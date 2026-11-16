@@ -947,6 +947,10 @@ public class LayoutBox {
             float maxWordW = 0;
             if (!textStyle.whiteSpace().wraps()) {
                 // nowrap / pre は行の中で折り返さないので、行全体が 1 つの塊
+                if (this.displayText.indexOf('\n') < 0) {
+                    String l = textStyle.whiteSpace().collapses() ? this.displayText.strip() : this.displayText;
+                    return l.isEmpty() ? 0 : face.advance(l, font);
+                }
                 for (String line : this.displayText.split("\n", -1)) {
                     String l = textStyle.whiteSpace().collapses() ? line.strip() : line;
                     if (!l.isEmpty()) maxWordW = Math.max(maxWordW, face.advance(l, font));
@@ -1021,16 +1025,53 @@ public class LayoutBox {
         FontStyle font = ctx.fontStyleFor(style);
         float max = face.advance(" ▾", font);
         for (HtmlNode option : node.children) {
-            if (!"option".equals(option.tag) && !"optgroup".equals(option.tag)) continue;
-            List<HtmlNode> options = "optgroup".equals(option.tag) ? option.children : List.of(option);
-            for (HtmlNode o : options) {
-                if (!"option".equals(o.tag)) continue;
-                String label = o.attrs.containsKey("label") ? o.attrs.get("label") : o.getTextContent();
-                label = label == null ? "" : label.strip().replaceAll("\\s+", " ");
-                max = Math.max(max, face.advance(label + " ▾", font));
+            if ("optgroup".equals(option.tag)) {
+                for (HtmlNode o : option.children) {
+                    if ("option".equals(o.tag)) max = Math.max(max, optionLabelWidth(o, face, font));
+                }
+            } else if ("option".equals(option.tag)) {
+                max = Math.max(max, optionLabelWidth(option, face, font));
             }
         }
         return max;
+    }
+
+    private static float optionLabelWidth(HtmlNode o, FontFace face, FontStyle font) {
+        String label = o.attrs.containsKey("label") ? o.attrs.get("label") : o.getTextContent();
+        label = label == null ? "" : collapseSelectSpaces(label);
+        return face.advance(label + " ▾", font);
+    }
+
+    /** 正規表現コンパイルを避けて前後の空白を落とし、内部の連続空白を単一スペースに潰す。 */
+    private static String collapseSelectSpaces(String s) {
+        int len = s.length();
+        int start = 0;
+        while (start < len && Character.isWhitespace(s.charAt(start))) start++;
+        int end = len;
+        while (end > start && Character.isWhitespace(s.charAt(end - 1))) end--;
+        if (start == end) return "";
+        StringBuilder sb = null;
+        boolean prevSpace = false;
+        for (int i = start; i < end; i++) {
+            char c = s.charAt(i);
+            if (Character.isWhitespace(c)) {
+                if (prevSpace || c != ' ') {
+                    if (sb == null) {
+                        sb = new StringBuilder(end - start);
+                        sb.append(s, start, i);
+                    }
+                    if (!prevSpace) sb.append(' ');
+                } else if (sb != null) {
+                    sb.append(' ');
+                }
+                prevSpace = true;
+            } else {
+                if (sb != null) sb.append(c);
+                prevSpace = false;
+            }
+        }
+        if (sb != null) return sb.toString();
+        return (start == 0 && end == len) ? s : s.substring(start, end);
     }
 
     /** 寸法が変わるため、測定パスの先頭でメモ化を捨てる。 */
@@ -1254,10 +1295,56 @@ public class LayoutBox {
     private enum TentativeKind { TENTATIVE, DEFINITE }
 
     /** 仮の測定（上書き寸法なし）・確定の測定（上書き寸法あり）の結果の産物と、その入力。 */
-    private record Tentative(TentativeKind kind, ConstraintSpace space, Viewport viewport, FontResolver fonts,
-                             IntrinsicSizeResolver intrinsics, int epoch, BoxOutputs outputs, boolean percentFree,
-                             boolean shrinkFree, boolean outsideFree, boolean widthFree, float fitNeed, boolean fillFit,
-                             float overrideW, float overrideH) {
+    private static final class Tentative {
+        TentativeKind kind;
+        ConstraintSpace space;
+        Viewport viewport;
+        FontResolver fonts;
+        IntrinsicSizeResolver intrinsics;
+        int epoch;
+        BoxOutputs outputs;
+        boolean percentFree, shrinkFree, outsideFree, widthFree;
+        float fitNeed;
+        boolean fillFit;
+        float overrideW, overrideH;
+
+        void set(TentativeKind kind, ConstraintSpace space, Viewport viewport, FontResolver fonts,
+                 IntrinsicSizeResolver intrinsics, int epoch, LayoutBox box, boolean percentFree,
+                 boolean shrinkFree, boolean outsideFree, boolean widthFree, float fitNeed, boolean fillFit,
+                 float overrideW, float overrideH) {
+            this.kind = kind;
+            this.space = space;
+            this.viewport = viewport;
+            this.fonts = fonts;
+            this.intrinsics = intrinsics;
+            this.epoch = epoch;
+            this.outputs = BoxOutputs.captureOrUpdate(this.outputs, box);
+            this.percentFree = percentFree;
+            this.shrinkFree = shrinkFree;
+            this.outsideFree = outsideFree;
+            this.widthFree = widthFree;
+            this.fitNeed = fitNeed;
+            this.fillFit = fillFit;
+            this.overrideW = overrideW;
+            this.overrideH = overrideH;
+        }
+
+        TentativeKind kind() { return kind; }
+        ConstraintSpace space() { return space; }
+        Viewport viewport() { return viewport; }
+        FontResolver fonts() { return fonts; }
+        IntrinsicSizeResolver intrinsics() { return intrinsics; }
+        int epoch() { return epoch; }
+        BoxOutputs outputs() { return outputs; }
+        boolean percentFree() { return percentFree; }
+        boolean shrinkFree() { return shrinkFree; }
+        boolean outsideFree() { return outsideFree; }
+        boolean widthFree() { return widthFree; }
+        float fitNeed() { return fitNeed; }
+        boolean fillFit() { return fillFit; }
+        float overrideW() { return overrideW; }
+        float overrideH() { return overrideH; }
+
         /**
          * 同じ制約か。上書き寸法は必ず一致させる。高さの % の基準が結果に効かない箱（{@link #percentFree}）や
          * 親の shrink 指示に依らない箱（{@link #shrinkFree}）はそれらだけが違っても同じとみなし、確定幅の箱（{@link #widthFree}）や
@@ -1980,10 +2067,10 @@ public class LayoutBox {
                         ? ((measuredFitFixedW || fillFit) ? measuredFitNeed : Float.POSITIVE_INFINITY)
                         : (!Float.isNaN(overrideWidth) && !axisStyle().layoutFacts().edgesAvailableFree
                                 ? Float.POSITIVE_INFINITY : measuredFitNeed);
-                Tentative fresh = new Tentative(kind, space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(),
-                        measuredEpoch, BoxOutputs.capture(this), measuredBlockPercentFree, measuredShrinkIndependent,
+                Tentative slot = obtainTentativeSlot(kind, space, tentativePhase ? MAX_TENTATIVES : MAX_DEFINITE_TENTATIVES);
+                slot.set(kind, space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(),
+                        measuredEpoch, this, measuredBlockPercentFree, measuredShrinkIndependent,
                         measuredOutsideFree, measuredWidthFree, tentFitNeed, fillFit, overrideWidth, overrideHeight);
-                recordTentative(fresh, tentativePhase ? MAX_TENTATIVES : MAX_DEFINITE_TENTATIVES);
             }
         }
         measurementValid = true;
@@ -2002,11 +2089,10 @@ public class LayoutBox {
                 && !isTableBox(this) && renderedLegend() == null;
     }
 
-    private void recordTentative(Tentative fresh, int maxForKind) {
+    private Tentative obtainTentativeSlot(TentativeKind kind, ConstraintSpace space, int maxForKind) {
         if (tentatives == null) {
             tentatives = new Tentative[MAX_TENTATIVES];
-            tentatives[0] = fresh;
-            return;
+            return tentatives[0] = new Tentative();
         }
         int firstNull = -1, countForKind = 0, oldestOfKind = -1;
         for (int i = 0; i < tentatives.length; i++) {
@@ -2015,10 +2101,9 @@ public class LayoutBox {
                 if (firstNull < 0) firstNull = i;
                 continue;
             }
-            if (old.kind() == fresh.kind()) {
-                if (old.matches(fresh.space())) {
-                    tentatives[i] = fresh;
-                    return;
+            if (old.kind() == kind) {
+                if (old.matches(space)) {
+                    return old;
                 }
                 if (oldestOfKind < 0) oldestOfKind = i;
                 countForKind++;
@@ -2026,21 +2111,21 @@ public class LayoutBox {
         }
         if (countForKind < maxForKind) {
             if (firstNull >= 0) {
-                tentatives[firstNull] = fresh;
-                return;
+                return tentatives[firstNull] = new Tentative();
             }
             int nextLen = Math.min(MAX_TOTAL_TENTATIVES, tentatives.length + 2);
             tentatives = java.util.Arrays.copyOf(tentatives, nextLen);
-            tentatives[tentatives.length - 2] = fresh;
-            return;
+            return tentatives[tentatives.length - 2] = new Tentative();
         }
         // この種類の枠がいっぱい: この種類で一番古いものを落とし、他種類の後ろを詰めて末尾へ置く
+        Tentative recycled = tentatives[oldestOfKind];
         int lastNonNull = oldestOfKind;
         for (int i = oldestOfKind + 1; i < tentatives.length && tentatives[i] != null; i++) {
             tentatives[i - 1] = tentatives[i];
             lastNonNull = i;
         }
-        tentatives[lastNonNull] = fresh;
+        tentatives[lastNonNull] = recycled;
+        return recycled;
     }
 
     /**
@@ -2553,8 +2638,9 @@ public class LayoutBox {
     }
 
     private boolean hasFloatingChild() {
-        for (LayoutBox child : children) {
-            if (child.style.facts().floating) return true;
+        List<LayoutBox> ch = children;
+        for (int i = 0, n = ch.size(); i < n; i++) {
+            if (ch.get(i).style.facts().floating) return true;
         }
         return false;
     }

@@ -28,6 +28,15 @@ public final class Gradients {
 
     private Gradients() {}
 
+    private static final Gradient NO_GRADIENT_SENTINEL = new LinearGradient(0, 0, 0, List.of(), false, null);
+    private static final java.util.Map<String, Gradient> PARSE_CACHE = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<String, Gradient>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, Gradient> eldest) {
+                    return size() > 256;
+                }
+            });
+
     /**
      * 色の停止点 1 つ。位置は未解決の文字列（無ければ null）。2 つ目の位置は {@code red 10% 20%} の形のとき。
      * {@code hint} は色の補間のヒント（{@code color} は使わず、{@code position} が 2 つの停止点の間の中間点）。
@@ -88,6 +97,14 @@ public final class Gradients {
     /** グラデーションの関数（{@code *-gradient()}）を読む。読めなければ null。 */
     public static Gradient parse(String image) {
         if (image == null) return null;
+        Gradient cached = PARSE_CACHE.get(image);
+        if (cached != null) return cached == NO_GRADIENT_SENTINEL ? null : cached;
+        Gradient computed = parseUncached(image);
+        PARSE_CACHE.put(image, computed == null ? NO_GRADIENT_SENTINEL : computed);
+        return computed;
+    }
+
+    private static Gradient parseUncached(String image) {
         List<ComponentValue> values = CssSyntax.trim(CssSyntax.parseComponentValues(image));
         if (values.size() != 1 || !(values.getFirst() instanceof CssSyntax.Function f)) return null;
         String name = f.name().toLowerCase(Locale.ROOT);
@@ -550,6 +567,12 @@ public final class Gradients {
      * <p>空のときは描くものがない（タイルの大きさが 0、線の長さが 0）。形式は {@link ShaderGradient}。
      */
     public static List<ShaderGradient> shaderGradients(Gradient g, Rect tile, float rootW, float rootH, float fontSize, float rootFontSize) {
+        return shaderGradients(g, tile, 0f, 0f, rootW, rootH, fontSize, rootFontSize);
+    }
+
+    /** 座標オフセット {@code (offX, offY)} を直接反映したシェーダー記述を返す（{@code offset} 再確保を避ける）。 */
+    public static List<ShaderGradient> shaderGradients(Gradient g, Rect tile, float offX, float offY,
+                                                       float rootW, float rootH, float fontSize, float rootFontSize) {
         if (tile.w() <= 0 || tile.h() <= 0) return List.of();
         ColorParser.ColorMixer mixer = g.colorSpace() == null ? null : ColorParser.mixer(g.colorSpace());
         return switch (g) {
@@ -564,20 +587,20 @@ public final class Gradients {
                 double cx = tile.x() + tile.w() / 2.0, cy = tile.y() + tile.h() / 2.0;
                 float dx = (float) (sin / length), dy = (float) (-cos / length);
                 float off = (float) ((-cx * sin + cy * cos) / length + 0.5);
-                yield segments(ShaderGradient.LINEAR, dx, dy, off, 0f, stops, linear.repeating(), mixer);
+                yield segments(ShaderGradient.LINEAR, dx, dy, off, 0f, offX, offY, stops, linear.repeating(), mixer);
             }
             case RadialGradient radial -> {
                 float[] center = resolveCenter(radial.center(), tile, rootW, rootH, fontSize, rootFontSize);
                 float[] radii = radialRadii(radial, tile, center[0], center[1], rootW, rootH, fontSize, rootFontSize);
                 float rx = Math.max(radii[0], 1e-3f), ry = Math.max(radii[1], 1e-3f);
                 ResolvedStops stops = resolveStops(g.stops(), rx, false, rootW, rootH, fontSize, rootFontSize);
-                yield segments(ShaderGradient.RADIAL, center[0], center[1], 1f / rx, 1f / ry, stops, radial.repeating(), mixer);
+                yield segments(ShaderGradient.RADIAL, center[0], center[1], 1f / rx, 1f / ry, offX, offY, stops, radial.repeating(), mixer);
             }
             case ConicGradient conic -> {
                 float[] center = resolveCenter(conic.center(), tile, rootW, rootH, fontSize, rootFontSize);
                 ResolvedStops stops = resolveStops(g.stops(), 1, true, rootW, rootH, fontSize, rootFontSize);
                 float from = (float) (conic.from() / 360.0);
-                yield segments(ShaderGradient.CONIC, center[0], center[1], from, 0f, stops, conic.repeating(), mixer);
+                yield segments(ShaderGradient.CONIC, center[0], center[1], from, 0f, offX, offY, stops, conic.repeating(), mixer);
             }
         };
     }
@@ -585,31 +608,96 @@ public final class Gradients {
     /** 区間 1 つ分。{@code p0} は始まりの位置、{@code span} は幅（どちらも停止点の尺度）、{@code hint} は t の指数。 */
     private record Piece(float p0, float span, int color0, int color1, float hint) {}
 
-    private static List<ShaderGradient> segments(int kind, float g0, float g1, float g2, float g3, ResolvedStops stops,
+    private static List<ShaderGradient> segments(int kind, float g0, float g1, float g2, float g3,
+                                                 float offX, float offY, ResolvedStops stops,
                                                  boolean repeating, ColorParser.ColorMixer mixer) {
         float[] pos = stops.positions();
         int[] colors = stops.colors();
         int n = pos.length;
+        if (mixer == null) {
+            int realCount = 0;
+            int firstReal = -1, lastReal = -1;
+            for (int i = 0; i + 1 < n; i++) {
+                if (pos[i + 1] - pos[i] > 1e-6f) {
+                    if (firstReal < 0) firstReal = i;
+                    lastReal = i;
+                    realCount++;
+                }
+            }
+            float period = pos[n - 1] - pos[0];
+            if (repeating && period > 1e-6f) {
+                if (realCount == 0) return List.of();
+                int both = ShaderGradient.LOWER_CLOSED | ShaderGradient.UPPER_CLOSED;
+                if (realCount == 1) {
+                    int i = firstReal;
+                    float a = pos[i], b = pos[i + 1];
+                    return List.of(make(kind, g0, g1, g2, g3, offX, offY, a, b - a, colors[i], colors[i + 1],
+                            hintExponent(stops.hints()[i], a, b), pos[0], period, both));
+                }
+                ShaderGradient[] arr = new ShaderGradient[realCount];
+                int idx = 0;
+                for (int i = 0; i + 1 < n; i++) {
+                    float a = pos[i], b = pos[i + 1], span = b - a;
+                    if (span <= 1e-6f) continue;
+                    arr[idx++] = make(kind, g0, g1, g2, g3, offX, offY, a, span, colors[i], colors[i + 1],
+                            hintExponent(stops.hints()[i], a, b), pos[0], period, both);
+                }
+                return java.util.Arrays.asList(arr);
+            }
+            if (repeating) {
+                return List.of(make(kind, g0, g1, g2, g3, offX, offY, pos[n - 1], 1f,
+                        colors[n - 1], colors[n - 1], 1f, 0f, 0f, 0));
+            }
+            boolean padBefore = firstReal != 0;
+            boolean padAfter = lastReal != n - 2;
+            int total = realCount + (padBefore ? 1 : 0) + (padAfter ? 1 : 0);
+            if (total == 1 && realCount == 1) {
+                int i = firstReal;
+                float a = pos[i], b = pos[i + 1];
+                return List.of(make(kind, g0, g1, g2, g3, offX, offY, a, b - a, colors[i], colors[i + 1],
+                        hintExponent(stops.hints()[i], a, b), 0f, 0f, 0));
+            }
+            ShaderGradient[] arr = new ShaderGradient[total];
+            int idx = 0;
+            if (padBefore) {
+                float edge = firstReal >= 0 ? pos[firstReal] : pos[0];
+                arr[idx++] = make(kind, g0, g1, g2, g3, offX, offY, edge - 1f, 1f,
+                        colors[0], colors[0], 1f, 0f, 0f, ShaderGradient.UPPER_CLOSED);
+            }
+            int k = 0;
+            for (int i = 0; i + 1 < n; i++) {
+                float a = pos[i], b = pos[i + 1], span = b - a;
+                if (span <= 1e-6f) continue;
+                int bounds = (k > 0 || padBefore ? ShaderGradient.LOWER_CLOSED : 0)
+                        | (k < realCount - 1 || padAfter ? ShaderGradient.UPPER_CLOSED : 0);
+                arr[idx++] = make(kind, g0, g1, g2, g3, offX, offY, a, span, colors[i], colors[i + 1],
+                        hintExponent(stops.hints()[i], a, b), 0f, 0f, bounds);
+                k++;
+            }
+            if (padAfter) {
+                float edge = lastReal >= 0 ? pos[lastReal + 1] : pos[n - 1];
+                arr[idx] = make(kind, g0, g1, g2, g3, offX, offY, edge, 1f,
+                        colors[n - 1], colors[n - 1], 1f, 0f, 0f, ShaderGradient.LOWER_CLOSED);
+            }
+            return java.util.Arrays.asList(arr);
+        }
+
         List<Piece> real = new ArrayList<>();
         int intervals = 0;
         for (int i = 0; i + 1 < n; i++) {
             if (pos[i + 1] - pos[i] > 1e-6f) intervals++;
         }
-        int sub = mixer == null ? 1 : Math.clamp(MAX_SHADER_SEGMENTS / Math.max(1, intervals), 1, COLOR_SPACE_SUBDIVISIONS);
+        int sub = Math.clamp(MAX_SHADER_SEGMENTS / Math.max(1, intervals), 1, COLOR_SPACE_SUBDIVISIONS);
         int firstReal = -1, lastReal = -1;
         for (int i = 0; i + 1 < n; i++) {
             float a = pos[i], b = pos[i + 1], span = b - a;
             if (span <= 1e-6f) continue;
             if (firstReal < 0) firstReal = i;
             lastReal = i;
-            if (mixer != null) {
-                // 色空間での色を刻みの端で求め、刻みの中は sRGB でつなぐ（ヒントも色の側に入っている）
-                for (int s = 0; s < sub; s++) {
-                    float pa = a + span * s / sub, pb = a + span * (s + 1) / sub;
-                    real.add(new Piece(pa, pb - pa, colorAt(stops, pa, false, mixer), colorAt(stops, pb, false, mixer), 1f));
-                }
-            } else {
-                real.add(new Piece(a, span, colors[i], colors[i + 1], hintExponent(stops.hints()[i], a, b)));
+            // 色空間での色を刻みの端で求め、刻みの中は sRGB でつなぐ（ヒントも色の側に入っている）
+            for (int s = 0; s < sub; s++) {
+                float pa = a + span * s / sub, pb = a + span * (s + 1) / sub;
+                real.add(new Piece(pa, pb - pa, colorAt(stops, pa, false, mixer), colorAt(stops, pb, false, mixer), 1f));
             }
         }
 
@@ -618,12 +706,12 @@ public final class Gradients {
         if (repeating && period > 1e-6f) {
             // 周期の中の区間は両側を閉じる（周期の外は畳まれて入ってこない）
             int both = ShaderGradient.LOWER_CLOSED | ShaderGradient.UPPER_CLOSED;
-            for (Piece p : real) out.add(make(kind, g0, g1, g2, g3, p, pos[0], period, both));
+            for (Piece p : real) out.add(make(kind, g0, g1, g2, g3, offX, offY, p, pos[0], period, both));
             return out;
         }
         if (repeating) {
             // 周期が 0 の繰り返しは最後の色の単色（§3.5.2）
-            out.add(make(kind, g0, g1, g2, g3, new Piece(pos[n - 1], 1f, colors[n - 1], colors[n - 1], 1f), 0f, 0f, 0));
+            out.add(make(kind, g0, g1, g2, g3, offX, offY, new Piece(pos[n - 1], 1f, colors[n - 1], colors[n - 1], 1f), 0f, 0f, 0));
             return out;
         }
         boolean padBefore = firstReal != 0;
@@ -631,24 +719,39 @@ public final class Gradients {
         if (padBefore) {
             // 最初の区間より手前（幅 0 の区間のさらに手前）は最初の停止点の色。その停止点までを単色で塗る
             float edge = firstReal >= 0 ? pos[firstReal] : pos[0];
-            out.add(make(kind, g0, g1, g2, g3, new Piece(edge - 1f, 1f, colors[0], colors[0], 1f), 0f, 0f, ShaderGradient.UPPER_CLOSED));
+            out.add(make(kind, g0, g1, g2, g3, offX, offY, new Piece(edge - 1f, 1f, colors[0], colors[0], 1f), 0f, 0f, ShaderGradient.UPPER_CLOSED));
         }
         for (int k = 0; k < real.size(); k++) {
             int bounds = (k > 0 || padBefore ? ShaderGradient.LOWER_CLOSED : 0)
                     | (k < real.size() - 1 || padAfter ? ShaderGradient.UPPER_CLOSED : 0);
-            out.add(make(kind, g0, g1, g2, g3, real.get(k), 0f, 0f, bounds));
+            out.add(make(kind, g0, g1, g2, g3, offX, offY, real.get(k), 0f, 0f, bounds));
         }
         if (padAfter) {
             float edge = lastReal >= 0 ? pos[lastReal + 1] : pos[n - 1];
-            out.add(make(kind, g0, g1, g2, g3, new Piece(edge, 1f, colors[n - 1], colors[n - 1], 1f), 0f, 0f, ShaderGradient.LOWER_CLOSED));
+            out.add(make(kind, g0, g1, g2, g3, offX, offY, new Piece(edge, 1f, colors[n - 1], colors[n - 1], 1f), 0f, 0f, ShaderGradient.LOWER_CLOSED));
         }
         return out;
     }
 
-    private static ShaderGradient make(int kind, float g0, float g1, float g2, float g3, Piece p,
+    private static ShaderGradient make(int kind, float g0, float g1, float g2, float g3, float offX, float offY,
+                                       Piece p, float repeatOrigin, float repeatPeriod, int bounds) {
+        return make(kind, g0, g1, g2, g3, offX, offY, p.p0(), p.span(), p.color0(), p.color1(), p.hint(),
+                repeatOrigin, repeatPeriod, bounds);
+    }
+
+    private static ShaderGradient make(int kind, float g0, float g1, float g2, float g3, float offX, float offY,
+                                       float p0, float span, int color0, int color1, float hint,
                                        float repeatOrigin, float repeatPeriod, int bounds) {
-        return ShaderGradient.of(kind, g0, g1, g2, g3, p.p0(), 1f / p.span(), p.hint(), repeatOrigin, repeatPeriod,
-                p.color0(), p.color1(), bounds);
+        if (offX != 0f || offY != 0f) {
+            if (kind == ShaderGradient.LINEAR) {
+                g2 = (float) ((double) g2 - ((double) g0 * offX + (double) g1 * offY));
+            } else {
+                g0 += offX;
+                g1 += offY;
+            }
+        }
+        return ShaderGradient.of(kind, g0, g1, g2, g3, p0, 1f / span, hint, repeatOrigin, repeatPeriod,
+                color0, color1, bounds);
     }
 
     /** 区間 [a, b] の補間のヒントを t の指数にする（中間点を hint に動かす: t' = t^(ln 0.5 / ln h)）。ヒントがなければ 1。 */

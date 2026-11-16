@@ -59,7 +59,8 @@ class ViewportCullingTest {
         }
         // 画面に掛かる項目は 1 つも落とさない
         for (DisplayItem it : full) {
-            boolean visible = it.type() != com.nishiyu.enderframelib.core.paint.model.ElementType.NODE && it.x() + it.width() > 0 && it.x() < w && it.y() + it.height() > 0 && it.y() < h;
+            DisplayItem abs = DisplayItem.resolveAbsolute(fullById, it);
+            boolean visible = abs.type() != com.nishiyu.enderframelib.core.paint.model.ElementType.NODE && abs.x() + abs.width() > 0 && abs.x() < w && abs.y() + abs.height() > 0 && abs.y() < h;
             if (visible) assertTrue(culled.stream().anyMatch(x -> x.id().equals(it.id())), "画面内の項目が落ちた: " + it);
         }
     }

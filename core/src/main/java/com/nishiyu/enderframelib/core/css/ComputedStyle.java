@@ -142,6 +142,20 @@ public final class ComputedStyle {
      */
     @SuppressWarnings("unchecked")
     public <T> T paintMemo(Object key, java.util.function.Function<Object, T> compute) {
+        return paintMemoInternal(key, compute, null);
+    }
+
+    /**
+     * {@link #paintMemo(Object, java.util.function.Function)} のラムダ捕獲を避ける版（{@code compute} へ {@code this} を渡す）。
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T paintMemoSelf(Object key, java.util.function.Function<ComputedStyle, T> compute) {
+        return paintMemoInternal(key, null, compute);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T paintMemoInternal(Object key, java.util.function.Function<Object, T> byKey,
+                                    java.util.function.Function<ComputedStyle, T> bySelf) {
         Object cur = paint;
         if (cur instanceof ConcurrentHashMap<?, ?> big) {
             Object hit = ((ConcurrentHashMap<Object, Object>) big).get(key);
@@ -150,7 +164,7 @@ public final class ComputedStyle {
             Object hit = ((ObjMemo) cur).get(key);
             if (hit != null) return (T) hit;
         }
-        T value = compute.apply(key);
+        T value = bySelf != null ? bySelf.apply(this) : byKey.apply(key);
         if (value == null) return null;
         for (; ; ) {
             cur = paint;

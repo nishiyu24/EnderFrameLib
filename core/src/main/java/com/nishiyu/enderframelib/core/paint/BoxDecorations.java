@@ -15,6 +15,7 @@ import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 箱の装飾（枠線・輪郭線の線種と背景のレイヤー）を矩形の並びに分ける純関数群。
@@ -197,8 +198,26 @@ public final class BoxDecorations {
     public static List<BackgroundLayer> layers(ComputedStyle style, double dppx) {
         // スタイルだけで決まるので、スタイルごとに 1 回だけ解く（描画のたびに全箱の background を字句解析していた）。
         // 呼び出し側が並べ替えても壊れないよう、写しを返す
-        return new ArrayList<>((List<BackgroundLayer>) style.paintMemo(
-                new LayerKey(false, dppx), k -> computeLayers(style, dppx)));
+        return new ArrayList<>(layersView(style, dppx));
+    }
+
+    private static final LayerKey LAYERS_KEY_1X = new LayerKey(false, 1.0);
+    private static final LayerKey MASK_LAYERS_KEY_1X = new LayerKey(true, 1.0);
+
+    private static List<BackgroundLayer> computeLayers1x(ComputedStyle style) {
+        return List.copyOf(computeLayers(style, 1.0));
+    }
+
+    private static List<BackgroundLayer> computeMaskLayers1x(ComputedStyle style) {
+        return List.copyOf(computeMaskLayers(style, 1.0));
+    }
+
+    /** 読み取り専用のレイヤー一覧をそのまま返す（呼び出し側は変更しないこと）。 */
+    @SuppressWarnings("unchecked")
+    public static List<BackgroundLayer> layersView(ComputedStyle style, double dppx) {
+        if (dppx == 1.0) return style.paintMemoSelf(LAYERS_KEY_1X, BoxDecorations::computeLayers1x);
+        return (List<BackgroundLayer>) style.paintMemo(
+                new LayerKey(false, dppx), k -> List.copyOf(computeLayers(style, dppx)));
     }
 
     /** 背景・マスクのレイヤー表のメモのキー。 */
@@ -228,17 +247,37 @@ public final class BoxDecorations {
     }
 
     public static List<BackgroundLayer> maskLayers(ComputedStyle style, double dppx) {
-        return new ArrayList<>((List<BackgroundLayer>) style.paintMemo(
-                new LayerKey(true, dppx), k -> computeMaskLayers(style, dppx)));
+        return new ArrayList<>(maskLayersView(style, dppx));
     }
 
+    /** 読み取り専用のマスクレイヤー一覧をそのまま返す（呼び出し側は変更しないこと）。 */
+    @SuppressWarnings("unchecked")
+    public static List<BackgroundLayer> maskLayersView(ComputedStyle style, double dppx) {
+        if (dppx == 1.0) return style.paintMemoSelf(MASK_LAYERS_KEY_1X, BoxDecorations::computeMaskLayers1x);
+        return (List<BackgroundLayer>) style.paintMemo(
+                new LayerKey(true, dppx), k -> List.copyOf(computeMaskLayers(style, dppx)));
+    }
+
+    private static final List<BackgroundLayer> NONE_MASK_LAYERS_1X = List.of(
+            new BackgroundLayer("none", "0% 0%", "auto", "repeat", "border-box", "border-box", 1.0));
+
     private static List<BackgroundLayer> computeMaskLayers(ComputedStyle style, double dppx) {
-        List<String> images = list(style.get(CssPropertyIndex.MASK_IMAGE), "none");
-        List<String> positions = list(style.get(CssPropertyIndex.MASK_POSITION), "0% 0%");
-        List<String> sizes = list(style.get(CssPropertyIndex.MASK_SIZE), "auto");
-        List<String> repeats = list(style.get(CssPropertyIndex.MASK_REPEAT), "repeat");
-        List<String> origins = list(style.get(CssPropertyIndex.MASK_ORIGIN), "border-box");
-        List<String> clips = list(style.get(CssPropertyIndex.MASK_CLIP), "border-box");
+        String imgRaw = style.get(CssPropertyIndex.MASK_IMAGE);
+        String posRaw = style.get(CssPropertyIndex.MASK_POSITION);
+        String sizeRaw = style.get(CssPropertyIndex.MASK_SIZE);
+        String repRaw = style.get(CssPropertyIndex.MASK_REPEAT);
+        String orgRaw = style.get(CssPropertyIndex.MASK_ORIGIN);
+        String clipRaw = style.get(CssPropertyIndex.MASK_CLIP);
+        if (dppx == 1.0 && imgRaw == null && posRaw == null && sizeRaw == null
+                && repRaw == null && orgRaw == null && clipRaw == null) {
+            return NONE_MASK_LAYERS_1X;
+        }
+        List<String> images = list(imgRaw, "none");
+        List<String> positions = list(posRaw, "0% 0%");
+        List<String> sizes = list(sizeRaw, "auto");
+        List<String> repeats = list(repRaw, "repeat");
+        List<String> origins = list(orgRaw, "border-box");
+        List<String> clips = list(clipRaw, "border-box");
         List<BackgroundLayer> out = new ArrayList<>(images.size());
         for (int i = 0; i < images.size(); i++) {
             String origin = origins.get(i % origins.size()), clip = clips.get(i % clips.size());
@@ -272,7 +311,7 @@ public final class BoxDecorations {
 
     /** 背景色が塗られる領域を決める箱（最後のレイヤーの {@code background-clip}）。 */
     public static String colorClip(ComputedStyle style) {
-        return (String) style.paintMemo(COLOR_CLIP, k -> computeColorClip(style));
+        return style.paintMemoSelf(COLOR_CLIP, BoxDecorations::computeColorClip);
     }
 
     private static final Object COLOR_CLIP = new Object();
@@ -308,25 +347,49 @@ public final class BoxDecorations {
      * レイヤーのタイルを並べる。{@code intrinsic} は画像の固有サイズ（不明・グラデーションなら null）。
      * 返すタイルは描画領域（{@code background-clip} の箱）と重なるものだけで、描画側はさらにその箱で切る。
      */
+    private static final String[] REPEAT_BOTH = {"repeat", "repeat"};
+    private static final String[] REPEAT_NO = {"no-repeat", "no-repeat"};
+    private static final String[] REPEAT_X_PAIR = {"repeat", "no-repeat"};
+    private static final String[] REPEAT_Y_PAIR = {"no-repeat", "repeat"};
+    private static final ConcurrentHashMap<String, String[]> REPEAT_CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, ParsedPosition> POSITION_CACHE = new ConcurrentHashMap<>();
+    private static final ThreadLocal<float[]> SCRATCH_PAIR = ThreadLocal.withInitial(() -> new float[4]);
+
+    private record ParsedPosition(String hEdge, String hOff, String vEdge, String vOff) {}
+
     public static List<Rect> tiles(BackgroundLayer layer, LayoutBox box, int[] intrinsic, float rootW, float rootH,
                                    float fontSize, float rootFontSize) {
         Rect area = boxArea(box, layer.origin());
         Rect paint = boxArea(box, layer.clip());
-        List<Rect> out = new ArrayList<>();
-        if (area.w() <= 0 || area.h() <= 0 || paint.w() <= 0 || paint.h() <= 0) return out;
+        if (area.w() <= 0 || area.h() <= 0 || paint.w() <= 0 || paint.h() <= 0) return List.of();
 
-        float[] size = tileSize(layer.size(), area, intrinsic, rootW, rootH, fontSize, rootFontSize);
-        float tileW = size[0], tileH = size[1];
-        if (tileW <= 0 || tileH <= 0) return out;
+        float[] scratch = SCRATCH_PAIR.get();
+        tileSizeInto(layer.size(), area, intrinsic, rootW, rootH, fontSize, rootFontSize, scratch, 0);
+        float tileW = scratch[0], tileH = scratch[1];
+        if (tileW <= 0 || tileH <= 0) return List.of();
 
         String[] repeat = repeatPair(layer.repeat());
         // round は敷き詰めの数が整数になるようにタイルを伸び縮みさせる（§3.4）
         if ("round".equals(repeat[0])) tileW = area.w() / Math.max(1, Math.round(area.w() / tileW));
         if ("round".equals(repeat[1])) tileH = area.h() / Math.max(1, Math.round(area.h() / tileH));
 
-        float[] pos = position(layer.position(), area, tileW, tileH, rootW, rootH, fontSize, rootFontSize);
-        float[] xs = axisStarts(repeat[0], area.x(), area.w(), paint.x(), paint.maxX(), area.x() + pos[0], tileW);
-        float[] ys = axisStarts(repeat[1], area.y(), area.h(), paint.y(), paint.maxY(), area.y() + pos[1], tileH);
+        positionInto(layer.position(), area, tileW, tileH, rootW, rootH, fontSize, rootFontSize, scratch, 2);
+        float posX = scratch[2], posY = scratch[3];
+        float tx0 = area.x() + posX, ty0 = area.y() + posY;
+        boolean noRepeat = !"repeat".equals(repeat[0]) && !"round".equals(repeat[0]) && !"space".equals(repeat[0])
+                && !"repeat".equals(repeat[1]) && !"round".equals(repeat[1]) && !"space".equals(repeat[1]);
+        boolean singleCoveringRepeat = "repeat".equals(repeat[0]) && "repeat".equals(repeat[1])
+                && tx0 <= paint.x() + 1e-4f && tx0 + tileW >= paint.maxX() - 1e-4f
+                && ty0 <= paint.y() + 1e-4f && ty0 + tileH >= paint.maxY() - 1e-4f;
+        if (noRepeat || singleCoveringRepeat) {
+            if (tx0 < paint.maxX() && tx0 + tileW > paint.x() && ty0 < paint.maxY() && ty0 + tileH > paint.y()) {
+                return List.of(new Rect(tx0, ty0, tileW, tileH));
+            }
+            return List.of();
+        }
+        List<Rect> out = new ArrayList<>();
+        float[] xs = axisStarts(repeat[0], area.x(), area.w(), paint.x(), paint.maxX(), tx0, tileW);
+        float[] ys = axisStarts(repeat[1], area.y(), area.h(), paint.y(), paint.maxY(), ty0, tileH);
         for (float ty : ys) {
             for (float tx : xs) {
                 if (out.size() >= MAX_TILES) return out;
@@ -339,12 +402,47 @@ public final class BoxDecorations {
     }
 
     private static String[] repeatPair(String repeat) {
-        String[] parts = repeat.trim().toLowerCase(Locale.ROOT).split("\\s+");
-        return switch (parts[0]) {
-            case "repeat-x" -> new String[]{"repeat", "no-repeat"};
-            case "repeat-y" -> new String[]{"no-repeat", "repeat"};
-            default -> new String[]{parts[0], parts.length > 1 ? parts[1] : parts[0]};
+        if ("no-repeat".equals(repeat)) return REPEAT_NO;
+        if ("repeat".equals(repeat)) return REPEAT_BOTH;
+        if ("repeat-x".equals(repeat)) return REPEAT_X_PAIR;
+        if ("repeat-y".equals(repeat)) return REPEAT_Y_PAIR;
+        String[] cached = REPEAT_CACHE.get(repeat);
+        if (cached != null) return cached;
+        String s = repeat.trim().toLowerCase(Locale.ROOT);
+        int sp = indexOfWhitespace(s, 0);
+        String p0 = sp < 0 ? s : s.substring(0, sp);
+        String[] res = switch (p0) {
+            case "repeat-x" -> REPEAT_X_PAIR;
+            case "repeat-y" -> REPEAT_Y_PAIR;
+            default -> {
+                String p1 = p0;
+                if (sp >= 0) {
+                    int s1 = skipWhitespace(s, sp);
+                    if (s1 < s.length()) {
+                        int e1 = indexOfWhitespace(s, s1);
+                        p1 = e1 < 0 ? s.substring(s1) : s.substring(s1, e1);
+                    }
+                }
+                yield "repeat".equals(p0) && "repeat".equals(p1) ? REPEAT_BOTH
+                        : "no-repeat".equals(p0) && "no-repeat".equals(p1) ? REPEAT_NO
+                        : new String[]{p0, p1};
+            }
         };
+        if (REPEAT_CACHE.size() < 256) REPEAT_CACHE.putIfAbsent(repeat, res);
+        return res;
+    }
+
+    private static int indexOfWhitespace(String s, int from) {
+        for (int i = from, n = s.length(); i < n; i++) {
+            if (Character.isWhitespace(s.charAt(i))) return i;
+        }
+        return -1;
+    }
+
+    private static int skipWhitespace(String s, int from) {
+        int i = from, n = s.length();
+        while (i < n && Character.isWhitespace(s.charAt(i))) i++;
+        return i;
     }
 
     /** 1 軸のタイルの始点。{@code repeat} は描画領域を覆うまで前後に、{@code space} は端から均等に並べる。 */
@@ -375,28 +473,48 @@ public final class BoxDecorations {
     }
 
     /** {@code background-size}。固有サイズが無い（グラデーション・未読み込み）ときの auto は配置領域の寸法。 */
-    private static float[] tileSize(String size, Rect area, int[] intrinsic, float rootW, float rootH,
-                                    float fontSize, float rootFontSize) {
-        String v = size.trim().toLowerCase(Locale.ROOT);
+    private static void tileSizeInto(String size, Rect area, int[] intrinsic, float rootW, float rootH,
+                                     float fontSize, float rootFontSize, float[] out, int off) {
         boolean hasIntrinsic = intrinsic != null && intrinsic.length >= 2 && intrinsic[0] > 0 && intrinsic[1] > 0;
         float iw = hasIntrinsic ? intrinsic[0] : area.w();
         float ih = hasIntrinsic ? intrinsic[1] : area.h();
+        if ("auto".equals(size) || "auto auto".equals(size)) {
+            out[off] = iw;
+            out[off + 1] = ih;
+            return;
+        }
+        String v = size.trim().toLowerCase(Locale.ROOT);
+        if ("auto".equals(v) || "auto auto".equals(v)) {
+            out[off] = iw;
+            out[off + 1] = ih;
+            return;
+        }
         if ("cover".equals(v) || "contain".equals(v)) {
-            if (!hasIntrinsic) return new float[]{area.w(), area.h()};
+            if (!hasIntrinsic) { out[off] = area.w(); out[off + 1] = area.h(); return; }
             float sx = area.w() / iw, sy = area.h() / ih;
             float s = "cover".equals(v) ? Math.max(sx, sy) : Math.min(sx, sy);
-            return new float[]{iw * s, ih * s};
+            out[off] = iw * s;
+            out[off + 1] = ih * s;
+            return;
         }
-        String[] parts = v.split("\\s+");
-        String ws = parts[0];
-        String hs = parts.length > 1 ? parts[1] : "auto";
+        int sp = indexOfWhitespace(v, 0);
+        String ws = sp < 0 ? v : v.substring(0, sp);
+        String hs = "auto";
+        if (sp >= 0) {
+            int s1 = skipWhitespace(v, sp);
+            if (s1 < v.length()) {
+                int e1 = indexOfWhitespace(v, s1);
+                hs = e1 < 0 ? v.substring(s1) : v.substring(s1, e1);
+            }
+        }
         Float w = "auto".equals(ws) ? null : LengthResolver.parseDim(ws, area.w(), rootW, rootH, fontSize, rootFontSize);
         Float h = "auto".equals(hs) ? null : LengthResolver.parseDim(hs, area.h(), rootW, rootH, fontSize, rootFontSize);
-        if (w == null && h == null) return new float[]{iw, ih};
+        if (w == null && h == null) { out[off] = iw; out[off + 1] = ih; return; }
         // 片方だけ auto なら、固有の比率を保つ（比率が無ければ固有サイズか配置領域の寸法）
-        if (w == null) return new float[]{hasIntrinsic ? h * iw / ih : iw, h};
-        if (h == null) return new float[]{w, hasIntrinsic ? w * ih / iw : ih};
-        return new float[]{w, h};
+        if (w == null) { out[off] = hasIntrinsic ? h * iw / ih : iw; out[off + 1] = h; return; }
+        if (h == null) { out[off] = w; out[off + 1] = hasIntrinsic ? w * ih / iw : ih; return; }
+        out[off] = w;
+        out[off + 1] = h;
     }
 
     /**
@@ -405,9 +523,45 @@ public final class BoxDecorations {
      */
     static float[] position(String position, Rect area, float tileW, float tileH, float rootW, float rootH,
                             float fontSize, float rootFontSize) {
-        List<String> tokens = new ArrayList<>();
-        for (String t : position.trim().toLowerCase(Locale.ROOT).split("\\s+")) if (!t.isEmpty()) tokens.add(t);
+        float[] out = new float[2];
+        positionInto(position, area, tileW, tileH, rootW, rootH, fontSize, rootFontSize, out, 0);
+        return out;
+    }
+
+    private static void positionInto(String position, Rect area, float tileW, float tileH, float rootW, float rootH,
+                                     float fontSize, float rootFontSize, float[] out, int off) {
         float freeW = area.w() - tileW, freeH = area.h() - tileH;
+        if ("0% 0%".equals(position) || "left top".equals(position) || "0 0".equals(position)) {
+            out[off] = 0f;
+            out[off + 1] = 0f;
+            return;
+        }
+        if ("50% 50%".equals(position) || "center".equals(position) || "center center".equals(position)) {
+            out[off] = freeW * 0.5f;
+            out[off + 1] = freeH * 0.5f;
+            return;
+        }
+        ParsedPosition parsed = POSITION_CACHE.get(position);
+        if (parsed == null) {
+            parsed = parsePosition(position);
+            if (POSITION_CACHE.size() < 512) POSITION_CACHE.putIfAbsent(position, parsed);
+        }
+        out[off] = axisOffset(parsed.hEdge, parsed.hOff, freeW, rootW, rootH, fontSize, rootFontSize);
+        out[off + 1] = axisOffset(parsed.vEdge, parsed.vOff, freeH, rootW, rootH, fontSize, rootFontSize);
+    }
+
+    private static ParsedPosition parsePosition(String position) {
+        String trimmed = position.trim().toLowerCase(Locale.ROOT);
+        List<String> tokens = new ArrayList<>(4);
+        int pos = 0, len = trimmed.length();
+        while (pos < len) {
+            int s = skipWhitespace(trimmed, pos);
+            if (s >= len) break;
+            int e = indexOfWhitespace(trimmed, s);
+            if (e < 0) e = len;
+            tokens.add(trimmed.substring(s, e));
+            pos = e;
+        }
         String hEdge = null, vEdge = null, hOff = null, vOff = null;
 
         if (tokens.size() >= 3) {
@@ -429,9 +583,7 @@ public final class BoxDecorations {
             if (isPositionKeyword(first)) hEdge = first; else { hEdge = "left"; hOff = first; }
             if (isPositionKeyword(second)) vEdge = second; else { vEdge = "top"; vOff = second; }
         }
-        float px = axisOffset(hEdge, hOff, freeW, rootW, rootH, fontSize, rootFontSize);
-        float py = axisOffset(vEdge, vOff, freeH, rootW, rootH, fontSize, rootFontSize);
-        return new float[]{px, py};
+        return new ParsedPosition(hEdge, hOff, vEdge, vOff);
     }
 
     private static boolean isPositionKeyword(String t) {
@@ -441,7 +593,11 @@ public final class BoxDecorations {
     private static float axisOffset(String edge, String offset, float free, float rootW, float rootH,
                                     float fontSize, float rootFontSize) {
         if (edge == null) edge = "center";
-        float off = offset == null ? 0 : LengthResolver.parseDim(offset, free, rootW, rootH, fontSize, rootFontSize);
+        float off;
+        if (offset == null || "0%".equals(offset) || "0".equals(offset) || "0px".equals(offset)) off = 0f;
+        else if ("50%".equals(offset)) off = free * 0.5f;
+        else if ("100%".equals(offset)) off = free;
+        else off = LengthResolver.parseDim(offset, free, rootW, rootH, fontSize, rootFontSize);
         return switch (edge) {
             case "center" -> free / 2f;
             case "right", "bottom" -> free - off;
@@ -567,8 +723,8 @@ public final class BoxDecorations {
      */
     public static List<Shadow> parseBoxShadows(String value, int currentColor, float rootW, float rootH,
                                                float fontSize, float rootFontSize) {
+        if (value == null || value.isBlank() || "none".equalsIgnoreCase(value.trim())) return List.of();
         List<Shadow> out = new ArrayList<>();
-        if (value == null || value.isBlank() || "none".equalsIgnoreCase(value.trim())) return out;
         for (String part : CssSyntax.parseCommaList(value)) {
             List<Float> lengths = new ArrayList<>(4);
             Integer color = null;
@@ -722,5 +878,113 @@ public final class BoxDecorations {
             if (c[4 + i] != c[8 + i]) elliptical = true;
         }
         return elliptical ? c : java.util.Arrays.copyOf(c, 8);
+    }
+
+    /**
+     * スカラー引数から直接 {@link ClipRect} を交差・正規化して作る（配列の一時確保を避ける）。
+     */
+    public static ClipRect intersectClipRect(
+            ClipRect outer,
+            float inMinX, float inMinY, float inMaxX, float inMaxY,
+            float rx0, float rx1, float rx2, float rx3,
+            float ry0, float ry1, float ry2, float ry3,
+            boolean inElliptical, String ownerId, List<ClipChainPart> chain) {
+        if (outer == null) {
+            return normalizeToClipRect(inMinX, inMinY, inMaxX, inMaxY,
+                    rx0, rx1, rx2, rx3, ry0, ry1, ry2, ry3, inElliptical, ownerId, chain);
+        }
+        float minX = Math.max(outer.minX(), inMinX);
+        float minY = Math.max(outer.minY(), inMinY);
+        float maxX = Math.max(minX, Math.min(outer.maxX(), inMaxX));
+        float maxY = Math.max(minY, Math.min(outer.maxY(), inMaxY));
+        boolean outEll = outer.isElliptical();
+        boolean anyEll = outEll || inElliptical;
+        float outRx0 = Math.max(cornerRadiusScalar(outer, 0, minX, minY, false), cornerRadiusInline(inMinX, inMinY, inMaxX, inMaxY, rx0, ry0, inElliptical, 0, minX, minY, false));
+        float outRx1 = Math.max(cornerRadiusScalar(outer, 1, maxX, minY, false), cornerRadiusInline(inMinX, inMinY, inMaxX, inMaxY, rx1, ry1, inElliptical, 1, maxX, minY, false));
+        float outRx2 = Math.max(cornerRadiusScalar(outer, 2, maxX, maxY, false), cornerRadiusInline(inMinX, inMinY, inMaxX, inMaxY, rx2, ry2, inElliptical, 2, maxX, maxY, false));
+        float outRx3 = Math.max(cornerRadiusScalar(outer, 3, minX, maxY, false), cornerRadiusInline(inMinX, inMinY, inMaxX, inMaxY, rx3, ry3, inElliptical, 3, minX, maxY, false));
+        if (!anyEll) {
+            return normalizeToClipRect(minX, minY, maxX, maxY,
+                    outRx0, outRx1, outRx2, outRx3, 0f, 0f, 0f, 0f, false, ownerId, chain);
+        }
+        float outRy0 = Math.max(cornerRadiusScalar(outer, 0, minX, minY, true), cornerRadiusInline(inMinX, inMinY, inMaxX, inMaxY, rx0, ry0, inElliptical, 0, minX, minY, true));
+        float outRy1 = Math.max(cornerRadiusScalar(outer, 1, maxX, minY, true), cornerRadiusInline(inMinX, inMinY, inMaxX, inMaxY, rx1, ry1, inElliptical, 1, maxX, minY, true));
+        float outRy2 = Math.max(cornerRadiusScalar(outer, 2, maxX, maxY, true), cornerRadiusInline(inMinX, inMinY, inMaxX, inMaxY, rx2, ry2, inElliptical, 2, maxX, maxY, true));
+        float outRy3 = Math.max(cornerRadiusScalar(outer, 3, minX, maxY, true), cornerRadiusInline(inMinX, inMinY, inMaxX, inMaxY, rx3, ry3, inElliptical, 3, minX, maxY, true));
+        return normalizeToClipRect(minX, minY, maxX, maxY,
+                outRx0, outRx1, outRx2, outRx3, outRy0, outRy1, outRy2, outRy3, true, ownerId, chain);
+    }
+
+    private static float cornerRadiusScalar(ClipRect clip, int corner, float x, float y, boolean vertical) {
+        boolean ell = clip.isElliptical();
+        float rx = switch (corner) {
+            case 0 -> clip.radiusTopLeft();
+            case 1 -> clip.radiusTopRight();
+            case 2 -> clip.radiusBottomRight();
+            default -> clip.radiusBottomLeft();
+        };
+        float ry = ell ? switch (corner) {
+            case 0 -> clip.radiusTopLeftV();
+            case 1 -> clip.radiusTopRightV();
+            case 2 -> clip.radiusBottomRightV();
+            default -> clip.radiusBottomLeftV();
+        } : rx;
+        float r = vertical && ell ? ry : rx;
+        return cornerRadiusInline(clip.minX(), clip.minY(), clip.maxX(), clip.maxY(), rx, ry, ell, corner, x, y, vertical, r);
+    }
+
+    private static float cornerRadiusInline(float minX, float minY, float maxX, float maxY,
+                                            float rx, float ry, boolean ell, int corner,
+                                            float x, float y, boolean vertical) {
+        float r = vertical && ell ? ry : rx;
+        return cornerRadiusInline(minX, minY, maxX, maxY, rx, ry, ell, corner, x, y, vertical, r);
+    }
+
+    private static float cornerRadiusInline(float minX, float minY, float maxX, float maxY,
+                                            float rx, float ry, boolean ell, int corner,
+                                            float x, float y, boolean vertical, float r) {
+        if (r <= 0f) return 0f;
+        float cx = corner == 0 || corner == 3 ? minX : maxX;
+        float cy = corner == 0 || corner == 1 ? minY : maxY;
+        float dx = Math.abs(x - cx), dy = Math.abs(y - cy);
+        if (!ell) {
+            if (dx >= r || dy >= r) return 0f;
+            if (Math.hypot(r - dx, r - dy) <= r) return 0f;
+            return Math.max(0f, r - Math.max(dx, dy));
+        }
+        if (rx > 0f && ry > 0f && dx < rx && dy < ry) {
+            double ux = (rx - dx) / rx, uy = (ry - dy) / ry;
+            if (ux * ux + uy * uy <= 1.0) return 0f;
+        }
+        return Math.max(0f, r - (vertical ? dy : dx));
+    }
+
+    private static ClipRect normalizeToClipRect(
+            float minX, float minY, float maxX, float maxY,
+            float rx0, float rx1, float rx2, float rx3,
+            float ry0, float ry1, float ry2, float ry3,
+            boolean elliptical, String ownerId, List<ClipChainPart> chain) {
+        if (maxX < minX) maxX = minX;
+        if (maxY < minY) maxY = minY;
+        float halfW = Math.max(0f, (maxX - minX) / 2f), halfH = Math.max(0f, (maxY - minY) / 2f);
+        if (!elliptical) {
+            float limit = Math.min(halfW, halfH);
+            return new ClipRect(minX, minY, maxX, maxY,
+                    Math.clamp(rx0, 0f, limit), Math.clamp(rx1, 0f, limit),
+                    Math.clamp(rx2, 0f, limit), Math.clamp(rx3, 0f, limit),
+                    ownerId, 0f, 0f, 0f, 0f, chain);
+        }
+        rx0 = Math.clamp(rx0, 0f, halfW); ry0 = Math.clamp(ry0, 0f, halfH);
+        rx1 = Math.clamp(rx1, 0f, halfW); ry1 = Math.clamp(ry1, 0f, halfH);
+        rx2 = Math.clamp(rx2, 0f, halfW); ry2 = Math.clamp(ry2, 0f, halfH);
+        rx3 = Math.clamp(rx3, 0f, halfW); ry3 = Math.clamp(ry3, 0f, halfH);
+        if (rx0 <= 0f || ry0 <= 0f) rx0 = ry0 = 0f;
+        if (rx1 <= 0f || ry1 <= 0f) rx1 = ry1 = 0f;
+        if (rx2 <= 0f || ry2 <= 0f) rx2 = ry2 = 0f;
+        if (rx3 <= 0f || ry3 <= 0f) rx3 = ry3 = 0f;
+        boolean stillEll = rx0 != ry0 || rx1 != ry1 || rx2 != ry2 || rx3 != ry3;
+        return stillEll
+                ? new ClipRect(minX, minY, maxX, maxY, rx0, rx1, rx2, rx3, ownerId, ry0, ry1, ry2, ry3, chain)
+                : new ClipRect(minX, minY, maxX, maxY, rx0, rx1, rx2, rx3, ownerId, 0f, 0f, 0f, 0f, chain);
     }
 }

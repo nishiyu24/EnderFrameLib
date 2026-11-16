@@ -12,6 +12,7 @@ import org.lwjgl.util.freetype.FreeType;
 import org.lwjgl.util.freetype.TT_HoriHeader;
 import org.lwjgl.util.freetype.TT_OS2;
 
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.Map;
@@ -703,7 +704,8 @@ public final class LoadedFace {
     private static final ColorBitmap NO_BITMAP = new ColorBitmap(new com.nishiyu.enderframelib.core.raster.Pixmap(1, 1), 0, 0);
     private static final StrikeBitmap NO_STRIKE = new StrikeBitmap(new com.nishiyu.enderframelib.core.raster.Pixmap(1, 1), 0, 0, 1f);
     /** (字形番号, 大きさ) → 前景色を使わない v1 / ビットマップ絵文字（描けない・持たない字形は {@link #NO_BITMAP}）。 */
-    private final Map<Long, ColorBitmap> colorBitmapCache = new ConcurrentHashMap<>();
+    private final Long2ObjectOpenHashMap<ColorBitmap> colorBitmapCache = new Long2ObjectOpenHashMap<>();
+    private final Object colorBitmapLock = new Object();
     /** (字形番号, 大きさ, 前景色 ARGB) → COLR v1 で {@code 0xFFFF} を参照したビットマップ絵文字。 */
     private final Map<ForegroundKey, ColorBitmap> foregroundBitmapCache = new ConcurrentHashMap<>();
     /** (字形番号, ストライク番号) → 元のカラービットマップ（同じストライクを異なる大きさで共有）。 */
@@ -725,7 +727,10 @@ public final class LoadedFace {
         if (gid == 0) return null;
         int sizeBits = Float.floatToIntBits(pixelSize);
         long key = ((long) gid << 32) | (sizeBits & 0xFFFFFFFFL);
-        ColorBitmap c = colorBitmapCache.get(key);
+        ColorBitmap c;
+        synchronized (colorBitmapLock) {
+            c = colorBitmapCache.get(key);
+        }
         if (c != null) return c == NO_BITMAP ? null : c;
         ForegroundKey fgKey = new ForegroundKey(gid, sizeBits, foregroundArgb);
         ColorBitmap fc = foregroundBitmapCache.get(fgKey);
@@ -750,8 +755,10 @@ public final class LoadedFace {
             }
         }
         c = rendered != null ? rendered : NO_BITMAP;
-        if (colorBitmapCache.size() > 4096) colorBitmapCache.clear();
-        colorBitmapCache.put(key, c);
+        synchronized (colorBitmapLock) {
+            if (colorBitmapCache.size() > 4096) colorBitmapCache.clear();
+            colorBitmapCache.put(key, c);
+        }
         return c == NO_BITMAP ? null : c;
     }
 

@@ -62,8 +62,9 @@ public final class ShaderPrograms {
             List.of(new Uniform("uViewProj", UniformType.MAT4),
                     new Uniform("uCameraPos", UniformType.VEC4), new Uniform("uLightDir", UniformType.VEC4),
                     new Uniform("uLightColor", UniformType.VEC4), new Uniform("uAmbientColor", UniformType.VEC4),
-                    new Uniform("uBaseInstance", UniformType.INT)),
-            List.of(), 0,
+                    new Uniform("uBaseInstance", UniformType.INT), new Uniform("uExtraCount", UniformType.INT),
+                    new Uniform("uExtra", UniformType.VEC4_ARRAY, 24)),
+            List.of("uBaseTex"), 1,
             List.of(new RecordView("uInstanceTboF", 0, ViewFormat.RGBA_FLOAT32, 8),
                     new RecordView("uInstanceTboI", 0, ViewFormat.RGBA_INT32, 9)));
 

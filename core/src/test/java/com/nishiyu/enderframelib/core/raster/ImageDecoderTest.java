@@ -13,7 +13,7 @@ class ImageDecoderTest {
     void gifCompositionWorksWithACustomDecoder() {
         int red = 0xFFFF0000, blue = 0xFF0000FF;
         ImageDecoder fake = new ImageDecoder() {
-            public Bitmap decode(byte[] b) { return null; }
+            public DecodedBitmap decode(byte[] b) { return null; }
             public GifStream decodeGif(byte[] b, int maxFrames, long maxPixels) {
                 return new GifStream(2, 1, List.of(
                         new GifFrame(0, 0, 2, 1, new int[]{red, red}, 0, 0),
@@ -35,7 +35,7 @@ class ImageDecoderTest {
     void decoderCanBeReplacedAndRestored() {
         ImageDecoder std = ImageDecoder.standard();
         ImageDecoder none = new ImageDecoder() {
-            public Bitmap decode(byte[] b) { return null; }
+            public DecodedBitmap decode(byte[] b) { return null; }
             public GifStream decodeGif(byte[] b, int m, long p) { return null; }
         };
         try {

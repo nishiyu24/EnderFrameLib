@@ -25,6 +25,7 @@ public final class EngineContext implements BindingHooks {
     static {
         // L3（DOM）の Bindings が上位層を参照せずに、このスレッドの文脈の翻訳・JSON 解析を引けるようにする（層の逆転）。
         BindingHooks.install(EngineContext::current);
+        com.nishiyu.enderframelib.core.paint.DisplayListBuilder.setParentRelativeSource(() -> current().parentRelativeDisplayItems);
     }
 
     /** {@code {{i18n:key}}} などの翻訳。既定はキーをそのまま返す。 */
@@ -52,6 +53,8 @@ public final class EngineContext implements BindingHooks {
     public volatile boolean localRelayout = true;
     /** 局所再レイアウト（箱の木を作り直さない）を有効にするか。false なら常に木を作り直す（切り分け用）。 */
     public volatile boolean inPlaceRestyleRelayout = true;
+    /** B3: DisplayItem の座標を親 NODE 原点からの相対座標にするか。false ならページ絶対座標（切り分け・パリティ検証用）。 */
+    public volatile boolean parentRelativeDisplayItems = !Boolean.getBoolean("enderframe.paint.noparentrelative");
     /** クライアント側リソース（リソースパックなど）の本文を引く。null なら引かない。 */
     public volatile Function<String, String> clientResourceFallback = null;
     /** サーバー側リソース（データパック）の本文を引く。null なら引かない。 */

@@ -754,6 +754,8 @@ public final class ShaderSources {
                 vec4 uLightColor;
                 vec4 uAmbientColor;
                 int uBaseInstance;
+                int uExtraCount;
+                vec4 uExtra[24];
             };
 
             EF_LOC(0) out vec3 vWorldPos;
@@ -829,51 +831,83 @@ public final class ShaderSources {
                 vec4 uLightColor;
                 vec4 uAmbientColor;
                 int uBaseInstance;
+                int uExtraCount;
+                vec4 uExtra[24];
             };
+
+            EF_TEX2D(1, uBaseTex);
 
             EF_LOC(0) out vec4 fragColor;
 
+            // 1 灯ぶんの Cook-Torrance（GGX 法線分布・Smith 相関の可視性・Schlick のフレネル）。radiance は面に届く光（減衰済み）。
+            // 明るさは「白い拡散面に光量 1 を当てると基本色になる」基準（BRDF に π を掛けて戻す）。
+            // ソフトウェア版（SoftwareScene3DRasterizer.Shader）と同じ式。変えるときは両方を直す。
+            vec3 efDirect(vec3 N, vec3 V, vec3 L, vec3 radiance, vec3 base, float metallic, float a2, vec3 f0, float ndv) {
+                float ndl = max(dot(N, L), 0.0);
+                vec3 H = normalize(L + V);
+                float ndh = max(dot(N, H), 0.0);
+                float vdh = max(dot(V, H), 0.0);
+                float dd = ndh * ndh * (a2 - 1.0) + 1.0;
+                float D = a2 / (3.14159265 * dd * dd);
+                float vis = 0.5 / (ndl * sqrt(ndv * ndv * (1.0 - a2) + a2) + ndv * sqrt(ndl * ndl * (1.0 - a2) + a2));
+                float fw = pow(1.0 - vdh, 5.0);
+                vec3 F = f0 + (1.0 - f0) * fw;
+                vec3 kd = (vec3(1.0) - F) * (1.0 - metallic);
+                return (kd * base + D * vis * F * 3.14159265) * radiance * ndl;
+            }
+
             void main() {
-                float alpha = vBaseColor.a;
+                int flags = int(vPbrFlags.w + 0.5);
+                vec4 baseC = vBaseColor;
+                if ((flags & 4) != 0) {
+                    // ベースカラー画像（非事前乗算）を基本色に掛ける。Texture3D.sample と同じ式
+                    vec2 uv = ((flags & 8) != 0) ? fract(vUv) : vUv;
+                    baseC *= texture(uBaseTex, vec2(uv.x, EF_IMG_V(uv.y)));
+                }
+                float alpha = baseC.a;
                 int blendCode = int(vPbrFlags.z + 0.5);
                 if (blendCode == 1 && alpha < 0.5) {
                     discard;
                 }
-                int flags = int(vPbrFlags.w + 0.5);
                 bool unlit = (flags & 2) != 0;
 
                 vec3 rgb;
                 if (unlit) {
-                    rgb = vBaseColor.rgb + vEmissive;
+                    rgb = baseC.rgb + vEmissive;
                 } else {
                     // Cook-Torrance（GGX 法線分布・Smith 相関の可視性・Schlick のフレネル）。
                     // 明るさは「白い拡散面に光量 1 を当てると基本色になる」基準（BRDF に π を掛けて戻す）。
                     // ソフトウェア版（SoftwareScene3DRasterizer.Shader）と同じ式。変えるときは両方を直す。
                     vec3 N = normalize(vWorldNorm);
                     if (!gl_FrontFacing) N = -N;
-                    vec3 L = normalize(-uLightDir.xyz);
                     vec3 V = normalize(uCameraPos.xyz - vWorldPos);
-                    vec3 H = normalize(L + V);
-                    float ndl = max(dot(N, L), 0.0);
                     float ndv = max(dot(N, V), 1e-4);
-                    float ndh = max(dot(N, H), 0.0);
-                    float vdh = max(dot(V, H), 0.0);
-
                     float metallic = vPbrFlags.x;
                     float roughness = clamp(vPbrFlags.y, 0.05, 1.0);
                     float a2 = roughness * roughness * roughness * roughness;
-                    float dd = ndh * ndh * (a2 - 1.0) + 1.0;
-                    float D = a2 / (3.14159265 * dd * dd);
-                    float vis = 0.5 / (ndl * sqrt(ndv * ndv * (1.0 - a2) + a2) + ndv * sqrt(ndl * ndl * (1.0 - a2) + a2));
-                    vec3 f0 = mix(vec3(0.04), vBaseColor.rgb, metallic);
-                    float fw = pow(1.0 - vdh, 5.0);
-                    vec3 F = f0 + (1.0 - f0) * fw;
+                    vec3 f0 = mix(vec3(0.04), baseC.rgb, metallic);
 
-                    vec3 kd = (vec3(1.0) - F) * (1.0 - metallic);
-                    vec3 direct = (kd * vBaseColor.rgb + D * vis * F * 3.14159265) * uLightColor.xyz * ndl;
+                    vec3 direct = efDirect(N, V, normalize(-uLightDir.xyz), uLightColor.xyz, baseC.rgb, metallic, a2, f0, ndv);
+                    // 追加ライト（ポイント / スポット）: 逆二乗減衰に範囲の窓、スポットは縁を smoothstep
+                    for (int i = 0; i < uExtraCount; i++) {
+                        vec4 la = uExtra[i * 3];
+                        vec4 lb = uExtra[i * 3 + 1];
+                        vec4 lc = uExtra[i * 3 + 2];
+                        vec3 toL = la.xyz - vWorldPos;
+                        float d2 = dot(toL, toL);
+                        vec3 L = toL / max(sqrt(d2), 1e-4);
+                        float q = d2 / (la.w * la.w);
+                        float win = clamp(1.0 - q * q, 0.0, 1.0);
+                        float att = win * win / max(d2, 0.01);
+                        if (lc.w > -1.5) {
+                            float t = clamp((dot(-L, lc.xyz) - lc.w) / (lb.w - lc.w), 0.0, 1.0);
+                            att *= t * t * (3.0 - 2.0 * t);
+                        }
+                        direct += efDirect(N, V, L, lb.xyz * att, baseC.rgb, metallic, a2, f0, ndv);
+                    }
                     // 環境光: 拡散は基本色、鏡面は視線に応じたフレネルで簡易に（IBL は無い）
                     vec3 fEnv = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - ndv, 5.0);
-                    vec3 ambient = uAmbientColor.xyz * (vBaseColor.rgb * (1.0 - metallic) + fEnv * (1.0 - roughness * 0.5));
+                    vec3 ambient = uAmbientColor.xyz * (baseC.rgb * (1.0 - metallic) + fEnv * (1.0 - roughness * 0.5));
                     vec3 diffuse = ambient;
                     vec3 spec = direct;
                     rgb = diffuse + spec + vEmissive;

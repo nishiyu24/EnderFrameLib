@@ -36,9 +36,9 @@ public class ClipMaskDisplayListTest {
         ClipShape shape = layer.clip();
         assertNotNull(shape);
         assertEquals(ClipShape.Kind.CIRCLE, shape.kind());
-        // 箱は (10, 10) 100x60: 中心は (60, 40)
-        assertEquals(60f, shape.data()[0], 0.5f);
-        assertEquals(40f, shape.data()[1], 0.5f);
+        // 箱は (10, 10) 100x60: ローカル座標（親相対ノード基準）では中心は (50, 30)
+        assertEquals(50f, shape.data()[0], 0.5f);
+        assertEquals(30f, shape.data()[1], 0.5f);
         assertEquals(20f, shape.data()[2], 0.01f);
         assertTrue(layer.needsLayer(1f));
     }

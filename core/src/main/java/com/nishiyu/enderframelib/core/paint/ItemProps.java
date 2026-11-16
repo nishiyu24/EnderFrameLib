@@ -26,16 +26,78 @@ import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
  */
 final class ItemProps {
 
+        private Map<String, String> baseAttrs;
         private Map<String, String> attrs;
-        private RenderHints hints;
+        private String parentId;
+        private long parentKey;
+        private String title;
+        private boolean scrollable;
+        private float scrollWidth;
+        private float scrollHeight;
+        private float shadowBlur;
+        private ShadowShape shadowShape;
+        private ShaderGradient shaderGradient;
+        private boolean shaderGradientLocal;
+        private boolean pointerEventsNone;
+        private int transitionDelayMs;
+        private String transitionEasing;
+        private String transitionProperty;
+        private float skew;
+        private boolean relativeOrigin;
+        private String fontFamily;
+        private RenderHints cachedHints = RenderHints.NONE;
+        private RenderHints reuseCandidate;
 
         ItemProps() {
-            this(null, RenderHints.NONE);
         }
 
-        private ItemProps(Map<String, String> attrs, RenderHints hints) {
+        private ItemProps(Map<String, String> baseAttrs, Map<String, String> attrs, ItemProps src) {
+            this.baseAttrs = baseAttrs;
             this.attrs = attrs;
-            this.hints = hints;
+            this.parentId = src.parentId;
+            this.parentKey = src.parentKey;
+            this.title = src.title;
+            this.scrollable = src.scrollable;
+            this.scrollWidth = src.scrollWidth;
+            this.scrollHeight = src.scrollHeight;
+            this.shadowBlur = src.shadowBlur;
+            this.shadowShape = src.shadowShape;
+            this.shaderGradient = src.shaderGradient;
+            this.shaderGradientLocal = src.shaderGradientLocal;
+            this.pointerEventsNone = src.pointerEventsNone;
+            this.transitionDelayMs = src.transitionDelayMs;
+            this.transitionEasing = src.transitionEasing;
+            this.transitionProperty = src.transitionProperty;
+            this.skew = src.skew;
+            this.relativeOrigin = src.relativeOrigin;
+            this.fontFamily = src.fontFamily;
+            this.cachedHints = src.cachedHints;
+            this.reuseCandidate = src.reuseCandidate;
+        }
+
+        ItemProps reset() {
+            this.baseAttrs = null;
+            this.attrs = null;
+            this.parentId = null;
+            this.parentKey = 0L;
+            this.title = null;
+            this.scrollable = false;
+            this.scrollWidth = 0f;
+            this.scrollHeight = 0f;
+            this.shadowBlur = 0f;
+            this.shadowShape = null;
+            this.shaderGradient = null;
+            this.shaderGradientLocal = false;
+            this.pointerEventsNone = false;
+            this.transitionDelayMs = 0;
+            this.transitionEasing = null;
+            this.transitionProperty = null;
+            this.skew = 0f;
+            this.relativeOrigin = false;
+            this.fontFamily = null;
+            this.cachedHints = RenderHints.NONE;
+            this.reuseCandidate = null;
+            return this;
         }
 
         static ItemProps parent(String parentId) {
@@ -43,14 +105,54 @@ final class ItemProps {
         }
 
         ItemProps copy() {
-            return new ItemProps(attrs == null || attrs.isEmpty() ? null : new HashMap<>(attrs), hints);
+            return new ItemProps(baseAttrs, attrs == null || attrs.isEmpty() ? null : new HashMap<>(attrs), this);
+        }
+
+        /** {@code src} と同じ属性・ヒントを借り受ける作業用複製（呼び出し元で {@code put} しないこと）。 */
+        void copyFrom(ItemProps src) {
+            this.baseAttrs = src.baseAttrs;
+            this.attrs = (src.attrs == null || src.attrs.isEmpty()) ? null : src.attrs;
+            this.parentId = src.parentId;
+            this.parentKey = src.parentKey;
+            this.title = src.title;
+            this.scrollable = src.scrollable;
+            this.scrollWidth = src.scrollWidth;
+            this.scrollHeight = src.scrollHeight;
+            this.shadowBlur = src.shadowBlur;
+            this.shadowShape = src.shadowShape;
+            this.shaderGradient = src.shaderGradient;
+            this.shaderGradientLocal = src.shaderGradientLocal;
+            this.pointerEventsNone = src.pointerEventsNone;
+            this.transitionDelayMs = src.transitionDelayMs;
+            this.transitionEasing = src.transitionEasing;
+            this.transitionProperty = src.transitionProperty;
+            this.skew = src.skew;
+            this.relativeOrigin = src.relativeOrigin;
+            this.fontFamily = src.fontFamily;
+            this.cachedHints = src.cachedHints;
+            this.reuseCandidate = src.reuseCandidate;
+        }
+
+        void reuseCandidate(RenderHints candidate) {
+            this.reuseCandidate = candidate;
         }
 
         // --- DOM 由来の属性 ---
 
         private Map<String, String> ensureAttrs() {
-            if (attrs == null) attrs = new HashMap<>(4);
+            if (attrs == null) {
+                attrs = (baseAttrs != null && !baseAttrs.isEmpty()) ? new HashMap<>(baseAttrs) : new HashMap<>(4);
+            }
             return attrs;
+        }
+
+        void putBaseAttrs(Map<String, String> immutableMap) {
+            if (immutableMap == null || immutableMap.isEmpty()) return;
+            if (attrs == null && baseAttrs == null) {
+                baseAttrs = immutableMap;
+            } else {
+                ensureAttrs().putAll(immutableMap);
+            }
         }
 
         void put(String key, String value) {
@@ -58,70 +160,178 @@ final class ItemProps {
         }
 
         String get(String key) {
-            return attrs != null ? attrs.get(key) : null;
+            if (attrs != null) return attrs.get(key);
+            return baseAttrs != null ? baseAttrs.get(key) : null;
         }
 
         boolean containsKey(String key) {
-            return attrs != null && attrs.containsKey(key);
+            return (attrs != null && attrs.containsKey(key))
+                    || (attrs == null && baseAttrs != null && baseAttrs.containsKey(key));
         }
 
         Map<String, String> attrs() {
-            return attrs == null || attrs.isEmpty() ? Map.of() : attrs;
+            if (attrs != null && !attrs.isEmpty()) return attrs;
+            if (baseAttrs != null && !baseAttrs.isEmpty()) return baseAttrs;
+            return Map.of();
         }
 
         // --- 型付きの描画の付帯情報 ---
 
         RenderHints hints() {
-            return hints;
+            return hintsReuse(reuseCandidate);
+        }
+
+        RenderHints hintsReuse(RenderHints candidate) {
+            RenderHints h = cachedHints;
+            if (h != null) return h;
+            if (parentId == null && parentKey == 0L && title == null && !scrollable && scrollWidth == 0f
+                    && scrollHeight == 0f && shadowBlur == 0f && shadowShape == null && shaderGradient == null
+                    && !pointerEventsNone && transitionDelayMs == 0 && transitionEasing == null
+                    && transitionProperty == null && skew == 0f && !relativeOrigin && fontFamily == null) {
+                cachedHints = RenderHints.NONE;
+                return RenderHints.NONE;
+            }
+            if (candidate != null && candidate.layer() == null
+                    && (parentKey != 0L
+                        ? candidate.parentKey() == parentKey
+                        : (parentId == null || parentId.isEmpty() ? candidate.parentKey() == 0L : true))
+                    && candidate.scrollable() == scrollable
+                    && Float.compare(candidate.scrollWidth(), scrollWidth) == 0
+                    && Float.compare(candidate.scrollHeight(), scrollHeight) == 0
+                    && Float.compare(candidate.shadowBlur(), shadowBlur) == 0
+                    && candidate.pointerEventsNone() == pointerEventsNone
+                    && candidate.transitionDelayMs() == transitionDelayMs
+                    && Float.compare(candidate.skew(), skew) == 0
+                    && candidate.relativeOrigin() == relativeOrigin
+                    && java.util.Objects.equals(candidate.parentId(), parentId)
+                    && java.util.Objects.equals(candidate.title(), title)
+                    && java.util.Objects.equals(candidate.shadowShape(), shadowShape)
+                    && java.util.Objects.equals(candidate.shaderGradient(), shaderGradient)
+                    && java.util.Objects.equals(candidate.transitionEasing(), transitionEasing)
+                    && java.util.Objects.equals(candidate.transitionProperty(), transitionProperty)
+                    && java.util.Objects.equals(candidate.fontFamily(), fontFamily)) {
+                cachedHints = candidate;
+                return candidate;
+            }
+            h = new RenderHints(parentId, parentKey, title, scrollable, scrollWidth, scrollHeight,
+                    shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs,
+                    transitionEasing, transitionProperty, null, skew, relativeOrigin, fontFamily);
+            cachedHints = h;
+            return h;
+        }
+
+        ItemProps fontFamily(String family) {
+            if (!java.util.Objects.equals(this.fontFamily, family)) {
+                this.fontFamily = family;
+                this.cachedHints = null;
+            }
+            return this;
         }
 
         ItemProps parentId(String id) {
-            hints = hints.withParentId(id);
+            if (!java.util.Objects.equals(this.parentId, id)) {
+                this.parentId = id;
+                this.parentKey = 0L;
+                this.cachedHints = null;
+            } else if (this.parentKey == 0L && id != null && !id.isEmpty()) {
+                this.cachedHints = null;
+            }
             return this;
         }
 
         ItemProps parentId(String id, long key) {
-            hints = hints.withParent(id, key);
+            if (!java.util.Objects.equals(this.parentId, id) || this.parentKey != key) {
+                this.parentId = id;
+                this.parentKey = key;
+                this.cachedHints = null;
+            }
             return this;
         }
 
         ItemProps title(String title) {
-            hints = hints.withTitle(title);
+            if (!java.util.Objects.equals(this.title, title)) {
+                this.title = title;
+                this.cachedHints = null;
+            }
             return this;
         }
 
         ItemProps scroll(float contentWidth, float contentHeight) {
-            hints = hints.withScroll(contentWidth, contentHeight);
+            if (!scrollable || scrollWidth != contentWidth || scrollHeight != contentHeight) {
+                this.scrollable = true;
+                this.scrollWidth = contentWidth;
+                this.scrollHeight = contentHeight;
+                this.cachedHints = null;
+            }
             return this;
         }
 
         ItemProps shadowBlur(float blur) {
-            hints = hints.withShadowBlur(blur);
+            if (this.shadowBlur != blur) {
+                this.shadowBlur = blur;
+                this.cachedHints = null;
+            }
             return this;
         }
 
         ItemProps shadowShape(ShadowShape shape) {
-            hints = hints.withShadowShape(shape);
+            if (!java.util.Objects.equals(this.shadowShape, shape)) {
+                this.shadowShape = shape;
+                this.cachedHints = null;
+            }
             return this;
         }
 
         ItemProps shaderGradient(ShaderGradient gradient) {
-            hints = hints.withShaderGradient(gradient);
+            return shaderGradient(gradient, false);
+        }
+
+        ItemProps shaderGradient(ShaderGradient gradient, boolean local) {
+            if (!java.util.Objects.equals(this.shaderGradient, gradient)) {
+                this.shaderGradient = gradient;
+                this.cachedHints = null;
+            }
+            this.shaderGradientLocal = local;
             return this;
         }
 
+        boolean isShaderGradientLocal() {
+            return shaderGradientLocal;
+        }
+
         ItemProps pointerEventsNone() {
-            hints = hints.withPointerEventsNone(true);
+            if (!this.pointerEventsNone) {
+                this.pointerEventsNone = true;
+                this.cachedHints = null;
+            }
+            return this;
+        }
+
+        ItemProps relativeOrigin() {
+            if (!this.relativeOrigin) {
+                this.relativeOrigin = true;
+                this.cachedHints = null;
+            }
             return this;
         }
 
         ItemProps skew(float degrees) {
-            hints = hints.withSkew(degrees);
+            if (this.skew != degrees) {
+                this.skew = degrees;
+                this.cachedHints = null;
+            }
             return this;
         }
 
         ItemProps transition(int delayMs, String easing, String property) {
-            hints = hints.withTransition(delayMs, easing, property);
+            if (this.transitionDelayMs != delayMs
+                    || !java.util.Objects.equals(this.transitionEasing, easing)
+                    || !java.util.Objects.equals(this.transitionProperty, property)) {
+                this.transitionDelayMs = delayMs;
+                this.transitionEasing = easing;
+                this.transitionProperty = property;
+                this.cachedHints = null;
+            }
             return this;
         }
 
@@ -146,12 +356,16 @@ final class ItemProps {
     }
 
     static ItemProps forParts(LayoutBox box, String id, TransitionSpec transSpec) {
-        ItemProps partsEvents = new ItemProps();
+        return populateForParts(new ItemProps(), box, id, transSpec);
+    }
+
+    static ItemProps populateForParts(ItemProps partsEvents, LayoutBox box, String id, TransitionSpec transSpec) {
+        partsEvents.reset();
         long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.nodeId()) : 0L;
         partsEvents.parentId(id, nodeKey);
         applyTransitionEvents(partsEvents, transSpec);
         if (box.style.containsKey(CssPropertyIndex.FONT_FAMILY)) {
-            partsEvents.put("font-family", box.style.get(CssPropertyIndex.FONT_FAMILY));
+            partsEvents.fontFamily(box.style.get(CssPropertyIndex.FONT_FAMILY));
         }
         putFontEvents(box, partsEvents);
         Map<String, String> nodeAttrs = box.node.attrs;
@@ -176,13 +390,12 @@ final class ItemProps {
             partsEvents.scroll(box.scrollWidth, box.scrollHeight);
         }
 
-        if (!nodeAttrs.isEmpty()) {
-            for (Map.Entry<String, String> entry : nodeAttrs.entrySet()) {
-                String k = entry.getKey();
-                if (k.regionMatches(true, 0, "on", 0, 2)) {
-                    partsEvents.put(k.toLowerCase(Locale.ROOT), entry.getValue());
+        if (box.node.hasEventAttributes()) {
+            nodeAttrs.forEach((k, v) -> {
+                if (k != null && k.regionMatches(true, 0, "on", 0, 2)) {
+                    partsEvents.put(k.toLowerCase(Locale.ROOT), v);
                 }
-            }
+            });
         }
         // スタイルの on* は算出スタイルだけで決まる。全プロパティを走査するので、スタイルごとに 1 回だけ集める
         String[] styleHandlers = (String[]) box.style.paintMemo(STYLE_HANDLERS, k -> styleHandlersOf(box));
@@ -203,7 +416,11 @@ final class ItemProps {
     }
 
     static ItemProps forPassiveBorder(String id, long parentKey, TransitionSpec transSpec) {
-        ItemProps passive = new ItemProps();
+        return populateForPassiveBorder(new ItemProps(), id, parentKey, transSpec);
+    }
+
+    static ItemProps populateForPassiveBorder(ItemProps passive, String id, long parentKey, TransitionSpec transSpec) {
+        passive.reset();
         passive.parentId(id, parentKey);
         applyTransitionEvents(passive, transSpec);
         return passive;

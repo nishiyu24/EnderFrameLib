@@ -136,22 +136,18 @@ class WindowedDisplayListTest {
                 a.mouseMove(100, 100, ca.sessionId());
                 b.mouseMove(100, 100, cb.sessionId());
                 Random ra = new Random(seed), rb = new Random(seed), rs = new Random(seed * 7);
-                StringBuilder log = new StringBuilder();
                 for (int step = 0; step < 80; step++) {
                     now += 16;
                     int kind = rs.nextInt(4);
                     if (kind == 0) { // 小さいスクロール（平行移動の範囲）と大きいスクロール（作り直し）
                         double d = (rs.nextInt(3) == 0 ? 25 : 3) * (rs.nextBoolean() ? 1 : -1);
-                        log.append(" S").append(d);
                         a.scroll(0, d, ca.sessionId());
                         b.scroll(0, d, cb.sessionId());
                     } else if (kind == 1) {
                         double x = 20 + rs.nextInt(300), y = 20 + rs.nextInt(250);
-                        log.append(" M").append((int) x).append(",").append((int) y);
                         a.mouseMove(x, y, ca.sessionId());
                         b.mouseMove(x, y, cb.sessionId());
                     } else {
-                        log.append(" X");
                         mutate(a, ra, step);
                         mutate(b, rb, step);
                     }

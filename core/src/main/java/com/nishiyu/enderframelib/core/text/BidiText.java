@@ -14,16 +14,28 @@ import java.text.Bidi;
  */
 public final class BidiText {
 
+    private static final ThreadLocal<char[]> RTL_CHECK_SCRATCH = new ThreadLocal<>();
+
     private BidiText() {}
 
     /** 右から左の文字（R / AL / AN の強い向き）を含むか。含まなければ並べ替えは要らない。 */
     public static boolean hasRtl(String text) {
         if (text == null) return false;
-        for (int i = 0; i < text.length(); i++) {
+        int len = text.length();
+        for (int i = 0; i < len; i++) {
             char c = text.charAt(i);
-            if (c < 0x0590) continue; // ラテン文字などは速く除く
-            if (Bidi.requiresBidi(text.toCharArray(), 0, text.length())) return true;
-            return false;
+            // Fast-skip ASCII/Latin/Hiragana/Katakana/CJK/Hangul/PUA (never requires bidi)
+            if (c < 0x0590 || (c >= 0x0900 && c < 0x200E)
+                    || (c > 0x206F && c < 0xD800) || (c > 0xDFFF && c < 0xFB1D) || c > 0xFEFC) {
+                continue;
+            }
+            char[] buf = RTL_CHECK_SCRATCH.get();
+            if (buf == null || buf.length < len) {
+                buf = new char[Math.max(64, len)];
+                RTL_CHECK_SCRATCH.set(buf);
+            }
+            text.getChars(0, len, buf, 0);
+            return Bidi.requiresBidi(buf, 0, len);
         }
         return false;
     }

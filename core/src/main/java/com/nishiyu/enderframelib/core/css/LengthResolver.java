@@ -415,11 +415,54 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
         return br != null && !br.isEmpty() && !"0".equals(br) && !"0px".equals(br);
     }
 
+    private static final Object CORNER_CACHE_KEY = new Object();
+
+    private static final class CornerCache {
+        float w, h, rootW, rootH;
+        float minSafeW, minSafeH;
+        float[] radii;
+        com.nishiyu.enderframelib.core.paint.model.Corners corners;
+        boolean fixedSize;
+    }
+
     /** 読み取り専用の四隅の楕円半径（呼び出し側は配列を書き換えないこと）。 */
     public static float[] cornerRadiiXYShared(ComputedStyle style, float w, float h, float rootW, float rootH) {
         if (!hasNonZeroCornerRadius(style)) return ZERO_RADII_XY;
-        return (float[]) style.paintMemo(new CornerKey(w, h, rootW, rootH),
-                k -> computeCornerRadiiXY(style, w, h, rootW, rootH));
+        CornerCache cache = style.paintMemoSelf(CORNER_CACHE_KEY, s -> new CornerCache());
+        float[] cached = cache.radii;
+        if (cached != null && ((cache.fixedSize && w >= cache.minSafeW && h >= cache.minSafeH)
+                || (cache.w == w && cache.h == h && cache.rootW == rootW && cache.rootH == rootH))) {
+            return cached;
+        }
+        String[] values = cornerRadiusValues(style);
+        float[] computed = cornerRadiiXY(values, w, h, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
+        float needW = Math.max(computed[0] + computed[1], computed[3] + computed[2]) + 0.01f;
+        float needH = Math.max(computed[4] + computed[7], computed[5] + computed[6]) + 0.01f;
+        boolean fixed = isFixedRadiusValues(values) && w > needW && h > needH;
+        cache.w = w;
+        cache.h = h;
+        cache.rootW = rootW;
+        cache.rootH = rootH;
+        cache.minSafeW = needW;
+        cache.minSafeH = needH;
+        cache.fixedSize = fixed;
+        cache.corners = null;
+        cache.radii = computed;
+        return computed;
+    }
+
+    /** 読み取り専用の丸め済み {@link com.nishiyu.enderframelib.core.paint.model.Corners} をキャッシュして返す。 */
+    public static com.nishiyu.enderframelib.core.paint.model.Corners cornersShared(
+            ComputedStyle style, float w, float h, float rootW, float rootH) {
+        if (!hasNonZeroCornerRadius(style)) return com.nishiyu.enderframelib.core.paint.model.Corners.ZERO;
+        float[] r = cornerRadiiXYShared(style, w, h, rootW, rootH);
+        CornerCache cache = style.paintMemoSelf(CORNER_CACHE_KEY, s -> new CornerCache());
+        com.nishiyu.enderframelib.core.paint.model.Corners c = cache.corners;
+        if (c == null) {
+            c = com.nishiyu.enderframelib.core.paint.model.Corners.ofFloatXY(r);
+            cache.corners = c;
+        }
+        return c;
     }
 
     public static float[] cornerRadiiXY(ComputedStyle style, float w, float h, float rootW, float rootH) {
@@ -427,9 +470,7 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
         return cornerRadiiXYShared(style, w, h, rootW, rootH).clone();
     }
 
-    private record CornerKey(float w, float h, float rootW, float rootH) {}
-
-    private static float[] computeCornerRadiiXY(ComputedStyle style, float w, float h, float rootW, float rootH) {
+    private static String[] cornerRadiusValues(ComputedStyle style) {
         String[] values = new String[4];
         String shorthand = null;
         for (int i = 0; i < 4; i++) {
@@ -440,7 +481,18 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
             }
             values[i] = value;
         }
-        return cornerRadiiXY(values, w, h, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
+        return values;
+    }
+
+    private static boolean isFixedRadiusValues(String[] values) {
+        for (int i = 0; i < values.length; i++) {
+            String v = values[i];
+            if (v != null && (v.indexOf('%') >= 0 || v.contains("vw") || v.contains("vh")
+                    || v.contains("vmin") || v.contains("vmax"))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

@@ -165,4 +165,63 @@ public record DisplayItem(
     public DisplayItem withTranslation(float newTranslateX, float newTranslateY) {
         return new DisplayItem(id, baseNodeId, type, x, y, width, height, text, color, bgColor, events, radius, opacity, newTranslateX, newTranslateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta, key);
     }
+
+    public DisplayItem withPosition(int newX, int newY) {
+        if (x == newX && y == newY) return this;
+        return new DisplayItem(id, baseNodeId, type, newX, newY, width, height, text, color, bgColor, events, radius, opacity, translateX, translateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta, key);
+    }
+
+    public DisplayItem withMeta(RenderMeta newMeta) {
+        if (meta == newMeta) return this;
+        return new DisplayItem(id, baseNodeId, type, x, y, width, height, text, color, bgColor, events, radius, opacity, translateX, translateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, newMeta, key);
+    }
+
+    public DisplayItem withPositionAndMeta(int newX, int newY, RenderMeta newMeta) {
+        if (x == newX && y == newY && meta == newMeta) return this;
+        return new DisplayItem(id, baseNodeId, type, newX, newY, width, height, text, color, bgColor, events, radius, opacity, translateX, translateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, newMeta, key);
+    }
+
+    public DisplayItem withBoundsAndMeta(int newX, int newY, int newWidth, int newHeight, RenderMeta newMeta) {
+        if (x == newX && y == newY && width == newWidth && height == newHeight && meta == newMeta) return this;
+        return new DisplayItem(id, baseNodeId, type, newX, newY, newWidth, newHeight, text, color, bgColor, events, radius, opacity, translateX, translateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, newMeta, key);
+    }
+
+    /**
+     * 親相対座標を持つ項目 {@code it} の絶対位置 {@code (x, y)} を解決した {@link DisplayItem} を返す
+     * （{@code relativeOrigin} を持つ祖先 {@code NODE} の位置を足し合わせる）。
+     */
+    public static DisplayItem resolveAbsolute(java.util.List<DisplayItem> items, DisplayItem it) {
+        return it == null || items == null ? it : resolveAbsolute(items, null, it);
+    }
+
+    /** {@link #resolveAbsolute(java.util.List, DisplayItem)} の {@link java.util.Map} 版（{@code id -> DisplayItem}）。 */
+    public static DisplayItem resolveAbsolute(java.util.Map<String, DisplayItem> byId, DisplayItem it) {
+        return it == null || byId == null ? it : resolveAbsolute(null, byId, it);
+    }
+
+    private static DisplayItem resolveAbsolute(java.util.List<DisplayItem> items, java.util.Map<String, DisplayItem> byId, DisplayItem it) {
+        int ax = it.x(), ay = it.y();
+        String pid = it.hints().parentId();
+        for (int guard = 0; pid != null && !pid.isEmpty() && guard < 64; guard++) {
+            DisplayItem anc = null;
+            if (byId != null) {
+                anc = byId.get(pid);
+            } else {
+                for (int i = 0, n = items.size(); i < n; i++) {
+                    DisplayItem cand = items.get(i);
+                    if (pid.equals(cand.id())) {
+                        anc = cand;
+                        break;
+                    }
+                }
+            }
+            if (anc == null) break;
+            if (anc.type() == ElementType.NODE && anc.hints().relativeOrigin()) {
+                ax += anc.x();
+                ay += anc.y();
+            }
+            pid = anc.hints().parentId();
+        }
+        return it.withPosition(ax, ay);
+    }
 }

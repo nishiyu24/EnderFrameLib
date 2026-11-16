@@ -93,6 +93,9 @@ public class ScrollTranslateTest {
                 if (synthetic(p.id())) {
                     ex += p.translateX();
                     ey += p.translateY();
+                } else if (p.type() == ElementType.NODE && p.hints().relativeOrigin()) {
+                    ex += p.x();
+                    ey += p.y();
                 }
                 parent = p.hints().parentId();
             }

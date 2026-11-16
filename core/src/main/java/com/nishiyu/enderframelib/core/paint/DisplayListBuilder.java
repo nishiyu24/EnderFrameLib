@@ -59,6 +59,13 @@ import com.nishiyu.enderframelib.core.paint.PaintOrder.RenderTask;
 public class DisplayListBuilder {
     // 単位なしの 0（例: translate(-50%, 0)）も受け付けるため単位は省略可能（省略時は px 扱い）
 
+    private static volatile java.util.function.BooleanSupplier parentRelativeSource =
+            () -> !Boolean.getBoolean("enderframe.paint.noparentrelative");
+
+    public static void setParentRelativeSource(java.util.function.BooleanSupplier source) {
+        parentRelativeSource = source != null ? source : () -> true;
+    }
+
     private static final Set<String> NON_FRAGMENT_TAGS = Set.of(
             "#text", "img",
             "input", "select", "progress", "meter", "textarea", "canvas", "svg"
@@ -81,6 +88,11 @@ public class DisplayListBuilder {
 
     /** 背景をキャンバスに譲った要素（html か body）。自分の箱には背景色を描かない。 */
     private LayoutBox canvasBackgroundSource;
+    /** 1 箱の未キャッシュ構築で使い回す ItemProps（DisplayItem 側には attrs Map / RenderHints だけが渡る）。 */
+    private final ItemProps scratchAnchorProps = new ItemProps();
+    private final ItemProps scratchPartsProps = new ItemProps();
+    private final ItemProps scratchPassiveProps = new ItemProps();
+    private final int[] scratchRawRadii = new int[4];
 
     /**
      * ビューポートの大きさが変わった（ウィンドウのリサイズ）。箱ごとの記憶は残す: ビューポート基準の単位（{@code vw} など）を
@@ -177,16 +189,37 @@ public List<DisplayItem> render(LayoutBox box) {
  * 直前に全件で描いた木と同じ中身のときに使う（部品の ID は箱ごとに数えるので、省いた箱が他の箱の ID に響かない）。
  * 変形・アニメーション・フィルターを持つ祖先の下は、動いて画面に入ってくるので省かない。
  */
-public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
+private static final ItemProps EMPTY_PROPS = new ItemProps();
+private PaintSupport.CaptureList reusableCaptureList;
+
+public ImmutableItemList renderImmutable(LayoutBox box, boolean cullOffscreen, ImmutableItemList prev) {
     long prof = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
     try {
-        return renderUnprofiled(box, cullOffscreen);
+        int cap = lastElementCount + (lastElementCount >> 4) + 16;
+        PaintSupport.CaptureList list = reusableCaptureList;
+        if (list == null) {
+            reusableCaptureList = list = new PaintSupport.CaptureList(cap);
+        } else {
+            list.resetForBuild();
+            list.ensureCapacity(cap);
+        }
+        renderUnprofiled(box, cullOffscreen, list);
+        return ImmutableItemList.from(prev, list);
     } finally {
         StageProfiler.end(PipelineStage.DISPLAY_LIST, prof);
     }
 }
 
-private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen) {
+public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
+    long prof = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
+    try {
+        return renderUnprofiled(box, cullOffscreen, null);
+    } finally {
+        StageProfiler.end(PipelineStage.DISPLAY_LIST, prof);
+    }
+}
+
+private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen, List<DisplayItem> sink) {
     generation++;
     buildSerial++;
     buildEpoch = LayoutBox.paintEpoch();
@@ -203,10 +236,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     scrollBoxes.clear();
     culledBoxes.clear();
     currentRoot = box;
+    boolean relMode = parentRelativeSource.getAsBoolean();
+    this.parentRelative = relMode;
+    order.setParentRelative(relMode);
     // 前回と同じ件数で足りることが多い。倍々に伸ばしながら全件を写し直すのを避ける
-    List<DisplayItem> elements = MEMO_ENABLED
+    List<DisplayItem> elements = sink != null ? sink
+            : ((MEMO_ENABLED || relMode)
             ? new PaintSupport.CaptureList(lastElementCount + (lastElementCount >> 4) + 16)
-            : new ArrayList<>(lastElementCount + (lastElementCount >> 4) + 16);
+            : new ArrayList<>(lastElementCount + (lastElementCount >> 4) + 16));
         canvasBackgroundSource = null;
         decor.setDevicePixelRatio(box.devicePixelRatio);
 
@@ -222,14 +259,15 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             if (canvasBg != 0x00000000) {
                 long bgRootKey = source != null && source.node != null ? DisplayItem.bgKeyOf(source.node.nodeId()) : 0L;
                 addElement(elements, "bg_root", "bg_root", ElementType.RECT, box.x, box.y, Math.max(box.w, rootW), Math.max(box.h, rootH),
-                        "", 0, canvasBg, new ItemProps(), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, RenderMeta.EMPTY, bgRootKey);
+                        "", 0, canvasBg, EMPTY_PROPS, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, RenderMeta.EMPTY, bgRootKey);
             }
         }
 
         // レイヤーに描く箱: 開始の印の次に出る錨の位置を覚え、終了の印でそこから出し終えた項目の数（span）を錨に書く
-        java.util.ArrayDeque<int[]> openLayers = new java.util.ArrayDeque<>();
-        java.util.ArrayDeque<LayerSpec> openSpecs = new java.util.ArrayDeque<>();
-        java.util.ArrayDeque<LayoutBox> openBoxes = new java.util.ArrayDeque<>();
+        int[] openLayerStarts = null;
+        LayerSpec[] openSpecs = null;
+        LayoutBox[] openBoxes = null;
+        int layerDepth = 0;
         // 部分木の保持は、全ての箱を描く描画でだけ（平行移動・画面外の省略では項目が欠ける／動く）。再利用は変更印が使える描画でだけ
         order.beginRender(buildSerial, buildEpoch, generation, !translating && !windowed, useChangeStamps && !translating);
         prunedOwners = 0;
@@ -243,17 +281,32 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             order.subtreePruner = null;
         }
         ownerCount += prunedOwners;
-        for (RenderTask task : paintTaskList) {
+        for (int ti = 0, tn = paintTaskList.size(); ti < tn; ti++) {
+            RenderTask task = paintTaskList.get(ti);
             if (task.layerStart() != null) {
-                openLayers.push(new int[]{elements.size()});
-                openSpecs.push(task.layerStart());
-                openBoxes.push(task.layerBox());
+                if (openLayerStarts == null) {
+                    openLayerStarts = new int[8];
+                    openSpecs = new LayerSpec[8];
+                    openBoxes = new LayoutBox[8];
+                } else if (layerDepth == openLayerStarts.length) {
+                    int next = layerDepth << 1;
+                    openLayerStarts = java.util.Arrays.copyOf(openLayerStarts, next);
+                    openSpecs = java.util.Arrays.copyOf(openSpecs, next);
+                    openBoxes = java.util.Arrays.copyOf(openBoxes, next);
+                }
+                openLayerStarts[layerDepth] = elements.size();
+                openSpecs[layerDepth] = task.layerStart();
+                openBoxes[layerDepth] = task.layerBox();
+                layerDepth++;
                 continue;
             }
             if (task.layerEnd()) {
-                int start = openLayers.pop()[0];
-                LayerSpec spec = openSpecs.pop();
-                LayoutBox layerBox = openBoxes.pop();
+                layerDepth--;
+                int start = openLayerStarts[layerDepth];
+                LayerSpec spec = openSpecs[layerDepth];
+                LayoutBox layerBox = openBoxes[layerDepth];
+                openSpecs[layerDepth] = null;
+                openBoxes[layerDepth] = null;
                 if (elements.size() - start > 0) {
                     // マスクは、箱の中身を出し終えたあとに足す（描画側は maskFrom 以降をマスク用の描画先へ描く）
                     if (spec.wantsMask()) {
@@ -269,11 +322,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             }
             LayoutBox owner = task.box();
             if (owner == null) {
-                task.drawAction().accept(elements);
+                order.executeTask(task, elements);
                 continue;
             }
             ownerCount++;
-            if (cull && !openBoxes.contains(owner) && !task.hasMovingAncestor() && !inWindowGeometry(owner)) {
+            if (cull && !containsBox(openBoxes, layerDepth, owner) && !task.hasMovingAncestor() && !inWindowGeometry(owner)) {
                 BoxMemo kept = boxMemo.get(owner);
                 if (kept != null) kept.generation = generation; // 省いた箱の記憶は、画面に戻ってくるまで残す
                 owner.dlStart = -1;
@@ -283,7 +336,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 continue;
             }
             int start = elements.size();
-            task.drawAction().accept(elements);
+            order.executeTask(task, elements);
             int end = elements.size();
             owner.dlStart = start;
             owner.dlEnd = end;
@@ -303,6 +356,12 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         this.currentDisplayList = elements;
         this.currentRoot = box;
         return elements;
+    }
+
+    private static boolean containsBox(LayoutBox[] boxes, int len, LayoutBox target) {
+        if (boxes == null) return false;
+        for (int i = 0; i < len; i++) if (boxes[i] == target) return true;
+        return false;
     }
 
     /** 切り分け用: false なら、画面外の部分木も箱ごとに分類してから省く（従来の動き）。 */
@@ -585,24 +644,38 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
     /** 箱の {@code mask-image} のレイヤーを項目にして足す（背景画像と同じ手順。クリップは箱の外へは出さない）。 */
     private void drawMaskItems(List<DisplayItem> elements, LayoutBox box) {
-        Corners radii = Corners.ofFloatXY(LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH));
-        int[] rawRadii = radii == Corners.ZERO ? Corners.ZERO_RAW : new int[]{
-                Math.min(radii.topLeft(), radii.topLeftV()), Math.min(radii.topRight(), radii.topRightV()),
-                Math.min(radii.bottomRight(), radii.bottomRightV()), Math.min(radii.bottomLeft(), radii.bottomLeftV())};
-        int color = box.style.color(CssPropertyIndex.COLOR, 0xFF000000);
-        BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
-        float fontHVal = Math.max(1.0f, box.style.fontSizePx());
-        decor.drawMaskLayers(elements, box, box.node.key(), null, radii, border, fontHVal, 0.5f, 0.5f);
-        if (BoxDecorations.clipsText(box.style)) {
-            // background-clip: text: 子孫の文字を白（不透明）で出す。これがマスクになり、箱の背景が文字の形だけに残る
-            ItemProps textEvents = ItemProps.parent(box.node.key());
-            textEvents.pointerEventsNone();
-            suppressTextShadow = true;
-            try {
-                maskText(elements, box, box.node.key(), textEvents);
-            } finally {
-                suppressTextShadow = false;
+        PaintSupport.CaptureList cap = (parentRelative && PaintOrder.boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
+        int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
+        if (cap != null) cap.setOrigin(Math.round(box.x), Math.round(box.y));
+        try {
+            Corners radii = LengthResolver.cornersShared(box.axisStyle(), box.w, box.h, rootW, rootH);
+            int[] rawRadii;
+            if (radii == Corners.ZERO) {
+                rawRadii = Corners.ZERO_RAW;
+            } else {
+                rawRadii = scratchRawRadii;
+                rawRadii[0] = Math.min(radii.topLeft(), radii.topLeftV());
+                rawRadii[1] = Math.min(radii.topRight(), radii.topRightV());
+                rawRadii[2] = Math.min(radii.bottomRight(), radii.bottomRightV());
+                rawRadii[3] = Math.min(radii.bottomLeft(), radii.bottomLeftV());
             }
+            int color = box.style.color(CssPropertyIndex.COLOR, 0xFF000000);
+            BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
+            float fontHVal = Math.max(1.0f, box.style.fontSizePx());
+            decor.drawMaskLayers(elements, box, box.node.key(), null, radii, border, fontHVal, 0.5f, 0.5f);
+            if (BoxDecorations.clipsText(box.style)) {
+                // background-clip: text: 子孫の文字を白（不透明）で出す。これがマスクになり、箱の背景が文字の形だけに残る
+                ItemProps textEvents = ItemProps.parent(box.node.key());
+                textEvents.pointerEventsNone();
+                suppressTextShadow = true;
+                try {
+                    maskText(elements, box, box.node.key(), textEvents);
+                } finally {
+                    suppressTextShadow = false;
+                }
+            }
+        } finally {
+            if (cap != null) cap.setOrigin(prevOx, prevOy);
         }
     }
 
@@ -667,6 +740,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         int appliedDx, appliedDy;
         /** {@link #match} が 2 を返したときの浮動小数の移動量（差分パッチで記憶の基準を進めるのに使う）。 */
         float appliedExactDx, appliedExactDy;
+        /** {@link #match} が 2 を返したときの親相対原点の差分。 */
+        int appliedOriginDx, appliedOriginDy;
         boolean appliedFragOnly;
         boolean appliedNonUniform;
         /** 各項目に対応する丸める前の {@code (x, y, w, h)}（4 要素ごと。小数移動の平行移動判定用）。 */
@@ -678,6 +753,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         List<DisplayItem> items;
         com.nishiyu.enderframelib.core.css.ComputedStyle style;
         com.nishiyu.enderframelib.core.css.ComputedStyle firstLineStyle;
+        com.nishiyu.enderframelib.core.css.ComputedStyle placeholderStyle;
         com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestors;
         float[] nums;
         float scrollW, scrollH;
@@ -700,9 +776,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         boolean nodeAndTextOnly;
         /** 項目が中身の大きさ（スクロール量）を持つ。中身が変わると、箱が動いただけでは使い回せない。 */
         boolean carriesContentExtent;
+        /** 記憶を作ったときの親相対モードと、自身および親の NODE の丸め原点。 */
+        boolean parentRelative;
+        int originX, originY;
+        int parentOriginX, parentOriginY;
         /** この箱を含む、保持された部分木。再利用されている間は、箱ごとに世代を書かなくても記憶は捨てられない。 */
         PaintOrder.Chunk chunk;
+        boolean itemsMutable;
     }
+
+    private boolean parentRelative = true;
 
     private final java.util.IdentityHashMap<LayoutBox, BoxMemo> boxMemo = new java.util.IdentityHashMap<>();
     private int generation;
@@ -758,7 +841,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             if (!ReplacedElements.isHost(tag)) return false;
         } else {
             switch (tag) {
-                case "video", "audio", "svg", "canvas", "textarea", "select", "input", "fieldset",
+                case "video", "audio", "svg", "canvas", "textarea", "select", "fieldset",
                      "legend", "table", "caption", "thead", "tbody", "tfoot", "tr", "td", "th", "col", "colgroup" -> {
                     return false;
                 }
@@ -798,7 +881,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     static float[] numsOf(LayoutBox b) {
-        return new float[]{b.x, b.y, b.w, b.h, b.pL, b.pT, b.pR, b.pB, b.bL, b.bT, b.bR, b.bB, b.lineHeightPx};
+        return fillNums(b, null);
+    }
+
+    static float[] fillNums(LayoutBox b, float[] reuse) {
+        float[] a = reuse != null && reuse.length == NUMS_LENGTH ? reuse : new float[NUMS_LENGTH];
+        a[0] = b.x; a[1] = b.y; a[2] = b.w; a[3] = b.h;
+        a[4] = b.pL; a[5] = b.pT; a[6] = b.pR; a[7] = b.pB;
+        a[8] = b.bL; a[9] = b.bT; a[10] = b.bR; a[11] = b.bB;
+        a[12] = b.lineHeightPx;
+        return a;
     }
 
     /** {@link #numsOf} の i 番目を、配列を作らずに返す（{@link #match} が箱ごとに配列を確保しないため）。 */
@@ -825,10 +917,196 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         return a == b || (a != null && a.equals(b));
     }
 
-    private static com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestorStyles(LayoutBox box) {
+    /** クリップの連鎖（各持ち主のローカル空間の矩形と所有者）が同じか。ページ AABB だけ動いたクリップを再利用できるか見る。 */
+    private static boolean sameClipChain(ClipRect a, ClipRect b) {
+        if (a == b) return true;
+        if (a == null || b == null) return false;
+        List<ClipChainPart> ca = a.chain(), cb = b.chain();
+        int n = ca.size();
+        if (n == 0 || n != cb.size()) return false;
+        for (int i = 0; i < n; i++) {
+            if (!ca.get(i).equals(cb.get(i))) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 祖先クリップの境界変更が、この箱の全描画項目の範囲の外側だけで起きているか。
+     * どの項目の描かれる矩形にも触れない辺の変化なら、記憶している {@code clipRect} のまま画素一致する。
+     */
+    private static boolean clipDifferenceOutsideItems(BoxMemo m, ClipRect newClip, LayoutBox box,
+                                                      ScrollState scrollState,
+                                                      int originX, int originY, int shiftX, int shiftY,
+                                                      int[] itemRects) {
+        ClipRect oldClip = m.clip;
+        if (oldClip == null || newClip == null) return false;
+        if (!java.util.Objects.equals(oldClip.ownerId(), newClip.ownerId())) return false;
+        List<ClipChainPart> oldChain = oldClip.chain(), newChain = newClip.chain();
+        if (oldChain.size() != newChain.size()) return false;
+        boolean hasOwn = m.parentRelative && PaintOrder.boxHasOwnNode(box);
+        int oldOriginDeltaX = hasOwn ? m.originX - originX : 0;
+        int oldOriginDeltaY = hasOwn ? m.originY - originY : 0;
+        if (!rectEdgesSafe(m.items, oldClip.minX(), oldClip.minY(), oldClip.maxX(), oldClip.maxY(),
+                newClip.minX(), newClip.minY(), newClip.maxX(), newClip.maxY(),
+                oldClip.radiusTopLeft(), oldClip.radiusTopRight(), oldClip.radiusBottomRight(), oldClip.radiusBottomLeft(),
+                oldClip.radiusTopLeftV(), oldClip.radiusTopRightV(), oldClip.radiusBottomRightV(), oldClip.radiusBottomLeftV(),
+                newClip.radiusTopLeft(), newClip.radiusTopRight(), newClip.radiusBottomRight(), newClip.radiusBottomLeft(),
+                newClip.radiusTopLeftV(), newClip.radiusTopRightV(), newClip.radiusBottomRightV(), newClip.radiusBottomLeftV(),
+                oldClip, originX, originY, oldOriginDeltaX, oldOriginDeltaY, shiftX, shiftY, itemRects)) {
+            return false;
+        }
+        for (int ci = 0, cn = oldChain.size(); ci < cn; ci++) {
+            ClipChainPart pa = oldChain.get(ci), pb = newChain.get(ci);
+            if (pa.equals(pb)) continue;
+            String oid = pa.ownerId();
+            if (!java.util.Objects.equals(oid, pb.ownerId())) return false;
+            float oAx = 0f, oAy = 0f, nAx = 0f, nAy = 0f;
+            if (oid != null) {
+                LayoutBox owner = null;
+                boolean axisAlignedNoScroll = true;
+                for (LayoutBox a = box.parent; a != null; a = a.parent) {
+                    if (PaintOrder.hasMovingProps(a.style)
+                            || (scrollState != null && a.node != null
+                            && (scrollState.getScrollX(a.node) != 0f || scrollState.getScrollY(a.node) != 0f))) {
+                        axisAlignedNoScroll = false;
+                        break;
+                    }
+                    if (a.node != null && oid.equals(a.node.key())) {
+                        owner = a;
+                        break;
+                    }
+                }
+                if (!axisAlignedNoScroll || owner == null) return false;
+                oAx = pa.ownerOriginX();
+                oAy = pa.ownerOriginY();
+                nAx = pb.ownerOriginX();
+                nAy = pb.ownerOriginY();
+            }
+            int len = pa.rectLength();
+            if (len != pb.rectLength() || len < 8) return false;
+            float aTLv = len >= 12 ? pa.rectAt(8) : 0f, aTRv = len >= 12 ? pa.rectAt(9) : 0f;
+            float aBRv = len >= 12 ? pa.rectAt(10) : 0f, aBLv = len >= 12 ? pa.rectAt(11) : 0f;
+            float bTLv = len >= 12 ? pb.rectAt(8) : 0f, bTRv = len >= 12 ? pb.rectAt(9) : 0f;
+            float bBRv = len >= 12 ? pb.rectAt(10) : 0f, bBLv = len >= 12 ? pb.rectAt(11) : 0f;
+            if (!rectEdgesSafe(m.items,
+                    pa.rectAt(0) + oAx, pa.rectAt(1) + oAy, pa.rectAt(2) + oAx, pa.rectAt(3) + oAy,
+                    pb.rectAt(0) + nAx, pb.rectAt(1) + nAy, pb.rectAt(2) + nAx, pb.rectAt(3) + nAy,
+                    pa.rectAt(4), pa.rectAt(5), pa.rectAt(6), pa.rectAt(7), aTLv, aTRv, aBRv, aBLv,
+                    pb.rectAt(4), pb.rectAt(5), pb.rectAt(6), pb.rectAt(7), bTLv, bTRv, bBRv, bBLv,
+                    oldClip, originX, originY, oldOriginDeltaX, oldOriginDeltaY, shiftX, shiftY, itemRects)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isSubClipOf(ClipRect sub, ClipRect parent) {
+        List<ClipChainPart> sc = sub.chain(), pc = parent.chain();
+        int pn = pc.size();
+        if (sc.size() <= pn) return false;
+        for (int i = 0; i < pn; i++) {
+            if (!sc.get(i).equals(pc.get(i))) return false;
+        }
+        return true;
+    }
+
+    private static boolean rectEdgesSafe(List<DisplayItem> items,
+                                         float oMinX, float oMinY, float oMaxX, float oMaxY,
+                                         float nMinX, float nMinY, float nMaxX, float nMaxY,
+                                         float oTL, float oTR, float oBR, float oBL,
+                                         float oTLv, float oTRv, float oBRv, float oBLv,
+                                         float nTL, float nTR, float nBR, float nBL,
+                                         float nTLv, float nTRv, float nBRv, float nBLv,
+                                         ClipRect oldClip, int originX, int originY,
+                                         int oldOriginDeltaX, int oldOriginDeltaY, int shiftX, int shiftY,
+                                         int[] itemRects) {
+        if ((oTL != 0f || oTR != 0f || oBR != 0f || oBL != 0f || oTLv != 0f || oTRv != 0f || oBRv != 0f || oBLv != 0f
+                || nTL != 0f || nTR != 0f || nBR != 0f || nBL != 0f || nTLv != 0f || nTRv != 0f || nBRv != 0f || nBLv != 0f)
+                && (Float.compare(oTL, nTL) != 0 || Float.compare(oTR, nTR) != 0
+                || Float.compare(oBR, nBR) != 0 || Float.compare(oBL, nBL) != 0
+                || Float.compare(oTLv, nTLv) != 0 || Float.compare(oTRv, nTRv) != 0
+                || Float.compare(oBRv, nBRv) != 0 || Float.compare(oBLv, nBLv) != 0)) {
+            return false;
+        }
+        boolean diffMinX = Float.compare(oMinX, nMinX) != 0;
+        boolean diffMinY = Float.compare(oMinY, nMinY) != 0;
+        boolean diffMaxX = Float.compare(oMaxX, nMaxX) != 0;
+        boolean diffMaxY = Float.compare(oMaxY, nMaxY) != 0;
+        if (!diffMinX && !diffMinY && !diffMaxX && !diffMaxY) return true;
+        float rL = Math.max(Math.max(oTL, oBL), Math.max(nTL, nBL));
+        float rR = Math.max(Math.max(oTR, oBR), Math.max(nTR, nBR));
+        float rT = Math.max(Math.max(oTLv > 0f ? oTLv : oTL, oTRv > 0f ? oTRv : oTR),
+                Math.max(nTLv > 0f ? nTLv : nTL, nTRv > 0f ? nTRv : nTR));
+        float rB = Math.max(Math.max(oBLv > 0f ? oBLv : oBL, oBRv > 0f ? oBRv : oBR),
+                Math.max(nBLv > 0f ? nBLv : nBL, nBRv > 0f ? nBRv : nBR));
+        float safeMinX = Math.max(oMinX, nMinX) + rL;
+        float safeMinY = Math.max(oMinY, nMinY) + rT;
+        float safeMaxX = Math.min(oMaxX, nMaxX) - rR;
+        float safeMaxY = Math.min(oMaxY, nMaxY) - rB;
+        int minShiftX = Math.min(oldOriginDeltaX, shiftX), maxShiftX = Math.max(oldOriginDeltaX, shiftX);
+        int minShiftY = Math.min(oldOriginDeltaY, shiftY), maxShiftY = Math.max(oldOriginDeltaY, shiftY);
+        for (int i = 0, n = items.size(); i < n; i++) {
+            DisplayItem it = items.get(i);
+            if (it.type() == ElementType.NODE) continue;
+            if (it.translateX() != 0f || it.translateY() != 0f
+                    || it.scaleX() != 1f || it.scaleY() != 1f || it.rotate() != 0f) {
+                return false;
+            }
+            RenderMeta meta = it.meta();
+            RenderHints h = meta != null ? meta.hints() : null;
+            if (meta != null) {
+                ClipRect mc = meta.clipRect();
+                if (mc != null && !sameClip(mc, oldClip) && !isSubClipOf(mc, oldClip)) return false;
+                if (h != null && h.skew() != 0f) return false;
+            }
+            float pad = (it.type() == ElementType.TEXT ? 4f : 1f) + (h != null && h.shadowBlur() > 0f ? 2f : 0f);
+            float x0, y0, x1, y1;
+            if (itemRects != null) {
+                int base = i * 4;
+                float ox0 = it.x() + oldOriginDeltaX, oy0 = it.y() + oldOriginDeltaY;
+                float nx0 = itemRects[base], ny0 = itemRects[base + 1];
+                float minXLocal = Math.min(ox0, nx0), minYLocal = Math.min(oy0, ny0);
+                float maxXLocal = Math.max(ox0 + it.width(), nx0 + itemRects[base + 2]);
+                float maxYLocal = Math.max(oy0 + it.height(), ny0 + itemRects[base + 3]);
+                if (h != null && h.shadowShape() != null) {
+                    ShadowShape ss = h.shadowShape();
+                    minXLocal = Math.min(minXLocal, ss.x0() + oldOriginDeltaX);
+                    minYLocal = Math.min(minYLocal, ss.y0() + oldOriginDeltaY);
+                    maxXLocal = Math.max(maxXLocal, ss.x1() + oldOriginDeltaX);
+                    maxYLocal = Math.max(maxYLocal, ss.y1() + oldOriginDeltaY);
+                }
+                x0 = minXLocal + originX - pad;
+                y0 = minYLocal + originY - pad;
+                x1 = maxXLocal + originX + pad;
+                y1 = maxYLocal + originY + pad;
+            } else {
+                float ix0 = it.x(), iy0 = it.y(), ix1 = ix0 + it.width(), iy1 = iy0 + it.height();
+                if (h != null && h.shadowShape() != null) {
+                    ShadowShape ss = h.shadowShape();
+                    ix0 = Math.min(ix0, ss.x0());
+                    iy0 = Math.min(iy0, ss.y0());
+                    ix1 = Math.max(ix1, ss.x1());
+                    iy1 = Math.max(iy1, ss.y1());
+                }
+                x0 = ix0 + originX + minShiftX - pad;
+                y0 = iy0 + originY + minShiftY - pad;
+                x1 = ix1 + originX + maxShiftX + pad;
+                y1 = iy1 + originY + maxShiftY + pad;
+            }
+            if (diffMinX && x0 < safeMinX) return false;
+            if (diffMinY && y0 < safeMinY) return false;
+            if (diffMaxX && x1 > safeMaxX) return false;
+            if (diffMaxY && y1 > safeMaxY) return false;
+        }
+        return true;
+    }
+
+    private static com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestorStyles(LayoutBox box,
+            com.nishiyu.enderframelib.core.css.ComputedStyle[] reuse) {
         int n = 0;
         for (LayoutBox a = box.parent; a != null; a = a.parent) n++;
-        com.nishiyu.enderframelib.core.css.ComputedStyle[] out = new com.nishiyu.enderframelib.core.css.ComputedStyle[n];
+        com.nishiyu.enderframelib.core.css.ComputedStyle[] out = reuse != null && reuse.length == n
+                ? reuse : new com.nishiyu.enderframelib.core.css.ComputedStyle[n];
         int i = 0;
         for (LayoutBox a = box.parent; a != null; a = a.parent) out[i++] = a.style;
         return out;
@@ -856,11 +1134,21 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 return false;
             }
         }
-        return m.parentBox == box.parent && box.pathPaintStamp(buildSerial) <= m.epoch
-                && m.attrVersion == box.node.attrVersion()
-                && m.canvasSource == (box == canvasBackgroundSource) && m.interactive == box.hasInteractiveRules
-                && m.suppressShadow == suppressTextShadow && sameClip(m.clip, clip)
-                && java.util.Objects.equals(m.parentId, parentId);
+        if (m.parentRelative != parentRelative || m.parentBox != box.parent || box.pathPaintStamp(buildSerial) > m.epoch
+                || m.attrVersion != box.node.attrVersion()
+                || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
+                || m.suppressShadow != suppressTextShadow || !sameClip(m.clip, clip)
+                || !sameStyle(m.placeholderStyle, box.placeholderStyle)
+                || !java.util.Objects.equals(m.parentId, parentId)) {
+            return false;
+        }
+        if (parentRelative) {
+            LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, parentId);
+            int curPox = pNode != null ? Math.round(pNode.x) : 0;
+            int curPoy = pNode != null ? Math.round(pNode.y) : 0;
+            if (curPox != m.parentOriginX || curPoy != m.parentOriginY) return false;
+        }
+        return true;
     }
 
     /** 平行移動で使い回すときの、箱の動き（{@link #match} が 2 を返したとき有効）。 */
@@ -869,6 +1157,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private boolean hitFragmentsOnly;
     private boolean hitPerItem;
     private int[] hitRects = new int[32];
+    private boolean hitParentRelReuse;
+    private boolean hitRelPosChanged, hitScrollChanged, hitClipChanged, hitReuseFragOnly;
+    private int hitNewRelX, hitNewRelY, hitCurOx, hitCurOy, hitCurPox, hitCurPoy;
+    private int hitNewRelW, hitNewRelH, hitPartDx, hitPartDy;
+    private float hitReuseFracDx, hitReuseFracDy;
 
     /**
      * 記憶が今の箱に使えるか。0: 使えない / 1: 項目をそのまま使える / 2: 箱がまるごと {@code (hitDx, hitDy)} だけ動いただけ
@@ -878,6 +1171,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      */
     /** 診断: {@link #match} が 0（使えない）を返した理由別の回数（添字は match 内の return 0 の出現順。1 始まり、[0] は未使用）。 */
     public static final java.util.concurrent.atomic.LongAdder[] STAT_MATCH_FAIL = newAdders(24);
+    /** 診断: {@link #appendTranslated}（全項目の複製を伴う平行移動）を実行した回数。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_APPEND_TRANSLATED = new java.util.concurrent.atomic.LongAdder();
 
     private static int matchFail(int reason) {
         STAT_MATCH_FAIL[reason].increment();
@@ -885,29 +1180,52 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     private int match(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
+        hitParentRelReuse = false;
+        hitPerItem = false;
+        if (m.parentRelative != parentRelative) return matchFail(5);
         if (m.viewportSensitive && (m.rootW != rootW || m.rootH != rootH)) return matchFail(1);
         if (!sameStyle(m.style, box.style) || !sameStyle(m.firstLineStyle, box.firstLineStyle)
+                || !sameStyle(m.placeholderStyle, box.placeholderStyle)
                 || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
                 || m.suppressShadow != suppressTextShadow) return matchFail(2);
-        if (m.carriesContentExtent && (Float.compare(m.scrollW, box.scrollWidth) != 0 || Float.compare(m.scrollH, box.scrollHeight) != 0)) return matchFail(3);
+        boolean scrollChanged = m.carriesContentExtent
+                && (Float.compare(m.scrollW, box.scrollWidth) != 0 || Float.compare(m.scrollH, box.scrollHeight) != 0);
+        if (!parentRelative && scrollChanged) return matchFail(3);
         float dx = box.x - m.nums[0], dy = box.y - m.nums[1];
+        float effDx = dx, effDy = dy;
+        int curOx = Math.round(box.x), curOy = Math.round(box.y);
+        int curPox = 0, curPoy = 0;
+        boolean relPosChanged = false;
+        float localDx = dx, localDy = dy;
+        boolean hasOwnNode = parentRelative && PaintOrder.boxHasOwnNode(box);
+        if (parentRelative) {
+            LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, parentId);
+            curPox = pNode != null ? Math.round(pNode.x) : 0;
+            curPoy = pNode != null ? Math.round(pNode.y) : 0;
+            relPosChanged = (curOx - curPox) != (m.originX - m.parentOriginX)
+                    || (curOy - curPoy) != (m.originY - m.parentOriginY);
+            localDx = dx - (hasOwnNode ? (curOx - m.originX) : (curPox - m.parentOriginX));
+            localDy = dy - (hasOwnNode ? (curOy - m.originY) : (curPoy - m.parentOriginY));
+        }
         // 文字の箱は自分の位置を持たず、断片だけが置かれる。箱が動かないのに断片が動いたときは、断片の動きを箱の動きとして見る
         // （後続の行が下へずれるとき、文字の箱が毎回描き直しになるのを避ける）。断片どうしの動きが揃っているかは下で確かめる
         // 箱の位置で置かれる NODE の項目は動かさず、断片の位置で置かれる TEXT の項目だけを動かす（hitFragmentsOnly）
         boolean fragmentsOnly = false;
         if (dx == 0 && dy == 0 && m.nodeAndTextOnly && m.fragNums.length >= 2 && !box.inlineFragments.isEmpty()) {
             LayoutBox.InlineFragment f0 = box.inlineFragments.get(0);
-            dx = f0.x - m.fragNums[0];
-            dy = f0.y - m.fragNums[1];
-            fragmentsOnly = dx != 0 || dy != 0;
+            effDx = f0.x - m.fragNums[0];
+            effDy = f0.y - m.fragNums[1];
+            localDx = parentRelative && !hasOwnNode ? effDx - (curPox - m.parentOriginX) : effDx;
+            localDy = parentRelative && !hasOwnNode ? effDy - (curPoy - m.parentOriginY) : effDy;
+            fragmentsOnly = effDx != 0 || effDy != 0;
         }
-        boolean moved = dx != 0 || dy != 0;
-        boolean intMove = isIntegerTranslation(dx) && isIntegerTranslation(dy);
+        boolean moved = parentRelative ? (localDx != 0 || localDy != 0) : (effDx != 0 || effDy != 0);
+        boolean intMove = isIntegerTranslation(localDx) && isIntegerTranslation(localDy);
         boolean exactFracCheck = false;
         // スクロールの作り直しは丸めて動かす。リサイズ・子の増減では、整数移動に加えて小数移動も丸め後の差が一致する箱なら使い回す
         boolean moveOk = m.translatable && (translating
-                || (exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent && intMove));
-        if (moved && !moveOk && exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent
+                || (exactTranslation && TRANSLATE_ENABLED && (!m.carriesContentExtent || parentRelative) && intMove));
+        if (moved && !moveOk && exactTranslation && TRANSLATE_ENABLED && (!m.carriesContentExtent || parentRelative)
                 && m.translatable && m.itemCoords != null && m.itemCoords.length == m.items.size() * 4) {
             exactFracCheck = true;
             moveOk = true;
@@ -916,7 +1234,12 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         if (m.nums.length != NUMS_LENGTH) return matchFail(5);
         for (int i = 2; i < NUMS_LENGTH; i++) if (Float.compare(m.nums[i], numAt(box, i)) != 0) return matchFail(6);
         boolean clipSame = sameClip(m.clip, clip);
-        if (!clipSame && !moveOk) return matchFail(7);
+        boolean clipChainSame = clipSame || (parentRelative && sameClipChain(m.clip, clip));
+        if (parentRelative) {
+            if (!clipChainSame && !moveOk) return matchFail(7);
+        } else {
+            if (!clipSame && !moveOk) return matchFail(7);
+        }
         if (!java.util.Objects.equals(m.parentId, parentId)) return matchFail(8);
         if (!java.util.Objects.equals(m.displayText, box.displayText) || !java.util.Objects.equals(m.shaped, box.shapedLines)) return matchFail(9);
         if (m.attrVersion != box.node.attrVersion()) return matchFail(10);
@@ -933,7 +1256,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             int n = i * 8;
             if (!java.util.Objects.equals(m.fragText[i], f.text)) return matchFail(14);
             // 断片の位置は、箱と同じだけ動いていること（動き方が違う断片があれば、平行移動では済まない）
-            if (moved ? (Math.abs(f.x - m.fragNums[n] - dx) > 1e-3f || Math.abs(f.y - m.fragNums[n + 1] - dy) > 1e-3f)
+            if ((effDx != 0 || effDy != 0) ? (Math.abs(f.x - m.fragNums[n] - effDx) > 1e-3f || Math.abs(f.y - m.fragNums[n + 1] - effDy) > 1e-3f)
                     : (Float.compare(m.fragNums[n], f.x) != 0 || Float.compare(m.fragNums[n + 1], f.y) != 0)) return matchFail(15);
             if (Float.compare(m.fragNums[n + 2], f.w) != 0 || Float.compare(m.fragNums[n + 3], f.h) != 0
                     || Float.compare(m.fragNums[n + 4], f.baseline) != 0 || m.fragNums[n + 5] != (f.startEdge ? 1f : 0f)
@@ -948,18 +1271,138 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             com.nishiyu.enderframelib.core.css.ComputedStyle ownerFl = f.firstLineOwner != null ? f.firstLineOwner.firstLineStyle : null;
             if (m.fragRefs[r++] != f.firstLineOwner || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], ownerFl)) return matchFail(17);
         }
+        if (parentRelative && !moved) {
+            if (!clipSame && clipDifferenceOutsideItems(m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy, 0, 0, null)) {
+                clipSame = true;
+            }
+            if (!relPosChanged && !scrollChanged && clipSame) {
+                syncParentRelPositionOnly(m, box, curOx, curOy, curPox, curPoy, dx, dy);
+                return 1;
+            }
+            if (clipChainSame || moveOk) {
+                hitParentRelReuse = true;
+                hitRelPosChanged = relPosChanged;
+                hitScrollChanged = scrollChanged;
+                hitClipChanged = !clipSame;
+                hitReuseFragOnly = false;
+                hitReuseFracDx = 0f;
+                hitReuseFracDy = 0f;
+                hitPartDx = 0;
+                hitPartDy = 0;
+                hitNewRelX = curOx - curPox;
+                hitNewRelY = curOy - curPoy;
+                hitCurOx = curOx;
+                hitCurOy = curOy;
+                hitCurPox = curPox;
+                hitCurPoy = curPoy;
+                hitDx = dx;
+                hitDy = dy;
+                return 2;
+            }
+        }
         if (!moved && clipSame) return 1;
         hitPerItem = false;
         if (exactFracCheck) {
-            if (!computeItemShifts(m, dx, dy, fragmentsOnly)) return matchFail(4);
+            if (!computeItemShifts(m, localDx, localDy, fragmentsOnly, parentRelative, curOx - curPox, curOy - curPoy, box)) return matchFail(4);
+            if (parentRelative
+                    && (!translating || (!hitPerItem && hitIntDx == 0 && hitIntDy == 0))
+                    && !hasMovingShadowShape(m.items, true, fragmentsOnly)) {
+                boolean effClipSame = clipSame || clipDifferenceOutsideItems(
+                        m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy,
+                        hitIntDx, hitIntDy, hitPerItem ? hitRects : null);
+                hitParentRelReuse = true;
+                hitRelPosChanged = relPosChanged;
+                hitScrollChanged = scrollChanged;
+                hitClipChanged = !effClipSame;
+                hitReuseFragOnly = fragmentsOnly;
+                hitReuseFracDx = localDx;
+                hitReuseFracDy = localDy;
+                hitPartDx = hitIntDx;
+                hitPartDy = hitIntDy;
+                hitNewRelX = curOx - curPox;
+                hitNewRelY = curOy - curPoy;
+                hitCurOx = curOx;
+                hitCurOy = curOy;
+                hitCurPox = curPox;
+                hitCurPoy = curPoy;
+                hitDx = dx;
+                hitDy = dy;
+                return 2;
+            }
         } else {
-            hitIntDx = Math.round(dx);
-            hitIntDy = Math.round(dy);
+            hitIntDx = Math.round(localDx);
+            hitIntDy = Math.round(localDy);
+            if (parentRelative && !translating && localDx == hitIntDx && localDy == hitIntDy
+                    && !hasMovingShadowShape(m.items, true, fragmentsOnly)) {
+                boolean effClipSame = clipSame || clipDifferenceOutsideItems(
+                        m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy,
+                        hitIntDx, hitIntDy, null);
+                hitParentRelReuse = true;
+                hitRelPosChanged = relPosChanged;
+                hitScrollChanged = scrollChanged;
+                hitClipChanged = !effClipSame;
+                hitReuseFragOnly = fragmentsOnly;
+                hitReuseFracDx = localDx;
+                hitReuseFracDy = localDy;
+                hitPartDx = hitIntDx;
+                hitPartDy = hitIntDy;
+                hitNewRelX = curOx - curPox;
+                hitNewRelY = curOy - curPoy;
+                hitCurOx = curOx;
+                hitCurOy = curOy;
+                hitCurPox = curPox;
+                hitCurPoy = curPoy;
+                hitDx = dx;
+                hitDy = dy;
+                return 2;
+            }
         }
-        hitDx = dx;
-        hitDy = dy;
+        hitDx = localDx;
+        hitDy = localDy;
         hitFragmentsOnly = fragmentsOnly;
+        hitRelPosChanged = relPosChanged;
+        hitScrollChanged = scrollChanged;
+        hitClipChanged = !clipSame;
+        hitNewRelX = curOx - curPox;
+        hitNewRelY = curOy - curPoy;
+        hitCurOx = curOx;
+        hitCurOy = curOy;
+        hitCurPox = curPox;
+        hitCurPoy = curPoy;
+        hitNewRelW = Math.round(box.x + box.w) - curOx;
+        hitNewRelH = Math.round(box.y + box.h) - curOy;
         return 2;
+    }
+
+    private static void syncParentRelPositionOnly(BoxMemo m, LayoutBox box, int curOx, int curOy, int curPox, int curPoy, float dx, float dy) {
+        if (dx == 0f && dy == 0f && curOx == m.originX && curOy == m.originY && curPox == m.parentOriginX && curPoy == m.parentOriginY
+                && (m.fragNums == null || box.inlineFragments.isEmpty() || (box.inlineFragments.get(0).x == m.fragNums[0] && box.inlineFragments.get(0).y == m.fragNums[1]))) {
+            return;
+        }
+        m.nums[0] = box.x;
+        m.nums[1] = box.y;
+        m.originX = curOx;
+        m.originY = curOy;
+        m.parentOriginX = curPox;
+        m.parentOriginY = curPoy;
+        if (m.fragNums != null && !box.inlineFragments.isEmpty()) {
+            for (int j = 0, fn = box.inlineFragments.size(); j < fn && j * 8 + 1 < m.fragNums.length; j++) {
+                LayoutBox.InlineFragment f = box.inlineFragments.get(j);
+                m.fragNums[j * 8] = f.x;
+                m.fragNums[j * 8 + 1] = f.y;
+            }
+        }
+    }
+
+    private static boolean hasMovingShadowShape(List<DisplayItem> items, boolean parentRel, boolean fragOnly) {
+        for (int i = 0, n = items.size(); i < n; i++) {
+            DisplayItem it = items.get(i);
+            if (parentRel && i == 0 && it.type() == ElementType.NODE && it.hints().relativeOrigin()) continue;
+            if (fragOnly && !movesWithFragment(it)) continue;
+            RenderMeta meta = it.meta();
+            if (meta != null && meta.hints() != null && meta.hints().shadowShape() != null) return true;
+        }
+        return false;
     }
 
     private static boolean movesWithFragment(DisplayItem it) {
@@ -974,12 +1417,18 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         return diffFromHalf > 0f || !exactGrid;
     }
 
+    /** {@link #computeItemShifts(BoxMemo, float, float, boolean, boolean, int, int, LayoutBox)} の互換版。 */
+    private boolean computeItemShifts(BoxMemo m, float dx, float dy, boolean fragmentsOnly) {
+        return computeItemShifts(m, dx, dy, fragmentsOnly, false, 0, 0, null);
+    }
+
     /**
      * 小数移動 {@code (dx, dy)} で、全移動対象項目について {@link PaintSupport#addElement} と同じ両端丸めを適用し、
      * 整数移動量と整数寸法を求める。全項目の移動量と寸法が一致すれば一括平行移動、項目ごとにずれる場合も
      * .5 境界を跨ぐ恐れがなければ項目ごとの丸め結果として平行移動を許す。
      */
-    private boolean computeItemShifts(BoxMemo m, float dx, float dy, boolean fragmentsOnly) {
+    private boolean computeItemShifts(BoxMemo m, float dx, float dy, boolean fragmentsOnly,
+                                      boolean parentRel, int newRelX, int newRelY, LayoutBox box) {
         List<DisplayItem> items = m.items;
         float[] coords = m.itemCoords;
         if (coords == null || coords.length != items.size() * 4) return false;
@@ -991,23 +1440,51 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         for (int i = 0; i < n; i++) {
             DisplayItem it = items.get(i);
             int base = i * 4;
-            if (fragmentsOnly && !movesWithFragment(it)) {
+            boolean isBoxNode = parentRel && i == 0 && it.type() == ElementType.NODE;
+            if (!isBoxNode && fragmentsOnly && !movesWithFragment(it)) {
                 hitRects[base] = it.x();
                 hitRects[base + 1] = it.y();
                 hitRects[base + 2] = it.width();
                 hitRects[base + 3] = it.height();
                 continue;
             }
-            float fx = coords[base], fy = coords[base + 1], fw = coords[base + 2], fh = coords[base + 3];
-            float nx = fx + dx, ny = fy + dy;
-            if (nearHalfBoundary(nx, fx, dx) || nearHalfBoundary(ny, fy, dy)
-                    || nearHalfBoundary(nx + fw, fx + fw, dx) || nearHalfBoundary(ny + fh, fy + fh, dy)) {
-                return false;
+            int left, top, nw, nh;
+            if (isBoxNode) {
+                if (box != null) {
+                    float bdx = box.x - m.nums[0], bdy = box.y - m.nums[1];
+                    if ((bdx != 0f || bdy != 0f)
+                            && (nearHalfBoundary(box.x, m.nums[0], bdx) || nearHalfBoundary(box.y, m.nums[1], bdy)
+                            || nearHalfBoundary(box.x + box.w, m.nums[0] + m.nums[2], bdx)
+                            || nearHalfBoundary(box.y + box.h, m.nums[1] + m.nums[3], bdy))) {
+                        return false;
+                    }
+                    int boxOx = Math.round(box.x), boxOy = Math.round(box.y);
+                    nw = Math.round(box.x + box.w) - boxOx;
+                    nh = Math.round(box.y + box.h) - boxOy;
+                } else {
+                    nw = it.width();
+                    nh = it.height();
+                }
+                left = newRelX;
+                top = newRelY;
+                hitRects[base] = left;
+                hitRects[base + 1] = top;
+                hitRects[base + 2] = nw;
+                hitRects[base + 3] = nh;
+                if (nw != it.width() || nh != it.height()) uniform = false;
+                continue;
+            } else {
+                float fx = coords[base], fy = coords[base + 1], fw = coords[base + 2], fh = coords[base + 3];
+                float nx = fx + dx, ny = fy + dy;
+                if (nearHalfBoundary(nx, fx, dx) || nearHalfBoundary(ny, fy, dy)
+                        || nearHalfBoundary(nx + fw, fx + fw, dx) || nearHalfBoundary(ny + fh, fy + fh, dy)) {
+                    return false;
+                }
+                left = Math.round(nx);
+                top = Math.round(ny);
+                nw = Math.round(nx + fw) - left;
+                nh = Math.round(ny + fh) - top;
             }
-            int left = Math.round(nx);
-            int top = Math.round(ny);
-            int nw = Math.round(nx + fw) - left;
-            int nh = Math.round(ny + fh) - top;
             hitRects[base] = left;
             hitRects[base + 1] = top;
             hitRects[base + 2] = nw;
@@ -1037,15 +1514,179 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     /**
+     * 親相対モードで、局所座標（箱の原点からの相対）は変わらず、親に対する {@code NODE} 位置・スクロール寸法・
+     * クリップ AABB のみが変わった箱の記憶を再利用する。部品 {@code DisplayItem} の作り直しを避け、必要な項目だけを差し替える。
+     */
+    private static void appendNodePatched(List<DisplayItem> out, BoxMemo m, LayoutBox box, ClipRect newClip,
+                                          int newRelX, int newRelY, int curOx, int curOy, int curPox, int curPoy,
+                                          boolean relPosChanged, boolean scrollChanged, boolean clipChanged,
+                                          int partDx, int partDy, int[] itemRects,
+                                          float fracDx, float fracDy, boolean fracFragOnly) {
+        List<DisplayItem> items = m.items;
+        int n = items.size();
+        boolean nodePosChanged = n > 0 && items.get(0).type() == ElementType.NODE
+                && (relPosChanged || items.get(0).x() != newRelX || items.get(0).y() != newRelY);
+        boolean hasGradMove = !fracFragOnly && (fracDx != 0f || fracDy != 0f);
+        boolean patchItems = nodePosChanged || scrollChanged || clipChanged || partDx != 0 || partDy != 0
+                || itemRects != null || (hasGradMove && carriesShaderGradient(items));
+        boolean hasOwnNode = PaintOrder.boxHasOwnNode(box);
+        int subOx = hasOwnNode ? curOx : curPox;
+        int subOy = hasOwnNode ? curOy : curPoy;
+        float subShiftX = (hasOwnNode || fracFragOnly) ? 0f : fracDx;
+        float subShiftY = (hasOwnNode || fracFragOnly) ? 0f : fracDy;
+        boolean ownSubClipMoved = hasOwnNode ? (curOx != m.originX || curOy != m.originY) : (subShiftX != 0f || subShiftY != 0f);
+        if (patchItems) {
+            DisplayItem[] updatedArr = null;
+            ClipRect lastOldClip = null;
+            ClipRect lastNextClip = null;
+            boolean haveLastClip = false;
+            RenderMeta lastOldMeta = null;
+            RenderMeta lastNextMeta = null;
+            for (int i = 0; i < n; i++) {
+                DisplayItem it = items.get(i);
+                int nextX = it.x();
+                int nextY = it.y();
+                int nextW = it.width();
+                int nextH = it.height();
+                if (itemRects != null) {
+                    int base = i * 4;
+                    if (i == 0 && it.type() == ElementType.NODE) {
+                        if (nodePosChanged) {
+                            nextX = newRelX;
+                            nextY = newRelY;
+                        }
+                        nextW = itemRects[base + 2];
+                        nextH = itemRects[base + 3];
+                    } else if (!fracFragOnly || movesWithFragment(it)) {
+                        nextX = itemRects[base];
+                        nextY = itemRects[base + 1];
+                        nextW = itemRects[base + 2];
+                        nextH = itemRects[base + 3];
+                    }
+                } else if (i == 0 && it.type() == ElementType.NODE) {
+                    if (nodePosChanged) {
+                        nextX = newRelX;
+                        nextY = newRelY;
+                    }
+                } else if ((partDx != 0 || partDy != 0) && (!fracFragOnly || movesWithFragment(it))) {
+                    nextX = it.x() + partDx;
+                    nextY = it.y() + partDy;
+                }
+                RenderMeta meta = it.meta();
+                RenderMeta nextMeta = meta;
+                if (meta != null) {
+                    if (meta == lastOldMeta) {
+                        nextMeta = lastNextMeta;
+                    } else {
+                        ClipRect curMetaClip = meta.clipRect();
+                        boolean updScroll = scrollChanged && meta.hints() != null && meta.hints().scrollable();
+                        boolean isDirectSubClip = curMetaClip != null && !sameClip(curMetaClip, m.clip);
+                        boolean updClip = curMetaClip != null && (clipChanged || (isDirectSubClip && ownSubClipMoved));
+                        boolean updGrad = hasGradMove && it.type() != ElementType.NODE && meta.hints() != null && meta.hints().shaderGradient() != null;
+                        if (updScroll || updClip || updGrad) {
+                            ClipRect nextClip;
+                            if (!updClip) {
+                                nextClip = curMetaClip;
+                            } else if (haveLastClip && curMetaClip == lastOldClip) {
+                                nextClip = lastNextClip;
+                            } else {
+                                ClipRect targetBaseClip = clipChanged ? newClip : m.clip;
+                                nextClip = isDirectSubClip
+                                        ? PaintSupport.rebaseSubClip(curMetaClip, m.clip, targetBaseClip, subOx, subOy, subShiftX, subShiftY)
+                                        : targetBaseClip;
+                                lastOldClip = curMetaClip;
+                                lastNextClip = nextClip;
+                                haveLastClip = true;
+                            }
+                            RenderHints nextHints = meta.hints();
+                            if (updScroll) nextHints = nextHints.withScroll(box.scrollWidth, box.scrollHeight);
+                            if (updGrad) nextHints = nextHints.withShaderGradient(nextHints.shaderGradient().offset(fracDx, fracDy));
+                            if (!sameClip(nextClip, curMetaClip) || nextHints != meta.hints()) {
+                                nextMeta = new RenderMeta(nextClip, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(),
+                                        meta.baseline(), meta.lineHeight(), meta.originX(), meta.originY(), meta.itemCount(),
+                                        meta.interactiveState(), meta.roundedBorder(), nextHints);
+                            }
+                            lastOldMeta = meta;
+                            lastNextMeta = nextMeta;
+                        }
+                    }
+                }
+                DisplayItem res = it.withBoundsAndMeta(nextX, nextY, nextW, nextH, nextMeta);
+                if (res != it) {
+                    if (m.itemsMutable) {
+                        items.set(i, res);
+                    } else {
+                        if (updatedArr == null) {
+                            updatedArr = new DisplayItem[n];
+                            for (int j = 0; j < i; j++) updatedArr[j] = items.get(j);
+                        }
+                        updatedArr[i] = res;
+                    }
+                } else if (updatedArr != null) {
+                    updatedArr[i] = it;
+                }
+                out.add(res);
+            }
+            if (updatedArr != null) {
+                m.items = java.util.Arrays.asList(updatedArr);
+                m.itemsMutable = true;
+            }
+        } else {
+            appendItems(out, items);
+        }
+        if ((fracDx != 0f || fracDy != 0f) && m.itemCoords != null && m.itemCoords.length == n * 4) {
+            for (int i = 0; i < n; i++) {
+                DisplayItem it = items.get(i);
+                if (i == 0 && it.type() == ElementType.NODE) {
+                    if (!it.hints().relativeOrigin()) {
+                        m.itemCoords[0] = box.x - curPox;
+                        m.itemCoords[1] = box.y - curPoy;
+                    }
+                    continue;
+                }
+                if (fracFragOnly && !movesWithFragment(it)) continue;
+                m.itemCoords[i * 4] += fracDx;
+                m.itemCoords[i * 4 + 1] += fracDy;
+            }
+        }
+        if (m.fragNums != null && !box.inlineFragments.isEmpty()) {
+            for (int j = 0, fn = box.inlineFragments.size(); j < fn && j * 8 + 1 < m.fragNums.length; j++) {
+                LayoutBox.InlineFragment f = box.inlineFragments.get(j);
+                m.fragNums[j * 8] = f.x;
+                m.fragNums[j * 8 + 1] = f.y;
+            }
+        }
+        m.nums[0] = box.x;
+        m.nums[1] = box.y;
+        m.originX = curOx;
+        m.originY = curOy;
+        m.parentOriginX = curPox;
+        m.parentOriginY = curPoy;
+        m.scrollW = box.scrollWidth;
+        m.scrollH = box.scrollHeight;
+        if (clipChanged) m.clip = newClip;
+        m.appliedDx = m.appliedDy = 0;
+        m.appliedExactDx = m.appliedExactDy = 0f;
+        m.appliedOriginDx = m.appliedOriginDy = 0;
+        m.appliedFragOnly = false;
+        m.appliedNonUniform = false;
+    }
+
+    /**
      * 前回の項目を平行移動（一括 {@code (ix, iy)}、または {@code itemRects} に基づく項目ごとの丸め）し、
      * クリップを今のものに替えた写しを {@code out} へ追加する。
      * {@link ShadowShape} は小数座標を保持しているため {@code (dx, dy)} で進める。
      */
     private static void appendTranslated(List<DisplayItem> out, BoxMemo m, ClipRect newClip,
-                                           float dx, float dy, int ix, int iy, boolean textOnly, int[] itemRects) {
+                                         float dx, float dy, int ix, int iy, boolean textOnly, int[] itemRects,
+                                         boolean parentRel, int newRelX, int newRelY, int newRelW, int newRelH,
+                                         int curOx, int curOy, LayoutBox box, boolean scrollChanged, boolean clipChanged) {
+        STAT_APPEND_TRANSLATED.increment();
         List<DisplayItem> items = m.items;
+        boolean hasOwnNode = parentRel && PaintOrder.boxHasOwnNode(box);
         for (int i = 0, n = items.size(); i < n; i++) {
             DisplayItem it = items.get(i);
+            boolean isRelNode = parentRel && i == 0 && it.type() == ElementType.NODE;
             boolean moves = !textOnly || movesWithFragment(it);
             int nx, ny, nw, nh;
             if (itemRects != null) {
@@ -1054,6 +1695,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 ny = itemRects[base + 1];
                 nw = itemRects[base + 2];
                 nh = itemRects[base + 3];
+            } else if (isRelNode) {
+                nx = newRelX;
+                ny = newRelY;
+                nw = newRelW;
+                nh = newRelH;
             } else {
                 int ox = moves ? ix : 0, oy = moves ? iy : 0;
                 nx = it.x() + ox;
@@ -1064,11 +1710,29 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             RenderMeta meta = it.meta();
             if (meta != null) {
                 RenderHints h = meta.hints();
-                if (h != null && h.shadowShape() != null && (moves && (dx != 0 || dy != 0))) {
+                if (scrollChanged && h != null && h.scrollable()) {
+                    h = h.withScroll(box.scrollWidth, box.scrollHeight);
+                }
+                if (!isRelNode && h != null && h.shadowShape() != null && (moves && (dx != 0 || dy != 0))) {
                     h = h.withShadowShape(h.shadowShape().offset(dx, dy));
                 }
-                if (meta.clipRect() != null || (h != null && h != meta.hints())) {
-                    ClipRect c = meta.clipRect() != null ? newClip : null;
+                if (!isRelNode && parentRel && h != null && h.shaderGradient() != null && (moves && (dx != 0 || dy != 0))) {
+                    h = h.withShaderGradient(h.shaderGradient().offset(dx, dy));
+                }
+                ClipRect c = meta.clipRect();
+                if (c != null) {
+                    if (parentRel) {
+                        LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, m.parentId);
+                        int curPox = pNode != null ? Math.round(pNode.x) : 0;
+                        int curPoy = pNode != null ? Math.round(pNode.y) : 0;
+                        c = PaintSupport.rebaseSubClip(c, m.clip, newClip,
+                                hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy,
+                                (hasOwnNode || !moves) ? 0f : dx, (hasOwnNode || !moves) ? 0f : dy);
+                    } else {
+                        c = newClip;
+                    }
+                }
+                if (c != meta.clipRect() || (h != null && h != meta.hints())) {
                     meta = new RenderMeta(c, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(), meta.baseline(),
                             meta.lineHeight(), meta.originX(), meta.originY(), meta.itemCount(), meta.interactiveState(),
                             meta.roundedBorder(), h != null ? h : meta.hints());
@@ -1084,33 +1748,61 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * 項目が平行移動だけで作り直せるか: 座標を持つのが x・y と（前回のクリップそのものの）クリップだけで、
      * 箱の座標で決まる図形（影・グラデーション・clip-path・backdrop）や、画面に固定の背景を持たない。
      */
+    private static final String[] EMPTY_STRINGS = new String[0];
+    private static final float[] EMPTY_FLOATS = new float[0];
+    private static final Object[] EMPTY_OBJECTS = new Object[0];
+
     /** 項目のどれかがスクロールの大きさ（中身の幅・高さ）を持つか。 */
     private static boolean carriesContentExtent(List<DisplayItem> items) {
-        for (DisplayItem it : items) {
-            RenderMeta meta = it.meta();
+        for (int i = 0, n = items.size(); i < n; i++) {
+            RenderMeta meta = items.get(i).meta();
             if (meta != null && meta.hints() != null && meta.hints().scrollable()) return true;
         }
         return false;
     }
 
     private static boolean onlyNodeAndText(List<DisplayItem> items) {
-        for (DisplayItem it : items) {
-            if (it.type() != ElementType.NODE && it.type() != ElementType.TEXT) return false;
+        for (int i = 0, n = items.size(); i < n; i++) {
+            ElementType t = items.get(i).type();
+            if (t != ElementType.NODE && t != ElementType.TEXT) return false;
         }
         return true;
     }
 
-    private static boolean survivesTranslation(LayoutBox box, ClipRect clip, List<DisplayItem> items) {
+    private static boolean carriesShaderGradient(List<DisplayItem> items) {
+        for (int i = 0, n = items.size(); i < n; i++) {
+            RenderMeta meta = items.get(i).meta();
+            if (meta != null && meta.hints() != null && meta.hints().shaderGradient() != null) return true;
+        }
+        return false;
+    }
+
+    private static boolean isBoxOwnedDirectSubClip(ClipRect mc, ClipRect clip, String ownerKey) {
+        if (ownerKey == null) return false;
+        List<ClipChainPart> sc = mc.chain();
+        List<ClipChainPart> pc = clip == null ? List.of() : clip.chain();
+        int pn = pc.size();
+        if (sc.size() != pn + 1) return false;
+        for (int i = 0; i < pn; i++) {
+            if (!sc.get(i).equals(pc.get(i))) return false;
+        }
+        return ownerKey.equals(sc.get(pn).ownerId());
+    }
+
+    private static boolean survivesTranslation(LayoutBox box, ClipRect clip, List<DisplayItem> items, boolean parentRel) {
         String attachment = box.style.get(CssPropertyIndex.BACKGROUND_ATTACHMENT);
         if (attachment != null && attachment.contains("fixed")) return false;
-        for (DisplayItem it : items) {
+        String ownerKey = box.node != null ? box.node.key() : null;
+        for (int i = 0, n = items.size(); i < n; i++) {
+            DisplayItem it = items.get(i);
             ElementType t = it.type();
             if (t != ElementType.NODE && t != ElementType.RECT && t != ElementType.TEXT && t != ElementType.ROUNDED_BORDER) return false;
             RenderMeta meta = it.meta();
             if (meta == null) continue;
-            if (meta.clipRect() != null && !sameClip(meta.clipRect(), clip)) return false;
+            ClipRect mc = meta.clipRect();
+            if (mc != null && !sameClip(mc, clip) && !(parentRel && isBoxOwnedDirectSubClip(mc, clip, ownerKey))) return false;
             RenderHints h = meta.hints();
-            if (h.shaderGradient() != null) return false;
+            if (h.shaderGradient() != null && !parentRel) return false;
             LayerSpec layer = h.layer();
             if (layer != null && (layer.clip() != null || layer.backdropShape() != null)) return false;
         }
@@ -1118,58 +1810,99 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     private BoxMemo remember(LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> items) {
-        BoxMemo m = new BoxMemo();
+        return remember(null, box, clip, parentId, items, false);
+    }
+
+    private BoxMemo remember(BoxMemo reuse, LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> items, boolean itemsMutable) {
+        BoxMemo m = reuse != null ? reuse : new BoxMemo();
+        m.appliedDx = m.appliedDy = 0;
+        m.appliedExactDx = m.appliedExactDy = 0f;
+        m.appliedOriginDx = m.appliedOriginDy = 0;
+        m.appliedFragOnly = false;
+        m.appliedNonUniform = false;
+        m.itemCoords = null;
         m.epoch = buildEpoch;
         m.rootW = rootW;
         m.rootH = rootH;
         m.viewportSensitive = box.parent == null || box.style.usesViewportUnits();
         m.parentBox = box.parent;
         m.items = items;
+        m.itemsMutable = itemsMutable;
         m.style = box.style;
         m.firstLineStyle = box.firstLineStyle;
-        m.ancestors = ancestorStyles(box);
-        m.nums = numsOf(box);
+        m.placeholderStyle = box.placeholderStyle;
+        m.ancestors = ancestorStyles(box, m.ancestors);
+        m.nums = fillNums(box, m.nums);
         m.scrollW = box.scrollWidth;
         m.scrollH = box.scrollHeight;
         m.clip = clip;
         m.parentId = parentId;
         m.attrVersion = box.node.attrVersion();
         m.displayText = box.displayText;
-        m.shaped = box.shapedLines == null ? null : List.copyOf(box.shapedLines);
-        List<LayoutBox.InlineFragment> frags = box.inlineFragments;
-        m.fragText = new String[frags.size()];
-        m.fragNums = new float[frags.size() * 8];
-        List<Object> refs = new ArrayList<>();
-        for (int i = 0; i < frags.size(); i++) {
-            LayoutBox.InlineFragment f = frags.get(i);
-            m.fragText[i] = f.text;
-            int n = i * 8;
-            m.fragNums[n] = f.x;
-            m.fragNums[n + 1] = f.y;
-            m.fragNums[n + 2] = f.w;
-            m.fragNums[n + 3] = f.h;
-            m.fragNums[n + 4] = f.baseline;
-            m.fragNums[n + 5] = f.startEdge ? 1f : 0f;
-            m.fragNums[n + 6] = f.endEdge ? 1f : 0f;
-            m.fragNums[n + 7] = f.descent;
-            refs.add(f.box);
-            refs.add(f.box != null ? f.box.style : null);
-            int pn = f.parents == null ? 0 : f.parents.size();
-            refs.add(pn);
-            for (int k = 0; k < pn; k++) {
-                refs.add(f.parents.get(k));
-                refs.add(f.parents.get(k).style);
-            }
-            refs.add(f.firstLineOwner);
-            refs.add(f.firstLineOwner != null ? f.firstLineOwner.firstLineStyle : null);
+        if (box.shapedLines == null) {
+            m.shaped = null;
+        } else if (box.shapedLines.isEmpty()) {
+            m.shaped = List.of();
+        } else if (!(m.shaped instanceof List<?> prevShaped && prevShaped.equals(box.shapedLines))) {
+            m.shaped = List.copyOf(box.shapedLines);
         }
-        m.fragRefs = refs.toArray();
+        List<LayoutBox.InlineFragment> frags = box.inlineFragments;
+        int fn = frags.size();
+        if (fn == 0) {
+            m.fragText = EMPTY_STRINGS;
+            m.fragNums = EMPTY_FLOATS;
+            m.fragRefs = EMPTY_OBJECTS;
+        } else {
+            m.fragText = (m.fragText != null && m.fragText.length == fn) ? m.fragText : new String[fn];
+            m.fragNums = (m.fragNums != null && m.fragNums.length == fn * 8) ? m.fragNums : new float[fn * 8];
+            int refLen = 0;
+            for (int i = 0; i < fn; i++) {
+                List<LayoutBox> ps = frags.get(i).parents;
+                refLen += 5 + (ps == null ? 0 : ps.size() * 2);
+            }
+            Object[] refs = (m.fragRefs != null && m.fragRefs.length == refLen) ? m.fragRefs : new Object[refLen];
+            int r = 0;
+            for (int i = 0; i < fn; i++) {
+                LayoutBox.InlineFragment f = frags.get(i);
+                m.fragText[i] = f.text;
+                int n = i * 8;
+                m.fragNums[n] = f.x;
+                m.fragNums[n + 1] = f.y;
+                m.fragNums[n + 2] = f.w;
+                m.fragNums[n + 3] = f.h;
+                m.fragNums[n + 4] = f.baseline;
+                m.fragNums[n + 5] = f.startEdge ? 1f : 0f;
+                m.fragNums[n + 6] = f.endEdge ? 1f : 0f;
+                m.fragNums[n + 7] = f.descent;
+                refs[r++] = f.box;
+                refs[r++] = f.box != null ? f.box.style : null;
+                List<LayoutBox> ps = f.parents;
+                int pn = ps == null ? 0 : ps.size();
+                refs[r++] = pn;
+                for (int k = 0; k < pn; k++) {
+                    LayoutBox p = ps.get(k);
+                    refs[r++] = p;
+                    refs[r++] = p.style;
+                }
+                refs[r++] = f.firstLineOwner;
+                refs[r++] = f.firstLineOwner != null ? f.firstLineOwner.firstLineStyle : null;
+            }
+            m.fragRefs = refs;
+        }
         m.canvasSource = box == canvasBackgroundSource;
         m.interactive = box.hasInteractiveRules;
         m.suppressShadow = suppressTextShadow;
-        m.translatable = survivesTranslation(box, clip, items);
+        m.translatable = survivesTranslation(box, clip, items, parentRelative);
         m.carriesContentExtent = carriesContentExtent(items);
         m.nodeAndTextOnly = onlyNodeAndText(items);
+        m.parentRelative = parentRelative;
+        if (parentRelative) {
+            m.originX = Math.round(box.x);
+            m.originY = Math.round(box.y);
+            LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, parentId);
+            m.parentOriginX = pNode != null ? Math.round(pNode.x) : 0;
+            m.parentOriginY = pNode != null ? Math.round(pNode.y) : 0;
+        }
         m.generation = generation;
         return m;
     }
@@ -1182,21 +1915,34 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private void drawBoxSelf(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
         drawBoxSelfMemo(elements, box, clipRect, parentId);
         PaintOrder.ScrollContent content = order.scrollContentOf(box);
-        if (content != null) order.addMovingNode(elements, content.contentId, box, null); // 箱の項目のあと・子孫の項目の前
+        if (content != null) {
+            PaintSupport.CaptureList cap = (parentRelative && PaintOrder.boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
+            int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
+            if (cap != null) cap.setOrigin(Math.round(box.x), Math.round(box.y));
+            try {
+                order.addMovingNode(elements, content.contentId, box, null); // 箱の項目のあと・子孫の項目の前
+            } finally {
+                if (cap != null) cap.setOrigin(prevOx, prevOy);
+            }
+        }
     }
 
     /** 項目が記憶の位置から動いている分（{@link BoxMemo#appliedExactDx}）を、記憶の基準の位置へ取り込む（差分パッチの前に呼ぶ）。 */
     private static void syncApplied(BoxMemo m) {
         float ax = m.appliedExactDx, ay = m.appliedExactDy;
-        if (ax == 0f && ay == 0f && m.appliedDx == 0 && m.appliedDy == 0) return;
+        int odx = m.appliedOriginDx, ody = m.appliedOriginDy;
+        if (ax == 0f && ay == 0f && odx == 0 && ody == 0 && m.appliedDx == 0 && m.appliedDy == 0) return;
+        float pageDx = odx + ax, pageDy = ody + ay;
         if (!m.appliedFragOnly && m.nums != null && m.nums.length >= 2) {
-            m.nums[0] += ax;
-            m.nums[1] += ay;
+            m.nums[0] += pageDx;
+            m.nums[1] += pageDy;
         }
+        m.originX += odx;
+        m.originY += ody;
         if (m.fragNums != null) {
             for (int i = 0; i + 1 < m.fragNums.length; i += 8) {
-                m.fragNums[i] += ax;
-                m.fragNums[i + 1] += ay;
+                m.fragNums[i] += pageDx;
+                m.fragNums[i + 1] += pageDy;
             }
         }
         if (m.itemCoords != null && m.items != null && m.itemCoords.length == m.items.size() * 4) {
@@ -1208,6 +1954,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
         m.appliedDx = m.appliedDy = 0;
         m.appliedExactDx = m.appliedExactDy = 0f;
+        m.appliedOriginDx = m.appliedOriginDy = 0;
         m.appliedFragOnly = false;
         m.appliedNonUniform = false;
     }
@@ -1236,6 +1983,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             STAT_EXACT.increment();
             m.appliedDx = m.appliedDy = 0;
             m.appliedExactDx = m.appliedExactDy = 0f;
+            m.appliedOriginDx = m.appliedOriginDy = 0;
             m.appliedFragOnly = false;
             m.appliedNonUniform = false;
             m.generation = generation;
@@ -1245,13 +1993,26 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
         if (kind == 2) { // 箱が動いただけ。記憶は動く前のまま残す（差が積もっても、丸めの誤差は 1 画素以内）
             m.generation = generation;
-            m.appliedDx = hitIntDx;
-            m.appliedDy = hitIntDy;
-            m.appliedExactDx = hitDx;
-            m.appliedExactDy = hitDy;
-            m.appliedFragOnly = hitFragmentsOnly;
-            m.appliedNonUniform = hitPerItem;
-            appendTranslated(elements, m, clipRect, hitDx, hitDy, hitIntDx, hitIntDy, hitFragmentsOnly, hitPerItem ? hitRects : null);
+            if (hitParentRelReuse) {
+                m.epoch = buildEpoch;
+                appendNodePatched(elements, m, box, clipRect, hitNewRelX, hitNewRelY,
+                        hitCurOx, hitCurOy, hitCurPox, hitCurPoy,
+                        hitRelPosChanged, hitScrollChanged, hitClipChanged,
+                        hitPartDx, hitPartDy, hitPerItem ? hitRects : null,
+                        hitReuseFracDx, hitReuseFracDy, hitReuseFragOnly);
+            } else {
+                m.appliedDx = hitIntDx;
+                m.appliedDy = hitIntDy;
+                m.appliedExactDx = hitDx;
+                m.appliedExactDy = hitDy;
+                m.appliedOriginDx = parentRelative ? (hitCurOx - m.originX) : 0;
+                m.appliedOriginDy = parentRelative ? (hitCurOy - m.originY) : 0;
+                m.appliedFragOnly = hitFragmentsOnly;
+                m.appliedNonUniform = hitPerItem;
+                appendTranslated(elements, m, clipRect, hitDx, hitDy, hitIntDx, hitIntDy, hitFragmentsOnly,
+                        hitPerItem ? hitRects : null, parentRelative, hitNewRelX, hitNewRelY, hitNewRelW, hitNewRelH,
+                        hitCurOx, hitCurOy, box, hitScrollChanged, hitClipChanged);
+            }
             translatedHits++;
             STAT_TRANSLATED.increment();
             return;
@@ -1261,27 +2022,78 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         int start = elements.size();
         PaintSupport.CaptureList cap = elements instanceof PaintSupport.CaptureList c ? c : null;
         if (cap != null) cap.beginCapture();
-        float[] capturedCoords = null;
+        boolean committed = false;
+        float[] prevCoords = m != null ? m.itemCoords : null;
         try {
-            drawBoxSelfUncached(elements, box, clipRect, parentId);
+            drawBoxSelfUncached(elements, box, clipRect, parentId, m);
+            int count = elements.size() - start;
+            List<DisplayItem> built = sliceCopy(m, elements, start);
+            BoxMemo stored = remember(m, box, clipRect, parentId, built, count >= 3);
+            if (cap != null && cap.capturing) {
+                stored.itemCoords = (stored.translatable && !stored.carriesContentExtent)
+                        ? cap.finishCaptureReuse(prevCoords)
+                        : null;
+                if (cap.capturing) cap.discardCapture();
+            }
+            committed = true;
+            if (stored != m) boxMemo.put(box, stored);
         } finally {
-            if (cap != null && cap.capturing) capturedCoords = cap.finishCapture();
+            if (!committed && cap != null && cap.capturing) cap.discardCapture();
         }
-        List<DisplayItem> built = List.copyOf(elements.subList(start, elements.size()));
-        BoxMemo stored = remember(box, clipRect, parentId, built);
-        if (capturedCoords != null && stored.translatable && !stored.carriesContentExtent
-                && capturedCoords.length == built.size() * 4) {
-            stored.itemCoords = capturedCoords;
+    }
+
+    private static List<DisplayItem> sliceCopy(BoxMemo reuse, List<DisplayItem> elements, int start) {
+        int count = elements.size() - start;
+        if (count <= 0) return List.of();
+        if (count == 1) return List.of(elements.get(start));
+        if (count == 2) return List.of(elements.get(start), elements.get(start + 1));
+        if (reuse != null && reuse.itemsMutable && reuse.items != null && reuse.items.size() == count) {
+            List<DisplayItem> dst = reuse.items;
+            for (int i = 0; i < count; i++) dst.set(i, elements.get(start + i));
+            return dst;
         }
-        boxMemo.put(box, stored);
+        DisplayItem[] arr = new DisplayItem[count];
+        for (int i = 0; i < count; i++) arr[i] = elements.get(start + i);
+        return java.util.Arrays.asList(arr);
+    }
+
+    private static RenderMeta reuseMeta(RenderMeta prev, ClipRect clipRect, Corners borderRadii,
+                                        float fontHeight, float lineHeight, float originX, float originY,
+                                        int itemCount, boolean interactiveState, RenderHints hints) {
+        if (prev != null && prev.circleBorder() == null && prev.roundedBorder() == null
+                && prev.baseline() == 0f
+                && Float.compare(prev.fontHeight(), fontHeight) == 0
+                && Float.compare(prev.lineHeight(), lineHeight) == 0
+                && Float.compare(prev.originX(), originX) == 0
+                && Float.compare(prev.originY(), originY) == 0
+                && prev.itemCount() == itemCount
+                && prev.interactiveState() == interactiveState
+                && java.util.Objects.equals(prev.clipRect(), clipRect)
+                && java.util.Objects.equals(prev.borderRadii(), borderRadii)
+                && java.util.Objects.equals(prev.hints(), hints)) {
+            return prev;
+        }
+        return new RenderMeta(clipRect, borderRadii, null, fontHeight, 0f, lineHeight, originX, originY,
+                itemCount, interactiveState, null, hints);
     }
 
     private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
-        Corners radii = Corners.ofFloatXY(LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH));
+        drawBoxSelfUncached(elements, box, clipRect, parentId, null);
+    }
+
+    private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId, BoxMemo prevMemo) {
+        Corners radii = LengthResolver.cornersShared(box.axisStyle(), box.w, box.h, rootW, rootH);
         // 円しか持たない所（インラインの断片・円判定）には、横と縦の小さい方の円で近似した半径を渡す
-        int[] rawRadii = radii == Corners.ZERO ? Corners.ZERO_RAW : new int[]{
-                Math.min(radii.topLeft(), radii.topLeftV()), Math.min(radii.topRight(), radii.topRightV()),
-                Math.min(radii.bottomRight(), radii.bottomRightV()), Math.min(radii.bottomLeft(), radii.bottomLeftV())};
+        int[] rawRadii;
+        if (radii == Corners.ZERO) {
+            rawRadii = Corners.ZERO_RAW;
+        } else {
+            rawRadii = scratchRawRadii;
+            rawRadii[0] = Math.min(radii.topLeft(), radii.topLeftV());
+            rawRadii[1] = Math.min(radii.topRight(), radii.topRightV());
+            rawRadii[2] = Math.min(radii.bottomRight(), radii.bottomRightV());
+            rawRadii[3] = Math.min(radii.bottomLeft(), radii.bottomLeftV());
+        }
         int fallbackRadius = radii.topLeft();
         float rOff = Math.min(fallbackRadius, Math.min(box.w, box.h) / 2);
 
@@ -1305,14 +2117,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         float sy = tr[3] * zoom;
         float rot = tr[4];
 
-        TransitionSpec transSpec = parseTransitionSpec(box.style.asMap());
+        TransitionSpec transSpec = parseTransitionSpec(box.style);
         AnimationSpec animDef = anim.parseAnimationDef(box.style, box.w, box.h, color, bgColor);
-        AnimationSpec colorBgAnim = animDef.withChannels(AnimationSpec.CH_COLOR | AnimationSpec.CH_BG_COLOR);
+        AnimationSpec colorBgAnim = animDef.isEmpty() ? AnimationSpec.NONE : animDef.withChannels(AnimationSpec.CH_COLOR | AnimationSpec.CH_BG_COLOR);
         int transDur = transSpec.durationMs();
         boolean interactive = box.hasInteractiveRules;
 
         float ox = 0.5f, oy = 0.5f;
-        ItemProps anchorEvents = new ItemProps();
+        ItemProps anchorEvents = scratchAnchorProps.reset();
         if (parentId != null) anchorEvents.parentId(parentId);
         if (tr.length > 5 && tr[5] != 0f) anchorEvents.skew(tr[5]);
         applyTransitionEvents(anchorEvents, transSpec);
@@ -1331,83 +2143,133 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 == CssKeywords.PointerEvents.NONE;
         if (pointerEventsNone) anchorEvents.pointerEventsNone();
 
+        boolean useRel = parentRelative && PaintOrder.boxHasOwnNode(box);
+        if (useRel) anchorEvents.relativeOrigin();
+        RenderMeta prevAnchorMeta = null, prevBaseMeta = null, prevInnerMeta = null;
+        RenderHints prevAnchorHints = null, prevPartsHints = null, prevPassiveHints = null;
+        if (prevMemo != null && prevMemo.items != null && !prevMemo.items.isEmpty()) {
+            DisplayItem m0 = prevMemo.items.get(0);
+            if (m0.type() == ElementType.NODE) {
+                prevAnchorMeta = m0.meta();
+                prevAnchorHints = m0.hints();
+            }
+            for (int mi = 1, mn = Math.min(prevMemo.items.size(), 8); mi < mn; mi++) {
+                DisplayItem item = prevMemo.items.get(mi);
+                RenderHints h = item.hints();
+                if (h == null || h.shadowShape() != null || h.shadowBlur() != 0f || h.shaderGradient() != null) continue;
+                if (h.pointerEventsNone() && !pointerEventsNone) {
+                    if (prevPassiveHints == null) prevPassiveHints = h;
+                } else {
+                    if (prevBaseMeta == null) prevBaseMeta = item.meta();
+                    else if (prevInnerMeta == null && item.meta() != null && item.meta() != prevBaseMeta
+                            && item.meta().roundedBorder() == null && item.meta().circleBorder() == null
+                            && h == RenderHints.NONE) {
+                        prevInnerMeta = item.meta();
+                    }
+                    if (prevPartsHints == null) prevPartsHints = h;
+                }
+            }
+        }
+        anchorEvents.hintsReuse(prevAnchorHints);
         ClipRect normalizedClip = clipRect;
-        RenderMeta anchorMeta = new RenderMeta(normalizedClip, radii, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive, null, anchorEvents.hints());
+        RenderMeta anchorMeta = reuseMeta(prevAnchorMeta, normalizedClip, radii, fontHVal, box.lineHeightPx, ox, oy,
+                itemCount, interactive, anchorEvents.hints());
         long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.nodeId()) : 0L;
-        addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", color, bgColor, anchorEvents, 0, opacity, tx, ty, sx, sy, rot, transDur, animDef, anchorMeta, nodeKey);
-
-        // visibility: hidden の箱は場所だけを取る。錨（NODE）は子孫の変形と不透明度の親として残す
-        // 何が壊れていたか: 以前は visibility を読んでおらず、hidden の箱が描かれクリックも受けていた
-        if (isInvisible(box) || PaintSupport.hidesEmptyCell(box)) return;
-
-        ItemProps partsEvents = ItemProps.forParts(box, id, transSpec);
-        ItemProps passiveBorderEvents = ItemProps.forPassiveBorder(id, nodeKey, transSpec);
-        // 何が壊れていたか: 以前は pointer-events を部品に載せていなかったので、ヒットテストの
-        // pointer-events: none の判定は常に偽だった
-        if (pointerEventsNone) {
-            partsEvents.pointerEventsNone();
-            passiveBorderEvents.pointerEventsNone();
+        PaintSupport.CaptureList cap = (parentRelative && elements instanceof PaintSupport.CaptureList c) ? c : null;
+        int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
+        if (cap != null) {
+            LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, parentId);
+            cap.setOrigin(pNode != null ? Math.round(pNode.x) : 0, pNode != null ? Math.round(pNode.y) : 0);
         }
+        try {
+            addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", color, bgColor, anchorEvents, 0, opacity, tx, ty, sx, sy, rot, transDur, animDef, anchorMeta, nodeKey);
 
-        RenderMeta baseMeta = new RenderMeta(normalizedClip, radii, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive, null, partsEvents.hints());
+            // visibility: hidden の箱は場所だけを取る。錨（NODE）は子孫の変形と不透明度の親として残す
+            // 何が壊れていたか: 以前は visibility を読んでおらず、hidden の箱が描かれクリックも受けていた
+            if (isInvisible(box) || PaintSupport.hidesEmptyCell(box)) return;
 
-        if (!box.inlineFragments.isEmpty() && !NON_FRAGMENT_TAGS.contains(box.node.tag) && !ReplacedElements.isHost(box.node.tag) && !BlockLayoutEngine.isAtomicInline(box)) {
-            decor.drawInlineFragments(elements, box, id, color, bgColor, rawRadii, normalizedClip, fontHVal, ox, oy, itemCount, interactive,
-                    partsEvents, passiveBorderEvents, transDur, colorBgAnim);
-            return;
-        }
+            if (useRel && cap != null) cap.setOrigin(Math.round(box.x), Math.round(box.y));
 
-        List<BoxDecorations.Shadow> shadows = BoxDecorations.parseBoxShadows(box.style.get(CssPropertyIndex.BOX_SHADOW), color,
-                rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
-        decor.drawOuterShadows(elements, box, id, shadows, radii, normalizedClip, fontHVal, ox, oy);
-
-        BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
-        RenderMeta innerMeta = new RenderMeta(normalizedClip, border.innerRadii(), null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
-
-        switch (box.node.tag) {
-            case "img", "video", "audio" -> controls.drawMediaElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-            case "#text" -> drawTextNodeElement(elements, box, id, color, bgColor, normalizedClip, fontHVal, ox, oy, partsEvents, transDur, anim.textColorAnimation(box, animDef));
-            case "progress", "meter" -> {
-                String val = box.node.attrs.getOrDefault("value", "0");
-                String min = box.node.attrs.getOrDefault("min", "0");
-                String max = box.node.attrs.getOrDefault("max", "100");
-                // 何が壊れていたか: ここが RANGE を出していたため、progress / meter が
-                // つまみ付きのスライダーとして描かれていた。進捗バーの描画実装
-                // (ControlElementRenderer.renderProgressElement) は呼ばれない死にコードだった。
-                long progressKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_PROGRESS) : 0L;
-                addElement(elements, id, id + "_progress", ElementType.PROGRESS, box.x, box.y, box.w, box.h, val + ":" + min + ":" + max, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, progressKey);
+            ItemProps partsEvents = ItemProps.populateForParts(scratchPartsProps, box, id, transSpec);
+            if (pointerEventsNone) partsEvents.pointerEventsNone();
+            partsEvents.reuseCandidate(prevPartsHints);
+            if ("#text".equals(box.node.tag)) {
+                drawTextNodeElement(elements, box, id, color, bgColor, normalizedClip, fontHVal, ox, oy, partsEvents, transDur, anim.textColorAnimation(box, animDef));
+                return;
             }
-            case "svg" -> controls.drawSvgElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-            case "canvas" -> controls.drawCanvasElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-            case "textarea" -> controls.drawTextareaElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-            case "select" -> controls.drawSelectElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-            case "input" -> {
-                if (isPlainRange(box)) {
-                    // appearance: none のレンジは作者の CSS で描いた箱に、つまみ（::-webkit-slider-thumb は部品のまま）だけを重ねる
-                    decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
-                    controls.drawNativeRange(elements, box, id, rangeData(box, resolveLiveInputValue(id, box.node.attrs.getOrDefault("value", ""))),
-                            color, false, partsEvents, border, baseMeta, transDur, colorBgAnim);
-                } else if (isPlainToggle(box)) {
-                    // appearance: none のチェックボックス・ラジオボタンは普通の箱（作者の枠線・背景だけで描き、印は無い）
-                    decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
-                } else {
-                    controls.drawInputElement(elements, box, id, color, bgColor, fallbackRadius, fontHVal, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+            ItemProps passiveBorderEvents = ItemProps.populateForPassiveBorder(scratchPassiveProps, id, nodeKey, transSpec);
+            // 何が壊れていたか: 以前は pointer-events を部品に載せていなかったので、ヒットテストの
+            // pointer-events: none の判定は常に偽だった
+            if (pointerEventsNone) {
+                passiveBorderEvents.pointerEventsNone();
+            }
+            passiveBorderEvents.reuseCandidate(prevPassiveHints != null ? prevPassiveHints : prevPartsHints);
+
+            if (!box.inlineFragments.isEmpty() && !NON_FRAGMENT_TAGS.contains(box.node.tag) && !ReplacedElements.isHost(box.node.tag) && !BlockLayoutEngine.isAtomicInline(box)) {
+                decor.drawInlineFragments(elements, box, id, color, bgColor, rawRadii, normalizedClip, fontHVal, ox, oy, itemCount, interactive,
+                        partsEvents, passiveBorderEvents, transDur, colorBgAnim);
+                return;
+            }
+
+            RenderMeta baseMeta = reuseMeta(prevBaseMeta, normalizedClip, radii, fontHVal, box.lineHeightPx, ox, oy,
+                    itemCount, interactive, partsEvents.hints());
+
+            List<BoxDecorations.Shadow> shadows = BoxDecorations.parseBoxShadows(box.style.get(CssPropertyIndex.BOX_SHADOW), color,
+                    rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
+            decor.drawOuterShadows(elements, box, id, shadows, radii, normalizedClip, fontHVal, ox, oy);
+
+            BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
+            RenderMeta innerMeta = border.innerRadii().equals(radii)
+                    ? baseMeta
+                    : reuseMeta(prevInnerMeta, normalizedClip, border.innerRadii(), fontHVal, box.lineHeightPx, ox, oy,
+                            itemCount, interactive, RenderHints.NONE);
+
+            switch (box.node.tag) {
+                case "img", "video", "audio" -> controls.drawMediaElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                case "progress", "meter" -> {
+                    String val = box.node.attrs.getOrDefault("value", "0");
+                    String min = box.node.attrs.getOrDefault("min", "0");
+                    String max = box.node.attrs.getOrDefault("max", "100");
+                    // 何が壊れていたか: ここが RANGE を出していたため、progress / meter が
+                    // つまみ付きのスライダーとして描かれていた。進捗バーの描画実装
+                    // (ControlElementRenderer.renderProgressElement) は呼ばれない死にコードだった。
+                    long progressKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_PROGRESS) : 0L;
+                    addElement(elements, id, id + "_progress", ElementType.PROGRESS, box.x, box.y, box.w, box.h, val + ":" + min + ":" + max, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, progressKey);
+                }
+                case "svg" -> controls.drawSvgElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                case "canvas" -> controls.drawCanvasElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                case "textarea" -> controls.drawTextareaElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                case "select" -> controls.drawSelectElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                case "input" -> {
+                    if (isPlainRange(box)) {
+                        // appearance: none のレンジは作者の CSS で描いた箱に、つまみ（::-webkit-slider-thumb は部品のまま）だけを重ねる
+                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevMemo != null ? prevMemo.items : null);
+                        controls.drawNativeRange(elements, box, id, rangeData(box, resolveLiveInputValue(id, box.node.attrs.getOrDefault("value", ""))),
+                                color, false, partsEvents, border, baseMeta, transDur, colorBgAnim);
+                    } else if (isPlainToggle(box)) {
+                        // appearance: none のチェックボックス・ラジオボタンは普通の箱（作者の枠線・背景だけで描き、印は無い）
+                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevMemo != null ? prevMemo.items : null);
+                    } else {
+                        controls.drawInputElement(elements, box, id, color, bgColor, fallbackRadius, fontHVal, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                    }
+                }
+                case "fieldset" -> controls.drawFieldsetElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
+                default -> {
+                    if (ReplacedElements.isHostScene(box.node.tag)) {
+                        controls.drawSceneElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                    } else if (ReplacedElements.isHostImageLike(box.node.tag)) {
+                        controls.drawMediaElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                    } else {
+                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevMemo != null ? prevMemo.items : null);
+                    }
                 }
             }
-            case "fieldset" -> controls.drawFieldsetElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
-            default -> {
-                if (ReplacedElements.isHostScene(box.node.tag)) {
-                    controls.drawSceneElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-                } else if (ReplacedElements.isHostImageLike(box.node.tag)) {
-                    controls.drawMediaElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-                } else {
-                    decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
-                }
-            }
+            decor.drawFirstLineBackground(elements, box, id, color, partsEvents, innerMeta, transDur);
+            decor.drawColumnRules(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
+            decor.drawOutline(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
+        } finally {
+            if (cap != null) cap.setOrigin(prevOx, prevOy);
         }
-        decor.drawFirstLineBackground(elements, box, id, color, partsEvents, innerMeta, transDur);
-        decor.drawColumnRules(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
-        decor.drawOutline(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
     }
 
     /**
@@ -1549,7 +2411,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private ItemProps textPropsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps partsEvents, int resolvedColor) {
         ItemProps props = partsEvents.copy();
         if (style.containsKey(CssPropertyIndex.FONT_WEIGHT)) props.put("font-weight", style.get(CssPropertyIndex.FONT_WEIGHT));
-        if (style.containsKey(CssPropertyIndex.FONT_FAMILY)) props.put("font-family", style.get(CssPropertyIndex.FONT_FAMILY));
+        if (style.containsKey(CssPropertyIndex.FONT_FAMILY)) props.fontFamily(style.get(CssPropertyIndex.FONT_FAMILY));
         if (style.containsKey(CssPropertyIndex.TEXT_DECORATION)) props.put("text-decoration", style.get(CssPropertyIndex.TEXT_DECORATION));
         putFontEvents(style, props);
         float strokeWidth = textStrokeWidth(style);
@@ -1915,21 +2777,50 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
 
         decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
+        boolean relMode = parentRelativeSource.getAsBoolean();
+        this.parentRelative = relMode;
+        order.setParentRelative(relMode);
 
         for (LayoutBox b : sorted) {
             ClipRect clip = clipForBox(b);
             String parentId = parentIdForBox(b);
             fragIds.set(0);
-            List<DisplayItem> newItems = new ArrayList<>(b.dlEnd - b.dlStart + 4);
-            drawBoxSelfUncached(newItems, b, clip, parentId);
-            boxMemo.put(b, remember(b, clip, parentId, newItems));
+            BoxMemo prev = boxMemo.get(b);
+            PaintSupport.CaptureList newItems;
+            if (prev != null && prev.itemsMutable && prev.items instanceof PaintSupport.CaptureList prevCap) {
+                prevCap.resetForBuild();
+                newItems = prevCap;
+            } else {
+                newItems = new PaintSupport.CaptureList(b.dlEnd - b.dlStart + 4);
+            }
+            newItems.beginCapture();
+            float[] capturedCoords = null;
+            try {
+                drawBoxSelfUncached(newItems, b, clip, parentId);
+            } finally {
+                if (newItems.capturing) capturedCoords = newItems.finishCapture();
+            }
+            BoxMemo stored = remember(prev, b, clip, parentId, newItems, true);
+            if (capturedCoords != null && stored.translatable && !stored.carriesContentExtent
+                    && capturedCoords.length == newItems.size() * 4) {
+                stored.itemCoords = capturedCoords;
+            }
+            boxMemo.put(b, stored);
             // スクロールの中身をまとめた節は、箱の項目の直後（drawBoxSelf と同じ位置）にある。差し替えで落とすと、
             // 子の項目が親を失って、スクロール量が掛からなくなる（ホバーのあとにスクロールすると表示がずれる）
             PaintOrder.ScrollContent sc = order.scrollContentOf(b);
             if (sc != null) {
                 for (int i = b.dlStart; i < b.dlEnd; i++) {
                     if (sc.contentId.equals(currentDisplayList.get(i).id())) {
-                        order.addMovingNode(newItems, sc.contentId, b, null);
+                        int prevOx = newItems.originX, prevOy = newItems.originY;
+                        if (relMode && PaintOrder.boxHasOwnNode(b)) {
+                            newItems.setOrigin(Math.round(b.x), Math.round(b.y));
+                        }
+                        try {
+                            order.addMovingNode(newItems, sc.contentId, b, null);
+                        } finally {
+                            newItems.setOrigin(prevOx, prevOy);
+                        }
                         break;
                     }
                 }
@@ -2015,6 +2906,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             STAT_SLICE_PATCH_FALLBACKS.increment();
             return null;
         }
+        boolean relMode = parentRelativeSource.getAsBoolean();
+        this.parentRelative = relMode;
+        order.setParentRelative(relMode);
         order.clearClips();
 
         // 1. 削除スライスの特定と除去（ブロック層・インライン層）
@@ -2110,9 +3004,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
 
         // 2. 追加ボックスの描画スライス生成（ブロック層・インライン層）
-        List<DisplayItem> addedBlockItems = new ArrayList<>();
+        List<DisplayItem> addedBlockItems = new PaintSupport.CaptureList(16);
         List<LayoutBox> addedBlockBoxes = new ArrayList<>();
-        List<DisplayItem> addedInlineItems = new ArrayList<>();
+        List<DisplayItem> addedInlineItems = new PaintSupport.CaptureList(16);
         List<LayoutBox> addedInlineBoxes = new ArrayList<>();
         decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
         ClipRect clip = order.contentClipOf(parentBox);
@@ -2405,20 +3299,33 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                         cachedParentClip = expectedClip;
                     }
 
+                    int curOx = Math.round(b.x), curOy = Math.round(b.y);
+                    boolean hasRelOrigin = relMode && PaintOrder.boxHasOwnNode(b);
+                    int curPox = 0, curPoy = 0;
+                    if (relMode) {
+                        String bParentId = m.parentId != null ? m.parentId : parentIdForBox(b);
+                        LayoutBox pNode = PaintOrder.effectiveParentNodeBox(b, bParentId);
+                        curPox = pNode != null ? Math.round(pNode.x) : 0;
+                        curPoy = pNode != null ? Math.round(pNode.y) : 0;
+                    }
+                    int partOx = hasRelOrigin ? curOx : curPox, partOy = hasRelOrigin ? curOy : curPoy;
+                    int oldPartOx = hasRelOrigin ? m.originX : m.parentOriginX, oldPartOy = hasRelOrigin ? m.originY : m.parentOriginY;
+
                     int itemCount = b.dlEnd - b.dlStart;
                     if (isTextNode && !b.inlineFragments.isEmpty()) {
                         int numFrags = b.inlineFragments.size();
                         if (numFrags == 1 && itemCount == 1 && currentDisplayList.get(b.dlStart).type() == ElementType.TEXT) {
                             // 最頻ケース: 単一フラグメント・単一TEXTアイテム（リスト行のテキストなど）
                             LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
-                            int newTop = Math.round(f0.y);
-                            int newLeft = Math.round(f0.x);
-                            int newH = Math.round(f0.y + f0.h) - newTop;
-                            int newW = Math.round(f0.x + f0.w) - newLeft;
+                            int newTop = Math.round(f0.y - partOy);
+                            int newLeft = Math.round(f0.x - partOx);
+                            int newH = Math.round(f0.y + f0.h - partOy) - newTop;
+                            int newW = Math.round(f0.x + f0.w - partOx) - newLeft;
                             DisplayItem it = currentDisplayList.get(b.dlStart);
                             RenderMeta meta = it.meta();
                             if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
-                                meta = meta.withClip(expectedClip);
+                                ClipRect nextClip = relMode ? PaintSupport.rebaseSubClip(meta.clipRect(), m.clip, expectedClip, curOx, curOy) : expectedClip;
+                                if (!sameClip(nextClip, meta.clipRect())) meta = meta.withClip(nextClip);
                             }
                             DisplayItem shifted = new DisplayItem(
                                     it.id(), it.baseNodeId(), it.type(),
@@ -2443,24 +3350,25 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                             if (textItemCount == validFrags.size()) {
                                 int fIdx = 0;
                                 LayoutBox.InlineFragment f0 = validFrags.get(0);
-                                int baseTop = Math.round(f0.y);
-                                int baseLeft = Math.round(f0.x);
+                                int baseTop = Math.round(f0.y - partOy);
+                                int baseLeft = Math.round(f0.x - partOx);
                                 float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] + fy : f0.y;
                                 float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] + fx : f0.x;
-                                int oldBaseTop = Math.round(oldFragY);
-                                int oldBaseLeft = Math.round(oldFragX);
+                                int oldBaseTop = Math.round(oldFragY - oldPartOy);
+                                int oldBaseLeft = Math.round(oldFragX - oldPartOx);
                                 for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
                                     DisplayItem it = currentDisplayList.get(idx);
                                     RenderMeta meta = it.meta();
                                     if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
-                                        meta = meta.withClip(expectedClip);
+                                        ClipRect nextClip = relMode ? PaintSupport.rebaseSubClip(meta.clipRect(), m.clip, expectedClip, curOx, curOy) : expectedClip;
+                                        if (!sameClip(nextClip, meta.clipRect())) meta = meta.withClip(nextClip);
                                     }
                                     if (it.type() == ElementType.TEXT) {
                                         LayoutBox.InlineFragment f = validFrags.get(fIdx++);
-                                        int newTop = Math.round(f.y);
-                                        int newLeft = Math.round(f.x);
-                                        int newH = Math.round(f.y + f.h) - newTop;
-                                        int newW = Math.round(f.x + f.w) - newLeft;
+                                        int newTop = Math.round(f.y - partOy);
+                                        int newLeft = Math.round(f.x - partOx);
+                                        int newH = Math.round(f.y + f.h - partOy) - newTop;
+                                        int newW = Math.round(f.x + f.w - partOx) - newLeft;
                                         DisplayItem shifted = new DisplayItem(
                                                 it.id(), it.baseNodeId(), it.type(),
                                                 newLeft, newTop, newW, newH,
@@ -2471,8 +3379,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                                         );
                                         currentDisplayList.set(idx, shifted);
                                     } else if (it.id() != null && b.node != null && it.id().equals(b.node.key())) {
-                                        int newX = Math.round(b.x);
-                                        int newY = Math.round(b.y);
+                                        int newX = curOx - curPox;
+                                        int newY = curOy - curPoy;
                                         DisplayItem shifted = new DisplayItem(
                                                 it.id(), it.baseNodeId(), it.type(),
                                                 newX, newY, it.width(), it.height(),
@@ -2498,25 +3406,26 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                                 }
                             } else {
                                 LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
-                                int targetTop = Math.round(f0.y);
-                                int targetLeft = Math.round(f0.x);
+                                int targetTop = Math.round(f0.y - partOy);
+                                int targetLeft = Math.round(f0.x - partOx);
                                 float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] + fy : f0.y;
                                 float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] + fx : f0.x;
-                                int oldTop = Math.round(oldFragY);
-                                int oldLeft = Math.round(oldFragX);
-                                int targetH = Math.round(f0.y + f0.h) - targetTop;
-                                int targetW = Math.round(f0.x + f0.w) - targetLeft;
-                                int oldHInt = Math.round(oldFragY + f0.h) - oldTop;
-                                int oldWInt = Math.round(oldFragX + f0.w) - oldLeft;
+                                int oldTop = Math.round(oldFragY - oldPartOy);
+                                int oldLeft = Math.round(oldFragX - oldPartOx);
+                                int targetH = Math.round(f0.y + f0.h - partOy) - targetTop;
+                                int targetW = Math.round(f0.x + f0.w - partOx) - targetLeft;
+                                int oldHInt = Math.round(oldFragY + f0.h - oldPartOy) - oldTop;
+                                int oldWInt = Math.round(oldFragX + f0.w - oldPartOx) - oldLeft;
                                 for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
                                     DisplayItem it = currentDisplayList.get(idx);
                                     RenderMeta meta = it.meta();
                                     if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
-                                        meta = meta.withClip(expectedClip);
+                                        ClipRect nextClip = relMode ? PaintSupport.rebaseSubClip(meta.clipRect(), m.clip, expectedClip, curOx, curOy) : expectedClip;
+                                        if (!sameClip(nextClip, meta.clipRect())) meta = meta.withClip(nextClip);
                                     }
                                     if (it.id() != null && b.node != null && it.id().equals(b.node.key())) {
-                                        int newX = Math.round(b.x);
-                                        int newY = Math.round(b.y);
+                                        int newX = curOx - curPox;
+                                        int newY = curOy - curPoy;
                                         DisplayItem shifted = new DisplayItem(
                                                 it.id(), it.baseNodeId(), it.type(),
                                                 newX, newY, it.width(), it.height(),
@@ -2546,18 +3455,18 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                         }
                     } else {
                         // ブロック要素
-                        int targetTop = Math.round(b.y);
-                        int targetLeft = Math.round(b.x);
+                        int targetTop = Math.round(b.y - partOy);
+                        int targetLeft = Math.round(b.x - partOx);
                         float oldBoxY = m.nums != null && m.nums.length >= 2 ? m.nums[1] + ay : b.y;
                         float oldBoxX = m.nums != null && m.nums.length >= 2 ? m.nums[0] + ax : b.x;
                         float oldBoxH = m.nums != null && m.nums.length >= 4 ? m.nums[3] : b.h;
                         float oldBoxW = m.nums != null && m.nums.length >= 4 ? m.nums[2] : b.w;
-                        int oldTop = Math.round(oldBoxY);
-                        int oldLeft = Math.round(oldBoxX);
-                        int targetH = Math.round(b.y + b.h) - targetTop;
-                        int targetW = Math.round(b.x + b.w) - targetLeft;
-                        int oldHInt = Math.round(oldBoxY + oldBoxH) - oldTop;
-                        int oldWInt = Math.round(oldBoxX + oldBoxW) - oldLeft;
+                        int oldTop = Math.round(oldBoxY - oldPartOy);
+                        int oldLeft = Math.round(oldBoxX - oldPartOx);
+                        int targetH = Math.round(b.y + b.h - curOy) - (hasRelOrigin ? 0 : targetTop);
+                        int targetW = Math.round(b.x + b.w - curOx) - (hasRelOrigin ? 0 : targetLeft);
+                        int oldHInt = Math.round(oldBoxY + oldBoxH - oldPartOy) - oldTop;
+                        int oldWInt = Math.round(oldBoxX + oldBoxW - oldPartOx) - oldLeft;
                         int shiftX = targetLeft - oldLeft;
                         int shiftY = targetTop - oldTop;
                         boolean sameDim = (targetH == oldHInt && targetW == oldWInt);
@@ -2565,7 +3474,12 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                         for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
                             DisplayItem it = currentDisplayList.get(idx);
                             int newX, newY, newW, newH;
-                            if (sameDim) {
+                            if (hasRelOrigin && idx == b.dlStart && it.type() == ElementType.NODE && it.hints().relativeOrigin()) {
+                                newX = curOx - curPox;
+                                newY = curOy - curPoy;
+                                newW = targetW;
+                                newH = targetH;
+                            } else if (sameDim) {
                                 newX = it.x() + shiftX;
                                 newY = it.y() + shiftY;
                                 newW = it.width();
@@ -2583,7 +3497,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                             }
                             RenderMeta meta = it.meta();
                             if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
-                                meta = meta.withClip(expectedClip);
+                                ClipRect nextClip = relMode ? PaintSupport.rebaseSubClip(meta.clipRect(), m.clip, expectedClip, curOx, curOy) : expectedClip;
+                                if (!sameClip(nextClip, meta.clipRect())) meta = meta.withClip(nextClip);
                             }
                             if (meta != null && meta.hints() != null && meta.hints().scrollable()) {
                                 meta = meta.withHints(meta.hints().withScroll(b.scrollWidth, b.scrollHeight));
@@ -2602,18 +3517,26 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
                     if (m.itemCoords != null) {
                         if (m.items != null && m.itemCoords.length == m.items.size() * 4 && itemCount >= m.items.size()) {
-                            float boxShiftX = (m.nums != null && m.nums.length >= 2) ? (b.x - m.nums[0]) : 0f;
-                            float boxShiftY = (m.nums != null && m.nums.length >= 2) ? (b.y - m.nums[1]) : 0f;
+                            int odx = relMode ? (partOx - oldPartOx) : 0;
+                            int ody = relMode ? (partOy - oldPartOy) : 0;
+                            float boxShiftX = (m.nums != null && m.nums.length >= 2) ? ((b.x - m.nums[0]) - odx) : 0f;
+                            float boxShiftY = (m.nums != null && m.nums.length >= 2) ? ((b.y - m.nums[1]) - ody) : 0f;
                             float fragShiftX = (!b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2)
-                                    ? (b.inlineFragments.get(0).x - m.fragNums[0]) : boxShiftX;
+                                    ? ((b.inlineFragments.get(0).x - m.fragNums[0]) - odx) : boxShiftX;
                             float fragShiftY = (!b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2)
-                                    ? (b.inlineFragments.get(0).y - m.fragNums[1]) : boxShiftY;
+                                    ? ((b.inlineFragments.get(0).y - m.fragNums[1]) - ody) : boxShiftY;
                             boolean valid = true;
                             for (int i = 0, nItems = m.items.size(); i < nItems; i++) {
                                 DisplayItem cur = currentDisplayList.get(b.dlStart + i);
-                                boolean isFragItem = !b.inlineFragments.isEmpty() && movesWithFragment(cur);
-                                float nx = m.itemCoords[i * 4] + (isFragItem ? fragShiftX : boxShiftX);
-                                float ny = m.itemCoords[i * 4 + 1] + (isFragItem ? fragShiftY : boxShiftY);
+                                float nx, ny;
+                                if (hasRelOrigin && i == 0 && cur.type() == ElementType.NODE && cur.hints().relativeOrigin()) {
+                                    nx = b.x - curPox;
+                                    ny = b.y - curPoy;
+                                } else {
+                                    boolean isFragItem = !b.inlineFragments.isEmpty() && movesWithFragment(cur);
+                                    nx = m.itemCoords[i * 4] + (isFragItem ? fragShiftX : boxShiftX);
+                                    ny = m.itemCoords[i * 4 + 1] + (isFragItem ? fragShiftY : boxShiftY);
+                                }
                                 float fw = m.itemCoords[i * 4 + 2], fh = m.itemCoords[i * 4 + 3];
                                 int rx = Math.round(nx), ry = Math.round(ny);
                                 int rw = Math.round(nx + fw) - rx, rh = Math.round(ny + fh) - ry;
@@ -2631,11 +3554,18 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                     }
                     m.appliedDx = m.appliedDy = 0; // 記憶を今のリストの状態に揃える（下で項目も取り直す）
                     m.appliedExactDx = m.appliedExactDy = 0f;
+                    m.appliedOriginDx = m.appliedOriginDy = 0;
                     m.appliedFragOnly = false;
                     m.appliedNonUniform = false;
                     if (m.nums != null && m.nums.length >= 2) {
                         m.nums[0] = b.x;
                         m.nums[1] = b.y;
+                    }
+                    if (relMode) {
+                        m.originX = curOx;
+                        m.originY = curOy;
+                        m.parentOriginX = curPox;
+                        m.parentOriginY = curPoy;
                     }
                     m.scrollW = b.scrollWidth;
                     m.scrollH = b.scrollHeight;
@@ -2797,6 +3727,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 return null;
             }
             ClipRect expectedClip = order.contentClipOf(anc.parent);
+            int ancOx = (relMode && PaintOrder.boxHasOwnNode(anc)) ? Math.round(anc.x) : 0;
+            int ancOy = (relMode && PaintOrder.boxHasOwnNode(anc)) ? Math.round(anc.y) : 0;
             int barThickness = 4;
             if (wantsV && vtIdx >= 0 && vIdx >= 0) {
                 float curY = scrollState != null ? scrollState.getScrollY(anc.node) : 0f;
@@ -2807,15 +3739,15 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 float maxScrollY = Math.max(1f, scrollH - anc.h);
                 float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
-                int vtLeft = Math.round(trackX);
-                int vtTop = Math.round(trackY);
-                int vtW = Math.round(trackX + barThickness) - vtLeft;
-                int vtH = Math.round(trackY + trackH) - vtTop;
+                int vtLeft = Math.round(trackX - ancOx);
+                int vtTop = Math.round(trackY - ancOy);
+                int vtW = Math.round(trackX - ancOx + barThickness) - vtLeft;
+                int vtH = Math.round(trackY - ancOy + trackH) - vtTop;
 
-                int vLeft = Math.round(trackX);
-                int vTop = Math.round(thumbY);
-                int vW = Math.round(trackX + barThickness) - vLeft;
-                int vH = Math.round(thumbY + thumbH) - vTop;
+                int vLeft = Math.round(trackX - ancOx);
+                int vTop = Math.round(thumbY - ancOy);
+                int vW = Math.round(trackX - ancOx + barThickness) - vLeft;
+                int vH = Math.round(thumbY - ancOy + thumbH) - vTop;
 
                 DisplayItem itVt = currentDisplayList.get(vtIdx);
                 RenderMeta metaVt = itVt.meta();
@@ -2835,10 +3767,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                     content.thumbVId = svId;
                     content.ky = (trackH - thumbH) / maxScrollY;
                     DisplayItem itSv = currentDisplayList.get(svIdx);
-                    int svLeft = Math.round(anc.x);
-                    int svTop = Math.round(anc.y);
-                    int svW = Math.round(anc.x + anc.w) - svLeft;
-                    int svH = Math.round(anc.y + anc.h) - svTop;
+                    int svLeft = Math.round(anc.x - ancOx);
+                    int svTop = Math.round(anc.y - ancOy);
+                    int svW = Math.round(anc.x - ancOx + anc.w) - svLeft;
+                    int svH = Math.round(anc.y - ancOy + anc.h) - svTop;
                     RenderMeta metaSv = itSv.meta();
                     if (metaSv != null && metaSv.clipRect() != null && expectedClip != null) {
                         metaSv = metaSv.withClip(expectedClip);
@@ -2876,15 +3808,15 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 float maxScrollX = Math.max(1f, scrollW - anc.w);
                 float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
-                int htLeft = Math.round(trackX);
-                int htTop = Math.round(trackY);
-                int htW = Math.round(trackX + trackW) - htLeft;
-                int htH = Math.round(trackY + barThickness) - htTop;
+                int htLeft = Math.round(trackX - ancOx);
+                int htTop = Math.round(trackY - ancOy);
+                int htW = Math.round(trackX - ancOx + trackW) - htLeft;
+                int htH = Math.round(trackY - ancOy + barThickness) - htTop;
 
-                int hLeft = Math.round(thumbX);
-                int hTop = Math.round(trackY);
-                int hW = Math.round(thumbX + thumbW) - hLeft;
-                int hH = Math.round(trackY + barThickness) - hTop;
+                int hLeft = Math.round(thumbX - ancOx);
+                int hTop = Math.round(trackY - ancOy);
+                int hW = Math.round(thumbX - ancOx + thumbW) - hLeft;
+                int hH = Math.round(trackY - ancOy + barThickness) - hTop;
 
                 DisplayItem itHt = currentDisplayList.get(htIdx);
                 RenderMeta metaHt = itHt.meta();
@@ -2904,10 +3836,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                     content.thumbHId = shId;
                     content.kx = (trackW - thumbW) / maxScrollX;
                     DisplayItem itSh = currentDisplayList.get(shIdx);
-                    int shLeft = Math.round(anc.x);
-                    int shTop = Math.round(anc.y);
-                    int shW = Math.round(anc.x + anc.w) - shLeft;
-                    int shH = Math.round(anc.y + anc.h) - shTop;
+                    int shLeft = Math.round(anc.x - ancOx);
+                    int shTop = Math.round(anc.y - ancOy);
+                    int shW = Math.round(anc.x - ancOx + anc.w) - shLeft;
+                    int shH = Math.round(anc.y - ancOy + anc.h) - shTop;
                     RenderMeta metaSh = itSh.meta();
                     if (metaSh != null && metaSh.clipRect() != null && expectedClip != null) {
                         metaSh = metaSh.withClip(expectedClip);

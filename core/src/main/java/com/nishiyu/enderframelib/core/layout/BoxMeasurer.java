@@ -530,7 +530,7 @@ public final class BoxMeasurer {
             // 高さは整形結果の行高の合計。行数と行送りを別々に数え直さない。
             float total = 0;
             if (box.shapedLines != null && !box.shapedLines.isEmpty()) {
-                for (ShapedLine line : box.shapedLines) total += line.height();
+                for (int i = 0, n = box.shapedLines.size(); i < n; i++) total += box.shapedLines.get(i).height();
             } else {
                 total = box.lineHeightPx;
             }

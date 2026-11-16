@@ -123,6 +123,13 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private long seenOverflows;
     private boolean retainOverflow;
 
+    // 差分インプレース上書きの前提状態
+    private boolean prevFrameCleanSinglePass;
+    private boolean inDiffPatch;
+    private int prevPatchWidth, prevPatchHeight, prevPatchClearPremul, prevPatchAtlasResets;
+    private long prevPatchScrollOps, frameLayerOps;
+    private boolean frameHadImg;
+
     // 層の管理
     private final ArrayDeque<GpuTexture> layerPool = new ArrayDeque<>();
     private final ArrayList<Entry> layerStack = new ArrayList<>();
@@ -368,6 +375,10 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         layerPool.clear();
         layerPool.addAll(allLayers);
         rectRunImg = null;
+        inDiffPatch = false;
+        frameLayerOps = 0;
+        frameHadImg = false;
+        long overlay0 = overlayFlushes, readbacks0 = readbacks, scrollOps0 = scrollLayersSkipped + scrollLayersRecorded;
         if (rects != null) rects.begin();
 
         activeMainCleared = false;
@@ -394,6 +405,23 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
             }
             activeFrame = null;
         }
+
+        prevFrameCleanSinglePass = ended
+                && frameLayerOps == 0
+                && retained.isEmpty()
+                && !frameHadImg
+                && overlayFlushes == overlay0
+                && readbacks == readbacks0
+                && scrollLayersSkipped + scrollLayersRecorded == scrollOps0
+                && layerStack.isEmpty()
+                && rects != null;
+        if (prevFrameCleanSinglePass) {
+            prevPatchWidth = width;
+            prevPatchHeight = height;
+            prevPatchClearPremul = clearPremul;
+            prevPatchAtlasResets = atlas.resets();
+        }
+        inDiffPatch = false;
 
         if (rects != null && rects.overflows != seenOverflows) {
             seenOverflows = rects.overflows;
@@ -440,6 +468,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
 
     private void drainRects() {
         if (rects == null || rects.pending() == 0) return;
+        if (rectRunImg != null) frameHadImg = true;
         GpuPass pass = ensurePass();
         GpuTexture img = rectRunImg != null ? rectRunImg : dummyTex;
         rects.drain(pass, atlasTex, img, width, height);
@@ -618,6 +647,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         endPass();
         GpuTexture l = acquireLayer();
         if (l == null) return false;
+        frameLayerOps++;
         Entry e = new Entry();
         e.layer = l;
         e.opacity = opacity;
@@ -638,6 +668,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         endPass();
         GpuTexture l = acquireLayer();
         if (l == null) return false;
+        frameLayerOps++;
         Entry e = new Entry();
         e.layer = l;
         e.opacity = 1f;
@@ -1115,7 +1146,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     // ------------------------------------------------------------------ GPU の図形 (GpuSink)
 
     private void beforeRectTreeShape(Matrix2D pose, float x0, float y0, float x1, float y1) {
-        if (rects.pending() == 0 || cpu.dirtyBounds() != null) {
+        if (!inDiffPatch && (rects.pending() == 0 || cpu.dirtyBounds() != null)) {
             flushOverlay();
         }
         if (!layerStack.isEmpty()) {
@@ -1159,6 +1190,51 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (rects == null) return;
         if (ok && !layerStack.isEmpty()) ok = false;
         rects.spanEnd(ok, atlas.resets(), (int) (gpuGlyphs - spanGlyph0));
+    }
+
+    @Override
+    public boolean beginDiffPatch() {
+        if (!spanOk() || !prevFrameCleanSinglePass || width != prevPatchWidth || height != prevPatchHeight
+                || clearPremul != prevPatchClearPremul || atlas.resets() != prevPatchAtlasResets
+                || !retained.isEmpty()) {
+            return false;
+        }
+        if (!rects.beginDiffPatch()) return false;
+        inDiffPatch = true;
+        return true;
+    }
+
+    @Override
+    public boolean canPatchSpan(int index) {
+        return inDiffPatch && spanOk() && rects.canPatchSpan(index, atlas.resets());
+    }
+
+    @Override
+    public boolean patchSpanBegin(int index) {
+        if (!inDiffPatch || !spanOk()) return false;
+        if (!rects.patchSpanBegin(index, atlas.resets())) return false;
+        spanGlyph0 = gpuGlyphs;
+        return true;
+    }
+
+    @Override
+    public boolean patchSpanEnd(int index, boolean ok) {
+        if (rects == null || !inDiffPatch) return false;
+        if (ok && !layerStack.isEmpty()) ok = false;
+        return rects.patchSpanEnd(index, ok, atlas.resets(), (int) (gpuGlyphs - spanGlyph0));
+    }
+
+    @Override
+    public void abortDiffPatch() {
+        inDiffPatch = false;
+        cpu.clearDirty();
+        if (rects != null) rects.abortDiffPatch();
+    }
+
+    @Override
+    public void endDiffPatch() {
+        inDiffPatch = false;
+        if (rects != null) rects.endDiffPatch();
     }
 
     @Override

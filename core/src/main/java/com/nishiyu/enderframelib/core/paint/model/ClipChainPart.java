@@ -11,10 +11,26 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 public final class ClipChainPart {
     private final float[] rect;
     private final String ownerId;
+    private final int ownerOriginX;
+    private final int ownerOriginY;
 
     public ClipChainPart(float[] rect, String ownerId) {
+        this(rect, ownerId, 0, 0);
+    }
+
+    public ClipChainPart(float[] rect, String ownerId, int ownerOriginX, int ownerOriginY) {
         this.rect = rect.clone();
         this.ownerId = ownerId;
+        this.ownerOriginX = ownerOriginX;
+        this.ownerOriginY = ownerOriginY;
+    }
+
+    public int ownerOriginX() {
+        return ownerOriginX;
+    }
+
+    public int ownerOriginY() {
+        return ownerOriginY;
     }
 
     public float[] rect() {

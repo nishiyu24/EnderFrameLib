@@ -103,19 +103,20 @@ public class FlexLayoutEngine extends LayoutEngine {
     @Override
     public float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         Axes axes = Axes.of(box.style);
-        FlexState state = new FlexState();
+        FlexState state = box.engineState instanceof FlexState fs ? fs : new FlexState();
         box.engineState = state;
-        state.items = orderedItems(box);
+        orderedItemsInto(box, state.items, state.itemPool);
 
         float innerW = Math.max(0, box.w - box.horizontalDecoration());
         if (axes.row) {
             buildLines(box, state, axes, innerW, space, ctx);
-            for (FlexLine line : state.lines) {
+            for (int i = 0, ln = state.lines.size(); i < ln; i++) {
+                FlexLine line = state.lines.get(i);
                 resolveFlexibleLengths(box, line, axes, innerW, space, ctx);
                 computeLineCross(line, axes);
             }
             float h = 0;
-            for (FlexLine line : state.lines) h += line.cross;
+            for (int i = 0, ln = state.lines.size(); i < ln; i++) h += state.lines.get(i).cross;
             if (state.lines.size() > 1) h += box.rowGap * (state.lines.size() - 1);
             return h;
         }
@@ -124,9 +125,13 @@ public class FlexLayoutEngine extends LayoutEngine {
         // 折り返すなら最も長い列（max-height で折り返すとき、箱はその列の高さまで縮む）
         float h = 0;
         float breakSize = axes.wrap ? columnBreakSize(box, space, ctx) : Float.NaN;
-        for (List<LayoutBox> line : columnLines(box, breakSize, ctx)) {
+        List<List<LayoutBox>> colLines = columnLines(box, breakSize, ctx);
+        for (int i = 0, cn = colLines.size(); i < cn; i++) {
+            List<LayoutBox> line = colLines.get(i);
             float lineH = box.rowGap * Math.max(0, line.size() - 1);
-            for (LayoutBox b : line) lineH += hypotheticalMain(b, false, Float.NaN, ctx) + mainMargins(b, false);
+            for (int j = 0, bn = line.size(); j < bn; j++) {
+                lineH += hypotheticalMain(line.get(j), false, Float.NaN, ctx) + mainMargins(line.get(j), false);
+            }
             h = Math.max(h, lineH);
         }
         return h;
@@ -277,29 +282,44 @@ public class FlexLayoutEngine extends LayoutEngine {
 
     private static List<FlexItem> orderedItems(LayoutBox box) {
         List<FlexItem> items = new ArrayList<>(box.children.size());
+        orderedItemsInto(box, items, null);
+        return items;
+    }
+
+    private static void orderedItemsInto(LayoutBox box, List<FlexItem> items, List<FlexItem> pool) {
+        if (pool != null) {
+            for (int i = 0, n = items.size(); i < n; i++) pool.add(items.get(i));
+        }
+        items.clear();
         boolean inOrder = true;
         int previous = Integer.MIN_VALUE;
         for (int i = 0, n = box.children.size(); i < n; i++) {
             LayoutBox child = box.children.get(i);
             if (!child.participatesInFlow()) continue;
-            items.add(new FlexItem(child));
+            FlexItem fi = (pool != null && !pool.isEmpty()) ? pool.remove(pool.size() - 1).reset(child) : new FlexItem(child);
+            items.add(fi);
             int order = (int) child.style.number(CssPropertyIndex.ORDER, 0f);
             if (order < previous) inOrder = false;
             previous = order;
         }
         // order が文書順のまま昇順（全て同じを含む）なら、安定ソートは何も動かさない
         if (!inOrder) items.sort(ORDER_COMPARATOR);
-        return items;
     }
 
     /** 仮の主軸の寸法で行に分ける（CSS Flexbox §9.3）。 */
     private static void buildLines(LayoutBox box, FlexState state, Axes axes, float innerMain,
                                    ConstraintSpace space, LayoutContext ctx) {
+        for (int i = 0, n = state.lines.size(); i < n; i++) {
+            FlexLine prev = state.lines.get(i);
+            prev.reset();
+            state.linePool.add(prev);
+        }
         state.lines.clear();
         float gap = axes.row ? box.columnGap : box.rowGap;
-        FlexLine line = new FlexLine();
+        FlexLine line = state.linePool.isEmpty() ? new FlexLine() : state.linePool.remove(state.linePool.size() - 1);
         float used = 0;
-        for (FlexItem item : state.items) {
+        for (int i = 0, n = state.items.size(); i < n; i++) {
+            FlexItem item = state.items.get(i);
             item.base = flexBaseSize(item.box, axes.row, innerMain, ctx);
             item.min = minMainSize(item.box, axes.row, innerMain, ctx);
             item.max = maxMainSize(item.box, axes.row, innerMain, space, ctx);
@@ -307,13 +327,14 @@ public class FlexLayoutEngine extends LayoutEngine {
             float outer = item.hypothetical + mainMargins(item.box, axes.row);
             if (axes.wrap && !line.items.isEmpty() && used + gap + outer > innerMain + 0.01f) {
                 state.lines.add(line);
-                line = new FlexLine();
+                line = state.linePool.isEmpty() ? new FlexLine() : state.linePool.remove(state.linePool.size() - 1);
                 used = 0;
             }
             used += (line.items.isEmpty() ? 0 : gap) + outer;
             line.items.add(item);
         }
         if (!line.items.isEmpty()) state.lines.add(line);
+        else state.linePool.add(line);
     }
 
     /**
@@ -396,7 +417,10 @@ public class FlexLayoutEngine extends LayoutEngine {
     /** 凍結したアイテムは決まった寸法、それ以外は flex base size で数えた外側の寸法の和。 */
     private static float outerSum(List<FlexItem> items, boolean row) {
         float sum = 0;
-        for (FlexItem item : items) sum += (item.frozen ? item.target : item.base) + mainMargins(item.box, row);
+        for (int i = 0, n = items.size(); i < n; i++) {
+            FlexItem item = items.get(i);
+            sum += (item.frozen ? item.target : item.base) + mainMargins(item.box, row);
+        }
         return sum;
     }
 
@@ -492,8 +516,9 @@ public class FlexLayoutEngine extends LayoutEngine {
     /** 行の交差軸の寸法。baseline で揃えるアイテムはベースラインの上と下を別々に数える。 */
     private static void computeLineCross(FlexLine line, Axes axes) {
         float cross = 0, above = 0, below = 0;
-        for (FlexItem item : line.items) {
-            LayoutBox b = item.box;
+        List<FlexItem> lineItems = line.items;
+        for (int i = 0, n = lineItems.size(); i < n; i++) {
+            LayoutBox b = lineItems.get(i).box;
             float outer = axes.row ? b.h + b.mT + b.mB : b.w + b.mL + b.mR;
             if (axes.row && alignSelfOf(b, alignItemsOf(b.parent.style)) == CssKeywords.Alignment.BASELINE && !hasAutoCrossMargin(b, true)) {
                 // baseline 揃えの行の高さは子孫の行を読むので、仮のままなら確定させる（stretch 対象外のため後から伸びない）
@@ -518,8 +543,9 @@ public class FlexLayoutEngine extends LayoutEngine {
      */
     private static void stretchItems(LayoutBox box, FlexLine line, Axes axes, CssKeywords.Alignment alignItems,
                                      ConstraintSpace space, LayoutContext ctx) {
-        for (FlexItem item : line.items) {
-            LayoutBox b = item.box;
+        List<FlexItem> lineItems = line.items;
+        for (int i = 0, n = lineItems.size(); i < n; i++) {
+            LayoutBox b = lineItems.get(i).box;
             if (alignSelfOf(b, alignItems) != CssKeywords.Alignment.STRETCH || hasAutoCrossMargin(b, axes.row)) continue;
             if (axes.row) {
                 if (hasSize(b.axisStyle(), CssPropertyIndex.HEIGHT)) continue;
@@ -537,10 +563,11 @@ public class FlexLayoutEngine extends LayoutEngine {
     private static void placeLineItems(LayoutBox box, FlexLine line, Axes axes, float innerMain, float mainGap,
                                        float lineStart, CssKeywords.Alignment alignItems) {
         List<FlexItem> items = line.items;
-        float used = mainGap * Math.max(0, items.size() - 1);
+        int n = items.size();
+        float used = mainGap * Math.max(0, n - 1);
         int autoMargins = 0;
-        for (FlexItem item : items) {
-            LayoutBox b = item.box;
+        for (int i = 0; i < n; i++) {
+            LayoutBox b = items.get(i).box;
             ComputedStyle bs = b.axisStyle();
             used += mainSize(b, axes.row) + mainMargins(b, axes.row);
             if (isAuto(bs, axes.row ? CssPropertyIndex.MARGIN_LEFT : CssPropertyIndex.MARGIN_TOP)) autoMargins++;
@@ -555,12 +582,13 @@ public class FlexLayoutEngine extends LayoutEngine {
             spacing = new MainAxisSpacing(0, mainGap);
         } else {
             String justify = box.style.keywordOf(CssPropertyIndex.JUSTIFY_CONTENT, CssKeywords.Alignment.class).cssName();
-            spacing = distributeMainAxis(justifyDistribution(justify, axes), 0, innerMain, used - mainGap * Math.max(0, items.size() - 1),
-                    mainGap, items.size());
+            spacing = distributeMainAxis(justifyDistribution(justify, axes), 0, innerMain, used - mainGap * Math.max(0, n - 1),
+                    mainGap, n);
         }
 
         float pos = spacing.start();
-        for (FlexItem item : items) {
+        for (int i = 0; i < n; i++) {
+            FlexItem item = items.get(i);
             LayoutBox b = item.box;
             ComputedStyle bs = b.axisStyle();
             if (axes.row) {
@@ -811,7 +839,7 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     private static final class FlexItem {
-        final LayoutBox box;
+        LayoutBox box;
         float base, hypothetical, min, max, target, violation;
         boolean frozen;
         /** 位置（マージンボックスの左上、内容ボックス相対）。 */
@@ -820,6 +848,20 @@ public class FlexLayoutEngine extends LayoutEngine {
         FlexItem(LayoutBox box) {
             this.box = box;
         }
+
+        FlexItem reset(LayoutBox box) {
+            this.box = box;
+            this.base = 0f;
+            this.hypothetical = 0f;
+            this.min = 0f;
+            this.max = 0f;
+            this.target = 0f;
+            this.violation = 0f;
+            this.frozen = false;
+            this.x = 0f;
+            this.y = 0f;
+            return this;
+        }
     }
 
     private static final class FlexLine {
@@ -827,12 +869,20 @@ public class FlexLayoutEngine extends LayoutEngine {
         float cross;
         /** 行の交差軸の始点からベースラインまで。 */
         float baseline;
+
+        void reset() {
+            items.clear();
+            cross = 0f;
+            baseline = 0f;
+        }
     }
 
     /** flex コンテナの行とアイテムの配置。 */
     static final class FlexState implements LayoutEngineState {
-        List<FlexItem> items = new ArrayList<>();
+        final List<FlexItem> items = new ArrayList<>();
         final List<FlexLine> lines = new ArrayList<>();
+        final List<FlexItem> itemPool = new ArrayList<>();
+        final List<FlexLine> linePool = new ArrayList<>();
         float innerW = -1, innerH = -1;
     }
 }

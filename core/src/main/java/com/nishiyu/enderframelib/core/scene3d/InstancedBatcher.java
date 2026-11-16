@@ -14,6 +14,10 @@ public final class InstancedBatcher {
     public static final int INSTANCE_STRIDE_BYTES = 128;
     public static final int FLAG_DOUBLE_SIDED = 1 << 0;
     public static final int FLAG_UNLIT = 1 << 1;
+    /** ベースカラー画像を掛ける。 */
+    public static final int FLAG_TEXTURED = 1 << 2;
+    /** 画像の UV を {@code fract} で繰り返す。 */
+    public static final int FLAG_REPEAT = 1 << 3;
 
     private long[] sortKeys = new long[256];
     private int[] sortNodes = new int[256];
@@ -84,6 +88,7 @@ public final class InstancedBatcher {
             MaterialDesc mat0 = materials.get(render.get(rb0 + Scene3DArena.RENDER_MATERIAL_ID));
             BlendMode3D blend = mat0.blendMode();
             boolean doubleSided = mat0.doubleSided();
+            Texture3D texture = mat0.baseColorMap();
 
             int j = i + 1;
             while (j < visible) {
@@ -91,12 +96,13 @@ public final class InstancedBatcher {
                 int rbj = node * Scene3DArena.RENDER_STRIDE;
                 int nextMesh = render.get(rbj + Scene3DArena.RENDER_MESH_ID);
                 MaterialDesc nextMat = materials.get(render.get(rbj + Scene3DArena.RENDER_MATERIAL_ID));
-                if (nextMesh != meshId || nextMat.blendMode() != blend || nextMat.doubleSided() != doubleSided) {
+                if (nextMesh != meshId || nextMat.blendMode() != blend || nextMat.doubleSided() != doubleSided
+                        || nextMat.baseColorMap() != texture) {
                     break;
                 }
                 j++;
             }
-            plan.addBatch(new DrawBatch3D(meshId, blend, i, j - i, doubleSided));
+            plan.addBatch(new DrawBatch3D(meshId, blend, i, j - i, doubleSided, texture));
             i = j;
         }
     }
@@ -185,7 +191,8 @@ public final class InstancedBatcher {
             int matId = render.get(rb + Scene3DArena.RENDER_MATERIAL_ID);
             int entityTag = render.get(rb + Scene3DArena.RENDER_ENTITY_TAG);
             MaterialDesc mat = materials.get(matId);
-            int instFlags = (mat.doubleSided() ? FLAG_DOUBLE_SIDED : 0) | (mat.unlit() ? FLAG_UNLIT : 0);
+            int instFlags = (mat.doubleSided() ? FLAG_DOUBLE_SIDED : 0) | (mat.unlit() ? FLAG_UNLIT : 0)
+                    | (mat.baseColorMap() != null ? FLAG_TEXTURED : 0) | (mat.mapRepeat() ? FLAG_REPEAT : 0);
 
             int metalByte = clampByte(mat.metallic() * 255.0f);
             int roughByte = clampByte(mat.roughness() * 255.0f);

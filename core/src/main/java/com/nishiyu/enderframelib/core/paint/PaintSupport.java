@@ -78,29 +78,59 @@ final class PaintSupport {
                             int color, int bgColor, ItemProps events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
                             RenderMeta meta, long key) {
-        if (elements instanceof CaptureList cap && cap.capturing) {
-            cap.record(x, y, w, h);
+        int ox = 0, oy = 0;
+        if (elements instanceof CaptureList cap) {
+            ox = cap.originX;
+            oy = cap.originY;
+            if (ox != 0 || oy != 0) {
+                x -= ox;
+                y -= oy;
+            }
+            if (cap.capturing) {
+                cap.record(x, y, w, h);
+            }
         }
         int left = Math.round(x);
         int top = Math.round(y);
         int width = Math.round(x + w) - left;
         int height = Math.round(y + h) - top;
+        RenderHints hints = events.hints();
+        if ((ox != 0 || oy != 0) && hints != RenderHints.NONE) {
+            if (hints.shadowShape() != null) hints = hints.withShadowShape(hints.shadowShape().offset(-ox, -oy));
+            if (hints.shaderGradient() != null && !events.isShaderGradientLocal()) {
+                hints = hints.withShaderGradient(hints.shaderGradient().offset(-ox, -oy));
+            }
+        }
         elements.add(new DisplayItem(id, baseNodeId, type, left, top, width, height, text, color, bgColor, events.attrs(), radius, opacity, tx, ty, sx, sy, rot, trans, animDef, fitMode,
-                (meta == null && events.hints() == RenderHints.NONE ? null : (meta != null ? meta : RenderMeta.EMPTY).withHints(events.hints())), key));
+                (meta == null && hints == RenderHints.NONE ? null : (meta != null ? meta : RenderMeta.EMPTY).withHints(hints)), key));
     }
 
     /**
      * 記憶を作るときだけ {@link #addElement} が受け取る丸める前の {@code (x, y, w, h)} を隣に記録するリスト。
-     * 通常の描画（記憶ヒットや非記憶ビルド）では記録フラグが false のため配列を作らない。
+     * 親相対座標のときは現在の節の原点 {@code (originX, originY)} も保持する。
      */
     static final class CaptureList extends java.util.ArrayList<DisplayItem> {
         private static final float[] EMPTY_COORDS = new float[0];
         boolean capturing;
+        int originX, originY;
         private float[] coords = new float[32];
         private int coordCount;
 
         CaptureList(int initialCapacity) {
             super(initialCapacity);
+        }
+
+        void resetForBuild() {
+            clear();
+            capturing = false;
+            originX = 0;
+            originY = 0;
+            coordCount = 0;
+        }
+
+        void setOrigin(int ox, int oy) {
+            this.originX = ox;
+            this.originY = oy;
         }
 
         void beginCapture() {
@@ -109,10 +139,24 @@ final class PaintSupport {
         }
 
         float[] finishCapture() {
+            return finishCaptureReuse(null);
+        }
+
+        float[] finishCaptureReuse(float[] reuse) {
             capturing = false;
-            float[] out = coordCount == 0 ? EMPTY_COORDS : java.util.Arrays.copyOf(coords, coordCount);
+            int n = coordCount;
             coordCount = 0;
-            return out;
+            if (n == 0) return EMPTY_COORDS;
+            if (reuse != null && reuse.length == n) {
+                System.arraycopy(coords, 0, reuse, 0, n);
+                return reuse;
+            }
+            return java.util.Arrays.copyOf(coords, n);
+        }
+
+        void discardCapture() {
+            capturing = false;
+            coordCount = 0;
         }
 
         void record(float x, float y, float w, float h) {
@@ -160,9 +204,15 @@ final class PaintSupport {
         return radius <= 0 ? 0 : Math.max(0, Math.round(radius + grow));
     }
 
+    static String partId(LayoutBox box, String id, int slot, String suffix) {
+        return box != null && box.node != null && id.equals(box.node.key()) ? box.node.partKey(slot, suffix) : id + suffix;
+    }
+
+    private static final Object FONT_ATTRS_KEY = new Object();
+
     /**
      * 描画側が測定と同じ書体・字の位置を引けるように、書体の照合と字の送りに効く指定を載せる
-     * （太さ・斜体・カーニング・字間）。
+     * （太さ・斜体・カーニング・字間）。算出スタイルだけで決まるため、不変マップをスタイルへメモ化する。
      */
     static void putFontEvents(LayoutBox box, ItemProps events) {
         putFontEvents(box.style, events);
@@ -170,19 +220,39 @@ final class PaintSupport {
 
     /** 算出スタイルを直接渡す版（{@code ::first-line} の断片用）。 */
     static void putFontEvents(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps events) {
+        Map<String, String> cached = style.paintMemoSelf(FONT_ATTRS_KEY, PaintSupport::computeFontAttrs);
+        if (!cached.isEmpty()) events.putBaseAttrs(cached);
+    }
+
+    private static Map<String, String> computeFontAttrs(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
         // 既定値（400 / normal / auto）は載せない。描画側は無ければ既定値として読む
+        String w = null, fs = null, fk = null, ls = null;
+        int count = 0;
         String weight = style.get(CssPropertyIndex.FONT_WEIGHT);
-        if (weight != null && !weight.equals("normal") && !weight.equals("400")) events.put("font-weight", weight);
+        if (weight != null && !weight.equals("normal") && !weight.equals("400")) { w = weight; count++; }
         String fontStyle = style.get(CssPropertyIndex.FONT_STYLE);
-        if (fontStyle != null && !fontStyle.equals("normal")) events.put("font-style", fontStyle);
+        if (fontStyle != null && !fontStyle.equals("normal")) { fs = fontStyle; count++; }
         String kerning = style.get(CssPropertyIndex.FONT_KERNING);
-        if (kerning != null && !kerning.equals("auto")) events.put("font-kerning", kerning);
+        if (kerning != null && !kerning.equals("auto")) { fk = kerning; count++; }
         // 長さの解決は要素ごとには重いので、指定があるときだけ（初期値は normal = 0）
         String spacing = style.get(CssPropertyIndex.LETTER_SPACING);
         if (spacing != null && !spacing.equals("normal") && !spacing.equals("0")) {
             float letterSpacing = style.length(CssPropertyIndex.LETTER_SPACING, 0, 0, 0);
-            if (letterSpacing != 0) events.put("letter-spacing", String.valueOf(letterSpacing));
+            if (letterSpacing != 0) { ls = String.valueOf(letterSpacing); count++; }
         }
+        if (count == 0) return Map.of();
+        if (count == 1) {
+            if (w != null) return Map.of("font-weight", w);
+            if (fs != null) return Map.of("font-style", fs);
+            if (fk != null) return Map.of("font-kerning", fk);
+            return Map.of("letter-spacing", ls);
+        }
+        Map<String, String> out = new java.util.HashMap<>(4);
+        if (w != null) out.put("font-weight", w);
+        if (fs != null) out.put("font-style", fs);
+        if (fk != null) out.put("font-kerning", fk);
+        if (ls != null) out.put("letter-spacing", ls);
+        return Map.copyOf(out);
     }
 
     /** text-align が行に与える水平方向のずれ。 */
@@ -199,25 +269,71 @@ final class PaintSupport {
      * 領域は要素 {@code ownerId} 自身の箱なので、その要素の変形に矩形も付いていく（{@link ClipRect#ownerId()}）。
      */
     static ClipRect intersectClip(ClipRect parent, BoxDecorations.Rect area, Corners r, String ownerId) {
-        float[] own = {area.x(), area.y(), area.x() + area.w(), area.y() + area.h(), 0, 0, 0, 0};
+        return intersectClip(null, parent, area, r, ownerId);
+    }
+
+    static ClipRect intersectClip(List<DisplayItem> elements, ClipRect parent, BoxDecorations.Rect area, Corners r, String ownerId) {
+        float x0 = area.x(), y0 = area.y(), x1 = x0 + area.w(), y1 = y0 + area.h();
+        float rx0 = 0f, rx1 = 0f, rx2 = 0f, rx3 = 0f, ry0 = 0f, ry1 = 0f, ry2 = 0f, ry3 = 0f;
+        boolean ell = false;
         if (r != null) {
-            own[4] = r.topLeft();
-            own[5] = r.topRight();
-            own[6] = r.bottomRight();
-            own[7] = r.bottomLeft();
+            rx0 = r.topLeft(); rx1 = r.topRight(); rx2 = r.bottomRight(); rx3 = r.bottomLeft();
             if (r.isElliptical()) {
-                own = java.util.Arrays.copyOf(own, 12);
-                own[8] = r.topLeftV();
-                own[9] = r.topRightV();
-                own[10] = r.bottomRightV();
-                own[11] = r.bottomLeftV();
+                ell = true;
+                ry0 = r.topLeftV(); ry1 = r.topRightV(); ry2 = r.bottomRightV(); ry3 = r.bottomLeftV();
             }
         }
-        ClipRect merged = ClipRect.fromArray(BoxDecorations.intersectClip(parent == null ? null : parent.toArray(), own)).withOwner(ownerId);
-        // 合成する前の 1 つ 1 つも持つ。持ち主はこの要素（自分の箱で切るクリップは、要素の変形に付いていく）
-        java.util.List<ClipChainPart> chain = new java.util.ArrayList<>(parent == null ? java.util.List.<ClipChainPart>of() : parent.chain());
-        chain.add(new ClipChainPart(own, ownerId));
-        return merged.withChain(chain);
+        int ox = 0, oy = 0;
+        if (elements instanceof CaptureList cap) {
+            ox = cap.originX;
+            oy = cap.originY;
+        }
+        float[] chainOwn = ell
+                ? new float[]{x0 - ox, y0 - oy, x1 - ox, y1 - oy, rx0, rx1, rx2, rx3, ry0, ry1, ry2, ry3}
+                : new float[]{x0 - ox, y0 - oy, x1 - ox, y1 - oy, rx0, rx1, rx2, rx3};
+        return BoxDecorations.intersectClipRect(
+                parent, x0, y0, x1, y1, rx0, rx1, rx2, rx3, ry0, ry1, ry2, ry3,
+                ell, ownerId, ClipRect.appendChain(parent, chainOwn, ownerId, ox, oy));
+    }
+
+    /**
+     * 箱の {@code m.clip} が新しい {@code newBoxClip} に変わったとき（連鎖は同じ・ページ AABB だけ変化）、
+     * 内側の部分クリップ（inset-shadow / 背景画像など）の連鎖を維持したままページ AABB だけを更新する。
+     */
+    static ClipRect rebaseSubClip(ClipRect partClip, ClipRect oldBoxClip, ClipRect newBoxClip, int curOx, int curOy) {
+        return rebaseSubClip(partClip, oldBoxClip, newBoxClip, curOx, curOy, 0f, 0f);
+    }
+
+    /**
+     * {@link #rebaseSubClip(ClipRect, ClipRect, ClipRect, int, int)} の拡張版。親のノードに対する相対位置が
+     * 動いた（箱自身が自分のノードを持たない）とき、末尾の自箱クリップ座標も {@code (shiftX, shiftY)} だけ進める。
+     */
+    static ClipRect rebaseSubClip(ClipRect partClip, ClipRect oldBoxClip, ClipRect newBoxClip,
+                                  int nextSubOx, int nextSubOy, float shiftX, float shiftY) {
+        if (partClip == null) return null;
+        if (oldBoxClip == partClip || (oldBoxClip != null && oldBoxClip.equals(partClip))) return newBoxClip;
+        int baseLen = oldBoxClip == null ? 0 : oldBoxClip.chain().size();
+        if (partClip.chain().size() == baseLen + 1) {
+            ClipChainPart last = partClip.chain().get(baseLen);
+            float[] r = last.rect();
+            float[] nr;
+            if (shiftX == 0f && shiftY == 0f) {
+                nr = r;
+            } else {
+                nr = r.clone();
+                nr[0] += shiftX;
+                nr[1] += shiftY;
+                nr[2] += shiftX;
+                nr[3] += shiftY;
+            }
+            boolean ell = nr.length >= 12;
+            return BoxDecorations.intersectClipRect(
+                    newBoxClip, nr[0] + nextSubOx, nr[1] + nextSubOy, nr[2] + nextSubOx, nr[3] + nextSubOy,
+                    nr[4], nr[5], nr[6], nr[7],
+                    ell ? nr[8] : 0f, ell ? nr[9] : 0f, ell ? nr[10] : 0f, ell ? nr[11] : 0f,
+                    ell, last.ownerId(), ClipRect.appendChain(newBoxClip, nr, last.ownerId(), nextSubOx, nextSubOy));
+        }
+        return partClip;
     }
 
     /** 角丸の半径は描画側の整数値（{@link Corners}）なので、解いた長さをここで丸める。 */

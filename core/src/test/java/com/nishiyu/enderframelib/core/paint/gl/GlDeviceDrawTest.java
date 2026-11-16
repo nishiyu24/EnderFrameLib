@@ -289,6 +289,8 @@ class GlDeviceDrawTest {
         u.putFloat(0).putFloat(0).putFloat(0).putFloat(0);
         u.putFloat(1).putFloat(1).putFloat(1).putFloat(0);
         u.putInt(baseInstance);
+        u.putInt(0); // uExtraCount（追加ライト無し）
+        u.position(ShaderPrograms.SCENE3D.uniformBytes()); // uExtra[24] は 0 のまま
         u.flip();
         return u;
     }
@@ -330,7 +332,7 @@ class GlDeviceDrawTest {
         GpuFrame f = d.beginFrame();
         GpuPass pass = f.beginPass(color, depth, LoadOp.CLEAR, 0x00000000, 1.0f, null);
         GpuBuffer[] recs = {inst, inst};
-        GpuTexture[] noTex = {};
+        GpuTexture[] noTex = {d.createTexture(TextureDesc.rgba8(1, 1, false))}; // uBaseTex（無印の材質は読まない）
         pass.bind(p, new GpuBindings(recs, noTex, scene3dUniforms(0)));
         pass.bindMesh(vb, ib);
         pass.drawIndexedInstanced(6, 0L, 1, 0, 0);

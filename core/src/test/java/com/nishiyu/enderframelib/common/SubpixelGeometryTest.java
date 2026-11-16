@@ -78,9 +78,9 @@ public class SubpixelGeometryTest {
         List<DisplayItem> elements = new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState())
                 .render(root);
 
-        DisplayItem a = findElement(elements, "a_bg");
-        DisplayItem b = findElement(elements, "b_bg");
-        DisplayItem c = findElement(elements, "c_bg");
+        DisplayItem a = DisplayItem.resolveAbsolute(elements, findElement(elements, "a_bg"));
+        DisplayItem b = DisplayItem.resolveAbsolute(elements, findElement(elements, "b_bg"));
+        DisplayItem c = DisplayItem.resolveAbsolute(elements, findElement(elements, "c_bg"));
         // 幅をそれぞれ丸めると 33 + 33 + 33 で 1px 足りなくなる。辺を丸めれば隣と接し、合計は親の幅に一致する
         assertEquals(a.x() + a.width(), b.x(), "a と b の間に隙間か重なりがある");
         assertEquals(b.x() + b.width(), c.x(), "b と c の間に隙間か重なりがある");

@@ -101,24 +101,26 @@ public final class StyleAnimator {
         if (!hasEntries && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;
 
         synchronized (this) {
-            Entry entry = entries.get(node);
-            if (entry == null && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;
+            Entry existing = entries.get(node);
+            if (existing == null && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;
 
-            ComputedStyle changeFrom = entry != null && entry.target != null ? entry.target : before;
-            if (entry == null) entry = new Entry();
+            ComputedStyle changeFrom = existing != null && existing.target != null ? existing.target : before;
+            Entry entry = existing != null ? existing : new Entry();
 
             if (changeFrom != null && changeFrom != target) {
                 startTransitions(entry, changeFrom, target, parentStyle, now);
             }
             updateAnimation(entry, target, keyframes, now);
-            entry.target = target;
-            entry.settledReported = false;
 
             if (entry.transitions.isEmpty() && entry.animation == null) {
-                entries.remove(node);
-                hasEntries = !entries.isEmpty();
+                if (existing != null) {
+                    entries.remove(node);
+                    hasEntries = !entries.isEmpty();
+                }
             } else {
-                entries.put(node, entry);
+                entry.target = target;
+                entry.settledReported = false;
+                if (existing == null) entries.put(node, entry);
                 hasEntries = true;
             }
         }

@@ -25,6 +25,9 @@ public final class Scene3DTags {
     /** 表示リスト項目へ載せる、シーンの種類（ビルトイン 3D。ホストの {@code <mc-scene>} と区別する）。 */
     public static final String KIND_ATTR = "data-scene-kind";
 
+    /** 表示リスト項目へ載せる、ドラッグでカメラを回せるか（{@code <scene-3d data-orbit>}）。値は {@code "true"}。 */
+    public static final String ORBIT_ATTR = "data-scene-orbit";
+
     /** {@link #KIND_ATTR} の値。 */
     public static final String KIND_3D = "3d";
 

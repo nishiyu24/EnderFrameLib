@@ -68,7 +68,13 @@ public class HtmlNode implements Node {
     public final String tag;
 
     // attrs を真のデータソース（Single Source of Truth）とする。id の増減はドキュメントの索引に反映される
-    public final Map<String, String> attrs = new AttributeMap();
+    private final AttributeMap attrMap = new AttributeMap();
+    public final Map<String, String> attrs = attrMap;
+
+    /** {@code on*} イベント属性を 1 つでも持つか（走査時の反復子確保を避けるための O(attrs) 無確保判定）。 */
+    public boolean hasEventAttributes() {
+        return attrMap.hasEventAttribute();
+    }
 
     /** 子の増減は、接続中のドキュメントの id 索引に反映される（{@code children} を直接触る経路も含む）。 */
     public final List<HtmlNode> children = new ChildList();
@@ -90,6 +96,9 @@ public class HtmlNode implements Node {
     private DocumentArena rootArena;
     /** 明示 id の無い節の鍵（{@code ~番号}）。番号を振り直したら捨てる。 */
     private String derivedKey;
+    private String scrollContentKeyBase, scrollContentKeyCache;
+    private String partKeyBase;
+    private String[] partKeyCache;
     /** class 属性のトークンを atom にしたもの。属性が変わるたびに 1 回だけ作り直す。 */
     private int[] classAtoms = NO_ATOMS;
     private static final int[] NO_ATOMS = new int[0];
@@ -675,6 +684,27 @@ public class HtmlNode implements Node {
         return k;
     }
 
+    /** {@link #key()} に {@code "_scrollc"} を付けたスクロール内容ノード用 ID をキャッシュして返す。 */
+    public String scrollContentKey() {
+        String k = key();
+        if (scrollContentKeyBase == k && scrollContentKeyCache != null) return scrollContentKeyCache;
+        scrollContentKeyBase = k;
+        return scrollContentKeyCache = k + "_scrollc";
+    }
+
+    /** 描画部品 ID（{@code id + suffix}）をキャッシュして返す（スロット 0..25）。 */
+    public String partKey(int slot, String suffix) {
+        String k = key();
+        String[] cache = partKeyCache;
+        if (partKeyBase != k || cache == null) {
+            partKeyBase = k;
+            partKeyCache = cache = new String[26];
+        }
+        String hit = cache[slot];
+        if (hit != null) return hit;
+        return cache[slot] = k + suffix;
+    }
+
     /** {@code ~番号} の鍵が指す節をこの木のアリーナから引く。鍵が派生鍵の形でなければ null。 */
     private HtmlNode resolveDerivedKey(String key) {
         if (key.length() < 2 || key.length() > 12 || key.charAt(0) != DERIVED_KEY_PREFIX) return null;
@@ -974,6 +1004,14 @@ public class HtmlNode implements Node {
                 int base = i << 1;
                 action.accept(pairs[base], pairs[base + 1]);
             }
+        }
+
+        boolean hasEventAttribute() {
+            for (int i = 0; i < count; i++) {
+                String k = pairs[i << 1];
+                if (k != null && k.regionMatches(true, 0, "on", 0, 2)) return true;
+            }
+            return false;
         }
 
         private <R> R trackingId(Supplier<R> mutation) {

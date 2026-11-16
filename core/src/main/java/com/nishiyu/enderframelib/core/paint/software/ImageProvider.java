@@ -8,6 +8,7 @@ import com.nishiyu.enderframelib.core.media.NativeVideoApi;
 import com.nishiyu.enderframelib.core.media.VideoPlayer;
 import com.nishiyu.enderframelib.core.net.MediaUrls;
 import com.nishiyu.enderframelib.core.raster.GifAnimation;
+import com.nishiyu.enderframelib.core.raster.DecodedBitmap;
 import com.nishiyu.enderframelib.core.raster.ImageDecoder;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.raster.RasterImageStore;
@@ -275,7 +276,7 @@ public interface ImageProvider {
         private Image decodeBitmap(String src) throws IOException {
             byte[] bytes = readBytes(src);
             if (bytes == null) return null;
-            ImageDecoder.Bitmap bmp = ImageDecoder.standard().decode(bytes);
+            DecodedBitmap bmp = ImageDecoder.standard().decode(bytes);
             if (bmp == null) return null;
             return new Image(Pixmap.fromStraightArgb(bmp.width(), bmp.height(), bmp.argb()), bmp.width(), bmp.height());
         }

@@ -183,13 +183,20 @@ public final class GlDevice implements GpuDevice {
         return meshVao;
     }
 
+    private Frame reusableFrame;
+
     @Override
     public GpuFrame beginFrame() {
         if (closed) throw new IllegalStateException("closed");
         if (inFrame) throw new IllegalStateException("フレームが開いたまま");
         inFrame = true;
         fences.await(fences.current());
-        return new Frame();
+        if (reusableFrame == null) {
+            reusableFrame = new Frame();
+        } else {
+            reusableFrame.reset();
+        }
+        return reusableFrame;
     }
 
     @Override
@@ -301,6 +308,12 @@ public final class GlDevice implements GpuDevice {
 
         PassImpl(Frame frame) {
             this.frame = frame;
+        }
+
+        void reset() {
+            boundPipeline = null;
+            done = false;
+            bound = false;
         }
 
         @Override
@@ -807,48 +820,83 @@ public final class GlDevice implements GpuDevice {
     // ------------------------------------------------------------------ フレーム
 
     private final class Frame implements GpuFrame {
-        private final int prevFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
-        private final int prevReadFbo = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
-        private final int prevDrawFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        private int prevFbo;
+        private int prevReadFbo;
+        private int prevDrawFbo;
         private final int[] prevViewport = new int[4];
-        private final boolean prevScissorTest = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
+        private boolean prevScissorTest;
         private final int[] prevScissor = new int[4];
-        private final int prevTex = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
-        private final int prevAlign = GL11.glGetInteger(GL11.GL_UNPACK_ALIGNMENT);
-        private final int prevPackAlign = GL11.glGetInteger(GL11.GL_PACK_ALIGNMENT);
-        private final int prevUnpackRow = GL11.glGetInteger(GL11.GL_UNPACK_ROW_LENGTH);
-        private final int prevPackRow = GL11.glGetInteger(GL11.GL_PACK_ROW_LENGTH);
+        private int prevTex;
+        private int prevAlign;
+        private int prevPackAlign;
+        private int prevUnpackRow;
+        private int prevPackRow;
         private final float[] prevClear = new float[4];
         private final boolean[] prevMask = new boolean[4];
-        private final int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
-        private final int prevVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
-        private final int prevArrayBuf = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
-        private final int prevElementBuf = GL11.glGetInteger(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
-        private final int prevUniformBuf = GL11.glGetInteger(GL31.GL_UNIFORM_BUFFER_BINDING);
-        private final int prevUniformBuf0 = GL30.glGetIntegeri(GL31.GL_UNIFORM_BUFFER_BINDING, 0);
-        private final boolean prevBlend = GL11.glIsEnabled(GL11.GL_BLEND);
-        private final int[] prevBlendFunc = {GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB), GL11.glGetInteger(GL14.GL_BLEND_DST_RGB),
-                GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA), GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA)};
-        private final boolean prevDepthTest = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
-        private final boolean prevDepthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
-        private final boolean prevCullFace = GL11.glIsEnabled(GL11.GL_CULL_FACE);
-        private final int prevCullMode = GL11.glGetInteger(GL11.GL_CULL_FACE_MODE);
-        private final int prevFrontFace = GL11.glGetInteger(GL11.GL_FRONT_FACE);
-        final int prevActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        private int prevProgram;
+        private int prevVao;
+        private int prevArrayBuf;
+        private int prevElementBuf;
+        private int prevUniformBuf;
+        private int prevUniformBuf0;
+        private boolean prevBlend;
+        private final int[] prevBlendFunc = new int[4];
+        private boolean prevDepthTest;
+        private boolean prevDepthMask;
+        private boolean prevCullFace;
+        private int prevCullMode;
+        private int prevFrontFace;
+        int prevActiveTexture;
         private final int[] prevUnitTex = new int[32];
         private final int[] prevUnitBufTex = new int[32];
+        private final int[] fullScissor = new int[4];
+        private final PassImpl reusablePass = new PassImpl(this);
         private int touched2dMask;
         private int touchedBufMask;
         boolean passOpen;
         private boolean ended;
 
         Frame() {
+            reset();
+        }
+
+        void reset() {
+            prevFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+            prevReadFbo = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+            prevDrawFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
             GL11.glGetIntegerv(GL11.GL_VIEWPORT, prevViewport);
+            prevScissorTest = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
             GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, prevScissor);
+            prevTex = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+            prevAlign = GL11.glGetInteger(GL11.GL_UNPACK_ALIGNMENT);
+            prevPackAlign = GL11.glGetInteger(GL11.GL_PACK_ALIGNMENT);
+            prevUnpackRow = GL11.glGetInteger(GL11.GL_UNPACK_ROW_LENGTH);
+            prevPackRow = GL11.glGetInteger(GL11.GL_PACK_ROW_LENGTH);
             GL11.glGetFloatv(GL11.GL_COLOR_CLEAR_VALUE, prevClear);
             scratchMask.clear();
             GL11.glGetBooleanv(GL11.GL_COLOR_WRITEMASK, scratchMask);
             for (int i = 0; i < 4; i++) prevMask[i] = scratchMask.get(i) != 0;
+            prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            prevVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+            prevArrayBuf = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+            prevElementBuf = GL11.glGetInteger(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
+            prevUniformBuf = GL11.glGetInteger(GL31.GL_UNIFORM_BUFFER_BINDING);
+            prevUniformBuf0 = GL30.glGetIntegeri(GL31.GL_UNIFORM_BUFFER_BINDING, 0);
+            prevBlend = GL11.glIsEnabled(GL11.GL_BLEND);
+            prevBlendFunc[0] = GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB);
+            prevBlendFunc[1] = GL11.glGetInteger(GL14.GL_BLEND_DST_RGB);
+            prevBlendFunc[2] = GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA);
+            prevBlendFunc[3] = GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA);
+            prevDepthTest = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
+            prevDepthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
+            prevCullFace = GL11.glIsEnabled(GL11.GL_CULL_FACE);
+            prevCullMode = GL11.glGetInteger(GL11.GL_CULL_FACE_MODE);
+            prevFrontFace = GL11.glGetInteger(GL11.GL_FRONT_FACE);
+            prevActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+            touched2dMask = 0;
+            touchedBufMask = 0;
+            passOpen = false;
+            ended = false;
             GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
             GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
             GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
@@ -894,7 +942,13 @@ public final class GlDevice implements GpuDevice {
             if (dt != null && (dt.format != TextureFormat.DEPTH24 || dt.w != t.w || dt.h != t.h)) {
                 throw new IllegalArgumentException("深度ターゲットが一致しない");
             }
-            int[] sc = scissor == null ? new int[]{0, 0, t.w, t.h} : scissor;
+            int[] sc;
+            if (scissor == null) {
+                sc = fullScissor;
+                sc[0] = 0; sc[1] = 0; sc[2] = t.w; sc[3] = t.h;
+            } else {
+                sc = scissor;
+            }
             checkRegion(t, sc[0], sc[1], sc[2], sc[3]);
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, t.fbo(dt));
             GL11.glViewport(0, 0, t.w, t.h);
@@ -915,7 +969,8 @@ public final class GlDevice implements GpuDevice {
             GL11.glEnable(GL11.GL_SCISSOR_TEST);
             GL11.glScissor(sc[0], t.h - (sc[1] + sc[3]), sc[2], sc[3]);
             passOpen = true;
-            return new PassImpl(this);
+            reusablePass.reset();
+            return reusablePass;
         }
 
         @Override

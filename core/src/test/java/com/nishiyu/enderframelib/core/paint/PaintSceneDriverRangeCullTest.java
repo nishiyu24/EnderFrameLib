@@ -103,6 +103,8 @@ class PaintSceneDriverRangeCullTest {
 
     /** 外した項目は全て画面外判定に当たり、判定に当たらない項目は全て残る。 */
     private static void assertExact(List<DisplayItem> items, Result on, Result off, double y0, double y1) {
+        java.util.Map<String, DisplayItem> byId = new java.util.HashMap<>();
+        for (DisplayItem it : items) byId.put(it.id(), it);
         Set<Integer> kept = new HashSet<>(on.rec.drawn);
         int dropped = 0;
         for (int i : off.rec.drawn) {
@@ -114,7 +116,8 @@ class PaintSceneDriverRangeCullTest {
             if (kept.contains(i)) continue;
             dropped++;
             assertNotEquals(ElementType.SCENE, el.type());
-            assertTrue(offscreen(el, y0, y1), "画面内の項目を外した: " + i + " y=" + el.y() + " h=" + el.height());
+            DisplayItem abs = DisplayItem.resolveAbsolute(byId, el);
+            assertTrue(offscreen(abs, y0, y1), "画面内の項目を外した: " + i + " y=" + abs.y() + " h=" + abs.height());
         }
         assertTrue(on.rec.drawn.size() + dropped == off.rec.drawn.size(), "外した以外の項目は同じ順で描かれる");
         List<Integer> expect = new ArrayList<>(off.rec.drawn);
@@ -236,10 +239,12 @@ class PaintSceneDriverRangeCullTest {
         List<DisplayItem> items = items(html(400, ""));
         Result on = run(items, 0, 240, true, false);
         Result off = run(items, 0, 240, false, false);
+        java.util.Map<String, DisplayItem> byId = new java.util.HashMap<>();
+        for (DisplayItem it : items) byId.put(it.id(), it);
         Set<Integer> kept = new HashSet<>(on.rec.drawn);
         for (int i : off.rec.drawn) {
             if (kept.contains(i)) continue;
-            DisplayItem el = items.get(i);
+            DisplayItem el = DisplayItem.resolveAbsolute(byId, items.get(i));
             assertTrue(i >= off.rec.from && i < off.rec.to && offscreen(el, 0, 240), "範囲内の画面外だけが落ちる: " + i);
         }
         assertEquals(List.of("begin", "end"), on.rec.log);

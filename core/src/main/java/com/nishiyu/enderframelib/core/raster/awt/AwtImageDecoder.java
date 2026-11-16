@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.raster.awt;
 
+import com.nishiyu.enderframelib.core.raster.DecodedBitmap;
 import com.nishiyu.enderframelib.core.raster.ImageDecoder;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import org.w3c.dom.Node;
@@ -20,11 +21,11 @@ import java.util.List;
 public final class AwtImageDecoder implements ImageDecoder {
 
     @Override
-    public Bitmap decode(byte[] bytes) throws IOException {
+    public DecodedBitmap decode(byte[] bytes) throws IOException {
         BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
         if (img == null) return null;
         int w = img.getWidth(), h = img.getHeight();
-        return new Bitmap(w, h, img.getRGB(0, 0, w, h, null, 0, w));
+        return new DecodedBitmap(w, h, img.getRGB(0, 0, w, h, null, 0, w));
     }
 
     @Override

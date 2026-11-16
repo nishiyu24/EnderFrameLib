@@ -29,6 +29,9 @@ import java.util.Map;
  * 解析用の一時領域はヒープ配列だけで、ダイレクトメモリは {@link GeometryPool}・{@link Scene3DArena} が持つ分だけ増える。
  */
 public final class GltfBinaryLoader {
+    /** 復号した画像の画素数の上限（これを超える画像は画像なしで読み込む）。 */
+    private static final long MAX_IMAGE_PIXELS = 4096L * 4096L;
+
     private GltfBinaryLoader() {}
 
     /** 読み込めなかった理由（形式の誤り・未対応・上限超え）。 */
@@ -86,6 +89,8 @@ public final class GltfBinaryLoader {
         int emissiveRgb;
         BlendMode3D blend = BlendMode3D.OPAQUE;
         boolean doubleSided, unlit;
+        Texture3D map;      // baseColorTexture（無い・読めないときは null）
+        boolean mapRepeat = true;
     }
 
     private static final class Parsed {
@@ -146,7 +151,7 @@ public final class GltfBinaryLoader {
         Ctx c = new Ctx(root, bin);
         Parsed out = new Parsed();
         JsonArray mats = arr(root, "materials");
-        if (mats != null) for (JsonElement m : mats) out.materials.add(material(m.getAsJsonObject()));
+        if (mats != null) for (JsonElement m : mats) out.materials.add(material(c, m.getAsJsonObject()));
         JsonArray meshes = arr(root, "meshes");
         if (meshes != null) {
             for (JsonElement m : meshes) out.meshes.add(mesh(c, m.getAsJsonObject(), out));
@@ -293,7 +298,7 @@ public final class GltfBinaryLoader {
         return (float) Math.sqrt(x * x + y * y + z * z);
     }
 
-    private static Mat material(JsonObject o) {
+    private static Mat material(Ctx c, JsonObject o) {
         Mat m = new Mat();
         JsonObject pbr = obj(o, "pbrMetallicRoughness");
         float[] base = {1, 1, 1, 1};
@@ -305,6 +310,11 @@ public final class GltfBinaryLoader {
             }
             if (pbr.has("metallicFactor")) m.metallic = clamp01(pbr.get("metallicFactor").getAsFloat());
             if (pbr.has("roughnessFactor")) m.roughness = clamp01(pbr.get("roughnessFactor").getAsFloat());
+            JsonObject bt = obj(pbr, "baseColorTexture");
+            // TEXCOORD_0 だけ読む（texCoord が 1 以上の材質は画像なしで読み込む）
+            if (bt != null && bt.has("index") && (!bt.has("texCoord") || bt.get("texCoord").getAsInt() == 0)) {
+                m.map = c.baseColorImage(bt.get("index").getAsInt(), m);
+            }
         }
         m.argb = (byteOf(base[3]) << 24) | (byteOf(srgb(base[0])) << 16) | (byteOf(srgb(base[1])) << 8) | byteOf(srgb(base[2]));
         JsonObject ext = obj(o, "extensions");
@@ -441,6 +451,82 @@ public final class GltfBinaryLoader {
         Ctx(JsonObject root, byte[] glbBin) {
             this.root = root;
             this.glbBin = glbBin;
+        }
+
+        private final java.util.Map<Integer, Texture3D> images = new java.util.HashMap<>();
+        private final java.util.Set<Integer> failedImages = new java.util.HashSet<>();
+
+        /**
+         * {@code textures[index]} の画像を {@link Texture3D} にする（同じ画像は 1 回だけ復号して共有）。{@code m.mapRepeat} へ
+         * sampler の wrap を写す（既定は REPEAT。S・T の片方でも REPEAT でなければ張り付き）。復号できない・大きすぎる画像は
+         * null（モデルは画像なしで読む）。
+         */
+        Texture3D baseColorImage(int textureIndex, Mat m) {
+            JsonArray texs = arr(root, "textures");
+            if (texs == null) throw new GltfException("no textures");
+            check(textureIndex, texs.size(), "texture");
+            JsonObject t = texs.get(textureIndex).getAsJsonObject();
+            m.mapRepeat = true;
+            if (t.has("sampler")) {
+                JsonArray ss = arr(root, "samplers");
+                int si = t.get("sampler").getAsInt();
+                if (ss == null) throw new GltfException("no samplers");
+                check(si, ss.size(), "sampler");
+                JsonObject s = ss.get(si).getAsJsonObject();
+                int ws = s.has("wrapS") ? s.get("wrapS").getAsInt() : 10497;
+                int wt = s.has("wrapT") ? s.get("wrapT").getAsInt() : 10497;
+                m.mapRepeat = ws == 10497 && wt == 10497;
+            }
+            if (!t.has("source")) return null;
+            return image(t.get("source").getAsInt());
+        }
+
+        private Texture3D image(int i) {
+            Texture3D cached = images.get(i);
+            if (cached != null) return cached;
+            if (failedImages.contains(i)) return null;
+            JsonArray imgs = arr(root, "images");
+            if (imgs == null) throw new GltfException("no images");
+            check(i, imgs.size(), "image");
+            JsonObject o = imgs.get(i).getAsJsonObject();
+            byte[] bytes = null;
+            String uri = str(o, "uri");
+            if (uri != null) {
+                if (!uri.startsWith("data:")) throw new GltfException("external image files are not supported: " + uri);
+                int comma = uri.indexOf(',');
+                if (comma < 0 || !uri.substring(0, comma).endsWith(";base64")) throw new GltfException("only base64 data URIs are supported");
+                try {
+                    bytes = Base64.getDecoder().decode(uri.substring(comma + 1));
+                } catch (IllegalArgumentException e) {
+                    throw new GltfException("invalid base64 in image " + i);
+                }
+            } else if (o.has("bufferView")) {
+                JsonArray bvs = arr(root, "bufferViews");
+                int bvi = o.get("bufferView").getAsInt();
+                if (bvs == null) throw new GltfException("no bufferViews");
+                check(bvi, bvs.size(), "bufferView");
+                JsonObject bv = bvs.get(bvi).getAsJsonObject();
+                byte[] buf = buffer(bv.get("buffer").getAsInt());
+                long off = bv.has("byteOffset") ? bv.get("byteOffset").getAsLong() : 0;
+                long len = bv.get("byteLength").getAsLong();
+                if (off < 0 || len < 0 || off + len > buf.length) throw new GltfException("image " + i + " reads outside its buffer");
+                bytes = java.util.Arrays.copyOfRange(buf, (int) off, (int) (off + len));
+            }
+            Texture3D tex = null;
+            if (bytes != null) {
+                try {
+                    com.nishiyu.enderframelib.core.raster.DecodedBitmap bmp =
+                            com.nishiyu.enderframelib.core.raster.ImageDecoder.standard().decode(bytes);
+                    if (bmp != null && (long) bmp.width() * bmp.height() <= MAX_IMAGE_PIXELS) {
+                        tex = new Texture3D(bmp.width(), bmp.height(), bmp.argb());
+                    }
+                } catch (java.io.IOException | RuntimeException e) {
+                    tex = null; // 読めない画像は無いものとして扱う
+                }
+            }
+            if (tex == null) failedImages.add(i);
+            else images.put(i, tex);
+            return tex;
         }
 
         byte[] buffer(int i) {
@@ -586,7 +672,7 @@ public final class GltfBinaryLoader {
         for (int i = 0; i < mats.length; i++) {
             Mat m = p.materials.get(i);
             mats[i] = world.materials().register(m.argb, m.metallic, m.roughness, m.emissiveRgb, m.emissiveStrength,
-                    m.blend, m.doubleSided, m.unlit);
+                    m.blend, m.doubleSided, m.unlit, m.map, m.mapRepeat);
         }
         MaterialDesc[] defaultMat = new MaterialDesc[1];
         MeshHandle[][] handles = new MeshHandle[p.meshes.size()][];

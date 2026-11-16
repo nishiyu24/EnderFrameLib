@@ -965,6 +965,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
             recordOwner = null;
             return GpuLayerAttempt.endScroll(route.current(), retainInfo.get(nodeIndex));
         }
+
+        @Override
+        public boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) {
+            return SoftwareRenderBackend.this.tryPatchItems(items, indices, count);
+        }
     };
 
     // ------------------------------------------------------------------ スクロール層の保持
@@ -982,7 +987,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private static String ownerKeyOf(DisplayItem node) {
         String id = node.id();
-        return id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX) ? id.substring(0, id.length() - PaintSceneDriver.SCROLL_CONTENT_SUFFIX.length()) : id;
+        int suffixLen = PaintSceneDriver.SCROLL_CONTENT_SUFFIX.length();
+        if (id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX)) {
+            String pid = node.hints().parentId();
+            if (pid != null && pid.length() == id.length() - suffixLen) return pid;
+            return id.substring(0, id.length() - suffixLen);
+        }
+        return id;
     }
 
     private String cachedOwnerKeyOf(DisplayItem node, int nodeIndex) {
@@ -1244,6 +1255,23 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float opacity = res.residual() * flat;
         if (opacity <= 0.005f) return;
         AnimatedValues anim = res.anim();
+        boolean canFastStatic = index >= 0 && !recordExtents && !partialActive && recordOwner == null && driver.idleAt(index);
+        GpuSink spanSink = null;
+        if (canFastStatic && index < spanEl.length && spanEl[index] == el && spanRes[index] == res) {
+            if (spanCulled[index]) {
+                if (cullOffscreen && fastClipUnchanged(index, spanClip[index])) {
+                    culledItems++;
+                    return;
+                }
+            } else if (glReplay && replayableType(el.type()) && spanFlat[index] == flat
+                    && fastClipUnchanged(index, spanClip[index])) {
+                spanSink = route.current();
+                if (spanSink != null && spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
+                    cpuOpsOrdered = cpuOps;
+                    return;
+                }
+            }
+        }
         // 保持層への記録中の判定は層の実体の範囲だけで決まりクリップを要さない。記録中の buildClip は使い回しの覚えが無く
         // 毎回作り直す（確保が出る）ので、画面外項目はその前に捨てる
         if (cullOffscreen && recordOwner != null && outsideClip(el, res.pose(), null)) {
@@ -1260,19 +1288,25 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         if (clip.empty()) return;
         if (cullOffscreen && outsideClip(el, res.pose(), clip)) {
+            if (canFastStatic) {
+                ensureSpanKeys(index);
+                spanEl[index] = el;
+                spanRes[index] = res;
+                spanClip[index] = clip;
+                spanCulled[index] = true;
+            }
             culledItems++;
             return;
         }
 
         // 項目単位の再生（GL）: 止まっている項目が、前フレームと同じ入力（項目・解決結果・クリップ・不透明度）なら、GPU 側の出力を
         // 計算せずに前進させる。前提は GpuSink.spanReplay。CPU 描画がそのフレームでまだ無いことも条件（描画順の整合のため）
-        GpuSink spanSink = null;
-        if (glReplay && index >= 0 && replayableType(el.type()) && !recordExtents && !partialActive && recordOwner == null
-                && driver.idleAt(index)) {
-            spanSink = route.current();
+        if (glReplay && index >= 0 && replayableType(el.type()) && !recordExtents && !partialActive && recordOwner == null) {
+            boolean idle = driver.idleAt(index);
+            if (spanSink == null) spanSink = route.current();
             if (spanSink != null) {
                 ensureSpanKeys(index);
-                if (spanEl[index] == el && spanRes[index] == res && spanClip[index] == clip && spanFlat[index] == flat) {
+                if (idle && !spanCulled[index] && spanEl[index] == el && spanRes[index] == res && spanClip[index] == clip && spanFlat[index] == flat) {
                     if (spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
                         cpuOpsOrdered = cpuOps;
                         return;
@@ -1282,6 +1316,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
         } else if (index >= 0 && index < spanEl.length) {
             spanEl[index] = null;
+            spanCulled[index] = false;
         }
         long cpuBefore = cpuOps;
         drawItemBody(el, anim, res, clip, opacity);
@@ -1293,10 +1328,105 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 spanRes[index] = res;
                 spanClip[index] = clip;
                 spanFlat[index] = flat;
+                spanCulled[index] = false;
             } else {
                 spanEl[index] = null;
+                spanCulled[index] = false;
             }
         }
+    }
+
+    private boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) {
+        if (!PaintSceneDriver.reuseIdlePoses || !glReplay) return false;
+        if (recordExtents || partialActive || recordOwner != null) return false;
+        GpuSink sink = route.current();
+        if (sink == null) return false;
+        if (!sink.beginDiffPatch()) return false;
+        syncClipGeneration();
+        boolean okAll = true;
+        try {
+            for (int k = 0; k < count; k++) {
+                int index = indices[k];
+                DisplayItem el = items.get(index);
+                if (el.type() == ElementType.NODE) {
+                    Resolved before = driver.peekPrevRes(index);
+                    Resolved res = driver.resolveAt(index);
+                    if (before == null || before != res || !res.groups().isEmpty()) {
+                        okAll = false;
+                        break;
+                    }
+                    continue;
+                }
+                Resolved res = driver.resolveAt(index);
+                if (!res.groups().isEmpty()) {
+                    okAll = false;
+                    break;
+                }
+                if (!replayableType(el.type())) {
+                    okAll = false;
+                    break;
+                }
+                float flat = 1f;
+                if (index < spanEl.length && spanEl[index] != null && !spanCulled[index] && spanFlat[index] != 1f) {
+                    okAll = false;
+                    break;
+                }
+                boolean visible = res.opacity() > 0.005f && res.residual() > 0.005f;
+                Clip clip = visible ? buildClip(index, el, res.anim()) : null;
+                boolean culled = !visible || clip.empty() || (cullOffscreen && outsideClip(el, res.pose(), clip));
+                if (culled) {
+                    if (sink.canPatchSpan(index)) {
+                        if (!sink.patchSpanBegin(index) || !sink.patchSpanEnd(index, true)) {
+                            okAll = false;
+                            break;
+                        }
+                        ensureSpanKeys(index);
+                        spanEl[index] = el;
+                        spanRes[index] = res;
+                        spanClip[index] = clip;
+                        spanFlat[index] = flat;
+                        spanCulled[index] = false;
+                    } else if (index < spanEl.length && spanEl[index] != null && !spanCulled[index]) {
+                        okAll = false;
+                        break;
+                    } else if (clip != null) {
+                        ensureSpanKeys(index);
+                        spanEl[index] = el;
+                        spanRes[index] = res;
+                        spanClip[index] = clip;
+                        spanFlat[index] = flat;
+                        spanCulled[index] = true;
+                    }
+                    continue;
+                }
+                if (!sink.patchSpanBegin(index)) {
+                    okAll = false;
+                    break;
+                }
+                long cpuBefore = cpuOps;
+                drawItemBody(el, res.anim(), res, clip, res.residual());
+                if (cpuOps != cpuBefore || !sink.patchSpanEnd(index, true)) {
+                    okAll = false;
+                    break;
+                }
+                ensureSpanKeys(index);
+                spanEl[index] = el;
+                spanRes[index] = res;
+                spanClip[index] = clip;
+                spanFlat[index] = flat;
+                spanCulled[index] = false;
+            }
+        } catch (RuntimeException ex) {
+            sink.abortDiffPatch();
+            throw ex;
+        }
+        if (!okAll) {
+            sink.abortDiffPatch();
+            return false;
+        }
+        sink.endDiffPatch();
+        cpuOpsOrdered = cpuOps;
+        return true;
     }
 
     /** CPU の図形描画を行った回数（項目単位の再生が、項目の描画に CPU 描画が混じったかを知るため）。 */
@@ -1309,6 +1439,21 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private Resolved[] spanRes = new Resolved[0];
     private Clip[] spanClip = new Clip[0];
     private float[] spanFlat = new float[0];
+    private boolean[] spanCulled = new boolean[0];
+
+    private boolean fastClipUnchanged(int index, Clip cachedClip) {
+        if (cachedClip == null || index >= clipCache.length) return false;
+        ClipEntry ce = clipCache[index];
+        if (ce == null || ce.clip != cachedClip || ce.w != raster.targetWidth() || ce.h != raster.targetHeight()
+                || ce.generation != clipGeneration || ce.version != driver.itemVersion(index)) {
+            return false;
+        }
+        for (int k = 0; k < ce.owner.length; k++) {
+            int ow = ce.owner[k];
+            if ((ow < 0 ? null : driver.resolveAt(ow)) != ce.ownerRes[k]) return false;
+        }
+        return true;
+    }
 
     private void ensureSpanKeys(int index) {
         if (index < spanEl.length) return;
@@ -1317,6 +1462,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         spanRes = java.util.Arrays.copyOf(spanRes, n);
         spanClip = java.util.Arrays.copyOf(spanClip, n);
         spanFlat = java.util.Arrays.copyOf(spanFlat, n);
+        spanCulled = java.util.Arrays.copyOf(spanCulled, n);
     }
 
     /** 再生してよい項目の種類（出力が GPU の図形・字形だけで、画像・入力・時間に依らないもの）。 */
@@ -2001,7 +2147,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     // ------------------------------------------------------------------ 文字
 
     private OutlineFontFace faceFor(DisplayItem el) {
-        String family = el.events() != null ? el.events().get("font-family") : null;
+        String family = el.hints().fontFamily();
+        if (family == null && el.events() != null) family = el.events().get("font-family");
         FontFace f = resources.fonts().resolve(family);
         if (f instanceof OutlineFontFace o) return o;
         f = SystemFonts.system().resolve(family);
@@ -2011,14 +2158,19 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private static FontStyle styleFor(DisplayItem el, float fontPx) {
         Map<String, String> ev = el.events() != null ? el.events() : Map.of();
         int weight = LayoutMetrics.numericWeight(ev.get("font-weight"));
-        String style = ev.getOrDefault("font-style", "normal").trim();
+        String style = ev.get("font-style");
+        boolean italic = style != null && !style.trim().equalsIgnoreCase("normal");
         float letterSpacing = 0f;
-        try {
-            letterSpacing = Float.parseFloat(ev.getOrDefault("letter-spacing", "0"));
-        } catch (NumberFormatException ignored) {
+        String ls = ev.get("letter-spacing");
+        if (ls != null && !ls.isEmpty()) {
+            try {
+                letterSpacing = Float.parseFloat(ls);
+            } catch (NumberFormatException ignored) {
+            }
         }
-        boolean kerning = !"none".equalsIgnoreCase(ev.getOrDefault("font-kerning", "auto").trim());
-        return new FontStyle(fontPx, weight >= 600, !style.equalsIgnoreCase("normal"), letterSpacing, weight, kerning);
+        String fk = ev.get("font-kerning");
+        boolean kerning = fk == null || !"none".equalsIgnoreCase(fk.trim());
+        return new FontStyle(fontPx, weight >= 600, italic, letterSpacing, weight, kerning);
     }
 
     private boolean skipPlaceholder(DisplayItem el) {

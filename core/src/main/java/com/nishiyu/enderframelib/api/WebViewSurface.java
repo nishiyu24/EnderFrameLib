@@ -17,6 +17,14 @@ import org.jetbrains.annotations.Nullable;
 public interface WebViewSurface extends AutoCloseable {
 
     /**
+     * 文書の {@code <scene-3d id="…">} を Java から操作する取っ手。その id の 3D ビューポートが無ければ空。
+     * 文書に書いた子要素と、ここから足したノードは同じ世界に同居する。
+     */
+    default java.util.Optional<com.nishiyu.enderframelib.api.scene3d.Scene3DController> scene3d(String elementId) {
+        return java.util.Optional.empty();
+    }
+
+    /**
      * 直近のフレームの結果を GPU のテクスチャのまま返す（コピーなし）。GPU 描画（{@link EnderEngine.Target#GPU}）の面だけ。
      * ソフトウェア描画の面は空。
      */

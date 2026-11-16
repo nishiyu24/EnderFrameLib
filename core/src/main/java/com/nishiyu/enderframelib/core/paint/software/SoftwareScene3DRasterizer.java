@@ -72,6 +72,7 @@ public final class SoftwareScene3DRasterizer {
         float[] sx = new float[0], sy = new float[0];     // 3 頂点 × 画面座標（画素）
         float[] sz = new float[0], iw = new float[0];     // 3 頂点 × NDC の z・1/w
         float[] wp = new float[0], wn = new float[0];     // 3 頂点 × ワールド位置・法線（各 3 要素）
+        float[] uv = new float[0];                        // 3 頂点 × UV（各 2 要素）
         int[] mat = new int[0];                           // 材質の番号
         boolean[] back = new boolean[0];                  // 背面か（両面材質のとき法線を反転する）
 
@@ -84,6 +85,7 @@ public final class SoftwareScene3DRasterizer {
             iw = Arrays.copyOf(iw, cap * 3);
             wp = Arrays.copyOf(wp, cap * 9);
             wn = Arrays.copyOf(wn, cap * 9);
+            uv = Arrays.copyOf(uv, cap * 6);
             mat = Arrays.copyOf(mat, cap);
             back = Arrays.copyOf(back, cap);
         }
@@ -182,6 +184,8 @@ public final class SoftwareScene3DRasterizer {
                     v[o + 7] = tx;
                     v[o + 8] = ty;
                     v[o + 9] = tz;
+                    v[o + 10] = vb.getFloat(p + 24);
+                    v[o + 11] = vb.getFloat(p + 28);
                 }
                 emit(v, matIdx, mat.doubleSided(), mirrored, dst);
             }
@@ -209,7 +213,7 @@ public final class SoftwareScene3DRasterizer {
                 }
                 if ((di >= 0) != (dj >= 0)) {
                     float t = di / (di - dj);
-                    for (int c = 0; c < 10; c++) poly[n * 12 + c] = v[i * 12 + c] + (v[j * 12 + c] - v[i * 12 + c]) * t;
+                    for (int c = 0; c < 12; c++) poly[n * 12 + c] = v[i * 12 + c] + (v[j * 12 + c] - v[i * 12 + c]) * t;
                     n++;
                 }
             }
@@ -253,6 +257,8 @@ public final class SoftwareScene3DRasterizer {
                     dst.wp[i * 9 + k * 3 + c] = v[o + 4 + c];
                     dst.wn[i * 9 + k * 3 + c] = v[o + 7 + c];
                 }
+                dst.uv[i * 6 + k * 2] = v[o + 10];
+                dst.uv[i * 6 + k * 2 + 1] = v[o + 11];
             }
             dst.mat[i] = matIdx;
             dst.back[i] = !front;
@@ -394,8 +400,12 @@ public final class SoftwareScene3DRasterizer {
     private static final class Shader {
         final float lr, lg, lb, ar, ag, ab, ldx, ldy, ldz;
         final float[] eye;
+        final float[] extra;
+        final int extraCount;
 
         Shader(LightDesc l, float[] eye) {
+            this.extra = l.extraData().clone();
+            this.extraCount = l.extraCount();
             float li = l.intensity();
             this.lr = l.lightR() * li;
             this.lg = l.lightG() * li;
@@ -410,12 +420,48 @@ public final class SoftwareScene3DRasterizer {
             this.eye = eye;
         }
 
+        /** 1 灯ぶんの Cook-Torrance を {@code lit} へ足す。{@code (rr,rg,rb)} は面に届く光（減衰済み）。GL 版の {@code efDirect} と同じ式。 */
+        private static void addLight(float[] lit, float nx, float ny, float nz, float vx, float vy, float vz,
+                                     float lx, float ly, float lz, float rr, float rg, float rb,
+                                     float[] c3, float metallic, float a2, float ndv) {
+            float ndl = Math.max(nx * lx + ny * ly + nz * lz, 0f);
+            float hx = lx + vx, hy = ly + vy, hz = lz + vz;
+            float hl = (float) Math.sqrt(hx * hx + hy * hy + hz * hz);
+            if (hl > 1e-20f) { hx /= hl; hy /= hl; hz /= hl; }
+            float ndh = Math.max(nx * hx + ny * hy + nz * hz, 0f);
+            float vdh = Math.max(vx * hx + vy * hy + vz * hz, 0f);
+            float dd = ndh * ndh * (a2 - 1f) + 1f;
+            float d = a2 / ((float) Math.PI * dd * dd);
+            float vis = 0.5f / (ndl * (float) Math.sqrt(ndv * ndv * (1f - a2) + a2)
+                    + ndv * (float) Math.sqrt(ndl * ndl * (1f - a2) + a2));
+            float fw = (float) Math.pow(1f - vdh, 5.0);
+            float spec = d * vis * (float) Math.PI;
+            float[] rad = {rr, rg, rb};
+            for (int k = 0; k < 3; k++) {
+                float fz = 0.04f + (c3[k] - 0.04f) * metallic;
+                float f = fz + (1f - fz) * fw;
+                float kd = (1f - f) * (1f - metallic);
+                lit[k] += (kd * c3[k] + spec * f) * rad[k] * ndl;
+            }
+        }
+
         /** 色（事前乗算の前の rgb・α。HDR は上限なし）を {@code out} へ。マスクで捨てるなら false。 */
         boolean shade(Tris t, int i, MaterialDesc m, float f0, float f1, float f2, boolean mask, float[] out) {
             int base = m.baseColorArgb();
             float alpha = ((base >>> 24) & 0xFF) / 255f;
-            if (mask && alpha < 0.5f) return false;
             float cr = ((base >> 16) & 0xFF) / 255f, cg = ((base >> 8) & 0xFF) / 255f, cb = (base & 0xFF) / 255f;
+            if (m.baseColorMap() != null) { // ベースカラー画像を基本色に掛ける（GL 版の uBaseTex と同じ）
+                int uo = i * 6;
+                float u = f0 * t.uv[uo] + f1 * t.uv[uo + 2] + f2 * t.uv[uo + 4];
+                float vv = f0 * t.uv[uo + 1] + f1 * t.uv[uo + 3] + f2 * t.uv[uo + 5];
+                float[] tx = new float[4];
+                m.baseColorMap().sample(u, vv, m.mapRepeat(), tx);
+                cr *= tx[0];
+                cg *= tx[1];
+                cb *= tx[2];
+                alpha *= tx[3];
+            }
+            if (mask && alpha < 0.5f) return false;
             float es = m.emissiveStrength(); // GL 版は強さ/4 を 8 bit にして ×4 で戻す = 強さそのもの
             float er = ((m.emissiveRgb() >> 16) & 0xFF) / 255f * es, eg = ((m.emissiveRgb() >> 8) & 0xFF) / 255f * es,
                     eb = (m.emissiveRgb() & 0xFF) / 255f * es;
@@ -437,39 +483,45 @@ public final class SoftwareScene3DRasterizer {
                 if (t.back[i]) { nx = -nx; ny = -ny; nz = -nz; }
                 float ll = (float) Math.sqrt(ldx * ldx + ldy * ldy + ldz * ldz);
                 float lx = ldx / ll, ly = ldy / ll, lz = ldz / ll;
-                float ndl = Math.max(nx * lx + ny * ly + nz * lz, 0f);
                 float vx = eye[0] - px, vy = eye[1] - py, vz = eye[2] - pz;
                 float vl = (float) Math.sqrt(vx * vx + vy * vy + vz * vz);
                 if (vl > 1e-20f) { vx /= vl; vy /= vl; vz /= vl; }
-                float hx = lx + vx, hy = ly + vy, hz = lz + vz;
-                float hl = (float) Math.sqrt(hx * hx + hy * hy + hz * hz);
-                if (hl > 1e-20f) { hx /= hl; hy /= hl; hz /= hl; }
                 float ndv = Math.max(nx * vx + ny * vy + nz * vz, 1e-4f);
-                float ndh = Math.max(nx * hx + ny * hy + nz * hz, 0f);
-                float vdh = Math.max(vx * hx + vy * hy + vz * hz, 0f);
                 // Cook-Torrance（GGX・Smith 相関・Schlick）。ShaderSources.SCENE3D_FRAGMENT と同じ式
                 float metallic = m.metallic();
                 float roughness = Math.min(1f, Math.max(m.roughness(), 0.05f));
                 float a2 = roughness * roughness * roughness * roughness;
-                float dd = ndh * ndh * (a2 - 1f) + 1f;
-                float d = a2 / ((float) Math.PI * dd * dd);
-                float vis = 0.5f / (ndl * (float) Math.sqrt(ndv * ndv * (1f - a2) + a2)
-                        + ndv * (float) Math.sqrt(ndl * ndl * (1f - a2) + a2));
-                float fw = (float) Math.pow(1f - vdh, 5.0);
                 float fe = (float) Math.pow(1f - ndv, 5.0);
-                float spec = d * vis * (float) Math.PI;
                 float[] c3 = {cr, cg, cb};
-                float[] light = {lr, lg, lb}, amb = {ar, ag, ab};
+                float[] amb = {ar, ag, ab};
                 float[] lit = new float[3];
+                addLight(lit, nx, ny, nz, vx, vy, vz, lx, ly, lz, lr, lg, lb, c3, metallic, a2, ndv);
+                // 追加ライト（ポイント / スポット）: 逆二乗減衰に範囲の窓、スポットは縁を smoothstep
+                for (int e = 0; e < extraCount; e++) {
+                    int eo = e * LightDesc.VEC4_PER_EXTRA * 4;
+                    float tx = extra[eo] - px, ty = extra[eo + 1] - py, tz = extra[eo + 2] - pz;
+                    float d2 = tx * tx + ty * ty + tz * tz;
+                    float dl = Math.max((float) Math.sqrt(d2), 1e-4f);
+                    float ex = tx / dl, ey = ty / dl, ez = tz / dl;
+                    float range = extra[eo + 3];
+                    float q = d2 / (range * range);
+                    float win = Math.min(1f, Math.max(1f - q * q, 0f));
+                    float att = win * win / Math.max(d2, 0.01f);
+                    float outer = extra[eo + 11];
+                    if (outer > -1.5f) {
+                        float cosD = -(ex * extra[eo + 8] + ey * extra[eo + 9] + ez * extra[eo + 10]);
+                        float st = Math.min(1f, Math.max((cosD - outer) / (extra[eo + 7] - outer), 0f));
+                        att *= st * st * (3f - 2f * st);
+                    }
+                    addLight(lit, nx, ny, nz, vx, vy, vz, ex, ey, ez,
+                            extra[eo + 4] * att, extra[eo + 5] * att, extra[eo + 6] * att, c3, metallic, a2, ndv);
+                }
                 float envK = Math.max(1f - roughness, 0f);
                 for (int k = 0; k < 3; k++) {
                     float fz = 0.04f + (c3[k] - 0.04f) * metallic;
-                    float f = fz + (1f - fz) * fw;
-                    float kd = (1f - f) * (1f - metallic);
-                    float direct = (kd * c3[k] + spec * f) * light[k] * ndl;
                     float fEnv = fz + (Math.max(envK, fz) - fz) * fe;
                     float ambient = amb[k] * (c3[k] * (1f - metallic) + fEnv * (1f - roughness * 0.5f));
-                    lit[k] = direct + ambient;
+                    lit[k] += ambient;
                 }
                 rr = lit[0] + er;
                 rg = lit[1] + eg;

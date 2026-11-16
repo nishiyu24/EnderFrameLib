@@ -19,6 +19,8 @@ public final class RectRenderer implements AutoCloseable {
     private final GpuTexture[] textures = new GpuTexture[2];
     private final ByteBuffer uniforms = ByteBuffer.allocateDirect(ShaderPrograms.RECTS.uniformBytes())
             .order(ByteOrder.nativeOrder());
+    private Object cachedBindingsArray;
+    private GpuBindings cachedBindings;
 
     public RectRenderer(GpuDevice device) {
         this.pipeline = device.createPipeline(new PipelineDesc("rects", true, false));
@@ -47,7 +49,12 @@ public final class RectRenderer implements AutoCloseable {
         uniforms.flip();
         textures[0] = atlasTex;
         textures[1] = imgTex;
-        pass.bind(pipeline, new GpuBindings(store.recordBindings(), textures, uniforms));
+        Object[] recs = store.recordBindings();
+        if (cachedBindings == null || cachedBindingsArray != recs) {
+            cachedBindingsArray = recs;
+            cachedBindings = new GpuBindings(store.recordBindings(), textures, uniforms);
+        }
+        pass.bind(pipeline, cachedBindings);
         pass.drawInstanced(4, count, 0);
     }
 

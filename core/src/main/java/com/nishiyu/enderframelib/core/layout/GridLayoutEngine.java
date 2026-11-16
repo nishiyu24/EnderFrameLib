@@ -69,8 +69,13 @@ public class GridLayoutEngine extends LayoutEngine {
         boolean definiteWidth = box.sizingMode == SizingMode.DEFINITE;
         float innerW = definiteWidth ? Math.max(0, box.w - box.horizontalDecoration()) : availableW;
 
-        GridState gs = new GridState();
-        box.engineState = gs;
+        GridState gs;
+        if (box.engineState instanceof GridState existing) {
+            gs = existing.resetForLayout();
+        } else {
+            gs = new GridState();
+            box.engineState = gs;
+        }
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
 
         Areas areas = Areas.parse(box.style.get(CssPropertyIndex.GRID_TEMPLATE_AREAS));
@@ -211,7 +216,9 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     private void sizeRows(LayoutBox box, GridState gs, float innerH, LayoutContext ctx) {
-        for (GridItem item : gs.items) {
+        List<GridItem> items = gs.items;
+        for (int i = 0, n = items.size(); i < n; i++) {
+            GridItem item = items.get(i);
             if (item.rowSub) continue;
             item.maxContribution = item.box.h + item.box.mT + item.box.mB;
             item.minContribution = rowMinContribution(item.box, ctx) + item.box.mT + item.box.mB;
@@ -300,13 +307,15 @@ public class GridLayoutEngine extends LayoutEngine {
      */
     private static List<GridItem> effectiveItems(GridState gs, boolean columns) {
         boolean any = false;
-        for (GridItem item : gs.items) {
+        List<GridItem> items = gs.items;
+        for (int i = 0, n = items.size(); i < n; i++) {
+            GridItem item = items.get(i);
             if (columns ? item.colSub : item.rowSub) {
                 any = true;
                 break;
             }
         }
-        if (!any) return gs.items;
+        if (!any) return items;
         List<GridItem> out = new ArrayList<>(gs.items.size() + 8);
         for (GridItem item : gs.items) {
             if (!(columns ? item.colSub : item.rowSub)) {
@@ -374,14 +383,22 @@ public class GridLayoutEngine extends LayoutEngine {
         boolean columnFlow = flow.contains("column");
         boolean dense = flow.contains("dense");
 
-        List<LayoutBox> children = new ArrayList<>(box.children.size());
-        for (LayoutBox c : box.children) if (c.participatesInFlow()) children.add(c);
-        children.sort(Comparator.comparingInt(c -> (int) c.style.number(CssPropertyIndex.ORDER, 0f)));
+        List<LayoutBox> ch = box.children;
+        List<LayoutBox> children = gs.flowChildren;
+        children.clear();
+        for (int i = 0, n = ch.size(); i < n; i++) {
+            LayoutBox c = ch.get(i);
+            if (c.participatesInFlow()) children.add(c);
+        }
+        if (children.size() > 1) {
+            children.sort(ORDER_COMPARATOR);
+        }
 
         int explicitCols = gs.colSub ? gs.columns.tracks.size() : Math.max(gs.columns.tracks.size(), areas.columns);
         int explicitRows = gs.rowSub ? gs.rows.tracks.size() : Math.max(gs.rows.tracks.size(), areas.rows.size());
-        for (LayoutBox child : children) {
-            GridItem item = new GridItem(child);
+        for (int i = 0, n = children.size(); i < n; i++) {
+            LayoutBox child = children.get(i);
+            GridItem item = gs.obtainItem(child);
             Placement p = Placement.of(child.style);
             int[] col = resolveAxis(p.colStart, p.colEnd, gs.columns, explicitCols);
             int[] row = resolveAxis(p.rowStart, p.rowEnd, gs.rows, explicitRows);
@@ -395,9 +412,13 @@ public class GridLayoutEngine extends LayoutEngine {
             gs.items.add(item);
         }
 
-        Occupancy occupied = new Occupancy();
+        Occupancy occupied = gs.occupancy;
+        occupied.clear();
         int colCount = explicitCols, rowCount = explicitRows;
-        for (GridItem item : gs.items) {
+        List<GridItem> items = gs.items;
+        int itemCount = items.size();
+        for (int i = 0; i < itemCount; i++) {
+            GridItem item = items.get(i);
             if (item.colStart >= 0) colCount = Math.max(colCount, item.colStart + item.colSpan);
             else colCount = Math.max(colCount, columnFlow ? 0 : item.colSpan);
             if (item.rowStart >= 0) rowCount = Math.max(rowCount, item.rowStart + item.rowSpan);
@@ -407,12 +428,14 @@ public class GridLayoutEngine extends LayoutEngine {
         int fixedCount = Math.max(1, columnFlow ? rowCount : colCount);
 
         // 1. 両方の位置が決まっているアイテム
-        for (GridItem item : gs.items) {
+        for (int i = 0; i < itemCount; i++) {
+            GridItem item = items.get(i);
             if (item.colStart >= 0 && item.rowStart >= 0) occupied.mark(item);
         }
         // 2. 伸ばさない方の軸の位置だけが決まっているアイテム（その行 / 列の中で詰める）
         Map<Integer, Integer> laneCursor = new LinkedHashMap<>();
-        for (GridItem item : gs.items) {
+        for (int i = 0; i < itemCount; i++) {
+            GridItem item = items.get(i);
             boolean lockedLane = columnFlow ? (item.colStart >= 0 && item.rowStart < 0) : (item.rowStart >= 0 && item.colStart < 0);
             if (!lockedLane) continue;
             int lane = columnFlow ? item.colStart : item.rowStart;
@@ -424,7 +447,8 @@ public class GridLayoutEngine extends LayoutEngine {
         }
         // 3. 残り（伸ばす方の軸の位置だけ決まっているか、両方 auto）
         int cursorLane = 0, cursorPos = 0;
-        for (GridItem item : gs.items) {
+        for (int i = 0; i < itemCount; i++) {
+            GridItem item = items.get(i);
             boolean placed = item.colStart >= 0 && item.rowStart >= 0;
             if (placed) continue;
             int span = columnFlow ? item.rowSpan : item.colSpan;
@@ -1053,7 +1077,39 @@ public class GridLayoutEngine extends LayoutEngine {
             return Math.max(1, (int) Math.floor((available + gap) / unit + 1e-4));
         }
 
+        private static final ThreadLocal<Map<String, TrackDef>> STATIC_TRACK_CACHE =
+                ThreadLocal.withInitial(java.util.HashMap::new);
+
         private static TrackDef parseTrack(String t, float available, ComputedStyle style, float rootW, float rootH) {
+            if (isStaticTrackToken(t)) {
+                Map<String, TrackDef> cache = STATIC_TRACK_CACHE.get();
+                TrackDef hit = cache.get(t);
+                if (hit != null) return hit;
+                TrackDef parsed = parseTrackUncached(t, available, style, rootW, rootH);
+                if (cache.size() >= 256) cache.clear();
+                cache.put(t, parsed);
+                return parsed;
+            }
+            return parseTrackUncached(t, available, style, rootW, rootH);
+        }
+
+        private static boolean isStaticTrackToken(String t) {
+            // %, em/rem/ex/ch, viewport units, calc/var, or font-dependent units require live context
+            for (int i = 0, n = t.length(); i < n; i++) {
+                char c = t.charAt(i);
+                if (c == '%' || c == 'e' || c == 'E' || c == 'v' || c == 'V' || c == 'c' || c == 'C') {
+                    String lower = t.toLowerCase(Locale.ROOT);
+                    return lower.equals("auto") || lower.equals("min-content") || lower.equals("max-content")
+                            || (!lower.contains("%") && !lower.contains("em") && !lower.contains("ex")
+                            && !lower.contains("ch") && !lower.contains("vw") && !lower.contains("vh")
+                            && !lower.contains("vmin") && !lower.contains("vmax") && !lower.contains("calc")
+                            && !lower.contains("fit-content"));
+                }
+            }
+            return true;
+        }
+
+        private static TrackDef parseTrackUncached(String t, float available, ComputedStyle style, float rootW, float rootH) {
             String lower = t.toLowerCase(Locale.ROOT);
             if (lower.startsWith("minmax(") && lower.endsWith(")")) {
                 String inner = t.substring(7, t.length() - 1);
@@ -1120,8 +1176,14 @@ public class GridLayoutEngine extends LayoutEngine {
         return -1;
     }
 
+    private static final ThreadLocal<Map<String, List<String>>> SPLIT_TRACK_CACHE =
+            ThreadLocal.withInitial(java.util.HashMap::new);
+
     /** 最上位の空白で区切る。括弧（関数）と角括弧（線の名前）の中は区切らない。 */
     private static List<String> splitTrackList(String def) {
+        Map<String, List<String>> cache = SPLIT_TRACK_CACHE.get();
+        List<String> cached = cache.get(def);
+        if (cached != null) return cached;
         List<String> list = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         int depth = 0;
@@ -1139,7 +1201,10 @@ public class GridLayoutEngine extends LayoutEngine {
             }
         }
         if (!current.isEmpty()) list.add(current.toString());
-        return list;
+        List<String> res = List.copyOf(list);
+        if (cache.size() >= 256) cache.clear();
+        cache.put(def, res);
+        return res;
     }
 
     /** {@code grid-template-areas}。名前付きの領域は {@code name-start} / {@code name-end} の線を作る。 */
@@ -1245,9 +1310,18 @@ public class GridLayoutEngine extends LayoutEngine {
         }
     }
 
+    private static final Comparator<LayoutBox> ORDER_COMPARATOR =
+            Comparator.comparingInt(c -> (int) c.style.number(CssPropertyIndex.ORDER, 0f));
+
     /** アイテムの 4 本の線。ロングハンドがあればそれを、無ければ grid-row / grid-column / grid-area を読む。 */
     private record Placement(GridLine rowStart, GridLine colStart, GridLine rowEnd, GridLine colEnd) {
+        private static final Object MEMO_KEY = new Object();
+
         static Placement of(ComputedStyle s) {
+            return s.paintMemoSelf(MEMO_KEY, Placement::compute);
+        }
+
+        private static Placement compute(ComputedStyle s) {
             String[] area = split(s.get(CssPropertyIndex.GRID_AREA), 4);
             String[] row = split(s.get(CssPropertyIndex.GRID_ROW), 2);
             String[] col = split(s.get(CssPropertyIndex.GRID_COLUMN), 2);
@@ -1284,6 +1358,10 @@ public class GridLayoutEngine extends LayoutEngine {
     private static final class Occupancy {
         private final Set<Long> cells = new HashSet<>();
 
+        void clear() {
+            cells.clear();
+        }
+
         boolean has(int row, int col) {
             return cells.contains(((long) row << 32) | (col & 0xFFFFFFFFL));
         }
@@ -1301,7 +1379,7 @@ public class GridLayoutEngine extends LayoutEngine {
         public int colStart, colSpan, rowStart, rowSpan;
         /** この項目はグリッドコンテナで、列 / 行をサブグリッドとして親と共有する。 */
         boolean colSub, rowSub;
-        public final LayoutBox box;
+        public LayoutBox box;
         float minContribution, maxContribution;
         /** 列の寄与の控え（サブグリッドの親が読む。行の測定で minContribution / maxContribution が上書きされるため）。 */
         float colMin, colMax;
@@ -1313,6 +1391,17 @@ public class GridLayoutEngine extends LayoutEngine {
         GridItem(LayoutBox box) {
             this.box = box;
         }
+
+        GridItem reset(LayoutBox box) {
+            this.box = box;
+            this.colStart = this.colSpan = this.rowStart = this.rowSpan = 0;
+            this.colSub = this.rowSub = false;
+            this.minContribution = this.maxContribution = 0f;
+            this.colMin = this.colMax = 0f;
+            this.percentBase = Float.NaN;
+            this.x = this.y = 0f;
+            return this;
+        }
     }
 
     /** グリッドのトラックと配置済みアイテム。 */
@@ -1323,6 +1412,9 @@ public class GridLayoutEngine extends LayoutEngine {
         public float[] rowSizes = new float[0];
         float[] colOffsets = new float[1], rowOffsets = new float[1];
         public final List<GridItem> items = new ArrayList<>();
+        final List<GridItem> itemPool = new ArrayList<>();
+        final List<LayoutBox> flowChildren = new ArrayList<>();
+        final Occupancy occupancy = new Occupancy();
         public int colCount = 1, rowCount = 0;
         /** 親グリッドの状態と、親から見たこの箱（サブグリッドでなければ null）。 */
         GridState parentState;
@@ -1336,6 +1428,29 @@ public class GridLayoutEngine extends LayoutEngine {
         float colEdgeStart, colEdgeEnd, rowEdgeStart, rowEdgeEnd;
         /** トラックの寸法を決めるアイテム（サブグリッドの子を親のトラックへ読み替えたものを含む）。 */
         List<GridItem> colEffective = List.of(), rowEffective = List.of();
+
+        GridState resetForLayout() {
+            for (int i = 0, n = items.size(); i < n; i++) itemPool.add(items.get(i));
+            items.clear();
+            flowChildren.clear();
+            occupancy.clear();
+            autoColumns = List.of();
+            autoRows = List.of();
+            colCount = 1;
+            rowCount = 0;
+            parentState = null;
+            parentItem = null;
+            colSub = rowSub = false;
+            colsFinal = rowsFinal = rowsOwnFinal = false;
+            colEdgeStart = colEdgeEnd = rowEdgeStart = rowEdgeEnd = 0f;
+            colEffective = List.of();
+            rowEffective = List.of();
+            return this;
+        }
+
+        GridItem obtainItem(LayoutBox box) {
+            return itemPool.isEmpty() ? new GridItem(box) : itemPool.remove(itemPool.size() - 1).reset(box);
+        }
 
         /** 明示的なトラックの後に、暗黙のトラックを {@code grid-auto-*} の繰り返しで足した並び。 */
         List<TrackDef> trackDefs(boolean cols) {

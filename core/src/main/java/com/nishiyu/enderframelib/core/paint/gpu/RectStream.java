@@ -25,7 +25,7 @@ public final class RectStream implements AutoCloseable {
     private final GpuTreeStore store;
     private final RectRenderer renderer;
     private final PropertyTrees trees;
-    private final int capacity, clipCapacity;
+    private final int capacity, usableCapacity, deadSlot, clipCapacity;
 
     private final float[] clipKeys;
     private final int[] clipTable;
@@ -58,6 +58,14 @@ public final class RectStream implements AutoCloseable {
     public long replayedShapes, replayedItems;
     public int replayedGlyphs;
 
+    // 差分インプレース上書き
+    private int prevFrameSlots, prevFrameCount, prevFrameClipCount;
+    private boolean prevFrameValid;
+    private boolean patchMode, patchSpanOn, patchOverflow;
+    private int patchSlotCursor, patchSlotLimit, patchOrderCursor, patchOrderLimit, patchSpanIndex, patchOldShapes;
+    private int[] patchDoneIndices = new int[32];
+    private int patchDoneCount;
+
     private final float[] trs = new float[4];
     private GpuClip[] lastClips;
     private int lastA, lastB, lastC, lastD;
@@ -66,6 +74,8 @@ public final class RectStream implements AutoCloseable {
         // 1 プリミティブ = 128 バイト（R16F で 64 テクセル）。maxBufferBytes は R16F 基準の上限バイト数。
         int maxPrimitives = (int) Math.min(Integer.MAX_VALUE, Math.max(16L, device.maxBufferBytes() / 128L));
         this.capacity = Math.max(16, Math.min(requestedCapacity, maxPrimitives));
+        this.usableCapacity = this.capacity - 1;
+        this.deadSlot = this.usableCapacity;
         this.clipCapacity = Math.min(CLIP_CAP, Math.max(4, maxPrimitives));
         this.store = new GpuTreeStore(device, capacity, clipCapacity, capacity, capacity);
         this.clipKeys = new float[clipCapacity * KEY];
@@ -80,6 +90,7 @@ public final class RectStream implements AutoCloseable {
             trees.addEffect(PropertyTrees.NONE, 1f, 0, 0, 0f);
             trees.addPrimitive();
         }
+        trees.setPrimitive(deadSlot, 0, PropertyTrees.NONE, 0, PropertyTrees.NONE, 0f, 0f, 0f, 0f, 0, 0);
         store.flush();
     }
 
@@ -201,13 +212,121 @@ public final class RectStream implements AutoCloseable {
     }
 
     public void begin() {
+        prevFrameSlots = slots;
+        prevFrameCount = count;
+        prevFrameClipCount = clipCount;
+        prevFrameValid = count > 0;
         slots = 0;
         count = 0;
         runStart = 0;
         clipCount = 0;
         lastClips = null;
+        patchMode = false;
+        patchSpanOn = false;
+        patchOverflow = false;
         frameNo++;
         Arrays.fill(clipTable, -1);
+    }
+
+    public boolean beginDiffPatch() {
+        if (!prevFrameValid || prevFrameSlots > usableCapacity || count != 0 || slots != 0 || patchMode) return false;
+        slots = prevFrameSlots;
+        count = prevFrameCount;
+        clipCount = prevFrameClipCount;
+        runStart = 0;
+        lastClips = null;
+        for (int s = 0; s < clipCount; s++) insertClipSlot(s);
+        frameNo--;
+        patchMode = true;
+        patchSpanOn = false;
+        patchOverflow = false;
+        patchOldShapes = 0;
+        patchDoneCount = 0;
+        return true;
+    }
+
+    public boolean canPatchSpan(int index, int atlasResets) {
+        if (!patchMode || index < 0 || index >= spSlot0.length || spFrame[index] != frameNo) return false;
+        if (spSlot1[index] <= spSlot0[index] || spCount1[index] <= spCount0[index]) return false;
+        return atlasResets == spAtlas[index];
+    }
+
+    public boolean patchSpanBegin(int index, int atlasResets) {
+        if (!canPatchSpan(index, atlasResets)) return false;
+        patchSpanOn = true;
+        patchOverflow = false;
+        patchSpanIndex = index;
+        patchSlotCursor = spSlot0[index];
+        patchSlotLimit = spSlot1[index];
+        patchOrderCursor = spCount0[index];
+        patchOrderLimit = spCount1[index];
+        spanOn = true;
+        spanUnclean = false;
+        spanIndex = index;
+        spanAtlas = atlasResets;
+        spanOverflows = overflows;
+        spanRefCount = 0;
+        lastClips = null;
+        return true;
+    }
+
+    public boolean patchSpanEnd(int index, boolean ok, int atlasResets, int glyphs) {
+        if (!patchSpanOn || patchSpanIndex != index) return false;
+        patchSpanOn = false;
+        spanOn = false;
+        if (!ok || patchOverflow || spanUnclean || overflows != spanOverflows || atlasResets != spanAtlas) {
+            return false;
+        }
+        for (int p = patchOrderCursor; p < patchOrderLimit; p++) {
+            trees.order.putInt(p, 0, deadSlot);
+        }
+        patchOldShapes += patchOrderLimit - spCount0[index];
+        spAtlas[index] = atlasResets;
+        spGlyphs[index] = glyphs;
+        int[] refs = spRefs[index];
+        int[] vers = spRefVers[index];
+        if (refs == null || refs.length != spanRefCount) {
+            refs = new int[spanRefCount];
+            vers = new int[spanRefCount];
+            spRefs[index] = refs;
+            spRefVers[index] = vers;
+        }
+        System.arraycopy(spanRefs, 0, refs, 0, spanRefCount);
+        for (int i = 0; i < spanRefCount; i++) vers[i] = clipSlotVersion[refs[i]];
+        spFrame[index] = frameNo;
+        if (patchDoneCount == patchDoneIndices.length) {
+            patchDoneIndices = Arrays.copyOf(patchDoneIndices, patchDoneCount * 2);
+        }
+        patchDoneIndices[patchDoneCount++] = index;
+        return true;
+    }
+
+    public void abortDiffPatch() {
+        patchMode = false;
+        patchSpanOn = false;
+        spanOn = false;
+        patchOverflow = false;
+        frameNo++;
+        for (int k = 0; k < patchDoneCount; k++) spFrame[patchDoneIndices[k]] = -1;
+        patchDoneCount = 0;
+        slots = 0;
+        count = 0;
+        runStart = 0;
+        clipCount = 0;
+        lastClips = null;
+        Arrays.fill(clipTable, -1);
+        prevFrameValid = false;
+    }
+
+    public void endDiffPatch() {
+        if (!patchMode) return;
+        int reused = prevFrameCount - patchOldShapes;
+        if (reused > 0) {
+            accepted += reused;
+            replayedShapes += reused;
+        }
+        replayedItems += prevFrameCount;
+        patchMode = false;
     }
 
     public boolean accepts(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry, GpuClip[] clips, float opacity) {
@@ -229,7 +348,12 @@ public final class RectStream implements AutoCloseable {
             if (clips.length <= PropertyTrees.MAX_CLIPS_PER_PRIMITIVE) overflows++;
             return false;
         }
-        if (slots + slotsNeeded > capacity) { rejects[3]++; overflows++; return false; }
+        if (patchSpanOn) {
+            if (patchSlotCursor + slotsNeeded > patchSlotLimit || patchOrderCursor >= patchOrderLimit) {
+                patchOverflow = true;
+                return false;
+            }
+        } else if (slots + slotsNeeded > usableCapacity) { rejects[3]++; overflows++; return false; }
         if (!(opacity > 0f) || !pose.isFinite() || !(x1 > x0) || !(y1 > y0)) { rejects[3]++; return false; }
         if (!decompose(pose)) { rejects[0]++; return false; }
         boolean rounded = false;
@@ -277,9 +401,13 @@ public final class RectStream implements AutoCloseable {
         return accepts(pose, bx0, by0, bx1, by1, rx, ry, clips, opacity, 2);
     }
 
+    private int nextExtSlot() {
+        return patchSpanOn ? patchSlotCursor++ : slots++;
+    }
+
     public void pushGlyphStroke(int bx, int by, int w, int h, int atlasX, int atlasY, float half, int argb, GpuClip[] clips, float opacity) {
         open(Matrix2D.IDENTITY, PropertyTrees.OP_GLYPH_STROKE, bx, by, bx + w, by + h, argb, clips, opacity, 0f);
-        int ext = slots++;
+        int ext = nextExtSlot();
         trees.setExtFloat(ext, 0, atlasX);
         trees.setExtFloat(ext, 1, atlasY);
         trees.setExtFloat(ext, 2, w);
@@ -290,7 +418,7 @@ public final class RectStream implements AutoCloseable {
     public void pushGlyphTransformed(Matrix2D pose, float bx0, float by0, float bx1, float by1, int atlasX, int atlasY, int w, int h,
                                      float ox, float oy, float s, float left, float top, int argb, GpuClip[] clips, float opacity) {
         open(pose, PropertyTrees.OP_GLYPH_TRANSFORMED, bx0, by0, bx1, by1, argb, clips, opacity, 0f);
-        int ext = slots++;
+        int ext = nextExtSlot();
         trees.setExtFloat(ext, 0, atlasX);
         trees.setExtFloat(ext, 1, atlasY);
         trees.setExtFloat(ext, 2, w);
@@ -306,7 +434,7 @@ public final class RectStream implements AutoCloseable {
                                  float bx0, float by0, float bx1, float by1, int[] colors, GpuClip[] clips, float opacity) {
         int k = open(pose, PropertyTrees.OP_CIRCLE_BORDER, bx0, by0, bx1, by1, colors[0], clips, opacity, 0f);
         trees.setPrimitiveColors(k, colors[0], colors[1], colors[2], colors[3]);
-        int ext = slots++;
+        int ext = nextExtSlot();
         trees.setExtFloat(ext, 0, cx);
         trees.setExtFloat(ext, 1, cy);
         trees.setExtFloat(ext, 2, outerR);
@@ -318,7 +446,7 @@ public final class RectStream implements AutoCloseable {
                           int taps, float stepX, float stepY, GpuClip[] clips, float opacity) {
         spanUnclean = true;
         open(pose, PropertyTrees.OP_IMAGE, bx0, by0, bx1, by1, 0, clips, opacity, 0f);
-        int ext = slots++;
+        int ext = nextExtSlot();
         trees.setExtFloat(ext, 0, x0);
         trees.setExtFloat(ext, 1, y0);
         trees.setExtFloat(ext, 2, x1);
@@ -340,7 +468,7 @@ public final class RectStream implements AutoCloseable {
 
     private int open(Matrix2D pose, int opcode, float x0, float y0, float x1, float y1, int argb, GpuClip[] clips, float opacity,
                      float margin) {
-        int k = slots++;
+        int k = patchSpanOn ? patchSlotCursor++ : slots++;
         trees.setTransformMatrix(k, (float) pose.a(), (float) pose.b(), (float) pose.c(), (float) pose.d(),
                 (float) pose.e(), (float) pose.f());
         int ef = PropertyTrees.NONE;
@@ -351,7 +479,7 @@ public final class RectStream implements AutoCloseable {
         trees.setPrimitive(k, opcode, k, clips == null ? 0 : clips.length, ef, x0, y0, x1 - x0, y1 - y0, argb, 0);
         trees.setPrimitiveMargin(k, margin);
         writeClips(k, clips);
-        trees.order.putInt(count++, 0, k);
+        trees.order.putInt(patchSpanOn ? patchOrderCursor++ : count++, 0, k);
         accepted++;
         return k;
     }
@@ -381,28 +509,28 @@ public final class RectStream implements AutoCloseable {
         trees.setPrimitiveInner(k, ix0, iy0, ix1, iy1, irx, iry,
                 (innerEmpty ? PropertyTrees.FLAG_INNER_EMPTY : 0) | PropertyTrees.FLAG_DASHED);
         trees.setPrimitiveBorderWidths(k, widths[0], widths[1], widths[2], widths[3]);
-        trees.setExtDash(slots++, bx, by, cxm, cym, pcx, pcy, period, dash, round, thickness);
+        trees.setExtDash(nextExtSlot(), bx, by, cxm, cym, pcx, pcy, period, dash, round, thickness);
     }
 
     public void pushGradient(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                              ShaderGradient g, GpuClip[] clips, float opacity) {
         int k = open(pose, PropertyTrees.OP_GRADIENT, x0, y0, x1, y1, 0, clips, opacity, 1f / Math.max((float) pose.meanScale(), 0.01f));
         trees.setPrimitiveRadiiXY(k, rx, ry);
-        trees.setPrimitiveGradient(slots++, g.gradA(), g.gradB(), g.repeatOrigin(), g.repeatPeriod(), g.color0(), g.color1());
+        trees.setPrimitiveGradient(nextExtSlot(), g.gradA(), g.gradB(), g.repeatOrigin(), g.repeatPeriod(), g.color0(), g.color1());
     }
 
     public void pushOuterShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1,
                                 float sx0, float sy0, float sx1, float sy1, float[] srx, float[] sry, float sigma,
                                 float[] hole, float[] hrx, float[] hry, int argb, GpuClip[] clips, float opacity) {
         open(pose, PropertyTrees.OP_OUTER_SHADOW, qx0, qy0, qx1, qy1, argb, clips, opacity, 0f);
-        trees.setPrimitiveShadow(slots++, sx0, sy0, sx1, sy1, srx, sry, sigma, hole, hrx, hry);
+        trees.setPrimitiveShadow(nextExtSlot(), sx0, sy0, sx1, sy1, srx, sry, sigma, hole, hrx, hry);
     }
 
     public void pushInsetShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1, float[] rx, float[] ry,
                                 float sigma, float[] hole, float[] hrx, float[] hry, int argb, GpuClip[] clips, float opacity) {
         int k = open(pose, PropertyTrees.OP_INSET_SHADOW, qx0, qy0, qx1, qy1, argb, clips, opacity, 1f);
         trees.setPrimitiveRadiiXY(k, rx, ry);
-        trees.setPrimitiveShadow(slots++, qx0, qy0, qx1, qy1, rx, ry, sigma, hole, hrx, hry);
+        trees.setPrimitiveShadow(nextExtSlot(), qx0, qy0, qx1, qy1, rx, ry, sigma, hole, hrx, hry);
     }
 
     private void writeClips(int k, GpuClip[] clips) {

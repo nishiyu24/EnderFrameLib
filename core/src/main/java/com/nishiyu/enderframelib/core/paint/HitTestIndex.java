@@ -33,6 +33,8 @@ public class HitTestIndex {
         public final int alphaThreshold;
         /** 項目自身が静止している（移動・回転・拡縮・傾き・遷移・アニメが無い）。逆変換が恒等なので、アニメ状態を引かずに済む。 */
         final boolean selfStatic;
+        /** 親相対座標のとき、祖先の静的な NODE 原点の合計（格子索引のページ座標計算用）。 */
+        final float staticOriginX, staticOriginY;
 
         public Entry(DisplayItem element, ClipRect clipRect, List<DisplayItem> transformChain) {
             this.element = element;
@@ -40,6 +42,16 @@ public class HitTestIndex {
             this.transformChain = transformChain;
             this.alphaThreshold = alphaThresholdOf(element);
             this.selfStatic = isStatic(element);
+            float ox = 0f, oy = 0f;
+            for (int i = 0, cn = transformChain.size() - 1; i < cn; i++) {
+                DisplayItem anc = transformChain.get(i);
+                if (anc.type() == ElementType.NODE && anc.hints().relativeOrigin()) {
+                    ox += anc.x();
+                    oy += anc.y();
+                }
+            }
+            this.staticOriginX = ox;
+            this.staticOriginY = oy;
         }
     }
 
@@ -271,12 +283,15 @@ public class HitTestIndex {
         RenderMeta meta = el.meta();
         float originX = meta != null ? meta.originX() : 0.5f;
         float originY = meta != null ? meta.originY() : 0.5f;
+        boolean relOrigin = el.type() == ElementType.NODE && el.hints().relativeOrigin();
 
-        float cx = el.x() + el.width() * originX;
-        float cy = el.y() + el.height() * originY;
+        float lx = (relOrigin ? 0f : el.x()) + el.width() * originX;
+        float ly = (relOrigin ? 0f : el.y()) + el.height() * originY;
+        double shiftX = (relOrigin ? el.x() : 0.0) + anim.tx();
+        double shiftY = (relOrigin ? el.y() : 0.0) + anim.ty();
 
-        double dx = px - cx - anim.tx();
-        double dy = py - cy - anim.ty();
+        double dx = px - lx - shiftX;
+        double dy = py - ly - shiftY;
         if (anim.rot() != 0.0f) {
             double rad = -Math.toRadians(anim.rot());
             double cos = Math.cos(rad);
@@ -290,8 +305,8 @@ public class HitTestIndex {
         if (anim.sx() != 0 && anim.sx() != 1.0f) dx /= anim.sx();
         if (anim.sy() != 0 && anim.sy() != 1.0f) dy /= anim.sy();
 
-        out[0] = dx + cx;
-        out[1] = dy + cy;
+        out[0] = dx + lx;
+        out[1] = dy + ly;
     }
 
     /**
@@ -503,7 +518,8 @@ public class HitTestIndex {
                 }
             }
             DisplayItem el = e.element;
-            float x0 = el.x() - 1f, y0 = el.y() - 1f, x1 = el.x() + el.width() + 1f, y1 = el.y() + el.height() + 1f;
+            float wx = el.x() + e.staticOriginX, wy = el.y() + e.staticOriginY;
+            float x0 = wx - 1f, y0 = wy - 1f, x1 = wx + el.width() + 1f, y1 = wy + el.height() + 1f;
             if (!ok || !Float.isFinite(x0 + y0 + x1 + y1) || x1 - x0 > 1e7f || y1 - y0 > 1e7f) continue;
             gridded[i] = true;
             count++;
@@ -532,7 +548,7 @@ public class HitTestIndex {
         boolean[] big = new boolean[n];
         for (int i = 0; i < n; i++) {
             if (!gridded[i]) continue;
-            int[] r = cellRange(entryArr[i].element);
+            int[] r = cellRange(entryArr[i]);
             if ((long) (r[2] - r[0] + 1) * (r[3] - r[1] + 1) * 4 > total && total > 16) {
                 big[i] = true;
                 continue;
@@ -548,7 +564,7 @@ public class HitTestIndex {
                 alwaysTmp[alwaysN++] = i;
                 continue;
             }
-            int[] r = cellRange(entryArr[i].element);
+            int[] r = cellRange(entryArr[i]);
             for (int cy = r[1]; cy <= r[3]; cy++) {
                 for (int cx = r[0]; cx <= r[2]; cx++) {
                     int c = cy * cols + cx;
@@ -560,9 +576,11 @@ public class HitTestIndex {
     }
 
     /** 項目の矩形（1 画素広げた）が覆うセルの範囲 {@code {cx0, cy0, cx1, cy1}}。 */
-    private int[] cellRange(DisplayItem el) {
-        int cx0 = clampCell((el.x() - 1f - gridX0) / cellSize, cols), cx1 = clampCell((el.x() + el.width() + 1f - gridX0) / cellSize, cols);
-        int cy0 = clampCell((el.y() - 1f - gridY0) / cellSize, rows), cy1 = clampCell((el.y() + el.height() + 1f - gridY0) / cellSize, rows);
+    private int[] cellRange(Entry e) {
+        DisplayItem el = e.element;
+        float wx = el.x() + e.staticOriginX, wy = el.y() + e.staticOriginY;
+        int cx0 = clampCell((wx - 1f - gridX0) / cellSize, cols), cx1 = clampCell((wx + el.width() + 1f - gridX0) / cellSize, cols);
+        int cy0 = clampCell((wy - 1f - gridY0) / cellSize, rows), cy1 = clampCell((wy + el.height() + 1f - gridY0) / cellSize, rows);
         return new int[]{cx0, cy0, cx1, cy1};
     }
 
@@ -635,7 +653,8 @@ public class HitTestIndex {
                 py = tmp[1];
             }
             DisplayItem el = entry.element;
-            double localX = px - el.x(), localY = py - el.y();
+            boolean relSelf = el.type() == ElementType.NODE && el.hints().relativeOrigin();
+            double localX = relSelf ? px : px - el.x(), localY = relSelf ? py : py - el.y();
             if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
                 UIHitResult hit = new UIHitResult(el, localX, localY);
                 if (first == null) {
@@ -663,7 +682,8 @@ public class HitTestIndex {
             px = p[0];
             py = p[1];
         }
-        return new UIHitResult(el, px - el.x(), py - el.y());
+        boolean relSelf = el.type() == ElementType.NODE && el.hints().relativeOrigin();
+        return new UIHitResult(el, relSelf ? px : px - el.x(), relSelf ? py : py - el.y());
     }
 
     public DisplayItem getElementById(String id) {

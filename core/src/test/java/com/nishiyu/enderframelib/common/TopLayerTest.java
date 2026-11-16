@@ -113,10 +113,11 @@ public class TopLayerTest {
         var items = render(c);
         var bd = item(items, "d_backdrop");
         assertNotNull(bd, "backdrop item");
-        assertEquals(0, bd.x());
-        assertEquals(0, bd.y());
-        assertEquals(W, bd.width());
-        assertEquals(H, bd.height());
+        var absBd = com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(items, bd);
+        assertEquals(0, absBd.x());
+        assertEquals(0, absBd.y());
+        assertEquals(W, absBd.width());
+        assertEquals(H, absBd.height());
         assertEquals(0x80FF0000, bd.bgColor() & 0xFFFFFFFF, 0);
         int ib = items.indexOf(bd), id = -1;
         for (int i = 0; i < items.size(); i++) if (items.get(i).id().equals("d") || items.get(i).id().startsWith("d_") && !items.get(i).id().equals("d_backdrop")) { id = i; break; }

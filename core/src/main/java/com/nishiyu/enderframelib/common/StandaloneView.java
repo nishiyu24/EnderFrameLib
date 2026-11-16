@@ -1,6 +1,8 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
+import com.nishiyu.enderframelib.core.scene3d.CameraOrbit;
 
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.core.css.CssProperty;
@@ -115,6 +117,9 @@ public final class StandaloneView implements AutoCloseable {
     private HtmlNode dragField;
     /** 押下をポップアップが使ったので、対になる解放は文書へ渡さない。 */
     private boolean swallowRelease;
+    /** 左ボタンを押した位置が {@code data-orbit} の {@code <scene-3d>} なら、その世界（ドラッグでカメラを回している間だけ非 null）。 */
+    private Scene3DWorld orbitWorld;
+    private static final float ORBIT_RAD_PER_PIXEL = (float) Math.toRadians(0.4);
     private java.util.function.LongSupplier clickClock = System::currentTimeMillis;
     private long lastClickAt = Long.MIN_VALUE;
     private double lastClickX, lastClickY;
@@ -188,8 +193,16 @@ public final class StandaloneView implements AutoCloseable {
         return ui.rootNode();
     }
 
+    private long lastFlushNs = -1;
+    private int lastFlushItems;
+    private String lastFlushBreakdown;
+
     /** 直近の再レイアウトの内訳（調べる用）。 */
     public String lastTimings() {
+        if (lastFlushNs >= 0) {
+            timings = "flush=" + (lastFlushNs / 1_000_000) + "ms items=" + lastFlushItems + " " + lastFlushBreakdown;
+            lastFlushNs = -1;
+        }
         return timings;
     }
 
@@ -304,7 +317,9 @@ public final class StandaloneView implements AutoCloseable {
         boolean running = interaction.animator().isRunning(nowMs);
         if (rebuilt) {
             items = after;
-            timings = "flush=" + (System.nanoTime() - t0) / 1_000_000 + "ms items=" + items.size() + " " + ui.lastBreakdown();
+            lastFlushNs = System.nanoTime() - t0;
+            lastFlushItems = items.size();
+            lastFlushBreakdown = ui.lastBreakdown();
             // レイアウト中に新しく走り出したアニメーションも拾う（OffsetItemList は同じ基底を平行移動しただけなので再走査しない）
             List<DisplayItem> compBase = after instanceof OffsetItemList ol ? ol.base() : after;
             if (compBase != compositorBase) {
@@ -325,6 +340,9 @@ public final class StandaloneView implements AutoCloseable {
             return false; // 窓を抜けた最初の1枚は最終値のために描く
         }
         backend.render(withOverlays(items), nowMs);
+        // 描画自身が世界を更新することがある（初回にビューポートの縦横比をカメラへ入れる）。それは描いた絵に含まれるので、
+        // 次のフレームで「3D が変わった」と数えて一度余計に描かないよう、ここで署名を取り直す
+        sceneSignature = ui.scene3dChangeSignature();
         drawn = true;
         return true;
     }
@@ -354,6 +372,10 @@ public final class StandaloneView implements AutoCloseable {
     /** マウス位置（CSS px）。ホバー中の要素が変われば再スタイルを予約する。押している間はドラッグ（range など）も進む。 */
     public void mouseMove(double x, double y, String sessionId) {
         ui.adoptSessionId(sessionId);
+        if (orbitWorld != null && mouseDown) {
+            // ドラッグで回す: 右へ引くと対象が右へ回る（カメラは左へ回り込む）、下へ引くとカメラが上がって見下ろす
+            CameraOrbit.orbit(orbitWorld.camera(), (float) (mouseX - x) * ORBIT_RAD_PER_PIXEL, (float) (y - mouseY) * ORBIT_RAD_PER_PIXEL);
+        }
         mouseX = x;
         mouseY = y;
         if (inspector) redraw = true;
@@ -371,6 +393,18 @@ public final class StandaloneView implements AutoCloseable {
                 st.caret = at;
                 redraw = true;
             }
+        }
+    }
+
+    /** ヒットした項目が {@code data-orbit} の {@code <scene-3d>} なら、その 3D ワールド。 */
+    private Scene3DWorld orbitWorldAt(UIHitResult hit) {
+        if (hit == null || hit.element() == null || hit.element().events() == null) return null;
+        var ev = hit.element().events();
+        if (!"true".equals(ev.get(Scene3DTags.ORBIT_ATTR)) || !Scene3DTags.KIND_3D.equals(ev.get(Scene3DTags.KIND_ATTR))) return null;
+        try {
+            return ui.scene3dWorld(Long.parseLong(ev.get(Scene3DTags.WORLD_ATTR)));
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
@@ -401,6 +435,7 @@ public final class StandaloneView implements AutoCloseable {
             mouseButtonOther(down, hostButton);
             return;
         }
+        if (!down) orbitWorld = null;
         if (down) {
             if (popup.isOpen()) {
                 // ポップアップが開いている間の押下は、選ぶか閉じるかだけ。閉じる押下が select 自身なら開き直さない
@@ -416,6 +451,7 @@ public final class StandaloneView implements AutoCloseable {
                 }
             }
             mouseDown = true;
+            orbitWorld = orbitWorldAt(ui.hitTest(mouseX, mouseY));
             UiInput.PressResult pressed = input.press(mouseX, mouseY, 0, UiInput.Host.NONE);
             HtmlNode target = pressed != null ? pressed.pressedNode() : null;
             HtmlNode focusable = UiFocus.nearestFocusable(target);
@@ -541,7 +577,7 @@ public final class StandaloneView implements AutoCloseable {
         LayoutBox targetBox = UiFocus.findBox(ui.layoutRoot(), node);
         if (targetBox == null) return false;
         for (HtmlNode p = node.parent; p != null; p = p.parent) {
-            DisplayItem box = scrollers.get(p.key());
+            DisplayItem box = DisplayItem.resolveAbsolute(items, scrollers.get(p.key()));
             if (box == null) continue;
             float limit = Math.max(0, box.hints().scrollHeight() - box.height());
             if (limit <= 0) continue;
@@ -563,6 +599,11 @@ public final class StandaloneView implements AutoCloseable {
                 var wheel = CoreEvent.wheel(top.localX(), top.localY(), notchesX, notchesY, false, false, false, false);
                 node.dispatchEvent(wheel);
                 if (wheel.isDefaultPrevented()) return true;
+            }
+            Scene3DWorld ow = orbitWorldAt(top);
+            if (ow != null && notchesY != 0) { // data-orbit の 3D ビューポート上のホイール: ズーム（上に回すと近づく）
+                CameraOrbit.zoom(ow.camera(), (float) Math.pow(0.9, notchesY));
+                return true;
             }
         }
         List<UIHitResult> hits = ui.hitTestIndex().scrollContainersAt(ui.sessionId(), mouseX, mouseY);
@@ -788,7 +829,7 @@ public final class StandaloneView implements AutoCloseable {
             }
             if (box == null) box = it;
         }
-        if (popup.open(select, box, height)) redraw = true;
+        if (popup.open(select, DisplayItem.resolveAbsolute(items, box), height)) redraw = true;
     }
 
     private boolean ownerUnderPointer(HtmlNode owner) {
@@ -864,13 +905,14 @@ public final class StandaloneView implements AutoCloseable {
         String id = field.key();
         String part = "textarea".equalsIgnoreCase(field.tag) ? "_textarea" : "_input";
         for (DisplayItem it : items) {
-            if (it.baseId().equals(id) && it.isPart(part)) return it;
+            if (it.baseId().equals(id) && it.isPart(part)) return DisplayItem.resolveAbsolute(items, it);
         }
         return null;
     }
 
     private OutlineFontFace faceOf(DisplayItem el) {
-        String family = el.events() != null ? el.events().get("font-family") : null;
+        String family = el.hints().fontFamily();
+        if (family == null && el.events() != null) family = el.events().get("font-family");
         FontFace f = fonts.resolve(family);
         if (f instanceof OutlineFontFace o) return o;
         f = SystemFonts.system().resolve(family);

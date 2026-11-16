@@ -47,6 +47,19 @@ public record ShaderGradient(int kind, float[] gradA, float[] gradB, float repea
         return Math.round(gradA[3]) / 10;
     }
 
+    /** 座標を (dx, dy) だけ平行移動した座標系で同じグラデーションになるよう位置パラメータをずらす。 */
+    public ShaderGradient offset(float dx, float dy) {
+        if (dx == 0f && dy == 0f) return this;
+        float[] na = gradA.clone();
+        if (kind == LINEAR) {
+            na[2] = (float) ((double) na[2] - ((double) na[0] * dx + (double) na[1] * dy));
+        } else {
+            na[0] += dx;
+            na[1] += dy;
+        }
+        return new ShaderGradient(kind, na, gradB, repeatOrigin, repeatPeriod, color0, color1);
+    }
+
     @Override
     public boolean equals(Object o) {
         return o instanceof ShaderGradient g && kind == g.kind && color0 == g.color0 && color1 == g.color1

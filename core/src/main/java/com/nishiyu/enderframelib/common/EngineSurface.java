@@ -198,6 +198,14 @@ public final class EngineSurface implements WebViewSurface {
         return view.scene3dWorld(nodeId);
     }
 
+    @Override
+    public java.util.Optional<com.nishiyu.enderframelib.api.scene3d.Scene3DController> scene3d(String elementId) {
+        com.nishiyu.enderframelib.core.dom.node.HtmlNode n = elementId == null ? null : view.ui().findNode(elementId);
+        if (n == null || !com.nishiyu.enderframelib.core.scene3d.Scene3DTags.isScene(n.tag)) return java.util.Optional.empty();
+        long id = n.nodeId();
+        return java.util.Optional.of(new Scene3DControllerImpl(view.ui(), elementId, id, view.ui().getOrCreateScene3dWorld(id)));
+    }
+
     public Scene3DWorld getOrCreateScene3dWorld(String elementId) {
         return view.scene3dWorldById(elementId);
     }

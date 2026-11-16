@@ -110,6 +110,35 @@ public interface GpuSink {
     /** 記録を閉じる。{@code ok} が false（その項目の描画に CPU 描画が混じった等）なら記録は捨てる。 */
     default void spanEnd(int index, boolean ok) {}
 
+    /**
+     * 前フレームと項目構成が同一で、変更箇所が少数のときに {@code RectStream} をそのまま引き継ぎ、
+     * 差分項目だけをインプレース上書きするモードへ入る。使用できなければ false。
+     */
+    default boolean beginDiffPatch() {
+        return false;
+    }
+
+    /** 項目 {@code index} がインプレース上書き可能な GPU スパンを持つなら true。 */
+    default boolean canPatchSpan(int index) {
+        return false;
+    }
+
+    /** 項目 {@code index} の既存スパンへの上書きを開始する。 */
+    default boolean patchSpanBegin(int index) {
+        return false;
+    }
+
+    /** 項目 {@code index} の既存スパン上書きを閉じる（余剰スロットは opcode=0 で無効化する）。溢れたら false。 */
+    default boolean patchSpanEnd(int index, boolean ok) {
+        return false;
+    }
+
+    /** インプレース上書きを中断して通常走査へ戻す。 */
+    default void abortDiffPatch() {}
+
+    /** インプレース上書きバッチを確定する。 */
+    default void endDiffPatch() {}
+
     int MAX_CLIPS = 4;
 
     /**

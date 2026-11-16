@@ -90,6 +90,14 @@ public final class PaintSceneDriver {
         default void beginRetained(DisplayItem node, int nodeIndex, int from, int to) {}
 
         /**
+         * 前フレームと項目構成が同一で、変更された位置が {@code indices[0..count)} に限られているとき、
+         * 変更分だけを高速に再描画できたら true。できない（または非対応の）ときは false を返して通常走査へフォールバックする。
+         */
+        default boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) {
+            return false;
+        }
+
+        /**
          * {@link RetainPlan#RECORD}: 範囲を描き終えた。層を保存して重ねたら true。保持できなかった（描き方が層に向かない）なら、層を捨てて false を返す。
          * false のとき、ドライバは同じ範囲をふつうに描き直す。
          */
@@ -215,14 +223,32 @@ public final class PaintSceneDriver {
         }
         rb.keyScale = Double.NaN;
         for (int j = 0; j < n; j++) {
-            DisplayItem el = items.get(from + j);
-            if (!isNeutral(el, from + j)) {
+            int idx = from + j;
+            DisplayItem el = items.get(idx);
+            if (!isNeutral(el, idx)) {
                 if (stateBlocked) { rb.valid = false; stateBlocked = false; }
                 return null;
             }
             boolean node = el.type() == ElementType.NODE;
-            rb.bottom[j] = node ? Double.NEGATIVE_INFINITY : el.y() + (double) el.height();
-            rb.top[j] = node ? Double.POSITIVE_INFINITY : el.y();
+            double relY = 0;
+            if (!node) {
+                int p = parentIdx[idx];
+                int hops = 0;
+                while (p != c) {
+                    if (p < from || p >= to || ++hops > n) {
+                        if (stateBlocked) { rb.valid = false; stateBlocked = false; }
+                        return null;
+                    }
+                    DisplayItem anc = items.get(p);
+                    if (anc.type() == ElementType.NODE && anc.hints().relativeOrigin()) {
+                        relY += anc.y();
+                    }
+                    p = parentIdx[p];
+                }
+            }
+            double absY = relY + el.y();
+            rb.bottom[j] = node ? Double.NEGATIVE_INFINITY : absY + (double) el.height();
+            rb.top[j] = node ? Double.POSITIVE_INFINITY : absY;
             rb.height[j] = node ? 0 : el.height();
         }
         rb.eligible = true;
@@ -304,7 +330,16 @@ public final class PaintSceneDriver {
     public static volatile boolean patchShiftIndex = !Boolean.getBoolean("enderframe.paint.noshiftpatch");
     /** 差のある位置の数がこれを超える（項目数に対する割合）なら、差分の更新より作り直しの方が安い。 */
     private static final int PATCH_MAX_DIFF_DIVISOR = 4;
+    private static final int MAX_DIFF_PATCH = 32;
     private int[] diffBuf = new int[64];
+    private final int[] lastDiffIndices = new int[MAX_DIFF_PATCH];
+    private final int[] lastActiveIndices = new int[MAX_DIFF_PATCH];
+    private final int[] patchWorkIndices = new int[MAX_DIFF_PATCH];
+    private int lastDiffCount, lastActiveCount;
+    private boolean lastDiffEligible;
+    private boolean lastRunCompleted;
+    private boolean lastRunActiveOverflow;
+    private int lastRunListSize;
     /** 索引（{@link #indexedById}・{@link #indexOf}・{@link #fxAnchors}）を作った時のリスト。 */
     private List<DisplayItem> indexedItems;
     /** {@link #prepare} で索引とフレーム番号を整え、まだ {@link #run} が消費していない。 */
@@ -396,11 +431,16 @@ public final class PaintSceneDriver {
         CssAnimator.cleanup(sessionId, items);
         // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
         // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
-        if (!(items == indexedItems && isImmutable(items))
-                && !patchIndex(items)
-                && !patchIndexByDiff(items)
-                && !patchIndexByShift(items)) {
-            rebuildIndex(items);
+        if (items == indexedItems && isImmutable(items)) {
+            lastDiffCount = 0;
+            lastDiffEligible = lastRunCompleted && !lastRunActiveOverflow && items.size() == lastRunListSize;
+        } else {
+            lastDiffEligible = false;
+            if (!patchIndex(items)
+                    && !patchIndexByDiff(items)
+                    && !patchIndexByShift(items)) {
+                rebuildIndex(items);
+            }
         }
         this.byId = indexedById;
         if (++frameStamp == 0) { Arrays.fill(curStamp, 0); frameStamp = 1; }
@@ -416,8 +456,26 @@ public final class PaintSceneDriver {
         if (items == null || items.isEmpty()) return;
         if (!prepared) prepare(items, nowMs, frame);
         prepared = false;
+        this.byId = indexedById;
+        boolean prevCompleted = lastRunCompleted;
+        lastRunCompleted = false;
         try {
-            this.byId = indexedById;
+            if (prevCompleted && lastDiffEligible && !lastRunActiveOverflow && items.size() == lastRunListSize) {
+                int wc = mergePatchIndices();
+                if (wc >= 0 && painter.tryPatchItems(items, patchWorkIndices, wc)) {
+                    int nextActive = 0;
+                    for (int k = 0; k < wc; k++) {
+                        int idx = patchWorkIndices[k];
+                        if (!prevIdle[idx]) lastActiveIndices[nextActive++] = idx;
+                    }
+                    lastActiveCount = nextActive;
+                    lastRunActiveOverflow = false;
+                    lastRunCompleted = true;
+                    return;
+                }
+            }
+            int activeCount = 0;
+            boolean activeOverflow = false;
             // 項目ごとの祖先のグループ（親子の鎖と、錨の範囲の両方から。外側から内側の順）
             anchorNext = 0;
             activeAnchors.clear();
@@ -458,15 +516,21 @@ public final class PaintSceneDriver {
                 List<Group> chain = List.of();
                 if (el.type() != ElementType.NODE) {
                     Resolved r = resolveAt(i);
+                    if (!prevIdle[i]) {
+                        if (activeCount < MAX_DIFF_PATCH) lastActiveIndices[activeCount++] = i;
+                        else activeOverflow = true;
+                    }
                     if (r.opacity() > 0.005f) {
-                        chain = chainFor(items, i, r);
-                        for (int k = 0, cn = chain.size(); k < cn; k++) {
-                            Group g = chain.get(k);
-                            if (g.maskOf() != null) continue;
-                            if (g.anchor() >= 0) members[g.anchor()]++;
-                            else {
-                                if (extraMembers == null) extraMembers = new HashMap<>(4);
-                                extraMembers.merge(g.id(), 1, Integer::sum);
+                        if (!r.groups().isEmpty() || !fxAnchors.isEmpty()) {
+                            chain = chainFor(items, i, r);
+                            for (int k = 0, cn = chain.size(); k < cn; k++) {
+                                Group g = chain.get(k);
+                                if (g.maskOf() != null) continue;
+                                if (g.anchor() >= 0) members[g.anchor()]++;
+                                else {
+                                    if (extraMembers == null) extraMembers = new HashMap<>(4);
+                                    extraMembers.merge(g.id(), 1, Integer::sum);
+                                }
                             }
                         }
                     } else {
@@ -541,9 +605,33 @@ public final class PaintSceneDriver {
                 }
             }
             painter.syncLayers(List.of());
+            lastActiveCount = activeCount;
+            lastRunActiveOverflow = activeOverflow;
+            lastRunListSize = total;
+            lastRunCompleted = true;
         } finally {
             this.byId = EMPTY_BY_KEY;
         }
+    }
+
+    /** 前フレームのアニメーション中項目と今フレームの差分項目を重複なく {@link #patchWorkIndices} へまとめる（上限超過時は -1）。 */
+    private int mergePatchIndices() {
+        int wc = 0;
+        for (int k = 0; k < lastActiveCount; k++) {
+            patchWorkIndices[wc++] = lastActiveIndices[k];
+        }
+        for (int k = 0; k < lastDiffCount; k++) {
+            int idx = lastDiffIndices[k];
+            boolean dup = false;
+            for (int j = 0; j < wc; j++) {
+                if (patchWorkIndices[j] == idx) { dup = true; break; }
+            }
+            if (!dup) {
+                if (wc >= MAX_DIFF_PATCH) return -1;
+                patchWorkIndices[wc++] = idx;
+            }
+        }
+        return wc;
     }
 
     /**
@@ -770,42 +858,42 @@ public final class PaintSceneDriver {
         }
         if (count == 0) {
             indexedItems = items;
+            lastDiffCount = 0;
+            lastDiffEligible = lastRunCompleted && !lastRunActiveOverflow && n == lastRunListSize;
             return true;
         }
 
         // 第 2 パス: 構造が完全に一致していることが保証されたため、変更位置を更新
-        if (count <= diffBuf.length && count <= n / 4) {
+        if (count <= diffBuf.length && count <= n / PATCH_MAX_DIFF_DIVISOR) {
+            boolean eligible = lastRunCompleted && !lastRunActiveOverflow && n == lastRunListSize && count <= MAX_DIFF_PATCH;
             for (int k = 0; k < count; k++) {
                 int i = diffBuf[k];
+                DisplayItem prevItem = old.get(i);
                 DisplayItem curItem = items.get(i);
-                long key = curItem.key();
-                indexedById.put(key, curItem);
-                if (curItem.id() != null && !curItem.id().isEmpty()) {
-                    long strKey = DisplayItem.keyOf(curItem.id());
-                    if (strKey != key) indexedById.put(strKey, curItem);
+                updateDiffSlot(i, prevItem, curItem);
+                if (eligible) {
+                    if (curItem.type() == ElementType.NODE) {
+                        Object prevClip = prevItem.meta() != null ? prevItem.meta().clipRect() : null;
+                        Object curClip = curItem.meta() != null ? curItem.meta().clipRect() : null;
+                        if (!sameGeometryWithoutTransition(prevItem, curItem)
+                                || hasFx(prevItem.hints().layer()) || hasFx(curItem.hints().layer())
+                                || !java.util.Objects.equals(prevClip, curClip)) {
+                            eligible = false;
+                        }
+                    }
+                    if (eligible) lastDiffIndices[k] = i;
                 }
-                states[i] = null;
-                prevRes[i] = null;
-                prevStatic[i] = false;
-                itemVersion[i]++;
-                stateVerified[i] = false;
             }
+            lastDiffCount = eligible ? count : 0;
+            lastDiffEligible = eligible;
         } else {
+            lastDiffEligible = false;
             // 差分が多数（inherited 等）の場合: diffBuf の再確保を避け直接走査で更新
             for (int i = 0; i < n; i++) {
+                DisplayItem prevItem = old.get(i);
                 DisplayItem is = items.get(i);
-                if (old.get(i) == is) continue;
-                long key = is.key();
-                indexedById.put(key, is);
-                if (is.id() != null && !is.id().isEmpty()) {
-                    long strKey = DisplayItem.keyOf(is.id());
-                    if (strKey != key) indexedById.put(strKey, is);
-                }
-                states[i] = null;
-                prevRes[i] = null;
-                prevStatic[i] = false;
-                itemVersion[i]++;
-                stateVerified[i] = false;
+                if (prevItem == is) continue;
+                updateDiffSlot(i, prevItem, is);
             }
         }
         invalidateRangeBounds();
@@ -813,6 +901,53 @@ public final class PaintSceneDriver {
         // 中身が変わった印（スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う）は、作り直しと同じく進める
         indexedBase = items instanceof OffsetItemList o ? o.base() : items;
         return true;
+    }
+
+    private void updateDiffSlot(int i, DisplayItem prevItem, DisplayItem curItem) {
+        long key = curItem.key();
+        indexedById.put(key, curItem);
+        if (curItem.id() != null && !curItem.id().isEmpty()) {
+            long strKey = DisplayItem.keyOf(curItem.id());
+            if (strKey != key) indexedById.put(strKey, curItem);
+        }
+        if (prevRes[i] != null && prevStatic[i] && sameGeometryWithoutTransition(prevItem, curItem)) {
+            states[i] = null;
+            prevIdle[i] = false;
+            Object prevClip = prevItem.meta() != null ? prevItem.meta().clipRect() : null;
+            Object curClip = curItem.meta() != null ? curItem.meta().clipRect() : null;
+            if (!java.util.Objects.equals(prevClip, curClip)) itemVersion[i]++;
+        } else {
+            states[i] = null;
+            prevRes[i] = null;
+            prevStatic[i] = false;
+            itemVersion[i]++;
+            stateVerified[i] = false;
+        }
+    }
+
+    private static boolean sameGeometryWithoutTransition(DisplayItem a, DisplayItem b) {
+        if (a.type() != b.type()
+                || a.x() != b.x() || a.y() != b.y() || a.width() != b.width() || a.height() != b.height()
+                || Float.compare(a.translateX(), b.translateX()) != 0
+                || Float.compare(a.translateY(), b.translateY()) != 0
+                || Float.compare(a.scaleX(), b.scaleX()) != 0
+                || Float.compare(a.scaleY(), b.scaleY()) != 0
+                || Float.compare(a.rotate(), b.rotate()) != 0
+                || Float.compare(a.opacity(), b.opacity()) != 0) {
+            return false;
+        }
+        var aa = a.animDef();
+        var ba = b.animDef();
+        if (aa != null && !com.nishiyu.enderframelib.core.css.model.AnimationSpec.NONE.equals(aa)) return false;
+        if (ba != null && !com.nishiyu.enderframelib.core.css.model.AnimationSpec.NONE.equals(ba)) return false;
+        RenderMeta ma = a.meta(), mb = b.meta();
+        float oxa = ma != null ? ma.originX() : 0.5f, oxb = mb != null ? mb.originX() : 0.5f;
+        float oya = ma != null ? ma.originY() : 0.5f, oyb = mb != null ? mb.originY() : 0.5f;
+        if (Float.compare(oxa, oxb) != 0 || Float.compare(oya, oyb) != 0) return false;
+        var ha = a.hints();
+        var hb = b.hints();
+        if (ha.relativeOrigin() != hb.relativeOrigin() || Float.compare(ha.skew(), hb.skew()) != 0) return false;
+        return java.util.Objects.equals(ha.layer(), hb.layer());
     }
 
     /**
@@ -949,13 +1084,13 @@ public final class PaintSceneDriver {
             }
         }
 
-        // 7. parentIdx の調整
+        // 7. parentIdx の調整（changed 領域内にあった親も新しい索引で引き直す）
         for (int i = 0; i < head; i++) {
             int p = parentIdx[i];
             if (p >= oldTailStart) {
                 parentIdx[i] = p + delta;
             } else if (p >= head) {
-                parentIdx[i] = -1;
+                parentIdx[i] = resolveParentIndex(items.get(i));
             }
         }
         for (int i = newTailStart; i < newN; i++) {
@@ -963,22 +1098,11 @@ public final class PaintSceneDriver {
             if (p >= oldTailStart) {
                 parentIdx[i] = p + delta;
             } else if (p >= head) {
-                parentIdx[i] = -1;
+                parentIdx[i] = resolveParentIndex(items.get(i));
             }
         }
         for (int i = head; i < newTailStart; i++) {
-            int pidx = -1;
-            long pKey = items.get(i).hints().parentKey();
-            if (pKey != 0L) {
-                pidx = indexOf.getOrDefault(pKey, -1);
-            }
-            if (pidx < 0) {
-                String pid = items.get(i).hints().parentId();
-                if (pid != null) {
-                    pidx = indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
-                }
-            }
-            parentIdx[i] = pidx;
+            parentIdx[i] = resolveParentIndex(items.get(i));
         }
 
         // 8. fxAnchors の更新
@@ -1041,6 +1165,21 @@ public final class PaintSceneDriver {
         return true;
     }
 
+    private int resolveParentIndex(DisplayItem item) {
+        int pidx = -1;
+        long pKey = item.hints().parentKey();
+        if (pKey != 0L) {
+            pidx = indexOf.getOrDefault(pKey, -1);
+        }
+        if (pidx < 0) {
+            String pid = item.hints().parentId();
+            if (pid != null) {
+                pidx = indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
+            }
+        }
+        return pidx;
+    }
+
     private void rebuildIndex(List<DisplayItem> items) {
         int n = items.size();
         Long2ObjectOpenHashMap<DisplayItem> map = new Long2ObjectOpenHashMap<>(n * 2);
@@ -1069,18 +1208,7 @@ public final class PaintSceneDriver {
 
         ensureCapacity(n);
         for (int i = 0; i < n; i++) {
-            int pidx = -1;
-            long pKey = items.get(i).hints().parentKey();
-            if (pKey != 0L) {
-                pidx = indexOf.getOrDefault(pKey, -1);
-            }
-            if (pidx < 0) {
-                String pid = items.get(i).hints().parentId();
-                if (pid != null) {
-                    pidx = indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
-                }
-            }
-            parentIdx[i] = pidx;
+            parentIdx[i] = resolveParentIndex(items.get(i));
         }
         computeRetainRanges(items);
         Arrays.fill(curRes, 0, n, null);
@@ -1216,6 +1344,11 @@ public final class PaintSceneDriver {
         return prevIdle[i];
     }
 
+    /** 項目の直近の解決済み姿勢（呼び出しは {@link #resolveAt} の前後に限る）。 */
+    public Resolved peekPrevRes(int i) {
+        return i >= 0 && i < prevRes.length ? prevRes[i] : null;
+    }
+
     public Resolved resolveAt(int i) {
         Resolved r;
         if (curStamp[i] == frameStamp && (r = curRes[i]) != null) return r;
@@ -1235,15 +1368,14 @@ public final class PaintSceneDriver {
         if (st == null) st = states[i] = CssAnimator.stateFor(sessionId, el, now);
         boolean idle = !st.isActiveAt(now);
         // 姿勢と不透明度が動いていない（止まっている・色だけが補間される）なら、前回の姿勢をそのまま使う
-        boolean geometryStatic = idle || st.geometryStaticAt(now);
+        boolean geometryStatic = idle || st.motionKindAt(now) <= 1;
         Resolved prev = prevRes[i];
-        if (reuseIdlePoses && prev != null && geometryStatic && prevStatic[i] && prevParentRes[i] == parent) {
-            // 自分も親も姿勢は動いていない: 行列の掛け算はしない。補間値（Resolved が持つ共有の同じ実体）は、前回も止まっていて
-            // 確定済みのとき以外は更新する（色が動いている・今のフレームで終わったとき）
-            if (!(idle && prevIdle[i])) st.getInterpolatedValues(now);
+        AnimatedValues animVals = null;
+        if (reuseIdlePoses && prev != null && geometryStatic && prevStatic[i] && prevParentRes[i] == parent
+                && ((idle && prevIdle[i]) || prev.anim() == (animVals = st.getInterpolatedValues(now)))) {
             r = prev;
         } else {
-            r = build(el, i, parent, st.getInterpolatedValues(now));
+            r = build(el, i, parent, animVals != null ? animVals : st.getInterpolatedValues(now));
             prevRes[i] = r;
             prevParentRes[i] = parent;
             prevStatic[i] = geometryStatic; // 「前回も姿勢が動いていなかった」
@@ -1260,8 +1392,10 @@ public final class PaintSceneDriver {
         float parentResidual = parent != null ? parent.residual() : 1f;
         List<Group> parentGroups = parent != null ? parent.groups() : List.of();
         Matrix2D pose;
+        boolean relOrigin = el.type() == ElementType.NODE && el.hints().relativeOrigin();
         if (anim.rot() == 0f && anim.skew() == 0f && anim.sx() == 1f && anim.sy() == 1f) {
-            float tx = anim.tx(), ty = anim.ty();
+            float tx = anim.tx() + (relOrigin ? el.x() : 0f);
+            float ty = anim.ty() + (relOrigin ? el.y() : 0f);
             if (tx == 0f && ty == 0f) {
                 pose = base;
             } else {
@@ -1272,12 +1406,15 @@ public final class PaintSceneDriver {
         } else {
             RenderMeta meta = el.meta();
             float ox = meta != null ? meta.originX() : 0.5f, oy = meta != null ? meta.originY() : 0.5f;
-            double cx = el.x() + el.width() * ox, cy = el.y() + el.height() * oy;
-            pose = base.multiply(Matrix2D.translate(cx + anim.tx(), cy + anim.ty()));
+            double lx = (relOrigin ? 0.0 : el.x()) + el.width() * ox;
+            double ly = (relOrigin ? 0.0 : el.y()) + el.height() * oy;
+            double px = relOrigin ? el.x() : 0.0;
+            double py = relOrigin ? el.y() : 0.0;
+            pose = base.multiply(Matrix2D.translate(px + lx + anim.tx(), py + ly + anim.ty()));
             if (anim.rot() != 0f) pose = pose.multiply(Matrix2D.rotate(Math.toRadians(anim.rot())));
             if (anim.skew() != 0f) pose = pose.multiply(new Matrix2D(1, 0, Math.tan(Math.toRadians(anim.skew())), 1, 0, 0)); // skewX（回転の後・拡縮の前）
             if (anim.sx() != 1f || anim.sy() != 1f) pose = pose.multiply(Matrix2D.scale(anim.sx(), anim.sy()));
-            pose = pose.multiply(Matrix2D.translate(-cx, -cy));
+            pose = pose.multiply(Matrix2D.translate(-lx, -ly));
         }
         boolean fx = el.type() == ElementType.NODE && hasFx(el.hints().layer());
         boolean group = el.type() == ElementType.NODE && (anim.opacity() < 0.999f || fx);

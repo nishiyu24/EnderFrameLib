@@ -171,15 +171,18 @@ public final class UiFocus {
         return it.y() + it.height() / 2.0;
     }
 
-    /** 節ごとに位置を代表する項目（節自身の箱があればそれ、無ければ最初の部品）。 */
+    /** 節ごとに位置を代表する項目（節自身の箱があればそれ、無ければ最初の部品）。絶対位置に解決して返す。 */
     private static Map<String, DisplayItem> itemsByNode(List<DisplayItem> items) {
+        Map<String, DisplayItem> byId = new HashMap<>();
         Map<String, DisplayItem> map = new HashMap<>();
         if (items == null) return map;
+        for (DisplayItem it : items) byId.put(it.id(), it);
         for (DisplayItem it : items) {
             if (it.width() <= 0 || it.height() <= 0) continue;
             if (it.type() == ElementType.NODE && it.id().equals(it.baseId())) map.put(it.baseId(), it);
             else map.putIfAbsent(it.baseId(), it);
         }
+        map.replaceAll((k, v) -> DisplayItem.resolveAbsolute(byId, v));
         return map;
     }
 

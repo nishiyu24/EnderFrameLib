@@ -151,7 +151,7 @@ public class PaintModelTest {
         Rendered r = render("<div id=\"a\" style=\"margin: 10px; width: 50px; height: 20px; outline: 2px solid rgb(255, 0, 0); outline-offset: 3px;\"></div>");
         LayoutBox a = find(r.root, "a");
         assertEquals(50, a.w, 0.01f);
-        DisplayItem top = element(r, "a_o_top");
+        DisplayItem top = DisplayItem.resolveAbsolute(r.elements, element(r, "a_o_top"));
         assertNotNull(top);
         assertEquals(Math.round(a.x - 5), top.x());
         assertEquals(Math.round(a.y - 5), top.y());
@@ -184,9 +184,10 @@ public class PaintModelTest {
         assertEquals(4, tiles.size());
         LayoutBox a = find(r.root, "a");
         for (int i = 0; i < 4; i++) {
-            assertEquals(Math.round(a.x + i * 10), tiles.get(i).x());
-            assertEquals(ElementType.IMAGE, tiles.get(i).type());
-            assertEquals("a.png", tiles.get(i).text());
+            DisplayItem absTile = DisplayItem.resolveAbsolute(r.elements, tiles.get(i));
+            assertEquals(Math.round(a.x + i * 10), absTile.x());
+            assertEquals(ElementType.IMAGE, absTile.type());
+            assertEquals("a.png", absTile.text());
         }
         // 描画領域（border-box）で切る
         assertEquals(a.x + a.w, tiles.getLast().meta().clipRect().maxX(), 0.01f);
@@ -194,9 +195,10 @@ public class PaintModelTest {
         List<DisplayItem> centered = parts(r, "b_bgl0");
         assertEquals(1, centered.size());
         LayoutBox b = find(r.root, "b");
-        assertEquals(Math.round(b.x + 15), centered.getFirst().x());
-        assertEquals(Math.round(b.y + 15), centered.getFirst().y());
-        assertEquals(10, centered.getFirst().width());
+        DisplayItem absCentered = DisplayItem.resolveAbsolute(r.elements, centered.getFirst());
+        assertEquals(Math.round(b.x + 15), absCentered.x());
+        assertEquals(Math.round(b.y + 15), absCentered.y());
+        assertEquals(10, absCentered.width());
     }
 
     @Test
@@ -383,10 +385,11 @@ public class PaintModelTest {
         List<DisplayItem> parts = parts(r, "a_shadow");
         assertEquals(1, parts.size(), "ぼかしの無い影は 1 枚");
         DisplayItem shadow = parts.getFirst();
-        assertEquals(Math.round(a.x + 5 - 2), shadow.x());
-        assertEquals(Math.round(a.y + 6 - 2), shadow.y());
-        assertEquals(44, shadow.width());
-        assertEquals(24, shadow.height());
+        DisplayItem absShadow = DisplayItem.resolveAbsolute(r.elements, shadow);
+        assertEquals(Math.round(a.x + 5 - 2), absShadow.x());
+        assertEquals(Math.round(a.y + 6 - 2), absShadow.y());
+        assertEquals(44, absShadow.width());
+        assertEquals(24, absShadow.height());
         assertEquals(0xFF000000, shadow.bgColor());
         // 影は箱の背景より下
         assertTrue(r.elements.indexOf(shadow) < r.elements.indexOf(element(r, "a_bg")));
@@ -434,8 +437,9 @@ public class PaintModelTest {
         ShadowShape hole = parts(r, "a_shadow").getFirst().hints().shadowShape();
         assertNotNull(hole, "ぼかした外側の影は箱の形を穴として持つ（透明な箱の内側に影が透けない）");
         assertEquals(false, hole.inset());
-        assertEquals(a.x, hole.x0(), 0.01);
-        assertEquals(a.y + a.h, hole.y1(), 0.01);
+        float ox = Math.round(a.x), oy = Math.round(a.y);
+        assertEquals(a.x - ox, hole.x0(), 0.01);
+        assertEquals(a.y + a.h - oy, hole.y1(), 0.01);
         assertEquals(5f, hole.rTL(), 0.01);
     }
 
@@ -596,10 +600,12 @@ public class PaintModelTest {
         List<DisplayItem> rights = numbered(r, "s_b_right_");
         assertEquals(1, lefts.size());
         assertEquals(1, rights.size());
-        assertEquals(Math.round(frags.getFirst().x), lefts.getFirst().x());
-        assertEquals(Math.round(frags.getFirst().y), lefts.getFirst().y());
+        DisplayItem absLeft = DisplayItem.resolveAbsolute(r.elements, lefts.getFirst());
+        DisplayItem absRight = DisplayItem.resolveAbsolute(r.elements, rights.getFirst());
+        assertEquals(Math.round(frags.getFirst().x), absLeft.x());
+        assertEquals(Math.round(frags.getFirst().y), absLeft.y());
         LayoutBox.InlineFragment last = frags.getLast();
-        assertEquals(Math.round(last.x + last.w), rights.getFirst().x() + rights.getFirst().width());
+        assertEquals(Math.round(last.x + last.w), absRight.x() + absRight.width());
         assertEquals(RED, lefts.getFirst().bgColor());
         assertEquals(0xFF00FF00, numbered(r, "s_frag_").getFirst().bgColor());
     }

@@ -97,11 +97,21 @@ final class BoxAnimation {
         return Transforms.toTrs(Transforms.compose(decls.get("translate"), decls.get("rotate"), decls.get("scale"), decls.get(CssProperty.TRANSFORM), ctx));
     }
 
+    private static final float[] IDENTITY_TRS = {0f, 0f, 1f, 1f, 0f, 0f};
+    static final TransitionSpec NONE_TRANSITION = new TransitionSpec(0, 0, EasingFunction.DEFAULT_EASING, "all");
+
     /** 箱の算出値の {@code translate} / {@code rotate} / {@code scale} / {@code transform} を宣言順に合成して {@code {tx, ty, sx, sy, rot}} にする。 */
     float[] transformOf(LayoutBox box) {
+        String tr = box.style.get(CssPropertyIndex.TRANSLATE);
+        String rot = box.style.get(CssPropertyIndex.ROTATE);
+        String sc = box.style.get(CssPropertyIndex.SCALE);
+        String tf = box.style.get(CssPropertyIndex.TRANSFORM);
+        if ((tr == null || tr.isEmpty()) && (rot == null || rot.isEmpty())
+                && (sc == null || sc.isEmpty()) && (tf == null || tf.isEmpty())) {
+            return IDENTITY_TRS;
+        }
         Transforms.Context ctx = new Transforms.Context(box.w, box.h, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
-        return Transforms.toTrs(Transforms.compose(box.style.get(CssPropertyIndex.TRANSLATE), box.style.get(CssPropertyIndex.ROTATE), box.style.get(CssPropertyIndex.SCALE),
-                box.style.get(CssPropertyIndex.TRANSFORM), ctx));
+        return Transforms.toTrs(Transforms.compose(tr, rot, sc, tf, ctx));
     }
 
     /**
@@ -109,6 +119,9 @@ final class BoxAnimation {
      * {@link AnimationSpec} に解決する。
      */
     AnimationSpec parseAnimationDef(ComputedStyle style, float baseW, float baseH, int baseColor, int baseBgColor) {
+        if (!style.containsKey(CssPropertyIndex.ANIMATION) && !style.containsKey(CssPropertyIndex.ANIMATION_NAME)) {
+            return AnimationSpec.NONE;
+        }
         // 結果はスタイルと（@keyframes・基準の大きさと色）だけで決まるので、スタイルの置き場に覚える。
         // 描画のたびに全箱の animation を字句解析し直していた（表示リスト作りの 3 割）
         if (NO_MEMO) return resolveAnimationDef(style, baseW, baseH, baseColor, baseBgColor);
@@ -235,12 +248,27 @@ final class BoxAnimation {
     private static final java.util.concurrent.ConcurrentHashMap<String, TransitionSpec> SHORTHAND_TRANSITION_CACHE =
             new java.util.concurrent.ConcurrentHashMap<>();
 
+    static TransitionSpec parseTransitionSpec(ComputedStyle style) {
+        String tr = style.get(CssPropertyIndex.TRANSITION);
+        String tp = style.get(CssPropertyIndex.TRANSITION_PROPERTY);
+        String tdur = style.get(CssPropertyIndex.TRANSITION_DURATION);
+        String td = style.get(CssPropertyIndex.TRANSITION_DELAY);
+        String ttf = style.get(CssPropertyIndex.TRANSITION_TIMING_FUNCTION);
+        if (tr == null && tp == null && tdur == null && td == null && ttf == null) return NONE_TRANSITION;
+        return resolveTransitionSpec(tr, tp, tdur, td, ttf);
+    }
+
     static TransitionSpec parseTransitionSpec(Map<String, String> style) {
         String tr = style.get(CssProperty.TRANSITION);
         String tp = style.get(CssProperty.TRANSITION_PROPERTY);
         String tdur = style.get(CssProperty.TRANSITION_DURATION);
         String td = style.get(CssProperty.TRANSITION_DELAY);
         String ttf = style.get(CssProperty.TRANSITION_TIMING_FUNCTION);
+        if (tr == null && tp == null && tdur == null && td == null && ttf == null) return NONE_TRANSITION;
+        return resolveTransitionSpec(tr, tp, tdur, td, ttf);
+    }
+
+    private static TransitionSpec resolveTransitionSpec(String tr, String tp, String tdur, String td, String ttf) {
         if (tp == null && tdur == null && td == null && ttf == null && tr != null && !tr.isBlank()) {
             TransitionSpec cached = SHORTHAND_TRANSITION_CACHE.get(tr);
             if (cached != null) return cached;

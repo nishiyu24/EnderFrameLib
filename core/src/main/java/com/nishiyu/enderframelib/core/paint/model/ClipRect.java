@@ -62,9 +62,26 @@ public record ClipRect(
 
     /** この矩形の連鎖に、{@code ownerId} の要素の空間の矩形 {@code rect}（{@link #toArray} の並び）を 1 つ足したもの。 */
     public java.util.List<ClipChainPart> chainPlus(float[] rect, String owner) {
-        java.util.List<ClipChainPart> out = new java.util.ArrayList<>(chain);
-        out.add(new ClipChainPart(rect, owner));
-        return out;
+        return appendChain(this, rect, owner);
+    }
+
+    /** {@code parent}（null 可）の連鎖末尾に 1 要素を足した不変リストを作る。 */
+    public static java.util.List<ClipChainPart> appendChain(ClipRect parent, float[] rect, String owner) {
+        return appendChain(parent, rect, owner, 0, 0);
+    }
+
+    /** {@code parent}（null 可）の連鎖末尾に、所有者の原点付きの 1 要素を足した不変リストを作る。 */
+    public static java.util.List<ClipChainPart> appendChain(ClipRect parent, float[] rect, String owner,
+                                                            int ownerOriginX, int ownerOriginY) {
+        ClipChainPart part = new ClipChainPart(rect, owner, ownerOriginX, ownerOriginY);
+        if (parent == null || parent.chain.isEmpty()) return java.util.List.of(part);
+        int n = parent.chain.size();
+        if (n == 1) return java.util.List.of(parent.chain.get(0), part);
+        if (n == 2) return java.util.List.of(parent.chain.get(0), parent.chain.get(1), part);
+        ClipChainPart[] arr = new ClipChainPart[n + 1];
+        for (int i = 0; i < n; i++) arr[i] = parent.chain.get(i);
+        arr[n] = part;
+        return java.util.List.of(arr);
     }
 
     /** 縦の半径が横と違う角があるか（縦が全部 0 なら円の角）。 */

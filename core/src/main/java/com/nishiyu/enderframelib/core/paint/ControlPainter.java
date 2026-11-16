@@ -57,6 +57,10 @@ final class ControlPainter {
             // ビルトイン 3D ビューポート: バックエンドが Scene3DWorld を引くための識別（nodeId）と種類
             sceneEvents.put(Scene3DTags.KIND_ATTR, Scene3DTags.KIND_3D);
             sceneEvents.put(Scene3DTags.WORLD_ATTR, Long.toString(box.node.nodeId()));
+            String orbit = box.node.attrs.get("data-orbit");
+            if (orbit != null && (orbit.isEmpty() || orbit.equalsIgnoreCase("true") || orbit.equals("1"))) {
+                sceneEvents.put(Scene3DTags.ORBIT_ATTR, "true");
+            }
         }
         long sceneKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_SCENE) : 0L;
         addElement(elements, id, id + "_scene", ElementType.SCENE, innerX, innerY, innerW, innerH, id, color, bgColor, sceneEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, sceneKey);
@@ -253,7 +257,7 @@ final class ControlPainter {
                             ? box.placeholderStyle.color(CssPropertyIndex.COLOR, DEFAULT_PLACEHOLDER_COLOR)
                             : DEFAULT_PLACEHOLDER_COLOR;
                     long phKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_PLACEHOLDER) : 0L;
-                    addElement(elements, id, id + "_ph", ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, placeholderColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, phKey);
+                    addElement(elements, id, PaintSupport.partId(box, id, 18, "_ph"), ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, placeholderColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, phKey);
                 }
             }
         }
@@ -290,7 +294,7 @@ final class ControlPainter {
         int radius = radio ? Math.round(size / 2) : Math.min(NATIVE_CHECKBOX_RADIUS, Math.round(size / 2));
         Corners corners = Corners.all(radius);
         RenderMeta meta = new RenderMeta(baseMeta.clipRect(), corners, null,
-                baseMeta.fontHeight(), baseMeta.originX(), baseMeta.originY(), 1, false);
+                baseMeta.fontHeight(), 0.0f, 0.0f, baseMeta.originX(), baseMeta.originY(), 1, false, null, partsEvents.hints());
 
         String state = mixed ? "mixed" : Boolean.toString(checked);
         boolean filled = !radio && (checked || mixed);
@@ -307,7 +311,7 @@ final class ControlPainter {
         int ring = radio ? strong : stateColor;
         RoundedBorderSpec spec = new RoundedBorderSpec(1f, 1f, 1f, 1f, ring, ring, ring, ring);
         RenderMeta ringMeta = new RenderMeta(baseMeta.clipRect(), corners, null,
-                baseMeta.fontHeight(), 0f, 0f, baseMeta.originX(), baseMeta.originY(), 1, false, spec);
+                baseMeta.fontHeight(), 0f, 0f, baseMeta.originX(), baseMeta.originY(), 1, false, spec, passiveBorderEvents.hints());
         long roundKey = box.node != null ? BoxDecorationPainter.decorationKey(box, BoxDecorationPainter.FRAG_PART_BASE, 0) : 0L;
         addElement(elements, id, id + "_b_round", ElementType.ROUNDED_BORDER, x, y, size, size, "", 0, 0x00000000,
                 passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta, roundKey);
@@ -456,11 +460,12 @@ final class ControlPainter {
                       "_textarea".equals(suffix) ? DisplayItem.PART_TEXTAREA :
                       "_select".equals(suffix) ? DisplayItem.PART_SELECT : DisplayItem.PART_INPUT;
         long ctrlKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), partOrd) : 0L;
+        String ctrlId = PaintSupport.partId(box, id, 19, suffix);
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
-            addElement(elements, id, id + suffix, type, innerX, innerY, innerW, innerH, text, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, ctrlKey);
+            addElement(elements, id, ctrlId, type, innerX, innerY, innerW, innerH, text, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, ctrlKey);
         } else {
-            addElement(elements, id, id + suffix, type, box.x, box.y, box.w, box.h, text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, ctrlKey);
+            addElement(elements, id, ctrlId, type, box.x, box.y, box.w, box.h, text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, ctrlKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }

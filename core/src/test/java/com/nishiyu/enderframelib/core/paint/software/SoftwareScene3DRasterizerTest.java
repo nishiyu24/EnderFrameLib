@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.scene3d.BlendMode3D;
+import com.nishiyu.enderframelib.core.scene3d.LightDesc;
 import com.nishiyu.enderframelib.core.scene3d.MaterialDesc;
 import com.nishiyu.enderframelib.core.scene3d.MeshHandle;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+import com.nishiyu.enderframelib.core.scene3d.Texture3D;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
@@ -254,5 +256,157 @@ class SoftwareScene3DRasterizerTest {
         // 画面でも: 単面の unlit な球は手前側が描かれる
         node(w, sphere, unlit(w, 0xFFFF8800), 0, 0, 0);
         assertEquals(0xFF8800, rgb(SoftwareScene3DRasterizer.render(w, 48, 48).get(24, 24)));
+    }
+
+    // ------------------------------------------------------------------ 追加ライト（ポイント / スポット）
+
+    /** 床（+Y 向きの板）を真上から見る。主ライトと環境光は 0 にして、追加ライトだけの寄与を見る。 */
+    private static Scene3DWorld floorWorld() {
+        Scene3DWorld w = world();
+        w.camera().lookAt(0, 6, 0.01f, 0, 0, 0, 0, 1, 0);
+        w.light().setColor(0f, 0f, 0f, 0f);
+        w.light().setAmbient(0f, 0f, 0f);
+        MeshHandle slab = w.geometry().createBox(8f, 0.1f, 8f);
+        MaterialDesc m = w.materials().register(0xFFC8C8C8, 0f, 0.9f, 0, 0f, null, false, false);
+        node(w, slab, m, 0, -0.05f, 0);
+        return w;
+    }
+
+    private static int lum(Pixmap p, int x, int y) { return channel(p.get(x, y), 8); }
+
+    @Test
+    void aPointLightBrightensTheNearSideAndFallsOffWithDistance() {
+        Scene3DWorld w = floorWorld();
+        assertEquals(0, lum(SoftwareScene3DRasterizer.render(w, 64, 64), 32, 32) , "追加ライト無しなら床は暗い");
+        assertTrue(w.light().addPoint(0, 1.5f, 0, 1f, 1f, 1f, 6f, 8f));
+        Pixmap p = SoftwareScene3DRasterizer.render(w, 64, 64);
+        int center = lum(p, 32, 32), edge = lum(p, 32 + 20, 32);
+        assertTrue(center > 60, "真下は明るい: " + center);
+        assertTrue(center > edge * 1.4, "離れるほど暗い: center=" + center + " edge=" + edge);
+    }
+
+    @Test
+    void aPointLightBeyondItsRangeContributesNothing() {
+        Scene3DWorld w = floorWorld();
+        w.light().addPoint(0, 1.5f, 0, 1f, 1f, 1f, 50f, 1.0f); // 範囲 1 < 高さ 1.5
+        assertEquals(0, lum(SoftwareScene3DRasterizer.render(w, 64, 64), 32, 32));
+    }
+
+    @Test
+    void aSpotLightLightsOnlyInsideItsCone() {
+        Scene3DWorld w = floorWorld();
+        // 真下へ向けた細いスポット（半角 内 8°・外 14°）。高さ 3 → 外縁の半径 ≈ 0.75
+        assertTrue(w.light().addSpot(0, 3f, 0, 0, -1, 0, 1f, 1f, 1f, 30f, 20f, 8f, 14f));
+        Pixmap p = SoftwareScene3DRasterizer.render(w, 64, 64);
+        assertTrue(lum(p, 32, 32) > 60, "円錐の中心は明るい: " + lum(p, 32, 32));
+        assertEquals(0, lum(p, 32 + 24, 32), "円錐の外は真っ暗");
+    }
+
+    @Test
+    void extraLightsAddUpAndStopAtTheCapacity() {
+        LightDesc l = new LightDesc();
+        for (int i = 0; i < LightDesc.MAX_EXTRA; i++) assertTrue(l.addPoint(i, 1, 0, 1, 1, 1, 1, 5));
+        assertFalse(l.addPoint(0, 0, 0, 1, 1, 1, 1, 5), "満杯では足せない");
+        assertEquals(LightDesc.MAX_EXTRA, l.extraCount());
+        long before = l.changeCount();
+        l.clearExtras();
+        assertEquals(0, l.extraCount());
+        assertTrue(l.changeCount() > before, "外すと見た目の変更として数える");
+        l.clearExtras();
+        assertEquals(before + 1, l.changeCount(), "空のまま外しても数えない");
+
+        Scene3DWorld w = floorWorld();
+        w.light().addPoint(-1.5f, 1.5f, 0, 1f, 1f, 1f, 4f, 8f);
+        int one = lum(SoftwareScene3DRasterizer.render(w, 64, 64), 32, 32);
+        w.light().addPoint(1.5f, 1.5f, 0, 1f, 1f, 1f, 4f, 8f);
+        int two = lum(SoftwareScene3DRasterizer.render(w, 64, 64), 32, 32);
+        assertTrue(two > one * 1.5, "2 灯は 1 灯より明るい: " + one + " → " + two);
+    }
+
+    @Test
+    void extraLightsAreSeenByTheRedrawGate() {
+        Scene3DWorld w = floorWorld();
+        long before = w.changeCount();
+        w.light().addPoint(0, 1, 0, 1, 1, 1, 1, 4);
+        assertNotEquals(before, w.changeCount(), "ライトを足したら描き直しが要る");
+    }
+
+    // ------------------------------------------------------------------ ベースカラー画像
+
+    /** 左半分が赤・右半分が青の 2×1 画像。 */
+    private static Texture3D redBlue() {
+        return new Texture3D(2, 1, new int[]{0xFFFF0000, 0xFF0000FF});
+    }
+
+    private static MaterialDesc textured(Scene3DWorld w, int base, Texture3D tex, boolean repeat, BlendMode3D mode) {
+        return w.materials().register(base, 0f, 0.5f, 0, 0f, mode, false, true, tex, repeat);
+    }
+
+    @Test
+    void aTexturedFaceShowsTheImageLeftToRight() {
+        Scene3DWorld w = world();
+        MeshHandle box = w.geometry().createBox(2f, 2f, 0.2f); // +Z 面: 左 (x<0) が u<0.5
+        node(w, box, textured(w, 0xFFFFFFFF, redBlue(), false, null), 0, 0, 0);
+        Pixmap p = SoftwareScene3DRasterizer.render(w, 64, 64);
+        int left = rgb(p.get(24, 32)), right = rgb(p.get(40, 32));
+        assertTrue(channel(left, 16) > 200 && channel(left, 0) < 60, "左は赤: " + Integer.toHexString(left));
+        assertTrue(channel(right, 0) > 200 && channel(right, 16) < 60, "右は青: " + Integer.toHexString(right));
+    }
+
+    @Test
+    void theBaseColorTintsTheImage() {
+        Scene3DWorld w = world();
+        MeshHandle box = w.geometry().createBox(2f, 2f, 0.2f);
+        node(w, box, textured(w, 0xFF808080, redBlue(), false, null), 0, 0, 0); // 灰 × 赤 = 暗い赤
+        int px = rgb(SoftwareScene3DRasterizer.render(w, 64, 64).get(24, 32));
+        int r = channel(px, 16);
+        assertTrue(r > 110 && r < 145, "0xFF x 0x80 は約 0x80: " + r);
+        assertTrue(channel(px, 8) < 10 && channel(px, 0) < 10);
+    }
+
+    @Test
+    void imageAlphaCutsAMaskMaterial() {
+        Scene3DWorld w = world();
+        MeshHandle box = w.geometry().createBox(2f, 2f, 0.2f);
+        Texture3D cut = new Texture3D(2, 1, new int[]{0xFFFF0000, 0x00FF0000}); // 右半分は透明
+        node(w, box, textured(w, 0xFFFFFFFF, cut, false, BlendMode3D.MASK), 0, 0, 0);
+        Pixmap p = SoftwareScene3DRasterizer.render(w, 64, 64);
+        assertEquals(0xFF0000, rgb(p.get(20, 32)), "左は残る");
+        assertEquals(BG, p.get(44, 32), "右は捨てられて背景");
+    }
+
+    @Test
+    void repeatDoesNotChangeAFaceWhoseUvStaysInsideTheImage() {
+        Pixmap[] out = new Pixmap[2];
+        for (int pass = 0; pass < 2; pass++) {
+            Scene3DWorld w = world();
+            MeshHandle box = w.geometry().createBox(2f, 2f, 0.2f);
+            node(w, box, textured(w, 0xFFFFFFFF, redBlue(), pass == 1, null), 0, 0, 0);
+            out[pass] = SoftwareScene3DRasterizer.render(w, 64, 64);
+        }
+        // UV は 0〜1 の内側なので fract(uv) = uv。繰り返しの有無で絵は変わらない（端の補間の差だけ許す）
+        int far = 0;
+        for (int i = 0; i < 64 * 64; i++) {
+            int a = out[0].pixels()[i], b = out[1].pixels()[i];
+            if (Math.abs(channel(a, 16) - channel(b, 16)) > 3 || Math.abs(channel(a, 0) - channel(b, 0)) > 3) far++;
+        }
+        assertEquals(0, far);
+    }
+
+    @Test
+    void texturedAndPlainMaterialsCanBeMixedInOneScene() {
+        Scene3DWorld w = world();
+        MeshHandle box = w.geometry().createBox(1f, 1f, 0.2f);
+        node(w, box, textured(w, 0xFFFFFFFF, redBlue(), false, null), -1.2f, 0, 0);
+        node(w, box, unlit(w, 0xFF00FF00), 1.2f, 0, 0);
+        Pixmap p = SoftwareScene3DRasterizer.render(w, 96, 64);
+        int red = 0, blue = 0;
+        for (int px : p.pixels()) {
+            if (channel(px, 16) > 150 && channel(px, 0) < 80) red++;
+            if (channel(px, 0) > 150 && channel(px, 16) < 80) blue++;
+        }
+        assertTrue(red > 30 && blue > 30, "画像つきは左が赤・右が青: red=" + red + " blue=" + blue);
+        long green = Arrays.stream(p.pixels()).filter(px -> rgb(px) == 0x00FF00).count();
+        assertTrue(green > 30, "画像なしは基本色のまま: " + green);
     }
 }

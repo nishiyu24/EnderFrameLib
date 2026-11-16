@@ -13,6 +13,8 @@ public final class Glsl {
             #define EF_INSTANCE_ID gl_InstanceID
             #define EF_FRAG_Y(efViewH) ((efViewH) - gl_FragCoord.y)
             #define EF_CLIP_Y(efClipVal) (efClipVal)
+            // RHI の GL は行を上下反転して持つ（上げた先頭の行が画面の上になる向き）。画像の v = 0（先頭の行）を引くには反転が要る
+            #define EF_IMG_V(efV) (1.0 - (efV))
             #define EF_ATLAS_Y(efAtlasTex, efRow) (textureSize(efAtlasTex, 0).y - 1 - (efRow))
             #define EF_UBO(efBind, efName) layout(std140) uniform efName
             #define EF_TEX2D(efBind, efName) uniform sampler2D efName
@@ -31,6 +33,7 @@ public final class Glsl {
             #define EF_INSTANCE_ID gl_InstanceIndex
             #define EF_FRAG_Y(efViewH) (gl_FragCoord.y)
             #define EF_CLIP_Y(efClipVal) (-(efClipVal))
+            #define EF_IMG_V(efV) (efV)
             #define EF_ATLAS_Y(efAtlasTex, efRow) (efRow)
             #define EF_UBO(efBind, efName) layout(set = 0, binding = efBind, std140) uniform efName
             #define EF_TEX2D(efBind, efName) layout(set = 0, binding = efBind) uniform sampler2D efName

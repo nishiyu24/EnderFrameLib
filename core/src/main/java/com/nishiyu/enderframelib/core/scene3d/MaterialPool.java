@@ -26,6 +26,21 @@ public final class MaterialPool {
         return desc;
     }
 
+    /** ベースカラー画像つき。{@code repeat} は UV が 0〜1 の外でタイル状に繰り返すか（false は端の色が伸びる）。 */
+    public synchronized MaterialDesc register(int baseColorArgb, float metallic, float roughness,
+                                              int emissiveRgb, float emissiveStrength,
+                                              BlendMode3D blendMode, boolean doubleSided, boolean unlit,
+                                              Texture3D baseColorMap, boolean repeat) {
+        int id = materials.size();
+        MaterialDesc desc = new MaterialDesc(
+                id, baseColorArgb, metallic, roughness,
+                emissiveRgb, emissiveStrength,
+                blendMode == null ? BlendMode3D.OPAQUE : blendMode,
+                doubleSided, unlit, baseColorMap, repeat);
+        materials.add(desc);
+        return desc;
+    }
+
     public synchronized MaterialDesc registerColor(int baseColorArgb) {
         int id = materials.size();
         MaterialDesc desc = MaterialDesc.ofColor(id, baseColorArgb);

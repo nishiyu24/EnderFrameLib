@@ -28,11 +28,13 @@ import com.nishiyu.enderframelib.core.scene3d.InstancedBatcher;
 import com.nishiyu.enderframelib.core.scene3d.LightDesc;
 import com.nishiyu.enderframelib.core.scene3d.MeshHandle;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DUploadPlan;
+import com.nishiyu.enderframelib.core.scene3d.Texture3D;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 
 /**
@@ -43,7 +45,23 @@ import java.util.Map;
  */
 public final class Scene3DRenderer implements AutoCloseable {
     private static final int INITIAL_INSTANCE_CAPACITY = 256;
-    private static final GpuTexture[] EMPTY_TEX = new GpuTexture[0];
+    /** 追加ライト配列（{@code uExtra}）の uniform ブロック内の位置（std140）。 */
+    private static final int EXTRA_OFFSET = ShaderPrograms.SCENE3D.std140Offsets()[7];
+    /** 使われなくなった画像のテクスチャを手放すまでのフレーム数。 */
+    private static final long IMAGE_IDLE_FRAMES = 300;
+
+    /** 材質のベースカラー画像 → GPU テクスチャ。画像は不変なので、初めて描くときに 1 回だけ上げる。 */
+    private static final class ImageEntry {
+        final GpuTexture texture;
+        long lastUsedFrame;
+
+        ImageEntry(GpuTexture texture) { this.texture = texture; }
+    }
+
+    private final Map<Texture3D, ImageEntry> images = new IdentityHashMap<>();
+    /** 画像の無い材質が読む 1×1 の白（サンプラーは常に何かを指す必要がある）。 */
+    private GpuTexture whiteTex;
+    private long frameSeq;
 
     private final GpuDevice device;
     /** 4 通り: [blend ? 2 : 0 | doubleSided ? 1 : 0]。 */
@@ -137,6 +155,47 @@ public final class Scene3DRenderer implements AutoCloseable {
         allocateInstanceBuffer(INITIAL_INSTANCE_CAPACITY);
     }
 
+    private GpuTexture textureFor(DrawBatch3D batch) {
+        if (batch.texture() == null) return whiteTex;
+        ImageEntry e = images.get(batch.texture());
+        e.lastUsedFrame = frameSeq;
+        return e.texture;
+    }
+
+    /** 画像がまだ GPU に無ければ上げる（RGBA8・先頭の行が上・線形補間・端は張り付き）。 */
+    private void ensureImage(GpuFrame frame, Texture3D img) {
+        ImageEntry e = images.get(img);
+        if (e == null) {
+            int w = img.width(), h = img.height();
+            GpuTexture tex = device.createTexture(TextureDesc.rgba8Linear(w, h, false));
+            ByteBuffer bytes = ByteBuffer.allocateDirect(w * h * 4);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int argb = img.argb(x, y);
+                    bytes.put((byte) (argb >> 16)).put((byte) (argb >> 8)).put((byte) argb).put((byte) (argb >>> 24));
+                }
+            }
+            bytes.flip();
+            frame.upload(tex, 0, 0, w, h, bytes);
+            e = new ImageEntry(tex);
+            images.put(img, e);
+        }
+        e.lastUsedFrame = frameSeq;
+    }
+
+    /** しばらく使われていない画像のテクスチャを閉じる（描画が終わった古いフレームの分だけなので、使用中のものには触れない）。 */
+    private void sweepIdleImages() {
+        if (images.isEmpty()) return;
+        images.values().removeIf(e -> {
+            if (frameSeq - e.lastUsedFrame <= IMAGE_IDLE_FRAMES) return false;
+            e.texture.close();
+            return true;
+        });
+    }
+
+    /** GPU に載っている画像の枚数（試験用）。 */
+    public int imageTextureCount() { return images.size(); }
+
     private void allocateInstanceBuffer(int capacity) {
         if (instanceGpuBuffer != null) {
             retired.add(instanceGpuBuffer);
@@ -169,7 +228,9 @@ public final class Scene3DRenderer implements AutoCloseable {
         int w = Math.max(1, width);
         int h = Math.max(1, height);
 
-        if (frame != cursorFrame) { // 新しいフレーム: 範囲を頭から使い直し、前のフレームで手放したバッファを閉じる
+        if (frame != cursorFrame) {
+            frameSeq++;
+            sweepIdleImages(); // 新しいフレーム: 範囲を頭から使い直し、前のフレームで手放したバッファを閉じる
             cursorFrame = frame;
             cursor = 0;
             for (GpuBuffer old : retired) old.close();
@@ -201,6 +262,19 @@ public final class Scene3DRenderer implements AutoCloseable {
         if (hasDraw) {
             cursor = base + world.packInstances(instanceBuffer, base);
             instanceBuffer.flush();
+        }
+
+        if (hasDraw) {
+            for (DrawBatch3D batch : plan.batches()) {
+                if (batch.texture() != null) ensureImage(frame, batch.texture());
+            }
+            if (whiteTex == null) {
+                whiteTex = device.createTexture(TextureDesc.rgba8(1, 1, false));
+                ByteBuffer one = ByteBuffer.allocateDirect(4);
+                for (int i = 0; i < 4; i++) one.put((byte) 0xFF);
+                one.flip();
+                frame.upload(whiteTex, 0, 0, 1, 1, one);
+            }
         }
 
         GpuPass pass = frame.beginPass(target.drawColor, target.drawDepth,
@@ -235,10 +309,16 @@ public final class Scene3DRenderer implements AutoCloseable {
                 uniforms.putFloat(lr).putFloat(lg).putFloat(lb).putFloat(0f);
                 uniforms.putFloat(light.ambientR()).putFloat(light.ambientG()).putFloat(light.ambientB()).putFloat(0f);
                 uniforms.putInt(base + batch.baseInstance());
+                int extras = light.extraCount();
+                uniforms.putInt(extras);
+                uniforms.position(EXTRA_OFFSET);
+                float[] extraData = light.extraData();
+                for (int i = 0, n = extras * LightDesc.VEC4_PER_EXTRA * 4; i < n; i++) uniforms.putFloat(extraData[i]);
+                uniforms.position(ShaderPrograms.SCENE3D.uniformBytes());
                 uniforms.flip();
 
                 int key = (batch.blendMode() == BlendMode3D.TRANSPARENT ? 2 : 0) | (batch.doubleSided() ? 1 : 0);
-                pass.bind((bloom ? pipelinesHdr : pipelines)[key], new GpuBindings(bindingsBuffers, EMPTY_TEX, uniforms));
+                pass.bind((bloom ? pipelinesHdr : pipelines)[key], new GpuBindings(bindingsBuffers, new GpuTexture[]{textureFor(batch)}, uniforms));
                 if (!meshBound) {
                     pass.bindMesh(target.vbo, target.ibo);
                     meshBound = true;
@@ -415,6 +495,9 @@ public final class Scene3DRenderer implements AutoCloseable {
             t.close();
         }
         targets.clear();
+        for (ImageEntry e : images.values()) e.texture.close();
+        images.clear();
+        if (whiteTex != null) { whiteTex.close(); whiteTex = null; }
         if (instanceGpuBuffer != null) {
             instanceGpuBuffer.close();
             instanceGpuBuffer = null;

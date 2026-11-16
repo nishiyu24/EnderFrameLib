@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.dom.Scene3DDomSync;
 import com.nishiyu.enderframelib.core.scene3d.Raycaster3D;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
@@ -115,6 +116,8 @@ public class UiView implements AutoCloseable {
     private final Map<Long, Scene3DWorld> scene3dWorlds = new ConcurrentHashMap<>();
     /** ワールドごとのレイキャスト（BVH を持つので使い回す）。 */
     private final Map<Long, Raycaster3D> scene3dRaycasters = new ConcurrentHashMap<>();
+    /** {@code <scene-3d>} の子要素（{@code <mesh-3d>} など）の属性を 3D ワールドへ写す（再スタイル・再レイアウトを伴うフレームで走る）。 */
+    private Scene3DDomSync scene3dSync = new Scene3DDomSync(this::getOrCreateScene3dWorld);
     private LayoutBox layoutRoot;
     private boolean serverManaged = false;
     private boolean headlessState = false;
@@ -306,7 +309,9 @@ public class UiView implements AutoCloseable {
         builder.setUseChangeStamps(useChangeStamps);
         builder.setExactTranslation(exactTranslation);
         try {
-            return builder.render(root, scrollOnly);
+            com.nishiyu.enderframelib.core.paint.ImmutableItemList prev =
+                    this.baseRenderCache instanceof com.nishiyu.enderframelib.core.paint.ImmutableItemList il ? il : null;
+            return builder.renderImmutable(root, scrollOnly, prev);
         } finally {
             builder.setUseChangeStamps(false);
             builder.setExactTranslation(false);
@@ -1074,7 +1079,9 @@ public class UiView implements AutoCloseable {
     }
 
     private void publishBuilt(List<DisplayItem> elements) {
-        for (ScrollContentInfo info : scrollBase) {
+        List<ScrollContentInfo> oldScrollBase = scrollBase;
+        for (int i = 0, n = oldScrollBase.size(); i < n; i++) {
+            ScrollContentInfo info = oldScrollBase.get(i);
             clearPaintOffset(info.contentId());
             if (info.thumbVId() != null) clearPaintOffset(info.thumbVId());
             if (info.thumbHId() != null) clearPaintOffset(info.thumbHId());
@@ -1367,6 +1374,7 @@ public class UiView implements AutoCloseable {
             IDLE_FRAMES.incrementAndGet();
             return;
         }
+        scene3dSync.sync(document.root); // DOM（属性・束縛）が変わったかもしれないフレームだけ、3D の記述を世界へ写す
         if (level != InvalidationLevel.TEXT_PATCH) {
             // 文字の変更と再スタイルが同じフレームに重なったら、再スタイルの経路は文字の箱を差し替えないので全体にする
             boolean hadPendingText;
@@ -2023,6 +2031,7 @@ public class UiView implements AutoCloseable {
     /** 要素 ID から {@code <scene-3d>} に対応する 3D ワールドを取得または作成する（要素が無ければ null）。 */
     /** 表示中の全 3D ワールドの変更回数の合計（{@link Scene3DWorld#changeCount()}）。増えていれば 3D の見た目が変わった。 */
     public long scene3dChangeSignature() {
+        if (scene3dWorlds.isEmpty()) return 0L;
         long sum = 0;
         for (Scene3DWorld w : scene3dWorlds.values()) sum += w.changeCount();
         return sum;
@@ -2073,6 +2082,7 @@ public class UiView implements AutoCloseable {
         initializeBindings(doc.root);
         tickLocalVariables(doc.root);
         applyOverrides();
+        scene3dSync.sync(doc.root); // 初回の記述を世界へ（以後は再スタイル・再レイアウトを伴うフレームで差分だけ）
 
         interactionState.markAllDirty();
         // 再同期で同じ文書を差し替えたときは、使い回せる箱（クライアント所有の島など）を前回の木から拾う
@@ -2522,6 +2532,7 @@ public class UiView implements AutoCloseable {
         timers.clear();
         scene3dWorlds.clear();
         scene3dRaycasters.clear();
+        scene3dSync = new Scene3DDomSync(this::getOrCreateScene3dWorld);
         onClose();
     }
 

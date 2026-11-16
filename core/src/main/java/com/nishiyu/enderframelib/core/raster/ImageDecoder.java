@@ -13,7 +13,6 @@ import java.util.List;
 public interface ImageDecoder {
 
     /** 非事前乗算の ARGB 画素（行優先）。 */
-    record Bitmap(int width, int height, int[] argb) {}
 
     /** GIF の 1 フレーム。位置・大きさは論理画面内の矩形、{@code disposal} は 0=なし・2=背景に戻す・3=前の内容に戻す。 */
     record GifFrame(int left, int top, int width, int height, int[] argb, int delayMs, int disposal) {}
@@ -22,7 +21,7 @@ public interface ImageDecoder {
     record GifStream(int width, int height, List<GifFrame> frames) {}
 
     /** 1 枚の画像を復号する。対応しない形式・壊れた画像は null。 */
-    Bitmap decode(byte[] bytes) throws IOException;
+    DecodedBitmap decode(byte[] bytes) throws IOException;
 
     /**
      * GIF のフレームを取り出す。GIF でない・壊れている・フレーム数が {@code maxFrames} か総画素数が

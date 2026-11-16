@@ -99,6 +99,7 @@ public final class PaintOrder {
     private final java.util.IdentityHashMap<LayoutBox, ScrollContent> scrollContentOf = new java.util.IdentityHashMap<>();
     private final List<ScrollContent> scrollContents = new ArrayList<>();
     private List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> cachedScrollInfos;
+    private List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> prevScrollInfos;
 
     @FunctionalInterface
     interface SubtreePruner {
@@ -122,39 +123,115 @@ public final class PaintOrder {
     // 箱の数が同じなら、分類も箱の照合も飛ばして、保持した項目をそのまま出す。
     // 描画順の決まり方は変えない: 部分木の項目は、分類したときと同じ層の同じ位置に出る。
 
-    record BoxSlice(LayoutBox box, List<DisplayItem> items) {}
+    static final class BoxSlice {
+        LayoutBox box;
+        List<DisplayItem> items = List.of();
+        final ArrayList<DisplayItem> buf = new ArrayList<>(4);
+
+        void reset() {
+            box = null;
+            items = List.of();
+            buf.clear();
+        }
+    }
+
+    private final List<BoxSlice> slicePool = new ArrayList<>(64);
+
+    private BoxSlice borrowSlice() {
+        int n = slicePool.size();
+        return n > 0 ? slicePool.remove(n - 1) : new BoxSlice();
+    }
+
+    private void recycleSlices(List<BoxSlice> list) {
+        for (int i = 0, n = list.size(); i < n; i++) {
+            BoxSlice s = list.get(i);
+            s.reset();
+            if (slicePool.size() < 1024) slicePool.add(s);
+        }
+        list.clear();
+    }
 
     /** 保持した部分木の項目。{@code blocks} と {@code inlines} は、分類したときに入った層ごとの、描いた順の項目。 */
     static final class Chunk {
-        final LayoutBox parentBox;
-        final float boxX, boxY;
-        final ClipRect clip;
-        final String parentId;
-        final long epoch;
-        final int boxCount;
-        final int interactiveCount;
-        final List<DisplayItem> blockItems = new ArrayList<>();
-        final List<DisplayItem> inlineItems = new ArrayList<>();
-        final List<BoxSlice> blockSlices = new ArrayList<>();
-        final List<BoxSlice> inlineSlices = new ArrayList<>();
+        LayoutBox parentBox;
+        float boxX, boxY;
+        ClipRect clip;
+        String parentId;
+        boolean parentRelative;
+        int parentOriginX, parentOriginY;
+        long epoch;
+        int boxCount;
+        int interactiveCount;
+        final List<DisplayItem> blockItems;
+        final List<DisplayItem> inlineItems;
+        final List<BoxSlice> blockSlices;
+        final List<BoxSlice> inlineSlices;
         int created;
         int executed;
         int generation;
 
-        Chunk(LayoutBox parentBox, float boxX, float boxY, ClipRect clip, String parentId, long epoch, int boxCount, int interactiveCount) {
+        Chunk(LayoutBox parentBox, float boxX, float boxY, ClipRect clip, String parentId,
+              boolean parentRelative, int parentOriginX, int parentOriginY,
+              long epoch, int boxCount, int interactiveCount) {
             this.parentBox = parentBox;
             this.boxX = boxX;
             this.boxY = boxY;
             this.clip = clip;
             this.parentId = parentId;
+            this.parentRelative = parentRelative;
+            this.parentOriginX = parentOriginX;
+            this.parentOriginY = parentOriginY;
             this.epoch = epoch;
             this.boxCount = boxCount;
             this.interactiveCount = interactiveCount;
+            int cap = Math.max(1, Math.min(boxCount, 16));
+            this.blockSlices = new ArrayList<>(cap);
+            this.inlineSlices = new ArrayList<>(cap);
+            if (DisplayListBuilder.verifyStamps) {
+                this.blockItems = new ArrayList<>();
+                this.inlineItems = new ArrayList<>();
+            } else {
+                this.blockItems = null;
+                this.inlineItems = null;
+            }
+        }
+
+        void reset(LayoutBox parentBox, float boxX, float boxY, ClipRect clip, String parentId,
+                   boolean parentRelative, int parentOriginX, int parentOriginY,
+                   long epoch, int boxCount, int interactiveCount, PaintOrder owner) {
+            this.parentBox = parentBox;
+            this.boxX = boxX;
+            this.boxY = boxY;
+            this.clip = clip;
+            this.parentId = parentId;
+            this.parentRelative = parentRelative;
+            this.parentOriginX = parentOriginX;
+            this.parentOriginY = parentOriginY;
+            this.epoch = epoch;
+            this.boxCount = boxCount;
+            this.interactiveCount = interactiveCount;
+            owner.recycleSlices(this.blockSlices);
+            owner.recycleSlices(this.inlineSlices);
+            if (this.blockItems != null) this.blockItems.clear();
+            if (this.inlineItems != null) this.inlineItems.clear();
+            this.created = 0;
+            this.executed = 0;
         }
 
         /** 記録中のタスクが全部走り終えたか（途中で止まった記録は使わない）。 */
         boolean complete() {
             return created == executed;
+        }
+        void release(PaintOrder owner) {
+            this.parentBox = null;
+            this.clip = null;
+            this.parentId = null;
+            owner.recycleSlices(this.blockSlices);
+            owner.recycleSlices(this.inlineSlices);
+            if (this.blockItems != null) this.blockItems.clear();
+            if (this.inlineItems != null) this.inlineItems.clear();
+            this.created = 0;
+            this.executed = 0;
         }
     }
 
@@ -178,15 +255,79 @@ public final class PaintOrder {
     static final java.util.concurrent.atomic.LongAdder STAT_CHUNK_REPLAYED = new java.util.concurrent.atomic.LongAdder(),
             STAT_CHUNK_RECORDED = new java.util.concurrent.atomic.LongAdder();
 
+    private static final int CHUNK_POOL_MAX = 512;
     private final Map<LayoutBox, Chunk> chunks = new IdentityHashMap<>();
+    private final List<Chunk> chunkPool = new ArrayList<>();
+    private final List<RenderTask> pooledTaskOut = new ArrayList<>();
+    private final List<RenderTask> taskPool = new ArrayList<>();
+    private final List<PaintNode> nodePool = new ArrayList<>();
+    private final List<PaintLayers> layerPool = new ArrayList<>();
+    private final ItemProps scratchMovingProps = new ItemProps();
+    private final ItemProps scratchSbProps = new ItemProps();
+    private final ItemProps scratchThumbProps = new ItemProps();
+    private int taskCursor, nodeCursor, layerCursor;
     private MemoKeeper memoKeeper;
     private Predicate<LayoutBox> memoizable = b -> false;
-    private boolean chunksOn, replayAllowed;
+    private boolean chunksOn, replayAllowed, parentRelative;
     private int renderSerial, renderGeneration;
     private long renderEpoch;
     private Chunk recording;
     private int scanCount, scanInteractive;
     private long scanMaxStamp;
+
+    private RenderTask borrowTask() {
+        if (taskCursor < taskPool.size()) return taskPool.get(taskCursor++);
+        RenderTask t = new RenderTask();
+        taskPool.add(t);
+        taskCursor++;
+        return t;
+    }
+
+    private PaintNode borrowNode(RenderTask self, boolean stackingContext, int z, PaintLayers layers, LayerSpec layerSpec, LayoutBox layerBox) {
+        PaintNode n;
+        if (nodeCursor < nodePool.size()) {
+            n = nodePool.get(nodeCursor++);
+        } else {
+            n = new PaintNode();
+            nodePool.add(n);
+            nodeCursor++;
+        }
+        n.reset(self, stackingContext, z, layers, layerSpec, layerBox);
+        return n;
+    }
+
+    private PaintLayers borrowLayers() {
+        PaintLayers l;
+        if (layerCursor < layerPool.size()) {
+            l = layerPool.get(layerCursor++);
+            l.reset();
+        } else {
+            l = new PaintLayers();
+            layerPool.add(l);
+            layerCursor++;
+        }
+        return l;
+    }
+
+    void setParentRelative(boolean parentRelative) {
+        this.parentRelative = parentRelative;
+    }
+
+    static boolean boxHasOwnNode(LayoutBox b) {
+        return b != null && !b.isAnonymous && b.w > 0 && b.h > 0 && b.node != null
+                && !"root".equals(b.node.tag) && !"#text".equals(b.node.tag);
+    }
+
+    /** 項目が親として辿る実 {@code ElementType.NODE} を持つ祖先の箱（匿名・root・0サイズ箱はスキップ）。 */
+    static LayoutBox effectiveParentNodeBox(LayoutBox box, String parentId) {
+        if (parentId == null || box == null) return null;
+        for (LayoutBox a = box.parent; a != null; a = a.parent) {
+            if (a.node != null && "root".equals(a.node.tag)) return null;
+            if (a.isAnonymous) continue;
+            return boxHasOwnNode(a) ? a : null;
+        }
+        return null;
+    }
 
     void configureChunks(MemoKeeper keeper, Predicate<LayoutBox> memoizable) {
         this.memoKeeper = keeper;
@@ -207,13 +348,23 @@ public final class PaintOrder {
         recording = null;
     }
 
-    /** 描き終えた。木から消えた箱の部分木は捨てる。 */
+    /** 描き終えた。木から消えた箱の部分木は捨てる（枠だけは {@link #chunkPool} へ戻す）。 */
     void endRender() {
         chunksOn = false;
         recording = null;
         if (!chunks.isEmpty() && renderGeneration % SWEEP_EVERY == 0) {
             int g = renderGeneration;
-            chunks.values().removeIf(c -> c.generation != g);
+            var it = chunks.values().iterator();
+            while (it.hasNext()) {
+                Chunk c = it.next();
+                if (c.generation != g) {
+                    it.remove();
+                    if (chunkPool.size() < CHUNK_POOL_MAX) {
+                        c.release(this);
+                        chunkPool.add(c);
+                    }
+                }
+            }
         }
     }
 
@@ -258,6 +409,9 @@ public final class PaintOrder {
      */
     private boolean tryChunk(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
                              boolean ancestorMoving) {
+        LayoutBox pNode = parentRelative ? effectiveParentNodeBox(box, parentId) : null;
+        int curPox = pNode != null ? Math.round(pNode.x) : 0;
+        int curPoy = pNode != null ? Math.round(pNode.y) : 0;
         Chunk c = chunks.get(box);
         if (c != null && c.complete() && replayAllowed) {
             scanCount = 0;
@@ -266,15 +420,18 @@ public final class PaintOrder {
             if (scan(box, false) && c.parentBox == box.parent
                     && Float.compare(c.boxX, box.x) == 0 && Float.compare(c.boxY, box.y) == 0
                     && c.clip == clip && java.util.Objects.equals(c.parentId, parentId)
+                    && c.parentRelative == parentRelative && c.parentOriginX == curPox && c.parentOriginY == curPoy
                     && scanCount == c.boxCount && scanInteractive == c.interactiveCount
                     && Math.max(scanMaxStamp, box.pathPaintStamp(renderSerial)) <= c.epoch) {
                 if (DisplayListBuilder.verifyStamps) verifyChunk(c, box, clip, parentId, ancestorMoving);
                 c.generation = renderGeneration;
-                for (BoxSlice slice : c.blockSlices) {
-                    local.addBlock(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items), ancestorMoving), false, 0, null));
+                for (int i = 0, n = c.blockSlices.size(); i < n; i++) {
+                    BoxSlice slice = c.blockSlices.get(i);
+                    local.addBlock(borrowNode(borrowTask().setReplay(slice.box, slice.items, ancestorMoving), false, 0, null, null, null));
                 }
-                for (BoxSlice slice : c.inlineSlices) {
-                    local.addInline(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items), ancestorMoving), false, 0, null));
+                for (int i = 0, n = c.inlineSlices.size(); i < n; i++) {
+                    BoxSlice slice = c.inlineSlices.get(i);
+                    local.addInline(borrowNode(borrowTask().setReplay(slice.box, slice.items, ancestorMoving), false, 0, null, null, null));
                 }
                 STAT_CHUNK_REPLAYED.increment();
                 return true;
@@ -284,9 +441,23 @@ public final class PaintOrder {
         scanMaxStamp = 0;
         scanInteractive = 0;
         if (!scan(box, true)) return false;
-        Chunk fresh = new Chunk(box.parent, box.x, box.y, clip, parentId, renderEpoch, scanCount, scanInteractive);
+        Chunk fresh;
+        if (c != null) {
+            fresh = c;
+            fresh.reset(box.parent, box.x, box.y, clip, parentId, parentRelative, curPox, curPoy,
+                    renderEpoch, scanCount, scanInteractive, this);
+        } else {
+            if (!chunkPool.isEmpty()) {
+                fresh = chunkPool.remove(chunkPool.size() - 1);
+                fresh.reset(box.parent, box.x, box.y, clip, parentId, parentRelative, curPox, curPoy,
+                        renderEpoch, scanCount, scanInteractive, this);
+            } else {
+                fresh = new Chunk(box.parent, box.x, box.y, clip, parentId, parentRelative, curPox, curPoy,
+                        renderEpoch, scanCount, scanInteractive);
+            }
+            chunks.put(box, fresh);
+        }
         fresh.generation = renderGeneration;
-        chunks.put(box, fresh);
         recording = fresh;
         try {
             classifyPlain(box, clip, parentId, sc, local, ancestorMoving);
@@ -302,7 +473,8 @@ public final class PaintOrder {
         boolean was = chunksOn;
         chunksOn = false;
         PaintLayers tl = new PaintLayers();
-        List<DisplayItem> blocks = new ArrayList<>(), inlines = new ArrayList<>();
+        List<DisplayItem> blocks = parentRelative ? new PaintSupport.CaptureList(c.blockItems.size()) : new ArrayList<>();
+        List<DisplayItem> inlines = parentRelative ? new PaintSupport.CaptureList(c.inlineItems.size()) : new ArrayList<>();
         try {
             classifyPlain(box, clip, parentId, tl, tl, ancestorMoving);
         } finally {
@@ -319,10 +491,10 @@ public final class PaintOrder {
         }
     }
 
-    private static void runTasks(List<PaintNode> nodes, List<DisplayItem> out) {
+    private void runTasks(List<PaintNode> nodes, List<DisplayItem> out) {
         List<RenderTask> tasks = new ArrayList<>();
-        for (PaintNode n : nodes) emit(n, tasks);
-        for (RenderTask t : tasks) t.drawAction().accept(out);
+        for (int i = 0, n = nodes.size(); i < n; i++) emit(nodes.get(i), tasks);
+        for (int i = 0, n = tasks.size(); i < n; i++) executeTask(tasks.get(i), out);
     }
 
     /** 箱が中身の節を持つスクロールコンテナなら、その記録。 */
@@ -348,14 +520,54 @@ public final class PaintOrder {
     List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> scrollContentInfos() {
         List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> cached = cachedScrollInfos;
         if (cached != null) return cached;
-        if (scrollContents.isEmpty()) return cachedScrollInfos = List.of();
-        List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> out = new ArrayList<>(scrollContents.size());
-        for (int i = 0, n = scrollContents.size(); i < n; i++) {
-            ScrollContent c = scrollContents.get(i);
-            out.add(new com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo(c.box.node, c.contentId, c.thumbVId, c.thumbHId,
-                    c.sx0, c.sy0, c.kx, c.ky));
+        int n = scrollContents.size();
+        if (n == 0) return cachedScrollInfos = List.of();
+        List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> prev = prevScrollInfos;
+        if (prev != null && prev.size() == n) {
+            boolean allSame = true;
+            for (int i = 0; i < n; i++) {
+                ScrollContent c = scrollContents.get(i);
+                com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo p = prev.get(i);
+                if (c.box.node != p.node()
+                        || !c.contentId.equals(p.contentId())
+                        || !java.util.Objects.equals(c.thumbVId, p.thumbVId())
+                        || !java.util.Objects.equals(c.thumbHId, p.thumbHId())
+                        || Float.compare(c.sx0, p.sx0()) != 0
+                        || Float.compare(c.sy0, p.sy0()) != 0
+                        || Float.compare(c.kx, p.kx()) != 0
+                        || Float.compare(c.ky, p.ky()) != 0) {
+                    allSame = false;
+                    break;
+                }
+            }
+            if (allSame) return cachedScrollInfos = prev;
         }
-        return cachedScrollInfos = java.util.Collections.unmodifiableList(out);
+        List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            ScrollContent c = scrollContents.get(i);
+            com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo item = null;
+            if (prev != null) {
+                for (int j = 0, pn = prev.size(); j < pn; j++) {
+                    com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo p = prev.get(j);
+                    if (c.box.node == p.node() && c.contentId.equals(p.contentId())
+                            && java.util.Objects.equals(c.thumbVId, p.thumbVId())
+                            && java.util.Objects.equals(c.thumbHId, p.thumbHId())
+                            && Float.compare(c.sx0, p.sx0()) == 0
+                            && Float.compare(c.sy0, p.sy0()) == 0
+                            && Float.compare(c.kx, p.kx()) == 0
+                            && Float.compare(c.ky, p.ky()) == 0) {
+                        item = p;
+                        break;
+                    }
+                }
+            }
+            if (item == null) {
+                item = new com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo(c.box.node, c.contentId, c.thumbVId, c.thumbHId,
+                        c.sx0, c.sy0, c.kx, c.ky);
+            }
+            out.add(item);
+        }
+        return cachedScrollInfos = prevScrollInfos = java.util.Collections.unmodifiableList(out);
     }
 
     /**
@@ -413,7 +625,14 @@ public final class PaintOrder {
     void setViewport(int rootW, int rootH) {
         this.rootW = rootW;
         this.rootH = rootH;
-        chunks.clear();
+        if (!chunks.isEmpty()) {
+            for (Chunk c : chunks.values()) {
+                if (chunkPool.size() >= CHUNK_POOL_MAX) break;
+                c.release(this);
+                chunkPool.add(c);
+            }
+            chunks.clear();
+        }
     }
 
     PaintOrder(int rootW, int rootH, ScrollState scrollState, AtomicInteger fragIds, BoxPainter painter,
@@ -476,25 +695,29 @@ public final class PaintOrder {
         fragIds.set(0);
         scrollContentOf.clear();
         scrollContents.clear();
+        if (cachedScrollInfos != null) prevScrollInfos = cachedScrollInfos;
         cachedScrollInfos = null;
         contentClips.clear();
         blendDescendants.clear();
+        taskCursor = 0;
+        nodeCursor = 0;
+        layerCursor = 0;
+        pooledTaskOut.clear();
         boolean rootMoving = root.style != null && factsOf(root.style).hasMovingProps();
         PaintNode top;
         topLayerRoot = null;
         if ("root".equals(root.node.tag)) {
-            top = new PaintNode(null, true, 0);
+            top = borrowNode(null, true, 0, borrowLayers(), null, null);
             topLayerRoot = top.layers;
             collectChildren(root, null, null, top.layers, top.layers, rootMoving);
         } else {
-            top = new PaintNode(selfTask(root, null, null, rootMoving), true, 0);
+            top = borrowNode(selfTask(root, null, null, rootMoving), true, 0, borrowLayers(), null, null);
             topLayerRoot = top.layers;
             collectChildren(root, null, null, top.layers, top.layers, rootMoving);
         }
         topLayerRoot = null;
-        List<RenderTask> out = new ArrayList<>();
-        emit(top, out);
-        return out;
+        emit(top, pooledTaskOut);
+        return pooledTaskOut;
     }
 
     /** Top Layer の箱を載せる、文書の根のスタッキングコンテキストの層（{@link #paintTasks} の間だけ）。 */
@@ -513,9 +736,16 @@ public final class PaintOrder {
         int nodeHandle = box.node != null ? box.node.nodeId() : 0;
         ItemProps props = new ItemProps();
         props.parentId(box.node.key(), nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L);
-        // 固定配置の箱と同じく、ビューポートに張り付く（スクロールしない）。クリップはかけない
-        addElement(elements, box.node.key(), box.node.key() + "_backdrop", ElementType.RECT, 0, 0, rootW, rootH, "", 0, color,
-                props, 0, opacity, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, null, 0L);
+        PaintSupport.CaptureList cap = (parentRelative && boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
+        int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
+        if (cap != null) cap.setOrigin(Math.round(box.x), Math.round(box.y));
+        try {
+            // 固定配置の箱と同じく、ビューポートに張り付く（スクロールしない）。クリップはかけない
+            addElement(elements, box.node.key(), box.node.key() + "_backdrop", ElementType.RECT, 0, 0, rootW, rootH, "", 0, color,
+                    props, 0, opacity, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, null, 0L);
+        } finally {
+            if (cap != null) cap.setOrigin(prevOx, prevOy);
+        }
     }
 
     private boolean isTopLayer(LayoutBox box) {
@@ -541,7 +771,7 @@ public final class PaintOrder {
         String childParent = "root".equals(tag) ? null : box.isAnonymous ? parentId : box.node.key();
         if (DisplayListBuilder.scrollContentNodes && scrollsAsOneNode(box)) {
             // 中身は専用の節の下に置く: スクロールではこの節だけを動かせばよい（箱自身の背景・枠・つまみは動かさない）
-            ScrollContent content = new ScrollContent(box, box.node.key() + "_scrollc",
+            ScrollContent content = new ScrollContent(box, box.node.scrollContentKey(),
                     scrollState.getScrollX(box.node), scrollState.getScrollY(box.node));
             scrollContentOf.put(box, content);
             scrollContents.add(content);
@@ -570,7 +800,9 @@ public final class PaintOrder {
                     classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
                 }
             } else {
-                for (LayoutBox child : box.children) {
+                List<LayoutBox> kids = box.children;
+                for (int i = 0, n = kids.size(); i < n; i++) {
+                    LayoutBox child = kids.get(i);
                     if (prune != null && prune.prune(child, ancestorOrSelfMoving)) continue;
                     classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
                 }
@@ -579,7 +811,7 @@ public final class PaintOrder {
 
         boolean scrollbars = factsOf(box.style).scrollbars();
         if (!"root".equals(tag) && box.w > 0 && box.h > 0 && scrollbars && !isInvisible(box)) {
-            local.addAfter(new RenderTask(null, elements -> drawScrollbarsIfNeeded(elements, box, clip)));
+            local.addAfter(borrowTask().setScrollbars(box, clip));
         }
     }
 
@@ -619,41 +851,41 @@ public final class PaintOrder {
         RenderTask self = selfTask(box, clip, parentId, selfOrAncestorMoving);
         if (createsStackingContext(box)) {
             int z = isZIndexAuto(box) ? 0 : box.zIndex;
-            PaintNode node = PaintNode.context(self, z, self != null ? layerSpecFor(box) : null, box);
+            PaintNode node = borrowNode(self, true, z, borrowLayers(), self != null ? layerSpecFor(box) : null, box);
             // 部分木の記録の途中は外へ出せない（記録は部分木の中だけで完結する）
             boolean hoist = recording == null && topLayerRoot != null && isTopLayer(box);
             PaintLayers target = hoist ? topLayerRoot : sc;
             if (hoist && box.backdropStyle != null) {
                 // ::backdrop は箱の直前（同じ z の中の先）に、ビューポート全面で描く
-                PaintNode backdrop = new PaintNode(new RenderTask(box, elements -> drawBackdrop(elements, box), false), false, 0, null);
+                PaintNode backdrop = borrowNode(borrowTask().setBackdrop(box), false, 0, null, null, null);
                 if (z < 0) target.addNegative(backdrop); else if (z > 0) target.addPositive(backdrop); else target.addPositioned(backdrop);
             }
             if (z < 0) target.addNegative(node); else if (z > 0) target.addPositive(node); else target.addPositioned(node);
             collectChildren(box, clip, parentId, node.layers, node.layers, selfOrAncestorMoving);
         } else if (isPositioned(box)) {
             // 先に入れてから中身を集める（中の位置指定要素は木の順で後ろに並ぶ）
-            PaintNode node = new PaintNode(self, false, 0);
+            PaintNode node = borrowNode(self, false, 0, borrowLayers(), null, null);
             sc.addPositioned(node);
             collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else if (BlockLayoutEngine.isFloating(box)) {
-            PaintNode node = new PaintNode(self, false, 0);
+            PaintNode node = borrowNode(self, false, 0, borrowLayers(), null, null);
             local.addFloat(node);
             collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else if (isAtomicInline(box)) {
-            PaintNode node = new PaintNode(self, false, 0);
+            PaintNode node = borrowNode(self, false, 0, borrowLayers(), null, null);
             local.addInline(node);
             collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else {
-            PaintNode leaf = new PaintNode(self, false, 0, null);
+            PaintNode leaf = borrowNode(self, false, 0, null, null, null);
             if (box.display.isInlineLevel()) local.addInline(leaf); else local.addBlock(leaf);
             collectChildren(box, clip, parentId, sc, local, selfOrAncestorMoving);
         }
     }
 
     /** 付録 E の層の順に平らにする。z-index の並べ替えは安定（同じ値なら木の順）。 */
-    static void emit(PaintNode node, List<RenderTask> out) {
+    void emit(PaintNode node, List<RenderTask> out) {
         // レイヤーに描く箱は、錨から子孫の最後までを開始と終了の印で挟む（スタッキングコンテキストの木は連続している）
-        if (node.layerSpec != null) out.add(RenderTask.layerStart(node.layerSpec, node.layerBox));
+        if (node.layerSpec != null) out.add(borrowTask().setLayerStart(node.layerSpec, node.layerBox));
         if (node.self != null) out.add(node.self);
         PaintLayers l = node.layers;
         if (l == null) {
@@ -662,41 +894,68 @@ public final class PaintOrder {
         }
         if (node.stackingContext) {
             l.sortNegative();
-            for (PaintNode n : l.negative()) emit(n, out);
+            List<PaintNode> neg = l.negative();
+            for (int i = 0, n = neg.size(); i < n; i++) emit(neg.get(i), out);
         }
-        for (PaintNode n : l.blocks()) emit(n, out);
-        for (PaintNode n : l.floats()) emit(n, out);
-        for (PaintNode n : l.inlines()) emit(n, out);
+        List<PaintNode> blks = l.blocks();
+        for (int i = 0, n = blks.size(); i < n; i++) emit(blks.get(i), out);
+        List<PaintNode> flts = l.floats();
+        for (int i = 0, n = flts.size(); i < n; i++) emit(flts.get(i), out);
+        List<PaintNode> inls = l.inlines();
+        for (int i = 0, n = inls.size(); i < n; i++) emit(inls.get(i), out);
         if (node.stackingContext) {
-            for (PaintNode n : l.positioned()) emit(n, out);
+            List<PaintNode> pos = l.positioned();
+            for (int i = 0, n = pos.size(); i < n; i++) emit(pos.get(i), out);
             l.sortPositive();
-            for (PaintNode n : l.positive()) emit(n, out);
+            List<PaintNode> posZ = l.positive();
+            for (int i = 0, n = posZ.size(); i < n; i++) emit(posZ.get(i), out);
         }
-        out.addAll(l.after());
+        List<RenderTask> after = l.after();
+        for (int i = 0, n = after.size(); i < n; i++) out.add(after.get(i));
         if (node.layerSpec != null) out.add(RenderTask.LAYER_END);
     }
 
     RenderTask selfTask(LayoutBox box, ClipRect clip, String parentId, boolean hasMovingAncestor) {
         if (box.w <= 0 || box.h <= 0 || box.isAnonymous) return null;
         Chunk rec = recording;
-        if (rec == null) return new RenderTask(box, elements -> painter.draw(elements, box, clip, parentId), hasMovingAncestor);
+        if (rec == null) return borrowTask().setDraw(box, clip, parentId, hasMovingAncestor);
         // 部分木を記録している間は、描いた項目を（入る層ごとに）保持へ写す。保持できる部分木の箱は全て通常のブロック／インラインの葉
         boolean inline = box.display.isInlineLevel();
         rec.created++;
-        return new RenderTask(box, elements -> {
-            int start = elements.size();
-            painter.draw(elements, box, clip, parentId);
-            int count = elements.size() - start;
-            List<DisplayItem> sliceItems = count > 0 ? new ArrayList<>(count) : List.of();
-            for (int i = start; i < elements.size(); i++) {
-                DisplayItem item = elements.get(i);
-                sliceItems.add(item);
-                (inline ? rec.inlineItems : rec.blockItems).add(item);
+        return borrowTask().setRecord(box, clip, parentId, rec, inline, hasMovingAncestor);
+    }
+
+    void executeTask(RenderTask task, List<DisplayItem> elements) {
+        switch (task.kind) {
+            case RenderTask.KIND_DRAW -> painter.draw(elements, task.box, task.clip, task.parentId);
+            case RenderTask.KIND_REPLAY -> DisplayListBuilder.appendItems(elements, task.replayItems);
+            case RenderTask.KIND_RECORD -> {
+                int start = elements.size();
+                painter.draw(elements, task.box, task.clip, task.parentId);
+                int count = elements.size() - start;
+                BoxSlice slice = borrowSlice();
+                slice.box = task.box;
+                if (count == 0) {
+                    slice.items = List.of();
+                } else {
+                    slice.buf.clear();
+                    List<DisplayItem> stampTarget = task.chunk.inlineItems != null
+                            ? (task.inline ? task.chunk.inlineItems : task.chunk.blockItems) : null;
+                    for (int i = start, end = elements.size(); i < end; i++) {
+                        DisplayItem item = elements.get(i);
+                        slice.buf.add(item);
+                        if (stampTarget != null) stampTarget.add(item);
+                    }
+                    slice.items = slice.buf;
+                }
+                (task.inline ? task.chunk.inlineSlices : task.chunk.blockSlices).add(slice);
+                if (memoKeeper != null) memoKeeper.owned(task.box, task.chunk);
+                task.chunk.executed++;
             }
-            (inline ? rec.inlineSlices : rec.blockSlices).add(new BoxSlice(box, sliceItems));
-            if (memoKeeper != null) memoKeeper.owned(box, rec);
-            rec.executed++;
-        }, hasMovingAncestor);
+            case RenderTask.KIND_SCROLLBARS -> drawScrollbarsIfNeeded(elements, task.box, task.clip);
+            case RenderTask.KIND_BACKDROP -> drawBackdrop(elements, task.box);
+            default -> {}
+        }
     }
 
     static boolean isPositioned(LayoutBox box) {
@@ -793,8 +1052,11 @@ public final class PaintOrder {
         boolean isolate = hasBlendDescendant(box);
 
         float fontPx = box.style.fontSizePx(), rootFontPx = box.style.rootFontSizePx();
-        float[] border = {box.x, box.y, box.w, box.h};
-        float[] padding = {box.x + box.bL, box.y + box.bT, Math.max(0, box.w - box.bL - box.bR), Math.max(0, box.h - box.bT - box.bB)};
+        boolean rel = parentRelative && boxHasOwnNode(box);
+        float lx = rel ? box.x - Math.round(box.x) : box.x;
+        float ly = rel ? box.y - Math.round(box.y) : box.y;
+        float[] border = {lx, ly, box.w, box.h};
+        float[] padding = {lx + box.bL, ly + box.bT, Math.max(0, box.w - box.bL - box.bR), Math.max(0, box.h - box.bT - box.bB)};
         float[] content = {padding[0] + box.pL, padding[1] + box.pT, Math.max(0, padding[2] - box.pL - box.pR), Math.max(0, padding[3] - box.pT - box.pB)};
         ClipShape clip = ClipShape.parse(box.style.get(CssPropertyIndex.CLIP_PATH),
                 ClipShape.Context.of(border, padding, content, rootW, rootH, fontPx, rootFontPx));
@@ -809,10 +1071,10 @@ public final class PaintOrder {
         if (!backdrop.isEmpty()) {
             float[] r = LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH);
             float[] d = new float[12];
-            d[0] = box.x;
-            d[1] = box.y;
-            d[2] = box.x + box.w;
-            d[3] = box.y + box.h;
+            d[0] = lx;
+            d[1] = ly;
+            d[2] = lx + box.w;
+            d[3] = ly + box.h;
             System.arraycopy(r, 0, d, 4, 8);
             backdropShape = new ClipShape(ClipShape.Kind.INSET, d, false);
         }
@@ -831,7 +1093,7 @@ public final class PaintOrder {
 
     private static boolean styleHasMask(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
         if (BoxDecorations.clipsText(style)) return true; // background-clip: text は文字のアルファを写すマスク
-        for (BoxDecorations.BackgroundLayer layer : BoxDecorations.maskLayers(style)) {
+        for (BoxDecorations.BackgroundLayer layer : BoxDecorations.maskLayersView(style, 1.0)) {
             if (layer.url() != null || layer.isGradient()) return true;
         }
         return false;
@@ -866,6 +1128,7 @@ public final class PaintOrder {
 
     /** スタッキングコンテキスト（または疑似コンテキスト）の中の層。番号は付録 E の手順。 */
     static final class PaintLayers {
+        private static final Comparator<PaintNode> Z_CMP = Comparator.comparingInt(PaintNode::z);
         // 空の層が大半なので、最初の追加まで一覧を作らない（読むときは空の共有一覧）
         private List<PaintNode> negative;   // 2: 負の z-index のコンテキスト
         private List<PaintNode> blocks;     // 4: 通常フローのブロックレベル
@@ -874,6 +1137,16 @@ public final class PaintOrder {
         private List<PaintNode> positioned; // 8: z-index: auto / 0 の位置指定要素とコンテキスト
         private List<PaintNode> positive;   // 9: 正の z-index のコンテキスト
         private List<RenderTask> after;     // スクロールバー（中身より上）
+
+        void reset() {
+            if (negative != null) negative.clear();
+            if (blocks != null) blocks.clear();
+            if (floats != null) floats.clear();
+            if (inlines != null) inlines.clear();
+            if (positioned != null) positioned.clear();
+            if (positive != null) positive.clear();
+            if (after != null) after.clear();
+        }
 
         List<PaintNode> negative() { return negative == null ? List.of() : negative; }
         List<PaintNode> blocks() { return blocks == null ? List.of() : blocks; }
@@ -891,26 +1164,32 @@ public final class PaintOrder {
         void addPositive(PaintNode n) { (positive == null ? positive = new ArrayList<>(4) : positive).add(n); }
         void addAfter(RenderTask t) { (after == null ? after = new ArrayList<>(2) : after).add(t); }
 
-        void sortNegative() { if (negative != null) negative.sort(Comparator.comparingInt(PaintNode::z)); }
-        void sortPositive() { if (positive != null) positive.sort(Comparator.comparingInt(PaintNode::z)); }
+        void sortNegative() { if (negative != null && negative.size() > 1) negative.sort(Z_CMP); }
+        void sortPositive() { if (positive != null && positive.size() > 1) positive.sort(Z_CMP); }
     }
 
     /**
      * {@code layers} が null なら箱自身だけ（中身は今の層に流れている）。{@code layerSpec} があれば、この箱は
      * レイヤーに描いて合成する（スタッキングコンテキストだけが持つ）。
      */
-    record PaintNode(RenderTask self, boolean stackingContext, int z, PaintLayers layers, LayerSpec layerSpec, LayoutBox layerBox) {
-        PaintNode(RenderTask self, boolean stackingContext, int z, PaintLayers layers) {
-            this(self, stackingContext, z, layers, null, null);
+    static final class PaintNode {
+        RenderTask self;
+        boolean stackingContext;
+        int z;
+        PaintLayers layers;
+        LayerSpec layerSpec;
+        LayoutBox layerBox;
+
+        void reset(RenderTask self, boolean stackingContext, int z, PaintLayers layers, LayerSpec layerSpec, LayoutBox layerBox) {
+            this.self = self;
+            this.stackingContext = stackingContext;
+            this.z = z;
+            this.layers = layers;
+            this.layerSpec = layerSpec;
+            this.layerBox = layerBox;
         }
 
-        PaintNode(RenderTask self, boolean stackingContext, int z) {
-            this(self, stackingContext, z, new PaintLayers(), null, null);
-        }
-
-        static PaintNode context(RenderTask self, int z, LayerSpec layerSpec, LayoutBox layerBox) {
-            return new PaintNode(self, true, z, new PaintLayers(), layerSpec, layerBox);
-        }
+        int z() { return z; }
     }
 
     /** 切らない軸のクリップの端（描画とヒットテストの座標に十分遠い値）。 */
@@ -925,6 +1204,18 @@ public final class PaintOrder {
      * 何が壊れていたか: 以前はショートハンドの {@code overflow} だけを読んでいたので、展開後は常に
      * visible 扱いになり、{@code overflow: hidden} も {@code overflow-y: auto} も子を切らなかった。
      */
+    private static final class ChildClipCache {
+        ClipRect parent;
+        float minX, minY, maxX, maxY;
+        float rx0, rx1, rx2, rx3, ry0, ry1, ry2, ry3;
+        boolean elliptical;
+        int ox, oy;
+        String ownerKey;
+        ClipRect result;
+    }
+
+    private final java.util.Map<LayoutBox, ChildClipCache> childClipCache = new java.util.IdentityHashMap<>();
+
     ClipRect computeChildClipRect(LayoutBox box, ClipRect parentClip) {
         String tag = box.node.tag;
         boolean isRootElement = "root".equals(tag) || "html".equals(tag) || "body".equals(tag);
@@ -942,29 +1233,62 @@ public final class PaintOrder {
         float maxY = clipY ? box.y + box.h - box.bB : UNCLIPPED;
 
         // 内側の角は外側の半径から隣り合う辺の太さを引いたもの（角丸は両軸を切るときだけ）
-        float[] own = {minX, minY, maxX, maxY, 0, 0, 0, 0};
+        float rx0 = 0f, rx1 = 0f, rx2 = 0f, rx3 = 0f;
+        float ry0 = 0f, ry1 = 0f, ry2 = 0f, ry3 = 0f;
+        boolean elliptical = false;
         if (clipX && clipY) {
             float[] r = LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH);
-            boolean elliptical = false;
             for (int i = 0; i < 4; i++) elliptical |= Math.round(r[i]) != Math.round(r[4 + i]);
             if (!elliptical) {
-                own[4] = Math.min(r[0], r[4]) - Math.max(box.bT, box.bL);
-                own[5] = Math.min(r[1], r[5]) - Math.max(box.bT, box.bR);
-                own[6] = Math.min(r[2], r[6]) - Math.max(box.bB, box.bR);
-                own[7] = Math.min(r[3], r[7]) - Math.max(box.bB, box.bL);
+                rx0 = Math.min(r[0], r[4]) - Math.max(box.bT, box.bL);
+                rx1 = Math.min(r[1], r[5]) - Math.max(box.bT, box.bR);
+                rx2 = Math.min(r[2], r[6]) - Math.max(box.bB, box.bR);
+                rx3 = Math.min(r[3], r[7]) - Math.max(box.bB, box.bL);
             } else {
                 // 楕円の角は、内側の角を軸ごとに縮める（横は左右の枠線、縦は上下の枠線の太さ）
-                own = java.util.Arrays.copyOf(own, 12);
-                float[] bx = {box.bL, box.bR, box.bR, box.bL}, by = {box.bT, box.bT, box.bB, box.bB};
-                for (int i = 0; i < 4; i++) {
-                    own[4 + i] = Math.max(0, r[i] - bx[i]);
-                    own[8 + i] = Math.max(0, r[4 + i] - by[i]);
-                }
+                rx0 = Math.max(0f, r[0] - box.bL); ry0 = Math.max(0f, r[4] - box.bT);
+                rx1 = Math.max(0f, r[1] - box.bR); ry1 = Math.max(0f, r[5] - box.bT);
+                rx2 = Math.max(0f, r[2] - box.bR); ry2 = Math.max(0f, r[6] - box.bB);
+                rx3 = Math.max(0f, r[3] - box.bL); ry3 = Math.max(0f, r[7] - box.bB);
             }
         }
-        ClipRect merged = ClipRect.fromArray(BoxDecorations.intersectClip(parentClip == null ? null : parentClip.toArray(), own));
+        int ox = parentRelative && boxHasOwnNode(box) && clipX ? Math.round(box.x) : 0;
+        int oy = parentRelative && boxHasOwnNode(box) && clipY ? Math.round(box.y) : 0;
+        String ownerKey = box.node.key();
+        ChildClipCache cc = childClipCache.get(box);
+        if (cc != null && cc.result != null
+                && java.util.Objects.equals(cc.parent, parentClip)
+                && Float.compare(cc.minX, minX) == 0 && Float.compare(cc.minY, minY) == 0
+                && Float.compare(cc.maxX, maxX) == 0 && Float.compare(cc.maxY, maxY) == 0
+                && Float.compare(cc.rx0, rx0) == 0 && Float.compare(cc.rx1, rx1) == 0
+                && Float.compare(cc.rx2, rx2) == 0 && Float.compare(cc.rx3, rx3) == 0
+                && cc.elliptical == elliptical
+                && (!elliptical || (Float.compare(cc.ry0, ry0) == 0 && Float.compare(cc.ry1, ry1) == 0
+                        && Float.compare(cc.ry2, ry2) == 0 && Float.compare(cc.ry3, ry3) == 0))
+                && cc.ox == ox && cc.oy == oy
+                && java.util.Objects.equals(cc.ownerKey, ownerKey)) {
+            return cc.result;
+        }
+        float[] chainOwn = elliptical
+                ? new float[]{minX - ox, minY - oy, maxX - ox, maxY - oy, rx0, rx1, rx2, rx3, ry0, ry1, ry2, ry3}
+                : new float[]{minX - ox, minY - oy, maxX - ox, maxY - oy, rx0, rx1, rx2, rx3};
         // 合成した矩形に、合成する前のこの箱の矩形を持ち主（この箱）つきで足す。箱が動く（変形する）と、切り口も一緒に動く
-        return merged.withChain(parentClip == null ? List.of(new ClipChainPart(own, box.node.key())) : parentClip.chainPlus(own, box.node.key()));
+        ClipRect out = BoxDecorations.intersectClipRect(
+                parentClip, minX, minY, maxX, maxY, rx0, rx1, rx2, rx3, ry0, ry1, ry2, ry3,
+                elliptical, null, ClipRect.appendChain(parentClip, chainOwn, ownerKey, ox, oy));
+        if (cc == null) {
+            cc = new ChildClipCache();
+            childClipCache.put(box, cc);
+        }
+        cc.parent = parentClip;
+        cc.minX = minX; cc.minY = minY; cc.maxX = maxX; cc.maxY = maxY;
+        cc.rx0 = rx0; cc.rx1 = rx1; cc.rx2 = rx2; cc.rx3 = rx3;
+        cc.ry0 = ry0; cc.ry1 = ry1; cc.ry2 = ry2; cc.ry3 = ry3;
+        cc.elliptical = elliptical;
+        cc.ox = ox; cc.oy = oy;
+        cc.ownerKey = ownerKey;
+        cc.result = out;
+        return out;
     }
 
     /**
@@ -992,86 +1316,187 @@ public final class PaintOrder {
         return "scroll".equals(overflow) || "auto".equals(overflow);
     }
 
+    private static final RenderMeta MOVING_NODE_META = new RenderMeta(null, null, null, 12.0f, 0.5f, 0.5f, 1, false);
+    private final java.util.Map<LayoutBox, MovingBoxCache> movingNodeCache = new java.util.IdentityHashMap<>();
+
+    private static final class MovingBoxCache {
+        RenderMeta contentMeta;
+        DisplayItem contentItem;
+        RenderMeta thumbVMeta;
+        DisplayItem thumbVNodeItem;
+        RenderMeta thumbHMeta;
+        DisplayItem thumbHNodeItem;
+        RenderMeta sbMeta;
+        RenderMeta thumbTrackMetaV;
+        RenderMeta thumbTrackMetaH;
+    }
+
+    private MovingBoxCache movingCacheOf(LayoutBox box) {
+        if (movingNodeCache.size() > 1024) movingNodeCache.clear();
+        MovingBoxCache c = movingNodeCache.get(box);
+        if (c == null) {
+            c = new MovingBoxCache();
+            movingNodeCache.put(box, c);
+        }
+        return c;
+    }
+
     /**
      * 子の項目をまとめて動かすための、見えない節（箱の下に置く。クリックも受けない）。移動量はあとから
      * {@code UiView#setPaintOffset} で足す。id が持ち主の節の id と違うので、持ち主の節の検索には現れない。
      */
     void addMovingNode(List<DisplayItem> elements, String id, LayoutBox box, RenderMeta meta) {
-        ItemProps events = new ItemProps();
+        ItemProps events = scratchMovingProps.reset();
         int nodeHandle = box.node != null ? box.node.nodeId() : 0;
         long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
-        events.parentId(box.node.key(), nodeKey);
+        String parentKeyStr = box.node != null ? box.node.key() : id;
+        events.parentId(parentKeyStr, nodeKey);
         events.pointerEventsNone();
-        long movingKey = nodeHandle > 0 ? (id.endsWith("_scrollv") ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_V)
-                : id.endsWith("_scrollh") ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_H)
+        boolean isV = id.endsWith("_scrollv");
+        boolean isH = !isV && id.endsWith("_scrollh");
+        long movingKey = nodeHandle > 0 ? (isV ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_V)
+                : isH ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_H)
                 : id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX) ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLL_CONTENT)
                 : DisplayItem.nodeKeyOf(nodeHandle)) : 0L;
+        RenderMeta baseMeta = meta == null ? RenderMeta.EMPTY : MOVING_NODE_META;
+        MovingBoxCache mc = movingCacheOf(box);
+        RenderMeta prevMeta = isV ? mc.thumbVMeta : (isH ? mc.thumbHMeta : mc.contentMeta);
+        DisplayItem prevItem = isV ? mc.thumbVNodeItem : (isH ? mc.thumbHNodeItem : mc.contentItem);
+        if (prevMeta != null && prevMeta.hints().parentKey() == nodeKey
+                && java.util.Objects.equals(prevMeta.hints().parentId(), parentKeyStr)
+                && Float.compare(prevMeta.fontHeight(), baseMeta.fontHeight()) == 0) {
+            events.hintsReuse(prevMeta.hints());
+            baseMeta = prevMeta;
+        } else {
+            baseMeta = baseMeta.withHints(events.hints());
+            if (isV) mc.thumbVMeta = baseMeta;
+            else if (isH) mc.thumbHMeta = baseMeta;
+            else mc.contentMeta = baseMeta;
+        }
+        int ox = 0, oy = 0;
+        if (elements instanceof PaintSupport.CaptureList cap) {
+            ox = cap.originX;
+            oy = cap.originY;
+        }
+        float x = box.x - ox, y = box.y - oy;
+        int left = Math.round(x), top = Math.round(y);
+        int width = Math.round(x + box.w) - left, height = Math.round(y + box.h) - top;
+        if (prevItem != null && prevItem.x() == left && prevItem.y() == top
+                && prevItem.width() == width && prevItem.height() == height
+                && prevItem.key() == movingKey && prevItem.meta() == baseMeta && id.equals(prevItem.id())) {
+            elements.add(prevItem);
+            return;
+        }
+        int idxBefore = elements.size();
         addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", 0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0,
-                AnimationSpec.NONE, meta == null ? RenderMeta.EMPTY : new RenderMeta(null, null, null, 12.0f, 0.5f, 0.5f, 1, false), movingKey);
+                AnimationSpec.NONE, baseMeta, movingKey);
+        DisplayItem created = elements.get(idxBefore);
+        if (isV) mc.thumbVNodeItem = created;
+        else if (isH) mc.thumbHNodeItem = created;
+        else mc.contentItem = created;
     }
+
+    private static final Corners SCROLLBAR_CORNERS = new Corners(2, 2, 2, 2);
 
     void drawScrollbarsIfNeeded(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect) {
         if (box.style.keywordOf(CssPropertyIndex.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class) == CssKeywords.ScrollbarWidth.NONE) return;
 
-        float scrollW = box.scrollWidth;
-        float scrollH = box.scrollHeight;
-        float curX = scrollState.getScrollX(box.node);
-        float curY = scrollState.getScrollY(box.node);
+        PaintSupport.CaptureList cap = (parentRelative && boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
+        int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
+        if (cap != null) cap.setOrigin(Math.round(box.x), Math.round(box.y));
+        try {
+            float scrollW = box.scrollWidth;
+            float scrollH = box.scrollHeight;
+            float curX = scrollState.getScrollX(box.node);
+            float curY = scrollState.getScrollY(box.node);
 
-        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
-        long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
-        ItemProps sbEvents = new ItemProps();
-        sbEvents.parentId(box.node.key(), nodeKey);
-        ScrollContent content = scrollContentOf.get(box);
-        ClipRect sbClip = clipRect;
-        RenderMeta sbMeta = new RenderMeta(sbClip, new Corners(2, 2, 2, 2), null, 12.0f, 0.5f, 0.5f, 1, false);
-
-        int barThickness = 4;
-        if (scrollH > box.h + 2 && box.h > 12) {
-            float trackX = box.x + box.w - box.bR - barThickness - 2;
-            float trackY = box.y + box.bT + 2;
-            float trackH = box.h - box.bT - box.bB - 4;
-            float thumbH = Math.max(12, trackH * (box.h / scrollH));
-            float maxScrollY = Math.max(1f, scrollH - box.h);
-            float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
-
-            long trackKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_TRACK_V) : 0L;
-            long thumbKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_V) : 0L;
-            long nodeVKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_V) : 0L;
-
-            addElement(elements, box.node.key(), box.node.key() + "_sb_vt", ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, trackKey);
-            ItemProps thumbEvents = sbEvents;
-            if (content != null) { // つまみは、スクロール量に比例して動く節の下に置く（スクロールのたびに作り直さない）
-                content.thumbVId = box.node.key() + "_scrollv";
-                content.ky = (trackH - thumbH) / maxScrollY;
-                addMovingNode(elements, content.thumbVId, box, sbMeta);
-                thumbEvents = new ItemProps();
-                thumbEvents.parentId(content.thumbVId, nodeVKey);
+            int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+            long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
+            String ownerId = box.node.key();
+            ItemProps sbEvents = scratchSbProps.reset();
+            sbEvents.parentId(ownerId, nodeKey);
+            ScrollContent content = scrollContentOf.get(box);
+            ClipRect sbClip = clipRect;
+            MovingBoxCache mc = movingCacheOf(box);
+            RenderMeta prevSb = mc.sbMeta;
+            RenderHints sbHints = sbEvents.hintsReuse(prevSb != null ? prevSb.hints() : null);
+            RenderMeta sbMeta;
+            if (prevSb != null && java.util.Objects.equals(prevSb.clipRect(), sbClip) && prevSb.hints() == sbHints) {
+                sbMeta = prevSb;
+            } else {
+                sbMeta = new RenderMeta(sbClip, SCROLLBAR_CORNERS, null, 12.0f, 0f, 0f, 0.5f, 0.5f, 1, false, null, sbHints);
+                mc.sbMeta = sbMeta;
             }
-            addElement(elements, box.node.key(), box.node.key() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, thumbKey);
-        }
-        if (scrollW > box.w + 2 && box.w > 12) {
-            float trackX = box.x + box.bL + 2;
-            float trackY = box.y + box.h - box.bB - barThickness - 2;
-            float trackW = box.w - box.bL - box.bR - 4;
-            float thumbW = Math.max(12, trackW * (box.w / scrollW));
-            float maxScrollX = Math.max(1f, scrollW - box.w);
-            float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
-            long trackKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_TRACK_H) : 0L;
-            long thumbKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_H) : 0L;
-            long nodeHKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_H) : 0L;
+            int barThickness = 4;
+            if (scrollH > box.h + 2 && box.h > 12) {
+                float trackX = box.x + box.w - box.bR - barThickness - 2;
+                float trackY = box.y + box.bT + 2;
+                float trackH = box.h - box.bT - box.bB - 4;
+                float thumbH = Math.max(12, trackH * (box.h / scrollH));
+                float maxScrollY = Math.max(1f, scrollH - box.h);
+                float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
-            addElement(elements, box.node.key(), box.node.key() + "_sb_ht", ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, trackKey);
-            ItemProps thumbEvents = sbEvents;
-            if (content != null) {
-                content.thumbHId = box.node.key() + "_scrollh";
-                content.kx = (trackW - thumbW) / maxScrollX;
-                addMovingNode(elements, content.thumbHId, box, sbMeta);
-                thumbEvents = new ItemProps();
-                thumbEvents.parentId(content.thumbHId, nodeHKey);
+                long trackKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_TRACK_V) : 0L;
+                long thumbKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_V) : 0L;
+                long nodeVKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_V) : 0L;
+
+                addElement(elements, ownerId, box.node.partKey(12, "_sb_vt"), ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, trackKey);
+                ItemProps thumbEvents = sbEvents;
+                RenderMeta thumbMeta = sbMeta;
+                if (content != null) { // つまみは、スクロール量に比例して動く節の下に置く（スクロールのたびに作り直さない）
+                    content.thumbVId = box.node.partKey(13, "_scrollv");
+                    content.ky = (trackH - thumbH) / maxScrollY;
+                    addMovingNode(elements, content.thumbVId, box, sbMeta);
+                    thumbEvents = scratchThumbProps.reset();
+                    thumbEvents.parentId(content.thumbVId, nodeVKey);
+                    RenderMeta prevTV = mc.thumbTrackMetaV;
+                    RenderHints tvHints = thumbEvents.hintsReuse(prevTV != null ? prevTV.hints() : null);
+                    thumbEvents.reuseCandidate(tvHints);
+                    if (prevTV != null && java.util.Objects.equals(prevTV.clipRect(), sbClip) && prevTV.hints() == tvHints) {
+                        thumbMeta = prevTV;
+                    } else {
+                        thumbMeta = new RenderMeta(sbClip, SCROLLBAR_CORNERS, null, 12.0f, 0f, 0f, 0.5f, 0.5f, 1, false, null, tvHints);
+                        mc.thumbTrackMetaV = thumbMeta;
+                    }
+                }
+                addElement(elements, ownerId, box.node.partKey(14, "_sb_v"), ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, thumbMeta, thumbKey);
             }
-            addElement(elements, box.node.key(), box.node.key() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, thumbKey);
+            if (scrollW > box.w + 2 && box.w > 12) {
+                float trackX = box.x + box.bL + 2;
+                float trackY = box.y + box.h - box.bB - barThickness - 2;
+                float trackW = box.w - box.bL - box.bR - 4;
+                float thumbW = Math.max(12, trackW * (box.w / scrollW));
+                float maxScrollX = Math.max(1f, scrollW - box.w);
+                float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
+
+                long trackKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_TRACK_H) : 0L;
+                long thumbKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_H) : 0L;
+                long nodeHKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_H) : 0L;
+
+                addElement(elements, ownerId, box.node.partKey(15, "_sb_ht"), ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, trackKey);
+                ItemProps thumbEvents = sbEvents;
+                RenderMeta thumbMeta = sbMeta;
+                if (content != null) {
+                    content.thumbHId = box.node.partKey(16, "_scrollh");
+                    content.kx = (trackW - thumbW) / maxScrollX;
+                    addMovingNode(elements, content.thumbHId, box, sbMeta);
+                    thumbEvents = scratchThumbProps.reset();
+                    thumbEvents.parentId(content.thumbHId, nodeHKey);
+                    RenderMeta prevTH = mc.thumbTrackMetaH;
+                    RenderHints thHints = thumbEvents.hintsReuse(prevTH != null ? prevTH.hints() : null);
+                    thumbEvents.reuseCandidate(thHints);
+                    if (prevTH != null && java.util.Objects.equals(prevTH.clipRect(), sbClip) && prevTH.hints() == thHints) {
+                        thumbMeta = prevTH;
+                    } else {
+                        thumbMeta = new RenderMeta(sbClip, SCROLLBAR_CORNERS, null, 12.0f, 0f, 0f, 0.5f, 0.5f, 1, false, null, thHints);
+                        mc.thumbTrackMetaH = thumbMeta;
+                    }
+                }
+                addElement(elements, ownerId, box.node.partKey(17, "_sb_h"), ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, thumbMeta, thumbKey);
+            }
+        } finally {
+            if (cap != null) cap.setOrigin(prevOx, prevOy);
         }
     }
 
@@ -1079,21 +1504,116 @@ public final class PaintOrder {
      * {@code box} は箱自身を描くタスクだけが持つ（スクロールバーは null）。{@code layerStart} はレイヤーの開始の印
      * （次に出る錨から {@link #LAYER_END} までがレイヤーの中身）、{@code layerEnd} は終了の印。印は項目を出さない。
      */
-    record RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction, LayerSpec layerStart, boolean layerEnd,
-                      LayoutBox layerBox, boolean hasMovingAncestor) {
-        static final RenderTask LAYER_END = new RenderTask(null, elements -> {}, null, true, null, false);
+    static final class RenderTask {
+        static final byte KIND_DRAW = 0;
+        static final byte KIND_RECORD = 1;
+        static final byte KIND_REPLAY = 2;
+        static final byte KIND_SCROLLBARS = 3;
+        static final byte KIND_BACKDROP = 4;
+        static final byte KIND_LAYER_START = 5;
+        static final byte KIND_LAYER_END = 6;
 
-        RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction) {
-            this(box, drawAction, null, false, null, false);
+        static final RenderTask LAYER_END = new RenderTask().setLayerEnd();
+
+        byte kind;
+        LayoutBox box;
+        ClipRect clip;
+        String parentId;
+        List<DisplayItem> replayItems;
+        Chunk chunk;
+        boolean inline;
+        LayerSpec layerStart;
+        LayoutBox layerBox;
+        boolean hasMovingAncestor;
+
+        RenderTask setDraw(LayoutBox box, ClipRect clip, String parentId, boolean hasMovingAncestor) {
+            this.kind = KIND_DRAW;
+            this.box = box;
+            this.clip = clip;
+            this.parentId = parentId;
+            this.replayItems = null;
+            this.chunk = null;
+            this.layerStart = null;
+            this.layerBox = null;
+            this.hasMovingAncestor = hasMovingAncestor;
+            return this;
         }
 
-        RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction, boolean hasMovingAncestor) {
-            this(box, drawAction, null, false, null, hasMovingAncestor);
+        RenderTask setRecord(LayoutBox box, ClipRect clip, String parentId, Chunk chunk, boolean inline, boolean hasMovingAncestor) {
+            this.kind = KIND_RECORD;
+            this.box = box;
+            this.clip = clip;
+            this.parentId = parentId;
+            this.replayItems = null;
+            this.chunk = chunk;
+            this.inline = inline;
+            this.layerStart = null;
+            this.layerBox = null;
+            this.hasMovingAncestor = hasMovingAncestor;
+            return this;
         }
 
-        /** {@code layerBox} は、レイヤーの終わりにマスクの項目を足すときの持ち主の箱。 */
-        static RenderTask layerStart(LayerSpec spec, LayoutBox layerBox) {
-            return new RenderTask(null, elements -> {}, spec, false, layerBox, false);
+        RenderTask setReplay(LayoutBox box, List<DisplayItem> replayItems, boolean hasMovingAncestor) {
+            this.kind = KIND_REPLAY;
+            this.box = box;
+            this.clip = null;
+            this.parentId = null;
+            this.replayItems = replayItems;
+            this.chunk = null;
+            this.layerStart = null;
+            this.layerBox = null;
+            this.hasMovingAncestor = hasMovingAncestor;
+            return this;
         }
+
+        RenderTask setScrollbars(LayoutBox box, ClipRect clip) {
+            this.kind = KIND_SCROLLBARS;
+            this.box = box;
+            this.clip = clip;
+            this.parentId = null;
+            this.replayItems = null;
+            this.chunk = null;
+            this.layerStart = null;
+            this.layerBox = null;
+            this.hasMovingAncestor = false;
+            return this;
+        }
+
+        RenderTask setBackdrop(LayoutBox box) {
+            this.kind = KIND_BACKDROP;
+            this.box = box;
+            this.clip = null;
+            this.parentId = null;
+            this.replayItems = null;
+            this.chunk = null;
+            this.layerStart = null;
+            this.layerBox = null;
+            this.hasMovingAncestor = false;
+            return this;
+        }
+
+        RenderTask setLayerStart(LayerSpec spec, LayoutBox layerBox) {
+            this.kind = KIND_LAYER_START;
+            this.box = null;
+            this.clip = null;
+            this.parentId = null;
+            this.replayItems = null;
+            this.chunk = null;
+            this.layerStart = spec;
+            this.layerBox = layerBox;
+            this.hasMovingAncestor = false;
+            return this;
+        }
+
+        private RenderTask setLayerEnd() {
+            this.kind = KIND_LAYER_END;
+            return this;
+        }
+
+        LayoutBox box() { return (kind == KIND_SCROLLBARS || kind == KIND_LAYER_START || kind == KIND_LAYER_END) ? null : box; }
+        LayerSpec layerStart() { return layerStart; }
+        boolean layerEnd() { return kind == KIND_LAYER_END; }
+        LayoutBox layerBox() { return layerBox; }
+        boolean hasMovingAncestor() { return hasMovingAncestor; }
     }
 }

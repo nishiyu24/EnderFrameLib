@@ -34,6 +34,14 @@ public final class BoxDecorationPainter {
     private int rootW;
     private int rootH;
     private final AtomicInteger fragIds;
+    private final ItemProps scratchGradientEvents = new ItemProps();
+    private final BorderSpec scratchBorder = new BorderSpec();
+    private final int[] scratchBorderColors = new int[4];
+    private final String[] scratchBorderStyles = new String[4];
+
+    static String partId(LayoutBox box, String id, int slot, String suffix) {
+        return PaintSupport.partId(box, id, slot, suffix);
+    }
 
     int rootW() {
         return rootW;
@@ -95,6 +103,7 @@ public final class BoxDecorationPainter {
             CssPropertyIndex.BORDER_BOTTOM_COLOR, CssPropertyIndex.BORDER_LEFT_COLOR};
     private static final int[] BORDER_STYLE_IDS = {CssPropertyIndex.BORDER_TOP_STYLE, CssPropertyIndex.BORDER_RIGHT_STYLE,
             CssPropertyIndex.BORDER_BOTTOM_STYLE, CssPropertyIndex.BORDER_LEFT_STYLE};
+    private static final String[] SOLID_STYLES = {"solid", "solid", "solid", "solid"};
 
     /**
      * 枠線の幅・色・線種。幅はレイアウトが決めた値（{@code box.bT} など）をそのまま使う（軸 1・3）。
@@ -104,25 +113,33 @@ public final class BoxDecorationPainter {
      * 色を書かない {@code border: 1px solid} の枠が透明になり、線種は読まずに常に実線だった。
      */
     BorderSpec parseBorderSpec(LayoutBox box, int[] radii, Corners corners, int textColor) {
-        float[] widths = {box.bT, box.bR, box.bB, box.bL};
-        int[] colors = new int[4];
-        String[] styles = new String[4];
-        boolean hasBorder = false;
+        float bwTop = box.bT, bwRight = box.bR, bwBottom = box.bB, bwLeft = box.bL;
+        boolean hasBorder = bwTop > 0f || bwRight > 0f || bwBottom > 0f || bwLeft > 0f;
+        boolean anyRadius = radii[0] > 0 || radii[1] > 0 || radii[2] > 0 || radii[3] > 0;
         ComputedStyle ax = box.axisStyle();
+        if (!hasBorder) {
+            boolean isCircle = anyRadius
+                    && radii[0] >= (box.w / 2) - 1 && radii[1] >= (box.w / 2) - 1
+                    && radii[2] >= (box.w / 2) - 1 && radii[3] >= (box.w / 2) - 1
+                    && box.w > 0 && box.h > 0 && Math.abs(box.w - box.h) <= 2;
+            String colorProp = ax.get(BORDER_COLOR_IDS[0]);
+            int bc0 = colorProp == null ? textColor : ColorParser.parseColor(colorProp);
+            return scratchBorder.set(false, isCircle, false, 0f, 0f, 0f, 0f, bc0, bc0, bc0, bc0,
+                    SOLID_STYLES, corners, BorderPath.SOLID);
+        }
+        int[] colors = scratchBorderColors;
+        String[] styles = scratchBorderStyles;
         for (int i = 0; i < 4; i++) {
             String colorProp = ax.get(BORDER_COLOR_IDS[i]);
             colors[i] = colorProp == null ? textColor : ColorParser.parseColor(colorProp);
             styles[i] = ax.keyword(BORDER_STYLE_IDS[i], "solid");
-            if (widths[i] > 0) hasBorder = true;
         }
-        float bwTop = widths[0], bwRight = widths[1], bwBottom = widths[2], bwLeft = widths[3];
         int bcTop = colors[0], bcRight = colors[1], bcBottom = colors[2], bcLeft = colors[3];
 
         // 4 辺が同じ線種（破線か点線）・太さ・色なら、角の円弧に沿って 1 本の経路として割り付ける（Blink と同じ）。
         // LIMITATION(制約): 辺ごとに線種・太さ・色が違う角丸の枠線は、線種を読まず実線で描き、角の中で隣り合う辺の色が
         // 切り替わる境目は斜めの線ではなく辺の太さの内側か外側かで決める。README の "Not supported" に対応。
         int dashKind = BorderPath.SOLID;
-        boolean anyRadius = radii[0] > 0 || radii[1] > 0 || radii[2] > 0 || radii[3] > 0;
         if (anyRadius && bwTop > 0 && bwTop == bwRight && bwRight == bwBottom && bwBottom == bwLeft
                 && bcTop == bcRight && bcRight == bcBottom && bcBottom == bcLeft
                 && styles[0].equals(styles[1]) && styles[1].equals(styles[2]) && styles[2].equals(styles[3])) {
@@ -156,7 +173,7 @@ public final class BoxDecorationPainter {
             );
         }
 
-        return new BorderSpec(hasBorder, isCircle, useRoundedBorder,
+        return scratchBorder.set(hasBorder, isCircle, useRoundedBorder,
                 bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, styles, innerRadii, dashKind);
     }
 
@@ -225,7 +242,7 @@ public final class BoxDecorationPainter {
         box.h = frag.h;
         box.pL = box.pR = box.pT = box.pB = box.bL = box.bR = box.bT = box.bB = 0;
         try {
-            drawImageLayers(elements, box, id, layers, "_f" + fragIds.getAndIncrement() + "_bgl", clip, radii, border, events, fontHVal, ox, oy);
+            drawImageLayers(elements, box, id, layers, "_f" + fragIds.getAndIncrement() + "_bgl", clip, radii, border, events, fontHVal, ox, oy, null);
         } finally {
             box.x = x0;
             box.y = y0;
@@ -318,6 +335,7 @@ public final class BoxDecorationPainter {
      */
     void drawOuterShadows(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.Shadow> shadows,
                                   Corners radii, ClipRect clip, float fontHVal, float ox, float oy) {
+        if (shadows.isEmpty()) return;
         ItemProps events = ItemProps.parent(id);
         int n = 0;
         for (int i = shadows.size() - 1; i >= 0; i--) {
@@ -374,7 +392,7 @@ public final class BoxDecorationPainter {
         if (!hasInset) return;
         BoxDecorations.Rect pad = BoxDecorations.boxArea(box, "padding-box");
         if (pad.w() <= 0 || pad.h() <= 0) return;
-        ClipRect padClip = intersectClip(clip, pad, border.innerRadii(), id);
+        ClipRect padClip = intersectClip(elements, clip, pad, border.innerRadii(), id);
         ItemProps events = ItemProps.parent(id);
         Corners inner = border.innerRadii() != null ? border.innerRadii() : Corners.ZERO;
         int n = 0;
@@ -420,6 +438,16 @@ public final class BoxDecorationPainter {
                                          ItemProps partsEvents, ItemProps passiveBorderEvents,
                                          BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                          int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows) {
+        drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy,
+                partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, null);
+    }
+
+    void drawDefaultBlockElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
+                                         Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
+                                         ItemProps partsEvents, ItemProps passiveBorderEvents,
+                                         BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
+                                         int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows,
+                                         List<DisplayItem> prevItems) {
         ElementType bgType = ElementType.RECT;
         if ("button".equalsIgnoreCase(box.node.tag)) {
             bgType = ElementType.BUTTON;
@@ -433,11 +461,11 @@ public final class BoxDecorationPainter {
             int thickness = border.maxThickness();
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             CircleBorderSpec cbSpec = new CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
-            addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, bgKey);
-            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
+            addElement(elements, id, partId(box, id, 0, "_bg"), bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, bgKey);
+            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy, prevItems);
             drawInsetShadows(elements, box, id, shadows, border, normalizedClip, fontHVal, ox, oy);
             long cbKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_BORDER) : 0L;
-            addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
+            addElement(elements, id, partId(box, id, 1, "_cb"), ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
                     new RenderMeta(normalizedClip, radii, cbSpec, fontHVal, ox, oy, 1, false), cbKey);
         } else {
             // background-clip が border-box でなければ、色は箱の内側だけに塗る。_bg はヒットテストと
@@ -448,18 +476,19 @@ public final class BoxDecorationPainter {
                 bgFill = 0x00000000;
                 BoxDecorations.Rect area = BoxDecorations.boxArea(box, colorClip);
                 Corners areaRadii = "padding-box".equals(colorClip) ? border.innerRadii() : null;
-                long bglKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_BGL_BASE + (BoxDecorations.layers(box.style).size() & 0x3F)) : 0L;
-                addElement(elements, id, id + "_bgl" + BoxDecorations.layers(box.style).size() + "_0", ElementType.RECT,
+                int bglCount = BoxDecorations.layersView(box.style, 1.0).size();
+                long bglKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_BGL_BASE + (bglCount & 0x3F)) : 0L;
+                addElement(elements, id, id + "_bgl" + bglCount + "_0", ElementType.RECT,
                         area.x(), area.y(), area.w(), area.h(), "", 0, bgColor, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
                         new RenderMeta(normalizedClip, areaRadii, null, fontHVal, ox, oy, 1, false), bglKey);
             }
             // 角丸の箱でも背景は枠線ボックスいっぱい（枠線の下まで）に塗り、枠線をその上に重ねる（付録 E）
-            addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgFill, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, bgKey);
-            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
+            addElement(elements, id, partId(box, id, 0, "_bg"), bgType, box.x, box.y, box.w, box.h, "", color, bgFill, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, bgKey);
+            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy, prevItems);
             drawInsetShadows(elements, box, id, shadows, border, normalizedClip, fontHVal, ox, oy);
             // border-image（9-slice）が描ければ、枠線の通常の描画に代わる（枠線の太さは配置にそのまま効く）
             if (!drawBorderImage(elements, box, id, normalizedClip, passiveBorderEvents, fontHVal, ox, oy)) {
-                drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
+                drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur, prevItems);
             }
         }
 
@@ -469,7 +498,7 @@ public final class BoxDecorationPainter {
                 float iconX = box.x + (box.w - 16) / 2;
                 float iconY = box.y + (box.h - 16) / 2;
                 long ghostKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_GHOST_IMAGE) : 0L;
-                addElement(elements, id, id + "_ghost_img", ElementType.IMAGE, ImageFitMode.FILL, iconX, iconY, 16, 16, "item:" + ghostItem, color, 0, partsEvents, 0, 0.85f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, ghostKey);
+                addElement(elements, id, partId(box, id, 2, "_ghost_img"), ElementType.IMAGE, ImageFitMode.FILL, iconX, iconY, 16, 16, "item:" + ghostItem, color, 0, partsEvents, 0, 0.85f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, ghostKey);
             }
         }
     }
@@ -490,7 +519,13 @@ public final class BoxDecorationPainter {
      */
     void drawBackgroundImages(List<DisplayItem> elements, LayoutBox box, String id, ClipRect clip, Corners radii,
                                       BorderSpec border, ItemProps events, float fontHVal, float ox, float oy) {
-        drawImageLayers(elements, box, id, BoxDecorations.layers(box.style, devicePixelRatio), "_bgl", clip, radii, border, events, fontHVal, ox, oy);
+        drawBackgroundImages(elements, box, id, clip, radii, border, events, fontHVal, ox, oy, null);
+    }
+
+    void drawBackgroundImages(List<DisplayItem> elements, LayoutBox box, String id, ClipRect clip, Corners radii,
+                                      BorderSpec border, ItemProps events, float fontHVal, float ox, float oy,
+                                      List<DisplayItem> prevItems) {
+        drawImageLayers(elements, box, id, BoxDecorations.layersView(box.style, devicePixelRatio), "_bgl", clip, radii, border, events, fontHVal, ox, oy, prevItems);
     }
 
     /**
@@ -505,7 +540,101 @@ public final class BoxDecorationPainter {
                                 BorderSpec border, float fontHVal, float ox, float oy) {
         ItemProps events = ItemProps.parent(id);
         events.pointerEventsNone();
-        drawImageLayers(elements, box, id, BoxDecorations.maskLayers(box.style, devicePixelRatio), "_mask", clip, radii, border, events, fontHVal, ox, oy);
+        drawImageLayers(elements, box, id, BoxDecorations.maskLayersView(box.style, devicePixelRatio), "_mask", clip, radii, border, events, fontHVal, ox, oy, null);
+    }
+
+    private static String cachedLayerSuffix(String idInfix, int layerIdx, int part) {
+        if ("_bgl".equals(idInfix)) {
+            return switch ((layerIdx << 2) | part) {
+                case 0 -> "_bgl0_0";
+                case 1 -> "_bgl0_1";
+                case 2 -> "_bgl0_2";
+                case 3 -> "_bgl0_3";
+                case 4 -> "_bgl1_0";
+                case 5 -> "_bgl1_1";
+                case 6 -> "_bgl1_2";
+                case 7 -> "_bgl1_3";
+                case 8 -> "_bgl2_0";
+                case 9 -> "_bgl2_1";
+                case 10 -> "_bgl2_2";
+                case 11 -> "_bgl2_3";
+                default -> idInfix + layerIdx + "_" + part;
+            };
+        }
+        return part == 0 ? "_mask0_0" : "_mask0_1";
+    }
+
+    private static int layerPartSlot(boolean bglCached, int layerIdx, int part) {
+        return bglCached ? (part < 2 ? 4 + layerIdx * 2 + part : 20 + layerIdx * 2 + (part - 2)) : (10 + part);
+    }
+
+    private static final Object SHADER_GRADIENT_CACHE_KEY = new Object();
+
+    private static final class ShaderGradientCache {
+        Gradients.Gradient g;
+        boolean vertical;
+        float lx, ly, tw, th, rootW, rootH, fontSize, rootFontSize;
+        List<ShaderGradient> result;
+    }
+
+    private static List<ShaderGradient> cachedShaderGradients(LayoutBox box, Gradients.Gradient g,
+                                                              BoxDecorations.Rect t, float offX, float offY,
+                                                              int rootW, int rootH) {
+        float fontSize = box.style.fontSizePx();
+        float rootFontSize = box.style.rootFontSizePx();
+        float lx = t.x() + offX, ly = t.y() + offY;
+        boolean vertical = g instanceof Gradients.LinearGradient lg && lg.cornerX() == 0
+                && Math.abs(Math.sin(Math.toRadians(lg.angle()))) < 1e-9;
+        ShaderGradientCache cache = box.style.paintMemoSelf(SHADER_GRADIENT_CACHE_KEY, s -> new ShaderGradientCache());
+        if (cache.result != null && cache.g == g
+                && Float.compare(cache.ly, ly) == 0 && Float.compare(cache.th, t.h()) == 0
+                && cache.rootW == rootW && cache.rootH == rootH
+                && cache.fontSize == fontSize && cache.rootFontSize == rootFontSize
+                && (vertical || (Float.compare(cache.lx, lx) == 0 && Float.compare(cache.tw, t.w()) == 0))) {
+            return cache.result;
+        }
+        List<ShaderGradient> res = Gradients.shaderGradients(g, t, offX, offY, rootW, rootH, fontSize, rootFontSize);
+        cache.g = g;
+        cache.vertical = vertical;
+        cache.lx = lx;
+        cache.ly = ly;
+        cache.tw = t.w();
+        cache.th = t.h();
+        cache.rootW = rootW;
+        cache.rootH = rootH;
+        cache.fontSize = fontSize;
+        cache.rootFontSize = rootFontSize;
+        cache.result = res;
+        return res;
+    }
+
+    private static DisplayItem findPrevLayerItem(List<DisplayItem> prevItems, long key, String id) {
+        if (prevItems == null) return null;
+        for (int i = 0, n = prevItems.size(); i < n; i++) {
+            DisplayItem it = prevItems.get(i);
+            if (key != 0L ? it.key() == key : id.equals(it.id())) return it;
+        }
+        return null;
+    }
+
+    private static RenderMeta reuseLayerMeta(RenderMeta prevMeta, ClipRect clip, Corners radii,
+                                             float fontHVal, float ox, float oy, RenderHints hints) {
+        if (prevMeta != null
+                && prevMeta.circleBorder() == null
+                && prevMeta.roundedBorder() == null
+                && Float.compare(prevMeta.fontHeight(), fontHVal) == 0
+                && prevMeta.baseline() == 0f
+                && prevMeta.lineHeight() == 0f
+                && Float.compare(prevMeta.originX(), ox) == 0
+                && Float.compare(prevMeta.originY(), oy) == 0
+                && prevMeta.itemCount() == 1
+                && !prevMeta.interactiveState()
+                && java.util.Objects.equals(prevMeta.clipRect(), clip)
+                && java.util.Objects.equals(prevMeta.borderRadii(), radii)
+                && java.util.Objects.equals(prevMeta.hints(), hints)) {
+            return prevMeta;
+        }
+        return new RenderMeta(clip, radii, null, fontHVal, 0f, 0f, ox, oy, 1, false, null, hints);
     }
 
     /** {@code currentColor} になる色（要素の {@code color}）。 */
@@ -515,7 +644,7 @@ public final class BoxDecorationPainter {
 
     private void drawImageLayers(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.BackgroundLayer> layers,
                                  String idInfix, ClipRect clip, Corners radii, BorderSpec border, ItemProps events,
-                                 float fontHVal, float ox, float oy) {
+                                 float fontHVal, float ox, float oy, List<DisplayItem> prevItems) {
         for (int i = layers.size() - 1; i >= 0; i--) {
             BoxDecorations.BackgroundLayer layer = layers.get(i);
             String url = layer.url();
@@ -535,45 +664,83 @@ public final class BoxDecorationPainter {
             }
             BoxDecorations.Rect paint = BoxDecorations.boxArea(box, layer.clip());
             Corners paintRadii = "border-box".equals(layer.clip()) ? radii : border.innerRadii();
-            ClipRect layerClip = intersectClip(clip, paint, paintRadii, id);
-            RenderMeta imageMeta = new RenderMeta(layerClip, null, null, fontHVal, ox, oy, 1, false);
-            // 塗る範囲 = 描画領域のとき（ふつうの背景）、角丸の形は描画領域そのもので、祖先のクリップは別に渡す。
-            // 合成した 1 つの角丸矩形（layerClip）は、祖先の縁が円や角丸の箱を切ると、切り口の角に半径を当てて形を歪め、
-            // 祖先が動くと矩形ごと動いてしまう。形（角丸）と切り取り（祖先）を分ければどちらも正確に描ける
-            RenderMeta exactMeta = new RenderMeta(clip, paintRadii, null, fontHVal, ox, oy, 1, false);
+            RenderMeta imageMeta = null;
+            RenderMeta exactMeta = null;
 
             List<BoxDecorations.Rect> tiles = BoxDecorations.tiles(layer, box, intrinsic, rootW, rootH,
                     box.style.fontSizePx(), box.style.rootFontSizePx());
             int part = 0;
             int nodeHandle = box.node != null ? box.node.nodeId() : 0;
-            for (BoxDecorations.Rect t : tiles) {
+            boolean bglCached = "_bgl".equals(idInfix) && i < 3;
+            boolean maskCached = "_mask".equals(idInfix) && i == 0;
+            PaintSupport.CaptureList cap = elements instanceof PaintSupport.CaptureList c ? c : null;
+            float offX = cap != null ? -cap.originX : 0f;
+            float offY = cap != null ? -cap.originY : 0f;
+            boolean localGradient = offX != 0f || offY != 0f;
+            for (int ti = 0, tn = tiles.size(); ti < tn; ti++) {
+                BoxDecorations.Rect t = tiles.get(ti);
                 if (url != null) {
                     String tileSrc = url;
                     if (SvgImage.looksLikeSvg(url)) {
                         // SVG はタイルの大きさで描く（拡大しても滲まない）。届くまでは描かない
                         tileSrc = svgLayer == null ? "" : RasterPainting.svgSrc(svgLayer.root(), t.w(), t.h(), ImageFitMode.FILL, t.w(), t.h(), currentColor(box), devicePixelRatio, svgLayer.sheet());
                     }
+                    if (imageMeta == null) {
+                        ClipRect layerClip = intersectClip(elements, clip, paint, paintRadii, id);
+                        imageMeta = new RenderMeta(layerClip, null, null, fontHVal, 0f, 0f, ox, oy, 1, false, null, events.hints());
+                    }
                     long bglPartKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BGL_BASE + ((i & 0x07) << 4) + (part & 0x0F)) : 0L;
-                    addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), tileSrc,
-                            0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta, bglPartKey);
+                    String pId = ((bglCached && part < 4) || (maskCached && part < 2))
+                            ? partId(box, id, layerPartSlot(bglCached, i, part), cachedLayerSuffix(idInfix, i, part))
+                            : id + idInfix + i + "_" + part;
+                    part++;
+                    DisplayItem prevImg = findPrevLayerItem(prevItems, bglPartKey, pId);
+                    RenderMeta imgMeta = prevImg != null ? reuseLayerMeta(prevImg.meta(), imageMeta.clipRect(), null, fontHVal, ox, oy, events.hints()) : imageMeta;
+                    addElement(elements, id, pId, ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), tileSrc,
+                            0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imgMeta, bglPartKey);
                     continue;
                 }
                 // グラデーションはシェーダーが画素ごとに計算して描く（帯・格子の継ぎ目や段が出ない）。
                 // 停止点の多いものは区間ごとに同じ矩形へ重ねる（各区間は自分の範囲の外を捨てる）
-                List<ShaderGradient> shaderGradients = Gradients.shaderGradients(gradient, t, rootW, rootH,
-                        box.style.fontSizePx(), box.style.rootFontSizePx());
+                List<ShaderGradient> shaderGradients = cachedShaderGradients(box, gradient, t, offX, offY, rootW, rootH);
                 float gx0 = Math.max(t.x(), paint.x()), gy0 = Math.max(t.y(), paint.y());
                 float gx1 = Math.min(t.x() + t.w(), paint.x() + paint.w()), gy1 = Math.min(t.y() + t.h(), paint.y() + paint.h());
                 if (gx1 <= gx0 || gy1 <= gy0) continue;
                 boolean coversPaint = Math.abs(gx0 - paint.x()) < 0.01f && Math.abs(gy0 - paint.y()) < 0.01f
                         && Math.abs(gx1 - (paint.x() + paint.w())) < 0.01f && Math.abs(gy1 - (paint.y() + paint.h())) < 0.01f;
-                RenderMeta gradientMeta = coversPaint ? exactMeta : imageMeta;
-                for (ShaderGradient segment : shaderGradients) {
-                    ItemProps gradientEvents = events.copy();
-                    gradientEvents.shaderGradient(segment);
+                // 塗る範囲 = 描画領域のとき（ふつうの背景）、角丸の形は描画領域そのもので、祖先のクリップは別に渡す。
+                // 合成した 1 つの角丸矩形（layerClip）は、祖先の縁が円や角丸の箱を切ると、切り口の角に半径を当てて形を歪め、
+                // 祖先が動くと矩形ごと動いてしまう。形（角丸）と切り取り（祖先）を分ければどちらも正確に描ける
+                scratchGradientEvents.copyFrom(events);
+                for (int si = 0, sn = shaderGradients.size(); si < sn; si++) {
+                    ShaderGradient segment = shaderGradients.get(si);
+                    scratchGradientEvents.shaderGradient(segment, localGradient);
                     long bglPartKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BGL_BASE + ((i & 0x07) << 4) + (part & 0x0F)) : 0L;
-                    addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.RECT, gx0, gy0, gx1 - gx0, gy1 - gy0, "",
-                            0, 0, gradientEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, gradientMeta, bglPartKey);
+                    String pId = ((bglCached && part < 4) || (maskCached && part < 2))
+                            ? partId(box, id, layerPartSlot(bglCached, i, part), cachedLayerSuffix(idInfix, i, part))
+                            : id + idInfix + i + "_" + part;
+                    part++;
+                    DisplayItem prevGrad = findPrevLayerItem(prevItems, bglPartKey, pId);
+                    RenderMeta prevGradMeta = prevGrad != null ? prevGrad.meta() : null;
+                    RenderHints gHints = scratchGradientEvents.hintsReuse(prevGrad != null ? prevGrad.hints() : null);
+                    RenderMeta gradientMeta;
+                    if (coversPaint) {
+                        gradientMeta = reuseLayerMeta(prevGradMeta, clip, paintRadii, fontHVal, ox, oy, gHints);
+                    } else {
+                        if (imageMeta == null) {
+                            ClipRect prevClip = prevGradMeta != null ? prevGradMeta.clipRect() : null;
+                            ClipRect layerClip = intersectClip(elements, clip, paint, paintRadii, id);
+                            if (prevClip != null && prevClip.equals(layerClip)) layerClip = prevClip;
+                            imageMeta = reuseLayerMeta(prevGradMeta, layerClip, null, fontHVal, ox, oy, gHints);
+                        } else if (prevGradMeta != null) {
+                            imageMeta = reuseLayerMeta(prevGradMeta, imageMeta.clipRect(), null, fontHVal, ox, oy, gHints);
+                        } else {
+                            imageMeta = imageMeta.withHints(gHints);
+                        }
+                        gradientMeta = imageMeta;
+                    }
+                    addElement(elements, id, pId, ElementType.RECT, gx0, gy0, gx1 - gx0, gy1 - gy0, "",
+                            0, 0, scratchGradientEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, gradientMeta, bglPartKey);
                 }
             }
         }
@@ -609,12 +776,17 @@ public final class BoxDecorationPainter {
     /** 角丸なら枠の領域だけを塗る 1 部品、そうでなければ辺ごとの帯。 */
     void drawBorder(List<DisplayItem> elements, String id, LayoutBox box, float rOff, ItemProps events,
                             BorderSpec border, RenderMeta meta, int transDur) {
+        drawBorder(elements, id, box, rOff, events, border, meta, transDur, null);
+    }
+
+    void drawBorder(List<DisplayItem> elements, String id, LayoutBox box, float rOff, ItemProps events,
+                            BorderSpec border, RenderMeta meta, int transDur, List<DisplayItem> prevItems) {
         LayoutBox legend = "fieldset".equals(box.node.tag) ? box.renderedLegend() : null;
         if (legend != null && border.hasBorder()) {
             drawBorderAroundLegend(elements, id, box, legend, rOff, events, border, meta, transDur);
             return;
         }
-        if (border.useRoundedBorder()) drawRoundedBorder(elements, id, box, events, border, meta, transDur);
+        if (border.useRoundedBorder()) drawRoundedBorder(elements, id, box, events, border, meta, transDur, prevItems);
         else if (border.hasBorder()) drawStraightBorders(elements, id, box, rOff, events, border, meta, transDur);
     }
 
@@ -663,13 +835,48 @@ public final class BoxDecorationPainter {
      */
     void drawRoundedBorder(List<DisplayItem> elements, String id, LayoutBox box, ItemProps events,
                                    BorderSpec b, RenderMeta meta, int transDur) {
-        RoundedBorderSpec spec = new RoundedBorderSpec(b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft(),
-                b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft(), b.dashKind());
-        RenderMeta ringMeta = new RenderMeta(meta.clipRect(), meta.borderRadii(), null,
-                meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec);
+        drawRoundedBorder(elements, id, box, events, b, meta, transDur, null);
+    }
+
+    void drawRoundedBorder(List<DisplayItem> elements, String id, LayoutBox box, ItemProps events,
+                                   BorderSpec b, RenderMeta meta, int transDur, List<DisplayItem> prevItems) {
         int nodeHandle = box.node != null ? box.node.nodeId() : 0;
         long borderKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BORDER) : 0L;
-        addElement(elements, id, id + "_b_round", ElementType.ROUNDED_BORDER, box.x, box.y, box.w, box.h, "", 0, 0x00000000,
+        String borderId = partId(box, id, 3, "_b_round");
+        DisplayItem prevItem = findPrevLayerItem(prevItems, borderKey, borderId);
+        RenderMeta prevMeta = prevItem != null ? prevItem.meta() : null;
+        RoundedBorderSpec prevSpec = prevMeta != null ? prevMeta.roundedBorder() : null;
+        RoundedBorderSpec spec = (prevSpec != null
+                && Float.compare(prevSpec.widthTop(), b.bwTop()) == 0
+                && Float.compare(prevSpec.widthRight(), b.bwRight()) == 0
+                && Float.compare(prevSpec.widthBottom(), b.bwBottom()) == 0
+                && Float.compare(prevSpec.widthLeft(), b.bwLeft()) == 0
+                && prevSpec.colorTop() == b.bcTop()
+                && prevSpec.colorRight() == b.bcRight()
+                && prevSpec.colorBottom() == b.bcBottom()
+                && prevSpec.colorLeft() == b.bcLeft()
+                && prevSpec.dashKind() == b.dashKind())
+                ? prevSpec
+                : new RoundedBorderSpec(b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft(),
+                        b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft(), b.dashKind());
+        RenderHints bHints = events.hintsReuse(prevItem != null ? prevItem.hints() : null);
+        RenderMeta ringMeta = (prevMeta != null
+                && prevMeta.circleBorder() == null
+                && prevMeta.roundedBorder() == spec
+                && Float.compare(prevMeta.fontHeight(), meta.fontHeight()) == 0
+                && prevMeta.baseline() == 0f
+                && prevMeta.lineHeight() == 0f
+                && Float.compare(prevMeta.originX(), meta.originX()) == 0
+                && Float.compare(prevMeta.originY(), meta.originY()) == 0
+                && prevMeta.itemCount() == 1
+                && !prevMeta.interactiveState()
+                && java.util.Objects.equals(prevMeta.clipRect(), meta.clipRect())
+                && java.util.Objects.equals(prevMeta.borderRadii(), meta.borderRadii())
+                && java.util.Objects.equals(prevMeta.hints(), bHints))
+                ? prevMeta
+                : new RenderMeta(meta.clipRect(), meta.borderRadii(), null,
+                        meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec, bHints);
+        addElement(elements, id, borderId, ElementType.ROUNDED_BORDER, box.x, box.y, box.w, box.h, "", 0, 0x00000000,
                 events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta, borderKey);
     }
 
@@ -748,12 +955,50 @@ public final class BoxDecorationPainter {
         }
     }
 
-    record BorderSpec(
-            boolean hasBorder, boolean isCircle, boolean useRoundedBorder,
-            float bwTop, float bwRight, float bwBottom, float bwLeft,
-            int bcTop, int bcRight, int bcBottom, int bcLeft,
-            String[] styles, Corners innerRadii, int dashKind
-    ) {
+    static final class BorderSpec {
+        private boolean hasBorder, isCircle, useRoundedBorder;
+        private float bwTop, bwRight, bwBottom, bwLeft;
+        private int bcTop, bcRight, bcBottom, bcLeft;
+        private String[] styles;
+        private Corners innerRadii;
+        private int dashKind;
+
+        BorderSpec set(boolean hasBorder, boolean isCircle, boolean useRoundedBorder,
+                       float bwTop, float bwRight, float bwBottom, float bwLeft,
+                       int bcTop, int bcRight, int bcBottom, int bcLeft,
+                       String[] styles, Corners innerRadii, int dashKind) {
+            this.hasBorder = hasBorder;
+            this.isCircle = isCircle;
+            this.useRoundedBorder = useRoundedBorder;
+            this.bwTop = bwTop;
+            this.bwRight = bwRight;
+            this.bwBottom = bwBottom;
+            this.bwLeft = bwLeft;
+            this.bcTop = bcTop;
+            this.bcRight = bcRight;
+            this.bcBottom = bcBottom;
+            this.bcLeft = bcLeft;
+            this.styles = styles;
+            this.innerRadii = innerRadii;
+            this.dashKind = dashKind;
+            return this;
+        }
+
+        boolean hasBorder() { return hasBorder; }
+        boolean isCircle() { return isCircle; }
+        boolean useRoundedBorder() { return useRoundedBorder; }
+        float bwTop() { return bwTop; }
+        float bwRight() { return bwRight; }
+        float bwBottom() { return bwBottom; }
+        float bwLeft() { return bwLeft; }
+        int bcTop() { return bcTop; }
+        int bcRight() { return bcRight; }
+        int bcBottom() { return bcBottom; }
+        int bcLeft() { return bcLeft; }
+        String[] styles() { return styles; }
+        Corners innerRadii() { return innerRadii; }
+        int dashKind() { return dashKind; }
+
         int maxThickness() {
             return Math.round(Math.max(Math.max(bwTop, bwRight), Math.max(bwBottom, bwLeft)));
         }

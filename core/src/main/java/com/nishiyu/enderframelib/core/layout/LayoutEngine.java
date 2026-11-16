@@ -111,7 +111,9 @@ public abstract class LayoutEngine {
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 
-        for (LayoutBox child : box.children) {
+        java.util.List<LayoutBox> ch = box.children;
+        for (int i = 0, n = ch.size(); i < n; i++) {
+            LayoutBox child = ch.get(i);
             if (child.isAbsolute && !isDisplayNone(child.style)) {
                 LayoutBox cb = child.findContainingBlock();
                 float cbW, cbH;

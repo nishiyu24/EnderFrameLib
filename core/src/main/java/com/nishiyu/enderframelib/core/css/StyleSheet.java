@@ -313,10 +313,12 @@ public class StyleSheet {
     public boolean updateMediaEnvironment(CssParser.MediaEnvironment next) {
         mediaEnvironment = next;
         boolean changed = false;
-        for (StyleRule rule : rules) {
+        for (int i = 0, rn = rules.size(); i < rn; i++) {
+            StyleRule rule = rules.get(i);
+            List<String> mq = rule.mediaQueries;
             boolean active = true;
-            for (String condition : rule.mediaQueries) {
-                if (!AtRuleProcessor.evaluateMediaQuery(condition, next)) {
+            for (int j = 0, qn = mq.size(); j < qn; j++) {
+                if (!AtRuleProcessor.evaluateMediaQuery(mq.get(j), next)) {
                     active = false;
                     break;
                 }

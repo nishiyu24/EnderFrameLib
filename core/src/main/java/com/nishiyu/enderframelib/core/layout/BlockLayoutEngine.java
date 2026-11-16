@@ -646,7 +646,9 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     private static boolean scanFloats(LayoutBox box) {
-        for (LayoutBox c : box.children) {
+        List<LayoutBox> ch = box.children;
+        for (int i = 0, n = ch.size(); i < n; i++) {
+            LayoutBox c = ch.get(i);
             if (c.isAbsolute || c.isRenderedLegend || c.display.isNone()) continue;
             if (isFloating(c)) return true;
             if (!c.establishesBfc && LayoutEngine.getEngine(c.display) instanceof BlockLayoutEngine && containsFloats(c)) {
@@ -974,7 +976,9 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     static boolean isFirstFlowChild(LayoutBox box) {
         if (box.parent == null) return true;
-        for (LayoutBox c : box.parent.children) {
+        List<LayoutBox> ch = box.parent.children;
+        for (int i = 0, n = ch.size(); i < n; i++) {
+            LayoutBox c = ch.get(i);
             if (c.isAbsolute || c.isOutsideMarker || c.isRenderedLegend || c.display.isNone()) continue;
             return c == box;
         }
@@ -1026,8 +1030,8 @@ public class BlockLayoutEngine extends LayoutEngine {
         /** 全 float の下端。無ければ負の無限大。 */
         float bottom() {
             float b = Float.NEGATIVE_INFINITY;
-            for (float[] f : lefts) b = Math.max(b, f[3]);
-            for (float[] f : rights) b = Math.max(b, f[3]);
+            for (int i = 0, n = lefts.size(); i < n; i++) b = Math.max(b, lefts.get(i)[3]);
+            for (int i = 0, n = rights.size(); i < n; i++) b = Math.max(b, rights.get(i)[3]);
             return b;
         }
 
@@ -1036,8 +1040,8 @@ public class BlockLayoutEngine extends LayoutEngine {
             boolean clearLeft = clear == CssKeywords.Clear.LEFT || clear == CssKeywords.Clear.INLINE_START;
             boolean clearRight = clear == CssKeywords.Clear.RIGHT || clear == CssKeywords.Clear.INLINE_END;
             float b = Float.NEGATIVE_INFINITY;
-            if (!clearRight) for (float[] f : lefts) b = Math.max(b, f[3]);
-            if (!clearLeft) for (float[] f : rights) b = Math.max(b, f[3]);
+            if (!clearRight) for (int i = 0, n = lefts.size(); i < n; i++) b = Math.max(b, lefts.get(i)[3]);
+            if (!clearLeft) for (int i = 0, n = rights.size(); i < n; i++) b = Math.max(b, rights.get(i)[3]);
             return b;
         }
 
