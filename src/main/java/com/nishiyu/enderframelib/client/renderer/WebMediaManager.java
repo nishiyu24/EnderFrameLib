@@ -331,7 +331,7 @@ public class WebMediaManager {
      */
     private static List<DisplayItem> elementsOf(String sessionId) {
         SessionContext session = ClientWebManager.getSession(sessionId);
-        if (session != null) return session.elements();
+        if (session != null) return session.relativeElements(); // 種類と文字だけを読むので、位置は問わない
         ClientWebManager.processRenderQueue();
         return List.of();
     }

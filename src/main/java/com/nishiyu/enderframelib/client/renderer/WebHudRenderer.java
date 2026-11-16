@@ -267,13 +267,21 @@ public class WebHudRenderer {
 
     private static void renderHudElements(PoseStack poseStack, Minecraft mc, String screenKey) {
         SessionContext session = ClientWebManager.getSession(screenKey);
-        List<DisplayItem> elements = session != null ? session.elements() : List.of();
+        List<DisplayItem> elements = session != null ? session.relativeElements() : List.of();
         if (elements.isEmpty()) return;
 
         List<DisplayItem> hudElements = new ArrayList<>(elements.size());
         for (DisplayItem el : elements) {
             if (el.events() != null && el.events().containsKey("data-mount-entity")) continue;
             hudElements.add(el);
+        }
+        if (hudElements.size() != elements.size()) {
+            // 省いた項目の子は親相対の原点を失うので、省くときは絶対座標の一覧から作り直す
+            hudElements = new ArrayList<>(elements.size());
+            for (DisplayItem el : session.elements()) {
+                if (el.events() != null && el.events().containsKey("data-mount-entity")) continue;
+                hudElements.add(el);
+            }
         }
         if (hudElements.isEmpty()) return;
 
