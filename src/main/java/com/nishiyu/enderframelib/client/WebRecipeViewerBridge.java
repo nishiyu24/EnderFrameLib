@@ -67,7 +67,9 @@ public class WebRecipeViewerBridge {
             return zones;
         }
 
-        for (DisplayItem el : session.elements()) {
+        for (DisplayItem relEl : session.relativeElements()) {
+            if (relEl.type() != ElementType.NODE) continue;
+            DisplayItem el = session.toAbsolute(relEl); // 親相対の一覧を絶対化せず、NODE だけ解く
             if (el.type() == ElementType.NODE && explicitExcludeIds.contains(el.id()) && el.width() > 0 && el.height() > 0) {
                 zones.add(screen.toScreenRect(el.x(), el.y(), el.width(), el.height()));
             }
@@ -108,7 +110,9 @@ public class WebRecipeViewerBridge {
         HtmlNode vRoot = session != null ? session.rootNode() : null;
         if (vRoot == null) return targets;
 
-        for (DisplayItem el : session.elements()) {
+        for (DisplayItem relEl : session.relativeElements()) {
+            if (relEl.type() != ElementType.NODE) continue;
+            DisplayItem el = session.toAbsolute(relEl); // 親相対の一覧を絶対化せず、NODE だけ解く
             if (el.type() != ElementType.NODE || el.width() <= 0 || el.height() <= 0) continue;
             HtmlNode domNode = vRoot.getNodeById(el.id());
             if (domNode == null) continue;

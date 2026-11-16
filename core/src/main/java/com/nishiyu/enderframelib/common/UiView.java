@@ -907,6 +907,34 @@ public class UiView implements AutoCloseable {
         return renderCache;
     }
 
+    private List<DisplayItem> byIdSource;
+    private Map<String, DisplayItem> byIdIndex;
+
+    private synchronized Map<String, DisplayItem> itemsById() {
+        List<DisplayItem> src = renderCache;
+        if (src != byIdSource) {
+            Map<String, DisplayItem> m = new java.util.HashMap<>(src.size() * 2);
+            for (DisplayItem it : src) m.put(it.id(), it);
+            byIdIndex = m;
+            byIdSource = src;
+        }
+        return byIdIndex;
+    }
+
+    /** 親相対の項目 {@code item}（{@link #relativeElements()} の要素）の絶対位置を解いた項目。公開ごとの索引を使うので、全体を直さずに済む。 */
+    public DisplayItem toAbsolute(DisplayItem item) {
+        if (item == null) return null;
+        applyPendingPaintOffsets();
+        return DisplayItem.resolveAbsolute(itemsById(), item);
+    }
+
+    /** 描画 ID が {@code id} の NODE 項目（絶対位置）。無ければ null。 */
+    public DisplayItem nodeItemAbsolute(String id) {
+        applyPendingPaintOffsets();
+        DisplayItem it = itemsById().get(id);
+        return it != null && it.type() == ElementType.NODE ? DisplayItem.resolveAbsolute(itemsById(), it) : null;
+    }
+
     /** {@link #elements()} と同じ絶対座標のリストを、前処理なしで返す。 */
     public List<DisplayItem> absoluteRenderCache() {
         applyPendingPaintOffsets();
@@ -2266,7 +2294,7 @@ public class UiView implements AutoCloseable {
     /** 描画 ID または節の ID が指す表示要素（位置は絶対座標）。無ければ null。 */
     public DisplayItem elementById(String id) {
         DisplayItem raw = elementByIdRaw(id);
-        return raw == null ? null : DisplayItem.resolveAbsolute(renderCache, raw);
+        return raw == null ? null : DisplayItem.resolveAbsolute(itemsById(), raw);
     }
 
     /** {@link #elementById} の、親相対のままの項目（ヒットテスト索引など、相対を解く側へ渡す用）。 */
@@ -2462,7 +2490,7 @@ public class UiView implements AutoCloseable {
     public UIHitResult hitTestAbsolute(double pixelX, double pixelY) {
         UIHitResult r = hitTest(pixelX, pixelY);
         if (r == null || r.element() == null) return r;
-        return new UIHitResult(DisplayItem.resolveAbsolute(renderCache, r.element()), r.localX(), r.localY());
+        return new UIHitResult(DisplayItem.resolveAbsolute(itemsById(), r.element()), r.localX(), r.localY());
     }
 
     public UIHitResult localCoords(String elementId, double pixelX, double pixelY) {

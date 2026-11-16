@@ -322,20 +322,13 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
         collectSlotNodesRecursive(vRoot, slotNodes);
         if (slotNodes.isEmpty()) return;
 
-        Map<String, DisplayItem> nodeElements = new HashMap<>();
-        for (DisplayItem el : session.elements()) {
-            if (el.type() == ElementType.NODE) {
-                nodeElements.put(el.id(), el);
-            }
-        }
-
         for (Map.Entry<Integer, HtmlNode> entry : slotNodes.entrySet()) {
             int slotIdx = entry.getKey();
             if (slotIdx < 0 || slotIdx >= this.menu.slots.size()) continue;
 
             Slot slot = this.menu.slots.get(slotIdx);
             HtmlNode node = entry.getValue();
-            DisplayItem anchor = nodeElements.get(node.key());
+            DisplayItem anchor = session.nodeItemAbsolute(node.key()); // 親相対の一覧を絶対化せず、この節だけ解く
 
             if (anchor != null && anchor.width() > 0 && anchor.height() > 0 && isNodeVisibleInDom(node)) {
                 int targetX = Math.round(anchor.x() + (anchor.width() - 16.0f) / 2.0f);
@@ -424,9 +417,9 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
             hoveredId = ClientScreenInteractionManager.handleHover(sessionId, webX, webY);
         }
 
-        List<DisplayItem> elements = ClientWebManager.getSession(sessionId) != null
-                ? ClientWebManager.getSession(sessionId).elements()
-                : java.util.Collections.emptyList();
+        var uiSession = ClientWebManager.getSession(sessionId);
+        // 描画は親相対のまま。絶対座標の一覧は、開発者ツールの検査が要るときだけ作る
+        List<DisplayItem> elements = uiSession != null ? uiSession.relativeElements() : java.util.Collections.emptyList();
         if (elements != null && !elements.isEmpty()) {
             PoseStack poseStack = guiGraphics.pose();
             poseStack.pushPose();
@@ -436,11 +429,11 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
             int logicW = (int) Math.ceil(virtualWidth / DisplayItemDrawer.RESOLUTION);
             int logicH = (int) Math.ceil(virtualHeight / DisplayItemDrawer.RESOLUTION);
 
-            SurfaceRenderer.draw(sessionId, com.nishiyu.enderframelib.client.ClientWebManager.getSession(sessionId).relativeElements(), logicW, logicH,
+            SurfaceRenderer.draw(sessionId, elements, logicW, logicH,
                     SurfaceStyle.gui(false).withHovered(hoveredId), poseStack, bufferSource);
             bufferSource.endBatch();
 
-            this.uiSupport.renderOverlays(guiGraphics, this.font, elements, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);
+            this.uiSupport.renderOverlays(guiGraphics, this.font, devToolsEnabled ? uiSession.elements() : elements, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);
 
             poseStack.popPose();
         }

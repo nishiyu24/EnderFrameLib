@@ -36,4 +36,37 @@ class RelativeElementsTest {
             EngineContext.current().parentRelativeDisplayItems = prev;
         }
     }
+
+    /** 画面のスロット・レシピビューアは NODE だけを絶対位置で要る。一覧全体を直さずに、その NODE だけを解ける。 */
+    @Test
+    void singleItemsResolveWithoutConvertingTheWholeList() {
+        boolean prev = EngineContext.current().parentRelativeDisplayItems;
+        EngineContext.current().parentRelativeDisplayItems = true;
+        try (StandaloneView v = new StandaloneView(HTML, 400, 300, FontResolver.FALLBACK);
+             SoftwareRenderBackend sw = new SoftwareRenderBackend(400, 300, 1f)) {
+            v.frame(0, sw, true);
+            long before = AbsoluteItems.CONVERSIONS.sum();
+            List<DisplayItem> rel = v.ui().relativeElements();
+            int checked = 0;
+            for (DisplayItem it : rel) {
+                if (it.type() != ElementType.NODE) continue;
+                DisplayItem viaIndex = v.ui().toAbsolute(it);
+                DisplayItem viaId = v.ui().nodeItemAbsolute(it.id());
+                assertEquals(viaIndex, viaId, it.id());
+                checked++;
+            }
+            assertTrue(checked > 3);
+            assertEquals(before, AbsoluteItems.CONVERSIONS.sum(), "NODE を 1 つずつ解いても、一覧全体の絶対化は起きない");
+            List<DisplayItem> abs = v.ui().elements();
+            assertEquals(before + 1, AbsoluteItems.CONVERSIONS.sum(), "elements() は 1 回だけ直す");
+            for (DisplayItem it : rel) {
+                if (it.type() != ElementType.NODE) continue;
+                DisplayItem a = abs.stream().filter(x -> x.id().equals(it.id())).findFirst().orElseThrow();
+                assertEquals(a.x(), v.ui().nodeItemAbsolute(it.id()).x(), it.id());
+                assertEquals(a.y(), v.ui().nodeItemAbsolute(it.id()).y(), it.id());
+            }
+        } finally {
+            EngineContext.current().parentRelativeDisplayItems = prev;
+        }
+    }
 }

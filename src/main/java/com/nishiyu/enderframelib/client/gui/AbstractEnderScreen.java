@@ -272,9 +272,9 @@ public class AbstractEnderScreen extends Screen implements EnderScreenHost {
             hoveredId = ClientScreenInteractionManager.handleHover(sessionId, webX, webY);
         }
 
-        List<DisplayItem> elements = ClientWebManager.getSession(sessionId) != null
-                ? ClientWebManager.getSession(sessionId).elements()
-                : java.util.Collections.emptyList();
+        var uiSession = ClientWebManager.getSession(sessionId);
+        // 描画は親相対のまま。絶対座標の一覧は、開発者ツールの検査が要るときだけ作る
+        List<DisplayItem> elements = uiSession != null ? uiSession.relativeElements() : java.util.Collections.emptyList();
         if (elements != null && !elements.isEmpty()) {
             PoseStack poseStack = guiGraphics.pose();
             poseStack.pushPose();
@@ -285,11 +285,11 @@ public class AbstractEnderScreen extends Screen implements EnderScreenHost {
             int logicW = (int) Math.ceil(virtualWidth / DisplayItemDrawer.RESOLUTION);
             int logicH = (int) Math.ceil(virtualHeight / DisplayItemDrawer.RESOLUTION);
 
-            SurfaceRenderer.draw(sessionId, com.nishiyu.enderframelib.client.ClientWebManager.getSession(sessionId).relativeElements(), logicW, logicH,
+            SurfaceRenderer.draw(sessionId, elements, logicW, logicH,
                     SurfaceStyle.gui(true).withHovered(hoveredId), poseStack, bufferSource);
             bufferSource.endBatch();
 
-            this.uiSupport.renderOverlays(guiGraphics, this.font, elements, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);
+            this.uiSupport.renderOverlays(guiGraphics, this.font, devToolsEnabled ? uiSession.elements() : elements, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);
 
             poseStack.popPose();
         }

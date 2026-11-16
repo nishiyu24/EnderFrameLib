@@ -118,8 +118,7 @@ public class UiInput {
 
     /** ホストへ渡す押下の結果。項目は絶対座標へ解く（ホスト側は親相対を知らない）。 */
     private PressResult absolutePress(DisplayItem element, UIHitResult hit, HtmlNode pressed, int hostButton, boolean consumed) {
-        List<DisplayItem> cache = session.renderCache();
-        DisplayItem abs = DisplayItem.resolveAbsolute(cache, element);
+        DisplayItem abs = session.toAbsolute(element);
         UIHitResult absHit = hit == null ? null : new UIHitResult(abs, hit.localX(), hit.localY());
         return new PressResult(abs, absHit, pressed, hostButton, consumed);
     }

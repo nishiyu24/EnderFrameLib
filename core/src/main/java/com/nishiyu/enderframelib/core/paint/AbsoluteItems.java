@@ -17,6 +17,9 @@ import java.util.Map;
  * NODE の {@code relativeOrigin} の印。相対の NODE が 1 つも無いリストは、そのまま返す。
  */
 public final class AbsoluteItems {
+    /** 診断: 絶対座標へ直した回数（相対の NODE があって実際に新しいリストを作った回数）。通常の描画経路では増えない。 */
+    public static final java.util.concurrent.atomic.LongAdder CONVERSIONS = new java.util.concurrent.atomic.LongAdder();
+
     private AbsoluteItems() {
     }
 
@@ -32,6 +35,7 @@ public final class AbsoluteItems {
             }
         }
         if (!any) return items;
+        CONVERSIONS.increment();
 
         Map<Long, Integer> indexOf = new HashMap<>(n * 2);
         for (int i = 0; i < n; i++) {

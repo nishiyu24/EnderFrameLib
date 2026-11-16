@@ -150,7 +150,7 @@ public class WebItemRendererHelper {
 
         SessionContext session = SurfaceRenderer.open(sessionId);
         if (session == null || session.rootW() <= 0 || session.rootH() <= 0) return;
-        List<DisplayItem> elements = session.elements();
+        List<DisplayItem> elements = session.relativeElements();
         if (elements == null || elements.isEmpty()) return;
 
         int layoutW = session.rootW();
