@@ -406,7 +406,7 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
      */
     private static final float[] ZERO_RADII_XY = new float[8];
 
-    private static boolean hasNonZeroCornerRadius(ComputedStyle style) {
+    public static boolean hasNonZeroCornerRadius(ComputedStyle style) {
         if (style.get(CORNER_IDS[0]) != null || style.get(CORNER_IDS[1]) != null
                 || style.get(CORNER_IDS[2]) != null || style.get(CORNER_IDS[3]) != null) {
             return true;
@@ -421,7 +421,6 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
         float w, h, rootW, rootH;
         float minSafeW, minSafeH;
         float[] radii;
-        com.nishiyu.enderframelib.core.paint.model.Corners corners;
         boolean fixedSize;
     }
 
@@ -446,23 +445,8 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
         cache.minSafeW = needW;
         cache.minSafeH = needH;
         cache.fixedSize = fixed;
-        cache.corners = null;
         cache.radii = computed;
         return computed;
-    }
-
-    /** 読み取り専用の丸め済み {@link com.nishiyu.enderframelib.core.paint.model.Corners} をキャッシュして返す。 */
-    public static com.nishiyu.enderframelib.core.paint.model.Corners cornersShared(
-            ComputedStyle style, float w, float h, float rootW, float rootH) {
-        if (!hasNonZeroCornerRadius(style)) return com.nishiyu.enderframelib.core.paint.model.Corners.ZERO;
-        float[] r = cornerRadiiXYShared(style, w, h, rootW, rootH);
-        CornerCache cache = style.paintMemoSelf(CORNER_CACHE_KEY, s -> new CornerCache());
-        com.nishiyu.enderframelib.core.paint.model.Corners c = cache.corners;
-        if (c == null) {
-            c = com.nishiyu.enderframelib.core.paint.model.Corners.ofFloatXY(r);
-            cache.corners = c;
-        }
-        return c;
     }
 
     public static float[] cornerRadiiXY(ComputedStyle style, float w, float h, float rootW, float rootH) {

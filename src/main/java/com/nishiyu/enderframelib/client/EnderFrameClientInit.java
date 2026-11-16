@@ -202,6 +202,8 @@ public class EnderFrameClientInit {
         };
 
         DomUtils.innerHtmlParser = UiDocumentCompiler.INNER_HTML_PARSER;
+        // client/ の描画項目の消費者（ヒットテスト・各レンダラー）は絶対座標を前提にしている。親相対への対応（B3 の残り）までは絶対座標で組む
+        com.nishiyu.enderframelib.core.EngineContext.global().parentRelativeDisplayItems = false;
         com.nishiyu.enderframelib.core.EngineContext.global().intrinsicSizeResolver = ClientImageRegistry.RESOLVER_ADAPTER;
         PaintServices.setIntrinsicSizeResolver(ClientImageRegistry.RESOLVER_ADAPTER);
 

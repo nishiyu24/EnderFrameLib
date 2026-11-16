@@ -642,13 +642,32 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return !hasMovingAncestor(box);
     }
 
+    private static final Object CORNERS_MEMO_KEY = new Object();
+
+    private static final class CornersMemo {
+        float[] src;
+        Corners corners;
+    }
+
+    /** 読み取り専用の丸め済み {@link Corners}。半径の配列（{@code LengthResolver} が有効な間は同じ実体）が変わらない間は作り直さない。 */
+    private static Corners cornersShared(ComputedStyle style, float w, float h, float rootW, float rootH) {
+        if (!LengthResolver.hasNonZeroCornerRadius(style)) return Corners.ZERO;
+        float[] r = LengthResolver.cornerRadiiXYShared(style, w, h, rootW, rootH);
+        CornersMemo memo = style.paintMemoSelf(CORNERS_MEMO_KEY, st -> new CornersMemo());
+        if (memo.src != r) {
+            memo.corners = Corners.ofFloatXY(r);
+            memo.src = r;
+        }
+        return memo.corners;
+    }
+
     /** 箱の {@code mask-image} のレイヤーを項目にして足す（背景画像と同じ手順。クリップは箱の外へは出さない）。 */
     private void drawMaskItems(List<DisplayItem> elements, LayoutBox box) {
         PaintSupport.CaptureList cap = (parentRelative && PaintOrder.boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
         int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
         if (cap != null) cap.setOrigin(Math.round(box.x), Math.round(box.y));
         try {
-            Corners radii = LengthResolver.cornersShared(box.axisStyle(), box.w, box.h, rootW, rootH);
+            Corners radii = cornersShared(box.axisStyle(), box.w, box.h, rootW, rootH);
             int[] rawRadii;
             if (radii == Corners.ZERO) {
                 rawRadii = Corners.ZERO_RAW;
@@ -1047,7 +1066,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         int minShiftY = Math.min(oldOriginDeltaY, shiftY), maxShiftY = Math.max(oldOriginDeltaY, shiftY);
         for (int i = 0, n = items.size(); i < n; i++) {
             DisplayItem it = items.get(i);
-            if (it.type() == ElementType.NODE) continue;
+            if (it.type() == ElementType.NODE) {
+                // 箱自身のノードの範囲は親相対で、ここの境界検査に載らない。クリップが違うまま古い印を残すと
+                // 子へ伝わるので、ノードがクリップを持つなら（ここへ来たのは箱のクリップが前と違うとき）「外側だけの差」とは言えない
+                RenderMeta nodeMeta = it.meta();
+                ClipRect nodeClip = nodeMeta != null ? nodeMeta.clipRect() : null;
+                if (nodeClip != null) return false;
+                continue;
+            }
             if (it.translateX() != 0f || it.translateY() != 0f
                     || it.scaleX() != 1f || it.scaleY() != 1f || it.rotate() != 0f) {
                 return false;
@@ -1534,7 +1560,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         int subOy = hasOwnNode ? curOy : curPoy;
         float subShiftX = (hasOwnNode || fracFragOnly) ? 0f : fracDx;
         float subShiftY = (hasOwnNode || fracFragOnly) ? 0f : fracDy;
-        boolean ownSubClipMoved = hasOwnNode ? (curOx != m.originX || curOy != m.originY) : (subShiftX != 0f || subShiftY != 0f);
+        boolean ownSubClipMoved = hasOwnNode ? (curOx != m.originX || curOy != m.originY) : (curPox != m.parentOriginX || curPoy != m.parentOriginY || subShiftX != 0f || subShiftY != 0f);
         if (patchItems) {
             DisplayItem[] updatedArr = null;
             ClipRect lastOldClip = null;
@@ -2082,7 +2108,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId, BoxMemo prevMemo) {
-        Corners radii = LengthResolver.cornersShared(box.axisStyle(), box.w, box.h, rootW, rootH);
+        Corners radii = cornersShared(box.axisStyle(), box.w, box.h, rootW, rootH);
         // 円しか持たない所（インラインの断片・円判定）には、横と縦の小さい方の円で近似した半径を渡す
         int[] rawRadii;
         if (radii == Corners.ZERO) {
@@ -2174,7 +2200,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         ClipRect normalizedClip = clipRect;
         RenderMeta anchorMeta = reuseMeta(prevAnchorMeta, normalizedClip, radii, fontHVal, box.lineHeightPx, ox, oy,
                 itemCount, interactive, anchorEvents.hints());
-        long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.nodeId()) : 0L;
+        long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.paintHandle()) : 0L;
         PaintSupport.CaptureList cap = (parentRelative && elements instanceof PaintSupport.CaptureList c) ? c : null;
         int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
         if (cap != null) {
@@ -2233,7 +2259,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     // 何が壊れていたか: ここが RANGE を出していたため、progress / meter が
                     // つまみ付きのスライダーとして描かれていた。進捗バーの描画実装
                     // (ControlElementRenderer.renderProgressElement) は呼ばれない死にコードだった。
-                    long progressKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_PROGRESS) : 0L;
+                    long progressKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_PROGRESS) : 0L;
                     addElement(elements, id, id + "_progress", ElementType.PROGRESS, box.x, box.y, box.w, box.h, val + ":" + min + ":" + max, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, progressKey);
                 }
                 case "svg" -> controls.drawSvgElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
@@ -2351,7 +2377,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                              ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows, float rot) {
         // vertical-lr は転置で置くので、文字は上下反転で鏡映を打ち消す
         float flipY = effStyle != null && WritingModes.isTransposed(WritingModes.flowOf(effStyle)) ? -1f : 1f;
-        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
         for (int i = shadows.size() - 1; i >= 0; i--) {
             BoxDecorations.Shadow sh = shadows.get(i);
             if ((sh.color() >>> 24) == 0) continue;
@@ -3654,6 +3680,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         syncApplied(am); // 項目を今のリストから取り直すので、基準の位置も動いた分だけ進める
                         if (hChanged) am.itemCoords = null;
                         am.items = List.copyOf(currentDisplayList.subList(anc.dlStart, memoEnd));
+                        am.itemsMutable = false;
                     }
                     anc.touchPaint();
                 }

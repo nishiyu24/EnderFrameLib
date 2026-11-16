@@ -62,7 +62,7 @@ final class ControlPainter {
                 sceneEvents.put(Scene3DTags.ORBIT_ATTR, "true");
             }
         }
-        long sceneKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_SCENE) : 0L;
+        long sceneKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_SCENE) : 0L;
         addElement(elements, id, id + "_scene", ElementType.SCENE, innerX, innerY, innerW, innerH, id, color, bgColor, sceneEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, sceneKey);
     }
 
@@ -95,7 +95,7 @@ final class ControlPainter {
             int thickness = border.maxThickness();
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             CircleBorderSpec cbSpec = new CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
-            long cbKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_BORDER) : 0L;
+            long cbKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_BORDER) : 0L;
             addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
                     new RenderMeta(normalizedClip, radii, cbSpec, fontHVal, ox, oy, 1, false), cbKey);
         } else {
@@ -124,7 +124,7 @@ final class ControlPainter {
             if (imageEvents == mediaEvents) imageEvents = mediaEvents.copy();
             imageEvents.put("hit-alpha", hitAlpha.isBlank() ? "128" : hitAlpha.trim());
         }
-        long mediaKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_MEDIA) : 0L;
+        long mediaKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_MEDIA) : 0L;
         addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, imageEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, mediaKey);
     }
 
@@ -150,7 +150,7 @@ final class ControlPainter {
         float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
         float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
         String src = RasterPainting.svgSrc(box.node, innerW, innerH, ImageFitMode.FILL, innerW, innerH, color, decor.devicePixelRatio());
-        long svgKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_MEDIA) : 0L;
+        long svgKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_MEDIA) : 0L;
         addElement(elements, id, id + "_svg", ElementType.IMAGE, ImageFitMode.FILL, innerX, innerY, innerW, innerH, src, color, bgColor,
                 partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, svgKey);
     }
@@ -171,7 +171,7 @@ final class ControlPainter {
         String position = box.style.get(CssPropertyIndex.OBJECT_POSITION);
         if (position != null && !position.isBlank()) canvasEvents.put("object-position", position);
         ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssPropertyIndex.OBJECT_FIT, "fill"));
-        long canvasKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_CANVAS) : 0L;
+        long canvasKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_CANVAS) : 0L;
         addElement(elements, id, id + "_canvas", ElementType.CANVAS, fitMode, innerX, innerY, innerW, innerH, id, color, bgColor, canvasEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, canvasKey);
     }
 
@@ -189,7 +189,7 @@ final class ControlPainter {
         if (box.node.attrs.containsKey("data-syntax")) taEvents.put("data-syntax", box.node.attrs.get("data-syntax"));
         if (box.node.attrs.containsKey("data-line-numbers")) taEvents.put("data-line-numbers", box.node.attrs.get("data-line-numbers"));
 
-        long taKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_TEXTAREA) : 0L;
+        long taKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_TEXTAREA) : 0L;
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
             addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, innerX, innerY, innerW, innerH, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, taKey);
@@ -208,7 +208,7 @@ final class ControlPainter {
         float innerX = box.x + border.bwLeft(), innerY = box.y + border.bwTop();
         float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
-        long selKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_SELECT) : 0L;
+        long selKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_SELECT) : 0L;
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
             addElement(elements, id, id + "_select", ElementType.SELECT, innerX, innerY, innerW, innerH, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, selKey);
@@ -256,7 +256,7 @@ final class ControlPainter {
                     int placeholderColor = box.placeholderStyle != null
                             ? box.placeholderStyle.color(CssPropertyIndex.COLOR, DEFAULT_PLACEHOLDER_COLOR)
                             : DEFAULT_PLACEHOLDER_COLOR;
-                    long phKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_PLACEHOLDER) : 0L;
+                    long phKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_PLACEHOLDER) : 0L;
                     addElement(elements, id, PaintSupport.partId(box, id, 18, "_ph"), ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, placeholderColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, phKey);
                 }
             }
@@ -303,7 +303,7 @@ final class ControlPainter {
         int mark = radio ? strong : dark && !mixed ? NATIVE_DARK : NATIVE_WHITE;
         int fill = filled ? strong : radio && dark ? NATIVE_DARK : NATIVE_WHITE;
         // 印の部品が背景を塗り、印（点・チェック）を中身として描く。輪はその上に重ねる
-        long toggleKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), radio ? DisplayItem.PART_RADIO : DisplayItem.PART_CHECKBOX) : 0L;
+        long toggleKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), radio ? DisplayItem.PART_RADIO : DisplayItem.PART_CHECKBOX) : 0L;
         addElement(elements, id, id + "_input", radio ? ElementType.RADIO : ElementType.CHECKBOX, x, y, size, size, state,
                 mark, fill, partsEvents, radius,
                 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, toggleKey);
@@ -394,7 +394,7 @@ final class ControlPainter {
         RoundedBorderSpec trackBorder = track ? new RoundedBorderSpec(1f, 1f, 1f, 1f, edge, edge, edge, edge) : null;
         RenderMeta meta = new RenderMeta(baseMeta.clipRect(), null, null, baseMeta.fontHeight(), 0f, 0f,
                 baseMeta.originX(), baseMeta.originY(), 1, false, trackBorder);
-        long rangeKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_INPUT) : 0L;
+        long rangeKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_INPUT) : 0L;
         addElement(elements, id, id + "_input", ElementType.RANGE, box.x, box.y, box.w, box.h, rangeData, strong, fill,
                 partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, rangeKey);
     }
@@ -459,7 +459,7 @@ final class ControlPainter {
         int partOrd = "_input".equals(suffix) ? DisplayItem.PART_INPUT :
                       "_textarea".equals(suffix) ? DisplayItem.PART_TEXTAREA :
                       "_select".equals(suffix) ? DisplayItem.PART_SELECT : DisplayItem.PART_INPUT;
-        long ctrlKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), partOrd) : 0L;
+        long ctrlKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), partOrd) : 0L;
         String ctrlId = PaintSupport.partId(box, id, 19, suffix);
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);

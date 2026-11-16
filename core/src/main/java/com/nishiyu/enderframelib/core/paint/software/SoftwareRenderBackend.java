@@ -1339,9 +1339,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) {
         if (!PaintSceneDriver.reuseIdlePoses || !glReplay) return false;
         if (recordExtents || partialActive || recordOwner != null) return false;
-        GpuSink sink = route.current();
-        if (sink == null) return false;
-        if (!sink.beginDiffPatch()) return false;
+        if (!route.beginDiffPatch()) return false;
         syncClipGeneration();
         boolean okAll = true;
         try {
@@ -1375,8 +1373,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 Clip clip = visible ? buildClip(index, el, res.anim()) : null;
                 boolean culled = !visible || clip.empty() || (cullOffscreen && outsideClip(el, res.pose(), clip));
                 if (culled) {
-                    if (sink.canPatchSpan(index)) {
-                        if (!sink.patchSpanBegin(index) || !sink.patchSpanEnd(index, true)) {
+                    if (route.canPatchSpan(index)) {
+                        if (!route.patchSpanBegin(index) || !route.patchSpanEnd(index, true)) {
                             okAll = false;
                             break;
                         }
@@ -1399,13 +1397,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     }
                     continue;
                 }
-                if (!sink.patchSpanBegin(index)) {
+                if (!route.patchSpanBegin(index)) {
                     okAll = false;
                     break;
                 }
                 long cpuBefore = cpuOps;
                 drawItemBody(el, res.anim(), res, clip, res.residual());
-                if (cpuOps != cpuBefore || !sink.patchSpanEnd(index, true)) {
+                if (cpuOps != cpuBefore || !route.patchSpanEnd(index, true)) {
                     okAll = false;
                     break;
                 }
@@ -1417,14 +1415,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 spanCulled[index] = false;
             }
         } catch (RuntimeException ex) {
-            sink.abortDiffPatch();
+            route.abortDiffPatch();
             throw ex;
         }
         if (!okAll) {
-            sink.abortDiffPatch();
+            route.abortDiffPatch();
             return false;
         }
-        sink.endDiffPatch();
+        route.endDiffPatch();
         cpuOpsOrdered = cpuOps;
         return true;
     }

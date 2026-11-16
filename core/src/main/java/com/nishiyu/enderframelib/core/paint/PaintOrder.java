@@ -733,7 +733,7 @@ public final class PaintOrder {
         int color = ColorParser.parseColor(box.backdropStyle.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
         float opacity = box.backdropStyle.number(CssPropertyIndex.OPACITY, 1.0f);
         if ((color >>> 24) == 0 || opacity <= 0f) return;
-        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
         ItemProps props = new ItemProps();
         props.parentId(box.node.key(), nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L);
         PaintSupport.CaptureList cap = (parentRelative && boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
@@ -1347,7 +1347,7 @@ public final class PaintOrder {
      */
     void addMovingNode(List<DisplayItem> elements, String id, LayoutBox box, RenderMeta meta) {
         ItemProps events = scratchMovingProps.reset();
-        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
         long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
         String parentKeyStr = box.node != null ? box.node.key() : id;
         events.parentId(parentKeyStr, nodeKey);
@@ -1410,7 +1410,7 @@ public final class PaintOrder {
             float curX = scrollState.getScrollX(box.node);
             float curY = scrollState.getScrollY(box.node);
 
-            int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+            int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
             long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
             String ownerId = box.node.key();
             ItemProps sbEvents = scratchSbProps.reset();

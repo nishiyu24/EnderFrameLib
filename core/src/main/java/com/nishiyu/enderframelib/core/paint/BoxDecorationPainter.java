@@ -74,7 +74,7 @@ public final class BoxDecorationPainter {
 
     /** 装飾部品の整数鍵。ノードが無ければ 0（従来どおり ID 文字列から導く）。部品番号は領域内へ丸める。 */
     static long decorationKey(LayoutBox box, int base, int ordinal) {
-        int handle = box.node != null ? box.node.nodeId() : 0;
+        int handle = box.node != null ? box.node.paintHandle() : 0;
         if (handle <= 0) return 0L;
         int mask = base == FRAG_PART_BASE ? FRAG_PART_MASK : SHADOW_PART_MASK;
         return DisplayItem.keyOf(handle, base | (ordinal & mask));
@@ -218,7 +218,7 @@ public final class BoxDecorationPainter {
                         decorationKey(box, FRAG_PART_BASE, ringPart));
             } else {
                 drawLines(elements, id, "_b_", frag.x, frag.y, frag.w, frag.h, widths, styles, colors, 0,
-                        passiveBorderEvents, meta, transDur, true, box.node != null ? box.node.nodeId() : 0);
+                        passiveBorderEvents, meta, transDur, true, box.node != null ? box.node.paintHandle() : 0);
             }
         }
     }
@@ -320,7 +320,7 @@ public final class BoxDecorationPainter {
         int bg = "currentcolor".equalsIgnoreCase(bgSpec.trim()) ? fallbackColor : ColorParser.parseColor(bgSpec);
         if ((bg >>> 24) == 0) return;
         int part = fragIds.getAndIncrement();
-        long key = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), FRAG_PART_BASE + part) : 0L;
+        long key = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), FRAG_PART_BASE + part) : 0L;
         addElement(elements, id, id + "_flbg_" + part, ElementType.RECT, rect[0], rect[1], rect[2], rect[3],
                 "", 0, bg, events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, meta, key);
     }
@@ -455,7 +455,7 @@ public final class BoxDecorationPainter {
             bgType = ElementType.A;
         }
         boolean isInteractiveBox = bgType != ElementType.RECT;
-        long bgKey = box.node != null ? DisplayItem.bgKeyOf(box.node.nodeId()) : 0L;
+        long bgKey = box.node != null ? DisplayItem.bgKeyOf(box.node.paintHandle()) : 0L;
 
         if (border.isCircle() && border.hasBorder()) {
             int thickness = border.maxThickness();
@@ -464,7 +464,7 @@ public final class BoxDecorationPainter {
             addElement(elements, id, partId(box, id, 0, "_bg"), bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, bgKey);
             drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy, prevItems);
             drawInsetShadows(elements, box, id, shadows, border, normalizedClip, fontHVal, ox, oy);
-            long cbKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_BORDER) : 0L;
+            long cbKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_BORDER) : 0L;
             addElement(elements, id, partId(box, id, 1, "_cb"), ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
                     new RenderMeta(normalizedClip, radii, cbSpec, fontHVal, ox, oy, 1, false), cbKey);
         } else {
@@ -477,7 +477,7 @@ public final class BoxDecorationPainter {
                 BoxDecorations.Rect area = BoxDecorations.boxArea(box, colorClip);
                 Corners areaRadii = "padding-box".equals(colorClip) ? border.innerRadii() : null;
                 int bglCount = BoxDecorations.layersView(box.style, 1.0).size();
-                long bglKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_BGL_BASE + (bglCount & 0x3F)) : 0L;
+                long bglKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_BGL_BASE + (bglCount & 0x3F)) : 0L;
                 addElement(elements, id, id + "_bgl" + bglCount + "_0", ElementType.RECT,
                         area.x(), area.y(), area.w(), area.h(), "", 0, bgColor, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
                         new RenderMeta(normalizedClip, areaRadii, null, fontHVal, ox, oy, 1, false), bglKey);
@@ -497,7 +497,7 @@ public final class BoxDecorationPainter {
             if (!ghostItem.isEmpty() && !"minecraft:air".equals(ghostItem)) {
                 float iconX = box.x + (box.w - 16) / 2;
                 float iconY = box.y + (box.h - 16) / 2;
-                long ghostKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_GHOST_IMAGE) : 0L;
+                long ghostKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_GHOST_IMAGE) : 0L;
                 addElement(elements, id, partId(box, id, 2, "_ghost_img"), ElementType.IMAGE, ImageFitMode.FILL, iconX, iconY, 16, 16, "item:" + ghostItem, color, 0, partsEvents, 0, 0.85f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, ghostKey);
             }
         }
@@ -670,7 +670,7 @@ public final class BoxDecorationPainter {
             List<BoxDecorations.Rect> tiles = BoxDecorations.tiles(layer, box, intrinsic, rootW, rootH,
                     box.style.fontSizePx(), box.style.rootFontSizePx());
             int part = 0;
-            int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+            int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
             boolean bglCached = "_bgl".equals(idInfix) && i < 3;
             boolean maskCached = "_mask".equals(idInfix) && i == 0;
             PaintSupport.CaptureList cap = elements instanceof PaintSupport.CaptureList c ? c : null;
@@ -763,7 +763,7 @@ public final class BoxDecorationPainter {
         if (cells.isEmpty()) return false;
         RenderMeta meta = new RenderMeta(clip, null, null, fontHVal, ox, oy, 1, false);
         int part = 0;
-        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
         for (BorderImage.Cell c : cells) {
             long biKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BORDER_IMAGE_BASE + (part & 0x3F)) : 0L;
             addElement(elements, id, id + "_bi" + (part++), ElementType.IMAGE, ImageFitMode.FILL, c.dx(), c.dy(), c.dw(), c.dh(),
@@ -803,7 +803,7 @@ public final class BoxDecorationPainter {
         float[][] regions = {{x0, y0, left, y1}, {right, y0, x1, y1}, {left, bottom, right, y1}};
         float[] widths = {b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft()};
         int[] colors = {b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft()};
-        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
         for (int i = 0; i < regions.length; i++) {
             if (regions[i][2] <= regions[i][0] || regions[i][3] <= regions[i][1]) continue;
             ClipRect clip = ClipRect.fromArray(BoxDecorations.intersectClip(
@@ -840,7 +840,7 @@ public final class BoxDecorationPainter {
 
     void drawRoundedBorder(List<DisplayItem> elements, String id, LayoutBox box, ItemProps events,
                                    BorderSpec b, RenderMeta meta, int transDur, List<DisplayItem> prevItems) {
-        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
         long borderKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BORDER) : 0L;
         String borderId = partId(box, id, 3, "_b_round");
         DisplayItem prevItem = findPrevLayerItem(prevItems, borderKey, borderId);
@@ -883,7 +883,7 @@ public final class BoxDecorationPainter {
     void drawStraightBorders(List<DisplayItem> elements, String id, LayoutBox box, float rOff, ItemProps partsEvents, BorderSpec b, RenderMeta meta, int transDur) {
         float[] widths = {b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft()};
         int[] colors = {b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft()};
-        drawLines(elements, id, "_b_", box.x, box.y, box.w, box.h, widths, b.styles(), colors, rOff, partsEvents, meta, transDur, false, box.node != null ? box.node.nodeId() : 0);
+        drawLines(elements, id, "_b_", box.x, box.y, box.w, box.h, widths, b.styles(), colors, rOff, partsEvents, meta, transDur, false, box.node != null ? box.node.paintHandle() : 0);
     }
 
     private static final int[] BORDER_SIDE_PARTS = {

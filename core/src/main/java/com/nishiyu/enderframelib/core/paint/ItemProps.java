@@ -361,7 +361,7 @@ final class ItemProps {
 
     static ItemProps populateForParts(ItemProps partsEvents, LayoutBox box, String id, TransitionSpec transSpec) {
         partsEvents.reset();
-        long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.nodeId()) : 0L;
+        long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.paintHandle()) : 0L;
         partsEvents.parentId(id, nodeKey);
         applyTransitionEvents(partsEvents, transSpec);
         if (box.style.containsKey(CssPropertyIndex.FONT_FAMILY)) {

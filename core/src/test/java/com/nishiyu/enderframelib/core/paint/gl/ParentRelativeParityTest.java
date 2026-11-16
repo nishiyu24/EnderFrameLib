@@ -99,6 +99,26 @@ class ParentRelativeParityTest {
         }
     }
 
+    /** 疑似要素（::before / ::after）の文字の節は文書に繋がらない。節の番号で鍵を作ると、複数の疑似要素で鍵が衝突して文字が消えた。 */
+    @Test
+    void pseudoElementTextKeysDoNotCollide() {
+        String twoSiblings = "<html><head><style>.b::before{content:'b';background:yellow}</style></head>"
+                + "<body><div class='b'>x</div><div class='b'>x</div></body></html>";
+        assertExactPixmapEquals("pseudo siblings", renderSw(twoSiblings, 400, 200, false, 0, -1, -1), renderSw(twoSiblings, 400, 200, true, 0, -1, -1));
+        String flex = """
+                <html><head><style>
+                .fc { display: flex; align-items: flex-end; justify-content: space-between; height: 50px; width: 300px; margin-bottom: 2px; background: lightgray; }
+                div.b::before { align-self: center; content: 'b'; background: yellow; }
+                div.a::after { align-self: center; content: 'a'; background: lightblue; }
+                </style></head><body>
+                <div class="fc b">x<div>y</div>z</div>
+                <div class="fc a">x<div>y</div>z</div>
+                <div class="fc b a">x<div>y</div>z</div>
+                </body></html>
+                """;
+        assertExactPixmapEquals("pseudo flex items", renderSw(flex, 400, 200, false, 0, -1, -1), renderSw(flex, 400, 200, true, 0, -1, -1));
+    }
+
     @Test
     void richFeaturesMatchBitForBit() {
         String html = """

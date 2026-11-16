@@ -665,6 +665,14 @@ public class HtmlNode implements Node {
         return nodeId;
     }
 
+    /**
+     * 描画項目の整数鍵に使う節の番号。文書に繋がっていない節（描画が作る仮想の節・疑似要素の文字など）は、節ごとに別の木の
+     * アリーナで同じ番号（1）が振られて鍵が衝突するので 0（文字列の ID から鍵を導く）を返す。
+     */
+    public int paintHandle() {
+        return treeTop() instanceof HtmlDocument ? nodeId() : 0;
+    }
+
     /** {@link #nodeId()} を振ったアリーナ。 */
     public DocumentArena arena() {
         nodeId();
