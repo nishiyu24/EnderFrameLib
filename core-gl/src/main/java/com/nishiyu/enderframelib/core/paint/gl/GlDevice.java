@@ -185,6 +185,18 @@ public final class GlDevice implements GpuDevice {
 
     private Frame reusableFrame;
 
+    /**
+     * このデバイスの GL コンテキストを、この装置だけが使っているか。真なら、フレームごとの呼び出し元の状態の退避
+     * （{@code glGet*} を約 30 回。ドライバとの往復で、短いフレームの CPU 時間の半分近くになる）を、最初の 1 回だけにする。
+     * フレームの終わりで状態を元へ戻すので、他の GL 呼び出しが間に入らないかぎり、次のフレームの始まりの状態は同じ。
+     * 既定は偽（ホストの状態を毎回退避する）。
+     */
+    public void setExclusiveContext(boolean exclusive) {
+        this.exclusiveContext = exclusive;
+    }
+
+    private boolean exclusiveContext;
+
     @Override
     public GpuFrame beginFrame() {
         if (closed) throw new IllegalStateException("closed");
@@ -860,7 +872,25 @@ public final class GlDevice implements GpuDevice {
             reset();
         }
 
+        private boolean stateSaved;
+        private int known2dMask, knownBufMask;
+
         void reset() {
+            if (exclusiveContext && stateSaved) {
+                // 前のフレームの終わりで、退避した状態へ戻してある。問い合わせずに、その値を使う
+                touched2dMask = 0;
+                touchedBufMask = 0;
+                passOpen = false;
+                ended = false;
+                GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+                GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
+                GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
+                GL11.glPixelStorei(GL11.GL_PACK_ROW_LENGTH, 0);
+                return;
+            }
+            known2dMask = 0;
+            knownBufMask = 0;
+            stateSaved = true;
             prevFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
             prevReadFbo = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
             prevDrawFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
@@ -908,6 +938,8 @@ public final class GlDevice implements GpuDevice {
             int bit = 1 << unit;
             if ((touched2dMask & bit) == 0) {
                 touched2dMask |= bit;
+                if (exclusiveContext && (known2dMask & bit) != 0) return; // 前に退避した値が今も正しい
+                known2dMask |= bit;
                 GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
                 prevUnitTex[unit] = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
             }
@@ -918,6 +950,8 @@ public final class GlDevice implements GpuDevice {
             int bit = 1 << unit;
             if ((touchedBufMask & bit) == 0) {
                 touchedBufMask |= bit;
+                if (exclusiveContext && (knownBufMask & bit) != 0) return;
+                knownBufMask |= bit;
                 GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
                 prevUnitBufTex[unit] = GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);
             }

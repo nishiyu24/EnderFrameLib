@@ -59,6 +59,10 @@ public final class ShowcaseApp {
             parity(html);
             return;
         }
+        if (args.length > 0 && args[0].equals("--hoverbench")) { // GL 経路で :hover の切替フレームの CPU 時間と確保量を測る
+            hoverBench(html);
+            return;
+        }
         if (args.length > 0 && args[0].equals("--bench")) {
             bench(html);
             return;
@@ -132,6 +136,32 @@ public final class ShowcaseApp {
             if (diff > 100) { System.out.println("PARITY first bad frame " + f + " diff=" + diff + " bbox=" + x0 + "," + y0 + " - " + x1 + "," + y1); return; }
         }
         System.out.println("PARITY ok");
+    }
+
+    private static void hoverBench(Path html) throws Exception {
+        String page = java.nio.file.Files.readString(html);
+        var tmx = (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
+        StandaloneView view = new StandaloneView(page, 1280, 800);
+        // タイマー（clock など）を止めて、:hover だけの費用を見る
+        try (var gl = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(1280, 800, 1f)) {
+            for (int i = 0; i < 60; i++) view.frame(i * 16L, gl, false);
+            int n = Integer.getInteger("hover.frames", 2000), warm = 400;
+            double[][] pts = {{140, 520}, {700, 640}, {1100, 620}, {200, 120}};
+            long cpu = 0, alloc = 0; int drawn = 0;
+            long id = Thread.currentThread().threadId();
+            for (int i = 0; i < n; i++) {
+                if (i == warm) { cpu = 0; alloc = 0; drawn = 0; }
+                var p = pts[i % pts.length];
+                if (!Boolean.getBoolean("hover.nomove")) view.mouseMove(p[0], p[1], gl.sessionId());
+                long c0 = tmx.getCurrentThreadCpuTime(), a0 = tmx.getThreadAllocatedBytes(id);
+                boolean d = view.frame((60 + i) * 16L, gl, false);
+                cpu += tmx.getCurrentThreadCpuTime() - c0;
+                alloc += tmx.getThreadAllocatedBytes(id) - a0;
+                if (d) drawn++;
+            }
+            int m = n - warm;
+            System.out.printf("HOVERBENCH cpu %.4f ms/frame, alloc %.1f KB/frame, drawn %d/%d | %s%n", cpu / 1e6 / m, alloc / 1024.0 / m, drawn, m, view.lastTimings());
+        }
     }
 
     /** 窓なし（見えない GL 窓）で 120 フレーム回し、1 フレームの所要時間を出す。 */

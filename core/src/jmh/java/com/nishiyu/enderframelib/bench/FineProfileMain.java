@@ -70,6 +70,33 @@ public final class FineProfileMain {
 
             com.sun.management.ThreadMXBean mx = (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
             long tid = Thread.currentThread().getId();
+            // -Dprofile.sample=true: 別スレッドから main のスタックを 50µs ごとに採って、上位を出す（JFR が短いフレームを取りこぼすため）
+            final java.util.concurrent.atomic.AtomicBoolean sampling = new java.util.concurrent.atomic.AtomicBoolean(false);
+            final java.util.Map<String, int[]> topHits = new java.util.concurrent.ConcurrentHashMap<>(), inclHits = new java.util.concurrent.ConcurrentHashMap<>();
+            final int[] sampleTotal = {0};
+            Thread mainThread = Thread.currentThread();
+            Thread sampler = null;
+            if (Boolean.getBoolean("profile.sample")) {
+                sampler = new Thread(() -> {
+                    while (!Thread.currentThread().isInterrupted()) {
+                        if (sampling.get()) {
+                            StackTraceElement[] st = mainThread.getStackTrace();
+                            if (st.length > 0) {
+                                sampleTotal[0]++;
+                                topHits.computeIfAbsent(st[0].getClassName() + "." + st[0].getMethodName(), k -> new int[1])[0]++;
+                                java.util.Set<String> seen = new java.util.HashSet<>();
+                                for (StackTraceElement e : st) {
+                                    String k = e.getClassName() + "." + e.getMethodName();
+                                    if (seen.add(k)) inclHits.computeIfAbsent(k, kk -> new int[1])[0]++;
+                                }
+                            }
+                        }
+                        java.util.concurrent.locks.LockSupport.parkNanos(50_000);
+                    }
+                }, "sampler");
+                sampler.setDaemon(true);
+                sampler.start();
+            }
             double[] ms = new double[frames];
             long allocTotal = 0;
             int rendered = 0;
@@ -91,18 +118,26 @@ public final class FineProfileMain {
                     }
                     StageProfiler.reset();
                     com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.reset();
-                    StageProfiler.trackAllocations(false);
+                    StageProfiler.trackAllocations(Boolean.getBoolean("profile.stagealloc"));
                     StageProfiler.enable(true);
                 }
                 long a0 = mx.getThreadAllocatedBytes(tid);
                 long t0 = System.nanoTime();
+                if (i >= 0) sampling.set(true);
                 boolean drew = step(scenario, view, backend, t, now, i, html);
+                sampling.set(false);
                 long t1 = System.nanoTime();
                 if (i >= 0) {
                     ms[i] = (t1 - t0) / 1e6;
                     allocTotal += mx.getThreadAllocatedBytes(tid) - a0;
                     if (drew) rendered++;
                 }
+            }
+            if (sampler != null) {
+                sampler.interrupt();
+                System.out.println("SAMPLES " + sampleTotal[0]);
+                topHits.entrySet().stream().sorted((a, b) -> b.getValue()[0] - a.getValue()[0]).limit(16).forEach(e -> System.out.println("  TOP " + e.getValue()[0] + " " + e.getKey()));
+                inclHits.entrySet().stream().filter(e -> e.getKey().contains("nishiyu")).sorted((a, b) -> b.getValue()[0] - a.getValue()[0]).limit(45).forEach(e -> System.out.println("  INC " + e.getValue()[0] + " " + e.getKey()));
             }
             StageProfiler.enable(false);
             if (com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.enabled()) {

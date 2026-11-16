@@ -194,7 +194,7 @@ tasks.register('runShowcase', JavaExec) {
     classpath = sourceSets.demo.output + sourceSets.demo.runtimeClasspath
     mainClass = 'com.nishiyu.enderframelib.demo.ShowcaseApp'
     if (System.getProperty('showcase.jfr') != null) jvmArgs "-XX:StartFlightRecording=filename=${System.getProperty('showcase.jfr')},settings=profile"
-    ['showcase.nogrid', 'showcase.inject', 'showcase.notimers', 'showcase.off', 'showcase.verbose', 'enderframe.paint.nomemo', 'showcase.gridms', 'enderframe.paint.noparentrelative'].each { k -> if (System.getProperty(k) != null) systemProperty k, System.getProperty(k) }
+    ['showcase.nogrid', 'showcase.inject', 'showcase.notimers', 'showcase.off', 'showcase.verbose', 'enderframe.paint.nomemo', 'showcase.gridms', 'enderframe.paint.noparentrelative', 'hover.nomove', 'hover.frames'].each { k -> if (System.getProperty(k) != null) systemProperty k, System.getProperty(k) }
     workingDir = rootProject.projectDir
 }
 
@@ -253,6 +253,8 @@ tasks.register('profile', JavaExec) {
     classpath = sourceSets.jmh.output + sourceSets.jmh.runtimeClasspath
     mainClass = project.findProperty('profile.main') ?: 'com.nishiyu.enderframelib.bench.PipelineProfileMain'
     workingDir = rootProject.projectDir
+    if (project.hasProperty('profile.sample')) systemProperty 'profile.sample', 'true'
+    if (project.hasProperty('profile.stagealloc')) systemProperty 'profile.stagealloc', 'true'
     if (project.hasProperty('profile.jfr')) jvmArgs "-XX:StartFlightRecording=filename=${project.property('profile.jfr')},settings=profile"
     if (project.hasProperty('profile.args')) args(project.property('profile.args').toString().split(' ').findAll { !it.isEmpty() })
 }

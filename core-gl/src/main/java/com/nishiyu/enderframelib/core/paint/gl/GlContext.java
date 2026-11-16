@@ -60,6 +60,7 @@ final class GlContext implements GpuSurfaceHost {
             this.vao = GL30.glGenVertexArrays();
             GL30.glBindVertexArray(vao);
             this.device = new GlDevice();
+            this.device.setExclusiveContext(true); // 自前のコンテキスト（ホストの文脈とは別。ホスト共有時も enter/exit で切り替える）
             if (hostManaged) GL11.glFinish();
         } catch (RuntimeException | Error e) {
             if (hostManaged) restoreContext(outerContext, outerCaps);
