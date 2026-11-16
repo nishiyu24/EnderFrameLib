@@ -116,6 +116,14 @@ public class UiInput {
                               int hostButton, boolean consumed) {
     }
 
+    /** ホストへ渡す押下の結果。項目は絶対座標へ解く（ホスト側は親相対を知らない）。 */
+    private PressResult absolutePress(DisplayItem element, UIHitResult hit, HtmlNode pressed, int hostButton, boolean consumed) {
+        List<DisplayItem> cache = session.renderCache();
+        DisplayItem abs = DisplayItem.resolveAbsolute(cache, element);
+        UIHitResult absHit = hit == null ? null : new UIHitResult(abs, hit.localX(), hit.localY());
+        return new PressResult(abs, absHit, pressed, hostButton, consumed);
+    }
+
     private UiView.InputSessionState state() {
         return session.inputState();
     }
@@ -180,7 +188,7 @@ public class UiInput {
                 return null;
             }
             session.handleScrollbarClick(clickedEl, pixelX, pixelY);
-            PressResult result = new PressResult(clickedEl, hit, null, hostButton, true);
+            PressResult result = absolutePress(clickedEl, hit, null, hostButton, true);
             if (host != null) host.pressed(result);
             return result;
         } else if (clickedEl.isPart(UiView.SB_V_THUMB) || clickedEl.isPart(UiView.SB_H_THUMB)) {
@@ -193,7 +201,7 @@ public class UiInput {
             state.draggingScrollbarPart = clickedEl.partSuffix();
             state.lastSentX = hit.localX();
             state.lastSentY = hit.localY();
-            PressResult result = new PressResult(clickedEl, hit, null, hostButton, true);
+            PressResult result = absolutePress(clickedEl, hit, null, hostButton, true);
             if (host != null) host.pressed(result);
             return result;
         }
@@ -213,7 +221,7 @@ public class UiInput {
         }
 
         startDragInteraction(session, hit, pressed);
-        PressResult result = new PressResult(clickedEl, hit, pressed, hostButton, false);
+        PressResult result = absolutePress(clickedEl, hit, pressed, hostButton, false);
         if (host != null) host.pressed(result);
         return result;
     }

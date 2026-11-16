@@ -67,7 +67,7 @@ public class AnimationTestSiteParityTest {
         assertNotNull(rootBox);
 
         DisplayListBuilder builder = new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, scrollState);
-        displayItems = builder.render(rootBox);
+        displayItems = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(builder.render(rootBox));
         assertNotNull(displayItems);
 
         allBoxes = new ArrayList<>();
@@ -427,7 +427,7 @@ public class AnimationTestSiteParityTest {
             ScrollState scroll = new ScrollState();
             LayoutBox root = compiler.layoutDocument(d, 400, 200, Map.of(), scroll,
                     EnderFrameStandalone.defaultFontResolver(), new InteractionState());
-            List<DisplayItem> items = new DisplayListBuilder(400, 200, d.sheet.keyframes, scroll).render(root);
+            List<DisplayItem> items = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(new DisplayListBuilder(400, 200, d.sheet.keyframes, scroll).render(root));
             DisplayItem inherit = items.stream().filter(i -> i.type() == ElementType.TEXT && "inherit".equals(i.text().strip())).findFirst().orElseThrow();
             DisplayItem fixed = items.stream().filter(i -> i.type() == ElementType.TEXT && "fixed".equals(i.text().strip())).findFirst().orElseThrow();
             assertTrue((inherit.animDef().animatedChannels() & AnimationSpec.CH_COLOR) != 0, "継承する文字には届くこと");

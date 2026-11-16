@@ -52,7 +52,7 @@ public final class ShowcaseApp {
             try (var cpu = new com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend(1280, 800, 1f)) {
                 v.frame(0, cpu, true);
             }
-            for (var it : v.items()) if (it.text() != null && (it.text().contains("node-1025") || it.text().equals("1") || it.text().equals("name"))) System.out.println(it.baseId() + " " + it.type() + " x=" + it.x() + " y=" + it.y() + " w=" + it.width() + " '" + it.text() + "'");
+            for (var it : v.items()) if (it.text() != null && (it.text().contains("node-1025") || it.text().equals("1") || it.text().equals("name"))) System.out.println(it.baseId() + " " + it.type() + " x=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).x() + " y=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).y() + " w=" + it.width() + " '" + it.text() + "'");
             return;
         }
         if (args.length > 0 && args[0].equals("--bench")) {
@@ -228,7 +228,7 @@ public final class ShowcaseApp {
     }
 
     private static float galleryY(StandaloneView v) {
-        for (var it : v.items()) if (it.baseId().equals("gallery")) return it.y();
+        for (var it : v.items()) if (it.baseId().equals("gallery")) return com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).y(); // 親相対なので絶対位置へ
         return Float.NaN;
     }
 

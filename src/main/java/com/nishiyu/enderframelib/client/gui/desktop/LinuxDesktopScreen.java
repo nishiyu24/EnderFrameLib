@@ -370,7 +370,7 @@ public class LinuxDesktopScreen extends AbstractEnderScreen {
     private DesktopLayout.Rect elementRect(String elementId) {
         SessionContext session = ClientWebManager.getSession(this.sessionId);
         if (session == null) return null;
-        for (DisplayItem item : session.renderCache()) {
+        for (DisplayItem item : session.absoluteRenderCache()) {
             if (elementId.equals(item.id())) return DesktopLayout.Rect.of(item);
         }
         return null;

@@ -47,6 +47,7 @@ public class AwtDisplayItemDrawer {
      */
     public static void render(Graphics2D g2d, List<DisplayItem> items) {
         if (items == null || items.isEmpty()) return;
+        items = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(items); // 親相対の表示リストを絶対座標へ
 
         // 高品位なレンダリングヒントを設定 (Chrome のテキストレンダリングと同等の品質)
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);

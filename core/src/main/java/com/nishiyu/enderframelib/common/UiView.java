@@ -887,11 +887,30 @@ public class UiView implements AutoCloseable {
     // 文書・入力・描画の操作（S3: セッション ID の代わりにこのオブジェクトへ）
     // ------------------------------------------------------------------
 
-    /** 描画要素のキャッシュ。必要なら先に環境変数と描画キューを更新する。 */
+    /**
+     * 描画要素のキャッシュ（絶対座標）。必要なら先に環境変数と描画キューを更新する。
+     * 親相対の表示リストは、絶対座標を前提にする消費者（MOD 側）のために、公開のたびに 1 回だけ直して持つ。
+     */
     public List<DisplayItem> elements() {
         beforeElements();
         applyPendingPaintOffsets();
-        return renderCache;
+        return absolute(renderCache);
+    }
+
+    /** {@link #elements()} と同じ絶対座標のリストを、前処理なしで返す。 */
+    public List<DisplayItem> absoluteRenderCache() {
+        applyPendingPaintOffsets();
+        return absolute(renderCache);
+    }
+
+    private List<DisplayItem> absoluteSource, absoluteResult;
+
+    private synchronized List<DisplayItem> absolute(List<DisplayItem> source) {
+        if (source != absoluteSource) {
+            absoluteResult = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(source);
+            absoluteSource = source;
+        }
+        return absoluteResult;
     }
 
     /** 状態変化に伴う部分木の再スタイル（必要に応じて再レイアウトまたは再描画へ分岐）を要求する。 */
@@ -2234,8 +2253,14 @@ public class UiView implements AutoCloseable {
         }
     }
 
-    /** 描画 ID または節の ID が指す表示要素。無ければ null。 */
+    /** 描画 ID または節の ID が指す表示要素（位置は絶対座標）。無ければ null。 */
     public DisplayItem elementById(String id) {
+        DisplayItem raw = elementByIdRaw(id);
+        return raw == null ? null : DisplayItem.resolveAbsolute(renderCache, raw);
+    }
+
+    /** {@link #elementById} の、親相対のままの項目（ヒットテスト索引など、相対を解く側へ渡す用）。 */
+    private DisplayItem elementByIdRaw(String id) {
         if (id == null) return null;
         DisplayItem fallback = null;
         List<DisplayItem> elements = renderCache();
@@ -2423,8 +2448,15 @@ public class UiView implements AutoCloseable {
         return hitTestIndex().hitTest(sessionId, pixelX, pixelY, nonInertHitFilter);
     }
 
+    /** {@link #hitTest} の結果の項目を絶対座標にしたもの（絶対座標を前提にする MOD 側の消費者用）。 */
+    public UIHitResult hitTestAbsolute(double pixelX, double pixelY) {
+        UIHitResult r = hitTest(pixelX, pixelY);
+        if (r == null || r.element() == null) return r;
+        return new UIHitResult(DisplayItem.resolveAbsolute(renderCache, r.element()), r.localX(), r.localY());
+    }
+
     public UIHitResult localCoords(String elementId, double pixelX, double pixelY) {
-        DisplayItem el = elementById(elementId);
+        DisplayItem el = elementByIdRaw(elementId);
         if (el == null) return null;
         return hitTestIndex().getLocalCoords(sessionId, el, pixelX, pixelY);
     }

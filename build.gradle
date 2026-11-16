@@ -223,8 +223,6 @@ idea {
 // --- 追加: JUnitを実行するための設定 ---
 tasks.named('test', Test) {
     useJUnitPlatform()
-    // MOD 側の描画項目の消費者（client/）は絶対座標を前提にしている。親相対への対応（B3 の残り）までは絶対座標で組む
-    systemProperty 'enderframe.paint.noparentrelative', 'true'
 
     testLogging {
         showStandardStreams = true

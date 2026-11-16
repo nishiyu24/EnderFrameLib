@@ -83,11 +83,12 @@ public final class UiEventFixture implements AutoCloseable {
         document = parser.parseDocument(html, "", WIDTH, HEIGHT);
         var rootBox = parser.layoutDocument(document, WIDTH, HEIGHT, Map.of(), new ScrollState(),
                 FontResolver.FALLBACK, new InteractionState());
-        elements = new DisplayListBuilder(WIDTH, HEIGHT, document.sheet.keyframes, new ScrollState()).render(rootBox);
+        List<DisplayItem> built = new DisplayListBuilder(WIDTH, HEIGHT, document.sheet.keyframes, new ScrollState()).render(rootBox);
+        elements = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(built); // 座標を測る用（親相対を絶対へ）
         SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
         session.setDocument(document);
         session.setLayoutRoot(rootBox);
-        session.setRenderCache(elements);
+        session.setRenderCache(built);
     }
 
     public HtmlNode node(String id) {

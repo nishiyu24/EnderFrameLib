@@ -132,7 +132,7 @@ public class WebRecipeViewerBridge {
     public static Object resolveIngredientAt(String sessionId, double webX, double webY) {
         SessionContext session = ClientWebManager.getSession(sessionId);
         if (session == null) return null;
-        UIHitResult hit = session.hitTest(webX, webY);
+        UIHitResult hit = session.hitTestAbsolute(webX, webY);
         if (hit == null || hit.element() == null) return null;
 
         DisplayItem el = hit.element();

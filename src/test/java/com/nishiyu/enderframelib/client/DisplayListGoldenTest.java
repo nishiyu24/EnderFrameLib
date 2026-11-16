@@ -128,7 +128,7 @@ public class DisplayListGoldenTest {
         LayoutBox root = parser.layoutDocument(doc, viewportW, viewportH, Map.of(),
                 new ScrollState(), FontResolver.FALLBACK);
         DisplayListBuilder renderer = new DisplayListBuilder(viewportW, viewportH, doc.sheet.keyframes, new ScrollState());
-        List<DisplayItem> elements = renderer.render(root);
+        List<DisplayItem> elements = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(renderer.render(root));
 
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < elements.size(); i++) {
