@@ -90,12 +90,7 @@ public final class Scene3D {
      * 壊れた入力は {@link IllegalArgumentException}（シーンは変わらない）。
      */
     public Object3D loadGltf(byte[] data) {
-        GltfBinaryLoader.Result r;
-        try {
-            r = GltfBinaryLoader.load(data, world);
-        } catch (GltfBinaryLoader.GltfException e) {
-            throw new IllegalArgumentException(e.getMessage(), e);
-        }
+        GltfBinaryLoader.Result r = GltfBinaryLoader.load(data, world); // 壊れた入力は IllegalArgumentException
         Object3D group = new Object3D();
         add(group);
         for (int root : r.rootNodes()) world.arena().setParent(root, group.node);
