@@ -21,6 +21,6 @@ class DisplayItemKeyTest {
                 0f, 0f, 1f, 1f, 0f, 0, null, null, null);
         assertEquals(DisplayItem.keyOf("n1_bg"), it.key());
         assertEquals(it.key(), it.withText("x").key());
-        assertEquals(it.key(), it.withTranslation(3f, 4f).key());
+        assertEquals(it.key(), it.withPosition(3, 4).key());
     }
 }

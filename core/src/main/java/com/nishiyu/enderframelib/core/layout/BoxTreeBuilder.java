@@ -522,7 +522,10 @@ public final class BoxTreeBuilder {
      * 要素の箱は再スタイルが要素ツリーを辿って直すが、DOM に無い箱はここで直す。
      */
     public static void restyleGeneratedBoxes(LayoutBox owner) {
-        for (LayoutBox child : owner.children) {
+        List<LayoutBox> kids = owner.children;
+        // 添字で回す（for-each は兄弟の多い親の hover のたびにイテレータを確保する。B9）
+        for (int ki = 0, kn = kids.size(); ki < kn; ki++) {
+            LayoutBox child = kids.get(ki);
             if (child.isVerticalWrapper) {
                 ComputedStyle next = owner.isVerticalRoot
                         ? wrapperStyle(owner, WritingModes.flowOf(owner.style), true)

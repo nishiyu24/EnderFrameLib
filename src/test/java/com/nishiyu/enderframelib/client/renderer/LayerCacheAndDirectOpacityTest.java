@@ -117,10 +117,22 @@ public class LayerCacheAndDirectOpacityTest {
     void cacheRequestRecognizesTheSameItemInstancesOnly() {
         DisplayItem a = rect("a", 0, 0, 10, 10), b = rect("b", 0, 0, 10, 10);
         LayerCompositor.CacheRequest req = new LayerCompositor.CacheRequest("s|a", List.of(a, b), 0, 2, 1L);
-        assertTrue(req.sameItems(new DisplayItem[]{a, b}));
+        int[] epochs = {a.paintEpoch(), b.paintEpoch()}; // 描いたときの塗りの通し番号
+        assertTrue(req.sameItems(new DisplayItem[]{a, b}, epochs));
         // 同じ内容でも別のインスタンスなら、作り直された項目として使い回さない
-        assertFalse(req.sameItems(new DisplayItem[]{rect("a", 0, 0, 10, 10), b}));
-        assertFalse(req.sameItems(new DisplayItem[]{a}));
+        assertFalse(req.sameItems(new DisplayItem[]{rect("a", 0, 0, 10, 10), b}, epochs));
+        assertFalse(req.sameItems(new DisplayItem[]{a}, new int[]{a.paintEpoch()}));
+    }
+
+    @Test
+    void cacheRequestRejectsAnItemWrittenToAfterItWasDrawn() {
+        DisplayItem a = rect("a", 0, 0, 10, 10);
+        LayerCompositor.CacheRequest req = new LayerCompositor.CacheRequest("s|a", List.of(a), 0, 1, 1L);
+        int[] epochs = {a.paintEpoch()};
+        assertTrue(req.sameItems(new DisplayItem[]{a}, epochs));
+        // 項目は同じまま塗り・移動量がセルへ書かれた（B9 の M3・M4）: 描き直す
+        a.setPaintOffset(3f, 0f);
+        assertFalse(req.sameItems(new DisplayItem[]{a}, epochs), "移動量が書かれた項目を同じものとして使い回した");
     }
 
     private static long signature(DisplayItem anchor, DisplayItem child, LayerSpec spec) {

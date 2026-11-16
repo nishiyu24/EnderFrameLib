@@ -12,6 +12,7 @@ import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
+import com.nishiyu.enderframelib.core.paint.ItemDiff;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.LayerBounds;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
@@ -129,10 +130,11 @@ public final class LayerCompositor {
      * 項目は同一のインスタンスであることも見る（ディスプレイリストが作り直されても、同じ項目なら見た目は同じ）。
      */
     record CacheRequest(String key, List<DisplayItem> list, int from, int span, long signature) {
-        boolean sameItems(DisplayItem[] items) {
+        /** 同じ項目で、かつ描いたあとに塗りがセルへ書かれていないこと（{@code epochs} は描いたときの各項目の paintEpoch）。 */
+        boolean sameItems(DisplayItem[] items, int[] epochs) {
             if (items.length != Math.min(span, list.size() - from)) return false;
             for (int i = 0; i < items.length; i++) {
-                if (list.get(from + i) != items[i]) return false;
+                if (ItemDiff.changed(items[i], list.get(from + i), epochs[i])) return false;
             }
             return true;
         }
@@ -142,6 +144,8 @@ public final class LayerCompositor {
     private static final class Cached {
         String key;
         DisplayItem[] items;
+        /** {@link #items} を描いたときの各項目の {@link DisplayItem#paintEpoch()}。 */
+        int[] itemEpochs;
         long signature;
         float[] deviceMap;
         int[] viewport;
@@ -196,6 +200,8 @@ public final class LayerCompositor {
         c.key = req.key();
         int end = Math.min(req.list().size(), req.from() + req.span());
         c.items = req.list().subList(req.from(), end).toArray(new DisplayItem[0]);
+        c.itemEpochs = new int[c.items.length];
+        for (int i = 0; i < c.items.length; i++) c.itemEpochs[i] = c.items[i].paintEpoch();
         c.signature = req.signature();
         c.deviceMap = layer.deviceMap.clone();
         c.viewport = layer.parentViewport.clone();
@@ -237,7 +243,7 @@ public final class LayerCompositor {
             int[] frame = frameSize(viewport);
             long now = System.nanoTime();
             if (c.signature != req.signature() || !Arrays.equals(c.viewport, viewport)
-                    || c.frameW != frame[0] || c.frameH != frame[1] || now - c.createdAt > c.maxAge || !req.sameItems(c.items)) {
+                    || c.frameW != frame[0] || c.frameH != frame[1] || now - c.createdAt > c.maxAge || !req.sameItems(c.items, c.itemEpochs)) {
                 dropCached(c);
                 return false;
             }

@@ -150,6 +150,8 @@ public class DisplayListBuilder {
     private LayoutBox currentRoot;
 
     /** 診断: 表示リストの差分スライスパッチ成功回数（全ボックス走査スキップ）。 */
+    /** 差分パッチで、項目を作り直さず塗りをセルへ書いて済ませた項目の数（B9 の M3）。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_REPAINT_IN_PLACE = new java.util.concurrent.atomic.LongAdder();
     public static final java.util.concurrent.atomic.LongAdder STAT_SLICE_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
     public static final java.util.concurrent.atomic.LongAdder STAT_CHILD_SLICE_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
     /** パッチ不成立の理由別カウンタ（計測用）。[0]=canPatchBoxes、[1]=canPatchChildSlices。添字は各判定内の if の出現順。 */
@@ -722,7 +724,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         RenderMeta withLayer = meta.withHints(meta.hints().withLayer(spec));
         return new DisplayItem(anchor.id(), anchor.baseNodeId(), anchor.type(), anchor.x(), anchor.y(), anchor.width(), anchor.height(),
                 anchor.text(), anchor.color(), anchor.bgColor(), anchor.events(), anchor.radius(), anchor.opacity(),
-                anchor.translateX(), anchor.translateY(), anchor.scaleX(), anchor.scaleY(), anchor.rotate(),
+                anchor.baseTranslateX(), anchor.baseTranslateY(), anchor.scaleX(), anchor.scaleY(), anchor.rotate(),
                 anchor.transitionDuration(), anchor.animDef(), anchor.fitMode(), withLayer, anchor.key());
     }
 
@@ -1077,7 +1079,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 if (nodeClip != null) return false;
                 continue;
             }
-            if (it.translateX() != 0f || it.translateY() != 0f
+            if (it.baseTranslateX() != 0f || it.baseTranslateY() != 0f
                     || it.scaleX() != 1f || it.scaleY() != 1f || it.rotate() != 0f) {
                 return false;
             }
@@ -1768,7 +1770,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 }
             }
             out.add(new DisplayItem(it.id(), it.baseNodeId(), it.type(), nx, ny, nw, nh,
-                    it.text(), it.color(), it.bgColor(), it.events(), it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                    it.text(), it.color(), it.bgColor(), it.events(), it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                     it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(), it.animDef(), it.fitMode(), meta, it.key()));
         }
     }
@@ -2054,7 +2056,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         boolean committed = false;
         float[] prevCoords = m != null ? m.itemCoords : null;
         try {
-            drawBoxSelfUncached(elements, box, clipRect, parentId, m);
+            drawBoxSelfUncached(elements, box, clipRect, parentId, m != null ? m.items : null);
             int count = elements.size() - start;
             List<DisplayItem> built = sliceCopy(m, elements, start);
             BoxMemo stored = remember(m, box, clipRect, parentId, built, count >= 3);
@@ -2110,7 +2112,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         drawBoxSelfUncached(elements, box, clipRect, parentId, null);
     }
 
-    private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId, BoxMemo prevMemo) {
+    /**
+     * @param prevItems この箱が前に出した項目（無ければ null）。メタ・ヒントを作り直さず使い回す候補（{@code reuseMeta}・{@code hintsReuse}）。
+     *                  差分パッチ（{@link #patchBoxes}）でも、表示リストの前のスライスを渡す（以前は null で、hover のたびに全部作り直していた）
+     */
+    private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId, List<DisplayItem> prevItems) {
         Corners radii = cornersShared(box.axisStyle(), box.w, box.h, rootW, rootH);
         // 円しか持たない所（インラインの断片・円判定）には、横と縦の小さい方の円で近似した半径を渡す
         int[] rawRadii;
@@ -2176,14 +2182,15 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         if (useRel) anchorEvents.relativeOrigin();
         RenderMeta prevAnchorMeta = null, prevBaseMeta = null, prevInnerMeta = null;
         RenderHints prevAnchorHints = null, prevPartsHints = null, prevPassiveHints = null;
-        if (prevMemo != null && prevMemo.items != null && !prevMemo.items.isEmpty()) {
-            DisplayItem m0 = prevMemo.items.get(0);
+        Map<String, String> prevPartsAttrs = null;
+        if (prevItems != null && !prevItems.isEmpty()) {
+            DisplayItem m0 = prevItems.get(0);
             if (m0.type() == ElementType.NODE) {
                 prevAnchorMeta = m0.meta();
                 prevAnchorHints = m0.hints();
             }
-            for (int mi = 1, mn = Math.min(prevMemo.items.size(), 8); mi < mn; mi++) {
-                DisplayItem item = prevMemo.items.get(mi);
+            for (int mi = 1, mn = Math.min(prevItems.size(), 8); mi < mn; mi++) {
+                DisplayItem item = prevItems.get(mi);
                 RenderHints h = item.hints();
                 if (h == null || h.shadowShape() != null || h.shadowBlur() != 0f || h.shaderGradient() != null) continue;
                 if (h.pointerEventsNone() && !pointerEventsNone) {
@@ -2195,7 +2202,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                             && h == RenderHints.NONE) {
                         prevInnerMeta = item.meta();
                     }
-                    if (prevPartsHints == null) prevPartsHints = h;
+                    if (prevPartsHints == null) {
+                        prevPartsHints = h;
+                        prevPartsAttrs = item.events();
+                    }
                 }
             }
         }
@@ -2219,7 +2229,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
             if (useRel && cap != null) cap.setOrigin(Math.round(box.x), Math.round(box.y));
 
-            ItemProps partsEvents = ItemProps.populateForParts(scratchPartsProps, box, id, transSpec);
+            ItemProps partsEvents = ItemProps.populateForParts(scratchPartsProps, box, id, transSpec, prevPartsAttrs);
             if (pointerEventsNone) partsEvents.pointerEventsNone();
             partsEvents.reuseCandidate(prevPartsHints);
             if ("#text".equals(box.node.tag)) {
@@ -2272,12 +2282,12 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 case "input" -> {
                     if (isPlainRange(box)) {
                         // appearance: none のレンジは作者の CSS で描いた箱に、つまみ（::-webkit-slider-thumb は部品のまま）だけを重ねる
-                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevMemo != null ? prevMemo.items : null);
+                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevItems);
                         controls.drawNativeRange(elements, box, id, rangeData(box, resolveLiveInputValue(id, box.node.attrs.getOrDefault("value", ""))),
                                 color, false, partsEvents, border, baseMeta, transDur, colorBgAnim);
                     } else if (isPlainToggle(box)) {
                         // appearance: none のチェックボックス・ラジオボタンは普通の箱（作者の枠線・背景だけで描き、印は無い）
-                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevMemo != null ? prevMemo.items : null);
+                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevItems);
                     } else {
                         controls.drawInputElement(elements, box, id, color, bgColor, fallbackRadius, fontHVal, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
                     }
@@ -2289,7 +2299,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     } else if (ReplacedElements.isHostImageLike(box.node.tag)) {
                         controls.drawMediaElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
                     } else {
-                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevMemo != null ? prevMemo.items : null);
+                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevItems);
                     }
                 }
             }
@@ -2827,8 +2837,12 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             newItems.beginCapture();
             float[] capturedCoords = null;
             try {
-                drawBoxSelfUncached(newItems, b, clip, parentId);
+                List<DisplayItem> prevSlice = b.dlStart >= 0 && b.dlEnd <= currentDisplayList.size()
+                        ? currentDisplayList.subList(b.dlStart, b.dlEnd) : null;
+                newItems.setReusePrev(prevSlice);
+                drawBoxSelfUncached(newItems, b, clip, parentId, prevSlice);
             } finally {
+                newItems.setReusePrev(null);
                 if (newItems.capturing) capturedCoords = newItems.finishCapture();
             }
             BoxMemo stored = remember(prev, b, clip, parentId, newItems, true);
@@ -2864,7 +2878,15 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             if (delta == 0) {
                 // スライス長同一: インプレース置換 (O(newLen))
                 for (int i = 0; i < newLen; i++) {
-                    currentDisplayList.set(b.dlStart + i, newItems.get(i));
+                    int slot = b.dlStart + i;
+                    DisplayItem was = currentDisplayList.get(slot), now = newItems.get(i);
+                    // 塗り（色・背景色・不透明度）だけが違うなら、項目を作り直さず前の項目のセルへ書く（B9 の M3）。変更の検出は
+                    // セルの通し番号が担う（ItemDiff）。文字は下ごしらえ（SoftwareRenderBackend.textSetups）が項目の同一性で引くので対象外
+                    if (was.type() != ElementType.TEXT && was.sameExceptPaint(now)) {
+                        if (was.repaintFrom(now)) STAT_REPAINT_IN_PLACE.increment();
+                    } else {
+                        currentDisplayList.set(slot, now);
+                    }
                 }
             } else {
                 // スライス長変化: 局所置換と後続インデックスシフト
@@ -3362,7 +3384,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                                     it.id(), it.baseNodeId(), it.type(),
                                     newLeft, newTop, newW, newH,
                                     it.text(), it.color(), it.bgColor(), it.events(),
-                                    it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                    it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                                     it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
                                     it.animDef(), it.fitMode(), meta, it.key()
                             );
@@ -3404,7 +3426,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                                                 it.id(), it.baseNodeId(), it.type(),
                                                 newLeft, newTop, newW, newH,
                                                 it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                                                 it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
                                                 it.animDef(), it.fitMode(), meta, it.key()
                                         );
@@ -3416,7 +3438,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                                                 it.id(), it.baseNodeId(), it.type(),
                                                 newX, newY, it.width(), it.height(),
                                                 it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                                                 it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
                                                 it.animDef(), it.fitMode(), meta, it.key()
                                         );
@@ -3428,7 +3450,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                                                 it.id(), it.baseNodeId(), it.type(),
                                                 newX, newY, it.width(), it.height(),
                                                 it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                                                 it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
                                                 it.animDef(), it.fitMode(), meta, it.key()
                                         );
@@ -3461,7 +3483,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                                                 it.id(), it.baseNodeId(), it.type(),
                                                 newX, newY, it.width(), it.height(),
                                                 it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                                                 it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
                                                 it.animDef(), it.fitMode(), meta, it.key()
                                         );
@@ -3475,7 +3497,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                                                 it.id(), it.baseNodeId(), it.type(),
                                                 newX, newY, newW, newH,
                                                 it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                                                 it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
                                                 it.animDef(), it.fitMode(), meta, it.key()
                                         );
@@ -3538,7 +3560,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                                     it.id(), it.baseNodeId(), it.type(),
                                     newX, newY, newW, newH,
                                     it.text(), it.color(), it.bgColor(), it.events(),
-                                    it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                    it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                                     it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
                                     it.animDef(), it.fitMode(), meta, it.key()
                             );
@@ -3666,7 +3688,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                                     it.id(), it.baseNodeId(), it.type(),
                                     it.x(), it.y(), it.width(), nextH,
                                     it.text(), it.color(), it.bgColor(), it.events(),
-                                    it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                    it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                                     it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
                                     it.animDef(), it.fitMode(), meta, it.key()
                             );
@@ -3790,7 +3812,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         itVt.id(), itVt.baseNodeId(), itVt.type(),
                         vtLeft, vtTop, vtW, vtH,
                         itVt.text(), itVt.color(), itVt.bgColor(), itVt.events(),
-                        itVt.radius(), itVt.opacity(), itVt.translateX(), itVt.translateY(),
+                        itVt.radius(), itVt.opacity(), itVt.baseTranslateX(), itVt.baseTranslateY(),
                         itVt.scaleX(), itVt.scaleY(), itVt.rotate(), itVt.transitionDuration(),
                         itVt.animDef(), itVt.fitMode(), metaVt, itVt.key()
                 ));
@@ -3811,7 +3833,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                             itSv.id(), itSv.baseNodeId(), itSv.type(),
                             svLeft, svTop, svW, svH,
                             itSv.text(), itSv.color(), itSv.bgColor(), itSv.events(),
-                            itSv.radius(), itSv.opacity(), itSv.translateX(), itSv.translateY(),
+                            itSv.radius(), itSv.opacity(), itSv.baseTranslateX(), itSv.baseTranslateY(),
                             itSv.scaleX(), itSv.scaleY(), itSv.rotate(), itSv.transitionDuration(),
                             itSv.animDef(), itSv.fitMode(), metaSv, itSv.key()
                     ));
@@ -3826,7 +3848,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         itV.id(), itV.baseNodeId(), itV.type(),
                         vLeft, vTop, vW, vH,
                         itV.text(), itV.color(), itV.bgColor(), itV.events(),
-                        itV.radius(), itV.opacity(), itV.translateX(), itV.translateY(),
+                        itV.radius(), itV.opacity(), itV.baseTranslateX(), itV.baseTranslateY(),
                         itV.scaleX(), itV.scaleY(), itV.rotate(), itV.transitionDuration(),
                         itV.animDef(), itV.fitMode(), metaV, itV.key()
                 ));
@@ -3859,7 +3881,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         itHt.id(), itHt.baseNodeId(), itHt.type(),
                         htLeft, htTop, htW, htH,
                         itHt.text(), itHt.color(), itHt.bgColor(), itHt.events(),
-                        itHt.radius(), itHt.opacity(), itHt.translateX(), itHt.translateY(),
+                        itHt.radius(), itHt.opacity(), itHt.baseTranslateX(), itHt.baseTranslateY(),
                         itHt.scaleX(), itHt.scaleY(), itHt.rotate(), itHt.transitionDuration(),
                         itHt.animDef(), itHt.fitMode(), metaHt, itHt.key()
                 ));
@@ -3880,7 +3902,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                             itSh.id(), itSh.baseNodeId(), itSh.type(),
                             shLeft, shTop, shW, shH,
                             itSh.text(), itSh.color(), itSh.bgColor(), itSh.events(),
-                            itSh.radius(), itSh.opacity(), itSh.translateX(), itSh.translateY(),
+                            itSh.radius(), itSh.opacity(), itSh.baseTranslateX(), itSh.baseTranslateY(),
                             itSh.scaleX(), itSh.scaleY(), itSh.rotate(), itSh.transitionDuration(),
                             itSh.animDef(), itSh.fitMode(), metaSh, itSh.key()
                     ));
@@ -3895,7 +3917,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         itH.id(), itH.baseNodeId(), itH.type(),
                         hLeft, hTop, hW, hH,
                         itH.text(), itH.color(), itH.bgColor(), itH.events(),
-                        itH.radius(), itH.opacity(), itH.translateX(), itH.translateY(),
+                        itH.radius(), itH.opacity(), itH.baseTranslateX(), itH.baseTranslateY(),
                         itH.scaleX(), itH.scaleY(), itH.rotate(), itH.transitionDuration(),
                         itH.animDef(), itH.fitMode(), metaH, itH.key()
                 ));
@@ -3912,7 +3934,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                             first.id(), first.baseNodeId(), first.type(),
                             first.x(), first.y(), first.width(), expectedH,
                             first.text(), first.color(), first.bgColor(), first.events(),
-                            first.radius(), first.opacity(), first.translateX(), first.translateY(),
+                            first.radius(), first.opacity(), first.baseTranslateX(), first.baseTranslateY(),
                             first.scaleX(), first.scaleY(), first.rotate(), first.transitionDuration(),
                             first.animDef(), first.fitMode(), first.meta(), first.key()
                     );

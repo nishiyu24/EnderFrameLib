@@ -16,7 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * 一般の表示リスト（スクロール用の {@link OffsetItemList} でないもの）が、前回と同じ大きさで少数の項目だけ入れ替わったとき、
+ * 表示リストが、前回と同じ大きさで少数の項目だけ入れ替わったとき、
  * 索引を作り直さず差分で更新する（{@link PaintSceneDriver#patchDiffIndex}）と、毎回作り直したときと走査の出力（描く項目・姿勢・
  * 不透明度・層の鎖）が完全に同じになること。文字・スタイル・ホバーの変化の列から実際の表示リストを取って突き合わせる。
  */

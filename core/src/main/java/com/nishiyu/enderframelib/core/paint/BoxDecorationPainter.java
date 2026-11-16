@@ -105,6 +105,17 @@ public final class BoxDecorationPainter {
             CssPropertyIndex.BORDER_BOTTOM_STYLE, CssPropertyIndex.BORDER_LEFT_STYLE};
     private static final String[] SOLID_STYLES = {"solid", "solid", "solid", "solid"};
 
+    /** 直前の内側の角（円）。値が同じなら同じ {@link Corners} を返し、毎フレームの作り直しを避ける（B9）。 */
+    private Corners lastInner = Corners.ZERO;
+
+    /** 円の角の {@link Corners}。全部 0 なら {@link Corners#ZERO}、直前と同じ値なら直前のものを返す。 */
+    Corners innerCircular(int tl, int tr, int br, int bl) {
+        if ((tl | tr | br | bl) == 0) return Corners.ZERO;
+        Corners c = lastInner;
+        if (c.topLeft() == tl && c.topRight() == tr && c.bottomRight() == br && c.bottomLeft() == bl && !c.isElliptical()) return c;
+        return lastInner = new Corners(tl, tr, br, bl);
+    }
+
     /**
      * 枠線の幅・色・線種。幅はレイアウトが決めた値（{@code box.bT} など）をそのまま使う（軸 1・3）。
      * 線種が none / hidden の辺は算出値の段で幅 0 になっている。色が無ければ {@code currentcolor}。
@@ -165,12 +176,11 @@ public final class BoxDecorationPainter {
             }
             innerRadii = Corners.ofEllipses(ih, iv);
         } else {
-            innerRadii = new Corners(
+            innerRadii = innerCircular(
                     Math.max(0, Math.round(radii[0] - Math.max(bwTop, bwLeft))),
                     Math.max(0, Math.round(radii[1] - Math.max(bwTop, bwRight))),
                     Math.max(0, Math.round(radii[2] - Math.max(bwBottom, bwRight))),
-                    Math.max(0, Math.round(radii[3] - Math.max(bwBottom, bwLeft)))
-            );
+                    Math.max(0, Math.round(radii[3] - Math.max(bwBottom, bwLeft))));
         }
 
         return scratchBorder.set(hasBorder, isCircle, useRoundedBorder,

@@ -27,7 +27,14 @@ class LayoutKeyEquivalenceTest {
 
     private static List<DisplayItem> flush(StandaloneView v) {
         v.ui().flushInvalidation();
-        return new ArrayList<>(v.ui().renderCache());
+        return snapshot(v);
+    }
+
+    /** 塗り・位置・寸法は項目のセルへ書かれうる（B9 の M3〜M5）ので、後のステップの影響を受けない値の写しを取る。 */
+    private static List<DisplayItem> snapshot(StandaloneView v) {
+        List<DisplayItem> out = new ArrayList<>();
+        for (DisplayItem it : v.ui().renderCache()) out.add(it.frozen());
+        return out;
     }
 
     private static void sameItems(List<DisplayItem> expected, List<DisplayItem> actual, String what) {
@@ -43,14 +50,14 @@ class LayoutKeyEquivalenceTest {
         expected.add(flush(off));
         for (int i = 1; i < sizes.length; i++) {
             off.ui().recomputeLayout(sizes[i][0], sizes[i][1]); // 即時（resize は時間でまとめられるので使わない）
-            expected.add(new ArrayList<>(off.ui().renderCache()));
+            expected.add(snapshot(off));
         }
         LayoutBox.blockPercentFreeEnabled = true;
         StandaloneView on = new StandaloneView(html, sizes[0][0], sizes[0][1], FontResolver.FALLBACK);
         sameItems(expected.get(0), flush(on), what + " 初回");
         for (int i = 1; i < sizes.length; i++) {
             on.ui().recomputeLayout(sizes[i][0], sizes[i][1]);
-            sameItems(expected.get(i), new ArrayList<>(on.ui().renderCache()), what + " 手順 " + i + " @" + sizes[i][0] + "x" + sizes[i][1]);
+            sameItems(expected.get(i), snapshot(on), what + " 手順 " + i + " @" + sizes[i][0] + "x" + sizes[i][1]);
         }
     }
 

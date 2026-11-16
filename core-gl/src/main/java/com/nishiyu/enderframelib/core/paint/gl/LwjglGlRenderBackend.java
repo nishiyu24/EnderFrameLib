@@ -143,6 +143,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     @Override public boolean beginMask() { return gpu.beginMask(); }
     @Override public void endMask() { gpu.endMask(); }
     @Override public void endGroup() { gpu.endGroup(); }
+    @Override public boolean snapsScrollOffsets() { return gpu.snapsScrollOffsets(); }
     @Override public boolean spanReplay(int index, boolean cpuPending) { return gpu.spanReplay(index, cpuPending); }
     @Override public boolean spanBegin(int index) { return gpu.spanBegin(index); }
     @Override public void spanEnd(int index, boolean ok) { gpu.spanEnd(index, ok); }

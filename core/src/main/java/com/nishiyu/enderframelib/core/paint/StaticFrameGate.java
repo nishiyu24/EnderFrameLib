@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * 面の再描画を飛ばせるかの判定（Phase B-2）。バックエンドが直前に描いた表示リストと、いま渡された表示リストが
- * 「同じ項目が同じ順に並んでいる」（項目は不変で、変わるときは別のインスタンスになる）うえで、時刻や外の事情で絵が
+ * 「同じ項目が同じ順に並んでいる」（塗り以外は不変で、変わるときは別のインスタンスになる。塗りの変化は項目のセルへ書かれ、{@link ItemDiff} の通し番号で見分ける）うえで、時刻や外の事情で絵が
  * 変わりえない（アニメーションが止まっている・画像／動画／キャンバス／3D シーンを含まない・フォント世代が同じ）なら、
  * 前回の出力テクスチャをそのまま使える。
  *
@@ -18,6 +18,8 @@ public final class StaticFrameGate {
     private Object[] items = new Object[0];
     private int count = -1; // -1 = まだ何も描いていない
     private int fontGeneration;
+    /** 描いた時点の塗りの書き込みの通し番号。これより後に塗りがセルへ書かれた項目は、同じ項目でも変わったものとして描き直す。 */
+    private int paintedEpoch;
     private boolean settled;
 
     /** @param enabled false なら常に {@link #canSkip} が false（切り分け用の無効化）。 */
@@ -30,7 +32,7 @@ public final class StaticFrameGate {
         if (!enabled || !settled || count < 0 || fontGeneration != fontGen || count != current.size()) return false;
         int i = 0;
         for (DisplayItem it : current) {
-            if (items[i++] != it) return false;
+            if (ItemDiff.changed((DisplayItem) items[i++], it, paintedEpoch)) return false;
         }
         return true;
     }
@@ -46,6 +48,7 @@ public final class StaticFrameGate {
         for (DisplayItem it : current) items[i++] = it;
         for (int k = n; k < count; k++) items[k] = null; // 前回より短くなったぶんの参照を手放す
         count = n;
+        paintedEpoch = com.nishiyu.enderframelib.core.paint.model.PaintCell.currentEpoch();
         fontGeneration = fontGen;
         settled = enabled && !timeDependent(current) && !backendStillAnimating;
     }

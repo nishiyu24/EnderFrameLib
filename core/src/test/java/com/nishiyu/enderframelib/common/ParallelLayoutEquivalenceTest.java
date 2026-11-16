@@ -50,7 +50,10 @@ class ParallelLayoutEquivalenceTest {
 
     private static List<DisplayItem> flush(StandaloneView v) {
         v.ui().flushInvalidation();
-        return new ArrayList<>(v.ui().renderCache());
+        // 塗りの変化は項目のセルへ書かれる（B9 M3）ので、後のフレームの影響を受けない値の写しを取る
+        List<DisplayItem> out = new ArrayList<>();
+        for (DisplayItem it : v.ui().renderCache()) out.add(it.frozen());
+        return out;
     }
 
     private static void assertTreesEqual(LayoutBox expected, LayoutBox actual, String path) {

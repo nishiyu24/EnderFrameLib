@@ -3770,6 +3770,18 @@ public class LayoutBox {
         /** 1 キーワードの旧構文と、{@code block flow-root} / {@code inline flex} などの複数キーワード構文を読む。 */
         public static Display parse(String value) {
             if (value == null) return null;
+            Display cached = PARSED.get(value);
+            if (cached != null) return cached == UNPARSEABLE ? null : cached;
+            Display parsed = parseUncached(value);
+            if (PARSED.size() < 256) PARSED.putIfAbsent(value, parsed == null ? UNPARSEABLE : parsed);
+            return parsed;
+        }
+
+        /** 解釈済みの {@code display} 値。再スタイルのたびに同じ文字列を読み直して {@link Display} を作らないための表（B9）。 */
+        private static final java.util.concurrent.ConcurrentHashMap<String, Display> PARSED = new java.util.concurrent.ConcurrentHashMap<>();
+        private static final Display UNPARSEABLE = new Display(Outer.NONE, Inner.NONE, true);
+
+        private static Display parseUncached(String value) {
             String v = value.trim().toLowerCase(Locale.ROOT);
             Display legacy = switch (v) {
                 case "none" -> HIDDEN;

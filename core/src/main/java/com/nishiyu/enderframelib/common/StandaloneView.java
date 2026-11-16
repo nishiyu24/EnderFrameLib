@@ -13,7 +13,7 @@ import com.nishiyu.enderframelib.core.event.DefaultActionContext;
 import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
-import com.nishiyu.enderframelib.core.paint.OffsetItemList;
+import com.nishiyu.enderframelib.core.paint.ItemDiff;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
@@ -98,7 +98,7 @@ public final class StandaloneView implements AutoCloseable {
     private boolean redraw = true;
     private boolean animating;
     private long compositorUntil;
-    private List<DisplayItem> compositorBase;
+    private Object compositorBase;
     private long lastNow;
     private String timings = "";
     /** ホイールで動かしている最中のスクロール先（節 → {x, y}）。毎フレーム少しずつ近づける。 */
@@ -320,11 +320,11 @@ public final class StandaloneView implements AutoCloseable {
             lastFlushNs = System.nanoTime() - t0;
             lastFlushItems = items.size();
             lastFlushBreakdown = ui.lastBreakdown();
-            // レイアウト中に新しく走り出したアニメーションも拾う（OffsetItemList は同じ基底を平行移動しただけなので再走査しない）
-            List<DisplayItem> compBase = after instanceof OffsetItemList ol ? ol.base() : after;
-            if (compBase != compositorBase) {
-                compositorBase = compBase;
-                compositorUntil = compositorUntil(compBase, nowMs);
+            // レイアウト中に新しく走り出したアニメーションも拾う（移動量だけが書かれた表示リストは中身の印が同じなので再走査しない）
+            Object compToken = ItemDiff.contentTokenOf(after);
+            if (compToken != compositorBase) {
+                compositorBase = compToken;
+                compositorUntil = compositorUntil(after, nowMs);
             }
         }
         long sceneSig = ui.scene3dChangeSignature();

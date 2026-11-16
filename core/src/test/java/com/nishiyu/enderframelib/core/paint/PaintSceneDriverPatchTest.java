@@ -12,7 +12,7 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
- * 同じ基底の上で差し替えだけが変わる表示リスト（スクロール）を、索引を作り直さず走査（{@link PaintSceneDriver#patchOffsetLists}）しても、
+ * 移動量だけが書き換わる表示リスト（スクロール）を、索引を作り直さず差分で走査しても、
  * 毎回作り直したときと走査の出力（描く項目・姿勢・不透明度・層の鎖）が完全に同じになること。
  */
 class PaintSceneDriverPatchTest {
@@ -60,46 +60,34 @@ class PaintSceneDriverPatchTest {
     }
 
     @Test
-    void patchedTraversalMatchesAFullRebuildEveryFrame() {
-        // スクロールの手順を 1 度だけ走らせ、各フレームの表示リストの同一インスタンスの列を取る
-        List<List<DisplayItem>> frames = new ArrayList<>();
+    void incrementalTraversalMatchesAFullRebuildEveryFrame() {
+        // スクロールの移動量は項目のセルへ書かれ、リストの項目は同じまま（B9 の M4）。各フレームで、前のフレームから引き継いだ
+        // 索引（差分で更新）と、そのフレームで作り直した索引の走査が、その場で同じ出力になることを確かめる
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try (var backend = new NoDraw()) {
             Random rnd = new Random(9);
             long now = 1000;
             view.frame(now, backend, true);
             String sid = backend.sessionId();
-            for (int step = 0; step < 80; step++) {
+            PaintSceneDriver incremental = new PaintSceneDriver("drv-incremental");
+            int patchedFrames = 0, frames = 80;
+            long t = 5000;
+            for (int step = 0; step < frames; step++) {
                 view.mouseMove(rnd.nextBoolean() ? 60 : 250, rnd.nextInt(H), sid);
                 view.scroll(0, rnd.nextInt(7) - 3, sid);
                 now += 16;
                 view.frame(now, backend, true);
-                frames.add(view.ui().renderCache());
+                List<DisplayItem> items = view.ui().renderCache();
+                t += 16;
+                List<String> expect = trace(new PaintSceneDriver("drv-rebuilt-" + step), items, t);
+                long gen = incremental.generation();
+                List<String> actual = trace(incremental, items, t);
+                if (incremental.generation() == gen && step > 0) patchedFrames++;
+                assertEquals(expect, actual, "frame " + step);
             }
+            assertTrue(patchedFrames > frames / 2, "索引が差分で済んでいない: " + patchedFrames + "/" + frames);
         } finally {
             view.close();
-        }
-        boolean saved = PaintSceneDriver.patchOffsetLists;
-        try {
-            PaintSceneDriver.patchOffsetLists = true;
-            PaintSceneDriver patched = new PaintSceneDriver("drv-patched");
-            PaintSceneDriver.patchOffsetLists = false;
-            PaintSceneDriver rebuilt = new PaintSceneDriver("drv-rebuilt");
-            int patchedFrames = 0;
-            long t = 5000;
-            for (int f = 0; f < frames.size(); f++) {
-                t += 16;
-                PaintSceneDriver.patchOffsetLists = false;
-                List<String> expect = trace(rebuilt, frames.get(f), t);
-                PaintSceneDriver.patchOffsetLists = true;
-                long gen = patched.generation();
-                List<String> actual = trace(patched, frames.get(f), t);
-                if (patched.generation() == gen && f > 0) patchedFrames++;
-                assertEquals(expect, actual, "frame " + f);
-            }
-            assertTrue(patchedFrames > frames.size() / 2, "索引が差し替えで済んでいない: " + patchedFrames + "/" + frames.size());
-        } finally {
-            PaintSceneDriver.patchOffsetLists = saved;
         }
     }
 }

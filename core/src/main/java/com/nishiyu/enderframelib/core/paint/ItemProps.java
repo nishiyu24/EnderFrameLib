@@ -47,6 +47,13 @@ final class ItemProps {
         private String fontFamily;
         private RenderHints cachedHints = RenderHints.NONE;
         private RenderHints reuseCandidate;
+        /**
+         * 前に出した項目の属性（無ければ null）。{@link #put} が前と同じ値を入れる限り、表を作らず「前と同じ」とだけ覚え
+         * （{@link #pendingKeys}）、全部一致したら {@link #attrs()} が前の表をそのまま返す（hover のたびに属性の表を作り直さない。B9）。
+         */
+        private Map<String, String> candidateAttrs;
+        private final String[] pendingKeys = new String[4];
+        private int pendingCount;
 
         ItemProps() {
         }
@@ -97,6 +104,8 @@ final class ItemProps {
             this.fontFamily = null;
             this.cachedHints = RenderHints.NONE;
             this.reuseCandidate = null;
+            this.candidateAttrs = null;
+            this.pendingCount = 0;
             return this;
         }
 
@@ -105,11 +114,15 @@ final class ItemProps {
         }
 
         ItemProps copy() {
+            materializePending();
             return new ItemProps(baseAttrs, attrs == null || attrs.isEmpty() ? null : new HashMap<>(attrs), this);
         }
 
         /** {@code src} と同じ属性・ヒントを借り受ける作業用複製（呼び出し元で {@code put} しないこと）。 */
         void copyFrom(ItemProps src) {
+            src.materializePending();
+            this.candidateAttrs = null;
+            this.pendingCount = 0;
             this.baseAttrs = src.baseAttrs;
             this.attrs = (src.attrs == null || src.attrs.isEmpty()) ? null : src.attrs;
             this.parentId = src.parentId;
@@ -139,7 +152,22 @@ final class ItemProps {
 
         // --- DOM 由来の属性 ---
 
+        /** 前の項目の属性を使い回す候補にする（この後の {@link #put} が前と同じなら表を作らない）。 */
+        void reuseAttrs(Map<String, String> candidate) {
+            this.candidateAttrs = candidate != null && !candidate.isEmpty() ? candidate : null;
+        }
+
+        /** 「前と同じ」とだけ覚えた {@code put} を、実際の表へ書く（表を持たねばならなくなったとき）。 */
+        private void materializePending() {
+            if (pendingCount == 0) return;
+            int n = pendingCount;
+            pendingCount = 0;
+            if (attrs == null) attrs = (baseAttrs != null && !baseAttrs.isEmpty()) ? new HashMap<>(baseAttrs) : new HashMap<>(8);
+            for (int i = 0; i < n; i++) attrs.put(pendingKeys[i], candidateAttrs.get(pendingKeys[i]));
+        }
+
         private Map<String, String> ensureAttrs() {
+            materializePending();
             if (attrs == null) {
                 attrs = (baseAttrs != null && !baseAttrs.isEmpty()) ? new HashMap<>(baseAttrs) : new HashMap<>(4);
             }
@@ -148,7 +176,7 @@ final class ItemProps {
 
         void putBaseAttrs(Map<String, String> immutableMap) {
             if (immutableMap == null || immutableMap.isEmpty()) return;
-            if (attrs == null && baseAttrs == null) {
+            if (attrs == null && baseAttrs == null && pendingCount == 0) {
                 baseAttrs = immutableMap;
             } else {
                 ensureAttrs().putAll(immutableMap);
@@ -156,21 +184,50 @@ final class ItemProps {
         }
 
         void put(String key, String value) {
+            if (attrs == null && candidateAttrs != null && pendingCount < pendingKeys.length
+                    && value != null && value.equals(candidateAttrs.get(key)) && !pendingHas(key)) {
+                pendingKeys[pendingCount++] = key;
+                return;
+            }
             ensureAttrs().put(key, value);
         }
 
+        private boolean pendingHas(String key) {
+            for (int i = 0; i < pendingCount; i++) if (pendingKeys[i].equals(key)) return true;
+            return false;
+        }
+
         String get(String key) {
+            if (pendingCount > 0 && attrs == null && pendingHas(key)) return candidateAttrs.get(key);
             if (attrs != null) return attrs.get(key);
             return baseAttrs != null ? baseAttrs.get(key) : null;
         }
 
         boolean containsKey(String key) {
+            if (pendingCount > 0 && attrs == null && pendingHas(key)) return true;
             return (attrs != null && attrs.containsKey(key))
                     || (attrs == null && baseAttrs != null && baseAttrs.containsKey(key));
         }
 
         Map<String, String> attrs() {
-            if (attrs != null && !attrs.isEmpty()) return attrs;
+            if (pendingCount > 0 && attrs == null) {
+                // 入れたものが全部前の表の項目で、基底の表（書体など）の残りも前の表と同じで、数も合えば、前の表そのもの（作らない）
+                int baseOnly = 0;
+                boolean same = true;
+                if (baseAttrs != null) {
+                    for (Map.Entry<String, String> e : baseAttrs.entrySet()) {
+                        if (pendingHas(e.getKey())) continue;
+                        baseOnly++;
+                        if (!e.getValue().equals(candidateAttrs.get(e.getKey()))) { same = false; break; }
+                    }
+                }
+                if (same && baseOnly + pendingCount == candidateAttrs.size()) return candidateAttrs;
+                materializePending();
+            }
+            if (attrs != null && !attrs.isEmpty()) {
+                if (candidateAttrs != null && attrs.equals(candidateAttrs)) return candidateAttrs;
+                return attrs;
+            }
             if (baseAttrs != null && !baseAttrs.isEmpty()) return baseAttrs;
             return Map.of();
         }
@@ -360,7 +417,14 @@ final class ItemProps {
     }
 
     static ItemProps populateForParts(ItemProps partsEvents, LayoutBox box, String id, TransitionSpec transSpec) {
+        return populateForParts(partsEvents, box, id, transSpec, null);
+    }
+
+    /** @param prevAttrs 前に出した部品の属性（無ければ null）。同じ値なら属性の表を作り直さず使い回す。 */
+    static ItemProps populateForParts(ItemProps partsEvents, LayoutBox box, String id, TransitionSpec transSpec,
+                                      Map<String, String> prevAttrs) {
         partsEvents.reset();
+        partsEvents.reuseAttrs(prevAttrs);
         long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.paintHandle()) : 0L;
         partsEvents.parentId(id, nodeKey);
         applyTransitionEvents(partsEvents, transSpec);

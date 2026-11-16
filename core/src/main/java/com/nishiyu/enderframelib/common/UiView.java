@@ -25,7 +25,6 @@ import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.TextSelection;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.OffsetItemList;
 import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -392,66 +391,45 @@ public class UiView implements AutoCloseable {
         if (paintOffsetsDirty) publishRenderCache();
     }
 
+    /** いま移動量（{@link #paintOffsets}）を書いてある項目（id → 項目）。外れたときに 0 へ戻す。 */
+    private final Map<String, DisplayItem> offsetApplied = new java.util.HashMap<>();
+
     private void publishRenderCache() {
         paintOffsetsDirty = false;
         List<DisplayItem> base = this.baseRenderCache;
-        List<DisplayItem> shown = base;
-        int offsetCount = paintOffsets.size();
-        if (offsetCount > 0 && !base.isEmpty()) {
-            // 動く節は 1〜数個。全項目を複製せず、差し替えだけを疎な表で持つ（作るのは O(動く節の数)）
-            Map<String, Integer> byId = baseIndexById(base);
-            if (offsetCount <= 8) {
-                int[] positions = new int[offsetCount];
-                DisplayItem[] repl = new DisplayItem[offsetCount];
-                int k = 0;
-                for (Map.Entry<String, float[]> e : paintOffsets.entrySet()) {
-                    Integer idxBox = byId.get(e.getKey());
-                    if (idxBox == null) continue;
-                    int idx = idxBox;
-                    DisplayItem el = base.get(idx);
-                    if (el.type() != ElementType.NODE) continue;
-                    float[] off = e.getValue();
-                    DisplayItem shifted = el.withTranslation(el.translateX() + off[0], el.translateY() + off[1]);
-                    int ins = k;
-                    while (ins > 0 && positions[ins - 1] > idx) {
-                        positions[ins] = positions[ins - 1];
-                        repl[ins] = repl[ins - 1];
-                        ins--;
-                    }
-                    positions[ins] = idx;
-                    repl[ins] = shifted;
-                    k++;
-                }
-                if (k > 0) {
-                    if (k < offsetCount) {
-                        positions = java.util.Arrays.copyOf(positions, k);
-                        repl = java.util.Arrays.copyOf(repl, k);
-                    }
-                    shown = new OffsetItemList(base, positions, repl);
-                }
-            } else {
-                java.util.TreeMap<Integer, DisplayItem> moved = new java.util.TreeMap<>();
-                for (Map.Entry<String, float[]> e : paintOffsets.entrySet()) {
-                    Integer idx = byId.get(e.getKey());
-                    if (idx == null) continue;
-                    DisplayItem el = base.get(idx);
-                    if (el.type() != ElementType.NODE) continue;
-                    float[] off = e.getValue();
-                    moved.put(idx, el.withTranslation(el.translateX() + off[0], el.translateY() + off[1]));
-                }
-                if (!moved.isEmpty()) {
-                    int[] positions = new int[moved.size()];
-                    DisplayItem[] repl = new DisplayItem[moved.size()];
-                    int k = 0;
-                    for (Map.Entry<Integer, DisplayItem> e : moved.entrySet()) {
-                        positions[k] = e.getKey();
-                        repl[k++] = e.getValue();
-                    }
-                    shown = new OffsetItemList(base, positions, repl);
-                }
-            }
+        if (base.isEmpty() || (paintOffsets.isEmpty() && offsetApplied.isEmpty())) {
+            this.renderCache = base;
+            return;
         }
-        this.renderCache = shown;
+        // 描画の上だけの移動量は、項目を作り直さず項目のセルへ書く（B9 の M4）。動く節は 1〜数個で、書き換えた位置だけを
+        // 新しいスナップショットに載せる（消費者は通し番号とブロックで変化を知る）。レイアウトで項目が作り直されても、
+        // 発行のたびに載せ直す（新しい項目には移動量が無い）
+        ImmutableItemList list = base instanceof ImmutableItemList il ? il : ImmutableItemList.from(null, base);
+        Map<String, Integer> byId = baseIndexById(list);
+        int count = 0;
+        // 外れた項目は 0 へ戻す（まだリストにある項目だけが位置を持つ）
+        for (java.util.Iterator<Map.Entry<String, DisplayItem>> it = offsetApplied.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<String, DisplayItem> e = it.next();
+            if (paintOffsets.containsKey(e.getKey())) continue;
+            it.remove();
+            if (e.getValue().setPaintOffset(0f, 0f) && byId.containsKey(e.getKey())) count++;
+        }
+        for (Map.Entry<String, float[]> e : paintOffsets.entrySet()) {
+            Integer idxBox = byId.get(e.getKey());
+            if (idxBox == null) continue;
+            DisplayItem el = list.get(idxBox);
+            if (el.type() != ElementType.NODE) continue;
+            float[] off = e.getValue();
+            offsetApplied.put(e.getKey(), el);
+            if (el.setPaintOffset(off[0], off[1])) count++;
+        }
+        if (count > 0) {
+            list = list.touched();
+            this.baseRenderCache = list;
+        } else if (list != base) {
+            this.baseRenderCache = list;
+        }
+        this.renderCache = list;
         // ヒットテストの索引は引かれたときに、同じ基底の上の差し替えだけが変わったなら作り直さず patch する（hitTestIndex()）
     }
 
@@ -488,18 +466,19 @@ public class UiView implements AutoCloseable {
     /** 基底リストの id → 位置。基底が変わるまで使い回す（スクロールのたびには作らない）。 */
     private Map<String, Integer> baseIndexById(List<DisplayItem> base) {
         Map<String, Integer> m = baseIndexCache;
-        if (m != null && baseIndexSource == base) return m;
+        Object token = ItemDiff.contentTokenOf(base); // 移動量の書き込みだけで別のスナップショットになっても、位置は同じ
+        if (m != null && baseIndexSource == token) return m;
         m = new java.util.HashMap<>(base.size() * 2);
         for (int i = 0; i < base.size(); i++) m.put(base.get(i).id(), i);
         baseIndexCache = m;
-        baseIndexSource = base;
+        baseIndexSource = token;
         return m;
     }
 
     private Map<String, Integer> baseIndexCache;
-    private List<DisplayItem> baseIndexSource;
+    private Object baseIndexSource;
     /** {@link #hitTestIndex} を作ったときの基底リスト。 */
-    private volatile List<DisplayItem> hitTestIndexBase;
+    private volatile Object hitTestIndexBase;
 
     /** 画像の透過ヒットテスト（{@code <img data-hit-alpha>}）が不透明度を引く先。ホストが画像の読み方を差し込む。 */
     private volatile com.nishiyu.enderframelib.core.paint.AlphaMaskProvider alphaMaskProvider;
@@ -538,7 +517,7 @@ public class UiView implements AutoCloseable {
         if (idx != null && hitTestIndexSource == current) return idx;
         // 同じ基底の上で、描画の上だけ動く節の移動量が変わっただけなら、索引は作り直さず該当の節だけを差し替える
         java.util.Set<String> dynamic = dynamicNodeIds();
-        if (idx != null && hitTestIndexBase == baseRenderCache && (idx.dynamicIds() == dynamic || idx.dynamicIds().containsAll(dynamic))) {
+        if (idx != null && hitTestIndexBase == ItemDiff.contentTokenOf(baseRenderCache) && (idx.dynamicIds() == dynamic || idx.dynamicIds().containsAll(dynamic))) {
             Map<String, Integer> byId = baseIndexById(baseRenderCache);
             List<DisplayItem> now = new ArrayList<>(idx.dynamicIds().size());
             for (String id : idx.dynamicIds()) {
@@ -553,7 +532,7 @@ public class UiView implements AutoCloseable {
         idx = new HitTestIndex(current, dynamic);
         idx.alphaMaskProvider(alphaMaskProvider);
         this.hitTestIndexSource = current;
-        this.hitTestIndexBase = baseRenderCache;
+        this.hitTestIndexBase = ItemDiff.contentTokenOf(baseRenderCache);
         this.hitTestIndex = idx;
         return idx;
     }

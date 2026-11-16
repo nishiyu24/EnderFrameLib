@@ -1232,8 +1232,9 @@ public class RenderPipeline {
         int kn = kids.size();
         if (!siblingInvalidation && kn >= LayoutTaskPool.PARALLEL_THRESHOLD
                 && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
-            int[] workIdx = new int[kn];
-            int[] workForce = new int[kn];
+            final int[] workIdx = borrowWorkTable(kn);
+            final int[] workForce = borrowWorkTable(kn);
+            try {
             int workCount = 0;
             for (int ci = 0; ci < kn; ci++) {
                 LayoutBox child = kids.get(ci);
@@ -1306,6 +1307,10 @@ public class RenderPipeline {
                         false, selfContainer, selfOrAncestorMoving, layoutChangedList, styleChangedList, workerShare);
             }
             return acc;
+            } finally {
+                returnWorkTable(workForce);
+                returnWorkTable(workIdx);
+            }
         }
 
         boolean siblingForceDirty = false;
@@ -1331,6 +1336,25 @@ public class RenderPipeline {
         }
 
         return acc;
+    }
+
+    /**
+     * 並列に配る子の表（添字・強制の段）。兄弟が多い親の中の 1 つだけが汚れる hover でも毎フレーム
+     * 兄弟の数ぶんの配列を 2 本確保しないよう、スレッドごとの置き場から借りて返す（入れ子の親は別の配列を借りる。B9）。
+     * 並列の作業者は表を読むだけで借りない（作業者の中では並列化しない）。
+     */
+    private static final ThreadLocal<java.util.ArrayDeque<int[]>> WORK_TABLES = ThreadLocal.withInitial(java.util.ArrayDeque::new);
+    private static final int WORK_TABLE_POOL = 8;
+
+    private static int[] borrowWorkTable(int n) {
+        java.util.ArrayDeque<int[]> pool = WORK_TABLES.get();
+        int[] t = pool.pollFirst();
+        return t != null && t.length >= n ? t : new int[Math.max(n, 64)];
+    }
+
+    private static void returnWorkTable(int[] t) {
+        java.util.ArrayDeque<int[]> pool = WORK_TABLES.get();
+        if (pool.size() < WORK_TABLE_POOL) pool.addFirst(t);
     }
 
     private static final PseudoType[] GENERATED_PSEUDOS = PseudoType.GENERATED.toArray(new PseudoType[0]);

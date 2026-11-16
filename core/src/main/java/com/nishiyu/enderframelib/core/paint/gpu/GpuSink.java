@@ -102,6 +102,14 @@ public interface GpuSink {
         return false;
     }
 
+    /**
+     * スクロールの中身の節の移動量をデバイス画素の整数倍へ丸めて描くか。保持したスクロール層をずらして使う描画先が true を返す
+     * （小数の位置だと層の境で 1 画素ずれる）。丸めは項目のセルへ書く（{@code PaintSceneDriver#setScrollSnapDpr}）。
+     */
+    default boolean snapsScrollOffsets() {
+        return false;
+    }
+
     /** 項目 {@code index} の出力の記録を始める。記録できない状態（層の中など）なら false（{@link #spanEnd} は呼ばない）。 */
     default boolean spanBegin(int index) {
         return false;

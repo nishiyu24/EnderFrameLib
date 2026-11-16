@@ -93,12 +93,13 @@ public class CssAnimator {
 
         // DisplayItem は不変。前回と同じインスタンスなら目標もテキストも変わっていないので、比較（AnimationSpec の
         // 深い equals を含む）を飛ばす。アニメーションだけが動くフレームは、ほぼ全項目がここを通る
-        if (state.seenItem != el) {
+        if (ItemDiff.changed(state.seenItem, el, state.seenEpoch)) {
             if (state.hasTargetChanged(el)) {
                 state.updateTarget(el, now);
             }
             state.updateStyleCache(el);
             state.seenItem = el;
+            state.seenEpoch = el.paintEpoch();
         }
         return state;
     }
@@ -259,6 +260,8 @@ public class CssAnimator {
         private final AnimatedValues cachedValues = new AnimatedValues();
         /** 最後に目標と突き合わせた項目（同じインスタンスなら再比較しない）。 */
         DisplayItem seenItem;
+        /** {@link #seenItem} を見たときの {@link DisplayItem#paintEpoch()}（塗りがセルへ書かれたら項目が同じでも変わった）。 */
+        int seenEpoch;
         public float startOpacity, targetOpacity, baseTargetOpacity;
         public float startTx, targetTx, baseTx;
         public float startTy, targetTy, baseTy;

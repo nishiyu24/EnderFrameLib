@@ -40,12 +40,6 @@ public final class PaintSceneDriver {
      */
     public static volatile boolean reuseIdlePoses = true;
 
-    /**
-     * 同じ基底の上で差し替えだけが変わった表示リスト（{@link OffsetItemList}。スクロール・ドラッグ）を、索引を作り直さず
-     * 差し替わった項目だけ更新して走査するか。false なら毎回作り直す（疑うときの切り分け用。絵は同じでなければならない）。
-     */
-    public static volatile boolean patchOffsetLists = true;
-
     /** 項目の姿勢（親から引き継いだ変形）と、祖先の不透明度の積。 */
     public record Resolved(Matrix2D pose, float opacity, float residual, List<Group> groups, AnimatedValues anim) {}
 
@@ -190,7 +184,7 @@ public final class PaintSceneDriver {
         if (el.translateX() != 0f || el.translateY() != 0f || el.scaleX() != 1f || el.scaleY() != 1f || el.rotate() != 0f
                 || el.opacity() != 1f || el.hints().skew() != 0f) return false;
         if (el.animDef() != null && !com.nishiyu.enderframelib.core.css.model.AnimationSpec.NONE.equals(el.animDef())) return false;
-        if (el.type() == ElementType.NODE && hasFx(el.hints().layer())) return false;
+        if (el.type() == ElementType.NODE && ItemDiff.hasFx(el.hints().layer())) return false;
         if (el.type() == ElementType.SCENE) return false;
         if (i < stateVerified.length && !stateVerified[i]) {
             CssAnimator.AnimState st = states[i] != null ? states[i] : CssAnimator.peekState(sessionId, el.id());
@@ -379,11 +373,6 @@ public final class PaintSceneDriver {
         return CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs);
     }
 
-    /** 項目が、層（フィルター・マスク・混合・クリップ・背景フィルター）を要する錨か。 */
-    public static boolean hasFxLayer(DisplayItem el) {
-        return el.type() == ElementType.NODE && hasFx(el.hints().layer());
-    }
-
     /** 走査中の、フレーム全体の変換（CSS px → デバイス画素）。 */
     public Matrix2D frame() {
         return frame;
@@ -436,12 +425,14 @@ public final class PaintSceneDriver {
             lastDiffEligible = lastRunCompleted && !lastRunActiveOverflow && items.size() == lastRunListSize;
         } else {
             lastDiffEligible = false;
-            if (!patchIndex(items)
-                    && !patchIndexByDiff(items)
+            if (!patchIndexByDiff(items)
                     && !patchIndexByShift(items)) {
                 rebuildIndex(items);
             }
         }
+        snapScrollContent(items);
+        // 次のフレームは、ここまでに書かれたもの（このフレームの発行・スナップ）を「見た」ものとして、後の書き込みだけを変化とみなす
+        indexedEpoch = com.nishiyu.enderframelib.core.paint.model.PaintCell.currentEpoch();
         this.byId = indexedById;
         if (++frameStamp == 0) { Arrays.fill(curStamp, 0); frameStamp = 1; }
         prepared = true;
@@ -756,48 +747,56 @@ public final class PaintSceneDriver {
     }
 
     /**
-     * 中身の同一性の印。同じ印の間は、差し替え（{@link OffsetItemList}）を除いて表示リストの中身は同じ。
+     * 中身の同一性の印。同じ印の間は、描画の上だけの移動量（{@link ImmutableItemList#touched}）を除いて表示リストの中身は同じ。
      * スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う。
      */
     public Object contentToken() {
         return indexedBase;
     }
 
-    /** 索引を作ったときの基底の表示リスト（{@link OffsetItemList} の差し替えだけが変わるなら、索引は作り直さない）。 */
-    private List<DisplayItem> indexedBase;
+    /** スクロールの中身の節の移動量を丸める先のデバイス画素比（0 以下なら丸めない）。GPU のスクロール層の保持が使う。 */
+    private float scrollSnapDpr;
+    private Object snapPositionsToken;
+    private int snapPositionsSize = -1;
+    private int[] snapPositions = new int[0];
 
     /**
-     * {@code items} が、前回の索引と同じ基底の上の {@link OffsetItemList} なら、差し替わった項目だけを更新して true。
-     * 位置・親子・グループの錨は基底のままなので、id の引き当てと、その項目の補間状態・姿勢の使い回しだけを捨てる
-     * （子孫の姿勢は、親の {@code Resolved} が新しくなるので自動で作り直される）。世代は進めない:
-     * クリップの使い回しは持ち主の {@code Resolved} の同一性で検証されるため、古い結果は返らない。
+     * スクロールの中身の節（{@link #SCROLL_CONTENT_SUFFIX}）の見える移動量を、デバイス画素の整数倍へ丸める（{@code dpr} が 0 以下なら丸めない）。
+     * 保持した層をずらして使うとき、小数の位置だと層の境で 1 画素ずれるため。丸めは項目のセルへ書く（以前は描画のたびに丸めた項目を作っていた。B9）。
      */
-    private boolean patchIndex(List<DisplayItem> items) {
-        OffsetItemList now = items instanceof OffsetItemList o ? o : null;
-        boolean sameBase = now != null ? now.base() == indexedBase : items == indexedBase;
-        if (!patchOffsetLists || !sameBase || indexedItems == null || indexedItems.size() != items.size()) return false;
-        List<DisplayItem> old = indexedItems;
-        boolean changed = false;
-        // 差し替わりうる位置: 今回の差し替えと、前回の差し替え（外れたものは基底へ戻る）
-        for (int pass = 0; pass < 2; pass++) {
-            OffsetItemList src = pass == 0 ? now : (old instanceof OffsetItemList o ? o : null);
-            if (src == null) continue;
-            for (int k = 0, n = src.overrideCount(); k < n; k++) {
-                int i = src.positionAt(k);
-                DisplayItem was = old.get(i), is = items.get(i);
-                if (was == is) continue;
-                indexedById.put(is.key(), is);
-                states[i] = null;
-                prevRes[i] = null;
-                prevStatic[i] = false;
-                stateVerified[i] = false;
-                changed = true;
-            }
-        }
-        if (changed) invalidateRangeBounds();
-        indexedItems = items;
-        return true;
+    public void setScrollSnapDpr(float dpr) {
+        this.scrollSnapDpr = dpr;
     }
+
+    private void snapScrollContent(List<DisplayItem> items) {
+        if (scrollSnapDpr <= 0f) return;
+        Object token = ItemDiff.contentTokenOf(items);
+        if (snapPositionsToken != token || snapPositionsSize != items.size()) {
+            int n = 0;
+            int[] buf = snapPositions.length >= 8 ? snapPositions : new int[8];
+            for (int i = 0, sz = items.size(); i < sz; i++) {
+                DisplayItem it = items.get(i);
+                if (it.type() != ElementType.NODE || it.id() == null || !it.id().endsWith(SCROLL_CONTENT_SUFFIX)) continue;
+                if (n == buf.length) buf = Arrays.copyOf(buf, n * 2);
+                buf[n++] = i;
+            }
+            snapPositions = Arrays.copyOf(buf, n);
+            snapPositionsToken = token;
+            snapPositionsSize = items.size();
+        }
+        float dpr = scrollSnapDpr;
+        for (int p : snapPositions) {
+            DisplayItem it = items.get(p);
+            float rx = Math.round(it.translateX() * dpr) / dpr, ry = Math.round(it.translateY() * dpr) / dpr;
+            if (rx == it.translateX() && ry == it.translateY()) continue;
+            it.setPaintOffset(rx - it.baseTranslateX(), ry - it.baseTranslateY());
+        }
+    }
+
+    /** 索引を作ったときの表示リストの中身の印（{@link ItemDiff#contentTokenOf}）。移動量だけが変わったリストは同じ印。 */
+    private Object indexedBase;
+    /** 索引を最後に更新した時点の塗り・移動量の書き込みの通し番号（これより後に書かれた項目が「変わった」ものになる）。 */
+    private int indexedEpoch;
 
     private void ensureCapacity(int minCap) {
         if (curRes.length >= minCap) return;
@@ -816,7 +815,7 @@ public final class PaintSceneDriver {
     }
 
     /**
-     * 一般のリスト（{@link OffsetItemList} でない）が、前回と同じ大きさで、差のある位置の構造
+     * 前回と同じ大きさで、差のある位置の構造
      * （鍵・親・種類・層）が前回と同じなら、差のある位置だけを更新して true。変わっていない項目の姿勢・補間状態は使い回す。
      * 1 つの要素の変化（文字・ホバー・色）や、全要素に及ぶ継承スタイル変更（inherited）でも、全項目の索引・姿勢・補間状態の表を作り直さずに済む。
      * 構造が違う（項目の増減・鍵や親の変更・層の出入り）ときは false で、呼び出し側が作り直すかシフトする。
@@ -827,6 +826,7 @@ public final class PaintSceneDriver {
         // 可変のリストは、索引を作ってから中身を書き換えられうる（前回のリストを基準にした差が当てにならない）ので、毎回作り直す。
         // 表示リストは不変のリスト（List.copyOf 系）で届く
         if (!isImmutable(old) || !isImmutable(items)) return false;
+        final int seen = indexedEpoch;
         int n = items.size();
 
         // 第 1 パス: 差分がある位置の構造が一致しているか全件確認（ImmutableItemList 同士は同一ブロックを飛ばす）
@@ -837,12 +837,13 @@ public final class PaintSceneDriver {
             for (int c = 0; c < chunks; c++) {
                 DisplayItem[] ob = oi.chunkAt(c);
                 DisplayItem[] nb = ni.chunkAt(c);
-                if (ob == nb) continue;
+                // 同じブロックでも、前に見たあとに項目のセルが書かれていれば（時計の印）項目ごとに調べる
+                if (ob == nb && ni.clock().chunkEpoch(c) <= seen) continue;
                 int base = c << ImmutableItemList.CHUNK_SHIFT;
                 for (int j = 0, len = ob.length; j < len; j++) {
                     DisplayItem was = ob[j], is = nb[j];
-                    if (was == is) continue;
-                    if (was.key() != is.key() || !sameStructure(was, is)) return false;
+                    if (ItemDiff.unchanged(was, is, seen)) continue;
+                    if (!(was.key() == is.key() && ItemDiff.sameStructure(was, is))) return false;
                     if (count < diffBuf.length) diffBuf[count] = base + j;
                     count++;
                 }
@@ -850,8 +851,8 @@ public final class PaintSceneDriver {
         } else {
             for (int i = 0; i < n; i++) {
                 DisplayItem was = old.get(i), is = items.get(i);
-                if (was == is) continue;
-                if (was.key() != is.key() || !sameStructure(was, is)) return false;
+                if (ItemDiff.unchanged(was, is, seen)) continue;
+                if (!(was.key() == is.key() && ItemDiff.sameStructure(was, is))) return false;
                 if (count < diffBuf.length) diffBuf[count] = i;
                 count++;
             }
@@ -875,8 +876,8 @@ public final class PaintSceneDriver {
                     if (curItem.type() == ElementType.NODE) {
                         Object prevClip = prevItem.meta() != null ? prevItem.meta().clipRect() : null;
                         Object curClip = curItem.meta() != null ? curItem.meta().clipRect() : null;
-                        if (!sameGeometryWithoutTransition(prevItem, curItem)
-                                || hasFx(prevItem.hints().layer()) || hasFx(curItem.hints().layer())
+                        if (!ItemDiff.sameGeometryWithoutTransition(prevItem, curItem, indexedEpoch)
+                                || ItemDiff.hasFx(prevItem.hints().layer()) || ItemDiff.hasFx(curItem.hints().layer())
                                 || !java.util.Objects.equals(prevClip, curClip)) {
                             eligible = false;
                         }
@@ -892,14 +893,14 @@ public final class PaintSceneDriver {
             for (int i = 0; i < n; i++) {
                 DisplayItem prevItem = old.get(i);
                 DisplayItem is = items.get(i);
-                if (prevItem == is) continue;
+                if (ItemDiff.unchanged(prevItem, is, seen)) continue;
                 updateDiffSlot(i, prevItem, is);
             }
         }
         invalidateRangeBounds();
         indexedItems = items;
         // 中身が変わった印（スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う）は、作り直しと同じく進める
-        indexedBase = items instanceof OffsetItemList o ? o.base() : items;
+        indexedBase = ItemDiff.contentTokenOf(items);
         return true;
     }
 
@@ -910,7 +911,7 @@ public final class PaintSceneDriver {
             long strKey = DisplayItem.keyOf(curItem.id());
             if (strKey != key) indexedById.put(strKey, curItem);
         }
-        if (prevRes[i] != null && prevStatic[i] && sameGeometryWithoutTransition(prevItem, curItem)) {
+        if (prevRes[i] != null && prevStatic[i] && ItemDiff.sameGeometryWithoutTransition(prevItem, curItem, indexedEpoch)) {
             states[i] = null;
             prevIdle[i] = false;
             Object prevClip = prevItem.meta() != null ? prevItem.meta().clipRect() : null;
@@ -925,31 +926,6 @@ public final class PaintSceneDriver {
         }
     }
 
-    private static boolean sameGeometryWithoutTransition(DisplayItem a, DisplayItem b) {
-        if (a.type() != b.type()
-                || a.x() != b.x() || a.y() != b.y() || a.width() != b.width() || a.height() != b.height()
-                || Float.compare(a.translateX(), b.translateX()) != 0
-                || Float.compare(a.translateY(), b.translateY()) != 0
-                || Float.compare(a.scaleX(), b.scaleX()) != 0
-                || Float.compare(a.scaleY(), b.scaleY()) != 0
-                || Float.compare(a.rotate(), b.rotate()) != 0
-                || Float.compare(a.opacity(), b.opacity()) != 0) {
-            return false;
-        }
-        var aa = a.animDef();
-        var ba = b.animDef();
-        if (aa != null && !com.nishiyu.enderframelib.core.css.model.AnimationSpec.NONE.equals(aa)) return false;
-        if (ba != null && !com.nishiyu.enderframelib.core.css.model.AnimationSpec.NONE.equals(ba)) return false;
-        RenderMeta ma = a.meta(), mb = b.meta();
-        float oxa = ma != null ? ma.originX() : 0.5f, oxb = mb != null ? mb.originX() : 0.5f;
-        float oya = ma != null ? ma.originY() : 0.5f, oyb = mb != null ? mb.originY() : 0.5f;
-        if (Float.compare(oxa, oxb) != 0 || Float.compare(oya, oyb) != 0) return false;
-        var ha = a.hints();
-        var hb = b.hints();
-        if (ha.relativeOrigin() != hb.relativeOrigin() || Float.compare(ha.skew(), hb.skew()) != 0) return false;
-        return java.util.Objects.equals(ha.layer(), hb.layer());
-    }
-
     /**
      * 表示リストのサイズが異なる場合（子の挿入・削除 = CHILD_PATCH）において、
      * 変化が単一の局所領域（head と tail の間）に集約されている場合、
@@ -959,18 +935,19 @@ public final class PaintSceneDriver {
         List<DisplayItem> old = indexedItems;
         if (!patchShiftIndex || old == null || old == items || old.size() == items.size()) return false;
         if (!isImmutable(old) || !isImmutable(items)) return false;
+        final int seen = indexedEpoch;
 
         int oldN = old.size();
         int newN = items.size();
 
         int head = 0;
-        while (head < oldN && head < newN && old.get(head) == items.get(head)) {
+        while (head < oldN && head < newN && ItemDiff.unchanged(old.get(head), items.get(head), seen)) {
             head++;
         }
 
         int tail = 0;
         while (tail < (oldN - head) && tail < (newN - head)
-                && old.get(oldN - 1 - tail) == items.get(newN - 1 - tail)) {
+                && ItemDiff.unchanged(old.get(oldN - 1 - tail), items.get(newN - 1 - tail), seen)) {
             tail++;
         }
 
@@ -1109,7 +1086,7 @@ public final class PaintSceneDriver {
         boolean hasNewFx = false;
         for (int i = head; i < newTailStart; i++) {
             DisplayItem it = items.get(i);
-            if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) {
+            if (it.type() == ElementType.NODE && ItemDiff.hasFx(it.hints().layer())) {
                 hasNewFx = true;
                 break;
             }
@@ -1126,7 +1103,7 @@ public final class PaintSceneDriver {
             if (hasNewFx) {
                 for (int i = head; i < newTailStart; i++) {
                     DisplayItem it = items.get(i);
-                    if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) {
+                    if (it.type() == ElementType.NODE && ItemDiff.hasFx(it.hints().layer())) {
                         newFx.add(i);
                     }
                 }
@@ -1141,27 +1118,8 @@ public final class PaintSceneDriver {
         invalidateRangeBounds();
 
         indexedItems = items;
-        indexedBase = items instanceof OffsetItemList o ? o.base() : items;
+        indexedBase = ItemDiff.contentTokenOf(items);
         generation++;
-        return true;
-    }
-
-    /** 索引・親子・グループの錨・スクロール範囲が、項目から読むもの（種類・親・層）が同じか。 */
-    private static boolean sameStructure(DisplayItem a, DisplayItem b) {
-        if (a.type() != b.type()) return false;
-        long pka = a.hints().parentKey(), pkb = b.hints().parentKey();
-        if (pka != 0L || pkb != 0L) {
-            if (pka != pkb) return false;
-        } else {
-            String pa = a.hints().parentId(), pb = b.hints().parentId();
-            if (pa != pb && (pa == null || !pa.equals(pb))) return false;
-        }
-        if (a.type() == ElementType.NODE) {
-            LayerSpec la = a.hints().layer(), lb = b.hints().layer();
-            boolean fa = hasFx(la), fb = hasFx(lb);
-            if (fa != fb) return false;
-            if (fa && la.span() != lb.span()) return false;
-        }
         return true;
     }
 
@@ -1201,10 +1159,10 @@ public final class PaintSceneDriver {
                 long strKey = DisplayItem.keyOf(it.id());
                 if (strKey != key) indexOf.putIfAbsent(strKey, i);
             }
-            if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) fxAnchors.add(i);
+            if (it.type() == ElementType.NODE && ItemDiff.hasFx(it.hints().layer())) fxAnchors.add(i);
         }
         indexedItems = items;
-        indexedBase = items instanceof OffsetItemList o ? o.base() : items;
+        indexedBase = ItemDiff.contentTokenOf(items);
 
         ensureCapacity(n);
         for (int i = 0; i < n; i++) {
@@ -1230,13 +1188,8 @@ public final class PaintSceneDriver {
         return list instanceof ImmutableItemList || list.getClass().getName().startsWith("java.util.ImmutableCollections$");
     }
 
-    private static boolean hasFx(LayerSpec spec) {
-        return spec != null && (!spec.filters().isEmpty() || spec.masked() || spec.blend() != BlendMode.NORMAL || spec.isolate()
-                || spec.clip() != null || spec.hasBackdrop());
-    }
-
     private Group groupFor(DisplayItem node, Resolved nr) {
-        LayerSpec spec = hasFx(node.hints().layer()) ? node.hints().layer() : null;
+        LayerSpec spec = ItemDiff.hasFx(node.hints().layer()) ? node.hints().layer() : null;
         Matrix2D m = nr.pose();
         return new Group(node.id(), Math.max(0f, nr.anim().opacity()), indexOf.getOrDefault(node.key(), -1), spec,
                 new double[]{m.a(), m.b(), m.c(), m.d()}, null, m);
@@ -1416,7 +1369,7 @@ public final class PaintSceneDriver {
             if (anim.sx() != 1f || anim.sy() != 1f) pose = pose.multiply(Matrix2D.scale(anim.sx(), anim.sy()));
             pose = pose.multiply(Matrix2D.translate(-lx, -ly));
         }
-        boolean fx = el.type() == ElementType.NODE && hasFx(el.hints().layer());
+        boolean fx = el.type() == ElementType.NODE && ItemDiff.hasFx(el.hints().layer());
         boolean group = el.type() == ElementType.NODE && (anim.opacity() < 0.999f || fx);
         List<Group> groups = parentGroups;
         if (group) {

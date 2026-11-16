@@ -245,11 +245,23 @@ final class ValueComputer {
      * {@code line-height} の宣言を px にする。数値は {@code font-size} 倍、長さはその長さ、{@code normal}（と読めない値）は
      * ビットマップフォントの行間込みの高さ。
      */
+    /** 解釈済みの {@code line-height} の字句（読めない・単一の字句でないものは {@link #NO_TOKEN}）。再スタイルのたびに同じ宣言を読み直さない。 */
+    private static final java.util.concurrent.ConcurrentHashMap<String, Token> LINE_HEIGHT_TOKENS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Token NO_TOKEN = new Token(Type.BAD_STRING, null, 0, null, false, null, 0, 0);
+
+    private static Token lineHeightToken(String declared) {
+        Token cached = LINE_HEIGHT_TOKENS.get(declared);
+        if (cached != null) return cached == NO_TOKEN ? null : cached;
+        List<ComponentValue> values = CssSyntax.trim(CssSyntax.parseComponentValues(declared));
+        Token t = values.size() == 1 ? CssSyntax.tokenOf(values.getFirst()) : null;
+        if (LINE_HEIGHT_TOKENS.size() < 256) LINE_HEIGHT_TOKENS.putIfAbsent(declared, t != null ? t : NO_TOKEN);
+        return t;
+    }
+
     static float lineHeightPx(String declared, float fontSize, float rootFontSize, int viewportW, int viewportH) {
         float lineHeight = fontSize * LengthResolver.NORMAL_LINE_HEIGHT_EM;
         if (declared == null || declared.equalsIgnoreCase("normal")) return lineHeight;
-        List<ComponentValue> values = CssSyntax.trim(CssSyntax.parseComponentValues(declared));
-        Token t = values.size() == 1 ? CssSyntax.tokenOf(values.getFirst()) : null;
+        Token t = lineHeightToken(declared);
         if (t != null && t.type() == Type.NUMBER) {
             lineHeight = (float) (t.number() * fontSize);
         } else if (t != null && t.type() == Type.DIMENSION) {

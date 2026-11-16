@@ -3,7 +3,8 @@ package com.nishiyu.enderframelib.common;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.paint.HitTestIndex;
-import com.nishiyu.enderframelib.core.paint.OffsetItemList;
+import com.nishiyu.enderframelib.core.paint.ImmutableItemList;
+import com.nishiyu.enderframelib.core.paint.ItemDiff;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -12,7 +13,7 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
- * スクロールのたびに表示リストを複製せず（{@link OffsetItemList}）、ヒットテストの索引も作り直さず使い回す（{@link HitTestIndex#patch}）ことが、
+ * スクロールのたびに項目を作り直さず（移動量は項目のセルへ書く。{@link ImmutableItemList#touched}）、ヒットテストの索引も作り直さず使い回す（{@link HitTestIndex#patch}）ことが、
  * 「その時点で新しく作った索引」と同じ結果を返し、かつ実際に使い回されていることを確かめる。
  */
 class ScrollIndexReuseTest {
@@ -61,34 +62,45 @@ class ScrollIndexReuseTest {
                 }
             }
             assertTrue(reused > (steps - 11) * 0.8, "索引が使い回されていない: " + reused + "/" + (steps - 11));
-            assertTrue(view.ui().renderCache() instanceof OffsetItemList, "スクロール中の表示リストは疎な差し替え");
+            assertTrue(view.ui().renderCache() instanceof ImmutableItemList, "スクロール中の表示リストは移動量だけを載せたスナップショット");
         } finally {
             view.close();
         }
     }
 
     @Test
-    void offsetListShowsOnlyTheReplacedItems() {
+    void scrollWritesOffsetsIntoAFewSameItems() {
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try (var backend = new MutationScenario.NoDraw()) {
             view.frame(1000, backend, true);
             String sid = backend.sessionId();
             view.mouseMove(60, 100, sid);
-            List<DisplayItem> before = List.copyOf(view.ui().renderCache());
+            List<DisplayItem> same = List.copyOf(view.ui().renderCache()); // 同じ項目への参照
+            List<DisplayItem> before = new java.util.ArrayList<>();
+            for (DisplayItem it : same) before.add(it.frozen()); // 値の控え
+            Object token = ItemDiff.contentTokenOf(view.ui().renderCache());
             view.scroll(0, -2, sid);
             view.frame(1016, backend, true);
             List<DisplayItem> after = view.ui().renderCache();
             assertEquals(before.size(), after.size());
+            assertSame(token, ItemDiff.contentTokenOf(after), "スクロールだけで中身の印が変わった（保持層などが無効になる）");
             int changed = 0;
             for (int i = 0; i < before.size(); i++) {
-                if (before.get(i) != after.get(i)) {
+                assertSame(same.get(i), after.get(i), "項目は作り直さない: " + after.get(i).id());
+                if (before.get(i).translateX() != after.get(i).translateX() || before.get(i).translateY() != after.get(i).translateY()) {
                     changed++;
                     assertTrue(after.get(i).id().endsWith("_scrollc") || after.get(i).id().endsWith("_scrollv"),
-                            "差し替わったのはスクロールの節だけのはず: " + after.get(i).id());
+                            "動いたのはスクロールの節だけのはず: " + after.get(i).id());
                     assertEquals(before.get(i).key(), after.get(i).key());
+                    assertEquals(before.get(i).baseTranslateY(), after.get(i).baseTranslateY(), "基準の移動量は変えない");
                 }
             }
-            assertTrue(changed >= 1 && changed <= 4, "差し替えは少数: " + changed);
+            assertTrue(changed >= 1 && changed <= 4, "動くのは少数: " + changed);
+            // 動いた位置は時計の印で分かる（スナップショットにブロックの複製や位置の表は載せない）
+            var clock = ((ImmutableItemList) after).clock();
+            int marked = 0;
+            for (int c = 0; c * 32 < after.size(); c++) if (clock.chunkEpoch(c) > 0) marked++;
+            assertTrue(marked >= 1, "動いた項目のブロックに時計の印が付いていない");
         } finally {
             view.close();
         }

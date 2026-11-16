@@ -44,6 +44,9 @@ public final class StyleAnimator {
             "border-top-color", "border-right-color", "border-bottom-color", "border-left-color");
 
     /** 要素ごとの状態。動いているものが無くなれば次の {@link #observe} で捨てる。 */
+    /** 動くものが無かった観測で捨てずに取っておく空の状態（再スタイルのたびに作らない。B9）。{@code this} の同期の中でだけ触る。 */
+    private Entry spare;
+
     private static final class Entry {
         /** 直近の再スタイルで算出した目標値（アニメーションの値を重ねる前）。トランジションの「変化前」の出所。 */
         ComputedStyle target;
@@ -105,7 +108,7 @@ public final class StyleAnimator {
             if (existing == null && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;
 
             ComputedStyle changeFrom = existing != null && existing.target != null ? existing.target : before;
-            Entry entry = existing != null ? existing : new Entry();
+            Entry entry = existing != null ? existing : (spare != null ? spare : (spare = new Entry()));
 
             if (changeFrom != null && changeFrom != target) {
                 startTransitions(entry, changeFrom, target, parentStyle, now);
@@ -120,7 +123,7 @@ public final class StyleAnimator {
             } else {
                 entry.target = target;
                 entry.settledReported = false;
-                if (existing == null) entries.put(node, entry);
+                if (existing == null) { entries.put(node, entry); spare = null; }
                 hasEntries = true;
             }
         }

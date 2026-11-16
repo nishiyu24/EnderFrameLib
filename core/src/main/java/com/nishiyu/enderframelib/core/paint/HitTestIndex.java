@@ -596,6 +596,7 @@ public class HitTestIndex {
     public UIHitResult hitTestLinear(String sessionId, double pixelX, double pixelY,
                                      java.util.function.Predicate<DisplayItem> accept) {
         double[] tmp = null;
+        AnimatedValues scratchAnim = null;
         for (int i = 0, n = interactiveEntries.size(); i < n; i++) {
             Entry entry = interactiveEntries.get(i);
             DisplayItem el = entry.element;
@@ -611,7 +612,8 @@ public class HitTestIndex {
             List<DisplayItem> chain = entry.transformChain;
             for (int j = 0, cn = chain.size(); j < cn; j++) {
                 DisplayItem ancestor = live(chain.get(j));
-                AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, ancestor);
+                if (scratchAnim == null) scratchAnim = new AnimatedValues();
+                AnimatedValues anim = CssAnimator.currentValuesInto(sessionId, ancestor, scratchAnim);
                 if (tmp == null) tmp = new double[2];
                 inverseInto(px, py, ancestor, anim, tmp);
                 px = tmp[0];
@@ -634,12 +636,16 @@ public class HitTestIndex {
      * 点の下にあるスクロールする箱を、手前のものから順に返す。祖先の変換の逆行列を宣言順に当てて箱の局所座標にし、
      * 祖先のクリップ（{@code overflow} / 角丸の外）に隠れた箱は除く。ホイールの宛先を決めるのに使う。
      */
+    /** {@link #scrollContainersAt} の作業用の補間値（呼び出しのたびに確保しない。索引は 1 つの描画スレッドが使う）。 */
+    private AnimatedValues scrollScratch;
+
     public List<UIHitResult> scrollContainersAt(String sessionId, double pixelX, double pixelY) {
         int n = scrollEntries.size();
         if (n == 0) return List.of();
         UIHitResult first = null;
         List<UIHitResult> out = null;
         double[] tmp = null;
+        AnimatedValues scratchAnim = scrollScratch; // 補間状態が無い祖先ごとに値を確保しない（B9）
         for (int i = 0; i < n; i++) {
             Entry entry = scrollEntries.get(i);
             if (entry.clipRect != null && !entry.clipRect.contains(pixelX, pixelY)) continue;
@@ -648,7 +654,8 @@ public class HitTestIndex {
             for (int j = 0, cn = chain.size(); j < cn; j++) {
                 DisplayItem ancestor = live(chain.get(j));
                 if (tmp == null) tmp = new double[2];
-                inverseInto(px, py, ancestor, CssAnimator.getCurrentValues(sessionId, ancestor), tmp);
+                if (scratchAnim == null) scratchAnim = scrollScratch = new AnimatedValues();
+                inverseInto(px, py, ancestor, CssAnimator.currentValuesInto(sessionId, ancestor, scratchAnim), tmp);
                 px = tmp[0];
                 py = tmp[1];
             }

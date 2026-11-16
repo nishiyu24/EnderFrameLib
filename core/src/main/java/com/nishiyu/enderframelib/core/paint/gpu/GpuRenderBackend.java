@@ -13,7 +13,6 @@ import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms;
 import com.nishiyu.enderframelib.core.paint.BlendMode;
 import com.nishiyu.enderframelib.core.paint.ClipShape;
 import com.nishiyu.enderframelib.core.paint.FilterOp;
-import com.nishiyu.enderframelib.core.paint.OffsetItemList;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
@@ -371,29 +370,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         }
     }
 
-    private List<DisplayItem> snapScrollNodes(List<DisplayItem> items) {
-        if (!retainedScroll || !(items instanceof OffsetItemList ol)) return items;
-        DisplayItem[] repl = null;
-        int n = ol.overrideCount();
-        for (int k = 0; k < n; k++) {
-            DisplayItem it = ol.replacementAt(k);
-            if (it.type() != ElementType.NODE || !it.id().endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX)) continue;
-            float tx = Math.round(it.translateX() * dpr) / dpr, ty = Math.round(it.translateY() * dpr) / dpr;
-            if (tx == it.translateX() && ty == it.translateY()) continue;
-            if (repl == null) {
-                repl = new DisplayItem[n];
-                for (int j = 0; j < n; j++) repl[j] = ol.replacementAt(j);
-            }
-            repl[k] = it.withTranslation(tx, ty);
-        }
-        if (repl == null) return items;
-        int[] pos = new int[n];
-        for (int k = 0; k < n; k++) pos[k] = ol.positionAt(k);
-        return new OffsetItemList(ol.base(), pos, repl);
-    }
-
     private void renderLocked(List<DisplayItem> items, long nowMs) {
-        items = snapScrollNodes(items);
         readbackValid = false;
         cpu.clearDirty();
         layerStack.clear();
@@ -1281,6 +1258,11 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
 
     private boolean spanOk() {
         return rects != null && RectStream.replayEnabled && layerStack.isEmpty();
+    }
+
+    @Override
+    public boolean snapsScrollOffsets() {
+        return retainedScroll;
     }
 
     @Override

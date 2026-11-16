@@ -27,8 +27,8 @@ import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
-import com.nishiyu.enderframelib.core.paint.OffsetItemList;
 import com.nishiyu.enderframelib.core.paint.ObjectFit;
+import com.nishiyu.enderframelib.core.paint.ItemDiff;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
@@ -122,6 +122,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** このフレームで塗り直す範囲（タイル境界まで広げた外接矩形）。 */
     private final DamageRegion damage = new DamageRegion();
+    /** 前のフレームの {@link #planDamage} を始めた時点の塗り・移動量の書き込みの通し番号。 */
+    private int prevEpoch;
     /** 前のフレームの表示リスト（項目の同一性の比較と、旧範囲の持ち主）。 */
     private List<DisplayItem> prevItems;
     private boolean prevValid;
@@ -262,6 +264,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
         route.begin(null);
+        driver.setScrollSnapDpr(0f);
         raster.beginFrame();
         beginFrame(items);
         boolean partial = false;
@@ -332,6 +335,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         partialActive = false;
         recordExtents = false;
         route.begin(gpu);
+        driver.setScrollSnapDpr(gpu != null && gpu.snapsScrollOffsets() ? dpr : 0f);
         raster.beginFrame();
         beginFrame(items);
         try {
@@ -380,7 +384,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
 
         int oldN = prevItems.size();
+        final int seen = prevEpoch;
         boolean sameSize = oldN == n;
+        // 次のフレームは、ここまでに書かれたものを見たものとして、後の書き込みだけを変化とみなす
+        prevEpoch = com.nishiyu.enderframelib.core.paint.model.PaintCell.currentEpoch();
         int[] oldIndexOf = null;
         if (!sameSize) {
             // サイズ不一致時: 64-bit 整数鍵を用いたインデックスマッピング（ブロック層・インライン層の複数スライスに対応）
@@ -443,12 +450,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
             for (int i = 0; i < n; i++) {
                 DisplayItem cur = items.get(i), old = prevItems.get(i);
                 // 内容が項目の同一性に現れない種類（画像・入力欄・キャンバス等）は、abort せず毎フレーム「変わった」として扱う（下の itemChanged）
-                if (cur.key() != old.key() || cur.type() != old.type() || groupItem(cur)) {
-                    fullWhy[cur.key() != old.key() || cur.type() != old.type() ? 7 : PaintSceneDriver.hasFxLayer(cur) ? 9 : 10]++;
+                if (!ItemDiff.sameKeyAndType(old, cur) || groupItem(cur)) {
+                    fullWhy[!ItemDiff.sameKeyAndType(old, cur) ? 7 : ItemDiff.hasFxLayer(cur) ? 9 : 10]++;
                     resetCurExtents(n);
                     return false;
                 }
-                if (old != cur && mayAnimate(cur)) {
+                if (ItemDiff.changed(old, cur, seen) && mayAnimate(cur)) {
                     // 差し替わった項目は状態が消えているので、目標との突き合わせから確かめる
                     byte act = driver.activityAt(cur, nowMs);
                     if (act != PaintSceneDriver.ACT_IDLE) {
@@ -476,11 +483,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
             boolean itemChanged;
             if (!sameSize) {
                 int oldI = oldIndexOf[i];
-                itemChanged = (oldI < 0) || (prevItems.get(oldI) != cur);
+                itemChanged = (oldI < 0) || ItemDiff.changed(prevItems.get(oldI), cur, seen);
             } else {
                 DisplayItem old = prevItems.get(i);
                 // 塗りだけが動く遷移の途中の項目と、前のフレームで動いていた項目（遷移が終わって最終色へ変わる）は塗り直す
-                itemChanged = old != cur || volatileItem(cur) || activity[i] != 0 || prevActivity[i] != 0;
+                itemChanged = ItemDiff.changed(old, cur, seen) || volatileItem(cur) || activity[i] != 0 || prevActivity[i] != 0;
             }
             boolean nodeChanged = itemChanged && cur.type() == ElementType.NODE;
             movedBuf[i] = parentMoved || nodeChanged;
@@ -494,8 +501,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (sameSize) {
             for (int i = 0; i < n; i++) {
                 DisplayItem cur = items.get(i), old = prevItems.get(i);
-                if (cur != old && isScrollContent(cur)) {
-                    if (cur.translateX() != old.translateX() || cur.translateY() != old.translateY()) {
+                if (ItemDiff.changed(old, cur, seen) && isScrollContent(cur)) {
+                    if (ItemDiff.translationChanged(old, cur)) {
                         if (scrollContentIdx == -1) {
                             scrollContentIdx = i;
                         } else {
@@ -701,7 +708,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 DisplayItem cur = items.get(i);
                 if (cur.type() == ElementType.NODE) continue;
                 int oldIdx = (oldIndexOf != null) ? oldIndexOf[i] : i;
-                boolean changed = oldIdx < 0 || prevItems.get(oldIdx) != cur || movedBuf[i]
+                boolean changed = oldIdx < 0 || ItemDiff.changed(prevItems.get(oldIdx), cur, seen) || movedBuf[i]
                         || (oldIndexOf == null && (activity[i] != 0 || prevActivity[i] != 0));
                 Resolved r = driver.resolveAt(i);
                 int[] cb = planClip(i, cur, r, changed);
@@ -847,7 +854,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private static boolean stableList(List<DisplayItem> list) {
-        if (list instanceof OffsetItemList o) return stableList(o.base());
         return PaintSceneDriver.isImmutable(list);
     }
 
@@ -859,7 +865,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private static boolean groupItem(DisplayItem el) {
-        return el.type() == ElementType.NODE && (el.opacity() < 0.999f || PaintSceneDriver.hasFxLayer(el));
+        return el.type() == ElementType.NODE && (el.opacity() < 0.999f || ItemDiff.hasFxLayer(el));
     }
 
     private static boolean mayAnimate(DisplayItem el) {
@@ -1257,7 +1263,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         AnimatedValues anim = res.anim();
         boolean canFastStatic = index >= 0 && !recordExtents && !partialActive && recordOwner == null && driver.idleAt(index);
         GpuSink spanSink = null;
-        if (canFastStatic && index < spanEl.length && spanEl[index] == el && spanRes[index] == res) {
+        if (canFastStatic && index < spanEl.length && ItemDiff.unchanged(spanEl[index], el, spanEpoch[index]) && spanRes[index] == res) {
             if (spanCulled[index]) {
                 if (cullOffscreen && fastClipUnchanged(index, spanClip[index])) {
                     culledItems++;
@@ -1290,7 +1296,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (cullOffscreen && outsideClip(el, res.pose(), clip)) {
             if (canFastStatic) {
                 ensureSpanKeys(index);
-                spanEl[index] = el;
+                setSpanItem(index, el);
                 spanRes[index] = res;
                 spanClip[index] = clip;
                 spanCulled[index] = true;
@@ -1306,7 +1312,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             if (spanSink == null) spanSink = route.current();
             if (spanSink != null) {
                 ensureSpanKeys(index);
-                if (idle && !spanCulled[index] && spanEl[index] == el && spanRes[index] == res && spanClip[index] == clip && spanFlat[index] == flat) {
+                if (idle && !spanCulled[index] && ItemDiff.unchanged(spanEl[index], el, spanEpoch[index]) && spanRes[index] == res && spanClip[index] == clip && spanFlat[index] == flat) {
                     if (spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
                         cpuOpsOrdered = cpuOps;
                         return;
@@ -1324,7 +1330,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             boolean ok = cpuOps == cpuBefore;
             spanSink.spanEnd(index, ok);
             if (ok) {
-                spanEl[index] = el;
+                setSpanItem(index, el);
                 spanRes[index] = res;
                 spanClip[index] = clip;
                 spanFlat[index] = flat;
@@ -1379,7 +1385,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                             break;
                         }
                         ensureSpanKeys(index);
-                        spanEl[index] = el;
+                        setSpanItem(index, el);
                         spanRes[index] = res;
                         spanClip[index] = clip;
                         spanFlat[index] = flat;
@@ -1389,7 +1395,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                         break;
                     } else if (clip != null) {
                         ensureSpanKeys(index);
-                        spanEl[index] = el;
+                        setSpanItem(index, el);
                         spanRes[index] = res;
                         spanClip[index] = clip;
                         spanFlat[index] = flat;
@@ -1408,7 +1414,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     break;
                 }
                 ensureSpanKeys(index);
-                spanEl[index] = el;
+                setSpanItem(index, el);
                 spanRes[index] = res;
                 spanClip[index] = clip;
                 spanFlat[index] = flat;
@@ -1434,6 +1440,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 項目単位の再生を使うか（切り分け用: {@code -Denderframe.paint.noreplay=true} で無効）。 */
     static volatile boolean glReplay = !Boolean.getBoolean("enderframe.paint.noreplay");
     private DisplayItem[] spanEl = new DisplayItem[0];
+    /** {@link #spanEl} の項目を覚えたときの {@link DisplayItem#paintEpoch()}（塗りがセルへ書かれたら同じ項目でも再生しない）。 */
+    private int[] spanEpoch = new int[0];
+
+    private void setSpanItem(int index, DisplayItem el) {
+        spanEl[index] = el;
+        spanEpoch[index] = el.paintEpoch();
+    }
     private Resolved[] spanRes = new Resolved[0];
     private Clip[] spanClip = new Clip[0];
     private float[] spanFlat = new float[0];
@@ -1457,6 +1470,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (index < spanEl.length) return;
         int n = Math.max(index + 1, spanEl.length * 2 + 64);
         spanEl = java.util.Arrays.copyOf(spanEl, n);
+        spanEpoch = java.util.Arrays.copyOf(spanEpoch, n);
         spanRes = java.util.Arrays.copyOf(spanRes, n);
         spanClip = java.util.Arrays.copyOf(spanClip, n);
         spanFlat = java.util.Arrays.copyOf(spanFlat, n);

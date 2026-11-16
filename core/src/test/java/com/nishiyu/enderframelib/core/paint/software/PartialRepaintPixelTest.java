@@ -89,7 +89,7 @@ class PartialRepaintPixelTest {
                         }
                     }
                     case 5 -> {
-                        // スクロールは描画上の平行移動（OffsetItemList）で、動いた節の子孫だけが塗り直しの対象になる
+                        // スクロールは描画上の平行移動（項目のセルへ書く）で、動いた節の子孫だけが塗り直しの対象になる
                         view.mouseMove(60, 120, cpu.sessionId());
                         view.scroll(0, rnd.nextInt(7) - 3, cpu.sessionId());
                     }
