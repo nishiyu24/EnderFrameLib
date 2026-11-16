@@ -117,6 +117,31 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private GpuPass activePass;
     private boolean activeMainCleared;
 
+    // ---- 損傷範囲（B10）: 差分パッチで書き換えた項目の旧・新の範囲だけを、シザー付きのクリアで描き直す
+    /** 損傷範囲による部分描画を使うか（{@code -Denderframe.gpu.nodamage=true} で無効）。 */
+    static volatile boolean damageEnabled = !Boolean.getBoolean("enderframe.gpu.nodamage");
+
+    /** テスト・診断用: 損傷範囲による部分描画を切り替える。 */
+    public static void setDamageEnabled(boolean on) {
+        damageEnabled = on;
+    }
+
+    public long partialFrameCount() { return partialFrames; }
+
+    public long fullFrameCount() { return fullFrames; }
+    /** スパンごとの、積んだ図形のデバイス画素の外接矩形（x0, y0, x1, y1。x1 = {@link Integer#MIN_VALUE} なら未知）。 */
+    private int[] spanBounds = new int[0];
+    private final int[] spanAcc = new int[4];
+    private boolean spanAccOn;
+    /** このフレームの差分パッチが書き換えた範囲の和。{@link #patchDamageValid} が偽なら不明（全面）。 */
+    private final int[] patchDamage = new int[4];
+    private boolean patchDamageValid;
+    /** 差分パッチが成功して終わったフレームの損傷範囲（{@code null} = 部分描画にできない）。 */
+    private int[] frameDamage;
+    /** 次に開く主パスのシザー（{@code null} = 全面）。 */
+    private int[] mainScissor;
+    private long partialFrames, fullFrames;
+
     private long gpuGlyphs, gpuImages, overlayFlushes, readbacks;
     private long spanGlyph0;
     private long scrollLayersSkipped, scrollLayersRecorded;
@@ -382,15 +407,35 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (rects != null) rects.begin();
 
         activeMainCleared = false;
+        frameDamage = null;
+        mainScissor = null;
         activeFrame = device.beginFrame();
         boolean ended = false;
+        // 前のフレームが主ターゲットへ全部描いて終わっていて、差分パッチの前提（beginDiffPatch と同じ）が揃うなら、
+        // 主パスを開くのを遅らせる。パッチが成功すれば範囲だけをクリアして描き直し、失敗したら従来どおり全面
+        boolean mayPartial = damageEnabled && rects != null && prevFrameCleanSinglePass && width == prevPatchWidth && height == prevPatchHeight
+                && clearPremul == prevPatchClearPremul && atlas.resets() == prevPatchAtlasResets && retained.isEmpty();
         try {
-            // 根のターゲットはクリアしておく（何も描かれないフレームでも確定させる）
-            activePass = activeFrame.beginPass(mainTarget, LoadOp.CLEAR, clearPremul, null);
-            activeMainCleared = true;
+            if (!mayPartial) {
+                // 根のターゲットはクリアしておく（何も描かれないフレームでも確定させる）
+                activePass = activeFrame.beginPass(mainTarget, LoadOp.CLEAR, clearPremul, null);
+                activeMainCleared = true;
+            }
 
             cpu.renderOnto(items, nowMs, this);
             while (!layerStack.isEmpty()) endGroup();
+            if (mayPartial && activePass == null && !activeMainCleared) {
+                int[] d = layerStack.isEmpty() && frameLayerOps == 0 ? frameDamage : null;
+                if (d != null) {
+                    // 何も変わらなかったフレームも、1 画素だけ描き直す（パスと描画の流れを変えずに済ませる）
+                    mainScissor = d[2] > d[0] && d[3] > d[1] ? damageScissor(d) : new int[]{0, 0, 1, 1};
+                    partialFrames++;
+                } else {
+                    fullFrames++;
+                }
+                ensurePass();
+                mainScissor = null;
+            }
             flushAll();
             endPass();
             activeFrame.end();
@@ -451,7 +496,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (layerStack.isEmpty()) {
             LoadOp op = activeMainCleared ? LoadOp.LOAD : LoadOp.CLEAR;
             activeMainCleared = true;
-            activePass = activeFrame.beginPass(target, op, clearPremul, null);
+            activePass = activeFrame.beginPass(target, op, clearPremul, op == LoadOp.CLEAR ? mainScissor : null);
         } else {
             Entry top = layerStack.get(layerStack.size() - 1);
             LoadOp op = top.cleared ? LoadOp.LOAD : LoadOp.CLEAR;
@@ -1146,6 +1191,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     // ------------------------------------------------------------------ GPU の図形 (GpuSink)
 
     private void beforeRectTreeShape(Matrix2D pose, float x0, float y0, float x1, float y1) {
+        if (spanAccOn) accumulate(spanAcc, pose, x0, y0, x1, y1);
         if (!inDiffPatch && (rects.pending() == 0 || cpu.dirtyBounds() != null)) {
             flushOverlay();
         }
@@ -1158,6 +1204,75 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
                     (float) Math.max(Math.max(ax, bx), Math.max(cx, dx)),
                     (float) Math.max(Math.max(ay, by), Math.max(cy, dy)));
         }
+    }
+
+    /** 損傷範囲 {@code {x0, y0, x1, y1}} を、パスのシザー {@code {x, y, 幅, 高さ}} にする（周りに 2 画素の余白。描画先の内側に収める）。 */
+    private int[] damageScissor(int[] d) {
+        int x0 = Math.max(0, d[0] - 2), y0 = Math.max(0, d[1] - 2), x1 = Math.min(width, d[2] + 2), y1 = Math.min(height, d[3] + 2);
+        if (x1 <= x0 || y1 <= y0) return new int[]{0, 0, 1, 1};
+        return new int[]{x0, y0, x1 - x0, y1 - y0};
+    }
+
+    private static void accumulate(int[] box, Matrix2D pose, float x0, float y0, float x1, float y1) {
+        double ax = pose.applyX(x0, y0), ay = pose.applyY(x0, y0), bx = pose.applyX(x1, y0), by = pose.applyY(x1, y0);
+        double cx = pose.applyX(x0, y1), cy = pose.applyY(x0, y1), dx = pose.applyX(x1, y1), dy = pose.applyY(x1, y1);
+        int bx0 = (int) Math.floor(Math.min(Math.min(ax, bx), Math.min(cx, dx))) - 1;
+        int by0 = (int) Math.floor(Math.min(Math.min(ay, by), Math.min(cy, dy))) - 1;
+        int bx1 = (int) Math.ceil(Math.max(Math.max(ax, bx), Math.max(cx, dx))) + 1;
+        int by1 = (int) Math.ceil(Math.max(Math.max(ay, by), Math.max(cy, dy))) + 1;
+        if (box[2] == Integer.MIN_VALUE) { box[0] = bx0; box[1] = by0; box[2] = bx1; box[3] = by1; return; }
+        if (bx0 < box[0]) box[0] = bx0;
+        if (by0 < box[1]) box[1] = by0;
+        if (bx1 > box[2]) box[2] = bx1;
+        if (by1 > box[3]) box[3] = by1;
+    }
+
+    private static void resetBox(int[] box) {
+        box[0] = box[1] = Integer.MAX_VALUE;
+        box[2] = box[3] = Integer.MIN_VALUE;
+    }
+
+    private void growSpanBounds(int index) {
+        int need = (index + 1) * 4;
+        if (spanBounds.length >= need) return;
+        int[] n = new int[Math.max(need, spanBounds.length * 2)];
+        System.arraycopy(spanBounds, 0, n, 0, spanBounds.length);
+        for (int i = spanBounds.length; i < n.length; i += 4) n[i + 2] = Integer.MIN_VALUE; // 未知
+        spanBounds = n;
+    }
+
+    private void storeSpanBounds(int index, boolean ok) {
+        growSpanBounds(index);
+        int b = index * 4;
+        if (!ok) { // 記録に失敗したスパン: 範囲は未知（次に書き換えるときは全面）
+            spanBounds[b] = spanBounds[b + 1] = spanBounds[b + 3] = 0;
+            spanBounds[b + 2] = Integer.MIN_VALUE;
+            return;
+        }
+        if (spanAcc[2] == Integer.MIN_VALUE) { // 何も積まなかった（描かない項目）: 空の範囲
+            spanBounds[b] = spanBounds[b + 1] = spanBounds[b + 2] = spanBounds[b + 3] = 0;
+            return;
+        }
+        spanBounds[b] = spanAcc[0];
+        spanBounds[b + 1] = spanAcc[1];
+        spanBounds[b + 2] = spanAcc[2];
+        spanBounds[b + 3] = spanAcc[3];
+    }
+
+    /** スパン {@code index} の記録済みの範囲を損傷へ足す。未知なら損傷を不明にする。 */
+    private void addSpanToDamage(int index) {
+        int b = index * 4;
+        if (b + 3 >= spanBounds.length || spanBounds[b + 2] == Integer.MIN_VALUE) { patchDamageValid = false; return; }
+        addToDamage(spanBounds[b], spanBounds[b + 1], spanBounds[b + 2], spanBounds[b + 3]);
+    }
+
+    private void addToDamage(int x0, int y0, int x1, int y1) {
+        if (x1 <= x0 || y1 <= y0) return;
+        if (patchDamage[2] == Integer.MIN_VALUE) { patchDamage[0] = x0; patchDamage[1] = y0; patchDamage[2] = x1; patchDamage[3] = y1; return; }
+        if (x0 < patchDamage[0]) patchDamage[0] = x0;
+        if (y0 < patchDamage[1]) patchDamage[1] = y0;
+        if (x1 > patchDamage[2]) patchDamage[2] = x1;
+        if (y1 > patchDamage[3]) patchDamage[3] = y1;
     }
 
     private static float shapeMargin(Matrix2D pose) {
@@ -1182,6 +1297,8 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (!spanOk()) return false;
         rects.spanBegin(index, atlas.resets());
         spanGlyph0 = gpuGlyphs;
+        resetBox(spanAcc);
+        spanAccOn = true;
         return true;
     }
 
@@ -1189,6 +1306,8 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     public void spanEnd(int index, boolean ok) {
         if (rects == null) return;
         if (ok && !layerStack.isEmpty()) ok = false;
+        spanAccOn = false;
+        storeSpanBounds(index, ok);
         rects.spanEnd(ok, atlas.resets(), (int) (gpuGlyphs - spanGlyph0));
     }
 
@@ -1201,6 +1320,9 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         }
         if (!rects.beginDiffPatch()) return false;
         inDiffPatch = true;
+        resetBox(patchDamage);
+        patchDamageValid = true;
+        frameDamage = null;
         return true;
     }
 
@@ -1214,6 +1336,9 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (!inDiffPatch || !spanOk()) return false;
         if (!rects.patchSpanBegin(index, atlas.resets())) return false;
         spanGlyph0 = gpuGlyphs;
+        addSpanToDamage(index); // 書き換える前の範囲（古い絵を消す）
+        resetBox(spanAcc);
+        spanAccOn = true;
         return true;
     }
 
@@ -1221,12 +1346,22 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     public boolean patchSpanEnd(int index, boolean ok) {
         if (rects == null || !inDiffPatch) return false;
         if (ok && !layerStack.isEmpty()) ok = false;
+        spanAccOn = false;
+        storeSpanBounds(index, ok);
+        if (ok) {
+            if (spanAcc[2] != Integer.MIN_VALUE) addToDamage(spanAcc[0], spanAcc[1], spanAcc[2], spanAcc[3]); // 新しい範囲
+        } else {
+            patchDamageValid = false;
+        }
         return rects.patchSpanEnd(index, ok, atlas.resets(), (int) (gpuGlyphs - spanGlyph0));
     }
 
     @Override
     public void abortDiffPatch() {
         inDiffPatch = false;
+        spanAccOn = false;
+        patchDamageValid = false;
+        frameDamage = null;
         cpu.clearDirty();
         if (rects != null) rects.abortDiffPatch();
     }
@@ -1234,6 +1369,8 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     @Override
     public void endDiffPatch() {
         inDiffPatch = false;
+        spanAccOn = false;
+        frameDamage = patchDamageValid ? new int[]{patchDamage[0], patchDamage[1], patchDamage[2], patchDamage[3]} : null;
         if (rects != null) rects.endDiffPatch();
     }
 
