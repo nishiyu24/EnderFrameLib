@@ -22,12 +22,12 @@ import org.junit.jupiter.api.Test;
  * B9 の M0: 表示項目の表現を作り替える前後で「見えるもの」が変わらないことを固定するゴールデン。
  * 現在の実装から記録した、シナリオ × フレームの SOFTWARE 画素ハッシュと表示リスト要約ハッシュ（{@code golden/frames.txt}）と比べる。
  * 実行時に新旧を切り替えて比べるのではなく、固定の基準と比べる（新旧の経路を共存させないため）。
+ * 画素は OS ごとの記録（{@code frames-pixels-<os>.txt}。フォントの描画が OS で違う）、表示リスト要約・項目数は OS に依らない {@code frames.txt}。
  * 意図した見た目の変更のときだけ {@code -Dgolden.update=true} で取り直し、差分をレビューする。
  */
 class GoldenFrameTest {
     private static final long T0 = 10_000L;
     private static final String RESOURCE = "/golden/frames.txt";
-    private static final Path SOURCE = Path.of("core/src/test/resources/golden/frames.txt");
 
     private static long itemsHash(List<DisplayItem> items) {
         CRC32 c = new CRC32();
@@ -117,10 +117,16 @@ class GoldenFrameTest {
         for (var c : n.children) collectButtons(c, out, max);
     }
 
-    private static Map<String, String> readGolden() throws IOException {
+    /** 画素のハッシュはフォントの描画が OS で違うので OS ごとのファイル、表示リスト要約と項目数は OS に依らない 1 つのファイル。 */
+    private static String osKey() {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        return os.contains("win") ? "windows" : os.contains("mac") ? "mac" : "linux";
+    }
+
+    private static Map<String, String> read(String resource) throws IOException {
         Map<String, String> m = new LinkedHashMap<>();
-        try (InputStream in = GoldenFrameTest.class.getResourceAsStream(RESOURCE)) {
-            if (in == null) return m;
+        try (InputStream in = GoldenFrameTest.class.getResourceAsStream(resource)) {
+            if (in == null) return null;
             for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
                 if (line.isBlank()) continue;
                 int sp = line.indexOf('\t');
@@ -128,6 +134,13 @@ class GoldenFrameTest {
             }
         }
         return m;
+    }
+
+    private static void write(Path file, Map<String, String> m) throws IOException {
+        List<String> lines = new ArrayList<>();
+        m.forEach((k, v) -> lines.add(k + "\t" + v));
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
     }
 
     @Test
@@ -141,18 +154,28 @@ class GoldenFrameTest {
     @Test
     void framesMatchGolden() throws IOException {
         Map<String, String> now = run();
+        Map<String, String> items = new LinkedHashMap<>(), pixels = new LinkedHashMap<>();
+        for (var e : now.entrySet()) {
+            String[] f = e.getValue().split(" ");
+            pixels.put(e.getKey(), f[0]);
+            items.put(e.getKey(), f[1] + " " + f[2]);
+        }
+        String pixelsResource = "/golden/frames-pixels-" + osKey() + ".txt";
         if (Boolean.getBoolean("golden.update")) {
-            List<String> lines = new ArrayList<>();
-            now.forEach((k, v) -> lines.add(k + "\t" + v));
-            Files.createDirectories(SOURCE.getParent());
-            Files.writeString(SOURCE, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+            write(Path.of("core/src/test/resources/golden/frames.txt"), items);
+            write(Path.of("core/src/test/resources/golden/frames-pixels-" + osKey() + ".txt"), pixels);
             return;
         }
-        Map<String, String> golden = readGolden();
-        assertFalse(golden.isEmpty(), "ゴールデンが無い。-Dgolden.update=true で記録する");
+        Map<String, String> goldenItems = read(RESOURCE);
+        assertNotNull(goldenItems, "ゴールデンが無い。-Dgolden.update=true で記録する");
         List<String> bad = new ArrayList<>();
-        for (var e : now.entrySet()) if (!e.getValue().equals(golden.get(e.getKey()))) bad.add(e.getKey() + " now=" + e.getValue() + " golden=" + golden.get(e.getKey()));
-        for (String k : golden.keySet()) if (!now.containsKey(k)) bad.add(k + " が実行されなかった");
+        for (var e : items.entrySet()) if (!e.getValue().equals(goldenItems.get(e.getKey()))) bad.add("items " + e.getKey() + " now=" + e.getValue() + " golden=" + goldenItems.get(e.getKey()));
+        for (String k : goldenItems.keySet()) if (!items.containsKey(k)) bad.add(k + " が実行されなかった");
+        // 画素は OS ごとの記録（無い OS では表示リストだけ比べる。記録は -Dgolden.update=true をその OS で走らせる）
+        Map<String, String> goldenPixels = read(pixelsResource);
+        if (goldenPixels != null) {
+            for (var e : pixels.entrySet()) if (!e.getValue().equals(goldenPixels.get(e.getKey()))) bad.add("pixels " + e.getKey() + " now=" + e.getValue() + " golden=" + goldenPixels.get(e.getKey()));
+        }
         assertTrue(bad.isEmpty(), "ゴールデンと違う: " + bad);
     }
 }
