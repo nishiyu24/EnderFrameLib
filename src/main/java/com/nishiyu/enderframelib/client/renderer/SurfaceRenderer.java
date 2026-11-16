@@ -38,7 +38,8 @@ public final class SurfaceRenderer {
     public static boolean draw(String sessionId, SurfaceGeometry geometry, SurfaceStyle style,
                                PoseStack poseStack, MultiBufferSource buffer) {
         SessionContext session = ClientWebManager.getSession(sessionId);
-        List<DisplayItem> elements = session != null ? session.elements() : List.of();
+        // GPU 経路は親相対のまま読める。従来の経路へ落ちたときだけ、paint の中で絶対座標へ直す
+        List<DisplayItem> elements = session != null ? session.relativeElements() : List.of();
         float step = switch (style.depth()) {
             case SurfaceStyle.Depth.Geometry g -> geometry.zStep() * g.scale();
             case SurfaceStyle.Depth.Fixed f -> f.step();
@@ -78,6 +79,10 @@ public final class SurfaceRenderer {
             if (!CoreGpuSurface.tryDraw(request)) {
                 long tLegacy = StageProfiler.begin(PipelineStage.SURFACE_LEGACY);
                 try {
+                    if (!empty) {
+                        List<DisplayItem> absolute = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(elements);
+                        if (absolute != elements) request = request.withElements(absolute);
+                    }
                     request.render();
                 } finally {
                     StageProfiler.end(PipelineStage.SURFACE_LEGACY, tLegacy);

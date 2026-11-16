@@ -285,7 +285,7 @@ public class AbstractEnderScreen extends Screen implements EnderScreenHost {
             int logicW = (int) Math.ceil(virtualWidth / DisplayItemDrawer.RESOLUTION);
             int logicH = (int) Math.ceil(virtualHeight / DisplayItemDrawer.RESOLUTION);
 
-            SurfaceRenderer.draw(sessionId, elements, logicW, logicH,
+            SurfaceRenderer.draw(sessionId, com.nishiyu.enderframelib.client.ClientWebManager.getSession(sessionId).relativeElements(), logicW, logicH,
                     SurfaceStyle.gui(true).withHovered(hoveredId), poseStack, bufferSource);
             bufferSource.endBatch();
 

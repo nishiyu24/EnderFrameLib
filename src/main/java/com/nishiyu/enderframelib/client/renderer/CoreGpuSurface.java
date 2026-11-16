@@ -171,6 +171,7 @@ public final class CoreGpuSurface {
         net.minecraft.client.gui.Font font = WebFontManager.getDefaultFont();
         if (font == null) font = Minecraft.getInstance().font;
         float z = DisplayItemDrawer.ZLayers.ELEMENT_Z_STEP * 4 + 0.05f;
+        target = DisplayItem.resolveAbsolute(items, target); // 項目は親相対のことがある
         DisplayItemDrawer.renderTooltipOverlay(pass.poseStack(), pass.buffer(), font, target, text,
                 w, h, z, pass.packedLight());
         flushPending(pass.buffer());

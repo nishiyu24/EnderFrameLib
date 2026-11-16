@@ -36,6 +36,13 @@ record PaintRequest(
         boolean flatLayers,
         boolean screenSpaceText
 ) {
+    /** 項目の一覧だけを差し替えた複製（親相対のまま GPU 経路へ渡し、描けなければ絶対座標へ直して従来の経路へ渡す）。 */
+    PaintRequest withElements(List<DisplayItem> newElements) {
+        return new PaintRequest(newElements, screenWidth, screenHeight, poseStack, buffer, packedLight, packedOverlay,
+                renderItems, renderText, renderRounded, zStep, subZOffset, hoveredId, lodColor, isLodMode, level,
+                playAudio, is2DAudio, sessionId, audioPos, flatLayers, screenSpaceText);
+    }
+
     void render() {
         DisplayItemDrawer.renderElements(this);
     }

@@ -95,7 +95,7 @@ public class WebItemRendererHelper {
         // レイアウトの画面サイズはセッションを読み込んだときの解像度。渡された解像度は、セッションがまだ無いときだけ使う
         int layoutW = session != null ? session.rootW() : virtualWidth;
         int layoutH = session != null ? session.rootH() : virtualHeight;
-        if (session == null || session.elements().isEmpty()) return;
+        if (session == null || session.relativeElements().isEmpty()) return;
 
         poseStack.pushPose();
         poseStack.translate(screenOriginX, screenOriginY, screenOriginZ);

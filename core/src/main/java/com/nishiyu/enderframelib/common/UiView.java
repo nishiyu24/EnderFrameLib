@@ -897,6 +897,16 @@ public class UiView implements AutoCloseable {
         return absolute(renderCache);
     }
 
+    /**
+     * 描画要素のキャッシュを、親相対のまま返す（{@link #elements()} の前処理つき）。親相対を読める描画経路（GPU バックエンド）用で、
+     * 絶対座標へ直す費用を払わない。読めない消費者は {@link #elements()} を使う。
+     */
+    public List<DisplayItem> relativeElements() {
+        beforeElements();
+        applyPendingPaintOffsets();
+        return renderCache;
+    }
+
     /** {@link #elements()} と同じ絶対座標のリストを、前処理なしで返す。 */
     public List<DisplayItem> absoluteRenderCache() {
         applyPendingPaintOffsets();
