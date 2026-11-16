@@ -89,7 +89,13 @@ public final class DocumentArena {
     // ------------------------------------------------------------------
 
     /** ノードを 1 つ確保する。静的領域が閉じていれば空きリストを優先する。 */
+    /** {@link #allocate} の通し番号（単調に増える。解放では減らない）。構造が増えたかを、木を歩かずに調べる用。 */
+    private int allocSerial;
+
+    public int allocSerial() { return allocSerial; }
+
     public int allocate(Object owner) {
+        allocSerial++;
         int id;
         if (freeHead != NONE) {
             id = freeHead;

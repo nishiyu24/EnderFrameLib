@@ -180,4 +180,23 @@ class Scene3DDeclarativeTest {
         v.ui().flushInvalidation();
         assertNull(v.ui().scene3dWorldById("s"), "要素が無い");
     }
+
+    /** シーンの無い文書は、節が新しく作られないかぎり文書を歩かない。あとから入れた scene-3d は次のフレームで拾う。 */
+    @Test
+    void aSceneAddedLaterIsPickedUpAfterSceneLessFrames() {
+        StandaloneView v = view("<p id='p'>no scene yet</p>");
+        for (int i = 0; i < 3; i++) { // シーンの無いフレームを重ねる（走査を省く状態にする）
+            v.ui().requestRestyle();
+            v.ui().flushInvalidation();
+        }
+        assertNull(v.ui().scene3dWorldById("late"));
+        HtmlNode holder = v.ui().findNode("p").parent;
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement scene = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("scene-3d");
+        scene.setAttribute("id", "late");
+        scene.setAttribute("style", "width:64px;height:64px");
+        holder.appendChild(scene);
+        v.ui().requestRestyle();
+        v.ui().flushInvalidation();
+        assertNotNull(v.ui().scene3dWorldById("late"), "あとから入れた scene-3d の世界ができる");
+    }
 }

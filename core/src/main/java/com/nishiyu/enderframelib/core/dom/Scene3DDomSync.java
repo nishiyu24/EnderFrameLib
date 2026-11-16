@@ -58,8 +58,18 @@ public final class Scene3DDomSync {
     /** 文書の中の全 {@code <scene-3d>} を同期する。消えたシーンの状態は捨てる。 */
     public void sync(HtmlNode root) {
         if (root == null) return;
+        // シーンが無い文書は、節が新しく作られていないかぎり（同じ文書の同じ確保の通し番号）、文書全体を歩かない
+        com.nishiyu.enderframelib.core.kernel.memory.DocumentArena arena = scenes.isEmpty() ? root.arena() : null;
+        if (arena != null && arena == lastArena && arena.allocSerial() == lastAllocSerial && lastRoot == root) return;
         foundScratch.clear();
         find(root, foundScratch);
+        if (arena != null && foundScratch.isEmpty()) {
+            lastArena = arena;
+            lastAllocSerial = arena.allocSerial();
+            lastRoot = root;
+        } else {
+            lastArena = null;
+        }
         if (foundScratch.isEmpty() && scenes.isEmpty()) return;
         java.util.Set<Long> alive = new java.util.HashSet<>();
         for (int i = 0, fn = foundScratch.size(); i < fn; i++) {
@@ -72,6 +82,10 @@ public final class Scene3DDomSync {
         scenes.keySet().retainAll(alive);
         foundScratch.clear();
     }
+
+    private com.nishiyu.enderframelib.core.kernel.memory.DocumentArena lastArena;
+    private int lastAllocSerial;
+    private HtmlNode lastRoot;
 
     public int sceneCount() { return scenes.size(); }
 
