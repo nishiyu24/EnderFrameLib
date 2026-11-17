@@ -2571,6 +2571,37 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         final List<LayoutBox> inlineBoxes = new ArrayList<>();
     }
 
+    /**
+     * 兄弟の「ブロック層の末尾／先頭」を探すための収集。インラインレベルの箱と flex / grid アイテム（{@link PaintSupport#isAtomicInline}）は
+     * 中身ごと後ろの層で描かれるので、その箱も子孫も入れない（入れると、層の末尾がリストの末尾を指してしまう）。
+     */
+    private void collectBlockPhaseBoxes(LayoutBox box, List<LayoutBox> out) {
+        if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
+        if (!box.isAnonymous) {
+            if (box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT)
+                    || PaintSupport.isAtomicInline(box)) return;
+            out.add(box);
+        }
+        if (box.children != null) for (LayoutBox c : box.children) collectBlockPhaseBoxes(c, out);
+    }
+
+    /** {@link #collectBlockPhaseBoxes} の残り（インラインレベルの箱・アトミックな箱とその子孫）。木の順。 */
+    private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out) {
+        List<LayoutBox> block = new ArrayList<>();
+        collectBlockPhaseBoxes(box, block);
+        Set<LayoutBox> blockSet = Collections.newSetFromMap(new IdentityHashMap<>());
+        blockSet.addAll(block);
+        List<LayoutBox> inOrder = new ArrayList<>();
+        collectDocOrder(box, inOrder);
+        for (LayoutBox b : inOrder) if (!blockSet.contains(b)) out.add(b);
+    }
+
+    private void collectDocOrder(LayoutBox box, List<LayoutBox> out) {
+        if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
+        if (!box.isAnonymous) out.add(box);
+        if (box.children != null) for (LayoutBox c : box.children) collectDocOrder(c, out);
+    }
+
     private void collectSubtreeSlices(LayoutBox box, SubtreeSlices out) {
         if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
         if (!box.isAnonymous) {
@@ -2903,12 +2934,33 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             }
         }
 
+        syncCanvasBackground(sorted);
         generation++;
         buildSerial++;
         buildEpoch = LayoutBox.paintEpoch();
         lastElementCount = currentDisplayList.size();
         STAT_SLICE_PATCH_HITS.increment();
         return currentDisplayList;
+    }
+
+    /**
+     * キャンバスの背景（先頭の {@code bg_root}）は、背景を譲った要素（ルート、無ければ body）の背景色で、箱のスライスの外にある。
+     * その要素を差し替えたら（子孫の :hover で body の背景が変わるなど）、色を合わせる（A6b ④。無いと 1 フレーム古い色が残る）。
+     */
+    private void syncCanvasBackground(List<LayoutBox> patched) {
+        LayoutBox source = canvasBackgroundSource;
+        if (source == null || currentDisplayList.isEmpty() || !patched.contains(source)) return;
+        DisplayItem first = currentDisplayList.get(0);
+        if (!"bg_root".equals(first.id())) return;
+        int color = ColorParser.parseColor(source.style.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
+        if (color == first.bgColor() || color == 0x00000000) return; // 透明になる場合は項目ごと無くなる（全面の組み直しでしか表せない）
+        DisplayItem now = new DisplayItem(
+                first.id(), first.baseNodeId(), first.type(), first.x(), first.y(), first.width(), first.height(),
+                first.text(), first.color(), color, first.events(),
+                first.radius(), first.opacity(), first.baseTranslateX(), first.baseTranslateY(),
+                first.scaleX(), first.scaleY(), first.rotate(), first.transitionDuration(),
+                first.animDef(), first.fitMode(), first.meta(), first.key());
+        if (!first.repaintFrom(now)) currentDisplayList.set(0, now);
     }
 
     /**
@@ -2919,6 +2971,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return cant(1, 0);
         if (parentBox == null || (removed.isEmpty() && added.isEmpty())) return cant(1, 1);
         if (parentBox.contentAutoSkipped || parentBox.childrenDeferred || parentBox.isVirtualizedFlow()) return cant(1, 12);
+        // 後続の箱の座標の反映（手順 7）と祖先の寸法の反映（手順 8）は、箱ごとの記憶が基準。記憶を切っていると基準が無く、古い座標・寸法が残る（A6b ④）
+        if (!MEMO_ENABLED) return cant(1, 14);
         int listSize = currentDisplayList.size();
         int boxCount = renderedBoxes.size();
         if (windowedBuild && !windowIntact(removed)) return cant(1, 13);
@@ -3095,17 +3149,17 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     LayoutBox lastBlock = null;
                     for (int i = afterIdx; i >= 0; i--) {
                         LayoutBox c = parentBox.children.get(i);
-                        SubtreeSlices s = new SubtreeSlices();
-                        collectSubtreeSlices(c, s);
-                        for (int k = s.blockBoxes.size() - 1; k >= 0; k--) {
-                            LayoutBox b = s.blockBoxes.get(k);
+                        List<LayoutBox> blockPhase = new ArrayList<>();
+                        collectBlockPhaseBoxes(c, blockPhase);
+                        for (int k = blockPhase.size() - 1; k >= 0; k--) {
+                            LayoutBox b = blockPhase.get(k);
                             if (b.dlEnd >= 0 && b.dlOrder >= 0) {
                                 lastBlock = b;
                                 break;
                             }
                         }
                         if (lastBlock != null) break;
-                        if (c.dlEnd >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel()) {
+                        if (c.dlEnd >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c)) {
                             lastBlock = c;
                             break;
                         }
@@ -3122,16 +3176,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
                             LayoutBox c = parentBox.children.get(i);
                             if (added.contains(c)) continue;
-                            SubtreeSlices s = new SubtreeSlices();
-                            collectSubtreeSlices(c, s);
-                            for (LayoutBox b : s.blockBoxes) {
+                            List<LayoutBox> blockPhase = new ArrayList<>();
+                            collectBlockPhaseBoxes(c, blockPhase);
+                            for (LayoutBox b : blockPhase) {
                                 if (b.dlStart >= 0 && b.dlOrder >= 0) {
                                     firstBlock = b;
                                     break;
                                 }
                             }
                             if (firstBlock != null) break;
-                            if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel()) {
+                            if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c)) {
                                 firstBlock = c;
                                 break;
                             }
@@ -3150,10 +3204,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     LayoutBox lastInline = null;
                     for (int i = afterIdx; i >= 0; i--) {
                         LayoutBox c = parentBox.children.get(i);
-                        SubtreeSlices s = new SubtreeSlices();
-                        collectSubtreeSlices(c, s);
-                        for (int k = s.inlineBoxes.size() - 1; k >= 0; k--) {
-                            LayoutBox b = s.inlineBoxes.get(k);
+                        List<LayoutBox> inlinePhase = new ArrayList<>();
+                        collectInlinePhaseBoxes(c, inlinePhase);
+                        for (int k = inlinePhase.size() - 1; k >= 0; k--) {
+                            LayoutBox b = inlinePhase.get(k);
                             if (b.dlEnd >= 0 && b.dlOrder >= 0) {
                                 lastInline = b;
                                 break;
@@ -3170,9 +3224,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
                             LayoutBox c = parentBox.children.get(i);
                             if (added.contains(c)) continue;
-                            SubtreeSlices s = new SubtreeSlices();
-                            collectSubtreeSlices(c, s);
-                            for (LayoutBox b : s.inlineBoxes) {
+                            List<LayoutBox> inlinePhase = new ArrayList<>();
+                            collectInlinePhaseBoxes(c, inlinePhase);
+                            for (LayoutBox b : inlinePhase) {
                                 if (b.dlStart >= 0 && b.dlOrder >= 0) {
                                     firstInline = b;
                                     break;
@@ -3196,16 +3250,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     if (parentBox.children != null) {
                         for (LayoutBox c : parentBox.children) {
                             if (added.contains(c)) continue;
-                            SubtreeSlices s = new SubtreeSlices();
-                            collectSubtreeSlices(c, s);
-                            for (LayoutBox b : s.blockBoxes) {
+                            List<LayoutBox> blockPhase = new ArrayList<>();
+                            collectBlockPhaseBoxes(c, blockPhase);
+                            for (LayoutBox b : blockPhase) {
                                 if (b.dlStart >= 0 && b.dlOrder >= 0) {
                                     firstBlock = b;
                                     break;
                                 }
                             }
                             if (firstBlock != null) break;
-                            if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel()) {
+                            if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c)) {
                                 firstBlock = c;
                                 break;
                             }
@@ -3225,9 +3279,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     if (parentBox.children != null) {
                         for (LayoutBox c : parentBox.children) {
                             if (added.contains(c)) continue;
-                            SubtreeSlices s = new SubtreeSlices();
-                            collectSubtreeSlices(c, s);
-                            for (LayoutBox b : s.inlineBoxes) {
+                            List<LayoutBox> inlinePhase = new ArrayList<>();
+                            collectInlinePhaseBoxes(c, inlinePhase);
+                            for (LayoutBox b : inlinePhase) {
                                 if (b.dlStart >= 0 && b.dlOrder >= 0) {
                                     firstInline = b;
                                     break;
@@ -3516,8 +3570,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         float oldBoxW = m.nums != null && m.nums.length >= 4 ? m.nums[2] : b.w;
                         int oldTop = Math.round(oldBoxY - oldPartOy);
                         int oldLeft = Math.round(oldBoxX - oldPartOx);
-                        int targetH = Math.round(b.y + b.h - curOy) - (hasRelOrigin ? 0 : targetTop);
-                        int targetW = Math.round(b.x + b.w - curOx) - (hasRelOrigin ? 0 : targetLeft);
+                        int targetH = Math.round(b.y + b.h - partOy) - targetTop; // 項目の座標系（絶対なら 0、親相対なら親の原点）で見た下端から上端を引く（旧い式は、絶対座標で箱の位置を二重に引いて負になった）
+                        int targetW = Math.round(b.x + b.w - partOx) - targetLeft;
                         int oldHInt = Math.round(oldBoxY + oldBoxH - oldPartOy) - oldTop;
                         int oldWInt = Math.round(oldBoxX + oldBoxW - oldPartOx) - oldLeft;
                         int shiftX = targetLeft - oldLeft;
@@ -3671,9 +3725,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         }
                         boolean itemChanged = false;
                         int nextH = it.height();
+                        int nextY = it.y();
                         if (hChanged) {
                             if (it.type() == ElementType.NODE) {
                                 nextH = targetH;
+                                itemChanged = true;
+                            } else if (it.type() == ElementType.RECT && it.id() != null && (it.id().endsWith("_b_top") || it.id().endsWith("_b_bottom"))) {
+                                // 上下の枠線は太さを保ち、下の線は箱の下端へ動く（高さに dh を足すと、太さが負になる）
+                                if (it.id().endsWith("_b_bottom")) nextY = it.y() + dh;
                                 itemChanged = true;
                             } else if (it.type() == ElementType.RECT || it.type() == ElementType.ROUNDED_BORDER) {
                                 nextH = (it.height() == oldHInt) ? targetH : it.height() + dh;
@@ -3686,7 +3745,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         if (itemChanged) {
                             DisplayItem updated = new DisplayItem(
                                     it.id(), it.baseNodeId(), it.type(),
-                                    it.x(), it.y(), it.width(), nextH,
+                                    it.x(), nextY, it.width(), nextH,
                                     it.text(), it.color(), it.bgColor(), it.events(),
                                     it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
                                     it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),

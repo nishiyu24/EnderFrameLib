@@ -296,6 +296,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
             recordExtents = false;
             currentItem = -1;
         }
+        // 描く前の見積もり（planDamage の冒頭）は、項目が差し替わって補間の状態が新しくなる前の古い状態を見ている（項目の増減のフレームなど）。
+        // 描いて状態が更新された今の値で取り直す。そうしないと、遷移中の項目が「止まっている」と記録され、次のフレームで遷移の
+        // 続き・終わり（最終色）を塗り直さず、途中の色が残る（A6b ③④）
+        byte m = driver.fillActivity(activity, items.size(), nowMs);
+        frameHadActive = m != PaintSceneDriver.ACT_IDLE;
+        frameHadGeometryActive = m == PaintSceneDriver.ACT_OPACITY;
         commitFrame(items, partial);
     }
 

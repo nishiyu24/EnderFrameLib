@@ -66,16 +66,99 @@ class IncrementalVsFullTest {
         assertEquals(List.of(), mismatches("cards", ShortcutMatrixMain.CARDS, ShortcutMatrixMain.CARD_CLASSES, ShortcutMatrixMain.CARD_STYLES, 8, 45, 1, true));
     }
 
-    /** nested（flex の入れ子）は、並び順だけがずれる既知の不具合（A6b）が残る。内容（項目の集合）は一致しなければならない。 */
+    /** nested（flex の入れ子）。ブロックの子を足したとき、新しい子の項目がブロック層の末尾（flex アイテムの手前）に入ること。 */
     @Test
-    void nestedDocumentHasTheSameItemsAsFullRelayout() {
-        assertEquals(List.of(), mismatches("nested", ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 8, 60, 5, false));
+    void nestedDocumentMatchesFullRelayoutEveryStep() {
+        assertEquals(List.of(), mismatches("nested", ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 8, 60, 5, true));
     }
 
-    /** 検査が効くこと: 厳密な並びで比べれば、nested には既知のずれが見える（直ったらこのテストを消して nested も厳密にする）。 */
+    /**
+     * 祖先の高さが変わる（子パッチの後のリサイズなど）とき、上下の枠線の太さが負にならないこと（A6b ⑥）。
+     * 以前は枠線の RECT の高さに高さの変化量を足して、1px の線が -20 になった（nested・種 4 の手 40）。全面の結果と比べるだけでは
+     * 見えない（全面へ強いた時点で直る）ので、項目の大きさを直接調べる。
+     */
     @Test
-    void nestedStillHasTheKnownOrderOnlyMismatch() {
-        List<String> bad = mismatches("nested", ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 8, 60, 5, true);
-        assertEquals(true, !bad.isEmpty(), "並び順のずれが解消した: nestedDocumentHasTheSameItemsAsFullRelayout を strictOrder = true にして、このテストを消す");
+    void borderLinesNeverGetNegativeSizeAfterAncestorResize() {
+        List<String> bad = new ArrayList<>();
+        for (long seed = 1; seed <= 8; seed++) {
+            final long sd = seed;
+            MutationScenario.STEP_HOOK = (step, view) -> {
+                for (var it : view.items()) if (it.width() < 0 || it.height() < 0) bad.add("nested/" + sd + " 手 " + step + " " + it.id());
+            };
+            MutationScenario.run(ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 5 * seed + 1, 60, false);
+        }
+        assertEquals(List.of(), bad.size() > 8 ? bad.subList(0, 8) : bad);
+    }
+
+    /**
+     * body の背景がキャンバスへ渡る文書で、子孫の :hover が body の背景を変えるとき、ホバーを外したフレームで先頭の bg_root の色が
+     * 戻ること（A6b ④。以前は 1 フレーム古い色が残った。bg_root は箱のスライスの外にあり、局所パッチが合わせていなかった）。
+     */
+    @Test
+    void canvasBackgroundFollowsBodyHoverStyleInTheSameFrame() {
+        String html = "<style>body{margin:0}body{background:#eef}body:hover{background:#fdd}.r{height:30px}</style><div class=\"r\" id=\"r1\">row</div>";
+        try (StandaloneView v = new StandaloneView(html, 320, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+             var be = new MutationScenario.NoDraw()) {
+            long now = 1000;
+            v.frame(now, be, true);
+            java.util.function.Supplier<Integer> bg = () -> v.items().stream().filter(i -> i.id().equals("bg_root")).map(i -> i.bgColor()).findFirst().orElse(0);
+            int normal = bg.get();
+            v.mouseMove(10, 10, be.sessionId());
+            v.frame(now += 50, be, true);
+            int hovered = bg.get();
+            v.mouseMove(10, 235, be.sessionId()); // 行の外（body の余白）へ出ると、body 自身のホバーも外れる文書にするため下の空きへ
+            v.mouseMove(330, 100, be.sessionId());
+            v.frame(now += 50, be, true);
+            assertEquals(true, hovered != normal, "ホバーで背景が変わる前提");
+            assertEquals(normal, (int) bg.get());
+        }
+    }
+
+    private static List<Integer> pixelsWithDamage(boolean damage, long seed) throws ReflectiveOperationException {
+        var f = com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend.class.getDeclaredField("damageEnabled");
+        f.setAccessible(true);
+        boolean saved = f.getBoolean(null);
+        f.setBoolean(null, damage);
+        try {
+            MutationScenario.run(ShortcutMatrixMain.CARDS, ShortcutMatrixMain.CARD_CLASSES, ShortcutMatrixMain.CARD_STYLES, seed, 45, true);
+            return new ArrayList<>(MutationScenario.PIXELS);
+        } finally {
+            f.setBoolean(null, saved);
+        }
+    }
+
+    /**
+     * 差分描画（変わった範囲だけを塗り直す）の画素が、毎フレーム全面で描いた画素と一致すること（A6b ③④）。以前は、項目の増減のフレームで
+     * 遷移中の項目が「止まっている」と記録され、次のフレームで遷移の途中の色が残った（cards・種 6 の手 22 と 34）。
+     */
+    @Test
+    void damageRepaintMatchesFullRepaintEveryStep() throws Exception {
+        for (long seed : new long[] {6, 4, 8}) {
+            assertEquals(pixelsWithDamage(false, seed), pixelsWithDamage(true, seed), "cards/" + seed + "（手ごとの画素の写し）");
+        }
+    }
+
+    /**
+     * 項目の座標が絶対のとき（親相対を切る。GL など）の局所パッチ（後続の箱の座標の反映）で、箱の高さ・幅が負にならず、
+     * 全面の結果と一致すること（A6b ⑤。以前は新しい高さを「下端 - 原点」と「上端」の二重引きで求め、枠線の高さが -150 になった）。
+     */
+    @Test
+    void absoluteCoordinatesPatchMatchesFullRelayoutAndNeverGoesNegative() {
+        String key = "enderframe.paint.noparentrelative";
+        String saved = System.getProperty(key);
+        System.setProperty(key, "true");
+        try {
+            List<String> bad = new ArrayList<>();
+            for (long seed = 1; seed <= 8; seed++) {
+                final long sd = seed;
+                MutationScenario.STEP_HOOK = (step, view) -> {
+                    for (var it : view.items()) if (it.width() < 0 || it.height() < 0) bad.add("nested/" + sd + " 手 " + step + " " + it.id());
+                };
+                MutationScenario.run(ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 5 * seed + 1, 60, false);
+            }
+            assertEquals(List.of(), bad.size() > 8 ? bad.subList(0, 8) : bad);
+        } finally {
+            if (saved == null) System.clearProperty(key); else System.setProperty(key, saved);
+        }
     }
 }

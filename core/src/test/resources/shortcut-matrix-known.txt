@@ -1,17 +1,7 @@
 # 近道スイッチを単独で切ると既定と食い違う既知の文書（ShortcutMatrixMain が読む）。形式: スイッチ | 文書名 | 理由
 # この表は減らす方向にだけ動かす。不一致が解消したら行を消す（残っていると失敗）。新しい不一致は失敗する。
 enderframe.layout.nocutoff | sig:layouts | 手 43 の表（#tb）の幅が 262 / 260 と食い違う（どちらが正しいかは未判定。B 系の新規行で調査）
-enderframe.paint.nodiffpatch | pix:cards | 手 6（hover でトランジション開始）で文字の縁の濃さが違う（x52–65・y4–31 の 340 画素。既定の方が濃く重ね描きの疑い。署名は一致）
-enderframe.paint.nomemo | sig:scrolllist | 手 10 の hover で bg_root の色が違う（#fde 系 / #eef。トランジションの開始値の食い違い）。以降の nomemo の行は同じ原因と推定
-enderframe.paint.nomemo | pix:scrolllist | 同じ原因と推定（手 10〜43 の hover・スクロール後）
-enderframe.paint.nomemo | sig:nested | 未調査
-enderframe.paint.nomemo | pix:nested | 未調査
-enderframe.paint.nomemo | pix:cards | 未調査
-enderframe.paint.noparentrelative | pix:nested | 未調査
-enderframe.paint.noparentrelative | pix:scrolllist | 署名は設計どおり変わるので画素だけを比べて、画素が違う（未調査）
-enderframe.paint.noscrollnode | pix:scrolllist | スクロール後の画素が違う（スクロール節を使わない経路。未調査）
-enderframe.paint.noscrollnode | pix:catalog | スクロール後の画素が違う（スクロール節を使わない経路。未調査）
-enderframe.paint.noshiftpatch | pix:cards | 未調査
-enderframe.soft.nodamage | pix:cards | 未調査
-enderframe.ui.nochildpatch | sig:nested | 未調査
-enderframe.ui.nochildpatch | pix:nested | 未調査
+enderframe.paint.nomemo | pix:scrolllist | 手 21。コンテナの下端をまたぐ行（r6）の項目の clip が、既定は箱の範囲（8,4,308,204）、nomemo は null で、nomemo の画素はコンテナを (8,4) ずらした位置（300×200）で切れて見える（既定のほうが正しい見た目。nomemo の全面の組み立てで clip が落ちる。未調査）
+enderframe.paint.noparentrelative | pix:scrolllist | 手 17。スムーズスクロール中の小数のスクロール量を、既定は節の平行移動（行の縁が 1 画素ぼける）、こちらは整数へ焼き込む（縁の行の 1 段階の差。設計どおりの表現の違いと推定）
+enderframe.paint.noscrollnode | pix:scrolllist | 手 26。上の noparentrelative と同じ（小数のスクロール量の縁のぼけ）
+enderframe.paint.noscrollnode | pix:catalog | 手 26。同じ（小数のスクロール量の縁のぼけ。行の境界の 2 行）
