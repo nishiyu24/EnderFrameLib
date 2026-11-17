@@ -30,6 +30,111 @@ final class AnchorPositioning {
     private AnchorPositioning() {}
 
     /**
+     * grid / flex 容器の絶対配置の子の静的位置を「領域 + 揃え」で入れる（横書きのみ。他は内容ボックスの原点のまま）。
+     * <ul>
+     *   <li>grid: 容器の padding ボックスを唯一のグリッド領域とみなし、{@code justify-self} / {@code align-self}
+     *       （auto は容器の {@code justify-items} / {@code align-items}）で揃える（css-grid §9.4）。</li>
+     *   <li>flex: 唯一の項目とみなし、主軸は {@code justify-content}、交差軸は {@code align-self} で揃える（css-flexbox §4.1）。</li>
+     * </ul>
+     */
+    static void applyStaticArea(LayoutBox parent, LayoutBox child, float innerX, float innerY) {
+        child.staticAreaW = Float.NaN;
+        child.staticAreaH = Float.NaN;
+        LayoutBox.Display.Inner inner = parent.display.inner();
+        if (inner != LayoutBox.Display.Inner.GRID && inner != LayoutBox.Display.Inner.FLEX) return;
+        if (parent.verticalAxisFlow != 0 || parent.isVerticalRoot || !isHorizontal(parent.style) || !isHorizontal(child.style)) return;
+        boolean rtl = isRtl(parent.style);
+        ComputedStyle ps = parent.style, cs = child.style;
+        if (inner == LayoutBox.Display.Inner.GRID) {
+            child.staticAlignX = selfFactor(selfValue(cs, CssPropertyIndex.JUSTIFY_SELF, ps, CssPropertyIndex.JUSTIFY_ITEMS), rtl, true, false);
+            child.staticAlignY = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, false);
+            if (!"static".equals(norm(ps.get(CssPropertyIndex.POSITION))) && !norm(ps.get(CssPropertyIndex.POSITION)).isEmpty()) {
+                // 容器が包含ブロック（grid-area があればそのグリッド領域）なら、その中で揃える。大きさは配置のときに決まる
+                child.staticAreaW = child.staticAreaH = STATIC_AREA_IS_CB;
+                return;
+            }
+            child.staticX = innerX - parent.pL;
+            child.staticY = innerY - parent.pT;
+            child.staticAreaW = Math.max(0, parent.w - parent.bL - parent.bR);
+            child.staticAreaH = Math.max(0, parent.h - parent.bT - parent.bB);
+            child.staticAlignX = selfFactor(selfValue(cs, CssPropertyIndex.JUSTIFY_SELF, ps, CssPropertyIndex.JUSTIFY_ITEMS), rtl, true, false);
+            child.staticAlignY = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, false);
+            return;
+        }
+        String dir = norm(ps.get(CssPropertyIndex.FLEX_DIRECTION));
+        boolean row = !dir.startsWith("column");
+        boolean reverse = dir.endsWith("reverse");
+        boolean wrapReverse = norm(ps.get(CssPropertyIndex.FLEX_WRAP)).equals("wrap-reverse");
+        child.staticAreaW = Math.max(0, parent.w - parent.horizontalDecoration());
+        child.staticAreaH = Math.max(0, parent.h - parent.verticalDecoration());
+        String justify = norm(ps.get(CssPropertyIndex.JUSTIFY_CONTENT));
+        // 項目が 1 つなら space-between は flex-start、space-around / space-evenly は center と同じ
+        justify = switch (justify) {
+            case "space-between" -> "flex-start";
+            case "space-around", "space-evenly" -> "center";
+            default -> justify;
+        };
+        float main = switch (justify) {
+            case "center" -> 0.5f;
+            case "flex-end" -> reverse ? 0 : 1;
+            case "end" -> 1;
+            case "right" -> row ? (rtl ? 0 : 1) : 0; // 下の rtl の裏返しを打ち消す（right は物理）
+            case "left" -> row ? (rtl ? 1 : 0) : 0;
+            case "flex-start", "normal", "stretch" -> reverse ? 1 : 0;
+            default -> 0;
+        };
+        if (row && rtl) main = 1 - main;
+        float cross = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, wrapReverse);
+        child.staticAlignX = row ? main : cross;
+        child.staticAlignY = row ? cross : main;
+    }
+
+    /** {@link LayoutBox#staticAreaW} がこの値なら、静的位置の領域は包含ブロックそのもの。 */
+    static final float STATIC_AREA_IS_CB = -1f;
+
+    private static boolean isHorizontal(ComputedStyle s) {
+        String wm = s.get(CssPropertyIndex.WRITING_MODE);
+        return wm == null || wm.isBlank() || norm(wm).equals("horizontal-tb");
+    }
+
+    private static boolean isRtl(ComputedStyle s) {
+        return norm(s.get(CssPropertyIndex.DIRECTION)).equals("rtl");
+    }
+
+    /** 小文字にして前後の空白と {@code safe} / {@code unsafe} を除いた値（null は空）。 */
+    private static String norm(String v) {
+        if (v == null) return "";
+        String t = v.trim().toLowerCase(Locale.ROOT);
+        if (t.startsWith("safe ")) t = t.substring(5).trim();
+        else if (t.startsWith("unsafe ")) t = t.substring(7).trim();
+        return t;
+    }
+
+    private static String selfValue(ComputedStyle child, int selfProp, ComputedStyle parent, int itemsProp) {
+        String v = norm(child.get(selfProp));
+        if (v.isEmpty() || v.equals("auto")) v = norm(parent.get(itemsProp));
+        if (v.startsWith("legacy")) v = v.substring(6).trim();
+        return v;
+    }
+
+    /**
+     * 自分の揃え（{@code *-self}）を 0 / 0.5 / 1 にする。{@code inline} は横（インライン軸）で、rtl なら start / end を裏返す。
+     * {@code flexReverse} は flex の交差軸が wrap-reverse で flex-start / flex-end を裏返すとき。
+     */
+    private static float selfFactor(String v, boolean rtl, boolean inline, boolean flexReverse) {
+        float f = switch (v) {
+            case "center" -> 0.5f;
+            case "end", "self-end", "last baseline" -> 1;
+            case "flex-end" -> flexReverse ? 0 : 1;
+            case "flex-start" -> flexReverse ? 1 : 0;
+            case "right" -> inline ? (rtl ? 0 : 1) : 0;
+            case "left" -> inline ? (rtl ? 1 : 0) : 0;
+            default -> 0; // normal / stretch / start / self-start / baseline
+        };
+        return inline && rtl ? 1 - f : f;
+    }
+
+    /**
      * 絶対配置・固定配置の箱の位置（および {@code anchor-size()} / {@code @position-try} /
      * {@code anchor()} 両端 inset による寸法）を決め、{@code position-try-fallbacks} があれば
      * 包含ブロックからはみ出さない候補を選ぶ。
@@ -63,16 +168,15 @@ final class AnchorPositioning {
         boolean topAuto = BoxMeasurer.isAutoInset(style, CssPropertyIndex.TOP);
         boolean bottomAuto = BoxMeasurer.isAutoInset(style, CssPropertyIndex.BOTTOM);
 
-        // width/height: auto で両端に anchor() を含む inset が指定されている場合、間の幅・高さを解く
-        if (facts.widthAuto && !leftAuto && !rightAuto
-                && (isAnchorFn(style.get(CssPropertyIndex.LEFT)) || isAnchorFn(style.get(CssPropertyIndex.RIGHT)))) {
+        // width/height: auto で両端の inset が指定されていれば、包含ブロックの寸法から間の幅・高さを解く（CSS 2.2 §10.3.7・§10.6.4）。
+        // 測定のときの基準は親の寸法で、包含ブロックが祖父母以上だと（親の高さが auto なら）高さが 0 になっていた
+        if (facts.widthAuto && !leftAuto && !rightAuto) {
             float l = insetPx(box, CssPropertyIndex.LEFT, refX, refW, rootW, rootH);
             float r = insetPx(box, CssPropertyIndex.RIGHT, refX, refW, rootW, rootH);
             float w = Math.max(box.horizontalDecoration(), refW - l - r - box.mL - box.mR);
             box.w = clampWidth(box, style, w, refW, rootW, rootH, isBorderBox);
         }
-        if (facts.heightAuto && !topAuto && !bottomAuto
-                && (isAnchorFn(style.get(CssPropertyIndex.TOP)) || isAnchorFn(style.get(CssPropertyIndex.BOTTOM)))) {
+        if (facts.heightAuto && !topAuto && !bottomAuto) {
             float t = insetPx(box, CssPropertyIndex.TOP, refY, refH, rootW, rootH);
             float b = insetPx(box, CssPropertyIndex.BOTTOM, refY, refH, rootW, rootH);
             float h = Math.max(box.verticalDecoration(), refH - t - b - box.mT - box.mB);
@@ -96,7 +200,8 @@ final class AnchorPositioning {
         } else if (!rightAuto) {
             box.x = refX + refW - box.w - insetPx(box, CssPropertyIndex.RIGHT, refX, refW, rootW, rootH) - box.mR;
         } else {
-            box.x = (Float.isNaN(box.staticX) ? refX : box.staticX) + box.mL;
+            box.x = box.staticAreaW == STATIC_AREA_IS_CB ? refX + box.staticAlignX * (refW - (box.w + box.mL + box.mR)) + box.mL
+                    : (Float.isNaN(box.staticX) ? refX : box.staticX + box.staticOffsetX(box.w + box.mL + box.mR)) + box.mL;
         }
 
         if (!topAuto) {
@@ -112,7 +217,8 @@ final class AnchorPositioning {
         } else if (!bottomAuto) {
             box.y = refY + refH - box.h - insetPx(box, CssPropertyIndex.BOTTOM, refY, refH, rootW, rootH) - box.mB;
         } else {
-            box.y = (Float.isNaN(box.staticY) ? refY : box.staticY) + box.mT;
+            box.y = box.staticAreaH == STATIC_AREA_IS_CB ? refY + box.staticAlignY * (refH - (box.h + box.mT + box.mB)) + box.mT
+                    : (Float.isNaN(box.staticY) ? refY : box.staticY + box.staticOffsetY(box.h + box.mT + box.mB)) + box.mT;
         }
 
         String[] area = parsePositionArea(style.get(CssPropertyIndex.POSITION_AREA));
@@ -282,7 +388,8 @@ final class AnchorPositioning {
             x = refX + refW - w - rightPx - mr;
         } else {
             imcbW = refW;
-            x = (Float.isNaN(box.staticX) ? refX : box.staticX) + ml;
+            x = box.staticAreaW == STATIC_AREA_IS_CB ? refX + box.staticAlignX * (refW - (w + ml + mr)) + ml
+                    : (Float.isNaN(box.staticX) ? refX : box.staticX + box.staticOffsetX(w + ml + mr)) + ml;
         }
 
         float y, imcbH;
@@ -315,7 +422,8 @@ final class AnchorPositioning {
             y = refY + refH - h - bottomPx - mb;
         } else {
             imcbH = refH;
-            y = (Float.isNaN(box.staticY) ? refY : box.staticY) + mt;
+            y = box.staticAreaH == STATIC_AREA_IS_CB ? refY + box.staticAlignY * (refH - (h + mt + mb)) + mt
+                    : (Float.isNaN(box.staticY) ? refY : box.staticY + box.staticOffsetY(h + mt + mb)) + mt;
         }
 
         if (spec.area != null) {

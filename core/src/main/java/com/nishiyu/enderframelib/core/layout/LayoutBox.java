@@ -382,6 +382,11 @@ public class LayoutBox {
         float cbY = cb.y + cb.bT - cbScrollY;
         float cbW = Math.max(0, cb.w - cb.bL - cb.bR);
         float cbH = Math.max(0, cb.h - cb.bT - cb.bB);
+        if (cb.display != null && cb.display.inner() == Display.Inner.GRID) {
+            // grid 容器が包含ブロックなら、grid-placement の線が示す領域（CSS Grid §10.1）
+            float[] area = GridLayoutEngine.absoluteArea(cb, this);
+            if (area != null) return new ContainingBlock(cbX + area[0], cbY + area[1], area[2], area[3]);
+        }
         return new ContainingBlock(cbX, cbY, cbW, cbH);
     }
 
@@ -437,7 +442,22 @@ public class LayoutBox {
      * inset が両方 auto の軸はここに置く。親のエンジンが子を並べるときに入れる。
      */
     public float staticX = Float.NaN, staticY = Float.NaN;
+    /**
+     * 静的位置が点ではなく領域のとき（grid / flex 容器の子。css-grid §9.4・css-flexbox §4.1）の領域の大きさと、
+     * その中での揃え（0 = 始点、0.5 = 中央、1 = 終点）。{@link #staticX} / {@link #staticY} は領域の左上。点なら NaN。
+     */
+    public float staticAreaW = Float.NaN, staticAreaH = Float.NaN, staticAlignX, staticAlignY;
     public int zIndex = 0;
+
+    /** 静的位置の領域の中で、マージンボックスの幅 {@code marginBoxW} の箱を揃えるための横のずれ。 */
+    public float staticOffsetX(float marginBoxW) {
+        return Float.isNaN(staticAreaW) ? 0 : staticAlignX * (staticAreaW - marginBoxW);
+    }
+
+    /** 静的位置の領域の中で、マージンボックスの高さ {@code marginBoxH} の箱を揃えるための縦のずれ。 */
+    public float staticOffsetY(float marginBoxH) {
+        return Float.isNaN(staticAreaH) ? 0 : staticAlignY * (staticAreaH - marginBoxH);
+    }
     /** DisplayListBuilder が同じ検証バッチ内で祖先からの moving 判定を O(1) で使い回すための一時印。 */
     public int movingMemoEpoch = 0;
     public boolean movingMemoResult = false;
@@ -816,7 +836,7 @@ public class LayoutBox {
                 || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.TEXT_TRANSFORM), newStyle.get(CssPropertyIndex.TEXT_TRANSFORM))) {
             // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
             String text = TextShaper.normalize(node.text, WhiteSpace.of(newStyle.get(CssPropertyIndex.WHITE_SPACE)));
-            this.displayText = LayoutMetrics.applyTextTransform(text, newStyle);
+            this.displayText = stripIgnorable(LayoutMetrics.applyTextTransform(text, newStyle));
         }
 
         String pos = newStyle.getOrDefault(CssPropertyIndex.POSITION, "static");
@@ -891,6 +911,29 @@ public class LayoutBox {
      * flex の shrink 解決ループから 1 要素あたり最大 10 回問われ、そのたびに
      * 部分木全体を再帰していたため、ビューポートごとに結果をメモ化する。
      */
+    /**
+     * 既定で無視される書式文字（双方向の制御 U+202A–202E・U+2066–2069、ゼロ幅の U+200B–200F・U+2060–2064、U+FEFF）を除く。
+     * 幅を持たず描かれない文字で、字形の無い書体では豆腐（□）として描かれていた（双方向の並べ替え自体は行わない）。
+     */
+    static String stripIgnorable(String s) {
+        int n = s.length();
+        int i = 0;
+        while (i < n && !isIgnorableFormat(s.charAt(i))) i++;
+        if (i == n) return s;
+        StringBuilder sb = new StringBuilder(n);
+        sb.append(s, 0, i);
+        for (; i < n; i++) {
+            char c = s.charAt(i);
+            if (!isIgnorableFormat(c)) sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    private static boolean isIgnorableFormat(char c) {
+        if (c < 0x200B) return false;
+        return c <= 0x200F || (c >= 0x202A && c <= 0x202E) || (c >= 0x2060 && c <= 0x2064) || (c >= 0x2066 && c <= 0x2069) || c == 0xFEFF;
+    }
+
     public float getMinContentWidth(LayoutContext ctx) {
         if (tentativeStashed && measuredMinContentVar) {
             settleTentative();
@@ -915,7 +958,8 @@ public class LayoutBox {
         // min-content / auto などのキーワードは長さとして解けないので、内容から計算する経路に落とす
         ComputedStyle ax = axisStyle();
         String minWidthDecl = ax.get(CssPropertyIndex.MIN_WIDTH);
-        if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)) {
+        // 表は min-width より内容の列が広ければ広がる（CSS 2.2 §17.5.2.1）ので、近道を使わず列から測る
+        if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl) && display.inner() != Display.Inner.TABLE) {
             // 枠線ボックスは padding と border より細くならない（min-width: 0 でも装飾の分は残る）
             float min = ax.length(CssPropertyIndex.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
             return ax.isBorderBox() ? Math.max(min, horizontalDecoration()) : min + horizontalDecoration();
@@ -2290,6 +2334,8 @@ public class LayoutBox {
         box.y = 0;
         box.staticX = Float.NaN;
         box.staticY = Float.NaN;
+        box.staticAreaW = Float.NaN;
+        box.staticAreaH = Float.NaN;
         box.scrollWidth = 0;
         box.scrollHeight = 0;
         box.descendantOverflowRight = 0;
@@ -2354,6 +2400,8 @@ public class LayoutBox {
         box.y = 0;
         box.staticX = Float.NaN;
         box.staticY = Float.NaN;
+        box.staticAreaW = Float.NaN;
+        box.staticAreaH = Float.NaN;
         box.scrollWidth = 0;
         box.scrollHeight = 0;
         box.descendantOverflowRight = 0;
@@ -3048,6 +3096,7 @@ public class LayoutBox {
                     if (child.isAbsolute) {
                         child.staticX = innerX;
                         child.staticY = innerY;
+                        AnchorPositioning.applyStaticArea(this, child, innerX, innerY);
                     }
                 }
             }

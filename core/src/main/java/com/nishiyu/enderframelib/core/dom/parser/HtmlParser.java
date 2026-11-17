@@ -77,6 +77,73 @@ public class HtmlParser {
     }
 
     /**
+     * XHTML（XML として読む文書。ブラウザなら {@code application/xhtml+xml}・拡張子 {@code .xht} / {@code .xhtml}）を、
+     * HTML として読んで同じ木になる文字列へ直す。本パーサは HTML の構文しか持たないので、XML の書き方のうち意味が変わる 2 つを書き換える:
+     * <ul>
+     *   <li>void でない要素の自己終了 {@code <div/>} → {@code <div></div>}（HTML では {@code /} が無視され、後ろの兄弟が子になる）。</li>
+     *   <li>CDATA 節 {@code <![CDATA[...]]>} → 中身（{@code style}/{@code script} の中ではそのまま、それ以外では文字として逃がす）。</li>
+     * </ul>
+     * 文書が XHTML かどうかは内容からは決められない（{@code xmlns} 付きの text/html も多い）ので、呼び出し側が種類を知っているときに使う。
+     */
+    public static String xhtmlToHtml(String xhtml) {
+        int len = xhtml.length();
+        StringBuilder out = new StringBuilder(len + 64);
+        int i = 0;
+        while (i < len) {
+            char c = xhtml.charAt(i);
+            if (c != '<') { out.append(c); i++; continue; }
+            if (xhtml.startsWith("<!--", i)) {
+                int end = xhtml.indexOf("-->", i + 4);
+                int stop = end < 0 ? len : end + 3;
+                out.append(xhtml, i, stop);
+                i = stop;
+                continue;
+            }
+            if (xhtml.startsWith("<![CDATA[", i)) {
+                int end = xhtml.indexOf("]]>", i + 9);
+                int stop = end < 0 ? len : end;
+                for (int k = i + 9; k < stop; k++) {
+                    char d = xhtml.charAt(k);
+                    out.append(d == '&' ? "&amp;" : d == '<' ? "&lt;" : String.valueOf(d));
+                }
+                i = end < 0 ? len : end + 3;
+                continue;
+            }
+            int nameStart = i + 1;
+            int j = nameStart;
+            while (j < len && HtmlTokenizer.isValidTagNameChar(xhtml.charAt(j))) j++;
+            if (j == nameStart || !HtmlTokenizer.isAsciiAlpha(xhtml.charAt(nameStart))) { out.append(c); i++; continue; }
+            String name = xhtml.substring(nameStart, j).toLowerCase();
+            // タグの終わり（引用符の中の '>' は飛ばす）
+            char q = 0;
+            int k = j;
+            for (; k < len; k++) {
+                char d = xhtml.charAt(k);
+                if (q != 0) { if (d == q) q = 0; }
+                else if (d == '"' || d == '\'') q = d;
+                else if (d == '>') break;
+            }
+            if (k >= len) { out.append(xhtml, i, len); break; }
+            boolean selfClosing = xhtml.charAt(k - 1) == '/';
+            if (selfClosing && !VoidElements.isVoid(name)) {
+                out.append(xhtml, i, k - 1).append("></").append(name).append('>');
+                i = k + 1;
+                continue;
+            }
+            out.append(xhtml, i, k + 1);
+            i = k + 1;
+            if (!selfClosing && (name.equals("style") || name.equals("script"))) {
+                // 中身は生の文字。CDATA の印だけ外す（XML では印は中身に入らない）
+                int close = HtmlTokenizer.findClosingTagIgnoreCase(xhtml, i, name);
+                int stop = close < 0 ? len : close;
+                out.append(xhtml.substring(i, stop).replace("<![CDATA[", "").replace("]]>", ""));
+                i = stop;
+            }
+        }
+        return out.toString();
+    }
+
+    /**
      * 文書として解析する。ルートの子は {@code html} の 1 つだけで、その下に {@code head} と {@code body} がある。
      * 書かれていなければ補う。
      */
@@ -1159,7 +1226,8 @@ public class HtmlParser {
             List<Token> tokens = new ArrayList<>();
             if (html == null || html.isEmpty()) return tokens;
 
-            int i = 0;
+            // 先頭の BOM（U+FEFF）は符号化の印で、文書の文字ではない（Encoding §6 "decode"）
+            int i = html.charAt(0) == '﻿' ? 1 : 0;
             int len = html.length();
             StringBuilder textBuffer = new StringBuilder();
 

@@ -804,6 +804,8 @@ public class GridLayoutEngine extends LayoutEngine {
                 : trackOffsets(gs.rowSizes, box.rowGap, innerH, contentDistribution(box.style, CssPropertyIndex.ALIGN_CONTENT));
         gs.colOffsets = colOffsets;
         gs.rowOffsets = rowOffsets;
+        // 列の向き（direction: rtl なら右から）。サブグリッドの列は親の向きに従うので裏返さない
+        boolean rtl = !gs.colSub && isRtl(box.style);
         // 行が確定した。サブグリッドの行を持つ子は、これ以降の測定で親の行の寸法を使う
         gs.rowsFinal = !gs.rowSub || gs.rowsOwnFinal;
 
@@ -855,7 +857,11 @@ public class GridLayoutEngine extends LayoutEngine {
             // 測り直しが来なかった項目の仮の産物を終わらせる（以降の alignWithin は auto マージンを書き換える）
             b.settleTentative();
             CssKeywords.Alignment justifySelf = selfAlignment(b, CssPropertyIndex.JUSTIFY_SELF, box.style, CssPropertyIndex.JUSTIFY_ITEMS);
+            // rtl は列を右から並べる。論理（ltr）で組んでから内容ボックスの中で左右を裏返すので、物理の left / right は先に入れ替えておく
+            if (rtl) justifySelf = justifySelf == CssKeywords.Alignment.LEFT ? CssKeywords.Alignment.RIGHT
+                    : justifySelf == CssKeywords.Alignment.RIGHT ? CssKeywords.Alignment.LEFT : justifySelf;
             item.x = areaX + alignWithin(b, true, areaW, justifySelf);
+            if (rtl) item.x = innerW - item.x - (b.w + b.mL + b.mR);
             item.y = areaY + alignWithin(b, false, areaH, alignSelf);
         }
     }
@@ -908,6 +914,49 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     /** 終端の線の手前にある gap の幅（最後の線の手前には無い）。 */
+    /**
+     * 包含ブロックが grid 容器である絶対配置の箱の包含ブロック（CSS Grid §10.1）: grid-placement の線が示す領域で、
+     * auto の側・グリッドに無い線の側は padding ボックスの端。{x, y, w, h} を grid 容器の padding ボックスの左上から測って返す。
+     * 容器がまだ組まれていなければ null。
+     */
+    static float[] absoluteArea(LayoutBox grid, LayoutBox abs) {
+        if (!(grid.engineState instanceof GridState gs) || gs.colOffsets.length != gs.colSizes.length + 1
+                || gs.rowOffsets.length != gs.rowSizes.length + 1) return null;
+        Placement p = Placement.of(abs.style);
+        float padW = Math.max(0, grid.w - grid.bL - grid.bR), padH = Math.max(0, grid.h - grid.bT - grid.bB);
+        boolean rtl = !gs.colSub && isRtl(grid.style);
+        float[] x = absoluteAxis(p.colStart, p.colEnd, gs.columns, gs.columns.tracks.size(), gs.colSizes, gs.colOffsets, grid.columnGap,
+                rtl ? grid.pR : grid.pL, padW);
+        float[] y = absoluteAxis(p.rowStart, p.rowEnd, gs.rows, gs.rows.tracks.size(), gs.rowSizes, gs.rowOffsets, grid.rowGap, grid.pT, padH);
+        // rtl の列は右の padding 端から数える
+        if (rtl) x[0] = padW - x[0] - x[1];
+        return new float[]{x[0], y[0], x[1], y[1]};
+    }
+
+    private static boolean isRtl(ComputedStyle style) {
+        String d = style.get(CssPropertyIndex.DIRECTION);
+        return d != null && "rtl".equalsIgnoreCase(d.trim());
+    }
+
+    /** 1 軸の {始点, 長さ}（padding ボックスの始点から）。 */
+    private static float[] absoluteAxis(GridLine start, GridLine end, TrackList tracks, int explicit, float[] sizes, float[] offsets,
+                                        float gap, float padStart, float padLen) {
+        int n = sizes.length;
+        Integer s = start.resolve(tracks, explicit, true);
+        Integer e = end.resolve(tracks, explicit, false);
+        if (s == null && e != null && start.span > 0) s = e - start.span;
+        if (e == null && s != null && end.span > 0) e = s + end.span;
+        if (s != null && e != null && e < s) { Integer t = s; s = e; e = t; }
+        // 始点と同じ終点は捨てる（CSS Grid §8.3.1）。絶対配置では auto（padding の端）になる
+        if (s != null && s.equals(e)) e = null;
+        // グリッドに無い線は auto（padding の端）として扱う
+        if (s != null && (s < 0 || s > n)) s = null;
+        if (e != null && (e < 0 || e > n)) e = null;
+        float a = s == null ? 0 : padStart + offsets[s];
+        float b = e == null ? padLen : padStart + offsets[e] - (e > 0 ? gapAfter(sizes, e, gap, offsets) : 0);
+        return new float[]{a, Math.max(0, b - a)};
+    }
+
     private static float gapAfter(float[] sizes, int lineIndex, float gap, float[] offsets) {
         if (lineIndex >= sizes.length) return 0;
         return offsets[lineIndex] - offsets[lineIndex - 1] - sizes[lineIndex - 1];

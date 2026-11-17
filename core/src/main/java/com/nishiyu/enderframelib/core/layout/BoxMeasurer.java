@@ -422,6 +422,8 @@ public final class BoxMeasurer {
                 box.w = Math.max(box.w, minW);
             }
         }
+        // 表の幅は列の最小幅の和より狭くならない（width / max-width より優先。CSS 2.2 §17.5.2.1）
+        if (box.display.inner() == Inner.TABLE) box.w = Math.max(box.w, box.getMinContentWidth(ctx));
     }
 
     private static void resolveHeights(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean isBorderBox,
@@ -459,6 +461,16 @@ public final class BoxMeasurer {
             applyAspectRatio(box);
         } else if (!box.contentAutoSkipped && !facts.contentVisibilityHidden) {
             resolveIntrinsicHeight(box, ctx, facts.heightAuto);
+        }
+
+        // gap の % は容器自身の内容ボックスが基準（CSS Box Alignment 3 §8.1）。親の寸法で解いた値を、幅と高さが決まったここで解き直す。
+        // 高さが不定なら行の gap の % は 0
+        String rg = style.get(CssPropertyIndex.ROW_GAP), cg = style.get(CssPropertyIndex.COLUMN_GAP);
+        if (cg != null && cg.indexOf('%') >= 0) {
+            box.columnGap = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_COLUMN_GAP, Math.max(0, box.w - box.horizontalDecoration()), rootW, rootH));
+        }
+        if (rg != null && rg.indexOf('%') >= 0) {
+            box.rowGap = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_ROW_GAP, hasHeight ? Math.max(0, box.h - box.verticalDecoration()) : 0, rootW, rootH));
         }
 
         // 高さが auto なら内容の高さが箱の高さになる。伸長や stretch はその高さを見て行う

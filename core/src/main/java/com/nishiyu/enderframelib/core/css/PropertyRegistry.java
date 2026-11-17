@@ -242,6 +242,9 @@ public final class PropertyRegistry {
         layout("word-spacing", "normal", true, ValueType.LENGTH, true);
         layout("text-indent", "0", true, ValueType.LENGTH_PERCENTAGE, true);
         keyword("text-align", TextAlign.class, TextAlign.START, true, Invalidation.LAYOUT);
+        // 最終行の揃えと両端揃えの機会（CSS Text 3 §7.2・§7.4）
+        layout("text-align-last", "auto", true, ValueType.KEYWORD, false);
+        layout("text-justify", "auto", true, ValueType.KEYWORD, false);
         keyword("text-transform", CssKeywords.TextTransform.class, CssKeywords.TextTransform.NONE, true, Invalidation.LAYOUT);
         layout("white-space", "normal", true, ValueType.KEYWORD, false);
         layout("word-break", "normal", true, ValueType.KEYWORD, false);

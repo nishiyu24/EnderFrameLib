@@ -702,6 +702,7 @@ public class StyleResolver {
                     else target.remove(subNames[j]);
                 }
             }
+            if (keyword != CssWideKeyword.REVERT && applyLogical(target, key, decls.values[i])) continue;
             int id = decls.ids[i];
             if (table != null && id >= 0) {
                 table.putValueById(id, keyword == CssWideKeyword.REVERT ? CompiledDeclarations.UNSET : decls.cssValues[i]);
@@ -709,6 +710,85 @@ public class StyleResolver {
                 target.put(key, keyword == CssWideKeyword.REVERT ? "unset" : decls.values[i]);
             }
         }
+    }
+
+    /**
+     * 論理プロパティ（CSS Logical Properties 1）を、その時点の {@code writing-mode} / {@code direction}（継承値を含む）で
+     * 物理プロパティへ写して書く。カスケードの順に写すので、後に来た物理・論理の宣言が勝つ。論理プロパティでなければ false。
+     * 縦書きの箱は物理プロパティを局所の軸へ読み替えて組む（{@code LayoutBox.axisStyle}）ので、ここで物理へ写せば整合する。
+     */
+    static boolean applyLogical(Map<String, String> target, String key, String value) {
+        if (key == null || value == null || key.length() < 9) return false;
+        int dash = key.indexOf("-inline");
+        boolean inline = dash >= 0;
+        if (!inline) dash = key.indexOf("-block");
+        String prefix;
+        String rest;
+        if (key.endsWith("inline-size") || key.endsWith("block-size")) {
+            // inline-size / min-inline-size / max-block-size …
+            boolean in = key.endsWith("inline-size");
+            prefix = key.substring(0, key.length() - (in ? "inline-size".length() : "block-size".length()));
+            if (!prefix.isEmpty() && !prefix.equals("min-") && !prefix.equals("max-")) return false;
+            String axis = in == isVerticalFlow(target) ? "height" : "width";
+            target.put(prefix + axis, value);
+            return true;
+        }
+        if (dash <= 0) return false;
+        prefix = key.substring(0, dash); // margin / padding / inset / border
+        if (!prefix.equals("margin") && !prefix.equals("padding") && !prefix.equals("inset") && !prefix.equals("border")) return false;
+        rest = key.substring(dash + (inline ? 7 : 6)); // "", "-start", "-end", "-start-width" …
+        String suffix = "";
+        String side;
+        if (rest.isEmpty()) {
+            side = null;
+        } else if (rest.startsWith("-start")) {
+            side = "start";
+            suffix = rest.substring(6);
+        } else if (rest.startsWith("-end")) {
+            side = "end";
+            suffix = rest.substring(4);
+        } else {
+            suffix = rest; // border-inline-width など（両側）
+            side = null;
+        }
+        if (prefix.equals("border") && suffix.isEmpty()) return false; // border-inline-start: 1px solid … のショートハンドは未対応
+        if (!prefix.equals("border") && !suffix.isEmpty()) return false;
+        String[] sides = physicalSides(target, inline); // {start, end}
+        if (side != null) {
+            target.put(physicalName(prefix, side.equals("start") ? sides[0] : sides[1], suffix), value);
+            return true;
+        }
+        // 2 値（start end）。1 値なら両方
+        String[] parts = prefix.equals("border") ? new String[]{value.trim()} : value.trim().split("\\s+");
+        String startValue = parts[0], endValue = parts.length > 1 ? parts[1] : parts[0];
+        target.put(physicalName(prefix, sides[0], suffix), startValue);
+        target.put(physicalName(prefix, sides[1], suffix), endValue);
+        return true;
+    }
+
+    private static String physicalName(String prefix, String physicalSide, String suffix) {
+        if (prefix.equals("inset")) return physicalSide;
+        return prefix + "-" + physicalSide + suffix;
+    }
+
+    private static boolean isVerticalFlow(Map<String, String> s) {
+        return WritingModes.flowOf(s.get(CssProperty.WRITING_MODE)) != WritingModes.HORIZONTAL;
+    }
+
+    /** 論理の軸の {始点, 終点} の物理の辺（top / right / bottom / left）。 */
+    private static String[] physicalSides(Map<String, String> s, boolean inline) {
+        int flow = WritingModes.flowOf(s.get(CssProperty.WRITING_MODE));
+        String dir = s.get(CssProperty.DIRECTION);
+        boolean rtl = dir != null && "rtl".equalsIgnoreCase(dir.trim());
+        if (flow == WritingModes.HORIZONTAL) {
+            return inline ? (rtl ? new String[]{"right", "left"} : new String[]{"left", "right"}) : new String[]{"top", "bottom"};
+        }
+        if (inline) {
+            boolean upward = flow == WritingModes.SIDEWAYS_LR; // 文字が下から上
+            return rtl != upward ? new String[]{"bottom", "top"} : new String[]{"top", "bottom"};
+        }
+        boolean leftToRight = flow == WritingModes.VERTICAL_LR || flow == WritingModes.SIDEWAYS_LR;
+        return leftToRight ? new String[]{"left", "right"} : new String[]{"right", "left"};
     }
 
     /** 色の型のプロパティなら、値が色として解けるか。色の型でなければ常に真。 */

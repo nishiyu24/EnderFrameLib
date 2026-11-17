@@ -38,6 +38,11 @@ class WptReftestRatchetTest {
     /** レイアウトが終わらない（エンジンの不具合）組。走らせない。直したら一覧から外す。 */
     private static final Path HANGS = DIR.resolve("reftest-hangs.txt");
     private static final int W = 800, H = 600;
+    /**
+     * レイアウトの書体。描画はシステム書体の字形で描くので、測定もシステム書体でないと、文字列の区切り方が違うテストと参照
+     * （{@code un<span></span>bro} と {@code unbro}）で字の位置が食い違う（{@link FontResolver#FALLBACK} は概算の幅しか返さない）。
+     */
+    private static final FontResolver FONTS = com.nishiyu.enderframelib.core.text.font.SystemFonts.system();
     private static final long T0 = 10_000L;
     private static final Pattern FUZZY = Pattern.compile("<meta[^>]+name=[\"']?fuzzy[\"']?[^>]*content=[\"']([^\"']*)[\"']", Pattern.CASE_INSENSITIVE);
     private static final Pattern MAXDIFF = Pattern.compile("maxDifference=(\\d+)(?:-(\\d+))?");
@@ -46,13 +51,15 @@ class WptReftestRatchetTest {
     /** 結果: 合格 / 不一致 / 空白 / 例外 / 時間切れ（レイアウトが終わらない）。 */
     enum Verdict { PASS, MISMATCH, BLANK, ERROR, HANG }
 
+    /** 文書を読む。{@code .xht} / {@code .xhtml} はブラウザと同じく XHTML として扱う（{@link com.nishiyu.enderframelib.core.dom.parser.HtmlParser#xhtmlToHtml}）。 */
     private static String read(String rel) throws IOException {
-        return Files.readString(DIR.resolve(rel), StandardCharsets.UTF_8);
+        String s = Files.readString(DIR.resolve(rel), StandardCharsets.UTF_8);
+        return rel.endsWith(".xht") || rel.endsWith(".xhtml") ? com.nishiyu.enderframelib.core.dom.parser.HtmlParser.xhtmlToHtml(s) : s;
     }
 
     private static Pixmap render(String html) {
         SoftwareRenderBackend b = new SoftwareRenderBackend(W, H, 1f);
-        b.render(SoftwareRendering.displayList(html, W, H, FontResolver.FALLBACK), T0);
+        b.render(SoftwareRendering.displayList(html, W, H, FONTS), T0);
         return b.pixmap();
     }
 
@@ -67,13 +74,25 @@ class WptReftestRatchetTest {
         return new int[]{maxDiff, total};
     }
 
+    /** premultiplied ARGB を白い地（ブラウザのキャンバスの既定）へ合成した不透明色。 */
+    static int overWhite(int pm) {
+        int ia = 255 - (pm >>> 24);
+        int r = Math.min(255, ((pm >>> 16) & 0xFF) + ia), g = Math.min(255, ((pm >>> 8) & 0xFF) + ia), b = Math.min(255, (pm & 0xFF) + ia);
+        return 0xFF000000 | r << 16 | g << 8 | b;
+    }
+
+    /**
+     * 両者を白い地に合成して比べる（WPT はキャンバスが白い状態で画面を撮る）。「何も描けていない」の判定は合成前に取る:
+     * テストが何も描いていなければ {@link Verdict#BLANK}（白地に白を描いた組は描いたものとして数える）。
+     */
     static Verdict compare(Pixmap test, Pixmap ref, int maxDiff, int totalPixels) {
         boolean anyInk = false;
         int differing = 0;
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
-                int a = test.get(x, y), r = ref.get(x, y);
-                if (a != 0) anyInk = true;
+                int a0 = test.get(x, y), r0 = ref.get(x, y);
+                if (a0 != 0) anyInk = true;
+                int a = overWhite(a0), r = overWhite(r0);
                 if (a == r) continue;
                 int d = 0;
                 for (int sh = 0; sh < 32; sh += 8) d = Math.max(d, Math.abs(((a >>> sh) & 0xFF) - ((r >>> sh) & 0xFF)));
@@ -189,6 +208,99 @@ class WptReftestRatchetTest {
         assertEquals(new TreeSet<String>(), gained, "新しく通った reftest が一覧に無い（-Dwpt.reftest.update=true で一覧を締める）");
     }
 
+    /**
+     * 不一致の原因分類のための診断（A11①）。{@code -Dwpt.reftest.diag=true} のときだけ走り、合格しなかった組ごとに
+     * 差のある画素数・差の範囲・両者のインクの範囲を {@code build/wpt-diag/summary.tsv} へ、画像を {@code build/wpt-diag/png/} へ書く。
+     */
+    @Test
+    void diagnoseFailures() throws IOException {
+        org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("wpt.reftest.diag"));
+        Path out = Path.of("build/wpt-diag");
+        Path png = out.resolve("png");
+        Files.createDirectories(png);
+        // 前回の画像は消す（今回合格した組の古い画像が残ると、一覧と食い違う）
+        try (var old = Files.list(png)) {
+            for (Path f : old.toList()) Files.deleteIfExists(f);
+        }
+        List<String> rows = new ArrayList<>();
+        rows.add("verdict\tdiffPx\tdiffBox\ttestInk\trefInk\ttest\terror");
+        for (var e : manifest().entrySet()) {
+            String id = e.getKey();
+            String row;
+            try {
+                String t = read(id);
+                int[] f = fuzzy(t);
+                Pixmap a = render(t), r = render(read(e.getValue()));
+                Verdict v = compare(a, r, f[0], f[1]);
+                if (v == Verdict.PASS) continue;
+                int diff = 0, x0 = W, y0 = H, x1 = -1, y1 = -1;
+                for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) if (overWhite(a.get(x, y)) != overWhite(r.get(x, y))) {
+                    diff++;
+                    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+                }
+                row = v + "\t" + diff + "\t" + box(x0, y0, x1, y1) + "\t" + ink(a) + "\t" + ink(r) + "\t" + id + "\t";
+                String name = id.replace('/', '_');
+                writePng(a, png.resolve(name + ".test.png"));
+                writePng(r, png.resolve(name + ".ref.png"));
+            } catch (Throwable ex) {
+                row = "ERROR\t\t\t\t\t" + id + "\t" + ex;
+            }
+            rows.add(row);
+        }
+        Files.write(out.resolve("summary.tsv"), rows, StandardCharsets.UTF_8);
+        System.out.println("WPT-DIAG " + (rows.size() - 1) + " 件 → " + out.toAbsolutePath());
+    }
+
+    /** 調査用: {@code -Dwpt.reftest.dump=<名前の一部>} に合う組のテストと参照の箱の木を標準出力へ書く。 */
+    @Test
+    void dumpBoxes() throws IOException {
+        String key = System.getProperty("wpt.reftest.dump");
+        org.junit.jupiter.api.Assumptions.assumeTrue(key != null && !key.isEmpty());
+        Map<String, String> pairs = manifest();
+        if (Files.isRegularFile(Path.of(key))) pairs = Map.of(Path.of(key).toAbsolutePath().toString(), Path.of(key).toAbsolutePath().toString());
+        for (var e : pairs.entrySet()) {
+            if (!e.getKey().contains(key) && !Files.isRegularFile(Path.of(key))) continue;
+            for (String rel : e.getKey().equals(e.getValue()) ? List.of(e.getKey()) : List.of(e.getKey(), e.getValue())) {
+                var compiler = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
+                var doc = compiler.parseDocument(read(rel), "", W, H);
+                var root = compiler.layoutDocument(doc, W, H, Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(),
+                        FONTS, new com.nishiyu.enderframelib.core.dom.InteractionState());
+                StringBuilder sb = new StringBuilder("WPT-DUMP " + rel + "\n");
+                dump(root, 0, sb);
+                System.out.println(sb);
+            }
+        }
+    }
+
+    private static void dump(com.nishiyu.enderframelib.core.layout.LayoutBox b, int depth, StringBuilder sb) {
+        sb.append("  ".repeat(depth)).append(b.isAnonymous ? "(anon)" : b.node == null ? "?" : b.node.tag)
+                .append(b.node != null && b.node.getAttribute("id") != null ? "#" + b.node.getAttribute("id") : "")
+                .append(String.format(" [%.1f,%.1f %.1fx%.1f] m=%.0f,%.0f,%.0f,%.0f", b.x, b.y, b.w, b.h, b.mT, b.mR, b.mB, b.mL));
+        for (var f : b.inlineFragments) sb.append(String.format(" {'%s' %.1f,%.1f %.1fx%.1f}", f.text == null ? "" : f.text.replace("\n", "\\n"), f.x, f.y, f.w, f.h));
+        sb.append('\n');
+        for (var c : b.children) dump(c, depth + 1, sb);
+    }
+
+    private static String box(int x0, int y0, int x1, int y1) {
+        return x1 < 0 ? "-" : x0 + "," + y0 + "-" + x1 + "," + y1;
+    }
+
+    private static String ink(Pixmap p) {
+        int x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) if (p.get(x, y) != 0) {
+            x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+        }
+        return box(x0, y0, x1, y1);
+    }
+
+    private static void writePng(Pixmap p, Path file) throws IOException {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(W, H, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        int[] px = new int[W * H];
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) px[y * W + x] = overWhite(p.get(x, y));
+        img.setRGB(0, 0, W, H, px, 0, W);
+        javax.imageio.ImageIO.write(img, "png", file.toFile());
+    }
+
     // ---- 判定ロジックの単体 ----
 
     private static Pixmap solid(int argb) {
@@ -212,6 +324,13 @@ class WptReftestRatchetTest {
     @Test
     void blankAgainstBlankIsNotAPass() {
         assertEquals(Verdict.BLANK, compare(new Pixmap(W, H), new Pixmap(W, H), 0, 0));
+    }
+
+    @Test
+    void whiteInkMatchesTheWhiteCanvas() {
+        // ブラウザのキャンバスは白い。白地に白を描いたテストは何も描かない参照と一致する（描いているので空白扱いにはしない）
+        assertEquals(Verdict.PASS, compare(solid(0xFFFFFFFF), new Pixmap(W, H), 0, 0));
+        assertEquals(Verdict.BLANK, compare(new Pixmap(W, H), solid(0xFFFFFFFF), 0, 0));
     }
 
     @Test

@@ -241,7 +241,10 @@ public class FlexLayoutEngine extends LayoutEngine {
         if (lineCount > 1 || axes.wrap) {
             float usedCross = crossGap * Math.max(0, lineCount - 1);
             for (int i = 0; i < lineCount; i++) usedCross += lines.get(i).cross;
-            MainAxisSpacing lineSpacing = distributeMainAxis(contentDistribution(alignContent), 0, innerCross,
+            String lineAlign = safeFallback(box.style.get(CssPropertyIndex.ALIGN_CONTENT), alignContent, usedCross > innerCross + 0.01f);
+            // wrap-reverse では交差軸の始点（flex-start）が下になる。start / end は書字方向の向きなので裏返して渡す
+            if (axes.wrapReverse) lineAlign = lineAlign.equals("start") ? "end" : lineAlign.equals("end") ? "start" : lineAlign;
+            MainAxisSpacing lineSpacing = distributeMainAxis(contentDistribution(lineAlign), 0, innerCross,
                     usedCross - crossGap * Math.max(0, lineCount - 1), crossGap, lineCount);
             lineOffset = lineSpacing.start();
             lineGap = lineSpacing.gap();
@@ -581,7 +584,8 @@ public class FlexLayoutEngine extends LayoutEngine {
         if (autoMargins > 0) {
             spacing = new MainAxisSpacing(0, mainGap);
         } else {
-            String justify = box.style.keywordOf(CssPropertyIndex.JUSTIFY_CONTENT, CssKeywords.Alignment.class).cssName();
+            String justify = safeFallback(box.style.get(CssPropertyIndex.JUSTIFY_CONTENT),
+                    box.style.keywordOf(CssPropertyIndex.JUSTIFY_CONTENT, CssKeywords.Alignment.class).cssName(), free < -0.01f);
             spacing = distributeMainAxis(justifyDistribution(justify, axes), 0, innerMain, used - mainGap * Math.max(0, n - 1),
                     mainGap, n);
         }
@@ -673,6 +677,16 @@ public class FlexLayoutEngine extends LayoutEngine {
      * （CSS Flexbox §4.5: 指定された寸法と内容の最小寸法の小さい方。スクロールコンテナは 0）。
      */
     private static float minMainSize(LayoutBox child, boolean row, float innerMain, LayoutContext ctx) {
+        float m = minMainSizeOf(child, row, innerMain, ctx);
+        // 表は内容より小さくなれない（表の幅・高さは下限として働く。CSS 2.2 §17.5.2・§17.5.3）。min-width / min-height が 0 でも
+        // 列の最小幅の和・行の高さの和までしか縮まない
+        if (child.display.inner() == LayoutBox.Display.Inner.TABLE) {
+            m = Math.max(m, row ? child.getMinContentWidth(ctx) : child.contentBlockExtent);
+        }
+        return m;
+    }
+
+    private static float minMainSizeOf(LayoutBox child, boolean row, float innerMain, LayoutContext ctx) {
         int prop = row ? CssPropertyIndex.MIN_WIDTH : CssPropertyIndex.MIN_HEIGHT;
         int sizeProp = row ? CssPropertyIndex.WIDTH : CssPropertyIndex.HEIGHT;
         float decoration = row ? child.horizontalDecoration() : child.verticalDecoration();
@@ -808,6 +822,16 @@ public class FlexLayoutEngine extends LayoutEngine {
             case "end", "right" -> axes.reverse ? "flex-start" : "flex-end";
             default -> contentDistribution(k);
         };
+    }
+
+    /**
+     * {@code safe} 付きの揃えは、中身が容器からはみ出すなら {@code start} として扱う（CSS Box Alignment 3 §4.4）。
+     * {@link CssKeywords} は safe を落として語だけを返すので、宣言の生の値で見る。
+     */
+    static String safeFallback(String raw, String keyword, boolean overflows) {
+        if (!overflows || raw == null) return keyword;
+        String t = raw.trim();
+        return t.regionMatches(true, 0, "safe", 0, 4) && t.length() > 4 && Character.isWhitespace(t.charAt(4)) ? "start" : keyword;
     }
 
     /** {@code justify-content} / {@code align-content} を {@link #distributeMainAxis} の語に寄せる。 */

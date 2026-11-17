@@ -410,8 +410,9 @@ public class BlockLayoutEngine extends LayoutEngine {
      */
     float arrangeFlow(LayoutBox box, FlowState state, float innerX, float innerY, float innerW,
                       java.util.Map<Object, float[]> shifts, LayoutContext ctx) {
-        TextAlign textAlign = box.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class)
-                .physical(isRtl(box.style));
+        TextAlign specifiedAlign = box.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class);
+        TextAlign textAlign = specifiedAlign.physical(isRtl(box.style));
+        LineJustify lineJustify = LineJustify.of(box.style, specifiedAlign, textAlign, isRtl(box.style));
         float textBottom = Float.NEGATIVE_INFINITY;
         boolean hasShifts = shifts != null && !shifts.isEmpty();
         box.firstLineBgRect = null;
@@ -478,20 +479,26 @@ public class BlockLayoutEngine extends LayoutEngine {
                 }
                 case LineRun run -> {
                     List<LayoutBox> runBoxes = run.boxes();
-                    for (int i = 0, n = runBoxes.size(); i < n; i++) clearFragmentsRecursively(runBoxes.get(i));
+                    for (int i = 0, n = runBoxes.size(); i < n; i++) {
+                        // 並びの中の float・絶対配置は Placement / StaticPosition が先に置いている（ここで消すと中身の断片が消える）
+                        LayoutBox rb = runBoxes.get(i);
+                        if (!isFloating(rb) && !rb.isAbsolute) clearFragmentsRecursively(rb);
+                    }
                     List<InlineLine> lines = run.lines();
                     if (hasShifts) {
                         for (int i = 0, n = lines.size(); i < n; i++) {
                             InlineLine line = lines.get(i);
                             float[] sh = shiftOf(shifts, line);
                             textBottom = Math.max(textBottom,
-                                    placeLine(line, innerX + sh[0] + line.left(), innerY + sh[1] + line.top(), line.width(), textAlign, ctx));
+                                    placeLine(line, innerX + sh[0] + line.left(), innerY + sh[1] + line.top(), line.width(),
+                                            lineJustify.align(line), lineJustify.justifies(line), lineJustify.mode, ctx));
                         }
                     } else {
                         for (int i = 0, n = lines.size(); i < n; i++) {
                             InlineLine line = lines.get(i);
                             textBottom = Math.max(textBottom,
-                                    placeLine(line, innerX + line.left(), innerY + line.top(), line.width(), textAlign, ctx));
+                                    placeLine(line, innerX + line.left(), innerY + line.top(), line.width(),
+                                            lineJustify.align(line), lineJustify.justifies(line), lineJustify.mode, ctx));
                         }
                     }
                     if (!recordedFirstLine && !lines.isEmpty()) {
@@ -835,7 +842,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                 child.h = 0;
                 BoxMeasurer.resolveFlexibleHeights(child, new ConstraintSpace(innerW, childPercentBase, childCtx), ctx, hadIncomingFloats);
             }
-            if (collapsesThrough(child)) {
+            if (collapsesThrough(child) && !clearsFloats(child)) {
                 // 上端の位置は「下にボーダーがあったら置かれた位置」（CSS 2.2 §8.3.1）
                 float y;
                 if (intoParentTop) {
@@ -901,6 +908,16 @@ public class BlockLayoutEngine extends LayoutEngine {
             if (!rtl || child.isAbsolute) return 0;
             if ("auto".equals(child.axisStyle().getOrDefault(CssPropertyIndex.MARGIN_RIGHT, "").trim())) return 0;
             return Math.max(0, innerW - (child.w + child.mL + child.mR));
+        }
+
+        /**
+         * {@code clear} が float の下へ下げる（クリアランスが付く）か。クリアランスを持つ空の箱はマージンを突き抜けず、
+         * float の下に置かれて後続と親の高さを押し下げる（CSS 2.2 §9.5.2。clearfix の {@code ::after} はこれに頼る）。
+         */
+        private boolean clearsFloats(LayoutBox child) {
+            if (floats.isEmpty()) return false;
+            CssKeywords.Clear clear = child.style.keywordOf(CssPropertyIndex.CLEAR, CssKeywords.Clear.class);
+            return clear != CssKeywords.Clear.NONE && floats.clearance(clear) - oy > cursor + pendingWith(child.mT);
         }
 
         /** {@code clear} を持つ箱を、その側の float の下端まで下げた位置。 */
@@ -1444,6 +1461,8 @@ public class BlockLayoutEngine extends LayoutEngine {
         final float top, left, width, height, baseline, used;
         final TextShaper.WrappedParagraph sliceWp;
         final int sliceStart, sliceEnd;
+        /** 自動の折り返しで終わった行（両端揃えの対象。強制改行・段落の最後の行は false で text-align-last に従う）。 */
+        boolean softWrapped;
         /** スライス行が段落ごとに共有する、ランの寸法と揃え（行ごとに確保しない）。 */
         final SliceStyle slice;
 
@@ -1816,6 +1835,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                 ob.hasContent = false;
             }
             InlineLine line = finishLine(fallbackHeight, fallbackBaseline, end);
+            line.softWrapped = wrapped;
             appendLine(line);
             lineTop += line.height();
             current = null;
@@ -1854,8 +1874,22 @@ public class BlockLayoutEngine extends LayoutEngine {
             markContent();
         }
 
+        /** 行頭か、行の直前の中身が空白で終わっている（次の run の先頭の畳まれる空白は消える。CSS Text §4.1.1–4.1.2）。 */
+        private boolean precededByCollapsibleSpace() {
+            if (currentEmpty()) return true;
+            String t = current.getLast().text();
+            return t != null && !t.isEmpty() && t.charAt(t.length() - 1) == ' ';
+        }
+
         private void addText(LayoutBox runBox, String runText, List<LayoutBox> inlineParents, float closing, boolean isLastRun) {
             TextStyle textStyle = ctx.textStyleFor(runBox.style);
+            if (!runText.isEmpty() && runText.charAt(0) == ' ' && textStyle.whiteSpace().collapses() && precededByCollapsibleSpace()) {
+                runText = runText.substring(1);
+                if (runText.isEmpty()) {
+                    ensureLine(); // 保留中の float はここで置く（空白の run でも従来どおり行を始める）
+                    return;
+                }
+            }
             FontFace face = ctx.faceFor(runBox.style);
             FontStyle font = textStyle.font();
             float runH = textStyle.lineHeightPx();
@@ -1892,7 +1926,9 @@ public class BlockLayoutEngine extends LayoutEngine {
                 SliceStyle sliceStyle = directLines > 0
                         ? new SliceStyle(runBox, runH, baseline, descent, inlineParents, align, raise) : null;
                 for (int l = 0; l < directLines; l++) {
-                    appendLine(InlineLine.ofWrappedSlice(wp, l, sliceStyle, lineTop, 0f, flow.innerW, lineHeight, lineBaseline));
+                    InlineLine slice = InlineLine.ofWrappedSlice(wp, l, sliceStyle, lineTop, 0f, flow.innerW, lineHeight, lineBaseline);
+                    slice.softWrapped = l < lineCount - 1;
+                    appendLine(slice);
                     lineTop += lineHeight;
                 }
                 if (isLastRun) {
@@ -2033,6 +2069,14 @@ public class BlockLayoutEngine extends LayoutEngine {
                         ensureLine();
                         kerned = 0;
                         join = 0;
+                        // 折り返した行の頭の畳まれる空白は消える（CSS Text §4.1.2。run の先頭の空白は前の語と同じ塊に入っている）
+                        if (segment.charAt(0) == ' ' && textStyle.whiteSpace().collapses()) {
+                            String stripped = segment.stripLeading();
+                            float cut = face.advance(segment.substring(0, segment.length() - stripped.length()), font);
+                            segment = stripped;
+                            advance -= cut;
+                            trimmedW -= cut;
+                        }
                     }
                     dropBelowFloats(lineX + kerned + join + trimmedW + edges);
                 }
@@ -2220,10 +2264,21 @@ public class BlockLayoutEngine extends LayoutEngine {
      * {@link LayoutBox#layout} の両方で足していて、二重にずれていた。
      */
     private float placeLine(InlineLine line, float startX, float drawY, float maxW, TextAlign textAlign,
-                            LayoutContext ctx) {
+                            boolean justify, String justifyMode, LayoutContext ctx) {
         if (line.sliceWp != null) {
             int start = line.sliceStart, end = line.sliceEnd;
             if (start == end) return Float.NEGATIVE_INFINITY;
+            String[] segs = line.sliceWp.prepared().segs();
+            float extraS = 0;
+            int lastS = end - 1;
+            while (lastS > start && !isNotBlankFast(segs[line.sliceWp.segIndex(lastS)])) lastS--;
+            if (justify && maxW > line.used + 0.01f) {
+                int opps = 0;
+                for (int k = start; k < lastS; k++) {
+                    if (justifyOpportunity(segs[line.sliceWp.segIndex(k)], segs[line.sliceWp.segIndex(k + 1)], justifyMode)) opps++;
+                }
+                if (opps > 0) extraS = (maxW - line.used) / opps;
+            }
             float offsetX = startX;
             if (textAlign == TextAlign.CENTER) offsetX += Math.max(0, (maxW - line.used) / 2);
             else if (textAlign == TextAlign.RIGHT) offsetX += Math.max(0, maxW - line.used);
@@ -2243,10 +2298,12 @@ public class BlockLayoutEngine extends LayoutEngine {
             float runDesc = st.descent();
             List<LayoutBox> parents = st.parents();
             float textBottom = Float.NEGATIVE_INFINITY;
+            float acc = 0;
             for (int k = start; k < end; k++) {
                 String text = segments[wp.segIndex(k)];
-                box.addFragment(wp.itemX(k) + offsetX, fragY, wp.advance(k), runH, text,
+                box.addFragment(wp.itemX(k) + offsetX + acc, fragY, wp.advance(k), runH, text,
                         runBase, runDesc, parents, true, true);
+                if (extraS != 0 && k < lastS && justifyOpportunity(text, segments[wp.segIndex(k + 1)], justifyMode)) acc += extraS;
                 if (isNotBlankFast(text)) {
                     textBottom = Math.max(textBottom, fragY + runBase + runDesc);
                 }
@@ -2264,8 +2321,26 @@ public class BlockLayoutEngine extends LayoutEngine {
             offsetX += Math.max(0, maxW - line.used());
         }
 
+        // 両端揃え: 行の余りを、語の間（と CJK の字の間）の機会に等しく配る（CSS Text 3 §7.3・§7.4）
+        float extra = 0;
+        int lastItem = items.size() - 1;
+        float[] oppEnds = null;
+        int oppCount = 0;
+        if (justify && maxW > line.used() + 0.01f) {
+            while (lastItem > 0 && (items.get(lastItem).text() == null || !isNotBlankFast(items.get(lastItem).text()))) lastItem--;
+            for (int i = 0; i < lastItem; i++) {
+                if (justifyOpportunity(items.get(i).text(), items.get(i + 1).text(), justifyMode)) {
+                    if (oppEnds == null) oppEnds = new float[lastItem];
+                    oppEnds[oppCount++] = items.get(i).x() + items.get(i).w();
+                }
+            }
+            if (oppCount > 0) extra = (maxW - line.used()) / oppCount;
+        }
+        float acc = 0;
         for (int i = 0, n = items.size(); i < n; i++) {
             LineItem src = items.get(i);
+            float itemShift = acc;
+            if (extra != 0 && i < lastItem && justifyOpportunity(src.text(), items.get(i + 1).text(), justifyMode)) acc += extra;
             // マージンボックスの上端
             float top = switch (src.align()) {
                 case TOP -> drawY;
@@ -2273,7 +2348,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                 default -> drawY + line.baseline() - (src.box().mT + src.baseline() + src.raise());
             };
 
-            InlineFragment f = src.box().addFragment(src.x() + offsetX, top + src.box().mT, src.w(), src.h(), src.text(),
+            InlineFragment f = src.box().addFragment(src.x() + offsetX + itemShift, top + src.box().mT, src.w(), src.h(), src.text(),
                     src.baseline(), src.descent(), src.parents(), true, true, src.firstLineStyle());
             if (!f.isText()) {
                 f.box.layout(f.x - f.box.mL, f.y - f.box.mT, f.w, f.h, ctx);
@@ -2285,9 +2360,70 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
         List<BoxSpan> lineSpans = line.spans();
         for (int i = 0, n = lineSpans.size(); i < n; i++) {
-            placeSpan(lineSpans.get(i), offsetX, drawY, line, ctx);
+            BoxSpan sp = lineSpans.get(i);
+            if (extra != 0) {
+                // 箱の左右の端も、その手前にある揃えの機会の数だけずらす
+                float sl = 0, sr = 0;
+                for (int k = 0; k < oppCount; k++) {
+                    if (oppEnds[k] <= sp.left() + 0.01f) sl += extra;
+                    if (oppEnds[k] <= sp.right() + 0.01f) sr += extra;
+                }
+                sp = new BoxSpan(sp.open(), sp.left() + sl, sp.right() + sr, sp.startEdge(), sp.endEdge());
+            }
+            placeSpan(sp, offsetX, drawY, line, ctx);
         }
         return textBottom;
+    }
+
+    /**
+     * 行の揃え（text-align / text-align-last / text-justify）。{@code justify} の行は開始端から置いて余りを配る。
+     * 最終行（強制改行の前の行を含む）は {@code text-align-last}（auto なら justify は start）に従う。
+     */
+    record LineJustify(TextAlign normal, boolean justifyNormal, TextAlign last, boolean justifyLast, String mode) {
+        static LineJustify of(ComputedStyle style, TextAlign specified, TextAlign physical, boolean rtl) {
+            String mode = style.get(CssPropertyIndex.TEXT_JUSTIFY);
+            mode = mode == null ? "auto" : mode.trim().toLowerCase(java.util.Locale.ROOT);
+            if (mode.equals("distribute")) mode = "inter-character";
+            boolean justify = specified == TextAlign.JUSTIFY && !mode.equals("none");
+            String lastRaw = style.get(CssPropertyIndex.TEXT_ALIGN_LAST);
+            String l = lastRaw == null ? "auto" : lastRaw.trim().toLowerCase(java.util.Locale.ROOT);
+            TextAlign last;
+            boolean justifyLast;
+            if (l.equals("auto")) {
+                last = physical;
+                justifyLast = false;
+            } else if (l.equals("justify")) {
+                last = TextAlign.START.physical(rtl);
+                justifyLast = !mode.equals("none");
+            } else {
+                TextAlign k = CssKeywords.parse(TextAlign.class, l);
+                last = k == null ? physical : k.physical(rtl);
+                justifyLast = false;
+            }
+            return new LineJustify(physical, justify, last, justifyLast, mode);
+        }
+
+        TextAlign align(InlineLine line) {
+            return line.softWrapped ? normal : last;
+        }
+
+        boolean justifies(InlineLine line) {
+            return line.softWrapped ? justifyNormal : justifyLast;
+        }
+    }
+
+    /** 2 つの隣り合う項目の間が両端揃えで広がるか（語の後ろの空白、CJK の字の間、inter-character なら文字の間すべて）。 */
+    static boolean justifyOpportunity(String a, String b, String mode) {
+        if (a == null || b == null || a.isEmpty() || b.isEmpty() || mode.equals("none")) return false;
+        char last = a.charAt(a.length() - 1);
+        if (last == ' ' || last == '\u00A0') return true;
+        if (mode.equals("inter-word")) return false;
+        if (mode.equals("inter-character")) return true;
+        return isCjk(last) || isCjk(b.charAt(0));
+    }
+
+    private static boolean isCjk(char c) {
+        return (c >= 0x2E80 && c <= 0x9FFF) || (c >= 0xAC00 && c <= 0xD7AF) || (c >= 0xF900 && c <= 0xFAFF) || (c >= 0xFF00 && c <= 0xFFEF);
     }
 
     /**
@@ -2448,7 +2584,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             LayoutBox child = children.get(i);
             // 配置を使い回せる箱（原子的インラインの中身など）は、自分の layout が置き直すか前回の配置を残すかを決める。
             // ここで断片だけを消すと、残す側で断片が消えたままになる
-            if (child.holdsPlacement()) continue;
+            if (child.holdsPlacement() || isFloating(child) || child.isAbsolute) continue;
             clearFragmentsRecursively(child);
         }
     }

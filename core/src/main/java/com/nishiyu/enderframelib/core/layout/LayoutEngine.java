@@ -162,8 +162,10 @@ public abstract class LayoutEngine {
                     start += gap;
                 }
             }
-            case "center" -> start += Math.max(0, container - totalWithGap) / 2;
-            case "flex-end", "end" -> start += Math.max(0, container - totalWithGap);
+            // 既定の揃えは unsafe: 中身がはみ出しても center は両側へ、end は始点側へはみ出す（CSS Box Alignment 3 §4.4）。
+            // はみ出したら始点に寄せる safe は呼び出し側が start に置き換えて渡す
+            case "center" -> start += (availableMain - totalWithGap) / 2;
+            case "flex-end", "end" -> start += availableMain - totalWithGap;
             default -> {
                 // flex-start / start / 未知の値は先頭詰め
             }

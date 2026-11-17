@@ -370,7 +370,9 @@ public final class BoxTreeBuilder {
     // ==========================================
 
     private List<LayoutBox> fixup(LayoutBox parent, List<LayoutBox> items) {
-        List<LayoutBox> result = fixupTable(parent, items);
+        Inner inner = parent.display.inner();
+        // flex / grid の容器の子のうち、畳まれる空白だけのテキストは描かれない（項目を作らない。css-flexbox §4・css-grid §6）
+        List<LayoutBox> result = fixupTable(parent, inner == Inner.FLEX || inner == Inner.GRID ? dropWhitespace(items) : items);
         if (parent.display.isBlockContainer()) result = wrapInlineRuns(parent, result);
         return result;
     }
