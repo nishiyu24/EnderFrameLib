@@ -18,8 +18,8 @@ and HUDs as HTML and CSS instead of hand-placing widgets and pixel offsets.
   mutate the same live DOM through the standard DOM API.
 - **No browser is embedded.** The engine is plain Java in the `:core` Gradle module
   (`core/`), with no dependency on Minecraft, so it is unit-testable headlessly and
-  usable standalone (software or pure-LWJGL OpenGL rendering to PNG/Swing/GLFW; see
-  [STANDALONE_RENDERING.md](STANDALONE_RENDERING.md)). Text is laid out
+  usable standalone (software, OpenGL or Vulkan rendering to PNG/Swing/GLFW; see
+  [core/README.md](core/README.md) and [docs/standalone-viewer.md](docs/standalone-viewer.md)). Text is laid out
   with the fonts installed on the system, as a browser does.
 
 > Status: usable, pre-1.0 in practice. The supported surface is `api/`;

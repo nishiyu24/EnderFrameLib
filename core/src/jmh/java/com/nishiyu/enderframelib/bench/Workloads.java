@@ -46,8 +46,24 @@ public final class Workloads {
     /** {@code large-list} または {@code large-list-N}（N 行）か。 */
     public static boolean isList(String name) { return name.equals(LARGE_LIST) || name.startsWith(LARGE_LIST + "-") || name.startsWith(VARIED_LIST + "-"); }
 
+    /** テスト用の文書（機械 UI の {@code machine_ui.html}）の置き場。{@link #FIXTURES} に無い名前はここから読む。 */
+    private static final Path TEST_FIXTURES = Path.of("src/test/resources/benchmark");
+
     private static String read(String file) throws IOException {
-        return Files.readString(FIXTURES.resolve(file), StandardCharsets.UTF_8).replace("\r\n", "\n");
+        Path p = FIXTURES.resolve(file);
+        if (!Files.exists(p)) p = TEST_FIXTURES.resolve(file);
+        return Files.readString(p, StandardCharsets.UTF_8).replace("\r\n", "\n");
+    }
+
+    /**
+     * 文書の全要素へ同じ書体を強制する規則を足す（エンジン間で書体を揃えた比較用）。最初の {@code <style>} の先頭に入れ、
+     * 無ければ末尾に {@code <style>} を足す。Chrome 側（{@code trace.js} の {@code BENCH_FONT}）と同じ文字列。
+     */
+    public static String withFont(String html, String family) {
+        String rule = "* { font-family: " + family + " !important; } ";
+        int i = html.indexOf("<style>");
+        if (i >= 0) return html.substring(0, i + 7) + rule + html.substring(i + 7);
+        return html + "<style>" + rule + "</style>";
     }
 
     /** {@code count} 行のリストを {@code #scroller}（スクロールコンテナ）に入れた高密度文書。行の id は {@code item-N}。 */

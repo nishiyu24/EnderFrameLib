@@ -22,7 +22,7 @@
 |:---|:---|
 | [../README.md](../README.md) | 全体の説明・API |
 | [../ARCHITECTURE.md](../ARCHITECTURE.md) | 構造・層の責務・`ArchitectureTest` の上限 |
-| [../STANDALONE_RENDERING.md](../STANDALONE_RENDERING.md) | スタンドアロン描画化の設計と進捗（Step 1〜5） |
+| [../core/README.md](../core/README.md) | `:core` を単体で使う（導入・クイックスタート・対応範囲。英語） |
 | [../FIDELITY.md](../FIDELITY.md) | ブラウザとの差異の台帳 |
 | [../BENCHMARK.md](../BENCHMARK.md) | 性能の基準値と実測 |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 規約（言語・コメント・テスト） |
@@ -31,4 +31,3 @@
 | [../TEST_SPEC_BLOCKS_ITEMS.md](../TEST_SPEC_BLOCKS_ITEMS.md) | ブロック・アイテム描画の実機テスト仕様 |
 | [../TEST_SPEC_MEDIA.md](../TEST_SPEC_MEDIA.md) | 動画・音声・画像の実機テスト仕様 |
 | [../TEST_SPEC_SURFACE.md](../TEST_SPEC_SURFACE.md) | ブロック／アイテム表面への Web 画面の実機確認手順 |
-| [../REVIEW.md](../REVIEW.md) | コードレビュー（現状評価と課題） |

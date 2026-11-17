@@ -17,7 +17,6 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.IntStream;
 
 /**
  * {@code <scene-3d>} を GPU なしで描くソフトウェアラスタライザ（X3-2）。{@link Scene3DWorld} だけを入力にし、
@@ -274,16 +273,17 @@ public final class SoftwareScene3DRasterizer {
             LightDesc light = world.light();
             float[] eye = {world.camera().eyeX(), world.camera().eyeY(), world.camera().eyeZ()};
             Shader shader = new Shader(light, eye);
-            IntStream range = IntStream.range(0, tiles);
-            if (tiles >= PARALLEL_TILES) range = range.parallel();
-            range.forEach(t -> {
+            java.util.function.IntConsumer tile = t -> {
                 int x0 = (t % tx) * TILE, y0 = (t / tx) * TILE;
                 int x1 = Math.min(w, x0 + TILE), y1 = Math.min(h, y0 + TILE);
                 float[] depth = new float[TILE * TILE];
                 Arrays.fill(depth, 1f);
                 drawBin(opaque, opaqueBins[t], px, hdr, depth, x0, y0, x1, y1, shader, false);
                 drawBin(blend, blendBins[t], px, hdr, depth, x0, y0, x1, y1, shader, true);
-            });
+            };
+            // ワーカー数はホストの設定（-Denderframe.threads）に従う
+            if (tiles >= PARALLEL_TILES) com.nishiyu.enderframelib.core.layout.LayoutTaskPool.forEachIndex(tiles, tile);
+            else for (int t = 0; t < tiles; t++) tile.accept(t);
         }
 
         private IntArrayList[] bin(Tris tris, int tx, int ty) {

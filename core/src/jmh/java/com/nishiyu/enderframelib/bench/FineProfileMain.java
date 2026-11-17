@@ -30,6 +30,14 @@ import java.util.List;
 public final class FineProfileMain {
     private FineProfileMain() { }
 
+    /**
+     * {@code -Dprofile.font=<family>}（Gradle では {@code -Pprofile.font=Arial}）: OS の実書体で測る。文書の全要素へ同じ
+     * {@code font-family} を強制し（{@link Workloads#withFont}。Chrome 側の {@code trace.js} も {@code BENCH_FONT} で同じ規則を足す）、
+     * 文字の測定と描画をアウトライン書体の経路に通す。指定が無ければ従来どおり {@link FontResolver#FALLBACK}（文字幅の表だけの簡易書体）。
+     */
+    private static final String FONT = System.getProperty("profile.font");
+    private static final FontResolver FONTS = FONT == null ? FontResolver.FALLBACK : com.nishiyu.enderframelib.core.text.font.SystemFonts.system();
+
     /** 描かないバックエンド（パイプラインのコストだけを見る）。 */
     private static final class NullBackend implements RenderBackend {
         @Override public void render(List<DisplayItem> items, long nowMs) { }
@@ -53,12 +61,17 @@ public final class FineProfileMain {
         boolean cpu = backendName.equals("cpu");
         int warmup = scenario.equals("open") ? 300 : 600;
         String html = Workloads.html(doc);
+        if (FONT != null) {
+            html = Workloads.withFont(html, FONT);
+            System.out.println("FONT " + FONT + " face=" + FONTS.resolve(FONT).getClass().getSimpleName());
+        }
+        System.out.println("THREADS workers=" + com.nishiyu.enderframelib.core.layout.LayoutTaskPool.workerCount());
         if ((scenario.equals("hover") || scenario.equals("scrollhover")) && Workloads.isList(doc)) html = html.replace("</style>", " li:hover { background: #eef; }</style>");
 
         try (RenderBackend raw = switch (backendName) {
-            case "cpu" -> new SoftwareRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, 1f);
-            case "gl" -> new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H);
-            case "vk" -> new com.nishiyu.enderframelib.core.paint.vulkan.VkRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H);
+            case "cpu" -> { var b = new SoftwareRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, 1f); yield FONT == null ? b : b.fonts(FONTS); }
+            case "gl" -> { var b = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H); yield FONT == null ? b : b.fonts(FONTS); }
+            case "vk" -> { var b = new com.nishiyu.enderframelib.core.paint.vulkan.VkRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H); yield FONT == null ? b : b.fonts(FONTS); }
             default -> new NullBackend();
         }) {
             // 描画バックエンド呼び出し（CPU 側の描画・GL 送出・索引走査を含む）を PAINT 段として計るため包む。種別判定は raw で行う
@@ -187,6 +200,25 @@ public final class FineProfileMain {
                 }
             }
             System.out.println("DOM elements=" + countElements(view[0].root()));
+            // A1: 回帰ゲート（CostGateMain）が読む、時間に依らない量だけの行。確保量は main スレッドの 1 フレームあたり（バイト）、
+            // ほかは経路の回数（ウォームアップ込みの累計。フレーム数が同じなら決定的）。項目を足すときは末尾へ（基準値ファイルは名前で引く）
+            System.out.println("COST allocBytes=" + (allocTotal / frames)
+                    + " drawn=" + rendered
+                    + " elements=" + countElements(view[0].root())
+                    + " items=" + view[0].ui().renderCache().size()
+                    + " textPatchHits=" + UiView.TEXT_PATCH_HITS.get() + " textPatchFallbacks=" + UiView.TEXT_PATCH_FALLBACKS.get()
+                    + " childPatchHits=" + UiView.CHILD_PATCH_HITS.get() + " childPatchFallbacks=" + UiView.CHILD_PATCH_FALLBACKS.get()
+                    + " slicePatchHits=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_SLICE_PATCH_HITS.sum()
+                    + " childSlicePatchHits=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CHILD_SLICE_PATCH_HITS.sum()
+                    + " slicePatchFallbacks=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_SLICE_PATCH_FALLBACKS.sum()
+                    + " restyleStructural=" + UiView.RESTYLE_STRUCTURAL.get()
+                    + " relayoutFull=" + UiView.RESTYLE_RELAYOUT_FULL.get()
+                    + " relayoutInplace=" + UiView.RESTYLE_RELAYOUT_INPLACE.get()
+                    + " reposition=" + UiView.RESTYLE_REPOSITION.get()
+                    + " repaintPatch=" + UiView.RESTYLE_REPAINT_PATCH.get()
+                    + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
+                    + " layoutsShifted=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted()
+                    + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped());
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             {
@@ -269,7 +301,7 @@ public final class FineProfileMain {
     }
 
     private static StandaloneView newView(String html) {
-        return new StandaloneView(html, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, FontResolver.FALLBACK);
+        return new StandaloneView(html, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, FONTS);
     }
 
     /** 1 フレームぶんの変化を起こして、1 フレーム進める。描いたら true。 */
@@ -390,6 +422,12 @@ public final class FineProfileMain {
             } else {
                 HtmlNode b2 = secondOf(v.root(), "button");
                 t.hoverIds = new String[]{t.styleTarget.key(), (b2 != null ? b2 : t.styleTarget).key()};
+                if (b2 == null && doc.endsWith(".html")) {
+                    // 実文書で button が 2 つ無いとき: class に btn を持つ要素を 2 つ使う（Chrome 側の trace.js と同じ決め方）
+                    java.util.List<HtmlNode> btns = new java.util.ArrayList<>();
+                    collectBtnClass(v.root(), btns);
+                    if (btns.size() >= 2) t.hoverIds = new String[]{btns.get(0).key(), btns.get(1).key()};
+                }
             }
             // ホバーの往復: :hover の規則が掛かる（interactiveState の）要素を 2 つ探して、その中心を行き来する
             int found = 0;
@@ -400,6 +438,12 @@ public final class FineProfileMain {
             }
             if (found < 2) t.hover = new double[][]{{40, 40}, {300, 300}};
             return t;
+        }
+
+        private static void collectBtnClass(HtmlNode n, java.util.List<HtmlNode> out) {
+            if (out.size() >= 2) return;
+            if (n instanceof HtmlElement && n.hasClass("btn")) out.add(n);
+            for (HtmlNode c : n.children) collectBtnClass(c, out);
         }
 
         private static HtmlNode firstOf(HtmlNode n, String tag) {

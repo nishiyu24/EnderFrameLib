@@ -3,65 +3,80 @@
 [![Java 21+](https://img.shields.io/badge/Java-21%2B-blue.svg)](https://openjdk.org/projects/jdk/21/)
 [![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL_3.0-green.svg)](https://www.gnu.org/licenses/lgpl-3.0.html)
 
-EnderFrameLib `:core` is an independent, lightweight, ultra-high-performance Web / UI rendering engine written in pure Java 21.
+EnderFrameLib `:core` is an independent, lightweight HTML/CSS UI rendering engine written in pure Java 21, built for the per-frame budgets of in-process UIs (game HUDs, tool panels).
 
-It combines the Java 21 Foreign Function & Memory (FFM) API (off-heap memory), bit-parallel selector matching, reactive slice patching, a single-draw-call GPU Uber-Shader, and a 64×64 tile-parallel CPU software rasterizer. It has **zero dependencies on Minecraft or game frameworks** and can be embedded into desktop apps, game engines, tools, or run headlessly for automated image generation.
+It combines off-heap columns on direct `ByteBuffer` + `VarHandle` (standard JDK 21 only: no preview APIs, no JVM flags, no `java.lang.foreign`), Bloom-filter selector rejection, retained incremental patching, an instanced SDF GPU shader behind a thin API-neutral device layer (RHI), and a 64×64 tile-parallel CPU software rasterizer. It has **zero dependencies on Minecraft or game frameworks** and can be embedded into desktop apps, game engines, tools, or run headlessly for automated image generation.
 
 ---
 
 ## ⚡ Highlights
 
-- **144Hz Frame Budget Optimized**:
-  - `idle`: **`0.000 ms / 0 B`** (completely skips no-op frames)
-  - `scroll`: **`0.002 ms / 0 B`** (instant bitset patch, 0 GC allocations)
-  - `:hover` & local restyle: **`0.008 ms / 32 B`** (up to 49× faster than Chromium Blink via `StyleStateAutomaton`)
-  - 2,000-item lists: GL frame times of `hover` (0.30 ms) and `child` insertion (1.44 ms) beat headless Chrome 157.
-- **Dual Hybrid Backends**:
-  - **GPU (OpenGL 3.2+ Core)**: SDF Uber-Shader batching rounded rectangles, borders, shadows, and glyphs into 1 draw call.
-  - **CPU (Tile-Parallel Software Rasterizer)**: 64×64 multithreaded tile rasterizer with zero native dependencies, ensuring pixel parity in headless, CI, or server environments.
-- **W3C Standards Subset**:
-  - Full support for Block, Flexbox, Grid, Table, Multicolumn, and Container Queries (`@container`).
-  - Colors: RGB, HSL, `oklch`, `display-p3`, and gradient shaders.
+- **Built for a 144 Hz frame budget (6.94 ms)**. These are measured values on one machine, not guarantees (see *Performance notes* below):
+  - Idle frames are skipped entirely: nothing is restyled, laid out, or drawn.
+  - `scroll` (OpenGL, real frame): `0.007 ms` on the showcase page, `0.09 ms` on a 2,000-row list (headless Chrome 157: `0.50 ms`)
+  - `:hover` toggle (OpenGL, real frame, showcase page): `0.10 ms` (Chrome: `1.24 ms`)
+  - Text update (showcase page): `0.17 ms` (Chrome: `1.07 ms`)
+  - Opening the showcase page in a warm JVM: `4.19 ms` (Chrome: `5.30 ms`)
+- **Three interchangeable backends with pixel parity**:
+  - **CPU** (in `:core`): 64×64 multithreaded tile rasterizer. No GPU and no window needed; works in headless, CI, and server environments.
+  - **OpenGL 3.2+ Core** (`:core-gl`) and **Vulkan 1.1** (`:core-vulkan`): an SDF shader batches rounded rectangles, borders, shadows, gradients, and glyphs into instanced draws. Shapes the GPU path refuses fall back to a CPU layer.
+  - `:core` itself has no compile or runtime dependency on OpenGL, GLFW, or Vulkan. GPU backends and the GLFW window (`:core-glfw`) are discovered through `ServiceLoader`.
+- **A subset of web standards** (this is not a browser; see [FIDELITY.md](../FIDELITY.md) for known divergences):
+  - Layout: Block, Inline, Flexbox, Grid, Table, Multicolumn, and Container Queries (`@container`). Coverage is partial: on a 260-pair subset of WPT reftests, **81 pass (31%)**: flexbox 55/120, grid 12/80, text 14/60 (tracked by `WptReftestRatchetTest`).
+  - Colors: RGB, HSL, `oklch`, `display-p3`, and gradients.
   - CSS `@keyframes` and `transition` animations.
-  - Full W3C DOM and UI Events (Mouse, Pointer, Keyboard, Wheel, Focus, and IME Composition).
+  - WHATWG DOM interfaces and UI Events (Mouse, Pointer, Keyboard, Wheel, Focus, and IME Composition) for Java callers. There is no JavaScript engine.
 - **Architectural Rigor**:
-  - Strict 7-layer OSI-style unidirectional architecture (L1–L7) mechanically enforced by `LayerDependencyRatchetTest` (0 upward dependencies).
-  - Clean public API (`com.nishiyu.enderframelib.api.*`) with zero internal types leaked.
+  - 7-layer unidirectional architecture (L1–L7) mechanically enforced by `LayerDependencyRatchetTest` (0 upward dependencies).
+  - The public API (`com.nishiyu.enderframelib.api.*`) does not reference implementation packages (`ApiBoundaryTest`).
+
+### Performance notes
+
+All numbers come from [BENCHMARK.md](../BENCHMARK.md) (section "`:core` の実フレーム計測"): one development machine (Windows, JDK 21, 24 hardware threads, 800×600, warm JVM), median of 3 runs, ±10–15% run-to-run variation. Both engines were forced to the same font (Arial). Chrome figures are per-frame CPU time from traces of headless Chrome 157 on the same documents. The comparison covers this engine's scope only (no JavaScript, single process, a subset of CSS), so it says how long the same change to the same document takes, not which engine is better overall.
+
+Where `:core` is not ahead:
+
+- **Row insertion is on par with Chrome**: inserting and removing one row in a 2,000-row list takes `1.44 ms` (Chrome: `1.34 ms`).
+- **Large relayouts depend on core count.** A font-size change across 2,000 rows that each have a different design takes `8.20 ms` with a real font, over the 144 Hz frame (Chrome: `39.35 ms`). With the built-in test font it takes `6.04 ms` on 23 worker threads, `8.03 ms` on 4, and `17.45 ms` on 1. Hosts that share cores with a game should expect the lower rows; set the worker count with `EnderEngine.workerThreads(n)` or `-Denderframe.threads=N`.
+- **Cold start** (process start → first frame): `510–594 ms`, against about `300 ms` for Chrome (see the AOT cache section below).
+- **Retained heap**: about 1.35–1.57x Chrome's on 2,000-row documents.
+- **Documents with constant animation** fall off the incremental paths and rebuild every frame; the bundled `voidwave.html` demo runs at 0.57–0.79x of Chrome's frame time instead of the 0.04–0.17x seen on the showcase page.
 
 ---
 
 ## 📦 Installation
+
+> **Not yet on Maven Central.** Until it is published, build from source. Only `:core` has a Maven publication today; `:core-gl`, `:core-vulkan`, and `:core-glfw` are consumed as Gradle projects (composite build or source dependency).
+
+```
+./gradlew :core:publishMavenJavaPublicationToLocalRepoRepository   # writes to <repo root>/repo
+```
 
 ### Gradle (Kotlin DSL)
 
 ```kotlin
 repositories {
     mavenCentral()
+    maven { url = uri("path/to/EnderFrameLib/repo") }
 }
 
 val lwjglVersion = "3.3.3"
-val lwjglNatives = "natives-windows" // or natives-linux, natives-macos, etc.
+val lwjglNatives = "natives-windows" // or natives-linux, natives-macos, natives-macos-arm64, ...
 
 dependencies {
+    // CPU rendering only: this is all you need
     implementation("com.nishiyu.enderframelib:enderframelib-core:2.0.0")
-
-    // LWJGL native binaries for your target platform(s)
     runtimeOnly("org.lwjgl:lwjgl::$lwjglNatives")
-    runtimeOnly("org.lwjgl:lwjgl-glfw::$lwjglNatives")
-    runtimeOnly("org.lwjgl:lwjgl-opengl::$lwjglNatives")
     runtimeOnly("org.lwjgl:lwjgl-freetype::$lwjglNatives")
+
+    // GPU rendering or a window: add the modules you use (Gradle projects for now, see above)
+    // implementation(project(":core-gl"))     + runtimeOnly lwjgl-opengl and lwjgl-glfw natives
+    // implementation(project(":core-vulkan")) + runtimeOnly lwjgl-vulkan natives on macOS
+    // implementation(project(":core-glfw"))   window + StandaloneViewer (brings :core-gl)
 }
 ```
 
-### Maven
-
-```xml
-<dependency>
-    <groupId>com.nishiyu.enderframelib</groupId>
-    <artifactId>enderframelib-core</artifactId>
-    <version>2.0.0</version>
-</dependency>
-```
+Without a GPU module on the classpath, `Target.SOFTWARE` works and `Target.GPU` fails at `build()` with a message naming the module to add.
 
 ---
 
@@ -107,55 +122,73 @@ EnderEngine.html(html)
     .build();
 ```
 
-### 3. Standalone Desktop Window (GLFW + OpenGL)
+### 3. GPU Offscreen (requires `:core-gl` or `:core-vulkan`)
+
+```java
+import com.nishiyu.enderframelib.api.EnderEngine;
+import com.nishiyu.enderframelib.api.GpuApi;
+
+try (WebViewSurface surface = EnderEngine.html(html).size(800, 600)
+        .target(EnderEngine.Target.GPU).gpu(GpuApi.AUTO) // GL, VULKAN, or AUTO
+        .build()) {
+    surface.frame(0, true);
+    surface.texture().ifPresent(tex -> { /* native texture handle, no pixel copy */ });
+}
+```
+
+### 4. Standalone Desktop Window (requires `:core-glfw`)
+
+```java
+// Blocks until the window is closed. Input and the frame loop are built in.
+EnderEngine.html(html).size(1024, 768).openWindow();
+```
+
+To load a file and attach Java callbacks, use `StandaloneViewer` from `:core-glfw`:
 
 ```java
 import com.nishiyu.enderframelib.common.StandaloneViewer;
 
-public class DesktopExample {
-    public static void main(String[] args) throws Exception {
-        StandaloneViewer.launch(new String[]{"path/to/page.html", "1024", "768"}, view -> {
-            // Optional: attach Java callbacks or inspect live DOM
-        });
-    }
-}
+StandaloneViewer.launch(new String[]{"path/to/page.html", "1024", "768"}, view -> {
+    // Optional: attach Java callbacks or inspect the live DOM
+});
 ```
 
 ---
 
-## ⚛️ Modern Declarative UI (React / Hyperscript DSL in Pure Java)
+## ⚛️ Declarative UI DSL in Pure Java
 
-EnderFrameLib provides a lightweight, zero-dependency declarative UI framework inspired by React and JSX (`com.nishiyu.enderframelib.api.ui.React`):
+`com.nishiyu.enderframelib.api.ui.UI` is a small hyperscript-style builder with reactive `State` bindings. It writes to the live DOM directly: there is no virtual-DOM diffing and no hook lifecycle.
 
 ```java
-import static com.nishiyu.enderframelib.api.ui.React.*;
+import static com.nishiyu.enderframelib.api.ui.UI.*;
+import com.nishiyu.enderframelib.api.ui.State;
 
-// 1. Reactive State
-var count = useState(0);
+// 1. Reactive state
+State<Integer> count = State.of(0);
 
-// 2. Declarative Components & VDOM
+// 2. Declarative element tree
 var app = div(cls("counter-card"),
-    h1("EnderFrameLib React DSL"),
-    p("Count: ", count), // automatically updates text when count changes!
+    h1("EnderFrameLib UI DSL"),
+    p("Count: ", count), // the text node follows the state
     button(cls("btn primary"), onClick(e -> count.update(c -> c + 1)), "Increment"),
     button(cls("btn"), onClick(e -> count.set(0)), "Reset")
 );
 
-// 3. Mount into DOM or render
+// 3. Mount into a DOM node
 mount(rootElement, app);
 ```
 
 ### Highlights:
-- **Zero Boilerplate**: Write nested HTML trees using `div(...)`, `span(...)`, `h1(...)`, `p(...)`, `cls(...)`, `style(...)`, `attr(...)`.
-- **React-Style Hooks**: `useState(initial)` with two-way binding & automatic DOM text synchronization, `useRef()` for typed element references, and `useEffect(runnable, deps...)`.
-- **Modern DOM Helpers**: jQuery-like `$(selector, root)` and `byId(id, root)`, plus standard WHATWG `classList(el).toggle("active", condition)`.
-- **High Performance**: Automatically batches insertions using `DocumentFragment`, eliminating unnecessary DOM mutation notifications.
+- **Element builders**: `div(...)`, `span(...)`, `h1(...)`, `p(...)`, `button(...)`, and more, with props `cls(...)`, `style(...)`, `sx(...)`, `attr(...)`, `on(...)`.
+- **Reactive bindings**: `State.of(initial)`, `State.derive(...)`, `state.onChange(...)`, `bindText`, `bindValue`, and the reactive slots `watch(state, renderer)` / `each(listState, itemRenderer)`. `Ref` with `ref(...)` gives typed element references.
+- **DOM helpers**: `$(selector, root)`, `$$(selector, root)`, `byId(id, root)`, and `classList(el)`.
+- **Batched insertion**: `mount` builds into a `DocumentFragment` and inserts once.
 
 ---
 
 ## ⌨️ Input & IME (Multi-language / Japanese Composition)
 
-`WebViewSurface` supports full pointer, keyboard, and W3C UI Events Composition:
+`WebViewSurface` takes pointer, keyboard, and IME composition input:
 
 ```java
 // Focus & standard inputs
@@ -181,11 +214,11 @@ EnderFrameLib `:core` is purpose-built as an **in-process embedded UI engine** (
 
 | Supported | Deliberately Excluded / Out of Scope |
 | :--- | :--- |
-| ✅ Flexbox, Grid, Blocks, Inline formatting | ❌ Heavy JavaScript engines (V8 / SpiderMonkey) |
-| ✅ Full WHATWG DOM mutation & W3C UI Events | ❌ Video decoders & WebRTC inside core |
+| ✅ Flexbox, Grid, Blocks, Inline formatting (subset; see the WPT numbers above) | ❌ JavaScript engines (V8 / SpiderMonkey) |
+| ✅ WHATWG DOM mutation & UI Events from Java (subset) | ❌ Bundled video codecs & WebRTC |
 | ✅ CSS animations, transforms, opacity, shadows | ❌ Cross-process IPC / Chromium multi-process overhead |
 | ✅ System outline fonts & TTF/OTF `@font-face` | ❌ Full Web browser navigation / arbitrary web browsing |
-| ✅ Hybrid GPU Uber-Shader & CPU software rasterizer | ❌ Heavy browser sandbox isolation |
+| ✅ GPU (OpenGL / Vulkan) & CPU software rasterizer with pixel parity | ❌ Heavy browser sandbox isolation |
 
 ---
 
@@ -198,11 +231,12 @@ java -XX:AOTCacheOutput=app.aot -cp <your classpath as jars> YourMain     # trai
 java -XX:AOTCache=app.aot        -cp <same jars>             YourMain     # normal runs
 ```
 
-Measured on Windows / JDK 27 (`ColdStartMain`, median of 7 fresh JVMs, 800x600): showcase `482 → 220 ms`, 2,000-row list `575 → 249 ms`. The cache must be built from the same jars (directories are rejected) and the same JDK.
+Measured on Windows / JDK 27 (`ColdStartMain`, median of 7 fresh JVMs, 800x600): the showcase page went from 482 ms to `220 ms`, and a 2,000-row list from 575 ms to `249 ms`. The cache must be built from the same jars (directories are rejected) and the same JDK.
 
 ---
 
 ## 📖 Further Reading
 
-- [DISTRIBUTION_ROADMAP.md](DISTRIBUTION_ROADMAP.md): Detailed distribution roadmap and readiness tracker.
-- [ENGINE_REARCHITECTURE_PLAN.md](ENGINE_REARCHITECTURE_PLAN.md): Master architectural specification, JFR profiling data, benchmarks, and the 3D scene graph integration design (§3.1).
+- [BENCHMARK.md](../BENCHMARK.md): Measured numbers, conditions, and how to reproduce them (Japanese).
+- [ARCHITECTURE.md](../ARCHITECTURE.md): Module layout, layers, and the mechanical checks that guard them (Japanese).
+- [FIDELITY.md](../FIDELITY.md): Ledger of known differences from browsers, with measured cases.

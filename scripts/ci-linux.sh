@@ -69,6 +69,12 @@ echo "[ci-linux] ./gradlew build test --stacktrace  （DISPLAY なし = GPU な�
 env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew build test --stacktrace --console=plain --continue 2>&1 | tee "$WORK/../last.log"
 status=${PIPESTATUS[0]}
 
+# build.yml の "Cost gate"。確保量と経路の回数の回帰ゲート（時間は見ない）。テストの成否に関わらず回して、結果は合否に足す
+echo "[ci-linux] ./gradlew :core:costGate --stacktrace"
+env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew :core:costGate --stacktrace --console=plain 2>&1 | tee -a "$WORK/../last.log"
+gate=${PIPESTATUS[0]}
+[ "$status" = 0 ] && status=$gate
+
 # CI の 2 つ目のステップ（build.yml の "Game test server"）。専用サーバーを 1 回走らせてセッション寿命を確認する。build が通ったときだけ
 if [ "$status" = 0 ]; then
   echo "[ci-linux] ./gradlew runGameTestServer --stacktrace"

@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.paint.software;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.function.Consumer;
-import java.util.stream.IntStream;
+import com.nishiyu.enderframelib.core.layout.LayoutTaskPool;
 
 /**
  * 画素を書く命令 {@link Op} を溜め、64×64 のタイルごとに（並列に）命令の順で実行する。
@@ -57,7 +57,7 @@ final class TileQueue {
             Op o = pending.get(i);
             area += (long) (o.x1 - o.x0) * (o.y1 - o.y0);
         }
-        if (n == 1 || Runtime.getRuntime().availableProcessors() < 2 || area < Rows.PARALLEL_MIN_PIXELS || !Rows.PARALLEL) {
+        if (n == 1 || LayoutTaskPool.workerCount() < 2 || area < Rows.PARALLEL_MIN_PIXELS || !Rows.PARALLEL) {
             for (int i = 0; i < n; i++) {
                 Op o = pending.get(i);
                 o.run(o.x0, o.y0, o.x1, o.y1, scratch);
@@ -81,7 +81,7 @@ final class TileQueue {
                 for (int tx = o.x0 / TILE; tx <= (o.x1 - 1) / TILE; tx++) list[fill[ty * tilesX + tx]++] = i;
         }
         final ArrayList<Op> ops = pending;
-        IntStream.range(0, tilesX * tilesY).parallel().forEach(t -> {
+        LayoutTaskPool.forEachIndex(tilesX * tilesY, t -> {
             if (start[t] == start[t + 1]) return;
             Scratch s = new Scratch();
             int tx0 = (t % tilesX) * TILE, ty0 = (t / tilesX) * TILE;

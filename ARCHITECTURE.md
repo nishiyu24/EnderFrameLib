@@ -15,10 +15,13 @@ EnderFrameLib は NeoForge 1.21.1 向けに、ブラウザ標準（HTML / CSS / 
 
 ## 1. 層と依存の向き
 
-> Gradle のモジュールは 2 つ。`:core`（`core/`）が Minecraft に依存しない `core`・`common`・`api/dom`・`api/event` などのパッケージを持ち、
+> Gradle のモジュールは 5 つ。`:core`（`core/`）が Minecraft に依存しない `core`・`common`・`api/dom`・`api/event` などのパッケージを持ち、
 > ルート（NeoForge Mod）が `:core` を取り込んで Mod の JAR に同梱する。パッケージ名はモジュールをまたいでも同じ。
+> GPU の実装と窓は `:core` から分けた 3 つのモジュールにある: `:core-gl`（OpenGL 3.2。`core.paint.gl`）・`:core-vulkan`（Vulkan 1.1。
+> `core.paint.vulkan`）・`:core-glfw`（GLFW の窓と単体ビューア）。`:core` はこの 3 つにも OpenGL・GLFW・Vulkan にも依存せず、
+> `ServiceLoader` で見つける（無ければソフトウェア描画だけが動く。`:core:verifyCoreDependencyGraph` と `:core:runCoreOnlySmoke` が検査する）。
 > `ArchitectureTest` / `ApiBoundaryTest` は両モジュールのソースを 1 本の木として検査する。
-> `:core` を単体で使う経路（ソフトウェア／純 LWJGL の描画）と、Minecraft の面への接続は [STANDALONE_RENDERING.md](STANDALONE_RENDERING.md)。
+> `:core` を単体で使う方法は [core/README.md](core/README.md) と [docs/standalone-viewer.md](docs/standalone-viewer.md)。
 
 ```
  client/   server/            （Minecraft / NeoForge に依存する実行系）
@@ -103,7 +106,7 @@ core/
 ├── dom/      ライブ DOM（node/）、パーサ（parser/: HtmlParser・MarkdownParser）、
 │             Bindings、InteractionState、MutationObserverManager、フォーム（ConstraintValidator など）
 ├── event/    DOM のイベントディスパッチ（EventDispatcher / CoreEvent / StandardDefaultActions）
-├── kernel/   Off-Heap の土台: memory/（DocumentArena・AtomTable・OffHeapColumns）、simd/。
+├── kernel/   Off-Heap の土台: memory/（DocumentArena・AtomTable・OffHeapColumns）、style/（PackedCssValue）、gpu/（描画 API に依らないデバイス層 RHI）。
 │             標準 JDK 21 のダイレクト ByteBuffer + VarHandle だけで作り、JVM フラグも追加依存も要らない
 ├── layout/   ボックスツリー（BoxTreeBuilder）と整形コンテキスト（Block / Flex / Grid / Table）、LayoutBox、model/
 ├── paint/    描画モデル（DisplayItem・BoxDecorations・Gradients・AnimationSpec）

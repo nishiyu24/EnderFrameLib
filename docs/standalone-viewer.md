@@ -1,7 +1,7 @@
 # スタンドアロン実行（Minecraft なしで HTML を表示する）
 
 `:core` モジュールは Minecraft / NeoForge に依存しません。HTML/CSS を、GLFW の窓（OpenGL）か PNG に出せます。
-設計の背景は [STANDALONE_RENDERING.md](../STANDALONE_RENDERING.md)、Gradle コマンドの一覧は [build-and-run-commands.md](build-and-run-commands.md) を参照してください。
+ライブラリとして組み込む方法は [core/README.md](../core/README.md)、Gradle コマンドの一覧は [build-and-run-commands.md](build-and-run-commands.md) を参照してください。
 
 ## 必要なもの
 

@@ -18,4 +18,7 @@ public interface EnginePlatform {
                 GpuApi gpuApi, long hostWindow) {}
 
     WebViewSurface create(Spec spec);
+
+    /** {@link EnderEngine#workerThreads} の実体。 */
+    default void workerThreads(int threads) {}
 }

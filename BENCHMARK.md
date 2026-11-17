@@ -218,8 +218,146 @@ guidebook 7.9 / 5.7 / 3.4 / 8.0 ms、large-list 19.8 / 9.4 / 9.2 / 13.7 ms。Res
 
 ---
 
-## 計測ガイド（2026-11-07）
+## `:core` の実フレーム計測（2026-11-17）
 
-JMH・段別プロファイル・GPU タイマークエリの手順と、その道具で取った実測は [core/MEASUREMENT.md](core/MEASUREMENT.md)。
-この文書の JUnit の値は JIT のウォームアップが短く、JMH の定常値より大きく出る段がある（最大で約 4 倍）。回帰判定は従来どおりここ、
-どの段を削るかの判断は MEASUREMENT.md の値を使う。
+ここが `:core`（Minecraft に依存しない描画コア）の性能値の出所。`core/README.md` に書く性能値は、この節にある値だけにする
+（`DocConsistencyTest` が検査する）。上の節までの JUnit の値は JIT のウォームアップが短く、ここの定常値より大きく出る。
+
+- **道具**: `FineProfileMain`（実フレームの経路 `StandaloneView.frame` を、ウォームアップ 600 フレームの後に 400〜1,500 フレーム回す）。
+  Chrome 側は `core/src/bench-crossengine/trace.js`（CDP のトレースから 1 フレームの CPU 時間 = main + raster + draw）。
+  手順は [core/src/bench-crossengine/README.md](core/src/bench-crossengine/README.md)。
+- **条件**: 開発機 1 台（Windows・JDK 21・論理 24 スレッド・800×600・ウォーム JVM）。`:core` は 3 回の中央値、Chrome 157（headless・GPU）は 3 回の中央値。
+  時間は実行ごとに ±10〜15% 揺れる。**比が 0.85x〜1.15x の行は「互角」と読む。**
+- **比較の範囲**: Chrome の値はこのエンジンが扱う範囲（JavaScript なし・単一文書）での 1 フレームの CPU 時間。Chrome は別プロセスの合成・
+  サンドボックスを含む構成で、仕様の網羅率も違う（`:core` の WPT 参照比較は部分集合 260 組中 81 組）。「同じ文書の同じ変更にかかる時間」の比であって、
+  エンジン全体の優劣ではない。
+- **書体**: 以前の比較は `:core` が内蔵の簡易書体（文字幅の表だけ）、Chrome が OS の書体で、文字の測定の仕事量が揃っていなかった。
+  下の「実書体」は両方に `* { font-family: Arial !important; }` を足して測った値。
+
+### README に引用している値
+
+`core/README.md` はここから引く（測り直したら両方を同じ値に直す）。
+
+- スクロール 1 段（GL・実書体）: showcase `0.007 ms`、2,000 行のリスト `0.09 ms`（Chrome `0.50 ms`）
+- `:hover` の切り替え（GL・実書体・showcase）: `0.10 ms`（Chrome `1.24 ms`）
+- 文字の書き換え（GL・実書体・showcase）: `0.17 ms`（Chrome `1.07 ms`）
+- 2,000 行のリストへの 1 行の挿入と削除（GL・実書体）: `1.44 ms`（Chrome `1.34 ms`。互角）
+- 文書を開く（GL・実書体・showcase・ウォーム JVM）: `4.19 ms`（Chrome `5.30 ms`）
+- 行ごとにデザインが違う 2,000 行の `font-size` 変更（GL）: 実書体・既定のワーカー数で `8.20 ms`（144Hz の 1 フレーム `6.94 ms` を超える。Chrome `39.35 ms`）。
+  内蔵の簡易書体ではワーカー 23 本で `6.04 ms`、4 本で `8.03 ms`、1 本で `17.45 ms`
+- コールド起動（プロセスの起動 → 最初のフレーム。2026-11-14 の値で、今回は測り直していない）: `510–594 ms`（Chrome は約 `300 ms`）。
+  JDK 27 の AOT キャッシュを使うと showcase `220 ms`・2,000 行のリスト `249 ms`
+
+### ワーカー数への依存（`font-size` の変更・GL・内蔵の簡易書体）
+
+レイアウトの並列実行は論理コア数 − 1 本のワーカーを使う（`-Denderframe.threads=N` / `EnderEngine.workerThreads(n)` で変えられる）。
+ゲームなど他の処理とコアを分け合うホストでは、下の表の小さいワーカー数の行が実際の値に近い。
+
+| 文書 | ワーカー | mean ms（範囲） | p50 ms | 確保 KB/フレーム | 144Hz（6.94 ms） |
+| :-- | :--: | :--: | :--: | :--: | :--: |
+| varied-list-2000 | 1 | 17.45（17.30–18.05） | 17.27 | 3460 | ❌ |
+| varied-list-2000 | 2 | 10.94（10.84–11.03） | 10.79 | 941 | ❌ |
+| varied-list-2000 | 4 | 8.03（7.91–8.21） | 7.90 | 941 | ❌ |
+| varied-list-2000 | 8 | 7.12（6.81–8.51） | 7.06 | 942 | ❌ |
+| varied-list-2000 | default | 6.04（6.02–6.05） | 5.99 | 943 | ✅ |
+| large-list-2000 | 1 | 4.91（4.91–4.93） | 4.83 | 1303 | ✅ |
+| large-list-2000 | 2 | 3.86（3.79–4.50） | 3.82 | 752 | ✅ |
+| large-list-2000 | 4 | 3.11（3.00–3.24） | 3.08 | 752 | ✅ |
+| large-list-2000 | 8 | 3.14（3.03–3.14） | 3.08 | 752 | ✅ |
+| large-list-2000 | default | 2.70（2.68–2.72） | 2.66 | 753 | ✅ |
+
+行ごとにデザインが違う 2,000 行（varied-list-2000）は、**ワーカーが 8 本以下だと 144Hz の予算に入らない**。同形の行の 2,000 行（large-list-2000）は 1 本でも入る。
+
+### 同じ書体での Chrome との比較
+
+| 文書 | シナリオ | :core 簡易書体 mean | :core 実書体 mean（p50・確保 KB） | Chrome 既定書体 | Chrome 実書体 | 比（実書体どうし） | 旧条件の比（簡易 ÷ 既定） |
+| :-- | :-- | :--: | :--: | :--: | :--: | :--: | :--: |
+| varied-list-2000 | inherited（gl） | 1.44 | 1.50（1.47・322.4） | 4.90 | 4.09 | 0.37x | 0.29x |
+| varied-list-2000 | child（gl） | 2.55 | 2.65（2.62・257.5） | 2.83 | 2.58 | 1.03x | 0.90x |
+| varied-list-2000 | fontsize（gl） | 6.28 | 8.20（8.09・1139.9） | 58.42 | 39.35 | 0.21x | 0.11x |
+| varied-list-2000 | scroll（gl） | 0.100 | 0.087（0.061・2.3） | 0.654 | 0.615 | 0.14x | 0.15x |
+| large-list | hover（gl） | 0.025 | 0.024（0.019・0.3）（描画なし） | 0.517 | 0.486 | 0.05x | 0.05x |
+| large-list | style（gl） | 0.060 | 0.058（0.043・5.5）（描画なし） | 0.480 | 0.453 | 0.13x | 0.13x |
+| large-list-2000 | text（gl） | 0.249 | 0.252（0.239・3.7）（描画なし） | 1.46 | 1.29 | 0.19x | 0.17x |
+| large-list-2000 | hover（gl） | 0.076 | 0.070（0.060・0.3）（描画なし） | 0.758 | 0.738 | 0.09x | 0.10x |
+| large-list-2000 | scroll（gl） | 0.092 | 0.090（0.066・2.3） | 0.627 | 0.502 | 0.18x | 0.15x |
+| large-list-2000 | child（gl） | 1.38 | 1.44（1.40・223.9） | 1.63 | 1.34 | 1.08x | 0.84x |
+| large-list-2000 | fontsize（gl） | 3.07 | 3.13（3.06・760.3） | 16.54 | 11.96 | 0.26x | 0.19x |
+| showcase | scroll（gl） | 0.0084 | 0.0070（0.0064・0.6）（描画なし） | 0.226 | 0.186 | 0.04x | 0.04x |
+| showcase | hover（gl） | 0.125 | 0.101（0.074・1.3） | 1.54 | 1.24 | 0.08x | 0.08x |
+| showcase | text（gl） | 0.171 | 0.167（0.139・9.6） | 1.22 | 1.07 | 0.16x | 0.14x |
+| showcase | style（gl） | 0.142 | 0.146（0.120・9.7） | 1.04 | 0.856 | 0.17x | 0.14x |
+| showcase | open（gl） | 4.25 | 4.19（4.13・3442.0） | — | — | — | — |
+| showcase | resizeexact（gl） | 0.571 | 0.539（0.513・160.9）（描画なし） | — | — | — | — |
+| showcase | hover（cpu） | 1.05 | 1.02（0.963・152.0） | 1.87 | 1.64 | 0.62x | 0.56x |
+
+- 「描画なし」は、変えた要素が画面の外（スクロール領域の外）にあって描き直しが起きなかった行。`:core` は再スタイルと差分の判定まで、
+  Chrome はスタイルの再計算とペイントの無効化まで走る。
+- 書体を揃えても比はほとんど変わらなかった（文字の測定は、行の中身が変わらない操作では再利用される）。変わったのは varied-list-2000 の
+  `fontsize`（全行の文字を測り直す）で、`:core` は簡易書体 `6.28 ms` → 実書体 `8.20 ms`。
+- `child`（1 行の挿入と削除）は Chrome と互角（`1.03x`・`1.08x`）。以前の「`0.58x`」は書体の条件が違う比較だった。
+- 幅変更と open の Chrome 側は下の run.js の表。showcase の `open` は `:core` `4.19 ms` に対し Chrome `5.30 ms`。幅変更のスタイル＋レイアウトは
+  Chrome `0.082 ms`（書体を揃えても同じ）。`:core` の幅変更は今回フレーム全体（`0.539 ms`。表示リストの組み直しを含む）しか測っておらず、
+  スタイル＋レイアウトだけの値（2026-11-15 に簡易書体で p50 `0.106 ms`。Chrome の約 1.3 倍）は測り直していない。
+
+### 実文書（同梱のデモ・テスト用の文書 5 本）
+
+代表文書 3 種（showcase・large-list・varied-list）以外で同じ傾向になるかを見る。文書は `src/main/resources/data/enderframelib/enderframe_ui/` の
+4 本と `src/test/resources/benchmark/machine_ui.html`。
+
+| 文書 | シナリオ | :core mean ms（範囲） | p50 ms | 確保 KB/フレーム | 描いたフレーム | Chrome ms | 比 | 144Hz |
+| :-- | :-- | :--: | :--: | :--: | :--: | :--: | :--: | :--: |
+| surface_test.html | hover | 0.936（0.890–1.012） | 0.867 | 641.5 | 1500 | 3.46 | 0.27x | ✅ |
+| surface_test.html | scroll | 0.063（0.061–0.066） | 0.042 | 2.7 | 1500 | 0.852 | 0.07x | ✅ |
+| surface_test.html | text | 0.191（0.185–0.197） | 0.164 | 11.1 | 1500 | 0.927 | 0.21x | ✅ |
+| surface_test.html | open | 5.47（5.18–5.53） | 5.33 | 3587.1 | 400 | — | — | ✅ |
+| voidwave.html | hover | 1.88（1.66–1.89） | 1.82 | 2144.3 | 1500 | 2.76 | 0.68x | ✅ |
+| voidwave.html | scroll | 1.62（1.61–1.66） | 1.56 | 1757.9 | 1500 | 2.06 | 0.79x | ✅ |
+| voidwave.html | text | 1.37（1.30–1.53） | 1.32 | 715.0 | 1500 | 2.42 | 0.57x | ✅ |
+| voidwave.html | open | 9.45（9.27–10.47） | 9.17 | 10130.7 | 400 | — | — | ❌ |
+| animation_test.html | hover | 1.11（1.08–1.14） | 1.06 | 642.6 | 1500 | 2.56 | 0.43x | ✅ |
+| animation_test.html | scroll | 0.0090（0.009–0.010） | 0.0075 | 0.6 | 0（変化なし） | 1.13 | — | ✅ |
+| animation_test.html | text | 0.398（0.395–0.427） | 0.341 | 58.8 | 1500 | 1.38 | 0.29x | ✅ |
+| animation_test.html | open | 5.58（5.57–5.90） | 5.41 | 4969.9 | 400 | — | — | ✅ |
+| media_test.html | hover | 0.0016（0.002–0.002） | 0.0014 | 0.1 | 0（変化なし） | 0.205 | — | ✅ |
+| media_test.html | scroll | 0.013（0.012–0.014） | 0.0072 | 0.6 | 0（変化なし） | 0.188 | — | ✅ |
+| media_test.html | text | 0.213（0.203–0.228） | 0.185 | 10.2 | 1500 | 0.972 | 0.22x | ✅ |
+| media_test.html | open | 7.25（6.86–7.33） | 6.89 | 6331.1 | 400 | — | — | ❌ |
+| machine_ui.html | hover | 0.0020（0.002–0.002） | 0.0015 | 0.1 | 0（変化なし） | 0.186 | — | ✅ |
+| machine_ui.html | scroll | 0.0045（0.004–0.005） | 0.0034 | 0.6 | 0（変化なし） | 0.172 | — | ✅ |
+| machine_ui.html | text | 0.176（0.173–0.195） | 0.149 | 10.2 | 1500 | 0.577 | 0.31x | ✅ |
+| machine_ui.html | open | 1.71（1.69–1.72） | 1.66 | 639.3 | 400 | — | — | ✅ |
+
+- 「変化なし」は、その文書ではシナリオが何も起こさなかった行（スクロールできない文書の `scroll`、`:hover` の規則が無い要素の `hover`）。比較から外す。
+- **`open` が 144Hz の 1 フレームを超える文書がある**（`voidwave.html` `9.45 ms`・`media_test.html` `7.25 ms`）。開くのは 1 回だけの処理だが、
+  1 フレームには収まらない。
+- `voidwave.html` は常時アニメーションのある文書で、`hover`・`scroll`・`text` のどれも 1 フレームに 0.7〜2.1 MB を確保する（showcase の `hover` は 1.3 KB）。
+  差分の経路に乗らず、毎フレーム組み直している。Chrome 比は `0.57x`〜`0.79x` で、代表文書（`0.04x`〜`0.17x`）より差が小さい。
+- `surface_test.html`・`animation_test.html` の `hover` も 1 フレームに約 640 KB を確保する。
+
+Chrome の `open`（`srcdoc` の設定 → load → レイアウトの強制）と幅変更（run.js。ページ内の計測）:
+
+| ファイル | 文書 | 書体 | 幅変更 style+layout | open |
+| :-- | :-- | :-- | :--: | :--: |
+| res-chrome-animation_test.html-Arial.json | animation_test.html | Arial | 0.530 | 6.30 |
+| res-chrome-machine_ui.html-Arial.json | machine_ui.html | Arial | 0.016 | 3.50 |
+| res-chrome-media_test.html-Arial.json | media_test.html | Arial | 0.250 | 1583.60 |
+| res-chrome-showcase-Arial.json | showcase | Arial | 0.082 | 5.30 |
+| res-chrome-showcase-committed.json | showcase | 既定 | 0.083 | 5.50 |
+| res-chrome-showcase-default.json | showcase | 既定 | 0.082 | 6.00 |
+| res-chrome-surface_test.html-Arial.json | surface_test.html | Arial | 0.017 | 5.90 |
+| res-chrome-voidwave.html-Arial.json | voidwave.html | Arial | 0.337 | 13.70 |
+
+`media_test.html` の `open` は、解決できない画像・動画の読み込み待ちが入った値で、比較に使えない。
+
+### 回帰の判定（時間を使わない）
+
+時間は機械と負荷で揺れるので、`:core` の回帰は「1 フレームの確保量」と「近道の経路の回数」で判定する（`./gradlew :core:costGate`。
+毎回の CI で回る）。新しい JVM・ワーカー 1 本・内蔵の簡易書体・描画なしで 17 シナリオを測り、基準値
+（`core/src/bench-crossengine/costgate-baseline.txt`）と比べる。確保量は ±5%、経路の回数は完全一致。
+
+- 同じ状態で 2 回続けて回して、2 回とも全項目が許容内（緑）だった。
+- 近道を 1 つ無効にすると赤になる: `-Pcostgate.jvmArgs=-Denderframe.ui.nochildpatch=true` で `child` の確保量が +141%・+178%、
+  `-Denderframe.layout.notentative=true` で showcase の `text` が +1,753%、`-Denderframe.css.noshare=true` で `style` が +46%。
+- **見ていないもの**: 描画バックエンドの中（GPU の差分再生・ソフトウェアの損傷範囲）。描画なしで測るため、
+  `-Denderframe.paint.nodiffpatch=true` では赤にならない。そこは画素の一致テスト（`GlDamageParityTest` ほか）が番をする。

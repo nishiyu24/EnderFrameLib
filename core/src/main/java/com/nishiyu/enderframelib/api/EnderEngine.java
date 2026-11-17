@@ -52,6 +52,16 @@ public final class EnderEngine {
         return new Builder("");
     }
 
+    /**
+     * エンジンが使うワーカースレッドの数を決める（プロセス全体。レイアウトの並列実行とソフトウェア描画のタイル実行に効く）。
+     * 既定は論理コア数 − 1（起動時なら {@code -Denderframe.threads=N} でも決められる）。ゲームなど、ほかの処理とコアを
+     * 分け合うホストは小さい値にする。1 以下なら呼び出したスレッドだけで動く。描画結果はこの値に依らない。
+     * フレームの外（{@link WebViewSurface#frame} を呼んでいないとき）に呼ぶこと。
+     */
+    public static void workerThreads(int threads) {
+        platform().workerThreads(threads);
+    }
+
     private static EnginePlatform platform() {
         for (EnginePlatform p : ServiceLoader.load(EnginePlatform.class, EnginePlatform.class.getClassLoader())) {
             return p;

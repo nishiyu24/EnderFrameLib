@@ -2,6 +2,11 @@
 const http=require('http'),fs=require('fs'),path=require('path'),cp=require('child_process'),os=require('os');
 const [,, doc, scen, gpuMode] = process.argv;   // gpuMode: soft | gpu
 const CHROME='C:/Program Files/Google/Chrome/Application/chrome.exe';
+// BENCH_FONT=<family>: 全要素へ同じ書体を強制する（:core 側の -Pprofile.font と同じ規則。Workloads.withFont と同じ文字列）
+const FONT=process.env.BENCH_FONT||'';
+function withFont(html){ if(!FONT) return html; const rule='* { font-family: '+FONT+' !important; } '; const i=html.indexOf('<style>'); return i>=0? html.slice(0,i+7)+rule+html.slice(i+7) : html+'<style>'+rule+'</style>'; }
+// <name>.html: 同梱の実文書（enderframe_ui）か、テスト用の文書（src/test/resources/benchmark）
+function fixture(name){ const a=path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui',name); return fs.existsSync(a)?a:path.join(__dirname,'../../../src/test/resources/benchmark',name); }
 function largeList(n){let s='<html><head><style>body { margin: 8px; } ul { list-style: none; padding: 0; } li { padding: 4px; border-bottom: 1px solid #ccc; } li.fh { background: #eef; }</style></head><body><div id="scroller" style="height: 400px; overflow-y: auto;"><ul>';
  for(let i=1;i<=n;i++) s+='<li id="item-'+i+'">Row item #'+i+' with description text</li>'; return s+'</ul></div></body></html>';}
 const SCRIPT=`<script>
@@ -9,10 +14,15 @@ const DOC=${JSON.stringify(doc)}, SC=${JSON.stringify(scen)};
 let frames=0;window.__frames=0;
 function init(){
  const d=document; const list=DOC.startsWith('large-list')||DOC.startsWith('varied-list');
- const hv=list?[d.getElementById('item-100'),d.getElementById('item-101')]:[...d.querySelectorAll('.btn')].slice(0,2);
- const textNode=list?d.getElementById('item-250').firstChild:[...d.querySelectorAll('span')].find(s=>s.firstChild&&s.firstChild.nodeType===3&&s.textContent.trim().length>3).firstChild;
- const styleEl=list?d.getElementById('item-100'):d.querySelector('.btn');
- const ul=list?d.querySelector('ul'):d.querySelector('div');
+ const real=DOC.endsWith('.html');
+ // 実文書は :core の FineProfileMain.Target と同じ決め方: 最初と 2 つ目の button（無ければ body の最初の要素）、button / label の外の最初の文字
+ const b1=d.querySelector('button')||d.body.firstElementChild||d.body, b2=d.querySelectorAll('button')[1]||b1;
+ function firstText(n){ for(const c of n.childNodes){ if(c.nodeType===3){ if(c.data.trim()&&n.tagName!=='BUTTON'&&n.tagName!=='LABEL'&&n.tagName!=='STYLE'&&n.tagName!=='SCRIPT') return c; continue; } const r=firstText(c); if(r) return r; } return null; }
+ const cb=[...d.querySelectorAll('.btn')].slice(0,2);
+ const hv=real?(d.querySelectorAll('button').length>=2||cb.length<2?[b1,b2]:cb):list?[d.getElementById('item-100'),d.getElementById('item-101')]:[...d.querySelectorAll('.btn')].slice(0,2);
+ const textNode=real?firstText(d.body):list?d.getElementById('item-250').firstChild:[...d.querySelectorAll('span')].find(s=>s.firstChild&&s.firstChild.nodeType===3&&s.textContent.trim().length>3).firstChild;
+ const styleEl=real?b1:list?d.getElementById('item-100'):d.querySelector('.btn');
+ const ul=real?b1.parentNode:list?d.querySelector('ul'):d.querySelector('div');
  const sc=list?d.getElementById('scroller'):d.scrollingElement;
  const M={idle:i=>{},
   hover:i=>{hv[i&1].classList.add('fh');hv[(i+1)&1].classList.remove('fh');},
@@ -29,8 +39,8 @@ function init(){
 addEventListener('load',()=>setTimeout(init,300));
 </script>`;
 const srv=http.createServer((req,res)=>{
-  let html = doc.startsWith('varied-list') ? fs.readFileSync(process.env.VARIED_FILE,'utf8') : doc.startsWith('large-list') ? largeList(parseInt(doc.split('-')[2]||'500')) : fs.readFileSync(path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8').replace(/:hover/g,'.fh');
-  html=html+SCRIPT; res.setHeader('Content-Type','text/html'); res.end(html);
+  let html = doc.endsWith('.html') ? fs.readFileSync(fixture(doc),'utf8').replace(/:hover/g,'.fh') : doc.startsWith('varied-list') ? fs.readFileSync(process.env.VARIED_FILE,'utf8') : doc.startsWith('large-list') ? largeList(parseInt(doc.split('-')[2]||'500')) : fs.readFileSync(path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8').replace(/:hover/g,'.fh');
+  html=withFont(html)+SCRIPT; res.setHeader('Content-Type','text/html'); res.end(html);
 }).listen(0,async()=>{
   const port=srv.address().port, dbg=9300+Math.floor(Math.random()*500);
   const prof=fs.mkdtempSync(path.join(os.tmpdir(),'prof-'));
@@ -56,7 +66,7 @@ const srv=http.createServer((req,res)=>{
   // 区間 'X'(完了イベント) の名前別合計。入れ子は無視して名前別の自己 + 子の合計をそのまま報告
   const agg={}; for(const e of events){ if(e.ph==='X'&&e.dur){ (agg[e.name]=agg[e.name]||{us:0,n:0}); agg[e.name].us+=e.dur; agg[e.name].n++; } }
   const pick=['UpdateLayoutTree','Layout','PrePaint','Paint','Layerize','Commit','CompositeLayers','RasterTask','ImageDecodeTask','Decode Image','GPUTask','FunctionCall','FireAnimationFrame','HitTest','UpdateLayer','BeginMainThreadFrame','ProxyMain::BeginMainFrame','LayerTreeHostImpl::PrepareToDraw','DrawFrame','Display::DrawAndSwap'];
-  const out={doc,scen,gpuMode,frames,perFrameMs:{}};
+  const out={doc,scen,gpuMode,font:FONT,frames,perFrameMs:{}};
   for(const k of pick) if(agg[k]) out.perFrameMs[k]={ms:+(agg[k].us/1000/frames).toFixed(4),callsPerFrame:+(agg[k].n/frames).toFixed(2)};
   console.log(JSON.stringify(out));
   ws.close(); child.kill(); srv.close(); process.exit(0);

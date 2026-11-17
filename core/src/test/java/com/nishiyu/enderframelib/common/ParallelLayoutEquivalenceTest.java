@@ -46,6 +46,7 @@ class ParallelLayoutEquivalenceTest {
     @AfterEach
     void restore() {
         LayoutTaskPool.parallelEnabled = true;
+        LayoutTaskPool.setWorkerThreads(LayoutTaskPool.defaultThreads());
     }
 
     private static List<DisplayItem> flush(StandaloneView v) {
@@ -123,6 +124,45 @@ class ParallelLayoutEquivalenceTest {
             if (hit != null) return hit;
         }
         return null;
+    }
+
+    /** A3: ワーカー数（{@code -Denderframe.threads} / {@code EnderEngine.workerThreads}）を変えても、箱の木と表示リストは直列と一致する。 */
+    @Test
+    void resultsDoNotDependOnWorkerThreadCount() {
+        for (int threads : new int[]{2, 4}) { // 1 本は並列に配らない（singleWorkerNeverDispatches）。直列が比較の基準
+            LayoutTaskPool.setWorkerThreads(threads);
+            assertEquals(threads, LayoutTaskPool.workerCount());
+            variedListFontsizeAndHoverAreBitForBitIdentical();
+            randomizedLargeSiblingTreesMatchSerial();
+        }
+    }
+
+    /** A3: ワーカーが 1 本なら、兄弟が多くても並列プールへ配らない（呼び出したスレッドだけで動く）。 */
+    @Test
+    void singleWorkerNeverDispatches() {
+        LayoutTaskPool.setWorkerThreads(1);
+        LayoutTaskPool.resetParallelDispatchCount();
+        StandaloneView v = new StandaloneView(buildVariedListHtml(180, 7L), 800, 600, FontResolver.FALLBACK);
+        flush(v);
+        assertEquals(0, LayoutTaskPool.parallelDispatchCount());
+    }
+
+    /** A3: ソフトウェア描画のタイル実行も同じプールに従い、画素はワーカー数に依らない。 */
+    @Test
+    void softwarePixelsDoNotDependOnWorkerThreadCount() {
+        String html = buildVariedListHtml(180, 11L);
+        int[][] shots = new int[3][];
+        int[] counts = {1, 2, 4};
+        for (int k = 0; k < counts.length; k++) {
+            LayoutTaskPool.setWorkerThreads(counts[k]);
+            StandaloneView v = new StandaloneView(html, 800, 600, FontResolver.FALLBACK);
+            try (var backend = new com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend(800, 600, 1f)) {
+                v.frame(1000, backend, true);
+                shots[k] = backend.pixmap().pixels().clone();
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertArrayEquals(shots[0], shots[1], "1 本と 2 本");
+        org.junit.jupiter.api.Assertions.assertArrayEquals(shots[0], shots[2], "1 本と 4 本");
     }
 
     @Test

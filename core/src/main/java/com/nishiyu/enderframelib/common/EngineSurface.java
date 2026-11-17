@@ -55,6 +55,11 @@ public final class EngineSurface implements WebViewSurface {
             return EngineSurface.create(spec);
         }
 
+        @Override
+        public void workerThreads(int threads) {
+            com.nishiyu.enderframelib.core.layout.LayoutTaskPool.setWorkerThreads(threads);
+        }
+
     }
 
     private interface BackendFactory {

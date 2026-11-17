@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
-import java.util.stream.IntStream;
+import com.nishiyu.enderframelib.core.layout.LayoutTaskPool;
 
 /**
  * 行の範囲を、互いに独立な画素の塗りのために並列で処理する小さな道具。
@@ -22,13 +22,13 @@ final class Rows {
     /** {@code [y0, y1)} を行のまとまりに割り、{@code body} を呼ぶ。まとまり同士は互いに触れない前提。 */
     static void forEach(int y0, int y1, long pixels, Body body) {
         int rows = y1 - y0;
-        int cpus = Runtime.getRuntime().availableProcessors();
+        int cpus = LayoutTaskPool.workerCount(); // ホストが決めたワーカー数（-Denderframe.threads）に従う
         if (rows < 2 * MIN_ROWS || cpus < 2 || pixels < PARALLEL_MIN_PIXELS || !PARALLEL) {
             body.run(y0, y1);
             return;
         }
         int chunks = Math.min(cpus * 2, rows / MIN_ROWS);
-        IntStream.range(0, chunks).parallel().forEach(k -> body.run(y0 + (int) ((long) rows * k / chunks), y0 + (int) ((long) rows * (k + 1) / chunks)));
+        LayoutTaskPool.forEachIndex(chunks, k -> body.run(y0 + (int) ((long) rows * k / chunks), y0 + (int) ((long) rows * (k + 1) / chunks)));
     }
 
     /** 検証用に止められる（{@code -Denderframe.raster.serial}）。 */

@@ -254,6 +254,8 @@ tasks.register('profile', JavaExec) {
     mainClass = project.findProperty('profile.main') ?: 'com.nishiyu.enderframelib.bench.PipelineProfileMain'
     workingDir = rootProject.projectDir
     if (project.hasProperty('profile.sample')) systemProperty 'profile.sample', 'true'
+    if (project.hasProperty('threads')) systemProperty 'enderframe.threads', project.property('threads').toString() // A3: ワーカー数ごとの計測
+    if (project.hasProperty('profile.font')) systemProperty 'profile.font', project.property('profile.font').toString() // A2: 実書体での計測
     if (project.hasProperty('gpu.nodamage')) systemProperty 'enderframe.gpu.nodamage', 'true'
     if (project.hasProperty('profile.stagealloc')) systemProperty 'profile.stagealloc', 'true'
     if (project.hasProperty('profile.jfr')) jvmArgs "-XX:StartFlightRecording=filename=${project.property('profile.jfr')},settings=profile"
@@ -354,3 +356,33 @@ tasks.register('runCoreOnlySmoke', JavaExec) {
     workingDir = rootProject.projectDir
 }
 tasks.named('check') { dependsOn 'runCoreOnlySmoke' }
+
+// 計測を Gradle を介さずに繰り返し回すためのクラスパス（1 行 1 要素）を build/profile-classpath.txt に書く。
+// 計測中に別の作業が core/build を再ビルドすると途中でクラスが消えるので、スクリプトはこの一覧を写しへ複製して使う。
+tasks.register('profileClasspath') {
+    group = 'verification'
+    description = 'profile / jmh と同じ実行時クラスパスを build/profile-classpath.txt に書く'
+    dependsOn 'jmhClasses'
+    def cp = sourceSets.jmh.output + sourceSets.jmh.runtimeClasspath
+    def out = layout.buildDirectory.file('profile-classpath.txt')
+    outputs.file(out)
+    outputs.upToDateWhen { false }
+    doLast {
+        out.get().asFile.text = cp.files.findAll { it.exists() }.collect { it.absolutePath }.join('\n') + '\n'
+    }
+}
+
+// A1: 時間に依らない量（1 フレームの確保量・近道の経路の回数）の回帰ゲート。シナリオごとに新しい JVM を立てるので check には
+// 繋がず、CI（build.yml）と手元から明示的に回す。
+//   ./gradlew :core:costGate                       判定
+//   ./gradlew :core:costGate -Pcostgate.update     基準値（core/src/bench-crossengine/costgate-baseline.txt）を書き換える
+tasks.register('costGate', JavaExec) {
+    group = 'verification'
+    description = '確保量と経路の回数の回帰ゲート（CostGateMain）。時間は見ない'
+    classpath = sourceSets.jmh.output + sourceSets.jmh.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.bench.CostGateMain'
+    workingDir = rootProject.projectDir
+    if (project.hasProperty('costgate.update')) systemProperty 'costgate.update', 'true'
+    if (project.hasProperty('costgate.tolerance')) systemProperty 'costgate.tolerance', project.property('costgate.tolerance').toString()
+    if (project.hasProperty('costgate.jvmArgs')) systemProperty 'costgate.jvmArgs', project.property('costgate.jvmArgs').toString()
+}
