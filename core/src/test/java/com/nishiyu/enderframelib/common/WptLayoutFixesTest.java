@@ -188,6 +188,63 @@ class WptLayoutFixesTest {
     }
 
     @Test
+    void shrinkToFitBoxesHonourMinAndMaxWidth() {
+        LayoutBox r = layout("<div id=a style='float:left;min-width:200px'>x</div>"
+                + "<div id=b style='float:left;clear:both;max-width:60px'>aaa bbb ccc ddd eee</div>");
+        assertEquals(200, find(r, "a").w, 0.01f);
+        assertEquals(60, find(r, "b").w, 0.01f);
+        assertTrue(find(r, "b").h > 30, "max-width の幅で折り返す");
+    }
+
+    @Test
+    void inlineFlexBaselineComesFromItsFirstLine() {
+        LayoutBox r = layout("<div style='line-height:20px'>a<div id=f style='display:inline-flex;align-items:baseline'>"
+                + "<div style='font-size:10px'>b</div><div style='align-self:stretch;font-size:35px;line-height:35px'>d</div></div></div>");
+        Float b = com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.firstBaseline(find(r, "f"));
+        assertNotNull(b, "flex 容器のベースラインがある");
+        assertTrue(b < find(r, "f").h, "下端ではなく項目のベースライン");
+    }
+
+    @Test
+    void spaceAtARunBoundaryCountsTowardsShrinkToFitWidth() {
+        LayoutBox a = layout("<div id=a style='float:left'>aa <span>bb</span></div>");
+        LayoutBox b = layout("<div id=a style='float:left'>aa bb</div>");
+        assertEquals(find(b, "a").w, find(a, "a").w, 0.5f);
+        assertEquals(find(a, "a").h, find(b, "a").h, 0.01f);
+    }
+
+    @Test
+    void wrapOpportunityBelongsToTheSpacesWhiteSpace() {
+        LayoutBox r = layout("<div id=d style='white-space:nowrap;width:30px'><span style='white-space:normal'><span style='white-space:nowrap'>aaaa</span> </span>bbbb</div>");
+        assertTrue(find(r, "d").h > 30, "normal の空白の後で、nowrap の文字でも折り返せる");
+    }
+
+    @Test
+    void textWrapBalanceEvensOutLines() {
+        LayoutBox r = layout("<div style='width:100px;text-wrap:balance'><span id=s>aaa bbb ccc ddd eee</span></div>");
+        var frags = find(r, "s").children.get(0).inlineFragments;
+        float firstY = frags.get(0).y, lastY = frags.get(frags.size() - 1).y;
+        long firstLine = frags.stream().filter(f -> f.y == firstY).count();
+        long lastLine = frags.stream().filter(f -> f.y == lastY).count();
+        assertTrue(Math.abs(firstLine - lastLine) <= 1, "行の語の数が揃う: " + firstLine + " / " + lastLine);
+    }
+
+    @Test
+    void textNodesDoNotMatchElementSelectors() {
+        LayoutBox r = layout("<style>.c > * { width: 20px; height: 15px; float: left }</style>"
+                + "<div class=c id=c style='width:40px'>\n  <div></div><div></div>\n  <div></div><div></div>\n</div>");
+        assertEquals(30, find(r, "c").children.stream().filter(k -> k.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.ELEMENT)
+                .mapToDouble(k -> k.y + k.h).max().orElse(0), 0.01f);
+    }
+
+    @Test
+    void newlineBetweenInlineElementsIsASpace() {
+        LayoutBox a = layout("<div><span id=x>a</span>\n<span id=y>b</span></div>");
+        LayoutBox b = layout("<div><span id=x>a</span> <span id=y>b</span></div>");
+        assertEquals(find(b, "y").x, find(a, "y").x, 0.01f);
+    }
+
+    @Test
     void leadingSpaceOfAWrappedRunDoesNotStartTheLine() {
         LayoutBox r = layout("<div style='width:60px'>aaaa <span>bbbbbbbb</span> cccc</div>");
         LayoutBox text = r.children.get(0).children.get(1).children.get(0).children.get(2);

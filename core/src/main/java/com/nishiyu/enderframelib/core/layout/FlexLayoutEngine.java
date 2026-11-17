@@ -258,8 +258,8 @@ public class FlexLayoutEngine extends LayoutEngine {
             lineOffset += line.cross + lineGap;
         }
         // direction: rtl ではインライン軸の始点が右（row なら主軸、column なら交差軸）。ltr で組んでから内容ボックスの中で左右を裏返す
-        if (box.verticalAxisFlow == 0 && !box.isVerticalRoot && !com.nishiyu.enderframelib.core.css.WritingModes.isVertical(box.style)
-                && "rtl".equalsIgnoreCase(String.valueOf(box.style.get(CssPropertyIndex.DIRECTION)).trim())) {
+        // 縦書きの中では局所の（論理の横書きの）座標で組んでいるので、同じ裏返しでインライン軸の向きが合う
+        if ("rtl".equalsIgnoreCase(String.valueOf(box.style.get(CssPropertyIndex.DIRECTION)).trim())) {
             for (int i = 0; i < lineCount; i++) {
                 List<FlexItem> its = lines.get(i).items;
                 for (int j = 0, m = its.size(); j < m; j++) {
@@ -453,6 +453,11 @@ public class FlexLayoutEngine extends LayoutEngine {
     private static boolean widthIndependentOfParent(LayoutBox child) {
         StyleFacts f = child.axisStyle().layoutFacts();
         if (f.percentGeometry || f.intrinsicWidthKind != StyleFacts.IW_NONE) return false;
+        // 縮小幅の箱は min-width / max-width で使える幅と確定幅が変わる（BoxMeasurer.shrinkMaxInnerWidth）ので、測り直しを省かない
+        ComputedStyle ax = child.axisStyle();
+        String maxW = ax.get(CssPropertyIndex.MAX_WIDTH), minW = ax.get(CssPropertyIndex.MIN_WIDTH);
+        if (maxW != null && !"none".equalsIgnoreCase(maxW.trim())) return false;
+        if (minW != null && !"auto".equalsIgnoreCase(minW.trim()) && !minW.trim().equals("0") && !minW.trim().equals("0px")) return false;
         // 子孫の割合は、この箱の幅が基準になる。仮の測定のときの利用可能幅と確定した幅とで解け方が変わり得るので、部分木ぜんぶを見る
         List<LayoutBox> kids = child.children;
         for (int i = 0, n = kids.size(); i < n; i++) {
@@ -840,8 +845,31 @@ public class FlexLayoutEngine extends LayoutEngine {
         return v == Overflow.SCROLL || v == Overflow.AUTO;
     }
 
+    /**
+     * flex 容器の最初のベースライン（border box の上端から。CSS Flexbox §8.5）: 1 行目に baseline 揃えの項目があればそのベースライン、
+     * 無ければ 1 行目の最初の項目のベースライン。項目が無ければ null（呼び出し側が合成する）。
+     */
+    static Float containerFirstBaseline(LayoutBox box) {
+        if (!(box.engineState instanceof FlexState state) || state.lines.isEmpty()) return null;
+        List<FlexItem> first = state.lines.getFirst().items;
+        if (first.isEmpty()) return null;
+        FlexItem pick = first.getFirst();
+        if (Axes.of(box.style).row) {
+            CssKeywords.Alignment items = alignItemsOf(box.style);
+            for (FlexItem it : first) {
+                if (alignSelfOf(it.box, items) == CssKeywords.Alignment.BASELINE && !hasAutoCrossMargin(it.box, true)) {
+                    pick = it;
+                    break;
+                }
+            }
+        }
+        return box.bT + box.pT + pick.y + pick.box.mT + itemBaseline(pick.box);
+    }
+
     /** アイテムのベースライン（border box の上端から）。行を持たなければ border box の下端から合成する。 */
     private static float itemBaseline(LayoutBox b) {
+        // 容器の直下の文字（匿名の項目）は、その最初の行のベースライン
+        if (b.node.nodeType == NodeType.TEXT && !Float.isNaN(b.textBaseline)) return b.textBaseline;
         Float baseline = BlockLayoutEngine.firstBaseline(b);
         return baseline != null ? baseline : b.h;
     }

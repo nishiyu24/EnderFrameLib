@@ -381,13 +381,13 @@ public final class BoxTreeBuilder {
     private List<LayoutBox> fixupTable(LayoutBox parent, List<LayoutBox> items) {
         Inner inner = parent.display.inner();
         if (inner == Inner.TABLE) {
-            return wrapRuns(parent, dropWhitespace(items), c -> !c.display.isNone() && !isProperTableChild(c), "table-row");
+            return wrapRuns(parent, dropTableWhitespace(items), c -> !c.display.isNone() && !isProperTableChild(c), "table-row");
         }
         if (inner == Inner.TABLE_ROW_GROUP) {
-            return wrapRuns(parent, dropWhitespace(items), c -> !c.display.isNone() && c.display.inner() != Inner.TABLE_ROW, "table-row");
+            return wrapRuns(parent, dropTableWhitespace(items), c -> !c.display.isNone() && c.display.inner() != Inner.TABLE_ROW, "table-row");
         }
         if (inner == Inner.TABLE_ROW) {
-            return wrapRuns(parent, dropWhitespace(items), c -> !c.display.isNone() && c.display.inner() != Inner.TABLE_CELL, "table-cell");
+            return wrapRuns(parent, dropTableWhitespace(items), c -> !c.display.isNone() && c.display.inner() != Inner.TABLE_CELL, "table-cell");
         }
         if (items.stream().noneMatch(c -> c.display.isTableInternal())) return items;
 
@@ -435,6 +435,19 @@ public final class BoxTreeBuilder {
         for (LayoutBox child : fixup(anon, run)) anon.addChild(child);
         out.add(anon);
         run.clear();
+    }
+
+    /**
+     * 表・行グループ・行の子の空白だけのテキストは、white-space に依らず箱を作らない（ブラウザの実装に合わせる。
+     * CSS 2.2 §17.2.1 は畳まれる空白だけを捨てるが、break-spaces の行の改行と字下げで匿名セルが増えていた）。
+     */
+    private static List<LayoutBox> dropTableWhitespace(List<LayoutBox> items) {
+        List<LayoutBox> kept = new ArrayList<>(items.size());
+        for (LayoutBox item : items) {
+            boolean blankText = item.node.nodeType == NodeType.TEXT && (item.node.text == null || item.node.text.isBlank());
+            if (!blankText) kept.add(item);
+        }
+        return kept;
     }
 
     private static List<LayoutBox> dropWhitespace(List<LayoutBox> items) {

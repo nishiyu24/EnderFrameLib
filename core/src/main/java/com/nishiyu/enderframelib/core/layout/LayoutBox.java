@@ -442,6 +442,8 @@ public class LayoutBox {
      * inset が両方 auto の軸はここに置く。親のエンジンが子を並べるときに入れる。
      */
     public float staticX = Float.NaN, staticY = Float.NaN;
+    /** テキストの箱の最初の行のベースライン（箱の上端から。測ったときに入る。テキストでなければ NaN）。 */
+    public float textBaseline = Float.NaN;
     /**
      * 静的位置が点ではなく領域のとき（grid / flex 容器の子。css-grid §9.4・css-flexbox §4.1）の領域の大きさと、
      * その中での揃え（0 = 始点、0.5 = 中央、1 = 終点）。{@link #staticX} / {@link #staticY} は領域の左上。点なら NaN。
@@ -837,7 +839,13 @@ public class LayoutBox {
             // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
             WhiteSpace ws = WhiteSpace.of(newStyle.get(CssPropertyIndex.WHITE_SPACE));
             String text = TextShaper.normalize(ws.collapses() ? trimNewlineEdges(node.text) : node.text, ws);
-            this.displayText = stripIgnorable(LayoutMetrics.applyTextTransform(text, newStyle));
+            String transformed = LayoutMetrics.applyTextTransform(text, newStyle);
+            // capitalize は語の頭だけを大文字にする。語が要素の境目をまたぐ（p<span></span>ass）なら、続きの頭は大文字にしない
+            if (!transformed.isEmpty() && !text.isEmpty() && transformed.charAt(0) != text.charAt(0)
+                    && Character.isLetterOrDigit(text.charAt(0)) && endsWithWordChar(node)) {
+                transformed = text.charAt(0) + transformed.substring(1);
+            }
+            this.displayText = stripIgnorable(transformed);
         }
 
         String pos = newStyle.getOrDefault(CssPropertyIndex.POSITION, "static");
@@ -925,9 +933,34 @@ public class LayoutBox {
         if (n == 0) return s;
         int start = 0, end = n;
         char first = s.charAt(0), last = s.charAt(n - 1);
+        if (s.isBlank()) return " "; // 要素の間の空白だけの節は空白 1 つ（インラインどうしの隙間。ブロックの間ならボックスツリーが捨てる）
         if (first == '\n' || first == '\r') while (start < end && Character.isWhitespace(s.charAt(start))) start++;
         if (last == '\n' || last == '\r') while (end > start && Character.isWhitespace(s.charAt(end - 1))) end--;
         return start == 0 && end == n ? s : s.substring(start, end);
+    }
+
+    /** 文書順でこの節の直前にある文字（文字の無い要素は飛ばす）が、語の途中の文字（英数字）か。 */
+    private static boolean endsWithWordChar(HtmlNode node) {
+        for (HtmlNode n = node; n != null && n.parent != null; n = n.parent) {
+            List<HtmlNode> sib = n.parent.children;
+            for (int i = sib.indexOf(n) - 1; i >= 0; i--) {
+                int c = lastChar(sib.get(i));
+                if (c >= 0) return Character.isLetterOrDigit(c);
+            }
+            if (n.parent.nodeType == NodeType.ELEMENT && !"span".equals(n.parent.tag) && !"b".equals(n.parent.tag)
+                    && !"i".equals(n.parent.tag) && !"a".equals(n.parent.tag) && !"em".equals(n.parent.tag)) return false;
+        }
+        return false;
+    }
+
+    /** 部分木の最後の文字（無ければ -1）。 */
+    private static int lastChar(HtmlNode n) {
+        if (n.nodeType == NodeType.TEXT) return n.text == null || n.text.isEmpty() ? -1 : n.text.charAt(n.text.length() - 1);
+        for (int i = n.children.size() - 1; i >= 0; i--) {
+            int c = lastChar(n.children.get(i));
+            if (c >= 0) return c;
+        }
+        return -1;
     }
 
     static String stripIgnorable(String s) {

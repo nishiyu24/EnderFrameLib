@@ -1317,6 +1317,16 @@ public class UiView implements AutoCloseable {
             repositionFromLayout(scrollOnly && !res.styleChanged() && !res.repositionRequired());
         } else if (res.styleChanged()) {
             List<LayoutBox> changedBoxes = RenderPipeline.styleChangedBoxes();
+            // 空白だけのテキストの箱は描くものが無い（ブロックの間なら箱の木にも入らない）。継承の変更で混ざっても部分の描き直しを妨げない
+            if (!changedBoxes.isEmpty()) {
+                boolean anyBlank = false;
+                for (int i = 0, n = changedBoxes.size(); i < n && !anyBlank; i++) anyBlank = isBlankText(changedBoxes.get(i).node);
+                if (anyBlank) {
+                    List<LayoutBox> kept = new ArrayList<>(changedBoxes.size());
+                    for (LayoutBox b : changedBoxes) if (!isBlankText(b.node)) kept.add(b);
+                    changedBoxes = kept;
+                }
+            }
             List<DisplayItem> patched = null;
             if (paintBuilder == null) {
                 SLICE_NO_BUILDER.incrementAndGet();
@@ -1853,10 +1863,15 @@ public class UiView implements AutoCloseable {
             ChildPlan plan = plans.get(0);
             List<LayoutBox> addedBoxes = built.get(0);
             LayoutBox previousBox = null;
-            if (plan.previousNode() != null) {
+            // 直前の兄弟が箱を作らない節（ブロックの間の空白など）なら、箱のある兄弟まで遡る
+            HtmlNode pn = plan.previousNode();
+            while (pn != null && previousBox == null) {
                 for (LayoutBox b : plan.parentBox().children) {
-                    if (b.node == plan.previousNode()) { previousBox = b; break; }
+                    if (b.node == pn) { previousBox = b; break; }
                 }
+                if (previousBox != null || pn.parent == null) break;
+                int at = pn.parent.children.indexOf(pn);
+                pn = at > 0 ? pn.parent.children.get(at - 1) : null;
             }
             if (paintBuilder.canPatchChildSlices(plan.parentBox(), plan.removed(), addedBoxes, previousBox)) {
                 elements = paintBuilder.patchChildSlices(plan.parentBox(), plan.removed(), addedBoxes, previousBox);

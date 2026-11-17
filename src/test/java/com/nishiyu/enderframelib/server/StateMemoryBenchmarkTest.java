@@ -129,8 +129,9 @@ public class StateMemoryBenchmarkTest {
         );
 
         // 100 セッションで DOM ノードが保持されていることを確認（決定論的指標）
-        assertEquals(3000, result.totalDomNodes(), "100 セッションで合計 3000 個の DOM ノードがヒープに常駐していること");
-        assertEquals(30, result.nodesPerSession(), "1 セッションあたり 30 個の DOM ノードが保持されていること");
+        // 2026-11-18: 30 → 49 / セッション。要素の間の改行入りの空白を DOM の節として持つようになった
+        assertEquals(4900, result.totalDomNodes(), "100 セッションで合計 4900 個の DOM ノードがヒープに常駐していること");
+        assertEquals(49, result.nodesPerSession(), "1 セッションあたり 49 個の DOM ノードが保持されていること");
         // メモリ消費量（全件テスト時は先行テストの GC 回収と重なると差分が揺れるため、厳密モード時のみ 1MB 閾値を強制）
         if (PerformanceBenchmarkTest.isStrictBenchmarkMode()) {
             assertTrue(result.usedMemoryBytes() > 1_000_000,

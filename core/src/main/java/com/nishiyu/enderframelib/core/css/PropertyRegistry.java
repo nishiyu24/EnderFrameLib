@@ -247,6 +247,9 @@ public final class PropertyRegistry {
         layout("text-justify", "auto", true, ValueType.KEYWORD, false);
         // tab の幅（空白の幅の倍数か長さ。CSS Text 3 §4.2）
         layout("tab-size", "8", true, ValueType.OTHER, false);
+        // 行の長さを揃える折り返し（CSS Text 4 §6.1）。text-wrap はショートハンドだが、balance かどうかだけを読む
+        layout("text-wrap", "wrap", true, ValueType.OTHER, false);
+        layout("text-wrap-style", "auto", true, ValueType.KEYWORD, false);
         keyword("text-transform", CssKeywords.TextTransform.class, CssKeywords.TextTransform.NONE, true, Invalidation.LAYOUT);
         layout("white-space", "normal", true, ValueType.KEYWORD, false);
         layout("word-break", "normal", true, ValueType.KEYWORD, false);

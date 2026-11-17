@@ -273,7 +273,8 @@ public class StyleResolver {
                 this.env = env;
                 this.sheetVersion = version;
             }
-            List<StyleRule> candidates = sheet.index().candidates(node);
+            // テキストの節はセレクタの対象ではない（継承値だけを持つ）。* > など要素向けの規則の width が空白の箱に掛かっていた
+            List<StyleRule> candidates = node.nodeType == NodeType.TEXT ? List.of() : sheet.index().candidates(node);
             ShareKey key = probe;
             key.begin(candidates.size());
             for (int i = 0, size = candidates.size(); i < size; i++) {
@@ -416,7 +417,7 @@ public class StyleResolver {
         inheritInto(parent, result);
         applyRegisteredInitialValues(result, parent, sheet);
 
-        List<StyleRule> candidates = sheet != null && node != null ? sheet.index().candidates(node) : List.of();
+        List<StyleRule> candidates = sheet != null && node != null && node.nodeType != NodeType.TEXT ? sheet.index().candidates(node) : List.of();
 
         // style 属性を持つ要素は少ないので、インラインの宣言は属性があるときだけ解く（CompiledDeclarations を直接キャッシュする）
         CompiledDeclarations inlineNormal = null;

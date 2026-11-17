@@ -58,7 +58,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         // 行の内容の幅は強制改行（<br> と保持された改行）で区切って、最も広い行を取る。
         // 何が壊れていたか: 以前は区切らずに足し続けていて、<br> を含む inline-block・float・flex アイテムが
         // 全行を横に繋げた幅まで広がっていた
-        float lineCur = 0, lineMax = 0;
+        float lineCur = 0, lineMax = 0, linePend = 0;
         // fill 幅ブロックの fit 境界判定では、前後の空白を削らない実送り幅（FlowBuilder が折り返し判定に使う幅）で数える
         float fitCur = 0, fitMax = 0;
 
@@ -121,17 +121,17 @@ public class BlockLayoutEngine extends LayoutEngine {
             // float は行の内容と同じく横に並ぶので、shrink-to-fit の幅には横に足して数える
             if (isInlineBox(child) || isFloating(child)) {
                 float[] wScratch = INLINE_WIDTH_SCRATCH.get();
-                wScratch[0] = lineCur; wScratch[1] = lineMax;
+                wScratch[0] = lineCur; wScratch[1] = lineMax; wScratch[2] = linePend;
                 addInlineWidth(child, wScratch, ctx, false);
-                lineCur = wScratch[0]; lineMax = wScratch[1];
-                wScratch[0] = fitCur; wScratch[1] = fitMax;
+                lineCur = wScratch[0]; lineMax = wScratch[1]; linePend = wScratch[2];
+                wScratch[0] = fitCur; wScratch[1] = fitMax; wScratch[2] = 0;
                 addInlineWidth(child, wScratch, ctx, true);
                 fitCur = wScratch[0]; fitMax = wScratch[1];
                 if (tentativeInnerW > 0 && lineMax > tentativeInnerW) box.measuredClamped = true;
                 maxChildW = Math.max(maxChildW, tentativeInnerW > 0 ? Math.min(tentativeInnerW, lineMax) : lineMax);
                 fitInnerW = Math.max(fitInnerW, fitMax);
             } else {
-                lineCur = 0; lineMax = 0;
+                lineCur = 0; lineMax = 0; linePend = 0;
                 fitCur = 0; fitMax = 0;
                 maxChildW = Math.max(maxChildW, child.w + child.mL + child.mR);
                 float childNeed = child.blockChildFitWidth();
@@ -150,7 +150,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** shrink-to-fit の測定で数える行幅の一時作業領域（{current, max}）。child.measure 再入の前後でローカル変数に退避して使う。 */
-    private static final ThreadLocal<float[]> INLINE_WIDTH_SCRATCH = ThreadLocal.withInitial(() -> new float[2]);
+    private static final ThreadLocal<float[]> INLINE_WIDTH_SCRATCH = ThreadLocal.withInitial(() -> new float[3]);
 
     private static final class BlockScratch {
         final FlowBuilder flow = new FlowBuilder(this);
@@ -231,8 +231,17 @@ public class BlockLayoutEngine extends LayoutEngine {
                     // min(max-content, 利用可能幅) なので、最も長い行の幅では利用可能幅より狭くなる
                     boolean wrapped = b.shapedLines != null && b.shapedLines.size() > 1 && b.displayText != null;
                     w = wrapped ? b.cachedStrippedAdvance(b.displayText, face, textStyle.font()) : b.w;
+                    // 前後の空白は行の先頭と末尾でだけ消える。run の境目（"aa " + "<span>green</span>"）では幅に入る
+                    String t = b.displayText;
+                    if (t != null && !t.isEmpty() && textStyle.whiteSpace().collapses()) {
+                        float space = face.advance(" ", textStyle.font());
+                        if (t.charAt(0) == ' ' && line[0] > 0 && line[2] == 0) line[2] = space;
+                        if (w > 0) addContent(line, w + b.mL + b.mR);
+                        if (t.charAt(t.length() - 1) == ' ' && (w > 0 || line[0] > 0)) line[2] = space;
+                        return;
+                    }
                 }
-                addLineWidth(line, w + b.mL + b.mR);
+                addContent(line, w + b.mL + b.mR);
                 return;
             }
             String[] paragraphs = b.displayText.split("\n", -1);
@@ -245,13 +254,24 @@ public class BlockLayoutEngine extends LayoutEngine {
             }
         } else if (b.node.tag.equals("br")) {
             line[0] = 0;
+            line[2] = 0;
         } else if (isFloating(b) || isAtomicInline(b) || !isInlineBox(b)) {
-            addLineWidth(line, b.w + b.mL + b.mR);
+            addContent(line, b.w + b.mL + b.mR);
         } else {
-            addLineWidth(line, b.mL + b.bL + b.pL);
+            float open = b.mL + b.bL + b.pL, close = b.pR + b.bR + b.mR;
+            if (open > 0) addContent(line, open);
             for (int i = 0, n = b.children.size(); i < n; i++) addInlineWidth(b.children.get(i), line, ctx, includeFullSpaces);
-            addLineWidth(line, b.pR + b.bR + b.mR);
+            if (close > 0) addContent(line, close);
         }
+    }
+
+    /** 内容の幅を足す。保留していた空白（前の run の末尾）は、後に内容が続いたので行の幅に入る。 */
+    private static void addContent(float[] line, float w) {
+        if (line.length > 2) {
+            w += line[2];
+            line[2] = 0;
+        }
+        addLineWidth(line, w);
     }
 
     /** {@link FlowBuilder} が 1 行に置いたときに進む幅（前後の空白・正のカーニングを含む）。 */
@@ -982,10 +1002,14 @@ public class BlockLayoutEngine extends LayoutEngine {
             List<LayoutBox> boxes = run.size() == 1 ? List.of(run.get(0)) : List.copyOf(run);
             List<InlineLine> result;
             scratch.line.init(this, y, indent, !hasContent);
+            scratch.line.balanceShrink = 0;
             try {
                 result = scratch.line.build(boxes);
             } finally {
                 scratch.line.clearRefs();
+            }
+            if (result.size() > 1 && result.size() <= 10 && isBalanced(box.style) && balanceable(boxes)) {
+                result = balanceLines(boxes, result, y, indent);
             }
             state.items.add(new LineRun(boxes, result));
             if (!result.isEmpty()) {
@@ -995,6 +1019,55 @@ public class BlockLayoutEngine extends LayoutEngine {
             }
             run.clear();
         }
+
+        /**
+         * text-wrap: balance（CSS Text 4 §6.1）: 行数を変えずに、折り返しの判定に使う幅をできるだけ狭めて組み直す（行の長さが揃う）。
+         * 行の箱の幅と揃えは元のまま。狭める量は二分探索で 1px 単位まで。
+         */
+        private List<InlineLine> balanceLines(List<LayoutBox> boxes, List<InlineLine> first, float y, float indent) {
+            int lines = first.size();
+            float lo = 0, hi = innerW;
+            List<InlineLine> best = first;
+            for (int iter = 0; iter < 12 && hi - lo > 1f; iter++) {
+                float mid = (lo + hi) / 2;
+                List<InlineLine> trial = buildWithShrink(boxes, y, indent, mid);
+                if (trial.size() == lines) {
+                    lo = mid;
+                    best = trial;
+                } else {
+                    hi = mid;
+                }
+            }
+            return best;
+        }
+
+        private List<InlineLine> buildWithShrink(List<LayoutBox> boxes, float y, float indent, float shrink) {
+            scratch.line.init(this, y, indent, !hasContent);
+            scratch.line.balanceShrink = shrink;
+            try {
+                return scratch.line.build(boxes);
+            } finally {
+                scratch.line.balanceShrink = 0;
+                scratch.line.clearRefs();
+            }
+        }
+    }
+
+    /** text-wrap: balance / text-wrap-style: balance。 */
+    private static boolean isBalanced(ComputedStyle style) {
+        String s = style.get(CssPropertyIndex.TEXT_WRAP_STYLE);
+        if (s != null && s.trim().equalsIgnoreCase("balance")) return true;
+        String w = style.get(CssPropertyIndex.TEXT_WRAP);
+        return w != null && w.toLowerCase(java.util.Locale.ROOT).contains("balance");
+    }
+
+    /** 組み直しても副作用の無い並び（float・絶対配置を含まない）か。 */
+    private static boolean balanceable(List<LayoutBox> boxes) {
+        for (LayoutBox b : boxes) {
+            if (b.isAbsolute || isFloating(b) || b.hasAbsoluteChild) return false;
+            if (isInlineBox(b) && !balanceable(b.children)) return false;
+        }
+        return true;
     }
 
     static boolean isFirstFlowChild(LayoutBox box) {
@@ -1135,7 +1208,9 @@ public class BlockLayoutEngine extends LayoutEngine {
      * flex / grid の {@code baseline} 揃えが読む。
      */
     public static Float firstBaseline(LayoutBox box) {
-        if (synthesizesBaseline(box) || !(box.engineState instanceof FlowState state)) return null;
+        if (synthesizesBaseline(box)) return null;
+        if (box.engineState instanceof FlexLayoutEngine.FlexState) return FlexLayoutEngine.containerFirstBaseline(box);
+        if (!(box.engineState instanceof FlowState state)) return null;
         for (Object item : state.items) {
             Float b = baselineOf(box, item);
             if (b != null) return b;
@@ -1390,10 +1465,10 @@ public class BlockLayoutEngine extends LayoutEngine {
             Object item = state.items.get(i);
             if (item instanceof Placement p && !isFloating(p.box())) {
                 Float b = lastBaseline(p.box());
-                if (b != null) return box.bT + box.pT + p.y() + p.box().mT + b;
+                if (b != null) return box.bT + box.pT + box.legendSpill + p.y() + p.box().mT + b;
             } else if (item instanceof LineRun run && !run.lines().isEmpty()) {
                 InlineLine line = run.lines().getLast();
-                return box.bT + box.pT + line.top() + line.baseline();
+                return box.bT + box.pT + box.legendSpill + line.top() + line.baseline();
             }
         }
         return null;
@@ -1402,11 +1477,12 @@ public class BlockLayoutEngine extends LayoutEngine {
     private static Float baselineOf(LayoutBox box, Object item) {
         if (item instanceof Placement p && !isFloating(p.box())) {
             Float b = firstBaseline(p.box());
-            return b != null ? box.bT + box.pT + p.y() + p.box().mT + b : null;
+            // fieldset の中身は legend のはみ出し（legendSpill）の下から始まる
+            return b != null ? box.bT + box.pT + box.legendSpill + p.y() + p.box().mT + b : null;
         }
         if (item instanceof LineRun run && !run.lines().isEmpty()) {
             InlineLine line = run.lines().getFirst();
-            return box.bT + box.pT + line.top() + line.baseline();
+            return box.bT + box.pT + box.legendSpill + line.top() + line.baseline();
         }
         return null;
     }
@@ -1588,6 +1664,10 @@ public class BlockLayoutEngine extends LayoutEngine {
         float lineLeft, lineWidth;
         /** 行の左端からの進み位置。float のまま持つ（断片ごとの切り上げで誤差が溜まっていた）。 */
         float lineX;
+        /** text-wrap: balance で、折り返しの判定に使う幅から引く量（行の幅・揃えはそのまま）。 */
+        float balanceShrink;
+        /** 直前の run の頭で畳んだ空白が、折り返しを許す white-space だった（次の run の頭で折り返せる）。 */
+        boolean wrapSpaceCollapsed;
         /** 最後に置いた語の行末の空白の幅。行を閉じるとき内容の幅から除く。 */
         float trailingSpace;
         float indent;
@@ -1616,6 +1696,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             this.lineX = 0;
             this.trailingSpace = 0;
             this.lineStarted = false;
+            this.wrapSpaceCollapsed = false;
             // 行ボックスの strut: 内容の無い行でも、ブロックの書体と line-height の高さを持つ（CSS 2.2 §10.8.1）
             ComputedStyle strutCss = this.flStyle != null ? this.flStyle : flow.box.style;
             TextStyle strut = ctx.textStyleFor(strutCss);
@@ -1897,6 +1978,8 @@ public class BlockLayoutEngine extends LayoutEngine {
             TextStyle textStyle = ctx.textStyleFor(runBox.style);
             if (!runText.isEmpty() && runText.charAt(0) == ' ' && textStyle.whiteSpace().collapses() && precededByCollapsibleSpace()) {
                 runText = runText.substring(1);
+                // 畳んだ空白が折り返しを許す white-space なら、その位置は折り返しの機会として残る
+                if (textStyle.whiteSpace().wraps() && !currentEmpty()) wrapSpaceCollapsed = true;
                 if (runText.isEmpty()) {
                     ensureLine(); // 保留中の float はここで置く（空白の run でも従来どおり行を始める）
                     return;
@@ -1916,7 +1999,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             if (effFl == null && flow.floats.isEmpty() && (deferredFloats == null || deferredFloats.isEmpty())
                     && (open == null || open.isEmpty()) && currentEmpty() && !lineStarted && lineX == 0 && indent == 0
                     && closing == 0 && textStyle.whiteSpace().wraps() && constrained() && runText.indexOf('\t') < 0
-                    && !textStyle.whiteSpace().breaksSpaces() && font.letterSpacingPx() == 0
+                    && !textStyle.whiteSpace().breaksSpaces() && font.letterSpacingPx() == 0 && balanceShrink == 0
                     && (!preserveNewlines || runText.indexOf('\n') < 0)) {
                 TextShaper.WrappedParagraph wp = runBox.cachedWrappedParagraph(
                         runText, face, font, textStyle.wordBreak(), flow.innerW);
@@ -1994,7 +2077,20 @@ public class BlockLayoutEngine extends LayoutEngine {
                 return;
             }
             addRemainingParagraph(runBox, inlineParents, face, font, textStyle, alignment, runH, baseline, descent,
-                    paragraph, closing, cacheOnBox, null, 0, null);
+                    paragraph, closing, cacheOnBox, previousTextSameFont(face, font), 0, null);
+        }
+
+        /**
+         * 行の直前の断片が同じ書体・同じ字の設定の文字なら、その文字列（要素の境目をまたいでも字の詰めを入れる。ブラウザは
+         * 段落の文字をまとめて整形する）。違えば null。
+         */
+        private String previousTextSameFont(FontFace face, FontStyle font) {
+            if (currentEmpty()) return null;
+            LineItem last = current.getLast();
+            String t = last.text();
+            if (t == null || t.isEmpty() || Character.isWhitespace(t.charAt(t.length() - 1)) || last.box() == null) return null;
+            if (ctx.faceFor(last.box().style) != face || !font.equals(ctx.fontStyleFor(last.box().style))) return null;
+            return t;
         }
 
         private void addFirstLineParagraph(LayoutBox runBox, List<LayoutBox> inlineParents, FontFace normFace, FontStyle normFont,
@@ -2093,8 +2189,9 @@ public class BlockLayoutEngine extends LayoutEngine {
                 float join = previousOnLine == null ? 0
                         : s > 0 && previousOnLine == segments[s - 1] ? prepared.joinW(s)
                         : TextShaper.kerningBetween(face, font, previousOnLine, segment);
-                if (textStyle.whiteSpace().wraps() && !segment.isBlank()) {
-                    if (needsWrap(lineX + kerned + join + trimmedW + edges)) {
+                // 折り返しの機会は空白の側の white-space が決める: 前の run の折り返し可の空白の後なら、この run が nowrap でも折り返せる
+                if ((textStyle.whiteSpace().wraps() || (s == 0 && afterWrappableSpace())) && !segment.isBlank()) {
+                    if (needsWrap(lineX + kerned + join + trimmedW + edges) && !(s == 0 && continuesWord(segment))) {
                         newLine(runH, baseline, true);
                         ensureLine();
                         kerned = 0;
@@ -2110,8 +2207,11 @@ public class BlockLayoutEngine extends LayoutEngine {
                     }
                     dropBelowFloats(lineX + kerned + join + trimmedW + edges);
                 }
-                kerned += join;
+                // run の先頭の、前の run の文字との詰め（同じ行に続くときだけ）は、断片の位置に入れる
+                if (s == 0 && previousOnLine != null && join != 0 && !currentEmpty()) lineX += join;
+                else kerned += join;
                 previousOnLine = segment;
+                wrapSpaceCollapsed = false;
                 // 断片の座標も float のまま持つ。丸めるのは描画側の 1 箇所だけ
                 if (tabPieces != null) {
                     if (tabPieces[0] != lineX) tabPieces = tabLayout(segment, lineX, runBox, face, font); // 折り返して始点が変わった
@@ -2193,6 +2293,29 @@ public class BlockLayoutEngine extends LayoutEngine {
             }
         }
 
+        /**
+         * この run の先頭が、行の直前の文字の続き（同じ語）か。要素の境目（{@code h<span></span>ighway}・語の中の絶対配置）は
+         * 折り返しの機会ではない（UAX #14。CJK の字の間と、原子的インラインの前後は除く）。
+         */
+        private boolean continuesWord(String segment) {
+            if (currentEmpty() || segment.isEmpty()) return false;
+            String prev = current.getLast().text();
+            if (prev == null || prev.isEmpty()) return false;
+            char a = prev.charAt(prev.length() - 1), b = segment.charAt(0);
+            if (Character.isWhitespace(a) || Character.isWhitespace(b) || a == '-' || a == '­') return false;
+            return a < 0x2E80 && b < 0x2E80;
+        }
+
+        /** 行の直前の断片が、折り返しを許す white-space の空白で終わっているか（CSS Text 3 §5.1）。 */
+        private boolean afterWrappableSpace() {
+            if (currentEmpty()) return false;
+            if (wrapSpaceCollapsed) return true;
+            LineItem last = current.getLast();
+            String t = last.text();
+            if (t == null || t.isEmpty() || t.charAt(t.length() - 1) != ' ' || last.box() == null) return false;
+            return WhiteSpace.of(last.box().style.get(CssPropertyIndex.WHITE_SPACE)).wraps();
+        }
+
         private static boolean hasWideChars(String s) {
             for (int i = 0, n = s.length(); i < n; i++) if (s.charAt(i) >= 0x2E80) return true;
             return false;
@@ -2233,6 +2356,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
 
         private void addAtomic(FlatRun run, float closing) {
+            wrapSpaceCollapsed = false;
             LayoutBox b = run.box;
             float boxOuterW = b.w + b.mL + b.mR;
             float baseline = atomicBaseline(b);
@@ -2275,7 +2399,7 @@ public class BlockLayoutEngine extends LayoutEngine {
          * 代わりに「ブラウザなら折り返す幅で折り返さない」差を生むだけになっていた。
          */
         private boolean needsWrap(float lineEnd) {
-            return constrained() && !currentEmpty() && lineEnd > lineWidth + TextShaper.WRAP_TOLERANCE;
+            return constrained() && !currentEmpty() && lineEnd > lineWidth - balanceShrink + TextShaper.WRAP_TOLERANCE;
         }
 
         /**
@@ -2640,7 +2764,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** 断片の上端からベースラインまでの距離。整形器と同じ half-leading の分け方を使う。 */
-    private static float baselineWithin(TextStyle textStyle, FontFace face) {
+    static float baselineWithin(TextStyle textStyle, FontFace face) {
         FontStyle font = textStyle.font();
         float ascent = face.ascent(font);
         float descent = face.descent(font);

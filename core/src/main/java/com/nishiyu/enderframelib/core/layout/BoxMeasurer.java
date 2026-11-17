@@ -117,6 +117,9 @@ public final class BoxMeasurer {
             engineInnerW = LayoutMetrics.UNBOUNDED_WIDTH;
         } else if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
             engineInnerW = Math.max(0, parentW - box.mL - box.mR - box.horizontalDecoration());
+            // 縮小幅は min(max-content, 使える幅) を max-width で切り詰めたもの（CSS 2.2 §10.3.5・§10.4）。内容はその幅で折り返す
+            float maxInner = shrinkMaxInnerWidth(box, parentW, rootW, rootH, isBorderBox, isPercentWidthAndShrinking);
+            if (!Float.isNaN(maxInner)) engineInnerW = Math.min(engineInnerW, maxInner);
         } else {
             engineInnerW = Math.max(0, box.w - box.horizontalDecoration());
         }
@@ -138,6 +141,8 @@ public final class BoxMeasurer {
             // 横の size containment がある箱（コンテナ）は、中身で幅が決まらない
             box.w = (box.effectiveContainsInlineSize() ? box.containIntrinsicInlinePx(rootW, rootH) : contentW)
                     + box.horizontalDecoration();
+            float maxInner = shrinkMaxInnerWidth(box, parentW, rootW, rootH, isBorderBox, isPercentWidthAndShrinking);
+            if (!Float.isNaN(maxInner)) box.w = Math.min(box.w, maxInner + box.horizontalDecoration());
             box.naturalInlineSize = box.w;
         }
 
@@ -147,6 +152,8 @@ public final class BoxMeasurer {
 
         if (!box.isHorizontalReturnRoot && !overridden) {
             applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
+            // 縮小幅（float・inline-block・絶対配置）の箱も、内容で決めた幅に min-width の下限が掛かる（CSS 2.2 §10.4）
+            if (box.sizingMode == SizingMode.SHRINK_TO_FIT) applyShrinkMinWidth(box, ctx, parentW, rootW, rootH, isBorderBox);
         }
 
         // auto マージンで中央に寄せるのはブロックフローだけ。flex / grid は自分の揃えで auto マージンを解く
@@ -348,6 +355,7 @@ public final class BoxMeasurer {
 
         var interval = box.shapeTextInterval(box.displayText, ctx.faceFor(style), ctx.textStyleFor(style), limitW);
         box.shapedLines = interval.lines();
+        box.textBaseline = BlockLayoutEngine.baselineWithin(ctx.textStyleFor(style), ctx.faceFor(style));
         float maxLineW = interval.maxLineWidth();
         box.w = maxLineW + box.horizontalDecoration();
         box.sizingMode = SizingMode.DEFINITE;
@@ -387,6 +395,26 @@ public final class BoxMeasurer {
      */
     static float toBorderBox(float specified, float decoration, boolean isBorderBox) {
         return isBorderBox ? Math.max(specified, decoration) : specified + decoration;
+    }
+
+    /** 縮小幅の箱の max-width（内容ボックスの幅）。指定が無い・解けない（不定の %・キーワード）なら NaN。 */
+    private static float shrinkMaxInnerWidth(LayoutBox box, float parentW, float rootW, float rootH, boolean isBorderBox,
+                                             boolean isPercentWidthAndShrinking) {
+        if (box.isHorizontalReturnRoot) return Float.NaN;
+        ComputedStyle style = box.axisStyle();
+        String maxWStr = style.get(CssPropertyIndex.MAX_WIDTH);
+        if (maxWStr == null || "none".equalsIgnoreCase(maxWStr.trim()) || LayoutMetrics.isIntrinsicSizeKeyword(maxWStr)) return Float.NaN;
+        if (maxWStr.contains("%") && (isPercentWidthAndShrinking || parentW <= 0)) return Float.NaN;
+        float maxW = toBorderBox(style.length(CssPropertyIndex.MAX_WIDTH, parentW, rootW, rootH), box.horizontalDecoration(), isBorderBox);
+        return Math.max(0, maxW - box.horizontalDecoration());
+    }
+
+    private static void applyShrinkMinWidth(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH, boolean isBorderBox) {
+        ComputedStyle style = box.axisStyle();
+        String minWStr = style.get(CssPropertyIndex.MIN_WIDTH);
+        if (minWStr == null || LayoutMetrics.isIntrinsicSizeKeyword(minWStr)) return;
+        float minW = toBorderBox(style.length(CssPropertyIndex.MIN_WIDTH, parentW, rootW, rootH), box.horizontalDecoration(), isBorderBox);
+        if (minW > box.w) box.w = minW;
     }
 
     private static void applyMinMaxWidths(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH,
