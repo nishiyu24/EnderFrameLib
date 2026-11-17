@@ -130,6 +130,16 @@ public final class BoxTreeBuilder {
      * 新しい子の箱（要素ツリーに加え済み）が、局所パッチで差し込める形か（子の側の条件）。
      * ブロックレベルで、番号を使うマーカーを持たず、表の内部・{@code display: contents} ・{@code display: none}・fieldset の legend でない。
      */
+    /**
+     * 通常の流れの外に出る・描画順を変える子か（float・絶対/固定/相対/sticky の位置指定）。このような子の増減は、兄弟の行の折り返し
+     * （float を避ける）や描画の層（位置指定の箱は流れの後ろに描く）に響くので、子だけを差し替える局所パッチでは扱えない。
+     */
+    public static boolean affectsSiblingsOrPaintOrder(LayoutBox box) {
+        if (box.isAbsolute || box.isFixed || box.isRelative || box.isSticky) return true;
+        return box.style != null && box.node != null && box.node.nodeType != NodeType.TEXT
+                && box.style.keywordOf(CssPropertyIndex.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE;
+    }
+
     public static boolean canInsertBuiltChild(LayoutBox parent, LayoutBox added) {
         LayoutBox.Display d = added.display;
         if (d == null || d.isNone() || d.isContents() || d.isInlineLevel() || d.isTableInternal()) return false;
@@ -138,6 +148,7 @@ public final class BoxTreeBuilder {
         if (added.isAnonymous || added.node.isPseudoNode || added.isOutsideMarker) return false;
         if ("legend".equals(added.node.tag)) return false;
         if (d.listItem() && !unnumberedListStyle(added)) return false;
+        if (affectsSiblingsOrPaintOrder(added)) return false;
         return true;
     }
 

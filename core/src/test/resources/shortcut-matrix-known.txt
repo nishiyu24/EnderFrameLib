@@ -4,19 +4,14 @@ enderframe.layout.nocutoff | sig:layouts | 手 43 の表（#tb）の幅が 262 /
 enderframe.paint.nodiffpatch | pix:cards | 手 6（hover でトランジション開始）で文字の縁の濃さが違う（x52–65・y4–31 の 340 画素。既定の方が濃く重ね描きの疑い。署名は一致）
 enderframe.paint.nomemo | sig:scrolllist | 手 10 の hover で bg_root の色が違う（#fde 系 / #eef。トランジションの開始値の食い違い）。以降の nomemo の行は同じ原因と推定
 enderframe.paint.nomemo | pix:scrolllist | 同じ原因と推定（手 10〜43 の hover・スクロール後）
-enderframe.paint.nomemo | sig:layouts | 同じ原因と推定（手 10〜43 の hover・スクロール後）
-enderframe.paint.nomemo | pix:layouts | 同じ原因と推定（手 10〜43 の hover・スクロール後）
 enderframe.paint.nomemo | sig:nested | 未調査
 enderframe.paint.nomemo | pix:nested | 未調査
 enderframe.paint.nomemo | pix:cards | 未調査
-enderframe.paint.noparentrelative | pix:layouts | 署名は設計どおり変わるので画素だけを比べて、画素が違う（未調査）
 enderframe.paint.noparentrelative | pix:nested | 未調査
 enderframe.paint.noparentrelative | pix:scrolllist | 署名は設計どおり変わるので画素だけを比べて、画素が違う（未調査）
 enderframe.paint.noscrollnode | pix:scrolllist | スクロール後の画素が違う（スクロール節を使わない経路。未調査）
 enderframe.paint.noscrollnode | pix:catalog | スクロール後の画素が違う（スクロール節を使わない経路。未調査）
 enderframe.paint.noshiftpatch | pix:cards | 未調査
 enderframe.soft.nodamage | pix:cards | 未調査
-enderframe.ui.nochildpatch | sig:layouts | 手 11 で足した div の項目（z11_txt）の並び順だけが違う（項目の中身は同じ。描画順の食い違い）
 enderframe.ui.nochildpatch | sig:nested | 未調査
 enderframe.ui.nochildpatch | pix:nested | 未調査
-enderframe.ui.nochildpatch | pix:layouts | 未調査

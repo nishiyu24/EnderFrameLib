@@ -81,7 +81,7 @@ public final class ShortcutMatrixMain {
 
     // ---- 子 JVM: シナリオを走らせて署名の写しを出す ----
 
-    private static final String CARDS = """
+    static final String CARDS = """
             <style>
               body { margin: 0; font-size: 14px }
               .card { padding: 6px; margin: 3px; border: 1px solid #888; background: #eef; transition: background-color .3s, width .3s }
@@ -106,10 +106,10 @@ public final class ShortcutMatrixMain {
               <div class="card item" id="j2"><div class="card"><span>deep</span></div></div>
             </div>
             """;
-    private static final String[] CARD_CLASSES = {"card item", "card item a", "card item b", "card item hot", "card item m", "card item big", "t", "t wide", "v", ""};
-    private static final String[] CARD_STYLES = {"", "width:80px", "color:red", "padding:10px", "border-radius:20px", "font-size:18px", "display:none", "opacity:.5"};
+    static final String[] CARD_CLASSES = {"card item", "card item a", "card item b", "card item hot", "card item m", "card item big", "t", "t wide", "v", ""};
+    static final String[] CARD_STYLES = {"", "width:80px", "color:red", "padding:10px", "border-radius:20px", "font-size:18px", "display:none", "opacity:.5"};
 
-    private static final String LAYOUTS = """
+    static final String LAYOUTS = """
             <style>
               body { margin: 0; font-size: 13px }
               .fx { display: flex; gap: 6px; flex-wrap: wrap } .fx > * { flex: 1 1 60px; min-width: 40px; padding: 3px; background: #def }
@@ -125,11 +125,11 @@ public final class ShortcutMatrixMain {
             <table id="tb"><tr><td id="t1">a</td><td>bb</td></tr><tr><td>c</td><td id="t2">dddd</td></tr></table>
             <div class="w p rel" id="w1">percent width <span id="w2">inline</span></div><div class="abs" id="ab"></div>
             """;
-    private static final String[] LAYOUT_CLASSES = {"fx", "gr", "fl", "w", "p", "w p", "rel", "p rel", "", "fx p"};
-    private static final String[] LAYOUT_STYLES = {"", "width:90px", "display:flex", "display:grid", "float:right", "padding:9px", "margin-left:11px", "height:50px", "font-size:17px", "display:none", "gap:2px"};
+    static final String[] LAYOUT_CLASSES = {"fx", "gr", "fl", "w", "p", "w p", "rel", "p rel", "", "fx p"};
+    static final String[] LAYOUT_STYLES = {"", "width:90px", "display:flex", "display:grid", "float:right", "padding:9px", "margin-left:11px", "height:50px", "font-size:17px", "display:none", "gap:2px"};
 
     /** flex / grid の入れ子（上書き幅・測定の記録の再利用を突く）。 */
-    private static final String NESTED = """
+    static final String NESTED = """
             <style>
               body { margin: 0; font-size: 13px }
               .row { display: flex; gap: 4px; padding: 3px; border: 1px solid #99a }
@@ -144,18 +144,18 @@ public final class ShortcutMatrixMain {
             <div class="g3" id="n3"><div class="box" id="c1">1</div><div class="box" id="c2">22</div><div class="box" id="c3">333 4</div><div class="box" id="c4">x</div><div class="box" id="c5">yy</div></div>
             <div class="wrapf" id="n4"><div class="box fit" id="d1">fit one</div><div class="box fit" id="d2">fit two longer</div><div class="box c1" id="d3">grow</div></div>
             """;
-    private static final String[] NESTED_CLASSES = {"box c1", "box c2", "box c3", "box pc", "box fit", "row", "col", "g2", "wrapf", "box lbl", ""};
-    private static final String[] NESTED_STYLES = {"", "width:90px", "min-width:100px", "flex:1 1 auto", "flex-basis:50%", "padding:7px", "gap:9px",
+    static final String[] NESTED_CLASSES = {"box c1", "box c2", "box c3", "box pc", "box fit", "row", "col", "g2", "wrapf", "box lbl", ""};
+    static final String[] NESTED_STYLES = {"", "width:90px", "min-width:100px", "flex:1 1 auto", "flex-basis:50%", "padding:7px", "gap:9px",
             "grid-template-columns:1fr 2fr", "font-size:17px", "display:none", "max-width:80px", "margin-left:6px", "flex-direction:column"};
 
-    private static String scrollList() {
+    static String scrollList() {
         StringBuilder sb = new StringBuilder("<style>body{margin:0;font-size:13px}#sc{width:300px;height:200px;overflow-y:auto}"
                 + ".row{height:24px;margin:2px;padding:2px 6px;background:#eef}.row:hover{background:#fdd}.hl{background:#cfc}.tall{height:60px}</style><div id=\"sc\">");
         for (int i = 0; i < 70; i++) sb.append("<div class=\"row\" id=\"r").append(i).append("\">row ").append(i).append(" text</div>");
         return sb.append("</div>").toString();
     }
-    private static final String[] LIST_CLASSES = {"row", "row hl", "row tall", "row hl tall", ""};
-    private static final String[] LIST_STYLES = {"", "color:red", "height:40px", "padding:8px", "opacity:.6", "display:none"};
+    static final String[] LIST_CLASSES = {"row", "row hl", "row tall", "row hl tall", ""};
+    static final String[] LIST_STYLES = {"", "color:red", "height:40px", "padding:8px", "opacity:.6", "display:none"};
 
     /** 名前 → 1 手ごとの写し（食い違った最初の手を示すため）。表示リストの署名は {@code sig:}、画素は {@code pix:}。 */
     private static final Map<String, String> STEPS = new LinkedHashMap<>();

@@ -1722,6 +1722,7 @@ public class UiView implements AutoCloseable {
         }
         for (LayoutBox r : removed) {
             if (r.node.nodeType != NodeType.ELEMENT && !isBlankText(r.node)) return null;
+            if (BoxTreeBuilder.affectsSiblingsOrPaintOrder(r)) return null; // float・位置指定の子を消すと、兄弟の行や描画順が変わる
         }
         return new ChildPlan(parent, pb, removed, added, prefix > 0 ? dom.get(prefix - 1) : null);
     }
