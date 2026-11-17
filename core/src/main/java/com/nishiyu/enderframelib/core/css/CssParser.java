@@ -30,7 +30,7 @@ import java.util.function.Function;
 public final class CssParser {
 
     /** {@code @font-face} を含む CSS を受け取ってフォントを登録するフック（クライアント側から注入）。 */
-    public static Consumer<String> fontFaceCallback = null;
+    public static volatile Consumer<String> fontFaceCallback = null;
 
     private CssParser() {}
 

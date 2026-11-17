@@ -28,7 +28,7 @@ class StaleTextPatchTest {
 
     private record Result(List<String> items, List<String> boxes) {}
 
-    private static Result run(boolean defer, boolean stalePatch) {
+    private static Result run(boolean defer, boolean stalePatch) throws InterruptedException {
         boolean savedDefer = UiView.deferScrollLayout, savedStale = UiView.staleTextPatchEnabled;
         UiView.deferScrollLayout = defer;
         UiView.staleTextPatchEnabled = stalePatch;
@@ -52,8 +52,16 @@ class StaleTextPatchTest {
                 collect(view.ui().layoutRoot(), boxes); // 箱の位置を読むと、後回しにした決め直しが済む
                 // 表示リストは、後回しの間は決め直す前の位置の枠で持つ（動いた分は節の移動）。同じ絵になるか比べるため、全体を作り直させる
                 view.resize(321, 240);
+                // リサイズは直前のレイアウト時間の 2 倍が経つまで保留される（壁時計。UiView.resizeDue）。適用されるまでフレームを回す。
+                // 保留されたときだけ増えるフレームで仮想時間を進めると、スムーズスクロール（StandaloneView.stepScroll）が余計に進んで
+                // 位置が変わる。時刻を進めない（dt = 0 ならスクロールは進まない）ので、保留の有無で結果が変わらない。
+                // 以前は 1 フレームだけ回して、保留のまま比べていた（全件の連続実行で赤になった原因）
                 now += 16;
-                view.frame(now, backend, true);
+                for (int tries = 0; tries < 2000 && view.ui().rootW() != 321; tries++) {
+                    view.frame(now, backend, true);
+                    if (view.ui().rootW() != 321) Thread.sleep(1);
+                }
+                assertEquals(321, view.ui().rootW(), "リサイズが適用されていない");
                 List<String> items = new ArrayList<>();
                 for (DisplayItem it : view.ui().renderCache()) items.add(it.id() + "@" + it.x() + "," + it.y() + "," + it.width() + "," + it.height());
                 return new Result(items, boxes);
@@ -67,7 +75,7 @@ class StaleTextPatchTest {
     }
 
     @Test
-    void textUpdatesWhileLayoutIsStaleMatchTheEagerResult() {
+    void textUpdatesWhileLayoutIsStaleMatchTheEagerResult() throws InterruptedException {
         long hits = UiView.STALE_TEXT_PATCH_HITS.get();
         Result lazy = run(true, true);
         assertTrue(UiView.STALE_TEXT_PATCH_HITS.get() > hits, "後回しの間の文字パッチが働いていない（テストの前提が崩れている）");

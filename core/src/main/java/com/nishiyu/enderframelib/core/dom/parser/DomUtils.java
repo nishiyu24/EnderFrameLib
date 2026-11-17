@@ -13,7 +13,7 @@ public class DomUtils {
     /**
      * UIParserへの依存を切り離すためのフック。引数は (HTML, 文脈の要素のタグ)。
      */
-    public static BiFunction<String, String, HtmlNode> innerHtmlParser = null;
+    public static volatile BiFunction<String, String, HtmlNode> innerHtmlParser = null;
 
     // --- DOM検索・更新系 ---
 

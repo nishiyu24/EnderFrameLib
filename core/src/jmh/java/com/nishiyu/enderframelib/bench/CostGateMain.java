@@ -15,7 +15,7 @@ import java.util.Map;
  * 時間に依らない量（1 フレームのヒープ確保と、近道の経路の回数）で退行を判定する回帰ゲート（ENGINE_REARCHITECTURE_PLAN A1）。
  *
  * <p>時間は同じマシンでも ±10〜15% 揺れ、CI の機械ではさらに揺れるので合否に使えない。確保量と経路の回数は、
- * 新しい JVM・ワーカー 1 本・内蔵の簡易書体・描画なし（{@code null} バックエンド）で測れば実行ごとにほぼ同じ値になる。
+ * 新しい JVM・ワーカー 1 本・内蔵の簡易書体・描画なし（{@code null} バックエンド。{@code cpu} の行だけソフトウェア描画）で測れば実行ごとにほぼ同じ値になる。
  * シナリオごとに {@link FineProfileMain} を別の JVM で走らせ、その {@code COST} 行を基準値ファイルと比べる:
  * 経路の回数は完全一致、確保量は ±{@code costgate.tolerance}（既定 5%。小さい値には {@value #ALLOC_SLACK_BYTES} B の余裕）。</p>
  *
@@ -33,13 +33,16 @@ public final class CostGateMain {
     static final long ALLOC_SLACK_BYTES = 256;
     private static final int FRAMES = 600;
 
-    /** 文書・シナリオ（バックエンドは常に null＝パイプラインだけ）。 */
+    /** 文書・シナリオ［・バックエンド］。バックエンドの既定は null（パイプラインだけ）。cpu 行は名前に {@code " cpu"} が付く。 */
     private static final String[][] RUNS = {
             {"showcase", "idle"}, {"showcase", "hover"}, {"showcase", "text"}, {"showcase", "style"},
             {"showcase", "scroll"}, {"showcase", "inherited"}, {"showcase", "resizeexact"}, {"showcase", "open"},
             {"large-list", "hover"}, {"large-list", "text"}, {"large-list", "style"}, {"large-list", "scroll"},
             {"large-list", "child"}, {"large-list", "fontsize"},
             {"varied-list-500", "inherited"}, {"varied-list-500", "child"}, {"varied-list-500", "fontsize"},
+            // ソフトウェア描画（cpu バックエンド。損傷範囲・タイルのラスタ）。確保量は実行ごとに ±0.1% 以内で安定する
+            {"showcase", "hover", "cpu"}, {"showcase", "text", "cpu"}, {"showcase", "style", "cpu"},
+            {"showcase", "scroll", "cpu"}, {"large-list", "hover", "cpu"},
     };
 
     public static void main(String[] args) throws Exception {
@@ -49,15 +52,16 @@ public final class CostGateMain {
 
         Map<String, Map<String, Long>> measured = new LinkedHashMap<>();
         for (String[] run : RUNS) {
-            String key = run[0] + " " + run[1];
-            measured.put(key, measure(run[0], run[1], extra));
+            String backend = run.length > 2 ? run[2] : "null";
+            String key = run[0] + " " + run[1] + (backend.equals("null") ? "" : " " + backend);
+            measured.put(key, measure(run[0], run[1], backend, extra));
             System.out.println("measured " + key + " " + format(measured.get(key)));
         }
 
         if (update) {
             StringBuilder sb = new StringBuilder();
             sb.append("# CostGateMain の基準値。./gradlew :core:costGate -Pcostgate.update で書き換える（差分を目で確認してからコミット）。\n");
-            sb.append("# 条件: 新しい JVM・ワーカー 1 本・FontResolver.FALLBACK・null バックエンド・ウォームアップ 600 + 計測 ").append(FRAMES).append(" フレーム。\n");
+            sb.append("# 条件: 新しい JVM・ワーカー 1 本・FontResolver.FALLBACK・null バックエンド（cpu の行だけソフトウェア描画）・ウォームアップ 600 + 計測 ").append(FRAMES).append(" フレーム。\n");
             sb.append("# allocBytes は ±5%（+").append(ALLOC_SLACK_BYTES).append(" B の余裕）、ほかの項目は完全一致で比べる。\n");
             for (var e : measured.entrySet()) sb.append(e.getKey()).append(" | ").append(format(e.getValue())).append('\n');
             Files.writeString(BASELINE, sb.toString(), StandardCharsets.UTF_8);
@@ -100,7 +104,7 @@ public final class CostGateMain {
     }
 
     /** 新しい JVM で 1 シナリオを走らせて COST 行を読む。 */
-    private static Map<String, Long> measure(String doc, String scenario, String extraJvmArgs) throws IOException, InterruptedException {
+    private static Map<String, Long> measure(String doc, String scenario, String backend, String extraJvmArgs) throws IOException, InterruptedException {
         List<String> cmd = new ArrayList<>();
         cmd.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
         cmd.add("-Dfile.encoding=UTF-8");
@@ -111,7 +115,7 @@ public final class CostGateMain {
         cmd.add("-cp");
         cmd.add(System.getProperty("java.class.path"));
         cmd.add(FineProfileMain.class.getName());
-        cmd.addAll(List.of(scenario, doc, String.valueOf(FRAMES), "null"));
+        cmd.addAll(List.of(scenario, doc, String.valueOf(FRAMES), backend));
         Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
         String cost = null;
         StringBuilder tail = new StringBuilder();

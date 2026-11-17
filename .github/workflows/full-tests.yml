@@ -50,3 +50,30 @@ jobs:
             core/build/test-results/test
           if-no-files-found: ignore
           retention-days: 14
+
+  # 時間の推移（A1③）。時間は共有ランナーで ±10〜15% 揺れるので合否には使わない（合否は build.yml の costGate）。
+  # JMH の結果（JSON）を毎晩の成果物に残し、後から推移を比べる。
+  timing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x ./gradlew
+
+      - name: JMH (pipeline stages, 5 forks)
+        run: ./gradlew :core:jmh -Pjmh.args="PipelineBench -p doc=showcase -f 5 -wi 3 -i 5 -rf json -rff core/build/jmh-nightly.json" --stacktrace
+
+      - name: Upload timing
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmh-nightly
+          path: core/build/jmh-nightly.json
+          if-no-files-found: error
+          retention-days: 90
