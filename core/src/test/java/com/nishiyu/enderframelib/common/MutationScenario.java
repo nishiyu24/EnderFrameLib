@@ -28,7 +28,8 @@ final class MutationScenario {
         return i.id() + "|" + i.baseId() + "|" + i.type() + "|" + i.x() + "," + i.y() + "," + i.width() + "," + i.height()
                 + "|" + i.text() + "|" + i.color() + "|" + i.bgColor() + "|" + i.radius() + "|" + i.opacity()
                 + "|" + i.translateX() + "," + i.translateY() + "," + i.scaleX() + "," + i.scaleY() + "," + i.rotate()
-                + "|" + i.transitionDuration() + "|" + i.events() + "|" + (i.animDef() == null ? "" : i.animDef().frames().size());
+                + "|" + i.transitionDuration() + "|" + i.events() + "|" + (i.animDef() == null ? "" : i.animDef().frames().size())
+                + (Boolean.getBoolean("matrix.sigclip") ? "|clip=" + (i.meta() == null ? null : i.meta().clipRect()) : "");
     }
 
     static void elements(HtmlNode node, List<HtmlElement> out) {

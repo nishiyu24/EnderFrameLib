@@ -594,6 +594,18 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 if (d != null) { sx += d[0]; sy += d[1]; }
             }
         }
+        List<LayoutBox.InlineFragment> frags = at.inlineFragments;
+        if (frags != null && !frags.isEmpty()) {
+            // 行に分かれた箱は、断片の範囲で判定する（A6b ⑤）。インラインの中の箱は箱自身の x / y が (0, 0) のまま
+            // （位置は断片にだけある）ことがあり、以前は窓の中と判定された。親（行・外側の span）は省かれて、
+            // この箱の項目だけが親の節なしで出て、スクロールする箱の上端に描かれた（scrolllist・noscrollnode・種 7）
+            for (int i = 0, n = frags.size(); i < n; i++) {
+                LayoutBox.InlineFragment f = frags.get(i);
+                if (f.x - sx + f.w >= -CULL_MARGIN && f.x - sx <= rootW + CULL_MARGIN
+                        && f.y - sy + f.h >= -CULL_MARGIN && f.y - sy <= rootH + CULL_MARGIN) return true;
+            }
+            return false;
+        }
         return at.x - sx + at.w >= -CULL_MARGIN && at.x - sx <= rootW + CULL_MARGIN
                 && at.y - sy + at.h >= -CULL_MARGIN && at.y - sy <= rootH + CULL_MARGIN;
     }
@@ -2533,13 +2545,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     private ClipRect clipForBox(LayoutBox box) {
         BoxMemo m = boxMemo.get(box);
         if (m != null && m.clip != null) return m.clip;
-        LayoutBox p = box.parent;
-        while (p != null) {
-            BoxMemo pm = boxMemo.get(p);
-            if (pm != null && pm.clip != null) return pm.clip;
-            p = p.parent;
-        }
-        return null;
+        // 記憶が無い箱（記憶を切った構成・記憶できない箱）は、親の中身の clip を組み立て直す（A6b ④）。
+        // 以前は祖先の記憶の clip を探していたが、それは祖先「自身の」項目の clip で、祖先が overflow で切る箱（スクロールする箱）なら
+        // 子の clip とは違う。祖先にも記憶が無いと null になり、:hover が外れて描き直した行がスクロールする箱の外へはみ出して描かれた
+        return box.parent != null ? order.contentClipOf(box.parent) : null;
     }
 
     private String contentParentIdOf(LayoutBox box) {
@@ -2585,21 +2594,38 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         if (box.children != null) for (LayoutBox c : box.children) collectBlockPhaseBoxes(c, out);
     }
 
-    /** {@link #collectBlockPhaseBoxes} の残り（インラインレベルの箱・アトミックな箱とその子孫）。木の順。 */
+    /**
+     * {@link #collectBlockPhaseBoxes} の残り（インラインレベルの箱・アトミックな箱とその子孫）。木の順。
+     * 1 回の走査で、インライン層の箱の下にいるかを引数で運ぶ（以前はブロック層の集合を作って木の順の一覧から引いており、
+     * 兄弟ごとにリスト 3 つと IdentityHashMap を作って、子の増減 1 回で数十 KB を確保した）。
+     */
     private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out) {
-        List<LayoutBox> block = new ArrayList<>();
-        collectBlockPhaseBoxes(box, block);
-        Set<LayoutBox> blockSet = Collections.newSetFromMap(new IdentityHashMap<>());
-        blockSet.addAll(block);
-        List<LayoutBox> inOrder = new ArrayList<>();
-        collectDocOrder(box, inOrder);
-        for (LayoutBox b : inOrder) if (!blockSet.contains(b)) out.add(b);
+        collectInlinePhaseBoxes(box, out, false);
     }
 
-    private void collectDocOrder(LayoutBox box, List<LayoutBox> out) {
+    private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out, boolean underInline) {
         if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
-        if (!box.isAnonymous) out.add(box);
-        if (box.children != null) for (LayoutBox c : box.children) collectDocOrder(c, out);
+        boolean inline = underInline;
+        if (!box.isAnonymous) {
+            inline |= box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT) || PaintSupport.isAtomicInline(box);
+            if (inline) out.add(box);
+        }
+        if (box.children != null) for (LayoutBox c : box.children) collectInlinePhaseBoxes(c, out, inline);
+    }
+
+    /** 挿入位置の探索で兄弟ごとに使い回す一覧（子パッチは描画のスレッドだけが走らせる）。 */
+    private final ArrayList<LayoutBox> phaseScratch = new ArrayList<>();
+
+    private List<LayoutBox> blockPhaseOf(LayoutBox c) {
+        phaseScratch.clear();
+        collectBlockPhaseBoxes(c, phaseScratch);
+        return phaseScratch;
+    }
+
+    private List<LayoutBox> inlinePhaseOf(LayoutBox c) {
+        phaseScratch.clear();
+        collectInlinePhaseBoxes(c, phaseScratch);
+        return phaseScratch;
     }
 
     private void collectSubtreeSlices(LayoutBox box, SubtreeSlices out) {
@@ -3149,8 +3175,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     LayoutBox lastBlock = null;
                     for (int i = afterIdx; i >= 0; i--) {
                         LayoutBox c = parentBox.children.get(i);
-                        List<LayoutBox> blockPhase = new ArrayList<>();
-                        collectBlockPhaseBoxes(c, blockPhase);
+                        List<LayoutBox> blockPhase = blockPhaseOf(c);
                         for (int k = blockPhase.size() - 1; k >= 0; k--) {
                             LayoutBox b = blockPhase.get(k);
                             if (b.dlEnd >= 0 && b.dlOrder >= 0) {
@@ -3176,8 +3201,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
                             LayoutBox c = parentBox.children.get(i);
                             if (added.contains(c)) continue;
-                            List<LayoutBox> blockPhase = new ArrayList<>();
-                            collectBlockPhaseBoxes(c, blockPhase);
+                            List<LayoutBox> blockPhase = blockPhaseOf(c);
                             for (LayoutBox b : blockPhase) {
                                 if (b.dlStart >= 0 && b.dlOrder >= 0) {
                                     firstBlock = b;
@@ -3204,8 +3228,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     LayoutBox lastInline = null;
                     for (int i = afterIdx; i >= 0; i--) {
                         LayoutBox c = parentBox.children.get(i);
-                        List<LayoutBox> inlinePhase = new ArrayList<>();
-                        collectInlinePhaseBoxes(c, inlinePhase);
+                        List<LayoutBox> inlinePhase = inlinePhaseOf(c);
                         for (int k = inlinePhase.size() - 1; k >= 0; k--) {
                             LayoutBox b = inlinePhase.get(k);
                             if (b.dlEnd >= 0 && b.dlOrder >= 0) {
@@ -3224,8 +3247,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                         for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
                             LayoutBox c = parentBox.children.get(i);
                             if (added.contains(c)) continue;
-                            List<LayoutBox> inlinePhase = new ArrayList<>();
-                            collectInlinePhaseBoxes(c, inlinePhase);
+                            List<LayoutBox> inlinePhase = inlinePhaseOf(c);
                             for (LayoutBox b : inlinePhase) {
                                 if (b.dlStart >= 0 && b.dlOrder >= 0) {
                                     firstInline = b;
@@ -3250,8 +3272,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     if (parentBox.children != null) {
                         for (LayoutBox c : parentBox.children) {
                             if (added.contains(c)) continue;
-                            List<LayoutBox> blockPhase = new ArrayList<>();
-                            collectBlockPhaseBoxes(c, blockPhase);
+                            List<LayoutBox> blockPhase = blockPhaseOf(c);
                             for (LayoutBox b : blockPhase) {
                                 if (b.dlStart >= 0 && b.dlOrder >= 0) {
                                     firstBlock = b;
@@ -3279,8 +3300,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     if (parentBox.children != null) {
                         for (LayoutBox c : parentBox.children) {
                             if (added.contains(c)) continue;
-                            List<LayoutBox> inlinePhase = new ArrayList<>();
-                            collectInlinePhaseBoxes(c, inlinePhase);
+                            List<LayoutBox> inlinePhase = inlinePhaseOf(c);
                             for (LayoutBox b : inlinePhase) {
                                 if (b.dlStart >= 0 && b.dlOrder >= 0) {
                                     firstInline = b;
@@ -3848,7 +3868,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 float trackX = anc.x + anc.w - anc.bR - barThickness - 2;
                 float trackY = anc.y + anc.bT + 2;
                 float trackH = anc.h - anc.bT - anc.bB - 4;
-                float thumbH = Math.max(12, trackH * (anc.h / scrollH));
+                float thumbH = Math.round(Math.max(12, trackH * (anc.h / scrollH))); // 整数: つまみの位置で丸めの高さが揺れない（平行移動と作り直しで同じ大きさ）
                 float maxScrollY = Math.max(1f, scrollH - anc.h);
                 float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
@@ -3879,6 +3899,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 if (content != null && svIdx >= 0) {
                     content.thumbVId = svId;
                     content.ky = (trackH - thumbH) / maxScrollY;
+                    content.fy0 = thumbY - Math.round(thumbY);
                     DisplayItem itSv = currentDisplayList.get(svIdx);
                     int svLeft = Math.round(anc.x - ancOx);
                     int svTop = Math.round(anc.y - ancOy);
@@ -3917,7 +3938,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 float trackX = anc.x + anc.bL + 2;
                 float trackY = anc.y + anc.h - anc.bB - barThickness - 2;
                 float trackW = anc.w - anc.bL - anc.bR - 4;
-                float thumbW = Math.max(12, trackW * (anc.w / scrollW));
+                float thumbW = Math.round(Math.max(12, trackW * (anc.w / scrollW)));
                 float maxScrollX = Math.max(1f, scrollW - anc.w);
                 float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
@@ -3948,6 +3969,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 if (content != null && shIdx >= 0) {
                     content.thumbHId = shId;
                     content.kx = (trackW - thumbW) / maxScrollX;
+                    content.fx0 = thumbX - Math.round(thumbX);
                     DisplayItem itSh = currentDisplayList.get(shIdx);
                     int shLeft = Math.round(anc.x - ancOx);
                     int shTop = Math.round(anc.y - ancOy);

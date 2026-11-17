@@ -79,6 +79,8 @@ public final class BoxMeasurer {
         // ここで length() を使って解き直していたため、% が包含ブロックの「幅」基準になっていた。
         box.lineHeightPx = lineHeightOf(box, ctx);
 
+        // 枠線を重ねる表の外周の枠線は、縁を解く前に決める（内側の幅の予算が枠線を引いた値になるように）
+        if (box.display != null && box.display.inner() == Inner.TABLE && !box.contentAutoSkipped) TableLayoutEngine.prepareCollapsedBorders(box, ctx);
         resolveBoxEdges(box, parentW, parentH, rootW, rootH);
 
         StyleFacts facts = style.layoutFacts();

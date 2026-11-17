@@ -589,7 +589,7 @@ public final class StandaloneView implements AutoCloseable {
             float limit = Math.max(0, box.hints().scrollHeight() - box.height());
             if (limit <= 0) continue;
             float cur = ui.scrollState().getScrollY(p);
-            float next = clamp(cur + (targetBox.y - box.y()), limit);
+            float next = snapTarget(clamp(cur + (targetBox.y - box.y()), limit), limit);
             scrollTargets.put(p, new float[]{ui.scrollState().getScrollX(p), next});
             return true;
         }
@@ -625,8 +625,8 @@ public final class StandaloneView implements AutoCloseable {
             float[] base = scrollTargets.get(node);
             float curX = base != null ? base[0] : ui.scrollState().getScrollX(node);
             float curY = base != null ? base[1] : ui.scrollState().getScrollY(node);
-            float nextX = clamp(curX - (float) notchesX * WHEEL_PIXELS, limitX);
-            float nextY = clamp(curY - (float) notchesY * WHEEL_PIXELS, limitY);
+            float nextX = snapTarget(clamp(curX - (float) notchesX * WHEEL_PIXELS, limitX), limitX);
+            float nextY = snapTarget(clamp(curY - (float) notchesY * WHEEL_PIXELS, limitY), limitY);
             if (Math.abs(nextX - curX) > 0.1f || Math.abs(nextY - curY) > 0.1f) {
                 if (base != null) {
                     base[0] = nextX;
@@ -652,8 +652,7 @@ public final class StandaloneView implements AutoCloseable {
             HtmlNode node = e.getKey();
             float[] t = e.getValue();
             float cx = ui.scrollState().getScrollX(node), cy = ui.scrollState().getScrollY(node);
-            float nx = Math.abs(t[0] - cx) < 0.5f ? t[0] : cx + (t[0] - cx) * (1 - keep);
-            float ny = Math.abs(t[1] - cy) < 0.5f ? t[1] : cy + (t[1] - cy) * (1 - keep);
+            float nx = easeOnPixelGrid(cx, t[0], keep), ny = easeOnPixelGrid(cy, t[1], keep);
             if (nx != cx || ny != cy) {
                 ui.scrollState().setScroll(node, nx, ny);
                 moved = true;
@@ -665,6 +664,25 @@ public final class StandaloneView implements AutoCloseable {
 
     private static float clamp(float v, float max) {
         return Math.max(0, Math.min(max, v));
+    }
+
+    /**
+     * 減速の途中のスクロール量を、整数の px に揃える（A6b ⑤。Chrome もスクロール量は画素へ揃えて描く）。
+     * 以前は途中の値が小数（12.4px など）のままで、既定（中身の節を小数だけ平行移動して描く＝縁が 1 画素ぼける）と、
+     * 作り直す経路（箱の座標へ焼き込んで項目の整数の座標へ丸める）で縁の画素が違った。表示項目の座標は整数の px なので、
+     * スクロール量も整数なら、どちらも同じ位置に描く。1 フレームで 1px も進まないときは 1px だけ進め、行き過ぎるなら止める。
+     */
+    private static float easeOnPixelGrid(float cur, float target, float keep) {
+        if (Math.abs(target - cur) < 0.5f) return target;
+        float next = Math.round(cur + (target - cur) * (1 - keep));
+        if (next == cur) next = cur + Math.signum(target - cur);
+        return (target - cur) * (target - next) <= 0 ? target : next;
+    }
+
+    /** スクロール先を整数の px に揃える（範囲の端を越えない側へ）。途中の値と終わりの値がどちらも整数になる。 */
+    private static float snapTarget(float v, float max) {
+        float s = Math.round(v);
+        return s > max ? (float) Math.floor(max) : Math.max(0, s);
     }
 
     // ------------------------------------------------------------------

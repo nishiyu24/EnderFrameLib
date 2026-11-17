@@ -1148,8 +1148,9 @@ public class UiView implements AutoCloseable {
             float dx = scrollState.getScrollX(info.node()) - info.sx0();
             float dy = scrollState.getScrollY(info.node()) - info.sy0();
             setPaintOffset(info.contentId(), -dx, -dy);
-            if (info.thumbVId() != null) setPaintOffset(info.thumbVId(), 0f, info.ky() * dy);
-            if (info.thumbHId() != null) setPaintOffset(info.thumbHId(), info.kx() * dx, 0f);
+            // つまみは作り直したときと同じ整数の位置へ（小数のまま動かすと角の縁の画素が作り直しと違う。A6b ⑤）
+            if (info.thumbVId() != null) setPaintOffset(info.thumbVId(), 0f, Math.round(info.fy0() + info.ky() * dy));
+            if (info.thumbHId() != null) setPaintOffset(info.thumbHId(), Math.round(info.fx0() + info.kx() * dx), 0f);
         }
         return true;
     }

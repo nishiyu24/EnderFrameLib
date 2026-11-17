@@ -15,6 +15,9 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
  * @param sy0       同じく縦
  * @param kx        横のスクロール 1px あたりの、横のつまみの移動量
  * @param ky        縦のスクロール 1px あたりの、縦のつまみの移動量
+ * @param fx0       作ったときの横のつまみの位置の丸めの端数（位置 - round(位置)）。つまみの移動量を round(fx0 + kx * Δx) にすると、
+ *                  作り直したときの round(位置 + kx * Δx) と同じ整数の位置になる
+ * @param fy0       同じく縦
  */
 public record ScrollContentInfo(HtmlNode node, String contentId, String thumbVId, String thumbHId,
-                                float sx0, float sy0, float kx, float ky) {}
+                                float sx0, float sy0, float kx, float ky, float fx0, float fy0) {}

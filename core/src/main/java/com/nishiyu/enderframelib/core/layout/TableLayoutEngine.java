@@ -70,17 +70,16 @@ public class TableLayoutEngine extends LayoutEngine {
         float parentH = space.percentageBlockSize();
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
 
-        TableState state = new TableState();
-        box.engineState = state;
-        collectStructure(box, state);
-        buildGrid(state);
-        markCollapsed(state);
-
-        state.collapse = box.style.keywordOf(CssPropertyIndex.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class)
-                == CssKeywords.BorderCollapse.COLLAPSE;
-        if (state.collapse) {
-            collapseBorders(box, state, rootW, rootH);
+        TableState state;
+        if (box.engineState instanceof TableState prepared && prepared.preparedForMeasure) {
+            // BoxMeasurer が枠線を決めるために、この測定の直前に組んだ格子と枠線の分担（prepareCollapsedBorders）
+            state = prepared;
+            state.preparedForMeasure = false;
         } else {
+            state = buildState(box, rootW, rootH);
+        }
+
+        if (!state.collapse) {
             float[] spacing = borderSpacing(box.style, rootW, rootH);
             state.hSpacing = spacing[0];
             state.vSpacing = spacing[1];
@@ -222,6 +221,36 @@ public class TableLayoutEngine extends LayoutEngine {
     // ==========================================
     // 構造
     // ==========================================
+
+    /** 格子を組み、枠線を重ねる表なら枠線の分担を決める（{@code box.engineState} に置く）。 */
+    private static TableState buildState(LayoutBox box, float rootW, float rootH) {
+        TableState state = new TableState();
+        box.engineState = state;
+        collectStructure(box, state);
+        buildGrid(state);
+        markCollapsed(state);
+        state.collapse = box.style.keywordOf(CssPropertyIndex.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class)
+                == CssKeywords.BorderCollapse.COLLAPSE;
+        if (state.collapse) collapseBorders(box, state, rootW, rootH);
+        return state;
+    }
+
+    /**
+     * 枠線を重ねる表の外周の枠線（{@code collapsedBorders}）を、測定が箱の縁を解く前に決める（A6b ②）。
+     * 外周の枠線はセルの枠線から決まるので、以前は {@link #measureContent} の中で初めて分かった。そのため新しく作った箱の最初の測定は
+     * 枠線 0 のまま内側の幅の予算（利用可能幅 − 枠線）を取り、あとから半分の枠線を足して利用可能幅を超えた（幅 260 の窓で 262）。
+     * 前回の測定の値が残る測り直し（増分）だけが正しく、全面の再レイアウトと増分で幅が食い違った。
+     * ここで組んだ格子は、続く {@link #measureContent} がそのまま使う（二重に組まない）。
+     */
+    static void prepareCollapsedBorders(LayoutBox box, LayoutContext ctx) {
+        if (box.display == null || box.display.inner() != Inner.TABLE) return;
+        if (box.style.keywordOf(CssPropertyIndex.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) != CssKeywords.BorderCollapse.COLLAPSE) {
+            box.collapsedBorders = null; // collapse から separate へ変わった表に、前回の分担を縁として読ませない
+            return;
+        }
+        TableState state = buildState(box, ctx.viewport().rootW(), ctx.viewport().rootH());
+        state.preparedForMeasure = true;
+    }
 
     /** 子をキャプション・列・行に分ける。行は thead の行を先頭、tfoot の行を末尾に並べる（CSS 2.2 §17.2）。 */
     private static void collectStructure(LayoutBox table, TableState state) {
@@ -824,6 +853,8 @@ public class TableLayoutEngine extends LayoutEngine {
         boolean[] collapsedRows = new boolean[0];
         boolean[] collapsedColumns = new boolean[0];
         boolean collapse;
+        /** {@link #prepareCollapsedBorders} が組んだばかりで、続く measureContent がそのまま使ってよい。 */
+        boolean preparedForMeasure;
         float hSpacing, vSpacing, contentW;
 
         @Override

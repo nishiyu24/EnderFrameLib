@@ -87,6 +87,8 @@ public final class PaintOrder {
         final float sx0, sy0;
         String thumbVId, thumbHId;
         float kx, ky;
+        /** 作ったときのつまみの位置の、丸めの端数（{@code 位置 - round(位置)}）。平行移動を作り直しと同じ丸めにする。 */
+        float fx0, fy0;
 
         ScrollContent(LayoutBox box, String contentId, float sx0, float sy0) {
             this.box = box;
@@ -536,7 +538,9 @@ public final class PaintOrder {
                         || Float.compare(c.sx0, p.sx0()) != 0
                         || Float.compare(c.sy0, p.sy0()) != 0
                         || Float.compare(c.kx, p.kx()) != 0
-                        || Float.compare(c.ky, p.ky()) != 0) {
+                        || Float.compare(c.ky, p.ky()) != 0
+                        || Float.compare(c.fx0, p.fx0()) != 0
+                        || Float.compare(c.fy0, p.fy0()) != 0) {
                     allSame = false;
                     break;
                 }
@@ -556,7 +560,9 @@ public final class PaintOrder {
                             && Float.compare(c.sx0, p.sx0()) == 0
                             && Float.compare(c.sy0, p.sy0()) == 0
                             && Float.compare(c.kx, p.kx()) == 0
-                            && Float.compare(c.ky, p.ky()) == 0) {
+                            && Float.compare(c.ky, p.ky()) == 0
+                            && Float.compare(c.fx0, p.fx0()) == 0
+                            && Float.compare(c.fy0, p.fy0()) == 0) {
                         item = p;
                         break;
                     }
@@ -564,7 +570,7 @@ public final class PaintOrder {
             }
             if (item == null) {
                 item = new com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo(c.box.node, c.contentId, c.thumbVId, c.thumbHId,
-                        c.sx0, c.sy0, c.kx, c.ky);
+                        c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0);
             }
             out.add(item);
         }
@@ -1434,7 +1440,7 @@ public final class PaintOrder {
                 float trackX = box.x + box.w - box.bR - barThickness - 2;
                 float trackY = box.y + box.bT + 2;
                 float trackH = box.h - box.bT - box.bB - 4;
-                float thumbH = Math.max(12, trackH * (box.h / scrollH));
+                float thumbH = Math.round(Math.max(12, trackH * (box.h / scrollH))); // 整数: つまみの位置で丸めの高さが揺れない（平行移動と作り直しで同じ大きさ）
                 float maxScrollY = Math.max(1f, scrollH - box.h);
                 float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
@@ -1448,6 +1454,7 @@ public final class PaintOrder {
                 if (content != null) { // つまみは、スクロール量に比例して動く節の下に置く（スクロールのたびに作り直さない）
                     content.thumbVId = box.node.partKey(13, "_scrollv");
                     content.ky = (trackH - thumbH) / maxScrollY;
+                    content.fy0 = thumbY - Math.round(thumbY);
                     addMovingNode(elements, content.thumbVId, box, sbMeta);
                     thumbEvents = scratchThumbProps.reset();
                     thumbEvents.parentId(content.thumbVId, nodeVKey);
@@ -1467,7 +1474,7 @@ public final class PaintOrder {
                 float trackX = box.x + box.bL + 2;
                 float trackY = box.y + box.h - box.bB - barThickness - 2;
                 float trackW = box.w - box.bL - box.bR - 4;
-                float thumbW = Math.max(12, trackW * (box.w / scrollW));
+                float thumbW = Math.round(Math.max(12, trackW * (box.w / scrollW)));
                 float maxScrollX = Math.max(1f, scrollW - box.w);
                 float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
@@ -1481,6 +1488,7 @@ public final class PaintOrder {
                 if (content != null) {
                     content.thumbHId = box.node.partKey(16, "_scrollh");
                     content.kx = (trackW - thumbW) / maxScrollX;
+                    content.fx0 = thumbX - Math.round(thumbX);
                     addMovingNode(elements, content.thumbHId, box, sbMeta);
                     thumbEvents = scratchThumbProps.reset();
                     thumbEvents.parentId(content.thumbHId, nodeHKey);

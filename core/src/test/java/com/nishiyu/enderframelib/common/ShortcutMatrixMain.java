@@ -340,6 +340,7 @@ public final class ShortcutMatrixMain {
         if (!System.getProperty("matrix.dump", "").isEmpty() || Boolean.getBoolean("matrix.selfcheck")) { // 調査用: このプロセスで 1 つのスイッチだけ切って走らせ、その手を出す
             String sw = System.getProperty("matrix.dumpswitch", "");
             if (!sw.isEmpty()) System.setProperty(sw, "true");
+            if (!System.getProperty("matrix.dump", "").isEmpty()) System.setProperty("matrix.sigclip", "true"); // 調べる手の写しには clip も出す
             child();
             return;
         }
