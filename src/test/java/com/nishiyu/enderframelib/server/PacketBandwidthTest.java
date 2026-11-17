@@ -128,7 +128,8 @@ public class PacketBandwidthTest {
 
         // ベースラインのアサート（Dual DOM は DOM ツリー全体を送るため 4KB 以上）
         // 2026-11-18: 4500 → 6183。DOM が要素の間の改行入りの空白を節として持つようになった（インラインの間の空白を Chrome と同じに描くため）
-        assertEquals(6183, result.initialOpenBytes(), "初回オープンのパケットサイズがベースラインと一致すること");
+        // 2026-11-18（A16①）: 6183 → 4451。HtmlNodeSerializer が空のキーを書かなくなった
+        assertEquals(4451, result.initialOpenBytes(), "初回オープンのパケットサイズがベースラインと一致すること");
         assertEquals(166, result.singleMutationBytes(), "単一更新のパケットサイズがベースラインと一致すること");
         assertEquals(16584, result.total100UpdatesBytes(), "100 回更新の総パケットバイト数がベースラインと一致すること");
 

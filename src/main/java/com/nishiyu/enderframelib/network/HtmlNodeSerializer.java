@@ -30,25 +30,34 @@ public class HtmlNodeSerializer {
         CompoundTag tag = new CompoundTag();
         tag.putInt("nid", node.nodeId());
         tag.putString("tag", node.tag != null ? node.tag : "");
-        tag.putString("id", node.getId() != null ? node.getId() : "");
-        tag.putString("text", node.text != null ? node.text : "");
+        // 空のキーは書かない（deserialize は欠けたキーを空として読むので、古いクライアントとも互換）
+        String id = node.getId();
+        if (id != null && !id.isEmpty()) tag.putString("id", id);
+        if (node.text != null && !node.text.isEmpty()) tag.putString("text", node.text);
 
-        ListTag classesTag = new ListTag();
-        for (String c : node.getClasses()) classesTag.add(StringTag.valueOf(c));
-        tag.put("classes", classesTag);
-
-        CompoundTag attrsTag = new CompoundTag();
-        for (Map.Entry<String, String> entry : node.attrs.entrySet()) {
-            attrsTag.putString(entry.getKey(), entry.getValue());
+        java.util.List<String> classes = node.getClasses();
+        if (!classes.isEmpty()) {
+            ListTag classesTag = new ListTag();
+            for (String c : classes) classesTag.add(StringTag.valueOf(c));
+            tag.put("classes", classesTag);
         }
-        tag.put("attrs", attrsTag);
 
-        ListTag childrenTag = new ListTag();
+        if (!node.attrs.isEmpty()) {
+            CompoundTag attrsTag = new CompoundTag();
+            for (Map.Entry<String, String> entry : node.attrs.entrySet()) {
+                attrsTag.putString(entry.getKey(), entry.getValue());
+            }
+            tag.put("attrs", attrsTag);
+        }
+
         HtmlNode childHost = childHost(node);
-        for (HtmlNode child : childHost.children) {
-            childrenTag.add(serializeNode(child));
+        if (!childHost.children.isEmpty()) {
+            ListTag childrenTag = new ListTag();
+            for (HtmlNode child : childHost.children) {
+                childrenTag.add(serializeNode(child));
+            }
+            tag.put("children", childrenTag);
         }
-        tag.put("children", childrenTag);
 
         return tag;
     }
