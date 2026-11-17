@@ -65,6 +65,9 @@ final class MutationScenario {
     /** 調査用（{@code -Dmatrix.keeppixels=true}）: 1 手ごとの画素そのもの。 */
     static final List<int[]> PIXEL_DATA = new ArrayList<>();
 
+    /** 調査用: 毎手のあと、手の番号と面を受け取る（ある手で全面の再レイアウトを強いて、増分の結果と比べるなど）。 */
+    static java.util.function.BiConsumer<Integer, StandaloneView> STEP_HOOK;
+
     static List<List<String>> run(String html, String[] classes, String[] styles, long seed, int steps, boolean draw) {
         return run(html, classes, styles, seed, steps, draw, false);
     }
@@ -146,6 +149,7 @@ final class MutationScenario {
                     sigs.add(sig(it));
                 }
                 out.add(sigs);
+                if (STEP_HOOK != null) STEP_HOOK.accept(step, view);
                 if (draw) {
                     PIXELS.add(java.util.Arrays.hashCode(backend.pixmap().pixels()));
                     if (Boolean.getBoolean("matrix.keeppixels")) PIXEL_DATA.add(backend.pixmap().pixels().clone());

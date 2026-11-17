@@ -400,6 +400,7 @@ tasks.register('shortcutMatrix', JavaExec) {
     workingDir = rootProject.projectDir
     if (project.hasProperty('matrix.only')) systemProperty 'matrix.only', project.property('matrix.only').toString()
     if (project.hasProperty('matrix.extra')) systemProperty 'matrix.extra', project.property('matrix.extra').toString()
+    if (project.hasProperty('matrix.selfcheck')) systemProperty 'matrix.selfcheck', 'true'
     if (project.hasProperty('matrix.update')) systemProperty 'matrix.update', 'true'
     if (project.hasProperty('matrix.dump')) systemProperty 'matrix.dump', project.property('matrix.dump').toString()
     if (project.hasProperty('matrix.dumpfile')) { systemProperty 'matrix.dumpfile', project.property('matrix.dumpfile').toString(); systemProperty 'matrix.keeppixels', 'true' }

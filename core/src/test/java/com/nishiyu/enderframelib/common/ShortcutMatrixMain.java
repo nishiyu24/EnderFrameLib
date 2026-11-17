@@ -195,7 +195,50 @@ public final class ShortcutMatrixMain {
         }
     }
 
+    /**
+     * 調査用（-Dmatrix.selfcheck=true）: 毎手、増分で作った表示リストと、同じ面で全面の再レイアウトを強いたあとの表示リストを比べる
+     * （近道が効いた結果と、近道に頼らない結果の一致。食い違えば、その構成の増分の経路が間違っている）。
+     */
+    private static void selfCheck() {
+        record Doc(String name, String html, String[] cl, String[] st, int steps) { }
+        List<Doc> docs = List.of(new Doc("cards", CARDS, CARD_CLASSES, CARD_STYLES, 45), new Doc("layouts", LAYOUTS, LAYOUT_CLASSES, LAYOUT_STYLES, 45),
+                new Doc("nested", NESTED, NESTED_CLASSES, NESTED_STYLES, 60), new Doc("scrolllist", scrollList(), LIST_CLASSES, LIST_STYLES, 45));
+        for (Doc d : docs) {
+            for (long seed = 1; seed <= 8; seed++) {
+                boolean[] bad = {false};
+                final long sd = seed;
+                MutationScenario.STEP_HOOK = (step, view) -> {
+                    if (bad[0]) return;
+                    List<String> live = new ArrayList<>();
+                    for (var it : view.items()) live.add(MutationScenario.sig(it));
+                    view.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
+                    try (var be = new MutationScenario.NoDraw()) {
+                        // 同じ時刻のフレーム（時間が進むとトランジション・スムーズスクロールが進んで、近道と無関係な差になる）
+                        var f = StandaloneView.class.getDeclaredField("lastNow"); f.setAccessible(true);
+                        view.frame(f.getLong(view), be, true);
+                    } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+                    List<String> full = new ArrayList<>();
+                    for (var it : view.items()) full.add(MutationScenario.sig(it));
+                    if (!live.equals(full)) {
+                        bad[0] = true;
+                        List<String> a = new ArrayList<>(live), b = new ArrayList<>(full);
+                        java.util.Collections.sort(a); java.util.Collections.sort(b);
+                        System.out.println("SELFCHECK " + d.name() + "/" + sd + " 手 " + step + (a.equals(b) ? " 項目の並び順だけが違う" : " 内容が違う")
+                                + "（項目 " + live.size() + " / " + full.size() + "）");
+                        for (int i = 0; i < Math.min(live.size(), full.size()); i++) if (!live.get(i).equals(full.get(i))) {
+                            System.out.println("  incremental " + live.get(i)); System.out.println("  full        " + full.get(i)); break;
+                        }
+                    }
+                };
+                MutationScenario.run(d.html(), d.cl(), d.st(), d.name().equals("nested") ? seed * 5 + 1 : seed, d.steps(), false, d.name().equals("scrolllist"));
+            }
+        }
+        MutationScenario.STEP_HOOK = null;
+        System.out.println("SELFCHECK done");
+    }
+
     private static void child() throws IOException {
+        if (Boolean.getBoolean("matrix.selfcheck")) { selfCheck(); return; }
         for (long seed = 1; seed <= 8; seed++) {
             digest("cards/" + seed, MutationScenario.run(CARDS, CARD_CLASSES, CARD_STYLES, seed, 45, true), new ArrayList<>(MutationScenario.PIXELS));
             digest("layouts/" + seed, MutationScenario.run(LAYOUTS, LAYOUT_CLASSES, LAYOUT_STYLES, seed, 45, true), new ArrayList<>(MutationScenario.PIXELS));
@@ -285,7 +328,7 @@ public final class ShortcutMatrixMain {
             child();
             return;
         }
-        if (!System.getProperty("matrix.dump", "").isEmpty()) { // 調査用: このプロセスで 1 つのスイッチだけ切って走らせ、その手を出す
+        if (!System.getProperty("matrix.dump", "").isEmpty() || Boolean.getBoolean("matrix.selfcheck")) { // 調査用: このプロセスで 1 つのスイッチだけ切って走らせ、その手を出す
             String sw = System.getProperty("matrix.dumpswitch", "");
             if (!sw.isEmpty()) System.setProperty(sw, "true");
             child();
