@@ -411,7 +411,13 @@ public class BlockLayoutEngine extends LayoutEngine {
     float arrangeFlow(LayoutBox box, FlowState state, float innerX, float innerY, float innerW,
                       java.util.Map<Object, float[]> shifts, LayoutContext ctx) {
         TextAlign specifiedAlign = box.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class);
-        TextAlign textAlign = specifiedAlign.physical(isRtl(box.style));
+        boolean alignRtl = isRtl(box.style);
+        // match-parent は親の値を、start / end を親の direction で解いたもの（CSS Text 3 §7.1）
+        for (LayoutBox p = box.parent; specifiedAlign == TextAlign.MATCH_PARENT && p != null; p = p.parent) {
+            specifiedAlign = p.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class);
+            alignRtl = isRtl(p.style);
+        }
+        TextAlign textAlign = specifiedAlign.physical(alignRtl);
         LineJustify lineJustify = LineJustify.of(box.style, specifiedAlign, textAlign, isRtl(box.style));
         float textBottom = Float.NEGATIVE_INFINITY;
         boolean hasShifts = shifts != null && !shifts.isEmpty();
@@ -1755,7 +1761,13 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
 
         private boolean constrained() {
-            return flow.innerW > 0;
+            if (flow.innerW > 0) return true;
+            // width: 0 を明示した箱は幅 0 で折り返す（全ての折り返し位置で切れる）。測定の途中の仮の幅 0 は制約にしない
+            if (flow.innerW == 0 && flow.box.sizingMode == SizingMode.DEFINITE) {
+                String w = flow.box.axisStyle().get(CssPropertyIndex.WIDTH);
+                return w != null && !"auto".equalsIgnoreCase(w.trim()) && !LayoutMetrics.isIntrinsicSizeKeyword(w);
+            }
+            return false;
         }
 
         private void ensureLine() {
@@ -1903,7 +1915,8 @@ public class BlockLayoutEngine extends LayoutEngine {
             boolean preserveNewlines = textStyle.whiteSpace().preservesNewlines();
             if (effFl == null && flow.floats.isEmpty() && (deferredFloats == null || deferredFloats.isEmpty())
                     && (open == null || open.isEmpty()) && currentEmpty() && !lineStarted && lineX == 0 && indent == 0
-                    && closing == 0 && textStyle.whiteSpace().wraps() && constrained()
+                    && closing == 0 && textStyle.whiteSpace().wraps() && constrained() && runText.indexOf('\t') < 0
+                    && !textStyle.whiteSpace().breaksSpaces() && font.letterSpacingPx() == 0
                     && (!preserveNewlines || runText.indexOf('\n') < 0)) {
                 TextShaper.WrappedParagraph wp = runBox.cachedWrappedParagraph(
                         runText, face, font, textStyle.wordBreak(), flow.innerW);
@@ -2041,6 +2054,12 @@ public class BlockLayoutEngine extends LayoutEngine {
                                            Alignment alignment, float runH, float baseline, float descent,
                                            String paragraph, float closing, boolean cacheOnBox,
                                            String previousOnLine, float kerned, ComputedStyle itemFlStyle) {
+            // word-break・CJK の折り返しは従来の経路が扱う（こちらは空白でだけ切る）
+            if (textStyle.whiteSpace().breaksSpaces() && paragraph.indexOf('\t') < 0
+                    && textStyle.wordBreak() == com.nishiyu.enderframelib.core.text.model.WordBreak.NORMAL && !hasWideChars(paragraph)) {
+                addBreakSpacesParagraph(runBox, inlineParents, face, font, alignment, runH, baseline, descent, paragraph, closing, itemFlStyle);
+                return;
+            }
             // 断片・幅・境目の詰めは文字列・書体・折り返しの規則だけで決まるので、同じ段落なら測り直さない（幅にも依らない）
             ParagraphSegments prepared = cacheOnBox
                     ? runBox.cachedSegments(paragraph, face, font, textStyle.wordBreak())
@@ -2056,8 +2075,19 @@ public class BlockLayoutEngine extends LayoutEngine {
                 float advance = prepared.fullW(s);
                 // 行末の空白は幅に数えない（CSS と同じ）
                 float trimmedW = prepared.strippedTrailingW(s);
+                // 保持された tab は次の tab 位置まで進む（CSS Text 3 §4.2）。位置は行の始点から測る
+                float[] tabPieces = segment.indexOf('\t') >= 0 ? tabLayout(segment, lineX, runBox, face, font) : null;
+                if (tabPieces != null) {
+                    advance = tabPieces[tabPieces.length - 1];
+                    trimmedW = textStyle.whiteSpace().wraps() ? advance - trailingTabWidth(segment, tabPieces) : advance;
+                }
                 // 最後の語は、直後に閉じる箱の終了端の装飾と一緒に行に入らないといけない
                 float edges = s == lastSegment ? closing : 0;
+                // letter-spacing は同じ要素の文字の間に入る。run の最後の文字の後（要素の境目）には足さない（CSS Text 3 §8.2）
+                if (s == lastSegment && font.letterSpacingPx() != 0 && tabPieces == null) {
+                    advance -= font.letterSpacingPx();
+                    trimmedW -= font.letterSpacingPx();
+                }
 
                 // 直前の断片との境目の詰め（直前が断片の並びの隣なら下ごしらえの値、空の断片を挟んだときだけ測る）
                 float join = previousOnLine == null ? 0
@@ -2083,11 +2113,114 @@ public class BlockLayoutEngine extends LayoutEngine {
                 kerned += join;
                 previousOnLine = segment;
                 // 断片の座標も float のまま持つ。丸めるのは描画側の 1 箇所だけ
-                ensureCurrent().add(new LineItem(runBox, lineX, advance, runH, segment, baseline, descent, inlineParents,
-                        alignment.align, alignment.raise, itemFlStyle));
+                if (tabPieces != null) {
+                    if (tabPieces[0] != lineX) tabPieces = tabLayout(segment, lineX, runBox, face, font); // 折り返して始点が変わった
+                    addTabPieces(segment, tabPieces, runBox, runH, baseline, descent, inlineParents, alignment, itemFlStyle);
+                    advance = tabPieces[tabPieces.length - 1];
+                } else {
+                    ensureCurrent().add(new LineItem(runBox, lineX, advance, runH, segment, baseline, descent, inlineParents,
+                            alignment.align, alignment.raise, itemFlStyle));
+                }
                 lineX += advance;
                 trailingSpace = advance - trimmedW;
                 markContent();
+            }
+        }
+
+        /**
+         * tab を含む塊の配置。戻り値は {始点の lineX, 各文字の後の位置（始点から）…, 全体の幅}。
+         * tab は {@code tab-size}（数なら空白の幅の倍数、長さならその px）の倍数の位置まで進み、残りが空白の半分未満なら次の位置まで進む。
+         */
+        private float[] tabLayout(String segment, float startX, LayoutBox runBox, FontFace face, FontStyle font) {
+            float space = face.advance(" ", font);
+            String ts = runBox.style.get(CssPropertyIndex.TAB_SIZE);
+            float tabW = 8 * space;
+            if (ts != null && !ts.isBlank()) {
+                String t = ts.trim();
+                try {
+                    tabW = Float.parseFloat(t) * space;
+                } catch (NumberFormatException e) {
+                    tabW = runBox.style.length(CssPropertyIndex.TAB_SIZE, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+                }
+            }
+            int n = segment.length();
+            float[] out = new float[n + 2];
+            out[0] = startX;
+            float x = startX;
+            for (int i = 0; i < n; i++) {
+                char c = segment.charAt(i);
+                if (c == '\t' && tabW > 0) {
+                    float next = (float) (Math.floor((x + 0.01f) / tabW) + 1) * tabW;
+                    if (next - x < space / 2) next += tabW;
+                    x = next;
+                } else {
+                    x += face.advance(String.valueOf(c), font);
+                }
+                out[i + 1] = x - startX;
+            }
+            out[n + 1] = x - startX;
+            return out;
+        }
+
+        /**
+         * {@code white-space: break-spaces}: 空白は 1 つずつ幅を取り（行末にぶら下がらない）、各空白の後で折り返せる（CSS Text 3 §3・§5.1）。
+         */
+        private void addBreakSpacesParagraph(LayoutBox runBox, List<LayoutBox> inlineParents, FontFace face, FontStyle font,
+                                             Alignment alignment, float runH, float baseline, float descent, String paragraph,
+                                             float closing, ComputedStyle itemFlStyle) {
+            int n = paragraph.length();
+            int i = 0;
+            while (i < n) {
+                int j = i;
+                if (paragraph.charAt(i) == ' ') {
+                    j = i + 1;
+                } else {
+                    while (j < n && paragraph.charAt(j) != ' ') j++;
+                }
+                String token = paragraph.substring(i, j);
+                float w = face.advance(token, font);
+                float edges = j == n ? closing : 0;
+                if (needsWrap(lineX + w + edges)) {
+                    newLine(runH, baseline, true);
+                    ensureLine();
+                }
+                ensureCurrent().add(new LineItem(runBox, lineX, w, runH, token, baseline, descent, inlineParents,
+                        alignment.align, alignment.raise, itemFlStyle));
+                lineX += w;
+                trailingSpace = 0;
+                markContent();
+                i = j;
+            }
+        }
+
+        private static boolean hasWideChars(String s) {
+            for (int i = 0, n = s.length(); i < n; i++) if (s.charAt(i) >= 0x2E80) return true;
+            return false;
+        }
+
+        /** 塊の末尾の空白（tab を含む）の幅。 */
+        private static float trailingTabWidth(String segment, float[] pieces) {
+            int end = segment.length();
+            int k = end;
+            while (k > 0 && (segment.charAt(k - 1) == ' ' || segment.charAt(k - 1) == '\t')) k--;
+            return pieces[end] - (k == 0 ? 0 : pieces[k]);
+        }
+
+        /** tab の部分（空の断片）と文字の部分を別の断片に置く（描画は断片の文字を続けて描くので、tab の位置で分ける）。 */
+        private void addTabPieces(String segment, float[] pieces, LayoutBox runBox, float runH, float baseline, float descent,
+                                  List<LayoutBox> inlineParents, Alignment alignment, ComputedStyle itemFlStyle) {
+            int n = segment.length();
+            int i = 0;
+            while (i < n) {
+                boolean tab = segment.charAt(i) == '\t';
+                int j = i;
+                while (j < n && (segment.charAt(j) == '\t') == tab) j++;
+                float from = i == 0 ? 0 : pieces[i];
+                float to = pieces[j];
+                String text = tab ? " " : segment.substring(i, j);
+                ensureCurrent().add(new LineItem(runBox, lineX + from, to - from, runH, text, baseline, descent, inlineParents,
+                        alignment.align, alignment.raise, itemFlStyle));
+                i = j;
             }
         }
 

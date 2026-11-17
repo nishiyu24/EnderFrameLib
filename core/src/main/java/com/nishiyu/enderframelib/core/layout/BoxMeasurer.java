@@ -484,6 +484,10 @@ public final class BoxMeasurer {
         }
         box.contentBlockExtent = contentH + box.verticalDecoration();
         if (!hasHeight) box.h = Math.max(box.h, contentH + box.verticalDecoration());
+        else if (box.display.inner() == Inner.TABLE && !overridden) {
+            // 表の height は行の部分の下限。caption はその外に足され、内容が高ければ内容に合わせる（CSS 2.2 §17.4・§17.5.3）
+            box.h = Math.max(box.h + TableLayoutEngine.captionExtent(box), contentH + box.verticalDecoration());
+        }
         if (!box.contentAutoSkipped) engine.finishLayout(box, space, ctx);
         if (overridden || box.isHorizontalReturnRoot) return;
 
@@ -514,21 +518,37 @@ public final class BoxMeasurer {
     }
 
     private static void applyAspectRatio(LayoutBox box) {
-        float innerW = Math.max(0, box.w - box.horizontalDecoration());
-        String ratioStr = box.axisStyle().get(CssPropertyIndex.ASPECT_RATIO);
-        try {
-            if (ratioStr.contains("/")) {
-                String[] parts = ratioStr.split("/");
-                float rw = Float.parseFloat(parts[0].trim());
-                float rh = Float.parseFloat(parts[1].trim());
-                if (rw > 0) box.h = (innerW * (rh / rw)) + box.verticalDecoration();
-            } else {
-                float ratio = Float.parseFloat(ratioStr.trim());
-                if (ratio > 0) box.h = (innerW / ratio) + box.verticalDecoration();
-            }
-        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+        ComputedStyle s = box.axisStyle();
+        float ratio = aspectRatioOf(s);
+        if (!(ratio > 0)) {
             box.h = box.w;
+            return;
         }
+        // box-sizing: border-box なら比率は枠線ボックスに掛かる（CSS Sizing 4 §5.1）
+        if (s.isBorderBox()) box.h = Math.max(box.verticalDecoration(), box.w / ratio);
+        else box.h = Math.max(0, box.w - box.horizontalDecoration()) / ratio + box.verticalDecoration();
+    }
+
+    /** {@code aspect-ratio} の幅 / 高さ（{@code auto} だけ・解けなければ NaN）。{@code auto 1/1} の auto は無視する。 */
+    static float aspectRatioOf(ComputedStyle s) {
+        String v = s.get(CssPropertyIndex.ASPECT_RATIO);
+        if (v == null) return Float.NaN;
+        String t = v.trim().toLowerCase(java.util.Locale.ROOT).replace("auto", "").trim();
+        if (t.isEmpty()) return Float.NaN;
+        try {
+            int slash = t.indexOf('/');
+            if (slash < 0) return Float.parseFloat(t);
+            float rw = Float.parseFloat(t.substring(0, slash).trim()), rh = Float.parseFloat(t.substring(slash + 1).trim());
+            return rh > 0 ? rw / rh : Float.NaN;
+        } catch (NumberFormatException e) {
+            return Float.NaN;
+        }
+    }
+
+    /** 比率 {@code ratio}（幅 / 高さ）の箱の、枠線ボックスの高さ {@code borderH} に対する枠線ボックスの幅。 */
+    static float widthFromHeight(LayoutBox box, float ratio, float borderH) {
+        if (box.axisStyle().isBorderBox()) return Math.max(box.horizontalDecoration(), borderH * ratio);
+        return Math.max(0, borderH - box.verticalDecoration()) * ratio + box.horizontalDecoration();
     }
 
     /**

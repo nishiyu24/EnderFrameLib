@@ -32,7 +32,7 @@ final class AnchorPositioning {
     /**
      * grid / flex 容器の絶対配置の子の静的位置を「領域 + 揃え」で入れる（横書きのみ。他は内容ボックスの原点のまま）。
      * <ul>
-     *   <li>grid: 容器の padding ボックスを唯一のグリッド領域とみなし、{@code justify-self} / {@code align-self}
+     *   <li>grid: 容器の内容ボックス（容器が包含ブロックなら grid-area の領域）を唯一のグリッド領域とみなし、{@code justify-self} / {@code align-self}
      *       （auto は容器の {@code justify-items} / {@code align-items}）で揃える（css-grid §9.4）。</li>
      *   <li>flex: 唯一の項目とみなし、主軸は {@code justify-content}、交差軸は {@code align-self} で揃える（css-flexbox §4.1）。</li>
      * </ul>
@@ -53,10 +53,9 @@ final class AnchorPositioning {
                 child.staticAreaW = child.staticAreaH = STATIC_AREA_IS_CB;
                 return;
             }
-            child.staticX = innerX - parent.pL;
-            child.staticY = innerY - parent.pT;
-            child.staticAreaW = Math.max(0, parent.w - parent.bL - parent.bR);
-            child.staticAreaH = Math.max(0, parent.h - parent.bT - parent.bB);
+            // 容器が包含ブロックでなければ、内容ボックスの中で揃える（ブラウザの実装と WPT の参照に合わせる）
+            child.staticAreaW = Math.max(0, parent.w - parent.horizontalDecoration());
+            child.staticAreaH = Math.max(0, parent.h - parent.verticalDecoration());
             child.staticAlignX = selfFactor(selfValue(cs, CssPropertyIndex.JUSTIFY_SELF, ps, CssPropertyIndex.JUSTIFY_ITEMS), rtl, true, false);
             child.staticAlignY = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, false);
             return;

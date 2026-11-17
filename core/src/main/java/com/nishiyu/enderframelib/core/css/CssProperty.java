@@ -157,6 +157,7 @@ public final class CssProperty {
     public static final String TEXT_ALIGN = "text-align";
     public static final String TEXT_ALIGN_LAST = "text-align-last";
     public static final String TEXT_JUSTIFY = "text-justify";
+    public static final String TAB_SIZE = "tab-size";
     public static final String TEXT_DECORATION = "text-decoration";
     public static final String TEXT_INDENT = "text-indent";
     public static final String TEXT_OVERFLOW = "text-overflow";

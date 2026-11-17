@@ -1168,11 +1168,11 @@ public class HtmlParser {
                 boolean inlineGap = !token.text.contains("\n") && !token.text.contains("\r") && !parent.children.isEmpty();
                 return inlineGap ? " " : "";
             }
-            char first = token.text.charAt(0);
-            char last = token.text.charAt(token.text.length() - 1);
-            boolean leadSpace = Character.isWhitespace(first) && first != '\n' && first != '\r';
-            boolean trailSpace = Character.isWhitespace(last) && last != '\n' && last != '\r';
-            return (leadSpace ? " " : "") + trimmed + (trailSpace ? " " : "");
+            // 文字を含むテキストは原文のまま持つ（DOM の値は原文。空白の畳み方は white-space で決まり、レイアウトの
+            // TextShaper.normalize が畳む）。以前はここで畳んでいて、CSS で white-space: pre / pre-wrap を指定しても
+            // 空白の並びや tab が残らず、要素の後の改行（<b>a</b>⏎b）も空白にならなかった
+            String t = token.text;
+            return t.indexOf('\r') >= 0 ? t.replace("\r\n", "\n").replace('\r', '\n') : t;
         }
 
         /** 改行・タブがある、または空白が 2 つ以上続く（畳む必要がある）か。 */

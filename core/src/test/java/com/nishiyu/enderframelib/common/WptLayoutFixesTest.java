@@ -120,6 +120,74 @@ class WptLayoutFixesTest {
     }
 
     @Test
+    void tableHeightExcludesCaption() {
+        LayoutBox r = layout("<div id=t style='display:table;height:80px;width:100px'><div style='display:table-caption;height:20px'></div>"
+                + "<div style='display:table-cell'>x</div></div>");
+        assertEquals(100, find(r, "t").h, 0.01f);
+    }
+
+    @Test
+    void percentBasisInIndefiniteColumnUsesContentSize() {
+        LayoutBox r = layout("<div style='display:flex;flex-direction:column'><div id=i style='flex:0 0 0%;height:500px'><div style='height:100px'></div></div></div>");
+        assertEquals(100, find(r, "i").h, 0.01f);
+    }
+
+    @Test
+    void preWrapViaCssKeepsSpacesAndTabStops() {
+        LayoutBox r = layout("<div style='white-space:pre;font-family:monospace;tab-size:4'><span id=s>\tX</span></div>"
+                + "<div style='white-space:pre-wrap'><span id=p>a   b</span></div>");
+        var tab = find(r, "s").children.get(0).inlineFragments;
+        var x = tab.get(tab.size() - 1);
+        assertEquals("X", x.text);
+        assertTrue(x.x > 0, "tab が次の tab 位置まで進む");
+        String text = find(r, "p").children.get(0).displayText;
+        assertEquals("a   b", text, "white-space: pre-wrap を CSS で指定しても空白が畳まれない");
+    }
+
+    @Test
+    void breakSpacesKeepsSpacesAtTheStartOfTheNextLine() {
+        LayoutBox r = layout("<div style='white-space:break-spaces;width:60px;font-family:monospace'><span id=s>aaaa    b</span></div>");
+        var frags = find(r, "s").children.get(0).inlineFragments;
+        var b = frags.get(frags.size() - 1);
+        assertEquals("b", b.text);
+        assertTrue(b.x > 0, "折り返した行の頭の空白が幅を取る");
+    }
+
+    @Test
+    void matchParentUsesTheParentsDirection() {
+        LayoutBox r = layout("<div style='direction:rtl;text-align:start;width:200px'><div style='direction:ltr;text-align:match-parent'><span id=s>x</span></div></div>");
+        assertTrue(find(r, "s").children.get(0).inlineFragments.get(0).x > 150, "親の start（rtl）は右");
+    }
+
+    @Test
+    void explicitZeroWidthWrapsAtEveryOpportunity() {
+        LayoutBox r = layout("<div style='width:0'><span id=s>aa bb</span></div>");
+        var frags = find(r, "s").children.get(0).inlineFragments;
+        assertNotEquals(frags.get(0).y, frags.get(frags.size() - 1).y, 0.01f);
+    }
+
+    @Test
+    void letterSpacingIsNotAddedAfterTheLastCharacterOfAnElement() {
+        LayoutBox a = layout("<div><span id=s style='letter-spacing:10px'>a</span><span id=t>a</span></div>");
+        LayoutBox b = layout("<div><span id=s>a</span><span id=t>a</span></div>");
+        assertEquals(find(b, "t").x, find(a, "t").x, 0.01f);
+    }
+
+    @Test
+    void rtlFlexRowStartsAtTheRight() {
+        LayoutBox r = layout("<div style='display:flex;direction:rtl;width:200px'><div id=a style='width:50px;height:5px'></div><div id=b style='width:50px;height:5px'></div></div>");
+        assertEquals(150, find(r, "a").x, 0.01f);
+        assertEquals(100, find(r, "b").x, 0.01f);
+    }
+
+    @Test
+    void collapsedFlexItemTakesNoSpace() {
+        LayoutBox r = layout("<div style='display:flex;gap:10px'><div style='width:50px;height:5px'></div>"
+                + "<div style='width:50px;height:5px;visibility:collapse'></div><div id=c style='width:50px;height:5px'></div></div>");
+        assertEquals(60, find(r, "c").x, 0.01f);
+    }
+
+    @Test
     void leadingSpaceOfAWrappedRunDoesNotStartTheLine() {
         LayoutBox r = layout("<div style='width:60px'>aaaa <span>bbbbbbbb</span> cccc</div>");
         LayoutBox text = r.children.get(0).children.get(1).children.get(0).children.get(2);

@@ -22,7 +22,7 @@ It combines off-heap columns on direct `ByteBuffer` + `VarHandle` (standard JDK 
   - **OpenGL 3.2+ Core** (`:core-gl`) and **Vulkan 1.1** (`:core-vulkan`): an SDF shader batches rounded rectangles, borders, shadows, gradients, and glyphs into instanced draws. Shapes the GPU path refuses fall back to a CPU layer.
   - `:core` itself has no compile or runtime dependency on OpenGL, GLFW, or Vulkan. GPU backends and the GLFW window (`:core-glfw`) are discovered through `ServiceLoader`.
 - **A subset of web standards** (this is not a browser; see [FIDELITY.md](../FIDELITY.md) for known divergences):
-  - Layout: Block, Inline, Flexbox, Grid, Table, Multicolumn, and Container Queries (`@container`). Coverage is partial: on a 260-pair subset of WPT reftests, **136 pass (52%)**: flexbox 94/120, grid 21/80, text 21/60 (tracked by `WptReftestRatchetTest`).
+  - Layout: Block, Inline, Flexbox, Grid, Table, Multicolumn, and Container Queries (`@container`). Coverage is partial: on a 260-pair subset of WPT reftests, **149 pass (57%)**: flexbox 99/120, grid 22/80, text 28/60 (tracked by `WptReftestRatchetTest`).
   - Colors: RGB, HSL, `oklch`, `display-p3`, and gradients.
   - CSS `@keyframes` and `transition` animations.
   - WHATWG DOM interfaces and UI Events (Mouse, Pointer, Keyboard, Wheel, Focus, and IME Composition) for Java callers. There is no JavaScript engine.

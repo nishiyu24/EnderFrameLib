@@ -835,7 +835,8 @@ public class LayoutBox {
                 || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.WHITE_SPACE), newStyle.get(CssPropertyIndex.WHITE_SPACE))
                 || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.TEXT_TRANSFORM), newStyle.get(CssPropertyIndex.TEXT_TRANSFORM))) {
             // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
-            String text = TextShaper.normalize(node.text, WhiteSpace.of(newStyle.get(CssPropertyIndex.WHITE_SPACE)));
+            WhiteSpace ws = WhiteSpace.of(newStyle.get(CssPropertyIndex.WHITE_SPACE));
+            String text = TextShaper.normalize(ws.collapses() ? trimNewlineEdges(node.text) : node.text, ws);
             this.displayText = stripIgnorable(LayoutMetrics.applyTextTransform(text, newStyle));
         }
 
@@ -915,6 +916,20 @@ public class LayoutBox {
      * 既定で無視される書式文字（双方向の制御 U+202A–202E・U+2066–2069、ゼロ幅の U+200B–200F・U+2060–2064、U+FEFF）を除く。
      * 幅を持たず描かれない文字で、字形の無い書体では豆腐（□）として描かれていた（双方向の並べ替え自体は行わない）。
      */
+    /**
+     * 空白を畳むときの原文の端: 改行で始まる先頭の空白・改行で終わる末尾の空白を落とす（ソースの字下げと行末）。
+     * DOM は原文を持ち（white-space: pre 系で空白と tab を残すため）、従来パーサが行っていた端の扱いをここで再現する。
+     */
+    static String trimNewlineEdges(String s) {
+        int n = s.length();
+        if (n == 0) return s;
+        int start = 0, end = n;
+        char first = s.charAt(0), last = s.charAt(n - 1);
+        if (first == '\n' || first == '\r') while (start < end && Character.isWhitespace(s.charAt(start))) start++;
+        if (last == '\n' || last == '\r') while (end > start && Character.isWhitespace(s.charAt(end - 1))) end--;
+        return start == 0 && end == n ? s : s.substring(start, end);
+    }
+
     static String stripIgnorable(String s) {
         int n = s.length();
         int i = 0;
@@ -1027,6 +1042,7 @@ public class LayoutBox {
         int count = 0;
         for (LayoutBox c : children) {
             if (!c.participatesInFlow()) continue;
+            if (sumItems && FlexLayoutEngine.isCollapsed(c)) continue;
             float contribution = c.minContentContribution(ctx) + c.intrinsicInlineMargins(ctx);
             max = Math.max(max, contribution);
             sum += contribution;

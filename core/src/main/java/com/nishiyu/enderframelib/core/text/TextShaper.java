@@ -54,7 +54,8 @@ public final class TextShaper {
         if (isAlreadyNormal(text, whiteSpace)) return text; // 正規表現（Matcher の生成）を避ける
         String result = text.indexOf('\r') >= 0 ? text.replace("\r\n", "\n").replace('\r', '\n') : text;
         if (!whiteSpace.preservesNewlines()) result = collapseRuns(result, true);
-        if (result.indexOf('\t') >= 0) result = result.replace("\t", TAB_SPACES);
+        // 空白を保つ（pre 系）なら tab は残し、行を組むときに tab 位置まで進める（BlockLayoutEngine）。畳むなら空白と同じ
+        if (result.indexOf('\t') >= 0 && whiteSpace.collapses()) result = result.replace("\t", TAB_SPACES);
         if (whiteSpace.collapses()) result = collapseRuns(result, false);
         return result;
     }
@@ -99,8 +100,8 @@ public final class TextShaper {
         if (!whiteSpace.preservesNewlines()) {
             result = LINE_BREAKS.matcher(result).replaceAll(" ");
         }
-        result = result.replace("\t", TAB_SPACES);
         if (whiteSpace.collapses()) {
+            result = result.replace("\t", TAB_SPACES);
             result = BLANK_RUN.matcher(result).replaceAll(" ");
         }
         return result;

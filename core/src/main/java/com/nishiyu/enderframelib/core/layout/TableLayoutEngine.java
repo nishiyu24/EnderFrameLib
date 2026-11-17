@@ -202,6 +202,7 @@ public class TableLayoutEngine extends LayoutEngine {
         for (boolean collapsed : state.collapsedRows) if (!collapsed) visibleRows++;
         float gridH = visibleRows > 0 ? sum(heights) + state.vSpacing * (visibleRows + 1) : 0;
         placeChildren(box, state, captionTop, gridH);
+        state.captionExtent = captionTop + captionBottom;
         return captionTop + gridH + captionBottom;
     }
 
@@ -838,6 +839,11 @@ public class TableLayoutEngine extends LayoutEngine {
     }
 
     /** 表の格子と寸法。arrangeChildren が読む位置は {@link #placements}。 */
+    /** 表の caption の外側の高さの和（組む前は 0）。 */
+    static float captionExtent(LayoutBox table) {
+        return table.engineState instanceof TableState s ? s.captionExtent : 0;
+    }
+
     public static class TableState implements LayoutEngineState {
         List<Placement> placements = List.of();
         public final List<LayoutBox> rows = new ArrayList<>();
@@ -856,6 +862,8 @@ public class TableLayoutEngine extends LayoutEngine {
         /** {@link #prepareCollapsedBorders} が組んだばかりで、続く measureContent がそのまま使ってよい。 */
         boolean preparedForMeasure;
         float hSpacing, vSpacing, contentW;
+        /** caption の外側の高さの和（表の height は行の部分に掛かり、caption はその外に足される。CSS 2.2 §17.4）。 */
+        float captionExtent;
 
         @Override
         public boolean contributesScrollExtent() {

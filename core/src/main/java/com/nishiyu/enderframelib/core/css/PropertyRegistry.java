@@ -245,6 +245,8 @@ public final class PropertyRegistry {
         // 最終行の揃えと両端揃えの機会（CSS Text 3 §7.2・§7.4）
         layout("text-align-last", "auto", true, ValueType.KEYWORD, false);
         layout("text-justify", "auto", true, ValueType.KEYWORD, false);
+        // tab の幅（空白の幅の倍数か長さ。CSS Text 3 §4.2）
+        layout("tab-size", "8", true, ValueType.OTHER, false);
         keyword("text-transform", CssKeywords.TextTransform.class, CssKeywords.TextTransform.NONE, true, Invalidation.LAYOUT);
         layout("white-space", "normal", true, ValueType.KEYWORD, false);
         layout("word-break", "normal", true, ValueType.KEYWORD, false);

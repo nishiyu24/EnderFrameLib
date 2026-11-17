@@ -154,6 +154,7 @@ public final class CssPropertyIndex {
     public static final int TEXT_ALIGN = ComputedStyle.idOf(CssProperty.TEXT_ALIGN);
     public static final int TEXT_ALIGN_LAST = ComputedStyle.idOf(CssProperty.TEXT_ALIGN_LAST);
     public static final int TEXT_JUSTIFY = ComputedStyle.idOf(CssProperty.TEXT_JUSTIFY);
+    public static final int TAB_SIZE = ComputedStyle.idOf(CssProperty.TAB_SIZE);
     public static final int TEXT_DECORATION = ComputedStyle.idOf(CssProperty.TEXT_DECORATION);
     public static final int TEXT_INDENT = ComputedStyle.idOf(CssProperty.TEXT_INDENT);
     public static final int TEXT_OVERFLOW = ComputedStyle.idOf(CssProperty.TEXT_OVERFLOW);
