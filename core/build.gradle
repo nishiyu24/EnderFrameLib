@@ -386,3 +386,23 @@ tasks.register('costGate', JavaExec) {
     if (project.hasProperty('costgate.tolerance')) systemProperty 'costgate.tolerance', project.property('costgate.tolerance').toString()
     if (project.hasProperty('costgate.jvmArgs')) systemProperty 'costgate.jvmArgs', project.property('costgate.jvmArgs').toString()
 }
+
+// A6: 近道の切り分けスイッチ（enderframe.*.no* / .off）の組み合わせ検証。既定・各スイッチ単独・ペアワイズの各構成を別 JVM で走らせ、
+// 乱数の変更列の表示リスト署名とソフトウェア描画の画素が既定と一致することを確かめる（夜間）。
+//   ./gradlew :core:shortcutMatrix                          全構成
+//   ./gradlew :core:shortcutMatrix -Pmatrix.only=noshift    名前に含まれるスイッチの単独の構成だけ
+//   ./gradlew :core:shortcutMatrix -Pmatrix.extra="-Dx=y"   全構成へ足す JVM 引数（検査が効くことの確認用）
+tasks.register('shortcutMatrix', JavaExec) {
+    group = 'verification'
+    description = '近道スイッチの単独オフ＋ペアワイズ構成で、表示リストと画素が既定と一致することを確かめる（ShortcutMatrixMain）'
+    classpath = sourceSets.test.output + sourceSets.test.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.common.ShortcutMatrixMain'
+    workingDir = rootProject.projectDir
+    if (project.hasProperty('matrix.only')) systemProperty 'matrix.only', project.property('matrix.only').toString()
+    if (project.hasProperty('matrix.extra')) systemProperty 'matrix.extra', project.property('matrix.extra').toString()
+    if (project.hasProperty('matrix.update')) systemProperty 'matrix.update', 'true'
+    if (project.hasProperty('matrix.dump')) systemProperty 'matrix.dump', project.property('matrix.dump').toString()
+    if (project.hasProperty('matrix.dumpfile')) { systemProperty 'matrix.dumpfile', project.property('matrix.dumpfile').toString(); systemProperty 'matrix.keeppixels', 'true' }
+    if (project.hasProperty('matrix.dumpswitch')) systemProperty 'matrix.dumpswitch', project.property('matrix.dumpswitch').toString()
+    if (project.hasProperty('matrix.parallel')) systemProperty 'matrix.parallel', project.property('matrix.parallel').toString()
+}

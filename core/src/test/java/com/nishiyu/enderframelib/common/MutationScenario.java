@@ -59,9 +59,22 @@ final class MutationScenario {
         @Override public void close() { tiny.close(); }
     }
 
+    /** 直近の手順の 1 手ごとの画素の写し（{@code draw = true} のときだけ。ソフトウェア描画の近道の検査用）。 */
+    static final List<Integer> PIXELS = new ArrayList<>();
+
+    /** 調査用（{@code -Dmatrix.keeppixels=true}）: 1 手ごとの画素そのもの。 */
+    static final List<int[]> PIXEL_DATA = new ArrayList<>();
+
     static List<List<String>> run(String html, String[] classes, String[] styles, long seed, int steps, boolean draw) {
+        return run(html, classes, styles, seed, steps, draw, false);
+    }
+
+    /** {@code scroll = true} は、ホイールの手（スクロールする箱の上へ移して回す）を混ぜる。false のときの乱数の列は従来と同じ。 */
+    static List<List<String>> run(String html, String[] classes, String[] styles, long seed, int steps, boolean draw, boolean scroll) {
         Random rnd = new Random(seed);
         LOG.clear();
+        PIXELS.clear();
+        PIXEL_DATA.clear();
         StandaloneView view = new StandaloneView(html, 320, 240, FontResolver.FALLBACK);
         try (com.nishiyu.enderframelib.core.paint.RenderBackend backend = draw ? new SoftwareRenderBackend(400, 300, 1f) : new NoDraw()) {
             List<List<String>> out = new ArrayList<>();
@@ -71,7 +84,7 @@ final class MutationScenario {
                 List<HtmlElement> els = new ArrayList<>();
                 elements(view.root(), els);
                 HtmlElement target = els.get(rnd.nextInt(els.size()));
-                switch (rnd.nextInt(9)) {
+                switch (rnd.nextInt(scroll ? 11 : 9)) {
                     case 0, 1 -> { String v = classes[rnd.nextInt(classes.length)]; LOG.add("class #" + target.getId() + " = '" + v + "'"); target.setAttribute("class", v); }
                     case 2 -> { String v = styles[rnd.nextInt(styles.length)]; LOG.add("style #" + target.getId() + " = '" + v + "'"); target.setAttribute("style", v); }
                     case 3 -> {
@@ -106,6 +119,12 @@ final class MutationScenario {
                         LOG.add("resize " + size[0] + "x" + size[1]);
                         view.resize(size[0], size[1]);
                     }
+                    case 9, 10 -> {
+                        int notch = rnd.nextInt(7) - 3;
+                        LOG.add("wheel " + notch);
+                        view.mouseMove(40 + rnd.nextInt(200), 40 + rnd.nextInt(160), backend.sessionId());
+                        view.scroll(0, notch, backend.sessionId());
+                    }
                     default -> LOG.add("(time only)"); // 時間だけ進める
                 }
                 now += 30 + rnd.nextInt(400);
@@ -127,6 +146,10 @@ final class MutationScenario {
                     sigs.add(sig(it));
                 }
                 out.add(sigs);
+                if (draw) {
+                    PIXELS.add(java.util.Arrays.hashCode(backend.pixmap().pixels()));
+                    if (Boolean.getBoolean("matrix.keeppixels")) PIXEL_DATA.add(backend.pixmap().pixels().clone());
+                }
             }
             return out;
         } finally {

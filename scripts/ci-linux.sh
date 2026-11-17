@@ -75,6 +75,12 @@ env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew :core:costGate --
 gate=${PIPESTATUS[0]}
 [ "$status" = 0 ] && status=$gate
 
+# full-tests.yml の夜間ジョブ "shortcut-matrix"（A6）。近道スイッチの単独オフ＋ペアワイズで、表示リストと画素が既定と一致するか
+echo "[ci-linux] ./gradlew :core:shortcutMatrix --stacktrace"
+env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew :core:shortcutMatrix --stacktrace --console=plain 2>&1 | tee -a "$WORK/../last.log"
+matrix=${PIPESTATUS[0]}
+[ "$status" = 0 ] && status=$matrix
+
 # CI の 2 つ目のステップ（build.yml の "Game test server"）。専用サーバーを 1 回走らせてセッション寿命を確認する。build が通ったときだけ
 if [ "$status" = 0 ]; then
   echo "[ci-linux] ./gradlew runGameTestServer --stacktrace"
