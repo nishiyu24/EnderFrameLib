@@ -13,7 +13,10 @@ import com.nishiyu.enderframelib.common.three.Scene3D;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 /**
  * インタラクティブな 3D のデモ（{@link Scene3D} の使い方の見本）。{@code <scene-3d>} 2 枚:
@@ -22,20 +25,45 @@ import java.util.Base64;
  * 窓では GL、{@code --png} ではソフトウェアの 3D ラスタライザで描かれる（同じシーンモデル）。
  *
  * <pre>
- * ./gradlew :core:runScene3d                                          窓で表示
- * ./gradlew :core:runScene3d --args="--png scene3d.png --after 1500"  窓なし（ソフトウェア描画）で PNG
+ * ./gradlew :core:runScene3d                                          可変ウィンドウで表示（最大化・マウスリサイズ可）
+ * ./gradlew :core:runScene3d --args="false"                           固定ウィンドウで表示
+ * ./gradlew :core:runScene3d --args="1280 800 true"                   幅・高さ・可変ウィンドウを指定
+ * ./gradlew :core:runScene3d --args="--png scene3d.png --after 1500"  窓なしで PNG
  * </pre>
  */
 public final class Scene3DApp {
     private Scene3DApp() {}
 
     public static void main(String[] args) throws Exception {
-        String[] a = new String[args.length + 3];
-        a[0] = "core/demo/resources/scene3d.html";
-        a[1] = "1100";
-        a[2] = "600";
-        System.arraycopy(args, 0, a, 3, args.length);
-        StandaloneViewer.launch(a, Scene3DApp::wire);
+        Path html = Path.of("core/demo/resources/scene3d.html");
+        List<String> a = new ArrayList<>(List.of(html.toString()));
+
+        // 画面サイズ（幅・高さ）と可変ウィンドウ（true指定: 最大化・マウスリサイズ可。argsでfalse指定された場合は可変しない）
+        boolean sized = args.length >= 2 && args[0].matches("[0-9]+") && args[1].matches("[0-9]+");
+        boolean hasResizable = sized
+                ? (args.length >= 3 && ("true".equalsIgnoreCase(args[2]) || "false".equalsIgnoreCase(args[2])))
+                : (args.length >= 1 && ("true".equalsIgnoreCase(args[0]) || "false".equalsIgnoreCase(args[0])));
+        boolean resizable = hasResizable ? Boolean.parseBoolean(sized ? args[2] : args[0]) : true;
+
+        int pos = 0;
+        if (sized) {
+            a.add(args[0]);
+            a.add(args[1]);
+            pos = 2;
+        } else {
+            a.addAll(List.of("1100", "600"));
+        }
+
+        a.add(String.valueOf(resizable));
+        if (hasResizable) {
+            pos++;
+        }
+
+        for (int i = pos; i < args.length; i++) {
+            a.add(args[i]);
+        }
+
+        StandaloneViewer.launch(a.toArray(new String[0]), Scene3DApp::wire);
     }
 
     static void wire(StandaloneView view) {
