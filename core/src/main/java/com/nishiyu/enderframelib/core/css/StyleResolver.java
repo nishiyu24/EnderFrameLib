@@ -485,12 +485,12 @@ public class StyleResolver {
 
     private static InlineStyleEntry resolveInlineStyleEntry(HtmlNode node) {
         int attrVer = node.attrVersion();
-        if (node.inlineStyleCache instanceof InlineStyleEntry cached && cached.attrVersion() == attrVer) {
+        if (node.inlineStyleCache() instanceof InlineStyleEntry cached && cached.attrVersion() == attrVer) {
             return cached;
         }
         String styleText = node.attrs.get("style");
         if (styleText == null) {
-            node.inlineStyleCache = null;
+            node.setInlineStyleCache(null);
             return null;
         }
         Map<String, String> normal = new LinkedHashMap<>();
@@ -512,7 +512,7 @@ public class StyleResolver {
         InlineStyleEntry entry = new InlineStyleEntry(attrVer, compiledNormal, compiledImp, rawNormal,
                 compiledNormal != null && compiledNormal.mentionsRevert,
                 compiledImp != null && compiledImp.mentionsRevert);
-        node.inlineStyleCache = entry;
+        node.setInlineStyleCache(entry);
         return entry;
     }
 

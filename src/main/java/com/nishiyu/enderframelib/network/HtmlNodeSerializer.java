@@ -106,7 +106,7 @@ public class HtmlNodeSerializer {
 
         CompoundTag attrsTag = tag.getCompound("attrs");
         for (String key : attrsTag.getAllKeys()) {
-            node.attrs.put(key, attrsTag.getString(key));
+            node.attrsForWrite().put(key, attrsTag.getString(key));
         }
 
         ListTag childrenTag = tag.getList("children", Tag.TAG_COMPOUND);

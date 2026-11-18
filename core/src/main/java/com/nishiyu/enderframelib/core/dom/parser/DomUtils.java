@@ -23,7 +23,7 @@ public class DomUtils {
             target.attrs.remove(attrName);
         } else {
             String val = attrValue != null ? attrValue : "true";
-            target.attrs.put(attrName, val);
+            target.attrsForWrite().put(attrName, val);
         }
     }
 

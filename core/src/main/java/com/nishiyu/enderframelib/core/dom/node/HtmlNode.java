@@ -67,38 +67,74 @@ public class HtmlNode implements Node {
     public final NodeType nodeType;
     public final String tag;
 
-    // attrs を真のデータソース（Single Source of Truth）とする。id の増減はドキュメントの索引に反映される
-    private final AttributeMap attrMap = new AttributeMap();
-    public final Map<String, String> attrs = attrMap;
+    /**
+     * attrs を真のデータソース（Single Source of Truth）とする。id の増減はドキュメントの索引に反映される。
+     * テキスト・コメントの節は子を持てず、属性もほぼ持たない（鍵の {@code id} だけ）ので、共有の空の不変の表を指し、
+     * 最初に書くときに作る（A16②: 節ごとに表 2 つ・64 バイトを確保していた）。書き込みは {@link #attrsForWrite()} を通す
+     * （共有の空の表へ直接 {@code put} すると {@link UnsupportedOperationException}）。読み取りは従来どおりこの欄。
+     */
+    public Map<String, String> attrs;
+
+    /** 書き込める属性の表（テキスト・コメントの節はここで初めて作る）。 */
+    public Map<String, String> attrsForWrite() {
+        Map<String, String> a = attrs;
+        if (a == NO_ATTRS) attrs = a = new AttributeMap();
+        return a;
+    }
+
+    private static final Map<String, String> NO_ATTRS = Collections.emptyMap();
+    private static final List<HtmlNode> NO_CHILDREN = Collections.emptyList();
 
     /** {@code on*} イベント属性を 1 つでも持つか（走査時の反復子確保を避けるための O(attrs) 無確保判定）。 */
     public boolean hasEventAttributes() {
-        return attrMap.hasEventAttribute();
+        return attrs instanceof AttributeMap map && map.hasEventAttribute();
     }
 
     /** 子の増減は、接続中のドキュメントの id 索引に反映される（{@code children} を直接触る経路も含む）。 */
-    public final List<HtmlNode> children = new ChildList();
+    public final List<HtmlNode> children;
     public String text = "";
     public HtmlNode parent = null;
     public HtmlDocument ownerDocument = null;
     public boolean isPseudoNode = false;
-    /** 登録があるまで作らない（大半の節はリスナーを持たない）。 */
-    private List<EventListenerEntry> eventListeners;
-    /** インライン {@code style} 属性の解析済みキャッシュ（{@link #attrVersion()} に紐づく）。 */
-    public Object inlineStyleCache;
+
+    /**
+     * まれにしか使わない欄（A16②: 節 1 つの大きさを 112 → 80 バイトにするため、使うときだけ作る）。
+     * イベントリスナー・木の根のアリーナ・スクロール内容と part の鍵のキャッシュ・インライン style の解析結果。
+     */
+    private static final class Rare {
+        List<EventListenerEntry> eventListeners;
+        DocumentArena rootArena;
+        String scrollContentKeyBase, scrollContentKeyCache;
+        String partKeyBase;
+        String[] partKeyCache;
+        Object inlineStyleCache;
+    }
+
+    private Rare rare;
+
+    private Rare rare() {
+        Rare r = rare;
+        return r != null ? r : (rare = new Rare());
+    }
+
+    /** インライン {@code style} 属性の解析済みキャッシュ（{@link #attrVersion()} に紐づく）。無ければ null。 */
+    public Object inlineStyleCache() {
+        Rare r = rare;
+        return r != null ? r.inlineStyleCache : null;
+    }
+
+    public void setInlineStyleCache(Object cache) {
+        if (cache == null && rare == null) return;
+        rare().inlineStyleCache = cache;
+    }
 
     // ---- Off-Heap アリーナ上の同一性（Milestone 1） ----
     /** 接続先アリーナ上の番号。まだ振られていなければ -1。 */
     int nodeId = -1;
     /** {@link #nodeId} を振ったアリーナ。 */
     DocumentArena arena;
-    /** この節が木の根のときだけ持つアリーナ（文書は最初の子が付いたとき、断片は鍵を問われたときに作る）。 */
-    private DocumentArena rootArena;
     /** 明示 id の無い節の鍵（{@code ~番号}）。番号を振り直したら捨てる。 */
     private String derivedKey;
-    private String scrollContentKeyBase, scrollContentKeyCache;
-    private String partKeyBase;
-    private String[] partKeyCache;
     /** class 属性のトークンを atom にしたもの。属性が変わるたびに 1 回だけ作り直す。 */
     private int[] classAtoms = NO_ATOMS;
     private static final int[] NO_ATOMS = new int[0];
@@ -119,6 +155,20 @@ public class HtmlNode implements Node {
     public HtmlNode(NodeType type, String tag) {
         this.nodeType = type;
         this.tag = tag != null ? tag : "";
+        boolean leaf = type == NodeType.TEXT || type == NodeType.COMMENT;
+        this.attrs = leaf ? NO_ATTRS : new AttributeMap();
+        this.children = leaf ? NO_CHILDREN : new ChildList();
+    }
+
+    /** この節が木の根のときだけ持つアリーナ（文書は最初の子が付いたとき、断片は鍵を問われたときに作る）。 */
+    private DocumentArena rootArena() {
+        Rare r = rare;
+        return r != null ? r.rootArena : null;
+    }
+
+    private DocumentArena ensureRootArena() {
+        Rare r = rare();
+        return r.rootArena != null ? r.rootArena : (r.rootArena = new DocumentArena());
     }
 
     // ==========================================
@@ -572,11 +622,11 @@ public class HtmlNode implements Node {
     private DocumentArena treeArena(boolean create) {
         HtmlNode top = this;
         top = top.treeTop();
-        if (top.rootArena == null && (create || top instanceof HtmlDocument)) {
-            top.rootArena = new DocumentArena();
-            if (!(top instanceof HtmlDocument)) numberTree(top, top.rootArena);
+        if (top.rootArena() == null && (create || top instanceof HtmlDocument)) {
+            DocumentArena a = top.ensureRootArena();
+            if (!(top instanceof HtmlDocument)) numberTree(top, a);
         }
-        return top.rootArena;
+        return top.rootArena();
     }
 
     /** 木全体を行きがけ順に番号付けする（既存の番号は捨てて振り直す）。 */
@@ -695,18 +745,20 @@ public class HtmlNode implements Node {
     /** {@link #key()} に {@code "_scrollc"} を付けたスクロール内容ノード用 ID をキャッシュして返す。 */
     public String scrollContentKey() {
         String k = key();
-        if (scrollContentKeyBase == k && scrollContentKeyCache != null) return scrollContentKeyCache;
-        scrollContentKeyBase = k;
-        return scrollContentKeyCache = k + "_scrollc";
+        Rare r = rare();
+        if (r.scrollContentKeyBase == k && r.scrollContentKeyCache != null) return r.scrollContentKeyCache;
+        r.scrollContentKeyBase = k;
+        return r.scrollContentKeyCache = k + "_scrollc";
     }
 
     /** 描画部品 ID（{@code id + suffix}）をキャッシュして返す（スロット 0..25）。 */
     public String partKey(int slot, String suffix) {
         String k = key();
-        String[] cache = partKeyCache;
-        if (partKeyBase != k || cache == null) {
-            partKeyBase = k;
-            partKeyCache = cache = new String[26];
+        Rare r = rare();
+        String[] cache = r.partKeyCache;
+        if (r.partKeyBase != k || cache == null) {
+            r.partKeyBase = k;
+            r.partKeyCache = cache = new String[26];
         }
         String hit = cache[slot];
         if (hit != null) return hit;
@@ -725,7 +777,7 @@ public class HtmlNode implements Node {
         if (value > Integer.MAX_VALUE) return null;
         HtmlNode top = this;
         top = top.treeTop();
-        DocumentArena a = top.rootArena;
+        DocumentArena a = top.rootArena();
         return a != null && a.owner((int) value) instanceof HtmlNode found ? found : null;
     }
 
@@ -742,7 +794,7 @@ public class HtmlNode implements Node {
     public void restoreNodeIds(java.util.function.ToIntFunction<HtmlNode> idOf, int staticCount) {
         HtmlNode top = this;
         top = top.treeTop();
-        DocumentArena a = top.rootArena != null ? top.rootArena : (top.rootArena = new DocumentArena());
+        DocumentArena a = top.ensureRootArena();
         a.reset();
         List<HtmlNode> unnumbered = new ArrayList<>();
         restoreWalk(top, a, idOf, unnumbered);
@@ -781,8 +833,7 @@ public class HtmlNode implements Node {
     public void sealNodeIds() {
         HtmlNode top = this;
         top = top.treeTop();
-        if (top.rootArena == null) top.rootArena = new DocumentArena();
-        numberTree(top, top.rootArena);
+        numberTree(top, top.ensureRootArena());
     }
 
     /** 自分の {@code id} 属性が変わった。接続中なら id 索引を付け替える。 */
@@ -1347,7 +1398,7 @@ public class HtmlNode implements Node {
     @Override
     public HtmlNode cloneNode(boolean deep) {
         HtmlNode copy = createNodeInstance();
-        copy.attrs.putAll(this.attrs);
+        if (!this.attrs.isEmpty()) copy.attrsForWrite().putAll(this.attrs);
         copy.text = this.text;
         copy.isPseudoNode = this.isPseudoNode;
         if (deep) {
@@ -1439,7 +1490,7 @@ public class HtmlNode implements Node {
         if (id == null || id.trim().isEmpty()) {
             attrs.remove("id");
         } else {
-            attrs.put("id", id.trim());
+            attrsForWrite().put("id", id.trim());
         }
     }
 
@@ -1551,7 +1602,7 @@ public class HtmlNode implements Node {
         if (name == null) return;
         String oldVal = this.attrs.get(name);
         String newVal = value != null ? value : "";
-        this.attrs.put(name, newVal);
+        attrsForWrite().put(name, newVal);
 
         if (this instanceof HtmlElement el && "style".equals(name)) {
             el.syncStyleFromAttribute(newVal);
@@ -1746,7 +1797,9 @@ public class HtmlNode implements Node {
         }
 
         // 同一 (type, listener, capture) の重複登録を防止 (§2.7)
-        if (eventListeners == null) eventListeners = new CopyOnWriteArrayList<>();
+        Rare r = rare();
+        if (r.eventListeners == null) r.eventListeners = new CopyOnWriteArrayList<>();
+        List<EventListenerEntry> eventListeners = r.eventListeners;
         for (EventListenerEntry existing : eventListeners) {
             if (existing.type().equalsIgnoreCase(type)
                     && Objects.equals(existing.listener(), listener)
@@ -1767,6 +1820,7 @@ public class HtmlNode implements Node {
     public void removeEventListener(String type, EventListener listener, EventListenerOptions options) {
         if (type == null || type.isEmpty() || listener == null) return;
         boolean capture = options != null && options.isCapture();
+        List<EventListenerEntry> eventListeners = rare != null ? rare.eventListeners : null;
         if (eventListeners == null) return;
         eventListeners.removeIf(entry ->
                 entry.type().equalsIgnoreCase(type)
@@ -1824,6 +1878,7 @@ public class HtmlNode implements Node {
     }
 
     public List<EventListenerEntry> getEventListenersSnapshot() {
+        List<EventListenerEntry> eventListeners = rare != null ? rare.eventListeners : null;
         return eventListeners == null || eventListeners.isEmpty() ? List.of() : new ArrayList<>(eventListeners);
     }
 }

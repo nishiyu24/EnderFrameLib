@@ -15,7 +15,21 @@ public class HtmlText extends HtmlNode implements Text {
 
     public HtmlText(String data) {
         super(NodeType.TEXT, "#text");
-        this.text = data != null ? data : "";
+        this.text = data == null ? "" : isShortWhitespace(data) ? data.intern() : data;
+    }
+
+    /**
+     * 要素の間の改行と字下げ（{@code "\n    "}）は文書の中・セッションの間で同じ文字列が大量に繰り返されるので、
+     * 1 つを共有する（A16②: 空白の節 1 つあたり文字列と配列の約 53 バイト）。
+     */
+    private static boolean isShortWhitespace(String s) {
+        int n = s.length();
+        if (n == 0 || n > 64) return false;
+        for (int i = 0; i < n; i++) {
+            char c = s.charAt(i);
+            if (c != ' ' && c != '\n' && c != '\t' && c != '\r') return false;
+        }
+        return true;
     }
 
     @Override
