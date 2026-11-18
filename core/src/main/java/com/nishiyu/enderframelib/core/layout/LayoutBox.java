@@ -3498,7 +3498,44 @@ public class LayoutBox {
             float limit = portX + portW - ax.length(CssPropertyIndex.RIGHT, portW, rootW, rootH);
             if (x + w > limit) dx = -Math.max(0, Math.min(x + w - limit, x - mL - cbLeft));
         }
+        stickyDy = dy;
+        stickyUnstuckY = y;
         if (dx != 0 || dy != 0) applyRelativeOffset(dx, dy);
+        stickyPlacedY = y;
+    }
+
+    /**
+     * 直近の配置で sticky として足した縦のずれ・足す前の y・足した後の y（{@link #applyStickyOffset}）。sticky でない箱では意味を持たない。
+     * 足した後の y が今の y と違えば、その後に（平行移動の近道などで）動いていて、ずれは今の位置の式の値ではない。
+     */
+    public float stickyDy, stickyUnstuckY, stickyPlacedY;
+
+    /**
+     * B12: この sticky の箱が、スクロールコンテナ {@code port} の縦のスクロールだけで {@link #applyStickyOffset} と同じ式で動くときの値
+     * {@code {上の限界, 包含ブロックの下端, 貼り付く前の y, h, 下の余白, 親がスクロールで動くなら 1}}（今の配置での値）。
+     * 上の inset だけで決まり（下・左・右は auto）、いちばん近いスクロールコンテナが {@code port} のときだけ。それ以外は null。
+     */
+    public float[] stickyScrollParams(LayoutBox port, float rootW, float rootH) {
+        if (!isSticky || parent == null || port == null) return null;
+        LayoutBox near = null;
+        for (LayoutBox cur = parent; cur != null; cur = cur.parent) {
+            if (cur.isScrollContainer()) {
+                near = cur;
+                break;
+            }
+        }
+        if (near != port) return null;
+        ComputedStyle ax = axisStyle();
+        if (BoxMeasurer.isAutoInset(ax, CssPropertyIndex.TOP) || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.BOTTOM)
+                || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.LEFT) || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.RIGHT)) {
+            return null;
+        }
+        float portY = port.y + port.bT;
+        float portH = Math.max(0, port.h - port.bT - port.bB);
+        float limit = portY + ax.length(CssPropertyIndex.TOP, portH, rootW, rootH);
+        float cbBottom = parent.y + parent.h - parent.bB - parent.pB;
+        if (Float.floatToIntBits(y) != Float.floatToIntBits(stickyPlacedY)) return null; // 貼り付けたあとに動いた
+        return new float[]{limit, cbBottom, stickyUnstuckY, h, mB, parent != port ? 1f : 0f};
     }
 
     /**

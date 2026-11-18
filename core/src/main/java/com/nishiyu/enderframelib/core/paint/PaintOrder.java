@@ -89,6 +89,8 @@ public final class PaintOrder {
         float kx, ky;
         /** 作ったときのつまみの位置の、丸めの端数（{@code 位置 - round(位置)}）。平行移動を作り直しと同じ丸めにする。 */
         float fx0, fy0;
+        /** 中身の中の sticky の箱（B12。スクロールだけの更新で節に貼り付きのずれの増減を足す）。 */
+        List<com.nishiyu.enderframelib.core.paint.model.StickyShift> stickies = List.of();
 
         ScrollContent(LayoutBox box, String contentId, float sx0, float sy0) {
             this.box = box;
@@ -549,7 +551,8 @@ public final class PaintOrder {
                         || Float.compare(c.kx, p.kx()) != 0
                         || Float.compare(c.ky, p.ky()) != 0
                         || Float.compare(c.fx0, p.fx0()) != 0
-                        || Float.compare(c.fy0, p.fy0()) != 0) {
+                        || Float.compare(c.fy0, p.fy0()) != 0
+                        || !c.stickies.equals(p.stickies())) {
                     allSame = false;
                     break;
                 }
@@ -571,7 +574,8 @@ public final class PaintOrder {
                             && Float.compare(c.kx, p.kx()) == 0
                             && Float.compare(c.ky, p.ky()) == 0
                             && Float.compare(c.fx0, p.fx0()) == 0
-                            && Float.compare(c.fy0, p.fy0()) == 0) {
+                            && Float.compare(c.fy0, p.fy0()) == 0
+                            && c.stickies.equals(p.stickies())) {
                         item = p;
                         break;
                     }
@@ -579,7 +583,7 @@ public final class PaintOrder {
             }
             if (item == null) {
                 item = new com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo(c.box.node, c.contentId, c.thumbVId, c.thumbHId,
-                        c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0);
+                        c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0, c.stickies);
             }
             out.add(item);
         }
@@ -590,6 +594,9 @@ public final class PaintOrder {
      * スクロールするだけで中身が正しく動くコンテナか: スクロールコンテナで、中身に sticky・固定配置・包含ブロックがコンテナの外の
      * 絶対配置（スクロールに動かされない）が無い。そうした子孫があると、中身の節を動かすと位置が合わないので、従来の作り直しにする。
      */
+    /** 切り分け用（テストが切り替える）: false なら sticky を含むコンテナは従来どおり節にまとめない（作り直す）。 */
+    static volatile boolean STICKY_IN_SCROLL_NODE = true;
+
     private boolean scrollsAsOneNode(LayoutBox box) {
         if (box.isAnonymous || box.w <= 0 || box.h <= 0 || !box.isScrollContainer()) return false;
         if (box.isVirtualizedFlow() || box.subtreeHasContentAuto) return false;
@@ -601,24 +608,52 @@ public final class PaintOrder {
         if (known == null || known.struct != struct || (known.sawAbsolute && known.container != container)) {
             if (unscrollableVerdict.size() > 1024) unscrollableVerdict.clear(); // 消えた箱の分が溜まり続けないように
             scanSawAbsolute = false;
-            boolean bad = hasUnscrollableDescendant(box, box);
-            known = new ScrollVerdict(!bad, scanSawAbsolute, struct, container);
+            scanStickies = null;
+            boolean bad = hasUnscrollableDescendant(box, box, false);
+            known = new ScrollVerdict(!bad, scanSawAbsolute, struct, container, scanStickies == null ? List.of() : List.copyOf(scanStickies));
             unscrollableVerdict.put(box, known);
         }
-        return known.oneNode;
+        lastStickyShifts = List.of();
+        if (!known.oneNode) return false;
+        if (!known.stickies.isEmpty()) {
+            // sticky の箱は、今の配置で式が使えるか（いちばん近いスクロールコンテナ・上の inset だけ・貼り付けたあとに動いていない）を毎回確かめる
+            List<com.nishiyu.enderframelib.core.paint.model.StickyShift> shifts = new ArrayList<>(known.stickies.size());
+            for (LayoutBox s : known.stickies) {
+                float[] p = boxHasOwnNode(s) ? s.stickyScrollParams(box, rootW, rootH) : null;
+                if (p == null) return false;
+                var shift = new com.nishiyu.enderframelib.core.paint.model.StickyShift(s.node.key(), p[0], p[1], p[2], p[3], p[4], p[5] != 0f, s.stickyDy);
+                if (Float.floatToIntBits(shift.dyAt(0f)) != Float.floatToIntBits(s.stickyDy)) return false; // 式がレイアウトと合わない
+                shifts.add(shift);
+            }
+            lastStickyShifts = shifts;
+        }
+        return true;
     }
 
-    private record ScrollVerdict(boolean oneNode, boolean sawAbsolute, long struct, long container) {}
+    private record ScrollVerdict(boolean oneNode, boolean sawAbsolute, long struct, long container, List<LayoutBox> stickies) {}
+
+    /** {@link #scrollsAsOneNode} が直近に true を返した箱の sticky の式（{@code ScrollContent} を作るときに渡す）。 */
+    private List<com.nishiyu.enderframelib.core.paint.model.StickyShift> lastStickyShifts = List.of();
+    private List<LayoutBox> scanStickies;
 
     private final java.util.IdentityHashMap<LayoutBox, ScrollVerdict> unscrollableVerdict = new java.util.IdentityHashMap<>();
     private boolean scanSawAbsolute;
 
-    private boolean hasUnscrollableDescendant(LayoutBox container, LayoutBox box) {
+    private boolean hasUnscrollableDescendant(LayoutBox container, LayoutBox box, boolean underSticky) {
         if (box.contentAutoSkipped || box.isVirtualizedFlow()) return box.isVirtualizedFlow();
         for (LayoutBox child : box.children) {
             if (child.display != null && child.display.isNone()) continue;
             if (child.subtreeHasContentAuto) return true;
-            if (child.isFixed || child.isSticky) return true;
+            if (child.isFixed) return true;
+            // sticky は、上の inset だけで、いちばん近いスクロールコンテナがこのコンテナで、sticky の中の sticky でなければ、
+            // 節の移動に貼り付きのずれの増減を足して表せる（B12）。それ以外は従来どおり作り直す
+            if (child.isSticky) {
+                if (!STICKY_IN_SCROLL_NODE || underSticky || child.stickyScrollParams(container, rootW, rootH) == null) return true;
+                if (scanStickies == null) scanStickies = new ArrayList<>(2);
+                scanStickies.add(child);
+                if (hasUnscrollableDescendant(container, child, true)) return true;
+                continue;
+            }
             if (child.isAbsolute) {
                 scanSawAbsolute = true;
                 LayoutBox cb = child.findContainingBlock();
@@ -632,7 +667,7 @@ public final class PaintOrder {
                 }
                 if (!inside) return true;
             }
-            if (hasUnscrollableDescendant(container, child)) return true;
+            if (hasUnscrollableDescendant(container, child, underSticky)) return true;
         }
         return false;
     }
@@ -736,6 +771,44 @@ public final class PaintOrder {
         return pooledTaskOut;
     }
 
+    /**
+     * B12: スタッキングコンテキストを作る箱 {@code box} 1 つ分の描画タスク。全体の {@link #paintTasks} の中で、{@link #classify} が
+     * この箱に作るノード（自分のタスク・レイヤー・中身の層）を同じ手順で作り、付録 E の順に平らにする。スタッキングコンテキストの
+     * 項目は表示リストの中で連続するので、全体を組み直さずにこの範囲だけを差し替えられる（{@code DisplayListBuilder} の部分木の組み直し）。
+     * 引数は、全体の分類で {@code box} に渡る値（親の中身のクリップ・親の id・祖先が動くか）。部分木の保持（チャンク）と
+     * 画面外の部分木の省略は使わない（箱ごとの判定で、全体の作り直しと同じ結果になる）。Top Layer の箱は外へ出せないので、呼び出し側が除く。
+     */
+    List<RenderTask> stackingSubtreeTasks(LayoutBox box, ClipRect clip, String parentId, boolean ancestorMoving) {
+        fragIds.set(0);
+        blendDescendants.clear();
+        taskCursor = 0;
+        nodeCursor = 0;
+        layerCursor = 0;
+        pooledTaskOut.clear();
+        boolean prevChunks = chunksOn;
+        SubtreePruner prevPruner = subtreePruner;
+        chunksOn = false;
+        subtreePruner = null;
+        topLayerRoot = null;
+        try {
+            boolean selfOrAncestorMoving = ancestorMoving || (box.style != null && factsOf(box.style).hasMovingProps());
+            RenderTask self = selfTask(box, clip, parentId, selfOrAncestorMoving);
+            int z = isZIndexAuto(box) ? 0 : box.zIndex;
+            PaintNode node = borrowNode(self, true, z, borrowLayers(), self != null ? layerSpecFor(box) : null, box);
+            collectChildren(box, clip, parentId, node.layers, node.layers, selfOrAncestorMoving);
+            emit(node, pooledTaskOut);
+        } finally {
+            chunksOn = prevChunks;
+            subtreePruner = prevPruner;
+        }
+        return pooledTaskOut;
+    }
+
+    /** {@link #isTopLayer} の外向けの口（部分木の組み直しの対象から外すため）。 */
+    boolean isTopLayerBox(LayoutBox box) {
+        return isTopLayer(box);
+    }
+
     /** Top Layer の箱を載せる、文書の根のスタッキングコンテキストの層（{@link #paintTasks} の間だけ）。 */
     private PaintLayers topLayerRoot;
 
@@ -789,6 +862,7 @@ public final class PaintOrder {
             // 中身は専用の節の下に置く: スクロールではこの節だけを動かせばよい（箱自身の背景・枠・つまみは動かさない）
             ScrollContent content = new ScrollContent(box, box.node.scrollContentKey(),
                     scrollState.getScrollX(box.node), scrollState.getScrollY(box.node));
+            content.stickies = lastStickyShifts;
             scrollContentOf.put(box, content);
             scrollContents.add(content);
             childParent = content.contentId;

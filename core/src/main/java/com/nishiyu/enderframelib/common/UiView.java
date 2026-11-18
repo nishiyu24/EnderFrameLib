@@ -449,6 +449,7 @@ public class UiView implements AutoCloseable {
             ids.add(info.contentId());
             if (info.thumbVId() != null) ids.add(info.thumbVId());
             if (info.thumbHId() != null) ids.add(info.thumbHId());
+            for (var st : info.stickies()) ids.add(st.nodeId());
         }
         cached = java.util.Set.copyOf(ids);
         dynamicIdsCache = cached;
@@ -1121,6 +1122,7 @@ public class UiView implements AutoCloseable {
             clearPaintOffset(info.contentId());
             if (info.thumbVId() != null) clearPaintOffset(info.thumbVId());
             if (info.thumbHId() != null) clearPaintOffset(info.thumbHId());
+            for (int k = 0, sn = info.stickies().size(); k < sn; k++) clearPaintOffset(info.stickies().get(k).nodeId());
         }
         setRenderCache(elements);
         setScrollBase(DisplayListBuilder.scrollContentNodes ? builtScrollContents() : List.of());
@@ -1151,6 +1153,11 @@ public class UiView implements AutoCloseable {
             // つまみは作り直したときと同じ整数の位置へ（小数のまま動かすと角の縁の画素が作り直しと違う。A6b ⑤）
             if (info.thumbVId() != null) setPaintOffset(info.thumbVId(), 0f, Math.round(info.fy0() + info.ky() * dy));
             if (info.thumbHId() != null) setPaintOffset(info.thumbHId(), Math.round(info.fx0() + info.kx() * dx), 0f);
+            // 中身の中の sticky の箱: 中身と一緒に動いた分に、貼り付きのずれの増減を足す（作り直したときの式と同じ。B12）
+            for (int k = 0, sn = info.stickies().size(); k < sn; k++) {
+                var st = info.stickies().get(k);
+                setPaintOffset(st.nodeId(), 0f, st.extraAt(dy));
+            }
         }
         return true;
     }
@@ -1269,11 +1276,13 @@ public class UiView implements AutoCloseable {
             keep.add(info.contentId());
             if (info.thumbVId() != null) keep.add(info.thumbVId());
             if (info.thumbHId() != null) keep.add(info.thumbHId());
+            for (var st : info.stickies()) keep.add(st.nodeId());
         }
         for (ScrollContentInfo info : scrollBase) { // 窓から外れたコンテナの移動量は、残さない
             if (!keep.contains(info.contentId())) clearPaintOffset(info.contentId());
             if (info.thumbVId() != null && !keep.contains(info.thumbVId())) clearPaintOffset(info.thumbVId());
             if (info.thumbHId() != null && !keep.contains(info.thumbHId())) clearPaintOffset(info.thumbHId());
+            for (var st : info.stickies()) if (!keep.contains(st.nodeId())) clearPaintOffset(st.nodeId());
         }
         setRenderCache(elements);
         setScrollBase(built);
@@ -1629,7 +1638,8 @@ public class UiView implements AutoCloseable {
         if (stale && elements != null) { // 表示リストのスクロールの基準は動かさない（位置は後回しのまま）
             STALE_TEXT_PATCH_HITS.incrementAndGet();
             setRenderCache(elements);
-            lastBreakdown = "stale-text-patch nodes=" + patchedBoxes.size() + " layout=" + ms(startedAt, layoutDone) + "ms";
+            int nodes = patchedBoxes.size();
+            lastBreakdown = () -> "stale-text-patch nodes=" + nodes + " layout=" + ms(startedAt, layoutDone) + "ms";
             applyOverrides();
             lastLayoutFinishedNanos = System.nanoTime();
             lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
@@ -1647,8 +1657,10 @@ public class UiView implements AutoCloseable {
         if (elements == null) elements = new ArrayList<>();
         long paintDone = System.nanoTime();
         publishBuilt(elements);
-        lastBreakdown = "text-patch nodes=" + patchedBoxes.size() + " layout=" + ms(startedAt, layoutDone)
-                + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, System.nanoTime()) + "ms";
+        int nodes = patchedBoxes.size();
+        long publishDone = System.nanoTime();
+        lastBreakdown = () -> "text-patch nodes=" + nodes + " layout=" + ms(startedAt, layoutDone)
+                + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, publishDone) + "ms";
         applyOverrides();
         lastLayoutFinishedNanos = System.nanoTime();
         lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
@@ -1891,8 +1903,10 @@ public class UiView implements AutoCloseable {
         if (elements == null) elements = new ArrayList<>();
         long paintDone = System.nanoTime();
         publishBuilt(elements);
-        lastBreakdown = "child-patch parents=" + plans.size() + " layout=" + ms(startedAt, layoutDone)
-                + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, System.nanoTime()) + "ms";
+        int parentCount = plans.size();
+        long publishDone = System.nanoTime();
+        lastBreakdown = () -> "child-patch parents=" + parentCount + " layout=" + ms(startedAt, layoutDone)
+                + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, publishDone) + "ms";
         applyOverrides();
         lastLayoutFinishedNanos = System.nanoTime();
         lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
@@ -1932,8 +1946,9 @@ public class UiView implements AutoCloseable {
         if (elements == null) elements = new ArrayList<>();
         long paintDone = System.nanoTime();
         publishBuilt(elements);
-        lastBreakdown = "inplace-relayout layout=" + ms(startedAt, layoutDone)
-                + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, System.nanoTime()) + "ms";
+        long publishDone = System.nanoTime();
+        lastBreakdown = () -> "inplace-relayout layout=" + ms(startedAt, layoutDone)
+                + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, publishDone) + "ms";
         applyOverrides();
         lastLayoutFinishedNanos = System.nanoTime();
         lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
@@ -2227,16 +2242,17 @@ public class UiView implements AutoCloseable {
         }
     }
 
-    private String lastBreakdown = "";
+    /** 直近の更新の内訳（診断表示用）。毎フレームの文字列の組み立て（{@code String.format}）を避けるため、読まれたときに作る（B12）。 */
+    private java.util.function.Supplier<String> lastBreakdown = () -> "";
 
     /** 診断・テスト用: 直近の更新の段ごとの内訳。 */
     public String lastBreakdownForTest() {
-        return lastBreakdown;
+        return lastBreakdown.get();
     }
 
     /** 直近の全レイアウトの内訳（調べる用）。 */
     public String lastBreakdown() {
-        return lastBreakdown;
+        return lastBreakdown.get();
     }
 
     /** ビューポートを変更してレイアウト・描画要素を作り直す。 */
@@ -2277,8 +2293,9 @@ public class UiView implements AutoCloseable {
             long layoutDone = System.nanoTime();
             long paintAlloc0 = com.nishiyu.enderframelib.core.EngineContext.current().trackAllocations ? RenderPipeline.threadAllocatedBytes() : 0;
             List<DisplayItem> elements = paintBoxes(rootBox, newRootW, newRootH, false);
-            lastBreakdown = RenderPipeline.lastBuildStats()
+            String breakdown = RenderPipeline.lastBuildStats()
                     + (com.nishiyu.enderframelib.core.EngineContext.current().trackAllocations ? " paintAllocKB=" + (RenderPipeline.threadAllocatedBytes() - paintAlloc0) / 1024 : "") + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
+            lastBreakdown = () -> breakdown;
             if (elements == null) elements = new ArrayList<>();
             publishBuilt(elements);
             applyOverrides();

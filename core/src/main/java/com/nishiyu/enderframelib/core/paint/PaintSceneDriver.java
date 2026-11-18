@@ -57,6 +57,7 @@ public final class PaintSceneDriver {
         }
 
         /** 開いている層を、項目の祖先のグループ {@code want}（外側から内側の順）に合わせる。 */
+        /** {@code want} は呼び出しの間だけ有効（走査が次の項目で使い回す。持ち続けるなら写す）。 */
         void syncLayers(List<Group> want);
 
         /**
@@ -298,6 +299,9 @@ public final class PaintSceneDriver {
     private int[] parentIdx = new int[0];
     /** スクロール節の添字 → 中身の範囲 {@code [from, to)}（表示リスト上で連続しているものだけ。無ければ from = -1）。 */
     private int[] retainFrom = new int[0], retainTo = new int[0];
+    /** {@link #computeRetainRanges} の作業表（使い回す）。 */
+    private int[] retainMin = new int[0], retainMax = new int[0], retainCount = new int[0];
+    private boolean[] retainCandidate = new boolean[0];
     /** 範囲の先頭の添字 → その範囲のスクロール節の添字（無ければ -1）。 */
     private int[] retainNodeAt = new int[0];
     /** スクロール節の添字（外側の節が先）。無ければ空。 */
@@ -426,7 +430,8 @@ public final class PaintSceneDriver {
         } else {
             lastDiffEligible = false;
             if (!patchIndexByDiff(items)
-                    && !patchIndexByShift(items)) {
+                    && !patchIndexByShift(items)
+                    && !patchIndexByMove(items)) {
                 rebuildIndex(items);
             }
         }
@@ -568,9 +573,11 @@ public final class PaintSceneDriver {
                             painter.syncLayers(List.of());
                             painter.drawItem(el, i, 1f);
                         } else {
-                            List<Group> layered = new ArrayList<>(chain.size());
+                            List<Group> layered = layeredScratch; // 描画側は呼び出しの間だけ読む（Painter#syncLayers）
+                            layered.clear();
                             float flat = 1f;
-                            for (Group g : chain) {
+                            for (int gi = 0, gn = chain.size(); gi < gn; gi++) {
+                                Group g = chain.get(gi);
                                 // フィルター・マスクのあるグループと、描く部品が 2 つ以上のグループだけ層にする
                                 // （部品が 1 つなら、部品ごとに不透明度を掛けても同じ。GPU の経路も保てる）
                                 if (g.spec() != null || g.maskOf() != null || (g.anchor() >= 0 ? members[g.anchor()] : (extraMembers != null ? extraMembers.getOrDefault(g.id(), 0) : 0)) > 1) layered.add(g);
@@ -683,20 +690,32 @@ public final class PaintSceneDriver {
             DisplayItem it = items.get(i);
             if (it.type() == ElementType.NODE && it.id().endsWith(SCROLL_CONTENT_SUFFIX)) nodes.add(i);
         }
-        retainFrom = new int[n];
-        retainTo = new int[n];
-        retainNodeAt = new int[n];
+        // 表は使い回す（索引を整えるたびに項目数ぶんの配列を 6 本作っていた。並びの入れ替えの差分は hover の毎フレーム走る。B12）。
+        // 大きさは項目数以上で、[0, n) だけを使う（読む側は添字 i < n だけを引く）
+        if (retainFrom.length < n) {
+            int cap = Math.max(n, retainFrom.length * 3 / 2);
+            retainFrom = new int[cap];
+            retainTo = new int[cap];
+            retainNodeAt = new int[cap];
+            retainMin = new int[cap];
+            retainMax = new int[cap];
+            retainCount = new int[cap];
+            retainCandidate = new boolean[cap];
+        }
         java.util.Arrays.fill(retainFrom, -1);
+        java.util.Arrays.fill(retainTo, 0);
         java.util.Arrays.fill(retainNodeAt, -1);
         if (nodes.size == 0) {
-            retainNodes = new int[0];
+            if (retainNodes.length != 0) retainNodes = new int[0];
             return;
         }
-        boolean[] candidate = new boolean[n];
+        boolean[] candidate = retainCandidate;
+        java.util.Arrays.fill(candidate, 0, n, false);
         for (int k = 0; k < nodes.size; k++) candidate[nodes.a[k]] = true;
-        int[] min = new int[n], max = new int[n], count = new int[n];
-        java.util.Arrays.fill(min, Integer.MAX_VALUE);
-        java.util.Arrays.fill(max, -1);
+        int[] min = retainMin, max = retainMax, count = retainCount;
+        java.util.Arrays.fill(min, 0, n, Integer.MAX_VALUE);
+        java.util.Arrays.fill(max, 0, n, -1);
+        java.util.Arrays.fill(count, 0, n, 0);
         for (int j = 0; j < n; j++) {
             int p = parentIdx[j];
             for (int guard = 0; p >= 0 && guard < 128; guard++) {
@@ -724,11 +743,18 @@ public final class PaintSceneDriver {
             if (other < 0 || retainTo[c] > retainTo[other]) retainNodeAt[at] = c;
         }
         // 問い合わせは外側の節が先（範囲の先頭の昇順、同じなら範囲の大きい方）
-        Integer[] order = new Integer[valid.size];
-        for (int k = 0; k < valid.size; k++) order[k] = valid.a[k];
-        java.util.Arrays.sort(order, (x, y) -> retainFrom[x] != retainFrom[y] ? Integer.compare(retainFrom[x], retainFrom[y]) : Integer.compare(retainTo[y], retainTo[x]));
-        retainNodes = new int[order.length];
-        for (int k = 0; k < order.length; k++) retainNodes[k] = order[k];
+        // 節は数個なので挿入整列（箱詰めの配列と比較の式を作らない）
+        int[] order = retainNodes.length == valid.size ? retainNodes : new int[valid.size];
+        for (int k = 0; k < valid.size; k++) {
+            int c = valid.a[k], j = k - 1;
+            while (j >= 0 && (retainFrom[order[j]] > retainFrom[c]
+                    || (retainFrom[order[j]] == retainFrom[c] && retainTo[order[j]] < retainTo[c]))) {
+                order[j + 1] = order[j];
+                j--;
+            }
+            order[j + 1] = c;
+        }
+        retainNodes = order;
     }
 
     /** 小さな int の可変配列（fastutil を引かずに済ませる）。 */
@@ -933,7 +959,9 @@ public final class PaintSceneDriver {
      */
     private boolean patchIndexByShift(List<DisplayItem> items) {
         List<DisplayItem> old = indexedItems;
-        if (!patchShiftIndex || old == null || old == items || old.size() == items.size()) return false;
+        // 同じ長さでも、途中の並びが入れ替わった（スタッキングコンテキストになった箱の項目が層 8 へ移った。B12）ときは、
+        // 差分（patchIndexByDiff）は鍵の食い違いで成り立たない。前後の一致する部分を残して、途中だけを入れ替えとして扱う
+        if (!patchShiftIndex || old == null || old == items) return false;
         if (!isImmutable(old) || !isImmutable(items)) return false;
         final int seen = indexedEpoch;
 
@@ -1091,7 +1119,7 @@ public final class PaintSceneDriver {
                 break;
             }
         }
-        if (delta != 0 || hasNewFx) {
+        if (delta != 0 || hasNewFx || delCount > 0) { // 消えた区間の錨も外す（長さが同じでも、途中の錨が無くなりうる）
             List<Integer> newFx = new ArrayList<>(fxAnchors.size() + (hasNewFx ? 4 : 0));
             for (int a : fxAnchors) {
                 if (a < head) {
@@ -1120,6 +1148,172 @@ public final class PaintSceneDriver {
         indexedItems = items;
         indexedBase = ItemDiff.contentTokenOf(items);
         generation++;
+        return true;
+    }
+
+    // 並びの入れ替えの差分（patchIndexByMove）の作業表。フレームをまたいで使い回す（毎回の確保を避ける）
+    private int[] moveSrc = new int[0], moveNewPos = new int[0], moveParent = new int[0], moveVersion = new int[0], moveStamp = new int[0];
+    private CssAnimator.AnimState[] moveStates = new CssAnimator.AnimState[0];
+    private Resolved[] movePrevRes = new Resolved[0], movePrevParentRes = new Resolved[0], moveCurRes = new Resolved[0];
+    private boolean[] movePrevStatic = new boolean[0], movePrevIdle = new boolean[0], moveVerified = new boolean[0];
+    /** 診断: 並びの入れ替えの差分で索引を整えた回数。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_MOVE_PATCHES = new java.util.concurrent.atomic.LongAdder();
+
+    /**
+     * 項目の実体はほぼ同じで、位置だけが入れ替わった（B12: スタッキングコンテキストになった箱の項目が別の層へ移り、離れた 2 か所が
+     * 変わった）ときの索引の更新。各位置の項目が前回のどこにいた同じ実体（中身も変わっていない）かを鍵で引き、その位置の状態
+     * （補間の状態・前回の姿勢・版）を写す。前回にいなかった・中身が変わった項目だけ状態を空にする（作り直しと同じ扱い）。
+     * 新しい項目が多い（4 分の 1 超）ときは false で、呼び出し側が作り直す。
+     */
+    private boolean patchIndexByMove(List<DisplayItem> items) {
+        List<DisplayItem> old = indexedItems;
+        if (!patchShiftIndex || old == null || old == items) return false;
+        if (!isImmutable(old) || !isImmutable(items)) return false;
+        final int seen = indexedEpoch;
+        int oldN = old.size(), n = items.size();
+        if (moveSrc.length < n) moveSrc = new int[Math.max(n, moveSrc.length * 3 / 2)];
+        if (moveNewPos.length < oldN) moveNewPos = new int[Math.max(oldN, moveNewPos.length * 3 / 2)];
+        Arrays.fill(moveNewPos, 0, oldN, -1);
+        int fresh = 0, limit = n / 4;
+        for (int i = 0; i < n; i++) {
+            DisplayItem is = items.get(i);
+            int src = -1;
+            if (i < oldN && ItemDiff.unchanged(old.get(i), is, seen)) {
+                src = i;
+            } else {
+                int j = indexOf.getOrDefault(is.key(), -1);
+                if (j >= 0 && j < oldN && j != i && moveNewPos[j] < 0 && ItemDiff.unchanged(old.get(j), is, seen)) src = j;
+            }
+            if (src >= 0 && moveNewPos[src] >= 0) src = -1; // 同じ実体が 2 度出る（念のため）
+            moveSrc[i] = src;
+            if (src >= 0) moveNewPos[src] = i;
+            else if (++fresh > limit) return false;
+        }
+        // スクロール節（_scrollc）が動いた・増えた・消えたなら、スクロール層の範囲ごと作り直す（patchIndexByShift と同じ用心）
+        for (int i = 0; i < n; i++) {
+            if (moveSrc[i] == i) continue;
+            DisplayItem it = items.get(i);
+            if (it.type() == ElementType.NODE && it.id() != null && it.id().endsWith(SCROLL_CONTENT_SUFFIX)) return false;
+        }
+        for (int j = 0; j < oldN; j++) {
+            if (moveNewPos[j] == j) continue;
+            DisplayItem it = old.get(j);
+            if (it.type() == ElementType.NODE && it.id() != null && it.id().endsWith(SCROLL_CONTENT_SUFFIX)) return false;
+        }
+        int m = Math.max(n, oldN);
+        ensureCapacity(m);
+        if (moveStates.length < oldN) {
+            int cap = Math.max(oldN, moveStates.length * 3 / 2);
+            moveStates = new CssAnimator.AnimState[cap];
+            movePrevRes = new Resolved[cap];
+            movePrevParentRes = new Resolved[cap];
+            moveCurRes = new Resolved[cap];
+            movePrevStatic = new boolean[cap];
+            movePrevIdle = new boolean[cap];
+            moveVerified = new boolean[cap];
+            moveParent = new int[cap];
+            moveVersion = new int[cap];
+            moveStamp = new int[cap];
+        }
+        System.arraycopy(states, 0, moveStates, 0, oldN);
+        System.arraycopy(prevRes, 0, movePrevRes, 0, oldN);
+        System.arraycopy(prevParentRes, 0, movePrevParentRes, 0, oldN);
+        System.arraycopy(curRes, 0, moveCurRes, 0, oldN);
+        System.arraycopy(prevStatic, 0, movePrevStatic, 0, oldN);
+        System.arraycopy(prevIdle, 0, movePrevIdle, 0, oldN);
+        System.arraycopy(stateVerified, 0, moveVerified, 0, oldN);
+        System.arraycopy(parentIdx, 0, moveParent, 0, oldN);
+        System.arraycopy(itemVersion, 0, moveVersion, 0, oldN);
+        System.arraycopy(curStamp, 0, moveStamp, 0, oldN);
+
+        // 索引: 消えた項目の鍵を外してから、位置の変わった項目・新しい項目の鍵を入れる
+        for (int j = 0; j < oldN; j++) {
+            if (moveNewPos[j] >= 0) continue;
+            DisplayItem was = old.get(j);
+            long key = was.key();
+            if (indexOf.getOrDefault(key, -1) == j) {
+                indexOf.remove(key);
+                indexedById.remove(key);
+            }
+            if (was.id() != null && !was.id().isEmpty()) {
+                long strKey = DisplayItem.keyOf(was.id());
+                if (strKey != key && indexOf.getOrDefault(strKey, -1) == j) {
+                    indexOf.remove(strKey);
+                    indexedById.remove(strKey);
+                }
+            }
+        }
+        for (int i = 0; i < n; i++) {
+            int src = moveSrc[i];
+            if (src == i) continue;
+            DisplayItem it = items.get(i);
+            long key = it.key();
+            indexedById.put(key, it);
+            indexOf.put(key, i);
+            if (it.id() != null && !it.id().isEmpty()) {
+                long strKey = DisplayItem.keyOf(it.id());
+                if (strKey != key) {
+                    indexedById.put(strKey, it);
+                    indexOf.put(strKey, i);
+                }
+            }
+        }
+        // 状態を新しい位置へ写す（前回にいなかった・中身が変わった項目は空）
+        for (int i = 0; i < n; i++) {
+            int src = moveSrc[i];
+            if (src >= 0) {
+                states[i] = moveStates[src];
+                prevRes[i] = movePrevRes[src];
+                prevParentRes[i] = movePrevParentRes[src];
+                curRes[i] = moveCurRes[src];
+                curStamp[i] = moveStamp[src];
+                prevStatic[i] = movePrevStatic[src];
+                prevIdle[i] = movePrevIdle[src];
+                stateVerified[i] = moveVerified[src];
+                itemVersion[i] = src == i ? moveVersion[src] : moveVersion[src] + 1; // 位置の変わった項目の覚え（クリップなど）は使わせない
+            } else {
+                states[i] = null;
+                prevRes[i] = null;
+                prevParentRes[i] = null;
+                curRes[i] = null;
+                curStamp[i] = 0;
+                prevStatic[i] = false;
+                prevIdle[i] = false;
+                stateVerified[i] = false;
+                itemVersion[i] = 0;
+            }
+            visiting[i] = false;
+        }
+        if (n < oldN) {
+            Arrays.fill(states, n, oldN, null);
+            Arrays.fill(prevRes, n, oldN, null);
+            Arrays.fill(prevParentRes, n, oldN, null);
+            Arrays.fill(curRes, n, oldN, null);
+            Arrays.fill(curStamp, n, oldN, 0);
+            Arrays.fill(itemVersion, n, oldN, 0);
+            Arrays.fill(prevStatic, n, oldN, false);
+            Arrays.fill(prevIdle, n, oldN, false);
+            Arrays.fill(visiting, n, oldN, false);
+            Arrays.fill(stateVerified, n, oldN, false);
+            Arrays.fill(parentIdx, n, oldN, -1);
+        }
+        // 親の位置: 親も同じ実体で残っていれば、その新しい位置。そうでなければ鍵で引き直す
+        for (int i = 0; i < n; i++) {
+            int src = moveSrc[i];
+            int p = src >= 0 ? moveParent[src] : -1;
+            parentIdx[i] = p >= 0 && p < oldN && moveNewPos[p] >= 0 ? moveNewPos[p] : resolveParentIndex(items.get(i));
+        }
+        fxAnchors.clear();
+        for (int i = 0; i < n; i++) {
+            DisplayItem it = items.get(i);
+            if (it.type() == ElementType.NODE && ItemDiff.hasFx(it.hints().layer())) fxAnchors.add(i);
+        }
+        computeRetainRanges(items);
+        invalidateRangeBounds();
+        indexedItems = items;
+        indexedBase = ItemDiff.contentTokenOf(items);
+        generation++;
+        STAT_MOVE_PATCHES.increment();
         return true;
     }
 
@@ -1210,15 +1404,18 @@ public final class PaintSceneDriver {
             if (plain) return base; // フィルター・マスクの層が無ければ、親子の鎖がそのまま答え
         }
         List<Group> chain = new ArrayList<>(base);
-        for (int a : activeAnchors) {
+        // 添字で回す（毎フレーム、錨の数・鎖の長さぶんの反復子と箱詰めを作らない。B12）
+        for (int ai = 0, an = activeAnchors.size(); ai < an; ai++) {
+            int a = activeAnchors.get(ai);
             DisplayItem node = items.get(a);
             boolean present = false;
-            for (Group g : chain) present |= g.id().equals(node.id());
+            for (int gi = 0, gn = chain.size(); gi < gn; gi++) present |= chain.get(gi).id().equals(node.id());
             if (!present) chain.add(groupFor(node, resolveAt(a)));
         }
-        chain.sort(Comparator.comparingInt(Group::anchor));
+        chain.sort((x, y) -> Integer.compare(x.anchor(), y.anchor())); // 捕まえない式は 1 つの実体で済む
         List<Group> out = new ArrayList<>(chain.size() + 1);
-        for (Group g : chain) {
+        for (int gi = 0, gn = chain.size(); gi < gn; gi++) {
+            Group g = chain.get(gi);
             out.add(g);
             LayerSpec spec = g.spec();
             if (spec != null && spec.masked() && g.anchor() >= 0 && i >= g.anchor() + spec.maskFrom() && i < g.anchor() + spec.span()) {
@@ -1339,6 +1536,21 @@ public final class PaintSceneDriver {
         return r;
     }
 
+    private final double[] poseScratch = new double[6];
+    /** {@link #run} が項目ごとに層にするグループを集める作業用の一覧。 */
+    private final List<Group> layeredScratch = new ArrayList<>();
+
+    /** {@code m = m · o}（{@link Matrix2D#multiply} と同じ式）。 */
+    private static void mulInto(double[] m, double oa, double ob, double oc, double od, double oe, double of) {
+        double a = m[0], b = m[1], c = m[2], d = m[3], e = m[4], f = m[5];
+        m[0] = a * oa + c * ob;
+        m[1] = b * oa + d * ob;
+        m[2] = a * oc + c * od;
+        m[3] = b * oc + d * od;
+        m[4] = a * oe + c * of + e;
+        m[5] = b * oe + d * of + f;
+    }
+
     private Resolved build(DisplayItem el, int index, Resolved parent, AnimatedValues anim) {
         Matrix2D base = parent != null ? parent.pose() : frame;
         float parentOpacity = parent != null ? parent.opacity() : 1f;
@@ -1363,11 +1575,19 @@ public final class PaintSceneDriver {
             double ly = (relOrigin ? 0.0 : el.y()) + el.height() * oy;
             double px = relOrigin ? el.x() : 0.0;
             double py = relOrigin ? el.y() : 0.0;
-            pose = base.multiply(Matrix2D.translate(px + lx + anim.tx(), py + ly + anim.ty()));
-            if (anim.rot() != 0f) pose = pose.multiply(Matrix2D.rotate(Math.toRadians(anim.rot())));
-            if (anim.skew() != 0f) pose = pose.multiply(new Matrix2D(1, 0, Math.tan(Math.toRadians(anim.skew())), 1, 0, 0)); // skewX（回転の後・拡縮の前）
-            if (anim.sx() != 1f || anim.sy() != 1f) pose = pose.multiply(Matrix2D.scale(anim.sx(), anim.sy()));
-            pose = pose.multiply(Matrix2D.translate(-lx, -ly));
+            // base · T(原点 + 移動) · R · skewX · S · T(-原点)。途中の行列を作らずに、Matrix2D#multiply と同じ式・同じ順で掛ける
+            // （結果はビット単位で同じ。動く項目ごとに毎フレーム 4〜6 個の行列を作っていた。B12）
+            double[] m = poseScratch;
+            m[0] = base.a(); m[1] = base.b(); m[2] = base.c(); m[3] = base.d(); m[4] = base.e(); m[5] = base.f();
+            mulInto(m, 1, 0, 0, 1, px + lx + anim.tx(), py + ly + anim.ty());
+            if (anim.rot() != 0f) {
+                double rad = Math.toRadians(anim.rot()), cos = Math.cos(rad), sin = Math.sin(rad);
+                mulInto(m, cos, sin, -sin, cos, 0, 0);
+            }
+            if (anim.skew() != 0f) mulInto(m, 1, 0, Math.tan(Math.toRadians(anim.skew())), 1, 0, 0); // skewX（回転の後・拡縮の前）
+            if (anim.sx() != 1f || anim.sy() != 1f) mulInto(m, anim.sx(), 0, 0, anim.sy(), 0, 0);
+            mulInto(m, 1, 0, 0, 1, -lx, -ly);
+            pose = new Matrix2D(m[0], m[1], m[2], m[3], m[4], m[5]);
         }
         boolean fx = el.type() == ElementType.NODE && ItemDiff.hasFx(el.hints().layer());
         boolean group = el.type() == ElementType.NODE && (anim.opacity() < 0.999f || fx);

@@ -289,6 +289,9 @@ public final class FineProfileMain {
                 cant.append(']');
             }
             cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get()).append(" multiPlan=").append(UiView.SLICE_MULTI_PLAN.get());
+            // B12: スタッキングコンテキストの部分木の組み直し（組み直した部分木の数）・描画側の索引の並びの入れ替えの差分の回数
+            cant.append(" stackSubtrees=").append(com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STACKING_PATCH_HITS.sum())
+                    .append(" indexMoves=").append(com.nishiyu.enderframelib.core.paint.PaintSceneDriver.STAT_MOVE_PATCHES.sum());
 
             System.out.println(cant);
         }

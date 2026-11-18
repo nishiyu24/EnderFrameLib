@@ -265,11 +265,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             }
         }
 
-        // レイヤーに描く箱: 開始の印の次に出る錨の位置を覚え、終了の印でそこから出し終えた項目の数（span）を錨に書く
-        int[] openLayerStarts = null;
-        LayerSpec[] openSpecs = null;
-        LayoutBox[] openBoxes = null;
-        int layerDepth = 0;
         // 部分木の保持は、全ての箱を描く描画でだけ（平行移動・画面外の省略では項目が欠ける／動く）。再利用は変更印が使える描画でだけ
         order.beginRender(buildSerial, buildEpoch, generation, !translating && !windowed, useChangeStamps && !translating);
         prunedOwners = 0;
@@ -283,6 +278,37 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             order.subtreePruner = null;
         }
         ownerCount += prunedOwners;
+        ownerCount += executeTasks(paintTaskList, elements, cull, windowed, 0, renderedBoxes);
+        // 今回使われなかった箱（木から消えた箱）の記憶を捨てる
+        // 掃除は数回に 1 度（毎回全件を辿るとリストの規模に比例する）。保持された部分木の中の箱は、部分木が使われていれば残す
+        if (generation % PaintOrder.SWEEP_EVERY == 0) {
+            boxMemo.values().removeIf(m -> m.generation != generation && (m.chunk == null || m.chunk.generation != generation));
+        }
+        order.endRender();
+
+        lastElementCount = elements.size();
+        lastOwnerCount = ownerCount;
+        this.currentDisplayList = elements;
+        this.currentRoot = box;
+        return elements;
+    }
+
+    /**
+     * 描画順のタスク（{@link PaintOrder#paintTasks} / {@link PaintOrder#stackingSubtreeTasks}）を順に実行して項目を出し、
+     * 箱ごとのスライス（{@code dlStart} / {@code dlEnd} / {@code dlOrder}）・描画順の箱の一覧・窓の外の記録を付ける。
+     * レイヤーに描く箱は、錨の項目に出し終えた項目の数（span）を書く。全体の作り直しと部分木の組み直し（B12）で同じ手順を使う。
+     *
+     * @param orderBase 描画順の箱の一覧での、{@code outBoxes} の先頭の位置（全体なら 0）
+     * @return 持ち主（箱を持つタスク）の数
+     */
+    private int executeTasks(List<RenderTask> paintTaskList, List<DisplayItem> elements, boolean cull, boolean windowed,
+                             int orderBase, List<LayoutBox> outBoxes) {
+        int ownerCount = 0;
+        // レイヤーに描く箱: 開始の印の次に出る錨の位置を覚え、終了の印でそこから出し終えた項目の数（span）を錨に書く
+        int[] openLayerStarts = null;
+        LayerSpec[] openSpecs = null;
+        LayoutBox[] openBoxes = null;
+        int layerDepth = 0;
         for (int ti = 0, tn = paintTaskList.size(); ti < tn; ti++) {
             RenderTask task = paintTaskList.get(ti);
             if (task.layerStart() != null) {
@@ -344,22 +370,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             owner.dlStart = start;
             owner.paintCulled = false;
             owner.dlEnd = end;
-            owner.dlOrder = renderedBoxes.size();
-            renderedBoxes.add(owner);
+            owner.dlOrder = orderBase + outBoxes.size();
+            outBoxes.add(owner);
             if (owner.node != null && PaintOrder.factsOf(owner.style).scrollbars()) scrollBoxes.add(owner);
         }
-        // 今回使われなかった箱（木から消えた箱）の記憶を捨てる
-        // 掃除は数回に 1 度（毎回全件を辿るとリストの規模に比例する）。保持された部分木の中の箱は、部分木が使われていれば残す
-        if (generation % PaintOrder.SWEEP_EVERY == 0) {
-            boxMemo.values().removeIf(m -> m.generation != generation && (m.chunk == null || m.chunk.generation != generation));
-        }
-        order.endRender();
-
-        lastElementCount = elements.size();
-        lastOwnerCount = ownerCount;
-        this.currentDisplayList = elements;
-        this.currentRoot = box;
-        return elements;
+        return ownerCount;
     }
 
     private static boolean containsBox(LayoutBox[] boxes, int len, LayoutBox target) {
@@ -2969,8 +2984,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     private List<DisplayItem> patchBoxesUnprofiled(java.util.Collection<LayoutBox> boxes) {
         List<LayoutBox> sorted = preparePatchBoxes(boxes);
         if (sorted == null) {
-            STAT_SLICE_PATCH_FALLBACKS.increment();
-            return null;
+            List<DisplayItem> viaStacking = STACKING_PATCH_ENABLED ? patchViaStackingSubtrees(boxes) : null;
+            if (viaStacking == null) STAT_SLICE_PATCH_FALLBACKS.increment();
+            return viaStacking;
         }
         if (sorted.isEmpty()) {
             return currentDisplayList;
@@ -2980,7 +2996,221 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         boolean relMode = parentRelativeSource.getAsBoolean();
         this.parentRelative = relMode;
         order.setParentRelative(relMode);
+        patchSortedSlices(sorted, relMode);
 
+        syncCanvasBackground(sorted);
+        generation++;
+        buildSerial++;
+        buildEpoch = LayoutBox.paintEpoch();
+        lastElementCount = currentDisplayList.size();
+        STAT_SLICE_PATCH_HITS.increment();
+        return currentDisplayList;
+    }
+
+    // ------------------------------------------------------------------ B12: スタッキングコンテキストの部分木の組み直し
+
+    /**
+     * 切り分け用（テストが切り替える）: false ならスタッキングコンテキストの部分木の組み直しを使わない（全体の作り直しに落ちる。
+     * 結果は同じでなければならない。{@code StackingSubtreePatchTest}）。起動時のスイッチは足さない（近道のスイッチ数のラチェット）。
+     */
+    public static volatile boolean STACKING_PATCH_ENABLED = true;
+    /** 診断: 組み直した部分木の数（スタッキングコンテキストの部分木の組み直しで差分パッチが成り立つたびに 1 以上増える）。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_STACKING_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
+
+    /**
+     * 箱のスライスの差し替えでは表せない変更（スタッキングコンテキストを作る・やめる箱。{@code :hover} で {@code transform} が付くボタンなど）を、
+     * その箱を含む、前後とも変わらないいちばん近いスタッキングコンテキストの部分木だけを組み直して表す。スタッキングコンテキストの
+     * 項目は表示リストの中で連続する（付録 E）ので、その範囲を全体の作り直しと同じ手順（{@link PaintOrder#stackingSubtreeTasks} →
+     * {@link #executeTasks}）で作り直して差し替え、後ろの箱の位置をずらす。残りの変わった箱は従来の箱のスライスの差し替え。
+     * 成り立たなければ何も変えずに null（呼び出し側が全体を作り直す）。
+     */
+    private List<DisplayItem> patchViaStackingSubtrees(java.util.Collection<LayoutBox> boxes) {
+        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null || boxes == null || boxes.isEmpty()) return null;
+        if (!(currentDisplayList instanceof PaintSupport.CaptureList) && !(currentDisplayList instanceof ArrayList)) return null;
+        // 1. スタッキングコンテキストにかかわる箱ごとに、組み直す部分木の根を決める（入れ子なら外側だけ）
+        List<LayoutBox> roots = new ArrayList<>(2);
+        List<LayoutBox> rest = new ArrayList<>(boxes.size());
+        for (LayoutBox b : boxes) {
+            if (b == null) continue;
+            BoxMemo m = boxMemo.get(b);
+            boolean stacking = b.style != null && order.createsStackingContext(b, b.style)
+                    || (m != null && m.style != null && order.createsStackingContext(b, m.style));
+            if (!stacking) {
+                rest.add(b);
+                continue;
+            }
+            LayoutBox root = stableStackingAncestor(b, boxes);
+            if (root == null) return null;
+            boolean covered = false;
+            for (int i = roots.size() - 1; i >= 0; i--) {
+                LayoutBox r = roots.get(i);
+                if (r == root || isAncestorOrSelf(r, root)) { covered = true; break; }
+                if (isAncestorOrSelf(root, r)) roots.remove(i);
+            }
+            if (!covered) roots.add(root);
+        }
+        if (roots.isEmpty()) return null;
+        rest.removeIf(b -> { for (LayoutBox r : roots) if (isAncestorOrSelf(r, b)) return true; return false; });
+        // 2. 何かを変える前に、全部が成り立つかを確かめる
+        int[][] ranges = new int[roots.size()][];
+        for (int i = 0; i < roots.size(); i++) {
+            if ((ranges[i] = stackingRange(roots.get(i))) == null) return null;
+        }
+        for (int i = 0; i < roots.size(); i++) {
+            for (int j = i + 1; j < roots.size(); j++) {
+                if (ranges[i][0] < ranges[j][1] && ranges[j][0] < ranges[i][1]) return null; // 重なる範囲（念のため）
+            }
+        }
+        if (!rest.isEmpty() && preparePatchBoxes(rest) == null) return null;
+
+        decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
+        boolean relMode = parentRelativeSource.getAsBoolean();
+        this.parentRelative = relMode;
+        order.setParentRelative(relMode);
+        // 3. 部分木を組み直して差し替える（範囲は直前に取り直す。前の差し替えで後ろがずれる）
+        for (LayoutBox root : roots) {
+            int[] range = stackingRange(root);
+            if (range == null) throw new IllegalStateException("組み直す範囲が途中で崩れた: " + root);
+            rebuildStackingSubtree(root, range);
+            STAT_STACKING_PATCH_HITS.increment();
+        }
+        // 4. 残りは箱のスライスの差し替え
+        List<LayoutBox> sortedRest = rest.isEmpty() ? List.of() : preparePatchBoxes(rest);
+        if (sortedRest == null) throw new IllegalStateException("組み直しのあとで箱のスライスの差し替えが成り立たない");
+        patchSortedSlices(sortedRest, relMode);
+
+        List<LayoutBox> all = new ArrayList<>(roots);
+        all.addAll(sortedRest);
+        syncCanvasBackground(all);
+        generation++;
+        buildSerial++;
+        buildEpoch = LayoutBox.paintEpoch();
+        lastElementCount = currentDisplayList.size();
+        STAT_SLICE_PATCH_HITS.increment();
+        return currentDisplayList;
+    }
+
+    private static boolean isAncestorOrSelf(LayoutBox ancestor, LayoutBox box) {
+        for (LayoutBox b = box; b != null; b = b.parent) if (b == ancestor) return true;
+        return false;
+    }
+
+    /**
+     * {@code b} を含む、組み直しの根にできるいちばん近い祖先: 今も前回の描画でもスタッキングコンテキストを作り、自身は変わっていない
+     * （{@code changed} に無い）、描画済みの、文書の根でない箱。無ければ null。
+     */
+    private LayoutBox stableStackingAncestor(LayoutBox b, java.util.Collection<LayoutBox> changed) {
+        for (LayoutBox a = b.parent; a != null; a = a.parent) {
+            if (a.node == null || "root".equals(a.node.tag)) return null;
+            if (a.isAnonymous || a.style == null || !order.createsStackingContext(a, a.style)) continue;
+            if (changed.contains(a)) continue;
+            BoxMemo m = boxMemo.get(a);
+            if (m == null || m.style == null || !order.createsStackingContext(a, m.style)) continue;
+            if (a.dlStart < 0 || a.dlOrder < 0 || a.dlOrder >= renderedBoxes.size() || renderedBoxes.get(a.dlOrder) != a) return null;
+            return a;
+        }
+        return null;
+    }
+
+    /**
+     * 部分木 {@code root} の、表示リストでの範囲 {@code {開始, 終わり, 描画順の先頭, 描画順の数}}。部分木の箱のスライスが隙間なく
+     * 連続して範囲を埋め、描画順の一覧でも連続しているときだけ。組み直しが全体の作り直しと同じ結果にならない部分木
+     * （スクロールする箱・Top Layer・マスク・内容を省いた箱・仮想化した並び・キャンバスの背景を譲った箱を含む）は null。
+     */
+    private int[] stackingRange(LayoutBox root) {
+        if (root.dlStart < 0 || root.dlOrder < 0 || root.dlOrder >= renderedBoxes.size() || renderedBoxes.get(root.dlOrder) != root) return null;
+        int[] acc = {Integer.MAX_VALUE, Integer.MIN_VALUE, 0, 0, Integer.MAX_VALUE, Integer.MIN_VALUE}; // 最小開始・最大終わり・項目数・箱数・最小順・最大順
+        if (!scanStackingSubtree(root, acc)) return null;
+        int start = acc[0], end = acc[1], items = acc[2], count = acc[3], o0 = acc[4], o1 = acc[5];
+        if (count == 0 || start != root.dlStart || o0 != root.dlOrder) return null;
+        if (end - start != items || o1 - o0 + 1 != count) return null; // 隙間（持ち主の無い項目）か、描画順の飛び
+        if (end > currentDisplayList.size()) return null;
+        return new int[]{start, end, o0, count};
+    }
+
+    private boolean scanStackingSubtree(LayoutBox b, int[] acc) {
+        if (b == null) return true;
+        if (b.contentAutoSkipped || b.childrenDeferred || b.isVirtualizedFlow()) return false;
+        if (b == canvasBackgroundSource) return false;
+        if (b.style != null && !b.isAnonymous) {
+            var facts = PaintOrder.factsOf(b.style);
+            if (facts.scrollbars() || facts.hasMask() || order.isTopLayerBox(b) || b.backdropStyle != null) return false;
+        }
+        if (b.dlOrder >= 0) {
+            if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlOrder >= renderedBoxes.size() || renderedBoxes.get(b.dlOrder) != b) return false;
+            acc[0] = Math.min(acc[0], b.dlStart);
+            acc[1] = Math.max(acc[1], b.dlEnd);
+            acc[2] += b.dlEnd - b.dlStart;
+            acc[3]++;
+            acc[4] = Math.min(acc[4], b.dlOrder);
+            acc[5] = Math.max(acc[5], b.dlOrder);
+        }
+        if (b.children != null) {
+            for (int i = 0, n = b.children.size(); i < n; i++) if (!scanStackingSubtree(b.children.get(i), acc)) return false;
+        }
+        return true;
+    }
+
+    private PaintSupport.CaptureList stackItemsScratch;
+    private final List<LayoutBox> stackBoxesScratch = new ArrayList<>();
+
+    /** 部分木 {@code root}（範囲 {@code range}）を組み直して表示リストと描画順の一覧へ差し替え、後ろの箱の位置をずらす。 */
+    private void rebuildStackingSubtree(LayoutBox root, int[] range) {
+        int start = range[0], end = range[1], orderStart = range[2], oldCount = range[3];
+        // 前の範囲にいた箱（窓から出る・消える箱があっても位置が残らないように、先に取り消す）
+        for (int k = orderStart, e = orderStart + oldCount; k < e; k++) renderedBoxes.get(k).clearDlSlice();
+        if (windowedBuild && !culledBoxes.isEmpty()) culledBoxes.removeIf(c -> isAncestorOrSelf(root, c));
+
+        boolean cull = translating || windowedBuild;
+        // 作業用の一覧は使い回す（差し替えで表示リストへ写したあとは読まない。hover の毎フレーム走る）
+        PaintSupport.CaptureList items = stackItemsScratch;
+        if (items == null) stackItemsScratch = items = new PaintSupport.CaptureList(end - start + 8);
+        else items.resetForBuild();
+        List<LayoutBox> newBoxes = stackBoxesScratch;
+        newBoxes.clear();
+        int prevEpoch = activeMovingEpoch;
+        activeMovingEpoch = ++movingEpochSeq;
+        try {
+            boolean ancestorMoving = hasMovingAncestor(root.parent);
+            List<RenderTask> tasks = order.stackingSubtreeTasks(root, clipForBox(root), parentIdForBox(root), ancestorMoving);
+            executeTasks(tasks, items, cull, windowedBuild, orderStart, newBoxes);
+        } finally {
+            activeMovingEpoch = prevEpoch;
+        }
+        // 表示リストと描画順の一覧を差し替え、箱の位置を全体の添字へ直す
+        int delta = items.size() - (end - start);
+        if (delta == 0) {
+            for (int k = 0, n = items.size(); k < n; k++) currentDisplayList.set(start + k, items.get(k));
+        } else {
+            currentDisplayList.subList(start, end).clear();
+            currentDisplayList.addAll(start, items);
+        }
+        int newCount = newBoxes.size();
+        for (int k = 0; k < newCount; k++) {
+            LayoutBox b = newBoxes.get(k);
+            b.dlStart += start;
+            b.dlEnd += start;
+        }
+        int orderDelta = newCount - oldCount;
+        if (orderDelta == 0) {
+            for (int k = 0; k < oldCount; k++) renderedBoxes.set(orderStart + k, newBoxes.get(k));
+        } else {
+            renderedBoxes.subList(orderStart, orderStart + oldCount).clear();
+            renderedBoxes.addAll(orderStart, newBoxes);
+        }
+        newBoxes.clear();
+        items.resetForBuild();
+        if (delta == 0 && orderDelta == 0) return; // 後ろの箱は動かない
+        for (int k = orderStart + newCount, n = renderedBoxes.size(); k < n; k++) {
+            LayoutBox succ = renderedBoxes.get(k);
+            succ.dlStart += delta;
+            succ.dlEnd += delta;
+            if (orderDelta != 0) succ.dlOrder = k;
+        }
+    }
+
+    /** 降順（{@code dlStart} の大きい順）に並んだ箱のスライスを、それぞれ作り直して差し替える（{@link #patchBoxes} の本体）。 */
+    private void patchSortedSlices(List<LayoutBox> sorted, boolean relMode) {
         for (LayoutBox b : sorted) {
             ClipRect clip = clipForBox(b);
             String parentId = parentIdForBox(b);
@@ -3061,14 +3291,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 }
             }
         }
-
-        syncCanvasBackground(sorted);
-        generation++;
-        buildSerial++;
-        buildEpoch = LayoutBox.paintEpoch();
-        lastElementCount = currentDisplayList.size();
-        STAT_SLICE_PATCH_HITS.increment();
-        return currentDisplayList;
     }
 
     /**

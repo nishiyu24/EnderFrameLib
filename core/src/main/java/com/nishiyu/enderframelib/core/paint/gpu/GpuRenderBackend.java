@@ -179,19 +179,55 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private final float[] fxBD = new float[12];
     private final float[] fxClipD = new float[MAX_CLIP_VEC * 4];
 
+    private static final double[] IDENTITY_MAP = {1, 0, 0, 1};
+
     private static final class Entry {
         GpuTexture layer;
         float opacity;
         List<FilterOp> filters = List.of();
-        double[] map = {1, 0, 0, 1};
+        /** 読むだけ（書き換えない）。既定は共有の単位行列。 */
+        double[] map = IDENTITY_MAP;
         boolean masked, luminance, isMask;
         GpuTexture mask;
         BlendMode blend = BlendMode.NORMAL;
         GroupExtras extras;
-        float[] bounds = {Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
+        final float[] bounds = {Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
         boolean unbounded;
         boolean cleared;
         String retainKey;
+
+        void reset() {
+            layer = null;
+            opacity = 0f;
+            filters = List.of();
+            map = IDENTITY_MAP;
+            masked = luminance = isMask = false;
+            mask = null;
+            blend = BlendMode.NORMAL;
+            extras = null;
+            bounds[0] = bounds[1] = Float.MAX_VALUE;
+            bounds[2] = bounds[3] = -Float.MAX_VALUE;
+            unbounded = cleared = false;
+            retainKey = null;
+        }
+    }
+
+    /**
+     * 層の記録（{@link Entry}）の使い回し（B12）。不透明度が動くアニメーションは毎フレーム層を開くので、層ごとの記録と既定の配列を
+     * 作らない。開くと {@link #obtainEntry}、閉じて使い終えたら {@link #releaseEntry}。
+     */
+    private final java.util.ArrayDeque<Entry> entryPool = new java.util.ArrayDeque<>();
+    /** {@link #endGroup} の作業用（途中の層）。入れ子にならない（閉じるのは 1 つずつ）。 */
+    private final List<GpuTexture> groupTemps = new ArrayList<>();
+
+    private Entry obtainEntry() {
+        Entry e = entryPool.pollFirst();
+        return e != null ? e : new Entry();
+    }
+
+    private void releaseEntry(Entry e) {
+        e.reset();
+        if (entryPool.size() < 64) entryPool.addFirst(e);
     }
 
     private static final class Retained {
@@ -373,6 +409,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private void renderLocked(List<DisplayItem> items, long nowMs) {
         readbackValid = false;
         cpu.clearDirty();
+        for (Entry left : layerStack) releaseEntry(left);
         layerStack.clear();
         layerPool.clear();
         layerPool.addAll(allLayers);
@@ -670,7 +707,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         GpuTexture l = acquireLayer();
         if (l == null) return false;
         frameLayerOps++;
-        Entry e = new Entry();
+        Entry e = obtainEntry();
         e.layer = l;
         e.opacity = opacity;
         e.filters = filters == null ? List.of() : filters;
@@ -691,7 +728,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         GpuTexture l = acquireLayer();
         if (l == null) return false;
         frameLayerOps++;
-        Entry e = new Entry();
+        Entry e = obtainEntry();
         e.layer = l;
         e.opacity = 1f;
         e.isMask = true;
@@ -707,6 +744,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         Entry m = layerStack.remove(layerStack.size() - 1);
         ensureCleared(m);
         layerStack.get(layerStack.size() - 1).mask = m.layer;
+        releaseEntry(m);
     }
 
     private static List<Stage> stages(List<FilterOp> ops) {
@@ -754,9 +792,18 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         flushAll();
         endPass();
         Entry e = layerStack.remove(layerStack.size() - 1);
-        List<GpuTexture> temps = new ArrayList<>();
+        try {
+            endGroup(e);
+        } finally {
+            releaseEntry(e);
+        }
+    }
+
+    private void endGroup(Entry e) {
+        List<GpuTexture> temps = groupTemps;
+        temps.clear();
         GpuTexture cur = e.layer;
-        List<Stage> stages = stages(e.filters);
+        List<Stage> stages = e.filters.isEmpty() ? List.of() : stages(e.filters);
         float[] finalMatrix = null;
         float finalOpacity = e.opacity;
         if (!stages.isEmpty() && stages.get(stages.size() - 1).kind == StageKind.COLOR) {
@@ -1715,7 +1762,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (r == null) return;
         flushAll();
         endPass();
-        Entry e = new Entry();
+        Entry e = obtainEntry();
         e.layer = r.layer;
         e.opacity = 1f;
         e.retainKey = l.key();
@@ -1729,6 +1776,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         endPass();
         Entry e = layerStack.remove(layerStack.size() - 1);
         ensureCleared(e);
+        releaseEntry(e);
         Retained r = retained.get(l.key());
         if (r == null) return false;
         r.token = l.token();

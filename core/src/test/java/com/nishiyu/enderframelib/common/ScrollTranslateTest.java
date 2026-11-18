@@ -82,7 +82,8 @@ public class ScrollTranslateTest {
             if (synthetic(it.id())) continue;
             // テキストノードの NODE 項目は位置を持たない（常に 0,0 に出る。文字は親の断片が持つ）ので、比べない
             if (it.type() == ElementType.NODE && (it.id().startsWith("~t") || it.id().endsWith("_txt"))) continue;
-            float ex = it.x(), ey = it.y();
+            // 描画では、項目自身と祖先の節の移動量（変形・スクロール節・sticky の貼り付きの増減〔B12〕）が掛かる
+            float ex = it.x() + it.translateX(), ey = it.y() + it.translateY();
             String parent = it.hints().parentId();
             for (int guard = 0; parent != null && guard < 64; guard++) {
                 DisplayItem p = byId.get(parent);
@@ -93,9 +94,13 @@ public class ScrollTranslateTest {
                 if (synthetic(p.id())) {
                     ex += p.translateX();
                     ey += p.translateY();
-                } else if (p.type() == ElementType.NODE && p.hints().relativeOrigin()) {
-                    ex += p.x();
-                    ey += p.y();
+                } else if (p.type() == ElementType.NODE) {
+                    ex += p.translateX();
+                    ey += p.translateY();
+                    if (p.hints().relativeOrigin()) {
+                        ex += p.x();
+                        ey += p.y();
+                    }
                 }
                 parent = p.hints().parentId();
             }
@@ -241,16 +246,27 @@ public class ScrollTranslateTest {
     }
 
     @Test
-    public void containersWithStickyOrFixedFallBackToRebuilding() {
-        // sticky を含むコンテナは節にまとめない（中身が一様に動かない）
+    public void stickyTopContainersMoveAsOneNodeOtherStickiesFallBack() {
+        // 上の inset だけの sticky を含むコンテナも節にまとめる（貼り付きの増減を sticky の節へ足す。B12）
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try {
             List<String> ids = new ArrayList<>();
             for (DisplayItem it : view.items()) if (synthetic(it.id())) ids.add(it.id());
             assertTrue(ids.contains("outer_scrollc"), "通常のコンテナは節にまとめる: " + ids);
-            assertTrue(!ids.contains("stick_scrollc"), "sticky を含むコンテナは節にまとめない: " + ids);
+            assertTrue(ids.contains("stick_scrollc"), "上の inset だけの sticky を含むコンテナも節にまとめる: " + ids);
         } finally {
             view.close();
+        }
+        // 下の inset の sticky（式を持たない）・固定配置を含むコンテナは従来どおり作り直す
+        for (String hdr : new String[]{".hdr{position:sticky;top:auto;bottom:0;background:#fc6}", ".hdr{position:fixed;top:0;background:#fc6}"}) {
+            StandaloneView v2 = new StandaloneView(html().replace(".hdr{position:sticky;top:0;background:#fc6}", hdr), W, H, FontResolver.FALLBACK);
+            try {
+                List<String> ids = new ArrayList<>();
+                for (DisplayItem it : v2.items()) if (synthetic(it.id())) ids.add(it.id());
+                assertTrue(!ids.contains("stick_scrollc"), "式を持たない箱を含むコンテナは節にまとめない（" + hdr + "）: " + ids);
+            } finally {
+                v2.close();
+            }
         }
     }
 }

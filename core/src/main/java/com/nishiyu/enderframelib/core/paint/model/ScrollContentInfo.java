@@ -18,6 +18,18 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
  * @param fx0       作ったときの横のつまみの位置の丸めの端数（位置 - round(位置)）。つまみの移動量を round(fx0 + kx * Δx) にすると、
  *                  作り直したときの round(位置 + kx * Δx) と同じ整数の位置になる
  * @param fy0       同じく縦
+ * @param stickies  中身の中の sticky の箱（上の inset だけ）。スクロールだけの更新で、節に貼り付きのずれの増減を足す（B12）。無ければ空
  */
 public record ScrollContentInfo(HtmlNode node, String contentId, String thumbVId, String thumbHId,
-                                float sx0, float sy0, float kx, float ky, float fx0, float fy0) {}
+                                float sx0, float sy0, float kx, float ky, float fx0, float fy0,
+                                java.util.List<StickyShift> stickies) {
+
+    public ScrollContentInfo {
+        stickies = stickies == null ? java.util.List.of() : java.util.List.copyOf(stickies);
+    }
+
+    public ScrollContentInfo(HtmlNode node, String contentId, String thumbVId, String thumbHId,
+                             float sx0, float sy0, float kx, float ky, float fx0, float fy0) {
+        this(node, contentId, thumbVId, thumbHId, sx0, sy0, kx, ky, fx0, fy0, java.util.List.of());
+    }
+}

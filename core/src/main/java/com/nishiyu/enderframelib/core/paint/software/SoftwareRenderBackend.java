@@ -334,6 +334,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         this.frameSize = items.size();
         this.retainInfo.clear();
         this.recordOwner = null;
+        if (!frameClips.isEmpty()) frameClips.clear();
+        if (!frameParts.isEmpty()) frameParts.clear();
     }
 
     private void drawFrame(List<DisplayItem> items, long nowMs, GpuSink gpu) {
@@ -1142,10 +1144,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
             if (cr == null) continue;
             if (!cr.chain().isEmpty()) {
                 for (ClipChainPart p : cr.chain()) {
-                    if (owner.equals(p.ownerId())) addClipPart(parts, new ArrayList<>(1), new ArrayList<>(1), p.rect(), p.ownerId());
+                    if (owner.equals(p.ownerId())) { clipOwnerCount = 0; addClipPart(parts, p.rectView(), p.ownerId()); }
                 }
             } else if (owner.equals(cr.ownerId())) {
-                addClipPart(parts, new ArrayList<>(1), new ArrayList<>(1), cr.toArray(), cr.ownerId());
+                clipOwnerCount = 0; // 持ち主の記録は使わない
+                addClipPart(parts, cr.toArray(), cr.ownerId());
             }
         }
         if (parts.isEmpty()) return null;
@@ -1161,6 +1164,26 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private ClipEntry[] clipCache = new ClipEntry[0];
     private long clipGeneration = -1;
     private boolean sawUnresolvedOwner;
+    /**
+     * 同じフレームの中で、同じクリップの元（{@link ClipRect} の同一実体）を持つ項目どうしで組んだクリップを分け合う（B12）。
+     * 動く持ち主（アニメーション中の {@code overflow: hidden} の箱など）のクリップは、項目ごとの覚え（{@link #clipCache}）が
+     * 毎フレーム外れるので、以前は持ち主の下の項目の数だけ同じクリップを組み直していた。照合は項目ごとの覚えと同じ
+     * （持ち主の姿勢 {@link Resolved} の同一性）。フレームの頭で空にする。テストが切り替える（起動時のスイッチは足さない）。
+     */
+    private final java.util.IdentityHashMap<Object, SharedClip> frameClips = new java.util.IdentityHashMap<>();
+    static volatile boolean CLIP_SHARE = true;
+    /** 診断: 同じフレームの別の項目が組んだクリップを使い回した回数。 */
+    static final java.util.concurrent.atomic.LongAdder STAT_SHARED_CLIPS = new java.util.concurrent.atomic.LongAdder();
+
+    private record SharedClip(Clip clip, int[] owner, Resolved[] ownerRes, int w, int h) { }
+
+    /**
+     * 同じフレームの中で、連鎖の部品（{@link ClipChainPart} の同一実体。入れ子のクリップは祖先の部品を共有する）と持ち主の姿勢が同じなら、
+     * 組んだ部品（逆行列・デバイスの範囲）を使い回す（B12）。フレームの頭で空にする。
+     */
+    private final java.util.IdentityHashMap<ClipChainPart, PartMemo> frameParts = new java.util.IdentityHashMap<>();
+
+    private record PartMemo(int ownerIndex, Resolved owner, ClipPart part, int w, int h) { }
 
     // ------------------------------------------------------------------ グループの層
 
@@ -1649,35 +1672,70 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
             if (same) return ce.clip;
         }
+        int tw = raster.targetWidth(), th = raster.targetHeight();
+        boolean share = CLIP_SHARE && !recording && source != null;
+        if (share) {
+            SharedClip sc = frameClips.get(source);
+            if (sc != null && sc.w() == tw && sc.h() == th && ownersUnchanged(sc.owner(), sc.ownerRes())) {
+                if (ce == null) {
+                    ce = new ClipEntry();
+                    clipCache[index] = ce;
+                }
+                ce.clip = sc.clip();
+                ce.owner = sc.owner();
+                ce.ownerRes = sc.ownerRes();
+                ce.generation = clipGeneration;
+                ce.version = driver.itemVersion(index);
+                ce.source = source;
+                ce.unresolvedOwner = false;
+                ce.w = tw;
+                ce.h = th;
+                STAT_SHARED_CLIPS.increment();
+                return sc.clip();
+            }
+        }
         sawUnresolvedOwner = false;
-        List<ClipPart> parts = new ArrayList<>(2);
-        List<Integer> owners = new ArrayList<>(2);
-        List<Resolved> ownerRes = new ArrayList<>(2);
+        clipOwnerCount = 0;
         RenderMeta meta = el.meta();
         ClipRect cr = meta != null ? meta.clipRect() : null;
+        List<ClipPart> parts = clipPartsScratch;
+        parts.clear();
         if (cr != null && !cr.chain().isEmpty()) {
-            for (ClipChainPart p : cr.chain()) {
+            List<ClipChainPart> chain = cr.chain();
+            for (int ci = 0, cn = chain.size(); ci < cn; ci++) {
+                ClipChainPart p = chain.get(ci);
                 if (recording && recordOwner.equals(p.ownerId())) continue;
-                addClipPart(parts, owners, ownerRes, p.rect(), p.ownerId());
+                addChainPart(parts, p);
             }
         } else if (cr != null) {
-            if (!(recording && recordOwner.equals(cr.ownerId()))) addClipPart(parts, owners, ownerRes, cr.toArray(), cr.ownerId());
+            if (!(recording && recordOwner.equals(cr.ownerId()))) addClipPart(parts, cr.toArray(), cr.ownerId());
         } else if (anim.clipData != null) {
-            addClipPart(parts, owners, ownerRes, anim.clipData, null);
+            addClipPart(parts, anim.clipData, null);
         }
         ce = new ClipEntry();
         ce.clip = finishClip(parts);
-        ce.owner = new int[owners.size()];
-        for (int k = 0; k < ce.owner.length; k++) ce.owner[k] = owners.get(k);
+        ce.owner = clipOwnerCount == 0 ? NO_OWNERS : java.util.Arrays.copyOf(clipOwnerScratch, clipOwnerCount);
         ce.generation = clipGeneration;
         ce.version = driver.itemVersion(index);
         ce.source = source;
         ce.unresolvedOwner = sawUnresolvedOwner;
-        ce.ownerRes = ownerRes.toArray(new Resolved[0]);
+        ce.ownerRes = clipOwnerCount == 0 ? NO_OWNER_RES : java.util.Arrays.copyOf(clipOwnerResScratch, clipOwnerCount);
         ce.w = raster.targetWidth();
         ce.h = raster.targetHeight();
         if (!recording) clipCache[index] = ce;
+        if (share && !ce.unresolvedOwner) {
+            if (frameClips.size() >= 4096) frameClips.clear();
+            frameClips.put(source, new SharedClip(ce.clip, ce.owner, ce.ownerRes, ce.w, ce.h));
+        }
         return ce.clip;
+    }
+
+    /** クリップを組んだときの持ち主の姿勢（{@link Resolved} の同一実体）が今も同じか。 */
+    private boolean ownersUnchanged(int[] owner, Resolved[] ownerRes) {
+        for (int k = 0; k < owner.length; k++) {
+            if ((owner[k] < 0 ? null : driver.resolveAt(owner[k])) != ownerRes[k]) return false;
+        }
+        return true;
     }
 
     /**
@@ -1719,6 +1777,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private Clip finishClip(List<ClipPart> parts) {
         parts = dropRedundantSquareParts(parts);
+        // 部品が 1 つ・0 個のクリップ（ほとんど）は小さい不変の一覧で持つ（可変の一覧と中の配列を作らない。部品の一覧は読むだけ）
+        // 2 つ以上は不変の写しにする（呼び出し側の作業用の一覧を持ち続けない）
+        parts = parts.isEmpty() ? List.of() : parts.size() == 1 ? List.of(parts.get(0)) : List.copyOf(parts);
         int x0 = 0, y0 = 0, x1 = raster.targetWidth(), y1 = raster.targetHeight();
         double ix0 = Double.NEGATIVE_INFINITY, iy0 = Double.NEGATIVE_INFINITY, ix1 = Double.POSITIVE_INFINITY, iy1 = Double.POSITIVE_INFINITY;
         for (int i = 0, n = parts.size(); i < n; i++) {
@@ -1735,7 +1796,51 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return new Clip(parts, x0, y0, x1, y1, ix0, iy0, ix1, iy1);
     }
 
-    private void addClipPart(List<ClipPart> parts, List<Integer> owners, List<Resolved> ownerRes, float[] rect, String ownerId) {
+    /** 連鎖の部品 1 つ分（{@link #addClipPart} と同じ結果。同じフレームの同じ部品・同じ姿勢なら使い回す）。 */
+    private void addChainPart(List<ClipPart> parts, ClipChainPart p) {
+        if (!CLIP_SHARE || recordOwner != null) {
+            addClipPart(parts, p.rectView(), p.ownerId(), p.radiiXView(), p.radiiYView());
+            return;
+        }
+        int tw = raster.targetWidth(), th = raster.targetHeight();
+        int ix = p.ownerId() == null ? -1 : driver.indexOf(p.ownerId());
+        Resolved owner = ix >= 0 ? driver.resolveAt(ix) : null;
+        PartMemo memo = frameParts.get(p);
+        if (memo != null && memo.ownerIndex() == ix && memo.owner() == owner && memo.w() == tw && memo.h() == th
+                && (ix >= 0 || p.ownerId() == null)) {
+            if (clipOwnerCount == clipOwnerScratch.length) {
+                clipOwnerScratch = java.util.Arrays.copyOf(clipOwnerScratch, clipOwnerCount * 2);
+                clipOwnerResScratch = java.util.Arrays.copyOf(clipOwnerResScratch, clipOwnerCount * 2);
+            }
+            clipOwnerScratch[clipOwnerCount] = ix;
+            clipOwnerResScratch[clipOwnerCount++] = owner;
+            parts.add(memo.part());
+            return;
+        }
+        int before = parts.size();
+        addClipPart(parts, p.rectView(), p.ownerId(), p.radiiXView(), p.radiiYView());
+        // 持ち主の id があるのに見つからない部品は覚えない（後から現れると結果が変わる）
+        if (parts.size() == before + 1 && (ix >= 0 || p.ownerId() == null)) {
+            if (frameParts.size() >= 4096) frameParts.clear();
+            frameParts.put(p, new PartMemo(ix, owner, parts.get(before), tw, th));
+        }
+    }
+
+    // buildClip の作業表（持ち主の位置と姿勢。1 つのクリップの部品の数だけ）
+    private int[] clipOwnerScratch = new int[4];
+    private Resolved[] clipOwnerResScratch = new Resolved[4];
+    private int clipOwnerCount;
+    /** buildClip が部品を集める作業用の一覧（finishClip が持ち続ける分は写す）。 */
+    private final List<ClipPart> clipPartsScratch = new ArrayList<>(4);
+    private static final int[] NO_OWNERS = new int[0];
+    private static final Resolved[] NO_OWNER_RES = new Resolved[0];
+
+    private void addClipPart(List<ClipPart> parts, float[] rect, String ownerId) {
+        addClipPart(parts, rect, ownerId, null, null);
+    }
+
+    /** {@code preRx} / {@code preRy} は、{@code rect} の角の半径を先に分けたもの（読むだけ。null なら {@code rect} から作る）。 */
+    private void addClipPart(List<ClipPart> parts, float[] rect, String ownerId, float[] preRx, float[] preRy) {
         if (rect == null || rect.length < 4) return;
         Matrix2D pose = frame;
         int ownerIndex = -1;
@@ -1750,14 +1855,21 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 sawUnresolvedOwner = true;
             }
         }
-        owners.add(ownerIndex);
-        ownerRes.add(owner);
+        if (clipOwnerCount == clipOwnerScratch.length) {
+            clipOwnerScratch = java.util.Arrays.copyOf(clipOwnerScratch, clipOwnerCount * 2);
+            clipOwnerResScratch = java.util.Arrays.copyOf(clipOwnerResScratch, clipOwnerCount * 2);
+        }
+        clipOwnerScratch[clipOwnerCount] = ownerIndex;
+        clipOwnerResScratch[clipOwnerCount++] = owner;
         Matrix2D inv = pose.invert();
         if (inv == null) return;
         float[] rx, ry;
         if (rect.length <= 4) {
             rx = ZERO4;
             ry = ZERO4;
+        } else if (preRx != null && preRy != null) {
+            rx = preRx;
+            ry = preRy;
         } else {
             rx = new float[4];
             ry = new float[4];
@@ -2356,7 +2468,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (alpha < 4) return;
         // 箱の外へは出さない
         List<ClipPart> parts = new ArrayList<>(clip.parts());
-        addClipPart(parts, new ArrayList<>(1), new ArrayList<>(1), new float[]{el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), 0, 0, 0, 0}, null);
+        clipOwnerCount = 0; // 持ち主の記録は使わない
+        addClipPart(parts, new float[]{el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), 0, 0, 0, 0}, null);
         Clip boxed = finishClip(parts);
         String[] lines = full.replace("\r\n", "\n").split("\n", -1);
         for (int i = 0; i < lines.length; i++) {

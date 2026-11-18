@@ -243,7 +243,13 @@ public interface ImageProvider {
                 if (cached == null) {
                     // 取得中は「無い」と覚えない（取れた次のフレームで引き直す）
                     if (isHttp(src) && (remote == null || remote.get(src) == HttpImageFetcher.PENDING)) return null;
-                    cached = decodeBitmap(src);
+                    try {
+                        cached = decodeBitmap(src);
+                    } catch (RuntimeException e) {
+                        // パスとして読めない名前（Windows の Path.of は "item:minecraft:beacon" の ':' で投げる）は何度引いても同じ。
+                        // 覚えないと、ホストの描き手が無い面で毎フレーム例外を作って読み直していた（B12）
+                        cached = null;
+                    }
                     if (decoded.size() >= MAX_CACHE) decoded.clear();
                     decoded.put(src, cached == null ? MISSING : cached);
                 }
@@ -251,6 +257,11 @@ public interface ImageProvider {
             } catch (RuntimeException | IOException e) {
                 return null;
             }
+        }
+
+        /** テスト用: {@code src} の結果（画像か「無い」）を覚えているか。 */
+        boolean remembers(String src) {
+            return decoded.containsKey(src);
         }
 
         private static Image fromRaster(String src) {

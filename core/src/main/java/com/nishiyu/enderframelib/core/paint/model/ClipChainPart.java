@@ -37,6 +37,40 @@ public final class ClipChainPart {
         return rect.clone();
     }
 
+    /** {@link #rect} の写しを作らない版。読むだけの呼び出し側（毎フレームのクリップの組み立て）用で、書き換えてはならない。 */
+    public float[] rectView() {
+        return rect;
+    }
+
+    /** 横・縦の角の半径（{@link #rectView} の 4〜11 番。縦が無ければ横と同じ）。読むだけ。最初に問われたときに作って覚える（B12）。 */
+    private float[] radiiX, radiiY;
+
+    /** 横の角の半径 4 つ（左上・右上・右下・左下）。半径の無い矩形なら null。書き換えてはならない。 */
+    public float[] radiiXView() {
+        if (rect.length <= 4) return null;
+        float[] rx = radiiX;
+        if (rx == null) fillRadii();
+        return radiiX;
+    }
+
+    /** 縦の角の半径 4 つ。半径の無い矩形なら null。書き換えてはならない。 */
+    public float[] radiiYView() {
+        if (rect.length <= 4) return null;
+        float[] ry = radiiY;
+        if (ry == null) fillRadii();
+        return radiiY;
+    }
+
+    private void fillRadii() {
+        float[] rx = new float[4], ry = new float[4];
+        for (int i = 0; i < 4; i++) {
+            rx[i] = rect.length > 4 + i ? rect[4 + i] : 0f;
+            ry[i] = rect.length >= 12 ? rect[8 + i] : rx[i];
+        }
+        radiiY = ry; // 縦を先に置く（別のスレッドが横だけ見て縦を読んでも、作り直すだけ）
+        radiiX = rx;
+    }
+
     public int rectLength() {
         return rect.length;
     }
