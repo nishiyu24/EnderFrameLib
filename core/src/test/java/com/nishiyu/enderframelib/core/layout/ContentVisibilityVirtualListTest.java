@@ -19,6 +19,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -195,6 +196,19 @@ class ContentVisibilityVirtualListTest {
 
     @Test
     void fenwickVirtualizes100kRowsWithExactScrollHeightAndBoundedWork() {
+        fenwick100kRows();
+    }
+
+    /** 上と同じ手順で、10 万行の途中へのジャンプが実時間でも速いこと（実時間で合否を決めるので、共有ランナーの CI では外す）。 */
+    @Test
+    @Tag("timing")
+    void fenwickJumpInto100kRowsIsFast() {
+        long scrollElapsedMs = fenwick100kRows();
+        assertTrue(scrollElapsedMs < 500L, "10 万行スクロールジャンプが O(log N + K) で高速完了する（経過=" + scrollElapsedMs + "ms）");
+    }
+
+    /** 10 万行の仮想化の正しさを確かめ、50,000 行目へのジャンプに掛かった時間（ms）を返す。 */
+    private long fenwick100kRows() {
         final int rows = 100_000;
         final float intrinsicH = 32f;
         final float tallRowH = 80f;
@@ -278,13 +292,13 @@ class ContentVisibilityVirtualListTest {
         assertTrue(row0.contentAutoSkipped && row0.childrenDeferred, "離れた先頭行は再スキップされ子の箱を解放する");
         assertTrue(row0.children.isEmpty());
         assertTrue(vf.placedCount() <= 65, "ジャンプ後の配置行数も O(K)（実際=" + vf.placedCount() + "）");
-        assertTrue(scrollElapsedMs < 500L, "10 万行スクロールジャンプが O(log N + K) で高速完了する（経過=" + scrollElapsedMs + "ms）");
 
         // 末尾 99,999 行目へジャンプ
         scroll.setScroll(listNode, 0f, Math.max(0f, listBox.scrollHeight - listBox.h));
         RenderPipeline.repositionLayout(root, doc, Map.of(), state, VP_W, VP_H, scroll, FontResolver.FALLBACK);
         assertFalse(rowLast.contentAutoSkipped, "末尾 99,999 行目が具現化される");
         assertEquals(listBox.h, rowLast.y + rowLast.h, 1.0f, "末尾行の下端がスクロールポート下端に一致する");
+        return scrollElapsedMs;
     }
 
     @Test

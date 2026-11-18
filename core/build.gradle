@@ -87,7 +87,11 @@ tasks.withType(JavaExec).configureEach {
 sourceSets.test.resources.srcDir rootProject.file('src/test/resources')
 
 tasks.named('test', Test) {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // 実時間で合否を決めるテスト（@Tag("timing")）。共有ランナーの CI（build.yml・full-tests.yml）は -Ptest.excludeTags=timing で外し、
+        // 開発機（scripts/ci-linux.ps1 を含む）では流す。TimingTagPolicyTest が付け忘れと CI の渡し忘れを見張る
+        if (project.hasProperty('test.excludeTags')) excludeTags(*project.property('test.excludeTags').toString().split(','))
+    }
     maxHeapSize = '3g' // 既定のヒープでは全件実行が OutOfMemoryError で落ちる
     systemProperty 'enderframe.paint.verifystamps', 'true'
     // float メモ（BlockLayoutEngine.containsFloats）が使える場面でも走査し直し、食い違えば AssertionError（無効化の付け漏れの検出）

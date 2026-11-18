@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.lang.management.ManagementFactory;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -161,6 +162,7 @@ class ScrollCostTest {
 
     /** 診断: 本物の GL バックエンド（新経路 / 従来経路）でのスクロール 1 回の CPU 時間（フレームの描画まで含む）。 */
     @Test
+    @Tag("timing") // 実時間で合否を決める（共有ランナーの CI では外す）
     void measureScrollWithTheGlBackend() {
         try (var probe = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(8, 8)) {
             // GL を使える環境だけ
@@ -203,6 +205,7 @@ class ScrollCostTest {
 
     /** 診断: 画面の中に収まるスクロールコンテナで、スクロール層の保持あり / なしの CPU 時間とヒープ（フレームの描画まで）。 */
     @Test
+    @Tag("timing")
     void measureScrollWithRetainedLayers() {
         try (var probe = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(8, 8)) {
         } catch (Throwable t) {
@@ -256,6 +259,7 @@ class ScrollCostTest {
      * CPU 時間に混ざる）。実ゲームの 1 フレームの CPU 負荷に近い。
      */
     @Test
+    @Tag("timing")
     void measureScrollWithRetainedLayersWhenTheGpuKeepsUp() throws Exception {
         try (var probe = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(8, 8)) {
         } catch (Throwable t) {

@@ -2,7 +2,7 @@ name: full-tests
 
 # 全テスト（約 3000 件・数分）。毎回の push では回さない（build ワークフローは検査だけ）。
 # 手動（Actions → full-tests → Run workflow）と、毎日 1 回（UTC 18:00 = 日本時間 3:00）。
-# GPU が無い環境なので GL / Vulkan のテストは中断（skip）になる。書体などの環境差で落ちたテストは、失敗サマリーに出る。
+# GPU が無い環境なので GL / Vulkan のテストは中断（skip）になる。実時間で合否を決めるテスト（@Tag("timing")）は共有ランナーでは揺れるので外す（開発機では流す）。書体などの環境差で落ちたテストは、失敗サマリーに出る。
 # 開発機での全件確認は scripts/ci-linux.ps1（WSL の Linux で同じ手順）と pre-push フックが担う。
 on:
   workflow_dispatch:
@@ -31,7 +31,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build and test
-        run: ./gradlew build test --stacktrace --continue
+        run: ./gradlew build test -Ptest.excludeTags=timing --stacktrace --continue
 
       # 失敗したテストを注釈（::error）とジョブのサマリーへ出す。ログの取得に権限が要らない形で原因が読める
       - name: Summarize test failures

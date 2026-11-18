@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.core.paint.software;
 
 import com.nishiyu.enderframelib.core.paint.FilterOp;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -35,6 +36,7 @@ public class LayerFxBlurTest {
     }
 
     @Test
+    @Tag("timing") // 実時間で合否を決める（共有ランナーの CI では外す）
     public void fullScreenLargeBlurIsFast() {
         Pixmap pm = new Pixmap(1280, 800);
         java.util.Arrays.fill(pm.pixels(), 0xFF3366FF);

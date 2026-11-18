@@ -1,7 +1,8 @@
 name: build
 
 # 毎回の CI は「クリーンな checkout でビルド・パッケージ・各種検査が通るか」に加えて、環境に依らない回帰の番を回す:
-#   - :core のテスト（GPU・OS の書体に依るテストは、無い環境では自分で中断＝skip する。ソフトウェア描画と内蔵書体の部分が走る）
+#   - :core のテスト（GPU・OS の書体に依るテストは、無い環境では自分で中断＝skip する。ソフトウェア描画と内蔵書体の部分が走る）。
+#     実時間で合否を決めるテスト（@Tag("timing")）は共有ランナーの混み具合で揺れるので -Ptest.excludeTags=timing で外す（開発機では流す）
 #   - 確保量と近道の経路の回数の回帰ゲート（:core:costGate。時間は機械ごとに揺れるので見ない）
 # ルート（NeoForge Mod）側のテストと、時間の基準値（benchmark）は、手動・夜間の full-tests ワークフローと開発機
 # （pre-push フック・scripts/ci-linux.ps1）で回す。
@@ -45,7 +46,7 @@ jobs:
       # :core のテスト。作った .md のリンク・README のコード例のコンパイル（DocConsistencyTest）、層の依存・移植性のラチェット、
       # 差分 / 並列 / ワーカー数の一致テストを含む
       - name: Core tests
-        run: ./gradlew :core:test --stacktrace --continue
+        run: ./gradlew :core:test -Ptest.excludeTags=timing --stacktrace --continue
 
       - name: Summarize test failures
         if: failure()

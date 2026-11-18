@@ -16,6 +16,7 @@
 #   - 表示環境を外す（DISPLAY / WAYLAND_DISPLAY を unset）。CI には GPU も画面も無いので、GL・Vulkan のテストは中断（skip）になる
 #   - JDK 21（Temurin）。無ければ ~/.cache/efl-jdk へ取得する
 #   - 実行する Gradle コマンドも CI と同じ: ./gradlew build test --stacktrace
+#     （ただし CI が外す実時間のテスト @Tag("timing") は、ここでは流す。共有ランナーより空いた開発機で速さの回帰を見る）
 set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

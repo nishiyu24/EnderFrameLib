@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.scene3d;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Random;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** X3-3: レイキャスト（BVH で絞り、三角形で厳密に判定）。BVH の結果は全ノードを 1 つずつ試した結果と一致しなければならない。 */
@@ -138,6 +139,7 @@ class Raycaster3DTest {
     }
 
     @Test
+    @Tag("timing") // 実時間で合否を決める（共有ランナーの CI では外す）
     void tenThousandMeshesRaycastUnderTheBudget() {
         Random r = new Random(7);
         Scene3DWorld w = new Scene3DWorld();
