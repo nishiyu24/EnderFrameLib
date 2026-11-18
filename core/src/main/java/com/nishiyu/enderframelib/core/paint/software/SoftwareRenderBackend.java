@@ -239,14 +239,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 描画先（事前乗算の ARGB）。 */
     @Override
-    public Pixmap pixmap() {
-        return raster.root();
-    }
+    public Pixmap pixmap() { return raster.root(); }
 
     @Override
-    public float devicePixelRatio() {
-        return dpr;
-    }
+    public float devicePixelRatio() { return dpr; }
 
     // ------------------------------------------------------------------ フレーム
 
@@ -730,7 +726,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (res.opacity() <= 0.005f) return;
         float opacity = res.residual() * flat;
         if (opacity <= 0.005f) return;
-        AnimatedValues anim = res.anim();
+        AnimatedValues anim = driver.animAt(index);
         boolean canFastStatic = index >= 0 && !recordExtents && !partialActive && recordOwner == null && driver.idleAt(index);
         GpuSink spanSink = null;
         if (canFastStatic && index < spanEl.length && ItemDiff.unchanged(spanEl[index], el, spanEpoch[index]) && spanRes[index] == res) {
@@ -846,7 +842,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     break;
                 }
                 boolean visible = res.opacity() > 0.005f && res.residual() > 0.005f;
-                Clip clip = visible ? buildClip(index, el, res.anim()) : null;
+                AnimatedValues anim = driver.animAt(index);
+                Clip clip = visible ? buildClip(index, el, anim) : null;
                 boolean culled = !visible || clip.empty() || (cullOffscreen && outsideClip(el, res.pose(), clip));
                 if (culled) {
                     if (route.canPatchSpan(index)) {
@@ -878,7 +875,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     break;
                 }
                 long cpuBefore = cpuOps;
-                drawItemBody(el, res.anim(), res, clip, res.residual());
+                drawItemBody(el, anim, res, clip, res.residual());
                 if (cpuOps != cpuBefore || !route.patchSpanEnd(index, true)) {
                     okAll = false;
                     break;

@@ -231,8 +231,7 @@ final class DamagePlanner {
                                     int anc = backend.driver.parentIndex(i);
                                     while (anc >= 0 && anc != scrollContentIdx) anc = backend.driver.parentIndex(anc);
                                     if (anc == scrollContentIdx) {
-                                        Resolved ir = backend.driver.resolveAt(i);
-                                        Clip c = backend.buildClip(i, items.get(i), ir.anim());
+                                        Clip c = backend.buildClip(i, items.get(i), backend.driver.animAt(i));
                                         if (c != null && !c.empty()) {
                                             clipBounds = new int[]{c.x0(), c.y0(), c.x1(), c.y1()};
                                             break;
@@ -477,7 +476,7 @@ final class DamagePlanner {
             backend.planClipScratch[3] = backend.prevClip[b + 3];
             return backend.planClipScratch;
         }
-        Clip c = backend.buildClip(i, el, r.anim());
+        Clip c = backend.buildClip(i, el, backend.driver.animAt(i));
         if (c.empty()) {
             backend.planClipScratch[0] = backend.planClipScratch[1] = backend.planClipScratch[2] = backend.planClipScratch[3] = 0;
         } else {

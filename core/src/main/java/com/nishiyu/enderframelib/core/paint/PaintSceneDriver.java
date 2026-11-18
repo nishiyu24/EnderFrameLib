@@ -35,12 +35,13 @@ import java.util.Map;
 public final class PaintSceneDriver {
 
     /**
-     * 姿勢が動いていない項目の姿勢を、前のフレームのものから使い回すか。false なら毎フレーム作り直す
+     * 姿勢が動いていない項目の姿勢を、前のフレームのものから使い回すか。自分の変形・不透明度が恒等の葉の項目は、親の姿勢の実体を
+     * そのまま使う（値は親と同じ。動く節の下の全項目の作り直しを避ける。B12）。false なら毎フレーム項目ごとに作り直す
      * （疑うときの切り分け用。絵は同じでなければならない）。
      */
     public static volatile boolean reuseIdlePoses = true;
 
-    /** 項目の姿勢（親から引き継いだ変形）と、祖先の不透明度の積。 */
+    /** 項目の姿勢（親から引き継いだ変形）と、祖先の不透明度の積。{@code anim} は親の実体を共有する項目では親のもの（項目の値は {@link #animAt}）。 */
     public record Resolved(Matrix2D pose, float opacity, float residual, List<Group> groups, AnimatedValues anim) {}
 
     /** 不透明度を持つ祖先（グループ）。層にまとめて描き、{@code opacity} を掛けて重ねる。 */
@@ -52,9 +53,7 @@ public final class PaintSceneDriver {
          * このフレームで項目 {@code index} を描かないと描画側が決めているなら true。ドライバは姿勢・クリップの計算と
          * {@link #drawItem} の呼び出しを省く（画素は描画側の責任で前のフレームのまま残す）。既定は false。
          */
-        default boolean skipItem(int index) {
-            return false;
-        }
+        default boolean skipItem(int index) { return false; }
 
         /** 開いている層を、項目の祖先のグループ {@code want}（外側から内側の順）に合わせる。 */
         /** {@code want} は呼び出しの間だけ有効（走査が次の項目で使い回す。持ち続けるなら写す）。 */
@@ -74,9 +73,7 @@ public final class PaintSceneDriver {
          * 保持済みの層を {@link #drawRetained} で重ねるので、ドライバは範囲の項目を走査しない。{@link RetainPlan#RECORD} なら、
          * 範囲の先頭で {@link #beginRetained}、末尾の後で {@link #endRetained} を呼ぶ（その間の項目は層へ描く）。</p>
          */
-        default RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) {
-            return RetainPlan.NONE;
-        }
+        default RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) { return RetainPlan.NONE; }
 
         /** {@link RetainPlan#SKIP}: 保持済みの層を今の位置で重ねる。 */
         default void drawRetained(DisplayItem node, int nodeIndex, int from, int to) {}
@@ -88,17 +85,13 @@ public final class PaintSceneDriver {
          * 前フレームと項目構成が同一で、変更された位置が {@code indices[0..count)} に限られているとき、
          * 変更分だけを高速に再描画できたら true。できない（または非対応の）ときは false を返して通常走査へフォールバックする。
          */
-        default boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) {
-            return false;
-        }
+        default boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) { return false; }
 
         /**
          * {@link RetainPlan#RECORD}: 範囲を描き終えた。層を保存して重ねたら true。保持できなかった（描き方が層に向かない）なら、層を捨てて false を返す。
          * false のとき、ドライバは同じ範囲をふつうに描き直す。
          */
-        default boolean endRetained(DisplayItem node, int nodeIndex) {
-            return true;
-        }
+        default boolean endRetained(DisplayItem node, int nodeIndex) { return true; }
 
         /**
          * {@link RetainPlan#RECORD} の範囲の項目のうち、描かれないと分かっている縦の区間（デバイス画素）。{@code {y0, y1, pad}} を返す:
@@ -106,9 +99,7 @@ public final class PaintSceneDriver {
          * その項目は何も描かない（描画側の画面外判定と同じ式）。ドライバはこの区間に確実に入る先頭・末尾の連続区間だけを走査から外す。
          * 既定は null（外さない）。
          */
-        default double[] cullWindow(DisplayItem node, int nodeIndex) {
-            return null;
-        }
+        default double[] cullWindow(DisplayItem node, int nodeIndex) { return null; }
     }
 
     /**
@@ -171,6 +162,9 @@ public final class PaintSceneDriver {
     public static final java.util.concurrent.atomic.AtomicLong RANGE_PLANNED = new java.util.concurrent.atomic.AtomicLong(), RANGE_INELIGIBLE = new java.util.concurrent.atomic.AtomicLong();
 
     public long rangeCulledItems() { return rangeCulledItems; }
+    private long posesBuilt;
+    /** 作った姿勢（{@code Resolved}）の数の累計（使い回し・親との共有は数えない。テストが確保の代わりに見る）。 */
+    public long posesBuilt() { return posesBuilt; }
 
     private void invalidateRangeBounds() {
         for (RangeBounds rb : rangeBounds.values()) rb.valid = false;
@@ -356,14 +350,10 @@ public final class PaintSceneDriver {
     public long generation() { return generation; }
 
     /** 項目 {@code i} の版（{@link #itemVersion}）。 */
-    public int itemVersion(int i) {
-        return i < itemVersion.length ? itemVersion[i] : 0;
-    }
+    public int itemVersion(int i) { return i < itemVersion.length ? itemVersion[i] : 0; }
 
     /** 項目 {@code i} の親（{@link ElementType#NODE} の項目）の位置。無ければ -1。 */
-    public int parentIndex(int i) {
-        return i >= 0 && i < parentIdx.length ? parentIdx[i] : -1;
-    }
+    public int parentIndex(int i) { return i >= 0 && i < parentIdx.length ? parentIdx[i] : -1; }
 
     /**
      * 項目 {@code el} に、時刻 {@code nowMs} でまだ動いている補間・キーフレームがあるか。
@@ -377,9 +367,7 @@ public final class PaintSceneDriver {
     public Matrix2D frame() { return frame; }
 
     /** 走査中の、ノードハンドルと部品番号から項目を引く。 */
-    public DisplayItem item(int nodeHandle, int partOrdinal) {
-        return byId.get(DisplayItem.keyOf(nodeHandle, partOrdinal));
-    }
+    public DisplayItem item(int nodeHandle, int partOrdinal) { return byId.get(DisplayItem.keyOf(nodeHandle, partOrdinal)); }
 
     /** ノードハンドルと部品番号の項目の位置。無ければ -1。 */
     public int indexOf(int nodeHandle, int partOrdinal) {
@@ -387,17 +375,13 @@ public final class PaintSceneDriver {
     }
 
     /** 走査中の、id から項目を引く。 */
-    public DisplayItem itemById(String id) {
-        return byId.get(DisplayItem.keyOf(id));
-    }
+    public DisplayItem itemById(String id) { return byId.get(DisplayItem.keyOf(id)); }
 
     /** 走査中の、鍵から項目を引く（文字列のハッシュを使わない）。 */
     public DisplayItem itemByKey(long key) { return byId.get(key); }
 
     /** id の項目の位置。無ければ -1。 */
-    public int indexOf(String id) {
-        return indexOf.getOrDefault(DisplayItem.keyOf(id), -1);
-    }
+    public int indexOf(String id) { return indexOf.getOrDefault(DisplayItem.keyOf(id), -1); }
 
     /** 鍵の項目の位置。無ければ -1。 */
     public int indexOfKey(long key) { return indexOf.getOrDefault(key, -1); }
@@ -782,9 +766,7 @@ public final class PaintSceneDriver {
      * スクロールの中身の節（{@link #SCROLL_CONTENT_SUFFIX}）の見える移動量を、デバイス画素の整数倍へ丸める（{@code dpr} が 0 以下なら丸めない）。
      * 保持した層をずらして使うとき、小数の位置だと層の境で 1 画素ずれるため。丸めは項目のセルへ書く（以前は描画のたびに丸めた項目を作っていた。B9）。
      */
-    public void setScrollSnapDpr(float dpr) {
-        this.scrollSnapDpr = dpr;
-    }
+    public void setScrollSnapDpr(float dpr) { this.scrollSnapDpr = dpr; }
 
     private void snapScrollContent(List<DisplayItem> items) {
         if (scrollSnapDpr <= 0f) return;
@@ -1480,7 +1462,6 @@ public final class PaintSceneDriver {
         return activityOf(CssAnimator.stateFor(sessionId, el, nowMs), nowMs);
     }
 
-    /** 項目 {@code i} の姿勢。同じフレームの間は 1 回だけ計算し、動いていない項目は前フレームの結果をそのまま使う。 */
     /** 項目 {@code i} が、いまのフレームで止まっている（補間値が確定済み）か。{@link #resolveAt} をそのフレームで呼んだあとに読む。 */
     public boolean idleAt(int i) { return prevIdle[i]; }
 
@@ -1489,6 +1470,14 @@ public final class PaintSceneDriver {
         return i >= 0 && i < prevRes.length ? prevRes[i] : null;
     }
 
+    /** 項目 {@code i} の補間値（色など）。姿勢を親と共有する項目でも、その項目自身のもの。 */
+    public AnimatedValues animAt(int i) {
+        Resolved r = resolveAt(i);
+        int p = parentIdx[i];
+        return p >= 0 && p != i && curStamp[p] == frameStamp && curRes[p] == r ? states[i].getInterpolatedValues(now) : r.anim();
+    }
+
+    /** 項目 {@code i} の姿勢。同じフレームの間は 1 回だけ計算し、動いていない項目は前フレームの結果をそのまま使う。 */
     public Resolved resolveAt(int i) {
         Resolved r;
         if (curStamp[i] == frameStamp && (r = curRes[i]) != null) return r;
@@ -1515,7 +1504,8 @@ public final class PaintSceneDriver {
                 && ((idle && prevIdle[i]) || prev.anim() == (animVals = st.getInterpolatedValues(now)))) {
             r = prev;
         } else {
-            r = build(el, i, parent, animVals != null ? animVals : st.getInterpolatedValues(now));
+            AnimatedValues av = animVals != null ? animVals : st.getInterpolatedValues(now);
+            r = reuseIdlePoses && parent != null && el.type() != ElementType.NODE && identityGeometry(av) ? parent : build(el, i, parent, av);
             prevRes[i] = r;
             prevParentRes[i] = parent;
             prevStatic[i] = geometryStatic; // 「前回も姿勢が動いていなかった」
@@ -1524,6 +1514,11 @@ public final class PaintSceneDriver {
         curRes[i] = r;
         curStamp[i] = frameStamp;
         return r;
+    }
+
+    /** 変形・不透明度が恒等（葉の項目なら {@link #build} の結果が親の姿勢と同じ値になる）。 */
+    private static boolean identityGeometry(AnimatedValues a) {
+        return a.opacity() == 1f && a.tx() == 0f && a.ty() == 0f && a.sx() == 1f && a.sy() == 1f && a.rot() == 0f && a.skew() == 0f;
     }
 
     private final double[] poseScratch = new double[6];
@@ -1542,6 +1537,7 @@ public final class PaintSceneDriver {
     }
 
     private Resolved build(DisplayItem el, int index, Resolved parent, AnimatedValues anim) {
+        posesBuilt++;
         Matrix2D base = parent != null ? parent.pose() : frame;
         float parentOpacity = parent != null ? parent.opacity() : 1f;
         float parentResidual = parent != null ? parent.residual() : 1f;
