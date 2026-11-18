@@ -9,8 +9,8 @@ core/dom/node/HtmlNode.java | 1884
 core/paint/gpu/GpuRenderBackend.java | 1870
 common/RenderPipeline.java | 1859
 core/paint/PaintOrder.java | 1712
-core/paint/PaintSceneDriver.java | 1603
 core/dom/parser/HtmlParser.java | 1594
+core/paint/PaintSceneDriver.java | 1593
 core/layout/GridLayoutEngine.java | 1532
 core/layout/BlockLayoutEngine.java | 1504
 core/css/StyleResolver.java | 1276

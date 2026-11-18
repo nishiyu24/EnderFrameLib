@@ -1740,3 +1740,5 @@ Chrome の `res-*.json` は `.gitignore` 対象の出力なので、計測のた
 > **最終更新**: 2026-11-18（**A8 一部実施**: 神クラス 5 つから 12 クラスを切り出し〔`DisplayListBuilder` `4,358 → 2,496` 行ほか〕、T1 のラチェットの上限を下げた。JIT の上限を超えていた子のパッチを分けて large-list `child` `0.33 → 0.28 ms`）。これより前の更新の経緯は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) の末尾「本編冒頭の更新履歴」。この行は日付と直近 1 件だけにする（運用ルール 3）。
 
 > **最終更新**: 2026-11-18（**T2 完了**: 回帰ゲートに同梱の実文書を載せた〔`costGate` `22 → 56` シナリオ・実文書 9 本 × 操作の手順の画素・表示リスト・ヒットテストのゴールデン・差分の経路 = 全体の作り直しの毎フレーム一致〕。この比較で見つけた不具合 3 件〔ヒットテストが壁時計でアニメーションを評価・入れ子のスクロールのクリップ・fieldset の枠線のクリップ〕を直した。GPU と SOFTWARE の差の残りは T2b）。これより前の更新の経緯は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) の末尾「本編冒頭の更新履歴」。この行は日付と直近 1 件だけにする（運用ルール 3）。
+
+> **最終更新**: 2026-11-18（**A1 の残り: CI が 11-17 から赤だったのを直す**: OS の書体に依る画素のゴールデンを書体の環境の指紋で切り替え〔GitHub の ubuntu-latest は Ubuntu 26 で WSL と書体が違う〕、`ColrV1EmojiTest` の書体の選び方・`LayoutParallelProbeTest` の壁時計の割合を直した。§6-100）。これより前の更新の経緯は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) の末尾「本編冒頭の更新履歴」。この行は日付と直近 1 件だけにする（運用ルール 3）。

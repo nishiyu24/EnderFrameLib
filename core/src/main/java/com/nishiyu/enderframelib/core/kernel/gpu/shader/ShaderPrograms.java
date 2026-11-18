@@ -16,7 +16,7 @@ public final class ShaderPrograms {
     public static final ShaderProgram TEX = new ShaderProgram("tex", ShaderSources.TEX_VERT, ShaderSources.TEX_FRAG,
             List.of(new Uniform("uDev", UniformType.VEC4), new Uniform("uView", UniformType.VEC2),
                     new Uniform("uOpacity", UniformType.FLOAT), new Uniform("uFlip", UniformType.INT)),
-            List.of("uTex"));
+            List.of("uTex"), 1, List.of()); // サンプラーは GLSL と同じ binding 1 から（0 は定数ブロック）
 
     /**
      * 矩形（SDF 図形）。図形・変換・クリップ・効果・スクロール・曲線・描画順は Property Tree のレコード列（7 本）として渡し、
@@ -54,7 +54,9 @@ public final class ShaderPrograms {
                     new Uniform("uBlend", UniformType.INT), new Uniform("uShapeScale", UniformType.FLOAT),
                     new Uniform("uClipKind", UniformType.INT), new Uniform("uEvenOdd", UniformType.INT),
                     new Uniform("uClipN", UniformType.INT), new Uniform("uHasB", UniformType.INT)),
-            List.of("uSrc", "uAux", "uBackdrop"));
+            // サンプラーは GLSL と同じ binding 1〜3（0 は定数ブロック）。以前は 0 始まりで、Vulkan の記述子セットのレイアウトで定数と
+            // 1 番目のテクスチャが同じ binding 0 になり、backdrop-filter・ぼかしの記述子の更新が不正だった（検証レイヤーと lavapipe が落ちた。T2b）
+            List.of("uSrc", "uAux", "uBackdrop"), 1, List.of());
 
     /** 3D インスタンス描画（{@code Scene3DRenderer} 用）。vec3 は std140 の 16B 整列を明示するため vec4 で受け渡しする。 */
     public static final ShaderProgram SCENE3D = new ShaderProgram("scene3d",

@@ -170,9 +170,7 @@ public final class PaintSceneDriver {
     /** 診断用: 記録（RECORD）の範囲を計画した回数と、窓を出せず・条件を満たさず外せなかった回数。 */
     public static final java.util.concurrent.atomic.AtomicLong RANGE_PLANNED = new java.util.concurrent.atomic.AtomicLong(), RANGE_INELIGIBLE = new java.util.concurrent.atomic.AtomicLong();
 
-    public long rangeCulledItems() {
-        return rangeCulledItems;
-    }
+    public long rangeCulledItems() { return rangeCulledItems; }
 
     private void invalidateRangeBounds() {
         for (RangeBounds rb : rangeBounds.values()) rb.valid = false;
@@ -355,9 +353,7 @@ public final class PaintSceneDriver {
     }
 
     /** 項目の索引を作り直すたび（リストが変わったとき）に増える。項目の位置で引く外部のキャッシュの無効化に使う。 */
-    public long generation() {
-        return generation;
-    }
+    public long generation() { return generation; }
 
     /** 項目 {@code i} の版（{@link #itemVersion}）。 */
     public int itemVersion(int i) {
@@ -378,9 +374,7 @@ public final class PaintSceneDriver {
     }
 
     /** 走査中の、フレーム全体の変換（CSS px → デバイス画素）。 */
-    public Matrix2D frame() {
-        return frame;
-    }
+    public Matrix2D frame() { return frame; }
 
     /** 走査中の、ノードハンドルと部品番号から項目を引く。 */
     public DisplayItem item(int nodeHandle, int partOrdinal) {
@@ -398,9 +392,7 @@ public final class PaintSceneDriver {
     }
 
     /** 走査中の、鍵から項目を引く（文字列のハッシュを使わない）。 */
-    public DisplayItem itemByKey(long key) {
-        return byId.get(key);
-    }
+    public DisplayItem itemByKey(long key) { return byId.get(key); }
 
     /** id の項目の位置。無ければ -1。 */
     public int indexOf(String id) {
@@ -408,9 +400,7 @@ public final class PaintSceneDriver {
     }
 
     /** 鍵の項目の位置。無ければ -1。 */
-    public int indexOfKey(long key) {
-        return indexOf.getOrDefault(key, -1);
-    }
+    public int indexOfKey(long key) { return indexOf.getOrDefault(key, -1); }
 
     /**
      * {@code items} の索引を（前回と同じなら差分で）整え、このフレームの時刻と変換を設定する。
@@ -462,7 +452,7 @@ public final class PaintSceneDriver {
                     int nextActive = 0;
                     for (int k = 0; k < wc; k++) {
                         int idx = patchWorkIndices[k];
-                        if (!prevIdle[idx]) lastActiveIndices[nextActive++] = idx;
+                        if (!prevIdle[idx] || ancestorActive(idx)) lastActiveIndices[nextActive++] = idx;
                     }
                     lastActiveCount = nextActive;
                     lastRunActiveOverflow = false;
@@ -512,7 +502,7 @@ public final class PaintSceneDriver {
                 List<Group> chain = List.of();
                 if (el.type() != ElementType.NODE) {
                     Resolved r = resolveAt(i);
-                    if (!prevIdle[i]) {
+                    if (!prevIdle[i] || ancestorActive(i)) {
                         if (activeCount < MAX_DIFF_PATCH) lastActiveIndices[activeCount++] = i;
                         else activeOverflow = true;
                     }
@@ -610,6 +600,12 @@ public final class PaintSceneDriver {
         } finally {
             this.byId = EMPTY_BY_KEY;
         }
+    }
+
+    /** 祖先の節がこのフレームで動いているか（動く節の下の部品も差分パッチの「動いている項目」にする。漏れると GPU が前の姿勢の図形を使い続けた。T2b）。 */
+    private boolean ancestorActive(int i) {
+        for (int p = parentIdx[i], g = 0; p >= 0 && p != i && g < 64; p = parentIdx[p] == p ? -1 : parentIdx[p], g++) if (curStamp[p] == frameStamp && !prevIdle[p]) return true;
+        return false;
     }
 
     /** 前フレームのアニメーション中項目と今フレームの差分項目を重複なく {@link #patchWorkIndices} へまとめる（上限超過時は -1）。 */
@@ -768,17 +764,13 @@ public final class PaintSceneDriver {
     }
 
     /** 走査中の、いまの表示リスト。 */
-    public List<DisplayItem> items() {
-        return indexedItems;
-    }
+    public List<DisplayItem> items() { return indexedItems; }
 
     /**
      * 中身の同一性の印。同じ印の間は、描画の上だけの移動量（{@link ImmutableItemList#touched}）を除いて表示リストの中身は同じ。
      * スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う。
      */
-    public Object contentToken() {
-        return indexedBase;
-    }
+    public Object contentToken() { return indexedBase; }
 
     /** スクロールの中身の節の移動量を丸める先のデバイス画素比（0 以下なら丸めない）。GPU のスクロール層の保持が使う。 */
     private float scrollSnapDpr;
@@ -1490,9 +1482,7 @@ public final class PaintSceneDriver {
 
     /** 項目 {@code i} の姿勢。同じフレームの間は 1 回だけ計算し、動いていない項目は前フレームの結果をそのまま使う。 */
     /** 項目 {@code i} が、いまのフレームで止まっている（補間値が確定済み）か。{@link #resolveAt} をそのフレームで呼んだあとに読む。 */
-    public boolean idleAt(int i) {
-        return prevIdle[i];
-    }
+    public boolean idleAt(int i) { return prevIdle[i]; }
 
     /** 項目の直近の解決済み姿勢（呼び出しは {@link #resolveAt} の前後に限る）。 */
     public Resolved peekPrevRes(int i) {

@@ -491,6 +491,30 @@ class RealDocumentFramesTest {
 
     // ---- ③ GPU = SOFTWARE -----------------------------------------------------------------------------
 
+    /**
+     * T2b: 検証レイヤーつきの Vulkan で実文書 9 本の手順を流して、検証エラーが 0。以前は fx シェーダー（ぼかし・backdrop-filter）の
+     * サンプラーと定数ブロックが同じ binding 0 になり、記述子の更新で検証レイヤーごと落ちた（{@code ShaderBindingConsistencyTest}）。
+     * Vulkan・検証レイヤーが無い環境と、CPU 上のソフトウェア実装（WSL の lavapipe）では飛ばす。
+     */
+    @Test
+    void vulkanValidationIsCleanOnRealDocuments() throws Exception {
+        try (var probe = new com.nishiyu.enderframelib.core.paint.vulkan.VkRenderBackend(8, 8, 1f, true)) {
+            Assumptions.assumeFalse(probe.device().context().isCpuDevice(), "Vulkan のデバイスが CPU 上のソフトウェア実装");
+        } catch (Throwable t) {
+            if (t instanceof org.opentest4j.TestAbortedException a) throw a;
+            Assumptions.abort("検証レイヤーつきの Vulkan を使えない: " + t);
+        }
+        Map<String, Integer> errors = new LinkedHashMap<>();
+        for (String doc : DOCS) {
+            try (var vk = new com.nishiyu.enderframelib.core.paint.vulkan.VkRenderBackend(W, H, 1f, true)) {
+                script(doc, vk, false, false, f -> { });
+                int n = vk.device().context().validationErrorCount();
+                if (n > 0) errors.put(doc, n);
+            }
+        }
+        assertEquals(Map.of(), errors, "検証エラーのあった文書");
+    }
+
     private static int maxDiff(int[] a, int[] b) {
         int max = 0;
         for (int i = 0; i < a.length; i++) {

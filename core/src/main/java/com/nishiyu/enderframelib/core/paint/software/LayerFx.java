@@ -212,7 +212,7 @@ final class LayerFx {
 
     /**
      * σ のガウスぼかしを、幅 d のボックスぼかし 3 回（d = floor(σ·3√(2π)/4 + ½)。偶数なら幅 d を 2 回ずらして 1 回は d+1）で近似する。
-     * 1 画素あたりの手数が σ に依らない（走る和）。作業面の外は透明として扱う。
+     * 1 画素あたりの手数が σ に依らない（走る和）。描画先の外は端の画素、作業面の外は透明として扱う（{@link #at} と同じ）。
      */
     private static Buf boxPass(Buf in, float sigma, boolean horizontal, int w, int h) {
         int d = (int) Math.floor(sigma * 3.0 * Math.sqrt(2 * Math.PI) / 4.0 + 0.5);
@@ -238,8 +238,9 @@ final class LayerFx {
         int len = horizontal ? out.x1 - out.x0 : out.y1 - out.y0;
         int inLen = horizontal ? in.x1 - in.x0 : in.y1 - in.y0;
         int inOrigin = horizontal ? in.x0 : in.y0, outOrigin = horizontal ? out.x0 : out.y0;
+        int screen = horizontal ? w : h; // 描画先の外の位置は端の画素（ガウスの at() と GPU の clamp-to-edge と同じ。T2b）
         if (!horizontal) {
-            boxColumns(in, out, left, right, inv, lines, len, inLen, inOrigin, outOrigin);
+            boxColumns(in, out, left, right, inv, lines, len, inLen, inOrigin, outOrigin, screen);
             return out;
         }
         Rows.forEach(0, lines, (long) lines * len, (lnA, lnB) -> { // 行ごとに独立
@@ -247,14 +248,14 @@ final class LayerFx {
             float sa = 0, sr = 0, sg = 0, sb = 0;
             // 出力 -1 の窓 [outOrigin-1-right, outOrigin-1+left] の和を先に作る
             for (int a = outOrigin - 1 - right; a <= outOrigin - 1 + left; a++) {
-                int k = a - inOrigin;
+                int k = edge(a, screen) - inOrigin;
                 if (k < 0 || k >= inLen) continue;
                 int i = horizontal ? (ln * inW + k) * 4 : (k * inW + ln) * 4;
                 sa += in.d[i]; sr += in.d[i + 1]; sg += in.d[i + 2]; sb += in.d[i + 3];
             }
             for (int p = 0; p < len; p++) {
-                int addIn = outOrigin + p + left - inOrigin;      // 窓の右端へ入る画素
-                int subIn = outOrigin + p - 1 - right - inOrigin; // 窓の左端から出る画素
+                int addIn = edge(outOrigin + p + left, screen) - inOrigin;      // 窓の右端へ入る画素
+                int subIn = edge(outOrigin + p - 1 - right, screen) - inOrigin; // 窓の左端から出る画素
                 if (addIn >= 0 && addIn < inLen) {
                     int i = horizontal ? (ln * inW + addIn) * 4 : (addIn * inW + ln) * 4;
                     sa += in.d[i]; sr += in.d[i + 1]; sg += in.d[i + 2]; sb += in.d[i + 3];
@@ -276,21 +277,21 @@ final class LayerFx {
      * （列を 1 本ずつ走るとストライドが大きくキャッシュを外す）。各列の加減算の順は列ごとに走る場合と同じで、結果は同一。
      */
     private static void boxColumns(Buf in, Buf out, int left, int right, float inv, int cols, int len, int inLen,
-                                   int inOrigin, int outOrigin) {
+                                   int inOrigin, int outOrigin, int screen) {
         int inW = in.w(), outW = out.w();
         // 列の範囲ごとに独立（別々の列しか読み書きしない）
         Rows.forEach(0, cols, (long) cols * len, (c0, c1) -> {
             int n = (c1 - c0) * 4, off = c0 * 4;
             float[] sum = new float[n];
             for (int a = outOrigin - 1 - right; a <= outOrigin - 1 + left; a++) {
-                int k = a - inOrigin;
+                int k = edge(a, screen) - inOrigin;
                 if (k < 0 || k >= inLen) continue;
                 int base = k * inW * 4 + off;
                 for (int j = 0; j < n; j++) sum[j] += in.d[base + j];
             }
             for (int p = 0; p < len; p++) {
-                int addIn = outOrigin + p + left - inOrigin;
-                int subIn = outOrigin + p - 1 - right - inOrigin;
+                int addIn = edge(outOrigin + p + left, screen) - inOrigin;
+                int subIn = edge(outOrigin + p - 1 - right, screen) - inOrigin;
                 if (addIn >= 0 && addIn < inLen) {
                     int base = addIn * inW * 4 + off;
                     for (int j = 0; j < n; j++) sum[j] += in.d[base + j];
@@ -303,6 +304,11 @@ final class LayerFx {
                 for (int j = 0; j < n; j++) out.d[ob + j] = sum[j] * inv;
             }
         });
+    }
+
+    /** 描画先の外の位置を端へ寄せる（{@link #at} と同じ）。走る和は寄せた位置の値を足し引きするので、窓の和はそのまま正しい。 */
+    private static int edge(int a, int screen) {
+        return a < 0 ? 0 : a >= screen ? screen - 1 : a;
     }
 
     /** 軸に沿って {@code d} 画素ずれた位置の線形補間。 */

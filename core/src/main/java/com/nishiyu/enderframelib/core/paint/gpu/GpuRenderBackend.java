@@ -1800,9 +1800,9 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (x1 <= x0 || y1 <= y0) return;
         float[] zero = new float[4];
         if (!acceptsRectImage(Matrix2D.IDENTITY, x0, y0, x1, y1, zero, zero, l.clip(), 1f, 2048)) return;
+        boolean flip = device.caps().bottomUpFramebuffer(); // 層の行の向きは API に依る（GL は下から上・Vulkan は上から下。以前は GL 決め打ちで Vulkan だけ上下反転。T2b）
         flushOverlay();
-        pushRectImage(Matrix2D.IDENTITY, r.layer, width, height, x0, y0, x1, y1,
-                dx, dy + height, 1f, -1f, x0, y0, x1, y1, zero, zero, 1, 0f, 0f, l.clip(), 1f);
+        pushRectImage(Matrix2D.IDENTITY, r.layer, width, height, x0, y0, x1, y1, dx, flip ? dy + height : dy, 1f, flip ? -1f : 1f, x0, y0, x1, y1, zero, zero, 1, 0f, 0f, l.clip(), 1f);
     }
 
     // ------------------------------------------------------------------ 結果・表示・終了
