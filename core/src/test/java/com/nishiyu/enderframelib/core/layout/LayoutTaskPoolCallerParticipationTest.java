@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import org.junit.jupiter.api.AfterEach;
@@ -48,10 +50,22 @@ class LayoutTaskPoolCallerParticipationTest {
         AtomicInteger onCaller = new AtomicInteger();
         Set<Thread> threads = ConcurrentHashMap.newKeySet();
         long[] sink = new long[1];
+        // 2 コアの CI ではワーカーが起きる前に呼び出し側が全部を終えることがあった。呼び出し側は 1 件取ったら、
+        // ワーカーが 1 件取るまで（最長 5 秒）待つ。ワーカーが加わらなければ待ち切って下の検査で赤になる。
+        CountDownLatch workerJoined = new CountDownLatch(1);
         LayoutTaskPool.forRange(n, 4, null, i -> {
             runs.incrementAndGet(i);
             threads.add(Thread.currentThread());
-            if (Thread.currentThread() == caller) onCaller.incrementAndGet();
+            if (Thread.currentThread() == caller) {
+                onCaller.incrementAndGet();
+                try {
+                    workerJoined.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            } else {
+                workerJoined.countDown();
+            }
             sink[0] ^= spin(i);
         });
         for (int i = 0; i < n; i++) assertEquals(1, runs.get(i), "index " + i);
