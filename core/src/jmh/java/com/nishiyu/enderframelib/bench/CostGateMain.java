@@ -132,6 +132,12 @@ public final class CostGateMain {
         }
         System.out.println("COSTGATE FAILED (" + failures.size() + ")");
         for (String f : failures) System.out.println("  " + f);
+        // GitHub Actions では、ログを開かなくても（認証なしの annotations API でも）読めるよう、失敗の一覧を 1 つの注記にする
+        if ("true".equals(System.getenv("GITHUB_ACTIONS"))) {
+            StringBuilder ann = new StringBuilder("::error title=costGate FAILED (" + failures.size() + ")::");
+            for (String f : failures) ann.append(f.replace("%", "%25").replace("\r", "").replace("\n", " ")).append("%0A");
+            System.out.println(ann);
+        }
         System.out.println("意図した変化なら ./gradlew :core:costGate -Pcostgate.update で基準値を更新する。");
         System.exit(1);
     }
