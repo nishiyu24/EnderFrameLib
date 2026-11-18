@@ -23,6 +23,7 @@ import com.nishiyu.enderframelib.core.css.StyleResolver.PseudoType;
 import com.nishiyu.enderframelib.core.css.model.StyleSet;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
@@ -902,6 +903,26 @@ public class RenderPipeline {
                         (StateLookup) n -> n == node ? ElementState.of(bits) : interactionState.stateOf(n), workerShare));
     }
 
+    /** 切り分け用: false ならテキストの節も要素と同じ経路（カスケード＋算出）で解く（結果は同じになるはず）。 */
+    public static volatile boolean TEXT_STYLE_FROM_PARENT = !Boolean.getBoolean("enderframe.css.textfullcascade");
+
+    /**
+     * A16: テキストの節の算出スタイル。テキストの節には規則が当たらず親から継承するだけなので、親の算出スタイルから
+     * 継承する値を写すだけで決まる（{@link ComputedStyle#derivedTextChild}。親のインスタンスにメモする）。
+     * カスケード・算出のやり直し、{@link StyleSet}・状態の表（{@link StateStyleMemo}）を作らない。
+     * 以前は親ごとに 1 回、親の表を丸ごと写して算出し直していた（showcase で空白の節 1 つの親あたり約 9 KB）。
+     * 使えないとき（{@code @property} の登録がある・親が算出スタイルでない・フォントの基準が親と違う）は null（従来の経路）。
+     */
+    private static ComputedStyle.TextChild textNodeStyle(HtmlNode node, Map<String, String> inheritedStyle,
+                                                         StyleSheet sheet, float parentFontSize, StyleScope scope) {
+        if (!TEXT_STYLE_FROM_PARENT || node.nodeType != NodeType.TEXT || sheet == null
+                || !sheet.registeredProperties.isEmpty()) return null;
+        ComputedStyle parent = ComputedStyle.ownerOf(inheritedStyle);
+        if (parent == null || Float.compare(parent.fontSizePx(), parentFontSize) != 0
+                || Float.compare(parent.rootFontSizePx(), scope.rootFontSize()) != 0) return null;
+        return parent.derivedTextChild();
+    }
+
     private static StateStyleMemo.Entry computeEntry(HtmlNode node, StyleSet styleSet,
                                                      Map<String, String> inheritedStyle, StyleSheet sheet,
                                                      Map<String, String> env, float parentFontSize, StyleScope scope,
@@ -1115,18 +1136,27 @@ public class RenderPipeline {
             ComputedStyle prevStyle = box.style;
             ContainerBox container = parentSizeContainer;
             // StyleSet は表を引けなかったとき（computeEntry）だけ作る
-            StateStyleMemo.Entry entry = styleEntry(node, null, inheritedStyle, sheet, env, parentFontSize, scope,
-                    interactionState, container, force, flags, workerShare);
-            boolean viewportDependent = entry.viewportDependent();
-            computed = entry.computed();
-            Map<String, String> animation = animationValues(node, prevStyle, computed, inheritedStyle, sheet, interactionState);
+            ComputedStyle.TextChild textEntry = textNodeStyle(node, inheritedStyle, sheet, parentFontSize, scope);
+            boolean viewportDependent;
+            if (textEntry != null) {
+                viewportDependent = textEntry.viewportDependent();
+                computed = textEntry.style();
+            } else {
+                StateStyleMemo.Entry entry = styleEntry(node, null, inheritedStyle, sheet, env, parentFontSize, scope,
+                        interactionState, container, force, flags, workerShare);
+                viewportDependent = entry.viewportDependent();
+                computed = entry.computed();
+            }
+            // テキストの節は animation・transition を継承しないので動かない（アニメーションの確認も飛ばす）
+            Map<String, String> animation = textEntry != null ? Map.of()
+                    : animationValues(node, prevStyle, computed, inheritedStyle, sheet, interactionState);
             if (!animation.isEmpty()) {
                 computed = recomputeWithAnimation(node, null, inheritedStyle, sheet, env, parentFontSize, scope,
                         interactionState, container, animation);
                 viewportDependent |= StyleResolver.rawDependsOnViewport(animation);
             }
-            boolean hasInteractive = canReuseInteractive(flags, node, sheet, force)
-                    ? flags.hasInteractiveRules : StyleResolver.hasInteractiveRules(node, sheet);
+            boolean hasInteractive = textEntry == null && (canReuseInteractive(flags, node, sheet, force)
+                    ? flags.hasInteractiveRules : StyleResolver.hasInteractiveRules(node, sheet));
 
             if (prevStyle == null || !ComputedStyle.sameDeclarations(prevStyle, computed)) {
                 styleChanged = true;
@@ -1505,13 +1535,19 @@ public class RenderPipeline {
         if (needsRestyle) {
             boolean tk = ctx().trackAllocations;
             long k0 = tk ? threadAllocatedBytes() : 0;
-            StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
             ContainerBox container = parentSizeContainer;
-            boolean viewportDependent;
             ComputedStyle previous = flags != null ? flags.computedStyle : null;
+            ComputedStyle.TextChild textEntry = textNodeStyle(node, inheritedStyle, sheet, parentFontSize, scope);
+            StyleSet styleSet = textEntry != null ? null : StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
+            boolean viewportDependent;
             long k1;
             long k2;
-            if (interactionState != null) {
+            if (textEntry != null) {
+                // テキストの節は animation・transition を継承しないので動かない（アニメーションの確認も飛ばす）
+                viewportDependent = textEntry.viewportDependent();
+                computed = textEntry.style();
+                k1 = k2 = tk ? threadAllocatedBytes() : 0;
+            } else if (interactionState != null) {
                 StateStyleMemo.Entry entry = styleEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize,
                         scope, interactionState, container, force, flags, false);
                 viewportDependent = entry.viewportDependent();
@@ -1527,13 +1563,14 @@ public class RenderPipeline {
                 computed = computeStyleOwned(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, container);
                 k2 = tk ? threadAllocatedBytes() : 0;
             }
-            Map<String, String> animation = animationValues(node, previous, computed, inheritedStyle, sheet, interactionState);
+            Map<String, String> animation = textEntry != null ? Map.of()
+                    : animationValues(node, previous, computed, inheritedStyle, sheet, interactionState);
             if (!animation.isEmpty()) {
                 computed = recomputeWithAnimation(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope,
                         interactionState, container, animation);
                 viewportDependent |= StyleResolver.rawDependsOnViewport(animation);
             }
-            hasInteractive = styleSet.hasInteractiveRules();
+            hasInteractive = styleSet != null && styleSet.hasInteractiveRules();
             if (tk) {
                 stats().allocResolve += k1 - k0;
                 stats().allocCompute += k2 - k1;

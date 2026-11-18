@@ -827,6 +827,71 @@ public final class ComputedStyle {
         return paintMemo(key, k -> buildInheritedWithOverrides(display, false));
     }
 
+    private static final Object KEY_TEXT_CHILD = new Object();
+
+    /**
+     * A16: この算出スタイルを親に持つテキストの節の算出スタイル。テキストの節には規則が当たらないので、
+     * 結果は継承するロングハンドと {@code --*} を写しただけのもの（{@link StyleResolver} の継承＋算出と同じ。
+     * 親の値はすでに算出値なので、算出し直しても変わらない）。親のインスタンスにメモするので、同じ親の文字の子と、
+     * 共有（hash-consing）で同じインスタンスを持つ別の親の文字の子は、1 つを使い回す。
+     * {@code @property} の登録があるシートでは使わない（登録した初期値が入る。呼び出し側が判断する）。
+     */
+    public TextChild derivedTextChild() {
+        return paintMemoSelf(KEY_TEXT_CHILD, ComputedStyle::buildTextChild);
+    }
+
+    /** {@link #asMap()} の表なら、その持ち主の算出スタイル。ほかの表なら null。 */
+    public static ComputedStyle ownerOf(Map<String, String> map) {
+        return map instanceof StyleMap view ? view.owner : null;
+    }
+
+    /**
+     * {@link #derivedTextChild} の結果。{@code viewportDependent} は写した値にビューポート・コンテナ基準の単位・
+     * {@code var()}・{@code env()} を含むか（{@link StyleResolver#rawDependsOnViewport} と同じ判定）。
+     */
+    public record TextChild(ComputedStyle style, boolean viewportDependent) {}
+
+    private static TextChild buildTextChild(ComputedStyle parent) {
+        CssValue[] v = parent.values;
+        CssValue[] out = new CssValue[CssPropertyId.TOTAL_COUNT];
+        boolean[] inherits = CssPropertyId.INHERITS_AS_LONGHAND;
+        int cnt = 0;
+        boolean viewport = false;
+        for (int i = CssPropertyId.NON_INH_END; i < v.length; i++) {
+            if (v[i] == null || !inherits[i]) continue;
+            out[i] = v[i];
+            cnt++;
+            if (!viewport && v[i].dependsOnViewport()) viewport = true;
+        }
+        Map<String, String> exBase = null;
+        Map<String, String> exUnmod = null;
+        byte exVp = 0;
+        if (parent.extras != null) {
+            if (parent.areAllExtrasCustom()) {
+                exBase = parent.extrasBase;
+                exUnmod = parent.extras;
+                exVp = parent.extrasViewportFlag();
+                cnt += parent.extras.size();
+            } else {
+                Map<String, String> custom = new LinkedHashMap<>();
+                for (Map.Entry<String, String> e : parent.extras.entrySet()) {
+                    if (e.getKey().startsWith("--")) {
+                        custom.put(e.getKey(), e.getValue());
+                        if (exVp == 0 && e.getValue() != null && StyleResolver.valueDependsOnViewport(e.getValue())) exVp = 1;
+                    }
+                }
+                if (!custom.isEmpty()) {
+                    exBase = custom;
+                    exUnmod = Collections.unmodifiableMap(custom);
+                    cnt += custom.size();
+                }
+            }
+        }
+        ComputedStyle fresh = new ComputedStyle(out, exBase, exUnmod, cnt, (byte) (viewport ? 1 : 0), exVp,
+                parent.elementFontSize, parent.rootFontSize);
+        return new TextChild(SHARE_ENABLED ? share(fresh) : fresh, viewport || exVp == 1);
+    }
+
     /**
      * {@code ::marker} 用スタイルを構築・メモ化する（{@code declaredMarker == null} なら所有者の継承値＋UA 上書き、
      * 非 null なら {@code declaredMarker} から {@code content} を除いて UA 上書きを掛ける）。
