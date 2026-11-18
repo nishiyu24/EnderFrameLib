@@ -1,0 +1,51 @@
+# ClassShapeRatchetTest の表（ENGINE_REARCHITECTURE_PLAN T1 ②③）: ソースの相対パス | pubMut | methods | setters | pubStatic
+#   pubMut    = public で static でも final でもないインスタンス欄（外側の型も public のもの）
+#   methods   = 最上位の型が宣言するメソッド数（合成のメソッドを除く）。100 以下なら 0 と書く
+#   setters   = public static void setXxx(...)（static な配線）
+#   pubStatic = public static で final でない欄（グローバルな切り替え・状態）
+# 増やさない。減ったら下げる（-Dratchet.update=true で現在値へ書き直す）。
+core/layout/LayoutBox.java | 106 | 201 | 0 | 10
+common/UiView.java | 16 | 161 | 0 | 8
+core/paint/gpu/GpuRenderBackend.java | 0 | 139 | 1 | 5
+api/ui/UI.java | 0 | 132 | 1 | 0
+core/raster/CanvasRenderingContext2D.java | 0 | 128 | 0 | 0
+core/css/ComputedStyle.java | 0 | 127 | 0 | 1
+core/dom/node/HtmlNode.java | 8 | 115 | 0 | 0
+core/paint/CssAnimator.java | 44 | 0 | 1 | 0
+core/css/Selector.java | 32 | 0 | 0 | 0
+core/dom/InteractionState.java | 31 | 0 | 0 | 0
+core/css/StyleFacts.java | 30 | 0 | 0 | 0
+core/EngineContext.java | 14 | 0 | 0 | 0
+common/EnderFrameBuiltInConfig.java | 0 | 0 | 0 | 13
+core/css/StyleSheet.java | 13 | 0 | 0 | 0
+core/diag/PipelineStats.java | 12 | 0 | 0 | 0
+core/layout/GridLayoutEngine.java | 9 | 0 | 0 | 0
+core/scene3d/Raycaster3D.java | 9 | 0 | 0 | 0
+core/paint/AnimatedValues.java | 7 | 0 | 0 | 0
+core/paint/gpu/RectStream.java | 5 | 0 | 0 | 2
+core/dom/parser/HtmlParser.java | 6 | 0 | 1 | 0
+core/paint/DisplayListBuilder.java | 0 | 0 | 2 | 6
+core/paint/PaintSceneDriver.java | 0 | 0 | 0 | 5
+common/TextEditing.java | 4 | 0 | 0 | 0
+core/layout/BlockLayoutEngine.java | 0 | 0 | 0 | 4
+common/Document.java | 3 | 0 | 0 | 0
+common/RenderPipeline.java | 0 | 0 | 0 | 3
+api/config/EnderConfigManager.java | 0 | 0 | 0 | 2
+common/three/Object3D.java | 2 | 0 | 0 | 0
+core/kernel/compiler/StateStyleMemo.java | 2 | 0 | 0 | 0
+api/dom/MutationObserver.java | 0 | 0 | 0 | 1
+common/DocumentLoader.java | 0 | 0 | 0 | 1
+common/UiPubSub.java | 1 | 0 | 0 | 0
+common/UiTimers.java | 1 | 0 | 0 | 0
+core/css/CssParser.java | 0 | 0 | 0 | 1
+core/css/StyleResolver.java | 0 | 0 | 0 | 1
+core/dom/node/HtmlDocument.java | 1 | 0 | 0 | 0
+core/dom/parser/DomUtils.java | 0 | 0 | 1 | 1
+core/layout/FlexLayoutEngine.java | 0 | 0 | 0 | 1
+core/layout/LayoutTaskPool.java | 0 | 0 | 1 | 1
+core/layout/TableLayoutEngine.java | 1 | 0 | 0 | 0
+core/paint/gpu/ImageTextureCache.java | 1 | 0 | 0 | 0
+common/LocalEnvironment.java | 0 | 0 | 1 | 0
+core/paint/PaintServices.java | 0 | 0 | 4 | 0
+core/raster/svg/SvgSources.java | 0 | 0 | 2 | 0
+core/text/font/FontFaceRules.java | 0 | 0 | 1 | 0

@@ -93,23 +93,27 @@ import java.util.concurrent.atomic.AtomicInteger;
  * スレッドセーフではない。
  */
 public final class SoftwareRenderBackend implements RenderBackend {
+    /** DamagePlanner（切り出した協力クラス）。 */
+    private final DamagePlanner damagePlanner = new DamagePlanner(this);
+    /** TextRaster（切り出した協力クラス）。 */
+    private final TextRaster textRaster = new TextRaster(this);
 
     private static final AtomicInteger SESSIONS = new AtomicInteger();
 
     /** 画素の置き場（根・描画先・層のスタック・汚れ範囲・層の合成）。根は CPU が実際に塗るまで確保しない。 */
-    private final CpuRaster raster;
-    private final GpuRoute route = new GpuRoute();
+    final CpuRaster raster;
+    final GpuRoute route = new GpuRoute();
     private final float dpr;
     private final Matrix2D dprFrame;
     private final String sessionId;
-    private final PaintResources resources;
-    private int clearColor = 0;
+    final PaintResources resources;
+    int clearColor = 0;
 
-    private final GlyphCache glyphCache = new GlyphCache();
+    final GlyphCache glyphCache = new GlyphCache();
 
     // 1 フレームの間だけ使う状態
     /** {@link #paintRange} の作業用（描画は 1 スレッドで、使い終えてから次を呼ぶ）。 */
-    private final double[] boundsScratch = new double[4];
+    final double[] boundsScratch = new double[4];
     private Matrix2D frame = Matrix2D.IDENTITY;
 
     // ------------------------------------------------------------------ 差分描画（Tile Dirty Bitset）
@@ -119,42 +123,46 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * 無効にすると毎フレーム全面をクリアして描く（疑うときの切り分け用。絵は同じでなければならない）。
      */
     static volatile boolean damageEnabled = !Boolean.getBoolean("enderframe.soft.nodamage");
+    /** 診断: 損傷範囲の決定の理由を出力する（フレームごとに読む。{@code -Denderframe.soft.damagedebug=true}）。 */
+    static boolean damageDebug() {
+        return Boolean.getBoolean("enderframe.soft.damagedebug");
+    }
 
     /** このフレームで塗り直す範囲（タイル境界まで広げた外接矩形）。 */
-    private final DamageRegion damage = new DamageRegion();
-    /** 前のフレームの {@link #planDamage} を始めた時点の塗り・移動量の書き込みの通し番号。 */
-    private int prevEpoch;
+    final DamageRegion damage = new DamageRegion();
+    /** 前のフレームの {@link DamagePlanner#planDamage} を始めた時点の塗り・移動量の書き込みの通し番号。 */
+    int prevEpoch;
     /** 前のフレームの表示リスト（項目の同一性の比較と、旧範囲の持ち主）。 */
-    private List<DisplayItem> prevItems;
-    private boolean prevValid;
+    List<DisplayItem> prevItems;
+    boolean prevValid;
     /** 前のフレームの描画がアニメーションの途中だった（次のフレームは全面を描き直す）。 */
-    private boolean prevHadActive;
+    boolean prevHadActive;
     /** 前のフレームで、不透明度が動く項目があった（あれば次は全面。色・変形の遷移は項目単位で塗り直す）。 */
-    private boolean prevHadGeometryActive;
+    boolean prevHadGeometryActive;
     /** 項目ごとの動き（{@link PaintSceneDriver#ACT_IDLE} など）。今のフレームと前のフレーム。 */
-    private byte[] activity = new byte[0], prevActivity = new byte[0];
-    private int prevClearColor;
-    private boolean prevCullOffscreen = true;
+    byte[] activity = new byte[0], prevActivity = new byte[0];
+    int prevClearColor;
+    boolean prevCullOffscreen = true;
     /** 直近に描いたスクロール節の姿勢平行移動成分 (key -> [tx, ty])。 */
-    private final java.util.HashMap<Long, double[]> prevScrollPoses = new java.util.HashMap<>();
+    final java.util.HashMap<Long, double[]> prevScrollPoses = new java.util.HashMap<>();
 
     /** 項目ごとの、実際に塗った範囲（{@code x0,y0,x1,y1}。空なら x1 <= x0）。前のフレームと今のフレームで入れ替える。 */
-    private int[] prevExtent = new int[0], curExtent = new int[0];
+    int[] prevExtent = new int[0], curExtent = new int[0];
     /** 項目ごとの、描いたときのクリップの外接（{@code x0,y0,x1,y1}）。新しい範囲の見積もりをクリップに収めるのに使う。 */
-    private int[] prevClip = new int[0], curClip = new int[0];
+    int[] prevClip = new int[0], curClip = new int[0];
     /** このフレームで描かない（前のフレームの画素をそのまま残す）項目。 */
-    private boolean[] skipBuf = new boolean[0];
+    boolean[] skipBuf = new boolean[0];
     /** このフレームで描き直す項目（項目自身が変わったか、動いた節の子孫）。 */
-    private boolean[] dirtyBuf = new boolean[0];
+    boolean[] dirtyBuf = new boolean[0];
     /** 動いた節の子孫（姿勢が親から変わる）か。 */
-    private boolean[] movedBuf = new boolean[0];
+    boolean[] movedBuf = new boolean[0];
     /** このフレームの差分描画が有効（{@link PaintSceneDriver.Painter#skipItem} を効かせる）。 */
     private boolean partialActive;
     /** 変更項目の塗りがダメージ範囲の外へ出た（全面描画へ切り替える）。 */
     private boolean damageAbort;
     /** このフレームの描画がアニメーションの途中か（次のフレームの判定に使う）。 */
-    private boolean frameHadActive;
-    private boolean frameHadGeometryActive;
+    boolean frameHadActive;
+    boolean frameHadGeometryActive;
     /** 実際に塗った範囲を記録するか（{@link #renderOnto} では要らない）。 */
     private boolean recordExtents;
     /** いま描いている項目の添字（{@link #paintRange} が範囲を記録する）。 */
@@ -162,13 +170,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** いま描いている項目が描き直しの対象か（塗りがダメージの外へ出たら全面へ切り替える）。 */
     private boolean currentItemDirty;
     /** 見積もりの作業用。 */
-    private final int[] estimateScratch = new int[4];
-    private final int[] planClipScratch = new int[4];
+    final int[] estimateScratch = new int[4];
+    final int[] planClipScratch = new int[4];
 
     /** 診断用: 差分描画したフレーム・全面描画したフレーム・見積もり外れで全面へ切り替えたフレーム・省いた項目の累計。 */
-    private long partialFrames, fullFrames, abortedFrames, skippedItems;
+    long partialFrames, fullFrames, abortedFrames, skippedItems;
     /** 差分描画を諦めた理由の件数（1=前フレームが動作中 2=無効 3=初回 4=背景/カリング変化 5=不安定な項目列 6=動作中の項目 7=項目の増減・種類変化 8=volatile 9=グループ）。 */
-    private final long[] fullWhy = new long[11];
+    final long[] fullWhy = new long[11];
 
     /** CSS px の大きさ {@code cssW × cssH}・等倍の描画先を作る。 */
     public SoftwareRenderBackend(int cssW, int cssH) {
@@ -271,7 +279,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         recordExtents = true;
         try {
             driver.prepare(items, nowMs, frame);
-            partial = planDamage(items, nowMs);
+            partial = damagePlanner.planDamage(items, nowMs);
             if (partial) raster.clearTiles(damage, clearColor);
             else raster.clearAll(clearColor);
             partialActive = partial;
@@ -284,7 +292,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 partialActive = false;
                 damageAbort = false;
                 raster.clearAll(clearColor);
-                resetCurExtents(items.size());
+                damagePlanner.resetCurExtents(items.size());
                 driver.run(items, nowMs, frame, painter);
                 queue.flush();
             }
@@ -302,7 +310,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         byte m = driver.fillActivity(activity, items.size(), nowMs);
         frameHadActive = m != PaintSceneDriver.ACT_IDLE;
         frameHadGeometryActive = m == PaintSceneDriver.ACT_OPACITY;
-        commitFrame(items, partial);
+        damagePlanner.commitFrame(items, partial);
     }
 
     /**
@@ -358,574 +366,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
     }
 
-    // ------------------------------------------------------------------ 差分描画の計画
-
-    private static boolean isScrollContent(DisplayItem item) {
-        if (item == null || item.type() != ElementType.NODE) return false;
-        if (DisplayItem.partOrdinalOf(item.key()) == DisplayItem.PART_SCROLL_CONTENT) return true;
-        String id = item.id();
-        return id != null && id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX);
-    }
-
-    /**
-     * このフレームを差分で描けるか決め、描けるなら {@link #damage} に塗り直す範囲を、{@link #skipBuf} に描かない項目を入れる。
-     * 描けない（初回・項目の増減・種類の変化・アニメーション中・層を要する項目がある）なら false を返す。
-     */
-    private boolean planDamage(List<DisplayItem> items, long nowMs) {
-        int n = items.size();
-        if (activity.length != n) activity = new byte[n];
-        byte maxAct = driver.fillActivity(activity, n, nowMs);
-        frameHadActive = maxAct != PaintSceneDriver.ACT_IDLE;
-        frameHadGeometryActive = maxAct == PaintSceneDriver.ACT_OPACITY;
-        // 色・変形だけが動く項目（hover のトランジションなど）は、項目数が同じなら項目単位で塗り直す
-        // （変形は動いた節の子孫の塗り直しに乗る）。不透明度が動く項目（層を要する）や、項目の増減を伴う動きは全面へ戻す
-        boolean perItemActivity = prevItems != null && prevItems.size() == n && prevActivity.length == n;
-        int why = prevHadGeometryActive || (prevHadActive && !perItemActivity) ? 1 : !damageEnabled ? 2
-                : (!prevValid || prevItems == null) ? 3
-                : (prevClearColor != clearColor || prevCullOffscreen != cullOffscreen) ? 4
-                : (!stableList(items) || !stableList(prevItems)) ? 5
-                : (frameHadActive && (frameHadGeometryActive || !perItemActivity)) ? 6 : 0;
-        if (why != 0) {
-            fullWhy[why]++;
-            resetCurExtents(n);
-            return false;
-        }
-
-        int oldN = prevItems.size();
-        final int seen = prevEpoch;
-        boolean sameSize = oldN == n;
-        // 次のフレームは、ここまでに書かれたものを見たものとして、後の書き込みだけを変化とみなす
-        prevEpoch = com.nishiyu.enderframelib.core.paint.model.PaintCell.currentEpoch();
-        int[] oldIndexOf = null;
-        if (!sameSize) {
-            // サイズ不一致時: 64-bit 整数鍵を用いたインデックスマッピング（ブロック層・インライン層の複数スライスに対応）
-            java.util.HashMap<Long, Integer> oldKeyMap = new java.util.HashMap<>(oldN * 2);
-            for (int i = 0; i < oldN; i++) {
-                DisplayItem it = prevItems.get(i);
-                long k = it.key();
-                if (k != 0L) oldKeyMap.putIfAbsent(k, i);
-            }
-            boolean[] oldUsed = new boolean[oldN];
-            oldIndexOf = new int[n];
-            int matchedCount = 0;
-            for (int i = 0; i < n; i++) {
-                DisplayItem it = items.get(i);
-                long k = it.key();
-                Integer prevIdx = (k != 0L) ? oldKeyMap.get(k) : null;
-                if (prevIdx != null && !oldUsed[prevIdx] && prevItems.get(prevIdx).type() == it.type()) {
-                    oldIndexOf[i] = prevIdx;
-                    oldUsed[prevIdx] = true;
-                    matchedCount++;
-                } else {
-                    oldIndexOf[i] = -1;
-                }
-            }
-            if (matchedCount < Math.min(oldN, n) / 2) {
-                resetCurExtents(n);
-                return false;
-            }
-            for (int i = 0; i < n; i++) {
-                DisplayItem cur = items.get(i);
-                if (volatileItem(cur) || groupItem(cur)) {
-                    resetCurExtents(n);
-                    return false;
-                }
-            }
-            for (int i = 0; i < oldN; i++) {
-                DisplayItem old = prevItems.get(i);
-                if (volatileItem(old) || groupItem(old)) {
-                    resetCurExtents(n);
-                    return false;
-                }
-            }
-
-            damage.reset(raster.width(), raster.height());
-            for (int i = 0; i < oldN; i++) {
-                if (!oldUsed[i]) addExtent(prevExtent, i, damage);
-            }
-            int[] newPrevExtent = new int[n * 4];
-            int[] newPrevClip = new int[n * 4];
-            for (int i = 0; i < n; i++) {
-                int oldI = oldIndexOf[i];
-                if (oldI >= 0) {
-                    copyExtent(prevExtent, newPrevExtent, oldI, i);
-                    copyClip(prevClip, newPrevClip, oldI, i);
-                }
-            }
-            prevExtent = newPrevExtent;
-            prevClip = newPrevClip;
-        } else {
-            for (int i = 0; i < n; i++) {
-                DisplayItem cur = items.get(i), old = prevItems.get(i);
-                // 内容が項目の同一性に現れない種類（画像・入力欄・キャンバス等）は、abort せず毎フレーム「変わった」として扱う（下の itemChanged）
-                if (!ItemDiff.sameKeyAndType(old, cur) || groupItem(cur)) {
-                    fullWhy[!ItemDiff.sameKeyAndType(old, cur) ? 7 : ItemDiff.hasFxLayer(cur) ? 9 : 10]++;
-                    resetCurExtents(n);
-                    return false;
-                }
-                if (ItemDiff.changed(old, cur, seen) && mayAnimate(cur)) {
-                    // 差し替わった項目は状態が消えているので、目標との突き合わせから確かめる
-                    byte act = driver.activityAt(cur, nowMs);
-                    if (act != PaintSceneDriver.ACT_IDLE) {
-                        frameHadActive = true;
-                        activity[i] = (byte) Math.max(activity[i], act);
-                        if (act == PaintSceneDriver.ACT_OPACITY) {
-                            frameHadGeometryActive = true;
-                            fullWhy[6]++;
-                            resetCurExtents(n);
-                            return false;
-                        }
-                    }
-                }
-            }
-            damage.reset(raster.width(), raster.height());
-        }
-
-        ensureArrays(n);
-
-        // 変わった項目と、姿勢が変わる「動いた節」の子孫
-        for (int i = 0; i < n; i++) {
-            DisplayItem cur = items.get(i);
-            int p = driver.parentIndex(i);
-            boolean parentMoved = p >= 0 && movedBuf[p];
-            boolean itemChanged;
-            if (!sameSize) {
-                int oldI = oldIndexOf[i];
-                itemChanged = (oldI < 0) || ItemDiff.changed(prevItems.get(oldI), cur, seen);
-            } else {
-                DisplayItem old = prevItems.get(i);
-                // 塗りだけが動く遷移の途中の項目と、前のフレームで動いていた項目（遷移が終わって最終色へ変わる）は塗り直す
-                itemChanged = ItemDiff.changed(old, cur, seen) || volatileItem(cur) || activity[i] != 0 || prevActivity[i] != 0;
-            }
-            boolean nodeChanged = itemChanged && cur.type() == ElementType.NODE;
-            movedBuf[i] = parentMoved || nodeChanged;
-            dirtyBuf[i] = itemChanged || parentMoved;
-        }
-
-        // スクロール Blit 再利用の判定
-        boolean didScrollBlit = false;
-        int scrollDx = 0, scrollDy = 0;
-        int scrollContentIdx = -1;
-        if (sameSize) {
-            for (int i = 0; i < n; i++) {
-                DisplayItem cur = items.get(i), old = prevItems.get(i);
-                if (ItemDiff.changed(old, cur, seen) && isScrollContent(cur)) {
-                    if (ItemDiff.translationChanged(old, cur)) {
-                        if (scrollContentIdx == -1) {
-                            scrollContentIdx = i;
-                        } else {
-                            scrollContentIdx = -2;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (scrollContentIdx >= 0) {
-                DisplayItem sNode = items.get(scrollContentIdx);
-                double[] prevP = prevScrollPoses.get(sNode.key());
-                Resolved r = driver.resolveAt(scrollContentIdx);
-                if (prevP != null && r != null && r.pose() != null) {
-                    Matrix2D pose = r.pose();
-                    if (Math.abs(pose.b()) < 1e-5 && Math.abs(pose.c()) < 1e-5) {
-                        double ddx = pose.e() - prevP[0];
-                        double ddy = pose.f() - prevP[1];
-                        int sdx = (int) Math.round(ddx);
-                        int sdy = (int) Math.round(ddy);
-                        // 純粋な整数ピクセル移動のときのみ scrollBlit を実行（サブピクセル位相差による画素ズレを完全防止）
-                        boolean isExactIntegerScroll = Math.abs(ddx - sdx) < 1e-3 && Math.abs(ddy - sdy) < 1e-3;
-                        if (isExactIntegerScroll && (sdx != 0 || sdy != 0)) {
-                            boolean otherOk = true;
-                            for (int i = 0; i < n; i++) {
-                                if (i == scrollContentIdx) continue;
-                                if (dirtyBuf[i]) {
-                                    int anc = driver.parentIndex(i);
-                                    while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
-                                    if (anc != scrollContentIdx) {
-                                        DisplayItem it = items.get(i);
-                                        int part = DisplayItem.partOrdinalOf(it.key());
-                                        boolean isScrollUi = part == DisplayItem.PART_SCROLLBAR_V
-                                                || part == DisplayItem.PART_SCROLLBAR_H
-                                                || part == DisplayItem.PART_SCROLLBAR_TRACK_V
-                                                || part == DisplayItem.PART_SCROLLBAR_TRACK_H
-                                                || part == DisplayItem.PART_SCROLLBAR_NODE_V
-                                                || part == DisplayItem.PART_SCROLLBAR_NODE_H;
-                                        if (!isScrollUi) {
-                                            otherOk = false;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            if (otherOk) {
-                                int[] clipBounds = null;
-                                for (int i = 0; i < n; i++) {
-                                    int anc = driver.parentIndex(i);
-                                    while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
-                                    if (anc == scrollContentIdx) {
-                                        Resolved ir = driver.resolveAt(i);
-                                        Clip c = buildClip(i, items.get(i), ir.anim());
-                                        if (c != null && !c.empty()) {
-                                            clipBounds = new int[]{c.x0(), c.y0(), c.x1(), c.y1()};
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (clipBounds != null && clipBounds[2] > clipBounds[0] && clipBounds[3] > clipBounds[1]) {
-                                    int cx0 = clipBounds[0], cy0 = clipBounds[1], cx1 = clipBounds[2], cy1 = clipBounds[3];
-                                    raster.scrollBlit(cx0, cy0, cx1, cy1, sdx, sdy, clearColor);
-                                    didScrollBlit = true;
-                                    scrollDx = sdx;
-                                    scrollDy = sdy;
-                                    if (sdy < 0) {
-                                        damage.add(cx0, cy1 + sdy, cx1, cy1);
-                                    } else if (sdy > 0) {
-                                        damage.add(cx0, cy0, cx1, cy0 + sdy);
-                                    }
-                                    if (sdx < 0) {
-                                        damage.add(cx1 + sdx, cy0, cx1, cy1);
-                                    } else if (sdx > 0) {
-                                        damage.add(cx0, cy0, cx0 + sdx, cy1);
-                                    }
-                                    damage.add(Math.max(cx0, cx1 - 20), cy0, cx1, cy1);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        syncClipGeneration();
-        java.util.Arrays.fill(skipBuf, 0, n, true);
-
-        if (didScrollBlit) {
-            // スクロール Blit 実行時
-            for (int i = 0; i < n; i++) {
-                if (!dirtyBuf[i]) continue;
-                int anc = driver.parentIndex(i);
-                while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
-                if (anc != scrollContentIdx) {
-                    DisplayItem cur = items.get(i);
-                    if (cur.type() == ElementType.NODE) continue;
-                    Resolved r = driver.resolveAt(i);
-                    int[] cb = planClip(i, cur, r, true);
-                    estimateBounds(cur, r.pose(), cb, estimateScratch);
-                    damage.add(estimateScratch[0], estimateScratch[1], estimateScratch[2], estimateScratch[3]);
-                    addExtent(prevExtent, i, damage);
-                }
-            }
-            damage.seal();
-            int dx0 = damage.x0(), dy0 = damage.y0(), dx1 = damage.x1(), dy1 = damage.y1();
-            if (Boolean.getBoolean("enderframe.soft.damagedebug")) {
-                System.out.println("FRAME=" + (partialFrames + fullFrames) + " dx0=" + dx0 + " dy0=" + dy0 + " dx1=" + dx1 + " dy1=" + dy1 + " sdy=" + scrollDy);
-            }
-
-            boolean[] subtreeDirty = new boolean[n];
-            for (int i = 0; i < n; i++) {
-                int anc = driver.parentIndex(i);
-                while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
-                boolean isDescendant = anc == scrollContentIdx;
-
-                if (isDescendant) {
-                    DisplayItem cur = items.get(i);
-                    if (cur.type() == ElementType.NODE) continue;
-                    boolean hasOldArea = hasArea(prevExtent, i);
-                    if (hasOldArea) {
-                        int b = i * 4;
-                        prevExtent[b] += scrollDx;
-                        prevExtent[b + 1] += scrollDy;
-                        prevExtent[b + 2] += scrollDx;
-                        prevExtent[b + 3] += scrollDy;
-                    }
-
-                    Resolved r = driver.resolveAt(i);
-                    int[] cb = planClip(i, cur, r, true);
-                    estimateBounds(cur, r.pose(), cb, estimateScratch);
-                    boolean hasNewArea = estimateScratch[2] > estimateScratch[0] && estimateScratch[3] > estimateScratch[1];
-
-                    boolean needRepaint;
-                    if (!hasOldArea) {
-                        needRepaint = hasNewArea;
-                    } else {
-                        needRepaint = extentIntersects(prevExtent, i, dx0, dy0, dx1, dy1)
-                                || (hasNewArea && damage.intersects(estimateScratch[0], estimateScratch[1], estimateScratch[2], estimateScratch[3]));
-                    }
-                    if (needRepaint) {
-                        dirtyBuf[i] = true;
-                        int p = driver.parentIndex(i);
-                        while (p >= 0 && p != scrollContentIdx) {
-                            subtreeDirty[p] = true;
-                            p = driver.parentIndex(p);
-                        }
-                    }
-                }
-            }
-
-            for (int i = 0; i < n; i++) {
-                int anc = driver.parentIndex(i);
-                while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
-                boolean isDescendant = anc == scrollContentIdx;
-
-                if (isDescendant) {
-                    DisplayItem cur = items.get(i);
-                    if (cur.type() == ElementType.NODE) {
-                        skipBuf[i] = true;
-                        continue;
-                    }
-                    int p = driver.parentIndex(i);
-                    boolean parentTreeDirty = false;
-                    while (p >= 0 && p != scrollContentIdx) {
-                        if (subtreeDirty[p]) {
-                            parentTreeDirty = true;
-                            break;
-                        }
-                        p = driver.parentIndex(p);
-                    }
-                    if (dirtyBuf[i] || parentTreeDirty) {
-                        skipBuf[i] = false;
-                        dirtyBuf[i] = true;
-                        clearExtent(curExtent, i);
-                        copyClip(prevClip, curClip, i);
-                    } else {
-                        skipBuf[i] = true;
-                        dirtyBuf[i] = false;
-                        copyExtent(prevExtent, curExtent, i);
-                        copyClip(prevClip, curClip, i);
-                    }
-                } else {
-                    if (dirtyBuf[i]) {
-                        skipBuf[i] = false;
-                        clearExtent(curExtent, i);
-                        copyClip(prevClip, curClip, i);
-                    } else {
-                        skipBuf[i] = !extentIntersects(prevExtent, i, dx0, dy0, dx1, dy1);
-                        if (skipBuf[i]) {
-                            copyExtent(prevExtent, curExtent, i);
-                            copyClip(prevClip, curClip, i);
-                        } else {
-                            clearExtent(curExtent, i);
-                            copyClip(prevClip, curClip, i);
-                        }
-                    }
-                }
-            }
-        } else {
-            // 通常の差分描画（要素追加・削除・スタイル変更・テキスト変更・小数スクロール）
-            for (int i = 0; i < n; i++) {
-                if (!dirtyBuf[i]) continue;
-                DisplayItem cur = items.get(i);
-                if (cur.type() == ElementType.NODE) continue;
-                int oldIdx = (oldIndexOf != null) ? oldIndexOf[i] : i;
-                boolean changed = oldIdx < 0 || ItemDiff.changed(prevItems.get(oldIdx), cur, seen) || movedBuf[i]
-                        || (oldIndexOf == null && (activity[i] != 0 || prevActivity[i] != 0));
-                Resolved r = driver.resolveAt(i);
-                int[] cb = planClip(i, cur, r, changed);
-                estimateBounds(cur, r.pose(), cb, estimateScratch);
-                boolean oldHas = hasArea(prevExtent, i);
-                boolean newHas = estimateScratch[2] > estimateScratch[0] && estimateScratch[3] > estimateScratch[1];
-                skipBuf[i] = !oldHas && !newHas;
-                damage.add(estimateScratch[0], estimateScratch[1], estimateScratch[2], estimateScratch[3]);
-                addExtent(prevExtent, i, damage);
-            }
-            damage.seal();
-            int dx0 = damage.x0(), dy0 = damage.y0(), dx1 = damage.x1(), dy1 = damage.y1();
-            for (int i = 0; i < n; i++) {
-                if (!dirtyBuf[i]) skipBuf[i] = !extentIntersects(prevExtent, i, dx0, dy0, dx1, dy1);
-                if (skipBuf[i] || !dirtyBuf[i]) {
-                    copyExtent(prevExtent, curExtent, i);
-                    copyClip(prevClip, curClip, i);
-                } else {
-                    clearExtent(curExtent, i);
-                    copyClip(prevClip, curClip, i);
-                }
-            }
-        }
-        return true;
-    }
-
-    private void commitFrame(List<DisplayItem> items, boolean partial) {
-        if (partial) partialFrames++;
-        else fullFrames++;
-        prevItems = items;
-        prevValid = true;
-        prevHadActive = frameHadActive;
-        prevHadGeometryActive = frameHadGeometryActive;
-        byte[] ta = prevActivity;
-        prevActivity = activity;
-        activity = ta;
-        prevClearColor = clearColor;
-        prevCullOffscreen = cullOffscreen;
-        int[] t = prevExtent;
-        prevExtent = curExtent;
-        curExtent = t;
-        t = prevClip;
-        prevClip = curClip;
-        curClip = t;
-
-        prevScrollPoses.clear();
-        for (int i = 0; i < items.size(); i++) {
-            DisplayItem it = items.get(i);
-            if (isScrollContent(it)) {
-                Resolved r = driver.resolveAt(i);
-                if (r != null && r.pose() != null) {
-                    prevScrollPoses.put(it.key(), new double[]{r.pose().e(), r.pose().f()});
-                }
-            }
-        }
-    }
-
-    private void ensureArrays(int n) {
-        int need = n * 4;
-        if (prevExtent.length != need) {
-            prevExtent = new int[need];
-            prevClip = new int[need];
-            prevValid = false; // 添字の意味が変わる
-        }
-        if (curExtent.length != need) {
-            curExtent = new int[need];
-            curClip = new int[need];
-        }
-        if (skipBuf.length != n) {
-            skipBuf = new boolean[n];
-            dirtyBuf = new boolean[n];
-            movedBuf = new boolean[n];
-        }
-    }
-
-    private void resetCurExtents(int n) {
-        ensureArrays(n);
-        java.util.Arrays.fill(curExtent, 0);
-        java.util.Arrays.fill(curClip, 0);
-    }
-
-    /** 項目の新しい範囲を、前のフレームのクリップ（変わった項目は新しいクリップ）に収めて見積もる。 */
-    private int[] planClip(int i, DisplayItem el, Resolved r, boolean changed) {
-        int b = i * 4;
-        if (!changed && prevClip[b + 2] > prevClip[b] && prevClip[b + 3] > prevClip[b + 1]) {
-            planClipScratch[0] = prevClip[b];
-            planClipScratch[1] = prevClip[b + 1];
-            planClipScratch[2] = prevClip[b + 2];
-            planClipScratch[3] = prevClip[b + 3];
-            return planClipScratch;
-        }
-        Clip c = buildClip(i, el, r.anim());
-        if (c.empty()) {
-            planClipScratch[0] = planClipScratch[1] = planClipScratch[2] = planClipScratch[3] = 0;
-        } else {
-            planClipScratch[0] = c.x0();
-            planClipScratch[1] = c.y0();
-            planClipScratch[2] = c.x1();
-            planClipScratch[3] = c.y1();
-        }
-        return planClipScratch;
-    }
-
-    /**
-     * 項目が新しく塗りうる範囲（デバイス画素）の見積もり。箱を姿勢で写し、文字・影・枠線のはみ出し分の余白を足して
-     * クリップと画面に収める。実際の塗りがこれを超えたら {@link #damageAbort} で全面描画へ切り替える。
-     */
-    private void estimateBounds(DisplayItem el, Matrix2D pose, int[] clip, int[] out) {
-        if (clip != null && (clip[2] <= clip[0] || clip[3] <= clip[1])) {
-            out[0] = out[1] = out[2] = out[3] = 0;
-            return;
-        }
-        float pad = 2f;
-        RenderHints hints = el.hints();
-        if (hints.shadowBlur() > 0f) pad = Math.max(pad, BoxDecorationPainter.SHADOW_REACH * hints.shadowBlur() + 1f);
-        String text = el.text();
-        if (text != null && !text.isEmpty()) {
-            RenderMeta meta = el.meta();
-            float font = meta != null && meta.fontHeight() > 0f ? meta.fontHeight() : el.height();
-            pad = Math.max(pad, font + 1f);
-        }
-        double[] b = deviceBounds(pose, el.x() - pad, el.y() - pad, el.x() + el.width() + pad, el.y() + el.height() + pad, boundsScratch);
-        int x0 = (int) Math.floor(b[0]), y0 = (int) Math.floor(b[1]);
-        int x1 = (int) Math.ceil(b[2]), y1 = (int) Math.ceil(b[3]);
-        if (clip != null) {
-            x0 = Math.max(x0, clip[0]);
-            y0 = Math.max(y0, clip[1]);
-            x1 = Math.min(x1, clip[2]);
-            y1 = Math.min(y1, clip[3]);
-        }
-        x0 = Math.max(0, x0);
-        y0 = Math.max(0, y0);
-        x1 = Math.min(raster.width(), x1);
-        y1 = Math.min(raster.height(), y1);
-        if (x1 <= x0 || y1 <= y0) {
-            out[0] = out[1] = out[2] = out[3] = 0;
-            return;
-        }
-        out[0] = x0;
-        out[1] = y0;
-        out[2] = x1;
-        out[3] = y1;
-    }
-
-    private static boolean stableList(List<DisplayItem> list) {
-        return PaintSceneDriver.isImmutable(list);
-    }
-
-    private static boolean volatileItem(DisplayItem el) {
-        return switch (el.type()) {
-            case IMAGE, VIDEO, CANVAS, SCENE, INPUT, TEXTAREA, SELECT, PROGRESS, RANGE -> true;
-            default -> false;
-        };
-    }
-
-    private static boolean groupItem(DisplayItem el) {
-        return el.type() == ElementType.NODE && (el.opacity() < 0.999f || ItemDiff.hasFxLayer(el));
-    }
-
-    private static boolean mayAnimate(DisplayItem el) {
-        return el.transitionDuration() > 0 || (el.animDef() != null && !AnimationSpec.NONE.equals(el.animDef()));
-    }
-
-    private static void addExtent(int[] ext, int i, DamageRegion d) {
-        int b = i * 4;
-        if (ext[b + 2] > ext[b] && ext[b + 3] > ext[b + 1]) d.add(ext[b], ext[b + 1], ext[b + 2], ext[b + 3]);
-    }
-
-    private static boolean hasArea(int[] ext, int i) {
-        int b = i * 4;
-        return ext[b + 2] > ext[b] && ext[b + 3] > ext[b + 1];
-    }
-
-    private static boolean extentIntersects(int[] ext, int i, int x0, int y0, int x1, int y1) {
-        int b = i * 4;
-        return ext[b + 2] > ext[b] && ext[b + 3] > ext[b + 1]
-                && ext[b + 2] > x0 && ext[b] < x1 && ext[b + 3] > y0 && ext[b + 1] < y1;
-    }
-
-    private static void copyExtent(int[] from, int[] to, int i) {
-        copyExtent(from, to, i, i);
-    }
-
-    private static void copyExtent(int[] from, int[] to, int srcIdx, int dstIdx) {
-        int sb = srcIdx * 4, db = dstIdx * 4;
-        to[db] = from[sb];
-        to[db + 1] = from[sb + 1];
-        to[db + 2] = from[sb + 2];
-        to[db + 3] = from[sb + 3];
-    }
-
-    private static void clearExtent(int[] ext, int i) {
-        int b = i * 4;
-        ext[b] = ext[b + 1] = ext[b + 2] = ext[b + 3] = 0;
-    }
-
-    private static void copyClip(int[] from, int[] to, int i) {
-        copyClip(from, to, i, i);
-    }
-
-    private static void copyClip(int[] from, int[] to, int srcIdx, int dstIdx) {
-        int sb = srcIdx * 4, db = dstIdx * 4;
-        to[db] = from[sb];
-        to[db + 1] = from[sb + 1];
-        to[db + 2] = from[sb + 2];
-        to[db + 3] = from[sb + 3];
-    }
-
-    private final PaintSceneDriver driver;
+    final PaintSceneDriver driver;
 
     /** 直近に描いた {@code items} に、時刻 {@code nowMs} でまだ動いているアニメーションがあるか。 */
     public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) {
@@ -1463,7 +904,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     /** CPU の図形描画を行った回数（項目単位の再生が、項目の描画に CPU 描画が混じったかを知るため）。 */
-    private long cpuOps;
+    long cpuOps;
     /** 再生の直前に、CPU の層を重ねる順序づけを済ませた時点の {@link #cpuOps}（それ以降に CPU 描画があれば、再生の前に順序づけが要る）。 */
     private long cpuOpsOrdered;
     /** 項目単位の再生を使うか（切り分け用: {@code -Denderframe.paint.noreplay=true} で無効）。 */
@@ -1530,14 +971,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
         switch (type) {
             case SCENE -> drawScene3d(el, rx, ry, res, clip, opacity);
-            case TEXTAREA -> drawTextarea(el, anim, res, clip, opacity);
+            case TEXTAREA -> textRaster.drawTextarea(el, anim, res, clip, opacity);
             case RANGE -> drawRange(el, anim, res, clip, opacity);
             case PROGRESS -> drawProgress(el, anim, rx, ry, res, clip, opacity);
             case TOGGLE, CHECKBOX, RADIO -> drawToggle(el, anim, res, clip, opacity);
             case IMAGE, VIDEO, CANVAS -> drawImage(el, rx, ry, res, clip, opacity);
             default -> {
                 if ((el.text() != null && !el.text().isEmpty()) || type == ElementType.INPUT || type == ElementType.SELECT) {
-                    drawText(el, anim, res, clip, opacity);
+                    textRaster.drawText(el, anim, res, clip, opacity);
                 }
             }
         }
@@ -1650,14 +1091,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
 
-    private void syncClipGeneration() {
+    void syncClipGeneration() {
         if (clipGeneration != driver.generation()) {
             if (clipCache.length != frameSize) clipCache = java.util.Arrays.copyOf(clipCache, frameSize);
             clipGeneration = driver.generation();
         }
     }
 
-    private Clip buildClip(int index, DisplayItem el, AnimatedValues anim) {
+    Clip buildClip(int index, DisplayItem el, AnimatedValues anim) {
         ClipEntry ce = clipCache[index];
         RenderMeta m0 = el.meta();
         Object source = m0 != null ? m0.clipRect() : null;
@@ -1775,7 +1216,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return true;
     }
 
-    private Clip finishClip(List<ClipPart> parts) {
+    Clip finishClip(List<ClipPart> parts) {
         parts = dropRedundantSquareParts(parts);
         // 部品が 1 つ・0 個のクリップ（ほとんど）は小さい不変の一覧で持つ（可変の一覧と中の配列を作らない。部品の一覧は読むだけ）
         // 2 つ以上は不変の写しにする（呼び出し側の作業用の一覧を持ち続けない）
@@ -1829,18 +1270,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
     // buildClip の作業表（持ち主の位置と姿勢。1 つのクリップの部品の数だけ）
     private int[] clipOwnerScratch = new int[4];
     private Resolved[] clipOwnerResScratch = new Resolved[4];
-    private int clipOwnerCount;
+    int clipOwnerCount;
     /** buildClip が部品を集める作業用の一覧（finishClip が持ち続ける分は写す）。 */
     private final List<ClipPart> clipPartsScratch = new ArrayList<>(4);
     private static final int[] NO_OWNERS = new int[0];
     private static final Resolved[] NO_OWNER_RES = new Resolved[0];
 
-    private void addClipPart(List<ClipPart> parts, float[] rect, String ownerId) {
+    void addClipPart(List<ClipPart> parts, float[] rect, String ownerId) {
         addClipPart(parts, rect, ownerId, null, null);
     }
 
     /** {@code preRx} / {@code preRy} は、{@code rect} の角の半径を先に分けたもの（読むだけ。null なら {@code rect} から作る）。 */
-    private void addClipPart(List<ClipPart> parts, float[] rect, String ownerId, float[] preRx, float[] preRy) {
+    void addClipPart(List<ClipPart> parts, float[] rect, String ownerId, float[] preRx, float[] preRy) {
         if (rect == null || rect.length < 4) return;
         Matrix2D pose = frame;
         int ownerIndex = -1;
@@ -1900,7 +1341,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     /** 四隅を写した外接矩形 {@code {minX, minY, maxX, maxY}} を {@code out} に書く（割り当てなし）。 */
-    private static double[] deviceBounds(Matrix2D m, double x0, double y0, double x1, double y1, double[] out) {
+    static double[] deviceBounds(Matrix2D m, double x0, double y0, double x1, double y1, double[] out) {
         double ax = m.applyX(x0, y0), ay = m.applyY(x0, y0);
         double bx = m.applyX(x1, y0), by = m.applyY(x1, y0);
         double cx = m.applyX(x1, y1), cy = m.applyY(x1, y1);
@@ -1918,7 +1359,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * 局所の矩形 {@code (bx0,by0)-(bx1,by1)} を姿勢 {@code pose} で写した範囲の画素ごとに {@code shader} を呼び、
      * クリップと不透明度を掛けて重ねる。画素の中心を逆変換した点で評価する。
      */
-    private void paint(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip, float opacity, Shader shader) {
+    void paint(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip, float opacity, Shader shader) {
         paint(pose, bx0, by0, bx1, by1, clip, opacity, shader, null);
     }
 
@@ -1929,15 +1370,15 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 画素を書く命令とタイル実行
 
-    private final OpPool pool = new OpPool();
-    private final TileQueue queue = new TileQueue(pool::release);
+    final OpPool pool = new OpPool();
+    final TileQueue queue = new TileQueue(pool::release);
 
     /**
      * 同上。{@code fast} の領域は、軸平行の姿勢のとき距離の計算なしに行ごとの塗り（または省略）で済ませる（結果は画素ごとの評価と同じ）。
      * 縁・角・クリップの被覆率が 1 と言えない画素だけが従来の経路を通る。{@code fastSolid=false} で無効（照合用）。
      * {@code fast} がある（呼び出し側がシェーダーを純粋と保証する）塗りは、溜めてタイルで実行する。
      */
-    private void paint(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip, float opacity, Shader shader,
+    void paint(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip, float opacity, Shader shader,
                        Fast fast) {
         if (opacity <= 0f || !(bx1 > bx0) || !(by1 > by0)) return;
         Matrix2D inv = pose.invert();
@@ -2006,7 +1447,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * 差分描画のフレームでは、実際に塗る範囲をダメージの外接矩形に収める（外の画素は前のフレームのまま残す）。
      * 描き直す項目の自然な範囲がダメージの外へ出たら、見積もりが外れた印を付ける（呼び出し側が全面でやり直す）。
      */
-    private int[] paintRange(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip) {
+    int[] paintRange(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip) {
         double[] b = deviceBounds(pose, bx0, by0, bx1, by1, boundsScratch);
         int x0 = Math.max(clip.x0(), (int) Math.floor(b[0])), y0 = Math.max(clip.y0(), (int) Math.floor(b[1]));
         int x1 = Math.min(clip.x1(), (int) Math.ceil(b[2])), y1 = Math.min(clip.y1(), (int) Math.ceil(b[3]));
@@ -2068,7 +1509,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return a.clone();
     }
 
-    private void fillRect(Matrix2D pose, float x0, float y0, float x1, float y1, int argb, Clip clip, float opacity) {
+    void fillRect(Matrix2D pose, float x0, float y0, float x1, float y1, int argb, Clip clip, float opacity) {
         fillRoundRect(pose, x0, y0, x1, y1, ZERO4, ZERO4, argb, clip, opacity);
     }
 
@@ -2312,437 +1753,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return true;
     }
 
-    // ------------------------------------------------------------------ 文字
-
-    private OutlineFontFace faceFor(DisplayItem el) {
-        String family = el.hints().fontFamily();
-        if (family == null && el.events() != null) family = el.events().get("font-family");
-        FontFace f = resources.fonts().resolve(family);
-        if (f instanceof OutlineFontFace o) return o;
-        f = SystemFonts.system().resolve(family);
-        return f instanceof OutlineFontFace o ? o : null;
-    }
-
-    private static FontStyle styleFor(DisplayItem el, float fontPx) {
-        Map<String, String> ev = el.events() != null ? el.events() : Map.of();
-        int weight = LayoutMetrics.numericWeight(ev.get("font-weight"));
-        String style = ev.get("font-style");
-        boolean italic = style != null && !style.trim().equalsIgnoreCase("normal");
-        float letterSpacing = 0f;
-        String ls = ev.get("letter-spacing");
-        if (ls != null && !ls.isEmpty()) {
-            try {
-                letterSpacing = Float.parseFloat(ls);
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        String fk = ev.get("font-kerning");
-        boolean kerning = fk == null || !"none".equalsIgnoreCase(fk.trim());
-        return new FontStyle(fontPx, weight >= 600, italic, letterSpacing, weight, kerning);
-    }
-
-    private boolean skipPlaceholder(DisplayItem el) {
-        if (!el.isPart("_ph")) return false;
-        String nodeId = el.id().substring(0, el.id().length() - 3);
-        DisplayItem input = driver.itemById(nodeId + "_input");
-        return input != null && input.text() != null && !input.text().isEmpty();
-    }
-
-    /**
-     * 文字項目の「項目だけで決まる」下ごしらえ（書体・スタイル・見た目の順の文字列・送り位置・基線・縁取り・影・下線）。
-     * 毎フレームの再描画で、変わらない項目のスタイル解釈（{@code events} の引き・数値の解析）と BiDi 並べ替えを繰り返さないよう、
-     * 項目の実体（同一性）で覚える。色・姿勢・クリップ・不透明度は毎回渡されるので鍵に含めない。
-     */
-    private static final class TextSetup {
-        OutlineFontFace face;
-        FontStyle style;
-        String visual;
-        float[] positions;
-        float textX, baseline;
-        Stroke stroke;
-        boolean shadow, underline, lineThrough;
-        float width;
-    }
-
     /** 変わらない文字項目の下ごしらえを使い回す（切り分け用: {@code -Denderframe.paint.notextsetup=true} で無効）。 */
     static volatile boolean textSetupReuse = !Boolean.getBoolean("enderframe.paint.notextsetup");
-    private static final int TEXT_SETUP_LIMIT = 8192;
-    private final java.util.IdentityHashMap<DisplayItem, TextSetup> textSetups = new java.util.IdentityHashMap<>();
-
-    /** 下ごしらえを作る。描くものが無ければ null。 */
-    private TextSetup buildTextSetup(DisplayItem el, OutlineFontFace face, boolean field) {
-        String text = el.text() == null ? "" : el.text().replace((char) 0xA0, ' ');
-        if (!field && text.isEmpty()) return null;
-        RenderMeta meta = el.meta();
-        TextSetup s = new TextSetup();
-        s.face = face;
-        float fontPx = meta != null && meta.fontHeight() > 0f ? meta.fontHeight() : Math.max(1f, el.height());
-        s.style = styleFor(el, fontPx);
-        float ascent = face.ascent(s.style), descent = face.descent(s.style);
-        boolean centers = field || el.isPart("_ph") || meta == null || meta.baseline() <= 0f;
-        s.baseline = el.y() + (centers ? (el.height() + ascent - descent) / 2f : meta.baseline());
-        s.textX = el.x() + (field ? 4f : 0f);
-        s.stroke = textStroke(el);
-        String shown = text;
-        if (field || el.isPart("_ph")) {
-            float available = Math.max(0f, el.width() - 8f);
-            shown = text.substring(0, face.fitChars(text, s.style, available));
-        }
-        s.shadow = el.events() != null && "true".equals(el.events().get("text-shadow"));
-        String deco = el.events() != null ? el.events().getOrDefault("text-decoration", "none") : "none";
-        boolean decorated = !field && !el.isPart("_ph");
-        s.underline = decorated && deco.contains("underline");
-        s.lineThrough = decorated && deco.contains("line-through");
-        s.width = el.width();
-        if (!shown.isEmpty()) {
-            s.visual = BidiText.toVisual(shown, null);
-            s.positions = face.positions(s.visual, s.style);
-        }
-        return s;
-    }
-
-    private void drawText(DisplayItem el, AnimatedValues anim, Resolved res, Clip clip, float opacity) {
-        if (skipPlaceholder(el)) return;
-        boolean field = el.type() == ElementType.INPUT || el.type() == ElementType.SELECT;
-        OutlineFontFace face = faceFor(el);
-        if (face == null) return;
-        TextSetup s = null;
-        boolean cacheable = textSetupReuse && !field && !el.isPart("_ph");
-        if (cacheable) {
-            s = textSetups.get(el);
-            if (s != null && s.face != face) s = null; // 書体の登録が変わった（別の面になった）
-        }
-        if (s == null) {
-            s = buildTextSetup(el, face, field);
-            if (s == null) return;
-            if (cacheable) {
-                if (textSetups.size() >= TEXT_SETUP_LIMIT) textSetups.clear();
-                textSetups.put(el, s);
-            }
-        }
-
-        int alpha = (int) (((anim.color() >>> 24) & 0xFF));
-        if (alpha < 4 && s.stroke == null) return;
-        int argb = (alpha << 24) | (anim.color() & 0x00FFFFFF);
-
-        if (s.visual != null) {
-            if (alpha >= 4) {
-                if (s.shadow) {
-                    float off = s.style.fontSizePx() / 9f;
-                    int shadowColor = (argb & 0xFF000000) | ((argb & 0xFCFCFC) >> 2);
-                    drawGlyphs(s.visual, s.positions, face, s.style, s.textX + off, s.baseline + off, shadowColor, res.pose(), clip, opacity, true);
-                }
-                drawGlyphs(s.visual, s.positions, face, s.style, s.textX, s.baseline, argb, res.pose(), clip, opacity);
-            }
-            if (s.stroke != null) {
-                drawGlyphStrokes(s.visual, s.positions, face, s.style, s.textX, s.baseline, s.stroke.argb(), s.stroke.width(), res.pose(), clip, opacity);
-            }
-        }
-        if (alpha < 4) return; // 塗りが透明（縁取りだけの文字）なら、下線などは付けない
-
-        if (s.underline || s.lineThrough) {
-            LoadedFace primary = face.primaryFace(s.style);
-            float size = s.style.fontSizePx();
-            if (s.underline) {
-                float top = s.baseline + primary.underlineOffset(size);
-                fillRect(res.pose(), s.textX, top, s.textX + s.width, top + primary.underlineThickness(size), argb, clip, opacity);
-            }
-            if (s.lineThrough) {
-                float thick = primary.strikeoutThickness(size);
-                float top = s.baseline - primary.strikeoutPosition(size) - thick / 2f;
-                fillRect(res.pose(), s.textX, top, s.textX + s.width, top + thick, argb, clip, opacity);
-            }
-        }
-    }
-
-    private void drawTextarea(DisplayItem el, AnimatedValues anim, Resolved res, Clip clip, float opacity) {
-        String full = el.text() == null ? "" : el.text();
-        if (full.isEmpty()) return;
-        OutlineFontFace face = faceFor(el);
-        if (face == null) return;
-        RenderMeta meta = el.meta() != null ? el.meta() : RenderMeta.EMPTY;
-        FontStyle style = styleFor(el, meta.fontHeight() > 0f ? meta.fontHeight() : 16f);
-        float lineHeight = meta.resolvedLineHeight();
-        float ascent = face.ascent(style), descent = face.descent(style);
-        int alpha = (anim.color() >>> 24) & 0xFF;
-        if (alpha < 4) return;
-        // 箱の外へは出さない
-        List<ClipPart> parts = new ArrayList<>(clip.parts());
-        clipOwnerCount = 0; // 持ち主の記録は使わない
-        addClipPart(parts, new float[]{el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), 0, 0, 0, 0}, null);
-        Clip boxed = finishClip(parts);
-        String[] lines = full.replace("\r\n", "\n").split("\n", -1);
-        for (int i = 0; i < lines.length; i++) {
-            float top = el.y() + 4f + i * lineHeight;
-            if (top > el.y() + el.height()) break;
-            if (lines[i].isEmpty()) continue;
-            float baseline = top + (lineHeight + ascent - descent) / 2f;
-            drawRun(lines[i], face, style, el.x() + 4f, baseline, anim.color(), false, res, boxed, opacity);
-        }
-    }
-
-    /** 1 行の文字を描く。影があれば 1/9 em ずらして 1/4 の明るさで先に描く（GL 版と同じ）。 */
-    private void drawRun(String text, OutlineFontFace face, FontStyle style, float x, float baseline, int argb, boolean shadow,
-                         Resolved res, Clip clip, float opacity) {
-        drawRun(text, face, style, x, baseline, argb, shadow, res, clip, opacity, true, null);
-    }
-
-    /**
-     * @param fill   塗りを描くか（縁取りだけの文字では false）
-     * @param stroke 縁取り（幅は CSS px、色は非乗算 ARGB）。null なら縁取りなし。塗りの上に重ねる
-     */
-    private void drawRun(String text, OutlineFontFace face, FontStyle style, float x, float baseline, int argb, boolean shadow,
-                         Resolved res, Clip clip, float opacity, boolean fill, Stroke stroke) {
-        if (text == null || text.isEmpty()) return;
-        text = BidiText.toVisual(text, null);
-        float[] positions = face.positions(text, style);
-        if (!fill) {
-            drawGlyphStrokes(text, positions, face, style, x, baseline, stroke.argb(), stroke.width(), res.pose(), clip, opacity);
-            return;
-        }
-        if (shadow) {
-            float off = style.fontSizePx() / 9f;
-            int shadowColor = (argb & 0xFF000000) | ((argb & 0xFCFCFC) >> 2);
-            drawGlyphs(text, positions, face, style, x + off, baseline + off, shadowColor, res.pose(), clip, opacity, true);
-        }
-        drawGlyphs(text, positions, face, style, x, baseline, argb, res.pose(), clip, opacity);
-        if (stroke != null) {
-            drawGlyphStrokes(text, positions, face, style, x, baseline, stroke.argb(), stroke.width(), res.pose(), clip, opacity);
-        }
-    }
-
-    /** {@code text-stroke} イベント（{@code "<幅> <色の 16 進>"}）。無い・幅が 0 以下なら null。 */
-    private record Stroke(float width, int argb) {}
-
-    private static Stroke textStroke(DisplayItem el) {
-        String v = el.events() != null ? el.events().get("text-stroke") : null;
-        if (v == null) return null;
-        int sp = v.indexOf(' ');
-        if (sp < 0) return null;
-        try {
-            float w = Float.parseFloat(v.substring(0, sp));
-            int color = (int) Long.parseLong(v.substring(sp + 1), 16);
-            return w > 0f ? new Stroke(w, color) : null;
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    /**
-     * 文字の縁取り。輪郭からの符号付き距離（SDF の字形）が {@code |d| <= 幅/2} の帯を、1 画素の傾斜でなめらかに塗る
-     * （{@code -webkit-text-stroke} と同じ、輪郭の上に中心を置く）。幅は SDF の広がり（{@link LoadedFace#SDF_SPREAD}）で頭打ち。
-     */
-    private void drawGlyphStrokes(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
-                                  int argb, float widthCss, Matrix2D pose, Clip clip, float opacity) {
-        boolean aligned = ShapeGeometry.glyphAxisAligned(pose);
-        float pixelSize = GlyphCache.quantize((float) (style.fontSizePx() * pose.meanScale()));
-        if (pixelSize < 0.5f) return;
-        float half = Math.min(widthCss * (float) pose.meanScale() / 2f, LoadedFace.SDF_SPREAD - 1.5f);
-        if (half <= 0.01f) return;
-        int pm = Pixmap.premultiply(argb);
-        if ((argb >>> 24) < 4) return;
-        for (int i = 0; i < text.length(); ) {
-            int cp = text.codePointAt(i);
-            int n = Character.charCount(cp);
-            if (cp <= 0x20 || cp == 0xA0 || Character.isWhitespace(cp)) {
-                i += n;
-                continue;
-            }
-            OutlineFontFace.GlyphFace gf = face.glyphFace(cp, style);
-            float gx = x + positions[i];
-            if (aligned) {
-                double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
-                float originX = ShapeGeometry.glyphOriginX(devX), originY = ShapeGeometry.glyphOriginY(devY);
-                GlyphBitmap sdf = glyphCache.sdfGlyph(gf, cp, pixelSize, ShapeGeometry.glyphSubpixel(devX));
-                if (!sdf.isEmpty() && !GpuAttempt.glyphStroke(route.current(), sdf, originX, originY, half, argb, clip, opacity)) {
-                    blitStrokeAligned(sdf, originX, originY, half, pm, clip, opacity);
-                }
-            } else {
-                GlyphBitmap sdf = glyphCache.sdfGlyph(gf, cp, pixelSize, 0);
-                if (!sdf.isEmpty()) blitStrokeTransformed(sdf, gx, baseline, pixelSize / style.fontSizePx(), pose, half, pm, clip, opacity);
-            }
-            i += n;
-        }
-    }
-
-    private void blitStrokeAligned(GlyphBitmap g, float originX, float originY, float half, int pm, Clip clip, float opacity) {
-        float bx = originX + g.left(), by = originY - g.top();
-        paint(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height(), clip, opacity, (lx, ly) -> {
-            int col = (int) Math.floor(lx - bx), row = (int) Math.floor(ly - by);
-            if (col < 0 || row < 0 || col >= g.width() || row >= g.height()) return 0;
-            float cov = GlyphCache.strokeCoverage(g.coverageAt(col, row), half);
-            return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
-        }, Fast.PURE);
-    }
-
-    private void blitStrokeTransformed(GlyphBitmap g, float ox, float oy, float s, Matrix2D pose, float half, int pm, Clip clip, float opacity) {
-        float[] lb = ShapeGeometry.glyphLocalBounds(g, ox, oy, s);
-        paint(pose, lb[0], lb[1], lb[2], lb[3], clip, opacity, (lx, ly) -> {
-            float col = (lx - ox) * s - g.left() - 0.5f, row = (ly - oy) * s + g.top() - 0.5f;
-            float cov = GlyphCache.strokeCoverage(GlyphCache.sampleRaw(g, col, row), half);
-            return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
-        }, Fast.PURE);
-    }
-
-    private void drawGlyphs(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
-                            int argb, Matrix2D pose, Clip clip, float opacity) {
-        drawGlyphs(text, positions, face, style, x, baseline, argb, pose, clip, opacity, false);
-    }
-
-    /** {@code monochrome}: カラー字形でも 1 色（{@code argb}）で塗る（影）。 */
-    private void drawGlyphs(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
-                            int argb, Matrix2D pose, Clip clip, float opacity, boolean monochrome) {
-        // 回転・せん断・縦横で違う拡縮が無ければ、字をデバイス画素の格子に揃えて置く（サブピクセル位置は 1/4 画素）
-        boolean aligned = ShapeGeometry.glyphAxisAligned(pose);
-        float pixelSize = GlyphCache.quantize((float) (style.fontSizePx() * pose.meanScale()));
-        if (pixelSize < 0.5f) return;
-        boolean light = GlyphCache.isLight(argb);
-        int pm = Pixmap.premultiply(argb);
-        for (int i = 0; i < text.length(); ) {
-            int cp = text.codePointAt(i);
-            int n = Character.charCount(cp);
-            if (cp <= 0x20 || cp == 0xA0 || Character.isWhitespace(cp)) {
-                i += n;
-                continue;
-            }
-            OutlineFontFace.GlyphFace gf = face.glyphFace(cp, style);
-            float gx = x + positions[i];
-            if (!monochrome) {
-                // COLR v1（グラデーション・変形・合成）は、描いた色付きビットマップを画像と同じ経路で置く
-                ColorBitmap colorBitmap = gf.face().colorBitmap(cp, pixelSize, argb);
-                if (colorBitmap != null) {
-                    drawColorBitmapGlyph(colorBitmap, gx, baseline, pixelSize, aligned, style, pose, clip, opacity);
-                    i += n;
-                    continue;
-                }
-            }
-            ColorLayers colorLayers = monochrome ? null : gf.face().colorLayers(cp);
-            if (colorLayers != null) {
-                drawColorGlyph(gf, colorLayers, gx, baseline, argb, pixelSize, aligned, style, pose, clip, opacity);
-                i += n;
-                continue;
-            }
-            if (aligned) {
-                double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
-                float originX = ShapeGeometry.glyphOriginX(devX), originY = ShapeGeometry.glyphOriginY(devY);
-                GlyphBitmap bmp = glyphCache.glyph(gf, cp, pixelSize, ShapeGeometry.glyphSubpixel(devX), light);
-                if (!bmp.isEmpty() && !GpuAttempt.glyph(route.current(), bmp, originX, originY, argb, clip, opacity)) {
-                    blitAligned(bmp, originX, originY, pm, clip, opacity);
-                }
-            } else {
-                GlyphBitmap bmp = glyphCache.glyph(gf, cp, pixelSize, 0, light);
-                if (!bmp.isEmpty() && !GpuAttempt.glyphTransformed(route.current(), bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, argb, clip, opacity)) {
-                    blitTransformed(bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, pm, clip, opacity);
-                }
-            }
-            i += n;
-        }
-    }
-
-    private static final float[] NO_RADII = new float[4];
-
-    /** 色付きのビットマップの字形。画素の格子に載せるときは等倍、回転などの姿勢の下では双一次補間で貼る。 */
-    private void drawColorBitmapGlyph(ColorBitmap cb, float gx, float baseline, float pixelSize, boolean aligned,
-                                      FontStyle style, Matrix2D pose, Clip clip, float opacity) {
-        Pixmap pm = cb.pixmap();
-        if (aligned) {
-            double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
-            float bx = ShapeGeometry.glyphOriginX(devX) + cb.left(), by = ShapeGeometry.glyphOriginY(devY) - cb.top();
-            drawGlyphPixmap(pm, bx, by, cb.width(), cb.height(), Matrix2D.IDENTITY, 1f, clip, opacity);
-        } else {
-            float s = pixelSize / style.fontSizePx();
-            drawGlyphPixmap(pm, gx + cb.left() / s, baseline - cb.top() / s, cb.width() / s, cb.height() / s, pose,
-                    (float) pose.meanScale(), clip, opacity);
-        }
-    }
-
-    /** 事前乗算の画素を、局所の矩形 {@code (x0, y0, w, h)} に貼る（GPU が受ければ GPU、なければ CPU）。 */
-    private void drawGlyphPixmap(Pixmap pm, float x0, float y0, float w, float h, Matrix2D pose, float scale, Clip clip, float opacity) {
-        if (!(w > 0) || !(h > 0)) return;
-        float sx = pm.width() / w, sy = pm.height() / h;
-        if (GpuAttempt.image(route.current(), pose, pm, x0, y0, w, h, x0, y0, w, h, sx, sy, NO_RADII, NO_RADII, 1, scale, clip, opacity)) return;
-        float m = 1f / Math.max(scale, 0.01f);
-        paint(pose, x0 - m, y0 - m, x0 + w + m, y0 + h + m, clip, opacity, (lx, ly) -> {
-            float u = (lx - x0) * sx, v = (ly - y0) * sy;
-            if (u < -0.5f || v < -0.5f || u > pm.width() + 0.5f || v > pm.height() + 0.5f) return 0;
-            return bilinear(pm, u - 0.5f, v - 0.5f);
-        }, Fast.PURE);
-    }
-
-    /** カラー字形（COLR）を、レイヤーごとの色で下から重ねて描く。レイヤーの被覆率は通常の字形と同じ経路（GL でも CPU でも）を通る。 */
-    private void drawColorGlyph(OutlineFontFace.GlyphFace gf, ColorLayers layers, float gx, float baseline, int textArgb,
-                                float pixelSize, boolean aligned, FontStyle style, Matrix2D pose, Clip clip, float opacity) {
-        double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
-        int sub = aligned ? ShapeGeometry.glyphSubpixel(devX) : 0;
-        float originX = ShapeGeometry.glyphOriginX(devX), originY = ShapeGeometry.glyphOriginY(devY);
-        for (int k = 0; k < layers.count(); k++) {
-            int layerArgb = layers.foreground()[k] ? textArgb : layers.argb()[k];
-            if ((layerArgb >>> 24) == 0) continue;
-            GlyphBitmap bmp = glyphCache.layerGlyph(gf, layers.glyphs()[k], pixelSize, sub, GlyphCache.isLight(layerArgb));
-            if (bmp.isEmpty()) continue;
-            int pm = Pixmap.premultiply(layerArgb);
-            if (aligned) {
-                if (!GpuAttempt.glyph(route.current(), bmp, originX, originY, layerArgb, clip, opacity)) {
-                    blitAligned(bmp, originX, originY, pm, clip, opacity);
-                }
-            } else if (!GpuAttempt.glyphTransformed(route.current(), bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, layerArgb, clip, opacity)) {
-                blitTransformed(bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, pm, clip, opacity);
-            }
-        }
-    }
-
-    /** デバイス画素の格子にそのまま置く（原点 {@code (originX, originY)}）。 */
-    private void blitAligned(GlyphBitmap g, float originX, float originY, int pm, Clip clip, float opacity) {
-        float bx = originX + g.left(), by = originY - g.top();
-        if (fastSolid && bx == Math.rint(bx) && by == Math.rint(by) && Math.abs(bx) < 1e6f && Math.abs(by) < 1e6f) {
-            blitGridAligned(g, (int) bx, (int) by, pm, clip, opacity);
-            return;
-        }
-        paint(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height(), clip, opacity, (lx, ly) -> {
-            int col = (int) Math.floor(lx - bx), row = (int) Math.floor(ly - by);
-            if (col < 0 || row < 0 || col >= g.width() || row >= g.height()) return 0;
-            int cov = g.coverageAt(col, row);
-            return cov == 0 ? 0 : SoftShapes.scalePremul(pm, cov / 255f);
-        }, Fast.PURE);
-    }
-
-    /** 被覆率 0..255 → 色（{@code covLutColor} の事前乗算を {@code cov/255} 倍したもの）。同じ色の字が続く間は再利用（命令が参照するので上書きしない）。 */
-    private int[] covLut;
-    private int covLutColor;
-
-
-    /**
-     * 字形の左上が画素の格子に載るとき（原点・左・上が整数）の貼り付け。恒等の姿勢の {@code paint} と同じ画素を同じ式で重ねるが、
-     * 画素ごとの逆変換・シェーダー呼び出しをせず、被覆率→色は 256 項の表で引く。
-     */
-    private void blitGridAligned(GlyphBitmap g, int bx, int by, int pm, Clip clip, float opacity) {
-        if (opacity <= 0f || g.width() <= 0 || g.height() <= 0) return;
-        int[] r = paintRange(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height(), clip);
-        if (r == null) return;
-        if (covLut == null || covLutColor != pm) {
-            int[] lut = new int[256];
-            for (int i = 1; i < 256; i++) lut[i] = SoftShapes.scalePremul(pm, i / 255f);
-            covLut = lut;
-            covLutColor = pm;
-        }
-        PixelOps.GlyphOp op = pool.acquireGlyph();
-        op.px = raster.target().pixels();
-        op.w = raster.targetWidth();
-        op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
-        op.g = g; op.bx = bx; op.by = by; op.lut = covLut; op.clip = clip; op.clipped = !clip.parts().isEmpty(); op.opacity = opacity;
-        cpuOps++;
-        queue.submit(op, true);
-    }
-
-    /** 回転などの姿勢の下で、字形を双一次補間で貼る。{@code s} は 1 レイアウト単位あたりの字形の画素数。 */
-    private void blitTransformed(GlyphBitmap g, float ox, float oy, float s, Matrix2D pose, int pm, Clip clip, float opacity) {
-        float[] lb = ShapeGeometry.glyphLocalBounds(g, ox, oy, s);
-        paint(pose, lb[0], lb[1], lb[2], lb[3], clip, opacity, (lx, ly) -> {
-            float col = (lx - ox) * s - g.left() - 0.5f, row = (ly - oy) * s + g.top() - 0.5f;
-            float cov = GlyphCache.sampleCoverage(g, col, row);
-            return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
-        }, Fast.PURE);
-    }
 
     // ------------------------------------------------------------------ 画像
 
@@ -2791,7 +1803,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     /** 事前乗算の画素の双一次補間（範囲の外は端の画素）。 */
-    private static int bilinear(Pixmap pm, float u, float v) {
+    static int bilinear(Pixmap pm, float u, float v) {
         int w = pm.width(), h = pm.height();
         int x0 = (int) Math.floor(u), y0 = (int) Math.floor(v);
         float fx = u - x0, fy = v - y0;

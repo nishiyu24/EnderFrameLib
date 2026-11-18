@@ -57,9 +57,11 @@ import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
 import com.nishiyu.enderframelib.core.paint.PaintOrder.RenderTask;
 
 public class DisplayListBuilder {
+    /** StackingSubtreePatch（切り出した協力クラス）。 */
+    private final StackingSubtreePatch stackingPatch = new StackingSubtreePatch(this);
     // 単位なしの 0（例: translate(-50%, 0)）も受け付けるため単位は省略可能（省略時は px 扱い）
 
-    private static volatile java.util.function.BooleanSupplier parentRelativeSource =
+    static volatile java.util.function.BooleanSupplier parentRelativeSource =
             () -> !Boolean.getBoolean("enderframe.paint.noparentrelative");
 
     public static void setParentRelativeSource(java.util.function.BooleanSupplier source) {
@@ -73,21 +75,21 @@ public class DisplayListBuilder {
 
     private int rootW;
 
-    private int rootH;
+    int rootH;
 
     private final Map<String, Keyframes> keyframes;
 
-    private final ScrollState scrollState;
+    final ScrollState scrollState;
 
     /** 要素の部品の id（{@code _txt_3} など）に振る通し番号。描画のたびに 0 から数える。 */
     private final AtomicInteger fragIds = new AtomicInteger();
     private final BoxAnimation anim;
-    private final BoxDecorationPainter decor;
+    final BoxDecorationPainter decor;
     private final ControlPainter controls;
-    private final PaintOrder order;
+    final PaintOrder order;
 
     /** 背景をキャンバスに譲った要素（html か body）。自分の箱には背景色を描かない。 */
-    private LayoutBox canvasBackgroundSource;
+    LayoutBox canvasBackgroundSource;
     /** 1 箱の未キャッシュ構築で使い回す ItemProps（DisplayItem 側には attrs Map / RenderHints だけが渡る）。 */
     private final ItemProps scratchAnchorProps = new ItemProps();
     private final ItemProps scratchPartsProps = new ItemProps();
@@ -139,15 +141,15 @@ public class DisplayListBuilder {
     }
 
     /** 直近に描画またはパッチされた完全な表示リスト（Segmented DisplayList）。 */
-    private List<DisplayItem> currentDisplayList;
+    List<DisplayItem> currentDisplayList;
     /** 直近に描画されたボックス（描画順 = 表示リスト上の dlStart 昇順）。 */
-    private final List<LayoutBox> renderedBoxes = new ArrayList<>();
+    final List<LayoutBox> renderedBoxes = new ArrayList<>();
     /** スクロールバーを持ちうる（overflow: scroll / auto）描画済みの箱。差分パッチで全箱を走査せずに済ませるための集合（描画のたびに作り直し、子の増減で更新する）。 */
-    private final Set<LayoutBox> scrollBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
+    final Set<LayoutBox> scrollBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
     /** 窓付きの描画で項目を省いた箱（画面外）。差分パッチが、窓の出入りが無いかを調べるのに使う。 */
-    private final List<LayoutBox> culledBoxes = new ArrayList<>();
+    final List<LayoutBox> culledBoxes = new ArrayList<>();
     /** 直近の描画のルートボックス。 */
-    private LayoutBox currentRoot;
+    LayoutBox currentRoot;
 
     /** 診断: 表示リストの差分スライスパッチ成功回数（全ボックス走査スキップ）。 */
     /** 差分パッチで、項目を作り直さず塗りをセルへ書いて済ませた項目の数（B9 の M3）。 */
@@ -301,7 +303,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
      * @param orderBase 描画順の箱の一覧での、{@code outBoxes} の先頭の位置（全体なら 0）
      * @return 持ち主（箱を持つタスク）の数
      */
-    private int executeTasks(List<RenderTask> paintTaskList, List<DisplayItem> elements, boolean cull, boolean windowed,
+    int executeTasks(List<RenderTask> paintTaskList, List<DisplayItem> elements, boolean cull, boolean windowed,
                              int orderBase, List<LayoutBox> outBoxes) {
         int ownerCount = 0;
         // レイヤーに描く箱: 開始の印の次に出る錨の位置を覚え、終了の印でそこから出し終えた項目の数（span）を錨に書く
@@ -659,13 +661,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     /** 直近の描画で出した項目の数（次の描画の出力リストの初期容量に使う）。 */
-    private int lastElementCount;
+    int lastElementCount;
     /** 直近の描画の、項目を持ちうる箱の数（省いた箱も含む）。窓付きの表示リストにするかの判定に使う。 */
     private int lastOwnerCount;
     /** 窓付きで作った表示リストの数（検証用）。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_WINDOWED_BUILDS = new java.util.concurrent.atomic.LongAdder();
     /** 直近の描画が窓付き（画面外の箱を省いた）か。 */
-    private boolean windowedBuild;
+    boolean windowedBuild;
     /** 切り分け用: false なら、大きい文書でも窓付きの表示リストにしない（従来の動き）。 */
     public static volatile boolean WINDOWED_ENABLED = !Boolean.getBoolean("enderframe.paint.nowindow");
     /** 窓付きにする、項目を持ちうる箱の数の下限（これより小さい文書は全件を作る）。 */
@@ -735,11 +737,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         windowShift = shift != null ? shift : java.util.Map.of();
     }
 
-    private int movingEpochSeq;
-    private int activeMovingEpoch;
+    int movingEpochSeq;
+    int activeMovingEpoch;
     private final ArrayList<LayoutBox> movingPathScratch = new ArrayList<>();
 
-    private boolean hasMovingAncestor(LayoutBox box) {
+    boolean hasMovingAncestor(LayoutBox box) {
         if (box == null) return false;
         if (box.movingStamped) return box.selfOrAncestorMoving;
         int epoch = activeMovingEpoch;
@@ -884,68 +886,17 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     // SVG・srcset 付きの画像・動画など描画側が別の資源を読む箱）は、いつも描き直す。img（点陣画像）・progress・meter・
     // ホスト登録の置換要素は属性とスタイルだけで決まるので記憶する。
 
-    /** 箱の記憶。{@code generation} は最後に使われた描画の世代（古いものは描画の終わりに捨てる）。 */
-    private static final class BoxMemo {
-        /**
-         * 表示リストの項目は、記憶の位置から平行移動した位置にある（{@link #match} が 2 を返した箱。記憶そのものは動かさない）ときの動き。
-         * 差分パッチは「箱の今の位置 − 記憶の位置」で動きを見るので、これを足さないと、リストの中で既に動いた分を二重に動かす。
-         */
-        int appliedDx, appliedDy;
-        /** {@link #match} が 2 を返したときの浮動小数の移動量（差分パッチで記憶の基準を進めるのに使う）。 */
-        float appliedExactDx, appliedExactDy;
-        /** {@link #match} が 2 を返したときの親相対原点の差分。 */
-        int appliedOriginDx, appliedOriginDy;
-        boolean appliedFragOnly;
-        boolean appliedNonUniform;
-        /** 各項目に対応する丸める前の {@code (x, y, w, h)}（4 要素ごと。小数移動の平行移動判定用）。 */
-        float[] itemCoords;
-        int generation;
-        /** 記憶を作ったときのビューポートの大きさと、項目がそれに依る箱か（ビューポート基準の単位・ルートの背景）。 */
-        int rootW, rootH;
-        boolean viewportSensitive;
-        List<DisplayItem> items;
-        com.nishiyu.enderframelib.core.css.ComputedStyle style;
-        com.nishiyu.enderframelib.core.css.ComputedStyle firstLineStyle;
-        com.nishiyu.enderframelib.core.css.ComputedStyle placeholderStyle;
-        com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestors;
-        float[] nums;
-        float scrollW, scrollH;
-        ClipRect clip;
-        String parentId;
-        /** 記憶を作ったときの属性の版番号（属性の写しを持たずに、書き換えがあったかを見分ける）。 */
-        int attrVersion;
-        String displayText;
-        Object shaped;
-        Object[] fragRefs;
-        float[] fragNums;
-        String[] fragText;
-        boolean canvasSource, interactive, suppressShadow;
-        /** 記憶を作った（または変わっていないと確かめた）描画の開始時の通し番号と、そのときの親の箱。 */
-        long epoch;
-        LayoutBox parentBox;
-        /** 位置だけが変わった作り直し（スクロール）で、項目を平行移動して使い回せる箱か。 */
-        boolean translatable;
-        /** 項目が NODE（箱の位置）と TEXT（断片の位置）だけ。箱が動かず断片だけが動くとき、TEXT だけを動かせば済む形。 */
-        boolean nodeAndTextOnly;
-        /** 項目が中身の大きさ（スクロール量）を持つ。中身が変わると、箱が動いただけでは使い回せない。 */
-        boolean carriesContentExtent;
-        /** 記憶を作ったときの親相対モードと、自身および親の NODE の丸め原点。 */
-        boolean parentRelative;
-        int originX, originY;
-        int parentOriginX, parentOriginY;
-        /** この箱を含む、保持された部分木。再利用されている間は、箱ごとに世代を書かなくても記憶は捨てられない。 */
-        PaintOrder.Chunk chunk;
-        boolean itemsMutable;
-    }
 
-    private boolean parentRelative = true;
+    boolean parentRelative = true;
 
-    private final java.util.IdentityHashMap<LayoutBox, BoxMemo> boxMemo = new java.util.IdentityHashMap<>();
-    private int generation;
+    final java.util.IdentityHashMap<LayoutBox, BoxMemo> boxMemo = new java.util.IdentityHashMap<>();
+    /** 子の挿入・削除の差分パッチ（{@link #patchChildSlices}）。A8 で切り出した。 */
+    private final ChildSlicePatch childPatch = new ChildSlicePatch(this);
+    int generation;
     /** 変更印で署名の比較を省くか（呼び出し側が、変わった箱が分かっている局所更新のときだけ true にする）。 */
     private boolean useChangeStamps;
-    private long buildEpoch;
-    private int buildSerial;
+    long buildEpoch;
+    int buildSerial;
     /** 診断: 変更印で比較を省いた箱の累計。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_STAMPED = new java.util.concurrent.atomic.LongAdder();
     /** 検証: 変更印が「変わっていない」と言った箱でも署名を比べ、食い違えば例外にする（{@code -Denderframe.paint.verifystamps=true}）。 */
@@ -974,7 +925,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     public static final java.util.concurrent.atomic.LongAdder STAT_EXACT = new java.util.concurrent.atomic.LongAdder(), STAT_TRANSLATED = new java.util.concurrent.atomic.LongAdder(),
             STAT_NEW = new java.util.concurrent.atomic.LongAdder(), STAT_MISS = new java.util.concurrent.atomic.LongAdder(), STAT_UNMEMOIZABLE = new java.util.concurrent.atomic.LongAdder();
     /** 位置だけが変わった作り直し（{@link #render(LayoutBox, boolean)} の {@code cullOffscreen}）か。 */
-    private boolean translating;
+    boolean translating;
     private int translatedHits;
 
     /** 直近の描画で、前回の項目を平行移動して使った箱の数（0 でなければ、位置が最大 1 画素ずれうる）。 */
@@ -1023,254 +974,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return !com.nishiyu.enderframelib.core.raster.svg.SvgImage.looksLikeSvg(src);
     }
 
-    /**
-     * 算出スタイルが値として同じか。再スタイルされた箱は宣言が同じでも新しいインスタンスになるので、同一性だけで比べると
-     * 子孫まで巻き込んで外れる。描画が読むのは宣言と、文字の大きさ（自分とルート）だけ。
-     */
-    private static boolean sameStyle(com.nishiyu.enderframelib.core.css.ComputedStyle a, com.nishiyu.enderframelib.core.css.ComputedStyle b) {
-        if (a == b) return true;
-        if (a == null || b == null) return false;
-        return a.fontSizePx() == b.fontSizePx() && a.rootFontSizePx() == b.rootFontSizePx() && com.nishiyu.enderframelib.core.css.ComputedStyle.sameDeclarations(a, b);
-    }
-
-    static float[] numsOf(LayoutBox b) {
-        return fillNums(b, null);
-    }
-
-    static float[] fillNums(LayoutBox b, float[] reuse) {
-        float[] a = reuse != null && reuse.length == NUMS_LENGTH ? reuse : new float[NUMS_LENGTH];
-        a[0] = b.x; a[1] = b.y; a[2] = b.w; a[3] = b.h;
-        a[4] = b.pL; a[5] = b.pT; a[6] = b.pR; a[7] = b.pB;
-        a[8] = b.bL; a[9] = b.bT; a[10] = b.bR; a[11] = b.bB;
-        a[12] = b.lineHeightPx;
-        return a;
-    }
-
-    /** {@link #numsOf} の i 番目を、配列を作らずに返す（{@link #match} が箱ごとに配列を確保しないため）。 */
-    static float numAt(LayoutBox b, int i) {
-        return switch (i) {
-            case 0 -> b.x; case 1 -> b.y; case 2 -> b.w; case 3 -> b.h;
-            case 4 -> b.pL; case 5 -> b.pT; case 6 -> b.pR; case 7 -> b.pB;
-            case 8 -> b.bL; case 9 -> b.bT; case 10 -> b.bR; case 11 -> b.bB;
-            case 12 -> b.lineHeightPx;
-            default -> throw new IndexOutOfBoundsException(i);
-        };
-    }
-
-    static final int NUMS_LENGTH = 13;
-
-    private static boolean sameNums(float[] a, float[] b) {
-        if (a.length != b.length) return false;
-        for (int i = 0; i < a.length; i++) if (Float.compare(a[i], b[i]) != 0) return false;
-        return true;
-    }
-
-    /** クリップの値としての一致（連鎖の矩形が配列なので、{@code ClipChainPart} の equals が中身を見る）。 */
-    private static boolean sameClip(ClipRect a, ClipRect b) {
-        return a == b || (a != null && a.equals(b));
-    }
-
-    /** クリップの連鎖（各持ち主のローカル空間の矩形と所有者）が同じか。ページ AABB だけ動いたクリップを再利用できるか見る。 */
-    private static boolean sameClipChain(ClipRect a, ClipRect b) {
-        if (a == b) return true;
-        if (a == null || b == null) return false;
-        List<ClipChainPart> ca = a.chain(), cb = b.chain();
-        int n = ca.size();
-        if (n == 0 || n != cb.size()) return false;
-        for (int i = 0; i < n; i++) {
-            if (!ca.get(i).equals(cb.get(i))) return false;
-        }
-        return true;
-    }
-
-    /**
-     * 祖先クリップの境界変更が、この箱の全描画項目の範囲の外側だけで起きているか。
-     * どの項目の描かれる矩形にも触れない辺の変化なら、記憶している {@code clipRect} のまま画素一致する。
-     */
-    private static boolean clipDifferenceOutsideItems(BoxMemo m, ClipRect newClip, LayoutBox box,
-                                                      ScrollState scrollState,
-                                                      int originX, int originY, int shiftX, int shiftY,
-                                                      int[] itemRects) {
-        ClipRect oldClip = m.clip;
-        if (oldClip == null || newClip == null) return false;
-        if (!java.util.Objects.equals(oldClip.ownerId(), newClip.ownerId())) return false;
-        List<ClipChainPart> oldChain = oldClip.chain(), newChain = newClip.chain();
-        if (oldChain.size() != newChain.size()) return false;
-        boolean hasOwn = m.parentRelative && PaintOrder.boxHasOwnNode(box);
-        int oldOriginDeltaX = hasOwn ? m.originX - originX : 0;
-        int oldOriginDeltaY = hasOwn ? m.originY - originY : 0;
-        if (!rectEdgesSafe(m.items, oldClip.minX(), oldClip.minY(), oldClip.maxX(), oldClip.maxY(),
-                newClip.minX(), newClip.minY(), newClip.maxX(), newClip.maxY(),
-                oldClip.radiusTopLeft(), oldClip.radiusTopRight(), oldClip.radiusBottomRight(), oldClip.radiusBottomLeft(),
-                oldClip.radiusTopLeftV(), oldClip.radiusTopRightV(), oldClip.radiusBottomRightV(), oldClip.radiusBottomLeftV(),
-                newClip.radiusTopLeft(), newClip.radiusTopRight(), newClip.radiusBottomRight(), newClip.radiusBottomLeft(),
-                newClip.radiusTopLeftV(), newClip.radiusTopRightV(), newClip.radiusBottomRightV(), newClip.radiusBottomLeftV(),
-                oldClip, originX, originY, oldOriginDeltaX, oldOriginDeltaY, shiftX, shiftY, itemRects)) {
-            return false;
-        }
-        for (int ci = 0, cn = oldChain.size(); ci < cn; ci++) {
-            ClipChainPart pa = oldChain.get(ci), pb = newChain.get(ci);
-            if (pa.equals(pb)) continue;
-            String oid = pa.ownerId();
-            if (!java.util.Objects.equals(oid, pb.ownerId())) return false;
-            float oAx = 0f, oAy = 0f, nAx = 0f, nAy = 0f;
-            if (oid != null) {
-                LayoutBox owner = null;
-                boolean axisAlignedNoScroll = true;
-                for (LayoutBox a = box.parent; a != null; a = a.parent) {
-                    if (PaintOrder.hasMovingProps(a.style)
-                            || (scrollState != null && a.node != null
-                            && (scrollState.getScrollX(a.node) != 0f || scrollState.getScrollY(a.node) != 0f))) {
-                        axisAlignedNoScroll = false;
-                        break;
-                    }
-                    if (a.node != null && oid.equals(a.node.key())) {
-                        owner = a;
-                        break;
-                    }
-                }
-                if (!axisAlignedNoScroll || owner == null) return false;
-                oAx = pa.ownerOriginX();
-                oAy = pa.ownerOriginY();
-                nAx = pb.ownerOriginX();
-                nAy = pb.ownerOriginY();
-            }
-            int len = pa.rectLength();
-            if (len != pb.rectLength() || len < 8) return false;
-            float aTLv = len >= 12 ? pa.rectAt(8) : 0f, aTRv = len >= 12 ? pa.rectAt(9) : 0f;
-            float aBRv = len >= 12 ? pa.rectAt(10) : 0f, aBLv = len >= 12 ? pa.rectAt(11) : 0f;
-            float bTLv = len >= 12 ? pb.rectAt(8) : 0f, bTRv = len >= 12 ? pb.rectAt(9) : 0f;
-            float bBRv = len >= 12 ? pb.rectAt(10) : 0f, bBLv = len >= 12 ? pb.rectAt(11) : 0f;
-            if (!rectEdgesSafe(m.items,
-                    pa.rectAt(0) + oAx, pa.rectAt(1) + oAy, pa.rectAt(2) + oAx, pa.rectAt(3) + oAy,
-                    pb.rectAt(0) + nAx, pb.rectAt(1) + nAy, pb.rectAt(2) + nAx, pb.rectAt(3) + nAy,
-                    pa.rectAt(4), pa.rectAt(5), pa.rectAt(6), pa.rectAt(7), aTLv, aTRv, aBRv, aBLv,
-                    pb.rectAt(4), pb.rectAt(5), pb.rectAt(6), pb.rectAt(7), bTLv, bTRv, bBRv, bBLv,
-                    oldClip, originX, originY, oldOriginDeltaX, oldOriginDeltaY, shiftX, shiftY, itemRects)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isSubClipOf(ClipRect sub, ClipRect parent) {
-        List<ClipChainPart> sc = sub.chain(), pc = parent.chain();
-        int pn = pc.size();
-        if (sc.size() <= pn) return false;
-        for (int i = 0; i < pn; i++) {
-            if (!sc.get(i).equals(pc.get(i))) return false;
-        }
-        return true;
-    }
-
-    private static boolean rectEdgesSafe(List<DisplayItem> items,
-                                         float oMinX, float oMinY, float oMaxX, float oMaxY,
-                                         float nMinX, float nMinY, float nMaxX, float nMaxY,
-                                         float oTL, float oTR, float oBR, float oBL,
-                                         float oTLv, float oTRv, float oBRv, float oBLv,
-                                         float nTL, float nTR, float nBR, float nBL,
-                                         float nTLv, float nTRv, float nBRv, float nBLv,
-                                         ClipRect oldClip, int originX, int originY,
-                                         int oldOriginDeltaX, int oldOriginDeltaY, int shiftX, int shiftY,
-                                         int[] itemRects) {
-        if ((oTL != 0f || oTR != 0f || oBR != 0f || oBL != 0f || oTLv != 0f || oTRv != 0f || oBRv != 0f || oBLv != 0f
-                || nTL != 0f || nTR != 0f || nBR != 0f || nBL != 0f || nTLv != 0f || nTRv != 0f || nBRv != 0f || nBLv != 0f)
-                && (Float.compare(oTL, nTL) != 0 || Float.compare(oTR, nTR) != 0
-                || Float.compare(oBR, nBR) != 0 || Float.compare(oBL, nBL) != 0
-                || Float.compare(oTLv, nTLv) != 0 || Float.compare(oTRv, nTRv) != 0
-                || Float.compare(oBRv, nBRv) != 0 || Float.compare(oBLv, nBLv) != 0)) {
-            return false;
-        }
-        boolean diffMinX = Float.compare(oMinX, nMinX) != 0;
-        boolean diffMinY = Float.compare(oMinY, nMinY) != 0;
-        boolean diffMaxX = Float.compare(oMaxX, nMaxX) != 0;
-        boolean diffMaxY = Float.compare(oMaxY, nMaxY) != 0;
-        if (!diffMinX && !diffMinY && !diffMaxX && !diffMaxY) return true;
-        float rL = Math.max(Math.max(oTL, oBL), Math.max(nTL, nBL));
-        float rR = Math.max(Math.max(oTR, oBR), Math.max(nTR, nBR));
-        float rT = Math.max(Math.max(oTLv > 0f ? oTLv : oTL, oTRv > 0f ? oTRv : oTR),
-                Math.max(nTLv > 0f ? nTLv : nTL, nTRv > 0f ? nTRv : nTR));
-        float rB = Math.max(Math.max(oBLv > 0f ? oBLv : oBL, oBRv > 0f ? oBRv : oBR),
-                Math.max(nBLv > 0f ? nBLv : nBL, nBRv > 0f ? nBRv : nBR));
-        float safeMinX = Math.max(oMinX, nMinX) + rL;
-        float safeMinY = Math.max(oMinY, nMinY) + rT;
-        float safeMaxX = Math.min(oMaxX, nMaxX) - rR;
-        float safeMaxY = Math.min(oMaxY, nMaxY) - rB;
-        int minShiftX = Math.min(oldOriginDeltaX, shiftX), maxShiftX = Math.max(oldOriginDeltaX, shiftX);
-        int minShiftY = Math.min(oldOriginDeltaY, shiftY), maxShiftY = Math.max(oldOriginDeltaY, shiftY);
-        for (int i = 0, n = items.size(); i < n; i++) {
-            DisplayItem it = items.get(i);
-            if (it.type() == ElementType.NODE) {
-                // 箱自身のノードの範囲は親相対で、ここの境界検査に載らない。クリップが違うまま古い印を残すと
-                // 子へ伝わるので、ノードがクリップを持つなら（ここへ来たのは箱のクリップが前と違うとき）「外側だけの差」とは言えない
-                RenderMeta nodeMeta = it.meta();
-                ClipRect nodeClip = nodeMeta != null ? nodeMeta.clipRect() : null;
-                if (nodeClip != null) return false;
-                continue;
-            }
-            if (it.baseTranslateX() != 0f || it.baseTranslateY() != 0f
-                    || it.scaleX() != 1f || it.scaleY() != 1f || it.rotate() != 0f) {
-                return false;
-            }
-            RenderMeta meta = it.meta();
-            RenderHints h = meta != null ? meta.hints() : null;
-            if (meta != null) {
-                ClipRect mc = meta.clipRect();
-                if (mc != null && !sameClip(mc, oldClip) && !isSubClipOf(mc, oldClip)) return false;
-                if (h != null && h.skew() != 0f) return false;
-            }
-            float pad = (it.type() == ElementType.TEXT ? 4f : 1f) + (h != null && h.shadowBlur() > 0f ? 2f : 0f);
-            float x0, y0, x1, y1;
-            if (itemRects != null) {
-                int base = i * 4;
-                float ox0 = it.x() + oldOriginDeltaX, oy0 = it.y() + oldOriginDeltaY;
-                float nx0 = itemRects[base], ny0 = itemRects[base + 1];
-                float minXLocal = Math.min(ox0, nx0), minYLocal = Math.min(oy0, ny0);
-                float maxXLocal = Math.max(ox0 + it.width(), nx0 + itemRects[base + 2]);
-                float maxYLocal = Math.max(oy0 + it.height(), ny0 + itemRects[base + 3]);
-                if (h != null && h.shadowShape() != null) {
-                    ShadowShape ss = h.shadowShape();
-                    minXLocal = Math.min(minXLocal, ss.x0() + oldOriginDeltaX);
-                    minYLocal = Math.min(minYLocal, ss.y0() + oldOriginDeltaY);
-                    maxXLocal = Math.max(maxXLocal, ss.x1() + oldOriginDeltaX);
-                    maxYLocal = Math.max(maxYLocal, ss.y1() + oldOriginDeltaY);
-                }
-                x0 = minXLocal + originX - pad;
-                y0 = minYLocal + originY - pad;
-                x1 = maxXLocal + originX + pad;
-                y1 = maxYLocal + originY + pad;
-            } else {
-                float ix0 = it.x(), iy0 = it.y(), ix1 = ix0 + it.width(), iy1 = iy0 + it.height();
-                if (h != null && h.shadowShape() != null) {
-                    ShadowShape ss = h.shadowShape();
-                    ix0 = Math.min(ix0, ss.x0());
-                    iy0 = Math.min(iy0, ss.y0());
-                    ix1 = Math.max(ix1, ss.x1());
-                    iy1 = Math.max(iy1, ss.y1());
-                }
-                x0 = ix0 + originX + minShiftX - pad;
-                y0 = iy0 + originY + minShiftY - pad;
-                x1 = ix1 + originX + maxShiftX + pad;
-                y1 = iy1 + originY + maxShiftY + pad;
-            }
-            if (diffMinX && x0 < safeMinX) return false;
-            if (diffMinY && y0 < safeMinY) return false;
-            if (diffMaxX && x1 > safeMaxX) return false;
-            if (diffMaxY && y1 > safeMaxY) return false;
-        }
-        return true;
-    }
-
-    private static com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestorStyles(LayoutBox box,
-            com.nishiyu.enderframelib.core.css.ComputedStyle[] reuse) {
-        int n = 0;
-        for (LayoutBox a = box.parent; a != null; a = a.parent) n++;
-        com.nishiyu.enderframelib.core.css.ComputedStyle[] out = reuse != null && reuse.length == n
-                ? reuse : new com.nishiyu.enderframelib.core.css.ComputedStyle[n];
-        int i = 0;
-        for (LayoutBox a = box.parent; a != null; a = a.parent) out[i++] = a.style;
-        return out;
-    }
 
     /**
      * 変更印から、記憶が今の箱にそのまま使えると言えるか。記憶を作った後に、自分にも祖先にもレイアウトが触れておらず
@@ -1297,8 +1000,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         if (m.parentRelative != parentRelative || m.parentBox != box.parent || box.pathPaintStamp(buildSerial) > m.epoch
                 || m.attrVersion != box.node.attrVersion()
                 || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
-                || m.suppressShadow != suppressTextShadow || !sameClip(m.clip, clip)
-                || !sameStyle(m.placeholderStyle, box.placeholderStyle)
+                || m.suppressShadow != suppressTextShadow || !BoxMemo.sameClip(m.clip, clip)
+                || !BoxMemo.sameStyle(m.placeholderStyle, box.placeholderStyle)
                 || !java.util.Objects.equals(m.parentId, parentId)) {
             return false;
         }
@@ -1344,8 +1047,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         hitPerItem = false;
         if (m.parentRelative != parentRelative) return matchFail(5);
         if (m.viewportSensitive && (m.rootW != rootW || m.rootH != rootH)) return matchFail(1);
-        if (!sameStyle(m.style, box.style) || !sameStyle(m.firstLineStyle, box.firstLineStyle)
-                || !sameStyle(m.placeholderStyle, box.placeholderStyle)
+        if (!BoxMemo.sameStyle(m.style, box.style) || !BoxMemo.sameStyle(m.firstLineStyle, box.firstLineStyle)
+                || !BoxMemo.sameStyle(m.placeholderStyle, box.placeholderStyle)
                 || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
                 || m.suppressShadow != suppressTextShadow) return matchFail(2);
         boolean scrollChanged = m.carriesContentExtent
@@ -1380,7 +1083,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             fragmentsOnly = effDx != 0 || effDy != 0;
         }
         boolean moved = parentRelative ? (localDx != 0 || localDy != 0) : (effDx != 0 || effDy != 0);
-        boolean intMove = isIntegerTranslation(localDx) && isIntegerTranslation(localDy);
+        boolean intMove = BoxMemo.isIntegerTranslation(localDx) && BoxMemo.isIntegerTranslation(localDy);
         boolean exactFracCheck = false;
         // スクロールの作り直しは丸めて動かす。リサイズ・子の増減では、整数移動に加えて小数移動も丸め後の差が一致する箱なら使い回す
         boolean moveOk = m.translatable && (translating
@@ -1391,10 +1094,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             moveOk = true;
         }
         if (moved && !moveOk) return matchFail(4);
-        if (m.nums.length != NUMS_LENGTH) return matchFail(5);
-        for (int i = 2; i < NUMS_LENGTH; i++) if (Float.compare(m.nums[i], numAt(box, i)) != 0) return matchFail(6);
-        boolean clipSame = sameClip(m.clip, clip);
-        boolean clipChainSame = clipSame || (parentRelative && sameClipChain(m.clip, clip));
+        if (m.nums.length != BoxMemo.NUMS_LENGTH) return matchFail(5);
+        for (int i = 2; i < BoxMemo.NUMS_LENGTH; i++) if (Float.compare(m.nums[i], BoxMemo.numAt(box, i)) != 0) return matchFail(6);
+        boolean clipSame = BoxMemo.sameClip(m.clip, clip);
+        boolean clipChainSame = clipSame || (parentRelative && BoxMemo.sameClipChain(m.clip, clip));
         if (parentRelative) {
             if (!clipChainSame && !moveOk) return matchFail(7);
         } else {
@@ -1405,7 +1108,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         if (m.attrVersion != box.node.attrVersion()) return matchFail(10);
         int depth = 0;
         for (LayoutBox a = box.parent; a != null; a = a.parent, depth++) {
-            if (depth >= m.ancestors.length || !sameStyle(m.ancestors[depth], a.style)) return matchFail(11);
+            if (depth >= m.ancestors.length || !BoxMemo.sameStyle(m.ancestors[depth], a.style)) return matchFail(11);
         }
         if (depth != m.ancestors.length) return matchFail(12);
         List<LayoutBox.InlineFragment> frags = box.inlineFragments;
@@ -1421,22 +1124,22 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             if (Float.compare(m.fragNums[n + 2], f.w) != 0 || Float.compare(m.fragNums[n + 3], f.h) != 0
                     || Float.compare(m.fragNums[n + 4], f.baseline) != 0 || m.fragNums[n + 5] != (f.startEdge ? 1f : 0f)
                     || m.fragNums[n + 6] != (f.endEdge ? 1f : 0f) || Float.compare(m.fragNums[n + 7], f.descent) != 0) return matchFail(16);
-            if (m.fragRefs[r++] != f.box || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], f.box != null ? f.box.style : null)) return matchFail(17);
+            if (m.fragRefs[r++] != f.box || !BoxMemo.sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], f.box != null ? f.box.style : null)) return matchFail(17);
             List<LayoutBox> parents = f.parents;
             int pn = parents == null ? 0 : parents.size();
             if (!(m.fragRefs[r++] instanceof Integer count) || count != pn) return matchFail(18);
             for (int k = 0; k < pn; k++) {
-                if (m.fragRefs[r++] != parents.get(k) || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], parents.get(k).style)) return matchFail(19);
+                if (m.fragRefs[r++] != parents.get(k) || !BoxMemo.sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], parents.get(k).style)) return matchFail(19);
             }
             com.nishiyu.enderframelib.core.css.ComputedStyle ownerFl = f.firstLineOwner != null ? f.firstLineOwner.firstLineStyle : null;
-            if (m.fragRefs[r++] != f.firstLineOwner || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], ownerFl)) return matchFail(17);
+            if (m.fragRefs[r++] != f.firstLineOwner || !BoxMemo.sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], ownerFl)) return matchFail(17);
         }
         if (parentRelative && !moved) {
-            if (!clipSame && clipDifferenceOutsideItems(m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy, 0, 0, null)) {
+            if (!clipSame && BoxMemo.clipDifferenceOutsideItems(m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy, 0, 0, null)) {
                 clipSame = true;
             }
             if (!relPosChanged && !scrollChanged && clipSame) {
-                syncParentRelPositionOnly(m, box, curOx, curOy, curPox, curPoy, dx, dy);
+                BoxMemo.syncParentRelPositionOnly(m, box, curOx, curOy, curPox, curPoy, dx, dy);
                 return 1;
             }
             if (clipChainSame || moveOk) {
@@ -1466,8 +1169,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             if (!computeItemShifts(m, localDx, localDy, fragmentsOnly, parentRelative, curOx - curPox, curOy - curPoy, box)) return matchFail(4);
             if (parentRelative
                     && (!translating || (!hitPerItem && hitIntDx == 0 && hitIntDy == 0))
-                    && !hasMovingShadowShape(m.items, true, fragmentsOnly)) {
-                boolean effClipSame = clipSame || clipDifferenceOutsideItems(
+                    && !BoxMemo.hasMovingShadowShape(m.items, true, fragmentsOnly)) {
+                boolean effClipSame = clipSame || BoxMemo.clipDifferenceOutsideItems(
                         m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy,
                         hitIntDx, hitIntDy, hitPerItem ? hitRects : null);
                 hitParentRelReuse = true;
@@ -1493,8 +1196,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             hitIntDx = Math.round(localDx);
             hitIntDy = Math.round(localDy);
             if (parentRelative && !translating && localDx == hitIntDx && localDy == hitIntDy
-                    && !hasMovingShadowShape(m.items, true, fragmentsOnly)) {
-                boolean effClipSame = clipSame || clipDifferenceOutsideItems(
+                    && !BoxMemo.hasMovingShadowShape(m.items, true, fragmentsOnly)) {
+                boolean effClipSame = clipSame || BoxMemo.clipDifferenceOutsideItems(
                         m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy,
                         hitIntDx, hitIntDy, null);
                 hitParentRelReuse = true;
@@ -1534,49 +1237,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return 2;
     }
 
-    private static void syncParentRelPositionOnly(BoxMemo m, LayoutBox box, int curOx, int curOy, int curPox, int curPoy, float dx, float dy) {
-        if (dx == 0f && dy == 0f && curOx == m.originX && curOy == m.originY && curPox == m.parentOriginX && curPoy == m.parentOriginY
-                && (m.fragNums == null || box.inlineFragments.isEmpty() || (box.inlineFragments.get(0).x == m.fragNums[0] && box.inlineFragments.get(0).y == m.fragNums[1]))) {
-            return;
-        }
-        m.nums[0] = box.x;
-        m.nums[1] = box.y;
-        m.originX = curOx;
-        m.originY = curOy;
-        m.parentOriginX = curPox;
-        m.parentOriginY = curPoy;
-        if (m.fragNums != null && !box.inlineFragments.isEmpty()) {
-            for (int j = 0, fn = box.inlineFragments.size(); j < fn && j * 8 + 1 < m.fragNums.length; j++) {
-                LayoutBox.InlineFragment f = box.inlineFragments.get(j);
-                m.fragNums[j * 8] = f.x;
-                m.fragNums[j * 8 + 1] = f.y;
-            }
-        }
-    }
-
-    private static boolean hasMovingShadowShape(List<DisplayItem> items, boolean parentRel, boolean fragOnly) {
-        for (int i = 0, n = items.size(); i < n; i++) {
-            DisplayItem it = items.get(i);
-            if (parentRel && i == 0 && it.type() == ElementType.NODE && it.hints().relativeOrigin()) continue;
-            if (fragOnly && !movesWithFragment(it)) continue;
-            RenderMeta meta = it.meta();
-            if (meta != null && meta.hints() != null && meta.hints().shadowShape() != null) return true;
-        }
-        return false;
-    }
-
-    private static boolean movesWithFragment(DisplayItem it) {
-        return it.type() == ElementType.TEXT || it.id().contains("_tsh");
-    }
-
-    private static boolean nearHalfBoundary(float v, float base, float delta) {
-        float diffFromHalf = Math.abs(Math.abs(v - (float) Math.rint(v)) - 0.5f);
-        boolean exactGrid = com.nishiyu.enderframelib.core.kernel.LayoutUnit.isOnGrid(base)
-                && com.nishiyu.enderframelib.core.kernel.LayoutUnit.isOnGrid(delta);
-        if (diffFromHalf >= (exactGrid ? 1e-4f : 2e-3f)) return false;
-        return diffFromHalf > 0f || !exactGrid;
-    }
-
     /** {@link #computeItemShifts(BoxMemo, float, float, boolean, boolean, int, int, LayoutBox)} の互換版。 */
     private boolean computeItemShifts(BoxMemo m, float dx, float dy, boolean fragmentsOnly) {
         return computeItemShifts(m, dx, dy, fragmentsOnly, false, 0, 0, null);
@@ -1601,7 +1261,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             DisplayItem it = items.get(i);
             int base = i * 4;
             boolean isBoxNode = parentRel && i == 0 && it.type() == ElementType.NODE;
-            if (!isBoxNode && fragmentsOnly && !movesWithFragment(it)) {
+            if (!isBoxNode && fragmentsOnly && !BoxMemo.movesWithFragment(it)) {
                 hitRects[base] = it.x();
                 hitRects[base + 1] = it.y();
                 hitRects[base + 2] = it.width();
@@ -1613,9 +1273,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 if (box != null) {
                     float bdx = box.x - m.nums[0], bdy = box.y - m.nums[1];
                     if ((bdx != 0f || bdy != 0f)
-                            && (nearHalfBoundary(box.x, m.nums[0], bdx) || nearHalfBoundary(box.y, m.nums[1], bdy)
-                            || nearHalfBoundary(box.x + box.w, m.nums[0] + m.nums[2], bdx)
-                            || nearHalfBoundary(box.y + box.h, m.nums[1] + m.nums[3], bdy))) {
+                            && (BoxMemo.nearHalfBoundary(box.x, m.nums[0], bdx) || BoxMemo.nearHalfBoundary(box.y, m.nums[1], bdy)
+                            || BoxMemo.nearHalfBoundary(box.x + box.w, m.nums[0] + m.nums[2], bdx)
+                            || BoxMemo.nearHalfBoundary(box.y + box.h, m.nums[1] + m.nums[3], bdy))) {
                         return false;
                     }
                     int boxOx = Math.round(box.x), boxOy = Math.round(box.y);
@@ -1636,8 +1296,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             } else {
                 float fx = coords[base], fy = coords[base + 1], fw = coords[base + 2], fh = coords[base + 3];
                 float nx = fx + dx, ny = fy + dy;
-                if (nearHalfBoundary(nx, fx, dx) || nearHalfBoundary(ny, fy, dy)
-                        || nearHalfBoundary(nx + fw, fx + fw, dx) || nearHalfBoundary(ny + fh, fy + fh, dy)) {
+                if (BoxMemo.nearHalfBoundary(nx, fx, dx) || BoxMemo.nearHalfBoundary(ny, fy, dy)
+                        || BoxMemo.nearHalfBoundary(nx + fw, fx + fw, dx) || BoxMemo.nearHalfBoundary(ny + fh, fy + fh, dy)) {
                     return false;
                 }
                 left = Math.round(nx);
@@ -1669,241 +1329,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return true;
     }
 
-    private static boolean isIntegerTranslation(float d) {
-        return Math.abs(d - Math.rint(d)) <= 1e-3f;
-    }
-
-    /**
-     * 親相対モードで、局所座標（箱の原点からの相対）は変わらず、親に対する {@code NODE} 位置・スクロール寸法・
-     * クリップ AABB のみが変わった箱の記憶を再利用する。部品 {@code DisplayItem} の作り直しを避け、必要な項目だけを差し替える。
-     */
-    private static void appendNodePatched(List<DisplayItem> out, BoxMemo m, LayoutBox box, ClipRect newClip,
-                                          int newRelX, int newRelY, int curOx, int curOy, int curPox, int curPoy,
-                                          boolean relPosChanged, boolean scrollChanged, boolean clipChanged,
-                                          int partDx, int partDy, int[] itemRects,
-                                          float fracDx, float fracDy, boolean fracFragOnly) {
-        List<DisplayItem> items = m.items;
-        int n = items.size();
-        boolean nodePosChanged = n > 0 && items.get(0).type() == ElementType.NODE
-                && (relPosChanged || items.get(0).x() != newRelX || items.get(0).y() != newRelY);
-        boolean hasGradMove = !fracFragOnly && (fracDx != 0f || fracDy != 0f);
-        boolean patchItems = nodePosChanged || scrollChanged || clipChanged || partDx != 0 || partDy != 0
-                || itemRects != null || (hasGradMove && carriesShaderGradient(items));
-        boolean hasOwnNode = PaintOrder.boxHasOwnNode(box);
-        int subOx = hasOwnNode ? curOx : curPox;
-        int subOy = hasOwnNode ? curOy : curPoy;
-        float subShiftX = (hasOwnNode || fracFragOnly) ? 0f : fracDx;
-        float subShiftY = (hasOwnNode || fracFragOnly) ? 0f : fracDy;
-        boolean ownSubClipMoved = hasOwnNode ? (curOx != m.originX || curOy != m.originY) : (curPox != m.parentOriginX || curPoy != m.parentOriginY || subShiftX != 0f || subShiftY != 0f);
-        if (patchItems) {
-            DisplayItem[] updatedArr = null;
-            ClipRect lastOldClip = null;
-            ClipRect lastNextClip = null;
-            boolean haveLastClip = false;
-            RenderMeta lastOldMeta = null;
-            RenderMeta lastNextMeta = null;
-            for (int i = 0; i < n; i++) {
-                DisplayItem it = items.get(i);
-                int nextX = it.x();
-                int nextY = it.y();
-                int nextW = it.width();
-                int nextH = it.height();
-                if (itemRects != null) {
-                    int base = i * 4;
-                    if (i == 0 && it.type() == ElementType.NODE) {
-                        if (nodePosChanged) {
-                            nextX = newRelX;
-                            nextY = newRelY;
-                        }
-                        nextW = itemRects[base + 2];
-                        nextH = itemRects[base + 3];
-                    } else if (!fracFragOnly || movesWithFragment(it)) {
-                        nextX = itemRects[base];
-                        nextY = itemRects[base + 1];
-                        nextW = itemRects[base + 2];
-                        nextH = itemRects[base + 3];
-                    }
-                } else if (i == 0 && it.type() == ElementType.NODE) {
-                    if (nodePosChanged) {
-                        nextX = newRelX;
-                        nextY = newRelY;
-                    }
-                } else if ((partDx != 0 || partDy != 0) && (!fracFragOnly || movesWithFragment(it))) {
-                    nextX = it.x() + partDx;
-                    nextY = it.y() + partDy;
-                }
-                RenderMeta meta = it.meta();
-                RenderMeta nextMeta = meta;
-                if (meta != null) {
-                    if (meta == lastOldMeta) {
-                        nextMeta = lastNextMeta;
-                    } else {
-                        ClipRect curMetaClip = meta.clipRect();
-                        boolean updScroll = scrollChanged && meta.hints() != null && meta.hints().scrollable();
-                        boolean isDirectSubClip = curMetaClip != null && !sameClip(curMetaClip, m.clip);
-                        boolean updClip = curMetaClip != null && (clipChanged || (isDirectSubClip && ownSubClipMoved));
-                        boolean updGrad = hasGradMove && it.type() != ElementType.NODE && meta.hints() != null && meta.hints().shaderGradient() != null;
-                        if (updScroll || updClip || updGrad) {
-                            ClipRect nextClip;
-                            if (!updClip) {
-                                nextClip = curMetaClip;
-                            } else if (haveLastClip && curMetaClip == lastOldClip) {
-                                nextClip = lastNextClip;
-                            } else {
-                                ClipRect targetBaseClip = clipChanged ? newClip : m.clip;
-                                nextClip = isDirectSubClip
-                                        ? PaintSupport.rebaseSubClip(curMetaClip, m.clip, targetBaseClip, subOx, subOy, subShiftX, subShiftY)
-                                        : targetBaseClip;
-                                lastOldClip = curMetaClip;
-                                lastNextClip = nextClip;
-                                haveLastClip = true;
-                            }
-                            RenderHints nextHints = meta.hints();
-                            if (updScroll) nextHints = nextHints.withScroll(box.scrollWidth, box.scrollHeight);
-                            if (updGrad) nextHints = nextHints.withShaderGradient(nextHints.shaderGradient().offset(fracDx, fracDy));
-                            if (!sameClip(nextClip, curMetaClip) || nextHints != meta.hints()) {
-                                nextMeta = new RenderMeta(nextClip, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(),
-                                        meta.baseline(), meta.lineHeight(), meta.originX(), meta.originY(), meta.itemCount(),
-                                        meta.interactiveState(), meta.roundedBorder(), nextHints);
-                            }
-                            lastOldMeta = meta;
-                            lastNextMeta = nextMeta;
-                        }
-                    }
-                }
-                DisplayItem res = it.withBoundsAndMeta(nextX, nextY, nextW, nextH, nextMeta);
-                if (res != it) {
-                    if (m.itemsMutable) {
-                        items.set(i, res);
-                    } else {
-                        if (updatedArr == null) {
-                            updatedArr = new DisplayItem[n];
-                            for (int j = 0; j < i; j++) updatedArr[j] = items.get(j);
-                        }
-                        updatedArr[i] = res;
-                    }
-                } else if (updatedArr != null) {
-                    updatedArr[i] = it;
-                }
-                out.add(res);
-            }
-            if (updatedArr != null) {
-                m.items = java.util.Arrays.asList(updatedArr);
-                m.itemsMutable = true;
-            }
-        } else {
-            appendItems(out, items);
-        }
-        if ((fracDx != 0f || fracDy != 0f) && m.itemCoords != null && m.itemCoords.length == n * 4) {
-            for (int i = 0; i < n; i++) {
-                DisplayItem it = items.get(i);
-                if (i == 0 && it.type() == ElementType.NODE) {
-                    if (!it.hints().relativeOrigin()) {
-                        m.itemCoords[0] = box.x - curPox;
-                        m.itemCoords[1] = box.y - curPoy;
-                    }
-                    continue;
-                }
-                if (fracFragOnly && !movesWithFragment(it)) continue;
-                m.itemCoords[i * 4] += fracDx;
-                m.itemCoords[i * 4 + 1] += fracDy;
-            }
-        }
-        if (m.fragNums != null && !box.inlineFragments.isEmpty()) {
-            for (int j = 0, fn = box.inlineFragments.size(); j < fn && j * 8 + 1 < m.fragNums.length; j++) {
-                LayoutBox.InlineFragment f = box.inlineFragments.get(j);
-                m.fragNums[j * 8] = f.x;
-                m.fragNums[j * 8 + 1] = f.y;
-            }
-        }
-        m.nums[0] = box.x;
-        m.nums[1] = box.y;
-        m.originX = curOx;
-        m.originY = curOy;
-        m.parentOriginX = curPox;
-        m.parentOriginY = curPoy;
-        m.scrollW = box.scrollWidth;
-        m.scrollH = box.scrollHeight;
-        if (clipChanged) m.clip = newClip;
-        m.appliedDx = m.appliedDy = 0;
-        m.appliedExactDx = m.appliedExactDy = 0f;
-        m.appliedOriginDx = m.appliedOriginDy = 0;
-        m.appliedFragOnly = false;
-        m.appliedNonUniform = false;
-    }
-
-    /**
-     * 前回の項目を平行移動（一括 {@code (ix, iy)}、または {@code itemRects} に基づく項目ごとの丸め）し、
-     * クリップを今のものに替えた写しを {@code out} へ追加する。
-     * {@link ShadowShape} は小数座標を保持しているため {@code (dx, dy)} で進める。
-     */
-    private static void appendTranslated(List<DisplayItem> out, BoxMemo m, ClipRect newClip,
-                                         float dx, float dy, int ix, int iy, boolean textOnly, int[] itemRects,
-                                         boolean parentRel, int newRelX, int newRelY, int newRelW, int newRelH,
-                                         int curOx, int curOy, LayoutBox box, boolean scrollChanged, boolean clipChanged) {
-        STAT_APPEND_TRANSLATED.increment();
-        List<DisplayItem> items = m.items;
-        boolean hasOwnNode = parentRel && PaintOrder.boxHasOwnNode(box);
-        for (int i = 0, n = items.size(); i < n; i++) {
-            DisplayItem it = items.get(i);
-            boolean isRelNode = parentRel && i == 0 && it.type() == ElementType.NODE;
-            boolean moves = !textOnly || movesWithFragment(it);
-            int nx, ny, nw, nh;
-            if (itemRects != null) {
-                int base = i * 4;
-                nx = itemRects[base];
-                ny = itemRects[base + 1];
-                nw = itemRects[base + 2];
-                nh = itemRects[base + 3];
-            } else if (isRelNode) {
-                nx = newRelX;
-                ny = newRelY;
-                nw = newRelW;
-                nh = newRelH;
-            } else {
-                int ox = moves ? ix : 0, oy = moves ? iy : 0;
-                nx = it.x() + ox;
-                ny = it.y() + oy;
-                nw = it.width();
-                nh = it.height();
-            }
-            RenderMeta meta = it.meta();
-            if (meta != null) {
-                RenderHints h = meta.hints();
-                if (scrollChanged && h != null && h.scrollable()) {
-                    h = h.withScroll(box.scrollWidth, box.scrollHeight);
-                }
-                if (!isRelNode && h != null && h.shadowShape() != null && (moves && (dx != 0 || dy != 0))) {
-                    h = h.withShadowShape(h.shadowShape().offset(dx, dy));
-                }
-                if (!isRelNode && parentRel && h != null && h.shaderGradient() != null && (moves && (dx != 0 || dy != 0))) {
-                    h = h.withShaderGradient(h.shaderGradient().offset(dx, dy));
-                }
-                ClipRect c = meta.clipRect();
-                if (c != null) {
-                    if (parentRel) {
-                        LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, m.parentId);
-                        int curPox = pNode != null ? Math.round(pNode.x) : 0;
-                        int curPoy = pNode != null ? Math.round(pNode.y) : 0;
-                        c = PaintSupport.rebaseSubClip(c, m.clip, newClip,
-                                hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy,
-                                (hasOwnNode || !moves) ? 0f : dx, (hasOwnNode || !moves) ? 0f : dy);
-                    } else {
-                        c = newClip;
-                    }
-                }
-                if (c != meta.clipRect() || (h != null && h != meta.hints())) {
-                    meta = new RenderMeta(c, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(), meta.baseline(),
-                            meta.lineHeight(), meta.originX(), meta.originY(), meta.itemCount(), meta.interactiveState(),
-                            meta.roundedBorder(), h != null ? h : meta.hints());
-                }
-            }
-            out.add(new DisplayItem(it.id(), it.baseNodeId(), it.type(), nx, ny, nw, nh,
-                    it.text(), it.color(), it.bgColor(), it.events(), it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
-                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(), it.animDef(), it.fitMode(), meta, it.key()));
-        }
-    }
-
     /**
      * 項目が平行移動だけで作り直せるか: 座標を持つのが x・y と（前回のクリップそのものの）クリップだけで、
      * 箱の座標で決まる図形（影・グラデーション・clip-path・backdrop）や、画面に固定の背景を持たない。
@@ -1911,63 +1336,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     private static final String[] EMPTY_STRINGS = new String[0];
     private static final float[] EMPTY_FLOATS = new float[0];
     private static final Object[] EMPTY_OBJECTS = new Object[0];
-
-    /** 項目のどれかがスクロールの大きさ（中身の幅・高さ）を持つか。 */
-    private static boolean carriesContentExtent(List<DisplayItem> items) {
-        for (int i = 0, n = items.size(); i < n; i++) {
-            RenderMeta meta = items.get(i).meta();
-            if (meta != null && meta.hints() != null && meta.hints().scrollable()) return true;
-        }
-        return false;
-    }
-
-    private static boolean onlyNodeAndText(List<DisplayItem> items) {
-        for (int i = 0, n = items.size(); i < n; i++) {
-            ElementType t = items.get(i).type();
-            if (t != ElementType.NODE && t != ElementType.TEXT) return false;
-        }
-        return true;
-    }
-
-    private static boolean carriesShaderGradient(List<DisplayItem> items) {
-        for (int i = 0, n = items.size(); i < n; i++) {
-            RenderMeta meta = items.get(i).meta();
-            if (meta != null && meta.hints() != null && meta.hints().shaderGradient() != null) return true;
-        }
-        return false;
-    }
-
-    private static boolean isBoxOwnedDirectSubClip(ClipRect mc, ClipRect clip, String ownerKey) {
-        if (ownerKey == null) return false;
-        List<ClipChainPart> sc = mc.chain();
-        List<ClipChainPart> pc = clip == null ? List.of() : clip.chain();
-        int pn = pc.size();
-        if (sc.size() != pn + 1) return false;
-        for (int i = 0; i < pn; i++) {
-            if (!sc.get(i).equals(pc.get(i))) return false;
-        }
-        return ownerKey.equals(sc.get(pn).ownerId());
-    }
-
-    private static boolean survivesTranslation(LayoutBox box, ClipRect clip, List<DisplayItem> items, boolean parentRel) {
-        String attachment = box.style.get(CssPropertyIndex.BACKGROUND_ATTACHMENT);
-        if (attachment != null && attachment.contains("fixed")) return false;
-        String ownerKey = box.node != null ? box.node.key() : null;
-        for (int i = 0, n = items.size(); i < n; i++) {
-            DisplayItem it = items.get(i);
-            ElementType t = it.type();
-            if (t != ElementType.NODE && t != ElementType.RECT && t != ElementType.TEXT && t != ElementType.ROUNDED_BORDER) return false;
-            RenderMeta meta = it.meta();
-            if (meta == null) continue;
-            ClipRect mc = meta.clipRect();
-            if (mc != null && !sameClip(mc, clip) && !(parentRel && isBoxOwnedDirectSubClip(mc, clip, ownerKey))) return false;
-            RenderHints h = meta.hints();
-            if (h.shaderGradient() != null && !parentRel) return false;
-            LayerSpec layer = h.layer();
-            if (layer != null && (layer.clip() != null || layer.backdropShape() != null)) return false;
-        }
-        return true;
-    }
 
     private BoxMemo remember(LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> items) {
         return remember(null, box, clip, parentId, items, false);
@@ -1991,8 +1359,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         m.style = box.style;
         m.firstLineStyle = box.firstLineStyle;
         m.placeholderStyle = box.placeholderStyle;
-        m.ancestors = ancestorStyles(box, m.ancestors);
-        m.nums = fillNums(box, m.nums);
+        m.ancestors = BoxMemo.ancestorStyles(box, m.ancestors);
+        m.nums = BoxMemo.fillNums(box, m.nums);
         m.scrollW = box.scrollWidth;
         m.scrollH = box.scrollHeight;
         m.clip = clip;
@@ -2052,9 +1420,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         m.canvasSource = box == canvasBackgroundSource;
         m.interactive = box.hasInteractiveRules;
         m.suppressShadow = suppressTextShadow;
-        m.translatable = survivesTranslation(box, clip, items, parentRelative);
-        m.carriesContentExtent = carriesContentExtent(items);
-        m.nodeAndTextOnly = onlyNodeAndText(items);
+        m.translatable = BoxMemo.survivesTranslation(box, clip, items, parentRelative);
+        m.carriesContentExtent = BoxMemo.carriesContentExtent(items);
+        m.nodeAndTextOnly = BoxMemo.onlyNodeAndText(items);
         m.parentRelative = parentRelative;
         if (parentRelative) {
             m.originX = Math.round(box.x);
@@ -2085,38 +1453,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 if (cap != null) cap.setOrigin(prevOx, prevOy);
             }
         }
-    }
-
-    /** 項目が記憶の位置から動いている分（{@link BoxMemo#appliedExactDx}）を、記憶の基準の位置へ取り込む（差分パッチの前に呼ぶ）。 */
-    private static void syncApplied(BoxMemo m) {
-        float ax = m.appliedExactDx, ay = m.appliedExactDy;
-        int odx = m.appliedOriginDx, ody = m.appliedOriginDy;
-        if (ax == 0f && ay == 0f && odx == 0 && ody == 0 && m.appliedDx == 0 && m.appliedDy == 0) return;
-        float pageDx = odx + ax, pageDy = ody + ay;
-        if (!m.appliedFragOnly && m.nums != null && m.nums.length >= 2) {
-            m.nums[0] += pageDx;
-            m.nums[1] += pageDy;
-        }
-        m.originX += odx;
-        m.originY += ody;
-        if (m.fragNums != null) {
-            for (int i = 0; i + 1 < m.fragNums.length; i += 8) {
-                m.fragNums[i] += pageDx;
-                m.fragNums[i + 1] += pageDy;
-            }
-        }
-        if (m.itemCoords != null && m.items != null && m.itemCoords.length == m.items.size() * 4) {
-            for (int i = 0, n = m.items.size(); i < n; i++) {
-                if (m.appliedFragOnly && !movesWithFragment(m.items.get(i))) continue;
-                m.itemCoords[i * 4] += ax;
-                m.itemCoords[i * 4 + 1] += ay;
-            }
-        }
-        m.appliedDx = m.appliedDy = 0;
-        m.appliedExactDx = m.appliedExactDy = 0f;
-        m.appliedOriginDx = m.appliedOriginDy = 0;
-        m.appliedFragOnly = false;
-        m.appliedNonUniform = false;
     }
 
     private void drawBoxSelfMemo(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
@@ -2155,7 +1491,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             m.generation = generation;
             if (hitParentRelReuse) {
                 m.epoch = buildEpoch;
-                appendNodePatched(elements, m, box, clipRect, hitNewRelX, hitNewRelY,
+                BoxMemo.appendNodePatched(elements, m, box, clipRect, hitNewRelX, hitNewRelY,
                         hitCurOx, hitCurOy, hitCurPox, hitCurPoy,
                         hitRelPosChanged, hitScrollChanged, hitClipChanged,
                         hitPartDx, hitPartDy, hitPerItem ? hitRects : null,
@@ -2169,7 +1505,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 m.appliedOriginDy = parentRelative ? (hitCurOy - m.originY) : 0;
                 m.appliedFragOnly = hitFragmentsOnly;
                 m.appliedNonUniform = hitPerItem;
-                appendTranslated(elements, m, clipRect, hitDx, hitDy, hitIntDx, hitIntDy, hitFragmentsOnly,
+                BoxMemo.appendTranslated(elements, m, clipRect, hitDx, hitDy, hitIntDx, hitIntDy, hitFragmentsOnly,
                         hitPerItem ? hitRects : null, parentRelative, hitNewRelX, hitNewRelY, hitNewRelW, hitNewRelH,
                         hitCurOx, hitCurOy, box, hitScrollChanged, hitClipChanged);
             }
@@ -2187,7 +1523,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         try {
             drawBoxSelfUncached(elements, box, clipRect, parentId, m != null ? m.items : null);
             int count = elements.size() - start;
-            List<DisplayItem> built = sliceCopy(m, elements, start);
+            List<DisplayItem> built = BoxMemo.sliceCopy(m, elements, start);
             BoxMemo stored = remember(m, box, clipRect, parentId, built, count >= 3);
             if (cap != null && cap.capturing) {
                 stored.itemCoords = (stored.translatable && !stored.carriesContentExtent)
@@ -2200,21 +1536,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         } finally {
             if (!committed && cap != null && cap.capturing) cap.discardCapture();
         }
-    }
-
-    private static List<DisplayItem> sliceCopy(BoxMemo reuse, List<DisplayItem> elements, int start) {
-        int count = elements.size() - start;
-        if (count <= 0) return List.of();
-        if (count == 1) return List.of(elements.get(start));
-        if (count == 2) return List.of(elements.get(start), elements.get(start + 1));
-        if (reuse != null && reuse.itemsMutable && reuse.items != null && reuse.items.size() == count) {
-            List<DisplayItem> dst = reuse.items;
-            for (int i = 0; i < count; i++) dst.set(i, elements.get(start + i));
-            return dst;
-        }
-        DisplayItem[] arr = new DisplayItem[count];
-        for (int i = 0; i < count; i++) arr[i] = elements.get(start + i);
-        return java.util.Arrays.asList(arr);
     }
 
     private static RenderMeta reuseMeta(RenderMeta prev, ClipRect clipRect, Corners borderRadii,
@@ -2659,7 +1980,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     // Segmented DisplayList: 差分スライスパッチ API (P0-4 / 戦略 T2)
     // ==========================================
 
-    private ClipRect clipForBox(LayoutBox box) {
+    ClipRect clipForBox(LayoutBox box) {
         BoxMemo m = boxMemo.get(box);
         if (m != null && m.clip != null) return m.clip;
         // 記憶が無い箱（記憶を切った構成・記憶できない箱）は、親の中身の clip を組み立て直す（A6b ④）。
@@ -2668,14 +1989,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return box.parent != null ? order.contentClipOf(box.parent) : null;
     }
 
-    private String contentParentIdOf(LayoutBox box) {
+    String contentParentIdOf(LayoutBox box) {
         if (box == null) return null;
         PaintOrder.ScrollContent sc = order.scrollContentOf(box);
         if (sc != null) return sc.contentId;
         return box.node != null ? box.node.key() : null;
     }
 
-    private String parentIdForBox(LayoutBox box) {
+    String parentIdForBox(LayoutBox box) {
         BoxMemo m = boxMemo.get(box);
         if (m != null && m.parentId != null) return m.parentId;
         if (box.parent == null) return null;
@@ -2733,19 +2054,19 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     /** 挿入位置の探索で兄弟ごとに使い回す一覧（子パッチは描画のスレッドだけが走らせる）。 */
     private final ArrayList<LayoutBox> phaseScratch = new ArrayList<>();
 
-    private List<LayoutBox> blockPhaseOf(LayoutBox c) {
+    List<LayoutBox> blockPhaseOf(LayoutBox c) {
         phaseScratch.clear();
         collectBlockPhaseBoxes(c, phaseScratch);
         return phaseScratch;
     }
 
-    private List<LayoutBox> inlinePhaseOf(LayoutBox c) {
+    List<LayoutBox> inlinePhaseOf(LayoutBox c) {
         phaseScratch.clear();
         collectInlinePhaseBoxes(c, phaseScratch);
         return phaseScratch;
     }
 
-    private void collectSubtreeSlices(LayoutBox box, SubtreeSlices out) {
+    void collectSubtreeSlices(LayoutBox box, SubtreeSlices out) {
         if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
         if (!box.isAnonymous) {
             if (box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT)) {
@@ -2761,7 +2082,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         }
     }
 
-    private void renderSubtreeSlices(LayoutBox box, ClipRect clip, String parentId, boolean ancestorHasMoving,
+    void renderSubtreeSlices(LayoutBox box, ClipRect clip, String parentId, boolean ancestorHasMoving,
                                     List<DisplayItem> outBlocks, List<LayoutBox> outBlockBoxes,
                                     List<DisplayItem> outInlines, List<LayoutBox> outInlineBoxes) {
         if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
@@ -2831,7 +2152,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return !b.isAnonymous && !(b.node != null && "#text".equals(b.node.tag));
     }
 
-    private static void markSubtree(LayoutBox b, Set<LayoutBox> out) {
+    static void markSubtree(LayoutBox b, Set<LayoutBox> out) {
         if (b == null) return;
         out.add(b);
         if (b.children != null) for (LayoutBox c : b.children) markSubtree(c, out);
@@ -2984,7 +2305,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     private List<DisplayItem> patchBoxesUnprofiled(java.util.Collection<LayoutBox> boxes) {
         List<LayoutBox> sorted = preparePatchBoxes(boxes);
         if (sorted == null) {
-            List<DisplayItem> viaStacking = STACKING_PATCH_ENABLED ? patchViaStackingSubtrees(boxes) : null;
+            List<DisplayItem> viaStacking = STACKING_PATCH_ENABLED ? stackingPatch.patchViaStackingSubtrees(boxes) : null;
             if (viaStacking == null) STAT_SLICE_PATCH_FALLBACKS.increment();
             return viaStacking;
         }
@@ -3017,200 +2338,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     /** 診断: 組み直した部分木の数（スタッキングコンテキストの部分木の組み直しで差分パッチが成り立つたびに 1 以上増える）。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_STACKING_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
 
-    /**
-     * 箱のスライスの差し替えでは表せない変更（スタッキングコンテキストを作る・やめる箱。{@code :hover} で {@code transform} が付くボタンなど）を、
-     * その箱を含む、前後とも変わらないいちばん近いスタッキングコンテキストの部分木だけを組み直して表す。スタッキングコンテキストの
-     * 項目は表示リストの中で連続する（付録 E）ので、その範囲を全体の作り直しと同じ手順（{@link PaintOrder#stackingSubtreeTasks} →
-     * {@link #executeTasks}）で作り直して差し替え、後ろの箱の位置をずらす。残りの変わった箱は従来の箱のスライスの差し替え。
-     * 成り立たなければ何も変えずに null（呼び出し側が全体を作り直す）。
-     */
-    private List<DisplayItem> patchViaStackingSubtrees(java.util.Collection<LayoutBox> boxes) {
-        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null || boxes == null || boxes.isEmpty()) return null;
-        if (!(currentDisplayList instanceof PaintSupport.CaptureList) && !(currentDisplayList instanceof ArrayList)) return null;
-        // 1. スタッキングコンテキストにかかわる箱ごとに、組み直す部分木の根を決める（入れ子なら外側だけ）
-        List<LayoutBox> roots = new ArrayList<>(2);
-        List<LayoutBox> rest = new ArrayList<>(boxes.size());
-        for (LayoutBox b : boxes) {
-            if (b == null) continue;
-            BoxMemo m = boxMemo.get(b);
-            boolean stacking = b.style != null && order.createsStackingContext(b, b.style)
-                    || (m != null && m.style != null && order.createsStackingContext(b, m.style));
-            if (!stacking) {
-                rest.add(b);
-                continue;
-            }
-            LayoutBox root = stableStackingAncestor(b, boxes);
-            if (root == null) return null;
-            boolean covered = false;
-            for (int i = roots.size() - 1; i >= 0; i--) {
-                LayoutBox r = roots.get(i);
-                if (r == root || isAncestorOrSelf(r, root)) { covered = true; break; }
-                if (isAncestorOrSelf(root, r)) roots.remove(i);
-            }
-            if (!covered) roots.add(root);
-        }
-        if (roots.isEmpty()) return null;
-        rest.removeIf(b -> { for (LayoutBox r : roots) if (isAncestorOrSelf(r, b)) return true; return false; });
-        // 2. 何かを変える前に、全部が成り立つかを確かめる
-        int[][] ranges = new int[roots.size()][];
-        for (int i = 0; i < roots.size(); i++) {
-            if ((ranges[i] = stackingRange(roots.get(i))) == null) return null;
-        }
-        for (int i = 0; i < roots.size(); i++) {
-            for (int j = i + 1; j < roots.size(); j++) {
-                if (ranges[i][0] < ranges[j][1] && ranges[j][0] < ranges[i][1]) return null; // 重なる範囲（念のため）
-            }
-        }
-        if (!rest.isEmpty() && preparePatchBoxes(rest) == null) return null;
-
-        decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
-        boolean relMode = parentRelativeSource.getAsBoolean();
-        this.parentRelative = relMode;
-        order.setParentRelative(relMode);
-        // 3. 部分木を組み直して差し替える（範囲は直前に取り直す。前の差し替えで後ろがずれる）
-        for (LayoutBox root : roots) {
-            int[] range = stackingRange(root);
-            if (range == null) throw new IllegalStateException("組み直す範囲が途中で崩れた: " + root);
-            rebuildStackingSubtree(root, range);
-            STAT_STACKING_PATCH_HITS.increment();
-        }
-        // 4. 残りは箱のスライスの差し替え
-        List<LayoutBox> sortedRest = rest.isEmpty() ? List.of() : preparePatchBoxes(rest);
-        if (sortedRest == null) throw new IllegalStateException("組み直しのあとで箱のスライスの差し替えが成り立たない");
-        patchSortedSlices(sortedRest, relMode);
-
-        List<LayoutBox> all = new ArrayList<>(roots);
-        all.addAll(sortedRest);
-        syncCanvasBackground(all);
-        generation++;
-        buildSerial++;
-        buildEpoch = LayoutBox.paintEpoch();
-        lastElementCount = currentDisplayList.size();
-        STAT_SLICE_PATCH_HITS.increment();
-        return currentDisplayList;
-    }
-
-    private static boolean isAncestorOrSelf(LayoutBox ancestor, LayoutBox box) {
-        for (LayoutBox b = box; b != null; b = b.parent) if (b == ancestor) return true;
-        return false;
-    }
-
-    /**
-     * {@code b} を含む、組み直しの根にできるいちばん近い祖先: 今も前回の描画でもスタッキングコンテキストを作り、自身は変わっていない
-     * （{@code changed} に無い）、描画済みの、文書の根でない箱。無ければ null。
-     */
-    private LayoutBox stableStackingAncestor(LayoutBox b, java.util.Collection<LayoutBox> changed) {
-        for (LayoutBox a = b.parent; a != null; a = a.parent) {
-            if (a.node == null || "root".equals(a.node.tag)) return null;
-            if (a.isAnonymous || a.style == null || !order.createsStackingContext(a, a.style)) continue;
-            if (changed.contains(a)) continue;
-            BoxMemo m = boxMemo.get(a);
-            if (m == null || m.style == null || !order.createsStackingContext(a, m.style)) continue;
-            if (a.dlStart < 0 || a.dlOrder < 0 || a.dlOrder >= renderedBoxes.size() || renderedBoxes.get(a.dlOrder) != a) return null;
-            return a;
-        }
-        return null;
-    }
-
-    /**
-     * 部分木 {@code root} の、表示リストでの範囲 {@code {開始, 終わり, 描画順の先頭, 描画順の数}}。部分木の箱のスライスが隙間なく
-     * 連続して範囲を埋め、描画順の一覧でも連続しているときだけ。組み直しが全体の作り直しと同じ結果にならない部分木
-     * （スクロールする箱・Top Layer・マスク・内容を省いた箱・仮想化した並び・キャンバスの背景を譲った箱を含む）は null。
-     */
-    private int[] stackingRange(LayoutBox root) {
-        if (root.dlStart < 0 || root.dlOrder < 0 || root.dlOrder >= renderedBoxes.size() || renderedBoxes.get(root.dlOrder) != root) return null;
-        int[] acc = {Integer.MAX_VALUE, Integer.MIN_VALUE, 0, 0, Integer.MAX_VALUE, Integer.MIN_VALUE}; // 最小開始・最大終わり・項目数・箱数・最小順・最大順
-        if (!scanStackingSubtree(root, acc)) return null;
-        int start = acc[0], end = acc[1], items = acc[2], count = acc[3], o0 = acc[4], o1 = acc[5];
-        if (count == 0 || start != root.dlStart || o0 != root.dlOrder) return null;
-        if (end - start != items || o1 - o0 + 1 != count) return null; // 隙間（持ち主の無い項目）か、描画順の飛び
-        if (end > currentDisplayList.size()) return null;
-        return new int[]{start, end, o0, count};
-    }
-
-    private boolean scanStackingSubtree(LayoutBox b, int[] acc) {
-        if (b == null) return true;
-        if (b.contentAutoSkipped || b.childrenDeferred || b.isVirtualizedFlow()) return false;
-        if (b == canvasBackgroundSource) return false;
-        if (b.style != null && !b.isAnonymous) {
-            var facts = PaintOrder.factsOf(b.style);
-            if (facts.scrollbars() || facts.hasMask() || order.isTopLayerBox(b) || b.backdropStyle != null) return false;
-        }
-        if (b.dlOrder >= 0) {
-            if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlOrder >= renderedBoxes.size() || renderedBoxes.get(b.dlOrder) != b) return false;
-            acc[0] = Math.min(acc[0], b.dlStart);
-            acc[1] = Math.max(acc[1], b.dlEnd);
-            acc[2] += b.dlEnd - b.dlStart;
-            acc[3]++;
-            acc[4] = Math.min(acc[4], b.dlOrder);
-            acc[5] = Math.max(acc[5], b.dlOrder);
-        }
-        if (b.children != null) {
-            for (int i = 0, n = b.children.size(); i < n; i++) if (!scanStackingSubtree(b.children.get(i), acc)) return false;
-        }
-        return true;
-    }
-
-    private PaintSupport.CaptureList stackItemsScratch;
-    private final List<LayoutBox> stackBoxesScratch = new ArrayList<>();
-
-    /** 部分木 {@code root}（範囲 {@code range}）を組み直して表示リストと描画順の一覧へ差し替え、後ろの箱の位置をずらす。 */
-    private void rebuildStackingSubtree(LayoutBox root, int[] range) {
-        int start = range[0], end = range[1], orderStart = range[2], oldCount = range[3];
-        // 前の範囲にいた箱（窓から出る・消える箱があっても位置が残らないように、先に取り消す）
-        for (int k = orderStart, e = orderStart + oldCount; k < e; k++) renderedBoxes.get(k).clearDlSlice();
-        if (windowedBuild && !culledBoxes.isEmpty()) culledBoxes.removeIf(c -> isAncestorOrSelf(root, c));
-
-        boolean cull = translating || windowedBuild;
-        // 作業用の一覧は使い回す（差し替えで表示リストへ写したあとは読まない。hover の毎フレーム走る）
-        PaintSupport.CaptureList items = stackItemsScratch;
-        if (items == null) stackItemsScratch = items = new PaintSupport.CaptureList(end - start + 8);
-        else items.resetForBuild();
-        List<LayoutBox> newBoxes = stackBoxesScratch;
-        newBoxes.clear();
-        int prevEpoch = activeMovingEpoch;
-        activeMovingEpoch = ++movingEpochSeq;
-        try {
-            boolean ancestorMoving = hasMovingAncestor(root.parent);
-            List<RenderTask> tasks = order.stackingSubtreeTasks(root, clipForBox(root), parentIdForBox(root), ancestorMoving);
-            executeTasks(tasks, items, cull, windowedBuild, orderStart, newBoxes);
-        } finally {
-            activeMovingEpoch = prevEpoch;
-        }
-        // 表示リストと描画順の一覧を差し替え、箱の位置を全体の添字へ直す
-        int delta = items.size() - (end - start);
-        if (delta == 0) {
-            for (int k = 0, n = items.size(); k < n; k++) currentDisplayList.set(start + k, items.get(k));
-        } else {
-            currentDisplayList.subList(start, end).clear();
-            currentDisplayList.addAll(start, items);
-        }
-        int newCount = newBoxes.size();
-        for (int k = 0; k < newCount; k++) {
-            LayoutBox b = newBoxes.get(k);
-            b.dlStart += start;
-            b.dlEnd += start;
-        }
-        int orderDelta = newCount - oldCount;
-        if (orderDelta == 0) {
-            for (int k = 0; k < oldCount; k++) renderedBoxes.set(orderStart + k, newBoxes.get(k));
-        } else {
-            renderedBoxes.subList(orderStart, orderStart + oldCount).clear();
-            renderedBoxes.addAll(orderStart, newBoxes);
-        }
-        newBoxes.clear();
-        items.resetForBuild();
-        if (delta == 0 && orderDelta == 0) return; // 後ろの箱は動かない
-        for (int k = orderStart + newCount, n = renderedBoxes.size(); k < n; k++) {
-            LayoutBox succ = renderedBoxes.get(k);
-            succ.dlStart += delta;
-            succ.dlEnd += delta;
-            if (orderDelta != 0) succ.dlOrder = k;
-        }
-    }
+    PaintSupport.CaptureList stackItemsScratch;
+    final List<LayoutBox> stackBoxesScratch = new ArrayList<>();
 
     /** 降順（{@code dlStart} の大きい順）に並んだ箱のスライスを、それぞれ作り直して差し替える（{@link #patchBoxes} の本体）。 */
-    private void patchSortedSlices(List<LayoutBox> sorted, boolean relMode) {
+    void patchSortedSlices(List<LayoutBox> sorted, boolean relMode) {
         for (LayoutBox b : sorted) {
             ClipRect clip = clipForBox(b);
             String parentId = parentIdForBox(b);
@@ -3297,7 +2429,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
      * キャンバスの背景（先頭の {@code bg_root}）は、背景を譲った要素（ルート、無ければ body）の背景色で、箱のスライスの外にある。
      * その要素を差し替えたら（子孫の :hover で body の背景が変わるなど）、色を合わせる（A6b ④。無いと 1 フレーム古い色が残る）。
      */
-    private void syncCanvasBackground(List<LayoutBox> patched) {
+    void syncCanvasBackground(List<LayoutBox> patched) {
         LayoutBox source = canvasBackgroundSource;
         if (source == null || currentDisplayList.isEmpty() || !patched.contains(source)) return;
         DisplayItem first = currentDisplayList.get(0);
@@ -3359,1000 +2491,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     private List<DisplayItem> patchChildSlicesUnprofiled(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
-        if (!canPatchChildSlices(parentBox, removed, added, afterBox)) {
-            STAT_SLICE_PATCH_FALLBACKS.increment();
-            return null;
-        }
-        boolean relMode = parentRelativeSource.getAsBoolean();
-        this.parentRelative = relMode;
-        order.setParentRelative(relMode);
-        order.clearClips();
-
-        // 1. 削除スライスの特定と除去（ブロック層・インライン層）
-        int remBlockStart = -1, remBlockEnd = -1, remBlockOrderStart = -1, remBlockCount = 0;
-        int remInlineStart = -1, remInlineEnd = -1, remInlineOrderStart = -1, remInlineCount = 0;
-
-        if (!removed.isEmpty()) {
-            SubtreeSlices remSlices = new SubtreeSlices();
-            for (LayoutBox r : removed) collectSubtreeSlices(r, remSlices);
-
-            // インライン層の削除区間
-            if (!remSlices.inlineBoxes.isEmpty()) {
-                int minS = Integer.MAX_VALUE, maxE = Integer.MIN_VALUE;
-                int minO = Integer.MAX_VALUE, maxO = Integer.MIN_VALUE;
-                for (LayoutBox b : remSlices.inlineBoxes) {
-                    if (b.dlStart >= 0 && b.dlEnd >= b.dlStart) {
-                        minS = Math.min(minS, b.dlStart);
-                        maxE = Math.max(maxE, b.dlEnd);
-                    }
-                    if (b.dlOrder >= 0) {
-                        minO = Math.min(minO, b.dlOrder);
-                        maxO = Math.max(maxO, b.dlOrder);
-                    }
-                }
-                if (minS != Integer.MAX_VALUE) {
-                    remInlineStart = minS;
-                    remInlineEnd = maxE;
-                    remInlineOrderStart = minO;
-                    remInlineCount = maxO - minO + 1;
-                }
-            }
-
-            // ブロック層の削除区間
-            if (!remSlices.blockBoxes.isEmpty()) {
-                int minS = Integer.MAX_VALUE, maxE = Integer.MIN_VALUE;
-                int minO = Integer.MAX_VALUE, maxO = Integer.MIN_VALUE;
-                for (LayoutBox b : remSlices.blockBoxes) {
-                    if (b.dlStart >= 0 && b.dlEnd >= b.dlStart) {
-                        minS = Math.min(minS, b.dlStart);
-                        maxE = Math.max(maxE, b.dlEnd);
-                    }
-                    if (b.dlOrder >= 0) {
-                        minO = Math.min(minO, b.dlOrder);
-                        maxO = Math.max(maxO, b.dlOrder);
-                    }
-                }
-                if (minS != Integer.MAX_VALUE) {
-                    remBlockStart = minS;
-                    remBlockEnd = maxE;
-                    remBlockOrderStart = minO;
-                    remBlockCount = maxO - minO + 1;
-                }
-            }
-
-            // 境界チェック
-            if (remInlineStart >= 0 && (remInlineEnd > currentDisplayList.size() || remInlineOrderStart + remInlineCount > renderedBoxes.size())) {
-                return null;
-            }
-            if (remBlockStart >= 0 && (remBlockEnd > currentDisplayList.size() || remBlockOrderStart + remBlockCount > renderedBoxes.size())) {
-                return null;
-            }
-
-            // 後ろの層から先に削除（通常はインライン層が後ろ）
-            if (remInlineStart >= 0 && remBlockStart >= 0) {
-                if (remInlineStart >= remBlockEnd) {
-                    currentDisplayList.subList(remInlineStart, remInlineEnd).clear();
-                    renderedBoxes.subList(remInlineOrderStart, remInlineOrderStart + remInlineCount).clear();
-                    currentDisplayList.subList(remBlockStart, remBlockEnd).clear();
-                    renderedBoxes.subList(remBlockOrderStart, remBlockOrderStart + remBlockCount).clear();
-                } else if (remBlockStart >= remInlineEnd) {
-                    currentDisplayList.subList(remBlockStart, remBlockEnd).clear();
-                    renderedBoxes.subList(remBlockOrderStart, remBlockOrderStart + remBlockCount).clear();
-                    currentDisplayList.subList(remInlineStart, remInlineEnd).clear();
-                    renderedBoxes.subList(remInlineOrderStart, remInlineOrderStart + remInlineCount).clear();
-                } else {
-                    return null; // 重複
-                }
-            } else if (remInlineStart >= 0) {
-                currentDisplayList.subList(remInlineStart, remInlineEnd).clear();
-                renderedBoxes.subList(remInlineOrderStart, remInlineOrderStart + remInlineCount).clear();
-            } else if (remBlockStart >= 0) {
-                currentDisplayList.subList(remBlockStart, remBlockEnd).clear();
-                renderedBoxes.subList(remBlockOrderStart, remBlockOrderStart + remBlockCount).clear();
-            }
-
-            for (LayoutBox b : remSlices.inlineBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); }
-            for (LayoutBox b : remSlices.blockBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); }
-            if (windowedBuild) {
-                Set<LayoutBox> goneBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
-                for (LayoutBox r : removed) markSubtree(r, goneBoxes);
-                culledBoxes.removeIf(goneBoxes::contains);
-            }
-        }
-
-        // 2. 追加ボックスの描画スライス生成（ブロック層・インライン層）
-        List<DisplayItem> addedBlockItems = new PaintSupport.CaptureList(16);
-        List<LayoutBox> addedBlockBoxes = new ArrayList<>();
-        List<DisplayItem> addedInlineItems = new PaintSupport.CaptureList(16);
-        List<LayoutBox> addedInlineBoxes = new ArrayList<>();
-        decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
-        ClipRect clip = order.contentClipOf(parentBox);
-        String parentId = contentParentIdOf(parentBox);
-
-        boolean parentMoving = hasMovingAncestor(parentBox);
-        for (LayoutBox a : added) {
-            renderSubtreeSlices(a, clip, parentId, parentMoving, addedBlockItems, addedBlockBoxes, addedInlineItems, addedInlineBoxes);
-        }
-
-        // 3. 挿入位置の決定（ブロック層・インライン層）
-        int insertBlockPos = -1, insertBlockOrder = -1;
-        int insertInlinePos = -1, insertInlineOrder = -1;
-
-        int removedBlockItemsLen = remBlockStart >= 0 ? (remBlockEnd - remBlockStart) : 0;
-
-        if (remBlockStart >= 0) {
-            insertBlockPos = remBlockStart;
-            insertBlockOrder = remBlockOrderStart;
-        }
-
-        if (remInlineStart >= 0) {
-            insertInlinePos = remInlineStart - removedBlockItemsLen;
-            insertInlineOrder = remInlineOrderStart - remBlockCount;
-        }
-
-        if (insertBlockPos < 0 || insertInlinePos < 0) {
-            int afterIdx = (parentBox.children != null && afterBox != null) ? parentBox.children.indexOf(afterBox) : -1;
-
-            if (afterBox != null && afterIdx >= 0) {
-                // afterBox 以前の描画済みボックスを逆順探索
-                if (insertBlockPos < 0) {
-                    LayoutBox lastBlock = null;
-                    for (int i = afterIdx; i >= 0; i--) {
-                        LayoutBox c = parentBox.children.get(i);
-                        List<LayoutBox> blockPhase = blockPhaseOf(c);
-                        for (int k = blockPhase.size() - 1; k >= 0; k--) {
-                            LayoutBox b = blockPhase.get(k);
-                            if (b.dlEnd >= 0 && b.dlOrder >= 0) {
-                                lastBlock = b;
-                                break;
-                            }
-                        }
-                        if (lastBlock != null) break;
-                        if (c.dlEnd >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c)) {
-                            lastBlock = c;
-                            break;
-                        }
-                    }
-                    if (lastBlock != null) {
-                        insertBlockPos = lastBlock.dlEnd;
-                        insertBlockOrder = lastBlock.dlOrder + 1;
-                    } else if (parentBox.dlEnd >= 0 && parentBox.dlOrder >= 0) {
-                        insertBlockPos = parentBox.dlEnd;
-                        insertBlockOrder = parentBox.dlOrder + 1;
-                    } else {
-                        // afterBox 以降の最初のブロックボックスを前方探索
-                        LayoutBox firstBlock = null;
-                        for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
-                            LayoutBox c = parentBox.children.get(i);
-                            if (added.contains(c)) continue;
-                            List<LayoutBox> blockPhase = blockPhaseOf(c);
-                            for (LayoutBox b : blockPhase) {
-                                if (b.dlStart >= 0 && b.dlOrder >= 0) {
-                                    firstBlock = b;
-                                    break;
-                                }
-                            }
-                            if (firstBlock != null) break;
-                            if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c)) {
-                                firstBlock = c;
-                                break;
-                            }
-                        }
-                        if (firstBlock != null) {
-                            insertBlockPos = firstBlock.dlStart;
-                            insertBlockOrder = firstBlock.dlOrder;
-                        } else {
-                            insertBlockPos = parentBox.dlEnd >= 0 ? parentBox.dlEnd : 0;
-                            insertBlockOrder = parentBox.dlOrder >= 0 ? parentBox.dlOrder + 1 : 0;
-                        }
-                    }
-                }
-
-                if (insertInlinePos < 0) {
-                    LayoutBox lastInline = null;
-                    for (int i = afterIdx; i >= 0; i--) {
-                        LayoutBox c = parentBox.children.get(i);
-                        List<LayoutBox> inlinePhase = inlinePhaseOf(c);
-                        for (int k = inlinePhase.size() - 1; k >= 0; k--) {
-                            LayoutBox b = inlinePhase.get(k);
-                            if (b.dlEnd >= 0 && b.dlOrder >= 0) {
-                                lastInline = b;
-                                break;
-                            }
-                        }
-                        if (lastInline != null) break;
-                    }
-                    if (lastInline != null) {
-                        insertInlinePos = lastInline.dlEnd;
-                        insertInlineOrder = lastInline.dlOrder + 1;
-                    } else {
-                        // afterBox 以降の最初のインラインボックスを前方探索
-                        LayoutBox firstInline = null;
-                        for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
-                            LayoutBox c = parentBox.children.get(i);
-                            if (added.contains(c)) continue;
-                            List<LayoutBox> inlinePhase = inlinePhaseOf(c);
-                            for (LayoutBox b : inlinePhase) {
-                                if (b.dlStart >= 0 && b.dlOrder >= 0) {
-                                    firstInline = b;
-                                    break;
-                                }
-                            }
-                            if (firstInline != null) break;
-                        }
-                        if (firstInline != null) {
-                            insertInlinePos = firstInline.dlStart;
-                            insertInlineOrder = firstInline.dlOrder;
-                        } else {
-                            insertInlinePos = insertBlockPos;
-                            insertInlineOrder = insertBlockOrder;
-                        }
-                    }
-                }
-            } else {
-                // 先頭挿入または afterBox 不明
-                if (insertBlockPos < 0) {
-                    LayoutBox firstBlock = null;
-                    if (parentBox.children != null) {
-                        for (LayoutBox c : parentBox.children) {
-                            if (added.contains(c)) continue;
-                            List<LayoutBox> blockPhase = blockPhaseOf(c);
-                            for (LayoutBox b : blockPhase) {
-                                if (b.dlStart >= 0 && b.dlOrder >= 0) {
-                                    firstBlock = b;
-                                    break;
-                                }
-                            }
-                            if (firstBlock != null) break;
-                            if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c)) {
-                                firstBlock = c;
-                                break;
-                            }
-                        }
-                    }
-                    if (firstBlock != null) {
-                        insertBlockPos = firstBlock.dlStart;
-                        insertBlockOrder = firstBlock.dlOrder;
-                    } else {
-                        insertBlockPos = parentBox.dlEnd >= 0 ? parentBox.dlEnd : 0;
-                        insertBlockOrder = parentBox.dlOrder >= 0 ? parentBox.dlOrder + 1 : 0;
-                    }
-                }
-
-                if (insertInlinePos < 0) {
-                    LayoutBox firstInline = null;
-                    if (parentBox.children != null) {
-                        for (LayoutBox c : parentBox.children) {
-                            if (added.contains(c)) continue;
-                            List<LayoutBox> inlinePhase = inlinePhaseOf(c);
-                            for (LayoutBox b : inlinePhase) {
-                                if (b.dlStart >= 0 && b.dlOrder >= 0) {
-                                    firstInline = b;
-                                    break;
-                                }
-                            }
-                            if (firstInline != null) break;
-                        }
-                    }
-                    if (firstInline != null) {
-                        insertInlinePos = firstInline.dlStart;
-                        insertInlineOrder = firstInline.dlOrder;
-                    } else {
-                        insertInlinePos = insertBlockPos;
-                        insertInlineOrder = insertBlockOrder;
-                    }
-                }
-            }
-        }
-
-        // 境界値チェックと安全なフォールバック
-        if (insertBlockPos < 0 || insertBlockPos > currentDisplayList.size()
-                || insertBlockOrder < 0 || insertBlockOrder > renderedBoxes.size()
-                || insertInlinePos < 0 || insertInlinePos > currentDisplayList.size()
-                || insertInlineOrder < 0 || insertInlineOrder > renderedBoxes.size()) {
-            return null;
-        }
-
-        // 4. ブロック層の挿入と後続シフト
-        int remBlockLen = remBlockStart >= 0 ? (remBlockEnd - remBlockStart) : 0;
-        int deltaBlock = addedBlockItems.size() - remBlockLen;
-        if (!addedBlockItems.isEmpty()) {
-            for (LayoutBox b : addedBlockBoxes) {
-                b.dlStart += insertBlockPos;
-                b.dlEnd += insertBlockPos;
-            }
-            currentDisplayList.addAll(insertBlockPos, addedBlockItems);
-            renderedBoxes.addAll(insertBlockOrder, addedBlockBoxes);
-            for (LayoutBox ab : addedBlockBoxes) if (ab.node != null && PaintOrder.factsOf(ab.style).scrollbars()) scrollBoxes.add(ab);
-            if (deltaBlock != 0) {
-                for (int k = insertBlockOrder + addedBlockBoxes.size(), n = renderedBoxes.size(); k < n; k++) {
-                    LayoutBox succ = renderedBoxes.get(k);
-                    succ.dlStart += deltaBlock;
-                    succ.dlEnd += deltaBlock;
-                }
-            }
-        } else if (remBlockLen > 0) {
-            for (int k = insertBlockOrder, n = renderedBoxes.size(); k < n; k++) {
-                LayoutBox succ = renderedBoxes.get(k);
-                succ.dlStart -= remBlockLen;
-                succ.dlEnd -= remBlockLen;
-            }
-        }
-
-        // ブロック層の変更がインライン層の挿入位置に及ぼす影響を反映
-        int actualInlinePos = insertInlinePos + addedBlockItems.size();
-        int actualInlineOrder = insertInlineOrder + addedBlockBoxes.size();
-
-        // 5. インライン層の挿入と後続シフト
-        int remInlineLen = remInlineStart >= 0 ? (remInlineEnd - remInlineStart) : 0;
-        int deltaInline = addedInlineItems.size() - remInlineLen;
-        if (!addedInlineItems.isEmpty()) {
-            for (LayoutBox b : addedInlineBoxes) {
-                b.dlStart += actualInlinePos;
-                b.dlEnd += actualInlinePos;
-            }
-            currentDisplayList.addAll(actualInlinePos, addedInlineItems);
-            renderedBoxes.addAll(actualInlineOrder, addedInlineBoxes);
-            for (LayoutBox ab : addedInlineBoxes) if (ab.node != null && PaintOrder.factsOf(ab.style).scrollbars()) scrollBoxes.add(ab);
-            if (deltaInline != 0) {
-                for (int k = actualInlineOrder + addedInlineBoxes.size(), n = renderedBoxes.size(); k < n; k++) {
-                    LayoutBox succ = renderedBoxes.get(k);
-                    succ.dlStart += deltaInline;
-                    succ.dlEnd += deltaInline;
-                }
-            }
-        } else if (remInlineLen > 0) {
-            for (int k = actualInlineOrder, n = renderedBoxes.size(); k < n; k++) {
-                LayoutBox succ = renderedBoxes.get(k);
-                succ.dlStart -= remInlineLen;
-                succ.dlEnd -= remInlineLen;
-            }
-        }
-
-        // 6. dlOrder の正規化（挿入位置以降のみ）
-        int startShiftOrder = Math.max(0, Math.min(insertBlockOrder, actualInlineOrder) - 1);
-        for (int k = startShiftOrder, n = renderedBoxes.size(); k < n; k++) {
-            renderedBoxes.get(k).dlOrder = k;
-        }
-
-        // 7. ボックスの座標変化（dx, dy）のアイテムへの反映（挿入位置以降のみ）
-        int translatedHits = 0;
-        LayoutBox lastParentForClip = null;
-        ClipRect cachedParentClip = null;
-
-        for (int k = startShiftOrder, n = renderedBoxes.size(); k < n; k++) {
-            LayoutBox b = renderedBoxes.get(k);
-            BoxMemo m = boxMemo.get(b);
-            if (m != null) {
-                // 表示リストの中の項目は、記憶の位置から appliedExactDx/appliedExactDy だけ動いている（箱の位置は記憶の基準を足して見る）
-                final float ax = m.appliedFragOnly ? 0f : m.appliedExactDx, ay = m.appliedFragOnly ? 0f : m.appliedExactDy;
-                final float fx = m.appliedExactDx, fy = m.appliedExactDy;
-                float dx = (m.nums != null && m.nums.length >= 2) ? (b.x - (m.nums[0] + ax)) : 0;
-                float dy = (m.nums != null && m.nums.length >= 2) ? (b.y - (m.nums[1] + ay)) : 0;
-                boolean isTextNode = (b.node != null && b.node.nodeType == NodeType.TEXT);
-                if (dx == 0 && dy == 0 && !b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2) {
-                    LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
-                    dx = f0.x - (m.fragNums[0] + fx);
-                    dy = f0.y - (m.fragNums[1] + fy);
-                }
-                if (dx != 0 || dy != 0) {
-                    if (b.dlStart < 0 || b.dlEnd > currentDisplayList.size() || b.dlStart > b.dlEnd) continue;
-                    STAT_TRANSLATED.increment();
-                    translatedHits++;
-
-                    // 親クリップのキャッシュ（親が同一なら再計算スキップ）
-                    ClipRect expectedClip;
-                    if (b.parent == lastParentForClip) {
-                        expectedClip = cachedParentClip;
-                    } else {
-                        expectedClip = order.contentClipOf(b.parent);
-                        lastParentForClip = b.parent;
-                        cachedParentClip = expectedClip;
-                    }
-
-                    int curOx = Math.round(b.x), curOy = Math.round(b.y);
-                    boolean hasRelOrigin = relMode && PaintOrder.boxHasOwnNode(b);
-                    int curPox = 0, curPoy = 0;
-                    if (relMode) {
-                        String bParentId = m.parentId != null ? m.parentId : parentIdForBox(b);
-                        LayoutBox pNode = PaintOrder.effectiveParentNodeBox(b, bParentId);
-                        curPox = pNode != null ? Math.round(pNode.x) : 0;
-                        curPoy = pNode != null ? Math.round(pNode.y) : 0;
-                    }
-                    int partOx = hasRelOrigin ? curOx : curPox, partOy = hasRelOrigin ? curOy : curPoy;
-                    int oldPartOx = hasRelOrigin ? m.originX : m.parentOriginX, oldPartOy = hasRelOrigin ? m.originY : m.parentOriginY;
-
-                    int itemCount = b.dlEnd - b.dlStart;
-                    if (isTextNode && !b.inlineFragments.isEmpty()) {
-                        int numFrags = b.inlineFragments.size();
-                        if (numFrags == 1 && itemCount == 1 && currentDisplayList.get(b.dlStart).type() == ElementType.TEXT) {
-                            // 最頻ケース: 単一フラグメント・単一TEXTアイテム（リスト行のテキストなど）
-                            LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
-                            int newTop = Math.round(f0.y - partOy);
-                            int newLeft = Math.round(f0.x - partOx);
-                            int newH = Math.round(f0.y + f0.h - partOy) - newTop;
-                            int newW = Math.round(f0.x + f0.w - partOx) - newLeft;
-                            DisplayItem it = currentDisplayList.get(b.dlStart);
-                            RenderMeta meta = it.meta();
-                            if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
-                                ClipRect nextClip = relMode ? PaintSupport.rebaseSubClip(meta.clipRect(), m.clip, expectedClip, curOx, curOy) : expectedClip;
-                                if (!sameClip(nextClip, meta.clipRect())) meta = meta.withClip(nextClip);
-                            }
-                            DisplayItem shifted = new DisplayItem(
-                                    it.id(), it.baseNodeId(), it.type(),
-                                    newLeft, newTop, newW, newH,
-                                    it.text(), it.color(), it.bgColor(), it.events(),
-                                    it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
-                                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
-                                    it.animDef(), it.fitMode(), meta, it.key()
-                            );
-                            currentDisplayList.set(b.dlStart, shifted);
-                        } else {
-                            // 複数フラグメントまたは装飾アンカー・シャドウを含むケース
-                            List<LayoutBox.InlineFragment> validFrags = new ArrayList<>(numFrags);
-                            for (int fi = 0; fi < numFrags; fi++) {
-                                LayoutBox.InlineFragment f = b.inlineFragments.get(fi);
-                                if (f.text != null && !f.text.isBlank()) validFrags.add(f);
-                            }
-                            int textItemCount = 0;
-                            for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
-                                if (currentDisplayList.get(idx).type() == ElementType.TEXT) textItemCount++;
-                            }
-                            if (textItemCount == validFrags.size()) {
-                                int fIdx = 0;
-                                LayoutBox.InlineFragment f0 = validFrags.get(0);
-                                int baseTop = Math.round(f0.y - partOy);
-                                int baseLeft = Math.round(f0.x - partOx);
-                                float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] + fy : f0.y;
-                                float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] + fx : f0.x;
-                                int oldBaseTop = Math.round(oldFragY - oldPartOy);
-                                int oldBaseLeft = Math.round(oldFragX - oldPartOx);
-                                for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
-                                    DisplayItem it = currentDisplayList.get(idx);
-                                    RenderMeta meta = it.meta();
-                                    if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
-                                        ClipRect nextClip = relMode ? PaintSupport.rebaseSubClip(meta.clipRect(), m.clip, expectedClip, curOx, curOy) : expectedClip;
-                                        if (!sameClip(nextClip, meta.clipRect())) meta = meta.withClip(nextClip);
-                                    }
-                                    if (it.type() == ElementType.TEXT) {
-                                        LayoutBox.InlineFragment f = validFrags.get(fIdx++);
-                                        int newTop = Math.round(f.y - partOy);
-                                        int newLeft = Math.round(f.x - partOx);
-                                        int newH = Math.round(f.y + f.h - partOy) - newTop;
-                                        int newW = Math.round(f.x + f.w - partOx) - newLeft;
-                                        DisplayItem shifted = new DisplayItem(
-                                                it.id(), it.baseNodeId(), it.type(),
-                                                newLeft, newTop, newW, newH,
-                                                it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
-                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
-                                                it.animDef(), it.fitMode(), meta, it.key()
-                                        );
-                                        currentDisplayList.set(idx, shifted);
-                                    } else if (it.id() != null && b.node != null && it.id().equals(b.node.key())) {
-                                        int newX = curOx - curPox;
-                                        int newY = curOy - curPoy;
-                                        DisplayItem shifted = new DisplayItem(
-                                                it.id(), it.baseNodeId(), it.type(),
-                                                newX, newY, it.width(), it.height(),
-                                                it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
-                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
-                                                it.animDef(), it.fitMode(), meta, it.key()
-                                        );
-                                        currentDisplayList.set(idx, shifted);
-                                    } else {
-                                        int newY = baseTop + (it.y() - oldBaseTop);
-                                        int newX = baseLeft + (it.x() - oldBaseLeft);
-                                        DisplayItem shifted = new DisplayItem(
-                                                it.id(), it.baseNodeId(), it.type(),
-                                                newX, newY, it.width(), it.height(),
-                                                it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
-                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
-                                                it.animDef(), it.fitMode(), meta, it.key()
-                                        );
-                                        currentDisplayList.set(idx, shifted);
-                                    }
-                                }
-                            } else {
-                                LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
-                                int targetTop = Math.round(f0.y - partOy);
-                                int targetLeft = Math.round(f0.x - partOx);
-                                float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] + fy : f0.y;
-                                float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] + fx : f0.x;
-                                int oldTop = Math.round(oldFragY - oldPartOy);
-                                int oldLeft = Math.round(oldFragX - oldPartOx);
-                                int targetH = Math.round(f0.y + f0.h - partOy) - targetTop;
-                                int targetW = Math.round(f0.x + f0.w - partOx) - targetLeft;
-                                int oldHInt = Math.round(oldFragY + f0.h - oldPartOy) - oldTop;
-                                int oldWInt = Math.round(oldFragX + f0.w - oldPartOx) - oldLeft;
-                                for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
-                                    DisplayItem it = currentDisplayList.get(idx);
-                                    RenderMeta meta = it.meta();
-                                    if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
-                                        ClipRect nextClip = relMode ? PaintSupport.rebaseSubClip(meta.clipRect(), m.clip, expectedClip, curOx, curOy) : expectedClip;
-                                        if (!sameClip(nextClip, meta.clipRect())) meta = meta.withClip(nextClip);
-                                    }
-                                    if (it.id() != null && b.node != null && it.id().equals(b.node.key())) {
-                                        int newX = curOx - curPox;
-                                        int newY = curOy - curPoy;
-                                        DisplayItem shifted = new DisplayItem(
-                                                it.id(), it.baseNodeId(), it.type(),
-                                                newX, newY, it.width(), it.height(),
-                                                it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
-                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
-                                                it.animDef(), it.fitMode(), meta, it.key()
-                                        );
-                                        currentDisplayList.set(idx, shifted);
-                                    } else {
-                                        int newY = targetTop + (it.y() - oldTop);
-                                        int newX = targetLeft + (it.x() - oldLeft);
-                                        int newH = (it.height() == oldHInt) ? targetH : it.height();
-                                        int newW = (it.width() == oldWInt) ? targetW : it.width();
-                                        DisplayItem shifted = new DisplayItem(
-                                                it.id(), it.baseNodeId(), it.type(),
-                                                newX, newY, newW, newH,
-                                                it.text(), it.color(), it.bgColor(), it.events(),
-                                                it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
-                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
-                                                it.animDef(), it.fitMode(), meta, it.key()
-                                        );
-                                        currentDisplayList.set(idx, shifted);
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // ブロック要素
-                        int targetTop = Math.round(b.y - partOy);
-                        int targetLeft = Math.round(b.x - partOx);
-                        float oldBoxY = m.nums != null && m.nums.length >= 2 ? m.nums[1] + ay : b.y;
-                        float oldBoxX = m.nums != null && m.nums.length >= 2 ? m.nums[0] + ax : b.x;
-                        float oldBoxH = m.nums != null && m.nums.length >= 4 ? m.nums[3] : b.h;
-                        float oldBoxW = m.nums != null && m.nums.length >= 4 ? m.nums[2] : b.w;
-                        int oldTop = Math.round(oldBoxY - oldPartOy);
-                        int oldLeft = Math.round(oldBoxX - oldPartOx);
-                        int targetH = Math.round(b.y + b.h - partOy) - targetTop; // 項目の座標系（絶対なら 0、親相対なら親の原点）で見た下端から上端を引く（旧い式は、絶対座標で箱の位置を二重に引いて負になった）
-                        int targetW = Math.round(b.x + b.w - partOx) - targetLeft;
-                        int oldHInt = Math.round(oldBoxY + oldBoxH - oldPartOy) - oldTop;
-                        int oldWInt = Math.round(oldBoxX + oldBoxW - oldPartOx) - oldLeft;
-                        int shiftX = targetLeft - oldLeft;
-                        int shiftY = targetTop - oldTop;
-                        boolean sameDim = (targetH == oldHInt && targetW == oldWInt);
-
-                        for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
-                            DisplayItem it = currentDisplayList.get(idx);
-                            int newX, newY, newW, newH;
-                            if (hasRelOrigin && idx == b.dlStart && it.type() == ElementType.NODE && it.hints().relativeOrigin()) {
-                                newX = curOx - curPox;
-                                newY = curOy - curPoy;
-                                newW = targetW;
-                                newH = targetH;
-                            } else if (sameDim) {
-                                newX = it.x() + shiftX;
-                                newY = it.y() + shiftY;
-                                newW = it.width();
-                                newH = it.height();
-                            } else {
-                                newY = targetTop + (it.y() - oldTop);
-                                newX = targetLeft + (it.x() - oldLeft);
-                                newH = (it.height() == oldHInt) ? targetH : it.height();
-                                newW = (it.width() == oldWInt) ? targetW : it.width();
-                                if (it.id() != null && it.id().endsWith("_b_bottom")) {
-                                    newY = (targetTop + targetH) - it.height();
-                                } else if (it.id() != null && it.id().endsWith("_b_right")) {
-                                    newX = (targetLeft + targetW) - it.width();
-                                }
-                            }
-                            RenderMeta meta = it.meta();
-                            if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
-                                ClipRect nextClip = relMode ? PaintSupport.rebaseSubClip(meta.clipRect(), m.clip, expectedClip, curOx, curOy) : expectedClip;
-                                if (!sameClip(nextClip, meta.clipRect())) meta = meta.withClip(nextClip);
-                            }
-                            if (meta != null && meta.hints() != null && meta.hints().scrollable()) {
-                                meta = meta.withHints(meta.hints().withScroll(b.scrollWidth, b.scrollHeight));
-                            }
-                            DisplayItem shifted = new DisplayItem(
-                                    it.id(), it.baseNodeId(), it.type(),
-                                    newX, newY, newW, newH,
-                                    it.text(), it.color(), it.bgColor(), it.events(),
-                                    it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
-                                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
-                                    it.animDef(), it.fitMode(), meta, it.key()
-                            );
-                            currentDisplayList.set(idx, shifted);
-                        }
-                    }
-
-                    if (m.itemCoords != null) {
-                        if (m.items != null && m.itemCoords.length == m.items.size() * 4 && itemCount >= m.items.size()) {
-                            int odx = relMode ? (partOx - oldPartOx) : 0;
-                            int ody = relMode ? (partOy - oldPartOy) : 0;
-                            float boxShiftX = (m.nums != null && m.nums.length >= 2) ? ((b.x - m.nums[0]) - odx) : 0f;
-                            float boxShiftY = (m.nums != null && m.nums.length >= 2) ? ((b.y - m.nums[1]) - ody) : 0f;
-                            float fragShiftX = (!b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2)
-                                    ? ((b.inlineFragments.get(0).x - m.fragNums[0]) - odx) : boxShiftX;
-                            float fragShiftY = (!b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2)
-                                    ? ((b.inlineFragments.get(0).y - m.fragNums[1]) - ody) : boxShiftY;
-                            boolean valid = true;
-                            for (int i = 0, nItems = m.items.size(); i < nItems; i++) {
-                                DisplayItem cur = currentDisplayList.get(b.dlStart + i);
-                                float nx, ny;
-                                if (hasRelOrigin && i == 0 && cur.type() == ElementType.NODE && cur.hints().relativeOrigin()) {
-                                    nx = b.x - curPox;
-                                    ny = b.y - curPoy;
-                                } else {
-                                    boolean isFragItem = !b.inlineFragments.isEmpty() && movesWithFragment(cur);
-                                    nx = m.itemCoords[i * 4] + (isFragItem ? fragShiftX : boxShiftX);
-                                    ny = m.itemCoords[i * 4 + 1] + (isFragItem ? fragShiftY : boxShiftY);
-                                }
-                                float fw = m.itemCoords[i * 4 + 2], fh = m.itemCoords[i * 4 + 3];
-                                int rx = Math.round(nx), ry = Math.round(ny);
-                                int rw = Math.round(nx + fw) - rx, rh = Math.round(ny + fh) - ry;
-                                if (rx != cur.x() || ry != cur.y() || rw != cur.width() || rh != cur.height()) {
-                                    valid = false;
-                                    break;
-                                }
-                                m.itemCoords[i * 4] = nx;
-                                m.itemCoords[i * 4 + 1] = ny;
-                            }
-                            if (!valid) m.itemCoords = null;
-                        } else {
-                            m.itemCoords = null;
-                        }
-                    }
-                    m.appliedDx = m.appliedDy = 0; // 記憶を今のリストの状態に揃える（下で項目も取り直す）
-                    m.appliedExactDx = m.appliedExactDy = 0f;
-                    m.appliedOriginDx = m.appliedOriginDy = 0;
-                    m.appliedFragOnly = false;
-                    m.appliedNonUniform = false;
-                    if (m.nums != null && m.nums.length >= 2) {
-                        m.nums[0] = b.x;
-                        m.nums[1] = b.y;
-                    }
-                    if (relMode) {
-                        m.originX = curOx;
-                        m.originY = curOy;
-                        m.parentOriginX = curPox;
-                        m.parentOriginY = curPoy;
-                    }
-                    m.scrollW = b.scrollWidth;
-                    m.scrollH = b.scrollHeight;
-                    if (expectedClip != null) {
-                        m.clip = expectedClip;
-                    }
-                    if (!b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2) {
-                        for (int i = 0; i < b.inlineFragments.size() && (i * 8 + 1) < m.fragNums.length; i++) {
-                            m.fragNums[i * 8] = b.inlineFragments.get(i).x;
-                            m.fragNums[i * 8 + 1] = b.inlineFragments.get(i).y;
-                        }
-                    }
-                    if (itemCount > 0) {
-                        int memoEnd = b.dlEnd;
-                        PaintOrder.ScrollContent content = order.scrollContentOf(b);
-                        if (content != null && memoEnd > b.dlStart && content.contentId.equals(currentDisplayList.get(memoEnd - 1).id())) {
-                            memoEnd--;
-                        }
-                        int mLen = memoEnd - b.dlStart;
-                        DisplayItem[] arr = new DisplayItem[mLen];
-                        for (int ai = 0; ai < mLen; ai++) {
-                            arr[ai] = currentDisplayList.get(b.dlStart + ai);
-                        }
-                        m.items = java.util.Arrays.asList(arr);
-                    }
-                    b.touchPaint();
-                }
-            }
-        }
-
-        // 8. 祖先ボックスの寸法変化（親要素・body・html の NODE や背景）および scrollWidth/scrollHeight 変化を反映
-        for (LayoutBox anc = parentBox; anc != null; anc = anc.parent) {
-            BoxMemo am = boxMemo.get(anc);
-            if (am != null && am.nums != null && am.nums.length >= 4) {
-                float oldH = am.nums[3];
-                float newH = anc.h;
-                boolean hChanged = Float.compare(oldH, newH) != 0;
-                boolean scrollChanged = Float.compare(am.scrollH, anc.scrollHeight) != 0 || Float.compare(am.scrollW, anc.scrollWidth) != 0;
-                if ((hChanged || scrollChanged) && anc.dlStart >= 0 && anc.dlEnd > anc.dlStart) {
-                    int targetTop = Math.round(anc.y);
-                    int targetH = Math.round(anc.y + newH) - targetTop;
-                    int oldTop = Math.round(am.nums[1]);
-                    int oldHInt = Math.round(am.nums[1] + oldH) - oldTop;
-                    int dh = targetH - oldHInt;
-                    for (int idx = anc.dlStart; idx < anc.dlEnd; idx++) {
-                        DisplayItem it = currentDisplayList.get(idx);
-                        RenderMeta meta = it.meta();
-                        if (meta != null && meta.hints() != null && meta.hints().scrollable()) {
-                            meta = meta.withHints(meta.hints().withScroll(anc.scrollWidth, anc.scrollHeight));
-                        }
-                        boolean itemChanged = false;
-                        int nextH = it.height();
-                        int nextY = it.y();
-                        if (hChanged) {
-                            if (it.type() == ElementType.NODE) {
-                                nextH = targetH;
-                                itemChanged = true;
-                            } else if (it.type() == ElementType.RECT && it.id() != null && (it.id().endsWith("_b_top") || it.id().endsWith("_b_bottom"))) {
-                                // 上下の枠線は太さを保ち、下の線は箱の下端へ動く（高さに dh を足すと、太さが負になる）
-                                if (it.id().endsWith("_b_bottom")) nextY = it.y() + dh;
-                                itemChanged = true;
-                            } else if (it.type() == ElementType.RECT || it.type() == ElementType.ROUNDED_BORDER) {
-                                nextH = (it.height() == oldHInt) ? targetH : it.height() + dh;
-                                itemChanged = true;
-                            }
-                        }
-                        if (meta != it.meta()) {
-                            itemChanged = true;
-                        }
-                        if (itemChanged) {
-                            DisplayItem updated = new DisplayItem(
-                                    it.id(), it.baseNodeId(), it.type(),
-                                    it.x(), nextY, it.width(), nextH,
-                                    it.text(), it.color(), it.bgColor(), it.events(),
-                                    it.radius(), it.opacity(), it.baseTranslateX(), it.baseTranslateY(),
-                                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
-                                    it.animDef(), it.fitMode(), meta, it.key()
-                            );
-                            currentDisplayList.set(idx, updated);
-                        }
-                    }
-                    am.nums[3] = newH;
-                    am.scrollH = anc.scrollHeight;
-                    am.scrollW = anc.scrollWidth;
-                    if (anc.dlStart >= 0 && anc.dlEnd >= anc.dlStart) {
-                        int memoEnd = anc.dlEnd;
-                        PaintOrder.ScrollContent content = order.scrollContentOf(anc);
-                        if (content != null && memoEnd > anc.dlStart && content.contentId.equals(currentDisplayList.get(memoEnd - 1).id())) {
-                            memoEnd--;
-                        }
-                        syncApplied(am); // 項目を今のリストから取り直すので、基準の位置も動いた分だけ進める
-                        if (hChanged) am.itemCoords = null;
-                        am.items = List.copyOf(currentDisplayList.subList(anc.dlStart, memoEnd));
-                        am.itemsMutable = false;
-                    }
-                    anc.touchPaint();
-                }
-            }
-        }
-
-        // 8b. スクロールバーのトラック・つまみ寸法の同期（祖先コンテナおよび動いたスクロールコンテナ）
-        Set<LayoutBox> scrollbarBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (LayoutBox anc = parentBox; anc != null; anc = anc.parent) {
-            if (anc.node != null && PaintOrder.factsOf(anc.style).scrollbars()) scrollbarBoxes.add(anc);
-        }
-        // 全箱ではなく、描画時に集めたスクロール可能な箱だけを見る（取り残しは dlOrder が今の並びと合うかで除く）
-        for (LayoutBox b : scrollBoxes) {
-            if (b.dlOrder >= 0 && b.dlOrder < renderedBoxes.size() && renderedBoxes.get(b.dlOrder) == b) scrollbarBoxes.add(b);
-        }
-        for (LayoutBox anc : scrollbarBoxes) {
-            float scrollH = anc.scrollHeight;
-            float scrollW = anc.scrollWidth;
-            boolean wantsV = scrollH > anc.h + 2 && anc.h > 12;
-            boolean wantsH = scrollW > anc.w + 2 && anc.w > 12;
-            // 6 部品は 64-bit 整数鍵（nodeHandle<<16 | 部品番号）で引く。文字列 equals を全項目 × 6 回しない
-            int sbHandle = anc.node.nodeId();
-            boolean byKey = sbHandle > 0;
-            long vtKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_TRACK_V) : 0L;
-            long vKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_V) : 0L;
-            long svKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_NODE_V) : 0L;
-            long htKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_TRACK_H) : 0L;
-            long hKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_H) : 0L;
-            long shKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_NODE_H) : 0L;
-            String vtId = byKey ? null : anc.node.key() + "_sb_vt";
-            String vId = byKey ? null : anc.node.key() + "_sb_v";
-            String svId = byKey ? null : anc.node.key() + "_scrollv";
-            String htId = byKey ? null : anc.node.key() + "_sb_ht";
-            String hId = byKey ? null : anc.node.key() + "_sb_h";
-            String shId = byKey ? null : anc.node.key() + "_scrollh";
-            int vtIdx = -1, vIdx = -1, svIdx = -1;
-            int htIdx = -1, hIdx = -1, shIdx = -1;
-            int sbGrace = 3;
-            PaintOrder.ScrollContent content = order.scrollContentOf(anc);
-            for (int i = currentDisplayList.size() - 1; i >= 0; i--) {
-                DisplayItem item = currentDisplayList.get(i);
-                if (byKey) {
-                    long k = item.key();
-                    if (vtIdx < 0 && k == vtKey) vtIdx = i;
-                    else if (vIdx < 0 && k == vKey) vIdx = i;
-                    else if (svIdx < 0 && k == svKey) svIdx = i;
-                    else if (htIdx < 0 && k == htKey) htIdx = i;
-                    else if (hIdx < 0 && k == hKey) hIdx = i;
-                    else if (shIdx < 0 && k == shKey) shIdx = i;
-                } else {
-                    if (vtIdx < 0 && vtId.equals(item.id())) vtIdx = i;
-                    if (vIdx < 0 && vId.equals(item.id())) vIdx = i;
-                    if (svIdx < 0 && svId.equals(item.id())) svIdx = i;
-                    if (htIdx < 0 && htId.equals(item.id())) htIdx = i;
-                    if (hIdx < 0 && hId.equals(item.id())) hIdx = i;
-                    if (shIdx < 0 && shId.equals(item.id())) shIdx = i;
-                }
-                // 6 部品は「縦（vt, sv, v）→ 横（ht, sh, h）」の順に連続して置かれ、持ち主の内容の後ろ（多くは表示リストの末尾付近）にある。
-                // 欲しい軸の部品が全部見つかったら、番号の小さい側に隣り合う高々 3 件（反対軸の取り残し）だけ確かめて打ち切る。
-                // 欲しい軸が無いときは、無いことを示すため従来どおり全走査する。
-                boolean haveV = !wantsV || (vtIdx >= 0 && vIdx >= 0 && (content == null || svIdx >= 0));
-                boolean haveH = !wantsH || (htIdx >= 0 && hIdx >= 0 && (content == null || shIdx >= 0));
-                if (haveV && haveH && (wantsV || wantsH)) {
-                    if (--sbGrace < 0) break;
-                } else if (haveV && haveH && (content == null || (svIdx >= 0 && shIdx >= 0))) {
-                    break;
-                }
-            }
-            if (wantsV != (vIdx >= 0) || wantsH != (hIdx >= 0)) {
-                // スクロールバーの出現・消滅はアイテム数増減を伴うため安全にフル描画へフォールバック
-                return null;
-            }
-            ClipRect expectedClip = order.contentClipOf(anc.parent);
-            int ancOx = (relMode && PaintOrder.boxHasOwnNode(anc)) ? Math.round(anc.x) : 0;
-            int ancOy = (relMode && PaintOrder.boxHasOwnNode(anc)) ? Math.round(anc.y) : 0;
-            int barThickness = 4;
-            if (wantsV && vtIdx >= 0 && vIdx >= 0) {
-                float curY = scrollState != null ? scrollState.getScrollY(anc.node) : 0f;
-                float trackX = anc.x + anc.w - anc.bR - barThickness - 2;
-                float trackY = anc.y + anc.bT + 2;
-                float trackH = anc.h - anc.bT - anc.bB - 4;
-                float thumbH = Math.round(Math.max(12, trackH * (anc.h / scrollH))); // 整数: つまみの位置で丸めの高さが揺れない（平行移動と作り直しで同じ大きさ）
-                float maxScrollY = Math.max(1f, scrollH - anc.h);
-                float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
-
-                int vtLeft = Math.round(trackX - ancOx);
-                int vtTop = Math.round(trackY - ancOy);
-                int vtW = Math.round(trackX - ancOx + barThickness) - vtLeft;
-                int vtH = Math.round(trackY - ancOy + trackH) - vtTop;
-
-                int vLeft = Math.round(trackX - ancOx);
-                int vTop = Math.round(thumbY - ancOy);
-                int vW = Math.round(trackX - ancOx + barThickness) - vLeft;
-                int vH = Math.round(thumbY - ancOy + thumbH) - vTop;
-
-                DisplayItem itVt = currentDisplayList.get(vtIdx);
-                RenderMeta metaVt = itVt.meta();
-                if (metaVt != null && metaVt.clipRect() != null && expectedClip != null) {
-                    metaVt = metaVt.withClip(expectedClip);
-                }
-                currentDisplayList.set(vtIdx, new DisplayItem(
-                        itVt.id(), itVt.baseNodeId(), itVt.type(),
-                        vtLeft, vtTop, vtW, vtH,
-                        itVt.text(), itVt.color(), itVt.bgColor(), itVt.events(),
-                        itVt.radius(), itVt.opacity(), itVt.baseTranslateX(), itVt.baseTranslateY(),
-                        itVt.scaleX(), itVt.scaleY(), itVt.rotate(), itVt.transitionDuration(),
-                        itVt.animDef(), itVt.fitMode(), metaVt, itVt.key()
-                ));
-
-                if (content != null && svIdx >= 0) {
-                    content.thumbVId = svId;
-                    content.ky = (trackH - thumbH) / maxScrollY;
-                    content.fy0 = thumbY - Math.round(thumbY);
-                    DisplayItem itSv = currentDisplayList.get(svIdx);
-                    int svLeft = Math.round(anc.x - ancOx);
-                    int svTop = Math.round(anc.y - ancOy);
-                    int svW = Math.round(anc.x - ancOx + anc.w) - svLeft;
-                    int svH = Math.round(anc.y - ancOy + anc.h) - svTop;
-                    RenderMeta metaSv = itSv.meta();
-                    if (metaSv != null && metaSv.clipRect() != null && expectedClip != null) {
-                        metaSv = metaSv.withClip(expectedClip);
-                    }
-                    currentDisplayList.set(svIdx, new DisplayItem(
-                            itSv.id(), itSv.baseNodeId(), itSv.type(),
-                            svLeft, svTop, svW, svH,
-                            itSv.text(), itSv.color(), itSv.bgColor(), itSv.events(),
-                            itSv.radius(), itSv.opacity(), itSv.baseTranslateX(), itSv.baseTranslateY(),
-                            itSv.scaleX(), itSv.scaleY(), itSv.rotate(), itSv.transitionDuration(),
-                            itSv.animDef(), itSv.fitMode(), metaSv, itSv.key()
-                    ));
-                }
-
-                DisplayItem itV = currentDisplayList.get(vIdx);
-                RenderMeta metaV = itV.meta();
-                if (metaV != null && metaV.clipRect() != null && expectedClip != null) {
-                    metaV = metaV.withClip(expectedClip);
-                }
-                currentDisplayList.set(vIdx, new DisplayItem(
-                        itV.id(), itV.baseNodeId(), itV.type(),
-                        vLeft, vTop, vW, vH,
-                        itV.text(), itV.color(), itV.bgColor(), itV.events(),
-                        itV.radius(), itV.opacity(), itV.baseTranslateX(), itV.baseTranslateY(),
-                        itV.scaleX(), itV.scaleY(), itV.rotate(), itV.transitionDuration(),
-                        itV.animDef(), itV.fitMode(), metaV, itV.key()
-                ));
-            }
-            if (wantsH && htIdx >= 0 && hIdx >= 0) {
-                float curX = scrollState != null ? scrollState.getScrollX(anc.node) : 0f;
-                float trackX = anc.x + anc.bL + 2;
-                float trackY = anc.y + anc.h - anc.bB - barThickness - 2;
-                float trackW = anc.w - anc.bL - anc.bR - 4;
-                float thumbW = Math.round(Math.max(12, trackW * (anc.w / scrollW)));
-                float maxScrollX = Math.max(1f, scrollW - anc.w);
-                float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
-
-                int htLeft = Math.round(trackX - ancOx);
-                int htTop = Math.round(trackY - ancOy);
-                int htW = Math.round(trackX - ancOx + trackW) - htLeft;
-                int htH = Math.round(trackY - ancOy + barThickness) - htTop;
-
-                int hLeft = Math.round(thumbX - ancOx);
-                int hTop = Math.round(trackY - ancOy);
-                int hW = Math.round(thumbX - ancOx + thumbW) - hLeft;
-                int hH = Math.round(trackY - ancOy + barThickness) - hTop;
-
-                DisplayItem itHt = currentDisplayList.get(htIdx);
-                RenderMeta metaHt = itHt.meta();
-                if (metaHt != null && metaHt.clipRect() != null && expectedClip != null) {
-                    metaHt = metaHt.withClip(expectedClip);
-                }
-                currentDisplayList.set(htIdx, new DisplayItem(
-                        itHt.id(), itHt.baseNodeId(), itHt.type(),
-                        htLeft, htTop, htW, htH,
-                        itHt.text(), itHt.color(), itHt.bgColor(), itHt.events(),
-                        itHt.radius(), itHt.opacity(), itHt.baseTranslateX(), itHt.baseTranslateY(),
-                        itHt.scaleX(), itHt.scaleY(), itHt.rotate(), itHt.transitionDuration(),
-                        itHt.animDef(), itHt.fitMode(), metaHt, itHt.key()
-                ));
-
-                if (content != null && shIdx >= 0) {
-                    content.thumbHId = shId;
-                    content.kx = (trackW - thumbW) / maxScrollX;
-                    content.fx0 = thumbX - Math.round(thumbX);
-                    DisplayItem itSh = currentDisplayList.get(shIdx);
-                    int shLeft = Math.round(anc.x - ancOx);
-                    int shTop = Math.round(anc.y - ancOy);
-                    int shW = Math.round(anc.x - ancOx + anc.w) - shLeft;
-                    int shH = Math.round(anc.y - ancOy + anc.h) - shTop;
-                    RenderMeta metaSh = itSh.meta();
-                    if (metaSh != null && metaSh.clipRect() != null && expectedClip != null) {
-                        metaSh = metaSh.withClip(expectedClip);
-                    }
-                    currentDisplayList.set(shIdx, new DisplayItem(
-                            itSh.id(), itSh.baseNodeId(), itSh.type(),
-                            shLeft, shTop, shW, shH,
-                            itSh.text(), itSh.color(), itSh.bgColor(), itSh.events(),
-                            itSh.radius(), itSh.opacity(), itSh.baseTranslateX(), itSh.baseTranslateY(),
-                            itSh.scaleX(), itSh.scaleY(), itSh.rotate(), itSh.transitionDuration(),
-                            itSh.animDef(), itSh.fitMode(), metaSh, itSh.key()
-                    ));
-                }
-
-                DisplayItem itH = currentDisplayList.get(hIdx);
-                RenderMeta metaH = itH.meta();
-                if (metaH != null && metaH.clipRect() != null && expectedClip != null) {
-                    metaH = metaH.withClip(expectedClip);
-                }
-                currentDisplayList.set(hIdx, new DisplayItem(
-                        itH.id(), itH.baseNodeId(), itH.type(),
-                        hLeft, hTop, hW, hH,
-                        itH.text(), itH.color(), itH.bgColor(), itH.events(),
-                        itH.radius(), itH.opacity(), itH.baseTranslateX(), itH.baseTranslateY(),
-                        itH.scaleX(), itH.scaleY(), itH.rotate(), itH.transitionDuration(),
-                        itH.animDef(), itH.fitMode(), metaH, itH.key()
-                ));
-            }
-        }
-
-        // 9. bg_root の寸法同期
-        if (!currentDisplayList.isEmpty()) {
-            DisplayItem first = currentDisplayList.get(0);
-            if ("bg_root".equals(first.id()) && currentRoot != null) {
-                int expectedH = Math.round(Math.max(currentRoot.h, (float) rootH));
-                if (first.height() != expectedH) {
-                    DisplayItem updatedRoot = new DisplayItem(
-                            first.id(), first.baseNodeId(), first.type(),
-                            first.x(), first.y(), first.width(), expectedH,
-                            first.text(), first.color(), first.bgColor(), first.events(),
-                            first.radius(), first.opacity(), first.baseTranslateX(), first.baseTranslateY(),
-                            first.scaleX(), first.scaleY(), first.rotate(), first.transitionDuration(),
-                            first.animDef(), first.fitMode(), first.meta(), first.key()
-                    );
-                    currentDisplayList.set(0, updatedRoot);
-                }
-            }
-        }
-
-        generation++;
-        buildSerial++;
-        buildEpoch = LayoutBox.paintEpoch();
-        lastElementCount = currentDisplayList.size();
-        STAT_CHILD_SLICE_PATCH_HITS.increment();
-        return currentDisplayList;
+        return childPatch.apply(parentBox, removed, added, afterBox);
     }
 }

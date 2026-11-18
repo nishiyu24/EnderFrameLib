@@ -22,12 +22,12 @@ class DisplayListBuilderNumsTest {
             b.pL = r.nextFloat(); b.pT = r.nextFloat(); b.pR = r.nextFloat(); b.pB = r.nextFloat();
             b.bL = r.nextFloat(); b.bT = r.nextFloat(); b.bR = r.nextFloat(); b.bB = r.nextFloat();
             b.lineHeightPx = r.nextFloat() * 30;
-            float[] nums = DisplayListBuilder.numsOf(b);
-            assertEquals(DisplayListBuilder.NUMS_LENGTH, nums.length);
+            float[] nums = BoxMemo.numsOf(b);
+            assertEquals(BoxMemo.NUMS_LENGTH, nums.length);
             for (int i = 0; i < nums.length; i++) {
-                assertEquals(Float.floatToIntBits(nums[i]), Float.floatToIntBits(DisplayListBuilder.numAt(b, i)), "field " + i);
+                assertEquals(Float.floatToIntBits(nums[i]), Float.floatToIntBits(BoxMemo.numAt(b, i)), "field " + i);
             }
         }
-        assertThrows(IndexOutOfBoundsException.class, () -> DisplayListBuilder.numAt(b, DisplayListBuilder.NUMS_LENGTH));
+        assertThrows(IndexOutOfBoundsException.class, () -> BoxMemo.numAt(b, BoxMemo.NUMS_LENGTH));
     }
 }

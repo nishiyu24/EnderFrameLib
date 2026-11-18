@@ -1,0 +1,66 @@
+# SystemPropertyRatchetTest の表（ENGINE_REARCHITECTURE_PLAN T1 ④）: キー | 種類 | 読むファイル（, 区切り） | 説明
+# 環境変数は env:NAME。種類は SHORTCUT / GPU / DIAGNOSTIC / TUNING / COMPAT / PLATFORM。
+# 新しいキーを足すときは S1（EngineFlags への一元化）の後なら EngineFlags だけで読む。
+enderframe.css.noshare | SHORTCUT | core/css/ComputedStyle.java | ComputedStyle.SHARE_ENABLED（算出スタイルの共有）
+enderframe.css.textfullcascade | COMPAT | common/RenderPipeline.java | RenderPipeline.TEXT_STYLE_FROM_PARENT を切り、文字の節にもカスケードを全部かける
+enderframe.gl.fullresblur | GPU | core/paint/gpu/GpuRenderBackend.java | GpuRenderBackend.downsampledBlur（縮小してぼかす）を切る
+enderframe.gl.fullscreenlayers | GPU | core/paint/gpu/GpuRenderBackend.java | GpuRenderBackend.boundedLayers（層を外接矩形に限る）を切る
+enderframe.gl.noreplay | GPU | core/paint/gpu/RectStream.java | RectStream.replayEnabled（項目単位の保持記録の再生）
+enderframe.gl.rectcapacity | GPU | core/paint/gpu/GpuRenderBackend.java | RectStream の初期容量（図形数。既定 16384）
+enderframe.gl.recttrees | GPU | core/paint/gpu/GpuRenderBackend.java | GpuRenderBackend.rectTrees（"false" で切る）
+enderframe.gl.retainscroll | GPU | core/paint/gpu/GpuRenderBackend.java | GpuRenderBackend.retainedScroll（"false" で切る）
+enderframe.gpu.nodamage | GPU | core/paint/gpu/GpuRenderBackend.java | GpuRenderBackend.damageEnabled（損傷範囲だけの描画。B10）
+enderframe.layout.noblockpercentkey | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.blockPercentFreeEnabled
+enderframe.layout.nocutoff | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.cutoffEnabled
+enderframe.layout.nodefiniteleaf | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.definiteLeafReuse
+enderframe.layout.nofitreuse | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.fitReuseEnabled
+enderframe.layout.noflexskip | SHORTCUT | core/layout/FlexLayoutEngine.java | FlexLayoutEngine.skipSameWidthRemeasure
+enderframe.layout.nofloatmemo | SHORTCUT | core/layout/BlockLayoutEngine.java | BlockLayoutEngine.floatMemoEnabled
+enderframe.layout.nofreshreuse | SHORTCUT | common/RenderPipeline.java | RenderPipeline.FRESH_LAYOUT_PASS_REUSE
+enderframe.layout.nolazythrough | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.lazyThroughIneligible
+enderframe.layout.noparallel | SHORTCUT | core/layout/LayoutTaskPool.java | LayoutTaskPool.parallelEnabled（B2 の並列化）
+enderframe.layout.noresizeskip | SHORTCUT | common/RenderPipeline.java | RenderPipeline.RESIZE_SKIP_REBUILD（Q7）
+enderframe.layout.nosamerun | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.samePassReuse
+enderframe.layout.noshift | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.SHIFT_ENABLED（部分木の平行移動）
+enderframe.layout.notentative | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.tentativeReuse
+enderframe.layout.noviewportwidthfree | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.viewportWidthFreeReuse（Q6）
+enderframe.layout.nowidthreuse | SHORTCUT | core/layout/LayoutBox.java | LayoutBox.widthIndependentReuse
+enderframe.layout.probe | DIAGNOSTIC | core/layout/LayoutParallelProbe.java | LayoutParallelProbe（並列化の採取）
+enderframe.layout.verifyfloats | DIAGNOSTIC | core/layout/BlockLayoutEngine.java | BlockLayoutEngine.verifyFloatMemo（:core:test が立てる）
+enderframe.paint.cullmargin | TUNING | core/paint/DisplayListBuilder.java | DisplayListBuilder.CULL_MARGIN（画面外の間引きの余白 px。既定 640）
+enderframe.paint.nochunks | SHORTCUT | core/paint/PaintOrder.java | PaintOrder.chunksEnabled
+enderframe.paint.nocullrange | SHORTCUT | core/paint/PaintSceneDriver.java | PaintSceneDriver.cullRecordedRanges
+enderframe.paint.nodiffpatch | SHORTCUT | core/paint/PaintSceneDriver.java | PaintSceneDriver.patchDiffIndex
+enderframe.paint.nomemo | SHORTCUT | core/paint/BoxAnimation.java, core/paint/DisplayListBuilder.java | DisplayListBuilder.MEMO_ENABLED・BoxAnimation.NO_MEMO
+enderframe.paint.noparentrelative | SHORTCUT | core/EngineContext.java, core/paint/DisplayListBuilder.java | EngineContext.parentRelativeDisplayItems（B3 の親相対化）
+enderframe.paint.noprune | SHORTCUT | core/paint/DisplayListBuilder.java | DisplayListBuilder.PRUNE_ENABLED
+enderframe.paint.noreplay | SHORTCUT | core/paint/software/SoftwareRenderBackend.java | SoftwareRenderBackend.glReplay
+enderframe.paint.noscrollnode | SHORTCUT | core/paint/DisplayListBuilder.java | DisplayListBuilder.scrollContentNodes
+enderframe.paint.noshiftpatch | SHORTCUT | core/paint/PaintSceneDriver.java | PaintSceneDriver.patchShiftIndex
+enderframe.paint.nostamps | SHORTCUT | common/UiView.java | UiView.changeStampsEnabled
+enderframe.paint.notextsetup | SHORTCUT | core/paint/software/SoftwareRenderBackend.java | SoftwareRenderBackend.textSetupReuse（P9b）
+enderframe.paint.notranslate | SHORTCUT | core/paint/DisplayListBuilder.java | DisplayListBuilder.TRANSLATE_ENABLED
+enderframe.paint.nowindow | SHORTCUT | core/paint/DisplayListBuilder.java | DisplayListBuilder.WINDOWED_ENABLED（窓付き表示リスト）
+enderframe.paint.verifystamps | DIAGNOSTIC | core/paint/DisplayListBuilder.java | DisplayListBuilder.verifyStamps（:core:test が立てる）
+enderframe.paint.windowmin | TUNING | core/paint/DisplayListBuilder.java | DisplayListBuilder.WINDOW_MIN_OWNERS（窓付きにする最小の持ち主数。既定 800）
+enderframe.parser.dropnewlinews | COMPAT | core/dom/parser/HtmlParser.java | HtmlParser の要素の間の改行入りの空白を捨てる（A11 第 4 段より前の挙動）
+enderframe.profile | DIAGNOSTIC | core/diag/StageProfiler.java | StageProfiler の段別計測
+enderframe.profile.alloc | DIAGNOSTIC | core/diag/StageProfiler.java | StageProfiler の段別の確保量
+enderframe.raster.serial | TUNING | core/paint/software/Rows.java | Rows.PARALLEL を切り、行の塗りを直列にする
+enderframe.sheetcache.off | SHORTCUT | common/DocumentLoader.java | DocumentLoader.sheetTemplateCache
+enderframe.soft.damagedebug | DIAGNOSTIC | core/paint/software/SoftwareRenderBackend.java | 損傷範囲の決定の理由を出力
+enderframe.soft.nocull | SHORTCUT | core/paint/software/SoftwareRenderBackend.java | SoftwareRenderBackend.cullOffscreen
+enderframe.soft.nodamage | SHORTCUT | core/paint/software/SoftwareRenderBackend.java | SoftwareRenderBackend.damageEnabled
+enderframe.soft.nofastsolid | SHORTCUT | core/paint/software/SoftwareRenderBackend.java | SoftwareRenderBackend.fastSolid
+enderframe.soft.notiled | SHORTCUT | core/paint/software/TileQueue.java | TileQueue.tiled（タイル並列ラスタ）
+enderframe.split | TUNING | core/layout/LayoutTaskPool.java | LayoutTaskPool.SPLIT_PER_PARTICIPANT（並列区間の分割数。既定 4）
+enderframe.text.cache | TUNING | core/text/TextShaper.java | TextShaper の整形キャッシュの容量（既定 4096）
+enderframe.threads | TUNING | core/layout/LayoutTaskPool.java | ワーカー数（A3。EnderEngine.workerThreads と同じ）
+enderframe.ui.nochildpatch | SHORTCUT | common/UiView.java | UiView.childPatchEnabled
+enderframe.ui.nocombinedtext | SHORTCUT | common/UiView.java | UiView.combinedTextPatchEnabled
+enderframe.ui.nostaletextpatch | SHORTCUT | common/UiView.java | UiView.staleTextPatchEnabled
+env:LOCALAPPDATA | PLATFORM | core/text/font/SystemFonts.java | 利用者の書体のフォルダ（Windows）
+env:WINDIR | PLATFORM | core/text/font/SystemFonts.java | システムの書体のフォルダ（Windows）
+os.arch | PLATFORM | core/media/NativeVideoApi.java, core/net/YtDlpProvisioner.java | 同梱の実行ファイルの選択
+os.name | PLATFORM | core/media/NativeVideoApi.java, core/net/YtDlpProvisioner.java, core/text/font/SystemFonts.java | OS ごとの分岐
+user.home | PLATFORM | core/text/font/SystemFonts.java | 利用者の書体のフォルダ（macOS・Linux）

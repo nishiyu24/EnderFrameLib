@@ -94,7 +94,7 @@ tasks.named('test', Test) {
     systemProperty 'enderframe.layout.verifyfloats', 'true'
     workingDir = rootProject.projectDir
     testLogging { showStandardStreams = true }
-    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees', 'enderframe.paint.noparentrelative', 'gpu.baseline.exact', 'gpu.baseline.update', 'wpt.reftest.update', 'wpt.reftest.diag', 'wpt.reftest.strict', 'wpt.reftest.dump', 'enderframe.parser.dropnewlinews'].each { key ->
+    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees', 'enderframe.paint.noparentrelative', 'gpu.baseline.exact', 'gpu.baseline.update', 'wpt.reftest.update', 'wpt.reftest.diag', 'wpt.reftest.strict', 'wpt.reftest.dump', 'enderframe.parser.dropnewlinews', 'ratchet.update'].each { key ->
         def value = System.getProperty(key)
         if (value != null) systemProperty key, value
         inputs.property key, value ?: ''

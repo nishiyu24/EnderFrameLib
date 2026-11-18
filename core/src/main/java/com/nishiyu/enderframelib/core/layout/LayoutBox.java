@@ -223,7 +223,7 @@ public class LayoutBox {
      * {@link BlockLayoutEngine} が子の高さを解き直す直前に入れ、子は読んだら消す
      * （前回のレイアウトの領域を持ち越さないため）。
      */
-    BlockLayoutEngine.FloatSpace floatSpace;
+    FloatSpace floatSpace;
     float floatSpaceX, floatSpaceY;
     /**
      * 親のエンジンが決めた border box の幅・高さ（flex の伸縮後の寸法、stretch、表の列幅）。
@@ -539,87 +539,6 @@ public class LayoutBox {
     /** 置き直しで捨てた断片オブジェクトの控え（{@link #resetPlacements} が積み、{@link #addFragment} が使う）。 */
     static final int SPARE_FRAGMENT_LIMIT = 128;
     private ArrayList<InlineFragment> spareFragments;
-
-    private static final class TextCache {
-        static final class Slot {
-            String text;
-            FontFace face;
-            TextStyle shapeStyle;
-            TextShaper.ShapedInterval shapedInterval;
-            FontStyle segFont;
-            WordBreak wordBreak;
-            ParagraphSegments segments;
-            TextShaper.WrappedParagraph wrapped;
-            float strippedAdvance = Float.NaN;
-        }
-
-        Slot primary;
-        Slot secondary;
-
-        Slot acquire(String text, FontFace face) {
-            if (primary == null) {
-                primary = new Slot();
-                primary.text = text;
-                primary.face = face;
-                return primary;
-            }
-            if (primary.text == text && primary.face == face) {
-                return primary;
-            }
-            if (secondary != null && secondary.text == text && secondary.face == face) {
-                Slot tmp = primary;
-                primary = secondary;
-                secondary = tmp;
-                return primary;
-            }
-            Slot target = secondary != null ? secondary : new Slot();
-            target.text = text;
-            target.face = face;
-            target.shapeStyle = null;
-            target.shapedInterval = null;
-            target.segFont = null;
-            target.wordBreak = null;
-            target.segments = null;
-            target.wrapped = null;
-            target.strippedAdvance = Float.NaN;
-            secondary = primary;
-            primary = target;
-            return target;
-        }
-
-        Slot acquireForStyle(String text, FontFace face, FontStyle font, WordBreak wordBreak) {
-            if (primary != null && primary.text == text && primary.face == face
-                    && (primary.segFont == null || ((primary.segFont == font || primary.segFont.equals(font))
-                            && (wordBreak == null || primary.wordBreak == null || primary.wordBreak == wordBreak)))) {
-                if (primary.segFont == null) primary.segFont = font;
-                if (primary.wordBreak == null && wordBreak != null) primary.wordBreak = wordBreak;
-                return primary;
-            }
-            if (secondary != null && secondary.text == text && secondary.face == face
-                    && (secondary.segFont == null || ((secondary.segFont == font || secondary.segFont.equals(font))
-                            && (wordBreak == null || secondary.wordBreak == null || secondary.wordBreak == wordBreak)))) {
-                Slot hit = secondary;
-                secondary = primary;
-                primary = hit;
-                if (hit.segFont == null) hit.segFont = font;
-                if (hit.wordBreak == null && wordBreak != null) hit.wordBreak = wordBreak;
-                return hit;
-            }
-            Slot target = secondary != null ? secondary : new Slot();
-            target.text = text;
-            target.face = face;
-            target.shapeStyle = null;
-            target.shapedInterval = null;
-            target.segFont = font;
-            target.wordBreak = wordBreak;
-            target.segments = null;
-            target.wrapped = null;
-            target.strippedAdvance = Float.NaN;
-            secondary = primary;
-            primary = target;
-            return target;
-        }
-    }
 
     private TextCache textCache;
 
@@ -1361,7 +1280,7 @@ public class LayoutBox {
     // 確定の測り直しが来なかった子は、親が settleTentative で本当に測る（部分木を仮の測定の状態で終えない）。
 
     /** 仮の測定が親へ渡す産物。再測定時は既存インスタンスを破壊的に更新して使い回す。 */
-    private static final class BoxOutputs {
+    static final class BoxOutputs {
         float w, h, mT, mR, mB, mL;
         float pT, pR, pB, pL, bT, bR, bB, bL;
         float legendSpill, contentBlockExtent, ownMarginTop, ownMarginBottom;
@@ -1395,91 +1314,9 @@ public class LayoutBox {
         }
     }
 
-    private enum TentativeKind { TENTATIVE, DEFINITE }
+    enum TentativeKind { TENTATIVE, DEFINITE }
 
-    /** 仮の測定（上書き寸法なし）・確定の測定（上書き寸法あり）の結果の産物と、その入力。 */
-    private static final class Tentative {
-        TentativeKind kind;
-        ConstraintSpace space;
-        Viewport viewport;
-        FontResolver fonts;
-        IntrinsicSizeResolver intrinsics;
-        int epoch;
-        BoxOutputs outputs;
-        boolean percentFree, shrinkFree, outsideFree, widthFree;
-        float fitNeed;
-        boolean fillFit;
-        float overrideW, overrideH;
-
-        void set(TentativeKind kind, ConstraintSpace space, Viewport viewport, FontResolver fonts,
-                 IntrinsicSizeResolver intrinsics, int epoch, LayoutBox box, boolean percentFree,
-                 boolean shrinkFree, boolean outsideFree, boolean widthFree, float fitNeed, boolean fillFit,
-                 float overrideW, float overrideH) {
-            this.kind = kind;
-            this.space = space;
-            this.viewport = viewport;
-            this.fonts = fonts;
-            this.intrinsics = intrinsics;
-            this.epoch = epoch;
-            this.outputs = BoxOutputs.captureOrUpdate(this.outputs, box);
-            this.percentFree = percentFree;
-            this.shrinkFree = shrinkFree;
-            this.outsideFree = outsideFree;
-            this.widthFree = widthFree;
-            this.fitNeed = fitNeed;
-            this.fillFit = fillFit;
-            this.overrideW = overrideW;
-            this.overrideH = overrideH;
-        }
-
-        TentativeKind kind() { return kind; }
-        ConstraintSpace space() { return space; }
-        Viewport viewport() { return viewport; }
-        FontResolver fonts() { return fonts; }
-        IntrinsicSizeResolver intrinsics() { return intrinsics; }
-        int epoch() { return epoch; }
-        BoxOutputs outputs() { return outputs; }
-        boolean percentFree() { return percentFree; }
-        boolean shrinkFree() { return shrinkFree; }
-        boolean outsideFree() { return outsideFree; }
-        boolean widthFree() { return widthFree; }
-        float fitNeed() { return fitNeed; }
-        boolean fillFit() { return fillFit; }
-        float overrideW() { return overrideW; }
-        float overrideH() { return overrideH; }
-
-        /**
-         * 同じ制約か。上書き寸法は必ず一致させる。高さの % の基準が結果に効かない箱（{@link #percentFree}）や
-         * 親の shrink 指示に依らない箱（{@link #shrinkFree}）はそれらだけが違っても同じとみなし、確定幅の箱（{@link #widthFree}）や
-         * 内容で寸法が決まる箱（{@link #fitNeed}）は使える幅の違いも許す。
-         */
-        boolean matches(ConstraintSpace s) {
-            if (!sameFixedSizes(space, s)) return false;
-            return space.equals(s)
-                    || sameIgnoringPercentAndShrink(space, s, percentFree, shrinkFree)
-                    || widthMatches(s)
-                    || fitMatches(s);
-        }
-
-        boolean widthMatches(ConstraintSpace s) {
-            return widthIndependentReuse && widthFree && sameBlockPercentAndParent(space, s, percentFree, shrinkFree);
-        }
-
-        boolean fitMatches(ConstraintSpace s) {
-            return fitReuseEnabled && fitNeed != Float.POSITIVE_INFINITY
-                    && s.availableInlineSize() >= fitNeed && space.availableInlineSize() >= fitNeed
-                    && sameBlockPercentAndParent(space, s, percentFree, shrinkFree);
-        }
-
-        /** ビューポートが同じか。外を読まない箱（{@link #outsideFree}）や内容で寸法が決まる箱は、幅の違いを許す。 */
-        boolean sameViewport(Viewport v) {
-            return viewport.equals(v)
-                    || (((fitReuseEnabled && fitNeed != Float.POSITIVE_INFINITY) || (viewportWidthFreeReuse && outsideFree))
-                            && viewport.rootH() == v.rootH() && viewport.devicePixelRatio() == v.devicePixelRatio());
-        }
-    }
-
-    private static boolean sameFixedSizes(ConstraintSpace a, ConstraintSpace b) {
+    static boolean sameFixedSizes(ConstraintSpace a, ConstraintSpace b) {
         return sameLength(a.fixedInlineSize(), b.fixedInlineSize()) && sameLength(a.fixedBlockSize(), b.fixedBlockSize());
     }
 
@@ -1487,13 +1324,13 @@ public class LayoutBox {
         return a.equals(b) || (shrinkFree && a.parentDisplay() == b.parentDisplay() && a.stretch() == b.stretch());
     }
 
-    private static boolean sameBlockPercentAndParent(ConstraintSpace a, ConstraintSpace b, boolean percentFree, boolean shrinkFree) {
+    static boolean sameBlockPercentAndParent(ConstraintSpace a, ConstraintSpace b, boolean percentFree, boolean shrinkFree) {
         return (percentFree || Float.floatToIntBits(a.percentageBlockSize()) == Float.floatToIntBits(b.percentageBlockSize()))
                 && sameParentContext(a.parent(), b.parent(), shrinkFree);
     }
 
     /** 効かない高さの % の基準や親の shrink 指示を除いて、制約が同じ。 */
-    private static boolean sameIgnoringPercentAndShrink(ConstraintSpace a, ConstraintSpace b, boolean percentFree, boolean shrinkFree) {
+    static boolean sameIgnoringPercentAndShrink(ConstraintSpace a, ConstraintSpace b, boolean percentFree, boolean shrinkFree) {
         if (!percentFree && !shrinkFree) return false;
         return Float.floatToIntBits(a.availableInlineSize()) == Float.floatToIntBits(b.availableInlineSize())
                 && sameBlockPercentAndParent(a, b, percentFree, shrinkFree);

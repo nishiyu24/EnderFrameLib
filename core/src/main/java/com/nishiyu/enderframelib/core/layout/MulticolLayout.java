@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.FlowState;
-import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.InlineLine;
+import com.nishiyu.enderframelib.core.layout.InlineLine;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.LineRun;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.Placement;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;

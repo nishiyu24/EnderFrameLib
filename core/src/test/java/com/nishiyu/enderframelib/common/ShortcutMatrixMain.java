@@ -43,8 +43,8 @@ public final class ShortcutMatrixMain {
         return !name.startsWith("enderframe.gl.") && !name.startsWith("enderframe.gpu.");
     }
 
-    /** {@code core/src/main} を走査して、近道の切り分けスイッチの名前を集める（テストと検査器で共有）。 */
-    static List<String> findSwitches(Path mainSources) throws IOException {
+    /** {@code core/src/main} を走査して、近道の切り分けスイッチの名前を集める（テストと検査器、{@code SystemPropertyRatchetTest} で共有）。 */
+    public static List<String> findSwitches(Path mainSources) throws IOException {
         TreeSet<String> out = new TreeSet<>();
         try (Stream<Path> s = Files.walk(mainSources)) {
             for (Path p : s.filter(f -> f.toString().endsWith(".java")).toList()) {
