@@ -51,10 +51,11 @@ jobs:
         if: failure()
         run: python3 scripts/ci-summarize-tests.py
 
-      # 新しい JVM・ワーカー 1 本・内蔵書体・描画なしで、1 フレームの確保量（±5%）と経路の回数（完全一致）を基準値と比べる。
+      # 新しい JVM・ワーカー 1 本・内蔵書体・描画なしで、1 フレームの確保量と経路の回数（完全一致）を基準値と比べる。
+      # 確保量の許容は手元が ±5%、ここは ±12%（2 コアの機械では JIT の進み方で実行ごとに ±8% ほど揺れた。近道を 1 つ切ると +100% 以上）。
       # 赤になったら: 意図した変化なら ./gradlew :core:costGate -Pcostgate.update で基準値を更新してコミットする
       - name: Cost gate (allocation and fast-path counters)
-        run: ./gradlew :core:costGate --stacktrace
+        run: ./gradlew :core:costGate -Pcostgate.tolerance=0.12 --stacktrace
 
       # サーバー側のセッション寿命（ログアウト・サーバー停止で static マップが空に戻るか）は
       # Minecraft を起動しないと確認できないため、ここで専用サーバーを 1 回走らせる。

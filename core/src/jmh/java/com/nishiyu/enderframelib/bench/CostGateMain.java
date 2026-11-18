@@ -115,7 +115,9 @@ public final class CostGateMain {
                 long got = m.getValue();
                 if (m.getKey().equals("allocBytes")) {
                     Long rowTol = base.get(ALLOC_TOL_KEY);
-                    double slack = Math.max(want * (rowTol != null ? rowTol / 100.0 : tolerance), ALLOC_SLACK_BYTES);
+                    // 行ごとの許容は既定より広いときだけ効く（CI は既定を広げて渡す。build.yml の -Pcostgate.tolerance）
+                    double pct = rowTol != null ? Math.max(rowTol / 100.0, tolerance) : tolerance;
+                    double slack = Math.max(want * pct, ALLOC_SLACK_BYTES);
                     if (Math.abs(got - want) > slack) {
                         failures.add(String.format("%s: allocBytes %d → %d（%+.1f%%、許容 ±%.0f B）", e.getKey(), want, got,
                                 want == 0 ? 0.0 : 100.0 * (got - want) / want, slack));
