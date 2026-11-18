@@ -385,6 +385,7 @@ tasks.register('costGate', JavaExec) {
     if (project.hasProperty('costgate.update')) systemProperty 'costgate.update', 'true'
     if (project.hasProperty('costgate.tolerance')) systemProperty 'costgate.tolerance', project.property('costgate.tolerance').toString()
     if (project.hasProperty('costgate.jvmArgs')) systemProperty 'costgate.jvmArgs', project.property('costgate.jvmArgs').toString()
+    if (project.hasProperty('costgate.only')) systemProperty 'costgate.only', project.property('costgate.only').toString()
 }
 
 // A6: 近道の切り分けスイッチ（enderframe.*.no* / .off）の組み合わせ検証。既定・各スイッチ単独・ペアワイズの各構成を別 JVM で走らせ、

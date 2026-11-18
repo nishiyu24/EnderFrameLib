@@ -128,10 +128,18 @@ public class CssAnimator {
      * 候補ごとに呼ぶので、割り当てを避けるための版。状態があるときは補間の結果（新しい {@link AnimatedValues}）を返す。
      */
     public static AnimatedValues currentValuesInto(String sessionId, DisplayItem el, AnimatedValues scratch) {
+        return valuesAtInto(sessionId, el, scratch, System.currentTimeMillis());
+    }
+
+    /**
+     * {@link #currentValuesInto} の時刻を明示する版。ヒットテストは、描いたフレームと同じ時刻で評価しないと、動いている要素の
+     * 見えている位置とクリックが当たる位置がずれる（ホストのフレームの時刻が壁時計と違うとき。T2 で発見）。
+     */
+    public static AnimatedValues valuesAtInto(String sessionId, DisplayItem el, AnimatedValues scratch, long now) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, false);
         AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
-        if (state != null) return state.getInterpolatedValues(System.currentTimeMillis());
+        if (state != null) return state.getInterpolatedValues(now);
         scratch.set(el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.hints().skew(), el.color(), el.bgColor());
         return scratch;
     }

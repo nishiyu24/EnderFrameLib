@@ -35,6 +35,8 @@ public class HitTestIndex {
         final boolean selfStatic;
         /** 親相対座標のとき、祖先の静的な NODE 原点の合計（格子索引のページ座標計算用）。 */
         final float staticOriginX, staticOriginY;
+        /** クリップを連鎖の部品ごとに当てるか（祖先が動きうると合成済みの矩形は作ったときの位置のまま。入れ子のスクロールの中身が親に当たった。T2）。 */
+        boolean clipByParts;
 
         public Entry(DisplayItem element, ClipRect clipRect, List<DisplayItem> transformChain) {
             this.element = element;
@@ -71,6 +73,13 @@ public class HitTestIndex {
 
     public void alphaMaskProvider(AlphaMaskProvider provider) {
         this.alphaProvider = provider;
+    }
+
+    /** 動いている項目の姿勢を評価する時刻（ms）。描いたフレームの時刻を渡す（既定の壁時計は、時刻を壁時計で進めるホストでだけ一致する。T2）。 */
+    private volatile java.util.function.LongSupplier animationClock = System::currentTimeMillis;
+
+    public void animationClock(java.util.function.LongSupplier clock) {
+        this.animationClock = clock != null ? clock : System::currentTimeMillis;
     }
 
     private final List<Entry> interactiveEntries; // z順序の逆順（上位優先）
@@ -127,18 +136,66 @@ public class HitTestIndex {
         for (int i = elements.size() - 1; i >= 0; i--) {
             DisplayItem el = elements.get(i);
             if (el.hints().scrollable() && !isPointerEventsNone(el)) {
-                scrollEntries.add(new Entry(el, el.meta() != null ? el.meta().clipRect() : null, buildTransformChain(el, elementMap)));
+                scrollEntries.add(prepareClip(new Entry(el, el.meta() != null ? el.meta().clipRect() : null, buildTransformChain(el, elementMap))));
             }
             if (isIgnoredElement(el)) continue;
             if (!isInteractiveOrOpaque(el, elementMap)) continue;
 
             List<DisplayItem> chain = buildTransformChain(el, elementMap);
             ClipRect clip = el.meta() != null ? el.meta().clipRect() : null;
-            entries.add(new Entry(el, clip, chain));
+            entries.add(prepareClip(new Entry(el, clip, chain)));
         }
         this.interactiveEntries = entries;
         buildGrid();
         indexDynamicRefs();
+    }
+
+    /** クリップの部品の持ち主の鍵 → 持ち主の変形の連鎖（自分か祖先が動きうるときだけ。動かなければ空）。索引を作るときに揃え、以後は読むだけ。 */
+    private final Long2ObjectOpenHashMap<List<DisplayItem>> ownerChains = new Long2ObjectOpenHashMap<>();
+
+    private boolean moving(List<DisplayItem> chain, int upTo) {
+        for (int i = 0; i < upTo; i++) if (!isStatic(chain.get(i)) || dynamicKeys.contains(chain.get(i).key())) return true;
+        return false;
+    }
+
+    /** 祖先に動きうる項目があれば、クリップを部品ごとに当てる印を付け、部品の持ち主の連鎖を用意する。 */
+    private Entry prepareClip(Entry e) {
+        ClipRect c = e.clipRect;
+        if (c == null || c.chain().isEmpty() || !moving(e.transformChain, e.transformChain.size() - 1)) return e;
+        for (int i = 0, n = c.chain().size(); i < n; i++) {
+            String owner = c.chain().get(i).ownerId();
+            long k = owner == null ? 0 : DisplayItem.keyOf(owner);
+            DisplayItem o = owner == null || ownerChains.containsKey(k) ? null : elementMap.get(k);
+            if (o == null) continue; // 持ち主が無い・表示リストに無い: フレームの空間のまま比べる
+            List<DisplayItem> oc = buildTransformChain(o, elementMap);
+            ownerChains.put(k, moving(oc, oc.size()) ? oc : List.of());
+        }
+        e.clipByParts = true;
+        return e;
+    }
+
+    /**
+     * 点がクリップの中か。{@link Entry#clipByParts} なら連鎖の部品ごとに、動く持ち主の部品は点を持ち主の今の姿勢で持ち主の空間へ戻して比べる
+     * （部品の矩形は持ち主の空間〔親相対の節なら原点からの相対〕で、持ち主の変形と動く祖先に付いていく。{@link ClipResolver} と同じ約束）。
+     */
+    private boolean clipContains(Entry e, double px, double py, PrefixCache prefix, double[] tmp) {
+        ClipRect c = e.clipRect;
+        if (c == null || !e.clipByParts) return c == null || c.contains(px, py);
+        for (int i = 0, n = c.chain().size(); i < n; i++) {
+            ClipChainPart part = c.chain().get(i);
+            if (part.rectLength() < 4) continue;
+            double x = px, y = py, ox = part.ownerOriginX(), oy = part.ownerOriginY();
+            List<DisplayItem> oc = part.ownerId() == null ? null : ownerChains.get(DisplayItem.keyOf(part.ownerId()));
+            if (oc != null && !oc.isEmpty()) {
+                prefix.apply(oc, oc.size(), tmp); // 祖先の連鎖の計算は 1 回の問い合わせの中で共有する
+                x = tmp[0];
+                y = tmp[1];
+                DisplayItem o = oc.get(oc.size() - 1);
+                if (o.type() == ElementType.NODE && o.hints().relativeOrigin()) ox = oy = 0;
+            }
+            if (!(x >= part.rectAt(0) + ox && x <= part.rectAt(2) + ox && y >= part.rectAt(1) + oy && y <= part.rectAt(3) + oy)) return false;
+        }
+        return true;
     }
 
     /** 差し替えを断る鍵の集合と、スクロールする箱の引き当てを作る。 */
@@ -187,7 +244,9 @@ public class HitTestIndex {
             if (scrollEntryAt.containsKey(k)) { // 動く節がスクロールする箱でもある: 新しい項目で Entry を作り直す
                 int at = scrollEntryAt.get(k);
                 Entry old = scrollEntries.get(at);
-                scrollEntries.set(at, new Entry(item, old.clipRect, old.transformChain));
+                Entry e = new Entry(item, old.clipRect, old.transformChain);
+                e.clipByParts = old.clipByParts;
+                scrollEntries.set(at, e);
             }
         }
         return true;
@@ -346,7 +405,7 @@ public class HitTestIndex {
         }
         int[] al = always;
         int b = 0;
-        PrefixCache prefix = PREFIX.get().reset(this, sessionId, px, py); // スレッドごとに使い回す（問い合わせごとの表の拡張と割り当てを省く）
+        PrefixCache prefix = PREFIX.get().reset(this, sessionId, px, py, animationClock.getAsLong()); // スレッドごとに使い回す（問い合わせごとの表の拡張と割り当てを省く）
         AnimatedValues scratch = prefix.scratch;
         double[] p = prefix.pt;
         while (a < aEnd || b < al.length) {
@@ -370,8 +429,10 @@ public class HitTestIndex {
         HitTestIndex owner;
         String sessionId;
         double px, py;
+        /** この問い合わせで姿勢を評価する時刻。 */
+        long now;
         final AnimatedValues scratch = new AnimatedValues();
-        final double[] pt = new double[2];
+        final double[] pt = new double[2], clipPt = new double[2];
         /** 鍵 → 結果の 2 要素（開地址法。容量は 2 のべき）。 */
         long[] keys = new long[16];
         double[] xs = new double[16], ys = new double[16];
@@ -379,11 +440,12 @@ public class HitTestIndex {
         int size;
         final double[] tmp = new double[2];
 
-        PrefixCache reset(HitTestIndex owner, String sessionId, double px, double py) {
+        PrefixCache reset(HitTestIndex owner, String sessionId, double px, double py, long now) {
             this.owner = owner;
             this.sessionId = sessionId;
             this.px = px;
             this.py = py;
+            this.now = now;
             if (size > 0) {
                 java.util.Arrays.fill(used, false);
                 size = 0;
@@ -411,7 +473,7 @@ public class HitTestIndex {
             }
             apply(chain, upTo - 1, out); // 一段手前までの結果
             DisplayItem ancestor = owner.live(chain.get(upTo - 1));
-            inverseInto(out[0], out[1], ancestor, CssAnimator.currentValuesInto(sessionId, ancestor, scratch), tmp);
+            inverseInto(out[0], out[1], ancestor, CssAnimator.valuesAtInto(sessionId, ancestor, scratch, now), tmp);
             out[0] = tmp[0];
             out[1] = tmp[1];
             if (size * 2 >= keys.length) grow();
@@ -445,7 +507,7 @@ public class HitTestIndex {
     private boolean hits(Entry entry, String sessionId, double pixelX, double pixelY,
                          AnimatedValues scratch, double[] p, double[] localOut, PrefixCache prefix) {
         DisplayItem el = entry.element;
-        if (entry.clipRect != null && !entry.clipRect.contains(pixelX, pixelY)) return false;
+        if (entry.clipRect != null && !clipContains(entry, pixelX, pixelY, prefix, prefix.clipPt)) return false;
         List<DisplayItem> chain = entry.transformChain;
         prefix.apply(chain, chain.size() - 1, p); // 親までの連鎖は共有して使い回す
         double x = p[0], y = p[1];
@@ -458,7 +520,7 @@ public class HitTestIndex {
             y = (y - cy) + cy;
         } else {
             DisplayItem self = live(chain.get(chain.size() - 1));
-            inverseInto(x, y, self, CssAnimator.currentValuesInto(sessionId, self, scratch), p);
+            inverseInto(x, y, self, CssAnimator.valuesAtInto(sessionId, self, scratch, prefix.now), p);
             x = p[0];
             y = p[1];
         }
@@ -597,15 +659,14 @@ public class HitTestIndex {
                                      java.util.function.Predicate<DisplayItem> accept) {
         double[] tmp = null;
         AnimatedValues scratchAnim = null;
+        long now = animationClock.getAsLong();
+        PrefixCache prefix = PREFIX.get().reset(this, sessionId, pixelX, pixelY, now);
         for (int i = 0, n = interactiveEntries.size(); i < n; i++) {
             Entry entry = interactiveEntries.get(i);
             DisplayItem el = entry.element;
 
-            // クリップ判定 (D-9)
-            // entry.clipRect は仮想座標での可視矩形。pixelX, pixelY がクリップ範囲外なら判定除外
-            if (entry.clipRect != null && !entry.clipRect.contains(pixelX, pixelY)) {
-                continue;
-            }
+            // クリップ判定 (D-9)。範囲外なら判定除外
+            if (entry.clipRect != null && !clipContains(entry, pixelX, pixelY, prefix, prefix.clipPt)) continue;
 
             double px = pixelX;
             double py = pixelY;
@@ -613,7 +674,7 @@ public class HitTestIndex {
             for (int j = 0, cn = chain.size(); j < cn; j++) {
                 DisplayItem ancestor = live(chain.get(j));
                 if (scratchAnim == null) scratchAnim = new AnimatedValues();
-                AnimatedValues anim = CssAnimator.currentValuesInto(sessionId, ancestor, scratchAnim);
+                AnimatedValues anim = CssAnimator.valuesAtInto(sessionId, ancestor, scratchAnim, now);
                 if (tmp == null) tmp = new double[2];
                 inverseInto(px, py, ancestor, anim, tmp);
                 px = tmp[0];
@@ -646,16 +707,19 @@ public class HitTestIndex {
         List<UIHitResult> out = null;
         double[] tmp = null;
         AnimatedValues scratchAnim = scrollScratch; // 補間状態が無い祖先ごとに値を確保しない（B9）
+        long now = animationClock.getAsLong();
+        PrefixCache prefix = null;
         for (int i = 0; i < n; i++) {
             Entry entry = scrollEntries.get(i);
-            if (entry.clipRect != null && !entry.clipRect.contains(pixelX, pixelY)) continue;
+            if (entry.clipByParts && prefix == null) prefix = PREFIX.get().reset(this, sessionId, pixelX, pixelY, now);
+            if (entry.clipRect != null && !clipContains(entry, pixelX, pixelY, prefix, prefix == null ? null : prefix.clipPt)) continue;
             double px = pixelX, py = pixelY;
             List<DisplayItem> chain = entry.transformChain;
             for (int j = 0, cn = chain.size(); j < cn; j++) {
                 DisplayItem ancestor = live(chain.get(j));
                 if (tmp == null) tmp = new double[2];
                 if (scratchAnim == null) scratchAnim = scrollScratch = new AnimatedValues();
-                inverseInto(px, py, ancestor, CssAnimator.currentValuesInto(sessionId, ancestor, scratchAnim), tmp);
+                inverseInto(px, py, ancestor, CssAnimator.valuesAtInto(sessionId, ancestor, scratchAnim, now), tmp);
                 px = tmp[0];
                 py = tmp[1];
             }
@@ -683,8 +747,9 @@ public class HitTestIndex {
         List<DisplayItem> chain = buildTransformChain(el, elementMap);
         double px = pixelX;
         double py = pixelY;
+        long now = animationClock.getAsLong();
         for (DisplayItem ancestor : chain) {
-            AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, ancestor);
+            AnimatedValues anim = CssAnimator.valuesAtInto(sessionId, ancestor, new AnimatedValues(), now);
             double[] p = inverseTransform(px, py, ancestor, anim);
             px = p[0];
             py = p[1];

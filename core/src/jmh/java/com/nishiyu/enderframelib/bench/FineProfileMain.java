@@ -53,7 +53,34 @@ public final class FineProfileMain {
         }
     }
 
+    /**
+     * {@code -Dprofile.disable=DisplayListBuilder.STACKING_PATCH_ENABLED,PaintOrder.STICKY_IN_SCROLL_NODE}: テストだけが切り替える
+     * static な近道の印（起動時のスイッチを持たないもの）を false にしてから走らせる。回帰ゲート（{@link CostGateMain}）が、
+     * 近道を 1 つ切ると実文書の行が赤になることを確かめるために使う（エンジン側に起動時のスイッチを足さない。近道のスイッチ数のラチェット）。
+     * クラス名は {@code com.nishiyu.enderframelib.core.} からの相対（{@code paint.DisplayListBuilder}）か、単純名なら {@code core.paint} の下。
+     */
+    static void applyDisabledFlags(String spec) {
+        if (spec == null || spec.isBlank()) return;
+        for (String entry : spec.split(",")) {
+            String e = entry.trim();
+            int dot = e.lastIndexOf('.');
+            if (dot <= 0) throw new IllegalArgumentException("profile.disable の書式は Class.FIELD: " + e);
+            String cls = e.substring(0, dot), field = e.substring(dot + 1);
+            String fqn = cls.startsWith("com.") ? cls : cls.contains(".") ? "com.nishiyu.enderframelib.core." + cls
+                    : "com.nishiyu.enderframelib.core.paint." + cls;
+            try {
+                java.lang.reflect.Field f = Class.forName(fqn).getDeclaredField(field);
+                f.setAccessible(true);
+                f.setBoolean(null, false);
+                System.out.println("DISABLED " + fqn + "." + field);
+            } catch (ReflectiveOperationException ex) {
+                throw new IllegalArgumentException("profile.disable: 切り替えられない印 " + e, ex);
+            }
+        }
+    }
+
     public static void main(String[] args) {
+        applyDisabledFlags(System.getProperty("profile.disable"));
         String scenario = args.length > 0 ? args[0] : "idle";
         String doc = args.length > 1 ? args[1] : Workloads.SHOWCASE;
         int frames = args.length > 2 ? Integer.parseInt(args[2]) : 2000;
@@ -218,7 +245,10 @@ public final class FineProfileMain {
                     + " repaintPatch=" + UiView.RESTYLE_REPAINT_PATCH.get()
                     + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
                     + " layoutsShifted=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted()
-                    + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped());
+                    + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped()
+                    // T2: B12 の近道（スタッキングコンテキストの部分木の組み直し・描画側の索引の並びの入れ替え）
+                    + " stackSubtrees=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STACKING_PATCH_HITS.sum()
+                    + " indexMoves=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.STAT_MOVE_PATCHES.sum());
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             {

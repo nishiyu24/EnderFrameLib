@@ -250,6 +250,18 @@ public final class VkContext implements AutoCloseable {
         return validationErrorCount.get();
     }
 
+    /**
+     * 選んだデバイスが CPU 上のソフトウェア実装（Mesa の lavapipe など）か。GPU が無い環境では、これしか選べないことがある。
+     * 試験の側が、ソフトウェア実装を GPU の比較から外すのに使う（WSL の lavapipe は backdrop-filter のぼかしのパイプラインを作るところで落ちる。T2b）。
+     */
+    public boolean isCpuDevice() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkPhysicalDeviceProperties props = VkPhysicalDeviceProperties.calloc(stack);
+            VK10.vkGetPhysicalDeviceProperties(physicalDevice, props);
+            return props.deviceType() == VK10.VK_PHYSICAL_DEVICE_TYPE_CPU;
+        }
+    }
+
     public List<String> validationMessages() {
         return List.copyOf(validationMessages);
     }

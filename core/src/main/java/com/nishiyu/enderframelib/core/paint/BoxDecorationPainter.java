@@ -816,8 +816,8 @@ public final class BoxDecorationPainter {
         int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
         for (int i = 0; i < regions.length; i++) {
             if (regions[i][2] <= regions[i][0] || regions[i][3] <= regions[i][1]) continue;
-            ClipRect clip = ClipRect.fromArray(BoxDecorations.intersectClip(
-                    meta.clipRect() == null ? null : meta.clipRect().toArray(), regions[i]));
+            ClipRect clip = PaintSupport.intersectClip(elements, meta.clipRect(), new BoxDecorations.Rect(regions[i][0], regions[i][1], // 連鎖に fieldset の空間の
+                    regions[i][2] - regions[i][0], regions[i][3] - regions[i][1]), null, id); // 矩形を足す（連鎖の無い矩形はフレームに固定され、スクロールの節が動くと上の枠線が切れた。T2）
             if (b.useRoundedBorder()) {
                 RoundedBorderSpec spec = new RoundedBorderSpec(widths[0], widths[1], widths[2], widths[3],
                         colors[0], colors[1], colors[2], colors[3], b.dashKind());

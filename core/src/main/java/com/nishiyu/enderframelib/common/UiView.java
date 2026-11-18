@@ -534,10 +534,10 @@ public class UiView implements AutoCloseable {
         }
         idx = new HitTestIndex(current, dynamic);
         idx.alphaMaskProvider(alphaMaskProvider);
+        idx.animationClock(interactionState::animationTimeMs); // 描いたフレームと同じ時刻の姿勢で当てる（T2）
         this.hitTestIndexSource = current;
         this.hitTestIndexBase = ItemDiff.contentTokenOf(baseRenderCache);
-        this.hitTestIndex = idx;
-        return idx;
+        return this.hitTestIndex = idx;
     }
 
     public Document document() {

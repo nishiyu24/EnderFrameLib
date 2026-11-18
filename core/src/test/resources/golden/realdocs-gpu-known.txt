@@ -1,0 +1,9 @@
+# RealDocumentFramesTest.gpuMatchesSoftwareEveryFrame（T2）の既知の差: 「API 文書<TAB>許す 1 チャンネルの最大差<TAB>原因」。
+# 載っていない組み合わせは 8（GpuBaselineTest と同じ）。原因を直したら行を消す（ENGINE_REARCHITECTURE_PLAN §3 T2 の残り）。
+# 2026-11-18 開発機（Windows・GL 4.6 / Vulkan）での実測。GPU の無い CI ではこのテスト自体が中断する。
+GL voidwave.html	87	粘着ヘッダ（y 0–68、半透明の背景の上のぼかし・グラデーション）が全フレームで違う
+VK voidwave.html	250	同上（Vulkan は差が大きい）
+GL surface_test.html	255	回る放射状の部品（.radar-sweep、overflow:hidden の円の中）。差の出るフレームが実行ごとに変わる（GPU 側の時刻か回転したクリップ）
+VK surface_test.html	255	同上
+VK showcase.html	240	内側のスクロールコンテナ（左の列）をスクロールした後、列の中身が違う（GL は一致。Vulkan の入れ子のスクロールの節）
+VK animation_test.html	240	開いた直後から全フレームで違う（GL は一致）
