@@ -50,21 +50,20 @@ class LayoutTaskPoolCallerParticipationTest {
         AtomicInteger onCaller = new AtomicInteger();
         Set<Thread> threads = ConcurrentHashMap.newKeySet();
         long[] sink = new long[1];
-        // 2 コアの CI ではワーカーが起きる前に呼び出し側が全部を終えることがあった。呼び出し側は 1 件取ったら、
-        // ワーカーが 1 件取るまで（最長 5 秒）待つ。ワーカーが加わらなければ待ち切って下の検査で赤になる。
-        CountDownLatch workerJoined = new CountDownLatch(1);
+        // 2 コアの CI では、ワーカーが起きる前に呼び出し側が全部を終えることも、逆にワーカーが全部を取って呼び出し側が
+        // 1 件も取れないこともあった。どちらも 1 件取ったら、相手が 1 件取るまで（最長 5 秒）待つ。片方が加わらなければ
+        // 待ち切って下の検査で赤になる（時間ではなく、加わったかどうかで判定する）。
+        CountDownLatch callerJoined = new CountDownLatch(1), workerJoined = new CountDownLatch(1);
         LayoutTaskPool.forRange(n, 4, null, i -> {
             runs.incrementAndGet(i);
             threads.add(Thread.currentThread());
-            if (Thread.currentThread() == caller) {
-                onCaller.incrementAndGet();
-                try {
-                    workerJoined.await(5, TimeUnit.SECONDS);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            } else {
-                workerJoined.countDown();
+            boolean onCallerThread = Thread.currentThread() == caller;
+            if (onCallerThread) onCaller.incrementAndGet();
+            (onCallerThread ? callerJoined : workerJoined).countDown();
+            try {
+                (onCallerThread ? workerJoined : callerJoined).await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
             sink[0] ^= spin(i);
         });
