@@ -361,7 +361,8 @@ class RealDocumentFramesTest {
                     "# RealDocumentFramesTest（T2）: 実文書 × 操作の手順の、表示リストの要約ハッシュ 項目数 ヒットテストのハッシュ。OS に依らない。\n"
                             + "# 取り直しは -Dgolden.update=true（差分を目で確かめてからコミット）。\n", items);
             write(Path.of("core/src/test/resources/" + pixelsFile),
-                    "# RealDocumentFramesTest（T2）: SOFTWARE の画素のハッシュ（書体の描画が OS で違うので OS ごと）。\n", pixels);
+                    "# RealDocumentFramesTest（T2）: SOFTWARE の画素のハッシュ（書体の描画が OS で違うので OS ごと）。\n"
+                            + FontEnvironment.HEADER + FontEnvironment.fingerprint() + "\n", pixels);
             return;
         }
         Map<String, String> goldenItems = read("/golden/realdocs.txt");
@@ -370,7 +371,12 @@ class RealDocumentFramesTest {
         for (var e : items.entrySet()) if (!e.getValue().equals(goldenItems.get(e.getKey()))) bad.add("items " + e.getKey() + " now=" + e.getValue() + " golden=" + goldenItems.get(e.getKey()));
         for (String k : goldenItems.keySet()) if (!items.containsKey(k)) bad.add(k + " が実行されなかった");
         Map<String, String> goldenPixels = read("/" + pixelsFile);
-        if (goldenPixels != null) { // 記録の無い OS では表示リストとヒットテストだけ比べる
+        String pixelsText;
+        try (InputStream in = RealDocumentFramesTest.class.getResourceAsStream("/" + pixelsFile)) {
+            pixelsText = in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        // 記録の無い OS・書体の環境が記録と違う（CI の ubuntu-latest など）ときは、表示リストとヒットテストだけ比べる
+        if (goldenPixels != null && FontEnvironment.pixelsComparable(pixelsText, "RealDocumentFramesTest")) {
             for (var e : pixels.entrySet()) if (!e.getValue().equals(goldenPixels.get(e.getKey()))) bad.add("pixels " + e.getKey() + " now=" + e.getValue() + " golden=" + goldenPixels.get(e.getKey()));
         }
         assertTrue(bad.isEmpty(), "ゴールデンと違う（" + bad.size() + " 件）: " + (bad.size() > 12 ? bad.subList(0, 12) : bad));

@@ -128,7 +128,7 @@ class GoldenFrameTest {
         try (InputStream in = GoldenFrameTest.class.getResourceAsStream(resource)) {
             if (in == null) return null;
             for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
-                if (line.isBlank()) continue;
+                if (line.isBlank() || line.startsWith("#")) continue;
                 int sp = line.indexOf('\t');
                 m.put(line.substring(0, sp), line.substring(sp + 1).trim());
             }
@@ -137,7 +137,13 @@ class GoldenFrameTest {
     }
 
     private static void write(Path file, Map<String, String> m) throws IOException {
+        write(file, m, null);
+    }
+
+    /** {@code header} があれば先頭に書く（画素のファイルの書体の環境の指紋。{@link com.nishiyu.enderframelib.core.paint.FontEnvironment}）。 */
+    private static void write(Path file, Map<String, String> m, String header) throws IOException {
         List<String> lines = new ArrayList<>();
+        if (header != null) lines.add(header);
         m.forEach((k, v) -> lines.add(k + "\t" + v));
         Files.createDirectories(file.getParent());
         Files.writeString(file, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
@@ -163,7 +169,8 @@ class GoldenFrameTest {
         String pixelsResource = "/golden/frames-pixels-" + osKey() + ".txt";
         if (Boolean.getBoolean("golden.update")) {
             write(Path.of("core/src/test/resources/golden/frames.txt"), items);
-            write(Path.of("core/src/test/resources/golden/frames-pixels-" + osKey() + ".txt"), pixels);
+            write(Path.of("core/src/test/resources/golden/frames-pixels-" + osKey() + ".txt"), pixels,
+                    com.nishiyu.enderframelib.core.paint.FontEnvironment.HEADER + com.nishiyu.enderframelib.core.paint.FontEnvironment.fingerprint());
             return;
         }
         Map<String, String> goldenItems = read(RESOURCE);
@@ -173,7 +180,12 @@ class GoldenFrameTest {
         for (String k : goldenItems.keySet()) if (!items.containsKey(k)) bad.add(k + " が実行されなかった");
         // 画素は OS ごとの記録（無い OS では表示リストだけ比べる。記録は -Dgolden.update=true をその OS で走らせる）
         Map<String, String> goldenPixels = read(pixelsResource);
-        if (goldenPixels != null) {
+        String pixelsText;
+        try (InputStream in = GoldenFrameTest.class.getResourceAsStream(pixelsResource)) {
+            pixelsText = in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        // 書体の環境が記録と違う（CI の ubuntu-latest など）なら画素は比べない（表示リストは比べる）
+        if (goldenPixels != null && com.nishiyu.enderframelib.core.paint.FontEnvironment.pixelsComparable(pixelsText, "GoldenFrameTest")) {
             for (var e : pixels.entrySet()) if (!e.getValue().equals(goldenPixels.get(e.getKey()))) bad.add("pixels " + e.getKey() + " now=" + e.getValue() + " golden=" + goldenPixels.get(e.getKey()));
         }
         assertTrue(bad.isEmpty(), "ゴールデンと違う: " + bad);

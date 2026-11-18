@@ -1,4 +1,5 @@
 # RealDocumentFramesTest（T2）: SOFTWARE の画素のハッシュ（書体の描画が OS で違うので OS ごと）。
+# fonts 506dbc3d-42
 showcase.html/open	30338c4d
 showcase.html/hover0a	30338c4d
 showcase.html/hover0b	7ac4f507

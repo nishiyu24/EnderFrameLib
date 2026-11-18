@@ -42,7 +42,9 @@ public class ColrV1EmojiTest {
             if (!system.hasFamily(name)) continue;
             for (SystemFonts.Face f : system.family(name)) {
                 LoadedFace lf = LoadedFace.open(f);
-                if (lf != null && lf.colorBitmap(SMILE, 48f) != null) return f;
+                // COLR の書体だけ（v0 のレイヤーを持つ。Segoe UI Emoji は v0 と v1 の両方）。ビットマップ（CBDT）版の Noto Color Emoji
+                // も色付きのビットマップを返すが、v0 との比較・大きさの上限（v1 だけ）の前提が無いので外す（CI の Ubuntu で赤になった）
+                if (lf != null && lf.colorLayers(SMILE) != null && lf.colorBitmap(SMILE, 48f) != null) return f;
             }
         }
         Assumptions.abort("COLR v1 を持つ絵文字書体が無い環境");
