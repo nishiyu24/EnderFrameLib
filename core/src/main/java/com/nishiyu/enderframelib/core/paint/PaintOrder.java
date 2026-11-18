@@ -103,9 +103,18 @@ public final class PaintOrder {
     private List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> cachedScrollInfos;
     private List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> prevScrollInfos;
 
-    @FunctionalInterface
     interface SubtreePruner {
-        boolean prune(LayoutBox box, boolean ancestorHasMoving);
+        /**
+         * @param prepared {@link #prepare} が返した配列（無ければ null）
+         * @param index    {@code prepared} の中の {@code box} の位置（{@code prepared} が null なら使わない）
+         */
+        boolean prune(LayoutBox box, boolean ancestorHasMoving, Object[] prepared, int index);
+
+        /**
+         * 子の並びの判定のうち重い部分（部分木の走査）を、先にまとめて（並列に）済ませる。返した配列を、同じ並びの
+         * {@link #prune} に位置と一緒に渡す。済ませない（並びが小さい・並列にできない）なら null。
+         */
+        Object[] prepare(List<LayoutBox> kids, boolean ancestorHasMoving);
     }
 
     /**
@@ -795,7 +804,7 @@ public final class PaintOrder {
                     int limit = Math.min(end, n - 1);
                     for (int i = start; i <= limit; i++) {
                         LayoutBox child = box.children.get(i);
-                        if (prune != null && prune.prune(child, ancestorOrSelfMoving)) continue;
+                        if (prune != null && prune.prune(child, ancestorOrSelfMoving, null, -1)) continue;
                         classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
                     }
                 }
@@ -803,14 +812,15 @@ public final class PaintOrder {
                     int idx = vf.extraPlacedAt(k);
                     if (idx < 0 || idx >= n || (idx >= start && idx <= end)) continue;
                     LayoutBox child = box.children.get(idx);
-                    if (prune != null && prune.prune(child, ancestorOrSelfMoving)) continue;
+                    if (prune != null && prune.prune(child, ancestorOrSelfMoving, null, -1)) continue;
                     classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
                 }
             } else {
                 List<LayoutBox> kids = box.children;
+                Object[] prepared = prune != null ? prune.prepare(kids, ancestorOrSelfMoving) : null;
                 for (int i = 0, n = kids.size(); i < n; i++) {
                     LayoutBox child = kids.get(i);
-                    if (prune != null && prune.prune(child, ancestorOrSelfMoving)) continue;
+                    if (prune != null && prune.prune(child, ancestorOrSelfMoving, prepared, i)) continue;
                     classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
                 }
             }

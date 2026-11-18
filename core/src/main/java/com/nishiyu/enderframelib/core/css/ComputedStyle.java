@@ -86,6 +86,36 @@ public final class ComputedStyle {
         this.cachedTextStyle = new CachedTextStyle(face, style);
     }
 
+    private record CachedFace(com.nishiyu.enderframelib.core.text.model.FontResolver resolver, long generation,
+                              com.nishiyu.enderframelib.core.text.model.FontFace face) {}
+    private volatile CachedFace cachedFace;
+
+    /**
+     * {@link com.nishiyu.enderframelib.core.layout.LayoutContext#faceFor} 用の単一エントリーメモ。解決器と、その
+     * {@link com.nishiyu.enderframelib.core.text.model.FontResolver#resolveGeneration 世代} が同じときだけ返す。
+     */
+    public com.nishiyu.enderframelib.core.text.model.FontFace peekFace(
+            com.nishiyu.enderframelib.core.text.model.FontResolver resolver, long generation) {
+        CachedFace c = cachedFace;
+        return c != null && c.resolver == resolver && c.generation == generation ? c.face : null;
+    }
+
+    /**
+     * 直前に作った書体の記録（1 スロットの記憶）。同じ組なら共有して確保しない（{@code font-size} の変更で作り直された全行の
+     * スタイルが、同じ書体の記録を 1 個ずつ確保していた。costGate の fontsize 行）。中身は不変なので競合しても取り違えない。
+     */
+    private static CachedFace LAST_FACE;
+
+    public void cacheFace(com.nishiyu.enderframelib.core.text.model.FontResolver resolver, long generation,
+                          com.nishiyu.enderframelib.core.text.model.FontFace face) {
+        CachedFace last = LAST_FACE;
+        if (last == null || last.resolver != resolver || last.generation != generation || last.face != face) {
+            last = new CachedFace(resolver, generation, face);
+            LAST_FACE = last;
+        }
+        this.cachedFace = last;
+    }
+
     private static final java.lang.invoke.VarHandle PAINT;
 
     static {

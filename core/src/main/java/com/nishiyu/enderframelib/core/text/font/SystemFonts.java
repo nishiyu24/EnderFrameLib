@@ -189,6 +189,15 @@ public final class SystemFonts implements FontResolver {
         return cache.computeIfAbsent(fontFamily == null ? "" : fontFamily, this::create);
     }
 
+    /** {@link #clearResolved} の回数。{@link #resolveGeneration} に入れて、覚えを捨てたら外の覚えも外れるようにする。 */
+    private final java.util.concurrent.atomic.AtomicInteger clears = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** {@code @font-face} の登録の版と、覚えを捨てた回数の組。どちらかが進むと同じ名前でも別の書体を返しうる。 */
+    @Override
+    public long resolveGeneration() {
+        return ((long) (WebFonts.version() & 0x7FFF_FFFF) << 32) | (clears.get() & 0xFFFF_FFFFL);
+    }
+
     /** {@code font-family} の名前（総称ファミリを含む）がこの環境で使えるか。 */
     public boolean isAvailable(FamilyEntry entry) {
         if (entry.generic()) {
@@ -250,7 +259,9 @@ public final class SystemFonts implements FontResolver {
      * 登録の版が進んだことに気づいたときに呼ぶ（{@link #resolve} が自分で確かめる）。
      */
     public void clearResolved() {
+        // 先に捨ててから世代を進める（逆だと、新しい世代を読んだ側が捨てる前の古い書体を覚えうる）
         cache.clear();
+        clears.incrementAndGet();
     }
 
     private static Map<String, List<Face>> index(List<Face> faces) {

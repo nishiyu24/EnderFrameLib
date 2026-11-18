@@ -157,7 +157,14 @@ public record LayoutContext(
 
     /** 算出スタイルの {@code font-family} に対応する書体。 */
     public FontFace faceFor(ComputedStyle style) {
-        return fonts.resolve(style.get(ID_FONT_FAMILY));
+        // 解決器が世代を持つなら、算出スタイルに覚えさせる（全行の測り直しで、文字列の鍵で表を引く費用が効いていた。B11）
+        long gen = fonts.resolveGeneration();
+        if (gen < 0) return fonts.resolve(style.get(ID_FONT_FAMILY));
+        FontFace face = style.peekFace(fonts, gen);
+        if (face != null) return face;
+        face = fonts.resolve(style.get(ID_FONT_FAMILY));
+        style.cacheFace(fonts, gen, face);
+        return face;
     }
 
     /** 算出スタイルから測定に必要な指定だけを取り出す。 */

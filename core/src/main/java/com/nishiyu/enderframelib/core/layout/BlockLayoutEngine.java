@@ -96,7 +96,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                     }
                 }
                 final ConstraintSpace workerSpace = sharedChildSpace;
-                int grain = Math.max(8, ec / (LayoutTaskPool.workerCount() * 2));
+                int grain = LayoutTaskPool.grainFor(ec, 8);
                 LayoutTaskPool.forRange(ec, grain, null, idx -> kids.get(eligible[idx]).measureParallel(workerSpace, ctx));
             }
         }
@@ -475,7 +475,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                     }
                 }
                 final LayoutContext workerCtx = ctx.withoutAutoVisibility();
-                int grain = Math.max(8, ec / (LayoutTaskPool.workerCount() * 2));
+                int grain = LayoutTaskPool.grainFor(ec, 8);
                 LayoutTaskPool.forRange(ec, grain, null, idx -> {
                     Placement p = (Placement) state.items.get(eligible[idx]);
                     p.box().layout(innerX + p.x(), innerY + p.y(), innerW, p.box().h, workerCtx);
@@ -1234,7 +1234,9 @@ public class BlockLayoutEngine extends LayoutEngine {
     private static boolean canVirtualize(LayoutBox box) {
         List<LayoutBox> kids = box.children;
         int n = kids.size();
-        if (n < VIRTUAL_FLOW_THRESHOLD || box.hasOutsideMarker || box.hasAbsoluteChild
+        // 仮想化は content-visibility: auto の子があるときだけ。子孫に 1 つも無い（印が立っていない）なら子を走査しない
+        // （以前は 2,000 行の親を測るたびに全部の子を直列に調べ、最後に「auto の子なし」で偽を返していた。B11）
+        if (n < VIRTUAL_FLOW_THRESHOLD || !box.subtreeHasContentAuto || box.hasOutsideMarker || box.hasAbsoluteChild
                 || MulticolLayout.isMulticol(box) || box.renderedLegend() != null) {
             return false;
         }

@@ -36,8 +36,12 @@ import org.junit.jupiter.api.Test;
  */
 class StaticStateRatchetTest {
 
-    /** 型で安全な static 欄の数の上限（2026-11-17 の実測値。減ったら下げる）。増やすなら、本当にグローバルな状態が要るかを先に考える。 */
-    private static final int MAX_SAFE_BY_TYPE = 158;
+    /**
+     * 型で安全な static 欄の数の上限（減ったら下げる）。増やすなら、本当にグローバルな状態が要るかを先に考える。
+     * 158（2026-11-17 の実測値）→ 160（2026-11-18 B11: {@code LayoutTaskPool.CALLER_IN_TASK}〔並列区間で仕事を取っている
+     * 呼び出し側の印。スレッドごとの状態〕・{@code DisplayListBuilder.STAT_PREPARED_SUBTREES}〔診断〕）。
+     */
+    private static final int MAX_SAFE_BY_TYPE = 160;
 
     private static final Pattern STATIC_FIELD = Pattern.compile("^\\s*(?:(?:private|public|protected)\\s+)?static\\s+(.*)$");
     private static final Pattern TYPE_DECL = Pattern.compile("^(final\\s+|abstract\\s+|sealed\\s+)?(class|interface|enum|record)\\b.*");

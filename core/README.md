@@ -37,7 +37,7 @@ All numbers come from [BENCHMARK.md](../BENCHMARK.md) (section "`:core` の実�
 Where `:core` is not ahead:
 
 - **Row insertion is on par with Chrome**: inserting and removing one row in a 2,000-row list takes `1.44 ms` (Chrome: `1.34 ms`).
-- **Large relayouts depend on core count.** A font-size change across 2,000 rows that each have a different design takes `8.20 ms` with a real font, over the 144 Hz frame (Chrome: `39.35 ms`). With the built-in test font it takes `6.04 ms` on 23 worker threads, `8.03 ms` on 4, and `17.45 ms` on 1. Hosts that share cores with a game should expect the lower rows; set the worker count with `EnderEngine.workerThreads(n)` or `-Denderframe.threads=N`.
+- **Large relayouts depend on core count.** A font-size change across 2,000 rows that each have a different design takes `5.72 ms` with a real font on the default worker count and `6.71 ms` on 4 worker threads, inside the 144 Hz frame (Chrome: `39.35 ms`), but `7.32 ms` on 3 and `17.20 ms` on 1. Hosts that share cores with a game should expect the lower rows; set the worker count with `EnderEngine.workerThreads(n)` or `-Denderframe.threads=N`.
 - **Cold start** (process start → first frame): `510–594 ms`, against about `300 ms` for Chrome (see the AOT cache section below).
 - **Retained heap**: about 1.35–1.57x Chrome's on 2,000-row documents.
 - **Documents with constant animation** fall off the incremental paths and rebuild every frame; the bundled `voidwave.html` demo runs at 0.57–0.79x of Chrome's frame time instead of the 0.04–0.17x seen on the showcase page.

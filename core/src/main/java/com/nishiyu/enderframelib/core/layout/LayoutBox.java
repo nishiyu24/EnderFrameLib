@@ -816,14 +816,13 @@ public class LayoutBox {
      * 算出スタイルを更新する（再スタイル時にジオメトリを保ったまま描画属性だけ差し替える用途を含む）。
      */
     public void updateStyle(ComputedStyle newStyle) {
-        // display / position / float が変わりうる。ただし文字ノードの箱は float の有無に影響しない（子を持たず、isFloating は常に false）ので、
-        // 文字の差し替え（TEXT_PATCH が毎フレーム呼ぶ）では世代を進めず、float メモを残す
-        if (node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT) bumpShapeEpoch();
         int traitsBefore = structTraits(), containerBefore = containerTraits();
         touchPaint();
         invalidateMinContentCache();
         styleStamp = paintStamp;
         ComputedStyle prevStyle = this.style;
+        Display displayBefore = this.display;
+        boolean absoluteBefore = this.isAbsolute;
         String prevSource = this.displaySource;
         this.style = newStyle;
         this.displaySource = node.text;
@@ -858,6 +857,15 @@ public class LayoutBox {
             markContentAutoSubtree();
         } else if (this.contentAutoSkipped) {
             this.contentAutoSkipped = false;
+        }
+        // 形の世代（float メモが読む）は display / position / float が変わったときだけ進める。以前は要素の箱を
+        // 再スタイルするたびに進めていて、font-size だけの全行の再スタイルで全部の float メモが毎フレーム消え、
+        // 2,000 行の親で子を直列に走査し直していた（B11）。文字ノードの箱は float の有無に影響しない（子を持たず、
+        // isFloating は常に false）。BFC の変わり目は BoxMeasurer が自分で進める。付け漏れは verifyFloatMemo が検出する
+        if (node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
+                && (prevStyle == null || absoluteBefore != this.isAbsolute || !display.equals(displayBefore)
+                        || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.FLOAT), newStyle.get(CssPropertyIndex.FLOAT)))) {
+            bumpShapeEpoch();
         }
         if (traitsBefore != structTraits()) STRUCT_EPOCH.incrementAndGet();
         if (containerBefore != containerTraits()) CONTAINER_EPOCH.incrementAndGet();
@@ -2397,7 +2405,7 @@ public class LayoutBox {
         List<LayoutBox> kids = box.children;
         int n = kids.size();
         if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
-            int grain = Math.max(8, n / (LayoutTaskPool.workerCount() * 2));
+            int grain = LayoutTaskPool.grainFor(n, 8);
             LayoutTaskPool.forRange(n, grain, null, i -> resetPlacements(kids.get(i), keepRun));
             return;
         }
@@ -2407,7 +2415,7 @@ public class LayoutBox {
     private static void resetChildrenPlacements(List<LayoutBox> kids) {
         int n = kids.size();
         if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
-            int grain = Math.max(8, n / (LayoutTaskPool.workerCount() * 2));
+            int grain = LayoutTaskPool.grainFor(n, 8);
             LayoutTaskPool.forRange(n, grain, null, i -> resetPlacements(kids.get(i), -1));
             return;
         }
@@ -2466,7 +2474,7 @@ public class LayoutBox {
             return;
         }
         if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
-            int chunks = Math.min(LayoutTaskPool.workerCount(), (n + 15) / 16);
+            int chunks = LayoutTaskPool.chunksFor(n, 16);
             @SuppressWarnings("unchecked")
             List<LayoutBox>[] perChunk = new List[chunks];
             LayoutTaskPool.forChunks(n, chunks, null, span -> {
@@ -2784,7 +2792,7 @@ public class LayoutBox {
         List<LayoutBox> kids = box.children;
         int n = kids.size();
         if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
-            int chunks = Math.min(LayoutTaskPool.workerCount(), (n + 15) / 16);
+            int chunks = LayoutTaskPool.chunksFor(n, 16);
             boolean[] flags = new boolean[chunks * 2];
             LayoutTaskPool.forChunks(n, chunks, null, span -> {
                 int c = LayoutTaskPool.spanChunk(span);
@@ -2949,7 +2957,7 @@ public class LayoutBox {
         List<LayoutBox> kids = root.children;
         int n = kids.size();
         if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
-            int grain = Math.max(8, n / (LayoutTaskPool.workerCount() * 2));
+            int grain = LayoutTaskPool.grainFor(n, 8);
             LayoutTaskPool.forRange(n, grain, null, i -> clearAllSubtreeMarks(kids.get(i)));
             return;
         }

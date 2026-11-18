@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.core.layout;
 
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinWorkerThread;
-import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
@@ -77,9 +76,42 @@ public final class LayoutTaskPool {
         PARALLEL_DISPATCHES.set(0);
     }
 
-    /** 現在のスレッドがすでにレイアウト並列プール内のワーカーか（ネストした再フォークを防ぐ）。 */
+    /** 呼び出し側のスレッドが、並列区間の仕事を自分でも取って実行している最中か（{@link #runShared}）。 */
+    private static final ThreadLocal<boolean[]> CALLER_IN_TASK = ThreadLocal.withInitial(() -> new boolean[1]);
+
+    /**
+     * 現在のスレッドが並列区間の仕事を実行中か（ネストした再フォークを防ぐ）。プールのワーカーに加えて、
+     * 並列区間を始めて自分も仕事を取っている呼び出し側のスレッドも真。
+     */
     public static boolean inWorker() {
-        return Thread.currentThread() instanceof Worker;
+        Thread t = Thread.currentThread();
+        return t instanceof Worker || CALLER_IN_TASK.get()[0];
+    }
+
+    /**
+     * 1 つの並列区間に加わるスレッドの数（ワーカー＋呼び出し側）。分割数を決める側が使う。直列なら 1。
+     * 呼び出し側は待つ間も仕事を取るので、ワーカーが {@code N} 本なら {@code N + 1} 本で回る（B11）。
+     */
+    public static int participants() {
+        int w = workerCount();
+        return w <= 1 ? 1 : w + 1;
+    }
+
+    /**
+     * 1 つの並列区間を、加わるスレッド 1 本あたり何個の仕事に割るか。1 本に 1 個だと、起きるのが遅いワーカーの分を
+     * 他のスレッドが拾えず待つ。{@code -Denderframe.split=N} で変えられる（計測用）。
+     */
+    static final int SPLIT_PER_PARTICIPANT = Math.max(1, Integer.getInteger("enderframe.split", 4));
+
+    /** {@link #forRange} に渡す粒度: {@code n} 件を {@link #SPLIT_PER_PARTICIPANT} × 加わる本数に割る（{@code minGrain} 件以上）。 */
+    public static int grainFor(int n, int minGrain) {
+        return Math.max(minGrain, n / (participants() * SPLIT_PER_PARTICIPANT));
+    }
+
+    /** {@link #forChunks} に渡す区間の数: {@link #grainFor} と同じ割り方で、1 区間 {@code minPerChunk} 件以上。 */
+    public static int chunksFor(int n, int minPerChunk) {
+        if (participants() <= 1) return 1; // 直列なら割らない（区間ごとの一覧・数えの配列を作らない）
+        return Math.max(1, Math.min(participants() * SPLIT_PER_PARTICIPANT, (n + minPerChunk - 1) / minPerChunk));
     }
 
     /**
@@ -93,7 +125,87 @@ public final class LayoutTaskPool {
             for (int i = 0; i < count; i++) task.accept(i);
             return;
         }
-        p.invoke(new RangeTask(0, count, 1, null, task));
+        runShared(p, count, null, task);
+    }
+
+    /** 並列区間 1 回分の共有状態。仕事の番号を先着で配り、加わったヘルパーが全員抜けるのを呼び出し側が待つ。 */
+    private static final class SharedRun implements Runnable {
+        private final int chunks;
+        private final Consumer<Runnable> scopeRunner;
+        private final IntConsumer chunkBody;
+        private final java.util.concurrent.atomic.AtomicInteger next = new java.util.concurrent.atomic.AtomicInteger();
+        /** 仕事を取りに入って、まだ抜けていないヘルパーの数。 */
+        private final java.util.concurrent.atomic.AtomicInteger active = new java.util.concurrent.atomic.AtomicInteger();
+        private final Thread caller;
+        private volatile Throwable failure;
+
+        SharedRun(int chunks, Consumer<Runnable> scopeRunner, IntConsumer chunkBody, Thread caller) {
+            this.chunks = chunks;
+            this.scopeRunner = scopeRunner;
+            this.chunkBody = chunkBody;
+            this.caller = caller;
+        }
+
+        /** ヘルパー（プールのワーカー）側。仕事を取る前に必ず {@link #active} を増やす（呼び出し側の待ちの条件）。 */
+        @Override
+        public void run() {
+            active.incrementAndGet();
+            try {
+                work();
+            } finally {
+                if (active.decrementAndGet() == 0) java.util.concurrent.locks.LockSupport.unpark(caller);
+            }
+        }
+
+        void work() {
+            int c;
+            while (failure == null && (c = next.getAndIncrement()) < chunks) {
+                final int chunk = c;
+                try {
+                    if (scopeRunner != null) scopeRunner.accept(() -> chunkBody.accept(chunk));
+                    else chunkBody.accept(chunk);
+                } catch (Throwable t) {
+                    if (failure == null) failure = t;
+                }
+            }
+        }
+
+        /**
+         * 呼び出し側が自分の取り分を終えた後に、仕事を持っているヘルパーが抜けるまで待つ。ここに来た時点で番号は配り終えている
+         * （{@link #next} が {@link #chunks} 以上）。番号を取ったヘルパーは取る前に {@link #active} を増やしているので、
+         * 0 を見たら残りの仕事は無い。まだ始まっていないヘルパーは、後で始まっても番号を取れずに抜ける。
+         */
+        void awaitHelpers() {
+            int spins = 0;
+            while (active.get() != 0) {
+                if (++spins < 2_000) Thread.onSpinWait();
+                else java.util.concurrent.locks.LockSupport.parkNanos(this, 50_000L);
+            }
+        }
+    }
+
+    /**
+     * {@code chunks} 個の仕事を、プールのワーカーと呼び出し側のスレッドで先着順に分け合う。以前は {@code ForkJoinPool.invoke}
+     * で、呼び出し側（ホストの描画スレッド）は区間の間ずっと待つだけだった（B11: ワーカー 4 本の varied-2000 `fontsize` で
+     * main の標本の 7 割が待ち）。結果は誰がどの番号を実行しても同じ（番号ごとに独立な仕事だけを渡すこと）。
+     */
+    private static void runShared(ForkJoinPool p, int chunks, Consumer<Runnable> scopeRunner, IntConsumer chunkBody) {
+        PARALLEL_DISPATCHES.incrementAndGet();
+        SharedRun run = new SharedRun(chunks, scopeRunner, chunkBody, Thread.currentThread());
+        int helpers = Math.min(p.getParallelism(), chunks - 1);
+        for (int i = 0; i < helpers; i++) p.execute(run);
+        boolean[] flag = CALLER_IN_TASK.get();
+        flag[0] = true;
+        try {
+            run.work();
+        } finally {
+            flag[0] = false;
+        }
+        run.awaitHelpers();
+        Throwable t = run.failure;
+        if (t instanceof RuntimeException re) throw re;
+        if (t instanceof Error e) throw e;
+        if (t != null) throw new java.util.concurrent.CompletionException(t);
     }
 
     /** チャンク呼び出しに渡す 64bit スパン値からチャンク番号を取り出す。 */
@@ -134,8 +246,12 @@ public final class LayoutTaskPool {
             }
             return;
         }
-        PARALLEL_DISPATCHES.incrementAndGet();
-        p.invoke(new RangeTask(0, count, grain, scopeRunner, task));
+        int chunks = (count + grain - 1) / grain;
+        runShared(p, chunks, scopeRunner, c -> {
+            int start = (int) (((long) c * count) / chunks);
+            int end = (int) (((long) (c + 1) * count) / chunks);
+            for (int i = start; i < end; i++) task.accept(i);
+        });
     }
 
     /**
@@ -151,82 +267,11 @@ public final class LayoutTaskPool {
             consumer.accept(packSpan(0, 0, itemCount));
             return;
         }
-        PARALLEL_DISPATCHES.incrementAndGet();
-        p.invoke(new ChunkTask(0, chunks, chunks, itemCount, scopeRunner, consumer));
-    }
-
-    private static final class RangeTask extends RecursiveAction {
-        private final int start;
-        private final int end;
-        private final int grain;
-        private final Consumer<Runnable> scopeRunner;
-        private final IntConsumer task;
-
-        RangeTask(int start, int end, int grain, Consumer<Runnable> scopeRunner, IntConsumer task) {
-            this.start = start;
-            this.end = end;
-            this.grain = grain;
-            this.scopeRunner = scopeRunner;
-            this.task = task;
-        }
-
-        @Override
-        protected void compute() {
-            int len = end - start;
-            if (len <= grain) {
-                Runnable leaf = () -> {
-                    for (int i = start; i < end; i++) {
-                        task.accept(i);
-                    }
-                };
-                if (scopeRunner != null) scopeRunner.accept(leaf);
-                else leaf.run();
-                return;
-            }
-            int mid = start + (len >>> 1);
-            RangeTask left = new RangeTask(start, mid, grain, scopeRunner, task);
-            RangeTask right = new RangeTask(mid, end, grain, scopeRunner, task);
-            left.fork();
-            right.compute();
-            left.join();
-        }
-    }
-
-    private static final class ChunkTask extends RecursiveAction {
-        private final int firstChunk;
-        private final int lastChunk;
-        private final int totalChunks;
-        private final int totalItems;
-        private final Consumer<Runnable> scopeRunner;
-        private final LongConsumer consumer;
-
-        ChunkTask(int firstChunk, int lastChunk, int totalChunks, int totalItems,
-                  Consumer<Runnable> scopeRunner, LongConsumer consumer) {
-            this.firstChunk = firstChunk;
-            this.lastChunk = lastChunk;
-            this.totalChunks = totalChunks;
-            this.totalItems = totalItems;
-            this.scopeRunner = scopeRunner;
-            this.consumer = consumer;
-        }
-
-        @Override
-        protected void compute() {
-            if (lastChunk - firstChunk <= 1) {
-                int c = firstChunk;
-                int start = (int) (((long) c * totalItems) / totalChunks);
-                int end = (int) (((long) (c + 1) * totalItems) / totalChunks);
-                Runnable leaf = () -> consumer.accept(packSpan(c, start, end));
-                if (scopeRunner != null) scopeRunner.accept(leaf);
-                else leaf.run();
-                return;
-            }
-            int mid = (firstChunk + lastChunk) >>> 1;
-            ChunkTask left = new ChunkTask(firstChunk, mid, totalChunks, totalItems, scopeRunner, consumer);
-            ChunkTask right = new ChunkTask(mid, lastChunk, totalChunks, totalItems, scopeRunner, consumer);
-            left.fork();
-            right.compute();
-            left.join();
-        }
+        final int total = chunks;
+        runShared(p, total, scopeRunner, c -> {
+            int start = (int) (((long) c * itemCount) / total);
+            int end = (int) (((long) (c + 1) * itemCount) / total);
+            consumer.accept(packSpan(c, start, end));
+        });
     }
 }

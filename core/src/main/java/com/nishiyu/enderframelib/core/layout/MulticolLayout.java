@@ -123,6 +123,8 @@ final class MulticolLayout {
 
     /** {@code column-span: all} の、フロー内のブロックレベルの子か。 */
     static boolean isSpanner(LayoutBox child) {
+        // 指定の無い（初期値 none の）箱が大半なので、文字列の取り出し・trim の前に宣言の有無で外す
+        if (child.style == null || !child.style.containsKey(CssPropertyIndex.COLUMN_SPAN)) return false;
         if (child.isAbsolute || child.display.isNone() || child.isOutsideMarker || child.isRenderedLegend
                 || BlockLayoutEngine.isInlineBox(child) || BlockLayoutEngine.isFloating(child)
                 || child.node.nodeType != NodeType.ELEMENT || child.style == null) return false;

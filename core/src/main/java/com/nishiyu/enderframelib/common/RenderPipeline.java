@@ -1285,7 +1285,7 @@ public class RenderPipeline {
             }
             if (workCount >= LayoutTaskPool.PARALLEL_THRESHOLD) {
                 interactionState.restyleDescended = true;
-                int chunks = Math.min(LayoutTaskPool.workerCount(), (workCount + 15) / 16);
+                int chunks = LayoutTaskPool.chunksFor(workCount, 16);
                 int[] chunkAcc = new int[chunks];
                 @SuppressWarnings("unchecked")
                 List<LayoutBox>[] chunkLayout = new List[chunks];

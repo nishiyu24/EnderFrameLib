@@ -275,7 +275,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         prunedOwners = 0;
         pruneWindowed = windowed;
         pruneSweeping = generation % PaintOrder.SWEEP_EVERY == 0;
-        order.subtreePruner = cull && PRUNE_ENABLED ? this::pruneOffscreenSubtree : null;
+        order.subtreePruner = cull && PRUNE_ENABLED ? pruner : null;
         List<RenderTask> paintTaskList;
         try {
             paintTaskList = order.paintTasks(box);
@@ -381,13 +381,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
      * 固定/粘着配置を持たず、窓の判定を動かすスクロールの対象でもなく、位置が箱の枠の内に収まるとき（このとき子孫も全て、
      * 箱ごとの判定で省かれる）。省いた箱は、箱ごとに省いたときと同じ記録（項目の位置の取り消し・記憶の保持・窓の外の記録）を残す。
      */
-    private boolean pruneOffscreenSubtree(LayoutBox c, boolean ancestorHasMoving) {
-        if (c.isAnonymous || c.node == null || c.display == null || c.style == null || c.display.isNone()
-                || "#text".equals(c.node.tag)) {
-            return false;
-        }
-        boolean moving = ancestorHasMoving || PaintOrder.hasMovingProps(c.style);
-        if (moving || inWindowGeometry(c)) return false;
+    private boolean pruneOffscreenSubtree(LayoutBox c, boolean ancestorHasMoving, Object[] prepared, int index) {
+        Object pre = prepared != null ? prepared[index] : null;
+        if (pre == PREP_REJECT || pre == PREP_NOT_CULLABLE) return false;
+        if (pre == null && !prunableRoot(c, ancestorHasMoving)) return false; // PREP_KNOWN と走査済みは入口の条件を通っている
         PrunedSubtree known = pruneCache.get(c);
         if (known != null && known.stillValid() && !known.anyShifted()) { // 部分木のどの箱にも描画の印が付いていない（中身も位置も同じ）ので、前の判定がそのまま使える
             if (!pruneSweeping && known.recordedSerial == buildSerial - 1 && known.recordedWindowed == pruneWindowed) {
@@ -402,32 +399,113 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             STAT_PRUNED_SUBTREES.increment();
             return true;
         }
-        pruneOwners.clear();
-        pruneScrolls.clear();
-        pruneVisited.clear();
-        if (!cullableSubtree(c, c)) {
-            pruneOwners.clear();
-            return false;
+        PrunedSubtree fresh;
+        if (pre instanceof PrunedSubtree p) {
+            fresh = p; // 先に並列で走査済み（覚えが無いか古いと分かった箱だけ）
+        } else {
+            pruneScrolls.clear();
+            pruneVisited.clear();
+            if (!cullableSubtree(c, c, pruneVisited, pruneScrolls)) return false;
+            fresh = new PrunedSubtree(
+                    pruneVisited.isEmpty() ? EMPTY_BOX_ARRAY : pruneVisited.toArray(EMPTY_BOX_ARRAY),
+                    pruneScrolls.isEmpty() ? EMPTY_NODE_ARRAY : pruneScrolls.toArray(EMPTY_NODE_ARRAY),
+                    LayoutBox.paintEpoch());
         }
-        PrunedSubtree fresh = new PrunedSubtree(
-                pruneVisited.isEmpty() ? EMPTY_BOX_ARRAY : pruneVisited.toArray(EMPTY_BOX_ARRAY),
-                pruneScrolls.isEmpty() ? EMPTY_NODE_ARRAY : pruneScrolls.toArray(EMPTY_NODE_ARRAY),
-                LayoutBox.paintEpoch());
-        if (pruneScrolls.size() <= 8) {
+        if (fresh.scrolls.length <= 8) {
             if (pruneCache.size() > Math.max(8192, lastOwnerCount)) pruneCache.clear(); // 消えた箱の分が溜まり続けないように
             pruneCache.put(c, fresh);
         }
-        fresh.record();
+        if (fresh.premarked) {
+            fresh.applyRecord(); // 箱ごとの書き込みは先の並列の判定で済んでいる
+            fresh.premarked = false;
+        } else {
+            fresh.record();
+        }
         fresh.recordedSerial = buildSerial;
         fresh.recordedWindowed = pruneWindowed;
-        pruneOwners.clear();
         STAT_PRUNED_SUBTREES.increment();
         return true;
+    }
+
+    /** 部分木ごと省く判定の入口の条件（箱そのものが持ち主になりうる・動かない・窓の判定に掛からない）。 */
+    private boolean prunableRoot(LayoutBox c, boolean ancestorHasMoving) {
+        if (c.isAnonymous || c.node == null || c.display == null || c.style == null || c.display.isNone()
+                || "#text".equals(c.node.tag)) {
+            return false;
+        }
+        return !ancestorHasMoving && !PaintOrder.hasMovingProps(c.style) && !inWindowGeometry(c);
+    }
+
+    /** 先の判定の結果: 入口の条件で外れた／部分木が省けない／入口は通り、覚えがまだ使える。 */
+    private static final Object PREP_REJECT = new Object();
+    private static final Object PREP_NOT_CULLABLE = new Object();
+    private static final Object PREP_KNOWN = new Object();
+    /** 先に並列で判定する子の並びの下限（これ未満は配る費用の方が大きい）。 */
+    static final int PREPARE_MIN_CHILDREN = 64;
+    /** 診断: 先の並列の判定で走査し、箱ごとの記録まで済ませた部分木の数（並列が無効〔{@code -Denderframe.layout.noparallel=true}〕なら直列の判定だけになる）。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_PREPARED_SUBTREES = new java.util.concurrent.atomic.LongAdder();
+
+    private final PaintOrder.SubtreePruner pruner = new PaintOrder.SubtreePruner() {
+        @Override
+        public boolean prune(LayoutBox box, boolean ancestorHasMoving, Object[] prepared, int index) {
+            return pruneOffscreenSubtree(box, ancestorHasMoving, prepared, index);
+        }
+
+        @Override
+        public Object[] prepare(List<LayoutBox> kids, boolean ancestorHasMoving) {
+            return preparePrune(kids, ancestorHasMoving);
+        }
+    };
+
+    /**
+     * 大きな子の並びについて、部分木ごと省けるかの走査（{@link #cullableSubtree}）を先に並列で済ませる（B11）。全行が
+     * 測り直されるフレーム（{@code font-size} の変更）では全部の箱に描画の印が付き、画面外の行ごとの覚えが毎回外れて、
+     * 2,000 行の走査が表示リストの組み立て（直列）の大半を占めていた。各要素は、入口の条件で外れた・覚えがまだ使える（null）・
+     * 省けない・省ける（走査済みの {@link PrunedSubtree}、まだ記録していない）のどれか。走査は箱の木・位置・スタイルを読むだけで、
+     * 書くのは各行の結果の欄だけ（組み立ての状態には触れない）。記録・覚えへの登録は従来どおり直列の {@link #pruneOffscreenSubtree}。
+     */
+    private Object[] preparePrune(List<LayoutBox> kids, boolean ancestorHasMoving) {
+        int n = kids.size();
+        if (n < PREPARE_MIN_CHILDREN || !com.nishiyu.enderframelib.core.layout.LayoutTaskPool.parallelEnabled
+                || com.nishiyu.enderframelib.core.layout.LayoutTaskPool.participants() < 2 || com.nishiyu.enderframelib.core.layout.LayoutTaskPool.inWorker()) {
+            return null;
+        }
+        Object[] out = new Object[n];
+        long epoch = LayoutBox.paintEpoch();
+        int grain = com.nishiyu.enderframelib.core.layout.LayoutTaskPool.grainFor(n, 16);
+        com.nishiyu.enderframelib.core.layout.LayoutTaskPool.forRange(n, grain, null, i -> {
+            LayoutBox c = kids.get(i);
+            if (!prunableRoot(c, ancestorHasMoving)) {
+                out[i] = PREP_REJECT;
+                return;
+            }
+            PrunedSubtree known = pruneCache.get(c);
+            if (known != null && known.stillValidAt(epoch) && !known.anyShifted()) { // 覚えが使える（直列側で使う）
+                out[i] = PREP_KNOWN;
+                return;
+            }
+            ArrayList<LayoutBox> visited = new ArrayList<>();
+            ArrayList<com.nishiyu.enderframelib.core.dom.node.HtmlNode> scrolls = new ArrayList<>(0);
+            if (!cullableSubtree(c, c, visited, scrolls)) {
+                out[i] = PREP_NOT_CULLABLE;
+                return;
+            }
+            PrunedSubtree fresh = new PrunedSubtree(visited.toArray(EMPTY_BOX_ARRAY),
+                    scrolls.isEmpty() ? EMPTY_NODE_ARRAY : scrolls.toArray(EMPTY_NODE_ARRAY), epoch);
+            // 走査済みの部分木は直列側で必ず省かれる（覚えは古いと分かっている）ので、箱ごとの書き込みもここで済ませる
+            visited.clear(); // 走査に使ったリストを、持ち主の作業用に使い回す
+            fresh.markBoxes(visited);
+            fresh.premarked = true;
+            out[i] = fresh;
+            STAT_PREPARED_SUBTREES.increment();
+        });
+        return out;
     }
 
     private static final LayoutBox[] EMPTY_BOX_ARRAY = new LayoutBox[0];
     private static final com.nishiyu.enderframelib.core.dom.node.HtmlNode[] EMPTY_NODE_ARRAY =
             new com.nishiyu.enderframelib.core.dom.node.HtmlNode[0];
+    /** 直列の記録（{@link PrunedSubtree#record}）が窓の外の持ち主を集める作業用のリスト。 */
     private final List<LayoutBox> pruneGeoScratch = new ArrayList<>();
 
     /** 窓の判定のために、このスクロールコンテナの節の位置がずれているか（ずれが 0 なら窓の判定には響かない）。 */
@@ -448,19 +526,37 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         int ownerCount;
         LayoutBox[] geometryOwners = EMPTY_BOX_ARRAY;
 
+        /** 先の並列の判定（{@link #preparePrune}）で {@link #markBoxes} を済ませ、まだ {@link #applyRecord} していない。 */
+        boolean premarked;
+
         /** 部分木の箱ごとの記録を残す（箱ごとに省いたときと同じ）。 */
         void record() {
-            pruneGeoScratch.clear();
+            markBoxes(pruneGeoScratch);
+            applyRecord();
+        }
+
+        /**
+         * 記録のうち、箱ごとの書き込み（項目の位置の取り消し・記憶の保持）。書くのは部分木の箱と、その箱の記憶だけなので、
+         * 別々の部分木なら並列に呼べる（{@code scratch} はスレッドごとに別のもの）。持ち主の数と窓の外の記録に入れる箱を自分に覚える。
+         */
+        void markBoxes(List<LayoutBox> scratch) {
+            scratch.clear();
             int n = 0;
             for (LayoutBox b : boxes) {
                 if (!isPruneOwner(b)) continue;
                 n++;
-                recordPruned(b);
-                if (isGeometryOwner(b)) pruneGeoScratch.add(b);
+                markPruned(b);
+                if (isGeometryOwner(b)) scratch.add(b);
             }
             ownerCount = n;
-            geometryOwners = pruneGeoScratch.isEmpty() ? EMPTY_BOX_ARRAY : pruneGeoScratch.toArray(EMPTY_BOX_ARRAY);
-            pruneGeoScratch.clear();
+            geometryOwners = scratch.isEmpty() ? EMPTY_BOX_ARRAY : scratch.toArray(EMPTY_BOX_ARRAY);
+            scratch.clear();
+        }
+
+        /** 記録のうち、組み立て全体の数と窓の外の一覧へ足す分（直列。木の順に足す）。 */
+        void applyRecord() {
+            prunedOwners += ownerCount;
+            if (pruneWindowed) for (LayoutBox b : geometryOwners) culledBoxes.add(b); // addAll(asList) は包みと配列の写しを確保する
         }
 
         PrunedSubtree(LayoutBox[] boxes, com.nishiyu.enderframelib.core.dom.node.HtmlNode[] scrolls, long epoch) {
@@ -475,6 +571,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             if (now == epoch) return true;
             for (LayoutBox b : boxes) if (b.paintStamp > epoch) return false;
             epoch = now;
+            return true;
+        }
+
+        /** {@link #stillValid} と同じ判定で、覚えの世代を書き換えない（並列の先の判定用）。 */
+        boolean stillValidAt(long now) {
+            if (now == epoch) return true;
+            for (LayoutBox b : boxes) if (b.paintStamp > epoch) return false;
             return true;
         }
 
@@ -498,14 +601,15 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return b.w > 0 && b.h > 0 && !b.isAnonymous && !(b.display != null && b.display.isNone());
     }
 
-    /** 部分木を調べる間に集める、省く箱（持ち主になる箱）。 */
-    private final ArrayList<LayoutBox> pruneOwners = new ArrayList<>();
-
-    private boolean cullableSubtree(LayoutBox b, LayoutBox top) {
-        pruneVisited.add(b);
+    /**
+     * {@code top} の部分木を丸ごと省けるか。辿った箱を {@code visited}、中のスクロールコンテナの節を {@code scrolls} へ足す。
+     * 読むだけで組み立ての状態を書かないので、別々の部分木なら並列に呼べる（{@link #preparePrune}）。
+     */
+    private boolean cullableSubtree(LayoutBox b, LayoutBox top, List<LayoutBox> visited,
+                                    List<com.nishiyu.enderframelib.core.dom.node.HtmlNode> scrolls) {
+        visited.add(b);
         if (b.display != null && b.display.isNone()) return true;
-        if (b.w > 0 && b.h > 0 && !b.isAnonymous) pruneOwners.add(b);
-        if (b.style != null && b.isScrollContainer()) pruneScrolls.add(b.node);
+        if (b.style != null && b.isScrollContainer()) scrolls.add(b.node);
         if (b.style == null || b.node == null) return false;
         String tag = b.node.tag;
         boolean text = "#text".equals(tag);
@@ -521,15 +625,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         if (b.children != null) {
             List<LayoutBox> kids = b.children;
             for (int i = 0, cn = kids.size(); i < cn; i++) {
-                if (!cullableSubtree(kids.get(i), top)) return false;
+                if (!cullableSubtree(kids.get(i), top, visited, scrolls)) return false;
             }
         }
         return true;
     }
 
-    /** 部分木ごと省いた箱の、箱ごとに省いたときと同じ記録。 */
-    private void recordPruned(LayoutBox b) {
-        prunedOwners++;
+    /** 部分木ごと省いた箱の、箱ごとに省いたときと同じ記録のうち、箱の側の書き込み（数と窓の外の一覧は {@link PrunedSubtree#applyRecord}）。 */
+    private void markPruned(LayoutBox b) {
         if (pruneSweeping) { // 記憶の掃除はこの世代でだけ使われを見る。それ以外の世代では、記憶を引かずに済ませる
             BoxMemo kept = boxMemo.get(b);
             if (kept != null) kept.generation = generation;
@@ -538,7 +641,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         b.paintCulled = true;
         b.dlEnd = -1;
         b.dlOrder = -1;
-        if (pruneWindowed && isGeometryOwner(b)) culledBoxes.add(b);
     }
 
     /** 直近の描画で出した項目の数（次の描画の出力リストの初期容量に使う）。 */

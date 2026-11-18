@@ -3,6 +3,7 @@
 css/ColorParser.java#NAMED_COLORS | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/ColorParser.java#SLOW_MEMO | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
 css/ComputedStyle.java#DIFF_MEMO | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
+css/ComputedStyle.java#LAST_FACE | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
 css/ComputedStyle.java#HASHES | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/ComputedStyle.java#INHERITED | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/ComputedStyle.java#INHERITS_AS_LONGHAND | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
