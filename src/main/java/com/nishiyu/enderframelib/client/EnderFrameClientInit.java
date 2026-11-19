@@ -147,23 +147,23 @@ public class EnderFrameClientInit {
         WebFontManager.installFontReader();
         CssParser.fontFaceCallback = WebFontManager::extractAndRegisterFontFaces;
 
-        com.nishiyu.enderframelib.core.EngineContext.global().clientResourceFallback = path -> {
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withClientResourceFallback(path -> {
             ResourceLocation loc = ResourceLocation.tryParse(path);
             if (loc == null) {
                 EnderFrameLib.LOGGER.warn("Not a valid resource location, ignoring include: {}", path);
                 return "";
             }
             return AbstractEnderScreen.findHtmlResource(loc).orElse("");
-        };
+        }));
 
-        com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver = ClientLocalEnvProvider::translateKey;
-        com.nishiyu.enderframelib.core.EngineContext.global().i18nFormatter = ClientLocalEnvProvider::translateKey;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nResolver(ClientLocalEnvProvider::translateKey));
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nFormatter(ClientLocalEnvProvider::translateKey));
         ClientTemplateManager.clearSources();
         ClientTemplateManager.addSource(id -> {
             ResourceLocation loc = ResourceLocation.tryParse(id);
             return loc == null ? null : AbstractEnderScreen.findHtmlResource(loc).orElse(null);
         });
-        com.nishiyu.enderframelib.core.EngineContext.global().jsonListParser = jsonStr -> {
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withJsonListParser(jsonStr -> {
             try {
                 com.google.gson.JsonElement parsedJson = com.google.gson.JsonParser.parseString(jsonStr);
                 List<Map<String, String>> result = new ArrayList<>();
@@ -199,10 +199,10 @@ public class EnderFrameClientInit {
             } catch (Exception e) {
                 return Collections.emptyList();
             }
-        };
+        }));
 
         DomUtils.innerHtmlParser = UiDocumentCompiler.INNER_HTML_PARSER;
-        com.nishiyu.enderframelib.core.EngineContext.global().intrinsicSizeResolver = ClientImageRegistry.RESOLVER_ADAPTER;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withIntrinsicSizeResolver(ClientImageRegistry.RESOLVER_ADAPTER));
         PaintServices.setIntrinsicSizeResolver(ClientImageRegistry.RESOLVER_ADAPTER);
 
         ClientImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);

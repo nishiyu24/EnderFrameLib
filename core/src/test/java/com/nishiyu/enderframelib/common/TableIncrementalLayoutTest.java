@@ -53,11 +53,11 @@ public class TableIncrementalLayoutTest {
 
     @AfterEach
     public void restore() {
-        com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = true;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
     }
 
     private static List<List<String>> run(boolean incremental, long seed) {
-        com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = incremental;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withIncrementalLayout(incremental));
         return MutationScenario.run(HTML, CLASSES, STYLES, seed, 80);
     }
 

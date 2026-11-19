@@ -32,8 +32,8 @@ public class BindingsTest {
 
     @BeforeEach
     public void setup() {
-        com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver = key -> "TR:" + key;
-        com.nishiyu.enderframelib.core.EngineContext.global().jsonListParser = jsonStr -> {
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nResolver(key -> "TR:" + key));
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withJsonListParser(jsonStr -> {
             if (jsonStr.contains("item1")) {
                 return List.of(
                         Map.of("_key", "0", "_value", "item1"),
@@ -41,14 +41,14 @@ public class BindingsTest {
                 );
             }
             return Collections.emptyList();
-        };
+        }));
     }
 
     @AfterEach
     public void teardown() {
-        com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver = key -> key;
-        com.nishiyu.enderframelib.core.EngineContext.global().i18nFormatter = (key, args) -> key;
-        com.nishiyu.enderframelib.core.EngineContext.global().jsonListParser = null;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nResolver(key -> key));
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nFormatter((key, args) -> key));
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withJsonListParser(null));
     }
 
     @Test
@@ -69,7 +69,7 @@ public class BindingsTest {
         assertEquals("TR:literal.key", Bindings.resolve("{{'literal.key'|i18n}}", data, env));
 
         // 引数つき: 状態のキーはその値、引用符つきは中身（カンマも可）
-        com.nishiyu.enderframelib.core.EngineContext.global().i18nFormatter = (key, args) -> key + java.util.Arrays.toString(args);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nFormatter((key, args) -> key + java.util.Arrays.toString(args)));
         assertEquals("m.hello[Steve, 100, a, b]", Bindings.resolve("{{i18n:m.hello, name, score, 'a, b'}}", data, env));
         assertEquals("TR:m.plain", Bindings.resolve("{{i18n:m.plain}}", data, env));
 

@@ -366,7 +366,7 @@ final class LocalPatches {
      */
     boolean tryRelayoutInPlace() {
         Document doc = view.document;
-        if (!com.nishiyu.enderframelib.core.EngineContext.current().inPlaceRestyleRelayout || view.layoutRoot == null || doc == null || doc.root == null
+        if (!com.nishiyu.enderframelib.core.EngineContext.current().flags().inPlaceRestyleRelayout() || view.layoutRoot == null || doc == null || doc.root == null
                 || doc.sheet == null) {
             return false;
         }

@@ -132,7 +132,7 @@ public class TextPatchTest {
             long[] ns = new long[2];
             for (int i = 0; i < 600; i++) {
                 int mode = i & 1;
-                com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = mode == 0;
+                com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withLocalRelayout(mode == 0));
                 hp.updateTextContent("HP " + i);
                 long t0 = System.nanoTime();
                 v.ui().flushInvalidation();
@@ -141,7 +141,7 @@ public class TextPatchTest {
             System.out.println("[text-patch benchmark] interleaved 250 frames each: local=" + ns[0] / 1_000_000
                     + "ms whole-tree-mark=" + ns[1] / 1_000_000 + "ms");
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withLocalRelayout(true));
         }
     }
 
@@ -161,16 +161,16 @@ public class TextPatchTest {
             for (int i = 0; i < ids.length; i++) {
                 final String id = ids[i], text = texts[i];
                 ((HtmlText) textChild(local, id)).setData(text);
-                com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = true;
+                com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withLocalRelayout(true));
                 List<String> a = sigs(local);
                 if (RenderPipeline.lastRelayoutWasLocal()) localHits++;
                 ((HtmlText) textChild(whole, id)).setData(text);
-                com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = false;
+                com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withLocalRelayout(false));
                 List<String> b = sigs(whole);
                 assertEquals(b, a, "手順 " + i + " (" + id + ")");
             }
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withLocalRelayout(true));
         }
         assertTrue(localHits >= ids.length - 1, "局所の印付けで済んだ回数: " + localHits);
     }

@@ -30,7 +30,7 @@ public class LocalRelayoutTest {
 
     @AfterEach
     void restore() {
-        com.nishiyu.enderframelib.core.EngineContext.global().inPlaceRestyleRelayout = true;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(true));
         UiView.changeStampsEnabled = true;
     }
 
@@ -78,12 +78,12 @@ public class LocalRelayoutTest {
             long before = UiView.INPLACE_RELAYOUT_HITS.get();
             List<String> a = sigs(inPlace);
             if (UiView.INPLACE_RELAYOUT_HITS.get() > before && RenderPipeline.lastRelayoutWasLocal()) localTaken++;
-            com.nishiyu.enderframelib.core.EngineContext.global().inPlaceRestyleRelayout = false;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(false));
             try {
                 rebuilt.root().getNodeById(s[0]).setAttribute(s[1], s[2]);
                 assertEquals(sigs(rebuilt), a, String.join(" ", s));
             } finally {
-                com.nishiyu.enderframelib.core.EngineContext.global().inPlaceRestyleRelayout = true;
+                com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(true));
             }
         }
         assertTrue(localTaken >= 5, "経路だけの印付けで済んだ回数: " + localTaken);
@@ -100,7 +100,8 @@ public class LocalRelayoutTest {
             v.ui().flushInvalidation();
             HtmlNode fill = v.root().getNodeById("fill");
             for (int i = 0; i < 40; i++) {
-                com.nishiyu.enderframelib.core.EngineContext.global().inPlaceRestyleRelayout = (i % 2 == 0);
+                boolean inPlace = i % 2 == 0;
+                com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(inPlace));
                 fill.setAttribute("style", "width:" + (i % 100) + "%");
                 v.ui().flushInvalidation();
             }
@@ -108,7 +109,7 @@ public class LocalRelayoutTest {
             int n = 250;
             for (int i = 0; i < n; i++) {
                 boolean local = (i % 2 == 0);
-                com.nishiyu.enderframelib.core.EngineContext.global().inPlaceRestyleRelayout = local;
+                com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(local));
                 fill.setAttribute("style", "width:" + (i % 100) + "%");
                 long c0 = mx.getCurrentThreadCpuTime();
                 v.ui().flushInvalidation();

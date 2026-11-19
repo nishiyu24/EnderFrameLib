@@ -45,13 +45,13 @@ public class DocumentLoader {
         String builtIn = resolveBuiltInTheme(clean);
         if (builtIn != null) return builtIn;
 
-        Function<String, String> dpFallback = com.nishiyu.enderframelib.core.EngineContext.current().datapackResourceFallback;
+        Function<String, String> dpFallback = com.nishiyu.enderframelib.core.EngineContext.current().host().datapackResourceFallback();
         if (dpFallback != null) {
             String fromDatapack = dpFallback.apply(clean);
             if (fromDatapack != null && !fromDatapack.isEmpty()) return fromDatapack;
         }
 
-        Function<String, String> clFallback = com.nishiyu.enderframelib.core.EngineContext.current().clientResourceFallback;
+        Function<String, String> clFallback = com.nishiyu.enderframelib.core.EngineContext.current().host().clientResourceFallback();
         if (clFallback != null) {
             String fromClient = clFallback.apply(clean);
             if (fromClient != null && !fromClient.isEmpty()) return fromClient;
@@ -75,7 +75,7 @@ public class DocumentLoader {
 
     /** 有効な解決関数。文脈に差し込まれていればそれ、無ければ既定（{@link #DEFAULT_RESOURCE_TEXT_RESOLVER}）。 */
     public static Function<String, String> effectiveResourceTextResolver() {
-        Function<String, String> r = com.nishiyu.enderframelib.core.EngineContext.current().resourceTextResolver;
+        Function<String, String> r = com.nishiyu.enderframelib.core.EngineContext.current().host().resourceTextResolver();
         return r != null ? r : DEFAULT_RESOURCE_TEXT_RESOLVER;
     }
 

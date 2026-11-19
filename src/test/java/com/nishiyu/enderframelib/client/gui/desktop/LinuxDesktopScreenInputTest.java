@@ -31,11 +31,11 @@ public class LinuxDesktopScreenInputTest {
 
     @BeforeEach
     public void setup() throws Exception {
-        prevRenderer = com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer;
+        prevRenderer = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
         // クリック音は Minecraft の SoundManager を要するので、画面を開かない検証では鳴らさない
         prevUiSounds = ClientScreenInteractionManager.isEnableDefaultUiSounds();
         ClientScreenInteractionManager.setEnableDefaultUiSounds(false);
-        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox)));
 
         String html;
         try (InputStream is = getClass().getResourceAsStream("/assets/enderframelib/enderframe_ui/linux_desktop.html")) {
@@ -53,7 +53,7 @@ public class LinuxDesktopScreenInputTest {
     @AfterEach
     public void teardown() {
         ClientWebManager.clearSession(screen.getWebSessionId());
-        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = prevRenderer;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(prevRenderer));
         ClientScreenInteractionManager.setEnableDefaultUiSounds(prevUiSounds);
     }
 

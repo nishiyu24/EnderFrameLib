@@ -104,7 +104,8 @@ public final class ShowcaseApp {
         int[][][] px = new int[2][frames][];
         java.util.List<com.nishiyu.enderframelib.core.paint.model.DisplayItem>[][] its = new java.util.List[2][frames];
         for (int mode = 0; mode < 2; mode++) {
-            com.nishiyu.enderframelib.core.EngineContext.current().parentRelativeDisplayItems = mode == 1;
+            boolean parentRelative = mode == 1;
+            com.nishiyu.enderframelib.core.EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(parentRelative));
             StandaloneView view = new StandaloneView(page, 1280, 800);
             wire(view);
             try (var sw = new com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend(1280, 800, 1f)) {

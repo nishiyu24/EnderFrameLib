@@ -44,7 +44,7 @@ class LayerInversionSeamsTest {
     @Test
     void bindingsReadTranslationThroughHooksOfTheCurrentContext() throws Exception {
         EngineContext ctx = new EngineContext();
-        ctx.i18nResolver = k -> "T:" + k;
+        ctx.updateHost(h -> h.withI18nResolver(k -> "T:" + k));
         // 文脈の外（global）は既定のまま、中だけ差し替わる
         assertEquals("a.b", Bindings.resolve("{{i18n:a.b}}", Map.of(), Map.of()));
         String inside = EngineContext.callWith(ctx, () -> Bindings.resolve("{{i18n:a.b}}", Map.of(), Map.of()));

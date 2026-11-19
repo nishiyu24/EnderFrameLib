@@ -123,7 +123,7 @@ final class RenderTreeBuilder {
         boolean subtreeDirty = (flags != null && flags.subtreeDirty()) || force == RenderPipeline.FORCE_SUBTREE;
 
         if (needsRestyle) {
-            boolean tk = RenderPipeline.ctx().trackAllocations;
+            boolean tk = RenderPipeline.ctx().flags().trackAllocations();
             long k0 = tk ? RenderPipeline.threadAllocatedBytes() : 0;
             ContainerBox container = parentSizeContainer;
             ComputedStyle previous = flags != null ? flags.computedStyle : null;

@@ -283,7 +283,7 @@ public class UiView implements AutoCloseable {
      * （画面の外の箱は項目を作らなくてよい）。既定は {@link com.nishiyu.enderframelib.core.EngineContext#boxRenderer}。
      */
     protected List<DisplayItem> paintBoxes(LayoutBox root, int width, int height, boolean scrollOnly) {
-        var renderer = com.nishiyu.enderframelib.core.EngineContext.current().boxRenderer;
+        var renderer = com.nishiyu.enderframelib.core.EngineContext.current().host().boxRenderer();
         if (renderer == null) return null;
         var keyframes = document.sheet.keyframes;
         if (renderer != com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer.DEFAULT) return renderer.render(root, width, height, keyframes, scrollState);
@@ -1135,7 +1135,7 @@ public class UiView implements AutoCloseable {
     /** 直近に作った表示リストの、中身を 1 つの節にまとめたスクロールコンテナ。既定の描画（{@link DisplayListBuilder}）が持つ。 */
     protected List<ScrollContentInfo> builtScrollContents() {
         var builder = paintBuilder;
-        return builder != null && com.nishiyu.enderframelib.core.EngineContext.current().boxRenderer == com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer.DEFAULT
+        return builder != null && com.nishiyu.enderframelib.core.EngineContext.current().host().boxRenderer() == com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer.DEFAULT
                 ? builder.scrollContents() : List.of();
     }
 
@@ -1894,10 +1894,10 @@ public class UiView implements AutoCloseable {
                     layoutRoot);
             setLayoutRoot(rootBox);
             long layoutDone = System.nanoTime();
-            long paintAlloc0 = com.nishiyu.enderframelib.core.EngineContext.current().trackAllocations ? RenderPipeline.threadAllocatedBytes() : 0;
+            long paintAlloc0 = com.nishiyu.enderframelib.core.EngineContext.current().flags().trackAllocations() ? RenderPipeline.threadAllocatedBytes() : 0;
             List<DisplayItem> elements = paintBoxes(rootBox, newRootW, newRootH, false);
             String breakdown = RenderPipeline.lastBuildStats()
-                    + (com.nishiyu.enderframelib.core.EngineContext.current().trackAllocations ? " paintAllocKB=" + (RenderPipeline.threadAllocatedBytes() - paintAlloc0) / 1024 : "") + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
+                    + (com.nishiyu.enderframelib.core.EngineContext.current().flags().trackAllocations() ? " paintAllocKB=" + (RenderPipeline.threadAllocatedBytes() - paintAlloc0) / 1024 : "") + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
             lastBreakdown = () -> breakdown;
             if (elements == null) elements = new ArrayList<>();
             publishBuilt(elements);

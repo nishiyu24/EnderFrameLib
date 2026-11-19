@@ -25,8 +25,8 @@ public class P8AllocationReductionTest {
 
     @AfterEach
     void restoreGlobals() {
-        EngineContext.global().incrementalLayout = true;
-        EngineContext.global().inPlaceRestyleRelayout = true;
+        EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
+        EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(true));
     }
 
     @Test
@@ -81,10 +81,10 @@ public class P8AllocationReductionTest {
     }
 
     private static void runBoth(StandaloneView inc, StandaloneView fresh, Consumer<StandaloneView> mutate) {
-        EngineContext.global().incrementalLayout = false;
+        EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
         mutate.accept(fresh);
         List<String> exp = sigs(fresh);
-        EngineContext.global().incrementalLayout = true;
+        EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
         mutate.accept(inc);
         assertEquals(exp, sigs(inc));
     }
@@ -94,9 +94,9 @@ public class P8AllocationReductionTest {
         String html = html(24);
         StandaloneView inc = new StandaloneView(html, 320, 400, FontResolver.FALLBACK);
         StandaloneView fresh = new StandaloneView(html, 320, 400, FontResolver.FALLBACK);
-        EngineContext.global().incrementalLayout = false;
+        EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
         List<String> exp0 = sigs(fresh);
-        EngineContext.global().incrementalLayout = true;
+        EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
         assertEquals(exp0, sigs(inc));
         assertTrue(exp0.size() > 24, "折り返しで行ごとの表示項目が出ていること");
 

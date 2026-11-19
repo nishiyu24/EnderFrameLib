@@ -45,16 +45,16 @@ public class ServerClientLayoutParityTest {
 
     @BeforeEach
     public void setUp() {
-        previousRenderer = com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer;
-        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox);
+        previousRenderer = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox)));
         clearSessions();
     }
 
     @AfterEach
     public void tearDown() {
         clearSessions();
-        com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = true;
-        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = previousRenderer;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(previousRenderer));
     }
 
     private static void clearSessions() {
@@ -241,11 +241,11 @@ public class ServerClientLayoutParityTest {
     private static void flushAndCompare(String label, List<String> history) {
         session(SERVER).flushInvalidation();
         session(CLIENT).flushInvalidation();
-        com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = false;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
         try {
             session(REFERENCE).flushInvalidation();
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
         }
         List<DisplayItem> reference = session(REFERENCE).renderCache();
         for (String id : new String[]{SERVER, CLIENT}) {

@@ -26,26 +26,26 @@ class EngineContextRendererTest {
     @Test
     void defaultsAreTheBuiltInRenderer() {
         EngineContext fresh = new EngineContext();
-        assertSame(ILayoutBoxRenderer.DEFAULT, fresh.boxRenderer);
-        assertNull(fresh.clientResourceFallback);
-        assertNull(fresh.datapackResourceFallback);
-        assertSame(ILayoutBoxRenderer.DEFAULT, EngineContext.global().boxRenderer);
+        assertSame(ILayoutBoxRenderer.DEFAULT, fresh.host().boxRenderer());
+        assertNull(fresh.host().clientResourceFallback());
+        assertNull(fresh.host().datapackResourceFallback());
+        assertSame(ILayoutBoxRenderer.DEFAULT, EngineContext.global().host().boxRenderer());
     }
 
     @Test
     void scopedRendererIsUsedOnlyInsideTheScope() {
         AtomicInteger calls = new AtomicInteger();
         EngineContext ctx = new EngineContext();
-        ctx.boxRenderer = (root, w, h, kf, ss) -> { calls.incrementAndGet(); return List.of(); };
+        ctx.updateHost(hs -> hs.withBoxRenderer((root, w, h, kf, ss) -> { calls.incrementAndGet(); return List.of(); }));
         assertEquals(List.of(), renderWith(ctx));
         assertEquals(1, calls.get());
-        assertSame(ILayoutBoxRenderer.DEFAULT, EngineContext.current().boxRenderer, "スコープの外は global のまま");
+        assertSame(ILayoutBoxRenderer.DEFAULT, EngineContext.current().host().boxRenderer(), "スコープの外は global のまま");
     }
 
     @Test
     void nullRendererDrawsNothing() {
         EngineContext ctx = new EngineContext();
-        ctx.boxRenderer = null;
+        ctx.updateHost(h -> h.withBoxRenderer(null));
         assertTrue(renderWith(ctx).isEmpty());
     }
 
@@ -53,8 +53,8 @@ class EngineContextRendererTest {
     void twoThreadsSeeTheirOwnRenderer() throws Exception {
         EngineContext a = new EngineContext();
         EngineContext b = new EngineContext();
-        a.boxRenderer = (r, w, h, k, s) -> List.of();
-        b.boxRenderer = (r, w, h, k, s) -> null;
+        a.updateHost(hs -> hs.withBoxRenderer((r, w, h, k, s) -> List.of()));
+        b.updateHost(hs -> hs.withBoxRenderer((r, w, h, k, s) -> null));
         var ra = new Object() { Object v = "unset"; };
         var rb = new Object() { Object v = "unset"; };
         Thread ta = new Thread(() -> EngineContext.runWith(a, () -> ra.v = RenderPipeline.renderBox(null, 1, 1, Map.of(), new ScrollState())));
@@ -67,23 +67,23 @@ class EngineContextRendererTest {
     @Test
     void resourceFallbacksAreScopedToo() throws Exception {
         EngineContext ctx = new EngineContext();
-        ctx.clientResourceFallback = p -> "client:" + p;
-        ctx.datapackResourceFallback = p -> "dp:" + p;
+        ctx.updateHost(h -> h.withClientResourceFallback(p -> "client:" + p));
+        ctx.updateHost(h -> h.withDatapackResourceFallback(p -> "dp:" + p));
         String out = EngineContext.callWith(ctx, () -> com.nishiyu.enderframelib.common.DocumentLoader.DEFAULT_RESOURCE_TEXT_RESOLVER.apply("ns:foo"));
         // データパックが先に答える
         assertEquals("dp:ns:foo", out);
-        ctx.datapackResourceFallback = null;
+        ctx.updateHost(h -> h.withDatapackResourceFallback(null));
         assertEquals("client:ns:foo", EngineContext.callWith(ctx, () -> com.nishiyu.enderframelib.common.DocumentLoader.DEFAULT_RESOURCE_TEXT_RESOLVER.apply("ns:foo")));
     }
 
     @Test
     void resourceTextResolverDefaultsToBuiltInAndIsScoped() throws Exception {
         var loader = com.nishiyu.enderframelib.common.DocumentLoader.class;
-        assertNull(new EngineContext().resourceTextResolver);
+        assertNull(new EngineContext().host().resourceTextResolver());
         assertSame(com.nishiyu.enderframelib.common.DocumentLoader.DEFAULT_RESOURCE_TEXT_RESOLVER,
                 com.nishiyu.enderframelib.common.DocumentLoader.effectiveResourceTextResolver(), "global が空なら既定");
         EngineContext ctx = new EngineContext();
-        ctx.resourceTextResolver = p -> "custom:" + p;
+        ctx.updateHost(h -> h.withResourceTextResolver(p -> "custom:" + p));
         assertEquals("custom:a", EngineContext.callWith(ctx,
                 () -> com.nishiyu.enderframelib.common.DocumentLoader.effectiveResourceTextResolver().apply("a")));
         assertSame(com.nishiyu.enderframelib.common.DocumentLoader.DEFAULT_RESOURCE_TEXT_RESOLVER,

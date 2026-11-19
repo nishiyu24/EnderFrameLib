@@ -91,10 +91,10 @@ public final class InvestigateMain {
         System.out.printf("buildStyleSheet split: UA parse=%.3f ms (uaChars=%d) author parse+merge+sort=%.3f ms%n", tua / 1e6 / open, ua.length(), tmerge / 1e6 / open);
 
         // 段ごとの確保量（build = スタイル + 箱の生成、boxTree = 箱の木の整形、passes = 測定 + 配置）
-        EngineContext.current().trackAllocations = true;
+        EngineContext.current().updateFlags(f -> f.withTrackAllocations(true));
         layout(parser, d, st);
         System.out.println("phases: " + RenderPipeline.lastBuildStats());
-        EngineContext.current().trackAllocations = false;
+        EngineContext.current().updateFlags(f -> f.withTrackAllocations(false));
     }
 
     private static LayoutBox layout(UiDocumentCompiler parser, Document d, InteractionState st) {

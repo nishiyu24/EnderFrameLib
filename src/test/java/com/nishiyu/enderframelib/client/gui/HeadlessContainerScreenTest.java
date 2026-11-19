@@ -75,10 +75,10 @@ public class HeadlessContainerScreenTest {
     void setUp() {
         lastUiAction.set(null);
         ClientScreenInteractionManager.setUiActionSender(lastUiAction::set);
-        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, rootW, rootH, keyframes, scrollState) -> {
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer((rootBox, rootW, rootH, keyframes, scrollState) -> {
             DisplayListBuilder renderer = new DisplayListBuilder(rootW, rootH, keyframes, scrollState);
             return renderer.render(rootBox);
-        };
+        }));
 
         ClientTemplateManager.clearCache();
         ClientWebManager.clearSession(INSTANCE_ID);

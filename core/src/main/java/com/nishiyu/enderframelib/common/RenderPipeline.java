@@ -60,11 +60,11 @@ public class RenderPipeline {
     private static final int MAX_CONTAINER_PASSES = 4;
 
     private static ILayoutBoxRenderer effectiveRenderer() {
-        return com.nishiyu.enderframelib.core.EngineContext.current().boxRenderer;
+        return com.nishiyu.enderframelib.core.EngineContext.current().host().boxRenderer();
     }
 
     private static IntrinsicSizeResolver effectiveIntrinsicResolver() {
-        return com.nishiyu.enderframelib.core.EngineContext.current().intrinsicSizeResolver;
+        return com.nishiyu.enderframelib.core.EngineContext.current().host().intrinsicSizeResolver();
     }
 
     public static List<DisplayItem> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env, ScrollState scrollState, FontResolver fonts) {
@@ -134,7 +134,7 @@ public class RenderPipeline {
     public static LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
                                            ScrollState scrollState, FontResolver fonts, InteractionState interactionState,
                                            LayoutBox previousRoot) {
-        boolean incremental = ctx().incrementalLayout && previousRoot != null;
+        boolean incremental = ctx().flags().incrementalLayout() && previousRoot != null;
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
 
         InteractionState effectiveState = interactionState != null ? interactionState : new InteractionState();
@@ -158,7 +158,7 @@ public class RenderPipeline {
             stats().allocResolve = stats().allocCompute = stats().allocAnimated = 0;
             long tA = System.nanoTime();
             long profBuild = StageProfiler.begin(PipelineStage.STYLE_BUILD);
-            boolean track = ctx().trackAllocations;
+            boolean track = ctx().flags().trackAllocations();
             long aA = track ? threadAllocatedBytes() : 0;
             // 共有した結果は残す（restyleLayoutTree と同じ理由。シート・環境・版が変われば ShareCache が捨てる）
             try {
@@ -440,7 +440,7 @@ public class RenderPipeline {
     public static void relayoutInPlace(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
                                        ScrollState scrollState, FontResolver fonts,
                                        java.util.Collection<LayoutBox> changed, java.util.Set<LayoutBox> shallow) {
-        List<LayoutBox> path = ctx().localRelayout && changed != null && !changed.isEmpty() && changed.size() <= 64
+        List<LayoutBox> path = ctx().flags().localRelayout() && changed != null && !changed.isEmpty() && changed.size() <= 64
                 ? LayoutBox.markLayoutChangesAlong(rootBox, changed, shallow) : null;
         stats().lastRelayoutWasLocal = path != null;
         if (path == null) LayoutBox.markLayoutChanges(rootBox);
@@ -994,7 +994,7 @@ public class RenderPipeline {
         else interactionState.discardUnscopedLog();
         // 飛ばしてよいのは、前回の走査と同じビューポートのとき（変わると、飛ばした子孫の vw や var() が古くなる）
         InteractionState.StateFlags rootFlags = interactionState.get(rootBox.node);
-        interactionState.pruneRestyle = ctx().pruneCleanSubtrees && rootFlags != null
+        interactionState.pruneRestyle = ctx().flags().pruneCleanSubtrees() && rootFlags != null
                 && rootFlags.cachedViewportW == rootW && rootFlags.cachedViewportH == rootH;
         // 共有の結果は再スタイルをまたいで残す（鍵は親の算出表の同一性・掛かった規則・数値の入力。シートの版・環境が変われば ShareCache が捨てる）。
         // 親が変わらない要素の「前に解いた規則の組」へ戻る往復（class の付け外しなど）が、解き直しなしで済む

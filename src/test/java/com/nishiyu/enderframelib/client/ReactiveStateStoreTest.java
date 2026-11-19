@@ -143,9 +143,9 @@ public class ReactiveStateStoreTest {
      */
     @Test
     public void testBoundStyleChangesReachLayoutWithoutOtherInvalidation() {
-        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer;
-        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, w, h, kf, ss) ->
-                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox);
+        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) ->
+                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox)));
         try {
             String html = "<style>#mover{position:absolute;width:10px;height:10px;background:red}"
                     + "#overlay{display:none;position:absolute;width:20px;height:20px;background:blue}"
@@ -165,7 +165,7 @@ public class ReactiveStateStoreTest {
             assertEquals(40, itemById("mover").width(), "data-class の変更が反映される");
             assertNotNull(itemById("overlay"), "スタイルシートで display:none の要素を data-show で表示できる");
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = prev;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(prev));
         }
     }
 
@@ -175,9 +175,9 @@ public class ReactiveStateStoreTest {
      */
     @Test
     public void testNumericStyleBindingsReachLayoutThroughThePatchTable() {
-        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer;
-        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, w, h, kf, ss) ->
-                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox);
+        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) ->
+                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox)));
         try {
             String html = "<style>#bar{position:absolute;left:0;top:0;height:10px;background:red}"
                     + "#pct{position:absolute;left:0;top:20px;height:10px;background:blue}</style>"
@@ -207,7 +207,7 @@ public class ReactiveStateStoreTest {
             store.syncToDom();
             assertEquals(80, itemById("bar").width());
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = prev;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(prev));
         }
     }
 
@@ -336,8 +336,8 @@ public class ReactiveStateStoreTest {
 
     @Test
     public void testApplyI18nAttributesFiresMutationObserver() {
-        java.util.function.Function<String, String> saved = com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver;
-        com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver = key -> "tr:" + key;
+        java.util.function.Function<String, String> saved = com.nishiyu.enderframelib.core.EngineContext.global().host().i18nResolver();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nResolver(key -> "tr:" + key));
         try {
             HtmlNode input = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("input");
             input.ownerDocument = new com.nishiyu.enderframelib.core.dom.node.HtmlDocument();
@@ -352,7 +352,7 @@ public class ReactiveStateStoreTest {
             assertEquals("tr:ui.name", input.getAttribute("placeholder"));
             assertTrue(hasAttributeRecord(received, "placeholder"), "placeholder の変更が MutationObserver に届くこと");
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver = saved;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nResolver(saved));
         }
     }
 

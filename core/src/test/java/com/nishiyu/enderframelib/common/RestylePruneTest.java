@@ -58,15 +58,15 @@ public class RestylePruneTest {
 
     @AfterEach
     public void restore() {
-        com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = true;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withPruneCleanSubtrees(true));
     }
 
     @Test
     public void skippingCleanSubtreesGivesTheSameDisplayListAsWalkingEverything() {
         for (long seed = 1; seed <= 14; seed++) {
-            com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withPruneCleanSubtrees(true));
             List<List<String>> pruned = MutationScenario.run(HTML, CLASSES, STYLES, seed, 70);
-            com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = false;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withPruneCleanSubtrees(false));
             List<List<String>> full = MutationScenario.run(HTML, CLASSES, STYLES, seed, 70);
             assertEquals(full.size(), pruned.size());
             for (int step = 0; step < full.size(); step++) {
@@ -95,9 +95,9 @@ public class RestylePruneTest {
         String[] classes = {"", "px", "px flash", "px pulse", "row", "card", "stat", "hot", "fill", "bar", "stripe"};
         String[] styles = {"", "transform:scaleX(.5)", "opacity:.5", "width:120px", "color:red", "display:none", "padding:12px"};
         for (long seed = 1; seed <= 3; seed++) {
-            com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withPruneCleanSubtrees(true));
             List<List<String>> pruned = MutationScenario.run(html, classes, styles, seed, 40, false);
-            com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = false;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withPruneCleanSubtrees(false));
             List<List<String>> full = MutationScenario.run(html, classes, styles, seed, 40, false);
             assertEquals(full.size(), pruned.size());
             for (int step = 0; step < full.size(); step++) {

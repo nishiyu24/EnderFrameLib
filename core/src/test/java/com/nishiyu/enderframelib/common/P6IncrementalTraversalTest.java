@@ -23,8 +23,8 @@ public class P6IncrementalTraversalTest {
 
     @AfterEach
     void restoreGlobals() {
-        EngineContext.global().incrementalLayout = true;
-        EngineContext.global().inPlaceRestyleRelayout = true;
+        EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
+        EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(true));
     }
 
     private static List<String> sigs(StandaloneView v) {
@@ -74,9 +74,9 @@ public class P6IncrementalTraversalTest {
         StandaloneView inc = new StandaloneView(html, 300, 260, FontResolver.FALLBACK);
         StandaloneView fresh = new StandaloneView(html, 300, 260, FontResolver.FALLBACK);
         try {
-            EngineContext.global().incrementalLayout = false;
+            EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
             List<String> exp0 = sigs(fresh);
-            EngineContext.global().incrementalLayout = true;
+            EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
             assertEquals(exp0, sigs(inc));
             assertAllParentsLinked(inc.ui().layoutRoot(), null);
 
@@ -142,19 +142,19 @@ public class P6IncrementalTraversalTest {
         StandaloneView inc = new StandaloneView(html, 400, 300, FontResolver.FALLBACK);
         StandaloneView fresh = new StandaloneView(html, 400, 300, FontResolver.FALLBACK);
         try {
-            EngineContext.global().incrementalLayout = false;
+            EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
             List<String> exp0 = sigs(fresh);
-            EngineContext.global().incrementalLayout = true;
+            EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
             assertEquals(exp0, sigs(inc));
 
             long skipsBefore = RenderPipeline.resizeRebuildSkips();
             int[][] sizes = {{220, 300}, {140, 260}, {360, 220}};
             for (int[] sz : sizes) {
-                EngineContext.global().incrementalLayout = false;
+                EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
                 fresh.ui().recomputeLayout(sz[0], sz[1]);
                 List<String> exp = fresh.ui().renderCache().stream().map(MutationScenario::sig).toList();
 
-                EngineContext.global().incrementalLayout = true;
+                EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
                 inc.ui().recomputeLayout(sz[0], sz[1]);
                 List<String> act = inc.ui().renderCache().stream().map(MutationScenario::sig).toList();
 
@@ -164,7 +164,7 @@ public class P6IncrementalTraversalTest {
             assertTrue(RenderPipeline.resizeRebuildSkips() > skipsBefore, "relayoutRootOnly が効くこと");
 
             // restyleLayoutTree が inPlaceRestyleRelayout=false で recomputeLayout(relayoutRootOnly) へ落ちても一致すること
-            EngineContext.global().inPlaceRestyleRelayout = false;
+            EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(false));
             runBoth(inc, fresh, v -> v.root().getNodeById("b2").setAttribute("style", "display:inline-block;width:90px"));
         } finally {
             inc.close();
@@ -182,9 +182,9 @@ public class P6IncrementalTraversalTest {
         StandaloneView view = new StandaloneView(html, 150, 200, FontResolver.FALLBACK);
         StandaloneView fresh = new StandaloneView(html, 150, 200, FontResolver.FALLBACK);
         try {
-            EngineContext.global().incrementalLayout = false;
+            EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
             sigs(fresh);
-            EngineContext.global().incrementalLayout = true;
+            EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
             sigs(view);
             LayoutBox root = view.ui().layoutRoot();
             HtmlNode toggleTextNode = view.root().getNodeById("toggle").children.getFirst();
@@ -227,9 +227,9 @@ public class P6IncrementalTraversalTest {
         StandaloneView inc = new StandaloneView(html, 300, 240, FontResolver.FALLBACK);
         StandaloneView fresh = new StandaloneView(html, 300, 240, FontResolver.FALLBACK);
         try {
-            EngineContext.global().incrementalLayout = false;
+            EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
             List<String> exp0 = sigs(fresh);
-            EngineContext.global().incrementalLayout = true;
+            EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
             assertEquals(exp0, sigs(inc));
 
             // 匿名ブロックを含まない flat 親へ混合ブロックを含む子を tryChildPatch で差し込んだ後、全体再構築しても一致する
@@ -258,10 +258,10 @@ public class P6IncrementalTraversalTest {
     }
 
     private static void runBoth(StandaloneView inc, StandaloneView fresh, java.util.function.Consumer<StandaloneView> mutate) {
-        EngineContext.global().incrementalLayout = false;
+        EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
         mutate.accept(fresh);
         List<String> exp = sigs(fresh);
-        EngineContext.global().incrementalLayout = true;
+        EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
         mutate.accept(inc);
         List<String> act = sigs(inc);
         assertEquals(exp, act);

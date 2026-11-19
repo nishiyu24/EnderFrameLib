@@ -22,10 +22,63 @@ class EngineContextTest {
     void scopedContextChangesBehaviourOnlyInsideTheScope() {
         String before = resolve("{{i18n:a.b}}");
         EngineContext ctx = new EngineContext();
-        ctx.i18nResolver = k -> "CTX:" + k;
+        ctx.updateHost(h -> h.withI18nResolver(k -> "CTX:" + k));
         EngineContext.runWith(ctx, () -> assertEquals("CTX:a.b", resolve("{{i18n:a.b}}")));
         assertEquals(before, resolve("{{i18n:a.b}}"), "終わったら元の文脈へ戻る");
         assertSame(EngineContext.global(), EngineContext.current());
+    }
+
+    /** S1 ②: 文脈は public な可変の欄を持たない（差し込み口と切り替えは不変の値で、update* が丸ごと差し替える）。 */
+    @Test
+    void contextHasNoPublicMutableFields() {
+        for (java.lang.reflect.Field f : EngineContext.class.getDeclaredFields()) {
+            int m = f.getModifiers();
+            assertFalse(java.lang.reflect.Modifier.isPublic(m) && !java.lang.reflect.Modifier.isFinal(m), "public で可変: " + f.getName());
+        }
+        for (Class<?> value : List.of(HostServices.class, ContextFlags.class)) {
+            assertTrue(value.isRecord(), value + " は不変の値");
+        }
+    }
+
+    @Test
+    void updatesReplaceOneValueAndKeepTheOthers() {
+        EngineContext ctx = new EngineContext();
+        assertSame(HostServices.DEFAULTS, ctx.host());
+        assertSame(ContextFlags.DEFAULTS, ctx.flags());
+        HostServices before = ctx.host();
+        ctx.updateHost(h -> h.withResourceTextResolver(p -> "R:" + p));
+        ctx.updateHost(h -> h.withI18nResolver(k -> "T:" + k));
+        assertEquals("R:x", ctx.host().resourceTextResolver().apply("x"), "前の差し替えが残る");
+        assertEquals("T:y", ctx.host().i18nResolver().apply("y"));
+        assertNull(before.resourceTextResolver(), "元の値は変わらない（読んだ側が途中の状態を見ない）");
+        ctx.updateFlags(f -> f.withIncrementalLayout(false));
+        assertFalse(ctx.flags().incrementalLayout());
+        assertTrue(ctx.flags().localRelayout(), "ほかの切り替えはそのまま");
+        assertTrue(EngineContext.global().flags().incrementalLayout(), "別の文脈には響かない");
+        assertThrows(NullPointerException.class, () -> ctx.updateHost(h -> null));
+    }
+
+    @Test
+    void concurrentUpdatesAreNotLost() throws Exception {
+        EngineContext ctx = new EngineContext();
+        int threads = 4, per = 500;
+        CountDownLatch go = new CountDownLatch(1);
+        List<Thread> ts = new java.util.ArrayList<>();
+        java.util.concurrent.atomic.AtomicInteger counter = new java.util.concurrent.atomic.AtomicInteger();
+        for (int t = 0; t < threads; t++) {
+            Thread th = new Thread(() -> {
+                try { go.await(); } catch (InterruptedException e) { return; }
+                for (int i = 0; i < per; i++) {
+                    // 前の関数を包む差し替え（読み替えの間に他のスレッドの差し替えが入ると、包みが 1 段失われる）
+                    ctx.updateHost(h -> { var prev = h.i18nResolver(); counter.incrementAndGet(); return h.withI18nResolver(k -> prev.apply(k) + "+"); });
+                }
+            });
+            ts.add(th);
+            th.start();
+        }
+        go.countDown();
+        for (Thread th : ts) th.join();
+        assertEquals(threads * per, ctx.host().i18nResolver().apply("").length(), "差し替えが 1 つも失われない");
     }
 
     @Test
@@ -49,9 +102,9 @@ class EngineContextTest {
     @Test
     void contextsAreIsolatedAcrossThreads() throws Exception {
         EngineContext a = new EngineContext();
-        a.i18nResolver = k -> "A:" + k;
+        a.updateHost(h -> h.withI18nResolver(k -> "A:" + k));
         EngineContext b = new EngineContext();
-        b.i18nResolver = k -> "B:" + k;
+        b.updateHost(h -> h.withI18nResolver(k -> "B:" + k));
         CountDownLatch bothIn = new CountDownLatch(2);
         AtomicReference<String> ra = new AtomicReference<>();
         AtomicReference<String> rb = new AtomicReference<>();
@@ -69,10 +122,10 @@ class EngineContextTest {
     @Test
     void newContextStartsWithDefaults() {
         EngineContext c = new EngineContext();
-        assertEquals("x", c.i18nResolver.apply("x"));
-        assertEquals("x", c.i18nFormatter.apply("x", new Object[0]));
-        assertNull(c.jsonListParser);
-        assertNull(c.intrinsicSizeResolver);
+        assertEquals("x", c.host().i18nResolver().apply("x"));
+        assertEquals("x", c.host().i18nFormatter().apply("x", new Object[0]));
+        assertNull(c.host().jsonListParser());
+        assertNull(c.host().intrinsicSizeResolver());
     }
 
     @Test

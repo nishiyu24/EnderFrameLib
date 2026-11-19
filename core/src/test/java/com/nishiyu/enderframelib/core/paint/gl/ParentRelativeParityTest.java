@@ -20,15 +20,15 @@ import org.junit.jupiter.api.Test;
 class ParentRelativeParityTest {
     private static final long T0 = 10_000L;
     private static final int W = 800, H = 600;
-    private static final boolean ORIG_PARENT_REL = EngineContext.current().parentRelativeDisplayItems;
+    private static final boolean ORIG_PARENT_REL = EngineContext.current().flags().parentRelativeDisplayItems();
 
     @AfterEach
     void restoreFlag() {
-        EngineContext.current().parentRelativeDisplayItems = ORIG_PARENT_REL;
+        EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(ORIG_PARENT_REL));
     }
 
     private static Pixmap renderSw(String html, int w, int h, boolean parentRel, double scrollY, double hoverX, double hoverY) {
-        EngineContext.current().parentRelativeDisplayItems = parentRel;
+        EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(parentRel));
         try (StandaloneView v = new StandaloneView(html, w, h, FontResolver.FALLBACK);
              SoftwareRenderBackend sw = new SoftwareRenderBackend(w, h, 1f)) {
             if (scrollY != 0) v.scroll(0, scrollY, sw.sessionId());
@@ -43,7 +43,7 @@ class ParentRelativeParityTest {
         } catch (Throwable t) {
             Assumptions.abort("OpenGL を使えない: " + t);
         }
-        EngineContext.current().parentRelativeDisplayItems = parentRel;
+        EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(parentRel));
         try (StandaloneView v = new StandaloneView(html, w, h, FontResolver.FALLBACK);
              LwjglGlRenderBackend gl = new LwjglGlRenderBackend(w, h, 1f)) {
             v.frame(T0, gl, true);
@@ -129,7 +129,8 @@ class ParentRelativeParityTest {
         int frames = 4;
         Pixmap[][] px = new Pixmap[2][frames];
         for (int mode = 0; mode < 2; mode++) {
-            EngineContext.current().parentRelativeDisplayItems = mode == 1;
+            boolean parentRelative = mode == 1;
+            EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(parentRelative));
             try (StandaloneView v = new StandaloneView(html, 1280, 800, FontResolver.FALLBACK);
                  SoftwareRenderBackend sw = new SoftwareRenderBackend(1280, 800, 1f)) {
                 var grid = v.document().getElementById("grid");
@@ -183,7 +184,7 @@ class ParentRelativeParityTest {
 
     @Test
     void resizeDoesNotTriggerExtentOrPositionMatchFailsOrAppendTranslated() throws IOException {
-        EngineContext.current().parentRelativeDisplayItems = true;
+        EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(true));
         // 1. large-list width resize: zero MATCHFAIL[3/4] and zero appendTranslated
         try (StandaloneView v = new StandaloneView(GpuBaselineTest.doc("large-list"), W, H, FontResolver.FALLBACK);
              SoftwareRenderBackend sw = new SoftwareRenderBackend(W, H, 1f)) {

@@ -379,7 +379,7 @@ public class BoxTreeTest {
     @Test
     public void testStyleAndLinkAreCollectedInDocumentOrder() {
         var ctx = new com.nishiyu.enderframelib.core.EngineContext();
-        ctx.resourceTextResolver = href -> "/* " + href + " */";
+        ctx.updateHost(h -> h.withResourceTextResolver(href -> "/* " + href + " */"));
         com.nishiyu.enderframelib.core.EngineContext.runWith(ctx, () -> {
             UiDocumentCompiler parser = new UiDocumentCompiler();
             Document doc = parser.parseDocument("""

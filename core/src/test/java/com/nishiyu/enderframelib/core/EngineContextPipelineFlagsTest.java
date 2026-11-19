@@ -31,19 +31,19 @@ class EngineContextPipelineFlagsTest {
     @Test
     void flagDefaultsMatchTheOldStatics() {
         EngineContext c = new EngineContext();
-        assertTrue(c.incrementalLayout);
-        assertTrue(c.pruneCleanSubtrees);
-        assertTrue(c.localRelayout);
-        assertTrue(c.inPlaceRestyleRelayout);
-        assertFalse(c.trackAllocations);
+        assertTrue(c.flags().incrementalLayout());
+        assertTrue(c.flags().pruneCleanSubtrees());
+        assertTrue(c.flags().localRelayout());
+        assertTrue(c.flags().inPlaceRestyleRelayout());
+        assertFalse(c.flags().trackAllocations());
     }
 
     @Test
     void flagsAreScopedToTheCurrentThread() {
         EngineContext c = new EngineContext();
-        c.localRelayout = false;
-        EngineContext.runWith(c, () -> assertFalse(EngineContext.current().localRelayout));
-        assertTrue(EngineContext.current().localRelayout, "global は変わらない");
+        c.updateFlags(f -> f.withLocalRelayout(false));
+        EngineContext.runWith(c, () -> assertFalse(EngineContext.current().flags().localRelayout()));
+        assertTrue(EngineContext.current().flags().localRelayout(), "global は変わらない");
     }
 
     @Test
@@ -59,7 +59,7 @@ class EngineContextPipelineFlagsTest {
     @Test
     void allocationTrackingFlagComesFromTheContext() throws Exception {
         EngineContext c = new EngineContext();
-        c.trackAllocations = true;
+        c.updateFlags(f -> f.withTrackAllocations(true));
         String tracked = statsOnFreshThread(c);
         assertTrue(tracked.contains("allocKB["), tracked);
         assertFalse(statsOnFreshThread(new EngineContext()).contains("allocKB["));
@@ -68,7 +68,7 @@ class EngineContextPipelineFlagsTest {
     @Test
     void disablingIncrementalLayoutInOneContextDoesNotAffectAnother() throws Exception {
         EngineContext off = new EngineContext();
-        off.incrementalLayout = false;
+        off.updateFlags(f -> f.withIncrementalLayout(false));
         // どちらも同じ結果（切り分けフラグは結果を変えない）
         assertEquals(statsOnFreshThread(new EngineContext()).split(" ")[0], statsOnFreshThread(off).split(" ")[0]);
     }

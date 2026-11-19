@@ -104,11 +104,11 @@ public class HtmlNodeSerializerTest {
         doc.root = simulateNetworkRoundTrip(doc.root, null);
 
         AtomicReference<LayoutBox> capturedRootBox = new AtomicReference<>();
-        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prevRenderer = com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer;
-        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, w, h, kf, ss) -> {
+        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prevRenderer = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) -> {
             capturedRootBox.set(rootBox);
             return List.<DisplayItem>of();
-        };
+        }));
         try {
             parser.renderDocument(
                     doc,
@@ -119,7 +119,7 @@ public class HtmlNodeSerializerTest {
                     FontResolver.FALLBACK
             );
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = prevRenderer;
+            com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(prevRenderer));
         }
 
         LayoutBox rootBox = capturedRootBox.get();
