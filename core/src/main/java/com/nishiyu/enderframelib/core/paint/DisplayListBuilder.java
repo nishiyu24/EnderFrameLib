@@ -132,7 +132,7 @@ public class DisplayListBuilder {
 
     /** 切り分け用: false なら部分木の保持（{@link Chunk}）を使わない。結果は同じでなければならない。 */
     public static void setChunksEnabled(boolean enabled) {
-        PaintOrder.chunksEnabled = enabled;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PAINT_CHUNKS.set(enabled);
     }
 
     /** 診断: 部分木の保持を再利用した回数の累計。 */
@@ -229,8 +229,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     buildEpoch = LayoutBox.paintEpoch();
     translating = cullOffscreen && TRANSLATE_ENABLED;
     // 大きい文書は、スクロール時でなくても画面（と余白）の外の箱の項目を作らない（窓付きの表示リスト。項目数が可視範囲に比例する）
-    if (lastOwnerCount == 0 && WINDOWED_ENABLED) lastOwnerCount = countBoxes(box, WINDOW_MIN_OWNERS); // 最初の描画だけ、箱の数を数えて判定する
-    boolean windowed = !cullOffscreen && WINDOWED_ENABLED && lastOwnerCount >= WINDOW_MIN_OWNERS;
+    if (lastOwnerCount == 0 && com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.on()) lastOwnerCount = countBoxes(box, WINDOW_MIN_OWNERS); // 最初の描画だけ、箱の数を数えて判定する
+    boolean windowed = !cullOffscreen && com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.on() && lastOwnerCount >= WINDOW_MIN_OWNERS;
     windowedBuild = windowed;
     if (windowed) STAT_WINDOWED_BUILDS.increment();
     boolean cull = cullOffscreen || windowed;
@@ -272,7 +272,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         prunedOwners = 0;
         pruneWindowed = windowed;
         pruneSweeping = generation % PaintOrder.SWEEP_EVERY == 0;
-        order.subtreePruner = cull && PRUNE_ENABLED ? pruner : null;
+        order.subtreePruner = cull && com.nishiyu.enderframelib.core.kernel.Shortcut.PRUNE.on() ? pruner : null;
         List<RenderTask> paintTaskList;
         try {
             paintTaskList = order.paintTasks(box);
@@ -385,8 +385,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return false;
     }
 
-    /** 切り分け用: false なら、画面外の部分木も箱ごとに分類してから省く（従来の動き）。 */
-    public static volatile boolean PRUNE_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.PRUNE;
     private int prunedOwners;
     /** 診断: 部分木ごと省いた回数。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_PRUNED_SUBTREES = new java.util.concurrent.atomic.LongAdder();
@@ -483,7 +481,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
      */
     private Object[] preparePrune(List<LayoutBox> kids, boolean ancestorHasMoving) {
         int n = kids.size();
-        if (n < PREPARE_MIN_CHILDREN || !com.nishiyu.enderframelib.core.layout.LayoutTaskPool.parallelEnabled
+        if (n < PREPARE_MIN_CHILDREN || !com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on()
                 || com.nishiyu.enderframelib.core.layout.LayoutTaskPool.participants() < 2 || com.nishiyu.enderframelib.core.layout.LayoutTaskPool.inWorker()) {
             return null;
         }
@@ -668,8 +666,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     public static final java.util.concurrent.atomic.LongAdder STAT_WINDOWED_BUILDS = new java.util.concurrent.atomic.LongAdder();
     /** 直近の描画が窓付き（画面外の箱を省いた）か。 */
     boolean windowedBuild;
-    /** 切り分け用: false なら、大きい文書でも窓付きの表示リストにしない（従来の動き）。 */
-    public static volatile boolean WINDOWED_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.WINDOWED;
     /** 窓付きにする、項目を持ちうる箱の数の下限（これより小さい文書は全件を作る）。 */
     public static volatile int WINDOW_MIN_OWNERS = com.nishiyu.enderframelib.core.kernel.EngineFlags.WINDOW_MIN_OWNERS;
     /** 箱の数（{@code cap} に達したらそこで打ち切る）。 */
@@ -868,12 +864,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
     private static final int MASK_ID_BASE = 1_000_000;
 
-    /**
-     * スクロールコンテナの中身を 1 つの節にまとめるか。まとめると、スクロールだけの更新は表示リストを作り直さず、その節の
-     * 移動量を更新するだけで済む（{@code UiView} が行う）。false なら従来どおり、中身の項目はコンテナの節の直下に並び、
-     * スクロールのたびに作り直す（疑うときの切り分け用。{@code -Denderframe.paint.noscrollnode=true} でも切れる）。結果は同じでなければならない。
-     */
-    public static volatile boolean scrollContentNodes = com.nishiyu.enderframelib.core.kernel.EngineFlags.SCROLL_CONTENT_NODES;
 
     // ==========================================
     // 箱ごとの記憶（React.memo と同じ考え方）
@@ -899,8 +889,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     int buildSerial;
     /** 診断: 変更印で比較を省いた箱の累計。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_STAMPED = new java.util.concurrent.atomic.LongAdder();
-    /** 検証: 変更印が「変わっていない」と言った箱でも署名を比べ、食い違えば例外にする（{@code -Denderframe.paint.verifystamps=true}）。 */
-    public static volatile boolean verifyStamps = com.nishiyu.enderframelib.core.kernel.EngineFlags.VERIFY_STAMPS;
 
     /** 診断: 描画順の分類用のスタイル値を新しく算出した回数の累計（キャッシュ退行の検出用）。 */
     public static long styleFactsComputed() {
@@ -1467,7 +1455,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         if (useChangeStamps && m != null && !translating && stampClean(m, box, clipRect, parentId)) {
             kind = 1;
             STAT_STAMPED.increment();
-            if (verifyStamps) {
+            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on()) {
                 int check = match(m, box, clipRect, parentId);
                 if (check != 1) throw new AssertionError("変更印は変わっていないと言ったが署名が違う: box=" + box.node.tag + "#" + box.node.key()
                         + " match=" + check + " stamp=" + box.pathPaintStamp(buildSerial) + " epoch=" + m.epoch);
@@ -2304,7 +2292,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     private List<DisplayItem> patchBoxesUnprofiled(java.util.Collection<LayoutBox> boxes) {
         List<LayoutBox> sorted = preparePatchBoxes(boxes);
         if (sorted == null) {
-            List<DisplayItem> viaStacking = STACKING_PATCH_ENABLED ? stackingPatch.patchViaStackingSubtrees(boxes) : null;
+            List<DisplayItem> viaStacking = com.nishiyu.enderframelib.core.kernel.Shortcut.STACKING_PATCH.on() ? stackingPatch.patchViaStackingSubtrees(boxes) : null;
             if (viaStacking == null) STAT_SLICE_PATCH_FALLBACKS.increment();
             return viaStacking;
         }
@@ -2329,11 +2317,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
     // ------------------------------------------------------------------ B12: スタッキングコンテキストの部分木の組み直し
 
-    /**
-     * 切り分け用（テストが切り替える）: false ならスタッキングコンテキストの部分木の組み直しを使わない（全体の作り直しに落ちる。
-     * 結果は同じでなければならない。{@code StackingSubtreePatchTest}）。起動時のスイッチは足さない（近道のスイッチ数のラチェット）。
-     */
-    public static volatile boolean STACKING_PATCH_ENABLED = true;
     /** 診断: 組み直した部分木の数（スタッキングコンテキストの部分木の組み直しで差分パッチが成り立つたびに 1 以上増える）。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_STACKING_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
 

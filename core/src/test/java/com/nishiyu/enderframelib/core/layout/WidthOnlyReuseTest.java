@@ -204,8 +204,8 @@ class WidthOnlyReuseTest {
 
     /** 差分レイアウトを 1 本の連鎖として進め、各手の結果の dump を返す。 */
     private static java.util.List<String> chain(UiDocumentCompiler parser, com.nishiyu.enderframelib.common.Document document, boolean fit) {
-        boolean saved = LayoutBox.fitReuseEnabled;
-        LayoutBox.fitReuseEnabled = fit;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(fit);
         try {
             InteractionState state = new InteractionState();
             LayoutBox previous = null;
@@ -219,7 +219,7 @@ class WidthOnlyReuseTest {
             }
             return out;
         } finally {
-            LayoutBox.fitReuseEnabled = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(saved);
         }
     }
 
@@ -243,13 +243,13 @@ class WidthOnlyReuseTest {
                     fail("seed " + seed + " 幅 " + FIT_WIDTHS[step] + " (手 " + step + ") で fit 再利用が結果を変えた\n" + html
                             + "\n--- without\n" + without.get(step) + "\n--- with\n" + with.get(step));
                 }
-                boolean savedFit = LayoutBox.fitReuseEnabled;
-                LayoutBox.fitReuseEnabled = false;
+                boolean savedFit = com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on();
+                com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(false);
                 String fresh;
                 try {
                     fresh = dump(parser.layoutDocument(document, FIT_WIDTHS[step], H, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState()));
                 } finally {
-                    LayoutBox.fitReuseEnabled = savedFit;
+                    com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(savedFit);
                 }
                 if (!fresh.equals(without.get(step))) {
                     if (firstMismatch.isEmpty()) {
@@ -277,8 +277,8 @@ class WidthOnlyReuseTest {
         var document = parser.parseDocument(sb.toString(), "", 800, H);
         long[] counts = new long[2];
         for (int k = 0; k < 2; k++) {
-            boolean saved = LayoutBox.fitReuseEnabled;
-            LayoutBox.fitReuseEnabled = k == 1;
+            boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on();
+            com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(k == 1);
             try {
                 InteractionState state = new InteractionState();
                 LayoutBox root = parser.layoutDocument(document, 800, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
@@ -286,7 +286,7 @@ class WidthOnlyReuseTest {
                 parser.layoutDocument(document, 799, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state, root);
                 counts[k] = LayoutBox.measurementsComputed() - before;
             } finally {
-                LayoutBox.fitReuseEnabled = saved;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(saved);
             }
         }
         System.out.println("FITREUSE measurements after a 1px width change: without=" + counts[0] + " with=" + counts[1]);
@@ -361,15 +361,15 @@ class WidthOnlyReuseTest {
         LayoutBox prev = null;
         for (int step = 0; step < widths.length; step++) {
             int w = widths[step];
-            boolean saved = LayoutBox.fitReuseEnabled;
-            LayoutBox.fitReuseEnabled = true;
+            boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on();
+            com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(true);
             LayoutBox inc;
             try {
                 inc = prev == null
                         ? parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state)
                         : parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state, prev);
             } finally {
-                LayoutBox.fitReuseEnabled = saved;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(saved);
             }
             LayoutBox fresh = parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
             assertEquals(roundedDump(dump(fresh)), roundedDump(dump(inc)), "step " + step + " w=" + w);
@@ -390,8 +390,8 @@ class WidthOnlyReuseTest {
         long[] counts = new long[2];
         LayoutBox[] last = new LayoutBox[2];
         for (int k = 0; k < 2; k++) {
-            boolean saved = LayoutBox.fitReuseEnabled;
-            LayoutBox.fitReuseEnabled = k == 1;
+            boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on();
+            com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(k == 1);
             try {
                 InteractionState state = new InteractionState();
                 LayoutBox root = parser.layoutDocument(document, 800, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
@@ -401,7 +401,7 @@ class WidthOnlyReuseTest {
                 counts[k] = LayoutBox.measurementsComputed() - before;
                 last[k] = root;
             } finally {
-                LayoutBox.fitReuseEnabled = saved;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(saved);
             }
         }
         assertEquals(roundedDump(dump(last[0])), roundedDump(dump(last[1])));
@@ -418,8 +418,8 @@ class WidthOnlyReuseTest {
         cards.append("</div></body></html>");
         for (String[] doc : new String[][]{{"showcase", showcase}, {"cards", cards.toString()}}) {
             for (boolean reuse : new boolean[]{false, true}) {
-                boolean saved = LayoutBox.widthIndependentReuse;
-                LayoutBox.widthIndependentReuse = reuse;
+                boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on();
+                com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.set(reuse);
                 try {
                     UiDocumentCompiler parser = new UiDocumentCompiler();
                     var document = parser.parseDocument(doc[1], "", 800, H);
@@ -437,15 +437,15 @@ class WidthOnlyReuseTest {
                     System.out.printf("WIDTHREUSE %s reuse=%s  %.3f ms/resize  measurements/resize=%.1f%n", doc[0], reuse, ms,
                             (LayoutBox.measurementsComputed() - m0) / (double) rounds);
                 } finally {
-                    LayoutBox.widthIndependentReuse = saved;
+                    com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.set(saved);
                 }
             }
         }
     }
 
     private static long measureCountOfResize(UiDocumentCompiler parser, com.nishiyu.enderframelib.common.Document document, boolean reuse) {
-        boolean saved = LayoutBox.widthIndependentReuse;
-        LayoutBox.widthIndependentReuse = reuse;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.set(reuse);
         try {
             InteractionState state = new InteractionState();
             LayoutBox root = parser.layoutDocument(document, 800, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
@@ -453,7 +453,7 @@ class WidthOnlyReuseTest {
             parser.layoutDocument(document, 640, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state, root);
             return LayoutBox.measurementsComputed() - before;
         } finally {
-            LayoutBox.widthIndependentReuse = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.set(saved);
         }
     }
 }

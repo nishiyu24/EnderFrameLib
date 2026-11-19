@@ -89,13 +89,9 @@ public class UiView implements AutoCloseable {
     private static final int TEXT_PATCH_MAX_NODES = 256;
     /** 次の flush で局所パッチする Text 節（同一性で比べる）。{@code synchronized (pendingTextNodes)} で触る。 */
     final Set<HtmlNode> pendingTextNodes = Collections.newSetFromMap(new IdentityHashMap<>());
-    /** TEXT_PATCH を使うか。false なら文字の変更も全体の再レイアウトにする（切り分け・比較用）。 */
-    public static volatile boolean textPatchEnabled = true;
 
     /** 次の flush で「描画だけ」の属性パッチをする節（同一性で比べる）。{@code synchronized (pendingAttrNodes)} で触る。 */
     private final Set<HtmlNode> pendingAttrNodes = Collections.newSetFromMap(new IdentityHashMap<>());
-    /** 切り分け用: false なら描画だけの属性（progress / meter の value など）も全体の再レイアウトにする。 */
-    public static volatile boolean attrPatchEnabled = true;
     public static final java.util.concurrent.atomic.AtomicLong ATTR_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     /** 局所パッチが成功した回数 / 全体の再レイアウトへ退いた回数（調べる用）。 */
     public static final java.util.concurrent.atomic.AtomicLong TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
@@ -337,8 +333,6 @@ public class UiView implements AutoCloseable {
     protected final boolean useChangeStamps() {
         return useChangeStamps;
     }
-    /** 切り分け用: false なら文字の局所パッチでも変更印を使わない。 */
-    public static volatile boolean changeStampsEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.CHANGE_STAMPS;
 
     com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder;
     private int paintBuilderW, paintBuilderH;
@@ -580,14 +574,14 @@ public class UiView implements AutoCloseable {
             }
             if (attributeName != null && isPresentationalAttribute(attributeName)) {
                 requestRestyle();
-            } else if (attributeName != null && attrPatchEnabled && isPaintOnlyAttribute(node, attributeName)) {
+            } else if (attributeName != null && com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.on() && isPaintOnlyAttribute(node, attributeName)) {
                 synchronized (pendingAttrNodes) {
                     pendingAttrNodes.add(node);
                 }
                 requestRestyle();
-            } else if (attributeName == null && textPatchEnabled && node.nodeType == NodeType.TEXT) {
+            } else if (attributeName == null && com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.on() && node.nodeType == NodeType.TEXT) {
                 requestTextPatch(node);
-            } else if (attributeName == null && childPatchEnabled && node.nodeType == NodeType.ELEMENT) {
+            } else if (attributeName == null && com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.on() && node.nodeType == NodeType.ELEMENT) {
                 localPatches.requestChildPatch(node);
             } else {
                 requestRender();
@@ -1127,7 +1121,7 @@ public class UiView implements AutoCloseable {
             for (int k = 0, sn = info.stickies().size(); k < sn; k++) clearPaintOffset(info.stickies().get(k).nodeId());
         }
         setRenderCache(elements);
-        setScrollBase(DisplayListBuilder.scrollContentNodes ? builtScrollContents() : List.of());
+        setScrollBase(com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() ? builtScrollContents() : List.of());
         scrollAtBuild = scrollState.snapshot();
         scrollWindowAt = scrollAtBuild;
     }
@@ -1144,7 +1138,7 @@ public class UiView implements AutoCloseable {
      * 動かせるのは、全てのコンテナの移動が範囲内のとき。動かせなければ false（作り直す）。
      */
     private boolean tryScrollTranslate() {
-        if (!DisplayListBuilder.scrollContentNodes || scrollBase.isEmpty()) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() || scrollBase.isEmpty()) return false;
         // 節にまとめていないコンテナ（sticky などを含む）のスクロール量が変わっていたら、その中身は作り直さないと動かない
         if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
         if (!withinWindow()) return false;
@@ -1164,20 +1158,18 @@ public class UiView implements AutoCloseable {
         return true;
     }
 
-    /** スクロールだけの更新で箱の位置の決め直しを後回しにするか（切り分け用。見た目は変わらない）。 */
-    public static volatile boolean deferScrollLayout = true;
 
     /** 寸法はそのままに位置だけを決め直し、描画要素リストを作り直す（measure と箱の木の作り直しを省く）。 */
     private void repositionFromLayout(boolean scrollOnly) {
         if (layoutRoot == null || document == null) return;
         // スクロール量だけの更新で、観測者がいなければ、箱の位置の決め直しは後回しにする（箱の位置を読む側が現れたときに済ませる）
         boolean observed = document.root instanceof HtmlDocument live && live.hasLayoutObservers();
-        if (scrollOnly && deferScrollLayout && !observed && tryScrollTranslate()) {
+        if (scrollOnly && com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on() && !observed && tryScrollTranslate()) {
             layoutStale = true;
             STAT_SCROLL_TRANSLATED.increment();
             return;
         }
-        if (scrollOnly && deferScrollLayout && !observed && !layoutRoot.subtreeHasContentAuto && rebuildWindowAtBoxFrame()) return;
+        if (scrollOnly && com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on() && !observed && !layoutRoot.subtreeHasContentAuto && rebuildWindowAtBoxFrame()) return;
         layoutStale = false; // 後回しにした決め直しも、次の 1 回で済む（ensureLayoutFresh を呼ぶと同じ決め直しが 2 回走る）
         RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
                 rootW, rootH, scrollState, fontResolver());
@@ -1197,7 +1189,7 @@ public class UiView implements AutoCloseable {
      * 変わった箱のスライスだけを差し替え、スクロール量は節の移動で済ませる。できなければ false（何も変えていない）。
      */
     private boolean patchThenTranslate() {
-        if (!deferScrollLayout || paintBuilder == null || !DisplayListBuilder.scrollContentNodes || scrollBase.isEmpty()) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on() || paintBuilder == null || !com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() || scrollBase.isEmpty()) return false;
         if (document == null || (document.root instanceof HtmlDocument live && live.hasLayoutObservers())) return false;
         if (!canTranslateAll()) return false;
         List<LayoutBox> changed = RenderPipeline.styleChangedBoxes();
@@ -1242,7 +1234,7 @@ public class UiView implements AutoCloseable {
      * 箱の位置を決め直す分（全箱の配置）が要らない。できなければ false（何も変えていない）。
      */
     private boolean rebuildWindowAtBoxFrame() {
-        if (!layoutStale || paintBuilder == null || !DisplayListBuilder.scrollContentNodes || scrollBase.isEmpty()) return false;
+        if (!layoutStale || paintBuilder == null || !com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() || scrollBase.isEmpty()) return false;
         if (layoutRoot == null || document == null) return false;
         if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
         Map<HtmlNode, float[]> now = scrollState.snapshot();
@@ -1272,7 +1264,7 @@ public class UiView implements AutoCloseable {
             }
         }
         if (elements == null) return false;
-        List<ScrollContentInfo> built = DisplayListBuilder.scrollContentNodes ? builtScrollContents() : List.of();
+        List<ScrollContentInfo> built = com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() ? builtScrollContents() : List.of();
         java.util.Set<String> keep = new java.util.HashSet<>();
         for (ScrollContentInfo info : built) {
             keep.add(info.contentId());
@@ -1369,7 +1361,7 @@ public class UiView implements AutoCloseable {
         wanted.addAll(attrNodes);
         Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
         LocalPatches.collectTextBoxes(layoutRoot, wanted, found, false);
-        boolean stamps = changeStampsEnabled && !found.containsValue(null);
+        boolean stamps = com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.on() && !found.containsValue(null);
         for (LayoutBox box : found.values()) if (box != null) box.touchPaint();
         useChangeStamps = stamps;
         try {
@@ -1439,7 +1431,7 @@ public class UiView implements AutoCloseable {
             synchronized (pendingTextNodes) {
                 hadPendingText = !pendingTextNodes.isEmpty();
                 // 再スタイルだけと重なったときは、文字を先に局所パッチで反映してから再スタイルを進める（下の localPatches.combinedTextPatch）。残しておく
-                if (hadPendingText && (level == InvalidationLevel.RESTYLE || level == InvalidationLevel.NONE) && combinedTextPatchEnabled) {
+                if (hadPendingText && (level == InvalidationLevel.RESTYLE || level == InvalidationLevel.NONE) && com.nishiyu.enderframelib.core.kernel.Shortcut.COMBINED_TEXT_PATCH.on()) {
                     localPatches.combinedTextPatch = true;
                 } else {
                     pendingTextNodes.clear();
@@ -1473,7 +1465,7 @@ public class UiView implements AutoCloseable {
         // 汚れた節（:hover など）の再スタイルは、位置が古いままでも進められる（箱は表示リストを作ったときの位置のままで、表示リストと同じ座標）。
         // 見た目だけの変化は箱のスライスの差し替えで済み、位置が要る経路に落ちるときだけ restyleAndUpdate が決め直す
         // 文字だけの更新（毎秒のタイマーなど）は、位置が古いままでも箱の座標で済ませられる（tryTextPatch が古い位置の枠で直す）。ここで決め直すと全箱の配置が走る
-        boolean staleTextPatch = layoutStale && staleTextPatchEnabled && (level == InvalidationLevel.TEXT_PATCH || localPatches.combinedTextPatch) && !resize
+        boolean staleTextPatch = layoutStale && com.nishiyu.enderframelib.core.kernel.Shortcut.STALE_TEXT_PATCH.on() && (level == InvalidationLevel.TEXT_PATCH || localPatches.combinedTextPatch) && !resize
                 && attrNodes.isEmpty() && !repositionRequested
                 && !(document.root instanceof HtmlDocument liveDoc && liveDoc.hasLayoutObservers());
         if (layoutStale && !staleTextPatch && (resize || level != InvalidationLevel.REPOSITION && level != InvalidationLevel.NONE && level != InvalidationLevel.RESTYLE
@@ -1542,23 +1534,17 @@ public class UiView implements AutoCloseable {
      * <p>条件: 文字以外の汚れが無い・コンテナクエリが無い・変わった文字の箱がすべて見つかる・文字の前後とも空白だけではない
      * （空白だけの Text は箱の木に入るかどうかが変わる）・表や入力部品、{@code <style>} の中ではない。</p>
      */
-    /** 文字の変更が再スタイルと同じフレームに重なったとき、文字を局所パッチで済ませてから再スタイルを進めるか（切り分け用）。 */
-    public static volatile boolean combinedTextPatchEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.COMBINED_TEXT_PATCH;
     /** 診断: 位置の決め直しを後回しにしたまま、文字の局所パッチで済ませた回数。 */
     public static final java.util.concurrent.atomic.AtomicLong STALE_TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     /** 診断: 重なった文字の変更を局所パッチで済ませた回数。 */
     public static final java.util.concurrent.atomic.AtomicLong COMBINED_TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
 
-    /** 位置の決め直しを後回しにしている間の文字の局所パッチを、決め直さずに古い位置の枠で済ませるか（切り分け用）。 */
-    public static volatile boolean staleTextPatchEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.STALE_TEXT_PATCH;
 
 
     // ==========================================
     // 子の増減の局所パッチ
     // ==========================================
 
-    /** false なら子の増減は常に全体の再レイアウトにする（切り分け用。結果は同じでなければならない）。 */
-    public static volatile boolean childPatchEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.CHILD_PATCH;
     public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_FALLBACKS = new java.util.concurrent.atomic.AtomicLong();
     /** 再スタイル経路（{@code restyleAndUpdate}）の行き先の内訳（計測用）。{@code RESTYLE_REPAINT_FULL} は表示リストを全体再構築した回数（スライスパッチ未使用）。 */

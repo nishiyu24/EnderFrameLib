@@ -14,7 +14,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * W1: クリップの範囲に掛からない項目を塗らない（{@link SoftwareRenderBackend#cullOffscreen}）。省いても全フレームの全画素が、
+ * W1: クリップの範囲に掛からない項目を塗らない（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#SOFT_CULL_OFFSCREEN}）。省いても全フレームの全画素が、
  * 省かない場合と同じであること（影・あふれる文字・スクロール箱・変形を含む）、画面外の項目が実際に省かれることを確かめる。
  */
 class OffscreenItemCullPixelTest {
@@ -22,7 +22,7 @@ class OffscreenItemCullPixelTest {
 
     @AfterEach
     void restore() {
-        SoftwareRenderBackend.cullOffscreen = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.set(true);
     }
 
     private static String html() {
@@ -41,7 +41,7 @@ class OffscreenItemCullPixelTest {
     private record Result(List<int[]> frames, long culled) {}
 
     private static Result run(boolean cull, long seed, int steps) {
-        SoftwareRenderBackend.cullOffscreen = cull;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.set(cull);
         List<int[]> out = new ArrayList<>();
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         long culled;

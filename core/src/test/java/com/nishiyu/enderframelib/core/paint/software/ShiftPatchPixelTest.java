@@ -16,7 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * 子要素の挿入・削除（CHILD_PATCH）に対する増分インデックスシフト（{@link PaintSceneDriver#patchShiftIndex}）が、
+ * 子要素の挿入・削除（CHILD_PATCH）に対する増分インデックスシフト（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#PATCH_SHIFT_INDEX}）が、
  * 毎回全再構築する場合と画素まで 100% 同じ絵を描くことを検証する画素等価性テスト。
  */
 class ShiftPatchPixelTest {
@@ -24,8 +24,8 @@ class ShiftPatchPixelTest {
 
     @AfterEach
     void restore() {
-        PaintSceneDriver.patchShiftIndex = true;
-        PaintSceneDriver.patchDiffIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_DIFF_INDEX.set(true);
     }
 
     private static String html() {
@@ -41,7 +41,7 @@ class ShiftPatchPixelTest {
     }
 
     private static List<int[]> run(boolean shiftPatch, long seed, int steps) {
-        PaintSceneDriver.patchShiftIndex = shiftPatch;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(shiftPatch);
         List<int[]> out = new ArrayList<>();
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {

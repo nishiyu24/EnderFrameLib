@@ -27,11 +27,8 @@ import java.util.function.LongFunction;
  * CPU 保険層は {@link CpuLayerFallback} へ委譲し、このクラス自身は GL/GLFW の API を直接呼ばない。
  */
 public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
-    public static volatile boolean rectTrees = GpuRenderBackend.rectTrees;
+    /** GPU の層の深さの上限（構築のときに {@link GpuRenderBackend#maxLayerDepth} へ写す）。近道の切り替えは {@link com.nishiyu.enderframelib.core.kernel.Shortcut}。 */
     public static volatile int maxLayerDepth = GpuRenderBackend.maxLayerDepth;
-    public static volatile boolean boundedLayers = GpuRenderBackend.boundedLayers;
-    public static volatile boolean downsampledBlur = GpuRenderBackend.downsampledBlur;
-    public static volatile boolean retainedScroll = GpuRenderBackend.retainedScroll;
 
     private final GlContext context;
     private final GpuRenderBackend gpu;
@@ -67,11 +64,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     }
 
     private static void syncFlags() {
-        GpuRenderBackend.rectTrees = rectTrees;
         GpuRenderBackend.maxLayerDepth = maxLayerDepth;
-        GpuRenderBackend.boundedLayers = boundedLayers;
-        GpuRenderBackend.downsampledBlur = downsampledBlur;
-        GpuRenderBackend.retainedScroll = retainedScroll;
     }
 
     public boolean enableGpuTiming() { return gpu.enableGpuTiming(); }

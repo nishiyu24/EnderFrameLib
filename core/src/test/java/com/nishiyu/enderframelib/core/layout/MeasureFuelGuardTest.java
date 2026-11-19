@@ -135,10 +135,10 @@ class MeasureFuelGuardTest {
     }
 
     private static void setAllReuseFlags(boolean enabled) {
-        LayoutBox.tentativeReuse = enabled;
-        LayoutBox.fitReuseEnabled = enabled;
-        LayoutBox.blockPercentFreeEnabled = enabled;
-        LayoutBox.definiteLeafReuse = enabled;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.set(enabled);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.set(enabled);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.BLOCK_PERCENT_FREE.set(enabled);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.DEFINITE_LEAF_REUSE.set(enabled);
     }
 
     @Test

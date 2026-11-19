@@ -243,12 +243,12 @@ class IncrementalVsFullTest {
      */
     @Test
     void layoutsDocumentWithoutCutoffMatchesFullRelayout() {
-        boolean saved = com.nishiyu.enderframelib.core.layout.LayoutBox.cutoffEnabled;
-        com.nishiyu.enderframelib.core.layout.LayoutBox.cutoffEnabled = false;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.set(false);
         try {
             assertEquals(List.of(), mismatches("layouts", 8, 1));
         } finally {
-            com.nishiyu.enderframelib.core.layout.LayoutBox.cutoffEnabled = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.set(saved);
         }
     }
 
@@ -330,13 +330,13 @@ class IncrementalVsFullTest {
     }
 
     private static List<Integer> scrollListPixels(long seed, boolean scrollNodes) {
-        boolean saved = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.scrollContentNodes;
-        com.nishiyu.enderframelib.core.paint.DisplayListBuilder.scrollContentNodes = scrollNodes;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(scrollNodes);
         try {
             MutationScenario.run(ShortcutMatrixMain.scrollList(), ShortcutMatrixMain.LIST_CLASSES, ShortcutMatrixMain.LIST_STYLES, seed, 45, true, true);
             return new ArrayList<>(MutationScenario.PIXELS);
         } finally {
-            com.nishiyu.enderframelib.core.paint.DisplayListBuilder.scrollContentNodes = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(saved);
         }
     }
 
@@ -381,17 +381,11 @@ class IncrementalVsFullTest {
         }
     }
 
-    private static List<Integer> pixelsWithDamage(boolean damage, long seed) throws ReflectiveOperationException {
-        var f = com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend.class.getDeclaredField("damageEnabled");
-        f.setAccessible(true);
-        boolean saved = f.getBoolean(null);
-        f.setBoolean(null, damage);
-        try {
+    private static List<Integer> pixelsWithDamage(boolean damage, long seed) {
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.with(java.util.Map.of(com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE, damage), () -> {
             MutationScenario.run(ShortcutMatrixMain.CARDS, ShortcutMatrixMain.CARD_CLASSES, ShortcutMatrixMain.CARD_STYLES, seed, 45, true);
             return new ArrayList<>(MutationScenario.PIXELS);
-        } finally {
-            f.setBoolean(null, saved);
-        }
+        });
     }
 
     /**

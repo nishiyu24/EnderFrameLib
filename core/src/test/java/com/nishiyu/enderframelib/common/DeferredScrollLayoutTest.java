@@ -11,7 +11,7 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
- * スクロールだけの更新で箱の位置の決め直しを後回しにしても（{@link UiView#deferScrollLayout}）、箱の位置を読む側
+ * スクロールだけの更新で箱の位置の決め直しを後回しにしても（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#DEFER_SCROLL_LAYOUT}）、箱の位置を読む側
  * （{@code layoutRoot()}）と、その後の別の更新の結果が、後回しにしない場合と同じになることを確かめる。
  */
 class DeferredScrollLayoutTest {
@@ -36,11 +36,11 @@ class DeferredScrollLayoutTest {
 
     @Test
     void deferredPositionsMatchEagerOnesWhenRead() {
-        boolean saved = UiView.deferScrollLayout;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on();
         try {
             List<List<float[]>> results = new ArrayList<>();
             for (boolean defer : new boolean[]{false, true}) {
-                UiView.deferScrollLayout = defer;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.set(defer);
                 StandaloneView view = new StandaloneView(html(), 320, 240, FontResolver.FALLBACK);
                 try (var backend = new MutationScenario.NoDraw()) {
                     long now = 1000;
@@ -61,17 +61,17 @@ class DeferredScrollLayoutTest {
             assertEquals(results.get(0).size(), results.get(1).size());
             for (int i = 0; i < results.get(0).size(); i++) assertArrayEquals(results.get(0).get(i), results.get(1).get(i), "box " + i);
         } finally {
-            UiView.deferScrollLayout = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.set(saved);
         }
     }
 
     @Test
     void aStyleChangeAfterDeferredScrollsGivesTheSameDisplayList() {
-        boolean saved = UiView.deferScrollLayout;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on();
         try {
             List<List<String>> results = new ArrayList<>();
             for (boolean defer : new boolean[]{false, true}) {
-                UiView.deferScrollLayout = defer;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.set(defer);
                 StandaloneView view = new StandaloneView(html(), 320, 240, FontResolver.FALLBACK);
                 try (var backend = new MutationScenario.NoDraw()) {
                     long now = 1000;
@@ -96,7 +96,7 @@ class DeferredScrollLayoutTest {
             }
             assertEquals(results.get(0), results.get(1));
         } finally {
-            UiView.deferScrollLayout = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.set(saved);
         }
     }
 }

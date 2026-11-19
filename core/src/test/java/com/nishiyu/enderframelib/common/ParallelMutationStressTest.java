@@ -36,7 +36,7 @@ class ParallelMutationStressTest {
 
     @AfterEach
     void restore() {
-        LayoutTaskPool.parallelEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
         LayoutTaskPool.setWorkerThreads(LayoutTaskPool.defaultThreads());
     }
 
@@ -115,17 +115,17 @@ class ParallelMutationStressTest {
             String doc = html(new Random(seed * 7919 + 13));
             Random rs = new Random(seed), rp = new Random(seed);
             int[] ss = {720, 540}, sp = {720, 540};
-            LayoutTaskPool.parallelEnabled = false;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(false);
             StandaloneView serial = new StandaloneView(doc, ss[0], ss[1], FontResolver.FALLBACK);
             List<DisplayItem> expected = flush(serial);
-            LayoutTaskPool.parallelEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
             StandaloneView parallel = new StandaloneView(doc, sp[0], sp[1], FontResolver.FALLBACK);
             assertEquals(expected, flush(parallel), "threads " + threads + " seed " + seed + " initial");
             for (int step = 0; step < STEPS; step++) {
-                LayoutTaskPool.parallelEnabled = false;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(false);
                 mutate(serial, rs, ss);
                 expected = flush(serial);
-                LayoutTaskPool.parallelEnabled = true;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
                 mutate(parallel, rp, sp);
                 assertEquals(expected, flush(parallel), "threads " + threads + " seed " + seed + " step " + step);
             }

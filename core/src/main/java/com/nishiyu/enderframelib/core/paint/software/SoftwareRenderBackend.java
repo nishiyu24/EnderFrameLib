@@ -90,11 +90,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 差分描画（Tile Dirty Bitset）
 
-    /**
-     * 変更のあった項目の範囲だけを塗り直すか（{@code -Denderframe.soft.nodamage=true} で無効）。
-     * 無効にすると毎フレーム全面をクリアして描く（疑うときの切り分け用。絵は同じでなければならない）。
-     */
-    static volatile boolean damageEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_DAMAGE;
     /** 診断: 損傷範囲の決定の理由を出力する（フレームごとに読む。{@code -Denderframe.soft.damagedebug=true}）。 */
     static boolean damageDebug() {
         return com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_DAMAGE_DEBUG;
@@ -376,7 +371,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         @Override
         public double[] cullWindow(DisplayItem node, int nodeIndex) {
             // 記録中も通常描画でも、項目のクリップは描画先 [0, 高さ] に収まる。その外へ CULL_PAD + 項目の高さ以上離れた項目は塗られない（outsideBox と同じ式）
-            if (!cullOffscreen) return null;
+            if (!com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on()) return null;
             scratchCullWindow[0] = 0;
             scratchCullWindow[1] = raster.targetHeight();
             scratchCullWindow[2] = CULL_PAD;
@@ -580,7 +575,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * （持ち主の姿勢 {@link Resolved} の同一性）。フレームの頭で空にする。テストが切り替える（起動時のスイッチは足さない）。
      */
     private final java.util.IdentityHashMap<Object, SharedClip> frameClips = new java.util.IdentityHashMap<>();
-    static volatile boolean CLIP_SHARE = true;
     /** 診断: 同じフレームの別の項目が組んだクリップを使い回した回数。 */
     static final java.util.concurrent.atomic.LongAdder STAT_SHARED_CLIPS = new java.util.concurrent.atomic.LongAdder();
 
@@ -636,8 +630,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 項目
 
-    /** 照合・切り分け用: false なら、クリップの外にある項目も塗りの経路へ渡す（結果の画素は同じはず）。 */
-    static volatile boolean cullOffscreen = com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_CULL_OFFSCREEN;
     /** 項目の塗りを、クリップの範囲に掛からないために省いた数（累計。診断・テスト用）。 */
     private long culledItems;
 
@@ -703,11 +695,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
         GpuSink spanSink = null;
         if (canFastStatic && index < spanEl.length && ItemDiff.unchanged(spanEl[index], el, spanEpoch[index]) && spanRes[index] == res) {
             if (spanCulled[index]) {
-                if (cullOffscreen && fastClipUnchanged(index, spanClip[index])) {
+                if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && fastClipUnchanged(index, spanClip[index])) {
                     culledItems++;
                     return;
                 }
-            } else if (glReplay && replayableType(el.type()) && spanFlat[index] == flat
+            } else if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_GL_REPLAY.on() && replayableType(el.type()) && spanFlat[index] == flat
                     && fastClipUnchanged(index, spanClip[index])) {
                 spanSink = route.current();
                 if (spanSink != null && spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
@@ -718,7 +710,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         // 保持層への記録中の判定は層の実体の範囲だけで決まりクリップを要さない。記録中の buildClip は使い回しの覚えが無く
         // 毎回作り直す（確保が出る）ので、画面外項目はその前に捨てる
-        if (cullOffscreen && recordOwner != null && outsideClip(el, res.pose(), null)) {
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && recordOwner != null && outsideClip(el, res.pose(), null)) {
             culledItems++;
             return;
         }
@@ -731,7 +723,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             curClip[b + 3] = clip.y1();
         }
         if (clip.empty()) return;
-        if (cullOffscreen && outsideClip(el, res.pose(), clip)) {
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && outsideClip(el, res.pose(), clip)) {
             if (canFastStatic) {
                 ensureSpanKeys(index);
                 setSpanItem(index, el);
@@ -745,7 +737,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
         // 項目単位の再生（GL）: 止まっている項目が、前フレームと同じ入力（項目・解決結果・クリップ・不透明度）なら、GPU 側の出力を
         // 計算せずに前進させる。前提は GpuSink.spanReplay。CPU 描画がそのフレームでまだ無いことも条件（描画順の整合のため）
-        if (glReplay && index >= 0 && replayableType(el.type()) && !recordExtents && !partialActive && recordOwner == null) {
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_GL_REPLAY.on() && index >= 0 && replayableType(el.type()) && !recordExtents && !partialActive && recordOwner == null) {
             boolean idle = driver.idleAt(index);
             if (spanSink == null) spanSink = route.current();
             if (spanSink != null) {
@@ -781,7 +773,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) {
-        if (!PaintSceneDriver.reuseIdlePoses || !glReplay) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.on() || !com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_GL_REPLAY.on()) return false;
         if (recordExtents || partialActive || recordOwner != null) return false;
         if (!route.beginDiffPatch()) return false;
         syncClipGeneration();
@@ -816,7 +808,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 boolean visible = res.opacity() > 0.005f && res.residual() > 0.005f;
                 AnimatedValues anim = driver.animAt(index);
                 Clip clip = visible ? buildClip(index, el, anim) : null;
-                boolean culled = !visible || clip.empty() || (cullOffscreen && outsideClip(el, res.pose(), clip));
+                boolean culled = !visible || clip.empty() || (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && outsideClip(el, res.pose(), clip));
                 if (culled) {
                     if (route.canPatchSpan(index)) {
                         if (!route.patchSpanBegin(index) || !route.patchSpanEnd(index, true)) {
@@ -876,8 +868,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     long cpuOps;
     /** 再生の直前に、CPU の層を重ねる順序づけを済ませた時点の {@link #cpuOps}（それ以降に CPU 描画があれば、再生の前に順序づけが要る）。 */
     private long cpuOpsOrdered;
-    /** 項目単位の再生を使うか（切り分け用: {@code -Denderframe.paint.noreplay=true} で無効）。 */
-    static volatile boolean glReplay = com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_GL_REPLAY;
     private DisplayItem[] spanEl = new DisplayItem[0];
     /** {@link #spanEl} の項目を覚えたときの {@link DisplayItem#paintEpoch()}（塗りがセルへ書かれたら同じ項目でも再生しない）。 */
     private int[] spanEpoch = new int[0];
@@ -1030,7 +1020,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             if (same) return ce.clip;
         }
         int tw = raster.targetWidth(), th = raster.targetHeight();
-        boolean share = CLIP_SHARE && !recording && source != null;
+        boolean share = com.nishiyu.enderframelib.core.kernel.Shortcut.CLIP_SHARE.on() && !recording && source != null;
         if (share) {
             SharedClip sc = frameClips.get(source);
             if (sc != null && sc.w() == tw && sc.h() == th && ownersUnchanged(sc.owner(), sc.ownerRes())) {
@@ -1155,7 +1145,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 連鎖の部品 1 つ分（{@link #addClipPart} と同じ結果。同じフレームの同じ部品・同じ姿勢なら使い回す）。 */
     private void addChainPart(List<ClipPart> parts, ClipChainPart p) {
-        if (!CLIP_SHARE || recordOwner != null) {
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.CLIP_SHARE.on() || recordOwner != null) {
             addClipPart(parts, p.rectView(), p.ownerId(), p.radiiXView(), p.radiiYView());
             return;
         }
@@ -1309,7 +1299,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
         op.pose = pose; op.inv = inv; op.clip = clip; op.opacity = opacity; op.shader = shader; op.fast = fast;
         op.clipped = !clip.parts().isEmpty();
-        boolean axis = fastSolid && fast != null && pose.b() == 0.0 && pose.c() == 0.0;
+        boolean axis = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.on() && fast != null && pose.b() == 0.0 && pose.c() == 0.0;
         int nr = 0;
         if (axis) {
             for (int k = 0; k < fast.n; k++) {
@@ -1354,8 +1344,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
 
-    /** 照合・切り分け用: false なら {@link #paint} の行ごとの塗りを使わず、全画素を評価する。 */
-    static volatile boolean fastSolid = com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_FAST_SOLID;
 
 
     /**
@@ -1446,8 +1434,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 枠線
 
-    /** 変わらない文字項目の下ごしらえを使い回す（切り分け用: {@code -Denderframe.paint.notextsetup=true} で無効）。 */
-    static volatile boolean textSetupReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.TEXT_SETUP_REUSE;
 
     // ------------------------------------------------------------------ 画像
 

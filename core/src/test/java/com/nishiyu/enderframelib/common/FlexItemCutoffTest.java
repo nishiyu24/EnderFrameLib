@@ -46,7 +46,7 @@ class FlexItemCutoffTest {
 
     @AfterEach
     void restore() {
-        UiView.textPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
     }
 
     private static String sig(DisplayItem i) {
@@ -68,11 +68,11 @@ class FlexItemCutoffTest {
 
     private static void step(StandaloneView patched, StandaloneView full, String name, Consumer<StandaloneView> mutate) {
         mutate.accept(patched);
-        UiView.textPatchEnabled = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(false);
         try {
             mutate.accept(full);
         } finally {
-            UiView.textPatchEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
         }
         List<String> a = sigs(patched);
         List<String> b = sigs(full);

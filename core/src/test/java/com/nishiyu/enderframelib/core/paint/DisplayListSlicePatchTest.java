@@ -29,7 +29,7 @@ class DisplayListSlicePatchTest {
 
     @AfterEach
     void tearDown() {
-        UiView.childPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
     }
 
     private static final String BASE_HTML = """
@@ -99,7 +99,7 @@ class DisplayListSlicePatchTest {
     }
 
     private static List<DisplayItem> flush(StandaloneView v, boolean patch) {
-        UiView.childPatchEnabled = patch;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(patch);
         v.ui().flushInvalidation();
         return v.ui().renderCache();
     }
@@ -236,7 +236,7 @@ class DisplayListSlicePatchTest {
         flush(viewFull, false);
 
         long hitsBefore = UiView.CHILD_PATCH_HITS.get();
-        UiView.childPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
 
         for (StandaloneView v : List.of(viewPatch, viewFull)) {
             HtmlNode list = v.root().getNodeById("list");
@@ -263,7 +263,7 @@ class DisplayListSlicePatchTest {
         flush(viewFull, false);
 
         long hitsBefore = UiView.CHILD_PATCH_HITS.get();
-        UiView.childPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
 
         for (StandaloneView v : List.of(viewPatch, viewFull)) {
             HtmlNode list = v.root().getNodeById("list");
@@ -288,7 +288,7 @@ class DisplayListSlicePatchTest {
             flush(viewFull, false);
 
             long hitsBefore = UiView.CHILD_PATCH_HITS.get();
-            UiView.childPatchEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
 
             for (StandaloneView v : List.of(viewPatch, viewFull)) {
                 HtmlNode list = v.root().getNodeById("list");
@@ -314,7 +314,7 @@ class DisplayListSlicePatchTest {
             flush(viewFull, false);
 
             long hitsBefore = UiView.CHILD_PATCH_HITS.get();
-            UiView.childPatchEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
 
             for (StandaloneView v : List.of(viewPatch, viewFull)) {
                 HtmlNode list = v.root().getNodeById("list");
@@ -345,8 +345,8 @@ class DisplayListSlicePatchTest {
         Random rnd = new Random(1234);
 
         for (int step = 0; step < 40; step++) {
-            UiView.childPatchEnabled = true;
-            UiView.textPatchEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
 
             int op = rnd.nextInt(3);
             if (op == 0) {
@@ -418,8 +418,8 @@ class DisplayListSlicePatchTest {
         int styleOps = 0;
 
         for (int step = 0; step < 60; step++) {
-            UiView.childPatchEnabled = true;
-            UiView.textPatchEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
             int op = rnd.nextInt(6);
             switch (op) {
                 case 0 -> { // class の付け外し
@@ -555,7 +555,7 @@ class DisplayListSlicePatchTest {
     }
 
     private static List<DisplayItem> resizeWithExactTranslation(StandaloneView view, int width, int height) {
-        UiView.childPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
         view.resize(width, height);
         long deadline = System.nanoTime() + 2_000_000_000L;
         while (view.ui().rootW() != width || view.ui().rootH() != height) {

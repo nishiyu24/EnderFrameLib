@@ -919,7 +919,7 @@ public final class ComputedStyle {
         }
         ComputedStyle fresh = new ComputedStyle(out, exBase, exUnmod, cnt, (byte) (viewport ? 1 : 0), exVp,
                 parent.elementFontSize, parent.rootFontSize);
-        return new TextChild(SHARE_ENABLED ? share(fresh) : fresh, viewport || exVp == 1);
+        return new TextChild(com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh, viewport || exVp == 1);
     }
 
     /**
@@ -1040,7 +1040,7 @@ public final class ComputedStyle {
         ComputedStyle fresh = new ComputedStyle(out, exBase, exUnmod, cnt, (byte) -1, exVp, elementFontSize, rootFontSize);
         if (!markerOverrides) fresh.g2 = this.g2;
         fresh.g3 = this.g3;
-        return SHARE_ENABLED ? share(fresh) : fresh;
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
     }
 
     private static ComputedStyle buildDeclaredMarker(ComputedStyle declared) {
@@ -1055,7 +1055,7 @@ public final class ComputedStyle {
         cnt += setOverrideSlot(out, CssPropertyIndex.TEXT_TRANSFORM, CssValue.of("none"));
         ComputedStyle fresh = new ComputedStyle(out, declared.extrasBase, declared.extras, cnt,
                 (byte) -1, declared.extrasViewport, declared.elementFontSize, declared.rootFontSize);
-        return SHARE_ENABLED ? share(fresh) : fresh;
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
     }
 
     private static int setOverrideSlot(CssValue[] out, int id, CssValue v) {
@@ -1475,7 +1475,7 @@ public final class ComputedStyle {
                     new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, 0, 0));
         }
         ComputedStyle fresh = new ComputedStyle(owned, own, rootFontSize, true);
-        return SHARE_ENABLED ? share(fresh) : fresh;
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
     }
 
     // ==================== 同じ内容の算出スタイルの共有（hash-consing） ====================
@@ -1485,8 +1485,6 @@ public final class ComputedStyle {
     // 保持量が要素数でなく「異なるスタイルの数」に比例し、変わっていないかの判定（diff・sameDeclarations）が同一性で済む。
     // 表は弱参照で持つので、どの要素からも使われなくなったスタイルは回収される。
 
-    /** 切り分け用: false なら算出スタイルを共有しない（要素ごとに別のインスタンス）。 */
-    public static volatile boolean SHARE_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.STYLE_SHARE;
 
     private static final class Interned extends java.lang.ref.WeakReference<ComputedStyle> {
         final int hash;

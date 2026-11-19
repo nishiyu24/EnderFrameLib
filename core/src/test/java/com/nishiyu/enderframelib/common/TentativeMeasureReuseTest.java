@@ -49,7 +49,7 @@ class TentativeMeasureReuseTest {
 
     @AfterEach
     void restore() {
-        LayoutBox.tentativeReuse = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.set(true);
     }
 
     private static String html() {
@@ -71,7 +71,7 @@ class TentativeMeasureReuseTest {
     }
 
     private static List<DisplayItem> flush(StandaloneView v, boolean tentative) {
-        LayoutBox.tentativeReuse = tentative;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.set(tentative);
         v.ui().flushInvalidation();
         return v.ui().renderCache();
     }
@@ -165,12 +165,12 @@ class TentativeMeasureReuseTest {
         long onMeasurements = 0;
         for (int i = 0; i < 20; i++) {
             int w = 800 - (i & 1);
-            LayoutBox.tentativeReuse = false;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.set(false);
             long m0 = LayoutBox.measurementsComputed();
             off.ui().recomputeLayout(w, 600);
             if (i >= 4) offMeasurements += LayoutBox.measurementsComputed() - m0;
 
-            LayoutBox.tentativeReuse = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.set(true);
             long m1 = LayoutBox.measurementsComputed();
             on.ui().recomputeLayout(w, 600);
             if (i >= 4) onMeasurements += LayoutBox.measurementsComputed() - m1;
@@ -224,9 +224,9 @@ class TentativeMeasureReuseTest {
         int[] widths = {799, 800, 799, 700, 799, 640, 800, 799, 800};
         for (int i = 0; i < widths.length; i++) {
             int w = widths[i];
-            LayoutBox.tentativeReuse = false;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.set(false);
             off.ui().recomputeLayout(w, 600);
-            LayoutBox.tentativeReuse = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.set(true);
             on.ui().recomputeLayout(w, 600);
             sameItems(off.ui().renderCache(), on.ui().renderCache(), "step " + i + " w=" + w);
         }

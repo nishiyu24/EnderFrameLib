@@ -130,7 +130,7 @@ final class TextRaster {
         OutlineFontFace face = faceFor(el);
         if (face == null) return;
         TextSetup s = null;
-        boolean cacheable = SoftwareRenderBackend.textSetupReuse && !field && !el.isPart("_ph");
+        boolean cacheable = com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_SETUP_REUSE.on() && !field && !el.isPart("_ph");
         if (cacheable) {
             s = textSetups.get(el);
             if (s != null && s.face != face) s = null; // 書体の登録が変わった（別の面になった）
@@ -417,7 +417,7 @@ final class TextRaster {
     /** デバイス画素の格子にそのまま置く（原点 {@code (originX, originY)}）。 */
     void blitAligned(GlyphBitmap g, float originX, float originY, int pm, Clip clip, float opacity) {
         float bx = originX + g.left(), by = originY - g.top();
-        if (SoftwareRenderBackend.fastSolid && bx == Math.rint(bx) && by == Math.rint(by) && Math.abs(bx) < 1e6f && Math.abs(by) < 1e6f) {
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.on() && bx == Math.rint(bx) && by == Math.rint(by) && Math.abs(bx) < 1e6f && Math.abs(by) < 1e6f) {
             blitGridAligned(g, (int) bx, (int) by, pm, clip, opacity);
             return;
         }

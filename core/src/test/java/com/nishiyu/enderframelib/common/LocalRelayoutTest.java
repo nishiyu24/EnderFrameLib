@@ -31,7 +31,7 @@ public class LocalRelayoutTest {
     @AfterEach
     void restore() {
         com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(true));
-        UiView.changeStampsEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(true);
     }
 
     private static String mixed() {

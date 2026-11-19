@@ -17,7 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * B12: 自分の変形・不透明度が恒等の葉の項目は、親の姿勢の実体をそのまま使う（{@link PaintSceneDriver#reuseIdlePoses}）。
+ * B12: 自分の変形・不透明度が恒等の葉の項目は、親の姿勢の実体をそのまま使う（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#REUSE_IDLE_POSES}）。
  * スクロールで中身の節が動くと、以前は見えている全項目の姿勢（{@code Resolved}）を毎フレーム作り直していた（voidwave の {@code scroll} で
  * 1 フレーム約 {@code 62 KB}）。共有しても、毎フレーム作り直したときと同じ絵になること、色だけが動く葉は姿勢を共有しつつ
  * 自分の色で描かれること（項目の補間値は {@link PaintSceneDriver#animAt}）、不透明度・変形の動く葉は共有しないことを確かめる。
@@ -58,11 +58,11 @@ class ParentPoseShareTest {
 
     @AfterEach
     void restore() {
-        PaintSceneDriver.reuseIdlePoses = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.set(true);
     }
 
     private static List<int[]> frames(boolean share) {
-        PaintSceneDriver.reuseIdlePoses = share;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.set(share);
         List<int[]> out = new ArrayList<>();
         try (SoftwareRenderBackend backend = new SoftwareRenderBackend(W, H, 1f);
              StandaloneView v = new StandaloneView(doc(), W, H, FontResolver.FALLBACK)) {
@@ -93,7 +93,7 @@ class ParentPoseShareTest {
 
     @Test
     void identityLeavesShareTheParentPoseAndKeepTheirOwnColors() {
-        PaintSceneDriver.reuseIdlePoses = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.set(true);
         try (SoftwareRenderBackend backend = new SoftwareRenderBackend(W, H, 1f);
              StandaloneView v = new StandaloneView(doc(), W, H, FontResolver.FALLBACK)) {
             long t = 1000;
@@ -134,7 +134,7 @@ class ParentPoseShareTest {
 
     /** 姿勢を作った数（1 フレームあたり）。{@code voidwave.html} の中身のスクロールを、往復で {@code frames} フレーム回す。 */
     private static double posesPerScrollFrame(boolean reuse) throws Exception {
-        PaintSceneDriver.reuseIdlePoses = reuse;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.set(reuse);
         String html = Files.readString(Path.of("src/main/resources/data/enderframelib/enderframe_ui/voidwave.html"), StandardCharsets.UTF_8);
         int frames = 40;
         try (SoftwareRenderBackend backend = new SoftwareRenderBackend(640, 400, 1f);

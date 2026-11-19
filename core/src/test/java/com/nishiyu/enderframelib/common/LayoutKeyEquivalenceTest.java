@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * 測定の再利用の鍵から「結果に効かない成分」を外す最適化（高さの % の基準を、高さ方向の割合を持たない部分木では無視する:
- * {@link LayoutBox#blockPercentFreeEnabled}）が、毎回別の入力として測る場合と、表示リストが完全に一致すること。
+ * {@link com.nishiyu.enderframelib.core.kernel.Shortcut#BLOCK_PERCENT_FREE}）が、毎回別の入力として測る場合と、表示リストが完全に一致すること。
  * 高さの割合（height / min-height / max-height / flex-basis / top）を混ぜた flex・grid・block の入れ子の乱数文書と、
  * 忠実度コーパス、ビューポートを変えながらの連続レイアウトで突き合わせる。
  */
@@ -22,7 +22,7 @@ class LayoutKeyEquivalenceTest {
 
     @AfterEach
     void restore() {
-        LayoutBox.blockPercentFreeEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.BLOCK_PERCENT_FREE.set(true);
     }
 
     private static List<DisplayItem> flush(StandaloneView v) {
@@ -44,7 +44,7 @@ class LayoutKeyEquivalenceTest {
 
     /** 同じ文書を、鍵の最適化の OFF / ON で、ビューポートを変えながら描いて全ステップで一致を見る。 */
     private static void same(String html, int[][] sizes, String what) {
-        LayoutBox.blockPercentFreeEnabled = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.BLOCK_PERCENT_FREE.set(false);
         StandaloneView off = new StandaloneView(html, sizes[0][0], sizes[0][1], FontResolver.FALLBACK);
         List<List<DisplayItem>> expected = new ArrayList<>();
         expected.add(flush(off));
@@ -52,7 +52,7 @@ class LayoutKeyEquivalenceTest {
             off.ui().recomputeLayout(sizes[i][0], sizes[i][1]); // 即時（resize は時間でまとめられるので使わない）
             expected.add(snapshot(off));
         }
-        LayoutBox.blockPercentFreeEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.BLOCK_PERCENT_FREE.set(true);
         StandaloneView on = new StandaloneView(html, sizes[0][0], sizes[0][1], FontResolver.FALLBACK);
         sameItems(expected.get(0), flush(on), what + " 初回");
         for (int i = 1; i < sizes.length; i++) {

@@ -102,11 +102,11 @@ final class Tentative {
     }
 
     boolean widthMatches(ConstraintSpace s) {
-        return LayoutBox.widthIndependentReuse && widthFree && LayoutBox.sameBlockPercentAndParent(space, s, percentFree, shrinkFree);
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on() && widthFree && LayoutBox.sameBlockPercentAndParent(space, s, percentFree, shrinkFree);
     }
 
     boolean fitMatches(ConstraintSpace s) {
-        return LayoutBox.fitReuseEnabled && fitNeed != Float.POSITIVE_INFINITY
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on() && fitNeed != Float.POSITIVE_INFINITY
                 && s.availableInlineSize() >= fitNeed && space.availableInlineSize() >= fitNeed
                 && LayoutBox.sameBlockPercentAndParent(space, s, percentFree, shrinkFree);
     }
@@ -114,7 +114,7 @@ final class Tentative {
     /** ビューポートが同じか。外を読まない箱（{@link #outsideFree}）や内容で寸法が決まる箱は、幅の違いを許す。 */
     boolean sameViewport(Viewport v) {
         return viewport.equals(v)
-                || (((LayoutBox.fitReuseEnabled && fitNeed != Float.POSITIVE_INFINITY) || (LayoutBox.viewportWidthFreeReuse && outsideFree))
+                || (((com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on() && fitNeed != Float.POSITIVE_INFINITY) || (com.nishiyu.enderframelib.core.kernel.Shortcut.VIEWPORT_WIDTH_FREE_REUSE.on() && outsideFree))
                         && viewport.rootH() == v.rootH() && viewport.devicePixelRatio() == v.devicePixelRatio());
     }
 }

@@ -172,8 +172,8 @@ class ScrollCostTest {
         StringBuilder out = new StringBuilder("SCROLL-GL");
         double[] cpuMs = new double[2];
         for (boolean trees : new boolean[]{false, true}) {
-            boolean saved = com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend.rectTrees;
-            com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend.rectTrees = trees;
+            boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.on();
+            com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.set(trees);
             StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
             try (var backend = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(W, H)) {
                 long now = 1000;
@@ -195,7 +195,7 @@ class ScrollCostTest {
                         cpuMs[trees ? 1 : 0], (mx.getThreadAllocatedBytes(tid) - alloc0) / 1024.0 / n));
             } finally {
                 view.close();
-                com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend.rectTrees = saved;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.set(saved);
             }
         }
         System.out.println(out);
@@ -220,8 +220,8 @@ class ScrollCostTest {
         double[] cpuMs = new double[2];
         for (int mode = 0; mode < 2; mode++) {
             boolean retain = mode == 1;
-            com.nishiyu.enderframelib.core.paint.PaintSceneDriver.retainScrollLayers = retain;
-            com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend.retainedScroll = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.set(retain);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.set(true);
             StandaloneView view = new StandaloneView(html, 520, 520, FontResolver.FALLBACK);
             try (var backend = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(520, 520)) {
                 long now = 1000;
@@ -247,7 +247,7 @@ class ScrollCostTest {
                         (mx.getThreadAllocatedBytes(tid) - alloc0) / 1024.0 / n, backend.scrollLayersSkipped(), backend.scrollLayersRecorded()));
             } finally {
                 view.close();
-                com.nishiyu.enderframelib.core.paint.PaintSceneDriver.retainScrollLayers = true;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.set(true);
             }
         }
         System.out.println(out);
@@ -270,8 +270,8 @@ class ScrollCostTest {
         String html = "<style>body{margin:0;font-size:13px;background:#123}.row{height:26px;margin:2px;padding:2px 6px;background:#eef;border:1px solid #99a}"
                 + "#outer{position:absolute;left:100px;top:150px;width:300px;height:230px;overflow-y:auto;border:2px solid #333;border-radius:8px}</style>"
                 + "<div id=\"outer\">" + rows + "</div>";
-        com.nishiyu.enderframelib.core.paint.PaintSceneDriver.retainScrollLayers = true;
-        com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend.retainedScroll = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.set(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.set(true);
         StandaloneView view = new StandaloneView(html, 520, 520, FontResolver.FALLBACK);
         try (var backend = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(520, 520)) {
             long now = 1000;

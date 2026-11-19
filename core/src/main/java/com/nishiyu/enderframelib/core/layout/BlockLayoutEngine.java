@@ -70,7 +70,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         int n = kids.size();
         boolean[] premeasured = null;
         if (columns == null && sharedChildSpace != null && n >= LayoutTaskPool.PARALLEL_THRESHOLD
-                && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+                && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
             int work = 0;
             for (int i = 0; i < n; i++) {
                 LayoutBox c = kids.get(i);
@@ -445,7 +445,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         boolean[] parallelPlaced = null;
         if (!hasShifts && box.floatSpace == null && !containsFloats(box)
                 && itemLen >= LayoutTaskPool.PARALLEL_THRESHOLD
-                && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+                && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
             int work = 0;
             for (int itemIdx = 0; itemIdx < itemLen; itemIdx++) {
                 if (state.items.get(itemIdx) instanceof Placement p) {
@@ -640,16 +640,6 @@ public class BlockLayoutEngine extends LayoutEngine {
         return LayoutEngine.getEngine(box.parent) instanceof BlockLayoutEngine;
     }
 
-    /**
-     * {@link #containsFloats} の結果を箱ごとにメモするか（既定は有効）。切り分け用: {@code -Denderframe.layout.nofloatmemo=true}。
-     * 無効にすると従来どおり毎回子孫を走査する（結果は同じ）。
-     */
-    public static volatile boolean floatMemoEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.FLOAT_MEMO;
-    /**
-     * 検証モード: メモを使える場面でも走査し直し、メモと食い違えば {@link AssertionError}（無効化の付け漏れの検出）。
-     * {@code -Denderframe.layout.verifyfloats=true}（{@code core/build.gradle} の {@code test} で常時有効）。
-     */
-    public static volatile boolean verifyFloatMemo = com.nishiyu.enderframelib.core.kernel.EngineFlags.VERIFY_FLOATS;
     /** 診断用の計数（メモが使えた回数／走査した回数）。厳密である必要はない。 */
     public static long floatMemoHits, floatMemoScans;
 
@@ -659,11 +649,11 @@ public class BlockLayoutEngine extends LayoutEngine {
      * 以前は 1 つのブロックを置くたびに子孫を再帰で走査し、1,500 行の文字 1 か所の更新で CPU の約 15% を占めていた。
      */
     static boolean containsFloats(LayoutBox box) {
-        if (!floatMemoEnabled) return scanFloats(box);
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.FLOAT_MEMO.on()) return scanFloats(box);
         int epoch = LayoutBox.shapeEpoch();
         if (box.floatsMemoEpoch == epoch) {
             floatMemoHits++;
-            if (verifyFloatMemo && box.floatsMemo != scanFloatsUncached(box)) {
+            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.on() && box.floatsMemo != scanFloatsUncached(box)) {
                 throw new AssertionError("float メモが古い: 箱 " + box.node.key() + " メモ=" + box.floatsMemo);
             }
             return box.floatsMemo;

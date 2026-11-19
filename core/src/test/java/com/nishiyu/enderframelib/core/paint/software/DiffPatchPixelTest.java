@@ -15,7 +15,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * 表示リストの差分更新（{@link PaintSceneDriver#patchDiffIndex}）と、項目ごとのクリップの記憶・GPU 用クリップ列の記憶・字形の送り位置の記憶が、
+ * 表示リストの差分更新（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#PATCH_DIFF_INDEX}）と、項目ごとのクリップの記憶・GPU 用クリップ列の記憶・字形の送り位置の記憶が、
  * 毎回作り直す場合と画素まで同じ絵を描くこと。文字・スタイル・クリップ（overflow の箱の大きさ）・ホバーの変化の列で、全フレームの全画素を比べる。
  */
 class DiffPatchPixelTest {
@@ -23,7 +23,7 @@ class DiffPatchPixelTest {
 
     @AfterEach
     void restore() {
-        PaintSceneDriver.patchDiffIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_DIFF_INDEX.set(true);
     }
 
     private static String html() {
@@ -38,7 +38,7 @@ class DiffPatchPixelTest {
     }
 
     private static List<int[]> run(boolean diffPatch, long seed, int steps) {
-        PaintSceneDriver.patchDiffIndex = diffPatch;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_DIFF_INDEX.set(diffPatch);
         List<int[]> out = new ArrayList<>();
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {

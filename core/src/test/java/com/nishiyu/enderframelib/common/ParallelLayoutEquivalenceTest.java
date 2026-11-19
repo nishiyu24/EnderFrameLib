@@ -45,7 +45,7 @@ class ParallelLayoutEquivalenceTest {
 
     @AfterEach
     void restore() {
-        LayoutTaskPool.parallelEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
         LayoutTaskPool.setWorkerThreads(LayoutTaskPool.defaultThreads());
     }
 
@@ -168,7 +168,7 @@ class ParallelLayoutEquivalenceTest {
     @Test
     void variedListFontsizeAndHoverAreBitForBitIdentical() {
         String html = buildVariedListHtml(180, 42L);
-        LayoutTaskPool.parallelEnabled = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(false);
         StandaloneView serial = new StandaloneView(html, 800, 600, FontResolver.FALLBACK);
         List<List<DisplayItem>> expectedItems = new ArrayList<>();
         expectedItems.add(flush(serial));
@@ -186,7 +186,7 @@ class ParallelLayoutEquivalenceTest {
         expectedItems.add(flush(serial));
         LayoutBox expectedRoot = serial.ui().layoutRoot();
 
-        LayoutTaskPool.parallelEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
         LayoutTaskPool.resetParallelDispatchCount();
         StandaloneView parallel = new StandaloneView(html, 800, 600, FontResolver.FALLBACK);
         assertDisplayItemsEqual(expectedItems.get(0), flush(parallel), "varied initial");
@@ -234,7 +234,7 @@ class ParallelLayoutEquivalenceTest {
             sb.append("</div>");
             String html = sb.toString();
 
-            LayoutTaskPool.parallelEnabled = false;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(false);
             StandaloneView serial = new StandaloneView(html, 720, 540, FontResolver.FALLBACK);
             List<DisplayItem> exp0 = flush(serial);
             HtmlElement sbBody = findElement(serial.ui().rootNode(), "body");
@@ -243,7 +243,7 @@ class ParallelLayoutEquivalenceTest {
             serial.ui().recomputeLayout(480, 400);
             List<DisplayItem> exp2 = flush(serial);
 
-            LayoutTaskPool.parallelEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
             StandaloneView parallel = new StandaloneView(html, 720, 540, FontResolver.FALLBACK);
             assertDisplayItemsEqual(exp0, flush(parallel), "seed " + seed + " initial");
             HtmlElement pbBody = findElement(parallel.ui().rootNode(), "body");
@@ -257,7 +257,7 @@ class ParallelLayoutEquivalenceTest {
 
     @Test
     void smallTreesStaySerialWithoutPoolDispatch() throws Exception {
-        LayoutTaskPool.parallelEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
         LayoutTaskPool.resetParallelDispatchCount();
 
         String smallHtml = buildVariedListHtml(16, 7L);

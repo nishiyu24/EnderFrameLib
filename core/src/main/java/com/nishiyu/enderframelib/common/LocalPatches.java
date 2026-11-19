@@ -124,7 +124,7 @@ final class LocalPatches {
         }
         if (stale) view.ensureLayoutFresh(); // 局所パッチで済まなかったので、位置を決め直してから全体を描く
         if (elements == null) {
-            view.useChangeStamps = UiView.changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal();
+            view.useChangeStamps = com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.on() && RenderPipeline.lastRelayoutWasLocal();
             try {
                 elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
             } finally {
@@ -230,7 +230,7 @@ final class LocalPatches {
             pendingChildParents.clear();
         }
         Document doc = view.document;
-        if (!UiView.childPatchEnabled || parents.isEmpty() || (!attrNodes.isEmpty() || repositionRequested) || view.layoutRoot == null
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.on() || parents.isEmpty() || (!attrNodes.isEmpty() || repositionRequested) || view.layoutRoot == null
                 || doc == null || doc.root == null || doc.sheet == null) {
             return "preconditions";
         }
@@ -336,7 +336,7 @@ final class LocalPatches {
             }
         }
         if (elements == null) {
-            view.useChangeStamps = UiView.changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal();
+            view.useChangeStamps = com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.on() && RenderPipeline.lastRelayoutWasLocal();
             // 属性は変わらず、後続の行が整数ぶん下へずれるだけの箱は、前回の項目を厳密に平行移動して使い回す
             view.exactTranslation = true;
             try {
@@ -379,7 +379,7 @@ final class LocalPatches {
         view.setLayoutRoot(view.layoutRoot);
         long layoutDone = System.nanoTime();
         // 再スタイルは変わった箱に updateStyle で印を付け、レイアウトは触った箱に印を付ける（検証モードが付け漏れを検出する）
-        view.useChangeStamps = UiView.changeStampsEnabled;
+        view.useChangeStamps = com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.on();
         List<DisplayItem> elements;
         try {
             elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);

@@ -27,8 +27,8 @@ class WindowedDisplayListTest {
 
     @AfterEach
     void restore() {
-        DisplayListBuilder.WINDOWED_ENABLED = true;
-        UiView.childPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.set(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
     }
 
     private static String html() {
@@ -84,19 +84,19 @@ class WindowedDisplayListTest {
             StandaloneView full = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
             StandaloneView patched = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
             try {
-                UiView.childPatchEnabled = false;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(false);
                 full.ui().flushInvalidation();
-                UiView.childPatchEnabled = true;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
                 patched.ui().flushInvalidation();
                 Random rf = new Random(seed), rp = new Random(seed);
                 for (int step = 0; step < 60; step++) {
-                    UiView.childPatchEnabled = true;
+                    com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
                     mutate(full, rf, step);
                     mutate(patched, rp, step);
-                    UiView.childPatchEnabled = false;
+                    com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(false);
                     full.ui().flushInvalidation();
                     List<DisplayItem> exp = new ArrayList<>(full.ui().renderCache());
-                    UiView.childPatchEnabled = true;
+                    com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
                     patched.ui().flushInvalidation();
                     List<DisplayItem> act = patched.ui().renderCache();
                     if (!exp.equals(act)) {
@@ -119,7 +119,7 @@ class WindowedDisplayListTest {
     }
 
     private static int[] frame(StandaloneView v, SoftwareRenderBackend cpu, boolean windowed, long now) {
-        DisplayListBuilder.WINDOWED_ENABLED = windowed;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.set(windowed);
         v.frame(now, cpu, true);
         return cpu.pixmap().pixels().clone();
     }

@@ -24,7 +24,7 @@ class ParallelPrunePrepareEquivalenceTest {
 
     @AfterEach
     void restore() {
-        LayoutTaskPool.parallelEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
         LayoutTaskPool.setWorkerThreads(LayoutTaskPool.defaultThreads());
     }
 
@@ -50,7 +50,7 @@ class ParallelPrunePrepareEquivalenceTest {
 
     /** 1 回分の実行で、各フレームの表示リストと、全部の箱の省いた記録を返す。 */
     private static List<List<Object>> run(boolean parallel) {
-        LayoutTaskPool.parallelEnabled = parallel;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(parallel);
         if (parallel) LayoutTaskPool.setWorkerThreads(4);
         List<List<Object>> frames = new ArrayList<>();
         StandaloneView view = new StandaloneView(html(), 640, 420, FontResolver.FALLBACK);

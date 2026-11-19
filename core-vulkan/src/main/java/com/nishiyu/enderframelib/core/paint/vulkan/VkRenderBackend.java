@@ -26,11 +26,7 @@ import java.util.function.LongFunction;
  * 同等の API（フレーム描画・ピクセル読み戻し・Retained 統計・GPU タイミング・検証レイヤエラー集計）を提供する。
  */
 public final class VkRenderBackend implements RenderBackend, GpuSink {
-    public static volatile boolean rectTrees = GpuRenderBackend.rectTrees;
     public static volatile int maxLayerDepth = GpuRenderBackend.maxLayerDepth;
-    public static volatile boolean boundedLayers = GpuRenderBackend.boundedLayers;
-    public static volatile boolean downsampledBlur = GpuRenderBackend.downsampledBlur;
-    public static volatile boolean retainedScroll = GpuRenderBackend.retainedScroll;
 
     private final VkSurfaceHost host;
     private final GpuRenderBackend gpu;
@@ -72,11 +68,7 @@ public final class VkRenderBackend implements RenderBackend, GpuSink {
     }
 
     private static void syncFlags() {
-        GpuRenderBackend.rectTrees = rectTrees;
         GpuRenderBackend.maxLayerDepth = maxLayerDepth;
-        GpuRenderBackend.boundedLayers = boundedLayers;
-        GpuRenderBackend.downsampledBlur = downsampledBlur;
-        GpuRenderBackend.retainedScroll = retainedScroll;
     }
 
     public VkDevice device() { return host.vkDevice(); }

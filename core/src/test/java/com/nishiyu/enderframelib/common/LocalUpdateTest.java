@@ -177,7 +177,7 @@ public class LocalUpdateTest {
 
     @AfterEach
     void restore() {
-        LayoutBox.cutoffEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.set(true);
     }
 
     private static final String HTML = """
@@ -218,7 +218,7 @@ public class LocalUpdateTest {
     private static final String[] IDS = {"para", "deep", "np", "fa", "fb", "tail", "r1", "r2", "r7", "r14", "r30"};
 
     private static List<DisplayItem> flush(StandaloneView v, boolean cutoff) {
-        LayoutBox.cutoffEnabled = cutoff;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.set(cutoff);
         v.ui().flushInvalidation();
         return v.ui().renderCache();
     }
@@ -300,9 +300,9 @@ public class LocalUpdateTest {
         StandaloneView on = new StandaloneView(STRETCH_HTML, 300, 400, FontResolver.FALLBACK);
         StandaloneView off = new StandaloneView(STRETCH_HTML, 300, 400, FontResolver.FALLBACK);
         try {
-            LayoutBox.samePassReuse = false;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.set(false);
             List<DisplayItem> base = flush(off, true);
-            LayoutBox.samePassReuse = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.set(true);
             same(base, flush(on, true), "初回");
             Random rnd = new Random(5L);
             for (int step = 0; step < 300; step++) {
@@ -310,13 +310,13 @@ public class LocalUpdateTest {
                 String text = TEXTS[rnd.nextInt(TEXTS.length)];
                 on.root().getNodeById(id).updateTextContent(text);
                 off.root().getNodeById(id).updateTextContent(text);
-                LayoutBox.samePassReuse = false;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.set(false);
                 List<DisplayItem> expected = flush(off, true);
-                LayoutBox.samePassReuse = true;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.set(true);
                 same(expected, flush(on, true), "手順 " + step + " (" + id + " = '" + text + "')");
             }
         } finally {
-            LayoutBox.samePassReuse = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.set(true);
         }
     }
     }
@@ -353,25 +353,25 @@ public class LocalUpdateTest {
     @Test
     public void probeTextChange() {
         // テストでは検証モードが常時ON（全箱を走査し直す）。実測では切る
-        boolean stamps = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.verifyStamps;
-        boolean floats = com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.verifyFloatMemo;
-        com.nishiyu.enderframelib.core.paint.DisplayListBuilder.verifyStamps = false;
-        com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.verifyFloatMemo = false;
+        boolean stamps = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on();
+        boolean floats = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(false);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(false);
         try {
             probe();
         } finally {
-            com.nishiyu.enderframelib.core.paint.DisplayListBuilder.verifyStamps = stamps;
-            com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.verifyFloatMemo = floats;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(stamps);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(floats);
         }
     }
 
     /** 5000 行で局所更新を繰り返し、別スレッドから主スレッドのスタックを採って、どこで時間を使うかを集計する。 */
     @Test
     public void sampleHotSpots() throws Exception {
-        boolean stamps = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.verifyStamps;
-        boolean floats = com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.verifyFloatMemo;
-        com.nishiyu.enderframelib.core.paint.DisplayListBuilder.verifyStamps = false;
-        com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.verifyFloatMemo = false;
+        boolean stamps = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on();
+        boolean floats = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(false);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(false);
         try {
             int rows = 5000;
             StandaloneView v = open(rows);
@@ -416,8 +416,8 @@ public class LocalUpdateTest {
             self.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).limit(14)
                     .forEach(e -> System.out.println("[hot] self " + e.getValue() + " " + e.getKey()));
         } finally {
-            com.nishiyu.enderframelib.core.paint.DisplayListBuilder.verifyStamps = stamps;
-            com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.verifyFloatMemo = floats;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(stamps);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(floats);
         }
     }
 

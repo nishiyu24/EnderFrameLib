@@ -10,7 +10,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * スクロールで箱の位置の決め直しを後回しにしている間の文字の更新を、決め直さずに局所パッチで済ませても（{@link UiView#staleTextPatchEnabled}）、
+ * スクロールで箱の位置の決め直しを後回しにしている間の文字の更新を、決め直さずに局所パッチで済ませても（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#STALE_TEXT_PATCH}）、
  * 表示リストと（読んだときに済む）箱の位置が、後回しにしない場合と同じになることを確かめる。
  */
 class StaleTextPatchTest {
@@ -29,9 +29,9 @@ class StaleTextPatchTest {
     private record Result(List<String> items, List<String> boxes) {}
 
     private static Result run(boolean defer, boolean stalePatch) throws InterruptedException {
-        boolean savedDefer = UiView.deferScrollLayout, savedStale = UiView.staleTextPatchEnabled;
-        UiView.deferScrollLayout = defer;
-        UiView.staleTextPatchEnabled = stalePatch;
+        boolean savedDefer = com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on(), savedStale = com.nishiyu.enderframelib.core.kernel.Shortcut.STALE_TEXT_PATCH.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.set(defer);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.STALE_TEXT_PATCH.set(stalePatch);
         try {
             StandaloneView view = new StandaloneView(html(), 320, 240, FontResolver.FALLBACK);
             try (var backend = new MutationScenario.NoDraw()) {
@@ -69,8 +69,8 @@ class StaleTextPatchTest {
                 view.close();
             }
         } finally {
-            UiView.deferScrollLayout = savedDefer;
-            UiView.staleTextPatchEnabled = savedStale;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.set(savedDefer);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.STALE_TEXT_PATCH.set(savedStale);
         }
     }
 

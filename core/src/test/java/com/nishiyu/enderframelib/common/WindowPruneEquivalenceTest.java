@@ -11,7 +11,7 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
- * 画面外の部分木を箱ごとに分類せず丸ごと省いても（{@link DisplayListBuilder#PRUNE_ENABLED}）、窓の作り直し・文字の更新・
+ * 画面外の部分木を箱ごとに分類せず丸ごと省いても（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#PRUNE}）、窓の作り直し・文字の更新・
  * ホバーを挟んだ各フレームの表示リストが、省かない場合と同じになることを確かめる。
  */
 class WindowPruneEquivalenceTest {
@@ -31,8 +31,8 @@ class WindowPruneEquivalenceTest {
     }
 
     private static List<List<String>> run(boolean prune) {
-        boolean saved = DisplayListBuilder.PRUNE_ENABLED;
-        DisplayListBuilder.PRUNE_ENABLED = prune;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.PRUNE.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PRUNE.set(prune);
         try {
             List<List<String>> frames = new ArrayList<>();
             StandaloneView view = new StandaloneView(html(), 640, 420, FontResolver.FALLBACK);
@@ -65,7 +65,7 @@ class WindowPruneEquivalenceTest {
             }
             return frames;
         } finally {
-            DisplayListBuilder.PRUNE_ENABLED = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.PRUNE.set(saved);
         }
     }
 

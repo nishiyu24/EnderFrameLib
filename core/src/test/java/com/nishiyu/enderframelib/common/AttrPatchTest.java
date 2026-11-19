@@ -30,8 +30,8 @@ public class AttrPatchTest {
 
     @AfterEach
     void restore() {
-        UiView.attrPatchEnabled = true;
-        UiView.changeStampsEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(true);
     }
 
     private static String sig(DisplayItem i) {
@@ -60,13 +60,13 @@ public class AttrPatchTest {
         for (String[] s : steps) {
             patched.root().getNodeById(s[0]).setAttribute(s[1], s[2]);
             List<String> a = sigs(patched);
-            UiView.attrPatchEnabled = false;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(false);
             try {
                 full.root().getNodeById(s[0]).setAttribute(s[1], s[2]);
                 List<String> b = sigs(full);
                 assertEquals(b, a, String.join(" ", s));
             } finally {
-                UiView.attrPatchEnabled = true;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(true);
             }
         }
         assertTrue(UiView.ATTR_PATCH_HITS.get() - hits >= 4, "変更印の経路に乗った回数: " + (UiView.ATTR_PATCH_HITS.get() - hits));
@@ -82,7 +82,7 @@ public class AttrPatchTest {
         HtmlNode hp = patched.root().getNodeById("hp");
         hp.removeAttribute("value");
         List<String> a = sigs(patched);
-        UiView.attrPatchEnabled = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(false);
         full.root().getNodeById("hp").removeAttribute("value");
         List<String> b = sigs(full);
         assertEquals(b, a);
@@ -92,7 +92,7 @@ public class AttrPatchTest {
     public void benchmarkGaugeInLargeDocument() {
         long[] ms = new long[2];
         for (int mode = 0; mode < 2; mode++) {
-            UiView.attrPatchEnabled = mode == 0;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(mode == 0);
             StandaloneView v = new StandaloneView(html(1500), 800, 600, FontResolver.FALLBACK);
             HtmlNode hp = v.root().getNodeById("hp");
             for (int i = 0; i < 30; i++) { hp.setAttribute("value", String.valueOf(i + 1)); v.ui().flushInvalidation(); }

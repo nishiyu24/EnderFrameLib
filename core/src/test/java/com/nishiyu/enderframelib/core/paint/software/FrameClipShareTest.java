@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * B12: 動く持ち主（アニメーション中の {@code overflow: hidden} の箱）の下の項目は、項目ごとのクリップの覚えが毎フレーム外れる。
- * 同じフレームの中で同じクリップの元を持つ項目どうしは、組んだクリップを分け合う（{@link SoftwareRenderBackend#CLIP_SHARE}）。
+ * 同じフレームの中で同じクリップの元を持つ項目どうしは、組んだクリップを分け合う（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#CLIP_SHARE}）。
  * 分け合っても画素は 1 つも変わらないこと（移動・回転・拡縮の持ち主、入れ子のクリップ、角丸のクリップ）と、実際に分け合ったことを確かめる。
  */
 class FrameClipShareTest {
@@ -34,11 +34,11 @@ class FrameClipShareTest {
 
     @AfterEach
     void restore() {
-        SoftwareRenderBackend.CLIP_SHARE = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CLIP_SHARE.set(true);
     }
 
     private static List<int[]> run(boolean share) {
-        SoftwareRenderBackend.CLIP_SHARE = share;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CLIP_SHARE.set(share);
         List<int[]> out = new ArrayList<>();
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f);
              StandaloneView v = new StandaloneView(DOC, W, H, FontResolver.FALLBACK)) {

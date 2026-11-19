@@ -27,7 +27,7 @@ class PatchHitRateRatchetTest {
 
     @AfterEach
     void tearDown() {
-        UiView.childPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
     }
 
     private static String html() {
@@ -108,7 +108,7 @@ class PatchHitRateRatchetTest {
 
     @Test
     void childAppendAlwaysHitsChildPatch() {
-        UiView.childPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
         StandaloneView v = open();
         HtmlNode list = v.root().getNodeById("list");
         for (int i = 0; i < 4; i++) { // 暖機

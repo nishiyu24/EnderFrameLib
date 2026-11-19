@@ -123,7 +123,7 @@ final class ItemRaster {
         op.inv = inv; op.clip = clip; op.clipped = clipped; op.opacity = opacity; op.g = g;
         op.sx0 = x0; op.sy0 = y0; op.sx1 = x1; op.sy1 = y1; op.rx = backend.freezeRadii(rx); op.ry = backend.freezeRadii(ry); op.scale = scale;
         op.fIx0 = ix0; op.fIx1 = ix1; op.fIy0 = iy0; op.fIy1 = iy1;
-        op.axis = backend.fastSolid && pose.b() == 0.0 && pose.c() == 0.0;
+        op.axis = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.on() && pose.b() == 0.0 && pose.c() == 0.0;
         int lo = 0, hi = 0;
         if (op.axis) {
             float[] lxs = op.lxs != null && op.lxs.length >= rx1 - rx0 ? op.lxs : new float[rx1 - rx0];

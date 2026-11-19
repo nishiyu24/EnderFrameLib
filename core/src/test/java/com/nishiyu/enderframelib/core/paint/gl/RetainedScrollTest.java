@@ -40,9 +40,9 @@ class RetainedScrollTest {
     }
 
     private static Run run(String html, boolean retained, long seed, int steps) {
-        boolean saved = LwjglGlRenderBackend.retainedScroll, savedDrv = PaintSceneDriver.retainScrollLayers;
-        LwjglGlRenderBackend.retainedScroll = true; // 整数画素への丸めは両方で有効。違うのは層を保持するか（ドライバへの問い合わせ）だけ
-        PaintSceneDriver.retainScrollLayers = retained;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on(), savedDrv = com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.set(true); // 整数画素への丸めは両方で有効。違うのは層を保持するか（ドライバへの問い合わせ）だけ
+        com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.set(retained);
         StandaloneView view = new StandaloneView(html, W, H, FontResolver.FALLBACK);
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(W, H)) {
             Random rnd = new Random(seed);
@@ -60,8 +60,8 @@ class RetainedScrollTest {
             return new Run(out, g.scrollLayersSkipped(), g.scrollLayersRecorded());
         } finally {
             view.close();
-            LwjglGlRenderBackend.retainedScroll = saved;
-            PaintSceneDriver.retainScrollLayers = savedDrv;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.set(saved);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.set(savedDrv);
         }
     }
 

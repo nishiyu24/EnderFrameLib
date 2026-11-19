@@ -23,7 +23,7 @@ class ChildPatchTest {
 
     @AfterEach
     void restore() {
-        UiView.childPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
     }
 
     private static final String CSS = """
@@ -149,7 +149,7 @@ class ChildPatchTest {
     };
 
     private static List<DisplayItem> flush(StandaloneView v, boolean patch) {
-        UiView.childPatchEnabled = patch;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(patch);
         v.ui().flushInvalidation();
         return v.ui().renderCache();
     }
@@ -191,7 +191,7 @@ class ChildPatchTest {
             Random rOff = new Random(seed), rOn = new Random(seed);
             for (int step = 0; step < 50; step++) {
                 int m = new Random(seed * 1000 + step).nextInt(MUTATIONS.length);
-                UiView.childPatchEnabled = true; // 変更の通知は有効なまま、パッチする側だけを flush で切り替える
+                com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true); // 変更の通知は有効なまま、パッチする側だけを flush で切り替える
                 MUTATIONS[m].apply(off, rOff, step);
                 MUTATIONS[m].apply(on, rOn, step);
                 List<DisplayItem> exp = flush(off, false);
@@ -228,7 +228,7 @@ class ChildPatchTest {
         for (int step = 0; step < 20; step++) {
             int at = r.nextInt(30);
             for (StandaloneView v : new StandaloneView[]{off, on}) {
-                UiView.childPatchEnabled = true;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
                 HtmlNode list = v.root().getNodeById("list");
                 HtmlElement row = new HtmlElement("div");
                 row.setAttribute("class", "row");
@@ -273,7 +273,7 @@ class ChildPatchTest {
             int at = 10 + r.nextInt(20);
             boolean remove = step % 3 == 2;
             for (StandaloneView v : new StandaloneView[]{off, on}) {
-                UiView.childPatchEnabled = true;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
                 HtmlNode list = v.root().getNodeById("list");
                 if (remove) {
                     list.removeChild(list.children.get(at));

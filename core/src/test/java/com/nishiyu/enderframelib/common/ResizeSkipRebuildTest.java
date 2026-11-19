@@ -24,7 +24,7 @@ class ResizeSkipRebuildTest {
 
     @AfterEach
     void restore() {
-        RenderPipeline.RESIZE_SKIP_REBUILD = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.RESIZE_SKIP_REBUILD.set(true);
     }
 
     private static String dump(LayoutBox b) {
@@ -88,7 +88,7 @@ class ResizeSkipRebuildTest {
     void switchOffNeverSkipsAndGivesSameResult() {
         List<String> on = new ArrayList<>();
         runChain(page("", rows(10)), WIDTHS, on);
-        RenderPipeline.RESIZE_SKIP_REBUILD = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.RESIZE_SKIP_REBUILD.set(false);
         List<String> off = new ArrayList<>();
         long skips = runChain(page("", rows(10)), WIDTHS, off);
         assertEquals(0, skips);

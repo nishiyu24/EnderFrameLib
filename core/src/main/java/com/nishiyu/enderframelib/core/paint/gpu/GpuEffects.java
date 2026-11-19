@@ -141,7 +141,7 @@ final class GpuEffects {
             finalMatrix = last.matrix;
             finalOpacity *= last.opacity;
         }
-        boolean bounded = gpu.boundedLayers && !e.unbounded && (e.extras == null || e.extras.clip() == null) && stages.size() <= 1;
+        boolean bounded = com.nishiyu.enderframelib.core.kernel.Shortcut.GL_BOUNDED_LAYERS.on() && !e.unbounded && (e.extras == null || e.extras.clip() == null) && stages.size() <= 1;
         if (!bounded || e.mask != null) gpu.ensureCleared(e);
         int[] region = bounded ? clampToScreen(e.bounds) : null;
         boolean hasBackdrop = e.extras != null && e.extras.backdropShape() != null && !e.extras.backdrop().isEmpty();
@@ -208,7 +208,7 @@ final class GpuEffects {
 
     private void applyBackdropFilter(GpuRenderBackend.Entry e, List<GpuTexture> temps) {
         List<GpuRenderBackend.Stage> bstages = stages(e.extras.backdrop());
-        int[] shape = gpu.boundedLayers && bstages.size() == 1 ? backdropDeviceBounds(e) : null;
+        int[] shape = com.nishiyu.enderframelib.core.kernel.Shortcut.GL_BOUNDED_LAYERS.on() && bstages.size() == 1 ? backdropDeviceBounds(e) : null;
         if (shape == OFFSCREEN) return;
         int[] copyRegion = null;
         if (shape != null) {
@@ -326,7 +326,7 @@ final class GpuEffects {
             step[axis] = Math.max(1f, sg / 12f);
             reach[axis] = (int) Math.ceil(Math.min(40, Math.ceil(3f * sg / step[axis])) * step[axis]) + 2;
         }
-        if (region != null && gpu.downsampledBlur) {
+        if (region != null && com.nishiyu.enderframelib.core.kernel.Shortcut.GL_DOWNSAMPLED_BLUR.on()) {
             float smax = Math.max(sx, sy);
             int k = 1;
             while (smax / k > 6f && k < 16) k *= 2;

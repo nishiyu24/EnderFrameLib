@@ -51,12 +51,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
                 new com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer[0];
     }
 
-    /** 診断・切り分け用フラグ。 */
-    public static volatile boolean rectTrees = com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_RECT_TREES;
     public static volatile int maxLayerDepth = 32;
-    public static volatile boolean boundedLayers = com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_BOUNDED_LAYERS;
-    public static volatile boolean downsampledBlur = com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_DOWNSAMPLED_BLUR;
-    public static volatile boolean retainedScroll = com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_RETAINED_SCROLL;
 
     private static final long LAYER_VRAM_BUDGET = 512L * 1024 * 1024;
     private static final int ATLAS_SIZE = 1024;
@@ -112,12 +107,10 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private boolean activeMainCleared;
 
     // ---- 損傷範囲（B10）: 差分パッチで書き換えた項目の旧・新の範囲だけを、シザー付きのクリアで描き直す
-    /** 損傷範囲による部分描画を使うか（{@code -Denderframe.gpu.nodamage=true} で無効）。 */
-    static volatile boolean damageEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.GPU_DAMAGE;
 
     /** テスト・診断用: 損傷範囲による部分描画を切り替える。 */
     public static void setDamageEnabled(boolean on) {
-        damageEnabled = on;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GPU_DAMAGE.set(on);
     }
 
     public long partialFrameCount() { return partialFrames; }
@@ -258,7 +251,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         this.fxBlendPipeline = device.createPipeline(new PipelineDesc("fx", true, false));
         this.fxCopyPipeline = device.createPipeline(new PipelineDesc("fx", false, false));
 
-        if (rectTrees) {
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.on()) {
             try {
                 this.rects = new RectStream(device, com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_RECT_CAPACITY);
                 LoggerFactory.getLogger(GpuRenderBackend.class).info(
@@ -403,7 +396,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         boolean ended = false;
         // 前のフレームが主ターゲットへ全部描いて終わっていて、差分パッチの前提（beginDiffPatch と同じ）が揃うなら、
         // 主パスを開くのを遅らせる。パッチが成功すれば範囲だけをクリアして描き直し、失敗したら従来どおり全面
-        boolean mayPartial = damageEnabled && rects != null && prevFrameCleanSinglePass && width == prevPatchWidth && height == prevPatchHeight
+        boolean mayPartial = com.nishiyu.enderframelib.core.kernel.Shortcut.GPU_DAMAGE.on() && rects != null && prevFrameCleanSinglePass && width == prevPatchWidth && height == prevPatchHeight
                 && clearPremul == prevPatchClearPremul && atlas.resets() == prevPatchAtlasResets && retained.isEmpty();
         try {
             if (!mayPartial) {
@@ -460,7 +453,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
 
         if (rects != null && rects.overflows != seenOverflows) {
             seenOverflows = rects.overflows;
-            if (retainedScroll && !retainOverflow) {
+            if (com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on() && !retainOverflow) {
                 retainOverflow = true;
                 releaseRetained();
             }
@@ -825,12 +818,12 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     }
 
     private boolean spanOk() {
-        return rects != null && RectStream.replayEnabled && layerStack.isEmpty();
+        return rects != null && com.nishiyu.enderframelib.core.kernel.Shortcut.GL_REPLAY.on() && layerStack.isEmpty();
     }
 
     @Override
     public boolean snapsScrollOffsets() {
-        return retainedScroll;
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on();
     }
 
     @Override
@@ -1242,7 +1235,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     @Override
     public RetainPlan planScrollLayerBounds(String key, Object token, Matrix2D pose, int x0, int y0, int x1, int y1) {
         RetainPlan NONE = RetainPlan.NONE;
-        if (!retainedScroll || retainOverflow || rects == null || closed || !layerStack.isEmpty()) return NONE;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on() || retainOverflow || rects == null || closed || !layerStack.isEmpty()) return NONE;
         if ((long) (x1 - x0) * (y1 - y0) * 8L < (long) width * height) return NONE;
         Retained r = retained.get(key);
         if (r == null) {

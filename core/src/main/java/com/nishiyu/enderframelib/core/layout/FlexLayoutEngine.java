@@ -443,8 +443,6 @@ public class FlexLayoutEngine extends LayoutEngine {
         return sum;
     }
 
-    /** 切り分け用: false なら、幅が同じでも shrink-to-fit の項目を必ず測り直す（従来の動き）。 */
-    public static volatile boolean skipSameWidthRemeasure = com.nishiyu.enderframelib.core.kernel.EngineFlags.FLEX_SKIP_SAME_WIDTH;
 
     /**
      * 親が渡す幅が違っても、この箱の寸法の決まり方が変わらないか。割合（親の幅が基準）と内在サイズのキーワード
@@ -506,7 +504,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         if (axes.row) {
             boolean sameWidth = Math.abs(child.w - size) <= 0.001f;
             if (!sameWidth || child.sizingMode != SizingMode.DEFINITE) {
-                if (sameWidth && skipSameWidthRemeasure && child.sizingMode == SizingMode.SHRINK_TO_FIT
+                if (sameWidth && com.nishiyu.enderframelib.core.kernel.Shortcut.FLEX_SKIP_SAME_WIDTH.on() && child.sizingMode == SizingMode.SHRINK_TO_FIT
                         && widthIndependentOfParent(child)) {
                     // 仮の測定（shrink-to-fit）で出た幅が、伸縮で決まった幅と同じ。同じ幅で測り直しても同じ箱になるので省く。
                     // 確定測定の状態（DEFINITE）にだけ揃える。測り直しが来なかった項目は、呼び出し側の settleTentative が終わらせる

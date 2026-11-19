@@ -49,9 +49,9 @@ final class DamagePlanner {
         // 色・変形だけが動く項目（hover のトランジションなど）は、項目数が同じなら項目単位で塗り直す
         // （変形は動いた節の子孫の塗り直しに乗る）。不透明度が動く項目（層を要する）や、項目の増減を伴う動きは全面へ戻す
         boolean perItemActivity = backend.prevItems != null && backend.prevItems.size() == n && backend.prevActivity.length == n;
-        int why = backend.prevHadGeometryActive || (backend.prevHadActive && !perItemActivity) ? 1 : !SoftwareRenderBackend.damageEnabled ? 2
+        int why = backend.prevHadGeometryActive || (backend.prevHadActive && !perItemActivity) ? 1 : !com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on() ? 2
                 : (!backend.prevValid || backend.prevItems == null) ? 3
-                : (backend.prevClearColor != backend.clearColor || backend.prevCullOffscreen != SoftwareRenderBackend.cullOffscreen) ? 4
+                : (backend.prevClearColor != backend.clearColor || backend.prevCullOffscreen != com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on()) ? 4
                 : (!stableList(items) || !stableList(backend.prevItems)) ? 5
                 : (backend.frameHadActive && (backend.frameHadGeometryActive || !perItemActivity)) ? 6 : 0;
         if (why != 0) {
@@ -422,7 +422,7 @@ final class DamagePlanner {
         backend.prevActivity = backend.activity;
         backend.activity = ta;
         backend.prevClearColor = backend.clearColor;
-        backend.prevCullOffscreen = SoftwareRenderBackend.cullOffscreen;
+        backend.prevCullOffscreen = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on();
         int[] t = backend.prevExtent;
         backend.prevExtent = backend.curExtent;
         backend.curExtent = t;

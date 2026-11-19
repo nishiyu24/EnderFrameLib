@@ -19,7 +19,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * A16: テキストの節の算出スタイルを親から写す近道（{@link RenderPipeline#TEXT_STYLE_FROM_PARENT}）が、
+ * A16: テキストの節の算出スタイルを親から写す近道（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#TEXT_STYLE_FROM_PARENT}）が、
  * 要素と同じ経路（カスケード＋算出）と同じ結果になるか。WPT の参照比較の入力と同梱の UI 文書のすべてのテキストの箱で比べる。
  */
 class TextNodeStyleEquivalenceTest {
@@ -72,8 +72,8 @@ class TextNodeStyleEquivalenceTest {
     }
 
     private static List<ComputedStyle> textStyles(String html, boolean fromParent) {
-        boolean saved = RenderPipeline.TEXT_STYLE_FROM_PARENT;
-        RenderPipeline.TEXT_STYLE_FROM_PARENT = fromParent;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_STYLE_FROM_PARENT.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_STYLE_FROM_PARENT.set(fromParent);
         try {
             UiDocumentCompiler c = new UiDocumentCompiler();
             Document doc = c.parseDocument(html, "", W, H);
@@ -82,7 +82,7 @@ class TextNodeStyleEquivalenceTest {
             collect(root, out);
             return out;
         } finally {
-            RenderPipeline.TEXT_STYLE_FROM_PARENT = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_STYLE_FROM_PARENT.set(saved);
         }
     }
 

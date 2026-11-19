@@ -76,13 +76,11 @@ class RealDocumentFramesTest {
      * 比べる構成では入れたままにし、画素とヒットテストだけを比べる構成で切る。
      */
     static void setShortcuts(boolean on, boolean scrollNodes) throws ReflectiveOperationException {
-        DisplayListBuilder.STACKING_PATCH_ENABLED = on;
-        DisplayListBuilder.scrollContentNodes = scrollNodes;
-        PaintOrder.STICKY_IN_SCROLL_NODE = scrollNodes;
-        LayoutBox.cutoffEnabled = on;
-        var damage = SoftwareRenderBackend.class.getDeclaredField("damageEnabled");
-        damage.setAccessible(true);
-        damage.setBoolean(null, on);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.STACKING_PATCH.set(on);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(scrollNodes);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.set(scrollNodes);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.set(on);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(on);
     }
 
     // ---- 操作の手順 --------------------------------------------------------------------------------------

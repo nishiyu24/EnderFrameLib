@@ -33,12 +33,6 @@ import java.util.Map;
  */
 public final class PaintSceneDriver {
 
-    /**
-     * 姿勢が動いていない項目の姿勢を、前のフレームのものから使い回すか。自分の変形・不透明度が恒等の葉の項目は、親の姿勢の実体を
-     * そのまま使う（値は親と同じ。動く節の下の全項目の作り直しを避ける。B12）。false なら毎フレーム項目ごとに作り直す
-     * （疑うときの切り分け用。絵は同じでなければならない）。
-     */
-    public static volatile boolean reuseIdlePoses = true;
 
     /** 項目の姿勢（親から引き継いだ変形）と、祖先の不透明度の積。{@code anim} は親の実体を共有する項目では親のもの（項目の値は {@link #animAt}）。 */
     public record Resolved(Matrix2D pose, float opacity, float residual, List<Group> groups, AnimatedValues anim) {}
@@ -46,11 +40,6 @@ public final class PaintSceneDriver {
     /** 不透明度を持つ祖先（グループ）。層にまとめて描き、{@code opacity} を掛けて重ねる。 */
     public record Group(String id, float opacity, int anchor, LayerSpec spec, double[] map, String maskOf, Matrix2D pose) {}
 
-    /**
-     * 記録する保持層の範囲のうち、描かれないと確実に言える先頭・末尾の区間を走査から外すか。false なら全項目を走査する
-     * （疑うときの切り分け用。絵は同じでなければならない）。
-     */
-    public static volatile boolean cullRecordedRanges = com.nishiyu.enderframelib.core.kernel.EngineFlags.CULL_RECORDED_RANGES;
 
     private static final int BLOCK_SHIFT = 6;
     static final int BLOCK = 1 << BLOCK_SHIFT;
@@ -151,7 +140,7 @@ public final class PaintSceneDriver {
 
     /** RECORD の節 {@code c} について、走査から外せる先頭・末尾の区間を求めて {@link #windows} に入れる（外せなければ入れない）。 */
     private void planWindow(List<DisplayItem> items, int c, Painter painter) {
-        if (!cullRecordedRanges) return;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.CULL_RECORDED_RANGES.on()) return;
         RANGE_PLANNED.incrementAndGet();
         RangeBounds rb = boundsFor(items, c);
         if (rb == null) { RANGE_INELIGIBLE.incrementAndGet(); return; }
@@ -178,10 +167,6 @@ public final class PaintSceneDriver {
         RANGE_CULLED_TOTAL.addAndGet(skipped);
     }
 
-    /**
-     * スクロール層の保持を描画側へ問い合わせるか。false なら問い合わせず、毎フレーム全部走査する（疑うときの切り分け用。絵は同じでなければならない）。
-     */
-    public static volatile boolean retainScrollLayers = true;
 
     /** スクロール節（{@code _scrollc}）の id の接尾辞。 */
     public static final String SCROLL_CONTENT_SUFFIX = "_scrollc";
@@ -221,10 +206,6 @@ public final class PaintSceneDriver {
      * 項目の添字で引く外部のキャッシュ（クリップ）が、世代が同じまま差し替わった項目の古い結果を返さないための印。
      */
     private int[] itemVersion = new int[0];
-    /** 切り分け用: false なら、一般のリストの変化は常に索引の作り直しにする（従来の動き）。 */
-    public static volatile boolean patchDiffIndex = com.nishiyu.enderframelib.core.kernel.EngineFlags.PATCH_DIFF_INDEX;
-    /** 切り分け用: false なら、サイズの異なるリストの局所挿入・削除に対する増分索引シフト（patchIndexByShift）を使わず作り直す。 */
-    public static volatile boolean patchShiftIndex = com.nishiyu.enderframelib.core.kernel.EngineFlags.PATCH_SHIFT_INDEX;
     /** 差のある位置の数がこれを超える（項目数に対する割合）なら、差分の更新より作り直しの方が安い。 */
     private static final int PATCH_MAX_DIFF_DIVISOR = 4;
     private static final int MAX_DIFF_PATCH = 32;
@@ -535,7 +516,7 @@ public final class PaintSceneDriver {
             if (insideFxAnchor(items, c)) continue;
             Resolved r = resolveAt(c);
             if (!r.groups().isEmpty() || r.opacity() < 0.999f) continue;
-            RetainPlan decision = retainScrollLayers ? painter.planRetained(items.get(c), c, from, to) : RetainPlan.NONE;
+            RetainPlan decision = com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.on() ? painter.planRetained(items.get(c), c, from, to) : RetainPlan.NONE;
             if (decision == RetainPlan.SKIP) {
                 if (plan == null) {
                     if (planBuf.length < items.size()) planBuf = new RetainPlan[Math.max(items.size(), planBuf.length * 2)];
@@ -719,7 +700,7 @@ public final class PaintSceneDriver {
      */
     private boolean patchIndexByDiff(List<DisplayItem> items) {
         List<DisplayItem> old = indexedItems;
-        if (!patchDiffIndex || old == null || old == items || old.size() != items.size()) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_DIFF_INDEX.on() || old == null || old == items || old.size() != items.size()) return false;
         // 可変のリストは、索引を作ってから中身を書き換えられうる（前回のリストを基準にした差が当てにならない）ので、毎回作り直す。
         // 表示リストは不変のリスト（List.copyOf 系）で届く
         if (!isImmutable(old) || !isImmutable(items)) return false;
@@ -832,7 +813,7 @@ public final class PaintSceneDriver {
         List<DisplayItem> old = indexedItems;
         // 同じ長さでも、途中の並びが入れ替わった（スタッキングコンテキストになった箱の項目が層 8 へ移った。B12）ときは、
         // 差分（patchIndexByDiff）は鍵の食い違いで成り立たない。前後の一致する部分を残して、途中だけを入れ替えとして扱う
-        if (!patchShiftIndex || old == null || old == items) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.on() || old == null || old == items) return false;
         if (!isImmutable(old) || !isImmutable(items)) return false;
         final int seen = indexedEpoch;
 
@@ -1038,7 +1019,7 @@ public final class PaintSceneDriver {
      */
     private boolean patchIndexByMove(List<DisplayItem> items) {
         List<DisplayItem> old = indexedItems;
-        if (!patchShiftIndex || old == null || old == items) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.on() || old == null || old == items) return false;
         if (!isImmutable(old) || !isImmutable(items)) return false;
         final int seen = indexedEpoch;
         int oldN = old.size(), n = items.size();
@@ -1397,12 +1378,12 @@ public final class PaintSceneDriver {
         boolean geometryStatic = idle || st.motionKindAt(now) <= 1;
         Resolved prev = prevRes[i];
         AnimatedValues animVals = null;
-        if (reuseIdlePoses && prev != null && geometryStatic && prevStatic[i] && prevParentRes[i] == parent
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.on() && prev != null && geometryStatic && prevStatic[i] && prevParentRes[i] == parent
                 && ((idle && prevIdle[i]) || prev.anim() == (animVals = st.getInterpolatedValues(now)))) {
             r = prev;
         } else {
             AnimatedValues av = animVals != null ? animVals : st.getInterpolatedValues(now);
-            r = reuseIdlePoses && parent != null && el.type() != ElementType.NODE && identityGeometry(av) ? parent : build(el, i, parent, av);
+            r = com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.on() && parent != null && el.type() != ElementType.NODE && identityGeometry(av) ? parent : build(el, i, parent, av);
             prevRes[i] = r;
             prevParentRes[i] = parent;
             prevStatic[i] = geometryStatic; // 「前回も姿勢が動いていなかった」

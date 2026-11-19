@@ -17,23 +17,23 @@ import org.junit.jupiter.api.Test;
 
 /**
  * flex の項目の主軸の幅が、仮の測定（shrink-to-fit）で出た幅と同じなら測り直しを省く
- * （{@link FlexLayoutEngine#skipSameWidthRemeasure}）と、毎回測り直す場合とで、表示リストが完全に一致すること。
+ * （{@link com.nishiyu.enderframelib.core.kernel.Shortcut#FLEX_SKIP_SAME_WIDTH}）と、毎回測り直す場合とで、表示リストが完全に一致すること。
  * コーパス（忠実度のケース・ショーケース）と、flex / grid の入れ子・割合幅・折り返し・auto マージンを混ぜた乱数の文書で突き合わせる。
  */
 class FlexSameWidthRemeasureTest {
 
     @AfterEach
     void restore() {
-        FlexLayoutEngine.skipSameWidthRemeasure = true;
-        RenderPipeline.FRESH_LAYOUT_PASS_REUSE = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.FLEX_SKIP_SAME_WIDTH.set(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.FRESH_LAYOUT_PASS_REUSE.set(true);
     }
 
     /** 切り替える最適化。flex の再測定の省略と、新品の箱のレイアウトでの同一パス内の測定の再利用。 */
     private static boolean fresh;
 
     private static List<DisplayItem> render(String html, int w, int h, boolean skip) {
-        if (fresh) RenderPipeline.FRESH_LAYOUT_PASS_REUSE = skip;
-        else FlexLayoutEngine.skipSameWidthRemeasure = skip;
+        if (fresh) com.nishiyu.enderframelib.core.kernel.Shortcut.FRESH_LAYOUT_PASS_REUSE.set(skip);
+        else com.nishiyu.enderframelib.core.kernel.Shortcut.FLEX_SKIP_SAME_WIDTH.set(skip);
         StandaloneView v = new StandaloneView(html, w, h, FontResolver.FALLBACK);
         v.ui().flushInvalidation();
         return new ArrayList<>(v.ui().renderCache());

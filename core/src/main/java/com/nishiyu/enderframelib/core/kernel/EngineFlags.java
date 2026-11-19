@@ -4,8 +4,8 @@ package com.nishiyu.enderframelib.core.kernel;
  * エンジンの設定の読み口（ENGINE_REARCHITECTURE_PLAN S1 ①）。{@code enderframe.*} のシステムプロパティを読むのはこのクラスだけで、
  * 各値はクラスの初期化のときに 1 回だけ読む（JVM の起動引数 {@code -D} で決める。実行中に {@code System.setProperty} しても変わらない）。
  *
- * <p>各クラスの切り替えの欄（{@code LayoutBox.cutoffEnabled} など）は、ここの値を初期値に持つ。テストはその欄を直接切り替える
- * （面ごとのフラグへ移すのは S1 ③）。キーの種類と説明の一覧は {@code core/src/test/resources/system-properties.txt}、
+ * <p>近道・切り分けの切り替え（{@link Shortcut}）と文脈の切り替え（{@code ContextFlags}）は、ここの値を初期値に持つ。
+ * 実行中に変えるのはそちら（{@link Shortcut#set} / {@link Shortcut#with}）。キーの種類と説明の一覧は {@code core/src/test/resources/system-properties.txt}、
  * 読み口がここ 1 つであることは {@code SystemPropertyRatchetTest} が見張る。新しい設定はここに足す。</p>
  */
 public final class EngineFlags {

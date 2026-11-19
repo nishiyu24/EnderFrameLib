@@ -26,8 +26,8 @@ class PaintSceneDriverShiftPatchTest {
 
     @AfterEach
     void restore() {
-        PaintSceneDriver.patchShiftIndex = true;
-        PaintSceneDriver.patchDiffIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_DIFF_INDEX.set(true);
     }
 
     private static String baseHtml(int rowCount) {
@@ -102,16 +102,16 @@ class PaintSceneDriverShiftPatchTest {
         PaintSceneDriver rebuilt = new PaintSceneDriver("drv-rebuild-inserted");
 
         // フレーム 0
-        PaintSceneDriver.patchShiftIndex = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(false);
         List<String> expect0 = trace(rebuilt, frames.get(0), 1000);
-        PaintSceneDriver.patchShiftIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
         List<String> actual0 = trace(shifted, frames.get(0), 1000);
         assertEquals(expect0, actual0);
 
         // フレーム 1 (サイズ増加)
-        PaintSceneDriver.patchShiftIndex = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(false);
         List<String> expect1 = trace(rebuilt, frames.get(1), 1016);
-        PaintSceneDriver.patchShiftIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
         List<String> actual1 = trace(shifted, frames.get(1), 1016);
         assertEquals(expect1, actual1, "挿入フレームの走査結果が毎回再構築と完全一致すること");
         assertTrue(frames.get(1).size() > frames.get(0).size(), "項目数が増加していること");
@@ -144,16 +144,16 @@ class PaintSceneDriverShiftPatchTest {
         PaintSceneDriver rebuilt = new PaintSceneDriver("drv-rebuild-removed");
 
         // フレーム 0
-        PaintSceneDriver.patchShiftIndex = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(false);
         List<String> expect0 = trace(rebuilt, frames.get(0), 1000);
-        PaintSceneDriver.patchShiftIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
         List<String> actual0 = trace(shifted, frames.get(0), 1000);
         assertEquals(expect0, actual0);
 
         // フレーム 1 (サイズ減少)
-        PaintSceneDriver.patchShiftIndex = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(false);
         List<String> expect1 = trace(rebuilt, frames.get(1), 1016);
-        PaintSceneDriver.patchShiftIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
         List<String> actual1 = trace(shifted, frames.get(1), 1016);
         assertEquals(expect1, actual1, "削除フレームの走査結果が毎回再構築と完全一致すること");
         assertTrue(frames.get(1).size() < frames.get(0).size(), "項目数が減少していること");
@@ -192,9 +192,9 @@ class PaintSceneDriverShiftPatchTest {
         trace(rebuilt, frames.get(0), 1000);
         trace(shifted, frames.get(0), 1000);
 
-        PaintSceneDriver.patchShiftIndex = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(false);
         List<String> expect = trace(rebuilt, frames.get(1), 1016);
-        PaintSceneDriver.patchShiftIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
         List<String> actual = trace(shifted, frames.get(1), 1016);
         assertEquals(expect, actual, "先頭挿入フレームの走査結果が一致すること");
     }
@@ -232,9 +232,9 @@ class PaintSceneDriverShiftPatchTest {
         trace(rebuilt, frames.get(0), 1000);
         trace(shifted, frames.get(0), 1000);
 
-        PaintSceneDriver.patchShiftIndex = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(false);
         List<String> expect = trace(rebuilt, frames.get(1), 1016);
-        PaintSceneDriver.patchShiftIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
         List<String> actual = trace(shifted, frames.get(1), 1016);
         assertEquals(expect, actual, "末尾挿入フレームの走査結果が一致すること");
     }
@@ -268,9 +268,9 @@ class PaintSceneDriverShiftPatchTest {
         trace(rebuilt, frames.get(0), 1000);
         trace(shifted, frames.get(0), 1000);
 
-        PaintSceneDriver.patchShiftIndex = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(false);
         List<String> expect = trace(rebuilt, frames.get(1), 1016);
-        PaintSceneDriver.patchShiftIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
         List<String> actual = trace(shifted, frames.get(1), 1016);
         assertEquals(expect, actual, "先頭削除フレームの走査結果が一致すること");
     }
@@ -304,9 +304,9 @@ class PaintSceneDriverShiftPatchTest {
         trace(rebuilt, frames.get(0), 1000);
         trace(shifted, frames.get(0), 1000);
 
-        PaintSceneDriver.patchShiftIndex = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(false);
         List<String> expect = trace(rebuilt, frames.get(1), 1016);
-        PaintSceneDriver.patchShiftIndex = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
         List<String> actual = trace(shifted, frames.get(1), 1016);
         assertEquals(expect, actual, "末尾削除フレームの走査結果が一致すること");
     }
@@ -374,10 +374,10 @@ class PaintSceneDriverShiftPatchTest {
         long t = 5000;
         for (int f = 0; f < frames.size(); f++) {
             t += 16;
-            PaintSceneDriver.patchShiftIndex = false;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(false);
             List<String> expect = trace(rebuilt, frames.get(f), t);
 
-            PaintSceneDriver.patchShiftIndex = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.PATCH_SHIFT_INDEX.set(true);
             List<String> actual = trace(shifted, frames.get(f), t);
 
             assertEquals(expect, actual, "ランダム操作列 frame " + f + " で走査結果が一致すること");

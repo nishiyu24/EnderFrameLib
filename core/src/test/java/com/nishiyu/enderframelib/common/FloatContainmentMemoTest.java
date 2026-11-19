@@ -44,21 +44,21 @@ public class FloatContainmentMemoTest {
             "display:none", "overflow:hidden", "display:inline-block", "float:none", "display:flex"};
 
     /** テスト JVM は検証モード常時有効（走査し直すため速度は測れない）。ベンチの間だけ切る。 */
-    private static final boolean VERIFY_DEFAULT = BlockLayoutEngine.verifyFloatMemo;
+    private static final boolean VERIFY_DEFAULT = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.on();
 
     @AfterEach
     public void restore() {
-        BlockLayoutEngine.floatMemoEnabled = true;
-        BlockLayoutEngine.verifyFloatMemo = VERIFY_DEFAULT;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.FLOAT_MEMO.set(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(VERIFY_DEFAULT);
     }
 
     @Test
     public void memoGivesTheSameDisplayListAsScanningEveryTime() {
         long hitsBefore = BlockLayoutEngine.floatMemoHits;
         for (long seed = 1; seed <= 16; seed++) {
-            BlockLayoutEngine.floatMemoEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.FLOAT_MEMO.set(true);
             List<List<String>> memo = MutationScenario.run(HTML, CLASSES, STYLES, seed, 70);
-            BlockLayoutEngine.floatMemoEnabled = false;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.FLOAT_MEMO.set(false);
             List<List<String>> scan = MutationScenario.run(HTML, CLASSES, STYLES, seed, 70);
             assertEquals(scan.size(), memo.size());
             for (int step = 0; step < scan.size(); step++) {
@@ -91,7 +91,7 @@ public class FloatContainmentMemoTest {
     /** 前後比較（CPU 時間、1 フレームごとに交互。表示するだけで、合否には使わない）。 */
     @Test
     public void benchmarkTextPatchInLargeDocument() {
-        BlockLayoutEngine.verifyFloatMemo = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(false);
         ThreadMXBean mx = ManagementFactory.getThreadMXBean();
         StringBuilder html = new StringBuilder("<style>body{margin:0;font-size:12px}.row{height:16px}#hud{width:200px;height:20px}</style><div id=hud><span id=hp>0</span></div>");
         for (int i = 0; i < 480; i++) html.append("<div class=row><span>item ").append(i).append("</span> <b>x</b></div>");
@@ -100,7 +100,7 @@ public class FloatContainmentMemoTest {
         long[] ns = new long[2];
         for (int i = 0; i < 1200; i++) {
             int mode = i & 1;
-            BlockLayoutEngine.floatMemoEnabled = mode == 0;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.FLOAT_MEMO.set(mode == 0);
             hp.updateTextContent("HP " + i);
             long t0 = System.nanoTime();
             v.ui().flushInvalidation();
@@ -115,7 +115,7 @@ public class FloatContainmentMemoTest {
      */
     @Test
     public void benchmarkTextPatchIn1500DomRows() {
-        BlockLayoutEngine.verifyFloatMemo = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(false);
         ThreadMXBean mx = ManagementFactory.getThreadMXBean();
         StandaloneView v = new StandaloneView("<style>body{margin:0;font-size:12px}.row{height:16px}#hud{width:200px;height:20px}</style><div id=hud><span id=hp>0</span></div><div id=inv></div>",
                 800, 600, FontResolver.FALLBACK);
@@ -135,7 +135,7 @@ public class FloatContainmentMemoTest {
         long hits0 = 0, scans0 = 0, hitsMemo = 0, scansMemo = 0;
         for (int i = 0; i < 1500; i++) {
             int mode = i & 1;
-            BlockLayoutEngine.floatMemoEnabled = mode == 0;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.FLOAT_MEMO.set(mode == 0);
             hp.updateTextContent("HP " + i);
             hits0 = BlockLayoutEngine.floatMemoHits; scans0 = BlockLayoutEngine.floatMemoScans;
             long t0 = System.nanoTime();

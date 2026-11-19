@@ -24,12 +24,12 @@ class PaintSceneDriverRangeCullTest {
     /** ドライバの範囲カリングを見るので、ビルダーの窓付きの表示リスト（画面外の箱の項目を作らない）は切って、全件のリストを渡す。 */
     @BeforeEach
     void noWindow() {
-        DisplayListBuilder.WINDOWED_ENABLED = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.set(false);
     }
 
     @AfterEach
     void restoreWindow() {
-        DisplayListBuilder.WINDOWED_ENABLED = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.set(true);
     }
 
     private static final double PAD = 128;
@@ -91,12 +91,12 @@ class PaintSceneDriverRangeCullTest {
         r.endOk = endOk;
         r.plan = plan;
         PaintSceneDriver d = new PaintSceneDriver("rangecull-" + SEQ.incrementAndGet());
-        boolean was = PaintSceneDriver.cullRecordedRanges;
-        PaintSceneDriver.cullRecordedRanges = cull;
+        boolean was = com.nishiyu.enderframelib.core.kernel.Shortcut.CULL_RECORDED_RANGES.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.CULL_RECORDED_RANGES.set(cull);
         try {
             d.run(items, 1000, Matrix2D.IDENTITY, r);
         } finally {
-            PaintSceneDriver.cullRecordedRanges = was;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.CULL_RECORDED_RANGES.set(was);
         }
         return new Result(r, d);
     }
@@ -267,8 +267,8 @@ class PaintSceneDriverRangeCullTest {
         List<DisplayItem> items = items(html(400, ""));
         Result baseline = run(items, 0, 240, true, true, RetainPlan.RECORD);
         int from = baseline.rec.from, to = baseline.rec.to;
-        boolean was = PaintSceneDriver.retainScrollLayers;
-        PaintSceneDriver.retainScrollLayers = false;
+        boolean was = com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.set(false);
         try {
             Result on = run(items, 0, 240, true, true, RetainPlan.NONE);
             Result off = run(items, 0, 240, false, true, RetainPlan.NONE);
@@ -278,7 +278,7 @@ class PaintSceneDriverRangeCullTest {
             assertTrue(on.driver.rangeCulledItems() > 300, "retainScrollLayers 無効時でも画面外ブロック除外が働く: " + on.driver.rangeCulledItems());
             assertTrue(on.rec.log.isEmpty());
         } finally {
-            PaintSceneDriver.retainScrollLayers = was;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.set(was);
         }
     }
 }

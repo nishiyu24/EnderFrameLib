@@ -31,8 +31,8 @@ class RectTreesBackendTest {
     }
 
     private static int[] render(String html, int w, int h, float dpr, boolean trees, long[] stats) {
-        boolean saved = LwjglGlRenderBackend.rectTrees;
-        LwjglGlRenderBackend.rectTrees = trees;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.set(trees);
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(w, h, dpr)) {
             SoftwareRendering.renderHtml(html, w, h, T0, g);
             if (stats != null) {
@@ -44,7 +44,7 @@ class RectTreesBackendTest {
             }
             return g.pixmap().pixels().clone();
         } finally {
-            LwjglGlRenderBackend.rectTrees = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.set(saved);
         }
     }
 
@@ -244,8 +244,8 @@ class RectTreesBackendTest {
         String html = showcase();
         double[] ms = new double[2];
         for (int mode = 0; mode < 2; mode++) {
-            boolean saved = LwjglGlRenderBackend.rectTrees;
-            LwjglGlRenderBackend.rectTrees = mode == 1;
+            boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.on();
+            com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.set(mode == 1);
             try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(900, 700)) {
                 for (int i = 0; i < 30; i++) SoftwareRendering.renderHtml(html, 900, 700, T0, g);
                 long t0 = System.nanoTime();
@@ -254,7 +254,7 @@ class RectTreesBackendTest {
                 g.pixmap(); // GPU の仕事の完了まで含める
                 ms[mode] = (System.nanoTime() - t0) / 1e6 / n;
             } finally {
-                LwjglGlRenderBackend.rectTrees = saved;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.set(saved);
             }
         }
         System.out.println("RECT-TREES frame: cpu " + String.format("%.2f", ms[0]) + " ms; gpu trees "
@@ -264,8 +264,8 @@ class RectTreesBackendTest {
     @Test
     void steadyFramesUploadNothingToTheTrees() {
         requireGl();
-        boolean saved = LwjglGlRenderBackend.rectTrees;
-        LwjglGlRenderBackend.rectTrees = true;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.set(true);
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(240, 180)) {
             SoftwareRendering.renderHtml(MIXED, 240, 180, T0, g);
             int[] first = g.pixmap().pixels().clone();
@@ -274,7 +274,7 @@ class RectTreesBackendTest {
             assertArrayEquals(first, g.pixmap().pixels());
             assertEquals(shapes * 2, g.rectTreeShapes(), "2 回目も同じ数を受け付ける");
         } finally {
-            LwjglGlRenderBackend.rectTrees = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RECT_TREES.set(saved);
         }
     }
 }

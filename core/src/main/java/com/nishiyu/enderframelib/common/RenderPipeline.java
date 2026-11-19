@@ -128,8 +128,6 @@ public class RenderPipeline {
      * 箱は DOM の節ごとに使い回し、中身も入力も前回と同じ部分木は measure を飛ばす。
      * 結果は全部を作り直したときと同じ（{@code IncrementalLayoutTest} が確かめる）。
      */
-    /** 切り分け用: 前回の箱が無い（新品の箱の）レイアウトでも、同じパスの中の同一入力の測定を使い回す。 */
-    public static volatile boolean FRESH_LAYOUT_PASS_REUSE = com.nishiyu.enderframelib.core.kernel.EngineFlags.FRESH_LAYOUT_PASS_REUSE;
 
     public static LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
                                            ScrollState scrollState, FontResolver fonts, InteractionState interactionState,
@@ -187,7 +185,7 @@ public class RenderPipeline {
             long tD = System.nanoTime();
             runLayoutPasses(rootBox, doc, env, effectiveState, rootW, rootH,
                     doc.sheet.mediaEnvironment().resolution(), scrollState, fonts,
-                    incremental || FRESH_LAYOUT_PASS_REUSE, true, false);
+                    incremental || com.nishiyu.enderframelib.core.kernel.Shortcut.FRESH_LAYOUT_PASS_REUSE.on(), true, false);
             long tE = System.nanoTime();
             long aE = track ? threadAllocatedBytes() : 0;
             stats().phases = "build=" + (tB - tA) / 1_000_000 + " boxTree=" + (tC - tB) / 1_000_000 + " mark=" + (tD - tC) / 1_000_000
@@ -199,8 +197,6 @@ public class RenderPipeline {
         return rootBox;
     }
 
-    /** 切り分け用: {@code -Denderframe.layout.noresizeskip=true} で、幅変更でも毎回スタイルと箱の木を組み直す。 */
-    public static volatile boolean RESIZE_SKIP_REBUILD = com.nishiyu.enderframelib.core.kernel.EngineFlags.RESIZE_SKIP_REBUILD;
 
     private static final java.util.concurrent.atomic.AtomicLong RESIZE_SKIPS = new java.util.concurrent.atomic.AtomicLong();
 
@@ -215,7 +211,7 @@ public class RenderPipeline {
      * ビューポートに依らないとき、ルート以外の算出スタイルも箱の木も前回のまま正しい。
      */
     private static boolean canSkipRebuild(Document doc, LayoutBox previousRoot, int rootW, int rootH, InteractionState state) {
-        if (!RESIZE_SKIP_REBUILD || previousRoot == null || previousRoot.node != doc.root || previousRoot.hasStructuralPending) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.RESIZE_SKIP_REBUILD.on() || previousRoot == null || previousRoot.node != doc.root || previousRoot.hasStructuralPending) return false;
         InteractionState.StateFlags rootFlags = state.get(previousRoot.node);
         if (rootFlags == null || rootFlags.computedStyle == null || rootFlags.isStyleDirty() || rootFlags.subtreeDirty()
                 || rootFlags.dirtyBelow() || state.hasDirtyNodes()) {
@@ -832,8 +828,6 @@ public class RenderPipeline {
                         (StateLookup) n -> n == node ? ElementState.of(bits) : interactionState.stateOf(n), workerShare));
     }
 
-    /** 切り分け用: false ならテキストの節も要素と同じ経路（カスケード＋算出）で解く（結果は同じになるはず）。 */
-    public static volatile boolean TEXT_STYLE_FROM_PARENT = com.nishiyu.enderframelib.core.kernel.EngineFlags.TEXT_STYLE_FROM_PARENT;
 
     /**
      * A16: テキストの節の算出スタイル。テキストの節には規則が当たらず親から継承するだけなので、親の算出スタイルから
@@ -844,7 +838,7 @@ public class RenderPipeline {
      */
     static ComputedStyle.TextChild textNodeStyle(HtmlNode node, Map<String, String> inheritedStyle,
                                                          StyleSheet sheet, float parentFontSize, StyleScope scope) {
-        if (!TEXT_STYLE_FROM_PARENT || node.nodeType != NodeType.TEXT || sheet == null
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_STYLE_FROM_PARENT.on() || node.nodeType != NodeType.TEXT || sheet == null
                 || !sheet.registeredProperties.isEmpty()) return null;
         ComputedStyle parent = ComputedStyle.ownerOf(inheritedStyle);
         if (parent == null || Float.compare(parent.fontSizePx(), parentFontSize) != 0
@@ -1190,7 +1184,7 @@ public class RenderPipeline {
         List<LayoutBox> kids = box.elementChildren;
         int kn = kids.size();
         if (!siblingInvalidation && kn >= LayoutTaskPool.PARALLEL_THRESHOLD
-                && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+                && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
             final int[] workIdx = borrowWorkTable(kn);
             final int[] workForce = borrowWorkTable(kn);
             try {

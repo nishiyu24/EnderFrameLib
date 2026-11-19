@@ -25,11 +25,11 @@ class TextSetupReuseTest {
 
     @AfterEach
     void restore() {
-        SoftwareRenderBackend.textSetupReuse = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_SETUP_REUSE.set(true);
     }
 
     private static int[] frames(boolean reuse, String html, String html2) {
-        SoftwareRenderBackend.textSetupReuse = reuse;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_SETUP_REUSE.set(reuse);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(360, 300, 1f)) {
             SoftwareRendering.renderHtml(html, 360, 300, T0, b);
             SoftwareRendering.renderHtml(html, 360, 300, T0 + 16, b); // 同じ画面をもう一度（覚えた下ごしらえを使う）

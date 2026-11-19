@@ -249,14 +249,14 @@ public class IncrementalLayoutFuzzTest {
 
     @Test
     public void measureReuseAloneMatchesFullRebuild() {
-        LayoutBox.keepPlacements = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.KEEP_PLACEMENTS.set(false);
         try {
             for (long seed = 1; seed <= 150; seed++) {
                 run(seed, false);
                 run(seed, true);
             }
         } finally {
-            LayoutBox.keepPlacements = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.KEEP_PLACEMENTS.set(true);
         }
     }
 

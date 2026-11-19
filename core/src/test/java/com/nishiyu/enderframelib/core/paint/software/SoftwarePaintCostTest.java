@@ -34,9 +34,9 @@ class SoftwarePaintCostTest {
     }
 
     private static int[] render(List<DisplayItem> items, int w, int h, boolean fast, boolean tiled) {
-        boolean savedFast = SoftwareRenderBackend.fastSolid, savedTiled = TileQueue.tiled;
-        SoftwareRenderBackend.fastSolid = fast;
-        TileQueue.tiled = tiled;
+        boolean savedFast = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.on(), savedTiled = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_TILED.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.set(fast);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_TILED.set(tiled);
         try {
             SoftwareRenderBackend cpu = new SoftwareRenderBackend(w, h, 1f);
             try {
@@ -46,8 +46,8 @@ class SoftwarePaintCostTest {
                 cpu.close();
             }
         } finally {
-            SoftwareRenderBackend.fastSolid = savedFast;
-            TileQueue.tiled = savedTiled;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.set(savedFast);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_TILED.set(savedTiled);
         }
     }
 
@@ -124,8 +124,8 @@ class SoftwarePaintCostTest {
             assertSame("乱数 " + doc, its, 640, 480);
             // 命令の置き場を使い回す（2 フレーム目以降は前のフレームの命令を再利用する）。何度目のフレームも毎回新しく作った基準と一致する
             int[] base = render(its, 640, 480, false, false);
-            SoftwareRenderBackend.fastSolid = true;
-            TileQueue.tiled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.set(true);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_TILED.set(true);
             SoftwareRenderBackend reuse = new SoftwareRenderBackend(640, 480, 1f);
             try {
                 for (int frame = 0; frame < 4; frame++) {
@@ -162,9 +162,9 @@ class SoftwarePaintCostTest {
     }
 
     private static double frameMs(List<DisplayItem> items, boolean fast, boolean tiled) {
-        boolean savedFast = SoftwareRenderBackend.fastSolid, savedTiled = TileQueue.tiled;
-        SoftwareRenderBackend.fastSolid = fast;
-        TileQueue.tiled = tiled;
+        boolean savedFast = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.on(), savedTiled = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_TILED.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.set(fast);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_TILED.set(tiled);
         SoftwareRenderBackend cpu = new SoftwareRenderBackend(800, 600, 1f);
         try {
             long now = 1000;
@@ -176,8 +176,8 @@ class SoftwarePaintCostTest {
             return ms;
         } finally {
             cpu.close();
-            SoftwareRenderBackend.fastSolid = savedFast;
-            TileQueue.tiled = savedTiled;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_FAST_SOLID.set(savedFast);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_TILED.set(savedTiled);
         }
     }
 }

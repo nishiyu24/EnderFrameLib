@@ -49,8 +49,8 @@ class PartialRepaintPixelTest {
      * {@code seed} の手順を {@code steps} 手進める。{@code damage} が false なら毎フレーム全面描画（比較の基準）。
      */
     private static Run run(boolean damage, long seed, int steps) {
-        boolean saved = SoftwareRenderBackend.damageEnabled;
-        SoftwareRenderBackend.damageEnabled = damage;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(damage);
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
             List<int[]> frames = new ArrayList<>();
@@ -122,7 +122,7 @@ class PartialRepaintPixelTest {
             return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
         } finally {
             view.close();
-            SoftwareRenderBackend.damageEnabled = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
         }
     }
 
@@ -152,8 +152,8 @@ class PartialRepaintPixelTest {
 
     /** ホバーで背景色のトランジションを始め、40 フレーム（800ms）進める。 */
     private static Run animationRun(boolean damage) {
-        boolean saved = SoftwareRenderBackend.damageEnabled;
-        SoftwareRenderBackend.damageEnabled = damage;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(damage);
         StandaloneView view = new StandaloneView(animationHtml(), W, H, FontResolver.FALLBACK);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
             List<int[]> frames = new ArrayList<>();
@@ -168,7 +168,7 @@ class PartialRepaintPixelTest {
             return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
         } finally {
             view.close();
-            SoftwareRenderBackend.damageEnabled = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
         }
     }
 
@@ -186,8 +186,8 @@ class PartialRepaintPixelTest {
 
     /** {@code #a} へ hover を当て、{@code frames} フレーム進めたあと外す（外す遷移も含む）。 */
     private static Run hoverRun(String html, boolean damage, int frames) {
-        boolean saved = SoftwareRenderBackend.damageEnabled;
-        SoftwareRenderBackend.damageEnabled = damage;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(damage);
         StandaloneView view = new StandaloneView(html, W, H, FontResolver.FALLBACK);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
             List<int[]> out = new ArrayList<>();
@@ -208,7 +208,7 @@ class PartialRepaintPixelTest {
             return new Run(out, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
         } finally {
             view.close();
-            SoftwareRenderBackend.damageEnabled = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
         }
     }
 
@@ -274,8 +274,8 @@ class PartialRepaintPixelTest {
 
     /** 表示リストが変わらないキーフレームだけが進むフレーム。差分描画は全面へ戻らなければならない。 */
     private static Run keyframeRun(boolean damage) {
-        boolean saved = SoftwareRenderBackend.damageEnabled;
-        SoftwareRenderBackend.damageEnabled = damage;
+        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(damage);
         StandaloneView view = new StandaloneView(keyframeHtml(), W, H, FontResolver.FALLBACK);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
             List<int[]> frames = new ArrayList<>();
@@ -287,7 +287,7 @@ class PartialRepaintPixelTest {
             return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
         } finally {
             view.close();
-            SoftwareRenderBackend.damageEnabled = saved;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
         }
     }
 

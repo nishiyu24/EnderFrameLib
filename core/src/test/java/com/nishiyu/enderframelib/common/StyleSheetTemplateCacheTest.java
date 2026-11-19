@@ -14,14 +14,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * 解析済みスタイルシートの雛形のキャッシュ（{@link DocumentLoader#sheetTemplateCache}）が、毎回解析する場合と
+ * 解析済みスタイルシートの雛形のキャッシュ（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#SHEET_CACHE}）が、毎回解析する場合と
  * 同じシート・同じ描画を返し、写しどうしが互いに影響しないこと。
  */
 class StyleSheetTemplateCacheTest {
 
     @AfterEach
     void restore() {
-        DocumentLoader.sheetTemplateCache = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SHEET_CACHE.set(true);
     }
 
     /** シートの中身を、規則の順・詳細度・宣言・状態・メディア・レイヤーまで文字列にする。 */
@@ -59,9 +59,9 @@ class StyleSheetTemplateCacheTest {
     @Test
     void cachedSheetsHaveTheSameContentAsFreshlyParsedOnes() {
         for (int[] vp : new int[][]{{320, 200}, {800, 600}, {200, 200}}) {
-            DocumentLoader.sheetTemplateCache = false;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SHEET_CACHE.set(false);
             String fresh = dump(DocumentLoader.buildStyleSheet(CSS, vp[0], vp[1]));
-            DocumentLoader.sheetTemplateCache = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.SHEET_CACHE.set(true);
             String first = dump(DocumentLoader.buildStyleSheet(CSS, vp[0], vp[1])); // 雛形を作る
             String second = dump(DocumentLoader.buildStyleSheet(CSS, vp[0], vp[1])); // 雛形の写し
             assertEquals(fresh, first, "初回 @" + vp[0]);
@@ -71,7 +71,7 @@ class StyleSheetTemplateCacheTest {
 
     @Test
     void copiesAreIndependent() {
-        DocumentLoader.sheetTemplateCache = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SHEET_CACHE.set(true);
         StyleSheet a = DocumentLoader.buildStyleSheet(CSS, 800, 600);
         StyleSheet b = DocumentLoader.buildStyleSheet(CSS, 800, 600);
         StyleSheet c = DocumentLoader.buildStyleSheet(CSS, 800, 600);
@@ -104,7 +104,7 @@ class StyleSheetTemplateCacheTest {
     }
 
     private static List<DisplayItem> render(String html, int w, int h, boolean cache) {
-        DocumentLoader.sheetTemplateCache = cache;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SHEET_CACHE.set(cache);
         StandaloneView v = new StandaloneView(html, w, h, FontResolver.FALLBACK);
         v.ui().flushInvalidation();
         return new ArrayList<>(v.ui().renderCache());

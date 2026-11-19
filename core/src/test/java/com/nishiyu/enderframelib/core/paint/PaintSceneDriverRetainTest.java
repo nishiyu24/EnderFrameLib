@@ -86,12 +86,12 @@ class PaintSceneDriverRetainTest {
     void noneDrawsEverythingLikeBefore() {
         List<DisplayItem> items = items(html(false));
         Rec none = run(items, RetainPlan.NONE, true);
-        PaintSceneDriver.retainScrollLayers = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.set(false);
         Rec off;
         try {
             off = run(items, RetainPlan.NONE, true);
         } finally {
-            PaintSceneDriver.retainScrollLayers = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.set(true);
         }
         assertEquals(off.drawn, none.drawn, "問い合わせの有無で走査は変わらない");
         assertEquals(0, off.planCalls);

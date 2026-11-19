@@ -22,7 +22,7 @@ class ViewportWidthFreeReuseTest {
 
     @AfterEach
     void restore() {
-        LayoutBox.viewportWidthFreeReuse = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VIEWPORT_WIDTH_FREE_REUSE.set(true);
     }
 
     private static String dump(LayoutBox b) {
@@ -75,12 +75,12 @@ class ViewportWidthFreeReuseTest {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         var doc = parser.parseDocument(html(), "", 800, H);
 
-        LayoutBox.viewportWidthFreeReuse = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VIEWPORT_WIDTH_FREE_REUSE.set(false);
         long c0 = LayoutBox.measurementsComputed();
         List<String> off = chain(parser, doc);
         long offCount = LayoutBox.measurementsComputed() - c0;
 
-        LayoutBox.viewportWidthFreeReuse = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VIEWPORT_WIDTH_FREE_REUSE.set(true);
         long c1 = LayoutBox.measurementsComputed();
         List<String> on = chain(parser, doc);
         long onCount = LayoutBox.measurementsComputed() - c1;

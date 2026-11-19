@@ -55,7 +55,7 @@ class StackingSubtreePatchTest {
 
     @AfterEach
     void restore() {
-        DisplayListBuilder.STACKING_PATCH_ENABLED = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.STACKING_PATCH.set(true);
         DisplayListBuilder.WINDOW_MIN_OWNERS = Integer.getInteger("enderframe.paint.windowmin", 800);
     }
 
@@ -85,7 +85,7 @@ class StackingSubtreePatchTest {
 
     /** 操作列を流す。{@code rows} 行を足すと窓付きの表示リストになる（{@code windowMin} を小さくする）。 */
     static Run run(boolean stackPatch, com.nishiyu.enderframelib.core.paint.RenderBackend backend, String doc) {
-        DisplayListBuilder.STACKING_PATCH_ENABLED = stackPatch;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.STACKING_PATCH.set(stackPatch);
         long hits0 = DisplayListBuilder.STAT_STACKING_PATCH_HITS.sum();
         long moves0 = PaintSceneDriver.STAT_MOVE_PATCHES.sum();
         List<List<DisplayItem>> lists = new ArrayList<>();

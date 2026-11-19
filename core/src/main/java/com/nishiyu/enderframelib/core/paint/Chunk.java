@@ -52,7 +52,7 @@ final class Chunk {
         int cap = Math.max(1, Math.min(boxCount, 16));
         this.blockSlices = new ArrayList<>(cap);
         this.inlineSlices = new ArrayList<>(cap);
-        if (DisplayListBuilder.verifyStamps) {
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on()) {
             this.blockItems = new ArrayList<>();
             this.inlineItems = new ArrayList<>();
         } else {

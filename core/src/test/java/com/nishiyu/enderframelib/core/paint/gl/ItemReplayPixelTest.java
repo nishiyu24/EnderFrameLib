@@ -45,7 +45,7 @@ class ItemReplayPixelTest {
 
     @AfterEach
     void restore() {
-        RectStream.replayEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_REPLAY.set(true);
     }
 
     private static void requireGl() {
@@ -58,7 +58,7 @@ class ItemReplayPixelTest {
 
     /** 操作列を流し、毎フレームの画素を集める。{@code replay} が false なら再生を止める。 */
     private static List<int[]> run(boolean replay, long[] stats) {
-        RectStream.replayEnabled = replay;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_REPLAY.set(replay);
         List<int[]> out = new ArrayList<>();
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(W, H);
              StandaloneView v = new StandaloneView(DOC, W, H, FontResolver.FALLBACK)) {

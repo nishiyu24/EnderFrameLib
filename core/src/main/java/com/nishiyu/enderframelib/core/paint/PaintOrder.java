@@ -173,8 +173,6 @@ public final class PaintOrder {
     /** 記憶と部分木の掃除は、毎回ではなくこの回数に 1 度（木から消えた箱の分が少し残るだけで、結果には響かない）。 */
     static final int SWEEP_EVERY = 8;
 
-    /** 切り分け用: false なら部分木の保持を使わない（結果は同じでなければならない。{@code -Denderframe.paint.nochunks=true} でも切れる）。 */
-    static volatile boolean chunksEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.PAINT_CHUNKS;
     /** 1 つの部分木に含める箱の上限。これを超える部分木は保持せず、子ごとに判断する。 */
     static final int CHUNK_MAX_BOXES = 128;
     /** 診断: 部分木を再利用した回数・新しく記録した回数の累計。 */
@@ -267,7 +265,7 @@ public final class PaintOrder {
      * 描画のとき（属性の変更は印に出ないので、呼び出し側が有効にする）。
      */
     void beginRender(int serial, long epoch, int generation, boolean enabled, boolean replay) {
-        chunksOn = chunksEnabled && enabled;
+        chunksOn = com.nishiyu.enderframelib.core.kernel.Shortcut.PAINT_CHUNKS.on() && enabled;
         replayAllowed = replay;
         renderSerial = serial;
         renderEpoch = epoch;
@@ -350,7 +348,7 @@ public final class PaintOrder {
                     && c.parentRelative == parentRelative && c.parentOriginX == curPox && c.parentOriginY == curPoy
                     && scanCount == c.boxCount && scanInteractive == c.interactiveCount
                     && Math.max(scanMaxStamp, box.pathPaintStamp(renderSerial)) <= c.epoch) {
-                if (DisplayListBuilder.verifyStamps) verifyChunk(c, box, clip, parentId, ancestorMoving);
+                if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on()) verifyChunk(c, box, clip, parentId, ancestorMoving);
                 c.generation = renderGeneration;
                 for (int i = 0, n = c.blockSlices.size(); i < n; i++) {
                     BoxSlice slice = c.blockSlices.get(i);
@@ -507,8 +505,6 @@ public final class PaintOrder {
      * スクロールするだけで中身が正しく動くコンテナか: スクロールコンテナで、中身に sticky・固定配置・包含ブロックがコンテナの外の
      * 絶対配置（スクロールに動かされない）が無い。そうした子孫があると、中身の節を動かすと位置が合わないので、従来の作り直しにする。
      */
-    /** 切り分け用（テストが切り替える）: false なら sticky を含むコンテナは従来どおり節にまとめない（作り直す）。 */
-    static volatile boolean STICKY_IN_SCROLL_NODE = true;
 
     private boolean scrollsAsOneNode(LayoutBox box) {
         if (box.isAnonymous || box.w <= 0 || box.h <= 0 || !box.isScrollContainer()) return false;
@@ -561,7 +557,7 @@ public final class PaintOrder {
             // sticky は、上の inset だけで、いちばん近いスクロールコンテナがこのコンテナで、sticky の中の sticky でなければ、
             // 節の移動に貼り付きのずれの増減を足して表せる（B12）。それ以外は従来どおり作り直す
             if (child.isSticky) {
-                if (!STICKY_IN_SCROLL_NODE || underSticky || child.stickyScrollParams(container, rootW, rootH) == null) return true;
+                if (!com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.on() || underSticky || child.stickyScrollParams(container, rootW, rootH) == null) return true;
                 if (scanStickies == null) scanStickies = new ArrayList<>(2);
                 scanStickies.add(child);
                 if (hasUnscrollableDescendant(container, child, true)) return true;
@@ -771,7 +767,7 @@ public final class PaintOrder {
         contentClips.put(box, childClip);
         // 匿名ボックスは描くものを持たない。子の持ち主は匿名ボックスの外の要素のまま
         String childParent = "root".equals(tag) ? null : box.isAnonymous ? parentId : box.node.key();
-        if (DisplayListBuilder.scrollContentNodes && scrollsAsOneNode(box)) {
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() && scrollsAsOneNode(box)) {
             // 中身は専用の節の下に置く: スクロールではこの節だけを動かせばよい（箱自身の背景・枠・つまみは動かさない）
             ScrollContent content = new ScrollContent(box, box.node.scrollContentKey(),
                     scrollState.getScrollX(box.node), scrollState.getScrollY(box.node));

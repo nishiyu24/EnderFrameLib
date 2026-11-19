@@ -1181,7 +1181,7 @@ public class LayoutBox {
         LayoutBox p = parent;
         if (p == null || fixedWidth) return;
         if (need == Float.POSITIVE_INFINITY) {
-            if (!(measuredWidthFree && widthIndependentReuse)) p.childFitBlocked = true;
+            if (!(measuredWidthFree && com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on())) p.childFitBlocked = true;
         } else if (need > p.childFitNeedMax) {
             // 子が切られずに済む使える幅（子の使える幅は親の内容幅）。親の必要幅は、これに親の装飾を足した幅以上
             p.childFitNeedMax = need;
@@ -1190,7 +1190,7 @@ public class LayoutBox {
 
     /** 親（fill 幅ブロック）が、自分の内容が収まる幅の境目を数えるときに使うこの子の必要幅。 */
     float blockChildFitWidth() {
-        return (measuredWidthFree && widthIndependentReuse) ? (w + mL + mR) : measuredFitNeed;
+        return (measuredWidthFree && com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on()) ? (w + mL + mR) : measuredFitNeed;
     }
 
     /** 直近の測定で、親が渡した制約で測られた子が、切られずに済むために必要とした使える幅の最大。測定の始めに 0 に戻す。 */
@@ -1346,7 +1346,7 @@ public class LayoutBox {
         StyleFacts f = axisStyle().layoutFacts();
         // 横方向の割合・内在サイズのキーワードは、親の現在の幅（子の割合 padding の基準・最小内容幅のキャッシュ）を通して
         // 測定時の状態に隠れて依存する。高さの基準を無視して測り直しを省くと、その状態の更新まで省いてしまうので、含まない
-        if (!blockPercentFreeEnabled || !f.blockPercentFree || f.percentGeometry
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.BLOCK_PERCENT_FREE.on() || !f.blockPercentFree || f.percentGeometry
                 || f.intrinsicWidthKind != StyleFacts.IW_NONE || renderedLegend() != null) return false;
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox c = children.get(i);
@@ -1356,8 +1356,6 @@ public class LayoutBox {
         return true;
     }
 
-    /** 切り分け用: false なら、高さの % の基準が違う制約は常に別の入力として扱う（従来の動き）。 */
-    public static volatile boolean blockPercentFreeEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.BLOCK_PERCENT_FREE;
 
     /** 仮の測定・確定の測定の産物。仮は最大 {@link #MAX_TENTATIVES}、確定は最大 {@link #MAX_DEFINITE_TENTATIVES} を別枠で保つ。 */
     private Tentative[] tentatives;
@@ -1372,13 +1370,6 @@ public class LayoutBox {
     /** 子に差し替え中の箱がある（親が測り終える前に確定させるための印）。 */
     private boolean hasTentativeChildren;
 
-    /** 切り分け用: false なら仮の測定を常に本当に測る。 */
-    /**
-     * 親が寸法を決めた葉の確定測定を別枠で使い回す（{@link TentativeKind#DEFINITE}）。切り分け: {@code -Denderframe.layout.nodefiniteleaf=true}。
-     */
-    public static volatile boolean definiteLeafReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.DEFINITE_LEAF_REUSE;
-
-    public static volatile boolean tentativeReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.TENTATIVE_REUSE;
     private static final java.util.concurrent.atomic.LongAdder TENTATIVE_SKIPPED =
             new java.util.concurrent.atomic.LongAdder();
 
@@ -1395,7 +1386,7 @@ public class LayoutBox {
     boolean measureTentatively(ConstraintSpace space, LayoutContext ctx) {
         restoreTentativeStash();
         Tentative[] all = tentatives;
-        if (subgridDependent || !tentativeReuse || all == null || !ctx.reuseMeasurements() || parent == null) return false;
+        if (subgridDependent || !com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.on() || all == null || !ctx.reuseMeasurements() || parent == null) return false;
         Tentative t = null;
         for (Tentative candidate : all) {
             if (candidate != null && candidate.kind() == TentativeKind.TENTATIVE && candidate.matches(space)) {
@@ -1406,7 +1397,7 @@ public class LayoutBox {
         if (t == null) return false;
         if (!Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) return false;
         if (!measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx) || measuredHasTable) return false;
-        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || samePassReuse)) return false;
+        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.on())) return false;
         if (t.epoch() != MEASUREMENT_EPOCH.get() || measuredEpoch != t.epoch()
                 || floatSpace != null || collapsedBorders != null
                 || !t.matches(space)
@@ -1495,8 +1486,6 @@ public class LayoutBox {
      */
     private static final boolean lazyThroughIneligible = com.nishiyu.enderframelib.core.kernel.EngineFlags.LAZY_THROUGH_INELIGIBLE;
 
-    /** 切り分け用: false なら外寸が変わらない子の変化を親で吸収しない（従来の祖先まで無効にする動き）。 */
-    public static volatile boolean cutoffEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.CUTOFF;
 
     /**
      * 子の中身が変わって測り直しても外寸（幅・高さ・マージン）が前回と同じなら、親の測定はそのまま使える箱か。
@@ -1507,7 +1496,7 @@ public class LayoutBox {
      */
     private boolean isCutoffEligible() {
         LayoutBox p = parent;
-        if (!cutoffEnabled || p == null || display == null || p.display == null) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.on() || p == null || display == null || p.display == null) return false;
         if (node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT || display.isInlineLevel() || display.isNone()
                 || isAbsolute || isRelative || isSticky || isOutsideMarker || isRenderedLegend
                 || isTableBox(this) || collapsedBorders != null || everLaidOutAsTable || floatSpace != null
@@ -1599,40 +1588,24 @@ public class LayoutBox {
     private boolean measuredFirstFlowChild;
     private boolean measuredHadFloatChild;
 
-    /** 切り分け用: false なら 2 回目の measure パスで、1 回目に測った箱も測り直す（従来の動き）。 */
-    public static volatile boolean samePassReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.SAME_PASS_REUSE;
     /**
      * 表を含む（自分か子孫が表の箱）か。表は measure の後に行の高さ・列幅を子へ書き戻し、2 回目のパスがそれを入力として
-     * 読み直すので、同じ run の中では表を含む部分木を使い回さない（{@link #samePassReuse}）。測り終えたときに決める。
+     * 読み直すので、同じ run の中では表を含む部分木を使い回さない（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#SAME_PASS_REUSE}）。測り終えたときに決める。
      */
     private boolean measuredHasTable;
 
-    /**
-     * 幅だけが変わった（親が渡す使える幅・ビューポートの幅）ときに、前回の測定を使い回してよいか。箱自身の横の寸法が確定した長さで
-     * （{@link com.nishiyu.enderframelib.core.css.StyleFacts#horizontalFixed}）、子孫に箱の外の寸法（ビューポート／コンテナ単位・絶対配置）を
-     * 読むものが無い（{@link #measuredWidthFree}）なら、測定の結果は幅に依らない。
-     * 切り分け用: {@code -Denderframe.layout.nowidthreuse=true} で無効。
-     */
-    public static volatile boolean widthIndependentReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.WIDTH_INDEPENDENT_REUSE;
 
     /** この箱の測定が、親の使える幅とビューポートの幅に依らない（前回の測定を記録した時点）。 */
     private boolean measuredWidthFree;
     /** この部分木が、箱の外の寸法（ビューポート／コンテナ単位・絶対配置）を読まない。幅に依らない測定の判定の材料。 */
     private boolean measuredOutsideFree;
 
-    /**
-     * ビューポートが前回の測定と同じとみなせるか。部分木が箱の外の寸法（ビューポート単位・絶対配置）を読まない
-     * （{@link #measuredOutsideFree}）なら、ビューポートの幅は測定の結果に効かない（ウィンドウの幅変更で、制約が同じ箱を測り直さない）。
-     * 高さと解像度比は、パーセントの高さ・画像の候補選びに効くので比べる。
-     * 切り分け用: {@code -Denderframe.layout.noviewportwidthfree=true} で無効。
-     */
-    public static volatile boolean viewportWidthFreeReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.VIEWPORT_WIDTH_FREE_REUSE;
 
     private boolean sameViewportForMeasure(Viewport vp) {
         Viewport old = measuredViewport;
         if (old == null) return false;
         if (vp.equals(old)) return true;
-        return viewportWidthFreeReuse && measuredOutsideFree && vp.rootH() == old.rootH()
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.VIEWPORT_WIDTH_FREE_REUSE.on() && measuredOutsideFree && vp.rootH() == old.rootH()
                 && vp.devicePixelRatio() == old.devicePixelRatio();
     }
 
@@ -1648,21 +1621,13 @@ public class LayoutBox {
     private boolean measuredMinContentVar;
 
     private boolean widthOnlyChange(ConstraintSpace space, LayoutContext ctx) {
-        if (!widthIndependentReuse || !measuredWidthFree || measuredSpace == null || measuredViewport == null) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on() || !measuredWidthFree || measuredSpace == null || measuredViewport == null) return false;
         Viewport vp = ctx.viewport(), old = measuredViewport;
         return (measuredBlockPercentFree || Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize()))
                 && sameParentContext(space.parent(), measuredSpace.parent(), measuredShrinkIndependent)
                 && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
     }
 
-    /**
-     * 内容で寸法が決まる箱（{@code width: auto} の shrink-to-fit と、折り返さない 1 行の文字）の fit 再利用。
-     * 親が渡す使える幅が {@link #measuredFitNeed} 以上なら、前回の幅が何であっても測定の結果は同じ
-     * （使える幅に届かず折り返す・縮められる箱だけが、使える幅に依る）。Blink の LayoutNG が fit-content の結果を
-     * 使い回すのと同じ考え方で、flex の項目・インラインブロック・span のように、幅が 1px 変わっても中身が収まっている箱を
-     * 測り直さない。切り分け用: {@code -Denderframe.layout.nofitreuse=true} で無効。
-     */
-    public static volatile boolean fitReuseEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.FIT_REUSE;
 
     /** この使える幅以上なら測定の結果が同じ（無限大は当てはまらない）。測り終えたときに決める。 */
     private float measuredFitNeed = Float.POSITIVE_INFINITY;
@@ -1677,7 +1642,7 @@ public class LayoutBox {
 
     private boolean matchesFitConstraint(ConstraintSpace space, LayoutContext ctx) {
         float need = measuredFitNeed;
-        if (!fitReuseEnabled || need == Float.POSITIVE_INFINITY || measuredSpace == null || measuredViewport == null) return false;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on() || need == Float.POSITIVE_INFINITY || measuredSpace == null || measuredViewport == null) return false;
         if (!(space.availableInlineSize() >= need) || !(measuredSpace.availableInlineSize() >= need)) return false;
         Viewport vp = ctx.viewport(), old = measuredViewport;
         // 文字は整形した行の幅・高さだけが結果で、親の整形コンテキスト（shrink かどうか）や % の基準には依らない
@@ -1696,7 +1661,7 @@ public class LayoutBox {
             return false;
         }
         if (!measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx)) return false;
-        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || (samePassReuse && !measuredHasTable))) return false;
+        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || (com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.on() && !measuredHasTable))) return false;
         if (measuredEpoch != MEASUREMENT_EPOCH.get() || floatSpace != null || collapsedBorders != null) return false;
         if (ctx.fonts() != measuredFonts || ctx.intrinsicResolver() != measuredIntrinsics) return false;
         if (!matchesFitConstraint(space, ctx)) return false;
@@ -1720,7 +1685,7 @@ public class LayoutBox {
         final float none = Float.POSITIVE_INFINITY;
         measuredFitFixedW = false;
         measuredFillFitReusable = false;
-        if (!fitReuseEnabled || parent == null || !measuredOutsideFree || measuredHasTable) return none;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on() || parent == null || !measuredOutsideFree || measuredHasTable) return none;
         if (floatSpace != null || collapsedBorders != null
                 || isAbsolute || isFixed || isRenderedLegend || isOutsideMarker || display == null || display.isNone()) return none;
         ComputedStyle ax = axisStyle();
@@ -1787,7 +1752,7 @@ public class LayoutBox {
             LayoutBox c = children.get(i);
             if (c.style.facts().displayNone) continue;
             if (!(c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
-                    || (c.measuredWidthFree && widthIndependentReuse) || c.sizingMode == SizingMode.SHRINK_TO_FIT)) {
+                    || (c.measuredWidthFree && com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on()) || c.sizingMode == SizingMode.SHRINK_TO_FIT)) {
                 return false;
             }
         }
@@ -1892,7 +1857,7 @@ public class LayoutBox {
         return !subgridDependent
                 && measurementValid
                 && !layoutChanged
-                && (ctx.firstPass() || measuredRun != ctx.layoutRun() || (samePassReuse && !measuredHasTable))
+                && (ctx.firstPass() || measuredRun != ctx.layoutRun() || (com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.on() && !measuredHasTable))
                 && measuredEpoch == MEASUREMENT_EPOCH.get()
                 && floatSpace == null
                 && collapsedBorders == null
@@ -1998,7 +1963,7 @@ public class LayoutBox {
         recordWidthIndependence();
         measuredShrinkIndependent = computeShrinkIndependent(space.parent());
         measuredFitNeed = computeFitNeed();
-        if (tentativeReuse && parentUsesTentatives() && floatSpace == null && collapsedBorders == null) {
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.on() && parentUsesTentatives() && floatSpace == null && collapsedBorders == null) {
             boolean tentativePhase = Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight);
             if (tentativePhase || isDefiniteCacheableLeaf()) {
                 TentativeKind kind = tentativePhase ? TentativeKind.TENTATIVE : TentativeKind.DEFINITE;
@@ -2023,7 +1988,7 @@ public class LayoutBox {
 
     /** 子を持たない要素だけ、BoxOutputs が測定状態のすべてなので確定測定を別枠で使い回せる。 */
     private boolean isDefiniteCacheableLeaf() {
-        return definiteLeafReuse && children.isEmpty()
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.DEFINITE_LEAF_REUSE.on() && children.isEmpty()
                 && node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
                 && floatSpace == null && collapsedBorders == null && !measuredHasTable
                 && !isTableBox(this) && renderedLegend() == null;
@@ -2073,11 +2038,11 @@ public class LayoutBox {
      * 同じ制約の記録があり部分木を持たない葉なら、再測定を省いて確定結果を戻す。
      */
     private boolean reuseDefiniteTentative(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        if (subgridDependent || !tentativeReuse || tentatives == null || (Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight))) {
+        if (subgridDependent || !com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.on() || tentatives == null || (Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight))) {
             return false;
         }
         if (!measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx) || !isDefiniteCacheableLeaf()) return false;
-        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || samePassReuse)) return false;
+        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.on())) return false;
         int epoch = MEASUREMENT_EPOCH.get();
         if (measuredEpoch != epoch) return false;
         Tentative match = null;
@@ -2241,7 +2206,7 @@ public class LayoutBox {
         }
         List<LayoutBox> kids = box.children;
         int n = kids.size();
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
             int grain = LayoutTaskPool.grainFor(n, 8);
             LayoutTaskPool.forRange(n, grain, null, i -> resetPlacements(kids.get(i), keepRun));
             return;
@@ -2251,7 +2216,7 @@ public class LayoutBox {
 
     private static void resetChildrenPlacements(List<LayoutBox> kids) {
         int n = kids.size();
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
             int grain = LayoutTaskPool.grainFor(n, 8);
             LayoutTaskPool.forRange(n, grain, null, i -> resetPlacements(kids.get(i), -1));
             return;
@@ -2310,7 +2275,7 @@ public class LayoutBox {
             vf.resetPlacedChildren(keepRun, nextOffset, nextBfcFloat, staleFrags);
             return;
         }
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
             int chunks = LayoutTaskPool.chunksFor(n, 16);
             @SuppressWarnings("unchecked")
             List<LayoutBox>[] perChunk = new List[chunks];
@@ -2628,7 +2593,7 @@ public class LayoutBox {
         boolean subtreeChanged = false;
         List<LayoutBox> kids = box.children;
         int n = kids.size();
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
             int chunks = LayoutTaskPool.chunksFor(n, 16);
             boolean[] flags = new boolean[chunks * 2];
             LayoutTaskPool.forChunks(n, chunks, null, span -> {
@@ -2793,7 +2758,7 @@ public class LayoutBox {
         }
         List<LayoutBox> kids = root.children;
         int n = kids.size();
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
             int grain = LayoutTaskPool.grainFor(n, 8);
             LayoutTaskPool.forRange(n, grain, null, i -> clearAllSubtreeMarks(kids.get(i)));
             return;
@@ -2871,7 +2836,7 @@ public class LayoutBox {
         }
         // 原点だけが違い、部分木の配置が前回と同じ（原点からの相対位置が変わらない）なら、置き直さず部分木ごと平行移動する
         // （行の挿入・削除で後続の行が動くだけのとき、各行の内側を組み直さない）
-        if (!sameInputs && !checkAutoSubtree && sameScroll && sameMargins && SHIFT_ENABLED && ctx.reuseMeasurements()
+        if (!sameInputs && !checkAutoSubtree && sameScroll && sameMargins && com.nishiyu.enderframelib.core.kernel.Shortcut.SHIFT.on() && ctx.reuseMeasurements()
                 && canKeepPlacement(ctx.layoutRun())
                 && !Float.isNaN(lastLayoutX) && !Float.isNaN(lastLayoutY)
                 && isShiftableDelta(parentX, lastLayoutX) && isShiftableDelta(parentY, lastLayoutY)
@@ -2885,7 +2850,7 @@ public class LayoutBox {
         // 原点か包含ブロックの寸法が変わったので、前回の配置を引き継いだ子孫の位置はどれも古い。先に捨てる
         // （自分の staticX / staticY は親が layout の前に置くので消さない）。入力が同じで、子孫の変化のために
         // 置き直すだけなら、子はそれぞれの入力を見て飛ばすか置き直すかを決める
-        if (keepPlacements && keptPure && !sameInputs) {
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.KEEP_PLACEMENTS.on() && keptPure && !sameInputs) {
             resetChildrenPlacements(children);
         }
 
@@ -3033,8 +2998,6 @@ public class LayoutBox {
     private static final java.util.concurrent.atomic.LongAdder LAYOUTS_SHIFTED =
             new java.util.concurrent.atomic.LongAdder();
 
-    /** 切り分け用: false なら、原点だけが違う部分木も置き直す（平行移動で済ませない）。 */
-    public static volatile boolean SHIFT_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.SHIFT;
 
     /** 原点だけが違うので部分木ごと平行移動した layout の回数（診断・テスト用）。 */
     public static long layoutsShifted() {
@@ -3162,12 +3125,10 @@ public class LayoutBox {
         return LAYOUTS_SKIPPED.sum();
     }
 
-    /** layout の結果の再利用を使うか。false なら毎回置き直す（再利用を疑うときの切り分け用）。 */
-    public static volatile boolean keepPlacements = true;
 
     /** 前回の layout の配置を使い回せる状態か（再利用が有効で、前回の部分木が外の状態に依らなかった）。 */
     public boolean holdsPlacement() {
-        return keepPlacements && placementPure;
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.KEEP_PLACEMENTS.on() && placementPure;
     }
 
     public String debugInfo() {
@@ -3233,7 +3194,7 @@ public class LayoutBox {
     }
 
     private boolean canKeepPlacement(long run, boolean floatsOrOffset) {
-        return keepPlacements && keptPure && placementValid && measurementValid && measuredRun != run
+        return com.nishiyu.enderframelib.core.kernel.Shortcut.KEEP_PLACEMENTS.on() && keptPure && placementValid && measurementValid && measuredRun != run
                 && !layoutChanged && !subtreeChanged
                 && parent != null && parent.display != null
                 && (parent.display.inner() == Display.Inner.FLOW || parent.display.inner() == Display.Inner.FLOW_ROOT

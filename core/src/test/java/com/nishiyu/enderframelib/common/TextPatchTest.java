@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 文字だけの更新（TEXT_PATCH）が、全体を再レイアウトしたときと項目ごとに同じ結果になること。
- * 同じ文書を 2 つ用意し、片方は局所パッチ、もう片方は {@link UiView#textPatchEnabled} を切って全体の再レイアウトで更新して比べる。
+ * 同じ文書を 2 つ用意し、片方は局所パッチ、もう片方は {@link com.nishiyu.enderframelib.core.kernel.Shortcut#TEXT_PATCH} を切って全体の再レイアウトで更新して比べる。
  */
 public class TextPatchTest {
 
@@ -38,7 +38,7 @@ public class TextPatchTest {
 
     @AfterEach
     void restoreFlag() {
-        UiView.textPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
     }
 
     private static String sig(DisplayItem i) {
@@ -62,11 +62,11 @@ public class TextPatchTest {
     /** 局所パッチ側と全体再レイアウト側に同じ変更を加え、結果が一致することを確かめる。 */
     private static void step(StandaloneView patched, StandaloneView full, String name, Consumer<StandaloneView> mutate) {
         mutate.accept(patched);
-        UiView.textPatchEnabled = false;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(false);
         try {
             mutate.accept(full);
         } finally {
-            UiView.textPatchEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
         }
         List<String> a = sigs(patched);
         List<String> b = sigs(full);
@@ -114,7 +114,7 @@ public class TextPatchTest {
         for (int i = 0; i < 1500; i++) html.append("<div class=row><span>item ").append(i).append("</span> <b>x</b></div>");
         long[] ms = new long[2];
         for (int mode = 0; mode < 2; mode++) {
-            UiView.textPatchEnabled = mode == 0;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(mode == 0);
             StandaloneView v = new StandaloneView(html.toString(), 800, 600, FontResolver.FALLBACK);
             HtmlNode hp = v.root().getNodeById("hp");
             for (int i = 0; i < 30; i++) { hp.updateTextContent("w" + i); v.ui().flushInvalidation(); }
@@ -123,7 +123,7 @@ public class TextPatchTest {
             ms[mode] = (System.nanoTime() - t0) / 1_000_000;
             System.out.println("[text-patch breakdown] mode=" + mode + " " + v.ui().lastBreakdown());
         }
-        UiView.textPatchEnabled = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
         System.out.println("[text-patch benchmark] 1500 rows, 200 updates: patch=" + ms[0] + "ms full=" + ms[1] + "ms");
         // 局所の印付けと木全体の印付けを 1 フレームごとに交互に切り替えて比べる（機械の負荷の揺れを打ち消す）
         try {
@@ -196,16 +196,16 @@ public class TextPatchTest {
         long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum();
         try {
             for (int i = 0; i < ids.length; i++) {
-                UiView.changeStampsEnabled = true;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(true);
                 ((HtmlText) textChild(stamped, ids[i])).setData(texts[i]);
                 List<String> a = sigs(stamped);
-                UiView.changeStampsEnabled = false;
+                com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(false);
                 ((HtmlText) textChild(plain, ids[i])).setData(texts[i]);
                 List<String> b = sigs(plain);
                 assertEquals(b, a, "手順 " + i + " (" + ids[i] + ")");
             }
         } finally {
-            UiView.changeStampsEnabled = true;
+            com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(true);
         }
         long skipped = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum() - before;
         assertTrue(skipped > 100, "変更印で比較を省いた箱の数: " + skipped);

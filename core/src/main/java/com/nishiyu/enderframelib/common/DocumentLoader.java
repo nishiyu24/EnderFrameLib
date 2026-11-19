@@ -136,12 +136,6 @@ public class DocumentLoader {
         return buildStyleSheet(null, authorCss, rootW, rootH);
     }
 
-    /**
-     * 解析済みのスタイルシートの雛形（UA + ユーザー + 作者の CSS とビューポートの大きさが同じなら同じ結果）。
-     * 画面を開き直すたびに UA シート（約 11 KB）と作者の CSS を解析し直さず、雛形の写しを渡す。
-     * 切り分け用: {@code -Denderframe.sheetcache.off=true} で無効。
-     */
-    public static volatile boolean sheetTemplateCache = EngineFlags.SHEET_CACHE;
 
     private static final int SHEET_TEMPLATE_MAX = 16;
 
@@ -169,7 +163,7 @@ public class DocumentLoader {
 
     public static StyleSheet buildStyleSheet(String userCss, String authorCss, int rootW, int rootH) {
         String ua = userAgentCss();
-        if (!sheetTemplateCache || uncacheableCss(ua) || uncacheableCss(userCss) || uncacheableCss(authorCss)) {
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.SHEET_CACHE.on() || uncacheableCss(ua) || uncacheableCss(userCss) || uncacheableCss(authorCss)) {
             return parseStyleSheet(userCss, authorCss, rootW, rootH);
         }
         SheetKey key = new SheetKey(ua, userCss == null ? "" : userCss, authorCss == null ? "" : authorCss, rootW, rootH);

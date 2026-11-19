@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * スクロールだけの更新で表示リストを作り直さず、スクロールコンテナの中身の節を動かして済ませても
- * （{@link DisplayListBuilder#scrollContentNodes}）、毎回作り直したときと同じ見た目・同じヒットテストになること。
+ * （{@link com.nishiyu.enderframelib.core.kernel.Shortcut#SCROLL_CONTENT_NODES}）、毎回作り直したときと同じ見た目・同じヒットテストになること。
  *
  * <p>見た目は「項目の位置 + 祖先のスクロール節の移動量」（実際の描画位置）で比べる（作り直しのほうは位置に焼き込まれている）。
  * 四捨五入の違いで 1 画素までずれうる。画面に入っている項目は、節で動かした側にも必ずあること（作り足りないと端が欠ける）。
@@ -117,7 +117,7 @@ public class ScrollTranslateTest {
     }
 
     private static List<Frame> run(boolean nodes, long seed, int steps) {
-        DisplayListBuilder.scrollContentNodes = nodes;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(nodes);
         Random rnd = new Random(seed);
         int[][] probes = new int[8][];
         for (int i = 0; i < probes.length; i++) probes[i] = new int[]{rnd.nextInt(W), rnd.nextInt(H)};
@@ -184,7 +184,7 @@ public class ScrollTranslateTest {
 
     @AfterEach
     public void restore() {
-        DisplayListBuilder.scrollContentNodes = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(true);
     }
 
     private static void assertSame(Frame expected, Frame actual, String where, java.util.Set<String> allIds) {

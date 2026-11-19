@@ -47,13 +47,13 @@ class StickyScrollNodeTest {
 
     @AfterEach
     void restore() {
-        PaintOrder.STICKY_IN_SCROLL_NODE = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.set(true);
     }
 
     record Run(List<int[]> pixels, List<String> hits, long translated) { }
 
     static Run run(boolean stickyNode, RenderBackend backend) {
-        PaintOrder.STICKY_IN_SCROLL_NODE = stickyNode;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.set(stickyNode);
         long tr0 = UiView.STAT_SCROLL_TRANSLATED.sum();
         List<int[]> pixels = new ArrayList<>();
         List<String> hits = new ArrayList<>();

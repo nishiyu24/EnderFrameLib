@@ -13,8 +13,6 @@ import com.nishiyu.enderframelib.core.layout.LayoutTaskPool;
  * 呼び出しは 1 スレッド（実行だけが内部で並列）。
  */
 final class TileQueue {
-    /** タイル単位の遅延実行を使うか（{@code -Denderframe.soft.notiled=true} で無効＝命令ごとにその場で全範囲を実行）。 */
-    static volatile boolean tiled = EngineFlags.SOFT_TILED;
     static final int TILE = 64;
 
     private final ArrayList<Op> pending = new ArrayList<>();
@@ -32,7 +30,7 @@ final class TileQueue {
 
     /** {@code defer} の命令は溜めてタイルで実行。そうでなければ、溜めた分を先に実行してからその場で全範囲を実行（順序を守る）。 */
     void submit(Op op, boolean defer) {
-        if (defer && tiled) {
+        if (defer && com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_TILED.on()) {
             if (!pending.isEmpty() && pending.get(0).px != op.px) flush();
             pending.add(op);
             return;

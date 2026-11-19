@@ -44,13 +44,13 @@ class GpuLayerBoundsTest {
 
     @AfterEach
     void restore() {
-        LwjglGlRenderBackend.boundedLayers = true;
-        LwjglGlRenderBackend.downsampledBlur = true;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_BOUNDED_LAYERS.set(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_DOWNSAMPLED_BLUR.set(true);
     }
 
     private static Pixmap render(String body, int w, int h, float dpr, boolean bounded, boolean downsampled) {
-        LwjglGlRenderBackend.boundedLayers = bounded;
-        LwjglGlRenderBackend.downsampledBlur = downsampled;
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_BOUNDED_LAYERS.set(bounded);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GL_DOWNSAMPLED_BLUR.set(downsampled);
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(w, h, dpr)) {
             SoftwareRendering.renderHtml(BODY0 + body + "</body></html>", w, h, T0, g);
             Pixmap src = g.pixmap();
