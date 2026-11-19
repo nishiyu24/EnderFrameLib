@@ -752,7 +752,7 @@ static final int NUMS_LENGTH = 13;
      * flex アイテムの子を消すなど）・flex / grid / 表など（ブロックの流れ以外）の中で兄弟の寸法が変わったときは、古い寸法の項目が残る（§6-108。T3 の差分ファズ
      * nested の種 17）。レイアウトは済んでいるので、表示リストに触る前に記憶の寸法と比べて退く。
      */
-    static boolean sizesFollowable(java.util.Map<LayoutBox, BoxMemo> memoOf, LayoutBox parentBox, List<LayoutBox> rendered, List<LayoutBox> removed) {
+    static boolean sizesFollowable(java.util.Map<LayoutBox, BoxMemo> memoOf, PaintOrder order, LayoutBox parentBox, List<LayoutBox> rendered, List<LayoutBox> removed) {
         // ⑦は記憶の原点との差で項目を動かすので、記憶の無い箱（表など）が後ろで動くと古い位置に残る（§6-109。差分ファズ layouts の種 23 の手 19）
         for (int i = Math.max(0, parentBox.dlOrder), n = rendered.size(); i < n; i++) {
             LayoutBox r = rendered.get(i);
@@ -760,7 +760,10 @@ static final int NUMS_LENGTH = 13;
         }
         for (LayoutBox anc = parentBox; anc != null; anc = anc.parent) {
             BoxMemo am = memoOf.get(anc);
+            // 寸法が 0 になった祖先は、全体の作り直しでは中身ごと描かれない（⑧は寸法を合わせるだけで項目を消さない。§6-112。nested の種 64: body を消した html）
+            if (am != null && (anc.w <= 0 || anc.h <= 0)) return false;
             if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[2], anc.w) != 0) return false;
+            if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[3], anc.h) != 0 && paintedAfterItsFlow(anc, order)) return false;
             if (anc.display == null || anc.display.isBlockContainer()) continue; // ブロックの流れでは兄弟の寸法は互いに響かない（float は計画で除いてある）
             for (LayoutBox c : anc.children) {
                 BoxMemo cm = memoOf.get(c);
@@ -768,6 +771,16 @@ static final int NUMS_LENGTH = 13;
             }
         }
         return true;
+    }
+
+    /**
+     * 流れの中にいるのに、流れの後ろの兄弟より後の層で描かれる箱か（float・相対位置・スタッキングコンテキスト。絶対位置・固定は流れの外なので除く）。
+     * この箱の高さが変わると、⑦は描画順で後ろの箱しか動かさないので、先の層で描かれた流れの後ろの兄弟が古い位置に残る（layouts の種 38: 相対位置の
+     * 箱の子を消した）。float は後ろの行の折り返し（＝兄弟の高さ）も変える（layouts の種 33）。§6-112。
+     */
+    private static boolean paintedAfterItsFlow(LayoutBox box, PaintOrder order) {
+        if (box.isAbsolute || box.isFixed) return false;
+        return BlockLayoutEngine.isFloating(box) || PaintOrder.isPositioned(box) || order.createsStackingContext(box);
     }
 
     /** {@code box} が {@code parentBox} の祖先（⑧が合わせる）か、消える部分木の中か。 */

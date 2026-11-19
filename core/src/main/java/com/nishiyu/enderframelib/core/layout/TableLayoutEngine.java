@@ -133,9 +133,11 @@ public class TableLayoutEngine extends LayoutEngine {
             slot.cell.measure(new ConstraintSpace(w, parentH, FIXED_CELL).withFixed(w, Float.NaN), ctx);
             slot.naturalHeight = slot.cell.h;
         }
-        for (LayoutBox caption : state.captions) {
-            caption.measure(new ConstraintSpace(contentW, parentH, FormattingContext.BLOCK), ctx);
-        }
+        for (LayoutBox caption : state.captions) caption.measure(new ConstraintSpace(contentW, parentH, FormattingContext.BLOCK), ctx);
+        // 表の min-content は幅を決める段でセルを測る前の装飾から求め、自分では測られない行・行グループに残る。測った後に捨てる（§6-112。layouts の種 49）
+        box.invalidateMinContentCache();
+        for (LayoutBox row : state.rows) row.invalidateMinContentCache();
+        for (LayoutBox group : state.rowGroups) if (group != null) group.invalidateMinContentCache();
         return contentW;
     }
 
@@ -193,9 +195,7 @@ public class TableLayoutEngine extends LayoutEngine {
         float captionTop = 0, captionBottom = 0;
         for (LayoutBox caption : state.captions) {
             float outer = caption.h + caption.mT + caption.mB;
-            if (caption.style.keywordOf(CssPropertyIndex.CAPTION_SIDE, CssKeywords.CaptionSide.class) == CssKeywords.CaptionSide.BOTTOM) {
-                captionBottom += outer;
-            }
+            if (caption.style.keywordOf(CssPropertyIndex.CAPTION_SIDE, CssKeywords.CaptionSide.class) == CssKeywords.CaptionSide.BOTTOM) captionBottom += outer;
             else captionTop += outer;
         }
         int visibleRows = 0;

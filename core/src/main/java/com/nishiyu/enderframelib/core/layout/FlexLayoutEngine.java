@@ -577,8 +577,8 @@ public class FlexLayoutEngine extends LayoutEngine {
                 if (b.h < target) remeasure(b, b.w, Math.max(0, target), axes, space, ctx);
             } else {
                 if (hasSize(b.axisStyle(), CssPropertyIndex.WIDTH)) continue;
-                float target = line.cross - b.mL - b.mR;
-                if (Math.abs(b.w - target) > 0.001f && target >= 0) remeasure(b, target, b.h, axes, space, ctx);
+                float target = Math.max(line.cross - b.mL - b.mR, b.horizontalDecoration()); // 内容は負にならないので装飾より細くしない（§6-113。nested の種 195）
+                if (Math.abs(b.w - target) > 0.001f && line.cross - b.mL - b.mR >= 0) remeasure(b, target, b.h, axes, space, ctx);
             }
         }
     }

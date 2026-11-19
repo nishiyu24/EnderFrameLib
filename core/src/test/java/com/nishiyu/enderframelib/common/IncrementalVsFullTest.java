@@ -1,6 +1,8 @@
 package com.nishiyu.enderframelib.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -71,10 +73,17 @@ class IncrementalVsFullTest {
     }
 
     private static void assertIncrementalMatchesFull(String html, java.util.function.Consumer<StandaloneView> change) {
+        assertIncrementalMatchesFull(html, v -> { }, change);
+    }
+
+    /** {@code setup} を当てて 1 フレーム描いてから {@code change} を当て、増分の結果が全面の作り直しと一致すること。 */
+    static void assertIncrementalMatchesFull(String html, java.util.function.Consumer<StandaloneView> setup, java.util.function.Consumer<StandaloneView> change) {
         try (StandaloneView v = new StandaloneView(html, 320, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
              var be = new MutationScenario.NoDraw()) {
             long now = 1000;
             v.frame(now, be, true);
+            setup.accept(v);
+            v.frame(now += 16, be, true);
             change.accept(v);
             v.frame(now += 16, be, true);
             List<String> incremental = v.items().stream().map(MutationScenario::sig).toList();
@@ -112,6 +121,121 @@ class IncrementalVsFullTest {
         assertIncrementalMatchesFull("<style>body{margin:0}td{border:1px solid #999}</style><div id=\"w\"><p id=\"p\">para</p><div>x</div></div>"
                 + "<table id=\"tb\"><tr><td>a</td><td>bb</td></tr></table>",
                 v -> v.root().ownerDocument.getElementById("w").removeChild(v.root().ownerDocument.getElementById("p")));
+    }
+
+    /** float の子を足して float が高くなると、後ろの段落の折り返し（高さ）が変わる。子パッチは全体の作り直しへ退く（§6-112。差分ファズ layouts の種 33）。 */
+    @Test
+    void growingAFloatRewrapsTheFollowingParagraph() {
+        assertIncrementalMatchesFull("<style>body{margin:0;width:110px}.fl{float:left;width:70px;background:#fed}p{background:#cfc}</style>"
+                + "<div id=\"g\" class=\"fl\"><div>one</div><div>two</div></div><div style=\"padding:9px\"><p>text beside floats that wraps around the floated box for a while</p></div><div>after</div>",
+                v -> {
+                    var doc = v.root().ownerDocument;
+                    var add = (com.nishiyu.enderframelib.core.dom.node.HtmlElement) doc.createElement("div");
+                    add.setAttribute("id", "z");
+                    add.setTextContent("added");
+                    doc.getElementById("g").appendChild(add);
+                });
+    }
+
+    /**
+     * 相対位置の箱は位置指定の層（流れの後ろの兄弟より後）で描く。その子を消して箱が縮むと、先に描いた後ろの兄弟を⑦が動かさない。
+     * 子パッチは全体の作り直しへ退く（§6-112。差分ファズ layouts の種 38）。
+     */
+    @Test
+    void shrinkingARelativeBoxMovesTheFollowingSiblings() {
+        assertIncrementalMatchesFull("<style>body{margin:0}.rel{position:relative;top:2px;left:3px;padding:8px;background:#def}.b{background:#fed}</style>"
+                + "<div id=\"r\" class=\"rel\"><div id=\"a\">alpha beta</div><div>gamma</div></div><div class=\"b\">after</div><p class=\"b\">para</p>",
+                v -> v.root().ownerDocument.getElementById("r").removeChild(v.root().ownerDocument.getElementById("a")));
+    }
+
+    /** body を消して html の高さが 0 になると、全体の作り直しは html を描かない。子パッチも項目を残さない（§6-112。差分ファズ nested の種 64）。 */
+    @Test
+    void removingTheLastChildOfAZeroHeightAncestorLeavesNoItems() {
+        assertIncrementalMatchesFull("<style>body{margin:0}.box{padding:2px;background:#def}</style><div id=\"only\" class=\"box\">x</div>",
+                v -> { // body を消し、html の直下に描かれる子を 1 つ置く
+                    var doc = v.root().ownerDocument;
+                    var body = doc.getElementById("only").parent;
+                    var html = body.parent;
+                    html.removeChild(body);
+                    var add = (com.nishiyu.enderframelib.core.dom.node.HtmlElement) doc.createElement("div");
+                    add.setAttribute("id", "z");
+                    add.setAttribute("class", "box");
+                    add.setTextContent("z");
+                    html.appendChild(add);
+                },
+                v -> {
+                    var z = v.root().ownerDocument.getElementById("z");
+                    z.parent.removeChild(z);
+                });
+    }
+
+    private static final String TABLE_IN_ANON_CELL = "<style>body{margin:0;font-size:13px}.w{width:40%}.p{padding:8px;border:2px solid #555}"
+            + "table{border-collapse:collapse}td{border:1px solid #999;padding:2px 4px}</style>"
+            + "<table id=\"tb\" class=\"w\"><tr><td>a</td><td class=\"p\">bb</td></tr><tr style=\"display:block\"><td>c<div class=\"p\">n37</div></td></tr></table>";
+
+    /**
+     * 表の min-content は、セルを測る前の装飾から求めて行に記憶される（行は自分では測られない）。一から組むと装飾 0 の新しい箱から、増分では前回の装飾から
+     * 求めて、匿名のセルの中の匿名の表の幅の下限が食い違った（§6-112。差分ファズ layouts の種 49: 祖先の余白で割合の幅の表が狭くなる）。
+     */
+    @Test
+    void tableInsideAnAnonymousCellKeepsItsMinContentAcrossRelayouts() {
+        assertIncrementalMatchesFull(TABLE_IN_ANON_CELL, v -> v.resize(260, 240),
+                v -> v.root().ownerDocument.getElementById("tb").parent.setAttribute("style", "margin-left:11px"));
+    }
+
+    /** 同じ文書（祖先の余白で狭めた形）を一から組んだとき、匿名のセルは中の匿名の表（セルの padding と中の箱の padding・枠線を含む min-content）より狭くならない。 */
+    @Test
+    void anonymousCellIsNotNarrowerThanTheTableInsideIt() {
+        try (StandaloneView v = new StandaloneView(TABLE_IN_ANON_CELL.replace("<table", "<div style=\"margin-left:11px\"><table"), 260, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+             var be = new MutationScenario.NoDraw()) {
+            v.frame(1000, be, true);
+            com.nishiyu.enderframelib.core.layout.LayoutBox[] innerTable = {null};
+            java.util.function.Consumer<com.nishiyu.enderframelib.core.layout.LayoutBox>[] walk = new java.util.function.Consumer[1];
+            walk[0] = b -> {
+                if (b.isAnonymous && b.display != null && b.display.inner() == com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner.TABLE) innerTable[0] = b;
+                for (var c : b.children) walk[0].accept(c);
+            };
+            walk[0].accept(v.ui().layoutRoot());
+            assertNotNull(innerTable[0], "tr{display:block} の中の td は匿名の表に包まれる");
+            var cell = innerTable[0].parent.parent; // 匿名の表 → tr（block）→ 匿名のセル
+            assertTrue(cell.w + 0.01f >= innerTable[0].w, "匿名のセル " + cell.w + " が中の表 " + innerTable[0].w + " より狭い");
+        }
+    }
+
+    /**
+     * 消す部分木の子孫に位置指定の箱があると、その項目は後ろの層にあり、消す区間の間に別の位置指定の箱の項目が挟まる。子パッチはそれごと消していた。
+     * 区間が途切れていれば全体の作り直しへ退く（§6-113。差分ファズ layouts の種 145）。
+     */
+    @Test
+    void removingASubtreeWithAPositionedDescendantKeepsOtherPositionedItems() {
+        assertIncrementalMatchesFull("<style>body{margin:0}.rel{position:relative;left:3px;background:#def}</style>"
+                + "<div><span class=\"rel\" id=\"p1\">p1</span></div><div id=\"r\">text <span class=\"rel\">p2</span></div><div>after</div>",
+                v -> {
+                    var r = v.root().ownerDocument.getElementById("r");
+                    r.parent.removeChild(r);
+                });
+    }
+
+    /**
+     * 描かれなくなった箱（tbody を消して 0×0 になった表）は前回の描画順の番号を持ち続ける。子パッチはそれを挿入位置にして、足したブロックを float の層の
+     * 後ろへ入れた（§6-113。差分ファズ layouts の種 137・nested の種 131）。
+     */
+    @Test
+    void blockAppendedAfterAnEmptiedTableGoesToTheEndOfTheBlockLayer() {
+        assertIncrementalMatchesFull("<style>body{margin:0}.fl{float:left;width:70px;background:#cfc}td{border:1px solid #999}.b{background:#def}</style>"
+                + "<div class=\"b\">x<div class=\"fl\">f</div><p class=\"b\">para</p></div><table id=\"tb\"><tbody id=\"tbody\"><tr><td>a</td></tr></tbody></table>",
+                v -> {
+                    var tbody = v.root().ownerDocument.getElementById("tbody");
+                    tbody.parent.removeChild(tbody);
+                },
+                v -> {
+                    var doc = v.root().ownerDocument;
+                    var add = (com.nishiyu.enderframelib.core.dom.node.HtmlElement) doc.createElement("div");
+                    add.setAttribute("id", "z");
+                    add.setAttribute("class", "b");
+                    add.setTextContent("added");
+                    doc.getElementById("tb").parent.appendChild(add);
+                });
     }
 
     /**

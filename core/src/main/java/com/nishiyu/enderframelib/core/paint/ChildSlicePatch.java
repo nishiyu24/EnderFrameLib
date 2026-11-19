@@ -32,6 +32,7 @@ final class ChildSlicePatch {
     private int remBlockStart, remBlockEnd, remBlockOrderStart, remBlockCount;
     private int remInlineStart, remInlineEnd, remInlineOrderStart, remInlineCount;
     private int insertBlockPos, insertBlockOrder, insertInlinePos, insertInlineOrder;
+    private int spanS, spanE, spanO, spanN; // span の結果
     private LayoutBox lastParentForClip;
     private ClipRect cachedParentClip;
     // 平行移動する箱 1 つぶんの座標系（translateFollowingBox が書き、下請けが読む。箱ごとに確保しない）:
@@ -44,7 +45,7 @@ final class ChildSlicePatch {
     }
 
     List<DisplayItem> apply(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
-        if (!b.canPatchChildSlices(parentBox, removed, added, afterBox) || !BoxMemo.sizesFollowable(b.boxMemo, parentBox, b.renderedBoxes, removed)) {
+        if (!b.canPatchChildSlices(parentBox, removed, added, afterBox) || !BoxMemo.sizesFollowable(b.boxMemo, b.order, parentBox, b.renderedBoxes, removed)) {
             DisplayListBuilder.STAT_SLICE_PATCH_FALLBACKS.increment();
             return null;
         }
@@ -124,6 +125,18 @@ final class ChildSlicePatch {
 
     // ------------------------------------------------------------------ 1. 削除
 
+    /** 消す箱の項目の区間（最小の開始〜最大の終わり）と描画順の区間を span* に置く（無ければ開始 -1・数 0）。描画順が途切れるとき false。 */
+    private boolean span(List<LayoutBox> boxes) {
+        int minS = Integer.MAX_VALUE, maxE = Integer.MIN_VALUE, minO = Integer.MAX_VALUE, maxO = Integer.MIN_VALUE, ordered = 0;
+        for (LayoutBox x : boxes) {
+            if (x.dlStart >= 0 && x.dlEnd >= x.dlStart) { minS = Math.min(minS, x.dlStart); maxE = Math.max(maxE, x.dlEnd); }
+            if (x.dlOrder >= 0) { minO = Math.min(minO, x.dlOrder); maxO = Math.max(maxO, x.dlOrder); ordered++; }
+        }
+        boolean found = minS != Integer.MAX_VALUE;
+        spanS = found ? minS : -1; spanE = found ? maxE : -1; spanO = found ? minO : -1; spanN = found ? maxO - minO + 1 : 0;
+        return found ? ordered > 0 && spanN == ordered : true;
+    }
+
     /** 消える子のスライスを両層から除く。続けられないとき false。 */
     private boolean removeSlices(List<LayoutBox> removed) {
         List<DisplayItem> list = b.currentDisplayList;
@@ -131,49 +144,11 @@ final class ChildSlicePatch {
         SubtreeSlices remSlices = new SubtreeSlices();
         for (LayoutBox r : removed) b.collectSubtreeSlices(r, remSlices);
 
-        // インライン層の削除区間
-        if (!remSlices.inlineBoxes.isEmpty()) {
-            int minS = Integer.MAX_VALUE, maxE = Integer.MIN_VALUE;
-            int minO = Integer.MAX_VALUE, maxO = Integer.MIN_VALUE;
-            for (LayoutBox x : remSlices.inlineBoxes) {
-                if (x.dlStart >= 0 && x.dlEnd >= x.dlStart) {
-                    minS = Math.min(minS, x.dlStart);
-                    maxE = Math.max(maxE, x.dlEnd);
-                }
-                if (x.dlOrder >= 0) {
-                    minO = Math.min(minO, x.dlOrder);
-                    maxO = Math.max(maxO, x.dlOrder);
-                }
-            }
-            if (minS != Integer.MAX_VALUE) {
-                remInlineStart = minS;
-                remInlineEnd = maxE;
-                remInlineOrderStart = minO;
-                remInlineCount = maxO - minO + 1;
-            }
-        }
-
-        // ブロック層の削除区間
-        if (!remSlices.blockBoxes.isEmpty()) {
-            int minS = Integer.MAX_VALUE, maxE = Integer.MIN_VALUE;
-            int minO = Integer.MAX_VALUE, maxO = Integer.MIN_VALUE;
-            for (LayoutBox x : remSlices.blockBoxes) {
-                if (x.dlStart >= 0 && x.dlEnd >= x.dlStart) {
-                    minS = Math.min(minS, x.dlStart);
-                    maxE = Math.max(maxE, x.dlEnd);
-                }
-                if (x.dlOrder >= 0) {
-                    minO = Math.min(minO, x.dlOrder);
-                    maxO = Math.max(maxO, x.dlOrder);
-                }
-            }
-            if (minS != Integer.MAX_VALUE) {
-                remBlockStart = minS;
-                remBlockEnd = maxE;
-                remBlockOrderStart = minO;
-                remBlockCount = maxO - minO + 1;
-            }
-        }
+        // 両層の削除区間。描画順が途切れる（位置指定・float の子孫は後ろの層で描かれ、間に他の箱の項目が挟まる）なら続けない（§6-113。layouts の種 145）
+        if (!span(remSlices.inlineBoxes)) return false;
+        remInlineStart = spanS; remInlineEnd = spanE; remInlineOrderStart = spanO; remInlineCount = spanN;
+        if (!span(remSlices.blockBoxes)) return false;
+        remBlockStart = spanS; remBlockEnd = spanE; remBlockOrderStart = spanO; remBlockCount = spanN;
 
         // 境界チェック
         if (remInlineStart >= 0 && (remInlineEnd > list.size() || remInlineOrderStart + remInlineCount > renderedBoxes.size())) {
@@ -254,6 +229,14 @@ final class ChildSlicePatch {
                 || insertInlineOrder < 0 || insertInlineOrder > boxes);
     }
 
+    /**
+     * 今の表示リストで描かれている箱か。描かれなくなった箱（寸法 0 になった表など）は前回の dlEnd / dlOrder を持ち続けるので、
+     * 番号が今の描画順の一覧でその箱を指すことまで確かめる（§6-113。layouts の種 137: tbody を消して 0×0 になった表の古い番号が挿入位置になった）。
+     */
+    private boolean drawn(LayoutBox x) {
+        return x.dlEnd >= 0 && x.dlOrder >= 0 && x.dlOrder < b.renderedBoxes.size() && b.renderedBoxes.get(x.dlOrder) == x;
+    }
+
     /** ブロック層: afterBox 以前の描画済みボックスを逆順探索し、無ければ親・後続の最初のブロックへ。 */
     private void blockInsertAfter(LayoutBox parentBox, List<LayoutBox> added, int afterIdx) {
         LayoutBox lastBlock = null;
@@ -262,13 +245,13 @@ final class ChildSlicePatch {
             List<LayoutBox> blockPhase = b.blockPhaseOf(c);
             for (int k = blockPhase.size() - 1; k >= 0; k--) {
                 LayoutBox x = blockPhase.get(k);
-                if (x.dlEnd >= 0 && x.dlOrder >= 0) {
+                if (drawn(x)) {
                     lastBlock = x;
                     break;
                 }
             }
             if (lastBlock != null) break;
-            if (c.dlEnd >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) {
+            if (drawn(c) && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) {
                 lastBlock = c;
                 break;
             }
@@ -300,7 +283,7 @@ final class ChildSlicePatch {
             List<LayoutBox> inlinePhase = b.inlinePhaseOf(c);
             for (int k = inlinePhase.size() - 1; k >= 0; k--) {
                 LayoutBox x = inlinePhase.get(k);
-                if (x.dlEnd >= 0 && x.dlOrder >= 0) {
+                if (drawn(x)) {
                     lastInline = x;
                     break;
                 }

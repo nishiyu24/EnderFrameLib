@@ -51,6 +51,21 @@ public class FlexMinContentTest {
         return null;
     }
 
+    /**
+     * 列方向の flex で、容器の内容幅が項目の padding と border より狭いとき、stretch した項目の枠線ボックスは装飾の幅で止まる（内容の幅は負にならない）。
+     * 何が壊れていたか: 伸ばす幅をそのまま枠線ボックスにして 0 になり、測り直す箱の組み合わせによって 0 / 10 が入れ替わった（§6-113。差分ファズ nested の種 195）。
+     */
+    @Test
+    void stretchedColumnItemIsNotNarrowerThanItsPaddingAndBorder() {
+        for (String sizing : new String[] {"content-box", "border-box"}) {
+            LayoutBox root = layout("<div style=\"display:flex;flex-direction:column;width:4px\">"
+                    + "<div id=\"i\" style=\"box-sizing:" + sizing + ";padding:0 4px;border:1px solid #000;flex:1 1 0;min-width:0\"></div>"
+                    + "<div id=\"j\" style=\"box-sizing:" + sizing + ";padding:0 4px;border:1px solid #000\">x</div></div>");
+            assertEquals(10f, byId(root, "i").w, 0.001f, sizing + ": 空の項目");
+            assertEquals(10f, byId(root, "j").w, 0.001f, sizing + ": 文字の項目");
+        }
+    }
+
     @Test
     void rowFlexItemDoesNotShrinkBelowTheSumOfItsItems() {
         LayoutBox root = layout(SEARCH_BAR);
