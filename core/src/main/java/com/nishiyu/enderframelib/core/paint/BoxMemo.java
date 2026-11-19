@@ -752,7 +752,12 @@ static final int NUMS_LENGTH = 13;
      * flex アイテムの子を消すなど）・flex / grid / 表など（ブロックの流れ以外）の中で兄弟の寸法が変わったときは、古い寸法の項目が残る（§6-108。T3 の差分ファズ
      * nested の種 17）。レイアウトは済んでいるので、表示リストに触る前に記憶の寸法と比べて退く。
      */
-    static boolean sizesFollowable(java.util.Map<LayoutBox, BoxMemo> memoOf, LayoutBox parentBox) {
+    static boolean sizesFollowable(java.util.Map<LayoutBox, BoxMemo> memoOf, LayoutBox parentBox, List<LayoutBox> rendered, List<LayoutBox> removed) {
+        // ⑦は記憶の原点との差で項目を動かすので、記憶の無い箱（表など）が後ろで動くと古い位置に残る（§6-109。差分ファズ layouts の種 23 の手 19）
+        for (int i = Math.max(0, parentBox.dlOrder), n = rendered.size(); i < n; i++) {
+            LayoutBox r = rendered.get(i);
+            if (r.dlStart >= 0 && r.dlEnd > r.dlStart && memoOf.get(r) == null && !isAncestorOrInside(r, parentBox, removed)) return false;
+        }
         for (LayoutBox anc = parentBox; anc != null; anc = anc.parent) {
             BoxMemo am = memoOf.get(anc);
             if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[2], anc.w) != 0) return false;
@@ -763,5 +768,12 @@ static final int NUMS_LENGTH = 13;
             }
         }
         return true;
+    }
+
+    /** {@code box} が {@code parentBox} の祖先（⑧が合わせる）か、消える部分木の中か。 */
+    private static boolean isAncestorOrInside(LayoutBox box, LayoutBox parentBox, List<LayoutBox> removed) {
+        for (LayoutBox a = parentBox; a != null; a = a.parent) if (a == box) return true;
+        for (LayoutBox a = box; a != null; a = a.parent) if (removed.contains(a)) return true;
+        return false;
     }
 }

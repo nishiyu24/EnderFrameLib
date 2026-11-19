@@ -1094,7 +1094,7 @@ public class RenderPipeline {
                         repositionRequired = true;
                     } else {
                         layoutRequired = true;
-                        if (box.touchedByTableEngine() || !isGeometryOnlyChange(prevStyle, computed)) structural = true;
+                        if (box.isInTableScope() || !isGeometryOnlyChange(prevStyle, computed)) structural = true;
                         else layoutChangedList.add(box);
                     }
                 } else {
@@ -1378,7 +1378,7 @@ public class RenderPipeline {
             if (isPositionOnlyChange(existing.style, next)) {
                 layoutRequired = false;
                 repositionRequired = true;
-            } else if (existing.touchedByTableEngine() || !isGeometryOnlyChange(existing.style, next)) {
+            } else if (existing.isInTableScope() || !isGeometryOnlyChange(existing.style, next)) {
                 structural = true;
             } else {
                 layoutChangedList.add(existing);

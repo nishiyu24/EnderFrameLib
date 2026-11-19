@@ -70,6 +70,50 @@ class IncrementalVsFullTest {
         }
     }
 
+    private static void assertIncrementalMatchesFull(String html, java.util.function.Consumer<StandaloneView> change) {
+        try (StandaloneView v = new StandaloneView(html, 320, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+             var be = new MutationScenario.NoDraw()) {
+            long now = 1000;
+            v.frame(now, be, true);
+            change.accept(v);
+            v.frame(now += 16, be, true);
+            List<String> incremental = v.items().stream().map(MutationScenario::sig).toList();
+            v.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
+            v.frame(now, be, true);
+            assertEquals(v.items().stream().map(MutationScenario::sig).toList(), incremental);
+        }
+    }
+
+    /** 前の兄弟の中に float があるとき、足したブロックの項目は float の層より前（ブロックの層の末尾）に入る（§6-109。差分ファズ layouts の種 17）。 */
+    @Test
+    void blockAddedAfterASiblingWithAFloatGoesBeforeTheFloatLayer() {
+        assertIncrementalMatchesFull("<style>body{margin:0}.fl{float:left;width:70px;background:#cfc}.b{background:#def}</style>"
+                + "<div id=\"a\" class=\"b\">x<div class=\"fl\">f</div></div>",
+                v -> {
+                    var doc = v.root().ownerDocument;
+                    var add = (com.nishiyu.enderframelib.core.dom.node.HtmlElement) doc.createElement("div");
+                    add.setAttribute("id", "z");
+                    add.setTextContent("added");
+                    doc.getElementById("a").parent.appendChild(add);
+                });
+    }
+
+    /** flex の箱を普通のインラインへ変えたとき、中の文字が flex の項目だったころの配置の記録を引き継がない（§6-109。種 23・29）。 */
+    @Test
+    void flexSpanTurnedInlineKeepsItsTextUnderARelativeAncestor() {
+        assertIncrementalMatchesFull("<style>body{margin:0}.rel{position:relative;top:2px}.fx{display:flex}</style>"
+                + "<div class=\"rel\"><div>333<span id=\"s\" class=\"fx\">n6</span></div></div>",
+                v -> ((com.nishiyu.enderframelib.core.dom.node.HtmlElement) v.root().ownerDocument.getElementById("s")).setAttribute("class", ""));
+    }
+
+    /** 記憶を持たない箱（表）が子の削除で動くとき、子パッチは全体の作り直しへ退く（§6-109。種 23 の手 19）。 */
+    @Test
+    void removingABlockMovesAFollowingTable() {
+        assertIncrementalMatchesFull("<style>body{margin:0}td{border:1px solid #999}</style><div id=\"w\"><p id=\"p\">para</p><div>x</div></div>"
+                + "<table id=\"tb\"><tr><td>a</td><td>bb</td></tr></table>",
+                v -> v.root().ownerDocument.getElementById("w").removeChild(v.root().ownerDocument.getElementById("p")));
+    }
+
     /**
      * 外寸が変わらない子の変化を親で吸収する近道（cutoff）を切ったときも、増分の結果が全面と一致すること（A6b ②）。
      */

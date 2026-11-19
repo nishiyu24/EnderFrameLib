@@ -44,7 +44,7 @@ final class ChildSlicePatch {
     }
 
     List<DisplayItem> apply(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
-        if (!b.canPatchChildSlices(parentBox, removed, added, afterBox) || !BoxMemo.sizesFollowable(b.boxMemo, parentBox)) {
+        if (!b.canPatchChildSlices(parentBox, removed, added, afterBox) || !BoxMemo.sizesFollowable(b.boxMemo, parentBox, b.renderedBoxes, removed)) {
             DisplayListBuilder.STAT_SLICE_PATCH_FALLBACKS.increment();
             return null;
         }
@@ -268,7 +268,7 @@ final class ChildSlicePatch {
                 }
             }
             if (lastBlock != null) break;
-            if (c.dlEnd >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c)) {
+            if (c.dlEnd >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) {
                 lastBlock = c;
                 break;
             }
@@ -352,7 +352,7 @@ final class ChildSlicePatch {
         for (LayoutBox x : b.blockPhaseOf(c)) {
             if (x.dlStart >= 0 && x.dlOrder >= 0) return x;
         }
-        if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c)) return c;
+        if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) return c;
         return null;
     }
 

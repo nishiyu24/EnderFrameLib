@@ -786,8 +786,8 @@ public class LayoutBox {
                         || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.FLOAT), newStyle.get(CssPropertyIndex.FLOAT)))) {
             bumpShapeEpoch();
         }
-        if (traitsBefore != structTraits()) STRUCT_EPOCH.incrementAndGet();
-        if (containerBefore != containerTraits()) CONTAINER_EPOCH.incrementAndGet();
+        if (displayBefore != null && !display.equals(displayBefore)) for (LayoutBox c : children) { c.lastLayoutX = c.lastLayoutY = Float.NaN; c.placementPure = c.keptPure = c.placementValid = false; } // 子は別の整形コンテキストで置かれていた（flex の項目だった文字など。§6-109）
+        if (traitsBefore != structTraits()) STRUCT_EPOCH.incrementAndGet(); if (containerBefore != containerTraits()) CONTAINER_EPOCH.incrementAndGet();
     }
 
     /** 算出スタイルも節の文字も前回と同じなら何もしない {@link #updateStyle}（差分レイアウトで箱を使い回すとき用）。 */

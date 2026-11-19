@@ -2019,14 +2019,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     /**
-     * 兄弟の「ブロック層の末尾／先頭」を探すための収集。インラインレベルの箱と flex / grid アイテム（{@link PaintSupport#isAtomicInline}）は
+     * 兄弟の「ブロック層の末尾／先頭」を探すための収集。インラインレベルの箱・flex / grid アイテム（{@link PaintSupport#isAtomicInline}）・float・位置指定は
      * 中身ごと後ろの層で描かれるので、その箱も子孫も入れない（入れると、層の末尾がリストの末尾を指してしまう）。
      */
     private void collectBlockPhaseBoxes(LayoutBox box, List<LayoutBox> out) {
         if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
         if (!box.isAnonymous) {
-            if (box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT)
-                    || PaintSupport.isAtomicInline(box)) return;
+            if (box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT) || PaintSupport.isAtomicInline(box)
+                    || BlockLayoutEngine.isFloating(box) || PaintOrder.isPositioned(box) || order.createsStackingContext(box)) return; // float・位置指定は後ろの層（§6-109）
             out.add(box);
         }
         if (box.children != null) for (LayoutBox c : box.children) collectBlockPhaseBoxes(c, out);
@@ -2037,12 +2037,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
      * 1 回の走査で、インライン層の箱の下にいるかを引数で運ぶ（以前はブロック層の集合を作って木の順の一覧から引いており、
      * 兄弟ごとにリスト 3 つと IdentityHashMap を作って、子の増減 1 回で数十 KB を確保した）。
      */
-    private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out) {
-        collectInlinePhaseBoxes(box, out, false);
-    }
+    private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out) { collectInlinePhaseBoxes(box, out, false); }
 
     private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out, boolean underInline) {
-        if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
+        if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone()) || PaintOrder.isPositioned(box) || order.createsStackingContext(box)
+                || (!underInline && BlockLayoutEngine.isFloating(box))) return; // 位置指定・float の中身はその層で描く（アトミックな箱の中の float はその箱の中。§6-109）
         boolean inline = underInline;
         if (!box.isAnonymous) {
             inline |= box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT) || PaintSupport.isAtomicInline(box);
