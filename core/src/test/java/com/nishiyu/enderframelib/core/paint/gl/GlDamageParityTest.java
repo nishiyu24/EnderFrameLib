@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 class GlDamageParityTest {
     @AfterEach
     void restore() {
-        GpuRenderBackend.setDamageEnabled(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.GPU_DAMAGE.set(true);
     }
 
     private static String listHtml(int rows) {
@@ -51,7 +51,7 @@ class GlDamageParityTest {
         Pixmap[] off = new Pixmap[frames];
         long partial = 0;
         for (int mode = 0; mode < 2; mode++) {
-            GpuRenderBackend.setDamageEnabled(mode == 1);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.GPU_DAMAGE.set(mode == 1);
             Random rnd = new Random(7);
             try (StandaloneView v = new StandaloneView(html, w, h, FontResolver.FALLBACK);
                  com.nishiyu.enderframelib.core.paint.RenderBackend gl = open(vulkan, w, h)) {

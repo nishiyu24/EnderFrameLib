@@ -130,11 +130,6 @@ public class DisplayListBuilder {
         }, DisplayListBuilder::memoizable);
     }
 
-    /** 切り分け用: false なら部分木の保持（{@link Chunk}）を使わない。結果は同じでなければならない。 */
-    public static void setChunksEnabled(boolean enabled) {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.PAINT_CHUNKS.set(enabled);
-    }
-
     /** 診断: 部分木の保持を再利用した回数の累計。 */
     public static long chunksReplayed() {
         return PaintOrder.STAT_CHUNK_REPLAYED.sum();

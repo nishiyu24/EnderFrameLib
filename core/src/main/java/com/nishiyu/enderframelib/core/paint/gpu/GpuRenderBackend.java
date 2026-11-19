@@ -108,11 +108,6 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
 
     // ---- 損傷範囲（B10）: 差分パッチで書き換えた項目の旧・新の範囲だけを、シザー付きのクリアで描き直す
 
-    /** テスト・診断用: 損傷範囲による部分描画を切り替える。 */
-    public static void setDamageEnabled(boolean on) {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.GPU_DAMAGE.set(on);
-    }
-
     public long partialFrameCount() { return partialFrames; }
 
     public long fullFrameCount() { return fullFrames; }

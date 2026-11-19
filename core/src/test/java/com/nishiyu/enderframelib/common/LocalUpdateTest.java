@@ -48,7 +48,7 @@ public class LocalUpdateTest {
 
     @AfterEach
     void restore() {
-        DisplayListBuilder.setChunksEnabled(true);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PAINT_CHUNKS.set(true);
     }
 
     private static String html(int rows) {
@@ -65,7 +65,7 @@ public class LocalUpdateTest {
     }
 
     private static List<DisplayItem> flush(StandaloneView v, boolean chunks) {
-        DisplayListBuilder.setChunksEnabled(chunks);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.PAINT_CHUNKS.set(chunks);
         v.ui().flushInvalidation();
         return v.ui().renderCache();
     }
