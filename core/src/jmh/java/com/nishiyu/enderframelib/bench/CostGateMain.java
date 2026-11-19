@@ -10,6 +10,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * 時間に依らない量（1 フレームのヒープ確保と、近道の経路の回数）で退行を判定する回帰ゲート（ENGINE_REARCHITECTURE_PLAN A1）。
@@ -71,17 +75,38 @@ public final class CostGateMain {
         String only = System.getProperty("costgate.only", "").trim();
         if (update && !only.isEmpty()) throw new IllegalArgumentException("costgate.only と costgate.update は併用できない（基準値の行が欠ける）");
 
-        Map<String, Map<String, Long>> measured = new LinkedHashMap<>();
+        // 子 JVM を同時に何本走らせるか（-Pcostgate.parallel=N。既定 1 = 直列）。途中の確認用: 24 コアで 4 本にすると 205 → 78 秒。
+        // 経路の回数は直列と全行一致するが、確保量は小さい行で最大 -20% ずれる（同時に走る JVM で JIT の進みが変わる。§6-116）。
+        // 合否（push 前・CI）は直列で取る
+        int parallel = Math.max(1, Integer.getInteger("costgate.parallel", 1));
+        Map<String, Future<Map<String, Long>>> pending = new LinkedHashMap<>();
         long started = System.nanoTime();
+        ExecutorService pool = Executors.newFixedThreadPool(parallel);
         for (String[] run : RUNS) {
             String backend = run.length > 2 ? run[2] : "null";
             String key = run[0] + " " + run[1] + (backend.equals("null") ? "" : " " + backend);
             if (!only.isEmpty() && !key.contains(only)) continue;
-            long t0 = System.nanoTime();
-            measured.put(key, measure(run[0], run[1], backend, extra));
-            System.out.printf("measured %s (%.1f s) %s%n", key, (System.nanoTime() - t0) / 1e9, format(measured.get(key)));
+            pending.put(key, pool.submit(() -> {
+                long t0 = System.nanoTime();
+                Map<String, Long> m = measure(run[0], run[1], backend, extra);
+                System.out.printf("measured %s (%.1f s) %s%n", key, (System.nanoTime() - t0) / 1e9, format(m));
+                return m;
+            }));
         }
-        System.out.printf("COSTGATE %d scenarios in %.0f s%n", measured.size(), (System.nanoTime() - started) / 1e9);
+        pool.shutdown();
+        Map<String, Map<String, Long>> measured = new LinkedHashMap<>();
+        try {
+            for (var e : pending.entrySet()) {
+                try {
+                    measured.put(e.getKey(), e.getValue().get());
+                } catch (ExecutionException ex) {
+                    throw ex.getCause() instanceof Exception c ? c : ex;
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        System.out.printf("COSTGATE %d scenarios in %.0f s (parallel %d)%n", measured.size(), (System.nanoTime() - started) / 1e9, parallel);
 
         if (update) {
             Map<String, Map<String, Long>> old = readBaseline();

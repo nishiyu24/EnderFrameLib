@@ -223,6 +223,9 @@ idea {
 // --- 追加: JUnitを実行するための設定 ---
 tasks.named('test', Test) {
     useJUnitPlatform()
+    // :core と同じく、テストのクラスを JVM ごとに振り分けて並列に流す（-Ptest.forks=N。既定はコア数 / 6、1〜4）
+    maxParallelForks = project.hasProperty('test.forks') ? project.property('test.forks').toString().toInteger()
+            : Math.max(1, Math.min(4, Runtime.runtime.availableProcessors().intdiv(6)))
 
     testLogging {
         showStandardStreams = true

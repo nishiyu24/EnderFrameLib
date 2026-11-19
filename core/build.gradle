@@ -86,26 +86,67 @@ tasks.withType(JavaExec).configureEach {
 // テストはリポジトリ直下の src/test/resources（フォント・ゴールデン等）と src/main/resources を相対パスで読む
 sourceSets.test.resources.srcDir rootProject.file('src/test/resources')
 
-tasks.named('test', Test) {
-    useJUnitPlatform {
-        // 実時間で合否を決めるテスト（@Tag("timing")）。共有ランナーの CI（build.yml・full-tests.yml）は -Ptest.excludeTags=timing で外し、
-        // 開発機（scripts/ci-linux.ps1 を含む）では流す。TimingTagPolicyTest が付け忘れと CI の渡し忘れを見張る
-        if (project.hasProperty('test.excludeTags')) excludeTags(*project.property('test.excludeTags').toString().split(','))
+// ---- テストの体制（2026-11-19。CONTRIBUTING.md「テストの回し方」）----
+//   ./gradlew :core:quickTest              開発中の確認。@Tag("slow")（種を多数回すファズ型）と @Tag("timing") を外し、JVM を分けて並列
+//   ./gradlew :core:test                   全件。slow を含めて並列で流し、続けて timing だけを直列の timingTest で流す
+//   ./gradlew :core:test --tests '*Foo*'   絞り込み（timingTest も同じ絞り込みで続く。該当なしは素通り）
+// 並列はテストのクラスを JVM ごとに振り分けるだけで、1 つの JVM の中は従来どおり直列（static な状態を書き換えるテストがあるため、
+// JUnit のスレッド並列は使わない）。本数は -Ptest.forks=N（既定はコア数 / 6、1〜4。2 コアの CI では 1 本＝従来どおり。各テストが内部でワーカーを立てるので、24 コアで 4 本と 6 本は同じ時間〔約 160 秒〕で 4 本の方が CPU の取り合いが少ない）。
+// timing を並列の JVM と同時に流すと CPU の取り合いで実時間が揺れるので、timing は必ず test の後に 1 本で流す。
+// 実時間で合否を決めるテスト（@Tag("timing")）は、共有ランナーの CI（build.yml・full-tests.yml）では -Ptest.excludeTags=timing で外す。
+// TimingTagPolicyTest が付け忘れと CI の渡し忘れを見張る。
+def excludedTags = project.hasProperty('test.excludeTags') ? project.property('test.excludeTags').toString().split(',').collect { it.trim() }.findAll { it } : []
+def testForks = project.hasProperty('test.forks') ? project.property('test.forks').toString().toInteger()
+        : Math.max(1, Math.min(4, Runtime.runtime.availableProcessors().intdiv(6)))
+def configureCoreTest = { Test t, List<String> includeTagList, List<String> excludeTagList, int forks ->
+    t.testClassesDirs = sourceSets.test.output.classesDirs
+    t.classpath = sourceSets.test.runtimeClasspath
+    t.useJUnitPlatform {
+        if (!includeTagList.isEmpty()) includeTags(*includeTagList)
+        if (!excludeTagList.isEmpty()) excludeTags(*excludeTagList)
     }
-    maxHeapSize = '3g' // 既定のヒープでは全件実行が OutOfMemoryError で落ちる
-    systemProperty 'enderframe.paint.verifystamps', 'true'
+    t.maxParallelForks = forks
+    t.maxHeapSize = '3g' // 既定のヒープでは全件実行が OutOfMemoryError で落ちる
+    t.systemProperty 'enderframe.paint.verifystamps', 'true'
     // float メモ（BlockLayoutEngine.containsFloats）が使える場面でも走査し直し、食い違えば AssertionError（無効化の付け漏れの検出）
-    systemProperty 'enderframe.layout.verifyfloats', 'true'
-    workingDir = rootProject.projectDir
-    testLogging { showStandardStreams = true }
+    t.systemProperty 'enderframe.layout.verifyfloats', 'true'
+    t.workingDir = rootProject.projectDir
+    t.testLogging { showStandardStreams = true }
     ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees', 'enderframe.paint.noparentrelative', 'gpu.baseline.exact', 'gpu.baseline.update', 'wpt.reftest.update', 'wpt.reftest.diag', 'wpt.reftest.strict', 'wpt.reftest.dump', 'enderframe.parser.dropnewlinews', 'ratchet.update'].each { key ->
         def value = System.getProperty(key)
-        if (value != null) systemProperty key, value
-        inputs.property key, value ?: ''
+        if (value != null) t.systemProperty key, value
+        t.inputs.property key, value ?: ''
     }
     // T4: 公開 API の署名の表（api-signatures.txt）を書き直す。差分を目で見てからコミットする
-    if (project.hasProperty('api.update')) systemProperty 'api.update', 'true'
-    inputs.property 'api.update', project.hasProperty('api.update')
+    if (project.hasProperty('api.update')) t.systemProperty 'api.update', 'true'
+    t.inputs.property 'api.update', project.hasProperty('api.update')
+}
+
+def timingTest = tasks.register('timingTest', Test) {
+    group = 'verification'
+    description = '実時間で合否を決めるテスト（@Tag("timing")）だけを 1 本の JVM で流す（test の後に自動で続く）'
+    configureCoreTest(it, ['timing'], excludedTags.findAll { it != 'timing' }, 1)
+    // test と同じ --tests の絞り込みを引き継ぐ。絞り込んだ結果に timing が無くても失敗にしない
+    filter.failOnNoMatchingTests = false
+    onlyIf('-Ptest.excludeTags=timing で外した') { !excludedTags.contains('timing') }
+    mustRunAfter tasks.named('test')
+}
+
+tasks.named('test', Test) {
+    configureCoreTest(it, [], (excludedTags + ['timing']).unique(), testForks)
+    finalizedBy timingTest
+    // --tests の絞り込みを timingTest へ写す（コマンド行の --tests は test にしか掛からない）
+    doFirst {
+        def patterns = filter.commandLineIncludePatterns
+        patterns.each { timingTest.get().filter.includeTestsMatching(it) }
+    }
+}
+
+tasks.register('quickTest', Test) {
+    group = 'verification'
+    description = '開発中の確認: @Tag("slow") と @Tag("timing") を外した全テストを並列で流す（push 前は test / ci-linux.ps1）'
+    configureCoreTest(it, [], (excludedTags + ['slow', 'timing']).unique(), testForks)
+    dependsOn 'verifyCoreDependencyGraph'
 }
 
 publishing {
@@ -393,6 +434,7 @@ tasks.register('costGate', JavaExec) {
     if (project.hasProperty('costgate.tolerance')) systemProperty 'costgate.tolerance', project.property('costgate.tolerance').toString()
     if (project.hasProperty('costgate.jvmArgs')) systemProperty 'costgate.jvmArgs', project.property('costgate.jvmArgs').toString()
     if (project.hasProperty('costgate.only')) systemProperty 'costgate.only', project.property('costgate.only').toString()
+    if (project.hasProperty('costgate.parallel')) systemProperty 'costgate.parallel', project.property('costgate.parallel').toString()
 }
 
 // T3: 差分ファズ。乱数の変更列で増分 = 全面を毎手比べ、ずれた種を core/build/fuzz/new-seeds.txt へ書く（夜間。種は日付から）。

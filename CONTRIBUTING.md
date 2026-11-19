@@ -8,7 +8,8 @@
 ```bash
 ./gradlew build test          # CI と同じ経路（性能ベンチはスモーク動作のみ・実時間閾値では落とさない）
 ./gradlew benchmark           # 単独 JVM での厳密な性能・メモリ回帰テスト（-Dbenchmark.enforce=true）
-./gradlew :core:test         # Minecraft 非依存の :core だけのテスト
+./gradlew :core:quickTest    # 開発中の確認（約 2 分）。slow・timing を外した :core のテストを並列で
+./gradlew :core:test         # Minecraft 非依存の :core の全件（約 3 分。slow を含み、timing は後から直列）
 ./gradlew runClient
 ./gradlew runServer
 ./gradlew runGameTestServer   # サーバー側ライフサイクルのゲームテスト
@@ -180,6 +181,19 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   （作業ディレクトリはリポジトリ直下。テスト資源は `src/test/resources` を共有する）。
   ソースは `core/src/main/java`、Minecraft に触れる側は `src/main/java`。
   Minecraft の起動が要らないので、ここが唯一安く速く検証できる層。
+- **テストの回し方**（24 コアの開発機での目安。2 コアの CI では並列にならず、従来と同じ直列）:
+
+  | 場面 | コマンド | 目安 |
+  | :-- | :-- | :-- |
+  | 1 つのクラス・パッケージを直している間 | `./gradlew :core:test --tests '*FooTest'`（timing のメソッドも同じ絞り込みで後に続く） | 数十秒 |
+  | 作業の区切り | `./gradlew :core:quickTest`（`@Tag("slow")`・`@Tag("timing")` を外す） | 約 2 分 |
+  | 項目の完了（計画書の運用ルール 5） | `./gradlew :core:test`・`./gradlew :core:costGate` | 約 3 分 + 約 3.5 分 |
+  | push の前（運用ルール 6） | `powershell -File scripts/ci-linux.ps1` | 長い |
+
+  - テストのクラスは JVM 4 本へ振り分けて並列に流す（1 つの JVM の中は直列。static な状態を書き換えるテストがあるので、JUnit のスレッド並列は使わない）。本数は `-Ptest.forks=N`、`-Ptest.forks=1` で従来と同じ直列。
+  - **`@Tag("slow")`**: 1 メソッドで 20 秒を超えるもの（種を多数回すファズ型など）に付ける。`quickTest` からは外れるが、`test` では流れる。
+  - **`@Tag("timing")`**: 実時間で合否を決めるもの。並列の JVM と同時に流すと揺れるので、`test` の後に `timingTest` が 1 本の JVM で流す。CI は `-Ptest.excludeTags=timing` で外す（`TimingTagPolicyTest` が見張る）。
+  - `costGate` の途中確認は `-Pcostgate.only=voidwave`（名前で絞る）か `-Pcostgate.parallel=4`（約 80 秒）。並列では経路の回数は一致するが確保量が最大 20% ずれるので、合否は既定の直列で取る。
 - **テストのパッケージは本体に合わせる。** `src/test/java` に本体の無いパッケージを作らない
   （WPT の移植ハーネスだけは例外）。`ArchitectureTest` が検査する。
 - **管理指標の上限は下げる方向にだけ動かす。** `ArchitectureTest` の M1〜M8 は

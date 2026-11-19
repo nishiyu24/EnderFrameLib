@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -72,6 +73,7 @@ class SoftwarePaintCostTest {
     }
 
     @Test
+    @Tag("slow") // 乱数の文書 120 本で約 45 秒。quickTest からは外し、全件の test で流す
     void randomShapesAreIdentical() {
         Random rnd = new Random(7);
         for (int doc = 0; doc < 120; doc++) {

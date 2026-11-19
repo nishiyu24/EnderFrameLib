@@ -8,6 +8,7 @@ import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.Map;
 import java.util.Random;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -228,6 +229,7 @@ class WidthOnlyReuseTest {
      * なしの差分レイアウトも一から組んだ結果と一致しなければならない（空の箱の min-content が今の幅を読んでいた不具合の再発防止）。
      */
     @Test
+    @Tag("slow") // 種 300 本で約 55 秒。quickTest からは外し、全件の test で流す
     void fitReuseDoesNotChangeTheIncrementalResultAcrossFittingAndWrappingWidths() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         int baselineMismatches = 0;
