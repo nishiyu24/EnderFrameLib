@@ -226,6 +226,8 @@ tasks.named('test', Test) {
     // :core と同じく、テストのクラスを JVM ごとに振り分けて並列に流す（-Ptest.forks=N。既定はコア数 / 6、1〜4）
     maxParallelForks = project.hasProperty('test.forks') ? project.property('test.forks').toString().toInteger()
             : Math.max(1, Math.min(4, Runtime.runtime.availableProcessors().intdiv(6)))
+    // ArchitectureTest などがクラスパスの外から読むファイル（文書・全モジュールのソース）。core/build.gradle の repoFilesReadByTests
+    inputs.files(project(':core').repoFilesReadByTests).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('repoFilesReadByTests')
 
     testLogging {
         showStandardStreams = true

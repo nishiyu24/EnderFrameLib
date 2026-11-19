@@ -98,7 +98,20 @@ sourceSets.test.resources.srcDir rootProject.file('src/test/resources')
 def excludedTags = project.hasProperty('test.excludeTags') ? project.property('test.excludeTags').toString().split(',').collect { it.trim() }.findAll { it } : []
 def testForks = project.hasProperty('test.forks') ? project.property('test.forks').toString().toInteger()
         : Math.max(1, Math.min(4, Runtime.runtime.availableProcessors().intdiv(6)))
+// テストがクラスパスの外から（リポジトリ直下からの相対パスで）読むファイル。文書の整合（DocConsistencyTest）・回帰カタログ・
+// ラチェット（ソースの走査）・ArchitectureTest・CI のワークフロー（TimingTagPolicyTest）・同梱の HTML など。
+// 入力に申告しないと、文書やコメントだけを直したときに test が UP-TO-DATE / FROM-CACHE で素通りする（2026-11-19）。
+// ルートの test（build.gradle）も同じ集合を使う
+def rootDir = rootProject.projectDir
+ext.repoFilesReadByTests = files(
+        { rootDir.listFiles().findAll { it.isFile() && it.name.endsWith('.md') } },
+        { new File(rootDir, 'core').listFiles().findAll { it.isFile() && it.name.endsWith('.md') } },
+        ['core/src/main/java', 'core-gl/src/main/java', 'core-vulkan/src/main/java', 'core-glfw/src/main/java',
+         'src/main/java', 'src/main/resources', 'core/demo/resources', 'core/src/bench-crossengine',
+         'core/src/test/java', 'src/test/java', '.github/workflows', 'scripts', 'core/baseline']
+                .collect { new File(rootDir, it) }.findAll { it.exists() })
 def configureCoreTest = { Test t, List<String> includeTagList, List<String> excludeTagList, int forks ->
+    t.inputs.files(repoFilesReadByTests).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('repoFilesReadByTests')
     t.testClassesDirs = sourceSets.test.output.classesDirs
     t.classpath = sourceSets.test.runtimeClasspath
     t.useJUnitPlatform {
