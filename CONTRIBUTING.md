@@ -163,7 +163,7 @@ CI は 2 本ある（どちらも Linux の ubuntu-latest。GPU なし）:
 | OS ごとに通る・通らないが違う合格一覧（WPT の reftest） | 一覧は作った OS（Windows）でだけ判定する。他の OS では差分を出力するだけ（`-Dwpt.reftest.strict=true` で強制） |
 | GPU が無い環境（CI）でだけ起きる差 | `scripts/ci-linux.sh` は `DISPLAY` を外して実行する（GL・Vulkan のテストは中断になる。CI と同じ） |
 
-- **Linux で CI と同じ手順を回す**: `powershell -File scripts/ci-linux.ps1`（WSL の Ubuntu。JDK 21 は自動取得）。数分かかる。大きな変更・モジュールや依存の追加・テストの追加の前後に回す。
+- **Linux で CI と同じ手順を回す**: `powershell -File scripts/ci-linux.ps1`（WSL の Ubuntu。JDK 21 は自動取得）。既定は `build test` と `runGameTestServer` で約 3 分。近道（`Shortcut`）・確保量・計測の基準値に触れた変更は `-Full` で `costGate` と `shortcutMatrix` も回す（約 8 分。CI が push ごと・夜間に回すものを先に見る）。大きな変更・モジュールや依存の追加・テストの追加の前後に回す。
 - **push 前フック**: `powershell -File scripts/install-hooks.ps1`（clone ごとに 1 回）。以降 `git push` で `./gradlew build -x test` が走る。`EFL_PREPUSH_LINUX=1 git push` で Linux の全件も回す。急ぐときは `git push --no-verify`。
 - **CI が赤くなったら**: ジョブの「Summarize test failures」のサマリーと注釈に、失敗したテスト名とメッセージが出る（ログを開かなくても読める。注釈は API の `check-runs/<id>/annotations` でも取れる）。
 
@@ -188,7 +188,7 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   | 1 つのクラス・パッケージを直している間 | `./gradlew :core:test --tests '*FooTest'`（timing のメソッドも同じ絞り込みで後に続く） | 数十秒 |
   | 作業の区切り | `./gradlew :core:quickTest`（`@Tag("slow")`・`@Tag("timing")` を外す） | 約 2 分 |
   | 項目の完了（計画書の運用ルール 5） | `./gradlew :core:test`・`./gradlew :core:costGate` | 約 3 分 + 約 3.5 分 |
-  | push の前（運用ルール 6） | `powershell -File scripts/ci-linux.ps1` | 長い |
+  | push の前（運用ルール 6） | `powershell -File scripts/ci-linux.ps1`（近道・確保量に触れたら `-Full`） | 約 3 分（`-Full` は約 8 分） |
 
   - テストのクラスは JVM 4 本へ振り分けて並列に流す（1 つの JVM の中は直列。static な状態を書き換えるテストがあるので、JUnit のスレッド並列は使わない）。本数は `-Ptest.forks=N`、`-Ptest.forks=1` で従来と同じ直列。
   - **`@Tag("slow")`**: 1 メソッドで 20 秒を超えるもの（種を多数回すファズ型など）に付ける。`quickTest` からは外れるが、`test` では流れる。

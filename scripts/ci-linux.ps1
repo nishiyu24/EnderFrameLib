@@ -3,9 +3,13 @@
 #
 #   powershell -File scripts/ci-linux.ps1            # default WSL distro (Ubuntu)
 #   powershell -File scripts/ci-linux.ps1 -Distro Ubuntu
+#   powershell -File scripts/ci-linux.ps1 -Full      # also costGate + shortcutMatrix (~8 min instead of ~3)
+#
+# Default runs build test + runGameTestServer only (what differs between Windows and Linux).
+# Use -Full when the change touches shortcuts (Shortcut), allocation, or measurement baselines.
 #
 # NOTE: keep this file ASCII-only (Windows PowerShell 5.1 reads BOM-less UTF-8 as ANSI).
-param([string]$Distro = "Ubuntu")
+param([string]$Distro = "Ubuntu", [switch]$Full)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -32,5 +36,6 @@ $wslTar = (& wsl -d $Distro -- wslpath -a ($tar.Replace('\', '/'))).Trim()
 
 # CRLF would break the bash script when the repo is checked out with autocrlf
 & wsl -d $Distro -- bash -c "sed -i 's/\r$//' '$wslRoot/scripts/ci-linux.sh' '$wslRoot/scripts/ci-summarize-tests.py' 2>/dev/null"
-& wsl -d $Distro -- env "EFL_CI_ARCHIVE=$wslTar" bash "$wslRoot/scripts/ci-linux.sh"
+$fullFlag = if ($Full) { "1" } else { "0" }
+& wsl -d $Distro -- env "EFL_CI_ARCHIVE=$wslTar" "EFL_CI_FULL=$fullFlag" bash "$wslRoot/scripts/ci-linux.sh"
 exit $LASTEXITCODE

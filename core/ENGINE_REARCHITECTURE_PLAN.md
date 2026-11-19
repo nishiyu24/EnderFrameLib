@@ -12,7 +12,7 @@
 3. **計測値は §2 の KPI 表を上書きする。** 古い値は残さない（履歴は git とアーカイブ）。測り直したら日付を更新する。
 4. **調査で分かった知見は §6 に 1〜3 行。** 外れた仮説も同じ形式で 1 行。
 5. 1 つの項目の完了条件は「**テストが緑、§2 の該当行を更新、§3 の行を削除**」の 3 つ。作業の途中は `.\gradlew.bat :core:quickTest`（約 2 分。`@Tag("slow")` と `@Tag("timing")` を外して並列）か `--tests` の絞り込みで回し、「テストが緑」の判定は項目の最後に 1 回だけ全件の `:core:test`（約 3 分。slow を含み、timing は後から直列）で取る。`costGate` の途中確認は `-Pcostgate.only=…` か `-Pcostgate.parallel=4`（確保量が揺れるので合否は直列で取る。§6-116）。種を多数回すなど 1 メソッドで 20 秒を超えるテストには `@Tag("slow")` を付ける（全件の `test` では流れる）。
-6. **push・マージの前に Linux で全テストを通す。** 毎回の CI（`build`）は `build -x test` + `runGameTestServer` だけ（環境差で赤くならない検査）。全テストは手動・毎日の `full-tests` と開発機が担う（GPU なしの ubuntu-latest 相当）。Windows で `test` が緑でも、ルート `build`（JAR）・書体・OS 別の合格一覧で CI だけ赤くなる。`powershell -File scripts/ci-linux.ps1`（WSL）を回す。pre-push フック（`scripts/install-hooks.ps1`）は `build -x test` を自動で回す。詳細は `CONTRIBUTING.md`「push 前の確認」。
+6. **push・マージの前に Linux で全テストを通す。** 毎回の CI（`build`）は `build -x test` + `runGameTestServer` だけ（環境差で赤くならない検査）。全テストは手動・毎日の `full-tests` と開発機が担う（GPU なしの ubuntu-latest 相当）。Windows で `test` が緑でも、ルート `build`（JAR）・書体・OS 別の合格一覧で CI だけ赤くなる。`powershell -File scripts/ci-linux.ps1`（WSL。既定は `build test` と `runGameTestServer` で約 3 分）を回す。近道（`Shortcut`）・確保量・計測の基準値に触れた変更は `-Full`（`costGate` と `shortcutMatrix` も。約 8 分）。どちらも CI が push ごと（`costGate`）・夜間（`shortcutMatrix`）に回すので、既定では省く（§6-116）。pre-push フック（`scripts/install-hooks.ps1`）は `build -x test` を自動で回す。詳細は `CONTRIBUTING.md`「push 前の確認」。
 7. **不具合を直したら、同じコミットで `core/src/test/resources/regression-catalog.txt` に 1 行足す**（元 | 守るテスト | 説明）。§6 に書くなら先頭に〔不具合〕の印を付ける（載せ忘れは `RegressionCatalogTest` が赤にする）。差分ファズ（`mutation-fuzz.yml`）が見つけた種は `mutation-seeds.txt` へ足して直す。すぐ直せないときだけ由来を「既知:」で始める（直ると赤になる）。
 
 ---
