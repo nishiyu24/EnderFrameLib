@@ -199,4 +199,34 @@ public abstract class LayoutEngine {
         }
     }
 
+    // 差分レイアウトの cutoff（LayoutBox.isCutoffEligible）が使う判定
+
+    /**
+     * {@code from} から上（再レイアウト境界・幅が px で決まった箱まで）に、自分の寸法を中身の内在幅から決められる箱があるか。
+     * 外寸が同じでも中身の max-content / min-content は変わりうる（flex-basis の % が不定の基準で内容の幅に落ちる・
+     * 子の flex-basis が変わる など）。そうした祖先は、親のエンジンが内在幅を読んで寸法を決めているので、子の変化を
+     * 外寸だけで吸収すると祖先の寸法が古いまま残る（T3 の差分ファズ nested/339: flex の html の中の縮小幅の body。§6-117）。
+     */
+    static boolean contentSizedAncestor(LayoutBox from) {
+        for (LayoutBox a = from; a != null && a.parent != null; a = a.parent) {
+            LayoutBox ap = a.parent;
+            if (ap.display != null) {
+                Display.Inner inner = ap.display.inner();
+                if (inner == Display.Inner.FLEX) {
+                    if (!FlexLayoutEngine.cutoffSafeItem(ap, a)) return true;
+                } else if (inner == Display.Inner.GRID || LayoutBox.isTableBox(ap)) {
+                    return true;
+                }
+            }
+            if (a.sizingMode == LayoutBox.SizingMode.SHRINK_TO_FIT && Float.isNaN(a.overrideWidth)) return true;
+            // 幅が px で決まった箱・再レイアウト境界より上へは、中身の内在幅が届かない
+            if (a.isRelayoutBoundary() || hasPxWidth(a)) return false;
+        }
+        return false;
+    }
+
+    private static boolean hasPxWidth(LayoutBox box) {
+        String v = box.axisStyle().get(CssPropertyIndex.WIDTH);
+        return v != null && v.trim().toLowerCase().endsWith("px");
+    }
 }

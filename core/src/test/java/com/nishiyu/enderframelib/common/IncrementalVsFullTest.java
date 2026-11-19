@@ -93,6 +93,45 @@ class IncrementalVsFullTest {
         }
     }
 
+    private static final String CONTENT_SIZED_BODY = "<html style=\"display:flex\"><head><style>body{margin:0;font-size:13px}"
+            + ".row{display:flex;gap:4px;padding:3px;border:1px solid #99a}.box{padding:2px 4px;border:1px solid #88a}"
+            + ".c2{flex:2 1 40px}.c1{flex:1 1 0;min-width:0}</style></head><body>"
+            + "<div class=\"row\" id=\"n1\"><div class=\"box c2\" id=\"a2\"%s>delta <b>epsilon</b></div><div class=\"box c1\" id=\"a3\">z</div></div>"
+            // 変える前の body の幅はこの行で決まり、変えた後は n1 の内在幅がこれを追い越す（n1 の高さは変わらない）
+            + "<div style=\"width:210px\">w</div></body></html>";
+
+    /**
+     * html が flex なので body は中身の幅で決まる flex アイテム。孫の flex-basis を % にすると（不定の基準なので内容の幅に落ちる）、
+     * 子の行の（body の幅で測った）外寸は変わらなくても body の内在幅が 210 → 228 に変わる。子の変化を外寸だけで吸収（cutoff）して
+     * body の幅が古いまま残った（§6-117。差分ファズ nested の種 339）。全面の再レイアウト（RELAYOUT）も同じ記憶を使い回して 210 になるので、
+     * 増分と全面を比べるだけでは見つからない。最初から変えた後の文書で作った面と比べる。
+     */
+    @Test
+    void flexBasisPercentInsideAContentSizedFlexItemResizesTheItem() {
+        java.util.function.Function<StandaloneView, List<String>> sigs = v -> v.items().stream().map(MutationScenario::sig).toList();
+        List<String> incremental, relayout, expected;
+        try (StandaloneView v = new StandaloneView(String.format(CONTENT_SIZED_BODY, ""), 400, 300,
+                     com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+             var be = new MutationScenario.NoDraw()) {
+            v.frame(1000, be, true);
+            v.root().ownerDocument.getElementById("a2").setAttribute("style", "flex-basis:50%");
+            v.frame(1016, be, true);
+            incremental = sigs.apply(v);
+            v.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
+            v.frame(1016, be, true);
+            relayout = sigs.apply(v);
+        }
+        // 比べる相手は、最初から変えた後の文書で作った面（変えた面の後に作る）
+        try (StandaloneView fresh = new StandaloneView(String.format(CONTENT_SIZED_BODY, " style=\"flex-basis:50%\""), 400, 300,
+                     com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+             var be = new MutationScenario.NoDraw()) {
+            fresh.frame(1000, be, true);
+            expected = sigs.apply(fresh);
+        }
+        assertEquals(expected, incremental, "増分");
+        assertEquals(expected, relayout, "全面の再レイアウト");
+    }
+
     /** 前の兄弟の中に float があるとき、足したブロックの項目は float の層より前（ブロックの層の末尾）に入る（§6-109。差分ファズ layouts の種 17）。 */
     @Test
     void blockAddedAfterASiblingWithAFloatGoesBeforeTheFloatLayer() {

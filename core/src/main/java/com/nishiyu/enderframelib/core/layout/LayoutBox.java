@@ -1514,6 +1514,7 @@ public class LayoutBox {
         for (LayoutBox a = p; a != null; a = a.parent) {
             if (!a.measuredFlowFloatFree) return false;
         }
+        if (LayoutEngine.contentSizedAncestor(p)) return false;
         return !BlockLayoutEngine.containsFloats(this);
     }
 
