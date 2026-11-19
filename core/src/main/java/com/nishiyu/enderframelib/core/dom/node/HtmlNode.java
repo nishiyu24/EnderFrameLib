@@ -7,12 +7,9 @@ import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlComment;
-import com.nishiyu.enderframelib.api.dom.CSSStyleDeclaration;
 import com.nishiyu.enderframelib.api.dom.DOMException;
-import com.nishiyu.enderframelib.api.dom.DOMCollections.DOMTokenList;
 import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.api.dom.Element;
-import com.nishiyu.enderframelib.api.dom.DOMCollections.HTMLCollection;
 import com.nishiyu.enderframelib.api.dom.Node;
 import com.nishiyu.enderframelib.api.dom.DOMCollections.NodeList;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
@@ -24,31 +21,18 @@ import com.nishiyu.enderframelib.api.event.EventListenerOptions;
 import com.nishiyu.enderframelib.core.event.EventDispatcher;
 import com.nishiyu.enderframelib.core.event.EventDispatcher.EventListenerEntry;
 import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
-import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.memory.AtomTable;
 import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.AbstractMap;
-import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -78,7 +62,7 @@ public class HtmlNode implements Node {
     /** 書き込める属性の表（テキスト・コメントの節はここで初めて作る）。 */
     public Map<String, String> attrsForWrite() {
         Map<String, String> a = attrs;
-        if (a == NO_ATTRS) attrs = a = new AttributeMap();
+        if (a == NO_ATTRS) attrs = a = new AttributeMap(this);
         return a;
     }
 
@@ -134,7 +118,7 @@ public class HtmlNode implements Node {
     /** {@link #nodeId} を振ったアリーナ。 */
     DocumentArena arena;
     /** 明示 id の無い節の鍵（{@code ~番号}）。番号を振り直したら捨てる。 */
-    private String derivedKey;
+    String derivedKey;
     /** class 属性のトークンを atom にしたもの。属性が変わるたびに 1 回だけ作り直す。 */
     private int[] classAtoms = NO_ATOMS;
     private static final int[] NO_ATOMS = new int[0];
@@ -156,8 +140,8 @@ public class HtmlNode implements Node {
         this.nodeType = type;
         this.tag = tag != null ? tag : "";
         boolean leaf = type == NodeType.TEXT || type == NodeType.COMMENT;
-        this.attrs = leaf ? NO_ATTRS : new AttributeMap();
-        this.children = leaf ? NO_CHILDREN : new ChildList();
+        this.attrs = leaf ? NO_ATTRS : new AttributeMap(this);
+        this.children = leaf ? NO_CHILDREN : new ChildList(this);
     }
 
     /** この節が木の根のときだけ持つアリーナ（文書は最初の子が付いたとき、断片は鍵を問われたときに作る）。 */
@@ -544,11 +528,11 @@ public class HtmlNode implements Node {
     }
 
     /** {@code child} の部分木が、この節の子として加わった。接続中なら id 索引に載せ、アリーナへ番号を振る。 */
-    private void childAttached(HtmlNode child) {
+    void childAttached(HtmlNode child) {
         attachChild(child, true);
     }
 
-    private void attachChild(HtmlNode child, boolean relink) {
+    void attachChild(HtmlNode child, boolean relink) {
         if (child == null) return;
         child.listed = true;
         HtmlDocument doc = connectedDocument();
@@ -566,7 +550,7 @@ public class HtmlNode implements Node {
     }
 
     /** {@code child} の部分木が、この節の子から外れた。接続中なら id 索引から外し、番号を返す。 */
-    private void childDetached(HtmlNode child) {
+    void childDetached(HtmlNode child) {
         if (child == null) return;
         child.listed = false;
         HtmlDocument doc = connectedDocument();
@@ -614,7 +598,7 @@ public class HtmlNode implements Node {
         return arena != null && nodeId >= 0 && arena.owner(nodeId) == this;
     }
 
-    private void relinkIfNumbered() {
+    void relinkIfNumbered() {
         if (arena != null && nodeId >= 0 && arena.owner(nodeId) == this) linkChildren(arena);
     }
 
@@ -697,7 +681,7 @@ public class HtmlNode implements Node {
     }
 
     /** class / id 属性が変わった。番号があれば同一性の列だけ書き直す。 */
-    private void identityAttributeChanged() {
+    void identityAttributeChanged() {
         if (arena != null && nodeId >= 0 && arena.owner(nodeId) == this) refreshIdentity();
     }
 
@@ -837,121 +821,16 @@ public class HtmlNode implements Node {
     }
 
     /** 自分の {@code id} 属性が変わった。接続中なら id 索引を付け替える。 */
-    private void idAttributeChanged(String oldId, String newId) {
+    void idAttributeChanged(String oldId, String newId) {
         HtmlDocument doc = connectedDocument();
         if (doc != null && this != doc) doc.reindexNode(this, oldId, newId);
-    }
-
-    /**
-     * 子の並び。直接 {@code add} / {@code remove} する呼び出し（パーサ・バインディング）も、
-     * DOM のツリー操作と同じく id 索引へ反映するため、変更の入口をここに集める。
-     */
-    private final class ChildList extends CompactList<HtmlNode> {
-
-        @Override
-        public boolean add(HtmlNode node) {
-            super.add(node);
-            childAttached(node);
-            return true;
-        }
-
-        @Override
-        public void add(int index, HtmlNode node) {
-            super.add(index, node);
-            childAttached(node);
-        }
-
-        @Override
-        public boolean addAll(Collection<? extends HtmlNode> nodes) {
-            List<HtmlNode> added = new ArrayList<>(nodes);
-            boolean changed = super.addAll(added);
-            for (HtmlNode n : added) attachChild(n, false);
-            relinkIfNumbered();
-            return changed;
-        }
-
-        @Override
-        public boolean addAll(int index, Collection<? extends HtmlNode> nodes) {
-            List<HtmlNode> added = new ArrayList<>(nodes);
-            boolean changed = super.addAll(index, added);
-            for (HtmlNode n : added) attachChild(n, false);
-            relinkIfNumbered();
-            return changed;
-        }
-
-        @Override
-        public HtmlNode set(int index, HtmlNode node) {
-            HtmlNode replaced = super.set(index, node);
-            childDetached(replaced);
-            childAttached(node);
-            return replaced;
-        }
-
-        @Override
-        public HtmlNode remove(int index) {
-            HtmlNode removed = super.remove(index);
-            childDetached(removed);
-            return removed;
-        }
-
-        @Override
-        public boolean remove(Object node) {
-            boolean removed = super.remove(node);
-            if (removed) childDetached((HtmlNode) node);
-            return removed;
-        }
-
-        @Override
-        public boolean removeIf(Predicate<? super HtmlNode> filter) {
-            List<HtmlNode> removed = new ArrayList<>();
-            for (HtmlNode node : this) {
-                if (filter.test(node)) removed.add(node);
-            }
-            boolean changed = super.removeIf(removed::contains);
-            removed.forEach(HtmlNode.this::childDetached);
-            return changed;
-        }
-
-        @Override
-        public boolean removeAll(Collection<?> nodes) {
-            return removeIf(nodes::contains);
-        }
-
-        @Override
-        public boolean retainAll(Collection<?> nodes) {
-            return removeIf(node -> !nodes.contains(node));
-        }
-
-        @Override
-        public void clear() {
-            List<HtmlNode> removed = new ArrayList<>(this);
-            super.clear();
-            removed.forEach(HtmlNode.this::childDetached);
-        }
-
-        @Override
-        protected void removeRange(int fromIndex, int toIndex) {
-            List<HtmlNode> removed = new ArrayList<>(subList(fromIndex, toIndex));
-            super.removeRange(fromIndex, toIndex);
-            removed.forEach(HtmlNode.this::childDetached);
-        }
-
-        @Override
-        public void replaceAll(UnaryOperator<HtmlNode> operator) {
-            List<HtmlNode> before = new ArrayList<>(this);
-            for (int i = 0; i < size(); i++) {
-                super.set(i, operator.apply(get(i)));
-            }
-            before.forEach(HtmlNode.this::childDetached);
-            forEach(HtmlNode.this::childAttached);
-        }
     }
 
     /**
      * 属性の表。{@code id} の増減だけを見て id 索引を保つ。{@code put} / {@code remove} 以外の
      * 変更（{@code compute} 系・{@code replace} 系）も、前後の {@code id} を比べて同じ扱いにする。
      */
-    private int attrVersion;
+    int attrVersion;
 
     /** 数値バインディングの直接書き込み値を持つ節の重ね先（無ければ null）。 */
     public InlineStyleOverlay inlineOverlay;
@@ -964,365 +843,6 @@ public class HtmlNode implements Node {
     /** 属性を書き換えるたびに増える版番号（属性に依存する算出結果の使い回しの目印）。 */
     public int attrVersion() {
         return attrVersion;
-    }
-
-    /**
-     * 要素ごとの属性数を 0〜数個想定で抑える線形ペア配列マップ。
-     * {@link LinkedHashMap} と同じ挿入順を保ちつつ、空のテキスト節では追加配列を確保しない。
-     */
-    private final class AttributeMap extends AbstractMap<String, String> {
-
-        private String[] pairs;
-        private int count;
-
-        private int indexOfKey(Object key) {
-            for (int i = 0; i < count; i++) {
-                if (Objects.equals(pairs[i << 1], key)) return i;
-            }
-            return -1;
-        }
-
-        private String rawGet(Object key) {
-            int idx = indexOfKey(key);
-            return idx >= 0 ? pairs[(idx << 1) + 1] : null;
-        }
-
-        private String rawPut(String key, String value) {
-            int idx = indexOfKey(key);
-            if (idx >= 0) {
-                int vIdx = (idx << 1) + 1;
-                String prev = pairs[vIdx];
-                pairs[vIdx] = value;
-                return prev;
-            }
-            int needed = (count + 1) << 1;
-            if (pairs == null) {
-                pairs = new String[2];
-            } else if (pairs.length < needed) {
-                int nextCap = pairs.length == 2 ? 4 : pairs.length + 4;
-                pairs = Arrays.copyOf(pairs, nextCap);
-            }
-            int base = count << 1;
-            pairs[base] = key;
-            pairs[base + 1] = value;
-            count++;
-            return null;
-        }
-
-        private void removeAt(int idx) {
-            int last = count - 1;
-            int tail = last - idx;
-            if (tail > 0) {
-                System.arraycopy(pairs, (idx + 1) << 1, pairs, idx << 1, tail << 1);
-            }
-            int base = last << 1;
-            pairs[base] = null;
-            pairs[base + 1] = null;
-            count = last;
-        }
-
-        private String rawRemove(Object key) {
-            int idx = indexOfKey(key);
-            if (idx < 0) return null;
-            String prev = pairs[(idx << 1) + 1];
-            removeAt(idx);
-            return prev;
-        }
-
-        private void rawClear() {
-            if (pairs != null) {
-                Arrays.fill(pairs, 0, count << 1, null);
-            }
-            count = 0;
-        }
-
-        @Override
-        public int size() {
-            return count;
-        }
-
-        @Override
-        public boolean isEmpty() {
-            return count == 0;
-        }
-
-        @Override
-        public boolean containsKey(Object key) {
-            return indexOfKey(key) >= 0;
-        }
-
-        @Override
-        public String get(Object key) {
-            return rawGet(key);
-        }
-
-        @Override
-        public void forEach(BiConsumer<? super String, ? super String> action) {
-            Objects.requireNonNull(action);
-            for (int i = 0; i < count; i++) {
-                int base = i << 1;
-                action.accept(pairs[base], pairs[base + 1]);
-            }
-        }
-
-        boolean hasEventAttribute() {
-            for (int i = 0; i < count; i++) {
-                String k = pairs[i << 1];
-                if (k != null && k.regionMatches(true, 0, "on", 0, 2)) return true;
-            }
-            return false;
-        }
-
-        private <R> R trackingId(Supplier<R> mutation) {
-            attrVersion++;
-            String before = rawGet("id");
-            String classBefore = rawGet("class");
-            R result = mutation.get();
-            String after = rawGet("id");
-            if (!Objects.equals(before, after)) {
-                derivedKey = null;
-                idAttributeChanged(before, after);
-                identityAttributeChanged();
-            } else if (!Objects.equals(classBefore, rawGet("class"))) {
-                identityAttributeChanged();
-            }
-            return result;
-        }
-
-        @Override
-        public String put(String key, String value) {
-            return trackingId(() -> rawPut(key, value));
-        }
-
-        @Override
-        public String putIfAbsent(String key, String value) {
-            return trackingId(() -> {
-                int idx = indexOfKey(key);
-                if (idx >= 0) {
-                    String cur = pairs[(idx << 1) + 1];
-                    if (cur != null) return cur;
-                    pairs[(idx << 1) + 1] = value;
-                    return null;
-                }
-                return rawPut(key, value);
-            });
-        }
-
-        @Override
-        public void putAll(Map<? extends String, ? extends String> entries) {
-            if (entries.isEmpty()) return;
-            trackingId(() -> {
-                for (Map.Entry<? extends String, ? extends String> e : entries.entrySet()) {
-                    rawPut(e.getKey(), e.getValue());
-                }
-                return null;
-            });
-        }
-
-        @Override
-        public String remove(Object key) {
-            return trackingId(() -> rawRemove(key));
-        }
-
-        @Override
-        public boolean remove(Object key, Object value) {
-            return trackingId(() -> {
-                int idx = indexOfKey(key);
-                if (idx < 0 || !Objects.equals(pairs[(idx << 1) + 1], value)) return false;
-                removeAt(idx);
-                return true;
-            });
-        }
-
-        @Override
-        public void clear() {
-            trackingId(() -> {
-                rawClear();
-                return null;
-            });
-        }
-
-        @Override
-        public String replace(String key, String value) {
-            return trackingId(() -> {
-                int idx = indexOfKey(key);
-                if (idx < 0) return null;
-                int vIdx = (idx << 1) + 1;
-                String prev = pairs[vIdx];
-                pairs[vIdx] = value;
-                return prev;
-            });
-        }
-
-        @Override
-        public boolean replace(String key, String oldValue, String newValue) {
-            return trackingId(() -> {
-                int idx = indexOfKey(key);
-                if (idx < 0 || !Objects.equals(pairs[(idx << 1) + 1], oldValue)) return false;
-                pairs[(idx << 1) + 1] = newValue;
-                return true;
-            });
-        }
-
-        @Override
-        public void replaceAll(BiFunction<? super String, ? super String, ? extends String> function) {
-            Objects.requireNonNull(function);
-            trackingId(() -> {
-                for (int i = 0; i < count; i++) {
-                    int base = i << 1;
-                    pairs[base + 1] = function.apply(pairs[base], pairs[base + 1]);
-                }
-                return null;
-            });
-        }
-
-        @Override
-        public String computeIfAbsent(String key, Function<? super String, ? extends String> mapping) {
-            Objects.requireNonNull(mapping);
-            return trackingId(() -> {
-                int idx = indexOfKey(key);
-                if (idx >= 0) {
-                    String cur = pairs[(idx << 1) + 1];
-                    if (cur != null) return cur;
-                }
-                String v = mapping.apply(key);
-                if (v != null) rawPut(key, v);
-                return v;
-            });
-        }
-
-        @Override
-        public String computeIfPresent(String key, BiFunction<? super String, ? super String, ? extends String> remapping) {
-            Objects.requireNonNull(remapping);
-            return trackingId(() -> {
-                int idx = indexOfKey(key);
-                if (idx < 0) return null;
-                String old = pairs[(idx << 1) + 1];
-                if (old == null) return null;
-                String next = remapping.apply(key, old);
-                if (next != null) {
-                    pairs[(idx << 1) + 1] = next;
-                } else {
-                    removeAt(idx);
-                }
-                return next;
-            });
-        }
-
-        @Override
-        public String compute(String key, BiFunction<? super String, ? super String, ? extends String> remapping) {
-            Objects.requireNonNull(remapping);
-            return trackingId(() -> {
-                int idx = indexOfKey(key);
-                String old = idx >= 0 ? pairs[(idx << 1) + 1] : null;
-                String next = remapping.apply(key, old);
-                if (next != null) {
-                    if (idx >= 0) {
-                        pairs[(idx << 1) + 1] = next;
-                    } else {
-                        rawPut(key, next);
-                    }
-                } else if (idx >= 0) {
-                    removeAt(idx);
-                }
-                return next;
-            });
-        }
-
-        @Override
-        public String merge(String key, String value, BiFunction<? super String, ? super String, ? extends String> remapping) {
-            Objects.requireNonNull(remapping);
-            Objects.requireNonNull(value);
-            return trackingId(() -> {
-                int idx = indexOfKey(key);
-                String old = idx >= 0 ? pairs[(idx << 1) + 1] : null;
-                String next = old == null ? value : remapping.apply(old, value);
-                if (next == null) {
-                    if (idx >= 0) removeAt(idx);
-                } else if (idx >= 0) {
-                    pairs[(idx << 1) + 1] = next;
-                } else {
-                    rawPut(key, next);
-                }
-                return next;
-            });
-        }
-
-        @Override
-        public Set<Map.Entry<String, String>> entrySet() {
-            return new AbstractSet<>() {
-                @Override
-                public int size() {
-                    return count;
-                }
-
-                @Override
-                public void clear() {
-                    AttributeMap.this.clear();
-                }
-
-                @Override
-                public Iterator<Map.Entry<String, String>> iterator() {
-                    return new Iterator<>() {
-                        private int cursor;
-                        private int last = -1;
-
-                        @Override
-                        public boolean hasNext() {
-                            return cursor < count;
-                        }
-
-                        @Override
-                        public Map.Entry<String, String> next() {
-                            if (cursor >= count) throw new NoSuchElementException();
-                            last = cursor++;
-                            int base = last << 1;
-                            String k = pairs[base];
-                            return new Map.Entry<>() {
-                                @Override
-                                public String getKey() {
-                                    return k;
-                                }
-
-                                @Override
-                                public String getValue() {
-                                    return rawGet(k);
-                                }
-
-                                @Override
-                                public String setValue(String value) {
-                                    return AttributeMap.this.put(k, value);
-                                }
-
-                                @Override
-                                public boolean equals(Object o) {
-                                    if (!(o instanceof Map.Entry<?, ?> other)) return false;
-                                    return Objects.equals(k, other.getKey())
-                                            && Objects.equals(getValue(), other.getValue());
-                                }
-
-                                @Override
-                                public int hashCode() {
-                                    return Objects.hashCode(k) ^ Objects.hashCode(getValue());
-                                }
-                            };
-                        }
-
-                        @Override
-                        public void remove() {
-                            if (last < 0) throw new IllegalStateException();
-                            int idx = last;
-                            trackingId(() -> {
-                                removeAt(idx);
-                                return null;
-                            });
-                            cursor = idx;
-                            last = -1;
-                        }
-                    };
-                }
-            };
-        }
     }
 
     // ==========================================

@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 /** フレームごとの姿勢の表の消去をフレーム印に替えても、前フレームの姿勢が漏れない。 */
 class PaintSceneDriverFrameStampTest {
 
-    private static final class PoseRec implements PaintSceneDriver.Painter {
+    private static final class PoseRec implements Painter {
         final PaintSceneDriver driver;
         final List<String> log = new ArrayList<>();
         PoseRec(PaintSceneDriver d) { driver = d; }

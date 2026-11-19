@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 局所更新（文字 1 つの変更など）の最適化の検収をまとめたもの（ファイル数のラチェットのため 1 ファイルに統合）。
  * <ul>
- *   <li>{@link ChunkRetention}: 描画順の部分木の保持（{@code PaintOrder.Chunk}）が、使わないときと項目ごとに同じ</li>
+ *   <li>{@link ChunkRetention}: 描画順の部分木の保持（{@code core.paint.Chunk}）が、使わないときと項目ごとに同じ</li>
  *   <li>{@link CutoffLayout}: 外寸が変わらない子の変化を親が吸収する測定（cutoff）が、吸収しないときと同じ</li>
  *   <li>{@link Probe}: 内訳の診断（表示のみ。判定しない）</li>
  * </ul>

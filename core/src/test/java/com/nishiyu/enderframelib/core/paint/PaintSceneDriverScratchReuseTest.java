@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 /** {@code run} の作業表（chains / members / plan）の使い回しが、毎回新しいドライバと同じ結果になる。 */
 class PaintSceneDriverScratchReuseTest {
 
-    private static final class Rec implements PaintSceneDriver.Painter {
+    private static final class Rec implements Painter {
         final List<String> log = new ArrayList<>();
         RetainPlan decision = RetainPlan.NONE;
         @Override public void syncLayers(List<PaintSceneDriver.Group> want) { log.add("sync" + want.size()); }

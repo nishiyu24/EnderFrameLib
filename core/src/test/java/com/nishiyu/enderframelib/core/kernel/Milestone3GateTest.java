@@ -36,7 +36,9 @@ class Milestone3GateTest {
     void tableBoxesAreReusableWithoutAShapeExclusion() throws IOException {
         String src = Files.readString(MAIN.resolve("core/layout/LayoutBox.java"));
         assertFalse(src.contains("isReusableShape"), "表を除外する isReusableShape は廃止");
-        String pipeline = Files.readString(MAIN.resolve("common/RenderPipeline.java"));
+        // 箱の木の組み立ては A8 で RenderPipeline から RenderTreeBuilder へ分けた（同じパイプラインの 2 ファイル）
+        String pipeline = Files.readString(MAIN.resolve("common/RenderPipeline.java"))
+                + Files.readString(MAIN.resolve("common/RenderTreeBuilder.java"));
         assertTrue(pipeline.contains("resetEngineOutputs()"), "使い回す箱は表の書き込みを捨てる");
         assertFalse(pipeline.contains("LayoutBox.isTableBox(box) || box.display.isNone()) box = null"));
     }

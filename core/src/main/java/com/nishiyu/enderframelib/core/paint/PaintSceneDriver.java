@@ -11,7 +11,6 @@ import com.nishiyu.enderframelib.core.raster.Matrix2D;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,106 +46,14 @@ public final class PaintSceneDriver {
     /** 不透明度を持つ祖先（グループ）。層にまとめて描き、{@code opacity} を掛けて重ねる。 */
     public record Group(String id, float opacity, int anchor, LayerSpec spec, double[] map, String maskOf, Matrix2D pose) {}
 
-    /** 走査の結果を受け取る描画側。 */
-    public interface Painter {
-        /**
-         * このフレームで項目 {@code index} を描かないと描画側が決めているなら true。ドライバは姿勢・クリップの計算と
-         * {@link #drawItem} の呼び出しを省く（画素は描画側の責任で前のフレームのまま残す）。既定は false。
-         */
-        default boolean skipItem(int index) { return false; }
-
-        /** 開いている層を、項目の祖先のグループ {@code want}（外側から内側の順）に合わせる。 */
-        /** {@code want} は呼び出しの間だけ有効（走査が次の項目で使い回す。持ち続けるなら写す）。 */
-        void syncLayers(List<Group> want);
-
-        /**
-         * 項目 {@code index} を描く。{@code flat} は層にしなかったグループの不透明度の積
-         * （姿勢などは {@link PaintSceneDriver#resolveAt} で引く）。
-         */
-        void drawItem(DisplayItem el, int index, float flat);
-
-        /**
-         * スクロールコンテナの中身（節 {@code node} の子孫の項目 {@code [from, to)}。表示リスト上で連続している）を、保持した層として扱うかを決める。
-         * 既定は {@link RetainPlan#NONE}（ふつうに 1 項目ずつ描く）。層を保持できる描画側（GPU）だけが上書きする。
-         *
-         * <p>呼ぶのは、節の祖先にグループ（不透明度・フィルター）が無いときだけ。{@link RetainPlan#SKIP} を返したら、描画側は
-         * 保持済みの層を {@link #drawRetained} で重ねるので、ドライバは範囲の項目を走査しない。{@link RetainPlan#RECORD} なら、
-         * 範囲の先頭で {@link #beginRetained}、末尾の後で {@link #endRetained} を呼ぶ（その間の項目は層へ描く）。</p>
-         */
-        default RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) { return RetainPlan.NONE; }
-
-        /** {@link RetainPlan#SKIP}: 保持済みの層を今の位置で重ねる。 */
-        default void drawRetained(DisplayItem node, int nodeIndex, int from, int to) {}
-
-        /** {@link RetainPlan#RECORD}: 範囲の項目を、保持する層へ描き始める。 */
-        default void beginRetained(DisplayItem node, int nodeIndex, int from, int to) {}
-
-        /**
-         * 前フレームと項目構成が同一で、変更された位置が {@code indices[0..count)} に限られているとき、
-         * 変更分だけを高速に再描画できたら true。できない（または非対応の）ときは false を返して通常走査へフォールバックする。
-         */
-        default boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) { return false; }
-
-        /**
-         * {@link RetainPlan#RECORD}: 範囲を描き終えた。層を保存して重ねたら true。保持できなかった（描き方が層に向かない）なら、層を捨てて false を返す。
-         * false のとき、ドライバは同じ範囲をふつうに描き直す。
-         */
-        default boolean endRetained(DisplayItem node, int nodeIndex) { return true; }
-
-        /**
-         * {@link RetainPlan#RECORD} の範囲の項目のうち、描かれないと分かっている縦の区間（デバイス画素）。{@code {y0, y1, pad}} を返す:
-         * 項目の箱の下端 + {@code pad} + 項目の高さが {@code y0} より上、または上端 − {@code pad} − 項目の高さが {@code y1} より下なら、
-         * その項目は何も描かない（描画側の画面外判定と同じ式）。ドライバはこの区間に確実に入る先頭・末尾の連続区間だけを走査から外す。
-         * 既定は null（外さない）。
-         */
-        default double[] cullWindow(DisplayItem node, int nodeIndex) { return null; }
-    }
-
     /**
      * 記録する保持層の範囲のうち、描かれないと確実に言える先頭・末尾の区間を走査から外すか。false なら全項目を走査する
      * （疑うときの切り分け用。絵は同じでなければならない）。
      */
     public static volatile boolean cullRecordedRanges = !Boolean.getBoolean("enderframe.paint.nocullrange");
 
-    /**
-     * スクロール範囲の項目の縦の範囲の索引。範囲の全項目が「変形なし・不透明度 1・グループなし」（姿勢がスクロール節と同じ）のときだけ作る。
-     * {@code prefBottom[j]} は先頭から j 番目までの下端（CSS px）の最大、{@code sufTop[j]} は j 番目から末尾までの上端の最小。どちらも単調なので、
-     * 画面外の先頭・末尾の区間は二分探索で正確に求まる（項目が縦に整列している仮定は要らない）。
-     */
-    private static final class RangeBounds {
-        boolean valid;
-        boolean eligible;
-        /** 項目ごとの下端・上端・高さ（CSS px）。節（NODE）は下端 −∞・上端 +∞（何も描かないので判定に影響しない）。 */
-        double[] bottom = new double[0], top = new double[0], height = new double[0];
-        /**
-         * 倍率 {@code keyScale} でのブロック（{@link #BLOCK} 項目ずつ）の鍵: ブロック内の {@code scale*下端 + 高さ} の最大（全項目が上へ外れているかの判定）、
-         * {@code scale*上端 − 高さ} の最小（全項目が下へ外れているかの判定）。表示リストは描画順（背景 → 文字）で並び、縦位置は整列していないので、
-         * 範囲全体の二分探索ではなくブロック単位で判定する。
-         */
-        double[] blockMax = new double[0], blockMin = new double[0];
-        double keyScale = Double.NaN;
-        /** このフレームで項目を走査してよいブロック（{@link #planWindow} が決める）。 */
-        boolean[] keep = new boolean[0];
-
-        void ensureKeys(double scale) {
-            if (keyScale == scale) return;
-            int n = bottom.length, nb = (n + BLOCK - 1) / BLOCK;
-            if (blockMax.length != nb) { blockMax = new double[nb]; blockMin = new double[nb]; keep = new boolean[nb]; }
-            for (int b = 0; b < nb; b++) {
-                double mx = Double.NEGATIVE_INFINITY, mn = Double.POSITIVE_INFINITY;
-                for (int j = b * BLOCK, e = Math.min(n, j + BLOCK); j < e; j++) {
-                    if (bottom[j] != Double.NEGATIVE_INFINITY) mx = Math.max(mx, scale * bottom[j] + height[j]);
-                    if (top[j] != Double.POSITIVE_INFINITY) mn = Math.min(mn, scale * top[j] - height[j]);
-                }
-                blockMax[b] = mx;
-                blockMin[b] = mn;
-            }
-            keyScale = scale;
-        }
-    }
-
     private static final int BLOCK_SHIFT = 6;
-    private static final int BLOCK = 1 << BLOCK_SHIFT;
+    static final int BLOCK = 1 << BLOCK_SHIFT;
 
     private final Int2ObjectOpenHashMap<RangeBounds> rangeBounds = new Int2ObjectOpenHashMap<>();
     /** 項目の状態（{@link CssAnimator.AnimState}）が「姿勢は中立」と確かめ済みの印。項目が差し替わる・索引を作り直すと外れる。 */
@@ -735,16 +642,6 @@ public final class PaintSceneDriver {
             order[j + 1] = c;
         }
         retainNodes = order;
-    }
-
-    /** 小さな int の可変配列（fastutil を引かずに済ませる）。 */
-    private static final class IntArrayListLite {
-        int[] a = new int[8];
-        int size;
-        void add(int v) {
-            if (size == a.length) a = java.util.Arrays.copyOf(a, size * 2);
-            a[size++] = v;
-        }
     }
 
     /** 走査中の、いまの表示リスト。 */

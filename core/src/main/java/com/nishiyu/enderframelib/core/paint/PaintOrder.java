@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.core.paint;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssKeywords;
-import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
@@ -16,11 +15,9 @@ import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
@@ -155,97 +152,13 @@ public final class PaintOrder {
         return n > 0 ? slicePool.remove(n - 1) : new BoxSlice();
     }
 
-    private void recycleSlices(List<BoxSlice> list) {
+    void recycleSlices(List<BoxSlice> list) {
         for (int i = 0, n = list.size(); i < n; i++) {
             BoxSlice s = list.get(i);
             s.reset();
             if (slicePool.size() < 1024) slicePool.add(s);
         }
         list.clear();
-    }
-
-    /** 保持した部分木の項目。{@code blocks} と {@code inlines} は、分類したときに入った層ごとの、描いた順の項目。 */
-    static final class Chunk {
-        LayoutBox parentBox;
-        float boxX, boxY;
-        ClipRect clip;
-        String parentId;
-        boolean parentRelative;
-        int parentOriginX, parentOriginY;
-        long epoch;
-        int boxCount;
-        int interactiveCount;
-        final List<DisplayItem> blockItems;
-        final List<DisplayItem> inlineItems;
-        final List<BoxSlice> blockSlices;
-        final List<BoxSlice> inlineSlices;
-        int created;
-        int executed;
-        int generation;
-
-        Chunk(LayoutBox parentBox, float boxX, float boxY, ClipRect clip, String parentId,
-              boolean parentRelative, int parentOriginX, int parentOriginY,
-              long epoch, int boxCount, int interactiveCount) {
-            this.parentBox = parentBox;
-            this.boxX = boxX;
-            this.boxY = boxY;
-            this.clip = clip;
-            this.parentId = parentId;
-            this.parentRelative = parentRelative;
-            this.parentOriginX = parentOriginX;
-            this.parentOriginY = parentOriginY;
-            this.epoch = epoch;
-            this.boxCount = boxCount;
-            this.interactiveCount = interactiveCount;
-            int cap = Math.max(1, Math.min(boxCount, 16));
-            this.blockSlices = new ArrayList<>(cap);
-            this.inlineSlices = new ArrayList<>(cap);
-            if (DisplayListBuilder.verifyStamps) {
-                this.blockItems = new ArrayList<>();
-                this.inlineItems = new ArrayList<>();
-            } else {
-                this.blockItems = null;
-                this.inlineItems = null;
-            }
-        }
-
-        void reset(LayoutBox parentBox, float boxX, float boxY, ClipRect clip, String parentId,
-                   boolean parentRelative, int parentOriginX, int parentOriginY,
-                   long epoch, int boxCount, int interactiveCount, PaintOrder owner) {
-            this.parentBox = parentBox;
-            this.boxX = boxX;
-            this.boxY = boxY;
-            this.clip = clip;
-            this.parentId = parentId;
-            this.parentRelative = parentRelative;
-            this.parentOriginX = parentOriginX;
-            this.parentOriginY = parentOriginY;
-            this.epoch = epoch;
-            this.boxCount = boxCount;
-            this.interactiveCount = interactiveCount;
-            owner.recycleSlices(this.blockSlices);
-            owner.recycleSlices(this.inlineSlices);
-            if (this.blockItems != null) this.blockItems.clear();
-            if (this.inlineItems != null) this.inlineItems.clear();
-            this.created = 0;
-            this.executed = 0;
-        }
-
-        /** 記録中のタスクが全部走り終えたか（途中で止まった記録は使わない）。 */
-        boolean complete() {
-            return created == executed;
-        }
-        void release(PaintOrder owner) {
-            this.parentBox = null;
-            this.clip = null;
-            this.parentId = null;
-            owner.recycleSlices(this.blockSlices);
-            owner.recycleSlices(this.inlineSlices);
-            if (this.blockItems != null) this.blockItems.clear();
-            if (this.inlineItems != null) this.inlineItems.clear();
-            this.created = 0;
-            this.executed = 0;
-        }
     }
 
     /** 描画側が持つ箱の記憶との橋渡し。 */
@@ -1217,48 +1130,6 @@ public final class PaintOrder {
         return value == null || "none".equals(value) || value.isBlank() || "none".equalsIgnoreCase(value.trim());
     }
 
-    /** スタッキングコンテキスト（または疑似コンテキスト）の中の層。番号は付録 E の手順。 */
-    static final class PaintLayers {
-        private static final Comparator<PaintNode> Z_CMP = Comparator.comparingInt(PaintNode::z);
-        // 空の層が大半なので、最初の追加まで一覧を作らない（読むときは空の共有一覧）
-        private List<PaintNode> negative;   // 2: 負の z-index のコンテキスト
-        private List<PaintNode> blocks;     // 4: 通常フローのブロックレベル
-        private List<PaintNode> floats;     // 5: float
-        private List<PaintNode> inlines;    // 7: インラインレベル
-        private List<PaintNode> positioned; // 8: z-index: auto / 0 の位置指定要素とコンテキスト
-        private List<PaintNode> positive;   // 9: 正の z-index のコンテキスト
-        private List<RenderTask> after;     // スクロールバー（中身より上）
-
-        void reset() {
-            if (negative != null) negative.clear();
-            if (blocks != null) blocks.clear();
-            if (floats != null) floats.clear();
-            if (inlines != null) inlines.clear();
-            if (positioned != null) positioned.clear();
-            if (positive != null) positive.clear();
-            if (after != null) after.clear();
-        }
-
-        List<PaintNode> negative() { return negative == null ? List.of() : negative; }
-        List<PaintNode> blocks() { return blocks == null ? List.of() : blocks; }
-        List<PaintNode> floats() { return floats == null ? List.of() : floats; }
-        List<PaintNode> inlines() { return inlines == null ? List.of() : inlines; }
-        List<PaintNode> positioned() { return positioned == null ? List.of() : positioned; }
-        List<PaintNode> positive() { return positive == null ? List.of() : positive; }
-        List<RenderTask> after() { return after == null ? List.of() : after; }
-
-        void addNegative(PaintNode n) { (negative == null ? negative = new ArrayList<>(4) : negative).add(n); }
-        void addBlock(PaintNode n) { (blocks == null ? blocks = new ArrayList<>(4) : blocks).add(n); }
-        void addFloat(PaintNode n) { (floats == null ? floats = new ArrayList<>(4) : floats).add(n); }
-        void addInline(PaintNode n) { (inlines == null ? inlines = new ArrayList<>(4) : inlines).add(n); }
-        void addPositioned(PaintNode n) { (positioned == null ? positioned = new ArrayList<>(4) : positioned).add(n); }
-        void addPositive(PaintNode n) { (positive == null ? positive = new ArrayList<>(4) : positive).add(n); }
-        void addAfter(RenderTask t) { (after == null ? after = new ArrayList<>(2) : after).add(t); }
-
-        void sortNegative() { if (negative != null && negative.size() > 1) negative.sort(Z_CMP); }
-        void sortPositive() { if (positive != null && positive.size() > 1) positive.sort(Z_CMP); }
-    }
-
     /**
      * {@code layers} が null なら箱自身だけ（中身は今の層に流れている）。{@code layerSpec} があれば、この箱は
      * レイヤーに描いて合成する（スタッキングコンテキストだけが持つ）。
@@ -1593,120 +1464,4 @@ public final class PaintOrder {
         }
     }
 
-    /**
-     * {@code box} は箱自身を描くタスクだけが持つ（スクロールバーは null）。{@code layerStart} はレイヤーの開始の印
-     * （次に出る錨から {@link #LAYER_END} までがレイヤーの中身）、{@code layerEnd} は終了の印。印は項目を出さない。
-     */
-    static final class RenderTask {
-        static final byte KIND_DRAW = 0;
-        static final byte KIND_RECORD = 1;
-        static final byte KIND_REPLAY = 2;
-        static final byte KIND_SCROLLBARS = 3;
-        static final byte KIND_BACKDROP = 4;
-        static final byte KIND_LAYER_START = 5;
-        static final byte KIND_LAYER_END = 6;
-
-        static final RenderTask LAYER_END = new RenderTask().setLayerEnd();
-
-        byte kind;
-        LayoutBox box;
-        ClipRect clip;
-        String parentId;
-        List<DisplayItem> replayItems;
-        Chunk chunk;
-        boolean inline;
-        LayerSpec layerStart;
-        LayoutBox layerBox;
-        boolean hasMovingAncestor;
-
-        RenderTask setDraw(LayoutBox box, ClipRect clip, String parentId, boolean hasMovingAncestor) {
-            this.kind = KIND_DRAW;
-            this.box = box;
-            this.clip = clip;
-            this.parentId = parentId;
-            this.replayItems = null;
-            this.chunk = null;
-            this.layerStart = null;
-            this.layerBox = null;
-            this.hasMovingAncestor = hasMovingAncestor;
-            return this;
-        }
-
-        RenderTask setRecord(LayoutBox box, ClipRect clip, String parentId, Chunk chunk, boolean inline, boolean hasMovingAncestor) {
-            this.kind = KIND_RECORD;
-            this.box = box;
-            this.clip = clip;
-            this.parentId = parentId;
-            this.replayItems = null;
-            this.chunk = chunk;
-            this.inline = inline;
-            this.layerStart = null;
-            this.layerBox = null;
-            this.hasMovingAncestor = hasMovingAncestor;
-            return this;
-        }
-
-        RenderTask setReplay(LayoutBox box, List<DisplayItem> replayItems, boolean hasMovingAncestor) {
-            this.kind = KIND_REPLAY;
-            this.box = box;
-            this.clip = null;
-            this.parentId = null;
-            this.replayItems = replayItems;
-            this.chunk = null;
-            this.layerStart = null;
-            this.layerBox = null;
-            this.hasMovingAncestor = hasMovingAncestor;
-            return this;
-        }
-
-        RenderTask setScrollbars(LayoutBox box, ClipRect clip) {
-            this.kind = KIND_SCROLLBARS;
-            this.box = box;
-            this.clip = clip;
-            this.parentId = null;
-            this.replayItems = null;
-            this.chunk = null;
-            this.layerStart = null;
-            this.layerBox = null;
-            this.hasMovingAncestor = false;
-            return this;
-        }
-
-        RenderTask setBackdrop(LayoutBox box) {
-            this.kind = KIND_BACKDROP;
-            this.box = box;
-            this.clip = null;
-            this.parentId = null;
-            this.replayItems = null;
-            this.chunk = null;
-            this.layerStart = null;
-            this.layerBox = null;
-            this.hasMovingAncestor = false;
-            return this;
-        }
-
-        RenderTask setLayerStart(LayerSpec spec, LayoutBox layerBox) {
-            this.kind = KIND_LAYER_START;
-            this.box = null;
-            this.clip = null;
-            this.parentId = null;
-            this.replayItems = null;
-            this.chunk = null;
-            this.layerStart = spec;
-            this.layerBox = layerBox;
-            this.hasMovingAncestor = false;
-            return this;
-        }
-
-        private RenderTask setLayerEnd() {
-            this.kind = KIND_LAYER_END;
-            return this;
-        }
-
-        LayoutBox box() { return (kind == KIND_SCROLLBARS || kind == KIND_LAYER_START || kind == KIND_LAYER_END) ? null : box; }
-        LayerSpec layerStart() { return layerStart; }
-        boolean layerEnd() { return kind == KIND_LAYER_END; }
-        LayoutBox layerBox() { return layerBox; }
-        boolean hasMovingAncestor() { return hasMovingAncestor; }
-    }
 }

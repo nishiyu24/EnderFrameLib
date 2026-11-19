@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** スクロール層の保持プロトコル（{@link PaintSceneDriver.Painter#planRetained} ほか）の動きを、記録するペインターで確かめる。 */
+/** スクロール層の保持プロトコル（{@link Painter#planRetained} ほか）の動きを、記録するペインターで確かめる。 */
 class PaintSceneDriverRetainTest {
 
     private static String html(boolean groupAround) {
@@ -24,7 +24,7 @@ class PaintSceneDriverRetainTest {
     }
 
     /** 呼び出しを全部記録するペインター。 */
-    private static final class Rec implements PaintSceneDriver.Painter {
+    private static final class Rec implements Painter {
         final List<String> log = new ArrayList<>();
         final List<Integer> drawn = new ArrayList<>();
         RetainPlan decision = RetainPlan.NONE;

@@ -54,7 +54,7 @@ import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
-import com.nishiyu.enderframelib.core.paint.PaintOrder.RenderTask;
+import com.nishiyu.enderframelib.core.paint.RenderTask;
 
 public class DisplayListBuilder {
     /** StackingSubtreePatch（切り出した協力クラス）。 */
@@ -123,14 +123,14 @@ public class DisplayListBuilder {
                         && (anim.parseAnimationDef(box.style, box.w, box.h, 0, 0).animatedChannels() & AnimationSpec.CH_OPACITY) != 0);
         this.order.configureChunks(new PaintOrder.MemoKeeper() {
             @Override
-            public void owned(LayoutBox box, PaintOrder.Chunk chunk) {
+            public void owned(LayoutBox box, Chunk chunk) {
                 BoxMemo m = boxMemo.get(box);
                 if (m != null) m.chunk = chunk;
             }
         }, DisplayListBuilder::memoizable);
     }
 
-    /** 切り分け用: false なら部分木の保持（{@link PaintOrder.Chunk}）を使わない。結果は同じでなければならない。 */
+    /** 切り分け用: false なら部分木の保持（{@link Chunk}）を使わない。結果は同じでなければならない。 */
     public static void setChunksEnabled(boolean enabled) {
         PaintOrder.chunksEnabled = enabled;
     }

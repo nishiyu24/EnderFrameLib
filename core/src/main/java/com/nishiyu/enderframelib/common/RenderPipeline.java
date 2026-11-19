@@ -12,7 +12,6 @@ import com.nishiyu.enderframelib.core.css.model.ContainerBox;
 import com.nishiyu.enderframelib.core.css.model.ContainerType;
 import com.nishiyu.enderframelib.core.css.CounterStyles;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.css.PropertyRegistry;
 import com.nishiyu.enderframelib.core.css.model.ElementState;
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher;
@@ -24,9 +23,7 @@ import com.nishiyu.enderframelib.core.css.model.StyleSet;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.BoxTreeBuilder;
 import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
@@ -45,7 +42,6 @@ import org.jetbrains.annotations.ApiStatus;
 import com.nishiyu.enderframelib.core.kernel.compiler.StateStyleMemo;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -103,11 +99,11 @@ public class RenderPipeline {
     private static final ThreadLocal<com.nishiyu.enderframelib.core.diag.PipelineStats> STATS =
             ThreadLocal.withInitial(com.nishiyu.enderframelib.core.diag.PipelineStats::new);
 
-    private static com.nishiyu.enderframelib.core.diag.PipelineStats stats() {
+    static com.nishiyu.enderframelib.core.diag.PipelineStats stats() {
         return STATS.get();
     }
 
-    private static com.nishiyu.enderframelib.core.EngineContext ctx() {
+    static com.nishiyu.enderframelib.core.EngineContext ctx() {
         return com.nishiyu.enderframelib.core.EngineContext.current();
     }
 
@@ -166,7 +162,7 @@ public class RenderPipeline {
             long aA = track ? threadAllocatedBytes() : 0;
             // 共有した結果は残す（restyleLayoutTree と同じ理由。シート・環境・版が変われば ShareCache が捨てる）
             try {
-                rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, FORCE_NONE,
+                rootBox = RenderTreeBuilder.buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, FORCE_NONE,
                         ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                         effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet),
                         prevReusable, nextReusable, false, null,
@@ -375,7 +371,7 @@ public class RenderPipeline {
         long run = LAYOUT_RUNS.incrementAndGet();
         LayoutContext.AutoVisibilitySession av = new LayoutContext.AutoVisibilitySession(
                 rootW, rootH,
-                doc != null ? b -> materializeAutoContent(b, doc.sheet, env, rootW, rootH, interactionState) : null);
+                doc != null ? b -> RenderTreeBuilder.materializeAutoContent(b, doc.sheet, env, rootW, rootH, interactionState) : null);
         LayoutContext ctx = null;
         FormattingContext fmtCtx = FormattingContext.BLOCK;
 
@@ -488,7 +484,7 @@ public class RenderPipeline {
                 }
             }
         }
-        return buildLayoutTree(node, parentBox.style.asMap(), sheet, env, FORCE_SUBTREE, parentBox.style.fontSizePx(), scope,
+        return RenderTreeBuilder.buildLayoutTree(node, parentBox.style.asMap(), sheet, env, FORCE_SUBTREE, parentBox.style.fontSizePx(), scope,
                 interactionState, StyleResolver.hasSiblingStateRules(sheet), null, null, false, null, parentContainer, parentMoving);
     }
 
@@ -510,7 +506,7 @@ public class RenderPipeline {
         Viewport viewport = new Viewport(rootW, rootH, rootBox.devicePixelRatio);
         LayoutContext.AutoVisibilitySession av = new LayoutContext.AutoVisibilitySession(
                 rootW, rootH,
-                doc != null ? b -> materializeAutoContent(b, doc.sheet, env, rootW, rootH, interactionState) : null);
+                doc != null ? b -> RenderTreeBuilder.materializeAutoContent(b, doc.sheet, env, rootW, rootH, interactionState) : null);
         LayoutContext ctx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts,
                 false, LAYOUT_RUNS.get(), true, av);
         long prof = StageProfiler.begin(PipelineStage.REPOSITION);
@@ -542,7 +538,7 @@ public class RenderPipeline {
         StageProfiler.end(PipelineStage.REPOSITION, prof);
     }
 
-    private static boolean isFocusWithin(HtmlNode node, InteractionState state) {
+    static boolean isFocusWithin(HtmlNode node, InteractionState state) {
         if (node == null || state == null) return false;
         HtmlNode focused = state.focusedNode();
         for (HtmlNode cur = focused; cur != null; cur = cur.parent) {
@@ -582,73 +578,6 @@ public class RenderPipeline {
         for (int i = 0, n = box.children.size(); i < n; i++) {
             syncContentVisibilityFlags(box.children.get(i), state);
         }
-    }
-
-    /**
-     * {@code content-visibility: auto} により遅延構築されていた {@code box} の中身（疑似要素＋子要素）をその場で組み立てる。
-     */
-    private static void materializeAutoContent(LayoutBox box, StyleSheet sheet, Map<String, String> env,
-                                               int rootW, int rootH, InteractionState interactionState) {
-        if (box == null || !box.childrenDeferred || box.node == null || sheet == null) return;
-        box.childrenDeferred = false;
-        HtmlNode node = box.node;
-        ComputedStyle computed = box.style;
-
-        ArrayList<LayoutBox> chain = new ArrayList<>();
-        for (LayoutBox b = box.parent; b != null; b = b.parent) chain.add(b);
-        StyleScope scope = StyleScope.initial(rootW, rootH);
-        for (int i = chain.size() - 1; i >= 0; i--) {
-            LayoutBox b = chain.get(i);
-            if (!b.isAnonymous && b.node != null) scope = scope.enter(b.node, b.style);
-        }
-        StyleScope childScope = scope.enter(node, computed);
-        ContainerBox parentContainer = interactionState != null && box.parent != null && box.parent.node != null
-                ? interactionState.nearestSizeContainer(box.parent.node)
-                : ContainerBox.NONE_SIZE;
-        boolean parentMoving = false;
-        for (int i = chain.size() - 1; i >= 0; i--) {
-            LayoutBox b = chain.get(i);
-            if (b.movingStamped ? b.selfOrAncestorMoving : PaintOrder.hasMovingProps(b.style)) {
-                parentMoving = true;
-                break;
-            }
-        }
-        boolean selfOrAncestorMoving = stampMoving(box, computed, parentMoving);
-        ContainerBox selfContainer = containerForSelf(node, computed, parentContainer, interactionState);
-        boolean siblingInvalidation = StyleResolver.hasSiblingStateRules(sheet);
-        boolean hasInteractive = box.hasInteractiveRules;
-        Map<String, String> childInherited = computed.asMap();
-
-        box.elementChildren.clear();
-        ComputedStyle beforeStyle = resolvePseudoStyle(node, PseudoType.BEFORE, computed, sheet, env, childScope, interactionState, selfContainer);
-        if (beforeStyle != null) {
-            box.addElementChild(buildPseudoBox(node, PseudoType.BEFORE, beforeStyle, hasInteractive, sheet, env,
-                    childScope, interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving, false, null));
-        }
-
-        if (!"textarea".equalsIgnoreCase(node.tag) && !"svg".equalsIgnoreCase(node.tag)) {
-            boolean isOpen = interactionState != null
-                    ? interactionState.stateOf(node).open()
-                    : node.attrs.containsKey("open");
-            boolean isClosedDetails = "details".equalsIgnoreCase(node.tag) && !isOpen;
-            for (HtmlNode child : node.children) {
-                if (child.tag.equals("#text") && child.text.isEmpty()) continue;
-                if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
-                box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, FORCE_SUBTREE,
-                        computed.fontSizePx(), childScope, interactionState, siblingInvalidation,
-                        null, null, false, null, selfContainer, selfOrAncestorMoving));
-            }
-        }
-
-        ComputedStyle afterStyle = resolvePseudoStyle(node, PseudoType.AFTER, computed, sheet, env, childScope, interactionState, selfContainer);
-        if (afterStyle != null) {
-            box.addElementChild(buildPseudoBox(node, PseudoType.AFTER, afterStyle, hasInteractive, sheet, env,
-                    childScope, interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving, false, null));
-        }
-
-        BoxTreeBuilder.build(box, CounterStyles.of(sheet.counterStyles));
-        box.linkParents();
-        box.recomputeChildFlags();
     }
 
     /**
@@ -772,7 +701,7 @@ public class RenderPipeline {
         return oldStyle != null && newStyle != null && !oldStyle.hasStructureAffectingDiff(newStyle);
     }
 
-    private record StyleScope(int viewportW, int viewportH, float rootFontSize, float rootLineHeight) {
+    record StyleScope(int viewportW, int viewportH, float rootFontSize, float rootLineHeight) {
         // 不変なので、直前と同じ値なら同じインスタンスを返す（再スタイルのたびに作らない）
         private static volatile StyleScope lastInitial, lastEntered;
 
@@ -802,14 +731,14 @@ public class RenderPipeline {
      *   <li>{@link #INVALID}: 状態・DOM・継承元が変わった。子孫もまとめて算出し直す</li>
      * </ul>
      */
-    private enum StyleCache { VALID, VIEWPORT_STALE, INVALID }
+    enum StyleCache { VALID, VIEWPORT_STALE, INVALID }
 
     /** 宣言値がビューポートの大きさで変わり得るか（{@code vw} / {@code svh} / {@code cqw} など、または参照先の分からない {@code var()}）。 */
     private static final Pattern VIEWPORT_DEPENDENT_VALUE = Pattern.compile(
             "\\d(?:[sld]?v(?:w|h|i|b|min|max)|cq(?:w|h|i|b|min|max))(?![a-z])|var\\(|env\\(",
             Pattern.CASE_INSENSITIVE);
 
-    private static StyleCache styleCacheState(InteractionState.StateFlags flags, float parentFontSize, StyleScope scope) {
+    static StyleCache styleCacheState(InteractionState.StateFlags flags, float parentFontSize, StyleScope scope) {
         if (flags == null
                 || flags.isStyleDirty()
                 || flags.computedStyle == null
@@ -823,14 +752,14 @@ public class RenderPipeline {
     }
 
     /** 親から子へ渡す「算出し直せ」の強さ。 */
-    private static final int FORCE_NONE = 0;
+    static final int FORCE_NONE = 0;
     /** この要素だけ算出し直す（継承元が変わった・兄弟に状態の変化がある）。子孫への強制は、算出結果から改めて決める。 */
-    private static final int FORCE_SELF = 1;
+    static final int FORCE_SELF = 1;
     /** この要素と全ての子孫を算出し直す（祖先の状態・class・属性を読む規則が子孫に効き得る）。 */
-    private static final int FORCE_SUBTREE = 2;
+    static final int FORCE_SUBTREE = 2;
 
     /** 算出し直した結果が、子孫の算出に及ぶ度合い。 */
-    private enum Propagation {
+    enum Propagation {
         /** 子孫が読む値は変わっていない。子孫はそれぞれのキャッシュの状態で判断する。 */
         NONE,
         /** 継承しないプロパティだけが変わった。{@code inherit} を明示した子孫だけが影響を受ける。 */
@@ -848,7 +777,7 @@ public class RenderPipeline {
      *       （背景色の変化で子孫全員を再スタイルしない）</li>
      * </ul>
      */
-    private static Propagation propagationOf(ComputedStyle previous, ComputedStyle computed) {
+    static Propagation propagationOf(ComputedStyle previous, ComputedStyle computed) {
         return switch (computed.classifyPropagationFrom(previous)) {
             case 0 -> Propagation.NONE;
             case 1 -> Propagation.NON_INHERITED;
@@ -856,7 +785,7 @@ public class RenderPipeline {
         };
     }
 
-    private static int childForceOf(boolean subtreeDirty, Propagation propagation, StyleSheet sheet) {
+    static int childForceOf(boolean subtreeDirty, Propagation propagation, StyleSheet sheet) {
         if (subtreeDirty) return FORCE_SUBTREE;
         if (propagation == Propagation.INHERITED
                 || (propagation == Propagation.NON_INHERITED && sheet != null && sheet.usesInheritKeyword())) {
@@ -875,7 +804,7 @@ public class RenderPipeline {
      * （{@link StateStyleMemo}）を引く（:hover の往復でセレクタ照合もカスケードもしない）。
      * 表を使えない／入力が変わったときは、従来どおり（スタイル共有 → カスケード）で作る。
      */
-    private static StateStyleMemo.Entry styleEntry(HtmlNode node, StyleSet styleSet, Map<String, String> inheritedStyle,
+    static StateStyleMemo.Entry styleEntry(HtmlNode node, StyleSet styleSet, Map<String, String> inheritedStyle,
                                                    StyleSheet sheet, Map<String, String> env, float parentFontSize,
                                                    StyleScope scope, InteractionState interactionState,
                                                    ContainerBox container, int force,
@@ -913,7 +842,7 @@ public class RenderPipeline {
      * 以前は親ごとに 1 回、親の表を丸ごと写して算出し直していた（showcase で空白の節 1 つの親あたり約 9 KB）。
      * 使えないとき（{@code @property} の登録がある・親が算出スタイルでない・フォントの基準が親と違う）は null（従来の経路）。
      */
-    private static ComputedStyle.TextChild textNodeStyle(HtmlNode node, Map<String, String> inheritedStyle,
+    static ComputedStyle.TextChild textNodeStyle(HtmlNode node, Map<String, String> inheritedStyle,
                                                          StyleSheet sheet, float parentFontSize, StyleScope scope) {
         if (!TEXT_STYLE_FROM_PARENT || node.nodeType != NodeType.TEXT || sheet == null
                 || !sheet.registeredProperties.isEmpty()) return null;
@@ -962,7 +891,7 @@ public class RenderPipeline {
                 && (flags.dirtyBits() & (InteractionState.StateFlags.DIRTY_STYLE | InteractionState.StateFlags.DIRTY_UNSCOPED)) == 0;
     }
 
-    private static void cacheStyle(InteractionState.StateFlags flags, HtmlNode node, boolean viewportDependent,
+    static void cacheStyle(InteractionState.StateFlags flags, HtmlNode node, boolean viewportDependent,
                                    ComputedStyle computed, float parentFontSize, StyleScope scope,
                                    boolean hasInteractive, StyleSheet sheet) {
         // カスケード解決後の生宣言（rawStyle）は、節に持たせない（要素ごとに 1 表・約 1 KB が残っていた）
@@ -998,7 +927,7 @@ public class RenderPipeline {
                 parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(), container);
     }
 
-    private static ComputedStyle computeStyleOwned(Map<String, String> rawStyle, Map<String, String> parentStyle,
+    static ComputedStyle computeStyleOwned(Map<String, String> rawStyle, Map<String, String> parentStyle,
                                                    StyleSheet sheet,
                                                    Map<String, String> env, float parentFontSize, StyleScope scope,
                                                    ContainerBox container) {
@@ -1006,7 +935,7 @@ public class RenderPipeline {
                 parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(), container);
     }
 
-    private static ComputedStyle recomputeWithAnimation(HtmlNode node, StyleSet styleSet,
+    static ComputedStyle recomputeWithAnimation(HtmlNode node, StyleSet styleSet,
                                                       Map<String, String> inheritedStyle, StyleSheet sheet,
                                                       Map<String, String> env, float parentFontSize, StyleScope scope,
                                                       InteractionState interactionState, ContainerBox container,
@@ -1024,7 +953,7 @@ public class RenderPipeline {
      * トランジションと {@code @keyframes} の値（{@link StyleAnimator}）。動いているものが無ければ空。
      * {@code opacity} / {@code transform} / 色は描画項目の補間が担うので対象外。
      */
-    private static Map<String, String> animationValues(HtmlNode node, ComputedStyle before, ComputedStyle target,
+    static Map<String, String> animationValues(HtmlNode node, ComputedStyle before, ComputedStyle target,
                                                        Map<String, String> inheritedStyle, StyleSheet sheet,
                                                        InteractionState interactionState) {
         if (interactionState == null || node.isPseudoNode || sheet == null) return Map.of();
@@ -1047,7 +976,7 @@ public class RenderPipeline {
     }
 
     /** 要素自身がサイズコンテナならその {@link ContainerBox}、そうでなければ親から引き継いだ {@code parentContainer} をそのまま返す。 */
-    private static ContainerBox containerForSelf(HtmlNode node, ComputedStyle computed, ContainerBox parentContainer,
+    static ContainerBox containerForSelf(HtmlNode node, ComputedStyle computed, ContainerBox parentContainer,
                                                  InteractionState interactionState) {
         if (interactionState == null || !isSizeContainerStyle(computed)) return parentContainer;
         ContainerBox self = interactionState.containerOf(node);
@@ -1195,12 +1124,12 @@ public class RenderPipeline {
             box.updateStyle(computed);
             cacheStyle(flags, node, viewportDependent, computed, parentFontSize, scope, hasInteractive, sheet);
             selfContainer = containerForSelf(node, computed, parentSizeContainer, interactionState);
-            selfOrAncestorMoving = stampMoving(box, computed, ancestorHasMoving);
+            selfOrAncestorMoving = RenderTreeBuilder.stampMoving(box, computed, ancestorHasMoving);
             ComputedStyle prevMarkerStyle = box.markerStyle;
             ComputedStyle prevPlaceholderStyle = box.placeholderStyle;
             ComputedStyle prevBackdropStyle = box.backdropStyle;
             ComputedStyle prevFirstLineStyle = box.firstLineStyle;
-            resolveHighlightPseudos(box, computed, sheet, env, scope.enter(node, computed), interactionState, selfContainer);
+            RenderTreeBuilder.resolveHighlightPseudos(box, computed, sheet, env, scope.enter(node, computed), interactionState, selfContainer);
             if (box.display.listItem() && prevMarkerStyle != box.markerStyle) {
                 styleChanged = true;
                 if (StyleResolver.isLayoutAffectingChange(prevMarkerStyle, box.markerStyle)) {
@@ -1222,7 +1151,7 @@ public class RenderPipeline {
                     layoutChangedList.add(box);
                 } else {
                     styleChangedList.add(box);
-                    addFirstLineTextBoxes(box, styleChangedList);
+                    RenderTreeBuilder.addFirstLineTextBoxes(box, styleChangedList);
                 }
             }
             if (prevBackdropStyle != box.backdropStyle) styleChanged = true;
@@ -1235,7 +1164,7 @@ public class RenderPipeline {
             selfContainer = containerForSelf(node, computed, parentSizeContainer, interactionState);
             selfOrAncestorMoving = box.movingStamped && box.ancestorMoving == ancestorHasMoving
                     ? box.selfOrAncestorMoving
-                    : stampMoving(box, computed, ancestorHasMoving);
+                    : RenderTreeBuilder.stampMoving(box, computed, ancestorHasMoving);
             childForce = subtreeDirty ? FORCE_SUBTREE : FORCE_NONE;
             flags.clearSubtreeDirty();
         }
@@ -1398,7 +1327,7 @@ public class RenderPipeline {
                 && styleCacheState(flags, parentFontSize, scope) == StyleCache.VALID;
     }
 
-    private static boolean isStateDirty(InteractionState interactionState, HtmlNode node) {
+    static boolean isStateDirty(InteractionState interactionState, HtmlNode node) {
         if (interactionState == null) return false;
         InteractionState.StateFlags flags = interactionState.get(node);
         return flags == null || flags.isStyleDirty();
@@ -1417,20 +1346,20 @@ public class RenderPipeline {
             String suffix = type == PseudoType.BEFORE ? "_before" : "_after";
             for (int ci = 0, cn = owner.elementChildren.size(); ci < cn; ci++) {
                 LayoutBox child = owner.elementChildren.get(ci);
-                if (child.node.isPseudoNode && isPseudoKey(child.node.key(), ownerKey, suffix)) {
+                if (child.node.isPseudoNode && RenderTreeBuilder.isPseudoKey(child.node.key(), ownerKey, suffix)) {
                     existing = child;
                     break;
                 }
             }
         }
-        ComputedStyle next = resolvePseudoStyle(owner.node, type, ownerStyle, sheet, env, scope, interactionState, ownerSizeContainer);
+        ComputedStyle next = RenderTreeBuilder.resolvePseudoStyle(owner.node, type, ownerStyle, sheet, env, scope, interactionState, ownerSizeContainer);
         if (existing == null && next == null) return RESTYLE_UNCHANGED;
 
         if (existing == null || next == null) {
             if (existing != null) {
                 owner.elementChildren.remove(existing);
             } else {
-                LayoutBox created = buildPseudoBox(owner.node, type, next, owner.hasInteractiveRules, sheet, env,
+                LayoutBox created = RenderTreeBuilder.buildPseudoBox(owner.node, type, next, owner.hasInteractiveRules, sheet, env,
                         scope, interactionState, siblingInvalidation, ownerSizeContainer, ownerSelfOrAncestorMoving);
                 owner.addElementChild(created);
                 if (type == PseudoType.BEFORE) {
@@ -1458,7 +1387,7 @@ public class RenderPipeline {
             styleChangedList.add(existing);
         }
         existing.updateStyle(next);
-        boolean pseudoMoving = stampMoving(existing, next, ownerSelfOrAncestorMoving);
+        boolean pseudoMoving = RenderTreeBuilder.stampMoving(existing, next, ownerSelfOrAncestorMoving);
         existing.hasInteractiveRules = owner.hasInteractiveRules;
         if (styleChanged) BoxTreeBuilder.restyleGeneratedBoxes(existing);
         int acc = (styleChanged ? RESTYLE_STYLE_CHANGED : 0)
@@ -1498,362 +1427,11 @@ public class RenderPipeline {
         if (interactionState != null) interactionState.styleShare.clear();
         try {
             ContainerBox rootContainer = containerFor(node, interactionState);
-            return buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty ? FORCE_SUBTREE : FORCE_NONE,
+            return RenderTreeBuilder.buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty ? FORCE_SUBTREE : FORCE_NONE,
                     parentFontSize, scope, interactionState, siblingInvalidation, null, null, false, null, rootContainer, false);
         } finally {
             if (interactionState != null) interactionState.styleShare.clear();
         }
     }
 
-    /**
-     * 箱の木を組む。{@code prevReusable} があれば、同じ DOM の節の前回の箱を作り直さずに使い回す（React の差分適用と同じく、
-     * 変わらない部分の実体を保つ）。同時に {@code nextReusable} があれば次フレーム用の再利用テーブルを構築中に登録し、
-     * 木組前の全木走査（collectReusableBoxes）を不要にする。表の中は使い回さない（{@link LayoutBox#recordReusableForBuild} を参照）。
-     */
-    private static LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
-                                             StyleSheet sheet,
-                                             Map<String, String> env, int force,
-                                             float parentFontSize, StyleScope scope, InteractionState interactionState,
-                                             boolean siblingInvalidation,
-                                             LayoutBox.ReusableTable prevReusable,
-                                             LayoutBox.ReusableTable nextReusable,
-                                             boolean inTableScope,
-                                             LayoutBox directPrev,
-                                             ContainerBox parentSizeContainer, boolean ancestorHasMoving) {
-        InteractionState.StateFlags flags = interactionState != null ? interactionState.getOrCreate(node) : null;
-        StyleCache cache = force != FORCE_NONE ? StyleCache.INVALID : styleCacheState(flags, parentFontSize, scope);
-        boolean needsRestyle = cache != StyleCache.VALID;
-        stats().boxes++;
-        if (needsRestyle) stats().restyled++;
-
-        ComputedStyle computed;
-        boolean hasInteractive;
-        int childForce = FORCE_NONE;
-        boolean childForceIfInherits = false;
-        boolean subtreeDirty = (flags != null && flags.subtreeDirty()) || force == FORCE_SUBTREE;
-
-        if (needsRestyle) {
-            boolean tk = ctx().trackAllocations;
-            long k0 = tk ? threadAllocatedBytes() : 0;
-            ContainerBox container = parentSizeContainer;
-            ComputedStyle previous = flags != null ? flags.computedStyle : null;
-            ComputedStyle.TextChild textEntry = textNodeStyle(node, inheritedStyle, sheet, parentFontSize, scope);
-            StyleSet styleSet = textEntry != null ? null : StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
-            boolean viewportDependent;
-            long k1;
-            long k2;
-            if (textEntry != null) {
-                // テキストの節は animation・transition を継承しないので動かない（アニメーションの確認も飛ばす）
-                viewportDependent = textEntry.viewportDependent();
-                computed = textEntry.style();
-                k1 = k2 = tk ? threadAllocatedBytes() : 0;
-            } else if (interactionState != null) {
-                StateStyleMemo.Entry entry = styleEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize,
-                        scope, interactionState, container, force, flags, false);
-                viewportDependent = entry.viewportDependent();
-                computed = entry.computed();
-                k1 = k2 = tk ? threadAllocatedBytes() : 0;
-            } else {
-                Map<String, String> rawStyle = styleSet.resolve(ElementState.NONE);
-                if (node.attrs.containsKey("hidden")) {
-                    rawStyle.put(CssProperty.DISPLAY, "none");
-                }
-                viewportDependent = flags != null && (node.parent == null || StyleResolver.rawDependsOnViewport(rawStyle));
-                k1 = tk ? threadAllocatedBytes() : 0;
-                computed = computeStyleOwned(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, container);
-                k2 = tk ? threadAllocatedBytes() : 0;
-            }
-            Map<String, String> animation = textEntry != null ? Map.of()
-                    : animationValues(node, previous, computed, inheritedStyle, sheet, interactionState);
-            if (!animation.isEmpty()) {
-                computed = recomputeWithAnimation(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope,
-                        interactionState, container, animation);
-                viewportDependent |= StyleResolver.rawDependsOnViewport(animation);
-            }
-            hasInteractive = styleSet != null && styleSet.hasInteractiveRules();
-            if (tk) {
-                stats().allocResolve += k1 - k0;
-                stats().allocCompute += k2 - k1;
-                stats().allocAnimated += threadAllocatedBytes() - k2;
-            }
-
-            Propagation propagation = propagationOf(previous, computed);
-            childForce = childForceOf(subtreeDirty, propagation, sheet);
-            childForceIfInherits = propagation == Propagation.NON_INHERITED;
-            if (flags != null) cacheStyle(flags, node, viewportDependent, computed, parentFontSize, scope, hasInteractive, sheet);
-        } else {
-            computed = flags.computedStyle;
-            hasInteractive = flags.hasInteractiveRules;
-            childForce = subtreeDirty ? FORCE_SUBTREE : FORCE_NONE;
-            flags.clearSubtreeDirty();
-            flags.clearDirtyBelow();
-        }
-        Map<String, String> childInherited = computed.asMap();
-        StyleScope childScope = scope.enter(node, computed);
-
-        LayoutBox box = directPrev != null && directPrev.node == node
-                ? directPrev
-                : (prevReusable != null ? prevReusable.take(node) : null);
-        LayoutBox prevBefore = null;
-        LayoutBox prevAfter = null;
-        boolean reusedBox = false;
-        if (box != null) {
-            if (box.hasPseudoElementChild) {
-                List<LayoutBox> ec = box.elementChildren;
-                String ownerKey = node.key();
-                for (int i = 0, n = ec.size(); i < n; i++) {
-                    LayoutBox ch = ec.get(i);
-                    if (!ch.node.isPseudoNode) continue;
-                    String k = ch.node.key();
-                    if (prevBefore == null && isPseudoKey(k, ownerKey, "_before")) prevBefore = ch;
-                    else if (prevAfter == null && isPseudoKey(k, ownerKey, "_after")) prevAfter = ch;
-                }
-                box.hasPseudoElementChild = false;
-            }
-            box.elementChildren.clear();
-            box.refreshStyle(computed);
-            if (box.display.isNone() || LayoutBox.isInternalTableBox(box)) {
-                box = null;
-                prevBefore = null;
-                prevAfter = null;
-            } else {
-                box.resetEngineOutputs();
-                reusedBox = true;
-                stats().reused++;
-            }
-        }
-        if (box == null) {
-            box = new LayoutBox(node, computed);
-        }
-        // 表のエンジンは中の箱へ直接書き込むので、表の中は作り直す。display: none の部分木は測られないので、
-        // 使い回すと前回の寸法が残る（新しく作った箱は 0）。コンテナクエリの寸法などが読むので作り直す
-        boolean entersTable = LayoutBox.recordReusableForBuild(inTableScope ? null : nextReusable, box);
-        boolean childInTableScope = inTableScope || entersTable;
-        boolean stopChildReuse = childInTableScope || box.display.isNone();
-        LayoutBox.ReusableTable childPrevReusable = stopChildReuse ? null : prevReusable;
-        LayoutBox.ReusableTable childNextReusable = childInTableScope ? null : nextReusable;
-        box.hasInteractiveRules = hasInteractive;
-        boolean selfOrAncestorMoving = stampMoving(box, computed, ancestorHasMoving);
-        // 持ち主のスタイルのキャッシュが有効なら、状態も祖先・兄弟も前回のままなので疑似要素の規則の当たり方も前回のまま。
-        // 疑似要素だけがビューポート単位を使うこともあるので、ビューポートが同じときに限って前回の疑似要素をそのまま使う
-        // （再スタイルの経路 restyleBoxRecursive も、汚れていない要素の疑似要素は解き直さない）
-        long viewportKey = ((long) scope.viewportW() << 32) | (scope.viewportH() & 0xffffffffL);
-        ContainerBox selfContainer = containerForSelf(node, computed, parentSizeContainer, interactionState);
-        boolean reusePseudos = reusedBox && !needsRestyle && box.pseudoStylesViewport == viewportKey;
-        if (!reusePseudos) {
-            resolveHighlightPseudos(box, computed, sheet, env, childScope, interactionState, selfContainer);
-            box.pseudoStylesViewport = viewportKey;
-        }
-
-        // content-visibility: hidden の中身は測らず描かない（箱の木に入れない。疑似要素も同じ）
-        // content-visibility: auto で前フレーム未表示かつ強制関連でない要素も中身を遅延する
-        boolean skipContents = computed.skipsContents();
-        boolean isCvAuto = !skipContents && computed.isContentVisibilityAuto();
-        boolean deferContents = false;
-        if (isCvAuto) {
-            box.markContentAutoSubtree();
-            box.originallyDeferred = true;
-            boolean forceRel = isFocusWithin(node, interactionState);
-            box.cvForceRelevant = forceRel;
-            if (flags != null) {
-                if (Float.isNaN(box.rememberedInnerW)) box.rememberedInnerW = flags.lastRememberedWidth;
-                if (Float.isNaN(box.rememberedInnerH)) box.rememberedInnerH = flags.lastRememberedHeight;
-            }
-            boolean wasActive = (flags != null && flags.contentAutoActive) || forceRel;
-            if (!wasActive) {
-                box.contentAutoSkipped = true;
-                box.childrenDeferred = true;
-                deferContents = true;
-            } else {
-                box.contentAutoSkipped = false;
-                box.childrenDeferred = false;
-            }
-        } else {
-            box.contentAutoSkipped = false;
-            box.childrenDeferred = false;
-            box.originallyDeferred = false;
-            box.cvForceRelevant = false;
-        }
-        boolean omitChildren = skipContents || deferContents;
-        if (omitChildren) {
-            // 子を持たない（または遅延構築する）箱として扱う
-        } else if (reusePseudos) {
-            if (prevBefore != null) {
-                stampMovingSubtree(prevBefore, selfOrAncestorMoving);
-                box.addElementChild(prevBefore);
-            }
-        } else {
-            ComputedStyle beforeStyle = resolvePseudoStyle(node, PseudoType.BEFORE, computed, sheet, env, childScope, interactionState, selfContainer);
-            if (beforeStyle != null) {
-                box.addElementChild(buildPseudoBox(node, PseudoType.BEFORE, beforeStyle, hasInteractive, sheet, env,
-                        childScope, interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving, !stopChildReuse, prevBefore));
-            }
-        }
-
-        // svg の子（図形）は箱にしない。svg 要素が木を読んで自分でラスタライズする
-        if (!omitChildren && !"textarea".equalsIgnoreCase(node.tag) && !"svg".equalsIgnoreCase(node.tag)) {
-            boolean isOpen = interactionState != null
-                    ? interactionState.stateOf(node).open()
-                    : node.attrs.containsKey("open");
-            boolean isClosedDetails = "details".equalsIgnoreCase(node.tag) && !isOpen;
-            boolean siblingForceDirty = false;
-            for (HtmlNode child : node.children) {
-                if (child.tag.equals("#text") && child.text.isEmpty()) continue;
-                if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
-                boolean stateChanged = siblingInvalidation && isStateDirty(interactionState, child);
-                int forceChild = siblingForceDirty ? FORCE_SUBTREE : childForce;
-                if (forceChild == FORCE_NONE && childForceIfInherits && interactionState != null) {
-                    InteractionState.StateFlags childFlags = interactionState.get(child);
-                    if (childFlags != null && childFlags.inheritsExplicitly) forceChild = FORCE_SELF;
-                }
-                box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, forceChild,
-                        computed.fontSizePx(), childScope, interactionState, siblingInvalidation,
-                        childPrevReusable, childNextReusable, childInTableScope, null,
-                        selfContainer, selfOrAncestorMoving));
-                siblingForceDirty |= stateChanged;
-            }
-        }
-
-        if (omitChildren) {
-            // 同上
-        } else if (reusePseudos) {
-            if (prevAfter != null) {
-                stampMovingSubtree(prevAfter, selfOrAncestorMoving);
-                box.addElementChild(prevAfter);
-            }
-        } else {
-            ComputedStyle afterStyle = resolvePseudoStyle(node, PseudoType.AFTER, computed, sheet, env, childScope, interactionState, selfContainer);
-            if (afterStyle != null) {
-                box.addElementChild(buildPseudoBox(node, PseudoType.AFTER, afterStyle, hasInteractive, sheet, env,
-                        childScope, interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving, !stopChildReuse, prevAfter));
-            }
-        }
-
-        return box;
-    }
-
-    private static void resolveHighlightPseudos(LayoutBox box, ComputedStyle computed,
-                                                StyleSheet sheet,
-                                                Map<String, String> env, StyleScope childScope,
-                                                InteractionState interactionState, ContainerBox selfContainer) {
-        HtmlNode node = box.node;
-        box.markerStyle = box.display.listItem()
-                ? resolvePseudoStyle(node, PseudoType.MARKER, computed, sheet, env, childScope, interactionState, selfContainer)
-                : null;
-        boolean textInput = "input".equals(node.tag) || "textarea".equals(node.tag);
-        box.placeholderStyle = textInput
-                ? resolvePseudoStyle(node, PseudoType.PLACEHOLDER, computed, sheet, env, childScope, interactionState, selfContainer)
-                : null;
-        // Top Layer の箱（dialog・popover）だけが ::backdrop を持つ
-        boolean topLayerCapable = "dialog".equals(node.tag) || node.attrs != null && node.attrs.containsKey("popover");
-        box.backdropStyle = topLayerCapable
-                ? resolvePseudoStyle(node, PseudoType.BACKDROP, computed, sheet, env, childScope, interactionState, selfContainer)
-                : null;
-        box.firstLineStyle = isFirstLineContainer(box)
-                ? resolvePseudoStyle(node, PseudoType.FIRST_LINE, computed, sheet, env, childScope, interactionState, selfContainer)
-                : null;
-    }
-
-    private static boolean isFirstLineContainer(LayoutBox box) {
-        return box.isFirstLineContainer();
-    }
-
-    private static void addFirstLineTextBoxes(LayoutBox parent, List<LayoutBox> out) {
-        for (int i = 0, n = parent.children.size(); i < n; i++) {
-            LayoutBox c = parent.children.get(i);
-            if (!c.inlineFragments.isEmpty() && !c.isAnonymous) out.add(c);
-            if (c.isAnonymous || c.isInlineFlow()) {
-                addFirstLineTextBoxes(c, out);
-            }
-        }
-    }
-
-    private static ComputedStyle resolvePseudoStyle(HtmlNode owner, PseudoType type, ComputedStyle ownerStyle,
-                                                    StyleSheet sheet,
-                                                    Map<String, String> env, StyleScope scope,
-                                                    InteractionState interactionState, ContainerBox selfContainer) {
-        StateLookup lookup =
-                interactionState != null ? interactionState : SelectorMatcher.STATIC_ATTRIBUTES;
-        return StyleResolver.resolvePseudoStyle(owner, type, sheet, lookup, ownerStyle, env,
-                scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(), selfContainer);
-    }
-
-    /** {@code key.equals(ownerKey + suffix)} を文字列を作らずに判定する。 */
-    private static boolean isPseudoKey(String key, String ownerKey, String suffix) {
-        return key != null && key.length() == ownerKey.length() + suffix.length()
-                && key.startsWith(ownerKey) && key.endsWith(suffix);
-    }
-
-    private static String pseudoElementId(HtmlNode owner, PseudoType type) {
-        return owner.key() + (type == PseudoType.BEFORE ? "_before" : "_after");
-    }
-
-    private static LayoutBox buildPseudoBox(HtmlNode owner, PseudoType type, ComputedStyle style, boolean ownerInteractive,
-                                           StyleSheet sheet,
-                                           Map<String, String> env, StyleScope scope,
-                                           InteractionState interactionState, boolean siblingInvalidation,
-                                           ContainerBox ownerSizeContainer, boolean ownerSelfOrAncestorMoving) {
-        return buildPseudoBox(owner, type, style, ownerInteractive, sheet, env, scope, interactionState,
-                siblingInvalidation, ownerSizeContainer, ownerSelfOrAncestorMoving, false, null);
-    }
-
-    /**
-     * {@code ::before} / {@code ::after} の箱を作る。持ち主の前回の子に同じ id の疑似要素があれば、
-     * その合成ノードと箱を使い回す（中の文字は {@link BoxTreeBuilder} が組むたびに入れ直す）。
-     */
-    private static LayoutBox buildPseudoBox(HtmlNode owner, PseudoType type, ComputedStyle style, boolean ownerInteractive,
-                                           StyleSheet sheet,
-                                           Map<String, String> env, StyleScope scope,
-                                           InteractionState interactionState, boolean siblingInvalidation,
-                                           ContainerBox ownerSizeContainer, boolean ownerSelfOrAncestorMoving,
-                                           boolean canReuse, LayoutBox prevPseudo) {
-        LayoutBox box = null;
-        LayoutBox prevTextBox = null;
-        if (canReuse && prevPseudo != null && prevPseudo.node.children.size() == 1) {
-            box = prevPseudo;
-            prevTextBox = box.elementChildren.isEmpty() ? null : box.elementChildren.getFirst();
-        }
-
-        HtmlNode textNode;
-        if (box != null) {
-            box.node.parent = owner;
-            box.elementChildren.clear();
-            box.hasPseudoElementChild = false;
-            box.updateStyle(style);
-            textNode = box.node.children.getFirst();
-        } else {
-            String pseudoId = pseudoElementId(owner, type);
-            HtmlNode pseudo = new HtmlNode("span");
-            pseudo.isPseudoNode = true;
-            pseudo.parent = owner;
-            pseudo.setId(pseudoId);
-
-            textNode = new HtmlText("");
-            textNode.parent = pseudo;
-            textNode.setId(pseudo.key() + "_txt");
-            pseudo.children.add(textNode);
-            box = new LayoutBox(pseudo, style);
-        }
-        box.hasInteractiveRules = ownerInteractive;
-        boolean pseudoMoving = stampMoving(box, style, ownerSelfOrAncestorMoving);
-        box.addElementChild(buildLayoutTree(textNode, style.asMap(), sheet, env, FORCE_SUBTREE, style.fontSizePx(), scope,
-                interactionState, siblingInvalidation, null, null, false, prevTextBox, ownerSizeContainer, pseudoMoving));
-        return box;
-    }
-
-    private static boolean stampMoving(LayoutBox box, ComputedStyle computed, boolean ancestorHasMoving) {
-        boolean selfOrAncestor = ancestorHasMoving || PaintOrder.hasMovingProps(computed);
-        box.ancestorMoving = ancestorHasMoving;
-        box.selfOrAncestorMoving = selfOrAncestor;
-        box.movingStamped = true;
-        return selfOrAncestor;
-    }
-
-    private static void stampMovingSubtree(LayoutBox box, boolean ancestorHasMoving) {
-        if (box.movingStamped && box.ancestorMoving == ancestorHasMoving) return;
-        boolean selfOrAncestor = stampMoving(box, box.style, ancestorHasMoving);
-        for (int i = 0, n = box.elementChildren.size(); i < n; i++) {
-            stampMovingSubtree(box.elementChildren.get(i), selfOrAncestor);
-        }
-    }
 }

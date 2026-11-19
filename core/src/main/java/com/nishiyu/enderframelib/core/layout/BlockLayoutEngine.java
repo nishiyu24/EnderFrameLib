@@ -11,7 +11,6 @@ import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssKeywords;
-import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
@@ -26,9 +25,7 @@ import java.util.List;
 
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
-import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * ブロックとインラインの整形（float と BFC を含む）。
@@ -517,14 +514,14 @@ public class BlockLayoutEngine extends LayoutEngine {
                             float[] sh = shiftOf(shifts, line);
                             textBottom = Math.max(textBottom,
                                     placeLine(line, innerX + sh[0] + line.left(), innerY + sh[1] + line.top(), line.width(),
-                                            lineJustify.align(line), lineJustify.justifies(line), lineJustify.mode, ctx));
+                                            lineJustify.align(line), lineJustify.justifies(line), lineJustify.mode(), ctx));
                         }
                     } else {
                         for (int i = 0, n = lines.size(); i < n; i++) {
                             InlineLine line = lines.get(i);
                             textBottom = Math.max(textBottom,
                                     placeLine(line, innerX + line.left(), innerY + line.top(), line.width(),
-                                            lineJustify.align(line), lineJustify.justifies(line), lineJustify.mode, ctx));
+                                            lineJustify.align(line), lineJustify.justifies(line), lineJustify.mode(), ctx));
                         }
                     }
                     if (!recordedFirstLine && !lines.isEmpty()) {
@@ -1271,43 +1268,6 @@ public class BlockLayoutEngine extends LayoutEngine {
             placeSpan(sp, offsetX, drawY, line, ctx);
         }
         return textBottom;
-    }
-
-    /**
-     * 行の揃え（text-align / text-align-last / text-justify）。{@code justify} の行は開始端から置いて余りを配る。
-     * 最終行（強制改行の前の行を含む）は {@code text-align-last}（auto なら justify は start）に従う。
-     */
-    record LineJustify(TextAlign normal, boolean justifyNormal, TextAlign last, boolean justifyLast, String mode) {
-        static LineJustify of(ComputedStyle style, TextAlign specified, TextAlign physical, boolean rtl) {
-            String mode = style.get(CssPropertyIndex.TEXT_JUSTIFY);
-            mode = mode == null ? "auto" : mode.trim().toLowerCase(java.util.Locale.ROOT);
-            if (mode.equals("distribute")) mode = "inter-character";
-            boolean justify = specified == TextAlign.JUSTIFY && !mode.equals("none");
-            String lastRaw = style.get(CssPropertyIndex.TEXT_ALIGN_LAST);
-            String l = lastRaw == null ? "auto" : lastRaw.trim().toLowerCase(java.util.Locale.ROOT);
-            TextAlign last;
-            boolean justifyLast;
-            if (l.equals("auto")) {
-                last = physical;
-                justifyLast = false;
-            } else if (l.equals("justify")) {
-                last = TextAlign.START.physical(rtl);
-                justifyLast = !mode.equals("none");
-            } else {
-                TextAlign k = CssKeywords.parse(TextAlign.class, l);
-                last = k == null ? physical : k.physical(rtl);
-                justifyLast = false;
-            }
-            return new LineJustify(physical, justify, last, justifyLast, mode);
-        }
-
-        TextAlign align(InlineLine line) {
-            return line.softWrapped ? normal : last;
-        }
-
-        boolean justifies(InlineLine line) {
-            return line.softWrapped ? justifyNormal : justifyLast;
-        }
     }
 
     /** 2 つの隣り合う項目の間が両端揃えで広がるか（語の後ろの空白、CJK の字の間、inter-character なら文字の間すべて）。 */

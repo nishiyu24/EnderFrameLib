@@ -55,7 +55,7 @@ class PaintSceneDriverDiffPatchTest {
 
     private static List<String> trace(PaintSceneDriver d, List<DisplayItem> items, long now) {
         List<String> out = new ArrayList<>();
-        d.run(items, now, Matrix2D.IDENTITY, new PaintSceneDriver.Painter() {
+        d.run(items, now, Matrix2D.IDENTITY, new Painter() {
             @Override public void syncLayers(List<PaintSceneDriver.Group> want) {
                 StringBuilder sb = new StringBuilder("layers:");
                 for (var g : want) sb.append(g.id()).append('@').append(g.opacity()).append(',');

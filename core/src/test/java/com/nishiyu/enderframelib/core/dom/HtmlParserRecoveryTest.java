@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.dom;
 import com.nishiyu.enderframelib.core.dom.node.*;
 import com.nishiyu.enderframelib.core.dom.parser.*;
 
-import com.nishiyu.enderframelib.core.dom.parser.HtmlParser.HtmlTokenizer;
+import com.nishiyu.enderframelib.core.dom.parser.HtmlTokenizer;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

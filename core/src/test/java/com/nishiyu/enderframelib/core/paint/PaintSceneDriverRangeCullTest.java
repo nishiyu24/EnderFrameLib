@@ -56,7 +56,7 @@ class PaintSceneDriverRangeCullTest {
         }
     }
 
-    private static final class Rec implements PaintSceneDriver.Painter {
+    private static final class Rec implements Painter {
         final List<Integer> drawn = new ArrayList<>();
         final List<String> log = new ArrayList<>();
         double y0, y1;

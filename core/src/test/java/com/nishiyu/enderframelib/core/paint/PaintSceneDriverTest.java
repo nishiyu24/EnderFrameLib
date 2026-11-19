@@ -18,7 +18,7 @@ public class PaintSceneDriverTest {
 
     private record Visit(String id, float flat, List<String> layers, Matrix2D pose, float opacity) {}
 
-    private static final class Recorder implements PaintSceneDriver.Painter {
+    private static final class Recorder implements Painter {
         final List<Visit> visits = new ArrayList<>();
         final List<List<String>> syncs = new ArrayList<>();
         List<String> current = List.of();

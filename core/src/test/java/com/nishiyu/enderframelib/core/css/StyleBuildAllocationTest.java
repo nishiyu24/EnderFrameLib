@@ -25,9 +25,9 @@ class StyleBuildAllocationTest {
         for (int i = 0; i < n; i++) new StandaloneView(doc, 800, 600, FontResolver.FALLBACK);
         System.out.println("[style-build] 1500 rows (~4500 nodes): " + (allocated() - a0) / n / 1024 + " KB, "
                 + (System.nanoTime() - t0) / n / 1_000_000 + " ms per build");
-        for (int i = 0; i < 20; i++) com.nishiyu.enderframelib.core.dom.parser.HtmlParser.HtmlTokenizer.tokenize(doc);
+        for (int i = 0; i < 20; i++) com.nishiyu.enderframelib.core.dom.parser.HtmlTokenizer.tokenize(doc);
         long b0 = allocated();
-        for (int i = 0; i < n; i++) com.nishiyu.enderframelib.core.dom.parser.HtmlParser.HtmlTokenizer.tokenize(doc);
+        for (int i = 0; i < n; i++) com.nishiyu.enderframelib.core.dom.parser.HtmlTokenizer.tokenize(doc);
         System.out.println("[style-build] tokenize only: " + (allocated() - b0) / n / 1024 + " KB per run (doc " + doc.length() / 1024 + " KB)");
         var mx = ManagementFactory.getThreadMXBean();
         for (int rep = 0; rep < 3; rep++) {

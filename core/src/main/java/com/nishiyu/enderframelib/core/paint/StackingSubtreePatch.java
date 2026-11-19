@@ -10,7 +10,7 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import static com.nishiyu.enderframelib.core.paint.PaintOrder.canvasBackgroundSource;
-import com.nishiyu.enderframelib.core.paint.PaintOrder.RenderTask;
+import com.nishiyu.enderframelib.core.paint.RenderTask;
 
 /**
  * スタッキングコンテキストの部分木だけを組み直す差分パッチ（B12。{@link DisplayListBuilder#patchBoxes} の近道の 1 つ）。
