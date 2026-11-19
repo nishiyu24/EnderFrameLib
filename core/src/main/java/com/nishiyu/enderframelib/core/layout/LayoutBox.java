@@ -1106,7 +1106,12 @@ public class LayoutBox {
         this.x += dx;
         this.y += dy;
         if (inlineContentBottom > Float.NEGATIVE_INFINITY) inlineContentBottom += dy;
-        for (LayoutBox child : children) child.applyRelativeOffset(dx, dy);
+        for (LayoutBox child : children) {
+            // 祖先のずらしは子孫の原点の記録（lastLayoutX / Y）に入らないので、記録と位置の差がずれる。祖先が相対位置でなくなった
+            // 次の layout で、平行移動（shiftSubtree）がこの差を保ったまま動かし、効かなくなったずらしが残る（§6-118）。記録を消して置き直させる
+            child.lastLayoutX = Float.NaN;
+            child.applyRelativeOffset(dx, dy);
+        }
         for (InlineFragment frag : inlineFragments) {
             frag.x += dx;
             frag.y += dy;
@@ -2180,8 +2185,12 @@ public class LayoutBox {
      */
     public static void resetPlacements(LayoutBox box, long keepRun) {
         if (keepRun >= 0 && box.canKeepPlacement(keepRun)) return;
-        // 配置を捨てた箱は、前回の layout の記録も無効にする（子を飛ばして古い 0,0 のまま残さない）
+        // 配置を捨てた箱は、前回の layout の記録も無効にする（子を飛ばして古い 0,0 のまま残さない）。keepRun >= 0 でも、
+        // ここで使い回せなかった箱は位置を 0 にするので、自分の配置は使い回させない（placementValid）。残すと、後の layout が
+        // 同じ原点と見て配置を飛ばし、位置が 0 のまま残る（その間に兄弟の float が消えるなどで使い回しの条件が揃うと起きる。§6-118）。
+        // 原点の記録（lastLayoutX）は消さない: 消すと自分の原点が変わったと見て子の配置を全部捨て、子の使い回しまで失う
         box.touchPaint();
+        box.placementValid = false;
         if (keepRun < 0) {
             box.placementPure = false;
             box.keptPure = false;
@@ -2246,6 +2255,7 @@ public class LayoutBox {
                                             List<LayoutBox> staleFrags) {
         if (keepRun >= 0 && box.canKeepPlacement(keepRun, ancestorOffset || inBfcFloat)) return;
         box.touchPaint();
+        box.placementValid = false; // 位置を 0 にするので、自分の配置は使い回させない（resetPlacements と同じ。§6-118）
         if (keepRun < 0) {
             box.placementPure = false;
             box.keptPure = false;

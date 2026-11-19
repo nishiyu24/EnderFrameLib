@@ -13,7 +13,7 @@ import java.util.Map;
 
 /**
  * 差分ファズ（ENGINE_REARCHITECTURE_PLAN T3 ③）: 乱数の変更列（{@link MutationScenario}）の毎手で、増分で作った表示リストが同じ時刻で
- * 全面の再レイアウトを強いた結果と一致するかを比べる。ずれた種は {@code mutation-seeds.txt} に足し、以後は
+ * 測定の記憶を全部捨てて（{@code LayoutBox.invalidateAllMeasurements}）全面を組み直した結果と一致するかを比べる。ずれた種は {@code mutation-seeds.txt} に足し、以後は
  * {@link MutationSeedRegressionTest} が毎回の CI で固定の種として回す（見つかった不具合がそのまま回帰テストになる）。
  *
  * <p>夜間（{@code full-tests.yml}）は {@code ./gradlew :core:mutationFuzz} で新しい種を回す。種の始まりは日付から決めるので、毎晩違う種になる。
@@ -55,6 +55,9 @@ public final class MutationFuzz {
         MutationScenario.STEP_HOOK = (step, view) -> {
             if (found[0] != null) return;
             List<String> live = sigs(view);
+            // 全面の再レイアウトは測定の記憶（measure の結果・仮の測定・fit の記録）を使い回すので、増分と同じ古い値を返す形がある
+            // （§6-117）。測定の世代を進めて全部測り直させ、記憶に頼らない結果と比べる
+            com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
             view.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
             try (var be = new MutationScenario.NoDraw()) {
                 var f = StandaloneView.class.getDeclaredField("lastNow");
