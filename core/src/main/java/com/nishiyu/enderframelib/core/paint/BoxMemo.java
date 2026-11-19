@@ -762,6 +762,9 @@ static final int NUMS_LENGTH = 13;
             BoxMemo am = memoOf.get(anc);
             // 寸法が 0 になった祖先は、全体の作り直しでは中身ごと描かれない（⑧は寸法を合わせるだけで項目を消さない。§6-112。nested の種 64: body を消した html）
             if (am != null && (anc.w <= 0 || anc.h <= 0)) return false;
+            // 逆に、描かれていなかった祖先（float しか持たず高さ 0 の div）が子を足して寸法を持つと、全体の作り直しは祖先自身も描く（§6-119）
+            if (am == null && !anc.isAnonymous && anc.w > 0 && anc.h > 0 && anc.parent != null
+                    && !(anc.dlOrder >= 0 && anc.dlOrder < rendered.size() && rendered.get(anc.dlOrder) == anc)) return false;
             if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[2], anc.w) != 0) return false;
             if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[3], anc.h) != 0 && paintedAfterItsFlow(anc, order)) return false;
             if (anc.display == null || anc.display.isBlockContainer()) continue; // ブロックの流れでは兄弟の寸法は互いに響かない（float は計画で除いてある）

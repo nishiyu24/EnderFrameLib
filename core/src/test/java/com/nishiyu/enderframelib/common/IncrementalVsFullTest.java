@@ -277,6 +277,131 @@ class IncrementalVsFullTest {
                 });
     }
 
+    /** 増分の結果が、測定の記憶を全部捨てて組み直した全面（{@link MutationFuzz} の比べる相手）と、最初から変えた後の文書で作った面の両方と一致すること。 */
+    private static void assertMatchesRemeasuredAndFresh(String html, java.util.function.Consumer<StandaloneView> change, String finalHtml) {
+        java.util.function.Function<StandaloneView, List<String>> sigs = v -> v.items().stream().map(MutationScenario::sig).toList();
+        List<String> incremental, remeasured, fresh;
+        try (StandaloneView v = new StandaloneView(html, 320, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+             var be = new MutationScenario.NoDraw()) {
+            v.frame(1000, be, true);
+            change.accept(v);
+            v.frame(1016, be, true);
+            incremental = sigs.apply(v);
+            com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
+            v.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
+            v.frame(1016, be, true);
+            remeasured = sigs.apply(v);
+        }
+        try (StandaloneView v = new StandaloneView(finalHtml, 320, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+             var be = new MutationScenario.NoDraw()) {
+            v.frame(1000, be, true);
+            fresh = sigs.apply(v);
+        }
+        assertEquals(fresh, incremental, "増分");
+        assertEquals(fresh, remeasured, "測定の記憶を捨てた全面");
+    }
+
+    private static final String FLOAT_SPAN = "<style>body{margin:0;font-size:13px}.fl{float:left;width:70px;background:#cfc}"
+            + ".fx{display:flex;padding:8px;border:2px solid #555}</style><div id=\"w1\">percent <span id=\"w2\"%s>inline<span id=\"z7\" class=\"fx\">n7</span></span></div>";
+
+    /**
+     * float の span の中の flex の子の文字は flex の項目として layout で置かれ、「配置を使い回せる」印が残る。span を普通のインラインへ戻すと、文字は
+     * 行の流れの中身になるのに、断片を消す走査がその印を見て飛ばし、遅延消去の印が解けずに行が足した断片が捨てられて 0,0 に描かれた（§6-119。
+     * 差分ファズ layouts の種 1149 ほか。全面の側だけが誤るので、最初から作った面とも比べる）。
+     */
+    @Test
+    void textOfAFormerFlexItemKeepsItsFragmentsWhenItsSpanStopsFloating() {
+        assertMatchesRemeasuredAndFresh(String.format(FLOAT_SPAN, " class=\"fl\""),
+                v -> v.root().ownerDocument.getElementById("w2").setAttribute("class", ""),
+                String.format(FLOAT_SPAN, " class=\"\""));
+    }
+
+    private static com.nishiyu.enderframelib.core.dom.node.HtmlElement newElement(StandaloneView v, String tag, String id, String cls, String text) {
+        var add = (com.nishiyu.enderframelib.core.dom.node.HtmlElement) v.root().ownerDocument.createElement(tag);
+        add.setAttribute("id", id);
+        if (cls != null) add.setAttribute("class", cls);
+        add.setTextContent(text);
+        return add;
+    }
+
+    private static final String FLOAT_ONLY = "<style>body{margin:0;font-size:13px}.fl{float:left;width:70px;background:#cfc}"
+            + ".fx{display:flex;padding:8px;border:2px solid #555}</style>";
+
+    /**
+     * 親の子に float しか無い（インラインの層の手がかりが無い）ところへ文字を持つ箱を足すと、文字の項目をブロックの層の直後に入れていた。描画は
+     * 「ブロック → float → インライン」なので float の前に入った（§6-119。差分ファズ layouts の種 1048: body を消した html）。
+     */
+    @Test
+    void textAddedBesideOnlyAFloatGoesAfterTheFloatLayer() {
+        assertIncrementalMatchesFull(FLOAT_ONLY + "<div id=\"p\"><div class=\"fl\">f</div></div>",
+                v -> v.root().ownerDocument.getElementById("p").appendChild(newElement(v, "span", "z", "fx", "n17")));
+    }
+
+    /** 同じ形で、祖先の兄弟に文字があれば、それを手がかりに子パッチのまま（全体を作り直さずに）正しい位置へ入れる（§6-119）。 */
+    @Test
+    void textAddedBesideOnlyAFloatUsesTheTextOfTheAncestorsSiblingsAsTheAnchor() {
+        long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CHILD_SLICE_PATCH_HITS.sum();
+        assertIncrementalMatchesFull(FLOAT_ONLY + "<p>before</p><div id=\"p\" style=\"height:60px\"><div class=\"fl\">f</div></div><p>after</p>",
+                v -> v.root().ownerDocument.getElementById("p").appendChild(newElement(v, "span", "z", "fx", "n17")));
+        assertTrue(com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CHILD_SLICE_PATCH_HITS.sum() > before, "子パッチで済んでいる");
+    }
+
+    /**
+     * 高さ 0 を指定した親は描かれないので、その中へ足したブロック（はみ出して描かれる）の挿入位置の手がかりにならない。以前は描かれていない親の
+     * 番号（-1）からリストの先頭 0（html の背景より前）に入れた。祖先の兄弟へたどって手がかりを探す（§6-119）。
+     */
+    @Test
+    void blockAddedIntoAZeroHeightParentGoesAfterThePrecedingSiblingsBlocks() {
+        long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CHILD_SLICE_PATCH_HITS.sum();
+        assertIncrementalMatchesFull("<style>body{margin:0;font-size:13px}.in{background:#def}</style>"
+                        + "<div class=\"in\">pre</div><div id=\"p\" style=\"height:0\"><div id=\"e\"></div></div><div class=\"in\">post</div>",
+                v -> v.root().ownerDocument.getElementById("p").appendChild(newElement(v, "div", "z", "in", "inner")));
+        assertTrue(com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CHILD_SLICE_PATCH_HITS.sum() > before, "子パッチで済んでいる");
+    }
+
+    /** 描かれていなかった親（float しか持たず高さ 0）が、子を足して寸法を持つと描かれる。子パッチは祖先の出現を追わないので全体を作り直す（§6-119）。 */
+    @Test
+    void parentThatStartsToBeDrawnWhenAChildIsAddedMatchesFullRelayout() {
+        assertIncrementalMatchesFull(FLOAT_ONLY + "<p>before</p><div id=\"p\" style=\"background:#eee\"><div class=\"fl\">f</div></div><p>after</p>",
+                v -> v.root().ownerDocument.getElementById("p").appendChild(newElement(v, "div", "z", null, "n17")));
+    }
+
+    /**
+     * 兄弟を消して親の節が上がっても、絶対位置の箱（包含ブロックは画面）は動かない。子パッチの平行移動は「箱が動いていない」と見て飛ばし、
+     * 親相対の座標が古い親の原点のまま残った（§6-119。差分ファズ layouts の種 1005: flex にした head を消した）。
+     */
+    @Test
+    void absoluteBoxIsRebasedWhenItsParentMovesButItDoesNot() {
+        assertIncrementalMatchesFull("<style>body{margin:0}.abs{position:absolute;right:4px;top:4px;width:50px;height:20px;background:#f99}</style>"
+                        + "<div id=\"h\" style=\"height:20px;background:#eee\"></div><div id=\"b\"><p>t</p><div class=\"abs\" id=\"ab\"></div></div>",
+                v -> {
+                    var h = v.root().ownerDocument.getElementById("h");
+                    h.parent.removeChild(h);
+                });
+    }
+
+    /**
+     * インラインの箱（b）の中のブロックは、ブロックの層で描かれる。挿入位置の探索がインラインの箱の中へ降りなかったので見落とし、後ろへ足した
+     * 兄弟のブロックがその前に入った（§6-119。差分ファズ nested の種 1295）。
+     */
+    @Test
+    void blockAddedAfterABlockInsideAnInlineGoesAfterIt() {
+        assertIncrementalMatchesFull("<style>body{margin:0;font-size:13px}.fx{display:flex;background:#def}</style>"
+                        + "<div id=\"n1\"><div id=\"a2\">delta <b>eps<div class=\"fx\">z15</div></b></div></div>",
+                v -> v.root().ownerDocument.getElementById("n1").appendChild(newElement(v, "div", "z", "fx", "n19")));
+    }
+
+    /**
+     * flex の項目（アトミックな箱）の中は「ブロック → インライン」の順に描くので、木の順で最後の子がブロックだと、それは描画順の最後ではない。
+     * 後ろへ足した兄弟の文字を、そのブロックの直後（項目の中の文字の前）に入れていた（§6-119。差分ファズ nested の種 811）。
+     */
+    @Test
+    void textAddedAfterAnAtomicItemWhoseLastChildIsABlockGoesAfterTheItemsText() {
+        assertIncrementalMatchesFull("<style>body{margin:0;font-size:13px}.row{display:flex}.bar{height:6px;background:#ccc}</style>"
+                        + "<div class=\"row\" id=\"n4\"><div id=\"d3\">grow<div class=\"bar\"></div></div></div>",
+                v -> v.root().ownerDocument.getElementById("n4").parent.appendChild(newElement(v, "div", "z", null, "n43")));
+    }
+
     /**
      * 外寸が変わらない子の変化を親で吸収する近道（cutoff）を切ったときも、増分の結果が全面と一致すること（A6b ②）。
      */

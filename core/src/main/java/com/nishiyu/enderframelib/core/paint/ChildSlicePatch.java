@@ -27,11 +27,11 @@ import java.util.Set;
  */
 final class ChildSlicePatch {
     private final DisplayListBuilder b;
+    private final ChildPatchInsertion insertion;
 
     // 1 回の apply の間だけ使う状態（apply の先頭で初期化）
     private int remBlockStart, remBlockEnd, remBlockOrderStart, remBlockCount;
     private int remInlineStart, remInlineEnd, remInlineOrderStart, remInlineCount;
-    private int insertBlockPos, insertBlockOrder, insertInlinePos, insertInlineOrder;
     private int spanS, spanE, spanO, spanN; // span の結果
     private LayoutBox lastParentForClip;
     private ClipRect cachedParentClip;
@@ -42,6 +42,7 @@ final class ChildSlicePatch {
 
     ChildSlicePatch(DisplayListBuilder builder) {
         this.b = builder;
+        this.insertion = new ChildPatchInsertion(builder);
     }
 
     List<DisplayItem> apply(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
@@ -78,7 +79,10 @@ final class ChildSlicePatch {
         }
 
         // 3. 挿入位置の決定（ブロック層・インライン層）
-        if (!findInsertPositions(parentBox, added, afterBox)) return null;
+        if (!insertion.find(parentBox, added, afterBox, remBlockStart, remBlockEnd, remBlockOrderStart, remBlockCount,
+                remInlineStart, remInlineOrderStart, !addedBlockItems.isEmpty(), !addedInlineItems.isEmpty())) return null;
+        int insertBlockPos = insertion.insertBlockPos, insertBlockOrder = insertion.insertBlockOrder;
+        int insertInlinePos = insertion.insertInlinePos, insertInlineOrder = insertion.insertInlineOrder;
 
         // 4. ブロック層の挿入と後続シフト
         int remBlockLen = remBlockStart >= 0 ? (remBlockEnd - remBlockStart) : 0;
@@ -191,182 +195,6 @@ final class ChildSlicePatch {
         return true;
     }
 
-    // ------------------------------------------------------------------ 3. 挿入位置
-
-    /** 両層の挿入位置（項目の位置と描画順）を決める。範囲外なら false。 */
-    private boolean findInsertPositions(LayoutBox parentBox, List<LayoutBox> added, LayoutBox afterBox) {
-        insertBlockPos = insertBlockOrder = insertInlinePos = insertInlineOrder = -1;
-        int removedBlockItemsLen = remBlockStart >= 0 ? (remBlockEnd - remBlockStart) : 0;
-
-        if (remBlockStart >= 0) {
-            insertBlockPos = remBlockStart;
-            insertBlockOrder = remBlockOrderStart;
-        }
-
-        if (remInlineStart >= 0) {
-            insertInlinePos = remInlineStart - removedBlockItemsLen;
-            insertInlineOrder = remInlineOrderStart - remBlockCount;
-        }
-
-        if (insertBlockPos < 0 || insertInlinePos < 0) {
-            int afterIdx = (parentBox.children != null && afterBox != null) ? parentBox.children.indexOf(afterBox) : -1;
-            if (afterBox != null && afterIdx >= 0) {
-                if (insertBlockPos < 0) blockInsertAfter(parentBox, added, afterIdx);
-                if (insertInlinePos < 0) inlineInsertAfter(parentBox, added, afterIdx);
-            } else {
-                // 先頭挿入または afterBox 不明
-                if (insertBlockPos < 0) blockInsertAtHead(parentBox, added);
-                if (insertInlinePos < 0) inlineInsertAtHead(parentBox, added);
-            }
-        }
-
-        // 境界値チェックと安全なフォールバック
-        List<DisplayItem> list = b.currentDisplayList;
-        int boxes = b.renderedBoxes.size();
-        return !(insertBlockPos < 0 || insertBlockPos > list.size()
-                || insertBlockOrder < 0 || insertBlockOrder > boxes
-                || insertInlinePos < 0 || insertInlinePos > list.size()
-                || insertInlineOrder < 0 || insertInlineOrder > boxes);
-    }
-
-    /**
-     * 今の表示リストで描かれている箱か。描かれなくなった箱（寸法 0 になった表など）は前回の dlEnd / dlOrder を持ち続けるので、
-     * 番号が今の描画順の一覧でその箱を指すことまで確かめる（§6-113。layouts の種 137: tbody を消して 0×0 になった表の古い番号が挿入位置になった）。
-     */
-    private boolean drawn(LayoutBox x) {
-        return x.dlEnd >= 0 && x.dlOrder >= 0 && x.dlOrder < b.renderedBoxes.size() && b.renderedBoxes.get(x.dlOrder) == x;
-    }
-
-    /** ブロック層: afterBox 以前の描画済みボックスを逆順探索し、無ければ親・後続の最初のブロックへ。 */
-    private void blockInsertAfter(LayoutBox parentBox, List<LayoutBox> added, int afterIdx) {
-        LayoutBox lastBlock = null;
-        for (int i = afterIdx; i >= 0; i--) {
-            LayoutBox c = parentBox.children.get(i);
-            List<LayoutBox> blockPhase = b.blockPhaseOf(c);
-            for (int k = blockPhase.size() - 1; k >= 0; k--) {
-                LayoutBox x = blockPhase.get(k);
-                if (drawn(x)) {
-                    lastBlock = x;
-                    break;
-                }
-            }
-            if (lastBlock != null) break;
-            if (drawn(c) && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) {
-                lastBlock = c;
-                break;
-            }
-        }
-        if (lastBlock != null) {
-            insertBlockPos = lastBlock.dlEnd;
-            insertBlockOrder = lastBlock.dlOrder + 1;
-        } else if (parentBox.dlEnd >= 0 && parentBox.dlOrder >= 0) {
-            insertBlockPos = parentBox.dlEnd;
-            insertBlockOrder = parentBox.dlOrder + 1;
-        } else {
-            // afterBox 以降の最初のブロックボックスを前方探索
-            LayoutBox firstBlock = null;
-            for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
-                LayoutBox c = parentBox.children.get(i);
-                if (added.contains(c)) continue;
-                firstBlock = firstPlacedBlock(c);
-                if (firstBlock != null) break;
-            }
-            placeBlockBefore(firstBlock, parentBox);
-        }
-    }
-
-    /** インライン層: afterBox 以前の描画済みボックスを逆順探索し、無ければ後続の最初のインライン、それも無ければブロック層の位置。 */
-    private void inlineInsertAfter(LayoutBox parentBox, List<LayoutBox> added, int afterIdx) {
-        LayoutBox lastInline = null;
-        for (int i = afterIdx; i >= 0; i--) {
-            LayoutBox c = parentBox.children.get(i);
-            List<LayoutBox> inlinePhase = b.inlinePhaseOf(c);
-            for (int k = inlinePhase.size() - 1; k >= 0; k--) {
-                LayoutBox x = inlinePhase.get(k);
-                if (drawn(x)) {
-                    lastInline = x;
-                    break;
-                }
-            }
-            if (lastInline != null) break;
-        }
-        if (lastInline != null) {
-            insertInlinePos = lastInline.dlEnd;
-            insertInlineOrder = lastInline.dlOrder + 1;
-        } else {
-            // afterBox 以降の最初のインラインボックスを前方探索
-            LayoutBox firstInline = null;
-            for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
-                LayoutBox c = parentBox.children.get(i);
-                if (added.contains(c)) continue;
-                firstInline = firstPlacedInline(c);
-                if (firstInline != null) break;
-            }
-            placeInlineBefore(firstInline);
-        }
-    }
-
-    private void blockInsertAtHead(LayoutBox parentBox, List<LayoutBox> added) {
-        LayoutBox firstBlock = null;
-        if (parentBox.children != null) {
-            for (LayoutBox c : parentBox.children) {
-                if (added.contains(c)) continue;
-                firstBlock = firstPlacedBlock(c);
-                if (firstBlock != null) break;
-            }
-        }
-        placeBlockBefore(firstBlock, parentBox);
-    }
-
-    private void inlineInsertAtHead(LayoutBox parentBox, List<LayoutBox> added) {
-        LayoutBox firstInline = null;
-        if (parentBox.children != null) {
-            for (LayoutBox c : parentBox.children) {
-                if (added.contains(c)) continue;
-                firstInline = firstPlacedInline(c);
-                if (firstInline != null) break;
-            }
-        }
-        placeInlineBefore(firstInline);
-    }
-
-    /** 子 {@code c} のブロック層で最初の描画済みの箱（無ければ、ブロックレベルの {@code c} 自身が描画済みならそれ）。 */
-    private LayoutBox firstPlacedBlock(LayoutBox c) {
-        for (LayoutBox x : b.blockPhaseOf(c)) {
-            if (x.dlStart >= 0 && x.dlOrder >= 0) return x;
-        }
-        if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) return c;
-        return null;
-    }
-
-    /** 子 {@code c} のインライン層で最初の描画済みの箱。 */
-    private LayoutBox firstPlacedInline(LayoutBox c) {
-        for (LayoutBox x : b.inlinePhaseOf(c)) {
-            if (x.dlStart >= 0 && x.dlOrder >= 0) return x;
-        }
-        return null;
-    }
-
-    private void placeBlockBefore(LayoutBox firstBlock, LayoutBox parentBox) {
-        if (firstBlock != null) {
-            insertBlockPos = firstBlock.dlStart;
-            insertBlockOrder = firstBlock.dlOrder;
-        } else {
-            insertBlockPos = parentBox.dlEnd >= 0 ? parentBox.dlEnd : 0;
-            insertBlockOrder = parentBox.dlOrder >= 0 ? parentBox.dlOrder + 1 : 0;
-        }
-    }
-
-    private void placeInlineBefore(LayoutBox firstInline) {
-        if (firstInline != null) {
-            insertInlinePos = firstInline.dlStart;
-            insertInlineOrder = firstInline.dlOrder;
-        } else {
-            insertInlinePos = insertBlockPos;
-            insertInlineOrder = insertBlockOrder;
-        }
-    }
-
     // ------------------------------------------------------------------ 4・5. 差し込み
 
     /** 1 つの層へ、描いたスライスを差し込み、後ろの箱の区間を「足した数 − 消した数」だけずらす。 */
@@ -413,7 +241,9 @@ final class ChildSlicePatch {
             dx = f0.x - (m.fragNums[0] + fx);
             dy = f0.y - (m.fragNums[1] + fy);
         }
-        if (dx == 0 && dy == 0) return;
+        // 絶対位置・固定の箱は、親の節が動いても自分は動かない。親相対の座標では項目を親の新しい原点へ付け替える（§6-119。差分ファズ layouts の
+        // 種 1005: flex にした head を消して body が 20 上がり、画面に固定の位置の ab の項目が 20 ずれたまま残った）
+        if (dx == 0 && dy == 0 && !(relMode && (box.isAbsolute || box.isFixed) && parentOriginMoved(box, m))) return;
         if (box.dlStart < 0 || box.dlEnd > list.size() || box.dlStart > box.dlEnd) return;
         DisplayListBuilder.STAT_TRANSLATED.increment();
 
@@ -450,6 +280,15 @@ final class ChildSlicePatch {
 
         rebaseItemCoords(box, m, itemCount);
         resetMemoToList(box, m, expectedClip, itemCount);
+    }
+
+    /** 親相対の座標の基準（実効の親の節の原点）が、記憶の基準から動いたか。 */
+    private boolean parentOriginMoved(LayoutBox box, BoxMemo m) {
+        String bParentId = m.parentId != null ? m.parentId : b.parentIdForBox(box);
+        LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, bParentId);
+        int pox = pNode != null ? Math.round(pNode.x) : 0;
+        int poy = pNode != null ? Math.round(pNode.y) : 0;
+        return pox != m.parentOriginX || poy != m.parentOriginY;
     }
 
     /** 文字の節: 断片ごとの TEXT と、節の NODE・装飾の項目を動かす。 */

@@ -505,7 +505,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                     for (int i = 0, n = runBoxes.size(); i < n; i++) {
                         // 並びの中の float・絶対配置は Placement / StaticPosition が先に置いている（ここで消すと中身の断片が消える）
                         LayoutBox rb = runBoxes.get(i);
-                        if (!isFloating(rb) && !rb.isAbsolute) clearFragmentsRecursively(rb);
+                        if (!isFloating(rb) && !rb.isAbsolute) clearFragmentsRecursively(rb, true);
                     }
                     List<InlineLine> lines = run.lines();
                     if (hasShifts) {
@@ -1419,7 +1419,8 @@ public class BlockLayoutEngine extends LayoutEngine {
         return ReplacedElements.isReplacedTag(tag);
     }
 
-    private static void clearFragmentsRecursively(LayoutBox box) {
+    /** {@code inFlow}: {@code box} がこの行の流れの中身（{@link #flattenInlines} が平坦化し、自分の layout を通らない）か。 */
+    private static void clearFragmentsRecursively(LayoutBox box, boolean inFlow) {
         box.startFragmentPass();
         // テキストの箱は断片から位置を取らない（fitToFragments が飛ばす）ので、祖先の相対配置・sticky のずれだけが乗る。
         // 原点に戻してから足し直させないと、同じ木を配置し直すたびにずれが積み重なる
@@ -1427,16 +1428,23 @@ public class BlockLayoutEngine extends LayoutEngine {
             box.x = 0;
             box.y = 0;
         }
+        boolean childrenInFlow = inFlow && !isAtomicInline(box);
         List<LayoutBox> children = box.children;
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox child = children.get(i);
+            if (isFloating(child) || child.isAbsolute) continue;
             // 配置を使い回せる箱（原子的インラインの中身など）は、自分の layout が置き直すか前回の配置を残すかを決める。
-            // ここで断片だけを消すと、残す側で断片が消えたままになる
-            if (child.holdsPlacement() || isFloating(child) || child.isAbsolute) continue;
-            clearFragmentsRecursively(child);
+            // ここで断片だけを消すと、残す側で断片が消えたままになる。ただし流れの中身（アトミックな箱を除く）は、前に flex の項目などとして
+            // 置かれた印が残っていても layout を通らないので消す（残すと遅延消去の印が解けず、行が足した断片が捨てられる。§6-119）
+            if (child.holdsPlacement() && (!childrenInFlow || isAtomicInline(child))) continue;
+            clearFragmentsRecursively(child, childrenInFlow);
         }
     }
 
+    /**
+     * 配置を使い回せる印の箱は切り詰めない。流れの中の箱まで切り詰めると、断片を毎フレーム作り直して確保が増えた（costGate の
+     * voidwave text +12%。§6-119）。
+     */
     private static void finishFragmentsRecursively(LayoutBox box) {
         box.finishFragmentPass();
         List<LayoutBox> children = box.children;

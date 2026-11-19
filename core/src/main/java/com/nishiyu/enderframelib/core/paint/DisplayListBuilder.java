@@ -2008,9 +2008,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     private void collectBlockPhaseBoxes(LayoutBox box, List<LayoutBox> out) {
         if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
         if (!box.isAnonymous) {
-            if (box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT) || PaintSupport.isAtomicInline(box)
+            if ((box.node != null && box.node.nodeType == NodeType.TEXT) || PaintSupport.isAtomicInline(box)
                     || BlockLayoutEngine.isFloating(box) || PaintOrder.isPositioned(box) || order.createsStackingContext(box)) return; // float・位置指定は後ろの層（§6-109）
-            out.add(box);
+            // インラインの箱（span）は自分はインラインの層だが、中のブロック（インラインの中のブロック）は同じ層の並びのブロックの層で描く
+            // （PaintOrder.collect は箱ごとに自分の display で層を決める）。中へ降りないと、足した兄弟がそのブロックの前に入る（§6-119。nested の種 1295）
+            if (!box.display.isInlineLevel()) out.add(box);
         }
         if (box.children != null) for (LayoutBox c : box.children) collectBlockPhaseBoxes(c, out);
     }
@@ -2022,15 +2024,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
      */
     private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out) { collectInlinePhaseBoxes(box, out, false); }
 
-    private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out, boolean underInline) {
+    private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out, boolean underAtomic) {
         if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone()) || PaintOrder.isPositioned(box) || order.createsStackingContext(box)
-                || (!underInline && BlockLayoutEngine.isFloating(box))) return; // 位置指定・float の中身はその層で描く（アトミックな箱の中の float はその箱の中。§6-109）
-        boolean inline = underInline;
-        if (!box.isAnonymous) {
-            inline |= box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT) || PaintSupport.isAtomicInline(box);
-            if (inline) out.add(box);
-        }
-        if (box.children != null) for (LayoutBox c : box.children) collectInlinePhaseBoxes(c, out, inline);
+                || (!underAtomic && BlockLayoutEngine.isFloating(box))) return; // 位置指定・float の中身はその層で描く（アトミックな箱の中の float はその箱の中。§6-109）
+        // アトミックな箱は中身ごとインラインの層で描く。インラインの箱（span）の中のブロックはブロックの層なので入れない（§6-119）
+        boolean atomic = underAtomic || (!box.isAnonymous && PaintSupport.isAtomicInline(box));
+        if (!box.isAnonymous && (atomic || box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT))) out.add(box);
+        if (box.children != null) for (LayoutBox c : box.children) collectInlinePhaseBoxes(c, out, atomic);
     }
 
     /** 挿入位置の探索で兄弟ごとに使い回す一覧（子パッチは描画のスレッドだけが走らせる）。 */

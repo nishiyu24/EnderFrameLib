@@ -30,7 +30,6 @@ core/paint/BoxDecorations.java | 990
 core/css/CssSyntax.java | 965
 core/css/LengthResolver.java | 957
 core/text/font/LoadedFace.java | 947
-core/paint/ChildSlicePatch.java | 941
 core/layout/LineBuilder.java | 892
 core/layout/TableLayoutEngine.java | 878
 core/paint/Gradients.java | 878
