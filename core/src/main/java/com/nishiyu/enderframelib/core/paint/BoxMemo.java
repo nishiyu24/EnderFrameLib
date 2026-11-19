@@ -746,4 +746,22 @@ static final int NUMS_LENGTH = 13;
         for (int i = 0; i < count; i++) arr[i] = elements.get(start + i);
         return java.util.Arrays.asList(arr);
     }
+
+    /**
+     * 子パッチ（{@link ChildSlicePatch}）が追える寸法の変化か。⑦は後続の箱の位置、⑧は祖先の高さしか合わせないので、祖先の幅が変わった（中身で幅の決まる
+     * flex アイテムの子を消すなど）・flex / grid / 表など（ブロックの流れ以外）の中で兄弟の寸法が変わったときは、古い寸法の項目が残る（§6-108。T3 の差分ファズ
+     * nested の種 17）。レイアウトは済んでいるので、表示リストに触る前に記憶の寸法と比べて退く。
+     */
+    static boolean sizesFollowable(java.util.Map<LayoutBox, BoxMemo> memoOf, LayoutBox parentBox) {
+        for (LayoutBox anc = parentBox; anc != null; anc = anc.parent) {
+            BoxMemo am = memoOf.get(anc);
+            if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[2], anc.w) != 0) return false;
+            if (anc.display == null || anc.display.isBlockContainer()) continue; // ブロックの流れでは兄弟の寸法は互いに響かない（float は計画で除いてある）
+            for (LayoutBox c : anc.children) {
+                BoxMemo cm = memoOf.get(c);
+                if (cm != null && cm.nums != null && cm.nums.length >= 4 && (Float.compare(cm.nums[2], c.w) != 0 || Float.compare(cm.nums[3], c.h) != 0)) return false;
+            }
+        }
+        return true;
+    }
 }

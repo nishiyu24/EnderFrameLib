@@ -392,6 +392,22 @@ tasks.register('costGate', JavaExec) {
     if (project.hasProperty('costgate.only')) systemProperty 'costgate.only', project.property('costgate.only').toString()
 }
 
+// T3: 差分ファズ。乱数の変更列で増分 = 全面を毎手比べ、ずれた種を core/build/fuzz/new-seeds.txt へ書く（夜間。種は日付から）。
+// 見つかった種は core/src/test/resources/mutation-seeds.txt へ足すと、MutationSeedRegressionTest が毎回の CI で回す。
+//   ./gradlew :core:mutationFuzz                         日付から決まる新しい種
+//   ./gradlew :core:mutationFuzz -Pfuzz.seeds=50 -Pfuzz.start=1   種の数と始まり
+//   ./gradlew :core:mutationFuzz -Pfuzz.record            ずれた種を表へ直接足す（手元）
+tasks.register('mutationFuzz', JavaExec) {
+    group = 'verification'
+    description = '乱数の変更列で増分と全面の一致を調べ、ずれた種を記録する（MutationFuzz）'
+    classpath = sourceSets.test.output + sourceSets.test.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.common.MutationFuzz'
+    workingDir = rootProject.projectDir
+    ['fuzz.seeds', 'fuzz.start'].each { if (project.hasProperty(it)) systemProperty it, project.property(it).toString() }
+    if (project.hasProperty('fuzz.record')) systemProperty 'fuzz.record', 'true'
+    if (project.hasProperty('fuzz.jvmArgs')) jvmArgs project.property('fuzz.jvmArgs').toString().split(' ')
+}
+
 // A6: 近道の切り分けスイッチ（enderframe.*.no* / .off）の組み合わせ検証。既定・各スイッチ単独・ペアワイズの各構成を別 JVM で走らせ、
 // 乱数の変更列の表示リスト署名とソフトウェア描画の画素が既定と一致することを確かめる（夜間）。
 //   ./gradlew :core:shortcutMatrix                          全構成

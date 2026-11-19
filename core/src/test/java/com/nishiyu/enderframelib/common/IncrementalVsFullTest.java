@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.common;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -20,58 +19,55 @@ class IncrementalVsFullTest {
         MutationScenario.STEP_HOOK = null;
     }
 
-    private static List<String> sigs(StandaloneView v) {
-        List<String> out = new ArrayList<>();
-        for (var it : v.items()) out.add(MutationScenario.sig(it));
-        return out;
-    }
-
-    /** 毎手、増分の結果と全面の結果を比べて、食い違った手の説明を返す（無ければ空）。{@code strictOrder = false} は並び順を無視する。 */
-    private static List<String> mismatches(String name, String html, String[] classes, String[] styles, int seeds, int steps, long seedMul, boolean strictOrder) {
+    /** 種 1〜{@code seeds}（実際の種は {@code seedMul * n + (seedMul > 1 ? 1 : 0)}）で、増分の結果と全面の結果を毎手比べ、食い違った種の説明を返す（無ければ空）。 */
+    private static List<String> mismatches(String name, int seeds, long seedMul) {
+        MutationFuzz.Doc doc = MutationFuzz.DOCS.get(name);
         List<String> bad = new ArrayList<>();
-        for (long seed = 1; seed <= seeds; seed++) {
-            final long sd = seed;
-            boolean[] failed = {false};
-            MutationScenario.STEP_HOOK = (step, view) -> {
-                if (failed[0]) return;
-                List<String> live = sigs(view);
-                view.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
-                try (var be = new MutationScenario.NoDraw()) {
-                    var f = StandaloneView.class.getDeclaredField("lastNow"); // 同じ時刻（時間が進むとトランジションが進んでノイズになる）
-                    f.setAccessible(true);
-                    view.frame(f.getLong(view), be, true);
-                } catch (ReflectiveOperationException e) {
-                    throw new IllegalStateException(e);
-                }
-                List<String> full = sigs(view);
-                List<String> a = new ArrayList<>(live), b = new ArrayList<>(full);
-                if (!strictOrder) { Collections.sort(a); Collections.sort(b); }
-                if (!a.equals(b)) {
-                    failed[0] = true;
-                    String detail = "";
-                    for (int i = 0; i < Math.min(a.size(), b.size()); i++) if (!a.get(i).equals(b.get(i))) { detail = "（" + a.get(i) + " ≠ " + b.get(i) + "）"; break; }
-                    bad.add(name + "/" + sd + " 手 " + step + detail);
-                }
-            };
-            MutationScenario.run(html, classes, styles, seedMul * seed + (seedMul > 1 ? 1 : 0), steps, false);
+        for (long n = 1; n <= seeds; n++) {
+            String m = MutationFuzz.firstMismatch(doc, seedMul * n + (seedMul > 1 ? 1 : 0), doc.steps());
+            if (m != null) bad.add(m);
         }
         return bad;
     }
 
     @Test
     void layoutsDocumentMatchesFullRelayoutEveryStep() {
-        assertEquals(List.of(), mismatches("layouts", ShortcutMatrixMain.LAYOUTS, ShortcutMatrixMain.LAYOUT_CLASSES, ShortcutMatrixMain.LAYOUT_STYLES, 8, 45, 1, true));
+        assertEquals(List.of(), mismatches("layouts", 8, 1));
     }
 
     @Test
     void cardsDocumentMatchesFullRelayoutEveryStep() {
-        assertEquals(List.of(), mismatches("cards", ShortcutMatrixMain.CARDS, ShortcutMatrixMain.CARD_CLASSES, ShortcutMatrixMain.CARD_STYLES, 8, 45, 1, true));
+        assertEquals(List.of(), mismatches("cards", 8, 1));
     }
 
     /** nested（flex の入れ子）。ブロックの子を足したとき、新しい子の項目がブロック層の末尾（flex アイテムの手前）に入ること。 */
     @Test
     void nestedDocumentMatchesFullRelayoutEveryStep() {
-        assertEquals(List.of(), mismatches("nested", ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 8, 60, 5, true));
+        assertEquals(List.of(), mismatches("nested", 8, 5));
+    }
+
+    /**
+     * 中身で幅の決まる flex アイテムの子を消すと、アイテムの幅が縮む（40 → 10）。子パッチは後続の箱の位置と祖先の高さしか合わせないので、
+     * 以前はアイテム自身の背景・枠線が古い幅のまま残った（§6-108。T3 の差分ファズ nested の種 17）。幅が変わるなら全体の作り直しへ退く。
+     */
+    @Test
+    void removingAChildThatShrinksAFlexItemMatchesFullRelayout() {
+        String html = "<style>body{margin:0;font-size:13px}.row{display:flex}.it{border:1px solid #99a;background:#def;min-width:10px}"
+                + ".z{width:30px;height:12px}</style><div class=\"row\"><div class=\"it\" id=\"d1\"><div class=\"z\" id=\"z1\"></div></div>"
+                + "<div class=\"it\" id=\"d2\">two</div></div>";
+        try (StandaloneView v = new StandaloneView(html, 320, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+             var be = new MutationScenario.NoDraw()) {
+            long now = 1000;
+            v.frame(now, be, true);
+            java.util.function.Supplier<List<String>> sigs = () -> v.items().stream().map(MutationScenario::sig).toList();
+            var d1 = v.root().ownerDocument.getElementById("d1");
+            d1.removeChild(v.root().ownerDocument.getElementById("z1"));
+            v.frame(now += 16, be, true);
+            List<String> incremental = sigs.get();
+            v.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
+            v.frame(now, be, true);
+            assertEquals(sigs.get(), incremental);
+        }
     }
 
     /**
@@ -82,7 +78,7 @@ class IncrementalVsFullTest {
         boolean saved = com.nishiyu.enderframelib.core.layout.LayoutBox.cutoffEnabled;
         com.nishiyu.enderframelib.core.layout.LayoutBox.cutoffEnabled = false;
         try {
-            assertEquals(List.of(), mismatches("layouts", ShortcutMatrixMain.LAYOUTS, ShortcutMatrixMain.LAYOUT_CLASSES, ShortcutMatrixMain.LAYOUT_STYLES, 8, 45, 1, true));
+            assertEquals(List.of(), mismatches("layouts", 8, 1));
         } finally {
             com.nishiyu.enderframelib.core.layout.LayoutBox.cutoffEnabled = saved;
         }

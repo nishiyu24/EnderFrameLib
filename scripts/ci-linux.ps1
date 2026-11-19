@@ -19,6 +19,8 @@ $idx = Join-Path $env:TEMP "efl-ci-index"
 Remove-Item $idx -ErrorAction SilentlyContinue
 $env:GIT_INDEX_FILE = $idx
 try {
+    # Start from HEAD so tracked files that .gitignore matches (e.g. core/*.md added with -f) are kept, as in CI's checkout.
+    git -C $root read-tree HEAD | Out-Null
     git -C $root add -A | Out-Null
     $tree = (git -C $root write-tree).Trim()
     git -C $root archive --format=tar -o $tar $tree

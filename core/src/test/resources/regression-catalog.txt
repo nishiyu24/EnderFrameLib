@@ -1,0 +1,70 @@
+# 回帰カタログ（ENGINE_REARCHITECTURE_PLAN T3）。直した不具合 1 件につき 1 行。どのテストが再発を見張っているかを、元（計画の §6・項目 ID・コミット）から引く。
+# 形式: 元 | テスト | 1 行の説明
+#   元     : §6-N（計画の §6 の項目番号。53b のような枝番も可）・計画の ID（A6b など）・コミット（7 桁以上の 16 進）。カンマ区切りで複数可
+#   テスト : クラス名#メソッド名（テストのソースに @Test 系の注釈つきで実在すること）・gradle:タスク名（core/build.gradle に登録があること）。カンマ区切りで複数可
+# RegressionCatalogTest が検査する: ①テストが実在する ②計画の §6 で〔不具合〕の印を付けた項目はすべてここに載っている。
+# 運用（計画の運用ルール 7）: 不具合を直したら、同じコミットでここに 1 行足す。GPU が要るテストだけで守っている行は、CPU で回るテストも併記する。
+
+# --- レイアウト（増分・平行移動・測定の再利用） ---
+§6-3 | FractionalShiftEquivalenceTest#fractionalInsertAndRemoveShiftsAndMatchesFullLayout | 平行移動が配置されなかった箱（br・断片のない空の span）を動かした
+§6-5 | TentativeMeasureReuseTest#definiteLeafAndStretchedFlexGridItemsAreIdenticalAcrossResizes, TentativeMeasureReuseTest#randomChangesGiveTheSameDisplayListWithAndWithoutTentativeReuse | stretch 予定の項目を仮寸法で測り直して flex の確定の測定記録を壊した
+§6-11 | WidthOnlyReuseTest#fitReuseDoesNotChangeTheIncrementalResultAcrossFittingAndWrappingWidths, WidthOnlyReuseTest#fillWidthBlocksAndFlexItemsMatchFreshAcrossWrappingBoundary | fill 幅の fitNeed がインライン要素の間の空白を数えず、折り返した測定を誤って使い回した
+§6-12 | FractionalShiftEquivalenceTest#emMarginsAndHorizontalFlexGridShiftsMatchFullLayout | em の余白の格子化漏れ・auto の margin の配置鍵・インラインの中の flex の子孫を shiftSubtree が誤って動かした
+§6-14 | TableIncrementalLayoutTest#incrementalLayoutMatchesAFullRebuildOnTables | 表の箱を構造変更から外したら 1px ずれた（表のエンジンが箱へ直接書く欄）
+§6-18 | P6IncrementalTraversalTest#incrementalBuildMatchesFreshWithPseudoTableDisplayNoneAndDynamicNodes | 再利用された動的な nodeId で別の節の箱を引いた・表の組みの遷移で箱を使い回した
+§6-20 | TentativeMeasureReuseTest#randomChangesGiveTheSameDisplayListWithAndWithoutTentativeReuse, WidthOnlyReuseTest#incrementalResizeMatchesAFreshLayoutAtEveryWidth | 確定測定の葉の再利用が記録と同じ実体を持ち、古い幅の値を別の上書き幅の記録として残した
+§6-38, W9 | MeasureFuelGuardTest#deeplyNestedFloatFlexTerminates, MeasureFuelGuardTest#nestedFloatFlexScalesLinearlyAndMatchesUnreused | 入れ子の float flex で測定の回数が段ごとに跳ね、19 段で終わらなかった
+§6-55, W9b | FlexSameWidthRemeasureTest#randomNestedFlexAndGridDocumentsAreIdentical, MeasureFuelGuardTest#incrementalUpdateInNestedFloatFlexMatchesUnreused | grid の measureTracks が仮の測定の直後に古い % パディングを読んだ（seed 5）・新品の箱が同一パス内の再利用を塞いだ
+§6-80, A6b | IncrementalVsFullTest#layoutsDocumentMatchesFullRelayoutEveryStep, MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout | float を消す・位置指定の子を足す子パッチで兄弟の行と描画の層がずれた（layouts の種 2 / 6 / 7 / 8）
+§6-81, A6b | IncrementalVsFullTest#nestedDocumentMatchesFullRelayoutEveryStep, IncrementalVsFullTest#borderLinesNeverGetNegativeSizeAfterAncestorResize | 足したブロックの子の項目がリストの末尾（flex アイテムの後ろ）に入った・祖先のリサイズで枠線の高さが負になった
+§6-108, T3 | IncrementalVsFullTest#removingAChildThatShrinksAFlexItemMatchesFullRelayout, MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout | 子パッチが祖先の幅・flex / grid の兄弟の寸法の変化を追わず、古い寸法の項目を残した（差分ファズ nested の種 14 / 15 / 17）
+§6-82, A6b | IncrementalVsFullTest#layoutsDocumentWithoutCutoffMatchesFullRelayout | 枠線を重ねる表で、新しく作った箱の最初の測定だけが枠線 0 で幅を取った
+§6-85, A11 | WptLayoutFixesTest#newlineBetweenInlineElementsIsASpace, ChildPatchTest#randomInsertAndRemoveWithWhitespaceBetweenChildrenMatchesFullRelayout | パーサが改行を含む空白だけのテキストを捨て、インラインの要素の間の空白が消えた
+4949e89 | WidthOnlyReuseTest#emptyBoxMinContentDoesNotDependOnItsCurrentWidth | 空の箱の min-content が現在の幅を読んだ
+A6b | IncrementalVsFullTest#absoluteCoordinatesPatchMatchesFullRelayoutAndNeverGoesNegative | 絶対座標の局所パッチで新しい高さを二重に引き、枠線の高さが -150 になった
+
+# --- 描画（表示リスト・差分パッチ・クリップ） ---
+§6-27, R5 | ItemReplayPixelTest#replayDoesNotChangeAnyPixelAcrossTheSequence | 項目の再生が補間中の色・上書きされたクリップ slot・CPU 層との順序を見落とした
+§6-59, B3 | ParentRelativeParityTest#pseudoElementTextKeysDoNotCollide | 疑似要素の文字の節の nodeId で鍵を作り、2 つ目以降の文字が消えた
+§6-60, B3 | ChildPatchTest#randomInsertAndRemoveMatchesFullRelayout, ChildPatchTest#siblingRulesMakeThePatchStepBackAndStillMatch | 差分再生で使い回す箱の記憶が不変リストで UnsupportedOperationException・ノードのクリップが古いまま子へ伝わった
+§6-61, B3 | GpuRouteTest#routeFollowsCpuLayerNesting, GpuRouteTest#backendHoldsNoGpuSinkField | 項目単位の差分再生が GpuSink を経路（GpuRoute）を通さずに呼んだ
+§6-66, B9 | StaticFrameGateTest#anyChangeForcesRepaint, ItemDiffRatchetTest#itemComparisonLivesOnlyInItemDiff | 項目をセルへ書く形に替えたら、実体の同一性で変化を知る消費者（再生・静止フレームの飛ばし）が黙って壊れた
+§6-83, A6b | IncrementalVsFullTest#repaintedBoxWithoutMemoKeepsScrollContainerClip | 記憶の無い箱を描き直すとき、スクロールする箱の clip が落ちた
+§6-84, A6b | IncrementalVsFullTest#scrollListPixelsMatchWithAndWithoutScrollContentNode, IncrementalVsFullTest#smoothScrollStaysOnWholePixels | 小数のスクロール量で 2 つの経路の画素が違った・インラインの中の span の箱が (0, 0) のまま窓の中と判定された
+§6-104, T2b | MovingChainPatchTest#itemsUnderAMovingNodeAreHandedToTheDiffPatch, RealDocumentFramesTest#gpuMatchesSoftwareEveryFrame | 回る節の下の止まった部品が差分パッチへ渡らず、GPU が前の姿勢の図形を使い続けた
+be95cfe, A6b | IncrementalVsFullTest#canvasBackgroundFollowsBodyHoverStyleInTheSameFrame, IncrementalVsFullTest#damageRepaintMatchesFullRepaintEveryStep | キャンバスへ渡る body の背景が 1 フレーム古い色のまま・遷移中の項目を止まっていると記録して差分描画に途中の色が残った
+61644d2 | ParentRelativeParityTest#culledAncestorOfAnimatedChildKeepsParity | 窓で省いた親の下に残る動く子の座標が崩れた
+159eec5 | BoxPaintMemoTest#partIdsDoNotShiftWhenAnEarlierBoxAppears, RestylePruneTest#skippingCleanSubtreesGivesTheSameDisplayListAsWalkingEverything | 前に箱が現れると部品の id がずれてアニメーションが別の項目へ移った
+80fbfb8 | ClipResolverTest#aClipThatStaysPutFollowsBackToTheItemInsideAMovingRail | 動くレールの中の項目に、止まったクリップが付いて行かなかった
+3766e66 | AnimationTestSiteParityTest#testRunnerGradientClipFollowsRunner | ランナーのグラデーション層のクリップが動きに付いて行かなかった
+e626eb7 | CpuFallbackOfRareShapesTest#cpuFallbackShapeKeepsTheDrawingOrderBetweenGpuShapes | CPU へ回した稀な図形が GPU の図形との描画順を崩した
+§6-103, T2b | BoxBlurEdgeTest#largeBlurBackdropAtTheScreenEdgeHasNoHalo, BoxBlurEdgeTest#smallBlurBackdropAtTheScreenEdgeHasNoHalo | CPU の大きなぼかし（ボックス 3 回）だけが画面の端を透明として扱い、端が薄くなった
+
+# --- ヒットテスト ---
+§6-95, T2 | HitTestFrameClockTest#animatedElementIsHitWhereItWasDrawnAtTheFrameTime | ヒットテストが描画と別の時計（壁時計）でアニメーションを評価し、当たる位置が見えている位置とずれた
+§6-96, T2 | ScrollNodeClipRegressionTest#textInNestedClipIsHitWhereItIsDrawnAfterOuterScroll | 動く節の下の入れ子のクリップを作ったときの位置で比べ、文字ではなく親の箱に当たった
+§6-97, T2 | ScrollNodeClipRegressionTest#scrolledContentMatchesFullRebuildInPixelsAndHits | 連鎖の無い ClipRect がスクロールに付いて行かず、凡例つきの fieldset の枠線が消えた
+
+# --- GPU・3D（GPU が要るテストは CI では中断。CPU で回る検査を併記） ---
+§6-53b, X3-2 | Scene3DSoftwareParityTest#softwareAndGlAgreeOnTheSameScene, SoftwareScene3DRasterizerTest#singleSidedPlaneIsCulledFromBehindAndDoubleSidedIsNot | GL の法線行列が逆行列だった・球の三角形の巻きが逆で手前が消えた
+§6-54, X3-2 | Scene3DSoftwareParityTest#bloomAgreesAcrossSoftwareGlAndVulkan, Scene3DBloomTest#bloomPassCountFollowsTheDualKawasePlan | Bloom: サンプラーだけのプログラムの binding が UBO と重なった・RGBA16F のコピーを拒んだ・発光が 4 倍だった
+§6-56, X3-2 | Scene3DSoftwareParityTest#vulkanAgreesWithSoftwareAndGl | テクスチャの v の向きが GL と Vulkan で逆だった
+§6-57, X3-3 | Scene3DRedrawTest#softwareRedrawsOnlyWhenTheSceneChanges, Scene3DRedrawTest#changeCountOnlyGrowsOnVisibleChanges | 初回描画が世界の署名を進め、静止した 3D が 2 フレーム目にもう一度描かれた
+eb1c9da | Scene3DRedrawTest#changeCountOnlyGrowsOnVisibleChanges, Scene3DRedrawTest#glRedrawsOnlyWhenTheSceneChanges | scene-3d の中身が変わっても描き直さず、3D が止まって見えた
+§6-101, T2b | ShaderBindingConsistencyTest#glslBindingsMatchTheJavaDeclarations, RealDocumentFramesTest#vulkanValidationIsCleanOnRealDocuments | Vulkan の記述子の binding が GLSL と食い違い（fx・tex が 0 始まり）、違う絵を出した
+§6-102, T2b | RealDocumentFramesTest#gpuMatchesSoftwareEveryFrame | 保持したスクロールの層の合成だけが GL の行の向きを決め打ちし、Vulkan で上下が反転した
+
+# --- 入力・その他 ---
+dcbad05 | WebControlInteractionTest#testClickingNonFocusableElementDoesNotFocusAndBlursPrevious | フォーカスできない要素のクリックで常にフォーカスが出た
+98454c4 | ServerOwnershipAndForwardingTest#resyncCarriesScrollFocusAndHoverByElementId | 再同期でスクロール・フォーカス・ホバーが失われた
+78839af | GpuModulesTest#autoFallsThroughToAnotherApiWhenGlIsUnavailable | GL が使えない環境で AUTO が別の API へ進まなかった
+
+# --- テストと CI の不安定さ（エンジンではなくテストの不具合） ---
+§6-74, A5 | StaleTextPatchTest#textUpdatesWhileLayoutIsStaleMatchTheEagerResult | リサイズの保留（壁時計）に当たった回だけ比べる時点がずれた
+§6-105, A1 | TimingTagPolicyTest#wallClockAssertionsAreTaggedTiming, TimingTagPolicyTest#ciWorkflowsExcludeTimingTests | 実時間で合否を決めるテストが共有ランナーの CI で揺れた
+25daf63, e34304e, B11 | LayoutTaskPoolCallerParticipationTest#everyIndexRunsOnceAndTheCallerTakesAShare | 2 コアの CI で、ワーカーか呼び出し側が全部を取って相手が 0 件になった
+50bbf92, A1 | FontEnvironmentTest#comparesPixelsOnlyWhenTheRecordedEnvironmentMatches | OS の書体に依る画素のゴールデンが、書体の違う CI で赤くなった
+
+# --- 差分ファズ（夜間 mutationFuzz が見つけた種は mutation-seeds.txt へ。ここは仕組みの行） ---
+T3 | MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout, MutationSeedRegressionTest#knownSeedsStillMismatchUntilFixed, gradle:mutationFuzz | 夜間のファズで見つかった種を固定の種として毎回の CI で回す（直せていない種は「既知:」で残し、直ると赤）
+A6 | gradle:shortcutMatrix | 近道スイッチを 1 つ切ると出力が変わる 20 件（夜間。既知の表 shortcut-matrix-known.txt は空）

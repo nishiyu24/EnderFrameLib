@@ -1,0 +1,36 @@
+name: mutation-fuzz
+
+# 差分ファズ（ENGINE_REARCHITECTURE_PLAN T3 ③）。日付で決まる新しい種で、増分の表示リストが全面の再レイアウトと毎手一致するかを調べる。
+# ずれた種は注釈（::error）と成果物 mutation-fuzz の new-seeds.txt に出る → core/src/test/resources/mutation-seeds.txt へ足して直す
+# （以後は MutationSeedRegressionTest が毎回の CI で固定の種として回す）。
+# 見つける役なので赤になりうる。full-tests（A1 の「7 日連続の緑」の対象）とは別のワークフローにしてある。
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 18 * * *'
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x ./gradlew
+
+      - name: Mutation fuzz (new seeds)
+        run: ./gradlew :core:mutationFuzz --stacktrace
+
+      - name: Upload new seeds
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-fuzz
+          path: core/build/fuzz/new-seeds.txt
+          if-no-files-found: ignore
+          retention-days: 30

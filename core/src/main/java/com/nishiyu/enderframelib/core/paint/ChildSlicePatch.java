@@ -44,7 +44,7 @@ final class ChildSlicePatch {
     }
 
     List<DisplayItem> apply(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
-        if (!b.canPatchChildSlices(parentBox, removed, added, afterBox)) {
+        if (!b.canPatchChildSlices(parentBox, removed, added, afterBox) || !BoxMemo.sizesFollowable(b.boxMemo, parentBox)) {
             DisplayListBuilder.STAT_SLICE_PATCH_FALLBACKS.increment();
             return null;
         }
