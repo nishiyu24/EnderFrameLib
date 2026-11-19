@@ -103,6 +103,9 @@ tasks.named('test', Test) {
         if (value != null) systemProperty key, value
         inputs.property key, value ?: ''
     }
+    // T4: 公開 API の署名の表（api-signatures.txt）を書き直す。差分を目で見てからコミットする
+    if (project.hasProperty('api.update')) systemProperty 'api.update', 'true'
+    inputs.property 'api.update', project.hasProperty('api.update')
 }
 
 publishing {
