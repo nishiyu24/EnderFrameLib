@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.atomic.AtomicLong;
@@ -20,7 +21,7 @@ public final class LayoutTaskPool {
     public static final int PARALLEL_THRESHOLD = 32;
 
     /** {@code -Denderframe.layout.noparallel=true} で並列実行を無効化する切り替え。 */
-    public static volatile boolean parallelEnabled = !Boolean.getBoolean("enderframe.layout.noparallel");
+    public static volatile boolean parallelEnabled = EngineFlags.LAYOUT_PARALLEL;
 
     /** プールのワーカー。入れ子の再フォークを防ぐ判定（{@link #inWorker}）は、プールを作り直しても効くようこの型で見る。 */
     private static final class Worker extends ForkJoinWorkerThread {
@@ -41,7 +42,7 @@ public final class LayoutTaskPool {
      * ゲームなど他の処理とコアを分け合うホストは、小さい値を指定するか {@link #setWorkerThreads} で実行時に変える。
      */
     public static int defaultThreads() {
-        Integer configured = Integer.getInteger("enderframe.threads");
+        Integer configured = EngineFlags.THREADS;
         if (configured != null) return Math.max(1, configured);
         return Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
     }
@@ -101,7 +102,7 @@ public final class LayoutTaskPool {
      * 1 つの並列区間を、加わるスレッド 1 本あたり何個の仕事に割るか。1 本に 1 個だと、起きるのが遅いワーカーの分を
      * 他のスレッドが拾えず待つ。{@code -Denderframe.split=N} で変えられる（計測用）。
      */
-    static final int SPLIT_PER_PARTICIPANT = Math.max(1, Integer.getInteger("enderframe.split", 4));
+    static final int SPLIT_PER_PARTICIPANT = Math.max(1, EngineFlags.SPLIT_PER_PARTICIPANT);
 
     /** {@link #forRange} に渡す粒度: {@code n} 件を {@link #SPLIT_PER_PARTICIPANT} × 加わる本数に割る（{@code minGrain} 件以上）。 */
     public static int grainFor(int n, int minGrain) {

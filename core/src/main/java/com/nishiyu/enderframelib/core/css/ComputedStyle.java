@@ -1486,7 +1486,7 @@ public final class ComputedStyle {
     // 表は弱参照で持つので、どの要素からも使われなくなったスタイルは回収される。
 
     /** 切り分け用: false なら算出スタイルを共有しない（要素ごとに別のインスタンス）。 */
-    public static volatile boolean SHARE_ENABLED = !Boolean.getBoolean("enderframe.css.noshare");
+    public static volatile boolean SHARE_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.STYLE_SHARE;
 
     private static final class Interned extends java.lang.ref.WeakReference<ComputedStyle> {
         final int hash;

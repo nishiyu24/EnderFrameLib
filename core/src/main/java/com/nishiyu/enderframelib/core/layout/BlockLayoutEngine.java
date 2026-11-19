@@ -644,12 +644,12 @@ public class BlockLayoutEngine extends LayoutEngine {
      * {@link #containsFloats} の結果を箱ごとにメモするか（既定は有効）。切り分け用: {@code -Denderframe.layout.nofloatmemo=true}。
      * 無効にすると従来どおり毎回子孫を走査する（結果は同じ）。
      */
-    public static volatile boolean floatMemoEnabled = !Boolean.getBoolean("enderframe.layout.nofloatmemo");
+    public static volatile boolean floatMemoEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.FLOAT_MEMO;
     /**
      * 検証モード: メモを使える場面でも走査し直し、メモと食い違えば {@link AssertionError}（無効化の付け漏れの検出）。
      * {@code -Denderframe.layout.verifyfloats=true}（{@code core/build.gradle} の {@code test} で常時有効）。
      */
-    public static volatile boolean verifyFloatMemo = Boolean.getBoolean("enderframe.layout.verifyfloats");
+    public static volatile boolean verifyFloatMemo = com.nishiyu.enderframelib.core.kernel.EngineFlags.VERIFY_FLOATS;
     /** 診断用の計数（メモが使えた回数／走査した回数）。厳密である必要はない。 */
     public static long floatMemoHits, floatMemoScans;
 

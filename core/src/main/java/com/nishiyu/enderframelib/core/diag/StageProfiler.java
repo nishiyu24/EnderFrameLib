@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.diag;
 
+import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,8 +32,8 @@ public final class StageProfiler {
 
     private static final int RING = 1024;
 
-    private static volatile boolean enabled = Boolean.getBoolean("enderframe.profile");
-    private static volatile boolean trackAllocations = Boolean.getBoolean("enderframe.profile.alloc");
+    private static volatile boolean enabled = EngineFlags.PROFILE;
+    private static volatile boolean trackAllocations = EngineFlags.PROFILE_ALLOC;
 
     private static final Stats[] STATS = new Stats[PipelineStage.values().length];
     /** 段ごとの「開始時の割り当て済みバイト」。段を入れ子にしない前提で、スレッドごとに 1 つ持つ。 */

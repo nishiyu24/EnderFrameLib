@@ -451,7 +451,7 @@ public final class TextShaper {
     private record BaseKey(String paragraph, WordBreak wordBreak) {}
     private record SegmentBase(String[] segs, int[] offsets) {}
     private static final Generational<BaseKey, SegmentBase> BASE_SEGMENTS =
-            new Generational<>(Math.min(512, Integer.getInteger("enderframe.text.cache", 4096)));
+            new Generational<>(Math.min(512, com.nishiyu.enderframelib.core.kernel.EngineFlags.TEXT_CACHE));
 
     private static final class NatKey {
         private String paragraph;
@@ -790,7 +790,7 @@ public final class TextShaper {
 
     private static final Generational<ShapeKey, ShapedHolder> SHAPED = new Generational<>();
     /** 1 世代の上限（件数）。2 世代で最大 2 倍まで持つ。段落 × 書体の組が上限を超えると、全消去ではなく古い世代だけが落ちる。 */
-    private static final int SHAPED_LIMIT = Integer.getInteger("enderframe.text.cache", 4096);
+    private static final int SHAPED_LIMIT = com.nishiyu.enderframelib.core.kernel.EngineFlags.TEXT_CACHE;
 
     /**
      * 2 世代の整形結果の記憶。新しい世代が上限に達したら、それを古い世代にして新しい世代を空にする（古い世代は捨てる）。

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.function.Consumer;
@@ -13,7 +14,7 @@ import com.nishiyu.enderframelib.core.layout.LayoutTaskPool;
  */
 final class TileQueue {
     /** タイル単位の遅延実行を使うか（{@code -Denderframe.soft.notiled=true} で無効＝命令ごとにその場で全範囲を実行）。 */
-    static volatile boolean tiled = !Boolean.getBoolean("enderframe.soft.notiled");
+    static volatile boolean tiled = EngineFlags.SOFT_TILED;
     static final int TILE = 64;
 
     private final ArrayList<Op> pending = new ArrayList<>();

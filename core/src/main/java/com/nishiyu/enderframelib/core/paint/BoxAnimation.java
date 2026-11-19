@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.ColorParser;
@@ -130,7 +131,7 @@ final class BoxAnimation {
     }
 
     /** 切り分け用: {@code -Denderframe.paint.nomemo=true} でメモを使わない。 */
-    private static final boolean NO_MEMO = Boolean.getBoolean("enderframe.paint.nomemo");
+    private static final boolean NO_MEMO = EngineFlags.NO_PAINT_MEMO;
 
     /** {@link #parseAnimationDef} のメモのキー。{@code @keyframes} の表は同一性で比べる（中身の比較は重い）。 */
     private static final class AnimKey {

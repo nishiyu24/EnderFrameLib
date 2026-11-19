@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.layout.LayoutTaskPool;
 
 /**
@@ -32,5 +33,5 @@ final class Rows {
     }
 
     /** 検証用に止められる（{@code -Denderframe.raster.serial}）。 */
-    static final boolean PARALLEL = System.getProperty("enderframe.raster.serial") == null;
+    static final boolean PARALLEL = EngineFlags.RASTER_PARALLEL;
 }

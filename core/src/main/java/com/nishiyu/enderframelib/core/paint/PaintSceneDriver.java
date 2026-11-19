@@ -50,7 +50,7 @@ public final class PaintSceneDriver {
      * 記録する保持層の範囲のうち、描かれないと確実に言える先頭・末尾の区間を走査から外すか。false なら全項目を走査する
      * （疑うときの切り分け用。絵は同じでなければならない）。
      */
-    public static volatile boolean cullRecordedRanges = !Boolean.getBoolean("enderframe.paint.nocullrange");
+    public static volatile boolean cullRecordedRanges = com.nishiyu.enderframelib.core.kernel.EngineFlags.CULL_RECORDED_RANGES;
 
     private static final int BLOCK_SHIFT = 6;
     static final int BLOCK = 1 << BLOCK_SHIFT;
@@ -222,9 +222,9 @@ public final class PaintSceneDriver {
      */
     private int[] itemVersion = new int[0];
     /** 切り分け用: false なら、一般のリストの変化は常に索引の作り直しにする（従来の動き）。 */
-    public static volatile boolean patchDiffIndex = !Boolean.getBoolean("enderframe.paint.nodiffpatch");
+    public static volatile boolean patchDiffIndex = com.nishiyu.enderframelib.core.kernel.EngineFlags.PATCH_DIFF_INDEX;
     /** 切り分け用: false なら、サイズの異なるリストの局所挿入・削除に対する増分索引シフト（patchIndexByShift）を使わず作り直す。 */
-    public static volatile boolean patchShiftIndex = !Boolean.getBoolean("enderframe.paint.noshiftpatch");
+    public static volatile boolean patchShiftIndex = com.nishiyu.enderframelib.core.kernel.EngineFlags.PATCH_SHIFT_INDEX;
     /** 差のある位置の数がこれを超える（項目数に対する割合）なら、差分の更新より作り直しの方が安い。 */
     private static final int PATCH_MAX_DIFF_DIVISOR = 4;
     private static final int MAX_DIFF_PATCH = 32;

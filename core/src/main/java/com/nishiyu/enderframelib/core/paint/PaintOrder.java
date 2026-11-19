@@ -174,7 +174,7 @@ public final class PaintOrder {
     static final int SWEEP_EVERY = 8;
 
     /** 切り分け用: false なら部分木の保持を使わない（結果は同じでなければならない。{@code -Denderframe.paint.nochunks=true} でも切れる）。 */
-    static volatile boolean chunksEnabled = !Boolean.getBoolean("enderframe.paint.nochunks");
+    static volatile boolean chunksEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.PAINT_CHUNKS;
     /** 1 つの部分木に含める箱の上限。これを超える部分木は保持せず、子ごとに判断する。 */
     static final int CHUNK_MAX_BOXES = 128;
     /** 診断: 部分木を再利用した回数・新しく記録した回数の累計。 */

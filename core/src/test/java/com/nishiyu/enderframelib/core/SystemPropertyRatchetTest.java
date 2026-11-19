@@ -24,12 +24,12 @@ import org.junit.jupiter.api.Test;
  * <p>main が読むキーを全部 {@code system-properties.txt}（キー | 種類 | 読むファイル | 説明）に載せる。表に無いキー・表にあるのに
  * 読まれないキー・読むファイルの食い違い・キーを文字列リテラルで書かない読み（{@code System.getProperty(name)} など）で失敗する。
  * 種類 {@code SHORTCUT} は近道の組み合わせ検証（{@code :core:shortcutMatrix}）が回すスイッチと一致しなければならない。
- * {@code enderframe.*} を読むファイルの数は {@link #MAX_ENGINE_READER_FILES} を超えられない（S1 で 1 へ下げる）。</p>
+ * {@code enderframe.*} を読むファイルの数は {@link #MAX_ENGINE_READER_FILES}（= 1。{@code EngineFlags}）を超えられない。</p>
  */
 class SystemPropertyRatchetTest {
 
-    /** {@code enderframe.*} を読むファイルの数の上限（2026-11-18 の実測値。減ったら下げる。S1 の合否線は 1）。 */
-    static final int MAX_ENGINE_READER_FILES = 22;
+    /** {@code enderframe.*} を読むファイルの数の上限（S1 ① で 22 → 1。読むのは {@code core/kernel/EngineFlags.java} だけ）。 */
+    static final int MAX_ENGINE_READER_FILES = 1;
 
     static final List<String> KINDS = List.of(
             "SHORTCUT",    // 近道の切り分け（true で近道を切る）。shortcutMatrix が回す

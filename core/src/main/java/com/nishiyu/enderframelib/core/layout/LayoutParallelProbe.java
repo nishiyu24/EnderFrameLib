@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 /**
  * B2 の着手条件の計測（ENGINE_REARCHITECTURE_PLAN）: 測定・配置の時間のうち、「互いに独立な部分木」の中で使われた割合。
  * 独立な部分木 = 兄弟が {@link #MIN_SIBLINGS} 以上いるブロックフローの親の、流れの中のブロックレベルの子で、float・絶対配置・表を含まないもの
@@ -13,7 +14,7 @@ public final class LayoutParallelProbe {
     private static final int KINDS = 3;
     /** 兄弟がこの数以上いる親の子だけを「配れる単位」とみなす。 */
     static final int MIN_SIBLINGS = 8;
-    private static volatile boolean enabled = Boolean.getBoolean("enderframe.layout.probe");
+    private static volatile boolean enabled = EngineFlags.LAYOUT_PROBE;
     /** スレッドごとの {深さ, 独立な部分木の中か(0/1), 独立の開始時刻, 全体の開始時刻}（種類ごと）。 */
     private static final ThreadLocal<long[][]> STATE = ThreadLocal.withInitial(() -> new long[KINDS][4]);
     private static final long[] TOTAL_NS = new long[KINDS], INDEPENDENT_NS = new long[KINDS], INDEPENDENT_BOXES = new long[KINDS];

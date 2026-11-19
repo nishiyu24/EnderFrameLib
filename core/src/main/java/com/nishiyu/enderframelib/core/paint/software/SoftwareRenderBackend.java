@@ -94,10 +94,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * 変更のあった項目の範囲だけを塗り直すか（{@code -Denderframe.soft.nodamage=true} で無効）。
      * 無効にすると毎フレーム全面をクリアして描く（疑うときの切り分け用。絵は同じでなければならない）。
      */
-    static volatile boolean damageEnabled = !Boolean.getBoolean("enderframe.soft.nodamage");
+    static volatile boolean damageEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_DAMAGE;
     /** 診断: 損傷範囲の決定の理由を出力する（フレームごとに読む。{@code -Denderframe.soft.damagedebug=true}）。 */
     static boolean damageDebug() {
-        return Boolean.getBoolean("enderframe.soft.damagedebug");
+        return com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_DAMAGE_DEBUG;
     }
 
     /** このフレームで塗り直す範囲（タイル境界まで広げた外接矩形）。 */
@@ -637,7 +637,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     // ------------------------------------------------------------------ 項目
 
     /** 照合・切り分け用: false なら、クリップの外にある項目も塗りの経路へ渡す（結果の画素は同じはず）。 */
-    static volatile boolean cullOffscreen = !Boolean.getBoolean("enderframe.soft.nocull");
+    static volatile boolean cullOffscreen = com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_CULL_OFFSCREEN;
     /** 項目の塗りを、クリップの範囲に掛からないために省いた数（累計。診断・テスト用）。 */
     private long culledItems;
 
@@ -877,7 +877,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 再生の直前に、CPU の層を重ねる順序づけを済ませた時点の {@link #cpuOps}（それ以降に CPU 描画があれば、再生の前に順序づけが要る）。 */
     private long cpuOpsOrdered;
     /** 項目単位の再生を使うか（切り分け用: {@code -Denderframe.paint.noreplay=true} で無効）。 */
-    static volatile boolean glReplay = !Boolean.getBoolean("enderframe.paint.noreplay");
+    static volatile boolean glReplay = com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_GL_REPLAY;
     private DisplayItem[] spanEl = new DisplayItem[0];
     /** {@link #spanEl} の項目を覚えたときの {@link DisplayItem#paintEpoch()}（塗りがセルへ書かれたら同じ項目でも再生しない）。 */
     private int[] spanEpoch = new int[0];
@@ -1355,7 +1355,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
 
     /** 照合・切り分け用: false なら {@link #paint} の行ごとの塗りを使わず、全画素を評価する。 */
-    static volatile boolean fastSolid = !Boolean.getBoolean("enderframe.soft.nofastsolid");
+    static volatile boolean fastSolid = com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_FAST_SOLID;
 
 
     /**
@@ -1447,7 +1447,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     // ------------------------------------------------------------------ 枠線
 
     /** 変わらない文字項目の下ごしらえを使い回す（切り分け用: {@code -Denderframe.paint.notextsetup=true} で無効）。 */
-    static volatile boolean textSetupReuse = !Boolean.getBoolean("enderframe.paint.notextsetup");
+    static volatile boolean textSetupReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.TEXT_SETUP_REUSE;
 
     // ------------------------------------------------------------------ 画像
 

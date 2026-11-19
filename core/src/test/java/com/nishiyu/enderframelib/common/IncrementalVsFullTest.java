@@ -411,9 +411,10 @@ class IncrementalVsFullTest {
      */
     @Test
     void absoluteCoordinatesPatchMatchesFullRelayoutAndNeverGoesNegative() {
-        String key = "enderframe.paint.noparentrelative";
-        String saved = System.getProperty(key);
-        System.setProperty(key, "true");
+        // 親相対の切り替えは文脈の欄（-Denderframe.paint.noparentrelative は起動時に 1 回だけ読む。S1 の EngineFlags）
+        var ctx = com.nishiyu.enderframelib.core.EngineContext.current();
+        boolean saved = ctx.parentRelativeDisplayItems;
+        ctx.parentRelativeDisplayItems = false;
         try {
             List<String> bad = new ArrayList<>();
             for (long seed = 1; seed <= 8; seed++) {
@@ -425,7 +426,7 @@ class IncrementalVsFullTest {
             }
             assertEquals(List.of(), bad.size() > 8 ? bad.subList(0, 8) : bad);
         } finally {
-            if (saved == null) System.clearProperty(key); else System.setProperty(key, saved);
+            ctx.parentRelativeDisplayItems = saved;
         }
     }
 }

@@ -1148,7 +1148,7 @@ public class HtmlParser {
         }
 
         /** 要素の間の改行を含む空白だけのテキストを節として残すか（調査用の切り替え）。 */
-        static final boolean KEEP_NEWLINE_WHITESPACE = !Boolean.getBoolean("enderframe.parser.dropnewlinews");
+        static final boolean KEEP_NEWLINE_WHITESPACE = com.nishiyu.enderframelib.core.kernel.EngineFlags.KEEP_NEWLINE_WHITESPACE;
 
         static String normalizeText(HtmlTokenizer.Token token, HtmlNode parent) {
             boolean preserveWs = token.isRawText || PRESERVE_WHITESPACE_TAGS.contains(parent.tag);

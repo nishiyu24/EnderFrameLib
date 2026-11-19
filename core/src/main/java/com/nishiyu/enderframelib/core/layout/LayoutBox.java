@@ -1357,7 +1357,7 @@ public class LayoutBox {
     }
 
     /** 切り分け用: false なら、高さの % の基準が違う制約は常に別の入力として扱う（従来の動き）。 */
-    public static volatile boolean blockPercentFreeEnabled = !Boolean.getBoolean("enderframe.layout.noblockpercentkey");
+    public static volatile boolean blockPercentFreeEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.BLOCK_PERCENT_FREE;
 
     /** 仮の測定・確定の測定の産物。仮は最大 {@link #MAX_TENTATIVES}、確定は最大 {@link #MAX_DEFINITE_TENTATIVES} を別枠で保つ。 */
     private Tentative[] tentatives;
@@ -1376,9 +1376,9 @@ public class LayoutBox {
     /**
      * 親が寸法を決めた葉の確定測定を別枠で使い回す（{@link TentativeKind#DEFINITE}）。切り分け: {@code -Denderframe.layout.nodefiniteleaf=true}。
      */
-    public static volatile boolean definiteLeafReuse = !Boolean.getBoolean("enderframe.layout.nodefiniteleaf");
+    public static volatile boolean definiteLeafReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.DEFINITE_LEAF_REUSE;
 
-    public static volatile boolean tentativeReuse = !Boolean.getBoolean("enderframe.layout.notentative");
+    public static volatile boolean tentativeReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.TENTATIVE_REUSE;
     private static final java.util.concurrent.atomic.LongAdder TENTATIVE_SKIPPED =
             new java.util.concurrent.atomic.LongAdder();
 
@@ -1493,10 +1493,10 @@ public class LayoutBox {
      * 経路の印付けで、cutoff できない祖先に当たっても、その親に「測り直し」を前払いで付けない（結果が外寸に出たときの動的な
      * 無効化に任せる）。false なら従来どおり前払いで付ける（切り分け用）。
      */
-    private static final boolean lazyThroughIneligible = !Boolean.getBoolean("enderframe.layout.nolazythrough");
+    private static final boolean lazyThroughIneligible = com.nishiyu.enderframelib.core.kernel.EngineFlags.LAZY_THROUGH_INELIGIBLE;
 
     /** 切り分け用: false なら外寸が変わらない子の変化を親で吸収しない（従来の祖先まで無効にする動き）。 */
-    public static volatile boolean cutoffEnabled = !Boolean.getBoolean("enderframe.layout.nocutoff");
+    public static volatile boolean cutoffEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.CUTOFF;
 
     /**
      * 子の中身が変わって測り直しても外寸（幅・高さ・マージン）が前回と同じなら、親の測定はそのまま使える箱か。
@@ -1600,7 +1600,7 @@ public class LayoutBox {
     private boolean measuredHadFloatChild;
 
     /** 切り分け用: false なら 2 回目の measure パスで、1 回目に測った箱も測り直す（従来の動き）。 */
-    public static volatile boolean samePassReuse = !Boolean.getBoolean("enderframe.layout.nosamerun");
+    public static volatile boolean samePassReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.SAME_PASS_REUSE;
     /**
      * 表を含む（自分か子孫が表の箱）か。表は measure の後に行の高さ・列幅を子へ書き戻し、2 回目のパスがそれを入力として
      * 読み直すので、同じ run の中では表を含む部分木を使い回さない（{@link #samePassReuse}）。測り終えたときに決める。
@@ -1613,7 +1613,7 @@ public class LayoutBox {
      * 読むものが無い（{@link #measuredWidthFree}）なら、測定の結果は幅に依らない。
      * 切り分け用: {@code -Denderframe.layout.nowidthreuse=true} で無効。
      */
-    public static volatile boolean widthIndependentReuse = !Boolean.getBoolean("enderframe.layout.nowidthreuse");
+    public static volatile boolean widthIndependentReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.WIDTH_INDEPENDENT_REUSE;
 
     /** この箱の測定が、親の使える幅とビューポートの幅に依らない（前回の測定を記録した時点）。 */
     private boolean measuredWidthFree;
@@ -1626,7 +1626,7 @@ public class LayoutBox {
      * 高さと解像度比は、パーセントの高さ・画像の候補選びに効くので比べる。
      * 切り分け用: {@code -Denderframe.layout.noviewportwidthfree=true} で無効。
      */
-    public static volatile boolean viewportWidthFreeReuse = !Boolean.getBoolean("enderframe.layout.noviewportwidthfree");
+    public static volatile boolean viewportWidthFreeReuse = com.nishiyu.enderframelib.core.kernel.EngineFlags.VIEWPORT_WIDTH_FREE_REUSE;
 
     private boolean sameViewportForMeasure(Viewport vp) {
         Viewport old = measuredViewport;
@@ -1662,7 +1662,7 @@ public class LayoutBox {
      * 使い回すのと同じ考え方で、flex の項目・インラインブロック・span のように、幅が 1px 変わっても中身が収まっている箱を
      * 測り直さない。切り分け用: {@code -Denderframe.layout.nofitreuse=true} で無効。
      */
-    public static volatile boolean fitReuseEnabled = !Boolean.getBoolean("enderframe.layout.nofitreuse");
+    public static volatile boolean fitReuseEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.FIT_REUSE;
 
     /** この使える幅以上なら測定の結果が同じ（無限大は当てはまらない）。測り終えたときに決める。 */
     private float measuredFitNeed = Float.POSITIVE_INFINITY;
@@ -3034,7 +3034,7 @@ public class LayoutBox {
             new java.util.concurrent.atomic.LongAdder();
 
     /** 切り分け用: false なら、原点だけが違う部分木も置き直す（平行移動で済ませない）。 */
-    public static volatile boolean SHIFT_ENABLED = !Boolean.getBoolean("enderframe.layout.noshift");
+    public static volatile boolean SHIFT_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.SHIFT;
 
     /** 原点だけが違うので部分木ごと平行移動した layout の回数（診断・テスト用）。 */
     public static long layoutsShifted() {

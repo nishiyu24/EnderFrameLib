@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
 
+import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.kernel.gpu.PropertyTrees;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuDevice;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuPass;
@@ -20,7 +21,7 @@ public final class RectStream implements AutoCloseable {
     /** 診断・切り分け用: 新経路に載せる図形の種類（ビット 0〜11）。 */
     public static volatile int opMask = 0xFFF;
     /** 再生を使うか（切り分け用: {@code -Denderframe.gl.noreplay=true} で無効）。 */
-    public static volatile boolean replayEnabled = !Boolean.getBoolean("enderframe.gl.noreplay");
+    public static volatile boolean replayEnabled = EngineFlags.GL_REPLAY;
 
     private final GpuTreeStore store;
     private final RectRenderer renderer;

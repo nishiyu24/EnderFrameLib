@@ -444,7 +444,7 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     /** 切り分け用: false なら、幅が同じでも shrink-to-fit の項目を必ず測り直す（従来の動き）。 */
-    public static volatile boolean skipSameWidthRemeasure = !Boolean.getBoolean("enderframe.layout.noflexskip");
+    public static volatile boolean skipSameWidthRemeasure = com.nishiyu.enderframelib.core.kernel.EngineFlags.FLEX_SKIP_SAME_WIDTH;
 
     /**
      * 親が渡す幅が違っても、この箱の寸法の決まり方が変わらないか。割合（親の幅が基準）と内在サイズのキーワード

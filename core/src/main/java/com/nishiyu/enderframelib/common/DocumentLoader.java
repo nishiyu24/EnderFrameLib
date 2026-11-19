@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -140,7 +141,7 @@ public class DocumentLoader {
      * 画面を開き直すたびに UA シート（約 11 KB）と作者の CSS を解析し直さず、雛形の写しを渡す。
      * 切り分け用: {@code -Denderframe.sheetcache.off=true} で無効。
      */
-    public static volatile boolean sheetTemplateCache = !Boolean.getBoolean("enderframe.sheetcache.off");
+    public static volatile boolean sheetTemplateCache = EngineFlags.SHEET_CACHE;
 
     private static final int SHEET_TEMPLATE_MAX = 16;
 

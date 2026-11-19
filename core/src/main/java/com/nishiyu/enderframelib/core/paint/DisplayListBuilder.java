@@ -62,7 +62,7 @@ public class DisplayListBuilder {
     // 単位なしの 0（例: translate(-50%, 0)）も受け付けるため単位は省略可能（省略時は px 扱い）
 
     static volatile java.util.function.BooleanSupplier parentRelativeSource =
-            () -> !Boolean.getBoolean("enderframe.paint.noparentrelative");
+            () -> com.nishiyu.enderframelib.core.kernel.EngineFlags.PARENT_RELATIVE;
 
     public static void setParentRelativeSource(java.util.function.BooleanSupplier source) {
         parentRelativeSource = source != null ? source : () -> true;
@@ -386,7 +386,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     /** 切り分け用: false なら、画面外の部分木も箱ごとに分類してから省く（従来の動き）。 */
-    public static volatile boolean PRUNE_ENABLED = !Boolean.getBoolean("enderframe.paint.noprune");
+    public static volatile boolean PRUNE_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.PRUNE;
     private int prunedOwners;
     /** 診断: 部分木ごと省いた回数。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_PRUNED_SUBTREES = new java.util.concurrent.atomic.LongAdder();
@@ -669,9 +669,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     /** 直近の描画が窓付き（画面外の箱を省いた）か。 */
     boolean windowedBuild;
     /** 切り分け用: false なら、大きい文書でも窓付きの表示リストにしない（従来の動き）。 */
-    public static volatile boolean WINDOWED_ENABLED = !Boolean.getBoolean("enderframe.paint.nowindow");
+    public static volatile boolean WINDOWED_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.WINDOWED;
     /** 窓付きにする、項目を持ちうる箱の数の下限（これより小さい文書は全件を作る）。 */
-    public static volatile int WINDOW_MIN_OWNERS = Integer.getInteger("enderframe.paint.windowmin", 800);
+    public static volatile int WINDOW_MIN_OWNERS = com.nishiyu.enderframelib.core.kernel.EngineFlags.WINDOW_MIN_OWNERS;
     /** 箱の数（{@code cap} に達したらそこで打ち切る）。 */
     private static int countBoxes(LayoutBox b, int cap) {
         int n = 1;
@@ -696,7 +696,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     /** 画面の外へ表示項目を作っておく幅（px）。スクロールを節の移動で済ませる範囲（UiView）はこれより小さく取る。広いほど、作り直しが起きる間隔が長い。 */
-    public static final float CULL_MARGIN = Float.parseFloat(System.getProperty("enderframe.paint.cullmargin", "640"));
+    public static final float CULL_MARGIN = com.nishiyu.enderframelib.core.kernel.EngineFlags.CULL_MARGIN;
     static final int[] MOVING_PROPS = {
             CssPropertyIndex.TRANSFORM, CssPropertyIndex.TRANSLATE, CssPropertyIndex.ROTATE,
             CssPropertyIndex.SCALE, CssPropertyIndex.ANIMATION, CssPropertyIndex.ANIMATION_NAME, CssPropertyIndex.FILTER,
@@ -873,7 +873,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
      * 移動量を更新するだけで済む（{@code UiView} が行う）。false なら従来どおり、中身の項目はコンテナの節の直下に並び、
      * スクロールのたびに作り直す（疑うときの切り分け用。{@code -Denderframe.paint.noscrollnode=true} でも切れる）。結果は同じでなければならない。
      */
-    public static volatile boolean scrollContentNodes = !Boolean.getBoolean("enderframe.paint.noscrollnode");
+    public static volatile boolean scrollContentNodes = com.nishiyu.enderframelib.core.kernel.EngineFlags.SCROLL_CONTENT_NODES;
 
     // ==========================================
     // 箱ごとの記憶（React.memo と同じ考え方）
@@ -900,7 +900,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     /** 診断: 変更印で比較を省いた箱の累計。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_STAMPED = new java.util.concurrent.atomic.LongAdder();
     /** 検証: 変更印が「変わっていない」と言った箱でも署名を比べ、食い違えば例外にする（{@code -Denderframe.paint.verifystamps=true}）。 */
-    public static volatile boolean verifyStamps = Boolean.getBoolean("enderframe.paint.verifystamps");
+    public static volatile boolean verifyStamps = com.nishiyu.enderframelib.core.kernel.EngineFlags.VERIFY_STAMPS;
 
     /** 診断: 描画順の分類用のスタイル値を新しく算出した回数の累計（キャッシュ退行の検出用）。 */
     public static long styleFactsComputed() {
@@ -932,9 +932,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     public int translatedHits() {
         return translatedHits;
     }
-    private static final boolean MEMO_ENABLED = !Boolean.getBoolean("enderframe.paint.nomemo");
+    private static final boolean MEMO_ENABLED = !com.nishiyu.enderframelib.core.kernel.EngineFlags.NO_PAINT_MEMO;
     /** 切り分け用: {@code -Denderframe.paint.notranslate=true} で、位置が動いた箱の項目を平行移動で使い回さない。 */
-    private static final boolean TRANSLATE_ENABLED = !Boolean.getBoolean("enderframe.paint.notranslate");
+    private static final boolean TRANSLATE_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.PAINT_TRANSLATE;
 
     private static boolean memoizable(LayoutBox box) {
         String tag = box.node.tag;

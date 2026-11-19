@@ -52,11 +52,11 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     }
 
     /** 診断・切り分け用フラグ。 */
-    public static volatile boolean rectTrees = !"false".equals(System.getProperty("enderframe.gl.recttrees"));
+    public static volatile boolean rectTrees = com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_RECT_TREES;
     public static volatile int maxLayerDepth = 32;
-    public static volatile boolean boundedLayers = !Boolean.getBoolean("enderframe.gl.fullscreenlayers");
-    public static volatile boolean downsampledBlur = !Boolean.getBoolean("enderframe.gl.fullresblur");
-    public static volatile boolean retainedScroll = !"false".equals(System.getProperty("enderframe.gl.retainscroll"));
+    public static volatile boolean boundedLayers = com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_BOUNDED_LAYERS;
+    public static volatile boolean downsampledBlur = com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_DOWNSAMPLED_BLUR;
+    public static volatile boolean retainedScroll = com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_RETAINED_SCROLL;
 
     private static final long LAYER_VRAM_BUDGET = 512L * 1024 * 1024;
     private static final int ATLAS_SIZE = 1024;
@@ -113,7 +113,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
 
     // ---- 損傷範囲（B10）: 差分パッチで書き換えた項目の旧・新の範囲だけを、シザー付きのクリアで描き直す
     /** 損傷範囲による部分描画を使うか（{@code -Denderframe.gpu.nodamage=true} で無効）。 */
-    static volatile boolean damageEnabled = !Boolean.getBoolean("enderframe.gpu.nodamage");
+    static volatile boolean damageEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.GPU_DAMAGE;
 
     /** テスト・診断用: 損傷範囲による部分描画を切り替える。 */
     public static void setDamageEnabled(boolean on) {
@@ -260,7 +260,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
 
         if (rectTrees) {
             try {
-                this.rects = new RectStream(device, Integer.getInteger("enderframe.gl.rectcapacity", 16384));
+                this.rects = new RectStream(device, com.nishiyu.enderframelib.core.kernel.EngineFlags.GL_RECT_CAPACITY);
                 LoggerFactory.getLogger(GpuRenderBackend.class).info(
                         "GPU プリミティブ経路を使う（永続マップ={}, 容量={}）", rects.isPersistent(), rects.capacity());
             } catch (RuntimeException | LinkageError e) {

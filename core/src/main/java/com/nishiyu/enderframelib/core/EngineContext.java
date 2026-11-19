@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core;
 
+import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.dom.BindingHooks;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
 import com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer;
@@ -54,7 +55,7 @@ public final class EngineContext implements BindingHooks {
     /** 局所再レイアウト（箱の木を作り直さない）を有効にするか。false なら常に木を作り直す（切り分け用）。 */
     public volatile boolean inPlaceRestyleRelayout = true;
     /** B3: DisplayItem の座標を親 NODE 原点からの相対座標にするか。false ならページ絶対座標（切り分け・パリティ検証用）。 */
-    public volatile boolean parentRelativeDisplayItems = !Boolean.getBoolean("enderframe.paint.noparentrelative");
+    public volatile boolean parentRelativeDisplayItems = EngineFlags.PARENT_RELATIVE;
     /** クライアント側リソース（リソースパックなど）の本文を引く。null なら引かない。 */
     public volatile Function<String, String> clientResourceFallback = null;
     /** サーバー側リソース（データパック）の本文を引く。null なら引かない。 */

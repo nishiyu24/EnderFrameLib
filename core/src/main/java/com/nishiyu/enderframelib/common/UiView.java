@@ -338,7 +338,7 @@ public class UiView implements AutoCloseable {
         return useChangeStamps;
     }
     /** 切り分け用: false なら文字の局所パッチでも変更印を使わない。 */
-    public static volatile boolean changeStampsEnabled = !Boolean.getBoolean("enderframe.paint.nostamps");
+    public static volatile boolean changeStampsEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.CHANGE_STAMPS;
 
     com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder;
     private int paintBuilderW, paintBuilderH;
@@ -1543,14 +1543,14 @@ public class UiView implements AutoCloseable {
      * （空白だけの Text は箱の木に入るかどうかが変わる）・表や入力部品、{@code <style>} の中ではない。</p>
      */
     /** 文字の変更が再スタイルと同じフレームに重なったとき、文字を局所パッチで済ませてから再スタイルを進めるか（切り分け用）。 */
-    public static volatile boolean combinedTextPatchEnabled = !Boolean.getBoolean("enderframe.ui.nocombinedtext");
+    public static volatile boolean combinedTextPatchEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.COMBINED_TEXT_PATCH;
     /** 診断: 位置の決め直しを後回しにしたまま、文字の局所パッチで済ませた回数。 */
     public static final java.util.concurrent.atomic.AtomicLong STALE_TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     /** 診断: 重なった文字の変更を局所パッチで済ませた回数。 */
     public static final java.util.concurrent.atomic.AtomicLong COMBINED_TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
 
     /** 位置の決め直しを後回しにしている間の文字の局所パッチを、決め直さずに古い位置の枠で済ませるか（切り分け用）。 */
-    public static volatile boolean staleTextPatchEnabled = !Boolean.getBoolean("enderframe.ui.nostaletextpatch");
+    public static volatile boolean staleTextPatchEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.STALE_TEXT_PATCH;
 
 
     // ==========================================
@@ -1558,7 +1558,7 @@ public class UiView implements AutoCloseable {
     // ==========================================
 
     /** false なら子の増減は常に全体の再レイアウトにする（切り分け用。結果は同じでなければならない）。 */
-    public static volatile boolean childPatchEnabled = !Boolean.getBoolean("enderframe.ui.nochildpatch");
+    public static volatile boolean childPatchEnabled = com.nishiyu.enderframelib.core.kernel.EngineFlags.CHILD_PATCH;
     public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_FALLBACKS = new java.util.concurrent.atomic.AtomicLong();
     /** 再スタイル経路（{@code restyleAndUpdate}）の行き先の内訳（計測用）。{@code RESTYLE_REPAINT_FULL} は表示リストを全体再構築した回数（スライスパッチ未使用）。 */

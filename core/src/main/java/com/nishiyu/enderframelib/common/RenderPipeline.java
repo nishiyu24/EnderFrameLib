@@ -129,7 +129,7 @@ public class RenderPipeline {
      * 結果は全部を作り直したときと同じ（{@code IncrementalLayoutTest} が確かめる）。
      */
     /** 切り分け用: 前回の箱が無い（新品の箱の）レイアウトでも、同じパスの中の同一入力の測定を使い回す。 */
-    public static volatile boolean FRESH_LAYOUT_PASS_REUSE = !Boolean.getBoolean("enderframe.layout.nofreshreuse");
+    public static volatile boolean FRESH_LAYOUT_PASS_REUSE = com.nishiyu.enderframelib.core.kernel.EngineFlags.FRESH_LAYOUT_PASS_REUSE;
 
     public static LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
                                            ScrollState scrollState, FontResolver fonts, InteractionState interactionState,
@@ -200,7 +200,7 @@ public class RenderPipeline {
     }
 
     /** 切り分け用: {@code -Denderframe.layout.noresizeskip=true} で、幅変更でも毎回スタイルと箱の木を組み直す。 */
-    public static volatile boolean RESIZE_SKIP_REBUILD = !Boolean.getBoolean("enderframe.layout.noresizeskip");
+    public static volatile boolean RESIZE_SKIP_REBUILD = com.nishiyu.enderframelib.core.kernel.EngineFlags.RESIZE_SKIP_REBUILD;
 
     private static final java.util.concurrent.atomic.AtomicLong RESIZE_SKIPS = new java.util.concurrent.atomic.AtomicLong();
 
@@ -833,7 +833,7 @@ public class RenderPipeline {
     }
 
     /** 切り分け用: false ならテキストの節も要素と同じ経路（カスケード＋算出）で解く（結果は同じになるはず）。 */
-    public static volatile boolean TEXT_STYLE_FROM_PARENT = !Boolean.getBoolean("enderframe.css.textfullcascade");
+    public static volatile boolean TEXT_STYLE_FROM_PARENT = com.nishiyu.enderframelib.core.kernel.EngineFlags.TEXT_STYLE_FROM_PARENT;
 
     /**
      * A16: テキストの節の算出スタイル。テキストの節には規則が当たらず親から継承するだけなので、親の算出スタイルから
