@@ -122,9 +122,10 @@ def configureCoreTest = { Test t, List<String> includeTagList, List<String> excl
     t.maxHeapSize = '3g' // 既定のヒープでは全件実行が OutOfMemoryError で落ちる
     t.systemProperty 'enderframe.paint.verifystamps', 'true'
     // 検証モード VERIFY_MEMO: 記憶（float メモ・測定の記憶・姿勢の使い回し）が当たった所を計算し直し、食い違えば AssertionError（鍵の漏れの検出。costGate・計測では無効）
-    t.systemProperty 'enderframe.verify.memo', 'true'
+    // 検証の費用を測る・切り分けるときは -Pverify.memo=false / -Pverify.boxmemo=false で個別に切れる
+    t.systemProperty 'enderframe.verify.memo', String.valueOf(findProperty('verify.memo') ?: 'true')
     // 箱の項目の記憶（DisplayListBuilder の箱ごとの記憶）も作り直して比べる（計画の §6-124・125）
-    t.systemProperty 'enderframe.verify.boxmemo', 'true'
+    t.systemProperty 'enderframe.verify.boxmemo', String.valueOf(findProperty('verify.boxmemo') ?: 'true')
     t.workingDir = rootProject.projectDir
     t.testLogging { showStandardStreams = true }
     ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees', 'enderframe.paint.noparentrelative', 'gpu.baseline.exact', 'gpu.baseline.update', 'wpt.reftest.update', 'wpt.reftest.diag', 'wpt.reftest.strict', 'wpt.reftest.dump', 'enderframe.parser.dropnewlinews', 'ratchet.update'].each { key ->

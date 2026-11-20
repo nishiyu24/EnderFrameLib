@@ -249,6 +249,24 @@ public final class PersistentVramBuffer {
         if (slot < 0 || slot >= highWater) throw new IndexOutOfBoundsException(slot);
     }
 
+    /** 検証用: 影の slot {@code [from, to)} の写し（{@code VERIFY_MEMO} の項目の再生の検証。GPU メモリは読まない）。 */
+    public byte[] copyShadow(int from, int to) {
+        byte[] out = new byte[Math.max(0, to - from) * stride];
+        ByteBuffer src = data.duplicate();
+        src.position(from * stride);
+        src.get(out);
+        return out;
+    }
+
+    /** 検証用: 影の slot {@code from} から {@code snap} と同じ長さが同じか。違う最初の slot（同じなら -1）。 */
+    public int firstShadowDifference(int from, byte[] snap) {
+        ByteBuffer cur = data.duplicate();
+        for (int i = 0; i < snap.length; i++) {
+            if (cur.get(from * stride + i) != snap[i]) return from + i / stride;
+        }
+        return -1;
+    }
+
     private int at(int slot, int byteOffset, int width) {
         check(slot);
         if (byteOffset < 0 || byteOffset + width > stride) throw new IndexOutOfBoundsException(byteOffset);

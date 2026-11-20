@@ -73,15 +73,42 @@ class ItemReplayPixelTest {
             }
             v.scroll(0, -2, "s");
             for (int i = 0; i < 3; i++) { v.frame(t += 40, g, true); out.add(g.pixmap().pixels().clone()); }
-            if (stats != null) { stats[0] = g.rectTreeReplayedItems(); stats[1] = g.rectTreeReplayedShapes(); long[] rj = g.rectTreeRejects(); stats[2] = rj[0] + rj[1] + rj[2] + rj[3]; }
+            if (stats != null) { stats[0] = g.rectTreeReplayedItems(); stats[1] = g.rectTreeReplayedShapes(); long[] rj = g.rectTreeRejects(); stats[2] = rj[0] + rj[1] + rj[2] + rj[3]; stats[3] = com.nishiyu.enderframelib.core.paint.gpu.RectStream.STAT_VERIFIED_SPANS.sum(); }
         }
         return out;
     }
 
+    /** {@code VERIFY_MEMO}（再生できる項目を再生せずに描き直す検証）を {@code on} にして {@code body} を流す。 */
+    private static void withVerify(boolean on, Runnable body) {
+        boolean was = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(on);
+        try { body.run(); } finally { com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(was); }
+    }
+
+    /** 検証モードでは再生しない（描き直して比べる）ので、再生そのものを見るこのテストでは切る。 */
     @Test
     void replayDoesNotChangeAnyPixelAcrossTheSequence() {
         requireGl();
-        long[] st = new long[3];
+        withVerify(false, this::replayDoesNotChangeAnyPixelBody);
+    }
+
+    /** 検証モード: 再生できる項目を描き直し、前フレームの出力と同じ（実 GL・ホバーの遷移・スクロール・CPU に回る図形の混在）。 */
+    @Test
+    void verifiedReplayMatchesAFreshDrawAcrossTheSequence() {
+        requireGl();
+        withVerify(true, () -> {
+            long[] st = new long[4];
+            long verified0 = com.nishiyu.enderframelib.core.paint.gpu.RectStream.STAT_VERIFIED_SPANS.sum();
+            List<int[]> off = run(false, null);
+            List<int[]> on = run(true, st);
+            assertEquals(off.size(), on.size());
+            for (int i = 0; i < off.size(); i++) assertArrayEquals(off.get(i), on.get(i), "フレーム " + i);
+            assertTrue(st[3] - verified0 > 0, "再生できる項目が検証された: " + (st[3] - verified0));
+        });
+    }
+
+    private void replayDoesNotChangeAnyPixelBody() {
+        long[] st = new long[4];
         List<int[]> off = run(false, null);
         List<int[]> on = run(true, st);
         assertEquals(off.size(), on.size());

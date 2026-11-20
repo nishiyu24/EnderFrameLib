@@ -141,6 +141,7 @@ public final class RectStream implements AutoCloseable {
         spanOn = false;
         int index = spanIndex;
         ensureSpan(index);
+        if (verifyIndex == index) spanVerifyCheck(index, ok && !spanUnclean && overflows == spanOverflows && atlasResets == spanAtlas); // 記録を書き換える前に、前フレームの出力と比べる
         if (!ok || spanUnclean || overflows != spanOverflows || atlasResets != spanAtlas || slots - spanSlot0 > 64) {
             spFrame[index] = -1;
             return;
@@ -163,8 +164,52 @@ public final class RectStream implements AutoCloseable {
         spFrame[index] = frameNo;
     }
 
+    // 検証（VERIFY_MEMO）: 再生できる項目を再生せずに描き直させ、描き直した出力が前フレームに残っている出力と同じか比べる
+    /** 検証で照合した項目の数（診断・テスト用）。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_VERIFIED_SPANS = new java.util.concurrent.atomic.LongAdder();
+    private int verifyIndex = -1;
+    private byte[] vTransforms, vEffects, vPrimitives, vClips;
+    private int[] vOrder;
+
+    /**
+     * 検証モード: 項目 {@code index} が再生できるときに、前フレームの出力（影）を写して true を返す。呼び出し側は再生せず、
+     * 通常どおり描き直す。{@link #spanEnd} が描き直した出力と比べる。再生できないなら false。
+     */
+    public boolean spanVerifyArm(int index, int atlasResets) {
+        if (!spanCanReplay(index, atlasResets)) return false;
+        int s0 = spSlot0[index], s1 = spSlot1[index], c0 = spCount0[index], c1 = spCount1[index];
+        vTransforms = trees.transforms.copyShadow(s0, s1);
+        vEffects = trees.effects.copyShadow(s0, s1);
+        vPrimitives = trees.primitives.copyShadow(s0, s1);
+        vClips = trees.clips.copyShadow(spClip0[index], spClip1[index]);
+        vOrder = new int[c1 - c0];
+        for (int i = 0; i < vOrder.length; i++) vOrder[i] = trees.order.getInt(c0 + i, 0);
+        verifyIndex = index;
+        return true;
+    }
+
+    private void spanVerifyCheck(int index, boolean ok) {
+        if (verifyIndex != index) return;
+        verifyIndex = -1;
+        int s0 = spSlot0[index], s1 = spSlot1[index], c0 = spCount0[index], c1 = spCount1[index];
+        String why = null;
+        if (!ok) why = "描き直した出力が記録できなかった（再生は記録できる前提だった）";
+        else if (s0 != spanSlot0 || slots != s1 || count != c1 || clipCount != spClip1[index]) why = "描き直した出力の長さが違う（slot " + (slots - spanSlot0) + " ≠ " + (s1 - s0) + "）";
+        else {
+            int d;
+            if ((d = trees.transforms.firstShadowDifference(s0, vTransforms)) >= 0) why = "変形の slot " + d;
+            else if ((d = trees.effects.firstShadowDifference(s0, vEffects)) >= 0) why = "効果の slot " + d;
+            else if ((d = trees.primitives.firstShadowDifference(s0, vPrimitives)) >= 0) why = "図形の slot " + d;
+            else if ((d = trees.clips.firstShadowDifference(spClip0[index], vClips)) >= 0) why = "クリップの slot " + d;
+            else for (int i = 0; i < vOrder.length && why == null; i++) if (trees.order.getInt(c0 + i, 0) != vOrder[i]) why = "描画順 " + (c0 + i);
+        }
+        if (why != null) throw new AssertionError("項目の再生が古い: 項目 " + index + " " + why);
+        STAT_VERIFIED_SPANS.increment();
+    }
+
     public void spanDrop(int index) {
         spanOn = false;
+        if (verifyIndex == index) verifyIndex = -1;
         if (index < spFrame.length) spFrame[index] = -1;
     }
 
@@ -211,6 +256,7 @@ public final class RectStream implements AutoCloseable {
     }
 
     public void begin() {
+        verifyIndex = -1; // 検証の武装は 1 フレーム限り（描き直さずに終わった項目の写しを次のフレームへ持ち越さない）
         prevFrameSlots = slots;
         prevFrameCount = count;
         prevFrameClipCount = clipCount;

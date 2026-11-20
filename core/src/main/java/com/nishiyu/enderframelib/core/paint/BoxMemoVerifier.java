@@ -39,15 +39,65 @@ final class BoxMemoVerifier {
         if (diff != null) throw new AssertionError("箱の項目の記憶が古い: box=" + box.node.tag + "#" + box.node.key() + " " + diff);
     }
 
-    /** 正規形で違う最初の所（無ければ null）。テストが直接呼ぶ。 */
+    /** 正規形で違う最初の所（無ければ null）。テストが直接呼ぶ。同じ場合（ほとんど）は文字列を作らない速い比較だけで済ませる。 */
     static String firstDifference(List<DisplayItem> remembered, List<DisplayItem> fresh) {
         if (remembered.size() != fresh.size()) return "個数 記憶=" + remembered.size() + " 作り直し=" + fresh.size();
+        boolean same = true;
+        for (int i = 0; i < fresh.size() && same; i++) same = same(remembered.get(i), fresh.get(i), "");
+        if (same) return null;
         for (int i = 0; i < fresh.size(); i++) {
             StringBuilder sb = new StringBuilder();
             diff(sb, "item[" + i + "]", remembered.get(i), fresh.get(i));
             if (sb.length() > 0) return sb.toString();
         }
         return null;
+    }
+
+    /** 記録クラスごとの、比べる欄の読み口（反射の呼び出しを毎回探さない）。 */
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.lang.reflect.Method[]> ACCESSORS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static java.lang.reflect.Method[] accessorsOf(Class<?> c) {
+        return ACCESSORS.computeIfAbsent(c, k -> {
+            var comps = k.getRecordComponents();
+            java.lang.reflect.Method[] out = new java.lang.reflect.Method[comps.length];
+            for (int i = 0; i < comps.length; i++) { out[i] = comps[i].getAccessor(); out[i].setAccessible(true); }
+            return out;
+        });
+    }
+
+    /**
+     * 文字列を作らない比較（{@link #diff} と同じ正規形）。{@code path} は直前の欄の名前で、無視する欄の判定にだけ使う。
+     */
+    private static boolean same(Object a, Object b, String field) {
+        if (field.equals("cell") || field.equals("layer")) return true;
+        if (a == b) return true;
+        if (a == null || b == null) return false;
+        if (field.equals("clipRect")) {
+            var x = (com.nishiyu.enderframelib.core.paint.model.ClipRect) a;
+            var y = (com.nishiyu.enderframelib.core.paint.model.ClipRect) b;
+            return near(x.maxX() - x.minX(), y.maxX() - y.minX()) && near(x.maxY() - x.minY(), y.maxY() - y.minY());
+        }
+        if (a instanceof Float x && b instanceof Float y) return near(x, y);
+        if (a instanceof Double x && b instanceof Double y) return Math.abs(x - y) <= TOLERANCE;
+        if (a.getClass().isArray()) {
+            if (a instanceof float[] x && b instanceof float[] y) {
+                if (x.length != y.length) return false;
+                for (int i = 0; i < x.length; i++) if (!near(x[i], y[i])) return false;
+                return true;
+            }
+            return java.util.Objects.deepEquals(a, b);
+        }
+        if (a.getClass().isRecord() && a.getClass() == b.getClass()) {
+            var comps = a.getClass().getRecordComponents();
+            var acc = accessorsOf(a.getClass());
+            try {
+                for (int i = 0; i < acc.length; i++) if (!same(acc[i].invoke(a), acc[i].invoke(b), comps[i].getName())) return false;
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+            return true;
+        }
+        return a.equals(b);
     }
 
     private static void diff(StringBuilder sb, String path, Object a, Object b) {

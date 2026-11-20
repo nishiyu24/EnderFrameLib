@@ -823,7 +823,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
 
     @Override
     public boolean spanReplay(int index, boolean cpuPending) {
-        if (!spanOk() || !rects.spanCanReplay(index, atlas.resets())) return false;
+        if (!spanOk() || !rects.spanCanReplay(index, atlas.resets()) || (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on() && rects.spanVerifyArm(index, atlas.resets()))) return false; // 検証: 再生せず描き直して比べる
         if (cpuPending && (rects.pending() == 0 || cpu.dirtyBounds() != null)) flushOverlay();
         rects.spanApply(index);
         gpuGlyphs += rects.replayedGlyphs;
