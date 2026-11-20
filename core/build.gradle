@@ -123,7 +123,7 @@ def configureCoreTest = { Test t, List<String> includeTagList, List<String> excl
     t.systemProperty 'enderframe.paint.verifystamps', 'true'
     // 検証モード VERIFY_MEMO: 記憶（float メモ・測定の記憶・姿勢の使い回し）が当たった所を計算し直し、食い違えば AssertionError（鍵の漏れの検出。costGate・計測では無効）
     t.systemProperty 'enderframe.verify.memo', 'true'
-    // 箱の項目の記憶（DisplayListBuilder の箱ごとの記憶）も作り直して比べる。実文書のテストだけは切る（計画の §6-124）
+    // 箱の項目の記憶（DisplayListBuilder の箱ごとの記憶）も作り直して比べる（計画の §6-124・125）
     t.systemProperty 'enderframe.verify.boxmemo', 'true'
     t.workingDir = rootProject.projectDir
     t.testLogging { showStandardStreams = true }

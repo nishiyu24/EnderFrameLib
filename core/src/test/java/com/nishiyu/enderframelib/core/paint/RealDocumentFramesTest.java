@@ -55,18 +55,8 @@ class RealDocumentFramesTest {
         return name.endsWith(".md") ? MarkdownParser.toHtml(text) : text;
     }
 
-    private boolean verifyBoxMemoWas;
-
-    /** 実文書（フォーム部品・画像・キャンバス）では、箱の項目の検証の再描画が状態を乱して差分の結果がずれる（§6-124）ので切る。 */
-    @org.junit.jupiter.api.BeforeEach
-    void disableBoxMemoVerification() {
-        verifyBoxMemoWas = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_BOX_MEMO.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_BOX_MEMO.set(false);
-    }
-
     @AfterEach
     void restoreShortcuts() throws ReflectiveOperationException {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_BOX_MEMO.set(verifyBoxMemoWas);
         setShortcuts(true);
     }
 
@@ -147,12 +137,21 @@ class RealDocumentFramesTest {
 
             // 幅の変更（ホストの経路。反映は実時間で間引かれるので、反映されるまで描いてから記録する）
             v.resize(700, H);
-            for (int k = 0; k < 6; k++) {
-                rec.frameUnrecorded(t[0] += 500);
+            // 反映は実時間で間引かれる（直前のレイアウトにかかった時間の 2 倍が過ぎるまで待つ）。毎フレーム再レイアウトを強制すると
+            // 間引きが解けず、リサイズが一度も反映されない（full 側が 800 のままだった）ので、待つ間は強制しない。反映されるまで描き
+            // （最大 200 回）、仮想時刻は最初の 6 回だけ進める（進めると、アニメーションの位相が実行の速さで変わる）
+            for (int k = 0; k < 200 && (k < 6 || !widthApplied(v, 700)); k++) {
+                rec.frameWithoutForcedRelayout(k < 6 ? (t[0] += 500) : t[0]);
                 try { Thread.sleep(40); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             }
+            for (int k = 0; k < 3; k++) rec.frameUnrecorded(t[0]); // 反映の直後の保留中の後処理を落ち着かせる（full は強制の再レイアウト）。時刻は進めない
             rec.frame("resize700", t[0] += 500);
         }
+    }
+
+    /** リサイズが反映された（レイアウトの基準幅が {@code w} になった）か。 */
+    private static boolean widthApplied(StandaloneView v, int w) {
+        return v.ui().rootW() == w;
     }
 
     private static final class Recorder {
@@ -165,6 +164,11 @@ class RealDocumentFramesTest {
         Recorder(StandaloneView v, com.nishiyu.enderframelib.core.paint.RenderBackend backend, boolean full, boolean keepPixels,
                  Consumer<Frame> sink, String doc) {
             this.v = v; this.backend = backend; this.full = full; this.keepPixels = keepPixels; this.sink = sink; this.doc = doc;
+        }
+
+        /** {@link #frameUnrecorded} から、full の強制の再レイアウトだけを除いた 1 フレーム（実時間の間引きを待つとき用）。 */
+        void frameWithoutForcedRelayout(long now) {
+            v.frame(now, backend, true);
         }
 
         void frameUnrecorded(long now) {

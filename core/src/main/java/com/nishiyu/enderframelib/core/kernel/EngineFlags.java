@@ -160,7 +160,7 @@ public final class EngineFlags {
     /** {@code enderframe.verify.memo}: 検証モード VERIFY_MEMO（記憶が当たった所を計算し直して比べる。:core:test が立てる）（使う所: {@code BlockLayoutEngine}） */
     public static final boolean VERIFY_MEMO = Boolean.getBoolean("enderframe.verify.memo");
 
-    /** {@code enderframe.verify.boxmemo}: 検証モード VERIFY_BOX_MEMO（箱の項目の記憶を作り直して比べる。再描画が状態を乱す文書があるので、VERIFY_MEMO と分ける）（使う所: {@code DisplayListBuilder}） */
+    /** {@code enderframe.verify.boxmemo}: 検証モード VERIFY_BOX_MEMO（箱の項目の記憶を作り直して比べる。再描画の費用が大きいので VERIFY_MEMO と分ける）（使う所: {@code DisplayListBuilder}） */
     public static final boolean VERIFY_BOX_MEMO = Boolean.getBoolean("enderframe.verify.boxmemo");
 
     /** {@code enderframe.paint.verifystamps}: DisplayListBuilder.verifyStamps（:core:test が立てる）（使う所: {@code DisplayListBuilder}） */
