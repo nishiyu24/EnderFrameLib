@@ -139,16 +139,8 @@ public final class CoreGpuSurface {
      */
     static boolean drawable(List<DisplayItem> items) {
         for (DisplayItem it : items) {
-            switch (it.type()) {
-                case SCENE -> {
-                    return false;
-                }
-                case IMAGE, VIDEO, CANVAS -> {
-                    if (!McMediaImages.supports(it)) return false;
-                }
-                default -> {
-                }
-            }
+            if (it.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.SCENE) return false;
+            if (it.type().rasterRoute() == com.nishiyu.enderframelib.core.paint.model.ElementType.RasterRoute.IMAGE && !McMediaImages.supports(it)) return false;
         }
         return true;
     }

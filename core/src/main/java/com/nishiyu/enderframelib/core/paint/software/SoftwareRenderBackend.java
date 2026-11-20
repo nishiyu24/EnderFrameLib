@@ -526,12 +526,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private static boolean rangeIsRetainable(List<DisplayItem> items, int from, int to) {
         for (int i = from; i < to; i++) {
             DisplayItem it = items.get(i);
-            switch (it.type()) {
-                case IMAGE, VIDEO, CANVAS, SCENE, INPUT, TEXTAREA, SELECT, PROGRESS -> {
-                    return false;
-                }
-                default -> { }
-            }
+            if (it.type().isExternallyDriven() || it.type().hasLiveWidgetState()) return false;
             if (it.transitionDuration() > 0 || (it.animDef() != null && !it.animDef().isEmpty())) return false;
         }
         return true;
@@ -928,19 +923,22 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         if (type != ElementType.RANGE) itemRaster.drawBackground(el, anim, rx, ry, res, clip, opacity);
 
-        switch (type) {
-            case SCENE -> itemRaster.drawScene3d(el, rx, ry, res, clip, opacity);
-            case TEXTAREA -> textRaster.drawTextarea(el, anim, res, clip, opacity);
-            case RANGE -> itemRaster.drawRange(el, anim, res, clip, opacity);
-            case PROGRESS -> itemRaster.drawProgress(el, anim, rx, ry, res, clip, opacity);
-            case TOGGLE, CHECKBOX, RADIO -> itemRaster.drawToggle(el, anim, res, clip, opacity);
-            case IMAGE, VIDEO, CANVAS -> itemRaster.drawImage(el, rx, ry, res, clip, opacity);
-            default -> {
-                if ((el.text() != null && !el.text().isEmpty()) || type == ElementType.INPUT || type == ElementType.SELECT) {
-                    textRaster.drawText(el, anim, res, clip, opacity);
-                }
+        // 網羅形の switch 式（default なし）。経路を足したらここがコンパイルで直し漏れを知らせる
+        boolean handled = switch (type.rasterRoute()) {
+            case SCENE -> { itemRaster.drawScene3d(el, rx, ry, res, clip, opacity); yield true; }
+            case TEXTAREA -> { textRaster.drawTextarea(el, anim, res, clip, opacity); yield true; }
+            case RANGE -> { itemRaster.drawRange(el, anim, res, clip, opacity); yield true; }
+            case PROGRESS -> { itemRaster.drawProgress(el, anim, rx, ry, res, clip, opacity); yield true; }
+            case TOGGLE -> { itemRaster.drawToggle(el, anim, res, clip, opacity); yield true; }
+            case IMAGE -> { itemRaster.drawImage(el, rx, ry, res, clip, opacity); yield true; }
+            case TEXT_ALWAYS -> { textRaster.drawText(el, anim, res, clip, opacity); yield true; }
+            case TEXT_IF_ANY -> {
+                boolean any = el.text() != null && !el.text().isEmpty();
+                if (any) textRaster.drawText(el, anim, res, clip, opacity);
+                yield any;
             }
-        }
+            case BORDER_ONLY -> false;
+        };
     }
 
     /** 角ごとの横・縦の半径（左上・右上・右下・左下の順）。要素の箱に収まるよう切り詰める。 */

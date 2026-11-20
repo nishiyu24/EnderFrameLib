@@ -693,10 +693,7 @@ public class DisplayItemDrawer {
 
     /** 使い回しを許す項目の型。入力欄・画像・動画・キャンバス・3D など、外の状態で見た目が変わるものは含めない。 */
     private static boolean isStaticPaint(ElementType type) {
-        return switch (type) {
-            case NODE, RECT, TEXT, CIRCLE_BORDER, ROUNDED_BORDER, BUTTON, A -> true;
-            default -> false;
-        };
+        return !type.drawsToBuffer();
     }
 
     /** 使い回しを考える箱の項目数の上限（調べる費用が描き直しに近づく大きさでは、使い回さない）。 */
@@ -787,10 +784,7 @@ public class DisplayItemDrawer {
 
     /** SDF の Quad ではなくバッファ（文字・画像・3D）へ描く要素か。 */
     private static boolean hasBufferContent(DisplayItem el) {
-        return switch (el.type()) {
-            case CANVAS, SCENE, TEXTAREA, IMAGE, VIDEO, INPUT, SELECT, RANGE, PROGRESS, TOGGLE, CHECKBOX, RADIO -> true;
-            default -> el.text() != null && !el.text().isEmpty();
-        };
+        return el.type().drawsToBuffer() || (el.text() != null && !el.text().isEmpty());
     }
 
     static final int Z_LEVEL_CELL = 4;

@@ -63,13 +63,7 @@ public final class StaticFrameGate {
     /** 時刻や外の事情（読み込み中の画像・動画・キャンバス・3D シーン）で絵が変わりうる項目を含むか。 */
     public static boolean timeDependent(List<DisplayItem> list) {
         for (DisplayItem it : list) {
-            switch (it.type()) {
-                case IMAGE, VIDEO, CANVAS, SCENE -> {
-                    return true;
-                }
-                default -> {
-                }
-            }
+            if (it.type().isExternallyDriven()) return true;
         }
         return false;
     }

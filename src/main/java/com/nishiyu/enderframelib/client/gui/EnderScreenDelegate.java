@@ -260,10 +260,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
     private static boolean shouldConsumePress(SessionInput.PressResult result) {
         if (result == null || result.element() == null) return false;
         if (result.consumed()) return true;
-        return switch (result.element().type()) {
-            case SCENE, TEXTAREA, INPUT, SELECT, RANGE -> true;
-            default -> hasActionFor(result.pressedNode(), result.hostButton());
-        };
+        return result.element().type().capturesPress() || hasActionFor(result.pressedNode(), result.hostButton());
     }
 
     private static boolean hasActionFor(HtmlNode node, int hostButton) {

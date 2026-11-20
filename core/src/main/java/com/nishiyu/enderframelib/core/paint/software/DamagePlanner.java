@@ -534,10 +534,7 @@ final class DamagePlanner {
     }
 
     static boolean volatileItem(DisplayItem el) {
-        return switch (el.type()) {
-            case IMAGE, VIDEO, CANVAS, SCENE, INPUT, TEXTAREA, SELECT, PROGRESS, RANGE -> true;
-            default -> false;
-        };
+        return el.type().isVolatileForDamage();
     }
 
     static boolean groupItem(DisplayItem el) {
