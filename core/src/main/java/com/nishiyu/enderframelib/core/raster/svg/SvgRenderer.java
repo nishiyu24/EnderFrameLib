@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.raster.svg;
 
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
@@ -221,7 +222,7 @@ public final class SvgRenderer {
         String tag = el.tag;
         if (NON_RENDERED.contains(tag)) return;
         boolean isShape = SHAPES.contains(tag);
-        boolean isContainer = tag.equals("g") || tag.equals("a") || tag.equals("svg") || tag.equals("switch");
+        boolean isContainer = tag.equals("g") || ElementTraits.isAnchor(tag) || ElementTraits.isSvg(tag) || tag.equals("switch");
         if (!isShape && !isContainer && !tag.equals("use") && !tag.equals("text")) return;
         Style st = styleFor(el, parent);
         if ("none".equals(st.local("display"))) return;

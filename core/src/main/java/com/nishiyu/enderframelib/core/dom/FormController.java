@@ -30,26 +30,26 @@ public final class FormController {
             com.nishiyu.enderframelib.api.dom.Document ownerDoc = control.getOwnerDocument();
             if (ownerDoc instanceof HtmlDocument doc) {
                 HtmlElement form = (HtmlElement) doc.getElementById(formId);
-                if (form != null && "form".equalsIgnoreCase(form.getTagName())) {
+                if (form != null && ElementTraits.isForm(form.getTagName())) {
                     return form;
                 }
             } else {
                 HtmlNode root = getRoot(control);
                 if (root instanceof HtmlDocument doc) {
                     HtmlElement form = (HtmlElement) doc.getElementById(formId);
-                    if (form != null && "form".equalsIgnoreCase(form.getTagName())) {
+                    if (form != null && ElementTraits.isForm(form.getTagName())) {
                         return form;
                     }
                 } else {
                     HtmlNode found = root.getElementById(formId);
-                    if (found instanceof HtmlElement form && "form".equalsIgnoreCase(form.getTagName())) {
+                    if (found instanceof HtmlElement form && ElementTraits.isForm(form.getTagName())) {
                         return form;
                     }
                 }
             }
         }
         for (HtmlNode cur = control.parent; cur != null; cur = cur.parent) {
-            if (cur instanceof HtmlElement el && "form".equalsIgnoreCase(el.getTagName())) {
+            if (cur instanceof HtmlElement el && ElementTraits.isForm(el.getTagName())) {
                 return el;
             }
         }
@@ -57,7 +57,7 @@ public final class FormController {
     }
 
     public static List<HtmlElement> getFormControls(HtmlElement form) {
-        if (form == null || !"form".equalsIgnoreCase(form.getTagName())) {
+        if (form == null || !ElementTraits.isForm(form.getTagName())) {
             return Collections.emptyList();
         }
         List<HtmlElement> controls = new ArrayList<>();
@@ -101,7 +101,7 @@ public final class FormController {
     }
 
     public static void requestSubmit(HtmlElement form, @Nullable HtmlElement submitter) {
-        if (form == null || !"form".equalsIgnoreCase(form.getTagName())) return;
+        if (form == null || !ElementTraits.isForm(form.getTagName())) return;
 
         if (submitter != null) {
             HtmlElement owner = getFormOwner(submitter);
@@ -134,7 +134,7 @@ public final class FormController {
     }
 
     public static void resetForm(HtmlElement form) {
-        if (form == null || !"form".equalsIgnoreCase(form.getTagName())) return;
+        if (form == null || !ElementTraits.isForm(form.getTagName())) return;
 
         CoreEvent resetEvent = new CoreEvent("reset", true, true);
         form.dispatchEvent(resetEvent);
@@ -146,7 +146,7 @@ public final class FormController {
         List<HtmlElement> controls = getFormControls(form);
         for (HtmlElement control : controls) {
             String tag = control.getTagName().toLowerCase(Locale.ROOT);
-            if ("input".equals(tag)) {
+            if (ElementTraits.isInputTag(tag)) {
                 String type = control.getAttribute("type");
                 String lowerType = type != null ? type.toLowerCase(Locale.ROOT) : "text";
                 if ("checkbox".equals(lowerType) || "radio".equals(lowerType)) {
@@ -163,7 +163,7 @@ public final class FormController {
                         control.removeAttribute("value");
                     }
                 }
-            } else if ("textarea".equals(tag)) {
+            } else if (ElementTraits.isTextarea(tag)) {
                 String initialVal = control.getDefaultValue();
                 if (!initialVal.isEmpty()) {
                     control.setAttribute("value", initialVal);
@@ -185,7 +185,7 @@ public final class FormController {
             if (name == null || name.isEmpty()) continue;
 
             String tag = control.getTagName().toLowerCase(Locale.ROOT);
-            if ("input".equals(tag)) {
+            if (ElementTraits.isInputTag(tag)) {
                 String type = control.getAttribute("type");
                 String lowerType = type != null ? type.toLowerCase(Locale.ROOT) : "text";
                 if ("checkbox".equals(lowerType) || "radio".equals(lowerType)) {
@@ -203,12 +203,12 @@ public final class FormController {
                     String val = control.getAttribute("value");
                     data.append(name, val != null ? val : "");
                 }
-            } else if ("button".equals(tag)) {
+            } else if (ElementTraits.isButton(tag)) {
                 if (control == submitter) {
                     String val = control.getAttribute("value");
                     data.append(name, val != null ? val : "");
                 }
-            } else if ("textarea".equals(tag)) {
+            } else if (ElementTraits.isTextarea(tag)) {
                 String val = control.getAttribute("value");
                 if (val == null) val = control.getTextContent();
                 data.append(name, val != null ? val : "");

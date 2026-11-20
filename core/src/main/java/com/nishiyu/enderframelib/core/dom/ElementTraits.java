@@ -219,6 +219,14 @@ public final class ElementTraits {
         return "label".equalsIgnoreCase(tag);
     }
 
+    public static boolean isSvg(String tag) {
+        return "svg".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isForm(String tag) {
+        return "form".equalsIgnoreCase(tag);
+    }
+
     /** 再生部品（video / audio）。 */
     public static boolean isMediaPlayer(String tag) {
         return "video".equalsIgnoreCase(tag) || "audio".equalsIgnoreCase(tag);

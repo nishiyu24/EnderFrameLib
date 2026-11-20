@@ -165,8 +165,8 @@ class ElementTraitsTest {
         assertEquals(List.of(), offenders, "置換要素の分類は ElementTraits を使う");
     }
 
-    /** 部品のタグ名を文字列で比べるファイルの数の上限（S2 のラチェット）。残りは構文解析・字句・原子表・SVG・セレクタ・フォームの検証と値の取り方。 */
-    private static final int MAX_FILES_COMPARING_TAG_NAMES = 6;
+    /** 部品のタグ名を文字列で比べるファイルの数の上限（S2 のラチェット）。残りは構文解析（HtmlParser。表の外）だけ。 */
+    private static final int MAX_FILES_COMPARING_TAG_NAMES = 1;
 
     @Test
     void filesComparingControlTagNamesOnlyShrink() throws IOException {

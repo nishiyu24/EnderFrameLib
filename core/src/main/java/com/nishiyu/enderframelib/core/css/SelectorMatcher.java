@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.Selector.AttrMatcher;
 import com.nishiyu.enderframelib.core.css.Selector.DocumentPseudoClass;
@@ -320,8 +321,8 @@ public final class SelectorMatcher {
     /** {@code placeholder} を持つ入力欄で、値が空のとき（HTML §4.16.3）。 */
     private static boolean isPlaceholderShown(HtmlNode node) {
         if (!(node instanceof HtmlElement el)) return false;
-        boolean textarea = "textarea".equals(node.tag);
-        boolean input = "input".equals(node.tag) && supportsPlaceholder(inputType(node));
+        boolean textarea = ElementTraits.isTextarea(node.tag);
+        boolean input = ElementTraits.isInputTag(node.tag) && supportsPlaceholder(inputType(node));
         if (!textarea && !input) return false;
         String placeholder = node.attrs.get("placeholder");
         return placeholder != null && !placeholder.isEmpty() && ConstraintValidator.getControlValue(el).isEmpty();
@@ -372,7 +373,7 @@ public final class SelectorMatcher {
      */
     private static Boolean validity(HtmlNode node) {
         if (!(node instanceof HtmlElement el)) return null;
-        if ("form".equals(node.tag) || "fieldset".equals(node.tag)) {
+        if (ElementTraits.isForm(node.tag) || ElementTraits.isFieldset(node.tag)) {
             return allControlsValid(node);
         }
         if (!ConstraintValidator.willValidate(el)) return null;
@@ -391,7 +392,7 @@ public final class SelectorMatcher {
 
     /** 範囲の制約。範囲が当てはまらない要素は null、当てはまるなら範囲内かどうか。 */
     private static Boolean rangeState(HtmlNode node) {
-        if (!(node instanceof HtmlElement el) || !"input".equals(node.tag)) return null;
+        if (!(node instanceof HtmlElement el) || !ElementTraits.isInputTag(node.tag)) return null;
         switch (inputType(node)) {
             case "number", "range", "date", "month", "week", "time", "datetime-local" -> {
             }
@@ -533,7 +534,7 @@ public final class SelectorMatcher {
     }
 
     private static boolean isLink(HtmlNode node) {
-        return ("a".equals(node.tag) || "area".equals(node.tag)) && node.attrs.containsKey("href");
+        return (ElementTraits.isAnchor(node.tag) || "area".equals(node.tag)) && node.attrs.containsKey("href");
     }
 
     /** :enabled / :disabled の対象（HTML §4.16.3 の「無効にできる」要素）。 */

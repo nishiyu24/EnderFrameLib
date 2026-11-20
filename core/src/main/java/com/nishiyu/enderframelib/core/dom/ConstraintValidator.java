@@ -66,7 +66,7 @@ public final class ConstraintValidator {
         }
         if (element.hasAttribute("disabled")) return false;
 
-        if (tag.equals("input")) {
+        if (ElementTraits.isInputTag(tag)) {
             String type = element.getAttribute("type");
             String lowerType = type != null ? type.toLowerCase(Locale.ROOT) : "text";
             if (lowerType.equals("hidden") || lowerType.equals("reset") || lowerType.equals("button")) {
@@ -74,9 +74,9 @@ public final class ConstraintValidator {
             }
             // readonly が効く種類（値を打ち込む入力欄）は、readonly だと制約検証の対象から外れる
             if (element.hasAttribute("readonly") && supportsReadonly(lowerType)) return false;
-        } else if (tag.equals("textarea")) {
+        } else if (ElementTraits.isTextarea(tag)) {
             if (element.hasAttribute("readonly")) return false;
-        } else if (tag.equals("button")) {
+        } else if (ElementTraits.isButton(tag)) {
             String type = element.getAttribute("type");
             String lowerType = type != null ? type.toLowerCase(Locale.ROOT) : "submit";
             if (lowerType.equals("reset") || lowerType.equals("button")) {
@@ -112,7 +112,7 @@ public final class ConstraintValidator {
 
         String tag = element.getTagName().toLowerCase(Locale.ROOT);
         String type = element.getAttribute("type");
-        String lowerType = type != null ? type.toLowerCase(Locale.ROOT) : (tag.equals("input") ? "text" : tag);
+        String lowerType = type != null ? type.toLowerCase(Locale.ROOT) : (ElementTraits.isInputTag(tag) ? "text" : tag);
         String val = getControlValue(element);
         boolean empty = val.isEmpty();
 
@@ -122,7 +122,7 @@ public final class ConstraintValidator {
                 valueMissing = !element.hasAttribute("checked");
             } else if ("radio".equals(lowerType)) {
                 valueMissing = !radioGroupHasChecked(element);
-            } else if ("select".equals(tag)) {
+            } else if (ElementTraits.isSelect(tag)) {
                 valueMissing = empty;
             } else {
                 valueMissing = empty;
@@ -252,7 +252,7 @@ public final class ConstraintValidator {
     }
 
     private static void collectRadiosByName(HtmlNode node, String name, List<HtmlElement> out) {
-        if (node instanceof HtmlElement el && "input".equalsIgnoreCase(el.getTagName())) {
+        if (node instanceof HtmlElement el && ElementTraits.isInputTag(el.getTagName())) {
             if ("radio".equalsIgnoreCase(el.getAttribute("type")) && name.equals(el.getAttribute("name"))) {
                 out.add(el);
             }
@@ -264,7 +264,7 @@ public final class ConstraintValidator {
 
     public static String getControlValue(HtmlElement element) {
         String tag = element.getTagName().toLowerCase(Locale.ROOT);
-        if ("textarea".equals(tag)) {
+        if (ElementTraits.isTextarea(tag)) {
             String val = element.getAttribute("value");
             return val != null ? val : (element.getTextContent() != null ? element.getTextContent() : "");
         }
@@ -277,8 +277,8 @@ public final class ConstraintValidator {
     }
 
     private static boolean supportsPattern(String tag, String type) {
-        if ("textarea".equals(tag)) return true;
-        if (!"input".equals(tag)) return false;
+        if (ElementTraits.isTextarea(tag)) return true;
+        if (!ElementTraits.isInputTag(tag)) return false;
         return switch (type) {
             case "text", "search", "url", "tel", "email", "password" -> true;
             default -> false;

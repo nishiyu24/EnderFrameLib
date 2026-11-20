@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.raster.svg;
 
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
@@ -140,7 +141,7 @@ public final class SvgImage {
     }
 
     private static HtmlNode findSvg(HtmlNode n) {
-        if (n.nodeType == NodeType.ELEMENT && "svg".equals(n.tag)) return n;
+        if (n.nodeType == NodeType.ELEMENT && ElementTraits.isSvg(n.tag)) return n;
         for (HtmlNode c : n.children) {
             HtmlNode f = findSvg(c);
             if (f != null) return f;
