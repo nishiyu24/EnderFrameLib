@@ -1686,16 +1686,12 @@ public class LayoutBox {
         public static final Display HIDDEN = new Display(Outer.NONE, Inner.NONE, false);
         public static final Display CONTENTS = new Display(Outer.CONTENTS, Inner.NONE, false);
 
-        /** {@code display} の宣言が無いときにインラインとして扱うタグ（従来の推測と同じ一覧）。 */
-        private static final Set<String> INLINE_TAGS = Set.of(
-                "br", "span", "a", "b", "i", "strong", "em", "img", "canvas", "svg", "input", "button", "select", "progress");
-
         /** 箱の display。テキストは常にインライン、宣言が無い・解釈できない値はタグから推測する。 */
         public static Display of(HtmlNode node, ComputedStyle style) {
             if (node.nodeType == NodeType.TEXT) return INLINE;
             Display parsed = parse(style.get(CssPropertyIndex.DISPLAY));
             if (parsed != null) return parsed;
-            return INLINE_TAGS.contains(node.tag) || ReplacedElements.isHost(node.tag) ? INLINE : BLOCK;
+            return com.nishiyu.enderframelib.core.dom.ElementTraits.isDefaultInline(node.tag) || ReplacedElements.isHost(node.tag) ? INLINE : BLOCK;
         }
 
         /** 1 キーワードの旧構文と、{@code block flow-root} / {@code inline flex} などの複数キーワード構文を読む。 */

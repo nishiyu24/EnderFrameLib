@@ -316,7 +316,7 @@ public final class BoxMeasurer {
                     ? intrinsic[0] + box.horizontalDecoration()
                     : replacedFallbackWidth(box, ctx) + box.horizontalDecoration();
             box.sizingMode = SizingMode.DEFINITE;
-        } else if (tag.equals("input") || tag.equals("select") || tag.equals("progress")) {
+        } else if (com.nishiyu.enderframelib.core.dom.ElementTraits.isControlSizedByContent(tag)) {
             box.w = box.getMinContentWidth(ctx);
             box.sizingMode = SizingMode.DEFINITE;
         } else if (box.isAbsolute && hasBothInsets(style, CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT)) {
@@ -651,7 +651,7 @@ public final class BoxMeasurer {
     }
 
     static boolean isReplacedImage(String tag) {
-        return tag.equals("img") || ReplacedElements.isHostImageLike(tag) || tag.equals("canvas") || tag.equals("svg");
+        return com.nishiyu.enderframelib.core.dom.ElementTraits.isBuiltinReplacedImage(tag) || ReplacedElements.isHostImageLike(tag);
     }
 
     /**

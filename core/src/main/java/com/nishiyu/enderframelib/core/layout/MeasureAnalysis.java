@@ -94,7 +94,7 @@ final class MeasureAnalysis {
         String tag = box.node.tag;
         return box.node.nodeType == NodeType.TEXT
                 || BoxMeasurer.isReplacedImage(tag) || ReplacedElements.isHostScene(tag)
-                || "input".equals(tag) || "select".equals(tag) || "progress".equals(tag);
+                || com.nishiyu.enderframelib.core.dom.ElementTraits.isControlSizedByContent(tag);
     }
 
     static boolean allChildrenWidthInvariantForFill(LayoutBox box, LayoutBox.Display.Inner inner) {
@@ -127,8 +127,7 @@ final class MeasureAnalysis {
     }
 
     static boolean isFillWidthExcludedTag(String tag) {
-        return tag == null || tag.equals("img") || tag.equals("svg") || tag.equals("canvas")
-                || tag.equals("input") || tag.equals("select") || tag.equals("progress")
+        return tag == null || com.nishiyu.enderframelib.core.dom.ElementTraits.isBuiltinReplacedImage(tag) || com.nishiyu.enderframelib.core.dom.ElementTraits.isControlSizedByContent(tag)
                 || ReplacedElements.isHostImageLike(tag) || ReplacedElements.isHostScene(tag);
     }
 

@@ -50,6 +50,35 @@ public final class ElementTraits {
         };
     }
 
+    /** 幅を最小内容幅（既定の部品の幅）で決める部品（input / select / progress）。 */
+    public static boolean isControlSizedByContent(String tag) {
+        return switch (tag == null ? "" : tag) {
+            case "input", "select", "progress" -> true;
+            default -> false;
+        };
+    }
+
+    /** 標準の置換画像（img / canvas / svg）。ホストが足す画像相当は {@code ReplacedElements} が持つ。 */
+    public static boolean isBuiltinReplacedImage(String tag) {
+        return switch (tag == null ? "" : tag) {
+            case "img", "canvas", "svg" -> true;
+            default -> false;
+        };
+    }
+
+    /** 標準の置換メディア（画像・video・iframe）。 */
+    public static boolean isBuiltinReplacedMedia(String tag) {
+        return isBuiltinReplacedImage(tag) || "video".equals(tag) || "iframe".equals(tag);
+    }
+
+    /** {@code display} の宣言が無いときにインラインとして扱うタグ。ホスト登録の置換要素は {@code ReplacedElements} が足す。 */
+    public static boolean isDefaultInline(String tag) {
+        return switch (tag == null ? "" : tag) {
+            case "br", "span", "a", "b", "i", "strong", "em", "img", "canvas", "svg", "input", "button", "select", "progress" -> true;
+            default -> false;
+        };
+    }
+
     /** 数値の表示部品（progress / meter）。 */
     public static boolean isGauge(String tag) {
         return switch (lower(tag)) {

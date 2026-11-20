@@ -42,6 +42,20 @@ class ElementTraitsTest {
     }
 
     @Test
+    void replacedSizingSets() {
+        for (String t : List.of("input", "select", "progress")) assertTrue(ElementTraits.isControlSizedByContent(t), t);
+        for (String t : List.of("textarea", "button", "img", "meter", "")) assertFalse(ElementTraits.isControlSizedByContent(t), t);
+        assertFalse(ElementTraits.isControlSizedByContent(null));
+        for (String t : List.of("img", "canvas", "svg")) assertTrue(ElementTraits.isBuiltinReplacedImage(t), t);
+        for (String t : List.of("video", "iframe", "picture", "input")) assertFalse(ElementTraits.isBuiltinReplacedImage(t), t);
+        for (String t : List.of("img", "canvas", "svg", "video", "iframe")) assertTrue(ElementTraits.isBuiltinReplacedMedia(t), t);
+        assertFalse(ElementTraits.isBuiltinReplacedMedia("audio"));
+        assertFalse(ElementTraits.isBuiltinReplacedMedia(null));
+        for (String t : List.of("span", "a", "img", "input", "button", "br")) assertTrue(ElementTraits.isDefaultInline(t), t);
+        for (String t : List.of("div", "p", "textarea", "video", "")) assertFalse(ElementTraits.isDefaultInline(t), t);
+    }
+
+    @Test
     void checkableTextAndRadioDependOnType() {
         assertTrue(ElementTraits.isCheckable(el("input", "type", "Checkbox")));
         assertTrue(ElementTraits.isCheckable(el("input", "type", "radio")));
@@ -79,5 +93,26 @@ class ElementTraitsTest {
             }
         }
         assertEquals(List.of(), offenders, "フォーム部品の列挙は ElementTraits を使う");
+    }
+
+    /** レイアウトの置換要素の判定（img/svg/canvas・input/select/progress の列挙）を表の外で書き直さない。 */
+    @Test
+    void noDuplicatedReplacedEnumerationInLayout() throws IOException {
+        Path root = Path.of("core/src/main/java/com/nishiyu/enderframelib/core/layout");
+        if (!Files.isDirectory(root)) root = Path.of("src/main/java/com/nishiyu/enderframelib/core/layout");
+        List<String> offenders = new ArrayList<>();
+        try (Stream<Path> s = Files.walk(root)) {
+            for (Path p : (Iterable<Path>) s.filter(f -> f.toString().endsWith(".java"))::iterator) {
+                if (p.getFileName().toString().equals("ReplacedElements.java")) continue; // 置換要素の台帳そのもの
+                List<String> lines = Files.readAllLines(p);
+                for (int i = 0; i < lines.size(); i++) {
+                    String l = lines.get(i);
+                    boolean media = l.contains("\"svg\"") && l.contains("\"canvas\"") && l.contains("\"img\"");
+                    boolean control = l.contains("\"input\"") && l.contains("\"select\"") && l.contains("\"progress\"");
+                    if (media || control) offenders.add(p + ":" + (i + 1));
+                }
+            }
+        }
+        assertEquals(List.of(), offenders, "置換要素の分類は ElementTraits を使う");
     }
 }

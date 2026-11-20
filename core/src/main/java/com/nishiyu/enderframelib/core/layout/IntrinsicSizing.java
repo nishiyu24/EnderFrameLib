@@ -86,8 +86,7 @@ final class IntrinsicSizing {
         }
 
         if (box.children.isEmpty()) {
-            if (!ReplacedElements.isReplacedTag(box.node.tag) && !box.node.tag.equals("canvas") && !box.node.tag.equals("svg")
-                    && !box.node.tag.equals("img") && !box.node.tag.equals("video") && !box.node.tag.equals("iframe")) {
+            if (!ReplacedElements.isReplacedTag(box.node.tag) && !com.nishiyu.enderframelib.core.dom.ElementTraits.isBuiltinReplacedMedia(box.node.tag)) {
                 return box.horizontalDecoration();
             }
             float image = BoxMeasurer.replacedImageWidth(box, ctx);
