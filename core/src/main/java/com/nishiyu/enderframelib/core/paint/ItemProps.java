@@ -469,7 +469,7 @@ final class ItemProps {
         if (com.nishiyu.enderframelib.core.dom.ElementTraits.isClickActivated(tag) && !partsEvents.containsKey("onclick")) {
             partsEvents.put("onclick", id);
         }
-        if ("label".equals(tag) && box.node.attrs.containsKey("for") && !partsEvents.containsKey("onclick")) {
+        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isLabel(tag) && box.node.attrs.containsKey("for") && !partsEvents.containsKey("onclick")) {
             partsEvents.put("onclick", "label_for:" + box.node.attrs.get("for"));
         }
         return partsEvents;

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.core.media.ImageChoice;
 import com.nishiyu.enderframelib.core.media.ImageSources;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
@@ -72,7 +73,7 @@ final class ControlPainter {
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         // img は srcset / sizes から密度に合う候補を選ぶ（無ければ src）
-        ImageChoice chosen = "img".equals(box.node.tag)
+        ImageChoice chosen = ElementTraits.isImage(box.node.tag)
                 ? ImageSources.forImg(box.node.attrs, decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
         String src = box.style.getOrDefault(CssPropertyIndex.SRC, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
         com.nishiyu.enderframelib.core.dom.CustomElementPainter hostPainter =
@@ -80,8 +81,8 @@ final class ControlPainter {
         if (hostPainter != null) src = hostPainter.resolveSrc(box.node.attrs, src);
 
         String tag = box.node.tag;
-        boolean gif = "img".equals(tag) && isRemoteGif(src);
-        ElementType type = "video".equals(tag) || "audio".equals(tag) || gif ? ElementType.VIDEO : ElementType.IMAGE;
+        boolean gif = ElementTraits.isImage(tag) && isRemoteGif(src);
+        ElementType type = ElementTraits.isMediaPlayer(tag) || gif ? ElementType.VIDEO : ElementType.IMAGE;
         ItemProps mediaEvents = partsEvents;
         if (type == ElementType.VIDEO) {
             mediaEvents = partsEvents.copy();
@@ -108,7 +109,7 @@ final class ControlPainter {
         float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
 
         // SVG は固有サイズ（viewBox）の縦横比で、描く大きさのビットマップにしてから置く。届くまでは何も描かない
-        if ("img".equals(box.node.tag) && SvgImage.looksLikeSvg(src)) {
+        if (ElementTraits.isImage(box.node.tag) && SvgImage.looksLikeSvg(src)) {
             SvgImage svg = PaintServices.svg(src);
             src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color, decor.devicePixelRatio(), svg.sheet());
         }
@@ -119,7 +120,7 @@ final class ControlPainter {
             imageEvents.put("object-position", position);
         }
         String hitAlpha = box.node.attrs.get("data-hit-alpha");
-        if (hitAlpha != null && ("img".equals(box.node.tag))) {
+        if (hitAlpha != null && (ElementTraits.isImage(box.node.tag))) {
             // 透明な部分のクリックを下へ通す（既定の閾値は半透明 = 128。値で 0〜255 を指定できる）
             if (imageEvents == mediaEvents) imageEvents = mediaEvents.copy();
             imageEvents.put("hit-alpha", hitAlpha.isBlank() ? "128" : hitAlpha.trim());

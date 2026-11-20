@@ -323,7 +323,7 @@ public final class BoxTreeBuilder {
                 LayoutBox.bumpShapeEpoch();
             }
         }
-        if (!"fieldset".equals(box.node.tag)) return null;
+        if (!com.nishiyu.enderframelib.core.dom.ElementTraits.isFieldset(box.node.tag)) return null;
         LayoutBox found = null;
         for (LayoutBox item : items) {
             if ("legend".equals(item.node.tag) && !item.node.isPseudoNode) {
@@ -906,12 +906,12 @@ public final class BoxTreeBuilder {
 
             Map<String, Integer> resets = parseCounterList(style.get(CssPropertyIndex.COUNTER_RESET), 0);
             // <ol start> は list-item の初期値を変える表示上のヒント（HTML の Rendering 節）
-            if (resets.containsKey(LIST_ITEM) && "ol".equalsIgnoreCase(node.tag) && node.attrs.containsKey("start")) {
+            if (resets.containsKey(LIST_ITEM) && com.nishiyu.enderframelib.core.dom.ElementTraits.isOrderedList(node.tag) && node.attrs.containsKey("start")) {
                 Integer start = parseInt(node.attrs.get("start"));
                 if (start != null) resets.put(LIST_ITEM, start - 1);
             }
             // <ol reversed> は項目数（start があればその値）から 1 ずつ減らす。最初の項目の減算の前に 1 足しておく
-            boolean reversed = resets.containsKey(LIST_ITEM) && "ol".equalsIgnoreCase(node.tag) && node.attrs.containsKey("reversed");
+            boolean reversed = resets.containsKey(LIST_ITEM) && com.nishiyu.enderframelib.core.dom.ElementTraits.isOrderedList(node.tag) && node.attrs.containsKey("reversed");
             if (reversed) {
                 Integer start = node.attrs.containsKey("start") ? parseInt(node.attrs.get("start")) : null;
                 resets.put(LIST_ITEM, (start != null ? start : listItemChildren(node)) + 1);

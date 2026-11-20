@@ -164,4 +164,31 @@ class ElementTraitsTest {
         }
         assertEquals(List.of(), offenders, "置換要素の分類は ElementTraits を使う");
     }
+
+    /** 部品のタグ名を文字列で比べるファイルの数の上限（S2 のラチェット）。残りは構文解析・字句・原子表・SVG・セレクタ・フォームの検証と値の取り方。 */
+    private static final int MAX_FILES_COMPARING_TAG_NAMES = 6;
+
+    @Test
+    void filesComparingControlTagNamesOnlyShrink() throws IOException {
+        Path root = Path.of("core/src/main/java");
+        if (!Files.isDirectory(root)) root = Path.of("src/main/java");
+        List<String> tags = List.of("img", "input", "textarea", "select", "button", "canvas", "video", "audio", "svg", "iframe",
+                "progress", "meter", "details", "summary", "fieldset", "option", "label");
+        java.util.TreeSet<String> files = new java.util.TreeSet<>();
+        try (Stream<Path> s = Files.walk(root)) {
+            for (Path p : (Iterable<Path>) s.filter(f -> f.toString().endsWith(".java"))::iterator) {
+                String fn = p.getFileName().toString();
+                if (fn.equals("ElementTraits.java") || fn.equals("ElementSizing.java") || fn.equals("ReplacedElements.java")) continue;
+                for (String l : Files.readAllLines(p)) {
+                    if (!l.contains(".equals") || !(l.contains("tag") || l.contains("Tag"))) continue;
+                    for (String t : tags) {
+                        if (l.contains("\"" + t + "\"")) { files.add(fn); break; }
+                    }
+                }
+            }
+        }
+        assertTrue(files.size() <= MAX_FILES_COMPARING_TAG_NAMES,
+                "部品のタグ名を文字列で比べるファイルが増えた: " + files.size() + " > " + MAX_FILES_COMPARING_TAG_NAMES + " " + files
+                        + " （ElementTraits / ElementSizing に分類を足して、そこを引く）");
+    }
 }

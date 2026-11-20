@@ -438,9 +438,9 @@ public final class BoxDecorationPainter {
                                          int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows,
                                          List<DisplayItem> prevItems) {
         ElementType bgType = ElementType.RECT;
-        if ("button".equalsIgnoreCase(box.node.tag)) {
+        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isButton(box.node.tag)) {
             bgType = ElementType.BUTTON;
-        } else if ("a".equalsIgnoreCase(box.node.tag)) {
+        } else if (com.nishiyu.enderframelib.core.dom.ElementTraits.isAnchor(box.node.tag)) {
             bgType = ElementType.A;
         }
         boolean isInteractiveBox = bgType != ElementType.RECT;
@@ -770,7 +770,7 @@ public final class BoxDecorationPainter {
 
     void drawBorder(List<DisplayItem> elements, String id, LayoutBox box, float rOff, ItemProps events,
                             BorderSpec border, RenderMeta meta, int transDur, List<DisplayItem> prevItems) {
-        LayoutBox legend = "fieldset".equals(box.node.tag) ? box.renderedLegend() : null;
+        LayoutBox legend = com.nishiyu.enderframelib.core.dom.ElementTraits.isFieldset(box.node.tag) ? box.renderedLegend() : null;
         if (legend != null && border.hasBorder()) {
             drawBorderAroundLegend(elements, id, box, legend, rOff, events, border, meta, transDur);
             return;

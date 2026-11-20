@@ -682,7 +682,7 @@ public final class BoxMeasurer {
     }
 
     private static float replacedFallbackWidth(LayoutBox box, LayoutContext ctx) {
-        ImageChoice sel = "img".equals(box.node.tag) ? selectedImage(box, ctx) : null;
+        ImageChoice sel = com.nishiyu.enderframelib.core.dom.ElementTraits.isImage(box.node.tag) ? selectedImage(box, ctx) : null;
         String src = sel != null ? sel.url() : box.node.attrs.getOrDefault("src", "");
         boolean pending = isRemote(src) || SvgImage.looksLikeSvg(src);
         return pending ? LayoutMetrics.PENDING_IMAGE_SIZE : LayoutMetrics.FALLBACK_REPLACED_SIZE;
@@ -708,7 +708,7 @@ public final class BoxMeasurer {
         if (MulticolLayout.isMulticol(box)) return true;
         // 直交フロー（縦書き根・縦中横・ラッパー）および fieldset 等は独立した整形コンテキストを作る（CSS Writing Modes §7.1 / HTML §15.3.13）
         if (box.isVerticalWrapper || box.isVerticalRoot || box.isHorizontalReturnRoot
-                || box.isAbsolute || box.isRenderedLegend || "fieldset".equals(box.node.tag)) return true;
+                || box.isAbsolute || box.isRenderedLegend || com.nishiyu.enderframelib.core.dom.ElementTraits.isFieldset(box.node.tag)) return true;
         StyleFacts facts = box.axisStyle().layoutFacts();
         if (facts.floating) return true;
         // flex / grid アイテムは自分の中に独立した整形コンテキストを作る

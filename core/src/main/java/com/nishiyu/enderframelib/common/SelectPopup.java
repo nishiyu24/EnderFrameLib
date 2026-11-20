@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -95,11 +96,11 @@ public final class SelectPopup {
 
     private static void collect(HtmlNode select, List<Option> out) {
         for (HtmlNode child : select.children) {
-            if ("option".equalsIgnoreCase(child.tag)) {
+            if (ElementTraits.isOption(child.tag)) {
                 addOption(child, out, false);
             } else if ("optgroup".equalsIgnoreCase(child.tag)) {
                 boolean groupOff = child.attrs.containsKey("disabled");
-                for (HtmlNode o : child.children) if ("option".equalsIgnoreCase(o.tag)) addOption(o, out, groupOff);
+                for (HtmlNode o : child.children) if (ElementTraits.isOption(o.tag)) addOption(o, out, groupOff);
             }
         }
     }

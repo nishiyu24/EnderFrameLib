@@ -169,6 +169,61 @@ public final class ElementTraits {
         return node != null && "input".equalsIgnoreCase(node.tag) && "radio".equalsIgnoreCase(node.attrs.get("type"));
     }
 
+    // ── 役割ごとの名前つきの判定（タグ名の文字列比較を各段に書かせない。大文字小文字は区別しない） ──
+
+    public static boolean isTextarea(String tag) {
+        return "textarea".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isSelect(String tag) {
+        return "select".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isOption(String tag) {
+        return "option".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isDetails(String tag) {
+        return "details".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isSummary(String tag) {
+        return "summary".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isFieldset(String tag) {
+        return "fieldset".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isOrderedList(String tag) {
+        return "ol".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isImage(String tag) {
+        return "img".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isButton(String tag) {
+        return "button".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isAnchor(String tag) {
+        return "a".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isInputTag(String tag) {
+        return "input".equalsIgnoreCase(tag);
+    }
+
+    public static boolean isLabel(String tag) {
+        return "label".equalsIgnoreCase(tag);
+    }
+
+    /** 再生部品（video / audio）。 */
+    public static boolean isMediaPlayer(String tag) {
+        return "video".equalsIgnoreCase(tag) || "audio".equalsIgnoreCase(tag);
+    }
+
     private static String lower(String tag) {
         return tag == null ? "" : tag.toLowerCase(Locale.ROOT);
     }

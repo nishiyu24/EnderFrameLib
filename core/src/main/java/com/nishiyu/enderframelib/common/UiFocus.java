@@ -97,10 +97,9 @@ public final class UiFocus {
         if (box != null && focusable && (tab == null || tab >= 0) && !node.key().isEmpty()) {
             out.add(new Candidate(node, items.get(node.key()), tab != null ? tab : 0, order[0]++));
         }
-        String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
-        boolean closedDetails = tag.equals("details") && !node.attrs.containsKey("open");
+        boolean open = node.attrs.containsKey("open");
         for (HtmlNode child : node.children) {
-            if (closedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
+            if (com.nishiyu.enderframelib.core.dom.ElementTraits.isHiddenByClosedDetails(node, open, child)) continue;
             collect(ui, layout, child, items, out, order);
         }
     }

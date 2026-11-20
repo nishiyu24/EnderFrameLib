@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.dom.parser;
 
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.*;
 import com.nishiyu.enderframelib.core.dom.node.*;
 
@@ -47,7 +48,7 @@ public class DomUtils {
 
     private static void clearRadioGroupRecursive(HtmlNode current, String groupName, HtmlNode keepNode) {
         if (current != keepNode
-                && "input".equalsIgnoreCase(current.tag)
+                && ElementTraits.isInputTag(current.tag)
                 && "radio".equalsIgnoreCase(current.attrs.getOrDefault("type", ""))
                 && groupName.equals(current.attrs.get("name"))) {
             if (current.attrs.containsKey("checked")) {
@@ -127,7 +128,7 @@ public class DomUtils {
         String val = currentVal != null ? currentVal : selectNode.attrs.getOrDefault("value", "");
         String firstLabel = null;
         for (HtmlNode child : selectNode.children) {
-            if ("option".equalsIgnoreCase(child.tag)) {
+            if (ElementTraits.isOption(child.tag)) {
                 String optVal = child.attrs.getOrDefault("value", child.getTextContent().trim());
                 String optLabel = child.getTextContent().trim();
                 if (firstLabel == null) firstLabel = optLabel.isEmpty() ? optVal : optLabel;

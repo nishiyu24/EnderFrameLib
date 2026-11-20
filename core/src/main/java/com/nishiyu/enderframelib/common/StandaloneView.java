@@ -478,7 +478,7 @@ public final class StandaloneView implements AutoCloseable {
                         st.anchor = w[0];
                         st.caret = w[1];
                     } else if (count >= 3) {
-                        int[] l = "textarea".equalsIgnoreCase(focusable.tag)
+                        int[] l = ElementTraits.isTextarea(focusable.tag)
                                 ? TextEditing.lineRange(text, at) : new int[]{0, text.length()};
                         st.anchor = l[0];
                         st.caret = l[1];
@@ -488,7 +488,7 @@ public final class StandaloneView implements AutoCloseable {
                 }
                 dragField = count >= 2 ? null : focusable; // 単語・行の選択はドラッグで崩さない
                 redraw = true;
-            } else if (focusable != null && "select".equalsIgnoreCase(focusable.tag)) {
+            } else if (focusable != null && ElementTraits.isSelect(focusable.tag)) {
                 openSelect(focusable);
             }
             return;
@@ -718,7 +718,7 @@ public final class StandaloneView implements AutoCloseable {
             editKey(focused, key, mods, enter, ev);
             return;
         }
-        if ("select".equalsIgnoreCase(focused.tag)) {
+        if (ElementTraits.isSelect(focused.tag)) {
             if (enter || key == Keys.SPACE || key == Keys.UP || key == Keys.DOWN) openSelect(focused);
             return;
         }
@@ -727,9 +727,8 @@ public final class StandaloneView implements AutoCloseable {
             if (to != null) ui.setFocusedElement(to.key(), true);
             return;
         }
-        String tag = focused.tag != null ? focused.tag.toLowerCase(Locale.ROOT) : "";
-        boolean activates = tag.equals("a") ? enter
-                : (tag.equals("button") || isCheckable(focused)) && (enter || key == Keys.SPACE);
+        boolean activates = ElementTraits.isAnchor(focused.tag) ? enter
+                : (ElementTraits.isButton(focused.tag) || isCheckable(focused)) && (enter || key == Keys.SPACE);
         if (activates && !focused.attrs.containsKey("disabled")) {
             input.dispatchClick(focused, 0, 0, 0, null, linkSink);
         }
@@ -820,7 +819,7 @@ public final class StandaloneView implements AutoCloseable {
     }
 
     private void editKey(HtmlNode field, int key, int mods, boolean enter, UIEvents.Keyboard ev) {
-        boolean multiline = "textarea".equalsIgnoreCase(field.tag);
+        boolean multiline = ElementTraits.isTextarea(field.tag);
         if (enter && !multiline) {
             input.submitInput(field.key(), valueOf(field)); // change を送る
             StandardDefaultActions.execute(ev, new DefaultActionContext() { // 暗黙のフォーム送信
@@ -929,7 +928,7 @@ public final class StandaloneView implements AutoCloseable {
     /** テキスト欄の表示項目（{@code _input} / {@code _textarea}）。 */
     private DisplayItem fieldItem(HtmlNode field) {
         String id = field.key();
-        String part = "textarea".equalsIgnoreCase(field.tag) ? "_textarea" : "_input";
+        String part = ElementTraits.isTextarea(field.tag) ? "_textarea" : "_input";
         for (DisplayItem it : items) {
             if (it.baseId().equals(id) && it.isPart(part)) return DisplayItem.resolveAbsolute(items, it);
         }
@@ -970,7 +969,7 @@ public final class StandaloneView implements AutoCloseable {
         if (face == null) return -1;
         String text = valueOf(field);
         FontStyle style = styleOf(el, fontPx(el));
-        if (!"textarea".equalsIgnoreCase(field.tag)) {
+        if (!ElementTraits.isTextarea(field.tag)) {
             return OutlineFontFace.nearestBoundary(text, face.positions(text, style), px - (el.x() + 4f));
         }
         String[] lines = text.split("\n", -1);
@@ -991,7 +990,7 @@ public final class StandaloneView implements AutoCloseable {
         TextEditing.State st = editState(field);
         String text = valueOf(field);
         FontStyle style = styleOf(el, fontPx(el));
-        boolean area = "textarea".equalsIgnoreCase(field.tag);
+        boolean area = ElementTraits.isTextarea(field.tag);
         float glyphH = face.ascent(style) + face.descent(style);
         float lineH = area ? (el.meta() != null ? el.meta() : RenderMeta.EMPTY).resolvedLineHeight() : el.height();
         float left = el.x() + 4f, right = el.x() + el.width() - 4f;

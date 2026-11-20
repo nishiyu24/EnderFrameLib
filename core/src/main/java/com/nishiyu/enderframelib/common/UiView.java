@@ -2106,7 +2106,7 @@ public class UiView implements AutoCloseable {
 
         HtmlNode target = findNode(baseId);
         boolean isRange = target != null && "range".equalsIgnoreCase(target.attrs.getOrDefault("type", ""));
-        boolean isSelect = target != null && "select".equalsIgnoreCase(target.tag);
+        boolean isSelect = target != null && com.nishiyu.enderframelib.core.dom.ElementTraits.isSelect(target.tag);
 
         String domValue = safeText;
         if (isRange && safeText.contains(":")) {

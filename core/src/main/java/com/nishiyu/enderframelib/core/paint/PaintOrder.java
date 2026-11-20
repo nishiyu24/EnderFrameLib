@@ -838,7 +838,7 @@ public final class PaintOrder {
     void classify(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
                   boolean ancestorMoving) {
         if (box.display().isNone() || factsOf(box.style).displayNone()) return;
-        if ("option".equalsIgnoreCase(box.node.tag)) return;
+        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isOption(box.node.tag)) return;
         boolean selfOrAncestorMoving = ancestorMoving || (box.style != null && factsOf(box.style).hasMovingProps());
         // 記録の途中（部分木の中）では、中の箱を別に保持しない
         if (chunksOn && recording == null && tryChunk(box, clip, parentId, sc, local, selfOrAncestorMoving)) return;

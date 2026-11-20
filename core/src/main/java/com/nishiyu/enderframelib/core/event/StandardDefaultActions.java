@@ -53,7 +53,7 @@ public class StandardDefaultActions {
 
         // 1. summary / details
         HtmlNode summaryNode = findSelfOrAncestor(target, "summary");
-        if (summaryNode != null && summaryNode.parent != null && "details".equalsIgnoreCase(summaryNode.parent.tag)) {
+        if (summaryNode != null && summaryNode.parent != null && ElementTraits.isDetails(summaryNode.parent.tag)) {
             HtmlNode details = summaryNode.parent;
             boolean wasOpen = details.attrs.containsKey("open");
             if (wasOpen) {
@@ -91,7 +91,7 @@ public class StandardDefaultActions {
         }
 
         // 3. input[type=checkbox] / input[type=radio]
-        if ("input".equalsIgnoreCase(target.tag)) {
+        if (ElementTraits.isInputTag(target.tag)) {
             String inputType = target.attrs.getOrDefault("type", "text").toLowerCase(Locale.ROOT);
             if ("checkbox".equals(inputType)) {
                 boolean wasChecked = target.attrs.containsKey("checked");
@@ -131,8 +131,8 @@ public class StandardDefaultActions {
         }
 
         // 4. button[type=submit] / button[type=reset] / input[type=submit] / input[type=reset]
-        boolean isButton = "button".equalsIgnoreCase(target.tag);
-        boolean isInputBtn = "input".equalsIgnoreCase(target.tag)
+        boolean isButton = ElementTraits.isButton(target.tag);
+        boolean isInputBtn = ElementTraits.isInputTag(target.tag)
                 && ("submit".equalsIgnoreCase(target.attrs.get("type")) || "reset".equalsIgnoreCase(target.attrs.get("type")));
 
         if (isButton || isInputBtn) {
@@ -189,7 +189,7 @@ public class StandardDefaultActions {
             }
             if ("Enter".equals(key)) {
                 // 入力欄での Enter キーによる暗黙の送信 (Implicit submission)
-                if ("input".equalsIgnoreCase(target.tag)) {
+                if (ElementTraits.isInputTag(target.tag)) {
                     String inputType = target.attrs.getOrDefault("type", "text").toLowerCase(Locale.ROOT);
                     if ("text".equals(inputType) || "search".equals(inputType) || "url".equals(inputType)
                             || "email".equals(inputType) || "password".equals(inputType)) {
@@ -207,7 +207,7 @@ public class StandardDefaultActions {
     private static HtmlNode popoverInvoker(HtmlNode target) {
         for (HtmlNode cur = target; cur != null; cur = cur.parent) {
             if (cur.attrs != null && cur.attrs.containsKey("popovertarget")
-                    && ("button".equalsIgnoreCase(cur.tag) || "input".equalsIgnoreCase(cur.tag))) return cur;
+                    && (ElementTraits.isButton(cur.tag) || ElementTraits.isInputTag(cur.tag))) return cur;
         }
         return null;
     }
@@ -261,8 +261,7 @@ public class StandardDefaultActions {
 
     private static boolean isNaturallyFocusable(HtmlNode node) {
         if (node == null) return false;
-        String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
-        if ("a".equals(tag) && node.attrs.containsKey("href")) return true;
+        if (ElementTraits.isAnchor(node.tag) && node.attrs.containsKey("href")) return true;
         return isFormControl(node);
     }
 

@@ -1102,7 +1102,7 @@ public class RenderPipeline {
                 structural = true;
             }
 
-            if ("details".equalsIgnoreCase(node.tag)) {
+            if (com.nishiyu.enderframelib.core.dom.ElementTraits.isDetails(node.tag)) {
                 boolean isOpen = interactionState.stateOf(node).open();
                 boolean wasOpen = box.elementChildren.size() > 1;
                 if (isOpen != wasOpen) {
