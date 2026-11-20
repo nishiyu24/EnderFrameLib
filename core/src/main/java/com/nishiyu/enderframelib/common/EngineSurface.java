@@ -81,6 +81,8 @@ public final class EngineSurface implements WebViewSurface {
     private int w;
     private int h;
     private boolean closed;
+    /** Builder で翻訳を差し込んだ面。読み込みのたびに data-i18n を解決する。 */
+    private boolean translate;
 
     private EngineSurface(StandaloneView view, BackendFactory factory, GpuBackendProvider[] gpuProvider, PixelSink sink, RenderBackend backend,
                           int w, int h, float dpr, ImageProvider images) {
@@ -139,6 +141,7 @@ public final class EngineSurface implements WebViewSurface {
     }
 
     static WebViewSurface create(EnginePlatform.Spec s) {
+        applyHostServices(s);
         int clear = s.clearColor();
         FontResolver fonts = fontsFor(s);
         ImageProvider images = imagesFor(s);
@@ -165,12 +168,47 @@ public final class EngineSurface implements WebViewSurface {
         try {
             StandaloneView view = new StandaloneView(s.html(), s.width(), s.height(), fonts).images(images);
             viewHolder[0] = view;
-            return new EngineSurface(view, f, gpuProvider, s.sink(), backend, s.width(), s.height(), s.devicePixelRatio(), images);
+            if (s.i18n() != null) applyI18n(view);
+            EngineSurface surface = new EngineSurface(view, f, gpuProvider, s.sink(), backend, s.width(), s.height(), s.devicePixelRatio(), images);
+            surface.translate = s.i18n() != null;
+            return surface;
         } catch (RuntimeException e) {
             backend.close();
             closeImages(images);
             throw e;
         }
+    }
+
+    /**
+     * {@code data-i18n} / {@code data-i18n-placeholder} / {@code data-i18n-title} を、差し込まれた翻訳で DOM へ反映する。
+     * 翻訳を差し込んだ面だけが呼ぶ（既定の翻訳はキーを返すだけで、文書の本文をキーで潰してしまうため）。
+     */
+    private static void applyI18n(StandaloneView view) {
+        if (applyI18nTo(view.root())) view.invalidate();
+    }
+
+    private static boolean applyI18nTo(com.nishiyu.enderframelib.core.dom.node.HtmlNode node) {
+        boolean changed = com.nishiyu.enderframelib.core.dom.Bindings.applyI18nAttributes(node);
+        for (var child : new java.util.ArrayList<>(node.children)) changed |= applyI18nTo(child);
+        return changed;
+    }
+
+    /** Builder の翻訳・リソースの差し込みを文脈へ反映する（現状は JVM 全体の文脈。面ごとにするのは A13）。 */
+    private static void applyHostServices(EnginePlatform.Spec s) {
+        if (s.i18n() == null && s.resources() == null) return;
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> {
+            if (s.i18n() != null) h = h.withI18nResolver(s.i18n());
+            if (s.resources() != null) {
+                var fromHost = s.resources();
+                // 差し込みが null を返した名前は既定の解決（組み込みテーマ → データパック → クラスパス）へ回す。
+                // 以前の差し込みは積まず置き換える（面を作るたびに包みが増えないように）
+                h = h.withResourceTextResolver(name -> {
+                    String text = fromHost.apply(name);
+                    return text != null ? text : DocumentLoader.DEFAULT_RESOURCE_TEXT_RESOLVER.apply(name);
+                });
+            }
+            return h;
+        });
     }
 
     /** 公開 API の選択を、実装の種類へ（AUTO は絞り込まない = null）。 */
@@ -262,6 +300,7 @@ public final class EngineSurface implements WebViewSurface {
     public void load(String html) {
         if (html == null) throw new NullPointerException("html");
         view.load(html);
+        if (translate) applyI18n(view);
         store.markAllDirty();
         store.syncToDom();
         for (SurfaceLifecycleListener l : listeners) l.onLoaded();

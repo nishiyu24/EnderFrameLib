@@ -148,7 +148,8 @@ publishing {
 def serviceModules = [':core', ':core-gl', ':core-vulkan', ':core-glfw']
 def mergedServicesDir = layout.buildDirectory.dir('generated/mergedServices')
 def mergeServices = tasks.register('mergeServiceFiles') {
-    def sources = serviceModules.collect { project(it).file('src/main/resources/META-INF/services') }
+    // ルート自身の登録（McHostElements など）も、:core の登録（公開 SPI の橋渡し）と同じ SPI 名なので同じ結合に入れる
+    def sources = serviceModules.collect { project(it).file('src/main/resources/META-INF/services') } + [file('src/main/resources/META-INF/services')]
     inputs.files(sources.collect { fileTree(it) })
     outputs.dir(mergedServicesDir)
     doLast {
@@ -174,6 +175,8 @@ tasks.named('jar', Jar) {
         from(project(path).sourceSets.main.output) { exclude 'META-INF/services/**' }
     }
     from(mergedServicesDir)
+    // ルート自身の META-INF/services は結合済みのファイルに入っているので、重ねて取り込まない
+    exclude { e -> e.relativePath.pathString.startsWith('META-INF/services/') && !e.file.toPath().startsWith(mergedServicesDir.get().asFile.toPath()) }
 }
 
 // Mod の JAR に、全モジュールのサービス登録（ServiceLoader 用）が揃っていること。結合に失敗すると、GPU 実装や窓が見つからなくなる

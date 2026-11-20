@@ -90,6 +90,8 @@ public final class EnderEngine {
         private boolean webImages;
         private GpuApi gpuApi = GpuApi.AUTO;
         private long hostWindow;
+        private java.util.function.Function<String, String> i18n;
+        private java.util.function.Function<String, String> resources;
 
         private Builder(String html) {
             this.html = html;
@@ -178,10 +180,29 @@ public final class EnderEngine {
             return this;
         }
 
+        /**
+         * 翻訳（{@code {{i18n:key}}} など）の解決を差し込む。既定はキーをそのまま返す。
+         * 現状は同じ JVM の全ての面に効く（面ごとの文脈は A13 で分ける）。
+         */
+        public Builder i18n(java.util.function.Function<String, String> resolver) {
+            this.i18n = Objects.requireNonNull(resolver, "resolver");
+            return this;
+        }
+
+        /**
+         * リソース（{@code <link href>} / {@code @import} / テンプレート）の本文の解決を差し込む。
+         * 名前を受けて本文を返し、{@code null} を返した名前は既定の解決（組み込みテーマ・クラスパスなど）へ回る。
+         * 現状は同じ JVM の全ての面に効く（面ごとの文脈は A13 で分ける）。
+         */
+        public Builder resources(java.util.function.Function<String, String> resolver) {
+            this.resources = Objects.requireNonNull(resolver, "resolver");
+            return this;
+        }
+
         /** 面を作ってマウントする。 */
         public WebViewSurface build() {
             return platform().create(new EnginePlatform.Spec(html, width, height, dpr, clearColor, target, sink,
-                    java.util.List.copyOf(fonts), systemFonts, images, webImages, gpuApi, hostWindow));
+                    java.util.List.copyOf(fonts), systemFonts, images, webImages, gpuApi, hostWindow, i18n, resources));
         }
 
         /** GLFW の窓に表示する。窓を閉じるまで戻らない（入力・描画ループは内蔵）。 */

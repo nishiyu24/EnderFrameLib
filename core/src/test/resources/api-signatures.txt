@@ -13,7 +13,9 @@ public static final class api.EnderEngine$Builder
     public api.EnderEngine$Builder api.EnderEngine$Builder.font(java.lang.String,java.nio.file.Path)
     public api.EnderEngine$Builder api.EnderEngine$Builder.gpu(api.GpuApi)
     public api.EnderEngine$Builder api.EnderEngine$Builder.hostDevice(long)
+    public api.EnderEngine$Builder api.EnderEngine$Builder.i18n(java.util.function.Function<java.lang.String, java.lang.String>)
     public api.EnderEngine$Builder api.EnderEngine$Builder.images(api.ImageSource)
+    public api.EnderEngine$Builder api.EnderEngine$Builder.resources(java.util.function.Function<java.lang.String, java.lang.String>)
     public api.EnderEngine$Builder api.EnderEngine$Builder.sink(api.PixelSink)
     public api.EnderEngine$Builder api.EnderEngine$Builder.size(int,int)
     public api.EnderEngine$Builder api.EnderEngine$Builder.systemFonts(boolean)
@@ -34,7 +36,7 @@ public static final record api.EnginePlatform$Spec
     public boolean api.EnginePlatform$Spec.systemFonts()
     public boolean api.EnginePlatform$Spec.webImages()
     public api.EnderEngine$Target api.EnginePlatform$Spec.target()
-    public api.EnginePlatform$Spec(java.lang.String,int,int,float,int,api.EnderEngine$Target,api.PixelSink,java.util.List<api.SurfaceFont>,boolean,api.ImageSource,boolean,api.GpuApi,long)
+    public api.EnginePlatform$Spec(java.lang.String,int,int,float,int,api.EnderEngine$Target,api.PixelSink,java.util.List<api.SurfaceFont>,boolean,api.ImageSource,boolean,api.GpuApi,long,java.util.function.Function<java.lang.String, java.lang.String>,java.util.function.Function<java.lang.String, java.lang.String>)
     public api.GpuApi api.EnginePlatform$Spec.gpuApi()
     public api.ImageSource api.EnginePlatform$Spec.images()
     public api.PixelSink api.EnginePlatform$Spec.sink()
@@ -47,6 +49,8 @@ public static final record api.EnginePlatform$Spec
     public int api.EnginePlatform$Spec.width()
     public java.lang.String api.EnginePlatform$Spec.html()
     public java.util.List<api.SurfaceFont> api.EnginePlatform$Spec.fonts()
+    public java.util.function.Function<java.lang.String, java.lang.String> api.EnginePlatform$Spec.i18n()
+    public java.util.function.Function<java.lang.String, java.lang.String> api.EnginePlatform$Spec.resources()
     public long api.EnginePlatform$Spec.hostWindow()
 public final enum api.GpuApi
     public static api.GpuApi api.GpuApi.valueOf(java.lang.String)
@@ -794,6 +798,26 @@ public abstract interface api.scene3d.Scene3DController
     public abstract void api.scene3d.Scene3DController.setScale(int,double,double,double)
     public abstract void api.scene3d.Scene3DController.setVisible(int,boolean)
     public abstract void api.scene3d.Scene3DController.zoom(double)
+public abstract interface api.spi.ElementPainter
+    public abstract api.spi.ReplacedKind api.spi.ElementPainter.kind()
+    public default boolean api.spi.ElementPainter.sceneFillsWidth()
+    public default int api.spi.ElementPainter.sceneHeight()
+    public default int api.spi.ElementPainter.sceneMinWidth()
+    public default java.lang.String api.spi.ElementPainter.resolveSrc(java.util.Map<java.lang.String, java.lang.String>,java.lang.String)
+public abstract interface api.spi.ElementProvider
+    public default java.util.Map<java.lang.String, api.spi.ElementPainter> api.spi.ElementProvider.replacedElements()
+    public default java.util.Map<java.lang.String, api.spi.TagTemplate> api.spi.ElementProvider.tagTemplates()
+    public default java.util.Map<java.lang.String, java.lang.String> api.spi.ElementProvider.attributeAliases()
+    public default java.util.Set<java.lang.String> api.spi.ElementProvider.markdownTags()
+    public default java.util.Set<java.lang.String> api.spi.ElementProvider.voidElements()
+public final enum api.spi.ReplacedKind
+    public static api.spi.ReplacedKind api.spi.ReplacedKind.valueOf(java.lang.String)
+    public static api.spi.ReplacedKind[] api.spi.ReplacedKind.values()
+    public static final api.spi.ReplacedKind api.spi.ReplacedKind.IMAGE_LIKE
+    public static final api.spi.ReplacedKind api.spi.ReplacedKind.SCENE
+public abstract interface api.spi.TagTemplate
+    public abstract java.lang.String api.spi.TagTemplate.expand(java.util.Map<java.lang.String, java.lang.String>,java.lang.String)
+    public static java.lang.String api.spi.TagTemplate.escape(java.lang.String)
 public abstract interface api.ui.Prop
     public abstract void api.ui.Prop.apply(api.dom.Element)
 public final class api.ui.RecordState<R extends java.lang.Record>
