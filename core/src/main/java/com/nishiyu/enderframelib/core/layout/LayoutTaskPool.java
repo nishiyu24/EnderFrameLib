@@ -127,6 +127,18 @@ public final class LayoutTaskPool {
         runShared(p, count, null, task);
     }
 
+    /** 呼び出したスレッドの文脈（面）を捕まえて、ワーカーでその文脈の中で仕事を実行する包みを返す口。global なら null（包まない）。 */
+    public interface ScopeCapture {
+        Consumer<Runnable> capture();
+    }
+
+    private static volatile ScopeCapture scopeCapture = () -> null;
+
+    /** 文脈の捕まえ口を結ぶ（{@code EngineContext} が 1 回だけ呼ぶ）。 */
+    public static void bindScopeCapture(ScopeCapture capture) {
+        scopeCapture = capture == null ? () -> null : capture;
+    }
+
     /** 並列区間 1 回分の共有状態。仕事の番号を先着で配り、加わったヘルパーが全員抜けるのを呼び出し側が待つ。 */
     private static final class SharedRun implements Runnable {
         private final int chunks;
@@ -190,7 +202,9 @@ public final class LayoutTaskPool {
      */
     private static void runShared(ForkJoinPool p, int chunks, Consumer<Runnable> scopeRunner, IntConsumer chunkBody) {
         PARALLEL_DISPATCHES.incrementAndGet();
-        SharedRun run = new SharedRun(chunks, scopeRunner, chunkBody, Thread.currentThread());
+        // 呼び出したスレッドの面の文脈を、明示の指定が無ければここで捕まえてワーカーへ引き継ぐ（A13。指定が null の呼び出しでも、
+        // ワーカーが global を見て面の置換要素・書体・解析の上限を取り違えない）
+        SharedRun run = new SharedRun(chunks, scopeRunner != null ? scopeRunner : scopeCapture.capture(), chunkBody, Thread.currentThread());
         int helpers = Math.min(p.getParallelism(), chunks - 1);
         for (int i = 0; i < helpers; i++) p.execute(run);
         boolean[] flag = CALLER_IN_TASK.get();

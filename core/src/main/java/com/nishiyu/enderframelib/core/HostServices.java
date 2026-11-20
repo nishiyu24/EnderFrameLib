@@ -34,6 +34,7 @@ import java.util.function.Function;
  * @param localEnvVariables      自前のローカル環境変数（キーは {@code @} 無し）。null なら無し
  * @param syntaxExtras           属性の別名・Markdown ブロックのタグの追加（SPI の宣言に足す。{@code HostSyntax}）。null なら追加なし
  * @param tagMacros              タグマクロの追加（キーは小文字。SPI の宣言に足す。{@code CustomTagExpander}）。null なら無し
+ * @param imageDecoder           圧縮画像（PNG / JPEG / GIF など）の復号器。null なら標準（JDK の ImageIO 版）
  */
 public record HostServices(
         Function<String, String> i18nResolver,
@@ -57,7 +58,8 @@ public record HostServices(
         java.util.function.Supplier<Map<String, String>> localEnvBase,
         Map<String, java.util.function.Supplier<String>> localEnvVariables,
         com.nishiyu.enderframelib.core.dom.HostSyntax.Extras syntaxExtras,
-        Map<String, com.nishiyu.enderframelib.core.dom.node.TagMacro> tagMacros)
+        Map<String, com.nishiyu.enderframelib.core.dom.node.TagMacro> tagMacros,
+        com.nishiyu.enderframelib.core.raster.ImageDecoder imageDecoder)
         implements com.nishiyu.enderframelib.core.paint.PaintServices.Source,
                 com.nishiyu.enderframelib.core.raster.svg.SvgSources.Source,
                 com.nishiyu.enderframelib.core.text.font.FontFaceRules.Source,
@@ -65,89 +67,90 @@ public record HostServices(
                 com.nishiyu.enderframelib.core.dom.parser.HtmlParser.Source,
                 com.nishiyu.enderframelib.core.css.GlyphUnits.Source,
                 com.nishiyu.enderframelib.core.layout.ReplacedElements.Source,
-                com.nishiyu.enderframelib.core.dom.HostSyntax.Source {
+                com.nishiyu.enderframelib.core.dom.HostSyntax.Source,
+                com.nishiyu.enderframelib.core.raster.ImageDecoder.Source {
 
     /** 何も差し込んでいない既定（翻訳はキーのまま・描画は {@link ILayoutBoxRenderer#DEFAULT}・ほかは無し）。 */
-    public static final HostServices DEFAULTS = new HostServices(key -> key, (key, args) -> key, null, null, ILayoutBoxRenderer.DEFAULT, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+    public static final HostServices DEFAULTS = new HostServices(key -> key, (key, args) -> key, null, null, ILayoutBoxRenderer.DEFAULT, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
 
     public HostServices withI18nResolver(Function<String, String> v) {
-        return new HostServices(v, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(v, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withI18nFormatter(BiFunction<String, Object[], String> v) {
-        return new HostServices(i18nResolver, v, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, v, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withJsonListParser(Function<String, List<Map<String, String>>> v) {
-        return new HostServices(i18nResolver, i18nFormatter, v, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, v, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withIntrinsicSizeResolver(IntrinsicSizeResolver v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, v, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, v, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withBoxRenderer(ILayoutBoxRenderer v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, v, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, v, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withResourceTextResolver(Function<String, String> v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, v, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, v, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withClientResourceFallback(Function<String, String> v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, v, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, v, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withDatapackResourceFallback(Function<String, String> v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, v, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, v, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withSvgSource(Function<String, com.nishiyu.enderframelib.core.raster.svg.SvgImage> v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, v, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, v, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withFontResolver(com.nishiyu.enderframelib.core.text.model.FontResolver v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, v, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, v, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withPixelSizeFallback(IntrinsicSizeResolver v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, v, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, v, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withSvgResourceReader(com.nishiyu.enderframelib.core.raster.svg.SvgSources.ResourceReader v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, v, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, v, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withSvgHttpSource(Function<String, com.nishiyu.enderframelib.core.raster.svg.SvgImage> v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, v, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, v, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withFontReader(com.nishiyu.enderframelib.core.text.font.FontFaceRules.FontReader v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, v, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, v, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withAnimationStateStore(com.nishiyu.enderframelib.core.paint.CssAnimator.StateStore v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, v, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, v, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withParseLimits(com.nishiyu.enderframelib.core.dom.parser.ParseLimits v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, v, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, v, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withGlyphFontResolver(com.nishiyu.enderframelib.core.text.model.FontResolver v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, v, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, v, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withReplacedElements(Map<String, com.nishiyu.enderframelib.core.dom.CustomElementPainter> v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, v, localEnvBase, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, v, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withLocalEnvBase(java.util.function.Supplier<Map<String, String>> v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, v, localEnvVariables, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, v, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
     public HostServices withLocalEnvVariables(Map<String, java.util.function.Supplier<String>> v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, v, syntaxExtras, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, v, syntaxExtras, tagMacros, imageDecoder);
     }
 
     /** ホスト置換要素を 1 つ足す（同名は上書き。他の面の登録は変えない）。 */
@@ -169,11 +172,11 @@ public record HostServices(
     }
 
     public HostServices withSyntaxExtras(com.nishiyu.enderframelib.core.dom.HostSyntax.Extras v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, v, tagMacros);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, v, tagMacros, imageDecoder);
     }
 
     public HostServices withTagMacros(Map<String, com.nishiyu.enderframelib.core.dom.node.TagMacro> v) {
-        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, v);
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, v, imageDecoder);
     }
 
     /** タグマクロを 1 つ足す（同名は上書き。タグ名は小文字へ寄せる。他の面の登録は変えない）。 */
@@ -192,5 +195,9 @@ public record HostServices(
     /** Markdown ブロックのタグを 1 つ足す。 */
     public HostServices withMarkdownTag(String tag) {
         return withSyntaxExtras((syntaxExtras == null ? com.nishiyu.enderframelib.core.dom.HostSyntax.Extras.NONE : syntaxExtras).withMarkdownTag(tag));
+    }
+
+    public HostServices withImageDecoder(com.nishiyu.enderframelib.core.raster.ImageDecoder v) {
+        return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, v);
     }
 }

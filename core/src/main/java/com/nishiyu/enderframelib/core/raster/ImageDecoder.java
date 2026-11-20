@@ -8,7 +8,7 @@ import java.util.List;
 /**
  * 圧縮画像（PNG / JPEG / GIF など）を画素へ復号する受け口（L0。AWT / ImageIO を知らない）。
  * 既定の実装 {@link #standard()} は JDK の ImageIO を使う L3 の {@link AwtImageDecoder} で、
- * AWT の無い環境・他のエンジンでは {@link #use(ImageDecoder)} で差し替える。
+ * AWT の無い環境・他のエンジンでは、面ごとの文脈（{@code HostServices#withImageDecoder}）で差し替える。
  */
 public interface ImageDecoder {
 
@@ -29,17 +29,25 @@ public interface ImageDecoder {
      */
     GifStream decodeGif(byte[] bytes, int maxFrames, long maxTotalPixels);
 
-    static ImageDecoder standard() {
-        return Holder.current;
+    /** 文脈（面）が差し込む復号器の読み口（{@code HostServices} が実装する）。null なら標準（JDK 版）。 */
+    interface Source {
+        ImageDecoder imageDecoder();
     }
 
-    /** 以後の既定を差し替える（null で JDK 版に戻す）。起動時に 1 回呼ぶ想定。 */
-    static void use(ImageDecoder decoder) {
-        Holder.current = decoder != null ? decoder : new AwtImageDecoder();
+    /** このスレッドの文脈の復号器（差し込みが無ければ JDK 版）。 */
+    static ImageDecoder standard() {
+        ImageDecoder d = Holder.source.get().imageDecoder();
+        return d != null ? d : Holder.DEFAULT;
+    }
+
+    /** 「このスレッドの文脈の値」を引く口を結ぶ（{@code EngineContext} が 1 回だけ呼ぶ）。以前は static の {@code use}（プロセス全体の差し替え）。 */
+    static void bindSource(java.util.function.Supplier<Source> contextSource) {
+        Holder.source = contextSource == null ? () -> () -> null : contextSource;
     }
 
     final class Holder {
-        private static volatile ImageDecoder current = new AwtImageDecoder();
+        private static final ImageDecoder DEFAULT = new AwtImageDecoder();
+        private static volatile java.util.function.Supplier<Source> source = () -> () -> null;
 
         private Holder() {}
     }

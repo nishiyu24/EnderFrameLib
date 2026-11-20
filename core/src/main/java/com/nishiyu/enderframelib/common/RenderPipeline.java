@@ -1214,15 +1214,8 @@ public class RenderPipeline {
                 List<LayoutBox>[] chunkLayout = new List[chunks];
                 @SuppressWarnings("unchecked")
                 List<LayoutBox>[] chunkStyle = new List[chunks];
-                final EngineContext activeCtx = EngineContext.current();
-                final Consumer<Runnable> scopeRunner = activeCtx == EngineContext.global()
-                        ? null
-                        : r -> {
-                            if (EngineContext.current() == activeCtx) r.run();
-                            else EngineContext.runWith(activeCtx, r);
-                        };
                 final Map<String, String> parentAsMap = computed.asMap();
-                LayoutTaskPool.forChunks(workCount, chunks, scopeRunner, span -> {
+                LayoutTaskPool.forChunks(workCount, chunks, null, span -> {
                     int c = LayoutTaskPool.spanChunk(span);
                     int start = LayoutTaskPool.spanStart(span);
                     int end = LayoutTaskPool.spanEnd(span);

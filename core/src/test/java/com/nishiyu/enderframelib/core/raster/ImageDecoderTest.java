@@ -31,19 +31,21 @@ class ImageDecoderTest {
         assertEquals(150, a.durationMs());
     }
 
+    /** 復号器は面ごとの文脈で差し替える（他の面・global は標準のまま。後始末も要らない）。 */
     @Test
-    void decoderCanBeReplacedAndRestored() {
+    void decoderIsReplacedPerContext() {
         ImageDecoder std = ImageDecoder.standard();
         ImageDecoder none = new ImageDecoder() {
             public DecodedBitmap decode(byte[] b) { return null; }
             public GifStream decodeGif(byte[] b, int m, long p) { return null; }
         };
-        try {
-            ImageDecoder.use(none);
+        com.nishiyu.enderframelib.core.EngineContext ctx = new com.nishiyu.enderframelib.core.EngineContext();
+        ctx.updateHost(h -> h.withImageDecoder(none));
+        com.nishiyu.enderframelib.core.EngineContext.runWith(ctx, () -> {
             assertSame(none, ImageDecoder.standard());
-        } finally {
-            ImageDecoder.use(std);
-        }
+            com.nishiyu.enderframelib.core.EngineContext.runWith(new com.nishiyu.enderframelib.core.EngineContext(),
+                    () -> assertSame(std, ImageDecoder.standard()));
+        });
         assertSame(std, ImageDecoder.standard());
     }
 }

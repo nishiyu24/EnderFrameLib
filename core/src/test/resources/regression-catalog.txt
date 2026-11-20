@@ -49,6 +49,8 @@ e626eb7 | CpuFallbackOfRareShapesTest#cpuFallbackShapeKeepsTheDrawingOrderBetwee
 §6-125 | PatchedMemoNoDuplicateItemsTest#noFrameHasTwoItemsWithTheSameId | 差分パッチが箱の記憶の項目リストへスクロール内容の節（_scrollc）を混ぜ、次の通常の組み立てで同じ id の項目が 2 つ並んだ（画素は同じ）
 §6-125 | NoHtmlSiteTest#buildsAndInteractsWithFullSiteWithoutAnyHtml | ノードの鍵が変わった箱で、古い id・鍵の項目の記憶が当たっていた（箱の項目の検証 VERIFY_BOX_MEMO が見つけた）
 
+§6-131 | WorkerContextPropagationTest#parallelLayoutInAScopedContextMatchesSerialLayout | 並列のワーカーが面の文脈を引き継がず、面に登録した置換要素を取り違えて並列と直列の結果がずれた
+
 # --- ヒットテスト ---
 §6-95, T2 | HitTestFrameClockTest#animatedElementIsHitWhereItWasDrawnAtTheFrameTime | ヒットテストが描画と別の時計（壁時計）でアニメーションを評価し、当たる位置が見えている位置とずれた
 §6-96, T2 | ScrollNodeClipRegressionTest#textInNestedClipIsHitWhereItIsDrawnAfterOuterScroll | 動く節の下の入れ子のクリップを作ったときの位置で比べ、文字ではなく親の箱に当たった

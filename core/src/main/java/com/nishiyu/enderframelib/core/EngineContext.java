@@ -34,6 +34,16 @@ public final class EngineContext implements BindingHooks {
         com.nishiyu.enderframelib.core.css.GlyphUnits.bindSource(() -> current().host);
         com.nishiyu.enderframelib.core.layout.ReplacedElements.bindSource(() -> current().host);
         com.nishiyu.enderframelib.core.dom.HostSyntax.bindSource(() -> current().host);
+        com.nishiyu.enderframelib.core.raster.ImageDecoder.bindSource(() -> current().host);
+        // 並列のワーカーが、呼び出したスレッドの面の文脈の中で仕事をするようにする（global の呼び出しは包まない）
+        com.nishiyu.enderframelib.core.layout.LayoutTaskPool.bindScopeCapture(() -> {
+            EngineContext active = current();
+            if (active == GLOBAL) return null;
+            return r -> {
+                if (current() == active) r.run();
+                else runWith(active, r);
+            };
+        });
         com.nishiyu.enderframelib.core.paint.DisplayListBuilder.bindParentRelativeSource(() -> current().flags.parentRelativeDisplayItems());
     }
 
