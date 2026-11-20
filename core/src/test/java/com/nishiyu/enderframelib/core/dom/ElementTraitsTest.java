@@ -84,6 +84,22 @@ class ElementTraitsTest {
     }
 
     @Test
+    void layoutSupportSets() {
+        assertTrue(ElementTraits.isRangeInput(el("input", "type", " RANGE ")));
+        assertFalse(ElementTraits.isRangeInput(el("input", "type", "text")));
+        assertFalse(ElementTraits.isRangeInput(el("div", "type", "range")));
+        assertFalse(ElementTraits.isRangeInput(null));
+        assertTrue(ElementTraits.selectsImageCandidates("img"));
+        assertTrue(ElementTraits.selectsImageCandidates("picture"));
+        assertFalse(ElementTraits.selectsImageCandidates("canvas"));
+        assertTrue(ElementTraits.isFallbackSizedMedia("video"));
+        assertTrue(ElementTraits.isFallbackSizedMedia("iframe"));
+        assertFalse(ElementTraits.isFallbackSizedMedia("img"));
+        for (String t : List.of("textarea", "select", "option")) assertTrue(ElementTraits.contentTextAffectsMeasure(t), t);
+        assertFalse(ElementTraits.contentTextAffectsMeasure("input"));
+    }
+
+    @Test
     void checkableTextAndRadioDependOnType() {
         assertTrue(ElementTraits.isCheckable(el("input", "type", "Checkbox")));
         assertTrue(ElementTraits.isCheckable(el("input", "type", "radio")));
@@ -131,13 +147,18 @@ class ElementTraitsTest {
         List<String> offenders = new ArrayList<>();
         try (Stream<Path> s = Files.walk(root)) {
             for (Path p : (Iterable<Path>) s.filter(f -> f.toString().endsWith(".java"))::iterator) {
-                if (p.getFileName().toString().equals("ReplacedElements.java")) continue; // 置換要素の台帳そのもの
+                String fn = p.getFileName().toString();
+                if (fn.equals("ReplacedElements.java") || fn.equals("ElementSizing.java")) continue; // 台帳と寸法の計算そのもの
                 List<String> lines = Files.readAllLines(p);
                 for (int i = 0; i < lines.size(); i++) {
                     String l = lines.get(i);
                     boolean media = l.contains("\"svg\"") && l.contains("\"canvas\"") && l.contains("\"img\"");
                     boolean control = l.contains("\"input\"") && l.contains("\"select\"") && l.contains("\"progress\"");
-                    if (media || control) offenders.add(p + ":" + (i + 1));
+                    boolean single = false;
+                    for (String t : List.of("input", "select", "progress", "canvas", "svg", "textarea", "button", "video", "iframe")) {
+                        if (l.contains("\"" + t + "\".equals") || l.contains(".equals(\"" + t + "\")")) single = true;
+                    }
+                    if (media || control || single) offenders.add(p + ":" + (i + 1));
                 }
             }
         }

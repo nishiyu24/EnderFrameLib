@@ -1078,7 +1078,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     private static boolean isRangeInput(LayoutBox box) {
-        return "input".equals(box.node.tag) && "range".equalsIgnoreCase(box.node.attrs.getOrDefault("type", "").trim());
+        return com.nishiyu.enderframelib.core.dom.ElementTraits.isRangeInput(box.node);
     }
 
     // ==========================================

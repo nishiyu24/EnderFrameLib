@@ -48,23 +48,8 @@ final class IntrinsicSizing {
             return ax.isBorderBox() ? Math.max(min, box.horizontalDecoration()) : min + box.horizontalDecoration();
         }
 
-        String tag = box.node.tag;
-        if (tag.equals("select")) {
-            return selectLabelWidth(box, ctx) + box.horizontalDecoration();
-        }
-        if (tag.equals("input") || tag.equals("progress")) {
-            float inputW = 90;
-            String type = box.node.attrs.getOrDefault("type", "text");
-            if (tag.equals("input") && (type.equals("checkbox") || type.equals("radio"))) {
-                inputW = LayoutMetrics.FALLBACK_REPLACED_SIZE;
-            } else if (box.node.attrs.containsKey("size")) {
-                try {
-                    inputW = Integer.parseInt(box.node.attrs.get("size")) * 8;
-                } catch (NumberFormatException ignored) {
-                }
-            }
-            return inputW + box.horizontalDecoration();
-        }
+        float control = ElementSizing.minContentWidth(box, ctx);
+        if (!Float.isNaN(control)) return control;
 
         if (box.node.nodeType == NodeType.TEXT) {
             TextStyle textStyle = ctx.textStyleFor(box.style);
@@ -139,59 +124,6 @@ final class IntrinsicSizing {
         String direction = box.style.getOrDefault(CssPropertyIndex.FLEX_DIRECTION, "row").trim();
         String wrap = box.style.getOrDefault(CssPropertyIndex.FLEX_WRAP, "nowrap").trim();
         return direction.startsWith("row") && "nowrap".equals(wrap);
-    }
-
-    private static float selectLabelWidth(LayoutBox box, LayoutContext ctx) {
-        FontFace face = ctx.faceFor(box.style);
-        FontStyle font = ctx.fontStyleFor(box.style);
-        float max = face.advance(" ▾", font);
-        for (HtmlNode option : box.node.children) {
-            if ("optgroup".equals(option.tag)) {
-                for (HtmlNode o : option.children) {
-                    if ("option".equals(o.tag)) max = Math.max(max, optionLabelWidth(o, face, font));
-                }
-            } else if ("option".equals(option.tag)) {
-                max = Math.max(max, optionLabelWidth(option, face, font));
-            }
-        }
-        return max;
-    }
-
-    private static float optionLabelWidth(HtmlNode o, FontFace face, FontStyle font) {
-        String label = o.attrs.containsKey("label") ? o.attrs.get("label") : o.getTextContent();
-        label = label == null ? "" : collapseSelectSpaces(label);
-        return face.advance(label + " ▾", font);
-    }
-
-    private static String collapseSelectSpaces(String s) {
-        int len = s.length();
-        int start = 0;
-        while (start < len && Character.isWhitespace(s.charAt(start))) start++;
-        int end = len;
-        while (end > start && Character.isWhitespace(s.charAt(end - 1))) end--;
-        if (start == end) return "";
-        StringBuilder sb = null;
-        boolean prevSpace = false;
-        for (int i = start; i < end; i++) {
-            char c = s.charAt(i);
-            if (Character.isWhitespace(c)) {
-                if (prevSpace || c != ' ') {
-                    if (sb == null) {
-                        sb = new StringBuilder(end - start);
-                        sb.append(s, start, i);
-                    }
-                    if (!prevSpace) sb.append(' ');
-                } else if (sb != null) {
-                    sb.append(' ');
-                }
-                prevSpace = true;
-            } else {
-                if (sb != null) sb.append(c);
-                prevSpace = false;
-            }
-        }
-        if (sb != null) return sb.toString();
-        return (start == 0 && end == len) ? s : s.substring(start, end);
     }
 
     static String trimNewlineEdges(String s) {

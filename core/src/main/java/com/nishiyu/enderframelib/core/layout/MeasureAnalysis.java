@@ -62,7 +62,7 @@ final class MeasureAnalysis {
         StyleFacts f = box.axisStyle().layoutFacts();
         // 画像の候補選び（srcset / sizes）はビューポートの幅を読む
         boolean outside = !box.isAbsolute && !f.usesViewportUnits
-                && !(box.node != null && ("img".equals(box.node.tag) || "picture".equals(box.node.tag)));
+                && !(box.node != null && com.nishiyu.enderframelib.core.dom.ElementTraits.selectsImageCandidates(box.node.tag));
         List<LayoutBox> kids = box.children;
         for (int i = 0, n = kids.size(); outside && i < n; i++) {
             LayoutBox c = kids.get(i);
@@ -134,7 +134,7 @@ final class MeasureAnalysis {
     static boolean isFallbackReplacedForMinContent(LayoutBox c) {
         String t = c.node.tag;
         return ReplacedElements.isReplacedTag(t) || BoxMeasurer.isReplacedImage(t)
-                || "video".equals(t) || "iframe".equals(t);
+                || com.nishiyu.enderframelib.core.dom.ElementTraits.isFallbackSizedMedia(t);
     }
 
     /** 仮の測定を使う親（flex / grid）の子か。それ以外の箱は産物を記録しない（割り当てを増やさない）。 */

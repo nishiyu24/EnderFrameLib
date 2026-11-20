@@ -621,28 +621,8 @@ public final class BoxMeasurer {
             return;
         }
 
-        if (tag.equals("input") || tag.equals("select")) {
-            box.h = LayoutMetrics.FALLBACK_REPLACED_SIZE + box.verticalDecoration();
-            String type = box.node.attrs.getOrDefault("type", "text");
-            boolean compact = type.equals("checkbox") || type.equals("radio") || type.equals("range");
-            // 内容の高さは Chrome（Windows）の実測に合わせる。以前は「行の高さ + 8px」という独自の値で、
-            // padding を指定した入力欄が Chrome より 8px 高くなっていた。
-            // - テキストの入力欄: line-height と書体の normal の行の高さの大きい方（字が欠けない）
-            // - select: line-height によらず ascent + descent + 2px
-            if (tag.equals("select") || !compact) {
-                FontFace face = ctx.faceFor(box.style);
-                FontStyle font = ctx.fontStyleFor(box.style);
-                float content = tag.equals("select")
-                        ? face.ascent(font) + face.descent(font) + 2
-                        : Math.max(box.lineHeightPx, face.normalLineHeight(font));
-                box.h = content + box.verticalDecoration();
-            }
-            return;
-        }
-
-        if (tag.equals("progress")) {
-            box.h = 12 + box.verticalDecoration();
-        }
+        float control = ElementSizing.height(box, ctx);
+        if (!Float.isNaN(control)) box.h = control;
     }
 
     /** この要素の 1 行分の高さ（px）。書体と line-height から決まる。 */
@@ -661,15 +641,8 @@ public final class BoxMeasurer {
      */
     private static int[] intrinsicSize(LayoutBox box, LayoutContext ctx) {
         String tag = box.node.tag;
-        if (tag.equals("canvas")) {
-            return new int[]{canvasDimension(box.node.attrs.get("width"), 300), canvasDimension(box.node.attrs.get("height"), 150)};
-        }
-        if (tag.equals("svg")) {
-            double[] d = SvgSize.intrinsic(box.node);
-            double w = Double.isNaN(d[0]) ? 300 : d[0];
-            double h = Double.isNaN(d[1]) ? 150 : d[1];
-            return new int[]{(int) Math.max(1, Math.round(w)), (int) Math.max(1, Math.round(h))};
-        }
+        int[] embedded = ElementSizing.embeddedIntrinsic(box);
+        if (embedded != null) return embedded;
         ImageChoice sel = selectedImage(box, ctx);
         if (sel == null) return null;
         String src = sel.url();
@@ -685,16 +658,6 @@ public final class BoxMeasurer {
         }
         if (size == null || sel.density() == 1) return size;
         return new int[]{(int) Math.max(1, Math.round(size[0] / sel.density())), (int) Math.max(1, Math.round(size[1] / sel.density()))};
-    }
-
-    private static int canvasDimension(String attr, int def) {
-        if (attr == null) return def;
-        try {
-            int v = Integer.parseInt(attr.trim());
-            return v >= 0 && v <= 32767 ? v : def;
-        } catch (NumberFormatException e) {
-            return def;
-        }
     }
 
     private static ImageChoice selectedImage(LayoutBox box, LayoutContext ctx) {
@@ -719,7 +682,7 @@ public final class BoxMeasurer {
     }
 
     private static float replacedFallbackWidth(LayoutBox box, LayoutContext ctx) {
-        ImageChoice sel = box.node.tag.equals("img") ? selectedImage(box, ctx) : null;
+        ImageChoice sel = "img".equals(box.node.tag) ? selectedImage(box, ctx) : null;
         String src = sel != null ? sel.url() : box.node.attrs.getOrDefault("src", "");
         boolean pending = isRemote(src) || SvgImage.looksLikeSvg(src);
         return pending ? LayoutMetrics.PENDING_IMAGE_SIZE : LayoutMetrics.FALLBACK_REPLACED_SIZE;

@@ -742,7 +742,7 @@ final class MeasureMemo {
         }
         int hash = attrHash;
         String tag = node.tag;
-        if ("textarea".equals(tag) || "select".equals(tag) || "option".equals(tag)) {
+        if (com.nishiyu.enderframelib.core.dom.ElementTraits.contentTextAffectsMeasure(tag)) {
             hash = 31 * hash + node.getTextContent().hashCode();
         }
         return hash;

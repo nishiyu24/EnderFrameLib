@@ -118,6 +118,26 @@ public final class ElementTraits {
         };
     }
 
+    /** スライダー（type が range の input）。 */
+    public static boolean isRangeInput(HtmlNode node) {
+        return node != null && "input".equals(node.tag) && "range".equalsIgnoreCase(node.attrs.getOrDefault("type", "").trim());
+    }
+
+    /** 画像の候補選び（srcset / sizes）をする要素（img / picture）。ビューポートの寸法に依る。 */
+    public static boolean selectsImageCandidates(String tag) {
+        return "img".equals(tag) || "picture".equals(tag);
+    }
+
+    /** 標準の置換メディアのうち、固有寸法を持たず既定寸法で測る要素（video / iframe）。 */
+    public static boolean isFallbackSizedMedia(String tag) {
+        return "video".equals(tag) || "iframe".equals(tag);
+    }
+
+    /** 中身のテキストが属性ハッシュ（測定キー）に効く要素（textarea / select / option）。 */
+    public static boolean contentTextAffectsMeasure(String tag) {
+        return "textarea".equals(tag) || "select".equals(tag) || "option".equals(tag);
+    }
+
     /** 数値の表示部品（progress / meter）。 */
     public static boolean isGauge(String tag) {
         return switch (lower(tag)) {
