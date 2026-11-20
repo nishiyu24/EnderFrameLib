@@ -4,7 +4,6 @@ import com.nishiyu.enderframelib.api.dom.DOMException;
 import com.nishiyu.enderframelib.api.dom.Node;
 import com.nishiyu.enderframelib.api.dom.Range;
 import com.nishiyu.enderframelib.api.dom.Selection;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
 import org.jetbrains.annotations.Nullable;
 
 /**

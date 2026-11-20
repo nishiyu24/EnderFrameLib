@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.raster;
 
+import com.nishiyu.enderframelib.core.raster.canvas.CanvasRenderingContext2D;
+
 import com.nishiyu.enderframelib.core.text.font.LoadedFace;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;

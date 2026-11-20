@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.client.gui.AbstractEnderScreen;
 import com.nishiyu.enderframelib.client.gui.EnderScreenDelegate;
 import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
+import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
 import com.nishiyu.enderframelib.network.OpenUiS2CPacket;
 import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import com.nishiyu.enderframelib.network.WebActionC2SPacket;

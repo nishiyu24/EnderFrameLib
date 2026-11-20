@@ -20,8 +20,8 @@ css/CounterStyles.java#BUILTINS | IMMUTABLE_TABLE | 静的初期化で埋めた�
 css/CounterStyles.java#LOWER_ALPHA | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/CounterStyles.java#LOWER_GREEK | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/CounterStyles.java#UPPER_ALPHA | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
-css/CssKeywords.java#BY_CSS_NAME | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-css/CssKeywords.java#CSS_NAMES | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
+css/model/CssKeywords.java#BY_CSS_NAME | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
+css/model/CssKeywords.java#CSS_NAMES | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/CssNumbers.java#HEX | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/CssSyntax.java#POOL | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
 css/LengthResolver.java#ZERO_RADII_XY | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
@@ -50,10 +50,10 @@ net/YtDlpProvisioner.java#lastFailureAt | LOCKED | synchronized (LOCK) の中で
 net/YtDlpProvisioner.java#lastFailureTarget | LOCKED | synchronized (LOCK) の中でだけ読み書き
 paint/AlphaMask.java#CACHE | LOCKED | アクセスするメソッドが synchronized
 paint/Gradients.java#STOPS_MEMO | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
-paint/gpu/GpuCoverage.java#KINDS | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
+paint/port/GpuCoverage.java#KINDS | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 paint/gpu/RectStream.java#ZERO4 | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 paint/model/Corners.java#ZERO_RAW | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-paint/software/CropSrc.java#CACHE | LOCKED | アクセスするメソッドが synchronized
+paint/software/CropImages.java#CACHE | LOCKED | アクセスするメソッドが synchronized
 paint/software/ShapeGeometry.java#ZERO_F4 | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 paint/software/TextRaster.java#NO_RADII | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 paint/software/SoftwareRenderBackend.java#ZERO4 | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）

@@ -302,7 +302,7 @@ public class ReactUiTest {
         assertEquals("initial", $(".watched", root).getTextContent());
         assertEquals(2, $$(root, ".chip").size());
 
-        $("#trigger", root).dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent("click", true, true));
+        $("#trigger", root).dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreEvent("click", true, true));
 
         assertEquals(List.of("clicked"), observed);
         assertEquals("updated", $(".watched", root).getTextContent());

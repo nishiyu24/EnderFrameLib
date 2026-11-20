@@ -30,7 +30,7 @@ public final class RasterPainting {
                          float devicePixelRatio) {
         // インライン svg には文書のスタイルシートを当てる
         com.nishiyu.enderframelib.core.css.StyleSheet sheet =
-                svg.getOwnerDocument() instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd ? hd.authorSheet : null;
+                svg.getOwnerDocument() instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd ? (com.nishiyu.enderframelib.core.css.StyleSheet) hd.authorSheet : null;
         return svgSrc(svg, intrW, intrH, fit, boxW, boxH, color, devicePixelRatio, sheet);
     }
 

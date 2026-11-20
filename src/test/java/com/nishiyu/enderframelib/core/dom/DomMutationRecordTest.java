@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.node.DomUtils;
 import com.nishiyu.enderframelib.core.dom.node.*;
 import com.nishiyu.enderframelib.core.dom.parser.*;
 

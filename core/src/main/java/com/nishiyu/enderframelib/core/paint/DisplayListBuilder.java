@@ -1,10 +1,12 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.dom.ElementTraits;
+import com.nishiyu.enderframelib.core.paint.model.BlendMode;
+import com.nishiyu.enderframelib.core.paint.model.FilterOp;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.ColorParser;
-import com.nishiyu.enderframelib.core.css.CssKeywords;
+import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
@@ -30,9 +32,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
-import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
 import java.util.concurrent.atomic.AtomicInteger;

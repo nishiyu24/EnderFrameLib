@@ -1,9 +1,5 @@
 package com.nishiyu.enderframelib.core.dom.node;
 
-import com.nishiyu.enderframelib.core.dom.*;
-import com.nishiyu.enderframelib.core.dom.node.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.api.dom.DOMNodes.Comment;
 import com.nishiyu.enderframelib.api.dom.CSSStyleDeclaration;
@@ -16,8 +12,6 @@ import com.nishiyu.enderframelib.api.dom.Node;
 import com.nishiyu.enderframelib.api.dom.DOMCollections.NodeList;
 import com.nishiyu.enderframelib.api.dom.DOMNodes.Text;
 import com.nishiyu.enderframelib.api.event.Event;
-import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -39,7 +33,7 @@ public class HtmlDocument extends HtmlNode implements Document {
     /** id 属性 → その id を持つ接続中の節（文書順は問わず、引くときに最初のものを選ぶ）。 */
     private final Map<String, List<HtmlNode>> nodesById = new HashMap<>();
     private String title = "";
-    private InteractionState interactionState = new InteractionState();
+    private DocumentState interactionState = NodeServices.get().newDocumentState();
     private InlineActionSink inlineActionSink = null;
     private Ownership defaultOwnership = Ownership.CLIENT;
     /** 文書内に {@code inert} 属性を持つ要素がいくつあるか（0 なら不活性判定の高速経路を通れる）。 */
@@ -80,7 +74,8 @@ public class HtmlDocument extends HtmlNode implements Document {
      * 作者スタイルシート（描画側がインライン {@code svg} の要素へ規則を当てるために読む）。文書を読み込む側が設定し、
      * シートを作り直したときに更新する。
      */
-    public volatile com.nishiyu.enderframelib.core.css.StyleSheet authorSheet;
+    /** 文書のスタイルシート（{@code css.StyleSheet}。インライン svg の描画が読む。ノードの型はスタイルシートの型を知らない）。 */
+    public volatile Object authorSheet;
 
     public HtmlDocument() {
         super(NodeType.ROOT, "root");
@@ -194,12 +189,12 @@ public class HtmlDocument extends HtmlNode implements Document {
     }
 
     /** この文書の対話状態。セッションに属する文書では、セッションの {@link InteractionState} が挿し込まれる。 */
-    public InteractionState interactionState() {
+    public DocumentState interactionState() {
         return interactionState;
     }
 
-    public void setInteractionState(InteractionState interactionState) {
-        this.interactionState = interactionState != null ? interactionState : new InteractionState();
+    public void setInteractionState(DocumentState interactionState) {
+        this.interactionState = interactionState != null ? interactionState : NodeServices.get().newDocumentState();
     }
 
     // ==========================================
@@ -222,8 +217,7 @@ public class HtmlDocument extends HtmlNode implements Document {
     @Override
     public CSSStyleDeclaration getComputedStyle(Element element) {
         HtmlNode node = element instanceof HtmlNode n ? n : null;
-        return new ComputedStyleDeclaration(node != null ? interactionState.computedStyleOf(node) : null,
-                node != null && layoutQuery != null ? layoutQuery.metrics(node) : null);
+        return interactionState.computedStyle(node, node != null && layoutQuery != null ? layoutQuery.metrics(node) : null);
     }
 
     @Override
@@ -254,11 +248,11 @@ public class HtmlDocument extends HtmlNode implements Document {
 
     private boolean deliveringLayoutObservers;
 
-    private final List<com.nishiyu.enderframelib.core.dom.MutationObserverManager.HtmlMutationObserver> mutationObservers =
+    private final List<com.nishiyu.enderframelib.core.dom.node.MutationObserverManager.HtmlMutationObserver> mutationObservers =
             new java.util.concurrent.CopyOnWriteArrayList<>();
 
     /** この文書を観測中の MutationObserver。文書と同じ寿命で、文書が捨てられれば一緒に解放される。 */
-    public List<com.nishiyu.enderframelib.core.dom.MutationObserverManager.HtmlMutationObserver> mutationObservers() {
+    public List<com.nishiyu.enderframelib.core.dom.node.MutationObserverManager.HtmlMutationObserver> mutationObservers() {
         return mutationObservers;
     }
 
@@ -559,13 +553,13 @@ public class HtmlDocument extends HtmlNode implements Document {
     @Nullable
     @Override
     public HtmlElement querySelector(String selectors) {
-        HtmlNode found = SelectorEngine.querySelector(this, selectors);
+        HtmlNode found = NodeServices.get().querySelector(this, selectors);
         return found instanceof HtmlElement he ? he : null;
     }
 
     @Override
     public NodeList querySelectorAll(String selectors) {
-        List<HtmlNode> nodes = SelectorEngine.querySelectorAll(this, selectors);
+        List<HtmlNode> nodes = NodeServices.get().querySelectorAll(this, selectors);
         return new HtmlCollections.StaticNodeList(nodes);
     }
 
@@ -694,13 +688,13 @@ public class HtmlDocument extends HtmlNode implements Document {
         @Nullable
         @Override
         public HtmlElement querySelector(String selectors) {
-            HtmlNode found = SelectorEngine.querySelector(this, selectors);
+            HtmlNode found = NodeServices.get().querySelector(this, selectors);
             return found instanceof HtmlElement he ? he : null;
         }
 
         @Override
         public NodeList querySelectorAll(String selectors) {
-            List<HtmlNode> nodes = SelectorEngine.querySelectorAll(this, selectors);
+            List<HtmlNode> nodes = NodeServices.get().querySelectorAll(this, selectors);
             return new HtmlCollections.StaticNodeList(nodes);
         }
     }

@@ -3,13 +3,13 @@ package com.nishiyu.enderframelib.core.paint.software;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.SoftwareRendering;
-import com.nishiyu.enderframelib.core.paint.BlendMode;
-import com.nishiyu.enderframelib.core.paint.FilterOp;
+import com.nishiyu.enderframelib.core.paint.model.BlendMode;
+import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
+import com.nishiyu.enderframelib.core.paint.port.GpuClip;
+import com.nishiyu.enderframelib.core.paint.port.GpuScrollLayer;
+import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;

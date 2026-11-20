@@ -1,11 +1,12 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.node.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.*;
 import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.api.event.Event;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
+import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
+import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

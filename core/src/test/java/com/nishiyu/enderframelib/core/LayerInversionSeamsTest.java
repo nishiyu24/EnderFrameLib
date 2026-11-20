@@ -6,7 +6,7 @@ import com.nishiyu.enderframelib.core.dom.Bindings;
 import com.nishiyu.enderframelib.core.paint.DisplayItemFonts;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2D;
+import com.nishiyu.enderframelib.core.raster.canvas.CanvasRenderingContext2D;
 import com.nishiyu.enderframelib.core.raster.ColorSyntax;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import org.junit.jupiter.api.Test;

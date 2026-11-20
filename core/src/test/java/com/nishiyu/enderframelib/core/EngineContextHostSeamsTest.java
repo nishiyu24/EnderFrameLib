@@ -118,8 +118,8 @@ class EngineContextHostSeamsTest {
 
     @Test
     void replacedElementsAreRegisteredPerContext() {
-        com.nishiyu.enderframelib.core.dom.CustomElementPainter p = new com.nishiyu.enderframelib.core.dom.CustomElementPainter() {
-            @Override public com.nishiyu.enderframelib.core.dom.ReplacedKind kind() { return com.nishiyu.enderframelib.core.dom.ReplacedKind.IMAGE_LIKE; }
+        com.nishiyu.enderframelib.core.dom.node.CustomElementPainter p = new com.nishiyu.enderframelib.core.dom.node.CustomElementPainter() {
+            @Override public com.nishiyu.enderframelib.core.dom.node.ReplacedKind kind() { return com.nishiyu.enderframelib.core.dom.node.ReplacedKind.IMAGE_LIKE; }
         };
         EngineContext a = new EngineContext(), b = new EngineContext();
         a.updateHost(h -> h.withReplacedElement("x-iso", p));
@@ -172,10 +172,10 @@ class EngineContextHostSeamsTest {
                 for (int i = 0; i < 3000 && fail.get() == null; i++) {
                     var root = HtmlParser.parse("<div><x-t></x-t></div>");
                     com.nishiyu.enderframelib.common.CustomTagExpander.expand(root);
-                    boolean ok = "data-if".equals(com.nishiyu.enderframelib.core.dom.HostSyntax.canonicalOf(my + "-when"))
-                            && (other + "-when").equals(com.nishiyu.enderframelib.core.dom.HostSyntax.canonicalOf(other + "-when"))
-                            && com.nishiyu.enderframelib.core.dom.HostSyntax.isMarkdownTag(my + "-md")
-                            && !com.nishiyu.enderframelib.core.dom.HostSyntax.isMarkdownTag(other + "-md")
+                    boolean ok = "data-if".equals(com.nishiyu.enderframelib.core.dom.node.HostSyntax.canonicalOf(my + "-when"))
+                            && (other + "-when").equals(com.nishiyu.enderframelib.core.dom.node.HostSyntax.canonicalOf(other + "-when"))
+                            && com.nishiyu.enderframelib.core.dom.node.HostSyntax.isMarkdownTag(my + "-md")
+                            && !com.nishiyu.enderframelib.core.dom.node.HostSyntax.isMarkdownTag(other + "-md")
                             && root.children.get(0).children.size() == 1 && tag.equals(root.children.get(0).children.get(0).tag);
                     if (!ok) fail.compareAndSet(null, "混ざった: 反復 " + i);
                 }
@@ -184,7 +184,7 @@ class EngineContextHostSeamsTest {
         }
         for (Thread t : ts) t.join();
         assertNull(fail.get());
-        assertEquals("a-when", com.nishiyu.enderframelib.core.dom.HostSyntax.canonicalOf("a-when"), "global には効かない");
+        assertEquals("a-when", com.nishiyu.enderframelib.core.dom.node.HostSyntax.canonicalOf("a-when"), "global には効かない");
     }
 
     /** 番人: 窓口に static の setter と、文脈以外の差し込み口が戻らない。登録表（構文・タグマクロ）にも static の登録口を戻さない。 */
@@ -197,7 +197,7 @@ class EngineContextHostSeamsTest {
             assertEquals(1, src.split("static volatile java.util.function.Supplier<Source>", -1).length - 1, f + ": 文脈の引き口は 1 つだけ");
         }
 
-        for (String f : new String[] {"dom/HostSyntax.java", "../common/CustomTagExpander.java"}) {
+        for (String f : new String[] {"dom/node/HostSyntax.java", "../common/CustomTagExpander.java"}) {
             String src = Files.readString(main.resolve(f));
             assertFalse(src.contains("static synchronized void register"), f + " に static の登録口が戻った（HostServices の with… を使う）");
             assertFalse(src.contains("static synchronized void resetToDefaults"), f + " に static の後始末が戻った");

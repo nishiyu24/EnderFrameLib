@@ -12,7 +12,7 @@ import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.model.EasingFunction;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.css.AnimationParser;
-import com.nishiyu.enderframelib.core.css.model.AnimationTiming;
+import com.nishiyu.enderframelib.core.css.AnimationTiming;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
@@ -22,10 +22,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import com.nishiyu.enderframelib.core.paint.*;
-import com.nishiyu.enderframelib.core.paint.model.*;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 
 /** 箱の {@code transform}・{@code transition}・{@code animation} を、描画項目が運ぶ値（{@link AnimationSpec} など）に解く。 */
 final class BoxAnimation {

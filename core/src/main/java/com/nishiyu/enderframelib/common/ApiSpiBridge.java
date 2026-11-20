@@ -3,9 +3,9 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.api.spi.ElementPainter;
 import com.nishiyu.enderframelib.api.spi.ElementProvider;
 import com.nishiyu.enderframelib.api.spi.TagTemplate;
-import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
-import com.nishiyu.enderframelib.core.dom.HostElementProvider;
-import com.nishiyu.enderframelib.core.dom.ReplacedKind;
+import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
+import com.nishiyu.enderframelib.core.dom.node.HostElementProvider;
+import com.nishiyu.enderframelib.core.dom.node.ReplacedKind;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.TagMacro;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
@@ -20,7 +20,7 @@ import java.util.Set;
 /**
  * 公開 SPI（{@code api.spi.ElementProvider}。署名は JDK と {@code api.*} だけ）の宣言を、内部の
  * {@link HostElementProvider} へ橋渡しする（A9）。内部の台帳（置換要素・タグマクロ・構文・空要素）は
- * {@code META-INF/services/com.nishiyu.enderframelib.core.dom.HostElementProvider} に登録されたこのクラスを
+ * {@code META-INF/services/com.nishiyu.enderframelib.core.dom.node.HostElementProvider} に登録されたこのクラスを
  * 従来どおり読むだけで、{@code core} は {@code api.spi} を知らない（層の向きを保つ）。
  *
  * <p>公開 SPI の実装は全てここで 1 つにまとめる。同じタグ・別名が複数の実装にあれば、後に読んだ方が勝つ。

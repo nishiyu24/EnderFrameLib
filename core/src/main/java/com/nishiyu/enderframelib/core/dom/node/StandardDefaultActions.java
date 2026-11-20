@@ -1,0 +1,306 @@
+package com.nishiyu.enderframelib.core.dom.node;
+
+import com.nishiyu.enderframelib.api.event.UIEvents;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
+import com.nishiyu.enderframelib.api.event.Event;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * HTML 標準の既定動作（Default Actions）。
+ *
+ * a (href), label (for / 包含), summary / details, checkbox / radio,
+ * button[type=submit/reset], フォーカス移動, スクロール, テキスト入力などの標準ブラウザ動作を一箇所に集約する。
+ */
+public class StandardDefaultActions {
+
+    public static void execute(Event event, DefaultActionContext ctx) {
+        if (event == null || event.isDefaultPrevented()) return;
+        Object targetObj = event.getTarget();
+        if (!(targetObj instanceof HtmlNode target)) return;
+
+        String type = event.getType().toLowerCase(Locale.ROOT);
+
+        switch (type) {
+            case "click" -> handleClick(target, ctx);
+            case "wheel" -> handleWheel(event, ctx);
+            case "keydown" -> handleKeyDown(event, target, ctx);
+        }
+    }
+
+    private static void handleClick(HtmlNode target, DefaultActionContext ctx) {
+        // Popover: 外側のクリックで auto の popover を閉じ（light dismiss）、popovertarget の要素は開閉する（HTML §6.12）
+        HtmlNode invoker = popoverInvoker(target);
+        HtmlNode invoked = invoker != null ? getRoot(invoker).getElementById(invoker.attrs.get("popovertarget")) : null;
+        lightDismiss(target, invoked);
+        if (invoker != null && invoked instanceof com.nishiyu.enderframelib.core.dom.node.HtmlElement pop
+                && pop.hasAttribute("popover")) {
+            String action = invoker.attrs.getOrDefault("popovertargetaction", "toggle").toLowerCase(Locale.ROOT);
+            switch (action) {
+                case "show" -> pop.showPopover();
+                case "hide" -> pop.hidePopover();
+                default -> pop.togglePopover();
+            }
+            return;
+        }
+        // フォーカス移動（クリックされたフォーカス可能要素へフォーカス）
+        if (isNaturallyFocusable(target) && ctx != null) {
+            ctx.setFocus(target);
+        }
+
+        // 1. summary / details
+        HtmlNode summaryNode = findSelfOrAncestor(target, "summary");
+        if (summaryNode != null && summaryNode.parent != null && ElementTraits.isDetails(summaryNode.parent.tag)) {
+            HtmlNode details = summaryNode.parent;
+            boolean wasOpen = details.attrs.containsKey("open");
+            if (wasOpen) {
+                details.removeAttribute("open");
+                if (ctx != null) ctx.onAttributeChanged(details, "open", null);
+            } else {
+                details.setAttribute("open", "true");
+                if (ctx != null) ctx.onAttributeChanged(details, "open", "true");
+            }
+            return;
+        }
+
+        // 2. label (for 属性または包含コントロール)
+        HtmlNode labelNode = findSelfOrAncestor(target, "label");
+        if (labelNode != null) {
+            // target 自体がコントロール（input 等）なら二重発火を防止
+            if (!isFormControl(target)) {
+                if (labelNode.attrs.containsKey("for")) {
+                    String targetId = labelNode.attrs.get("for");
+                    HtmlNode root = getRoot(labelNode);
+                    HtmlNode control = root.getElementById(targetId);
+                    if (control != null && ctx != null) {
+                        ctx.dispatchClickTo(control);
+                        return;
+                    }
+                } else {
+                    // label 内の最初の子孫フォームコントロールを探す
+                    HtmlNode control = findFirstFormControl(labelNode);
+                    if (control != null && ctx != null) {
+                        ctx.dispatchClickTo(control);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 3. input[type=checkbox] / input[type=radio]
+        if (ElementTraits.isInputTag(target.tag)) {
+            String inputType = target.attrs.getOrDefault("type", "text").toLowerCase(Locale.ROOT);
+            if ("checkbox".equals(inputType)) {
+                boolean wasChecked = target.attrs.containsKey("checked");
+                if (wasChecked) {
+                    target.removeAttribute("checked");
+                    if (ctx != null) ctx.onAttributeChanged(target, "checked", null);
+                } else {
+                    target.setAttribute("checked", "true");
+                    if (ctx != null) ctx.onAttributeChanged(target, "checked", "true");
+                }
+                // input / change イベントの発火
+                target.dispatchEvent(new CoreUIEvent("input", true, false, 0));
+                target.dispatchEvent(new CoreUIEvent("change", true, false, 0));
+                return;
+            } else if ("radio".equals(inputType)) {
+                if (!target.attrs.containsKey("checked")) {
+                    String name = target.attrs.get("name");
+                    if (name != null && !name.isEmpty()) {
+                        // 同じ name を持つ他の radio を解除
+                        HtmlNode root = getRoot(target);
+                        List<HtmlNode> radios = new ArrayList<>();
+                        findRadiosByName(root, name, radios);
+                        for (HtmlNode r : radios) {
+                            if (r != target && r.attrs.containsKey("checked")) {
+                                r.removeAttribute("checked");
+                                if (ctx != null) ctx.onAttributeChanged(r, "checked", null);
+                            }
+                        }
+                    }
+                    target.setAttribute("checked", "true");
+                    if (ctx != null) ctx.onAttributeChanged(target, "checked", "true");
+                    target.dispatchEvent(new CoreUIEvent("input", true, false, 0));
+                    target.dispatchEvent(new CoreUIEvent("change", true, false, 0));
+                }
+                return;
+            }
+        }
+
+        // 4. button[type=submit] / button[type=reset] / input[type=submit] / input[type=reset]
+        boolean isButton = ElementTraits.isButton(target.tag);
+        boolean isInputBtn = ElementTraits.isInputTag(target.tag)
+                && ("submit".equalsIgnoreCase(target.attrs.get("type")) || "reset".equalsIgnoreCase(target.attrs.get("type")));
+
+        if (isButton || isInputBtn) {
+            String btnType = target.attrs.getOrDefault("type", isButton ? "submit" : "button").toLowerCase(Locale.ROOT);
+            HtmlNode form = findSelfOrAncestor(target, "form");
+            if (form != null) {
+                if ("submit".equals(btnType)) {
+                    if (target instanceof com.nishiyu.enderframelib.api.dom.Element el) {
+                        el.requestSubmit(el);
+                    }
+                    if (ctx != null) {
+                        ctx.executeFormAction(form, "onsubmit");
+                    }
+                    return;
+                } else if ("reset".equals(btnType)) {
+                    if (form instanceof com.nishiyu.enderframelib.api.dom.Element formEl) {
+                        formEl.reset();
+                    }
+                    if (ctx != null) {
+                        ctx.executeFormAction(form, "onreset");
+                    }
+                    return;
+                }
+            }
+        }
+
+        // 5. a (anchor with href)
+        HtmlNode anchorNode = findSelfOrAncestor(target, "a");
+        if (anchorNode != null && anchorNode.attrs.containsKey("href")) {
+            String href = anchorNode.attrs.get("href");
+            // ページ内リンク（#id）は文書のフラグメント識別子を変える。:target の規則がこれを読む
+            if (href != null && href.startsWith("#")
+                    && anchorNode.getOwnerDocument() instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument document) {
+                document.setTargetFragment(href);
+            }
+            if (href != null && !href.isEmpty() && ctx != null) {
+                ctx.navigateTo(href);
+            }
+        }
+    }
+
+    private static void handleWheel(Event event, DefaultActionContext ctx) {
+        if (event instanceof UIEvents.Wheel we && ctx != null) {
+            ctx.scroll(we.getDeltaX(), we.getDeltaY());
+        }
+    }
+
+    private static void handleKeyDown(Event event, HtmlNode target, DefaultActionContext ctx) {
+        if (event instanceof UIEvents.Keyboard ke) {
+            String key = ke.getKey();
+            if ("Escape".equals(key) || "Esc".equals(key)) {
+                closeTopmostOnEscape(target);
+                return;
+            }
+            if ("Enter".equals(key)) {
+                // 入力欄での Enter キーによる暗黙の送信 (Implicit submission)
+                if (ElementTraits.isInputTag(target.tag)) {
+                    String inputType = target.attrs.getOrDefault("type", "text").toLowerCase(Locale.ROOT);
+                    if ("text".equals(inputType) || "search".equals(inputType) || "url".equals(inputType)
+                            || "email".equals(inputType) || "password".equals(inputType)) {
+                        HtmlNode form = findSelfOrAncestor(target, "form");
+                        if (form instanceof com.nishiyu.enderframelib.api.dom.Element formEl) {
+                            formEl.requestSubmit(null);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** {@code popovertarget} を持つボタン（自身か祖先）。 */
+    private static HtmlNode popoverInvoker(HtmlNode target) {
+        for (HtmlNode cur = target; cur != null; cur = cur.parent) {
+            if (cur.attrs != null && cur.attrs.containsKey("popovertarget")
+                    && (ElementTraits.isButton(cur.tag) || ElementTraits.isInputTag(cur.tag))) return cur;
+        }
+        return null;
+    }
+
+    /** auto（既定）か hint の popover か。manual は light dismiss と Esc の対象外。 */
+    private static boolean isAutoPopover(HtmlNode n) {
+        if (n.attrs == null || !n.attrs.containsKey("popover")) return false;
+        String v = n.attrs.get("popover");
+        return v == null || v.isEmpty() || "auto".equalsIgnoreCase(v) || "hint".equalsIgnoreCase(v);
+    }
+
+    private static boolean contains(HtmlNode ancestor, HtmlNode node) {
+        for (HtmlNode cur = node; cur != null; cur = cur.parent) if (cur == ancestor) return true;
+        return false;
+    }
+
+    /** 文書順に、閉じられる（不活性でない、表示中の auto popover とモーダルの dialog）を集める。 */
+    private static void collectDismissable(HtmlNode node, List<com.nishiyu.enderframelib.core.dom.node.HtmlElement> out) {
+        if (node instanceof com.nishiyu.enderframelib.core.dom.node.HtmlElement el && !el.isInert()) {
+            if ((isAutoPopover(el) && el.isPopoverOpen())
+                    || ("dialog".equalsIgnoreCase(el.tag) && el.isModalOpen())) out.add(el);
+        }
+        for (HtmlNode child : node.children) collectDismissable(child, out);
+    }
+
+    /** クリックが表示中の auto popover の外（かつ、その popover を開閉するボタンの外）なら閉じる。 */
+    private static void lightDismiss(HtmlNode clicked, HtmlNode invokedByClick) {
+        List<com.nishiyu.enderframelib.core.dom.node.HtmlElement> open = new ArrayList<>();
+        collectDismissable(getRoot(clicked), open);
+        for (var el : open) {
+            if (!isAutoPopover(el) || "dialog".equalsIgnoreCase(el.tag) && el.isModalOpen()) continue;
+            if (contains(el, clicked) || el == invokedByClick) continue;
+            el.hidePopover();
+        }
+    }
+
+    /** Esc: いちばん手前（文書順で最後）の popover かモーダル dialog を閉じる。dialog は先に cancel を送り、止められたら閉じない。 */
+    private static void closeTopmostOnEscape(HtmlNode target) {
+        List<com.nishiyu.enderframelib.core.dom.node.HtmlElement> open = new ArrayList<>();
+        collectDismissable(getRoot(target), open);
+        if (open.isEmpty()) return;
+        var top = open.get(open.size() - 1);
+        if ("dialog".equalsIgnoreCase(top.tag) && top.isModalOpen()) {
+            CoreEvent cancel = new CoreEvent("cancel", false, true);
+            top.dispatchEvent(cancel);
+            if (!cancel.isDefaultPrevented()) top.close();
+        } else {
+            top.hidePopover();
+        }
+    }
+
+    private static boolean isNaturallyFocusable(HtmlNode node) {
+        if (node == null) return false;
+        if (ElementTraits.isAnchor(node.tag) && node.attrs.containsKey("href")) return true;
+        return isFormControl(node);
+    }
+
+    private static boolean isFormControl(HtmlNode node) {
+        return ElementTraits.isFormControl(node);
+    }
+
+    private static HtmlNode findSelfOrAncestor(HtmlNode node, String tag) {
+        HtmlNode cur = node;
+        while (cur != null) {
+            if (tag.equalsIgnoreCase(cur.tag)) return cur;
+            cur = cur.parent;
+        }
+        return null;
+    }
+
+    private static HtmlNode getRoot(HtmlNode node) {
+        HtmlNode cur = node;
+        while (cur.parent != null) cur = cur.parent;
+        return cur;
+    }
+
+    private static HtmlNode findFirstFormControl(HtmlNode root) {
+        for (HtmlNode child : root.children) {
+            if (isFormControl(child)) return child;
+            HtmlNode nested = findFirstFormControl(child);
+            if (nested != null) return nested;
+        }
+        return null;
+    }
+
+    private static void findRadiosByName(HtmlNode root, String name, List<HtmlNode> out) {
+        if (root == null) return;
+        if (ElementTraits.isRadio(root)
+                && name.equals(root.attrs.get("name"))) {
+            out.add(root);
+        }
+        for (HtmlNode child : root.children) {
+            findRadiosByName(child, name, out);
+        }
+    }
+}

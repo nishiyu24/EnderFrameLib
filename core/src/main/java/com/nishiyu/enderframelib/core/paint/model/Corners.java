@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.model;
 
-import com.nishiyu.enderframelib.core.paint.*;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 /**
  * 4隅の角丸半径。{@code topLeft} など無印の値は横の半径、{@code *V} は縦の半径。

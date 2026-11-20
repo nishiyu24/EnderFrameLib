@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.raster;
 
+import com.nishiyu.enderframelib.core.raster.canvas.CanvasRenderingContext2D;
+
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;

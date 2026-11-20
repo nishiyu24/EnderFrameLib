@@ -17,7 +17,7 @@ core/css/ColorParser.java | 1273
 core/dom/parser/HtmlParser.java | 1256
 core/dom/Bindings.java | 1177
 core/layout/AnchorPositioning.java | 1152
-core/raster/CanvasRenderingContext2D.java | 1146
+core/raster/canvas/CanvasRenderingContext2D.java | 1144
 core/dom/InteractionState.java | 1104
 common/StandaloneView.java | 1102
 core/text/TextShaper.java | 1065

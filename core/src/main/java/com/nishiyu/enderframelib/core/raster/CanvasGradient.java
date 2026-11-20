@@ -153,7 +153,7 @@ public final class CanvasGradient extends Paint {
     }
 
     @Override
-    Shader shader(Matrix2D toDevice) {
+    public Shader shader(Matrix2D toDevice) {
         if (stops.isEmpty()) return (x, y) -> 0;
         Matrix2D inv = toDevice.multiply(transform).invert();
         if (inv == null) return (x, y) -> 0;

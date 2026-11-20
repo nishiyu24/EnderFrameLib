@@ -26,7 +26,7 @@ import com.nishiyu.enderframelib.client.renderer.WebMediaManager;
 import com.nishiyu.enderframelib.client.renderer.WebMediaManager.ClientImageRegistry;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.CssParser;
-import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
+import com.nishiyu.enderframelib.core.dom.node.DomUtils;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.Bindings;
 import java.util.ArrayList;

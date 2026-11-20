@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 行間は GDI の外部行間（hhea の lineGap から win と hhea の差を引いたもの）。
  * どれもピクセルに直してから整数に丸める（Blink の SimpleFontData と同じ）。
  */
-public final class LoadedFace {
+public final class LoadedFace implements ColrV1Renderer.Face {
 
     /** 斜体を合成するときの傾き（tan）。DirectWrite の斜体シミュレーションに近い値。 */
     static final float SYNTHETIC_OBLIQUE_SKEW = 0.2f;
@@ -736,10 +736,10 @@ public final class LoadedFace {
         ColorBitmap fc = foregroundBitmapCache.get(fgKey);
         if (fc != null) return fc == NO_BITMAP ? null : fc;
 
-        ColrV1Painter.Result v1;
+        ColrV1Renderer.Result v1;
         synchronized (lock) {
             ensureOpen();
-            v1 = ColrV1Painter.render(this, face, gid, pixelSize, foregroundArgb);
+            v1 = ColrV1Renderers.render(this, face, gid, pixelSize, foregroundArgb);
         }
         if (v1 != null && v1.usedForeground()) {
             ColorBitmap val = v1.bitmap() != null ? v1.bitmap() : NO_BITMAP;

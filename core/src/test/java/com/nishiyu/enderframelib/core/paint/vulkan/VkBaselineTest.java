@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage;
+import com.nishiyu.enderframelib.core.paint.port.GpuCoverage;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import java.io.IOException;

@@ -57,12 +57,12 @@ public final class EngineSurface implements WebViewSurface {
 
         @Override
         public com.nishiyu.enderframelib.api.event.Event createEvent(String type, boolean bubbles, boolean cancelable) {
-            return new com.nishiyu.enderframelib.core.event.CoreEvent(type, bubbles, cancelable);
+            return new com.nishiyu.enderframelib.core.dom.node.CoreEvent(type, bubbles, cancelable);
         }
 
         @Override
         public com.nishiyu.enderframelib.api.event.AbortSignal.Controller createAbortController() {
-            return new com.nishiyu.enderframelib.core.event.EventDispatcher.DomAbortController();
+            return new com.nishiyu.enderframelib.core.dom.node.EventDispatcher.DomAbortController();
         }
 
         @Override

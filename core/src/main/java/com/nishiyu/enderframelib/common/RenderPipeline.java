@@ -19,7 +19,7 @@ import com.nishiyu.enderframelib.core.css.model.StateLookup;
 import com.nishiyu.enderframelib.core.css.StyleAnimator;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.css.StyleResolver.PseudoType;
-import com.nishiyu.enderframelib.core.css.model.StyleSet;
+import com.nishiyu.enderframelib.core.css.StyleSet;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
@@ -1102,7 +1102,7 @@ public class RenderPipeline {
                 structural = true;
             }
 
-            if (com.nishiyu.enderframelib.core.dom.ElementTraits.isDetails(node.tag)) {
+            if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isDetails(node.tag)) {
                 boolean isOpen = interactionState.stateOf(node).open();
                 boolean wasOpen = box.elementChildren.size() > 1;
                 if (isOpen != wasOpen) {

@@ -5,10 +5,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.ArrayList;
 import java.util.List;
-import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 import static com.nishiyu.enderframelib.core.paint.PaintOrder.canvasBackgroundSource;
 import com.nishiyu.enderframelib.core.paint.RenderTask;
 

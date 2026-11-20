@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.api.dom.DOMRect;
 import com.nishiyu.enderframelib.core.css.AtRuleProcessor;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
-import com.nishiyu.enderframelib.core.dom.LayoutQuery;
+import com.nishiyu.enderframelib.core.dom.node.LayoutQuery;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;

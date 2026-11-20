@@ -21,7 +21,7 @@ public final class CanvasPattern extends Paint {
         this(image, 0, 0, image.width(), image.height(), repetition);
     }
 
-    CanvasPattern(Pixmap image, int sx, int sy, int sw, int sh, String repetition) {
+    public CanvasPattern(Pixmap image, int sx, int sy, int sw, int sh, String repetition) {
         this.image = image;
         this.sx = sx;
         this.sy = sy;
@@ -54,13 +54,13 @@ public final class CanvasPattern extends Paint {
         return this;
     }
 
-    CanvasPattern smoothing(boolean smoothing) {
+    public CanvasPattern smoothing(boolean smoothing) {
         this.smoothing = smoothing;
         return this;
     }
 
     @Override
-    Shader shader(Matrix2D toDevice) {
+    public Shader shader(Matrix2D toDevice) {
         Matrix2D inv = toDevice.multiply(transform).invert();
         if (inv == null || sw <= 0 || sh <= 0) return (x, y) -> 0;
         final int[] px = image.pixels();

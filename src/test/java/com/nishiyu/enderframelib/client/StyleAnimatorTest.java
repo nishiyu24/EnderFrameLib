@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.AnimationParser;
-import com.nishiyu.enderframelib.core.css.model.AnimationTiming;
+import com.nishiyu.enderframelib.core.css.AnimationTiming;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.ValueInterpolator;
 import com.nishiyu.enderframelib.core.dom.InteractionState;

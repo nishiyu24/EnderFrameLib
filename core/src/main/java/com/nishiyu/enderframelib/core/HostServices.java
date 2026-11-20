@@ -54,10 +54,10 @@ public record HostServices(
         com.nishiyu.enderframelib.core.paint.CssAnimator.StateStore animationStateStore,
         com.nishiyu.enderframelib.core.dom.parser.ParseLimits parseLimits,
         com.nishiyu.enderframelib.core.text.model.FontResolver glyphFontResolver,
-        Map<String, com.nishiyu.enderframelib.core.dom.CustomElementPainter> replacedElements,
+        Map<String, com.nishiyu.enderframelib.core.dom.node.CustomElementPainter> replacedElements,
         java.util.function.Supplier<Map<String, String>> localEnvBase,
         Map<String, java.util.function.Supplier<String>> localEnvVariables,
-        com.nishiyu.enderframelib.core.dom.HostSyntax.Extras syntaxExtras,
+        com.nishiyu.enderframelib.core.dom.node.HostSyntax.Extras syntaxExtras,
         Map<String, com.nishiyu.enderframelib.core.dom.node.TagMacro> tagMacros,
         com.nishiyu.enderframelib.core.raster.ImageDecoder imageDecoder)
         implements com.nishiyu.enderframelib.core.paint.PaintServices.Source,
@@ -67,7 +67,7 @@ public record HostServices(
                 com.nishiyu.enderframelib.core.dom.parser.HtmlParser.Source,
                 com.nishiyu.enderframelib.core.css.GlyphUnits.Source,
                 com.nishiyu.enderframelib.core.layout.ReplacedElements.Source,
-                com.nishiyu.enderframelib.core.dom.HostSyntax.Source,
+                com.nishiyu.enderframelib.core.dom.node.HostSyntax.Source,
                 com.nishiyu.enderframelib.core.raster.ImageDecoder.Source {
 
     /** 何も差し込んでいない既定（翻訳はキーのまま・描画は {@link ILayoutBoxRenderer#DEFAULT}・ほかは無し）。 */
@@ -141,7 +141,7 @@ public record HostServices(
         return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, v, replacedElements, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
-    public HostServices withReplacedElements(Map<String, com.nishiyu.enderframelib.core.dom.CustomElementPainter> v) {
+    public HostServices withReplacedElements(Map<String, com.nishiyu.enderframelib.core.dom.node.CustomElementPainter> v) {
         return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, v, localEnvBase, localEnvVariables, syntaxExtras, tagMacros, imageDecoder);
     }
 
@@ -154,11 +154,11 @@ public record HostServices(
     }
 
     /** ホスト置換要素を 1 つ足す（同名は上書き。他の面の登録は変えない）。 */
-    public HostServices withReplacedElement(String tag, com.nishiyu.enderframelib.core.dom.CustomElementPainter painter) {
+    public HostServices withReplacedElement(String tag, com.nishiyu.enderframelib.core.dom.node.CustomElementPainter painter) {
         if (tag == null || tag.isEmpty() || painter == null || painter.kind() == null) {
             throw new IllegalArgumentException("tag/painter");
         }
-        Map<String, com.nishiyu.enderframelib.core.dom.CustomElementPainter> m = new java.util.HashMap<>(replacedElements == null ? Map.of() : replacedElements);
+        Map<String, com.nishiyu.enderframelib.core.dom.node.CustomElementPainter> m = new java.util.HashMap<>(replacedElements == null ? Map.of() : replacedElements);
         m.put(tag, painter);
         return withReplacedElements(Map.copyOf(m));
     }
@@ -171,7 +171,7 @@ public record HostServices(
         return withLocalEnvVariables(Map.copyOf(m));
     }
 
-    public HostServices withSyntaxExtras(com.nishiyu.enderframelib.core.dom.HostSyntax.Extras v) {
+    public HostServices withSyntaxExtras(com.nishiyu.enderframelib.core.dom.node.HostSyntax.Extras v) {
         return new HostServices(i18nResolver, i18nFormatter, jsonListParser, intrinsicSizeResolver, boxRenderer, resourceTextResolver, clientResourceFallback, datapackResourceFallback, svgSource, fontResolver, pixelSizeFallback, svgResourceReader, svgHttpSource, fontReader, animationStateStore, parseLimits, glyphFontResolver, replacedElements, localEnvBase, localEnvVariables, v, tagMacros, imageDecoder);
     }
 
@@ -189,12 +189,12 @@ public record HostServices(
 
     /** 属性の別名を 1 つ足す（他の面の登録は変えない）。 */
     public HostServices withAttributeAlias(String alias, String canonical) {
-        return withSyntaxExtras((syntaxExtras == null ? com.nishiyu.enderframelib.core.dom.HostSyntax.Extras.NONE : syntaxExtras).withAttributeAlias(alias, canonical));
+        return withSyntaxExtras((syntaxExtras == null ? com.nishiyu.enderframelib.core.dom.node.HostSyntax.Extras.NONE : syntaxExtras).withAttributeAlias(alias, canonical));
     }
 
     /** Markdown ブロックのタグを 1 つ足す。 */
     public HostServices withMarkdownTag(String tag) {
-        return withSyntaxExtras((syntaxExtras == null ? com.nishiyu.enderframelib.core.dom.HostSyntax.Extras.NONE : syntaxExtras).withMarkdownTag(tag));
+        return withSyntaxExtras((syntaxExtras == null ? com.nishiyu.enderframelib.core.dom.node.HostSyntax.Extras.NONE : syntaxExtras).withMarkdownTag(tag));
     }
 
     public HostServices withImageDecoder(com.nishiyu.enderframelib.core.raster.ImageDecoder v) {

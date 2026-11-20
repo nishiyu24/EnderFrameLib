@@ -800,11 +800,11 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             com.nishiyu.enderframelib.api.event.EventListener listener = ev -> count.incrementAndGet();
 
             target.addEventListener("custom", listener);
-            target.dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent("custom", false, false));
+            target.dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreEvent("custom", false, false));
             assertEqualsWpt(1, count.get(), "Listener called on dispatch");
 
             target.removeEventListener("custom", listener);
-            target.dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent("custom", false, false));
+            target.dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreEvent("custom", false, false));
             assertEqualsWpt(1, count.get(), "Listener not called after removal");
         });
 
@@ -816,7 +816,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             target.addEventListener("click", listener);
             target.addEventListener("click", listener); // duplicate
 
-            target.dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent("click", true, true));
+            target.dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreEvent("click", true, true));
             assertEqualsWpt(1, count.get(), "Duplicate listener only fires once");
         });
     }
@@ -841,7 +841,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
                     com.nishiyu.enderframelib.api.event.AddEventListenerOptions.builder().capture(false).build());
             child.addEventListener("test", ev -> phases.add("child:target"));
 
-            child.dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent("test", true, true));
+            child.dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreEvent("test", true, true));
 
             assertEqualsWpt(java.util.List.of("parent:capture", "child:target", "parent:bubble"), phases,
                     "Phases executed in correct standard order");
@@ -866,7 +866,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             });
             target.addEventListener("click", ev -> called.add("second"));
 
-            target.dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent("click", true, true));
+            target.dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreEvent("click", true, true));
 
             assertEqualsWpt(java.util.List.of("first"), called, "Only first listener executed");
         });

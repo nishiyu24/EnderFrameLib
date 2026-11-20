@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.text.model;
 
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 
 /**
  * 1 回の測定を決める書体の指定。

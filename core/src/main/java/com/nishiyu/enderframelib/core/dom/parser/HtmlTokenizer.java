@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.dom.parser;
 
-import com.nishiyu.enderframelib.core.dom.*;
-import com.nishiyu.enderframelib.core.dom.node.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
+import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
 import com.nishiyu.enderframelib.network.OpenUiS2CPacket;
 import com.nishiyu.enderframelib.network.StateDeltaS2CPacket;
 import com.nishiyu.enderframelib.server.state.TestServerPlayerHelper;

@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import com.nishiyu.enderframelib.core.EngineContext;
-import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
-import com.nishiyu.enderframelib.core.dom.ReplacedKind;
+import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
+import com.nishiyu.enderframelib.core.dom.node.ReplacedKind;
 import com.nishiyu.enderframelib.core.kernel.Shortcut;
 import com.nishiyu.enderframelib.core.layout.LayoutTaskPool;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;

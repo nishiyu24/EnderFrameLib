@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
 
+import com.nishiyu.enderframelib.core.paint.port.GpuClip;
 import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.kernel.gpu.PropertyTrees;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuDevice;

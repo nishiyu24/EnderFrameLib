@@ -1,10 +1,10 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
-import com.nishiyu.enderframelib.core.paint.BlendMode;
+import com.nishiyu.enderframelib.core.paint.model.BlendMode;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
+import com.nishiyu.enderframelib.core.paint.port.GpuScrollLayer;
+import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 
 import java.util.List;

@@ -1,8 +1,11 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.model.BlendMode;
+import com.nishiyu.enderframelib.core.paint.model.ClipShape;
+import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
-import com.nishiyu.enderframelib.core.css.CssKeywords;
+import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
@@ -18,10 +21,7 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import java.util.function.Predicate;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
@@ -759,7 +759,7 @@ public final class PaintOrder {
     void collectChildren(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
                          boolean ancestorOrSelfMoving) {
         String tag = box.node.tag;
-        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isValueControl(tag)) return;
+        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isValueControl(tag)) return;
 
         ClipRect computedClip = computeChildClipRect(box, clip);
         // 切らない箱は親のクリップをそのまま返す（すでにそろえてある）。新しく作った分だけそろえる
@@ -838,7 +838,7 @@ public final class PaintOrder {
     void classify(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
                   boolean ancestorMoving) {
         if (box.display().isNone() || factsOf(box.style).displayNone()) return;
-        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isOption(box.node.tag)) return;
+        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isOption(box.node.tag)) return;
         boolean selfOrAncestorMoving = ancestorMoving || (box.style != null && factsOf(box.style).hasMovingProps());
         // 記録の途中（部分木の中）では、中の箱を別に保持しない
         if (chunksOn && recording == null && tryChunk(box, clip, parentId, sc, local, selfOrAncestorMoving)) return;

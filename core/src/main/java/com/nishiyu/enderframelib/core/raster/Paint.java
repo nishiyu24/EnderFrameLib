@@ -22,7 +22,7 @@ public abstract class Paint {
     /**
      * @param toDevice 塗りの座標系（ユーザー空間）からデバイスへの変換
      */
-    abstract Shader shader(Matrix2D toDevice);
+    public abstract Shader shader(Matrix2D toDevice);
 
     public static Paint solid(int straightArgb) {
         return new Solid(straightArgb);
@@ -43,7 +43,7 @@ public abstract class Paint {
         }
 
         @Override
-        Shader shader(Matrix2D toDevice) {
+        public Shader shader(Matrix2D toDevice) {
             final int pm = premultiplied;
             return new Shader() {
                 @Override

@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.dom.ReplacedKind;
-import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
+import com.nishiyu.enderframelib.core.dom.node.ReplacedKind;
+import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -15,14 +15,14 @@ import org.junit.jupiter.api.Test;
 
 /** ホスト置換要素の差し込み（CustomElementPainter）: 参照先の解決・シーン寸法・描画経路。 */
 class CustomElementPainterTest {
-    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.CustomElementPainter p) {
+    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.node.CustomElementPainter p) {
         com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElement(tag, p));
     }
 
-    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.ReplacedKind kind) {
+    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.node.ReplacedKind kind) {
         if (kind == null) throw new IllegalArgumentException("tag/kind");
-        reg(tag, new com.nishiyu.enderframelib.core.dom.CustomElementPainter() {
-            @Override public com.nishiyu.enderframelib.core.dom.ReplacedKind kind() { return kind; }
+        reg(tag, new com.nishiyu.enderframelib.core.dom.node.CustomElementPainter() {
+            @Override public com.nishiyu.enderframelib.core.dom.node.ReplacedKind kind() { return kind; }
         });
     }
 

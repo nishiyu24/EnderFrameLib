@@ -1,12 +1,12 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.dom.ElementTraits;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.media.ImageChoice;
 import com.nishiyu.enderframelib.core.media.ImageSources;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
+import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
-import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
+import com.nishiyu.enderframelib.core.dom.node.DomUtils;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
@@ -21,11 +21,8 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import java.util.List;
 import java.util.Locale;
-import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.paint.model.*;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.resolveLiveInputValue;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
@@ -76,7 +73,7 @@ final class ControlPainter {
         ImageChoice chosen = ElementTraits.isImage(box.node.tag)
                 ? ImageSources.forImg(box.node.attrs, decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
         String src = box.style.getOrDefault(CssPropertyIndex.SRC, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
-        com.nishiyu.enderframelib.core.dom.CustomElementPainter hostPainter =
+        com.nishiyu.enderframelib.core.dom.node.CustomElementPainter hostPainter =
                 com.nishiyu.enderframelib.core.layout.ReplacedElements.painterOf(box.node.tag);
         if (hostPainter != null) src = hostPainter.resolveSrc(box.node.attrs, src);
 

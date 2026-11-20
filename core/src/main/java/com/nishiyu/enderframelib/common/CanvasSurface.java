@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2D;
+import com.nishiyu.enderframelib.core.raster.canvas.CanvasRenderingContext2D;
 import com.nishiyu.enderframelib.core.raster.Paint;
 import com.nishiyu.enderframelib.core.raster.Path2D;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;

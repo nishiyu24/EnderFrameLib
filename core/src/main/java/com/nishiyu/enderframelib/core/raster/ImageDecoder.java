@@ -1,13 +1,13 @@
 package com.nishiyu.enderframelib.core.raster;
 
-import com.nishiyu.enderframelib.core.raster.awt.AwtImageDecoder;
-
 import java.io.IOException;
 import java.util.List;
+import java.util.ServiceLoader;
 
 /**
  * 圧縮画像（PNG / JPEG / GIF など）を画素へ復号する受け口（L0。AWT / ImageIO を知らない）。
- * 既定の実装 {@link #standard()} は JDK の ImageIO を使う L3 の {@link AwtImageDecoder} で、
+ * 既定の実装 {@link #standard()} は、{@link ServiceLoader} で見つけた実装（同梱は JDK の ImageIO を使う {@code AwtImageDecoder}。
+ * この受け口は実装の型を知らない。AWT の無い環境では実装が見つからず、何も復号しない）で、
  * AWT の無い環境・他のエンジンでは、面ごとの文脈（{@code HostServices#withImageDecoder}）で差し替える。
  */
 public interface ImageDecoder {
@@ -46,8 +46,19 @@ public interface ImageDecoder {
     }
 
     final class Holder {
-        private static final ImageDecoder DEFAULT = new AwtImageDecoder();
+        /** 何も復号しない（実装が見つからないとき）。 */
+        private static final ImageDecoder NONE = new ImageDecoder() {
+            @Override public DecodedBitmap decode(byte[] bytes) { return null; }
+            @Override public GifStream decodeGif(byte[] bytes, int maxFrames, long maxTotalPixels) { return null; }
+        };
+
+        private static final ImageDecoder DEFAULT = loadDefault();
         private static volatile java.util.function.Supplier<Source> source = () -> () -> null;
+
+        private static ImageDecoder loadDefault() {
+            for (ImageDecoder d : ServiceLoader.load(ImageDecoder.class, ImageDecoder.class.getClassLoader())) return d;
+            return NONE;
+        }
 
         private Holder() {}
     }

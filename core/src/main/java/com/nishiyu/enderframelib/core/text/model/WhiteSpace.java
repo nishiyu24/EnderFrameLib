@@ -1,8 +1,6 @@
 package com.nishiyu.enderframelib.core.text.model;
 
 import com.nishiyu.enderframelib.core.kernel.style.KeywordMatch;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 
 /** 空白の扱い。CSS の {@code white-space} に対応する。 */
 public enum WhiteSpace {

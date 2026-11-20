@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.nishiyu.enderframelib.core.dom.HostSyntax;
-import com.nishiyu.enderframelib.core.dom.ReplacedKind;
+import com.nishiyu.enderframelib.core.dom.node.HostSyntax;
+import com.nishiyu.enderframelib.core.dom.node.ReplacedKind;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import com.nishiyu.enderframelib.core.layout.ReplacedElements;

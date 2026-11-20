@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.paint.gl;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage;
+import com.nishiyu.enderframelib.core.paint.port.GpuCoverage;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.nio.file.Files;
 import java.nio.file.Path;

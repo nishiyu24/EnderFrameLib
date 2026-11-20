@@ -10,7 +10,6 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import java.util.*;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.RenderPipeline;
-import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 /**

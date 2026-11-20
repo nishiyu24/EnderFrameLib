@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.kernel.compiler;
 
+import com.nishiyu.enderframelib.core.css.StyleStateAutomaton;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.css.model.ElementState;

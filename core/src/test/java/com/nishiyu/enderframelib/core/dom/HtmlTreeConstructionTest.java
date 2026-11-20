@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.dom.node.*;
 import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.dom.parser.HtmlParser.VoidElements;
+import com.nishiyu.enderframelib.core.dom.node.VoidElements;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 

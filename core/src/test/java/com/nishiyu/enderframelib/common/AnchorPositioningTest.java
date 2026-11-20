@@ -66,7 +66,7 @@ public class AnchorPositioningTest {
                 + "<div id=t popover style='top:anchor(bottom);left:anchor(left);margin:0;width:40px;height:20px'></div>", "", W, H);
         ((HtmlElement) doc.dom().getElementById("t")).showPopover();
         LayoutBox r = c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK,
-                ((HtmlDocument) doc.root).interactionState());
+                (com.nishiyu.enderframelib.core.dom.InteractionState) ((HtmlDocument) doc.root).interactionState());
         LayoutBox t = find(r, "t");
         assertEquals(10, t.x(), 0.5f);
         assertEquals(224, t.y(), 0.5f);

@@ -1,13 +1,13 @@
 package com.nishiyu.enderframelib.core.raster.svg;
 
-import com.nishiyu.enderframelib.core.dom.ElementTraits;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.raster.CanvasGradient;
-import com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2D;
+import com.nishiyu.enderframelib.core.raster.canvas.CanvasRenderingContext2D;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Path2D;
 import com.nishiyu.enderframelib.core.raster.Paint;

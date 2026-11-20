@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
-import com.nishiyu.enderframelib.core.dom.ElementTraits;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.scene3d.CameraOrbit;
 
@@ -9,9 +9,9 @@ import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
-import com.nishiyu.enderframelib.core.event.DefaultActionContext;
-import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
+import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
+import com.nishiyu.enderframelib.core.dom.node.DefaultActionContext;
+import com.nishiyu.enderframelib.core.dom.node.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.ItemDiff;

@@ -1,14 +1,14 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.api.event.Event;
-import com.nishiyu.enderframelib.core.dom.ElementTraits;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.api.event.UIEvents;
-import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
+import com.nishiyu.enderframelib.core.dom.node.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
-import com.nishiyu.enderframelib.core.event.CoreUIEvent;
-import com.nishiyu.enderframelib.core.event.DefaultActionContext;
-import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
+import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
+import com.nishiyu.enderframelib.core.dom.node.CoreUIEvent;
+import com.nishiyu.enderframelib.core.dom.node.DefaultActionContext;
+import com.nishiyu.enderframelib.core.dom.node.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 

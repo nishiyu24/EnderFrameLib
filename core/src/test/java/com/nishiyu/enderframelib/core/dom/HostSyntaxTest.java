@@ -1,9 +1,10 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.node.HostSyntax;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.dom.parser.MarkdownParser;
-import com.nishiyu.enderframelib.core.dom.HostElementProvider;
+import com.nishiyu.enderframelib.core.dom.node.HostElementProvider;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -107,7 +108,7 @@ class HostSyntaxTest {
 
     @Test
     void coreHoldsNoMinecraftSyntaxNames() throws IOException {
-        for (String f : new String[] {"dom/Bindings.java", "dom/parser/MarkdownParser.java", "dom/HostSyntax.java"}) {
+        for (String f : new String[] {"dom/Bindings.java", "dom/parser/MarkdownParser.java", "dom/node/HostSyntax.java"}) {
             String s = Files.readString(CORE.resolve(f));
             for (String t : new String[] {"\"mc-if\"", "\"mc-for\"", "\"mc-markdown\""}) {
                 assertFalse(s.contains(t), f + " が " + t + " を直書きしている（HostElementProvider 経由にする）");

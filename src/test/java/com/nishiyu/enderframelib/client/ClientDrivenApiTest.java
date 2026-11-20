@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
 import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.api.dom.Element;
 import com.nishiyu.enderframelib.network.WebActionC2SPacket;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
+import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

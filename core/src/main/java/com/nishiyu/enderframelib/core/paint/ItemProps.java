@@ -10,10 +10,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
-import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import static com.nishiyu.enderframelib.core.paint.BoxAnimation.applyTransitionEvents;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.putFontEvents;
@@ -466,10 +463,10 @@ final class ItemProps {
         for (int i = 0; i < styleHandlers.length; i += 2) partsEvents.put(styleHandlers[i], styleHandlers[i + 1]);
 
         String tag = box.node.tag;
-        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isClickActivated(tag) && !partsEvents.containsKey("onclick")) {
+        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isClickActivated(tag) && !partsEvents.containsKey("onclick")) {
             partsEvents.put("onclick", id);
         }
-        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isLabel(tag) && box.node.attrs.containsKey("for") && !partsEvents.containsKey("onclick")) {
+        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isLabel(tag) && box.node.attrs.containsKey("for") && !partsEvents.containsKey("onclick")) {
             partsEvents.put("onclick", "label_for:" + box.node.attrs.get("for"));
         }
         return partsEvents;

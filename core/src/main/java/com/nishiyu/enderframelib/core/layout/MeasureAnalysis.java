@@ -62,7 +62,7 @@ final class MeasureAnalysis {
         StyleFacts f = box.axisStyle().layoutFacts();
         // 画像の候補選び（srcset / sizes）はビューポートの幅を読む
         boolean outside = !box.isAbsolute && !f.usesViewportUnits
-                && !(box.node != null && com.nishiyu.enderframelib.core.dom.ElementTraits.selectsImageCandidates(box.node.tag));
+                && !(box.node != null && com.nishiyu.enderframelib.core.dom.node.ElementTraits.selectsImageCandidates(box.node.tag));
         List<LayoutBox> kids = box.children;
         for (int i = 0, n = kids.size(); outside && i < n; i++) {
             LayoutBox c = kids.get(i);
@@ -94,7 +94,7 @@ final class MeasureAnalysis {
         String tag = box.node.tag;
         return box.node.nodeType == NodeType.TEXT
                 || BoxMeasurer.isReplacedImage(tag) || ReplacedElements.isHostScene(tag)
-                || com.nishiyu.enderframelib.core.dom.ElementTraits.isControlSizedByContent(tag);
+                || com.nishiyu.enderframelib.core.dom.node.ElementTraits.isControlSizedByContent(tag);
     }
 
     static boolean allChildrenWidthInvariantForFill(LayoutBox box, LayoutBox.Display.Inner inner) {
@@ -127,14 +127,14 @@ final class MeasureAnalysis {
     }
 
     static boolean isFillWidthExcludedTag(String tag) {
-        return tag == null || com.nishiyu.enderframelib.core.dom.ElementTraits.isBuiltinReplacedImage(tag) || com.nishiyu.enderframelib.core.dom.ElementTraits.isControlSizedByContent(tag)
+        return tag == null || com.nishiyu.enderframelib.core.dom.node.ElementTraits.isBuiltinReplacedImage(tag) || com.nishiyu.enderframelib.core.dom.node.ElementTraits.isControlSizedByContent(tag)
                 || ReplacedElements.isHostImageLike(tag) || ReplacedElements.isHostScene(tag);
     }
 
     static boolean isFallbackReplacedForMinContent(LayoutBox c) {
         String t = c.node.tag;
         return ReplacedElements.isReplacedTag(t) || BoxMeasurer.isReplacedImage(t)
-                || com.nishiyu.enderframelib.core.dom.ElementTraits.isFallbackSizedMedia(t);
+                || com.nishiyu.enderframelib.core.dom.node.ElementTraits.isFallbackSizedMedia(t);
     }
 
     /** 仮の測定を使う親（flex / grid）の子か。それ以外の箱は産物を記録しない（割り当てを増やさない）。 */

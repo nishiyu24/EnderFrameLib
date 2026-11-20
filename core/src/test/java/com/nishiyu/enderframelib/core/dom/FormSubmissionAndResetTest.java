@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.api.dom.FormData;
-import com.nishiyu.enderframelib.core.dom.FormController;
+import com.nishiyu.enderframelib.core.dom.node.FormController;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import org.junit.jupiter.api.DisplayName;

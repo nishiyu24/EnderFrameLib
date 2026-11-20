@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.paint.CropSrc;
 import com.nishiyu.enderframelib.core.raster.RasterImageEntry;
 
 import com.nishiyu.enderframelib.core.paint.PaintServices;
@@ -58,7 +59,7 @@ public interface ImageProvider {
         String src = item.text();
         if (CropSrc.isCrop(src)) { // 9-slice の区画: 元の画像を引いて一部を切り出す（元の画素ごとに使い回す）
             String inner = CropSrc.inner(src);
-            return inner == null ? null : CropSrc.crop(src, load(inner, boxW, boxH));
+            return inner == null ? null : CropImages.crop(src, load(inner, boxW, boxH));
         }
         return load(src, boxW, boxH);
     }

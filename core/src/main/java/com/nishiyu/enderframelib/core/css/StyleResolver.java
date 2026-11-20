@@ -264,7 +264,7 @@ public class StyleResolver {
                               int viewportW, int viewportH, ContainerBox container) {
             if (!enabled || node == null || sheet == null || lookup == null || parent == null) return null;
             if (node.attrs.containsKey("style") || node.inlineOverlay != null || node.attrs.containsKey("hidden")
-                    || com.nishiyu.enderframelib.core.dom.ElementTraits.isInputTag(node.tag)) return null;
+                    || com.nishiyu.enderframelib.core.dom.node.ElementTraits.isInputTag(node.tag)) return null;
             int version = sheet.rules.version();
             // 再スタイルをまたいで残すので、シート・環境・規則の版が変わったら捨てる。件数にも上限を置く
             if (this.sheet != sheet || this.env != env || this.sheetVersion != version || map.size() >= MAX_ENTRIES) {
@@ -444,7 +444,7 @@ public class StyleResolver {
 
         // revert の巻き戻し先。UA オリジンの宣言だけでカスケードした結果（継承値を含む）と、それにユーザーオリジンを足した結果。
         // revert / revert-layer を書いた宣言も、UA の枠線色を読む部品（input）も無ければ誰も読まないので、コピーを作らない
-        boolean trackOrigins = pseudo == null && node != null && com.nishiyu.enderframelib.core.dom.ElementTraits.isInputTag(node.tag) || trackRevert;
+        boolean trackOrigins = pseudo == null && node != null && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isInputTag(node.tag) || trackRevert;
         for (int i = 0; !trackOrigins && i < candidates.size(); i++) {
             trackOrigins = candidates.get(i).compiled().mentionsRevert;
         }
@@ -551,7 +551,7 @@ public class StyleResolver {
      * 描画は部品の溝とつまみだけなので、枠の色だけを UA の状態ごとの強調色に置き換える。
      */
     public static boolean isNativeRange(HtmlNode node, Map<String, String> style) {
-        if (!com.nishiyu.enderframelib.core.dom.ElementTraits.isInputTag(node.tag)) return false;
+        if (!com.nishiyu.enderframelib.core.dom.node.ElementTraits.isInputTag(node.tag)) return false;
         if (!"range".equalsIgnoreCase(node.attrs.getOrDefault("type", "").trim())) return false;
         String appearance = style.get(CssProperty.APPEARANCE);
         return appearance != null && !"none".equalsIgnoreCase(appearance.trim());
@@ -559,7 +559,7 @@ public class StyleResolver {
 
     /** {@code appearance} が none でないチェックボックス・ラジオボタン。 */
     public static boolean isNativeToggle(HtmlNode node, Map<String, String> style) {
-        if (!com.nishiyu.enderframelib.core.dom.ElementTraits.isInputTag(node.tag)) return false;
+        if (!com.nishiyu.enderframelib.core.dom.node.ElementTraits.isInputTag(node.tag)) return false;
         String type = node.attrs.getOrDefault("type", "").trim().toLowerCase(java.util.Locale.ROOT);
         if (!type.equals("checkbox") && !type.equals("radio")) return false;
         String appearance = style.get(CssProperty.APPEARANCE);
@@ -901,7 +901,7 @@ public class StyleResolver {
      */
     public static boolean hasInteractiveRules(HtmlNode node, StyleSheet sheet) {
         // 対話規則だけの部分集合を見る（シートの全規則は走査しない）。詳細は StyleStateAutomaton
-        return com.nishiyu.enderframelib.core.kernel.compiler.StyleStateAutomaton.interactiveMask(node, sheet) != 0;
+        return com.nishiyu.enderframelib.core.css.StyleStateAutomaton.interactiveMask(node, sheet) != 0;
     }
 
     /**

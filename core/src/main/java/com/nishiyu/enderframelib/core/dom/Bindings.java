@@ -3,11 +3,9 @@ package com.nishiyu.enderframelib.core.dom;
 
 import com.nishiyu.enderframelib.core.dom.node.*;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment;
-import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.model;
 
-import com.nishiyu.enderframelib.core.paint.*;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 /**
  * 角丸の枠線の辺ごとの太さと色（上・右・下・左）。外側の半径は {@link RenderMeta#borderRadii()}。

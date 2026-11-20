@@ -1,10 +1,9 @@
 # SwallowedExceptionRatchetTest の表（ENGINE_REARCHITECTURE_PLAN T1 ⑤）: ソースの相対パス | 本体が空の広い catch の数
 # 増やさない。直したら下げる（-Dratchet.update=true で現在値へ書き直す）。握りつぶしてよいなら本体に理由のコメントを書く。
 api/config/EnderConfigManager.java | 2
-client/template/ClientTemplateManager.java | 1
 common/LocalEnvironment.java | 2
 common/UiPubSub.java | 1
 core/dom/Bindings.java | 8
-core/event/EventDispatcher.java | 1
+core/dom/node/EventDispatcher.java | 1
 core/media/NativeVideoApi.java | 1
 core/text/font/FontFaceRules.java | 2

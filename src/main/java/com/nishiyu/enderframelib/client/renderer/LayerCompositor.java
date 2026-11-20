@@ -1,9 +1,9 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.core.paint.LayerPool;
-import com.nishiyu.enderframelib.core.paint.BlendMode;
-import com.nishiyu.enderframelib.core.paint.ClipShape;
-import com.nishiyu.enderframelib.core.paint.FilterOp;
+import com.nishiyu.enderframelib.core.paint.model.BlendMode;
+import com.nishiyu.enderframelib.core.paint.model.ClipShape;
+import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;

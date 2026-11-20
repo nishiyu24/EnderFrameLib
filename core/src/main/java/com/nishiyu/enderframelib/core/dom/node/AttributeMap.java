@@ -1,9 +1,5 @@
 package com.nishiyu.enderframelib.core.dom.node;
 
-import com.nishiyu.enderframelib.core.dom.*;
-import com.nishiyu.enderframelib.core.dom.node.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.Arrays;

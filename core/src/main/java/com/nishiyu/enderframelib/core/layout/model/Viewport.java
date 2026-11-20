@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.layout.model;
 
-import com.nishiyu.enderframelib.core.layout.*;
-import com.nishiyu.enderframelib.core.layout.model.*;
 
 /**
  * @param devicePixelRatio 1 CSS px あたりの実ピクセル（{@code srcset} / {@code image-set()} の候補選びの基準）。

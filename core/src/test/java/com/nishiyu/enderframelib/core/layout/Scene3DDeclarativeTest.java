@@ -35,7 +35,7 @@ class Scene3DDeclarativeTest {
     private static void set(StandaloneView v, String id, String attr, String value) {
         HtmlNode n = v.ui().findNode(id);
         assertNotNull(n, id);
-        com.nishiyu.enderframelib.core.dom.parser.DomUtils.updateAttribute(n, attr, value, false);
+        com.nishiyu.enderframelib.core.dom.node.DomUtils.updateAttribute(n, attr, value, false);
         v.ui().requestRestyle();
         v.ui().flushInvalidation();
     }

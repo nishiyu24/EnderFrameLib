@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.model;
 
-import com.nishiyu.enderframelib.core.paint.*;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 import java.util.Locale;
 

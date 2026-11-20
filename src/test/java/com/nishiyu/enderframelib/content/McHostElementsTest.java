@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.content;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.core.dom.parser.HtmlParser.VoidElements;
+import com.nishiyu.enderframelib.core.dom.node.VoidElements;
 import com.nishiyu.enderframelib.api.spi.ElementProvider;
 import com.nishiyu.enderframelib.core.layout.ReplacedElements;
 import java.util.Map;

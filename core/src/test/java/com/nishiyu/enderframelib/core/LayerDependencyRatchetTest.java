@@ -40,7 +40,6 @@ class LayerDependencyRatchetTest {
             {"core.scene3d", "2"},
             {"core.dom", "3"},
             {"core.css", "3"},
-            {"core.event", "3"},
             {"core.layout", "4"},
             {"core.paint", "5"},
     };

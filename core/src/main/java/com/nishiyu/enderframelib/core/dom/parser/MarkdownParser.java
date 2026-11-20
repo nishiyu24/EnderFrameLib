@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.core.dom.parser;
 
-import com.nishiyu.enderframelib.core.dom.*;
-import com.nishiyu.enderframelib.core.dom.node.*;
+import com.nishiyu.enderframelib.core.dom.node.HostSyntax;
 
 import java.util.ArrayList;
 import java.util.List;

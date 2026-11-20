@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.text.model;
 
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 
 /**
  * 測定と描画が共有する書体のモデル。

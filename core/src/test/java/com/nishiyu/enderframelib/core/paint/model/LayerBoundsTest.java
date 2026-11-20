@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.model;
 
-import com.nishiyu.enderframelib.core.paint.FilterOp;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

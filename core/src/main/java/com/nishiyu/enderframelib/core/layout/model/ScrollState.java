@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.layout.model;
 
-import com.nishiyu.enderframelib.core.layout.*;
-import com.nishiyu.enderframelib.core.layout.model.*;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 

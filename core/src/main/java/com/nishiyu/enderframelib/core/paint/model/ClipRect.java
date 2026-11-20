@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.model;
 
-import com.nishiyu.enderframelib.core.paint.*;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 /**
  * クリップ矩形と角丸情報（角ごとの横の半径 4 値 + 縦の半径 4 値）。

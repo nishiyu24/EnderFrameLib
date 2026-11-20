@@ -776,7 +776,7 @@ final class MeasureMemo {
         }
         int hash = attrHash;
         String tag = node.tag;
-        if (com.nishiyu.enderframelib.core.dom.ElementTraits.contentTextAffectsMeasure(tag)) {
+        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.contentTextAffectsMeasure(tag)) {
             hash = 31 * hash + node.getTextContent().hashCode();
         }
         return hash;

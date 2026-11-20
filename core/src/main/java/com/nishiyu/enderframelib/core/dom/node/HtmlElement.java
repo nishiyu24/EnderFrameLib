@@ -1,9 +1,5 @@
 package com.nishiyu.enderframelib.core.dom.node;
 
-import com.nishiyu.enderframelib.core.dom.*;
-import com.nishiyu.enderframelib.core.dom.node.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.api.dom.CSSStyleDeclaration;
 import com.nishiyu.enderframelib.api.dom.DOMRect;
@@ -15,9 +11,6 @@ import com.nishiyu.enderframelib.api.dom.Node;
 import com.nishiyu.enderframelib.api.dom.DOMCollections.NodeList;
 import com.nishiyu.enderframelib.api.dom.ValidityState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment;
-import com.nishiyu.enderframelib.core.css.SelectorMatcher;
-import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -134,7 +127,7 @@ public class HtmlElement extends HtmlNode implements Element {
         if (html != null && !html.trim().isEmpty()) {
             HtmlNode parsedRoot = DomUtils.innerHtmlParser != null
                     ? DomUtils.innerHtmlParser.apply(html, this.tag)
-                    : HtmlParser.parseFragment(html, this.tag);
+                    : NodeServices.get().parseFragment(html, this.tag);
             if (parsedRoot != null) {
                 List<HtmlNode> newChildren = new ArrayList<>(parsedRoot.children);
                 for (HtmlNode child : newChildren) {
@@ -160,7 +153,7 @@ public class HtmlElement extends HtmlNode implements Element {
         if (html != null && !html.trim().isEmpty()) {
             HtmlNode parsedRoot = DomUtils.innerHtmlParser != null
                     ? DomUtils.innerHtmlParser.apply(html, p.tag)
-                    : HtmlParser.parseFragment(html, p.tag);
+                    : NodeServices.get().parseFragment(html, p.tag);
             if (parsedRoot != null) {
                 for (HtmlNode child : new ArrayList<>(parsedRoot.children)) {
                     p.insertBefore(child, next);
@@ -267,23 +260,20 @@ public class HtmlElement extends HtmlNode implements Element {
     @Nullable
     @Override
     public HtmlElement querySelector(String selectors) {
-        HtmlNode found = SelectorEngine.querySelector(this, selectors);
+        HtmlNode found = NodeServices.get().querySelector(this, selectors);
         return found instanceof HtmlElement he ? he : null;
     }
 
     @Override
     public NodeList querySelectorAll(String selectors) {
-        List<HtmlNode> nodes = SelectorEngine.querySelectorAll(this, selectors);
+        List<HtmlNode> nodes = NodeServices.get().querySelectorAll(this, selectors);
         return new HtmlCollections.StaticNodeList(nodes);
     }
 
     @Override
     public boolean matches(String selectors) {
         if (selectors == null || selectors.trim().isEmpty()) return false;
-        for (com.nishiyu.enderframelib.core.css.Selector s : SelectorEngine.getOrParse(selectors)) {
-            if (SelectorMatcher.matches(s, this)) return true;
-        }
-        return false;
+        return NodeServices.get().matches(this, selectors);
     }
 
     @Nullable
@@ -516,7 +506,7 @@ public class HtmlElement extends HtmlNode implements Element {
         return root instanceof HtmlDocument doc ? doc : null;
     }
 
-    private InteractionState topLayerState() {
+    private DocumentState topLayerState() {
         HtmlDocument doc = topLayerDocument();
         return doc != null ? doc.interactionState() : null;
     }
@@ -531,7 +521,7 @@ public class HtmlElement extends HtmlNode implements Element {
     public void showModal() {
         if (!"dialog".equalsIgnoreCase(tag) || hasAttribute("open")) return;
         HtmlDocument doc = topLayerDocument();
-        InteractionState st = doc != null ? doc.interactionState() : null;
+        DocumentState st = doc != null ? doc.interactionState() : null;
         setAttribute("open", "");
         if (st != null) st.setModal(this, true);
         if (doc != null) {
@@ -541,7 +531,7 @@ public class HtmlElement extends HtmlNode implements Element {
         }
     }
 
-    private static HtmlElement findAutofocus(HtmlNode node, InteractionState st) {
+    private static HtmlElement findAutofocus(HtmlNode node, DocumentState st) {
         for (HtmlNode child : node.children) {
             if (child instanceof HtmlElement el) {
                 if (el.hasAttribute("autofocus") && !el.hasAttribute("disabled") && !el.hasAttribute("hidden")
@@ -557,7 +547,7 @@ public class HtmlElement extends HtmlNode implements Element {
 
     /** この要素が不活性（{@code inert} 属性の配下、またはモーダル {@code <dialog>} の外側）か。 */
     public boolean isInert() {
-        InteractionState st = topLayerState();
+        DocumentState st = topLayerState();
         if (st != null) return st.isInert(this);
         for (HtmlNode cur = this; cur != null; cur = cur.parent) {
             if (cur.attrs != null && cur.attrs.containsKey("inert")) return true;
@@ -568,44 +558,44 @@ public class HtmlElement extends HtmlNode implements Element {
     /** {@code dialog.close()}。閉じたら {@code close} イベントを送る。 */
     public void close() {
         if (!"dialog".equalsIgnoreCase(tag) || !hasAttribute("open")) return;
-        InteractionState st = topLayerState();
+        DocumentState st = topLayerState();
         removeAttribute("open");
         if (st != null) st.setModal(this, false);
-        dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent("close", false, false));
+        dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreEvent("close", false, false));
     }
 
     /** {@code showModal()} で開いていて、まだ閉じていないか（{@code :modal}）。 */
     public boolean isModalOpen() {
-        InteractionState st = topLayerState();
-        return st != null && st.stateOf(this).modal();
+        DocumentState st = topLayerState();
+        return st != null && st.isModal(this);
     }
 
     /** {@code popover} 属性を持ち、表示中か（{@code :popover-open}）。 */
     public boolean isPopoverOpen() {
         if (!hasAttribute("popover")) return false;
-        InteractionState st = topLayerState();
-        return st != null && st.stateOf(this).popoverOpen();
+        DocumentState st = topLayerState();
+        return st != null && st.isPopoverOpen(this);
     }
 
     /** {@code popover} 属性を持つ要素を表示する（Top Layer に載る）。 */
     public void showPopover() {
         if (!hasAttribute("popover")) return;
-        InteractionState st = topLayerState();
+        DocumentState st = topLayerState();
         if (st != null) st.setPopoverOpen(this, true);
     }
 
     public void hidePopover() {
         if (!hasAttribute("popover")) return;
-        InteractionState st = topLayerState();
+        DocumentState st = topLayerState();
         if (st != null) st.setPopoverOpen(this, false);
     }
 
     /** @return 呼び出し後に表示中か */
     public boolean togglePopover() {
         if (!hasAttribute("popover")) return false;
-        InteractionState st = topLayerState();
+        DocumentState st = topLayerState();
         if (st == null) return false;
-        boolean open = !st.stateOf(this).popoverOpen();
+        boolean open = !st.isPopoverOpen(this);
         st.setPopoverOpen(this, open);
         return open;
     }

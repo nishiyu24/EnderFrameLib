@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.kernel.compiler;
 
+import com.nishiyu.enderframelib.core.css.StyleStateAutomaton;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;

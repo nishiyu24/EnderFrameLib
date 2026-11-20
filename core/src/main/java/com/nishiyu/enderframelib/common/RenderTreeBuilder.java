@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.PaintOrder;
-import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.ContainerBox;
 import com.nishiyu.enderframelib.core.css.CounterStyles;
@@ -11,7 +10,7 @@ import com.nishiyu.enderframelib.core.css.SelectorMatcher;
 import com.nishiyu.enderframelib.core.css.model.StateLookup;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.css.StyleResolver.PseudoType;
-import com.nishiyu.enderframelib.core.css.model.StyleSet;
+import com.nishiyu.enderframelib.core.css.StyleSet;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
@@ -70,13 +69,13 @@ final class RenderTreeBuilder {
                     childScope, interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving, false, null));
         }
 
-        if (!com.nishiyu.enderframelib.core.dom.ElementTraits.hasOpaqueContent(node.tag)) {
+        if (!com.nishiyu.enderframelib.core.dom.node.ElementTraits.hasOpaqueContent(node.tag)) {
             boolean isOpen = interactionState != null
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");
             for (HtmlNode child : node.children) {
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
-                if (com.nishiyu.enderframelib.core.dom.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
+                if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
                 box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, RenderPipeline.FORCE_SUBTREE,
                         computed.fontSizePx(), childScope, interactionState, siblingInvalidation,
                         null, null, false, null, selfContainer, selfOrAncestorMoving));
@@ -280,14 +279,14 @@ final class RenderTreeBuilder {
         }
 
         // svg の子（図形）は箱にしない。svg 要素が木を読んで自分でラスタライズする
-        if (!omitChildren && !com.nishiyu.enderframelib.core.dom.ElementTraits.hasOpaqueContent(node.tag)) {
+        if (!omitChildren && !com.nishiyu.enderframelib.core.dom.node.ElementTraits.hasOpaqueContent(node.tag)) {
             boolean isOpen = interactionState != null
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");
             boolean siblingForceDirty = false;
             for (HtmlNode child : node.children) {
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
-                if (com.nishiyu.enderframelib.core.dom.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
+                if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
                 boolean stateChanged = siblingInvalidation && RenderPipeline.isStateDirty(interactionState, child);
                 int forceChild = siblingForceDirty ? RenderPipeline.FORCE_SUBTREE : childForce;
                 if (forceChild == RenderPipeline.FORCE_NONE && childForceIfInherits && interactionState != null) {
@@ -328,7 +327,7 @@ final class RenderTreeBuilder {
         box.markerStyle = box.display().listItem()
                 ? resolvePseudoStyle(node, PseudoType.MARKER, computed, sheet, env, childScope, interactionState, selfContainer)
                 : null;
-        boolean textInput = com.nishiyu.enderframelib.core.dom.ElementTraits.isTextEntryTag(node.tag);
+        boolean textInput = com.nishiyu.enderframelib.core.dom.node.ElementTraits.isTextEntryTag(node.tag);
         box.placeholderStyle = textInput
                 ? resolvePseudoStyle(node, PseudoType.PLACEHOLDER, computed, sheet, env, childScope, interactionState, selfContainer)
                 : null;

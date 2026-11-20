@@ -1,11 +1,11 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.dom.HostElementProvider;
+import com.nishiyu.enderframelib.core.dom.node.HostElementProvider;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.dom.parser.HtmlParser.VoidElements;
+import com.nishiyu.enderframelib.core.dom.node.VoidElements;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

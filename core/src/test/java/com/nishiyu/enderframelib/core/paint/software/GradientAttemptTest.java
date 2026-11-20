@@ -3,8 +3,8 @@ package com.nishiyu.enderframelib.core.paint.software;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.SoftwareRendering;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
+import com.nishiyu.enderframelib.core.paint.port.GpuClip;
+import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;

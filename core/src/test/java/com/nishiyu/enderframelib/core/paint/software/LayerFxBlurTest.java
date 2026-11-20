@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
-import com.nishiyu.enderframelib.core.paint.FilterOp;
+import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

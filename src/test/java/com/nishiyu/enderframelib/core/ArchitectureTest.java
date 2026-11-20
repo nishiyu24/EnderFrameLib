@@ -137,7 +137,7 @@ public class ArchitectureTest {
     private static final Pattern PACKAGE = Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
     private static final Pattern CLEAR_SESSION = Pattern.compile("\\bstatic\\s+void\\s+clearSession(?:State)?\\s*\\(");
     private static final Pattern FOCUS_STATE_FIELD =
-            Pattern.compile("\\b(?:String|Element|HtmlNode)\\s+(?:focusedElementBaseId|activeElement|focusedNode)\\b");
+            Pattern.compile("\\b(?:String|Element|HtmlNode)\\s+(?:focusedElementBaseId|activeElement|focusedNode)\\b(?!\\s*\\()");
     private static final Pattern NESTED_TYPE = Pattern.compile(
             "(?m)^\\s+(?:@[\\w.]+\\s+)*(?:public|protected|private)?\\s*(?:static\\s+)?(?:final\\s+)?"
                     + "(?:abstract\\s+)?(?:sealed\\s+)?(?:non-sealed\\s+)?(?:class|interface|record|enum)\\s+"
@@ -358,7 +358,7 @@ public class ArchitectureTest {
         Path input = resolveMain("common/UiInput.java");
         assertTrue(Files.isRegularFile(input), "入力経路の本体がありません: " + input);
         String inputContent = Files.readString(input);
-        for (String marker : List.of("CoreEvent.pointer", "CoreEvent.mouse", "CoreEvent.click", "core.event.StandardDefaultActions")) {
+        for (String marker : List.of("CoreEvent.pointer", "CoreEvent.mouse", "CoreEvent.click", "core.dom.node.StandardDefaultActions")) {
             assertTrue(inputContent.contains(marker),
                     "UiInput が " + marker + " を使っていません。入力合成の置き場所が変わった可能性があります");
         }
@@ -369,7 +369,7 @@ public class ArchitectureTest {
                 "client/gui/EnderScreenDelegate.java",
                 "client/ClientDomEventDispatcher.java")) {
             String content = Files.readString(resolveMain(legacy));
-            for (String marker : List.of("CoreEvent.pointer", "CoreEvent.mouse", "CoreEvent.click", "core.event.StandardDefaultActions")) {
+            for (String marker : List.of("CoreEvent.pointer", "CoreEvent.mouse", "CoreEvent.click", "core.dom.node.StandardDefaultActions")) {
                 if (content.contains(marker)) {
                     violations.add(legacy + " → " + marker);
                 }
@@ -377,6 +377,15 @@ public class ArchitectureTest {
         }
         assertTrue(violations.isEmpty(),
                 "入力イベントの合成が UiInput の外に残っています:\n  " + String.join("\n  ", violations));
+    }
+
+    /**
+     * 部品（コンポーネント）単位のパッケージ名: {@code core.paint.model} / {@code core.paint.gpu} は {@code core.paint} の内側として 1 つに数える
+     * （S5: 型の置き場を層の内側のサブパッケージへ分けても、部品の外へ漏れていない入れ子型は漏れとみなさない）。
+     */
+    private static String componentOf(String pkg) {
+        java.util.regex.Matcher m = Pattern.compile("^(com\\.nishiyu\\.enderframelib\\.core\\.[a-z0-9]+)(?:\\..*)?$").matcher(pkg);
+        return m.matches() ? m.group(1) : pkg;
     }
 
     @Test
@@ -387,10 +396,10 @@ public class ArchitectureTest {
 
         for (Path path : javaFiles(MAIN)) {
             String content = Files.readString(path);
-            String pkg = packageOf(content, path);
+            String pkg = componentOf(packageOf(content, path));
             for (Map.Entry<String, NestedType> entry : nested.entrySet()) {
                 NestedType type = entry.getValue();
-                if (pkg.equals(type.ownerPackage)) continue;
+                if (pkg.equals(componentOf(type.ownerPackage))) continue;
                 Pattern qualified = Pattern.compile("\\b" + Pattern.quote(type.owner) + "\\."
                         + Pattern.quote(type.name) + "\\b");
                 if (qualified.matcher(content).find()) {
@@ -403,7 +412,7 @@ public class ArchitectureTest {
         for (Map.Entry<String, Set<String>> entry : references.entrySet()) {
             if (entry.getValue().size() >= 2) {
                 NestedType type = nested.get(entry.getKey());
-                leaked.add(entry.getKey() + " [" + type.ownerPackage + "] ← "
+                leaked.add(entry.getKey() + " [" + componentOf(type.ownerPackage) + "] ← "
                         + String.join(", ", entry.getValue()));
             }
         }

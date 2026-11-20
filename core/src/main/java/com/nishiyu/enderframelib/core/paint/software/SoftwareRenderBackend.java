@@ -7,9 +7,9 @@ import com.nishiyu.enderframelib.core.paint.AnimatedValues;
 
 import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
 
-import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
+import com.nishiyu.enderframelib.core.paint.port.GpuClip;
+import com.nishiyu.enderframelib.core.paint.port.GpuScrollLayer;
+import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.ItemDiff;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
@@ -492,7 +492,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 partCount++;
             }
         }
-        if (partCount == 0 || partCount > com.nishiyu.enderframelib.core.paint.gpu.GpuSink.MAX_CLIPS || x1 <= x0 || y1 <= y0) {
+        if (partCount == 0 || partCount > com.nishiyu.enderframelib.core.paint.port.GpuSink.MAX_CLIPS || x1 <= x0 || y1 <= y0) {
             return RetainPlan.NONE;
         }
         Matrix2D nodePose = driver.resolveAt(nodeIndex).pose();
@@ -1085,7 +1085,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /**
      * 同じ空間（同じ逆行列・同じ倍率）で、別の部品の領域をすっかり含む直角のクリップは、重ねても何も変わらないので除く。
-     * 入れ子の箱が同じ範囲で切るとき（親が直角・子が丸角など）に、GPU が受け取れる部品数（{@link com.nishiyu.enderframelib.core.paint.gpu.GpuSink#MAX_CLIPS}）を超えて、
+     * 入れ子の箱が同じ範囲で切るとき（親が直角・子が丸角など）に、GPU が受け取れる部品数（{@link com.nishiyu.enderframelib.core.paint.port.GpuSink#MAX_CLIPS}）を超えて、
      * 図形が CPU 層へ落ちるのを防ぐ。CPU の被覆率も部品の積なので、同じ縁を二重に掛けていた分（c²）が c になる以外は変わらない。
      */
     static List<ClipPart> dropRedundantSquareParts(List<ClipPart> parts) {

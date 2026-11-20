@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
-import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
+import com.nishiyu.enderframelib.core.paint.port.GpuClip;
+import com.nishiyu.enderframelib.core.paint.port.GpuCoverage;
+import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.BorderDashPattern;
 import com.nishiyu.enderframelib.core.paint.ImagePlacement;
 import com.nishiyu.enderframelib.core.paint.ObjectFit;

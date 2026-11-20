@@ -264,6 +264,10 @@ sourceSets {
         runtimeClasspath += sourceSets.main.output + configurations.viewerRuntime
     }
 }
+dependencies {
+    // デモのうち、テストで守るもの（Three.js 風の Scene3D API。`:core` 本体には含めない。S5）
+    testImplementation sourceSets.demo.output
+}
 tasks.register('runShowcase', JavaExec) {
     group = 'application'
     description = 'ライブラリだけで動くテストサイト（Java が DOM を操作）を窓または PNG に出す'

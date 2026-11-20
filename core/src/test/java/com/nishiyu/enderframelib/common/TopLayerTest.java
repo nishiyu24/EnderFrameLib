@@ -26,7 +26,7 @@ public class TopLayerTest {
 
         LayoutBox layout() {
             return compiler.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK,
-                    ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) doc.root).interactionState());
+                    (com.nishiyu.enderframelib.core.dom.InteractionState) ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) doc.root).interactionState());
         }
 
         HtmlElement el(String id) {
@@ -135,11 +135,11 @@ public class TopLayerTest {
     }
 
     private static void click(HtmlElement el) {
-        el.dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreUIEvent("click", true, true, 0));
+        el.dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreUIEvent("click", true, true, 0));
     }
 
     private static void key(HtmlElement el, String key) {
-        el.dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent.CoreKeyboardEvent("keydown", true, true,
+        el.dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreEvent.CoreKeyboardEvent("keydown", true, true,
                 key, key, 0, false, false, false, false, false, false));
     }
 

@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.core.layout;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.core.dom.ReplacedKind;
+import com.nishiyu.enderframelib.core.dom.node.ReplacedKind;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,14 +12,14 @@ import org.junit.jupiter.api.Test;
 
 /** 置換要素の台帳（Minecraft 固有タグの SPI 化）。 */
 class ReplacedElementsTest {
-    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.CustomElementPainter p) {
+    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.node.CustomElementPainter p) {
         com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElement(tag, p));
     }
 
-    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.ReplacedKind kind) {
+    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.node.ReplacedKind kind) {
         if (kind == null) throw new IllegalArgumentException("tag/kind");
-        reg(tag, new com.nishiyu.enderframelib.core.dom.CustomElementPainter() {
-            @Override public com.nishiyu.enderframelib.core.dom.ReplacedKind kind() { return kind; }
+        reg(tag, new com.nishiyu.enderframelib.core.dom.node.CustomElementPainter() {
+            @Override public com.nishiyu.enderframelib.core.dom.node.ReplacedKind kind() { return kind; }
         });
     }
 

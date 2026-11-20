@@ -1,8 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.model;
 
-import com.nishiyu.enderframelib.core.paint.BlendMode;
-import com.nishiyu.enderframelib.core.paint.ClipShape;
-import com.nishiyu.enderframelib.core.paint.FilterOp;
 
 import java.util.List;
 

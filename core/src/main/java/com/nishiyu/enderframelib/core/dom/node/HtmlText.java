@@ -1,9 +1,5 @@
 package com.nishiyu.enderframelib.core.dom.node;
 
-import com.nishiyu.enderframelib.core.dom.*;
-import com.nishiyu.enderframelib.core.dom.node.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.api.dom.DOMException;
 import com.nishiyu.enderframelib.api.dom.DOMNodes.Text;

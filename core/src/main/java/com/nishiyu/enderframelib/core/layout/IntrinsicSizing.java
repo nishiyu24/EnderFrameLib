@@ -71,7 +71,7 @@ final class IntrinsicSizing {
         }
 
         if (box.children.isEmpty()) {
-            if (!ReplacedElements.isReplacedTag(box.node.tag) && !com.nishiyu.enderframelib.core.dom.ElementTraits.isBuiltinReplacedMedia(box.node.tag)) {
+            if (!ReplacedElements.isReplacedTag(box.node.tag) && !com.nishiyu.enderframelib.core.dom.node.ElementTraits.isBuiltinReplacedMedia(box.node.tag)) {
                 return box.horizontalDecoration();
             }
             float image = BoxMeasurer.replacedImageWidth(box, ctx);
@@ -145,7 +145,7 @@ final class IntrinsicSizing {
                 if (c >= 0) return Character.isLetterOrDigit(c);
             }
             if (n.parent.nodeType == NodeType.ELEMENT && !"span".equals(n.parent.tag) && !"b".equals(n.parent.tag)
-                    && !"i".equals(n.parent.tag) && !com.nishiyu.enderframelib.core.dom.ElementTraits.isAnchor(n.parent.tag) && !"em".equals(n.parent.tag)) return false;
+                    && !"i".equals(n.parent.tag) && !com.nishiyu.enderframelib.core.dom.node.ElementTraits.isAnchor(n.parent.tag) && !"em".equals(n.parent.tag)) return false;
         }
         return false;
     }

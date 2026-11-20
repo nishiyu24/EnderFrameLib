@@ -8,7 +8,7 @@ import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
 import com.nishiyu.enderframelib.api.event.Event;
-import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
+import com.nishiyu.enderframelib.core.dom.node.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.network.UiActionC2SPacket;

@@ -64,7 +64,7 @@ public final class UiFocus {
     }
 
     private static boolean isNaturallyFocusable(HtmlNode node) {
-        return com.nishiyu.enderframelib.core.dom.ElementTraits.isNaturallyFocusable(node);
+        return com.nishiyu.enderframelib.core.dom.node.ElementTraits.isNaturallyFocusable(node);
     }
 
     /** {@code Tab} で巡る順の候補。箱の無い（{@code display:none}）要素・無効・{@code hidden}・負の {@code tabindex} は含めない。 */
@@ -99,7 +99,7 @@ public final class UiFocus {
         }
         boolean open = node.attrs.containsKey("open");
         for (HtmlNode child : node.children) {
-            if (com.nishiyu.enderframelib.core.dom.ElementTraits.isHiddenByClosedDetails(node, open, child)) continue;
+            if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isHiddenByClosedDetails(node, open, child)) continue;
             collect(ui, layout, child, items, out, order);
         }
     }

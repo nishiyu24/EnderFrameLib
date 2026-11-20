@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.layout.model;
 
-import com.nishiyu.enderframelib.core.layout.*;
-import com.nishiyu.enderframelib.core.layout.model.*;
 
 /**
  * 親が子の整形に渡す制約（エンジン SPI の入力）。測定の結果は、この制約と箱自身のスタイル・中身だけで決まる。

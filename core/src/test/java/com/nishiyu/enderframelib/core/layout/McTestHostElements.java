@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
-import com.nishiyu.enderframelib.core.dom.HostElementProvider;
-import com.nishiyu.enderframelib.core.dom.ReplacedKind;
+import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
+import com.nishiyu.enderframelib.core.dom.node.HostElementProvider;
+import com.nishiyu.enderframelib.core.dom.node.ReplacedKind;
 import java.util.Map;
 import java.util.Set;
 

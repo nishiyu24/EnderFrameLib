@@ -18,4 +18,4 @@ switch:PATCH_SHIFT_INDEX | switch | C2 | MovingChainPatchTest
 cant-sites | 22 | C1 | IncrementalVsFullTest
 lines:core/paint/ChildSlicePatch.java | 763 | C1 | ChildPatchTest
 lines:core/paint/ChildPatchInsertion.java | 300 | C1 | ChildPatchTest
-lines:common/LocalPatches.java | 428 | C5 | StaleTextPatchTest
+lines:common/LocalPatches.java | 427 | C5 | StaleTextPatchTest

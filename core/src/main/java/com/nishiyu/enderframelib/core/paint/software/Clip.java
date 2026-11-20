@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
-import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
+import com.nishiyu.enderframelib.core.paint.port.GpuClip;
 import java.util.List;
 import java.util.Objects;
 

@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.text.model;
 
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 
 /**
  * {@code font-family} から書体を引く。

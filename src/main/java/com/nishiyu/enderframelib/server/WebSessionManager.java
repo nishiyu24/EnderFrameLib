@@ -6,7 +6,7 @@ import com.nishiyu.enderframelib.api.WebActionReceiver;
 import com.nishiyu.enderframelib.api.WebSessionProvider;
 import com.nishiyu.enderframelib.api.WebSessionHandle;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
+import com.nishiyu.enderframelib.core.dom.node.DomUtils;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.network.HtmlNodeSerializer;
 import com.nishiyu.enderframelib.network.WebSyncS2CPacket;

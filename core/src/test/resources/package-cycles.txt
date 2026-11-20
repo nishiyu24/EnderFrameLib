@@ -1,0 +1,4 @@
+# PackageCycleRatchetTest の表（ENGINE_REARCHITECTURE_PLAN S5 ①）: 代表のパッケージ | 循環の塊（パッケージをコンマ区切り）
+#   同一層の中でパッケージが互いを参照し合う塊。広げない。解消したら下げる（-Dratchet.update=true）。目標は空。
+#   残っている 1 つ: api.dom↔api.event は DOM 仕様どおりの相互参照（EventTarget↔Event。公開 API の署名に関わるので凍結。判断待ち）。
+api.dom | api.dom, api.event

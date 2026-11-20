@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.raster;
 
+import com.nishiyu.enderframelib.core.raster.canvas.CanvasRenderingContext2D;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
-import com.nishiyu.enderframelib.core.paint.BlendMode;
+import com.nishiyu.enderframelib.core.paint.model.BlendMode;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;

@@ -1,8 +1,6 @@
 package com.nishiyu.enderframelib.core.text.model;
 
 import com.nishiyu.enderframelib.core.kernel.style.KeywordMatch;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 
 /** 語の内側で分割してよいか。CSS の {@code word-break} に対応する。 */
 public enum WordBreak {

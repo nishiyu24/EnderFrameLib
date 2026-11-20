@@ -1,9 +1,5 @@
 package com.nishiyu.enderframelib.core.dom.node;
 
-import com.nishiyu.enderframelib.core.dom.*;
-import com.nishiyu.enderframelib.core.dom.node.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlComment;
@@ -12,15 +8,12 @@ import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.api.dom.Element;
 import com.nishiyu.enderframelib.api.dom.Node;
 import com.nishiyu.enderframelib.api.dom.DOMCollections.NodeList;
-import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
 import com.nishiyu.enderframelib.api.event.AbortSignal;
 import com.nishiyu.enderframelib.api.event.AddEventListenerOptions;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.api.event.EventListener;
 import com.nishiyu.enderframelib.api.event.EventListenerOptions;
-import com.nishiyu.enderframelib.core.event.EventDispatcher;
-import com.nishiyu.enderframelib.core.event.EventDispatcher.EventListenerEntry;
-import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
+import com.nishiyu.enderframelib.core.dom.node.EventDispatcher.EventListenerEntry;
 import com.nishiyu.enderframelib.core.kernel.memory.AtomTable;
 import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 import org.jetbrains.annotations.Nullable;
@@ -1267,7 +1260,7 @@ public class HtmlNode implements Node {
 
     public HtmlElement querySelector(String selector) {
         if (selector == null || selector.trim().isEmpty()) return null;
-        HtmlNode found = SelectorEngine.querySelector(this, selector);
+        HtmlNode found = NodeServices.get().querySelector(this, selector);
         return found instanceof HtmlElement he ? he : null;
     }
 
@@ -1275,7 +1268,7 @@ public class HtmlNode implements Node {
         if (selector == null || selector.trim().isEmpty()) {
             return new HtmlCollections.StaticNodeList(Collections.emptyList());
         }
-        return new HtmlCollections.StaticNodeList(SelectorEngine.querySelectorAll(this, selector));
+        return new HtmlCollections.StaticNodeList(NodeServices.get().querySelectorAll(this, selector));
     }
 
     // ==========================================

@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.model;
 
-import com.nishiyu.enderframelib.core.paint.*;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 /**
  * 連鎖の 1 つ。{@code rect} は矩形 + 横の半径 4 つ（楕円の角があれば縦の半径 4 つが続く 12 値。{@link #toArray} と同じ並び）で、

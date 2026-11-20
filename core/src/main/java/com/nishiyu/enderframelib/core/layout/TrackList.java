@@ -3,15 +3,12 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.layout.GridLayoutEngine.SizeKind;
 import com.nishiyu.enderframelib.core.layout.GridLayoutEngine.TrackDef;
 import com.nishiyu.enderframelib.core.layout.GridLayoutEngine.TrackSize;
-import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 
 /** トラックの並びと、各線の名前（{@code lineNames.get(i)} は i 番目の線）。 */
 /** グリッドのトラックの並びと線の名前（{@code grid-template-rows} / {@code grid-template-columns} の解析結果）。A8 で {@code GridLayoutEngine} から分けた。 */

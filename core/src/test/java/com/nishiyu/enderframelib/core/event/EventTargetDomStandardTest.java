@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.event;
 
-import com.nishiyu.enderframelib.core.event.EventDispatcher.DomAbortController;
+import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
+import com.nishiyu.enderframelib.core.dom.node.EventDispatcher.DomAbortController;
 import com.nishiyu.enderframelib.api.event.UIEvents;
 
 import com.nishiyu.enderframelib.api.event.AbortSignal;

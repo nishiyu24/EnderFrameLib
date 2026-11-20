@@ -16,10 +16,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.List;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
-import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.growRadius;
@@ -438,9 +435,9 @@ public final class BoxDecorationPainter {
                                          int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows,
                                          List<DisplayItem> prevItems) {
         ElementType bgType = ElementType.RECT;
-        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isButton(box.node.tag)) {
+        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isButton(box.node.tag)) {
             bgType = ElementType.BUTTON;
-        } else if (com.nishiyu.enderframelib.core.dom.ElementTraits.isAnchor(box.node.tag)) {
+        } else if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isAnchor(box.node.tag)) {
             bgType = ElementType.A;
         }
         boolean isInteractiveBox = bgType != ElementType.RECT;
@@ -756,7 +753,7 @@ public final class BoxDecorationPainter {
         for (BorderImage.Cell c : cells) {
             long biKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BORDER_IMAGE_BASE + (part & 0x3F)) : 0L;
             addElement(elements, id, id + "_bi" + (part++), ElementType.IMAGE, ImageFitMode.FILL, c.dx(), c.dy(), c.dw(), c.dh(),
-                    com.nishiyu.enderframelib.core.paint.software.CropSrc.of(c.sx(), c.sy(), c.sw(), c.sh(), url),
+                    com.nishiyu.enderframelib.core.paint.CropSrc.of(c.sx(), c.sy(), c.sw(), c.sh(), url),
                     0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta, biKey);
         }
         return true;
@@ -770,7 +767,7 @@ public final class BoxDecorationPainter {
 
     void drawBorder(List<DisplayItem> elements, String id, LayoutBox box, float rOff, ItemProps events,
                             BorderSpec border, RenderMeta meta, int transDur, List<DisplayItem> prevItems) {
-        LayoutBox legend = com.nishiyu.enderframelib.core.dom.ElementTraits.isFieldset(box.node.tag) ? box.renderedLegend() : null;
+        LayoutBox legend = com.nishiyu.enderframelib.core.dom.node.ElementTraits.isFieldset(box.node.tag) ? box.renderedLegend() : null;
         if (legend != null && border.hasBorder()) {
             drawBorderAroundLegend(elements, id, box, legend, rOff, events, border, meta, transDur);
             return;

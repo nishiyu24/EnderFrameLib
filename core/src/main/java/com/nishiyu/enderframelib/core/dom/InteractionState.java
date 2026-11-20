@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.core.dom;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.node.*;
-import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.ElementState;
@@ -36,7 +35,7 @@ import java.util.function.BiConsumer;
  * （{@link ElementState} のビット）が唯一の記憶で、アリーナの列へ写し書きはしない
  * （写しは誰にも読まれず、書くだけの二重コストだった）。</p>
  */
-public class InteractionState implements StateLookup {
+public class InteractionState implements StyledDocumentState {
 
     /** アリーナごとの列挙用の表。節が文書から外れて番号の世代が進めば、その項は自然に無効になる。 */
     private record Tab(DocumentArena arena, DocumentArena.NodeSlots<StateFlags> slots) {}

@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.dom.Scene3DDomSync;
 import com.nishiyu.enderframelib.core.scene3d.Raycaster3D;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
@@ -10,8 +9,8 @@ import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
-import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
-import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
+import com.nishiyu.enderframelib.core.dom.node.DomUtils;
+import com.nishiyu.enderframelib.core.dom.node.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.Bindings;
@@ -1584,7 +1583,7 @@ public class UiView implements AutoCloseable {
      */
     private static boolean isPaintOnlyAttribute(HtmlNode node, String name) {
         if (node.nodeType != NodeType.ELEMENT || node.tag == null) return false;
-        if (!com.nishiyu.enderframelib.core.dom.ElementTraits.isGauge(node.tag)) return false;
+        if (!com.nishiyu.enderframelib.core.dom.node.ElementTraits.isGauge(node.tag)) return false;
         String n = name.toLowerCase(Locale.ROOT);
         return n.equals("value") || n.equals("min") || n.equals("max");
     }
@@ -2106,7 +2105,7 @@ public class UiView implements AutoCloseable {
 
         HtmlNode target = findNode(baseId);
         boolean isRange = target != null && "range".equalsIgnoreCase(target.attrs.getOrDefault("type", ""));
-        boolean isSelect = target != null && com.nishiyu.enderframelib.core.dom.ElementTraits.isSelect(target.tag);
+        boolean isSelect = target != null && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isSelect(target.tag);
 
         String domValue = safeText;
         if (isRange && safeText.contains(":")) {

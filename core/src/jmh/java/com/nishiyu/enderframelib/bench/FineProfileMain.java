@@ -150,8 +150,8 @@ public final class FineProfileMain {
             for (int i = -warmup; i < frames; i++) {
                 if (i == 0) {
                     if (gpuBackend != null) { // G0/G3: 計測区間（ウォームアップ後）の GPU 被覆率
-                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.reset();
-                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.enable(true);
+                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.reset();
+                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.enable(true);
                         replayed0 = gpuBackend.rectTreeReplayedShapes();
                         flushes0 = gpuBackend.cpuOverlayFlushCount();
                         draws0 = gpuBackend.drawCallCount();
@@ -192,14 +192,14 @@ public final class FineProfileMain {
                         com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.totalNs(2) / 1e6 / frames);
             }
             if (gpuBackend != null) {
-                com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.enable(false);
+                com.nishiyu.enderframelib.core.paint.port.GpuCoverage.enable(false);
                 long replayed = gpuBackend.rectTreeReplayedShapes() - replayed0;
                 // GPU 被覆率 = (受理 + 再生で再利用した図形) ÷ 全図形。CPU 層へ落ちた図形は種別ヒストグラムで多い順に出す
                 System.out.printf("GPUCOVERAGE %.4f accepted=%d replayed=%d declined=%d declinedByKind: %s%n",
-                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.coverage(replayed),
-                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.totalAccepted(), replayed,
-                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.totalDeclined(),
-                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.declinedHistogram());
+                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.coverage(replayed),
+                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.totalAccepted(), replayed,
+                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.totalDeclined(),
+                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.declinedHistogram());
                 System.out.printf("GPUFRAME backend=%s per-frame drawCalls=%.2f cpuOverlayFlushes=%.2f%n",
                         backendName, (gpuBackend.drawCallCount() - draws0) / (double) frames,
                         (gpuBackend.cpuOverlayFlushCount() - flushes0) / (double) frames);

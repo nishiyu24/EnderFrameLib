@@ -49,7 +49,7 @@ class Milestone2GateTest {
     @Test
     void kernelClassesExist() {
         for (String f : new String[]{"kernel/style/PackedCssValue.java",
-                "kernel/compiler/StyleStateAutomaton.java",
+                "css/StyleStateAutomaton.java",
                 "kernel/compiler/BindingPatchTable.java"}) {
             assertTrue(Files.exists(MAIN.resolve("core").resolve(f)), f);
         }

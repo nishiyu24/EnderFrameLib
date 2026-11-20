@@ -115,7 +115,7 @@ public final class Pixmap {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
-    static int div255(int v) {
+    public static int div255(int v) {
         return ((v + 128) * 257) >> 16;
     }
 }

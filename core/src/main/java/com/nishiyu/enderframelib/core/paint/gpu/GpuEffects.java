@@ -1,14 +1,14 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
 
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink.GroupExtras;
+import com.nishiyu.enderframelib.core.paint.port.GpuSink.GroupExtras;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.LoadOp;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBindings;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuPass;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuTexture;
 import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms;
-import com.nishiyu.enderframelib.core.paint.BlendMode;
-import com.nishiyu.enderframelib.core.paint.ClipShape;
-import com.nishiyu.enderframelib.core.paint.FilterOp;
+import com.nishiyu.enderframelib.core.paint.model.BlendMode;
+import com.nishiyu.enderframelib.core.paint.model.ClipShape;
+import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;

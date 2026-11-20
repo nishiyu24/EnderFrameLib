@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
+import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
@@ -9,7 +9,7 @@ import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssKeywords;
+import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
@@ -23,8 +23,6 @@ import com.nishiyu.enderframelib.core.media.ImageSources;
 import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.raster.svg.SvgSize;
 
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
 import com.nishiyu.enderframelib.core.css.model.BorderStyle;
@@ -316,7 +314,7 @@ public final class BoxMeasurer {
                     ? intrinsic[0] + box.horizontalDecoration()
                     : replacedFallbackWidth(box, ctx) + box.horizontalDecoration();
             box.sizingMode = SizingMode.DEFINITE;
-        } else if (com.nishiyu.enderframelib.core.dom.ElementTraits.isControlSizedByContent(tag)) {
+        } else if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isControlSizedByContent(tag)) {
             box.w = box.getMinContentWidth(ctx);
             box.sizingMode = SizingMode.DEFINITE;
         } else if (box.isAbsolute && hasBothInsets(style, CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT)) {
@@ -631,7 +629,7 @@ public final class BoxMeasurer {
     }
 
     static boolean isReplacedImage(String tag) {
-        return com.nishiyu.enderframelib.core.dom.ElementTraits.isBuiltinReplacedImage(tag) || ReplacedElements.isHostImageLike(tag);
+        return com.nishiyu.enderframelib.core.dom.node.ElementTraits.isBuiltinReplacedImage(tag) || ReplacedElements.isHostImageLike(tag);
     }
 
     /**
@@ -682,7 +680,7 @@ public final class BoxMeasurer {
     }
 
     private static float replacedFallbackWidth(LayoutBox box, LayoutContext ctx) {
-        ImageChoice sel = com.nishiyu.enderframelib.core.dom.ElementTraits.isImage(box.node.tag) ? selectedImage(box, ctx) : null;
+        ImageChoice sel = com.nishiyu.enderframelib.core.dom.node.ElementTraits.isImage(box.node.tag) ? selectedImage(box, ctx) : null;
         String src = sel != null ? sel.url() : box.node.attrs.getOrDefault("src", "");
         boolean pending = isRemote(src) || SvgImage.looksLikeSvg(src);
         return pending ? LayoutMetrics.PENDING_IMAGE_SIZE : LayoutMetrics.FALLBACK_REPLACED_SIZE;
@@ -708,7 +706,7 @@ public final class BoxMeasurer {
         if (MulticolLayout.isMulticol(box)) return true;
         // 直交フロー（縦書き根・縦中横・ラッパー）および fieldset 等は独立した整形コンテキストを作る（CSS Writing Modes §7.1 / HTML §15.3.13）
         if (box.isVerticalWrapper || box.isVerticalRoot || box.isHorizontalReturnRoot
-                || box.isAbsolute || box.isRenderedLegend || com.nishiyu.enderframelib.core.dom.ElementTraits.isFieldset(box.node.tag)) return true;
+                || box.isAbsolute || box.isRenderedLegend || com.nishiyu.enderframelib.core.dom.node.ElementTraits.isFieldset(box.node.tag)) return true;
         StyleFacts facts = box.axisStyle().layoutFacts();
         if (facts.floating) return true;
         // flex / grid アイテムは自分の中に独立した整形コンテキストを作る

@@ -8,7 +8,7 @@ import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.common.UiView;
 import com.nishiyu.enderframelib.core.dom.Bindings;
-import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
+import com.nishiyu.enderframelib.core.dom.node.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.Ownership;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;

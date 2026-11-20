@@ -98,7 +98,7 @@ public class UiEventPipelineTest {
         assertInstanceOf(HtmlDocument.class, document.root);
         assertNotNull(((HtmlDocument) document.root).inlineActionSink());
 
-        node("a").dispatchEvent(com.nishiyu.enderframelib.core.event.CoreEvent.click(3, 4, 0));
+        node("a").dispatchEvent(com.nishiyu.enderframelib.core.dom.node.CoreEvent.click(3, 4, 0));
 
         assertEquals(List.of("action:onclick=doA@a[a|3.0,4.0]"), log);
     }

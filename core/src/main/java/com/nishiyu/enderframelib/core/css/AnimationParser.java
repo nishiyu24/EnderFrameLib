@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.css;
 
-import com.nishiyu.enderframelib.core.css.model.AnimationTiming;
 import com.nishiyu.enderframelib.core.css.model.EasingFunction;
 
 import java.util.ArrayList;

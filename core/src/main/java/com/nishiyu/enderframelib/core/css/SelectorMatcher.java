@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.css;
 
-import com.nishiyu.enderframelib.core.dom.ElementTraits;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.Selector.AttrMatcher;
 import com.nishiyu.enderframelib.core.css.Selector.DocumentPseudoClass;
@@ -12,7 +12,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.dom.ConstraintValidator;
+import com.nishiyu.enderframelib.core.dom.node.ConstraintValidator;
 import com.nishiyu.enderframelib.core.kernel.memory.AtomTable;
 import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 

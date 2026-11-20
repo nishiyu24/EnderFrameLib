@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
+import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 
 /**
  * 1 フレームの間だけ、図形・層の GPU 試行をどの {@link GpuSink} へ向けるか。
