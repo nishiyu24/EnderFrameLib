@@ -33,7 +33,8 @@ public final class EngineContext implements BindingHooks {
         com.nishiyu.enderframelib.core.dom.parser.HtmlParser.bindSource(() -> current().host);
         com.nishiyu.enderframelib.core.css.GlyphUnits.bindSource(() -> current().host);
         com.nishiyu.enderframelib.core.layout.ReplacedElements.bindSource(() -> current().host);
-        com.nishiyu.enderframelib.core.paint.DisplayListBuilder.setParentRelativeSource(() -> current().flags.parentRelativeDisplayItems());
+        com.nishiyu.enderframelib.core.dom.HostSyntax.bindSource(() -> current().host);
+        com.nishiyu.enderframelib.core.paint.DisplayListBuilder.bindParentRelativeSource(() -> current().flags.parentRelativeDisplayItems());
     }
 
     /** ホストの差し込み口（不変。{@link #updateHost} で丸ごと差し替える）。 */

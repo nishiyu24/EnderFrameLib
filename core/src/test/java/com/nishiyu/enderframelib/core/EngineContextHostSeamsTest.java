@@ -18,7 +18,10 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
-/** A13 第 2 段: SVG の取得元・書体の読み手・アニメ状態の置き場・解析の上限が面ごとの文脈にあり、面同士で混ざらない。 */
+/**
+ * A13 第 2〜4 段: SVG の取得元・書体の読み手・アニメ状態の置き場・解析の上限・置換要素・ローカル環境・テンプレート構文（属性の別名・
+ * Markdown タグ）・タグマクロが面ごとの文脈にあり、面同士で混ざらない。
+ */
 class EngineContextHostSeamsTest {
     private static String svg(int w) {
         return "<svg xmlns='http://www.w3.org/2000/svg' width='" + w + "' height='" + w + "'><rect width='" + w + "' height='" + w + "'/></svg>";
@@ -152,7 +155,39 @@ class EngineContextHostSeamsTest {
         assertEquals("en_us", com.nishiyu.enderframelib.common.LocalEnvironment.capture().get("@lang"));
     }
 
-    /** 番人: 4 つの窓口に static の setter と、文脈以外の差し込み口が戻らない。 */
+    /** A13 第 4 段: テンプレート構文（属性の別名・Markdown タグ）とタグマクロは面ごと。2 スレッドが同時に自分の面だけを見る。 */
+    @Test
+    void syntaxAndTagMacrosDoNotCrossContextsAcrossThreads() throws Exception {
+        EngineContext a = new EngineContext(), b = new EngineContext();
+        a.updateHost(h -> h.withAttributeAlias("a-when", "data-if").withMarkdownTag("a-md")
+                .withTagMacro("x-t", src -> List.of(new com.nishiyu.enderframelib.core.dom.node.HtmlElement("i"))));
+        b.updateHost(h -> h.withAttributeAlias("b-when", "data-if").withMarkdownTag("b-md")
+                .withTagMacro("x-t", src -> List.of(new com.nishiyu.enderframelib.core.dom.node.HtmlElement("b"))));
+        AtomicReference<String> fail = new AtomicReference<>();
+        Thread[] ts = new Thread[2];
+        for (int t = 0; t < 2; t++) {
+            EngineContext mine = t == 0 ? a : b;
+            String my = t == 0 ? "a" : "b", other = t == 0 ? "b" : "a", tag = t == 0 ? "i" : "b";
+            ts[t] = new Thread(() -> EngineContext.runWith(mine, () -> {
+                for (int i = 0; i < 3000 && fail.get() == null; i++) {
+                    var root = HtmlParser.parse("<div><x-t></x-t></div>");
+                    com.nishiyu.enderframelib.common.CustomTagExpander.expand(root);
+                    boolean ok = "data-if".equals(com.nishiyu.enderframelib.core.dom.HostSyntax.canonicalOf(my + "-when"))
+                            && (other + "-when").equals(com.nishiyu.enderframelib.core.dom.HostSyntax.canonicalOf(other + "-when"))
+                            && com.nishiyu.enderframelib.core.dom.HostSyntax.isMarkdownTag(my + "-md")
+                            && !com.nishiyu.enderframelib.core.dom.HostSyntax.isMarkdownTag(other + "-md")
+                            && root.children.get(0).children.size() == 1 && tag.equals(root.children.get(0).children.get(0).tag);
+                    if (!ok) fail.compareAndSet(null, "混ざった: 反復 " + i);
+                }
+            }));
+            ts[t].start();
+        }
+        for (Thread t : ts) t.join();
+        assertNull(fail.get());
+        assertEquals("a-when", com.nishiyu.enderframelib.core.dom.HostSyntax.canonicalOf("a-when"), "global には効かない");
+    }
+
+    /** 番人: 窓口に static の setter と、文脈以外の差し込み口が戻らない。登録表（構文・タグマクロ）にも static の登録口を戻さない。 */
     @Test
     void seamsStayStateless() throws Exception {
         Path main = Path.of("core/src/main/java/com/nishiyu/enderframelib/core");
@@ -161,5 +196,12 @@ class EngineContextHostSeamsTest {
             assertFalse(src.contains("public static void set"), f + " に static setter が戻った");
             assertEquals(1, src.split("static volatile java.util.function.Supplier<Source>", -1).length - 1, f + ": 文脈の引き口は 1 つだけ");
         }
+
+        for (String f : new String[] {"dom/HostSyntax.java", "../common/CustomTagExpander.java"}) {
+            String src = Files.readString(main.resolve(f));
+            assertFalse(src.contains("static synchronized void register"), f + " に static の登録口が戻った（HostServices の with… を使う）");
+            assertFalse(src.contains("static synchronized void resetToDefaults"), f + " に static の後始末が戻った");
+        }
+        assertFalse(Files.readString(main.resolve("paint/DisplayListBuilder.java")).contains("public static void set"), "DisplayListBuilder に static setter が戻った");
     }
 }

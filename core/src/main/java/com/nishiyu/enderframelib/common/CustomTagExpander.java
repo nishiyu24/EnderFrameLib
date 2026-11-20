@@ -23,7 +23,8 @@ public final class CustomTagExpander {
     /** マクロが入れ子を生むことはないが、万一の循環で無限に展開しないための上限。 */
     private static final int MAX_PASSES = 4;
 
-    private static volatile Map<String, TagMacro> macros = load();
+    /** SPI（ServiceLoader）が宣言したタグマクロ。起動後は変わらない。面ごとの追加は {@code HostServices#withTagMacro}（A13）。 */
+    private static final Map<String, TagMacro> SPI = load();
 
     private CustomTagExpander() {}
 
@@ -40,24 +41,20 @@ public final class CustomTagExpander {
         return Map.copyOf(m);
     }
 
-    /** タグマクロを足す（同名は上書き）。テスト・動的登録用。 */
-    public static synchronized void register(String tag, TagMacro macro) {
-        if (tag == null || tag.isEmpty() || macro == null) throw new IllegalArgumentException("tag/macro");
-        Map<String, TagMacro> m = new HashMap<>(macros);
-        m.put(tag.toLowerCase(Locale.ROOT), macro);
-        macros = Map.copyOf(m);
-    }
-
-    /** プロバイダ（SPI）の宣言だけの状態へ戻す。テストの後始末用。 */
-    public static synchronized void resetToDefaults() {
-        macros = load();
+    /** このスレッドの文脈のタグマクロ（SPI に文脈の追加を重ねる。追加が無ければ SPI のまま）。 */
+    private static Map<String, TagMacro> table() {
+        Map<String, TagMacro> extra = com.nishiyu.enderframelib.core.EngineContext.current().host().tagMacros();
+        if (extra == null || extra.isEmpty()) return SPI;
+        Map<String, TagMacro> m = new HashMap<>(SPI);
+        m.putAll(extra);
+        return m;
     }
 
     /** 文書全体のカスタムタグを展開する。先に文書内の {@code <template component>}、次にホストのタグマクロ。 */
     public static void expand(HtmlNode root) {
         if (root == null) return;
         expandComponents(root);
-        Map<String, TagMacro> table = macros;
+        Map<String, TagMacro> table = table();
         if (table.isEmpty()) return;
         for (int pass = 0; pass < MAX_PASSES; pass++) {
             if (!expandOnce(root, table)) return;

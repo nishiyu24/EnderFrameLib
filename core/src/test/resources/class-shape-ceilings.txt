@@ -37,6 +37,6 @@ core/css/StyleResolver.java | 0 | 0 | 0 | 1
 core/dom/node/HtmlDocument.java | 1 | 0 | 0 | 0
 core/dom/parser/DomUtils.java | 0 | 0 | 1 | 1
 core/layout/TableLayoutEngine.java | 1 | 0 | 0 | 0
-core/paint/DisplayListBuilder.java | 0 | 0 | 1 | 1
+core/paint/DisplayListBuilder.java | 0 | 0 | 0 | 1
 core/paint/gpu/ImageTextureCache.java | 1 | 0 | 0 | 0
 core/layout/LayoutTaskPool.java | 0 | 0 | 1 | 0

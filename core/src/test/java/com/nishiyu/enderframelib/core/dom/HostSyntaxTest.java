@@ -9,7 +9,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
-import org.junit.jupiter.api.AfterEach;
+import com.nishiyu.enderframelib.core.EngineContext;
+import com.nishiyu.enderframelib.core.HostServices;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /** ホスト構文（属性の別名・Markdown ブロックのタグ）の SPI。コアは具体名を持たない。 */
@@ -17,9 +19,11 @@ class HostSyntaxTest {
 
     private static final Path CORE = Path.of("core/src/main/java/com/nishiyu/enderframelib/core");
 
-    @AfterEach
-    void reset() {
-        HostSyntax.resetToDefaults();
+    /** 新しい文脈（global とは独立）で {@code body} を流す。構文の追加は文脈ごと（A13。以前は static の登録表と後始末）。 */
+    private static void withContext(UnaryOperator<HostServices> host, Runnable body) {
+        EngineContext ctx = new EngineContext();
+        ctx.updateHost(host);
+        EngineContext.runWith(ctx, body);
     }
 
     @Test
@@ -41,17 +45,17 @@ class HostSyntaxTest {
     }
 
     @Test
-    void dynamicRegistrationAndReset() {
-        HostSyntax.registerAttributeAlias("X-When", "data-if");
-        assertEquals("data-if", HostSyntax.canonicalOf("x-when"));
-        assertEquals("v", HostSyntax.attr(Map.of("x-when", "v"), "data-if"));
-        HostSyntax.registerMarkdownTag("x-md");
-        assertTrue(HostSyntax.isMarkdownTag("x-md"));
-        HostSyntax.resetToDefaults();
-        assertEquals("x-when", HostSyntax.canonicalOf("x-when"));
+    void registrationIsScopedToItsContext() {
+        withContext(h -> h.withAttributeAlias("X-When", "data-if").withMarkdownTag("x-md"), () -> {
+            assertEquals("data-if", HostSyntax.canonicalOf("x-when"));
+            assertEquals("v", HostSyntax.attr(Map.of("x-when", "v"), "data-if"));
+            assertTrue(HostSyntax.isMarkdownTag("x-md"));
+            assertEquals("data-if", HostSyntax.canonicalOf("mc-if"), "SPI の宣言は追加の上にも残る");
+        });
+        assertEquals("x-when", HostSyntax.canonicalOf("x-when"), "global には効かない");
         assertFalse(HostSyntax.isMarkdownTag("x-md"));
-        assertThrows(IllegalArgumentException.class, () -> HostSyntax.registerMarkdownTag(""));
-        assertThrows(IllegalStateException.class, () -> HostSyntax.registerAttributeAlias("a", "a"));
+        assertThrows(IllegalArgumentException.class, () -> HostServices.DEFAULTS.withMarkdownTag(""));
+        assertThrows(IllegalStateException.class, () -> HostServices.DEFAULTS.withAttributeAlias("a", "a"));
     }
 
     @Test
@@ -67,9 +71,10 @@ class HostSyntaxTest {
         assertTrue(out.contains("<h1"), out);
         assertTrue(out.contains("<article"), out);
         assertFalse(out.contains("mc-markdown"), out);
-        HostSyntax.registerMarkdownTag("x-md");
-        String out2 = MarkdownParser.processDocumentOrBlocks("<div><x-md># Yo</x-md></div>");
-        assertTrue(out2.contains("<h1"), out2);
+        withContext(h -> h.withMarkdownTag("x-md"), () -> {
+            String out2 = MarkdownParser.processDocumentOrBlocks("<div><x-md># Yo</x-md></div>");
+            assertTrue(out2.contains("<h1"), out2);
+        });
     }
 
     /** data-if 相当の指令を 1 つ付けた要素へ sync を掛け、hidden になったか。 */
@@ -89,8 +94,7 @@ class HostSyntaxTest {
         assertTrue(hiddenAfterSync("mc-if", "off", v), "別名も同じに隠す");
         assertFalse(hiddenAfterSync("mc-if", "ready", v));
         assertFalse(hiddenAfterSync("x-when", "off", v), "未登録の名前は指令ではない");
-        HostSyntax.registerAttributeAlias("x-when", "data-if");
-        assertTrue(hiddenAfterSync("x-when", "off", v), "動的に足した別名も効く");
+        withContext(h -> h.withAttributeAlias("x-when", "data-if"), () -> assertTrue(hiddenAfterSync("x-when", "off", v), "文脈に足した別名も効く"));
     }
 
     @Test

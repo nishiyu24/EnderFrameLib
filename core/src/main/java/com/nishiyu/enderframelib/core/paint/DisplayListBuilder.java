@@ -65,7 +65,7 @@ public class DisplayListBuilder {
     static volatile java.util.function.BooleanSupplier parentRelativeSource =
             () -> com.nishiyu.enderframelib.core.kernel.EngineFlags.PARENT_RELATIVE;
 
-    public static void setParentRelativeSource(java.util.function.BooleanSupplier source) {
+    public static void bindParentRelativeSource(java.util.function.BooleanSupplier source) {
         parentRelativeSource = source != null ? source : () -> true;
     }
 
