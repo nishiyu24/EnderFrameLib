@@ -10,10 +10,30 @@ import com.nishiyu.enderframelib.core.kernel.style.PackedCssValue;
 final class PackedLengths {
     private PackedLengths() {}
 
-    /** 式表。読みは volatile の配列のスナップショット、書きは同期（式は稀で、詰めるのは初回だけ）。 */
-    private static volatile LengthResolver.CompiledLength[] exprs = new LengthResolver.CompiledLength[8];
-    private static int exprCount;
-    private static final java.util.HashMap<String, Integer> EXPR_INDEX = new java.util.HashMap<>();
+    /**
+     * 式表。式は弱参照で持ち、持ち主（{@code CssValue} が {@link LengthResolver.CompiledLength} を強参照で保持し、
+     * それを{@code ComputedStyle} が保持する）が消えれば添字ごと回収して再利用する。長時間のアニメーションで
+     * 補間の {@code calc()} が毎フレーム生まれても、生きている式の数でしか増えない。
+     * 読みは volatile の配列のスナップショット、書きは同期（式は稀で、詰めるのは初回だけ）。
+     */
+    private static final class Slot extends java.lang.ref.WeakReference<LengthResolver.CompiledLength> {
+        final int index;
+        final String raw;
+
+        Slot(LengthResolver.CompiledLength c, int index, java.lang.ref.ReferenceQueue<LengthResolver.CompiledLength> q) {
+            super(c, q);
+            this.index = index;
+            this.raw = c.raw();
+        }
+    }
+
+    private static volatile Slot[] slots = new Slot[8];
+    private static int slotCount;
+    private static int[] freeList = new int[8];
+    private static int freeCount;
+    private static final java.util.HashMap<String, Slot> EXPR_INDEX = new java.util.HashMap<>();
+    private static final java.lang.ref.ReferenceQueue<LengthResolver.CompiledLength> QUEUE =
+            new java.lang.ref.ReferenceQueue<>();
 
     /** 宣言なしは {@link PackedCssValue#NONE}。{@link LengthResolver.CompiledLength#ZERO}（auto・不正値）は 0 px。 */
     static long pack(LengthResolver.CompiledLength c) {
@@ -33,14 +53,56 @@ final class PackedLengths {
     }
 
     private static synchronized int register(LengthResolver.CompiledLength c) {
-        Integer hit = EXPR_INDEX.get(c.raw());
-        if (hit != null) return hit;
-        LengthResolver.CompiledLength[] a = exprs;
-        if (exprCount == a.length) a = java.util.Arrays.copyOf(a, a.length * 2);
-        a[exprCount] = c;
-        exprs = a;
-        EXPR_INDEX.put(c.raw(), exprCount);
-        return exprCount++;
+        drain();
+        Slot hit = EXPR_INDEX.get(c.raw());
+        // 同じ式でも別の実体なら共有しない（先の実体が先に消えると、後の持ち主の添字が宙に浮くため）
+        if (hit != null && hit.get() == c) return hit.index;
+        int idx;
+        if (freeCount > 0) {
+            idx = freeList[--freeCount];
+        } else {
+            Slot[] a = slots;
+            if (slotCount == a.length) {
+                a = java.util.Arrays.copyOf(a, a.length * 2);
+                slots = a;
+            }
+            idx = slotCount++;
+        }
+        Slot s = new Slot(c, idx, QUEUE);
+        slots[idx] = s;
+        EXPR_INDEX.put(c.raw(), s);
+        return idx;
+    }
+
+    /** 回収された式の添字を空きへ戻す（{@link #register} の同期の中で呼ぶ）。 */
+    private static void drain() {
+        Object r;
+        while ((r = QUEUE.poll()) != null) {
+            Slot s = (Slot) r;
+            if (slots[s.index] != s) continue;
+            slots[s.index] = null;
+            EXPR_INDEX.remove(s.raw, s);
+            if (freeCount == freeList.length) freeList = java.util.Arrays.copyOf(freeList, freeList.length * 2);
+            freeList[freeCount++] = s.index;
+        }
+    }
+
+    private static LengthResolver.CompiledLength expr(long v) {
+        Slot s = slots[PackedCssValue.payload(v)];
+        LengthResolver.CompiledLength c = s == null ? null : s.get();
+        if (c == null) throw new IllegalStateException("式の持ち主が先に消えた: 添字 " + PackedCssValue.payload(v));
+        return c;
+    }
+
+    /** テスト用: 使用中（添字が割り当て済み）の式の数。回収待ちは {@link #register} が次に空きへ戻す。 */
+    static synchronized int liveExprCountForTest() {
+        drain();
+        return slotCount - freeCount;
+    }
+
+    /** テスト用: 式表が確保した添字の総数（高水位）。 */
+    static synchronized int exprCapacityUsedForTest() {
+        return slotCount;
     }
 
     /** {@code auto} を詰めた値（キーワード種別。{@link #resolve} は 0 px に解くので、旧 {@code ZERO} と同じ寸法になる）。 */
@@ -65,7 +127,7 @@ final class PackedLengths {
         return switch (PackedCssValue.kind(v)) {
             case PackedCssValue.K_LENGTH -> PackedCssValue.unit(v) == PackedCssValue.U_PERCENT;
             case PackedCssValue.K_CALC -> {
-                String raw = exprs[PackedCssValue.payload(v)].raw();
+                String raw = expr(v).raw();
                 yield raw != null && raw.indexOf('%') >= 0;
             }
             default -> false;
@@ -77,7 +139,7 @@ final class PackedLengths {
         return switch (PackedCssValue.kind(v)) {
             case PackedCssValue.K_NONE, PackedCssValue.K_KEYWORD -> 0f;
             case PackedCssValue.K_CALC ->
-                    exprs[PackedCssValue.payload(v)].resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+                    expr(v).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
             default -> PackedCssValue.resolveLength(v, maxPixels, elementFontSize, rootFontSize, rootW, rootH);
         };
     }

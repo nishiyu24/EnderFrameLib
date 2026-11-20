@@ -98,7 +98,7 @@ public class WebFontManager {
 
     /** 書体データの読み出しをリソースパックへつなぐ（起動時に 1 回）。 */
     public static void installFontReader() {
-        FontFaceRules.setFontReader(source -> {
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withFontReader(source -> {
             Minecraft mc = Minecraft.getInstance();
             if (mc == null) return null;
             ResourceLocation loc = ResourceLocation.tryParse(source);
@@ -108,7 +108,7 @@ public class WebFontManager {
             try (InputStream in = resource.get().open()) {
                 return in.readAllBytes();
             }
-        });
+        }));
     }
 
     public static void registerFontFace(FontFaceSpec spec) {

@@ -19,7 +19,7 @@ class Scene3DConnectionTest {
 
     @AfterEach
     void reset() {
-        ReplacedElements.resetToDefaults();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElements(null));
     }
 
     private static List<DisplayItem> render(String html) {
@@ -38,7 +38,7 @@ class Scene3DConnectionTest {
         assertTrue(ReplacedElements.isHostScene("scene-3d"));
         assertFalse(ReplacedElements.isHostImageLike("scene-3d"));
         // SPI の宣言が無くても（resetToDefaults 後も）ビルトインとして残る
-        ReplacedElements.resetToDefaults();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElements(null));
         assertTrue(ReplacedElements.isHostScene("scene-3d"));
         // 記述要素は置換要素ではない
         for (String t : Scene3DTags.CHILDREN) assertFalse(ReplacedElements.isReplacedTag(t), t);

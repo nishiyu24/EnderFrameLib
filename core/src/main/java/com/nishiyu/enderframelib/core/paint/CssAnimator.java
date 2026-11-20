@@ -39,10 +39,21 @@ public class CssAnimator {
             ? DEFAULT_STATES.computeIfAbsent(id, k -> new java.util.concurrent.ConcurrentHashMap<>())
             : DEFAULT_STATES.get(id);
 
-    private static volatile StateStore store = DEFAULT_STORE;
+    /** 文脈が差し込む置き場（A13。以前は static の差し込み口）。null なら既定のプロセス内レジストリ。 */
+    public interface Source {
+        StateStore animationStateStore();
+    }
 
-    public static void setStateStore(StateStore newStore) {
-        store = newStore == null ? DEFAULT_STORE : newStore;
+    private static volatile java.util.function.Supplier<Source> source = () -> () -> null;
+
+    /** 「このスレッドの文脈の値」を引く口を結ぶ（{@code EngineContext} が 1 回だけ呼ぶ）。 */
+    public static void bindSource(java.util.function.Supplier<Source> contextSource) {
+        source = contextSource == null ? () -> () -> null : contextSource;
+    }
+
+    private static StateStore store() {
+        StateStore s = source.get().animationStateStore();
+        return s != null ? s : DEFAULT_STORE;
     }
 
     /** 既定の置き場の指定セッションを捨てる。 */
@@ -87,7 +98,7 @@ public class CssAnimator {
      */
     public static AnimState stateFor(String sessionId, DisplayItem el, long now) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, true);
+        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, true);
         AnimState state = sessionMap.get(el.id());
         if (state == null) state = sessionMap.computeIfAbsent(el.id(), k -> new AnimState(el, now));
 
@@ -107,13 +118,13 @@ public class CssAnimator {
     /** 状態を作らずに引く。無ければ null。 */
     public static AnimState peekState(String sessionId, String id) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, false);
+        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
         return sessionMap != null ? sessionMap.get(id) : null;
     }
 
     public static AnimatedValues getCurrentValues(String sessionId, DisplayItem el) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, false);
+        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
         AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
         if (state != null) {
             return state.getInterpolatedValues(System.currentTimeMillis());
@@ -137,7 +148,7 @@ public class CssAnimator {
      */
     public static AnimatedValues valuesAtInto(String sessionId, DisplayItem el, AnimatedValues scratch, long now) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, false);
+        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
         AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
         if (state != null) return state.getInterpolatedValues(now);
         scratch.set(el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.hints().skew(), el.color(), el.bgColor());
@@ -148,7 +159,7 @@ public class CssAnimator {
 
     public static void cleanup(String sessionId, List<DisplayItem> currentElements) {
         if (sessionId == null) return;
-        Map<String, AnimState> sessionMap = store.mapFor(sessionId, false);
+        Map<String, AnimState> sessionMap = store().mapFor(sessionId, false);
         if (sessionMap == null || sessionMap.isEmpty()) return;
         // 毎フレームやると要素数分の集合を作り直すので、掃除は 1 秒に 1 回でよい（消えた要素の状態が少し残るだけ）
         long now = System.nanoTime();

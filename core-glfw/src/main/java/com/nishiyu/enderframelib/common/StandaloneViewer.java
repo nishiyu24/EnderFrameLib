@@ -148,7 +148,7 @@ public final class StandaloneViewer {
      */
     static FontSources installFonts(String source) {
         FontSources fonts = new FontSources(new SafeHttpClient(HttpPolicy.publicOnly())).setBase(source);
-        FontFaceRules.setFontReader(fonts);
+        com.nishiyu.enderframelib.core.EngineContext.current().updateHost(h -> h.withFontReader(fonts));
         CssParser.fontFaceCallback = css -> FontFaceRules.extractAndRegister(css, null);
         return fonts;
     }

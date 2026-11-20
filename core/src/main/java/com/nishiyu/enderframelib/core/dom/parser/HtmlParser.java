@@ -43,15 +43,15 @@ public class HtmlParser {
 
     static final Logger LOGGER = LoggerFactory.getLogger(HtmlParser.class);
 
-    private static volatile ParseLimits defaultLimits = ParseLimits.DEFAULT;
-
-    /** 既定の上限を差し替える（プロセス全体）。個別の呼び出しは {@code limits} 付きの overload を使う。 */
-    public static void setDefaultLimits(ParseLimits limits) {
-        defaultLimits = java.util.Objects.requireNonNull(limits);
-    }
+    /** 文脈が差し込む既定の上限（A13）。null なら {@link ParseLimits#DEFAULT}。 */
+    public interface Source { ParseLimits parseLimits(); }
+    private static volatile java.util.function.Supplier<Source> source = () -> () -> null;
+    /** このスレッドの文脈の値を引く口を結ぶ（{@code EngineContext} が呼ぶ）。 */
+    public static void bindSource(java.util.function.Supplier<Source> s) { source = s == null ? () -> () -> null : s; }
 
     public static ParseLimits defaultLimits() {
-        return defaultLimits;
+        ParseLimits l = source.get().parseLimits();
+        return l != null ? l : ParseLimits.DEFAULT;
     }
     private static final int MAX_TEXT = 16384;
     private static final int MAX_RAW_TEXT = 1 << 20;
@@ -142,7 +142,7 @@ public class HtmlParser {
      * 書かれていなければ補う。
      */
     public static HtmlNode parseDocument(String html) {
-        return parseDocument(html, defaultLimits);
+        return parseDocument(html, defaultLimits());
     }
 
     public static HtmlNode parseDocument(String html, ParseLimits limits) {
@@ -159,7 +159,7 @@ public class HtmlParser {
      * 表の部品を最上位に置ける。
      */
     public static HtmlNode parseFragment(String html, String contextTag) {
-        return parseFragment(html, contextTag, defaultLimits);
+        return parseFragment(html, contextTag, defaultLimits());
     }
 
     public static HtmlNode parseFragment(String html, String contextTag, ParseLimits limits) {

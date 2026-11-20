@@ -16,7 +16,17 @@ import java.util.Map;
  */
 public final class GlyphUnits {
 
-    private static volatile FontResolver resolver;
+    /** 文脈が差し込む書体の解決（A13。以前は static の差し込み口）。null なら代替の 0.5em。 */
+    public interface Source {
+        FontResolver glyphFontResolver();
+    }
+
+    private static volatile java.util.function.Supplier<Source> source = () -> () -> null;
+
+    /** 「このスレッドの文脈の値」を引く口を結ぶ（{@code EngineContext} が 1 回だけ呼ぶ）。 */
+    public static void bindSource(java.util.function.Supplier<Source> contextSource) {
+        source = contextSource == null ? () -> () -> null : contextSource;
+    }
 
     private final Map<String, String> declared;
     private final Map<String, String> parent;
@@ -32,17 +42,12 @@ public final class GlyphUnits {
         this.fontSizePx = fontSizePx;
     }
 
-    /** 測定に使う書体の解決を渡す。null で外す（代替の 0.5em に戻る）。 */
-    public static void install(FontResolver fonts) {
-        resolver = fonts;
-    }
-
     /**
      * この要素の {@code ch} / {@code ex} の源。{@code style} に無い書体の指定は {@code parent}（継承）から取る。
      * 書体を解決する手段が渡されていなければ null。
      */
     static GlyphUnits of(Map<String, String> style, Map<String, String> parent, float fontSizePx) {
-        return resolver == null ? null : new GlyphUnits(style, parent, fontSizePx);
+        return source.get().glyphFontResolver() == null ? null : new GlyphUnits(style, parent, fontSizePx);
     }
 
     /** 書体の指定を読む。要素ごとに作るので、{@code ch} / {@code ex} が使われるまで読まない。 */
@@ -75,7 +80,7 @@ public final class GlyphUnits {
     }
 
     private FontFace face() {
-        FontResolver r = resolver;
+        FontResolver r = source.get().glyphFontResolver();
         fontStyle();
         return r == null ? FontFace.FALLBACK : r.resolve(fontFamily);
     }

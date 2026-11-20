@@ -16,7 +16,6 @@ import com.nishiyu.enderframelib.api.config.EnderConfigManager;
 import com.nishiyu.enderframelib.client.gui.AbstractEnderScreen;
 import com.nishiyu.enderframelib.client.gui.EnderConfigScreen;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
-import com.nishiyu.enderframelib.core.paint.PaintServices;
 import com.nishiyu.enderframelib.core.raster.svg.SvgSources;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
@@ -80,7 +79,7 @@ public class EnderFrameClientInit {
         // システムの書体の一覧は最初の画面を開くときに要る。読み込み（数十〜百数十ミリ秒）を起動中に裏で済ませておく
         SystemFonts.warmUpAsync();
         // ch / ex は、測定と描画が使う書体の指標（「0」の送り幅・x ハイト）で決める
-        com.nishiyu.enderframelib.core.css.GlyphUnits.install(WebFontManager.McFontResolver.INSTANCE);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withGlyphFontResolver(WebFontManager.McFontResolver.INSTANCE));
         // 効果のあるフレームが続かなければ、レイヤーの FBO は手放す（効果のある箱があるときだけ確保する）
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.ClientTickEvent.Post event) ->
                 com.nishiyu.enderframelib.client.renderer.LayerCompositor.trimIdle());
@@ -127,22 +126,23 @@ public class EnderFrameClientInit {
         EnderConfigScreen.registerForMod(EnderFrameLib.MODID);
 
         // 表示リスト生成は core/paint に移したので、Minecraft のリソース・書体・セッション状態だけをここで繋ぐ
-        SvgSources.setHttpSource(com.nishiyu.enderframelib.client.renderer.WebMediaManager::getSvg);
-        SvgSources.setResourceReader((name, max) -> {
-            var loc = net.minecraft.resources.ResourceLocation.tryParse(name);
-            if (loc == null) return null;
-            var res = net.minecraft.client.Minecraft.getInstance().getResourceManager().getResource(loc);
-            if (res.isEmpty()) return null;
-            try (java.io.InputStream in = res.get().open()) {
-                return in.readNBytes(max);
-            }
-        });
-        PaintServices.setSvgSource(SvgSources::get);
-        PaintServices.setFontResolver(WebFontManager.McFontResolver.INSTANCE);
-        CssAnimator.setStateStore((sessionId, create) -> {
-            SessionContext ctx = create ? ClientWebManager.getOrCreateSession(sessionId) : ClientWebManager.getSession(sessionId);
-            return ctx == null ? null : ctx.cssAnimations();
-        });
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h
+                .withSvgHttpSource(com.nishiyu.enderframelib.client.renderer.WebMediaManager::getSvg)
+                .withSvgResourceReader((name, max) -> {
+                    var loc = net.minecraft.resources.ResourceLocation.tryParse(name);
+                    if (loc == null) return null;
+                    var res = net.minecraft.client.Minecraft.getInstance().getResourceManager().getResource(loc);
+                    if (res.isEmpty()) return null;
+                    try (java.io.InputStream in = res.get().open()) {
+                        return in.readNBytes(max);
+                    }
+                })
+                .withSvgSource(SvgSources::get)
+                .withFontResolver(WebFontManager.McFontResolver.INSTANCE)
+                .withAnimationStateStore((sessionId, create) -> {
+                    SessionContext ctx = create ? ClientWebManager.getOrCreateSession(sessionId) : ClientWebManager.getSession(sessionId);
+                    return ctx == null ? null : ctx.cssAnimations();
+                }));
 
         WebFontManager.installFontReader();
         CssParser.fontFaceCallback = WebFontManager::extractAndRegisterFontFaces;
@@ -203,7 +203,6 @@ public class EnderFrameClientInit {
 
         DomUtils.innerHtmlParser = UiDocumentCompiler.INNER_HTML_PARSER;
         com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withIntrinsicSizeResolver(ClientImageRegistry.RESOLVER_ADAPTER));
-        PaintServices.setIntrinsicSizeResolver(ClientImageRegistry.RESOLVER_ADAPTER);
 
         ClientImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);
 

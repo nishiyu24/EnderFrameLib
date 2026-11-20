@@ -13,7 +13,7 @@ import java.util.ServiceLoader;
  * ホスト固有タグの直書きを 1 か所へ集約する。
  *
  * <p>HTML 標準の置換要素（img・canvas・svg・フォーム部品など）は固定、ホストが持ち込む置換要素
- * （Minecraft なら mc-fluid 等）は {@link #register} で登録する。エンジン本体は具体的なタグ名を知らない。
+ * （Minecraft なら mc-fluid 等）は {@code HostServices#withReplacedElement}（文脈）で登録する。エンジン本体は具体的なタグ名を知らない。
  * 読み取りは不変スナップショットの参照 1 回（ロック・確保なし）。
  */
 public final class ReplacedElements {
@@ -25,7 +25,26 @@ public final class ReplacedElements {
         @Override public int sceneHeight() { return Scene3DTags.DEFAULT_HEIGHT; }
     };
 
-    private static volatile Map<String, CustomElementPainter> host = defaults();
+    /** SPI（ServiceLoader）が宣言した置換要素。起動後は変わらない。 */
+    private static final Map<String, CustomElementPainter> SPI = defaults();
+
+    /** 文脈が差し込む置換要素（A13。以前は static の登録表）。null なら無し。 */
+    public interface Source {
+        Map<String, CustomElementPainter> replacedElements();
+    }
+
+    private static volatile java.util.function.Supplier<Source> source = () -> () -> null;
+
+    /** 「このスレッドの文脈の値」を引く口を結ぶ（{@code EngineContext} が 1 回だけ呼ぶ）。 */
+    public static void bindSource(java.util.function.Supplier<Source> contextSource) {
+        source = contextSource == null ? () -> () -> null : contextSource;
+    }
+
+    private static CustomElementPainter lookup(String tag) {
+        Map<String, CustomElementPainter> ctx = source.get().replacedElements();
+        CustomElementPainter p = ctx == null ? null : ctx.get(tag);
+        return p != null ? p : SPI.get(tag);
+    }
 
     private ReplacedElements() {}
 
@@ -51,45 +70,24 @@ public final class ReplacedElements {
         return Map.copyOf(m);
     }
 
-    /** ホスト置換要素を性質だけで登録する（同名は上書き）。 */
-    public static void register(String tag, ReplacedKind kind) {
-        if (kind == null) throw new IllegalArgumentException("tag/kind");
-        register(tag, new Plain(kind));
-    }
-
-    /** ホスト置換要素を採寸・描画の差し込み付きで登録する（同名は上書き）。 */
-    public static synchronized void register(String tag, CustomElementPainter painter) {
-        if (tag == null || tag.isEmpty() || painter == null || painter.kind() == null) {
-            throw new IllegalArgumentException("tag/painter");
-        }
-        Map<String, CustomElementPainter> m = new HashMap<>(host);
-        m.put(tag, painter);
-        host = Map.copyOf(m);
-    }
-
     /** 登録された差し込み。無ければ null。 */
     public static CustomElementPainter painterOf(String tag) {
-        return host.get(tag);
-    }
-
-    /** プロバイダ（SPI）の宣言だけの状態へ戻す。テストの後始末用。 */
-    public static synchronized void resetToDefaults() {
-        host = defaults();
+        return lookup(tag);
     }
 
     /** ホストが登録した置換要素か。 */
     public static boolean isHost(String tag) {
-        return host.containsKey(tag);
+        return lookup(tag) != null;
     }
 
     /** ホスト置換要素のうち画像として採寸されるもの。 */
     public static boolean isHostImageLike(String tag) {
-        CustomElementPainter p = host.get(tag);
+        CustomElementPainter p = lookup(tag);
         return p != null && p.kind() == ReplacedKind.IMAGE_LIKE;
     }
 
     public static boolean isHostScene(String tag) {
-        CustomElementPainter p = host.get(tag);
+        CustomElementPainter p = lookup(tag);
         return p != null && p.kind() == ReplacedKind.SCENE;
     }
 

@@ -25,8 +25,11 @@ css/CssKeywords.java#CSS_NAMES | IMMUTABLE_TABLE | 静的初期化で作った�
 css/CssNumbers.java#HEX | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/CssSyntax.java#POOL | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
 css/LengthResolver.java#ZERO_RADII_XY | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-css/PackedLengths.java#EXPR_INDEX | LOCKED | register が synchronized。読み側は volatile の exprs 配列を引く（追記のみ）
-css/PackedLengths.java#exprCount | LOCKED | register が synchronized。読み側は volatile の exprs 配列を引く（追記のみ）
+css/PackedLengths.java#EXPR_INDEX | LOCKED | register が synchronized。式は弱参照で持ち、持ち主が消えた添字は空きへ戻して再利用する（読み側は volatile の slots 配列を引く）
+css/PackedLengths.java#slotCount | LOCKED | register が synchronized。式は弱参照で持ち、持ち主が消えた添字は空きへ戻して再利用する（読み側は volatile の slots 配列を引く）
+css/PackedLengths.java#freeList | LOCKED | register が synchronized。式は弱参照で持ち、持ち主が消えた添字は空きへ戻して再利用する（読み側は volatile の slots 配列を引く）
+css/PackedLengths.java#freeCount | LOCKED | register が synchronized。式は弱参照で持ち、持ち主が消えた添字は空きへ戻して再利用する（読み側は volatile の slots 配列を引く）
+layout/ReplacedElements.java#SPI | IMMUTABLE_TABLE | SPI が宣言した置換要素。静的初期化で作った後は読むだけ（ホストの登録は文脈の HostServices）
 css/PropertyRegistry.java#PROPERTIES | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/PropertyRegistry.java#SUBPROPERTIES | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/ShorthandPlan.java#IDS | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）

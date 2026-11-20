@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FontFaceRulesTest {
 
-    @AfterEach void reset() { FontFaceRules.setFontReader(null); }
+    @AfterEach void reset() { com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withFontReader(null)); }
 
     @Test @DisplayName("書体名は引用符を外して小文字にする")
     void clean() {
@@ -48,7 +48,7 @@ class FontFaceRulesTest {
     @Test @DisplayName("TTF / OTF 以外は読み手を呼ばない。ns:path は font/ を挟んだ置き場も試す")
     void readerCandidates() {
         List<String> asked = new ArrayList<>();
-        FontFaceRules.setFontReader(s -> { asked.add(s); return null; });
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withFontReader(s -> { asked.add(s); return null; }));
         FontFaceRules.extractAndRegister("@font-face{font-family:a;src:url(x:f.woff2)}", null);
         assertTrue(asked.isEmpty());
         FontFaceRules.extractAndRegister("@font-face{font-family:b;src:url(x:f.ttf)}", null);

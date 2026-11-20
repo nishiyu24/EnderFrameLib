@@ -25,6 +25,14 @@ public final class EngineContext implements BindingHooks {
     static {
         // L3（DOM）の Bindings が上位層を参照せずに、このスレッドの文脈の翻訳・JSON 解析を引けるようにする（層の逆転）。
         BindingHooks.install(EngineContext::current);
+        // L5 の PaintServices が、このスレッドの文脈（HostServices）の SVG・書体・固有サイズを引けるようにする。
+        com.nishiyu.enderframelib.core.paint.PaintServices.bindSource(() -> current().host);
+        com.nishiyu.enderframelib.core.raster.svg.SvgSources.bindSource(() -> current().host);
+        com.nishiyu.enderframelib.core.text.font.FontFaceRules.bindSource(() -> current().host);
+        com.nishiyu.enderframelib.core.paint.CssAnimator.bindSource(() -> current().host);
+        com.nishiyu.enderframelib.core.dom.parser.HtmlParser.bindSource(() -> current().host);
+        com.nishiyu.enderframelib.core.css.GlyphUnits.bindSource(() -> current().host);
+        com.nishiyu.enderframelib.core.layout.ReplacedElements.bindSource(() -> current().host);
         com.nishiyu.enderframelib.core.paint.DisplayListBuilder.setParentRelativeSource(() -> current().flags.parentRelativeDisplayItems());
     }
 

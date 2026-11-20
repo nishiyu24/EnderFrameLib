@@ -22,7 +22,7 @@ class HostElementProviderTest {
 
     @AfterEach
     void reset() {
-        ReplacedElements.resetToDefaults();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElements(null));
         VoidElements.resetHost();
     }
 

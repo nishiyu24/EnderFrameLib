@@ -25,6 +25,17 @@ public final class AtomTable {
     private static final int CHUNK_BITS = 10;
     private static final int CHUNK_SIZE = 1 << CHUNK_BITS;
     private static final int MAX_CHUNKS = 1 << 12; // 約 419 万 atom まで
+    /** 振れる atom の最大数（既定）。 */
+    public static final int DEFAULT_CAPACITY = MAX_CHUNKS * CHUNK_SIZE;
+
+    /** 上限を超えて振ろうとした。解放の無い辞書なので、動的な id・class を際限なく振り続けたときの失敗を型で区別する。 */
+    public static final class ExhaustedException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        ExhaustedException(int capacity) {
+            super("atom の上限を超えた（上限 " + capacity + "）。id / class に連番などの動的な値を入れ続けていないか確認する");
+        }
+    }
 
     /** 標準の HTML タグと属性名。並びを変えると予約 ID がずれるので、追記だけにする。 */
     private static final String[] RESERVED = {
@@ -55,6 +66,9 @@ public final class AtomTable {
     private final ConcurrentHashMap<String, Integer> byName = new ConcurrentHashMap<>(1024);
     private final AtomicReferenceArray<String[]> chunks = new AtomicReferenceArray<>(MAX_CHUNKS);
     private final AtomicInteger next = new AtomicInteger(LAST_RESERVED + 1);
+    private final int capacity;
+    private final java.util.concurrent.atomic.AtomicBoolean nearLimitFired = new java.util.concurrent.atomic.AtomicBoolean();
+    private volatile java.util.function.Consumer<AtomTable> nearLimitListener;
 
     /** プロセス全体で共有する辞書。DOM の節と算出スタイルは、これを通して名前を整数にする。 */
     public static AtomTable shared() {
@@ -62,6 +76,15 @@ public final class AtomTable {
     }
 
     public AtomTable() {
+        this(DEFAULT_CAPACITY);
+    }
+
+    /** 上限つきの辞書（テストや、小さな上限で動的入力を早めに検出したい用途）。 */
+    public AtomTable(int capacity) {
+        if (capacity <= LAST_RESERVED + 1 || capacity > DEFAULT_CAPACITY) {
+            throw new IllegalArgumentException("capacity は " + (LAST_RESERVED + 2) + ".." + DEFAULT_CAPACITY + ": " + capacity);
+        }
+        this.capacity = capacity;
         int id = 1;
         for (String name : RESERVED) {
             if (byName.putIfAbsent(name, id) == null) {
@@ -88,8 +111,12 @@ public final class AtomTable {
         if (found != null) return found;
         Integer created = byName.computeIfAbsent(name, key -> {
             int id = next.getAndIncrement();
-            if (id >= MAX_CHUNKS * CHUNK_SIZE) throw new IllegalStateException("atom の上限を超えた");
+            if (id >= capacity) throw new ExhaustedException(capacity);
             store(id, key);
+            if (id >= capacity - capacity / 10 && nearLimitFired.compareAndSet(false, true)) {
+                java.util.function.Consumer<AtomTable> l = nearLimitListener;
+                if (l != null) l.accept(this);
+            }
             return id;
         });
         return created;
@@ -111,6 +138,24 @@ public final class AtomTable {
         if (chunk == null) return "";
         String name = chunk[atom & (CHUNK_SIZE - 1)];
         return name != null ? name : "";
+    }
+
+    /** 振れる atom の最大数。 */
+    public int capacity() {
+        return capacity;
+    }
+
+    /** あと何個振れるか（上限に達していれば 0）。長時間稼働の監視用。 */
+    public int remaining() {
+        return Math.max(0, capacity - next.get());
+    }
+
+    /**
+     * 使用量が上限の 90% を超えたとき、最初の 1 回だけ呼ぶ監視口（振る処理の中で呼ばれるので軽く保つ）。
+     * 超過した後に例外で落ちる前に、運用側がログ・警告を出せるようにする。
+     */
+    public void onNearLimit(java.util.function.Consumer<AtomTable> listener) {
+        this.nearLimitListener = listener;
     }
 
     /** 振られた atom の数（予約席を含み、{@link #NONE} は含まない）。 */

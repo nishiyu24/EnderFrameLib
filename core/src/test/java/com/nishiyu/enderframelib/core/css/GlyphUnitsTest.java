@@ -64,7 +64,7 @@ public class GlyphUnitsTest {
 
     @AfterEach
     void uninstall() {
-        GlyphUnits.install(null);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withGlyphFontResolver(null));
     }
 
     private static float px(String value) {
@@ -80,7 +80,7 @@ public class GlyphUnitsTest {
 
     @Test
     void unitsComeFromTheFontMetrics() {
-        GlyphUnits.install(new RecordingResolver());
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withGlyphFontResolver(new RecordingResolver()));
         Map<String, String> style = Map.of("font-family", "Foo");
         Metrics m = new Metrics(0, 320, 200, 20, 16, 24, 24, Float.NaN, Float.NaN, GlyphUnits.of(style, Map.of(), 20));
         assertEquals(12f, LengthResolver.lengthUnitInPixels("ch", m), 0.001f); // 20px * 0.6
@@ -90,7 +90,7 @@ public class GlyphUnitsTest {
     @Test
     void fontIsReadFromTheElementAndInheritedFromTheParent() {
         RecordingResolver resolver = new RecordingResolver();
-        GlyphUnits.install(resolver);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withGlyphFontResolver(resolver));
         Map<String, String> own = Map.of("font-weight", "bold");
         Map<String, String> parent = Map.of("font-family", "'Inherited Font', serif", "font-style", "italic");
         Metrics m = new Metrics(0, 320, 200, 20, 16, 24, 24, Float.NaN, Float.NaN, GlyphUnits.of(own, parent, 20));
@@ -105,7 +105,7 @@ public class GlyphUnitsTest {
     @Test
     void theFontIsOnlyResolvedWhenAChOrExUnitIsUsed() {
         RecordingResolver resolver = new RecordingResolver();
-        GlyphUnits.install(resolver);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withGlyphFontResolver(resolver));
         Metrics m = new Metrics(0, 320, 200, 20, 16, 24, 24, Float.NaN, Float.NaN, GlyphUnits.of(Map.of(), Map.of(), 20));
         assertEquals(40f, LengthResolver.lengthUnitInPixels("em", m) * 2, 0f);
         assertEquals(20f, LengthResolver.lengthUnitInPixels("px", m) * 20, 0f);
@@ -117,7 +117,7 @@ public class GlyphUnitsTest {
 
     @Test
     void computedStyleUsesTheMeasuredUnits() {
-        GlyphUnits.install(new RecordingResolver());
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withGlyphFontResolver(new RecordingResolver()));
         Map<String, String> raw = new LinkedHashMap<>();
         raw.put("font-family", "Foo");
         raw.put("font-size", "20px");
@@ -131,7 +131,7 @@ public class GlyphUnitsTest {
     @Test
     void childrenMeasureWithTheInheritedFamilyAndTheirOwnSize() {
         RecordingResolver resolver = new RecordingResolver();
-        GlyphUnits.install(resolver);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withGlyphFontResolver(resolver));
         Map<String, String> raw = new LinkedHashMap<>();
         raw.put("font-size", "10px");
         raw.put("width", "10ch");

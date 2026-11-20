@@ -15,10 +15,21 @@ import org.junit.jupiter.api.Test;
 
 /** ホスト置換要素の差し込み（CustomElementPainter）: 参照先の解決・シーン寸法・描画経路。 */
 class CustomElementPainterTest {
+    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.CustomElementPainter p) {
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElement(tag, p));
+    }
+
+    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.ReplacedKind kind) {
+        if (kind == null) throw new IllegalArgumentException("tag/kind");
+        reg(tag, new com.nishiyu.enderframelib.core.dom.CustomElementPainter() {
+            @Override public com.nishiyu.enderframelib.core.dom.ReplacedKind kind() { return kind; }
+        });
+    }
+
 
     @AfterEach
     void reset() {
-        ReplacedElements.resetToDefaults();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElements(null));
     }
 
     private static List<DisplayItem> render(String html) {
@@ -45,7 +56,7 @@ class CustomElementPainterTest {
 
     @Test
     void hostPainterResolvesSrcForRendering() {
-        ReplacedElements.register("x-gauge", new CustomElementPainter() {
+        reg("x-gauge", new CustomElementPainter() {
             @Override public ReplacedKind kind() { return ReplacedKind.IMAGE_LIKE; }
             @Override public String resolveSrc(Map<String, String> attrs, String src) {
                 return "gauge:" + attrs.getOrDefault("kind", "none");
@@ -58,7 +69,7 @@ class CustomElementPainterTest {
 
     @Test
     void hostSceneUsesPainterDimensions() {
-        ReplacedElements.register("x-view", new CustomElementPainter() {
+        reg("x-view", new CustomElementPainter() {
             @Override public ReplacedKind kind() { return ReplacedKind.SCENE; }
             @Override public int sceneHeight() { return 77; }
         });
@@ -77,8 +88,8 @@ class CustomElementPainterTest {
 
     @Test
     void invalidPainterIsRejected() {
-        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("x-a", (CustomElementPainter) null));
-        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("x-a", new CustomElementPainter() {
+        assertThrows(IllegalArgumentException.class, () -> reg("x-a", (CustomElementPainter) null));
+        assertThrows(IllegalArgumentException.class, () -> reg("x-a", new CustomElementPainter() {
             @Override public ReplacedKind kind() { return null; }
         }));
     }

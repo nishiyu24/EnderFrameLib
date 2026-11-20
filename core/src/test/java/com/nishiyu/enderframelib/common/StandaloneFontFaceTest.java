@@ -22,7 +22,7 @@ class StandaloneFontFaceTest {
     @AfterEach
     void tearDown() {
         CssParser.fontFaceCallback = null;
-        FontFaceRules.setFontReader(null);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withFontReader(null));
         WebFonts.clear();
     }
 

@@ -29,7 +29,7 @@ public class ClientLocalEnvProvider {
 
 
     static {
-        LocalEnvironment.setBaseSource(ClientLocalEnvProvider::captureMinecraftEnv);
+        LocalEnvironment.useBaseSource(ClientLocalEnvProvider::captureMinecraftEnv);
         com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nResolver(ClientLocalEnvProvider::translateKey));
         com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withI18nFormatter(ClientLocalEnvProvider::translateKey));
     }

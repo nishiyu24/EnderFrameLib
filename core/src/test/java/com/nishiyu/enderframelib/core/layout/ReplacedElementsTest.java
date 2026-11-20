@@ -12,12 +12,23 @@ import org.junit.jupiter.api.Test;
 
 /** 置換要素の台帳（Minecraft 固有タグの SPI 化）。 */
 class ReplacedElementsTest {
+    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.CustomElementPainter p) {
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElement(tag, p));
+    }
+
+    private static void reg(String tag, com.nishiyu.enderframelib.core.dom.ReplacedKind kind) {
+        if (kind == null) throw new IllegalArgumentException("tag/kind");
+        reg(tag, new com.nishiyu.enderframelib.core.dom.CustomElementPainter() {
+            @Override public com.nishiyu.enderframelib.core.dom.ReplacedKind kind() { return kind; }
+        });
+    }
+
 
     private static final Path CORE = Path.of("core/src/main/java/com/nishiyu/enderframelib/core");
 
     @AfterEach
     void reset() {
-        ReplacedElements.resetToDefaults();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElements(null));
     }
 
     @Test
@@ -37,27 +48,27 @@ class ReplacedElementsTest {
     @Test
     void hostCanRegisterItsOwnReplacedElement() {
         assertFalse(ReplacedElements.isReplacedTag("x-gauge"));
-        ReplacedElements.register("x-gauge", ReplacedKind.IMAGE_LIKE);
+        reg("x-gauge", ReplacedKind.IMAGE_LIKE);
         assertTrue(ReplacedElements.isReplacedTag("x-gauge"));
         assertTrue(ReplacedElements.isHostImageLike("x-gauge"));
-        ReplacedElements.resetToDefaults();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElements(null));
         assertFalse(ReplacedElements.isReplacedTag("x-gauge"));
     }
 
     @Test
     void invalidRegistrationIsRejected() {
-        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("", ReplacedKind.SCENE));
-        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register(null, ReplacedKind.SCENE));
-        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("x-a", (ReplacedKind) null));
+        assertThrows(IllegalArgumentException.class, () -> reg("", ReplacedKind.SCENE));
+        assertThrows(IllegalArgumentException.class, () -> reg(null, ReplacedKind.SCENE));
+        assertThrows(IllegalArgumentException.class, () -> reg("x-a", (ReplacedKind) null));
     }
 
     @Test
     void registeredTagBehavesAsInlineReplacedInLayout() {
-        ReplacedElements.register("x-gauge", ReplacedKind.IMAGE_LIKE);
+        reg("x-gauge", ReplacedKind.IMAGE_LIKE);
         var node = new com.nishiyu.enderframelib.core.dom.node.HtmlNode("x-gauge");
         var style = new com.nishiyu.enderframelib.core.css.ComputedStyle(java.util.Map.of());
         assertEquals(LayoutBox.Display.INLINE, LayoutBox.Display.of(node, style));
-        ReplacedElements.resetToDefaults();
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElements(null));
         assertEquals(LayoutBox.Display.BLOCK, LayoutBox.Display.of(node, style));
     }
 

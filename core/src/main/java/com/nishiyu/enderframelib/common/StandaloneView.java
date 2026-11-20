@@ -140,7 +140,7 @@ public final class StandaloneView implements AutoCloseable {
         this.width = width;
         this.height = height;
         this.fonts = fonts;
-        com.nishiyu.enderframelib.core.paint.software.ImageSizes.installDefault();
+        com.nishiyu.enderframelib.core.EngineContext.current().updateHost(h -> h.withPixelSizeFallback(com.nishiyu.enderframelib.core.paint.software.ImageSizes.STANDARD));
         this.ui = new Ui();
         this.ui.alphaMaskProvider(com.nishiyu.enderframelib.core.paint.software.AlphaMasks.from(com.nishiyu.enderframelib.core.paint.software.ImageProvider.standard()));
         this.input = new UiInput(ui);

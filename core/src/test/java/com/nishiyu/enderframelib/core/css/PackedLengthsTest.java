@@ -44,19 +44,25 @@ class PackedLengthsTest {
 
     @Test
     void sameExpressionSharesOneTableSlot() {
-        long a = PackedLengths.pack(LengthResolver.compile("calc(10% + 3px)"));
-        long b = PackedLengths.pack(LengthResolver.compile("calc(10% + 3px)"));
+        LengthResolver.CompiledLength c = LengthResolver.compile("calc(10% + 3px)");
+        long a = PackedLengths.pack(c);
+        long b = PackedLengths.pack(c);
         assertEquals(a, b);
+        assertNotNull(c);
         assertEquals(PackedCssValue.K_CALC, PackedCssValue.kind(a));
     }
 
     @Test
     void expressionTableGrowsPastItsInitialCapacity() {
+        java.util.List<LengthResolver.CompiledLength> keep = new java.util.ArrayList<>();
         for (int i = 0; i < 100; i++) {
             String s = "calc(" + i + "px + 1%)";
-            long v = PackedLengths.pack(LengthResolver.compile(s));
+            LengthResolver.CompiledLength c = LengthResolver.compile(s);
+            keep.add(c);
+            long v = PackedLengths.pack(c);
             assertEquals(i + 10f, PackedLengths.resolve(v, 1000, 0, 0, 16, 16), 0f, s);
         }
+        assertEquals(100, keep.size());
     }
 
     @Test
@@ -95,6 +101,39 @@ class PackedLengthsTest {
         long used = mx.getThreadAllocatedBytes(tid) - before;
         assertTrue(sink != 0);
         assertTrue(used < 4096, "確保 " + used + " B");
+    }
+
+    /** 長時間アニメーション: 毎フレーム別の {@code calc()} が生まれても、式表は生きている式の数でしか増えない。 */
+    @Test
+    void animatedCalcDoesNotGrowTheExpressionTableWithoutBound() {
+        int before = PackedLengths.exprCapacityUsedForTest();
+        float sink = 0;
+        for (int frame = 0; frame < 100_000; frame++) {
+            Map<String, String> p = new HashMap<>();
+            p.put("margin-left", "calc(" + (frame * 0.01f) + "% + " + (frame % 97) + "px)");
+            ComputedStyle st = new ComputedStyle(p, 16f, 16f);
+            sink += st.edgeLength(ComputedStyle.EDGE_MARGIN_L, 1000, 800, 600);
+            if (frame % 2000 == 0) System.gc();
+        }
+        System.gc();
+        assertTrue(sink > 0);
+        int grown = PackedLengths.exprCapacityUsedForTest() - before;
+        assertTrue(grown < 20_000, "式表の添字が " + grown + " 個増えた（10 万フレームで無制限に増えている）");
+    }
+
+    @Test
+    void releasedSlotsAreReusedAndLiveExpressionsKeepTheirOwnSlot() {
+        LengthResolver.CompiledLength keep = LengthResolver.compile("calc(7% + 1px)");
+        long kept = PackedLengths.pack(keep);
+        for (int round = 0; round < 5; round++) {
+            for (int i = 0; i < 500; i++) PackedLengths.pack(LengthResolver.compile("calc(" + round + "px + " + i + "%)"));
+            System.gc();
+        }
+        LengthResolver.CompiledLength probe = LengthResolver.compile("calc(1px + 1px)");
+        PackedLengths.pack(probe); // 回収分を空きへ戻す
+        assertTrue(PackedLengths.liveExprCountForTest() < 2500, "回収されず " + PackedLengths.liveExprCountForTest() + " 個残る");
+        assertEquals(keep.resolve(1000, 0, 0, 16, 16), PackedLengths.resolve(kept, 1000, 0, 0, 16, 16), 0f);
+        assertEquals(2f, PackedLengths.resolve(PackedLengths.pack(probe), 1000, 0, 0, 16, 16), 0f);
     }
 
     /** 番人: 縁は {@code long[]} で持つ。{@code CompiledLength[]} と二つ目の数式評価器（{@code CalcProgram}）が戻らない。 */

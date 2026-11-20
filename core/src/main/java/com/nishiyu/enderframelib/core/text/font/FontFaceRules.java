@@ -52,13 +52,26 @@ public final class FontFaceRules {
     private record OutlineSource(String family, String source, int weight, boolean italic) {}
 
     private static final List<OutlineSource> OUTLINE_SOURCES = new CopyOnWriteArrayList<>();
-    private static volatile FontReader reader = s -> null;
+
+    /** 文脈が差し込む読み手（A13。以前は static の差し込み口）。null なら読まない。 */
+    public interface Source {
+        FontReader fontReader();
+    }
+
+    private static final FontReader NO_READER = s -> null;
+    private static volatile java.util.function.Supplier<Source> source = () -> () -> null;
+
+    /** 「このスレッドの文脈の値」を引く口を結ぶ（{@code EngineContext} が 1 回だけ呼ぶ）。 */
+    public static void bindSource(java.util.function.Supplier<Source> contextSource) {
+        source = contextSource == null ? () -> () -> null : contextSource;
+    }
+
+    private static FontReader reader() {
+        FontReader r = source.get().fontReader();
+        return r != null ? r : NO_READER;
+    }
 
     private FontFaceRules() {}
-
-    public static void setFontReader(FontReader r) {
-        reader = r == null ? s -> null : r;
-    }
 
     public static String cleanFamilyName(String raw) {
         if (raw == null) return "";
@@ -174,9 +187,9 @@ public final class FontFaceRules {
                 ? src.substring(0, colon + 1) + "font/" + src.substring(colon + 1) : null;
         for (String candidate : alt == null ? List.of(src) : List.of(src, alt)) {
             try {
-                java.nio.file.Path file = reader.locate(candidate);
+                java.nio.file.Path file = reader().locate(candidate);
                 if (file != null && WebFonts.registerFile(source.family(), file, source.weight(), source.italic())) return true;
-                byte[] bytes = reader.read(candidate);
+                byte[] bytes = reader().read(candidate);
                 if (bytes == null) continue;
                 return WebFonts.register(source.family(), bytes, source.weight(), source.italic());
             } catch (Exception ignored) {

@@ -37,7 +37,7 @@ class FontSourcesTest {
 
     @AfterEach
     void tearDown() {
-        FontFaceRules.setFontReader(null);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withFontReader(null));
         WebFonts.clear();
     }
 
@@ -48,7 +48,7 @@ class FontSourcesTest {
         Path page = dir.resolve("page.html");
         Files.writeString(page, "<html></html>");
         FontSources src = new FontSources(null).setBase(page.toString());
-        FontFaceRules.setFontReader(src);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withFontReader(src));
 
         FontFaceRules.extractAndRegister("@font-face{font-family:'Local One';src:url(fonts/a.ttf)}", null);
         assertTrue(WebFonts.has("local one"));
@@ -64,7 +64,7 @@ class FontSourcesTest {
         assertNull(src.locate("data:font/ttf;base64,AAAA"));
         assertNull(src.locate("http://example.test/a.ttf"));
 
-        FontFaceRules.setFontReader(src);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withFontReader(src));
         FontFaceRules.extractAndRegister("@font-face{font-family:ByPath;src:url(a.ttf)}", null);
         SystemFonts.Face face = WebFonts.family("bypath").get(0);
         assertNotNull(face.path(), "パスで登録される");
@@ -89,7 +89,7 @@ class FontSourcesTest {
     @Test
     void dataUriAndNonFileSchemes() throws Exception {
         FontSources src = new FontSources(null);
-        FontFaceRules.setFontReader(src);
+        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withFontReader(src));
         String uri = "data:font/ttf;base64," + Base64.getEncoder().encodeToString(ttf);
         FontFaceRules.extractAndRegister("@font-face{font-family:Inline;src:url(" + uri + ".ttf)}", null);
         // data: は拡張子で TTF と見なさないので、ここでは読み手が直接読めることだけを確かめる
@@ -109,7 +109,7 @@ class FontSourcesTest {
         server.start();
         FontSources src = new FontSources(new SafeHttpClient(HttpPolicy.permissive()));
         try {
-            FontFaceRules.setFontReader(src);
+            com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withFontReader(src));
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/f/web.ttf?v=1";
             FontFaceRules.extractAndRegister("@font-face{font-family:Remote;src:url(" + url + ")}", null);
             assertFalse(WebFonts.has("remote"), "取得中はまだ使えない（描画を止めない）");

@@ -13,7 +13,7 @@ class LocalEnvironmentTest {
     @BeforeEach
     @AfterEach
     void reset() {
-        LocalEnvironment.setBaseSource(null);
+        LocalEnvironment.useBaseSource(null);
         LocalEnvironment.clearCustomVariables();
     }
 
@@ -26,7 +26,7 @@ class LocalEnvironmentTest {
 
     @Test
     void baseSourceReplacesDefaults() {
-        LocalEnvironment.setBaseSource(() -> Map.of("@lang", "ja_jp", "@hp", "20"));
+        LocalEnvironment.useBaseSource(() -> Map.of("@lang", "ja_jp", "@hp", "20"));
         Map<String, String> env = LocalEnvironment.capture();
         assertEquals("ja_jp", env.get("@lang"));
         assertEquals("20", env.get("@hp"));
@@ -35,13 +35,13 @@ class LocalEnvironmentTest {
 
     @Test
     void nullFromBaseSourceFallsBackToDefaults() {
-        LocalEnvironment.setBaseSource(() -> null);
+        LocalEnvironment.useBaseSource(() -> null);
         assertEquals("en_us", LocalEnvironment.capture().get("@lang"));
     }
 
     @Test
     void throwingBaseSourceFallsBackToDefaults() {
-        LocalEnvironment.setBaseSource(() -> { throw new IllegalStateException("boom"); });
+        LocalEnvironment.useBaseSource(() -> { throw new IllegalStateException("boom"); });
         assertEquals("60", LocalEnvironment.capture().get("@fps"));
     }
 
