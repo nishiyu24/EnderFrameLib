@@ -70,14 +70,13 @@ final class RenderTreeBuilder {
                     childScope, interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving, false, null));
         }
 
-        if (!"textarea".equalsIgnoreCase(node.tag) && !"svg".equalsIgnoreCase(node.tag)) {
+        if (!com.nishiyu.enderframelib.core.dom.ElementTraits.hasOpaqueContent(node.tag)) {
             boolean isOpen = interactionState != null
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");
-            boolean isClosedDetails = "details".equalsIgnoreCase(node.tag) && !isOpen;
             for (HtmlNode child : node.children) {
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
-                if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
+                if (com.nishiyu.enderframelib.core.dom.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
                 box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, RenderPipeline.FORCE_SUBTREE,
                         computed.fontSizePx(), childScope, interactionState, siblingInvalidation,
                         null, null, false, null, selfContainer, selfOrAncestorMoving));
@@ -281,15 +280,14 @@ final class RenderTreeBuilder {
         }
 
         // svg の子（図形）は箱にしない。svg 要素が木を読んで自分でラスタライズする
-        if (!omitChildren && !"textarea".equalsIgnoreCase(node.tag) && !"svg".equalsIgnoreCase(node.tag)) {
+        if (!omitChildren && !com.nishiyu.enderframelib.core.dom.ElementTraits.hasOpaqueContent(node.tag)) {
             boolean isOpen = interactionState != null
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");
-            boolean isClosedDetails = "details".equalsIgnoreCase(node.tag) && !isOpen;
             boolean siblingForceDirty = false;
             for (HtmlNode child : node.children) {
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
-                if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
+                if (com.nishiyu.enderframelib.core.dom.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
                 boolean stateChanged = siblingInvalidation && RenderPipeline.isStateDirty(interactionState, child);
                 int forceChild = siblingForceDirty ? RenderPipeline.FORCE_SUBTREE : childForce;
                 if (forceChild == RenderPipeline.FORCE_NONE && childForceIfInherits && interactionState != null) {
@@ -330,7 +328,7 @@ final class RenderTreeBuilder {
         box.markerStyle = box.display().listItem()
                 ? resolvePseudoStyle(node, PseudoType.MARKER, computed, sheet, env, childScope, interactionState, selfContainer)
                 : null;
-        boolean textInput = "input".equals(node.tag) || "textarea".equals(node.tag);
+        boolean textInput = com.nishiyu.enderframelib.core.dom.ElementTraits.isTextEntryTag(node.tag);
         box.placeholderStyle = textInput
                 ? resolvePseudoStyle(node, PseudoType.PLACEHOLDER, computed, sheet, env, childScope, interactionState, selfContainer)
                 : null;

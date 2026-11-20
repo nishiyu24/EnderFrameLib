@@ -1584,8 +1584,7 @@ public class UiView implements AutoCloseable {
      */
     private static boolean isPaintOnlyAttribute(HtmlNode node, String name) {
         if (node.nodeType != NodeType.ELEMENT || node.tag == null) return false;
-        String tag = node.tag.toLowerCase(Locale.ROOT);
-        if (!tag.equals("progress") && !tag.equals("meter")) return false;
+        if (!com.nishiyu.enderframelib.core.dom.ElementTraits.isGauge(node.tag)) return false;
         String n = name.toLowerCase(Locale.ROOT);
         return n.equals("value") || n.equals("min") || n.equals("max");
     }

@@ -79,6 +79,45 @@ public final class ElementTraits {
         };
     }
 
+    /** 子を箱にしない要素（textarea は値の文字、svg は図形を自分で読む）。 */
+    public static boolean hasOpaqueContent(String tag) {
+        return switch (tag == null ? "" : lower(tag)) {
+            case "textarea", "svg" -> true;
+            default -> false;
+        };
+    }
+
+    /** 閉じた {@code details} の中で、箱を作らない子か（{@code summary} 以外）。 */
+    public static boolean isHiddenByClosedDetails(HtmlNode details, boolean open, HtmlNode child) {
+        return !open && "details".equalsIgnoreCase(details.tag) && !"summary".equalsIgnoreCase(child.tag);
+    }
+
+    /** 行の断片を子のあいだで畳まない要素（リスト・fieldset・details・文字入力・svg・select・button）。 */
+    public static boolean blocksInlineRunFolding(String tag) {
+        return switch (tag == null ? "" : lower(tag)) {
+            case "ol", "fieldset", "details", "textarea", "svg", "select", "button" -> true;
+            default -> false;
+        };
+    }
+
+    /** click の既定の操作を持つ要素（button / select / summary）。 */
+    public static boolean isClickActivated(String tag) {
+        return switch (tag == null ? "" : tag) {
+            case "button", "select", "summary" -> true;
+            default -> false;
+        };
+    }
+
+    /** Tab で到達できる要素（type=hidden でない input・button・select・textarea・summary・href 付きの a）。 */
+    public static boolean isNaturallyFocusable(HtmlNode node) {
+        return switch (lower(node.tag)) {
+            case "input" -> !"hidden".equalsIgnoreCase(node.attrs.getOrDefault("type", ""));
+            case "button", "select", "textarea", "summary" -> true;
+            case "a" -> node.attrs.containsKey("href");
+            default -> false;
+        };
+    }
+
     /** 数値の表示部品（progress / meter）。 */
     public static boolean isGauge(String tag) {
         return switch (lower(tag)) {

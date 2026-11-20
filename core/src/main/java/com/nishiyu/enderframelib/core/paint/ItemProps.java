@@ -466,7 +466,7 @@ final class ItemProps {
         for (int i = 0; i < styleHandlers.length; i += 2) partsEvents.put(styleHandlers[i], styleHandlers[i + 1]);
 
         String tag = box.node.tag;
-        if (("button".equals(tag) || "select".equals(tag) || "summary".equals(tag)) && !partsEvents.containsKey("onclick")) {
+        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isClickActivated(tag) && !partsEvents.containsKey("onclick")) {
             partsEvents.put("onclick", id);
         }
         if ("label".equals(tag) && box.node.attrs.containsKey("for") && !partsEvents.containsKey("onclick")) {

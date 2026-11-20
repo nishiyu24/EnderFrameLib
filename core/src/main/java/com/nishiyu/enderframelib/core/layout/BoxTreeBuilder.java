@@ -110,9 +110,7 @@ public final class BoxTreeBuilder {
                 || WritingModes.isVertical(parent.style)) return false;
         if (MulticolLayout.isMulticol(parent) || parent.style.skipsContents()
                 || parent.contentAutoSkipped || parent.childrenDeferred || parent.isVirtualizedFlow()) return false;
-        String tag = parent.node.tag == null ? "" : parent.node.tag.toLowerCase(Locale.ROOT);
-        if (tag.equals("ol") || tag.equals("fieldset") || tag.equals("details") || tag.equals("textarea")
-                || tag.equals("svg") || tag.equals("select") || tag.equals("button")) {
+        if (com.nishiyu.enderframelib.core.dom.ElementTraits.blocksInlineRunFolding(parent.node.tag)) {
             return false;
         }
         if (!WhiteSpace.of(parent.style.get(CssPropertyIndex.WHITE_SPACE)).collapses()) return false;

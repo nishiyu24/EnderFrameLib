@@ -56,6 +56,34 @@ class ElementTraitsTest {
     }
 
     @Test
+    void behaviorSets() {
+        assertTrue(ElementTraits.hasOpaqueContent("textarea"));
+        assertTrue(ElementTraits.hasOpaqueContent("svg"));
+        assertFalse(ElementTraits.hasOpaqueContent("input"));
+        assertFalse(ElementTraits.hasOpaqueContent(null));
+        for (String t : List.of("ol", "fieldset", "details", "textarea", "svg", "select", "button")) {
+            assertTrue(ElementTraits.blocksInlineRunFolding(t), t);
+        }
+        assertFalse(ElementTraits.blocksInlineRunFolding("div"));
+        assertFalse(ElementTraits.blocksInlineRunFolding(null));
+        for (String t : List.of("button", "select", "summary")) assertTrue(ElementTraits.isClickActivated(t), t);
+        assertFalse(ElementTraits.isClickActivated("a"));
+
+        HtmlNode details = el("details");
+        assertTrue(ElementTraits.isHiddenByClosedDetails(details, false, el("p")));
+        assertFalse(ElementTraits.isHiddenByClosedDetails(details, false, el("summary")));
+        assertFalse(ElementTraits.isHiddenByClosedDetails(details, true, el("p")), "開いていれば隠さない");
+        assertFalse(ElementTraits.isHiddenByClosedDetails(el("div"), false, el("p")), "details 以外は隠さない");
+
+        assertTrue(ElementTraits.isNaturallyFocusable(el("input")));
+        assertFalse(ElementTraits.isNaturallyFocusable(el("input", "type", "HIDDEN")));
+        assertTrue(ElementTraits.isNaturallyFocusable(el("summary")));
+        assertTrue(ElementTraits.isNaturallyFocusable(el("a", "href", "#")));
+        assertFalse(ElementTraits.isNaturallyFocusable(el("a")));
+        assertFalse(ElementTraits.isNaturallyFocusable(el("div")));
+    }
+
+    @Test
     void checkableTextAndRadioDependOnType() {
         assertTrue(ElementTraits.isCheckable(el("input", "type", "Checkbox")));
         assertTrue(ElementTraits.isCheckable(el("input", "type", "radio")));

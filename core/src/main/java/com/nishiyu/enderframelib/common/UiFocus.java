@@ -64,13 +64,7 @@ public final class UiFocus {
     }
 
     private static boolean isNaturallyFocusable(HtmlNode node) {
-        String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
-        return switch (tag) {
-            case "input" -> !"hidden".equalsIgnoreCase(node.attrs.getOrDefault("type", ""));
-            case "button", "select", "textarea", "summary" -> true;
-            case "a" -> node.attrs.containsKey("href");
-            default -> false;
-        };
+        return com.nishiyu.enderframelib.core.dom.ElementTraits.isNaturallyFocusable(node);
     }
 
     /** {@code Tab} で巡る順の候補。箱の無い（{@code display:none}）要素・無効・{@code hidden}・負の {@code tabindex} は含めない。 */
