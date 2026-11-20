@@ -2350,10 +2350,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             // スクロールの中身をまとめた節は、箱の項目の直後（drawBoxSelf と同じ位置）にある。差し替えで落とすと、
             // 子の項目が親を失って、スクロール量が掛からなくなる（ホバーのあとにスクロールすると表示がずれる）
             PaintOrder.ScrollContent sc = order.scrollContentOf(b);
+            int memoSize = newItems.size(); // 節を足す前の長さ（記憶のリストは箱の項目だけ。下で節を取り除いて戻す。§6-125）
             if (sc != null) {
                 for (int i = b.dlStart; i < b.dlEnd; i++) {
                     if (sc.contentId.equals(currentDisplayList.get(i).id())) {
-                        if (stored.items == newItems) { stored.items = new ArrayList<>(newItems); stored.itemsMutable = false; } // 記憶のリストへ節を混ぜない
                         int prevOx = newItems.originX, prevOy = newItems.originY;
                         if (relMode && PaintOrder.boxHasOwnNode(b)) {
                             newItems.setOrigin(Math.round(b.x()), Math.round(b.y()));
@@ -2398,6 +2398,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                     succ.dlEnd += delta;
                 }
             }
+            if (stored.items == newItems && newItems.size() > memoSize) newItems.subList(memoSize, newItems.size()).clear();
         }
     }
 

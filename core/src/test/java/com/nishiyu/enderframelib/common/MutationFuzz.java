@@ -16,6 +16,10 @@ import java.util.Map;
  * 測定の記憶を全部捨てて（{@code LayoutBox.invalidateAllMeasurements}）全面を組み直した結果と一致するかを比べる。ずれた種は {@code mutation-seeds.txt} に足し、以後は
  * {@link MutationSeedRegressionTest} が毎回の CI で固定の種として回す（見つかった不具合がそのまま回帰テストになる）。
  *
+ * <p>検証モード（{@code VERIFY_MEMO}・{@code VERIFY_BOX_MEMO}。{@code mutationFuzz} では既定で有効）も併走させる。記憶が当たった所を計算し直して
+ * 比べる検証が赤になった手は、増分と全面の食い違いとは別に「鍵の漏れ[記憶の種類]」として報告する（どの記憶の鍵が漏れたかが分かる。
+ * 古い値を持つ箱が測り直しの入口に来ない型〔§6-128〕は、従来どおり増分と全面の食い違いで見つかる）。
+ *
  * <p>夜間（{@code full-tests.yml}）は {@code ./gradlew :core:mutationFuzz} で新しい種を回す。種の始まりは日付から決めるので、毎晩違う種になる。
  * <ul>
  *   <li>{@code -Pfuzz.seeds=N}: 文書ごとに回す種の数（既定 24）</li>
@@ -36,6 +40,9 @@ public final class MutationFuzz {
         DOCS.put("cards", new Doc("cards", ShortcutMatrixMain.CARDS, ShortcutMatrixMain.CARD_CLASSES, ShortcutMatrixMain.CARD_STYLES, 45));
         DOCS.put("nested", new Doc("nested", ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 60));
     }
+
+    /** テスト用: 各手の全面との比較のあとに呼ばれる（記憶を壊して、検証が鍵の漏れとして報告することを確かめる）。 */
+    static java.util.function.BiConsumer<Integer, StandaloneView> TAMPER;
 
     static final Path SEEDS_FILE = Path.of("core/src/test/resources/mutation-seeds.txt");
 
@@ -74,13 +81,35 @@ public final class MutationFuzz {
                 }
                 found[0] = doc.name() + "/" + seed + " 手 " + step + detail;
             }
+            if (TAMPER != null) TAMPER.accept(step, view);
         };
         try {
             MutationScenario.run(doc.html(), doc.classes(), doc.styles(), seed, steps, false);
+        } catch (AssertionError e) {
+            String kind = leakKind(e.getMessage());
+            if (kind == null) throw e; // 検証以外の失敗（項目の id の重複など）は従来どおり
+            if (found[0] == null) found[0] = keyLeak(doc, seed, MutationScenario.LOG.size() - 1, kind, e.getMessage());
         } finally {
             MutationScenario.STEP_HOOK = saved;
         }
         return found[0];
+    }
+
+    /** 検証モードの {@link AssertionError} の文面から、漏れた記憶の種類（検証でなければ null）。 */
+    static String leakKind(String message) {
+        if (message == null) return null;
+        if (message.startsWith("測定の記憶")) return "測定の記憶";
+        if (message.startsWith("箱の項目の記憶")) return "箱の項目の記憶";
+        if (message.startsWith("項目の再生")) return "項目の再生";
+        if (message.startsWith("姿勢の使い回し")) return "姿勢の使い回し";
+        if (message.startsWith("float メモ")) return "float メモ";
+        return null;
+    }
+
+    /** 検証が赤にした手の報告（増分と全面の食い違いと区別できる印 {@code 鍵の漏れ[…]} を付ける）。 */
+    static String keyLeak(Doc doc, long seed, int step, String kind, String message) {
+        String m = message.length() > 220 ? message.substring(0, 220) + "…" : message;
+        return doc.name() + "/" + seed + " 手 " + step + " 鍵の漏れ[" + kind + "]: " + m;
     }
 
     /** 表の 1 行（文書 | 種 | 手数 | 由来）。由来の中の区切り文字は置き換え、長い説明は切る。 */
@@ -114,7 +143,7 @@ public final class MutationFuzz {
                 runs++;
                 String bad = firstMismatch(doc, seed, doc.steps());
                 if (bad == null) continue;
-                System.out.println("MISMATCH " + bad);
+                System.out.println((bad.contains("鍵の漏れ[") ? "KEYLEAK " : "MISMATCH ") + bad);
                 if (gha) System.out.println("::error title=mutationFuzz::" + bad + " → mutation-seeds.txt に「" + seedLine(doc, seed, "夜間ファズ " + LocalDate.now()) + "」を足して直す");
                 found.add(seedLine(doc, seed, "夜間ファズ " + LocalDate.now() + "（" + bad + "）"));
             }

@@ -478,6 +478,9 @@ tasks.register('mutationFuzz', JavaExec) {
     workingDir = rootProject.projectDir
     ['fuzz.seeds', 'fuzz.start'].each { if (project.hasProperty(it)) systemProperty it, project.property(it).toString() }
     if (project.hasProperty('fuzz.record')) systemProperty 'fuzz.record', 'true'
+    // 検証モードも併走させる（鍵の漏れを「どの記憶か」つきで報告する。切るときは -Pverify.memo=false / -Pverify.boxmemo=false）
+    systemProperty 'enderframe.verify.memo', String.valueOf(findProperty('verify.memo') ?: 'true')
+    systemProperty 'enderframe.verify.boxmemo', String.valueOf(findProperty('verify.boxmemo') ?: 'true')
     if (project.hasProperty('fuzz.jvmArgs')) jvmArgs project.property('fuzz.jvmArgs').toString().split(' ')
 }
 
