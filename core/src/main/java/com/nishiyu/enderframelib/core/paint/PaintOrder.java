@@ -238,7 +238,7 @@ public final class PaintOrder {
     }
 
     static boolean boxHasOwnNode(LayoutBox b) {
-        return b != null && !b.isAnonymous && b.w > 0 && b.h > 0 && b.node != null
+        return b != null && !b.isAnonymous && b.w() > 0 && b.h() > 0 && b.node != null
                 && !"root".equals(b.node.tag) && !"#text".equals(b.node.tag);
     }
 
@@ -300,9 +300,9 @@ public final class PaintOrder {
     private boolean scan(LayoutBox b, boolean full) {
         if (++scanCount > CHUNK_MAX_BOXES) return false;
         if (full && !chunkable(b)) return false;
-        if (b.paintStamp > scanMaxStamp) scanMaxStamp = b.paintStamp;
+        if (b.paintStamp() > scanMaxStamp) scanMaxStamp = b.paintStamp();
         if (b.hasInteractiveRules) scanInteractive++;
-        if (b.display == null || b.display.isNone()) return true;
+        if (b.display() == null || b.display().isNone()) return true;
         List<LayoutBox> kids = b.children;
         for (int i = 0, n = kids.size(); i < n; i++) {
             if (!scan(kids.get(i), full)) return false;
@@ -312,7 +312,7 @@ public final class PaintOrder {
 
     /** 純粋なフローの箱か（保持した項目が、箱の入力だけで決まり、描画順の外へ出ていかない）。 */
     private boolean chunkable(LayoutBox b) {
-        if (b.display == null || b.style == null || b.node.tag == null) return false;
+        if (b.display() == null || b.style == null || b.node.tag == null) return false;
         switch (b.node.tag) {
             case "html", "body", "root", "option", "optgroup", "select", "textarea", "input" -> {
                 return false;
@@ -320,7 +320,7 @@ public final class PaintOrder {
             default -> { }
         }
         if (!memoizable.test(b)) return false;
-        if (b.display.isNone()) return true;
+        if (b.display().isNone()) return true;
         StyleFacts f = factsOf(b.style);
         if (f.displayNone()) return true;
         if (f.scrollbars() || f.hasMovingProps() || !"visible".equals(f.overflowX()) || !"visible".equals(f.overflowY())) return false;
@@ -335,15 +335,15 @@ public final class PaintOrder {
     private boolean tryChunk(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
                              boolean ancestorMoving) {
         LayoutBox pNode = parentRelative ? effectiveParentNodeBox(box, parentId) : null;
-        int curPox = pNode != null ? Math.round(pNode.x) : 0;
-        int curPoy = pNode != null ? Math.round(pNode.y) : 0;
+        int curPox = pNode != null ? Math.round(pNode.x()) : 0;
+        int curPoy = pNode != null ? Math.round(pNode.y()) : 0;
         Chunk c = chunks.get(box);
         if (c != null && c.complete() && replayAllowed) {
             scanCount = 0;
             scanMaxStamp = 0;
             scanInteractive = 0;
             if (scan(box, false) && c.parentBox == box.parent
-                    && Float.compare(c.boxX, box.x) == 0 && Float.compare(c.boxY, box.y) == 0
+                    && Float.compare(c.boxX, box.x()) == 0 && Float.compare(c.boxY, box.y()) == 0
                     && c.clip == clip && java.util.Objects.equals(c.parentId, parentId)
                     && c.parentRelative == parentRelative && c.parentOriginX == curPox && c.parentOriginY == curPoy
                     && scanCount == c.boxCount && scanInteractive == c.interactiveCount
@@ -369,15 +369,15 @@ public final class PaintOrder {
         Chunk fresh;
         if (c != null) {
             fresh = c;
-            fresh.reset(box.parent, box.x, box.y, clip, parentId, parentRelative, curPox, curPoy,
+            fresh.reset(box.parent, box.x(), box.y(), clip, parentId, parentRelative, curPox, curPoy,
                     renderEpoch, scanCount, scanInteractive, this);
         } else {
             if (!chunkPool.isEmpty()) {
                 fresh = chunkPool.remove(chunkPool.size() - 1);
-                fresh.reset(box.parent, box.x, box.y, clip, parentId, parentRelative, curPox, curPoy,
+                fresh.reset(box.parent, box.x(), box.y(), clip, parentId, parentRelative, curPox, curPoy,
                         renderEpoch, scanCount, scanInteractive, this);
             } else {
-                fresh = new Chunk(box.parent, box.x, box.y, clip, parentId, parentRelative, curPox, curPoy,
+                fresh = new Chunk(box.parent, box.x(), box.y(), clip, parentId, parentRelative, curPox, curPoy,
                         renderEpoch, scanCount, scanInteractive);
             }
             chunks.put(box, fresh);
@@ -507,8 +507,8 @@ public final class PaintOrder {
      */
 
     private boolean scrollsAsOneNode(LayoutBox box) {
-        if (box.isAnonymous || box.w <= 0 || box.h <= 0 || !box.isScrollContainer()) return false;
-        if (box.isVirtualizedFlow() || box.subtreeHasContentAuto) return false;
+        if (box.isAnonymous || box.w() <= 0 || box.h() <= 0 || !box.isScrollContainer()) return false;
+        if (box.isVirtualizedFlow() || box.subtreeHasContentAuto()) return false;
         String tag = box.node.tag;
         if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) return false;
         // 子孫の全走査になる（大きいスクロールコンテナでは毎回の作り直しの負担）。子の増減や、固定・粘着・絶対配置・包含ブロックに効くスタイルが変わると構造の世代が進むので、進むまで保持する
@@ -530,8 +530,8 @@ public final class PaintOrder {
             for (LayoutBox s : known.stickies) {
                 float[] p = boxHasOwnNode(s) ? s.stickyScrollParams(box, rootW, rootH) : null;
                 if (p == null) return false;
-                var shift = new com.nishiyu.enderframelib.core.paint.model.StickyShift(s.node.key(), p[0], p[1], p[2], p[3], p[4], p[5] != 0f, s.stickyDy);
-                if (Float.floatToIntBits(shift.dyAt(0f)) != Float.floatToIntBits(s.stickyDy)) return false; // 式がレイアウトと合わない
+                var shift = new com.nishiyu.enderframelib.core.paint.model.StickyShift(s.node.key(), p[0], p[1], p[2], p[3], p[4], p[5] != 0f, s.stickyDy());
+                if (Float.floatToIntBits(shift.dyAt(0f)) != Float.floatToIntBits(s.stickyDy())) return false; // 式がレイアウトと合わない
                 shifts.add(shift);
             }
             lastStickyShifts = shifts;
@@ -551,19 +551,19 @@ public final class PaintOrder {
     private boolean hasUnscrollableDescendant(LayoutBox container, LayoutBox box, boolean underSticky) {
         if (box.contentAutoSkipped || box.isVirtualizedFlow()) return box.isVirtualizedFlow();
         for (LayoutBox child : box.children) {
-            if (child.display != null && child.display.isNone()) continue;
-            if (child.subtreeHasContentAuto) return true;
-            if (child.isFixed) return true;
+            if (child.display() != null && child.display().isNone()) continue;
+            if (child.subtreeHasContentAuto()) return true;
+            if (child.isFixed()) return true;
             // sticky は、上の inset だけで、いちばん近いスクロールコンテナがこのコンテナで、sticky の中の sticky でなければ、
             // 節の移動に貼り付きのずれの増減を足して表せる（B12）。それ以外は従来どおり作り直す
-            if (child.isSticky) {
+            if (child.isSticky()) {
                 if (!com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.on() || underSticky || child.stickyScrollParams(container, rootW, rootH) == null) return true;
                 if (scanStickies == null) scanStickies = new ArrayList<>(2);
                 scanStickies.add(child);
                 if (hasUnscrollableDescendant(container, child, true)) return true;
                 continue;
             }
-            if (child.isAbsolute) {
+            if (child.isAbsolute()) {
                 scanSawAbsolute = true;
                 LayoutBox cb = child.findContainingBlock();
                 if (cb == null) return true;
@@ -702,7 +702,7 @@ public final class PaintOrder {
         try {
             boolean selfOrAncestorMoving = ancestorMoving || (box.style != null && factsOf(box.style).hasMovingProps());
             RenderTask self = selfTask(box, clip, parentId, selfOrAncestorMoving);
-            int z = isZIndexAuto(box) ? 0 : box.zIndex;
+            int z = isZIndexAuto(box) ? 0 : box.zIndex();
             PaintNode node = borrowNode(self, true, z, borrowLayers(), self != null ? layerSpecFor(box) : null, box);
             collectChildren(box, clip, parentId, node.layers, node.layers, selfOrAncestorMoving);
             emit(node, pooledTaskOut);
@@ -736,7 +736,7 @@ public final class PaintOrder {
         props.parentId(box.node.key(), nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L);
         PaintSupport.CaptureList cap = (parentRelative && boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
         int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
-        if (cap != null) cap.setOrigin(Math.round(box.x), Math.round(box.y));
+        if (cap != null) cap.setOrigin(Math.round(box.x()), Math.round(box.y()));
         try {
             // 固定配置の箱と同じく、ビューポートに張り付く（スクロールしない）。クリップはかけない
             addElement(elements, box.node.key(), box.node.key() + "_backdrop", ElementType.RECT, 0, 0, rootW, rootH, "", 0, color,
@@ -747,7 +747,7 @@ public final class PaintOrder {
     }
 
     private boolean isTopLayer(LayoutBox box) {
-        return box.isFixed && box.zIndex == TOP_LAYER_Z && !isZIndexAuto(box);
+        return box.isFixed() && box.zIndex() == TOP_LAYER_Z && !isZIndexAuto(box);
     }
 
     /**
@@ -810,7 +810,7 @@ public final class PaintOrder {
         }
 
         boolean scrollbars = factsOf(box.style).scrollbars();
-        if (!"root".equals(tag) && box.w > 0 && box.h > 0 && scrollbars && !isInvisible(box)) {
+        if (!"root".equals(tag) && box.w() > 0 && box.h() > 0 && scrollbars && !isInvisible(box)) {
             local.addAfter(borrowTask().setScrollbars(box, clip));
         }
     }
@@ -823,7 +823,7 @@ public final class PaintOrder {
      * {@code overflow: hidden} の箱の中のドロップダウンやモーダル（absolute / fixed）が箱の枠で切り落とされていた。
      */
     ClipRect clipForChild(LayoutBox child, ClipRect flowClip) {
-        if (!child.isAbsolute) return flowClip;
+        if (!child.isAbsolute()) return flowClip;
         LayoutBox cb = child.findContainingBlock();
         if (cb == null) return null;
         return contentClips.containsKey(cb) ? contentClips.get(cb) : flowClip;
@@ -837,7 +837,7 @@ public final class PaintOrder {
      */
     void classify(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
                   boolean ancestorMoving) {
-        if (box.display.isNone() || factsOf(box.style).displayNone()) return;
+        if (box.display().isNone() || factsOf(box.style).displayNone()) return;
         if ("option".equalsIgnoreCase(box.node.tag)) return;
         boolean selfOrAncestorMoving = ancestorMoving || (box.style != null && factsOf(box.style).hasMovingProps());
         // 記録の途中（部分木の中）では、中の箱を別に保持しない
@@ -850,7 +850,7 @@ public final class PaintOrder {
                                boolean selfOrAncestorMoving) {
         RenderTask self = selfTask(box, clip, parentId, selfOrAncestorMoving);
         if (createsStackingContext(box)) {
-            int z = isZIndexAuto(box) ? 0 : box.zIndex;
+            int z = isZIndexAuto(box) ? 0 : box.zIndex();
             PaintNode node = borrowNode(self, true, z, borrowLayers(), self != null ? layerSpecFor(box) : null, box);
             // 部分木の記録の途中は外へ出せない（記録は部分木の中だけで完結する）
             boolean hoist = recording == null && topLayerRoot != null && isTopLayer(box);
@@ -877,7 +877,7 @@ public final class PaintOrder {
             collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else {
             PaintNode leaf = borrowNode(self, false, 0, null, null, null);
-            if (box.display.isInlineLevel()) local.addInline(leaf); else local.addBlock(leaf);
+            if (box.display().isInlineLevel()) local.addInline(leaf); else local.addBlock(leaf);
             collectChildren(box, clip, parentId, sc, local, selfOrAncestorMoving);
         }
     }
@@ -916,11 +916,11 @@ public final class PaintOrder {
     }
 
     RenderTask selfTask(LayoutBox box, ClipRect clip, String parentId, boolean hasMovingAncestor) {
-        if (box.w <= 0 || box.h <= 0 || box.isAnonymous) return null;
+        if (box.w() <= 0 || box.h() <= 0 || box.isAnonymous) return null;
         Chunk rec = recording;
         if (rec == null) return borrowTask().setDraw(box, clip, parentId, hasMovingAncestor);
         // 部分木を記録している間は、描いた項目を（入る層ごとに）保持へ写す。保持できる部分木の箱は全て通常のブロック／インラインの葉
-        boolean inline = box.display.isInlineLevel();
+        boolean inline = box.display().isInlineLevel();
         rec.created++;
         return borrowTask().setRecord(box, clip, parentId, rec, inline, hasMovingAncestor);
     }
@@ -959,7 +959,7 @@ public final class PaintOrder {
     }
 
     static boolean isPositioned(LayoutBox box) {
-        return box.isRelative || box.isAbsolute || box.isSticky;
+        return box.isRelative() || box.isAbsolute() || box.isSticky();
     }
 
     static boolean isZIndexAuto(LayoutBox box) {
@@ -1029,7 +1029,7 @@ public final class PaintOrder {
         StyleFacts f = factsOf(style);
         boolean zAuto = f.zAuto();
         if (isPositioned(box) && !zAuto) return true;
-        if (box.isFixed || box.isSticky) return true;
+        if (box.isFixed() || box.isSticky()) return true;
         if (!zAuto && isFlexOrGridItem(box)) return true;
         if (f.opacity() < 1f) return true;
         // opacity を動かすアニメーションは、静的な値が 1 でも動いている間スタッキングコンテキストを作る（CSS Positioned Layout 3 §2）
@@ -1053,11 +1053,11 @@ public final class PaintOrder {
 
         float fontPx = box.style.fontSizePx(), rootFontPx = box.style.rootFontSizePx();
         boolean rel = parentRelative && boxHasOwnNode(box);
-        float lx = rel ? box.x - Math.round(box.x) : box.x;
-        float ly = rel ? box.y - Math.round(box.y) : box.y;
-        float[] border = {lx, ly, box.w, box.h};
-        float[] padding = {lx + box.bL, ly + box.bT, Math.max(0, box.w - box.bL - box.bR), Math.max(0, box.h - box.bT - box.bB)};
-        float[] content = {padding[0] + box.pL, padding[1] + box.pT, Math.max(0, padding[2] - box.pL - box.pR), Math.max(0, padding[3] - box.pT - box.pB)};
+        float lx = rel ? box.x() - Math.round(box.x()) : box.x();
+        float ly = rel ? box.y() - Math.round(box.y()) : box.y();
+        float[] border = {lx, ly, box.w(), box.h()};
+        float[] padding = {lx + box.bL(), ly + box.bT(), Math.max(0, box.w() - box.bL() - box.bR()), Math.max(0, box.h() - box.bT() - box.bB())};
+        float[] content = {padding[0] + box.pL(), padding[1] + box.pT(), Math.max(0, padding[2] - box.pL() - box.pR()), Math.max(0, padding[3] - box.pT() - box.pB())};
         ClipShape clip = ClipShape.parse(box.style.get(CssPropertyIndex.CLIP_PATH),
                 ClipShape.Context.of(border, padding, content, rootW, rootH, fontPx, rootFontPx));
 
@@ -1069,12 +1069,12 @@ public final class PaintOrder {
                 box.style.color(CssPropertyIndex.COLOR, 0xFF000000)));
         ClipShape backdropShape = null;
         if (!backdrop.isEmpty()) {
-            float[] r = LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH);
+            float[] r = LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w(), box.h(), rootW, rootH);
             float[] d = new float[12];
             d[0] = lx;
             d[1] = ly;
-            d[2] = lx + box.w;
-            d[3] = ly + box.h;
+            d[2] = lx + box.w();
+            d[3] = ly + box.h();
             System.arraycopy(r, 0, d, 4, 8);
             backdropShape = new ClipShape(ClipShape.Kind.INSET, d, false);
         }
@@ -1108,7 +1108,7 @@ public final class PaintOrder {
         if (cached != null) return cached;
         boolean found = false;
         for (LayoutBox child : box.children) {
-            if (child.display.isNone()) continue;
+            if (child.display().isNone()) continue;
             if (!"normal".equals(child.style.keyword(CssPropertyIndex.MIX_BLEND_MODE, "normal"))) {
                 found = true;
                 break;
@@ -1185,33 +1185,33 @@ public final class PaintOrder {
         boolean clipY = panZoom || !"visible".equals(facts.overflowY());
         if (!clipX && !clipY) return parentClip;
 
-        float minX = clipX ? box.x + box.bL : -UNCLIPPED;
-        float minY = clipY ? box.y + box.bT : -UNCLIPPED;
-        float maxX = clipX ? box.x + box.w - box.bR : UNCLIPPED;
-        float maxY = clipY ? box.y + box.h - box.bB : UNCLIPPED;
+        float minX = clipX ? box.x() + box.bL() : -UNCLIPPED;
+        float minY = clipY ? box.y() + box.bT() : -UNCLIPPED;
+        float maxX = clipX ? box.x() + box.w() - box.bR() : UNCLIPPED;
+        float maxY = clipY ? box.y() + box.h() - box.bB() : UNCLIPPED;
 
         // 内側の角は外側の半径から隣り合う辺の太さを引いたもの（角丸は両軸を切るときだけ）
         float rx0 = 0f, rx1 = 0f, rx2 = 0f, rx3 = 0f;
         float ry0 = 0f, ry1 = 0f, ry2 = 0f, ry3 = 0f;
         boolean elliptical = false;
         if (clipX && clipY) {
-            float[] r = LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH);
+            float[] r = LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w(), box.h(), rootW, rootH);
             for (int i = 0; i < 4; i++) elliptical |= Math.round(r[i]) != Math.round(r[4 + i]);
             if (!elliptical) {
-                rx0 = Math.min(r[0], r[4]) - Math.max(box.bT, box.bL);
-                rx1 = Math.min(r[1], r[5]) - Math.max(box.bT, box.bR);
-                rx2 = Math.min(r[2], r[6]) - Math.max(box.bB, box.bR);
-                rx3 = Math.min(r[3], r[7]) - Math.max(box.bB, box.bL);
+                rx0 = Math.min(r[0], r[4]) - Math.max(box.bT(), box.bL());
+                rx1 = Math.min(r[1], r[5]) - Math.max(box.bT(), box.bR());
+                rx2 = Math.min(r[2], r[6]) - Math.max(box.bB(), box.bR());
+                rx3 = Math.min(r[3], r[7]) - Math.max(box.bB(), box.bL());
             } else {
                 // 楕円の角は、内側の角を軸ごとに縮める（横は左右の枠線、縦は上下の枠線の太さ）
-                rx0 = Math.max(0f, r[0] - box.bL); ry0 = Math.max(0f, r[4] - box.bT);
-                rx1 = Math.max(0f, r[1] - box.bR); ry1 = Math.max(0f, r[5] - box.bT);
-                rx2 = Math.max(0f, r[2] - box.bR); ry2 = Math.max(0f, r[6] - box.bB);
-                rx3 = Math.max(0f, r[3] - box.bL); ry3 = Math.max(0f, r[7] - box.bB);
+                rx0 = Math.max(0f, r[0] - box.bL()); ry0 = Math.max(0f, r[4] - box.bT());
+                rx1 = Math.max(0f, r[1] - box.bR()); ry1 = Math.max(0f, r[5] - box.bT());
+                rx2 = Math.max(0f, r[2] - box.bR()); ry2 = Math.max(0f, r[6] - box.bB());
+                rx3 = Math.max(0f, r[3] - box.bL()); ry3 = Math.max(0f, r[7] - box.bB());
             }
         }
-        int ox = parentRelative && boxHasOwnNode(box) && clipX ? Math.round(box.x) : 0;
-        int oy = parentRelative && boxHasOwnNode(box) && clipY ? Math.round(box.y) : 0;
+        int ox = parentRelative && boxHasOwnNode(box) && clipX ? Math.round(box.x()) : 0;
+        int oy = parentRelative && boxHasOwnNode(box) && clipY ? Math.round(box.y()) : 0;
         String ownerKey = box.node.key();
         ChildClipCache cc = childClipCache.get(box);
         if (cc != null && cc.result != null
@@ -1336,9 +1336,9 @@ public final class PaintOrder {
             ox = cap.originX;
             oy = cap.originY;
         }
-        float x = box.x - ox, y = box.y - oy;
+        float x = box.x() - ox, y = box.y() - oy;
         int left = Math.round(x), top = Math.round(y);
-        int width = Math.round(x + box.w) - left, height = Math.round(y + box.h) - top;
+        int width = Math.round(x + box.w()) - left, height = Math.round(y + box.h()) - top;
         if (prevItem != null && prevItem.x() == left && prevItem.y() == top
                 && prevItem.width() == width && prevItem.height() == height
                 && prevItem.key() == movingKey && prevItem.meta() == baseMeta && id.equals(prevItem.id())) {
@@ -1346,7 +1346,7 @@ public final class PaintOrder {
             return;
         }
         int idxBefore = elements.size();
-        addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", 0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0,
+        addElement(elements, id, id, ElementType.NODE, box.x(), box.y(), box.w(), box.h(), "", 0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0,
                 AnimationSpec.NONE, baseMeta, movingKey);
         DisplayItem created = elements.get(idxBefore);
         if (isV) mc.thumbVNodeItem = created;
@@ -1361,10 +1361,10 @@ public final class PaintOrder {
 
         PaintSupport.CaptureList cap = (parentRelative && boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
         int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
-        if (cap != null) cap.setOrigin(Math.round(box.x), Math.round(box.y));
+        if (cap != null) cap.setOrigin(Math.round(box.x()), Math.round(box.y()));
         try {
-            float scrollW = box.scrollWidth;
-            float scrollH = box.scrollHeight;
+            float scrollW = box.scrollWidth();
+            float scrollH = box.scrollHeight();
             float curX = scrollState.getScrollX(box.node);
             float curY = scrollState.getScrollY(box.node);
 
@@ -1387,12 +1387,12 @@ public final class PaintOrder {
             }
 
             int barThickness = 4;
-            if (scrollH > box.h + 2 && box.h > 12) {
-                float trackX = box.x + box.w - box.bR - barThickness - 2;
-                float trackY = box.y + box.bT + 2;
-                float trackH = box.h - box.bT - box.bB - 4;
-                float thumbH = Math.round(Math.max(12, trackH * (box.h / scrollH))); // 整数: つまみの位置で丸めの高さが揺れない（平行移動と作り直しで同じ大きさ）
-                float maxScrollY = Math.max(1f, scrollH - box.h);
+            if (scrollH > box.h() + 2 && box.h() > 12) {
+                float trackX = box.x() + box.w() - box.bR() - barThickness - 2;
+                float trackY = box.y() + box.bT() + 2;
+                float trackH = box.h() - box.bT() - box.bB() - 4;
+                float thumbH = Math.round(Math.max(12, trackH * (box.h() / scrollH))); // 整数: つまみの位置で丸めの高さが揺れない（平行移動と作り直しで同じ大きさ）
+                float maxScrollY = Math.max(1f, scrollH - box.h());
                 float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
                 long trackKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_TRACK_V) : 0L;
@@ -1421,12 +1421,12 @@ public final class PaintOrder {
                 }
                 addElement(elements, ownerId, box.node.partKey(14, "_sb_v"), ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, thumbMeta, thumbKey);
             }
-            if (scrollW > box.w + 2 && box.w > 12) {
-                float trackX = box.x + box.bL + 2;
-                float trackY = box.y + box.h - box.bB - barThickness - 2;
-                float trackW = box.w - box.bL - box.bR - 4;
-                float thumbW = Math.round(Math.max(12, trackW * (box.w / scrollW)));
-                float maxScrollX = Math.max(1f, scrollW - box.w);
+            if (scrollW > box.w() + 2 && box.w() > 12) {
+                float trackX = box.x() + box.bL() + 2;
+                float trackY = box.y() + box.h() - box.bB() - barThickness - 2;
+                float trackW = box.w() - box.bL() - box.bR() - 4;
+                float thumbW = Math.round(Math.max(12, trackW * (box.w() / scrollW)));
+                float maxScrollX = Math.max(1f, scrollW - box.w());
                 float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
                 long trackKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_TRACK_H) : 0L;

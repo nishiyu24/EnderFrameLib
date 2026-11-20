@@ -44,7 +44,7 @@ public class P6IncrementalTraversalTest {
     }
 
     private static void assertNoStaleFragments(LayoutBox box) {
-        assertFalse(box.fragmentsStale, () -> "fragmentsStale left set on " + box.node);
+        assertFalse(box.fragmentsStale(), () -> "fragmentsStale left set on " + box.node);
         for (int i = 0; i < box.children.size(); i++) {
             assertNoStaleFragments(box.children.get(i));
         }
@@ -195,10 +195,10 @@ public class P6IncrementalTraversalTest {
             // resetPlacementsFast はまず fragmentsStale 印だけを付け、unvisited の箱は finishResetPlacements で回収する
             List<LayoutBox> stale = new ArrayList<>();
             LayoutBox.resetPlacementsFast(root, -1, stale);
-            assertTrue(textBox.fragmentsStale, "resetPlacementsFast 直後は fragmentsStale が立つこと");
+            assertTrue(textBox.fragmentsStale(), "resetPlacementsFast 直後は fragmentsStale が立つこと");
             assertFalse(textBox.inlineFragments.isEmpty(), "前払いの discardFragments を省いていること");
             LayoutBox.finishResetPlacements(stale);
-            assertFalse(textBox.fragmentsStale);
+            assertFalse(textBox.fragmentsStale());
             assertTrue(textBox.inlineFragments.isEmpty(), "layout が触れなかった箱の断片が finishResetPlacements で回収されること");
             assertTrue(stale.isEmpty());
 

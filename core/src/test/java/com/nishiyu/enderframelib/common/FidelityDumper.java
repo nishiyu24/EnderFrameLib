@@ -108,21 +108,21 @@ final class FidelityDumper {
     }
 
     private static Snapshot createSnapshot(LayoutBox box, List<LayoutBox> paintedWithId, List<String> caseProps) {
-        float x = box.x;
-        float y = box.y;
-        float w = box.w;
-        float h = box.h;
+        float x = box.x();
+        float y = box.y();
+        float w = box.w();
+        float h = box.h();
         int z = stackDepthAtCenter(box, paintedWithId);
 
-        boolean isInlineNonBfc = box.display != null && box.display.isInlineLevel() && !box.establishesBfc;
+        boolean isInlineNonBfc = box.display() != null && box.display().isInlineLevel() && !box.establishesBfc();
         boolean collapsedTable = box.isCollapsedTable();
-        float cw = isInlineNonBfc ? 0 : collapsedTable ? w : Math.max(0, w - box.bL - box.bR);
-        float ch = isInlineNonBfc ? 0 : collapsedTable ? h : Math.max(0, h - box.bT - box.bB);
+        float cw = isInlineNonBfc ? 0 : collapsedTable ? w : Math.max(0, w - box.bL() - box.bR());
+        float ch = isInlineNonBfc ? 0 : collapsedTable ? h : Math.max(0, h - box.bT() - box.bB());
 
-        float sw = isInlineNonBfc ? 0 : collapsedTable ? (box.scrollWidth > 0 ? box.scrollWidth : w)
-                : Math.max(cw, (box.scrollWidth > 0 ? box.scrollWidth : w) - box.bL - box.bR);
-        float sh = isInlineNonBfc ? 0 : collapsedTable ? (box.scrollHeight > 0 ? box.scrollHeight : h)
-                : Math.max(ch, (box.scrollHeight > 0 ? box.scrollHeight : h) - box.bT - box.bB);
+        float sw = isInlineNonBfc ? 0 : collapsedTable ? (box.scrollWidth() > 0 ? box.scrollWidth() : w)
+                : Math.max(cw, (box.scrollWidth() > 0 ? box.scrollWidth() : w) - box.bL() - box.bR());
+        float sh = isInlineNonBfc ? 0 : collapsedTable ? (box.scrollHeight() > 0 ? box.scrollHeight() : h)
+                : Math.max(ch, (box.scrollHeight() > 0 ? box.scrollHeight() : h) - box.bT() - box.bB());
 
         Map<String, String> computed = new LinkedHashMap<>();
         computed.put("display", computeDisplay(box));
@@ -151,8 +151,8 @@ final class FidelityDumper {
     private static String computeDisplay(LayoutBox box) {
         String disp = box.style.get(CssProperty.DISPLAY);
         if (disp != null) return disp.trim().toLowerCase(java.util.Locale.ROOT);
-        if (box.display != null) {
-            if (box.display.isInlineLevel()) return "inline";
+        if (box.display() != null) {
+            if (box.display().isInlineLevel()) return "inline";
             return "block";
         }
         return "block";
@@ -224,8 +224,8 @@ final class FidelityDumper {
     /** 中心点で自分より後に描かれる（= 上に重なる）id 付き要素の数。当たらなければ -1。 */
     private static int stackDepthAtCenter(LayoutBox box, List<LayoutBox> paintOrder) {
         int index = paintOrder.indexOf(box);
-        float cx = box.x + box.w / 2f;
-        float cy = box.y + box.h / 2f;
+        float cx = box.x() + box.w() / 2f;
+        float cy = box.y() + box.h() / 2f;
         if (index < 0 || !hits(box, cx, cy)) return -1;
         int above = 0;
         for (int i = index + 1; i < paintOrder.size(); i++) {
@@ -240,7 +240,7 @@ final class FidelityDumper {
      */
     private static boolean hits(LayoutBox box, float px, float py) {
         if (px < 0 || py < 0 || px >= VIEWPORT_W || py >= VIEWPORT_H) return false;
-        if (!contains(box.x, box.y, box.w, box.h, px, py)) return false;
+        if (!contains(box.x(), box.y(), box.w(), box.h(), px, py)) return false;
         if (!box.inlineFragments.isEmpty()
                 && box.inlineFragments.stream().noneMatch(f -> contains(f.x, f.y, f.w, f.h, px, py))) {
             return false;
@@ -250,7 +250,7 @@ final class FidelityDumper {
             if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) continue;
             if ("visible".equals(a.style.getOrDefault(CssProperty.OVERFLOW, "visible"))) continue;
             // クリップは padding box（ボーダーの内側）。描画側の computeChildClipRect と同じ
-            if (!contains(a.x + a.bL, a.y + a.bT, a.w - a.bL - a.bR, a.h - a.bT - a.bB, px, py)) return false;
+            if (!contains(a.x() + a.bL(), a.y() + a.bT(), a.w() - a.bL() - a.bR(), a.h() - a.bT() - a.bB(), px, py)) return false;
         }
         return true;
     }

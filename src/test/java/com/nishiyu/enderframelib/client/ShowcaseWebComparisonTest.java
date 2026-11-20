@@ -109,14 +109,14 @@ public class ShowcaseWebComparisonTest {
     }
 
     private static boolean overlaps(LayoutBox a, LayoutBox b) {
-        return a.x < b.x + b.w - EPS && b.x < a.x + a.w - EPS && a.y < b.y + b.h - EPS && b.y < a.y + a.h - EPS;
+        return a.x() < b.x() + b.w() - EPS && b.x() < a.x() + a.w() - EPS && a.y() < b.y() + b.h() - EPS && b.y() < a.y() + a.h() - EPS;
     }
 
     private static void assertInside(LayoutBox inner, LayoutBox outer, String what) {
-        assertTrue(inner.x >= outer.x - EPS && inner.x + inner.w <= outer.x + outer.w + EPS
-                        && inner.y >= outer.y - EPS && inner.y + inner.h <= outer.y + outer.h + EPS,
+        assertTrue(inner.x() >= outer.x() - EPS && inner.x() + inner.w() <= outer.x() + outer.w() + EPS
+                        && inner.y() >= outer.y() - EPS && inner.y() + inner.h() <= outer.y() + outer.h() + EPS,
                 () -> String.format("%s: [%.1f,%.1f %.1fx%.1f] が [%.1f,%.1f %.1fx%.1f] の内側にあること",
-                        what, inner.x, inner.y, inner.w, inner.h, outer.x, outer.y, outer.w, outer.h));
+                        what, inner.x(), inner.y(), inner.w(), inner.h(), outer.x(), outer.y(), outer.w(), outer.h()));
     }
 
     /** 箱の中のテキストが 1 行に収まっている（断片がすべて同じ行にある）。 */
@@ -166,7 +166,7 @@ public class ShowcaseWebComparisonTest {
             }
             // 検索入力は内容（padding と border）より細く潰れない
             LayoutBox input = r.byId("test_input");
-            assertTrue(input.w >= input.horizontalDecoration() - EPS, name + ": 検索入力の幅 " + input.w);
+            assertTrue(input.w() >= input.horizontalDecoration() - EPS, name + ": 検索入力の幅 " + input.w());
         }
 
         @Test
@@ -178,18 +178,18 @@ public class ShowcaseWebComparisonTest {
             LayoutBox actions = r.one("header-actions");
 
             // 左から ロゴ → 検索バー → アクション の順に 1 行（Chrome の実測と同じ並び）
-            assertTrue(brand.x + brand.w <= search.x + EPS);
-            assertTrue(search.x + search.w <= actions.x + EPS);
-            float searchMid = search.y + search.h / 2;
-            assertTrue(searchMid > actions.y && searchMid < actions.y + actions.h, "検索バーとアクションが同じ行にある");
+            assertTrue(brand.x() + brand.w() <= search.x() + EPS);
+            assertTrue(search.x() + search.w() <= actions.x() + EPS);
+            float searchMid = search.y() + search.h() / 2;
+            assertTrue(searchMid > actions.y() && searchMid < actions.y() + actions.h(), "検索バーとアクションが同じ行にある");
             // アクションはヘッダーの右端に揃う（justify-content: space-between）
             LayoutBox header = r.byId("header_panel");
-            assertEquals(header.x + header.w - header.bR - header.pR, actions.x + actions.w, 1.0f);
+            assertEquals(header.x() + header.w() - header.bR() - header.pR(), actions.x() + actions.w(), 1.0f);
 
             LayoutBox select = r.byId("mode_select");
-            assertEquals(128f, select.w, EPS, "select は指定幅 128px のまま縮まない（Chrome 実測 128）");
+            assertEquals(128f, select.w(), EPS, "select は指定幅 128px のまま縮まない（Chrome 実測 128）");
             LayoutBox input = r.byId("test_input");
-            assertTrue(input.w >= 60, "検索入力は 60px 以上（Chrome 実測 114.9px）: " + input.w);
+            assertTrue(input.w() >= 60, "検索入力は 60px 以上（Chrome 実測 114.9px）: " + input.w());
         }
     }
 
@@ -239,17 +239,17 @@ public class ShowcaseWebComparisonTest {
             assertEquals(3, cols.size());
             float[][] chrome = {{12, 190}, {214, 396}, {622, 220}};
             for (int i = 0; i < 3; i++) {
-                assertEquals(chrome[i][0], cols.get(i).x, EPS, name + ": 列 " + i + " の x");
-                assertEquals(chrome[i][1], cols.get(i).w, EPS, name + ": 列 " + i + " の幅");
+                assertEquals(chrome[i][0], cols.get(i).x(), EPS, name + ": 列 " + i + " の x");
+                assertEquals(chrome[i][1], cols.get(i).w(), EPS, name + ": 列 " + i + " の幅");
             }
-            assertTrue(cols.get(2).x + cols.get(2).w <= W - 12 + EPS, name + ": 右列が画面からはみ出さない");
+            assertTrue(cols.get(2).x() + cols.get(2).w() <= W - 12 + EPS, name + ": 右列が画面からはみ出さない");
 
             List<LayoutBox> cards = r.byClass("product-card");
             assertEquals(4, cards.size());
             float[] chromeCardX = {227, 417, 227, 417};
             for (int i = 0; i < 4; i++) {
-                assertEquals(180f, cards.get(i).w, EPS, name + ": カード " + i + " の幅（Chrome 実測 180）");
-                assertEquals(chromeCardX[i], cards.get(i).x, EPS, name + ": カード " + i + " の x");
+                assertEquals(180f, cards.get(i).w(), EPS, name + ": カード " + i + " の幅（Chrome 実測 180）");
+                assertEquals(chromeCardX[i], cards.get(i).x(), EPS, name + ": カード " + i + " の x");
             }
         }
 
@@ -310,8 +310,8 @@ public class ShowcaseWebComparisonTest {
             LayoutBox box = r.byId("mode_select");
             FontStyle font = new FontStyle(box.style.fontSizePx(), LayoutMetrics.isBold(box.style), false, 0);
             float label = UniformFontFace.FACE.advance(select.text(), font);
-            assertTrue(label <= box.w - box.horizontalDecoration() + EPS,
-                    "ラベル幅 " + label + " が select の内容幅 " + (box.w - box.horizontalDecoration()) + " に収まる");
+            assertTrue(label <= box.w() - box.horizontalDecoration() + EPS,
+                    "ラベル幅 " + label + " が select の内容幅 " + (box.w() - box.horizontalDecoration()) + " に収まる");
         }
     }
 
@@ -325,8 +325,8 @@ public class ShowcaseWebComparisonTest {
             RenderResult r = inGame();
             // header: linear-gradient(135deg, #1e293b, #0f172a)。135deg は左上が始点、右下が終点ちょうど
             LayoutBox header = r.byId("header_panel");
-            float px = header.x + header.bL, py = header.y + header.bT;
-            float pw = header.w - header.bL - header.bR, ph = header.h - header.bT - header.bB;
+            float px = header.x() + header.bL(), py = header.y() + header.bT();
+            float pw = header.w() - header.bL() - header.bR(), ph = header.h() - header.bT() - header.bB();
             List<DisplayItem> tiles = r.items().stream()
                     .filter(i -> i.id() != null && i.id().startsWith("header_panel_bgl0_"))
                     .toList();

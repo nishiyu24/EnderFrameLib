@@ -66,14 +66,14 @@ public final class BoxLayoutQuery implements LayoutQuery {
     }
 
     private static boolean positioned(LayoutBox box) {
-        return box.isAbsolute || box.isFixed || box.isRelative || box.isSticky;
+        return box.isAbsolute() || box.isFixed() || box.isRelative() || box.isSticky();
     }
 
     @Nullable
     @Override
     public BoxMetrics metrics(HtmlNode node) {
         LayoutBox box = boxOf(node);
-        if (box == null || (box.display != null && box.display.isNone())) return null;
+        if (box == null || (box.display() != null && box.display().isNone())) return null;
         HtmlNode offsetParent = null;
         for (HtmlNode a = node.parent; a != null; a = a.parent) {
             LayoutBox ab = boxOf(a);
@@ -82,8 +82,8 @@ public final class BoxLayoutQuery implements LayoutQuery {
                 break;
             }
         }
-        float x = box.x;
-        float y = box.y;
+        float x = box.x();
+        float y = box.y();
         if (box.parent != null && box.parent.isVirtualizedFlow() && box.contentAutoSkipped) {
             float[] est = box.parent.virtualOffsetOf(box);
             if (est != null) {
@@ -91,11 +91,11 @@ public final class BoxLayoutQuery implements LayoutQuery {
                 y = est[1];
             }
         }
-        return new BoxMetrics(x, y, box.w, box.h,
-                box.bL, box.bT, box.bR, box.bB,
-                box.pL, box.pT, box.pR, box.pB,
-                box.mL, box.mT, box.mR, box.mB,
-                box.scrollWidth, box.scrollHeight,
+        return new BoxMetrics(x, y, box.w(), box.h(),
+                box.bL(), box.bT(), box.bR(), box.bB(),
+                box.pL(), box.pT(), box.pR(), box.pB(),
+                box.mL(), box.mT(), box.mR(), box.mB(),
+                box.scrollWidth(), box.scrollHeight(),
                 box.style != null && box.style.isBorderBox(), box.isScrollContainer(), clips(box), box.isCollapsedTable(), offsetParent);
     }
 
@@ -128,8 +128,8 @@ public final class BoxLayoutQuery implements LayoutQuery {
     public void scrollIntoView(HtmlNode node) {
         LayoutBox target = boxOf(node);
         if (target == null) return;
-        float ex = target.x;
-        float ey = target.y;
+        float ex = target.x();
+        float ey = target.y();
         if (target.parent != null && target.parent.isVirtualizedFlow() && target.contentAutoSkipped) {
             float[] est = target.parent.virtualOffsetOf(target);
             if (est != null) {
@@ -137,7 +137,7 @@ public final class BoxLayoutQuery implements LayoutQuery {
                 ey = est[1];
             }
         }
-        float ew = target.w;
+        float ew = target.w();
         boolean changed = false;
         for (HtmlNode a = node.parent; a != null; a = a.parent) {
             LayoutBox ab = boxOf(a);

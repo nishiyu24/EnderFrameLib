@@ -71,7 +71,7 @@ final class StackingSubtreePatch {
         }
         if (!rest.isEmpty() && builder.preparePatchBoxes(rest) == null) return null;
 
-        builder.decor.setDevicePixelRatio(builder.currentRoot.devicePixelRatio);
+        builder.decor.setDevicePixelRatio(builder.currentRoot.devicePixelRatio());
         boolean relMode = DisplayListBuilder.parentRelativeSource.getAsBoolean();
         builder.parentRelative = relMode;
         builder.order.setParentRelative(relMode);

@@ -1,0 +1,249 @@
+package com.nishiyu.enderframelib.core.layout;
+
+import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.text.TextShaper;
+import com.nishiyu.enderframelib.core.text.model.FontFace;
+import com.nishiyu.enderframelib.core.text.model.FontStyle;
+import com.nishiyu.enderframelib.core.text.model.TextStyle;
+
+import java.util.List;
+
+/**
+ * 内在幅（min-content）・表示用テキストの正規化に関する算出処理（A7）。
+ */
+final class IntrinsicSizing {
+    private IntrinsicSizing() {}
+
+    static float getMinContentWidth(LayoutBox box, LayoutContext ctx) {
+        MeasureMemo mm = box.measureMemo;
+        if (mm.isTentativeStashed() && mm.isMinContentVar()) {
+            mm.settleTentative(box);
+        }
+        long key = ((long) ctx.viewport().rootW() << 32) | (ctx.viewport().rootH() & 0xFFFFFFFFL);
+        key = key * 31 + Float.floatToIntBits(ctx.viewport().devicePixelRatio());
+        float cached = mm.cachedMinContentWidth(key);
+        if (cached >= 0) return cached;
+
+        float result = computeMinContentWidth(box, ctx);
+        mm.cacheMinContentWidth(key, result);
+        return result;
+    }
+
+    private static float computeMinContentWidth(LayoutBox box, LayoutContext ctx) {
+        if (box.effectiveContainsInlineSize()) {
+            return box.horizontalDecoration() + box.containIntrinsicInlinePx(ctx.viewport().rootW(), ctx.viewport().rootH());
+        }
+        float rootW = ctx.viewport().rootW();
+        float rootH = ctx.viewport().rootH();
+
+        ComputedStyle ax = box.axisStyle();
+        String minWidthDecl = ax.get(CssPropertyIndex.MIN_WIDTH);
+        if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)
+                && box.display.inner() != LayoutBox.Display.Inner.TABLE) {
+            float min = ax.length(CssPropertyIndex.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
+            return ax.isBorderBox() ? Math.max(min, box.horizontalDecoration()) : min + box.horizontalDecoration();
+        }
+
+        String tag = box.node.tag;
+        if (tag.equals("select")) {
+            return selectLabelWidth(box, ctx) + box.horizontalDecoration();
+        }
+        if (tag.equals("input") || tag.equals("progress")) {
+            float inputW = 90;
+            String type = box.node.attrs.getOrDefault("type", "text");
+            if (tag.equals("input") && (type.equals("checkbox") || type.equals("radio"))) {
+                inputW = LayoutMetrics.FALLBACK_REPLACED_SIZE;
+            } else if (box.node.attrs.containsKey("size")) {
+                try {
+                    inputW = Integer.parseInt(box.node.attrs.get("size")) * 8;
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            return inputW + box.horizontalDecoration();
+        }
+
+        if (box.node.nodeType == NodeType.TEXT) {
+            TextStyle textStyle = ctx.textStyleFor(box.style);
+            FontFace face = ctx.faceFor(box.style);
+            FontStyle font = textStyle.font();
+            float maxWordW = 0;
+            if (!textStyle.whiteSpace().wraps()) {
+                if (box.displayText.indexOf('\n') < 0) {
+                    String l = textStyle.whiteSpace().collapses() ? box.displayText.strip() : box.displayText;
+                    return l.isEmpty() ? 0 : face.advance(l, font);
+                }
+                for (String line : box.displayText.split("\n", -1)) {
+                    String l = textStyle.whiteSpace().collapses() ? line.strip() : line;
+                    if (!l.isEmpty()) maxWordW = Math.max(maxWordW, face.advance(l, font));
+                }
+                return maxWordW;
+            }
+            return TextShaper.segmented(box.displayText, face, font, textStyle.wordBreak()).maxStrippedW();
+        }
+
+        if (box.children.isEmpty()) {
+            if (!ReplacedElements.isReplacedTag(box.node.tag) && !box.node.tag.equals("canvas") && !box.node.tag.equals("svg")
+                    && !box.node.tag.equals("img") && !box.node.tag.equals("video") && !box.node.tag.equals("iframe")) {
+                return box.horizontalDecoration();
+            }
+            float image = BoxMeasurer.replacedImageWidth(box, ctx);
+            if (!Float.isNaN(image)) return image;
+            return box.w > 0 ? box.w : LayoutMetrics.FALLBACK_REPLACED_SIZE;
+        }
+
+        boolean sumItems = box.display != null && box.display.inner() == LayoutBox.Display.Inner.FLEX && isSingleLineRowFlex(box);
+        float max = 0, sum = 0;
+        int count = 0;
+        for (LayoutBox c : box.children) {
+            if (!c.participatesInFlow()) continue;
+            if (sumItems && FlexLayoutEngine.isCollapsed(c)) continue;
+            float contribution = minContentContribution(c, ctx) + c.intrinsicInlineMargins(ctx);
+            max = Math.max(max, contribution);
+            sum += contribution;
+            count++;
+        }
+        LayoutBox legend = box.renderedLegend();
+        float legendW = legend == null ? 0 : minContentContribution(legend, ctx) + ownInlineMargins(legend, ctx);
+        if (sumItems) return Math.max(legendW, sum + box.columnGap * Math.max(0, count - 1)) + box.horizontalDecoration();
+        return Math.max(legendW, max) + box.horizontalDecoration();
+    }
+
+    private static float minContentContribution(LayoutBox box, LayoutContext ctx) {
+        ComputedStyle ax = box.axisStyle();
+        String width = ax.get(CssPropertyIndex.WIDTH);
+        if (width == null || width.contains("%") || LayoutMetrics.isIntrinsicSizeKeyword(width)) {
+            return getMinContentWidth(box, ctx);
+        }
+        float v = ax.length(CssPropertyIndex.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+        float borderBox = ax.isBorderBox() ? Math.max(v, box.horizontalDecoration()) : v + box.horizontalDecoration();
+        String minWidth = ax.get(CssPropertyIndex.MIN_WIDTH);
+        if (minWidth != null && !minWidth.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(minWidth)) {
+            float min = ax.length(CssPropertyIndex.MIN_WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+            borderBox = Math.max(borderBox, ax.isBorderBox() ? min : min + box.horizontalDecoration());
+        }
+        return borderBox;
+    }
+
+    static float ownInlineMargins(LayoutBox box, LayoutContext ctx) {
+        float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
+        ComputedStyle ax = box.axisStyle();
+        float l = "auto".equals(ax.get(CssPropertyIndex.MARGIN_LEFT)) ? 0 : ax.length(CssPropertyIndex.MARGIN_LEFT, 0, rootW, rootH);
+        float r = "auto".equals(ax.get(CssPropertyIndex.MARGIN_RIGHT)) ? 0 : ax.length(CssPropertyIndex.MARGIN_RIGHT, 0, rootW, rootH);
+        return l + r;
+    }
+
+    private static boolean isSingleLineRowFlex(LayoutBox box) {
+        String direction = box.style.getOrDefault(CssPropertyIndex.FLEX_DIRECTION, "row").trim();
+        String wrap = box.style.getOrDefault(CssPropertyIndex.FLEX_WRAP, "nowrap").trim();
+        return direction.startsWith("row") && "nowrap".equals(wrap);
+    }
+
+    private static float selectLabelWidth(LayoutBox box, LayoutContext ctx) {
+        FontFace face = ctx.faceFor(box.style);
+        FontStyle font = ctx.fontStyleFor(box.style);
+        float max = face.advance(" ▾", font);
+        for (HtmlNode option : box.node.children) {
+            if ("optgroup".equals(option.tag)) {
+                for (HtmlNode o : option.children) {
+                    if ("option".equals(o.tag)) max = Math.max(max, optionLabelWidth(o, face, font));
+                }
+            } else if ("option".equals(option.tag)) {
+                max = Math.max(max, optionLabelWidth(option, face, font));
+            }
+        }
+        return max;
+    }
+
+    private static float optionLabelWidth(HtmlNode o, FontFace face, FontStyle font) {
+        String label = o.attrs.containsKey("label") ? o.attrs.get("label") : o.getTextContent();
+        label = label == null ? "" : collapseSelectSpaces(label);
+        return face.advance(label + " ▾", font);
+    }
+
+    private static String collapseSelectSpaces(String s) {
+        int len = s.length();
+        int start = 0;
+        while (start < len && Character.isWhitespace(s.charAt(start))) start++;
+        int end = len;
+        while (end > start && Character.isWhitespace(s.charAt(end - 1))) end--;
+        if (start == end) return "";
+        StringBuilder sb = null;
+        boolean prevSpace = false;
+        for (int i = start; i < end; i++) {
+            char c = s.charAt(i);
+            if (Character.isWhitespace(c)) {
+                if (prevSpace || c != ' ') {
+                    if (sb == null) {
+                        sb = new StringBuilder(end - start);
+                        sb.append(s, start, i);
+                    }
+                    if (!prevSpace) sb.append(' ');
+                } else if (sb != null) {
+                    sb.append(' ');
+                }
+                prevSpace = true;
+            } else {
+                if (sb != null) sb.append(c);
+                prevSpace = false;
+            }
+        }
+        if (sb != null) return sb.toString();
+        return (start == 0 && end == len) ? s : s.substring(start, end);
+    }
+
+    static String trimNewlineEdges(String s) {
+        int n = s.length();
+        if (n == 0) return s;
+        int start = 0, end = n;
+        char first = s.charAt(0), last = s.charAt(n - 1);
+        if (s.isBlank()) return " ";
+        if (first == '\n' || first == '\r') while (start < end && Character.isWhitespace(s.charAt(start))) start++;
+        if (last == '\n' || last == '\r') while (end > start && Character.isWhitespace(s.charAt(end - 1))) end--;
+        return start == 0 && end == n ? s : s.substring(start, end);
+    }
+
+    static boolean endsWithWordChar(HtmlNode node) {
+        for (HtmlNode n = node; n != null && n.parent != null; n = n.parent) {
+            List<HtmlNode> sib = n.parent.children;
+            for (int i = sib.indexOf(n) - 1; i >= 0; i--) {
+                int c = lastChar(sib.get(i));
+                if (c >= 0) return Character.isLetterOrDigit(c);
+            }
+            if (n.parent.nodeType == NodeType.ELEMENT && !"span".equals(n.parent.tag) && !"b".equals(n.parent.tag)
+                    && !"i".equals(n.parent.tag) && !"a".equals(n.parent.tag) && !"em".equals(n.parent.tag)) return false;
+        }
+        return false;
+    }
+
+    private static int lastChar(HtmlNode n) {
+        if (n.nodeType == NodeType.TEXT) return n.text == null || n.text.isEmpty() ? -1 : n.text.charAt(n.text.length() - 1);
+        for (int i = n.children.size() - 1; i >= 0; i--) {
+            int c = lastChar(n.children.get(i));
+            if (c >= 0) return c;
+        }
+        return -1;
+    }
+
+    static String stripIgnorable(String s) {
+        int n = s.length();
+        int i = 0;
+        while (i < n && !isIgnorableFormat(s.charAt(i))) i++;
+        if (i == n) return s;
+        StringBuilder sb = new StringBuilder(n);
+        sb.append(s, 0, i);
+        for (; i < n; i++) {
+            char c = s.charAt(i);
+            if (!isIgnorableFormat(c)) sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    private static boolean isIgnorableFormat(char c) {
+        if (c < 0x200B) return false;
+        return c <= 0x200F || (c >= 0x202A && c <= 0x202E) || (c >= 0x2060 && c <= 0x2064) || (c >= 0x2066 && c <= 0x2069) || c == 0xFEFF;
+    }
+}

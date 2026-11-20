@@ -114,15 +114,15 @@ public class P8AllocationReductionTest {
         sigs(v);
         LayoutBox host = find(v.ui().layoutRoot(), v.root().getNodeById("host"));
         assertNotNull(host);
-        assertNotNull(host.contentSpaceCache, "測定後は内容の制約が記録される");
-        ConstraintSpace before = host.contentSpaceCache;
-        ConstraintSpace beforeChild = host.childSpaceCache;
+        assertNotNull(host.contentSpaceCache(), "測定後は内容の制約が記録される");
+        ConstraintSpace before = host.contentSpaceCache();
+        ConstraintSpace beforeChild = host.childSpaceCache();
         // 見た目だけが変わる再レイアウト（幅は同じ）では、制約オブジェクトが同一のまま
         v.root().getNodeById("host").setAttribute("style", "font-size:15px");
         sigs(v);
         LayoutBox host2 = find(v.ui().layoutRoot(), v.root().getNodeById("host"));
-        assertSame(before, host2.contentSpaceCache);
-        assertSame(beforeChild, host2.childSpaceCache);
+        assertSame(before, host2.contentSpaceCache());
+        assertSame(beforeChild, host2.childSpaceCache());
     }
 
     private static LayoutBox find(LayoutBox box, Object node) {

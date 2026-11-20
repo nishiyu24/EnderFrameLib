@@ -34,8 +34,8 @@ class ResizeSkipRebuildTest {
     }
 
     private static void dump(LayoutBox b, StringBuilder sb, int d) {
-        sb.append(d).append(' ').append(b.node.tag).append(' ').append(b.x).append(',').append(b.y).append(' ')
-                .append(b.w).append('x').append(b.h).append(' ').append(b.style.asMap().hashCode()).append('\n');
+        sb.append(d).append(' ').append(b.node.tag).append(' ').append(b.x()).append(',').append(b.y()).append(' ')
+                .append(b.w()).append('x').append(b.h()).append(' ').append(b.style.asMap().hashCode()).append('\n');
         for (LayoutBox c : b.children) dump(c, sb, d + 1);
     }
 

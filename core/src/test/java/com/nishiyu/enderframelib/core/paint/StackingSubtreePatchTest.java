@@ -65,7 +65,7 @@ class StackingSubtreePatchTest {
     private static double[] center(StandaloneView v, String id) {
         LayoutBox b = find(v.ui().layoutRoot(), id);
         assertNotNull(b, id);
-        return new double[]{b.x + b.w / 2.0, b.y + b.h / 2.0};
+        return new double[]{b.x() + b.w() / 2.0, b.y() + b.h() / 2.0};
     }
 
     private static LayoutBox find(LayoutBox b, String id) {

@@ -58,10 +58,10 @@ public class FieldsetLegendTest {
 
         LayoutBox fs = find(root, "fs");
         LayoutBox lg = find(root, "lg");
-        assertEquals(0, fs.y, 0.01f);
-        assertEquals(0, lg.y, 0.01f, "legend は fieldset の上端に揃う（枠線より高い）");
-        assertEquals(12, lg.x, 0.01f, "legend は内容ボックスの左端（枠線 2 + padding 10）");
-        assertEquals(20 + 10 + 30 + 10 + 2, fs.h, 0.01f, "高さ = legend + padding + 内容 + padding + 下の枠線");
+        assertEquals(0, fs.y(), 0.01f);
+        assertEquals(0, lg.y(), 0.01f, "legend は fieldset の上端に揃う（枠線より高い）");
+        assertEquals(12, lg.x(), 0.01f, "legend は内容ボックスの左端（枠線 2 + padding 10）");
+        assertEquals(20 + 10 + 30 + 10 + 2, fs.h(), 0.01f, "高さ = legend + padding + 内容 + padding + 下の枠線");
 
         DisplayItem bg = items.stream().filter(i -> i.id().equals("fs_bg")).findFirst().orElseThrow();
         assertEquals(9, bg.y(), "背景は legend の中央（(20 - 2) / 2）から塗る");
@@ -71,7 +71,7 @@ public class FieldsetLegendTest {
         for (DisplayItem part : borders) {
             ClipRect clip = part.meta().clipRect();
             assertTrue(clip != null, "枠線の部品はクリップを持つ: " + part.id());
-            boolean coversLegend = clip.minX() < lg.x + lg.w && clip.maxX() > lg.x && clip.minY() < lg.y + lg.h;
+            boolean coversLegend = clip.minX() < lg.x() + lg.w() && clip.maxX() > lg.x() && clip.minY() < lg.y() + lg.h();
             assertFalse(coversLegend, "枠線が legend の後ろに描かれる: " + part.id() + " " + clip);
         }
         DisplayItem top = borders.stream().filter(i -> i.id().contains("_b_top")).findFirst().orElseThrow();

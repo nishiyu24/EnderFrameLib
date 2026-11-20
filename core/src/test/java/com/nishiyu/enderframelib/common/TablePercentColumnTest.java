@@ -30,9 +30,9 @@ public class TablePercentColumnTest {
                   <div id="b" style="%swidth: 75%%; height: 10px;"></div>
                 </div></div>
                 """.formatted(TABLE, CELL, CELL));
-        assertEquals(75, find(root, "a").w, 0.01f);
-        assertEquals(225, find(root, "b").w, 0.01f);
-        assertEquals(75, find(root, "b").x - find(root, "a").x, 0.01f);
+        assertEquals(75, find(root, "a").w(), 0.01f);
+        assertEquals(225, find(root, "b").w(), 0.01f);
+        assertEquals(75, find(root, "b").x() - find(root, "a").x(), 0.01f);
     }
 
     @Test
@@ -43,8 +43,8 @@ public class TablePercentColumnTest {
                   <div id="b" style="%sheight: 10px;"></div>
                 </div></div>
                 """.formatted(TABLE, CELL, CELL));
-        assertEquals(120, find(root, "a").w, 0.01f);
-        assertEquals(180, find(root, "b").w, 0.01f);
+        assertEquals(120, find(root, "a").w(), 0.01f);
+        assertEquals(180, find(root, "b").w(), 0.01f);
     }
 
     @Test
@@ -56,8 +56,8 @@ public class TablePercentColumnTest {
                 </div></div>
                 """.formatted(TABLE, CELL, CELL));
         // 10% は 20px だが、中身の 60px が最小幅
-        assertEquals(60, find(root, "a").w, 0.01f);
-        assertEquals(140, find(root, "b").w, 0.01f);
+        assertEquals(60, find(root, "a").w(), 0.01f);
+        assertEquals(140, find(root, "b").w(), 0.01f);
     }
 
     @Test
@@ -68,8 +68,8 @@ public class TablePercentColumnTest {
                   <tr><td id="a" style="padding: 0; height: 10px;"></td><td id="b" style="padding: 0; height: 10px;"></td></tr>
                 </table>
                 """);
-        assertEquals(60, find(root, "a").w, 0.01f);
-        assertEquals(140, find(root, "b").w, 0.01f);
+        assertEquals(60, find(root, "a").w(), 0.01f);
+        assertEquals(140, find(root, "b").w(), 0.01f);
     }
 
     @Test
@@ -80,8 +80,8 @@ public class TablePercentColumnTest {
                   <div id="b" style="%swidth: 60%%; height: 10px;"></div>
                 </div></div>
                 """.formatted(TABLE, CELL, CELL));
-        assertEquals(150, find(root, "a").w, 0.01f);
-        assertEquals(150, find(root, "b").w, 0.01f);
+        assertEquals(150, find(root, "a").w(), 0.01f);
+        assertEquals(150, find(root, "b").w(), 0.01f);
     }
 
     @Test
@@ -93,8 +93,8 @@ public class TablePercentColumnTest {
                   <div id="b" style="%sheight: 10px;"><div style="width: 20px; height: 5px;"></div></div>
                 </div></div>
                 """.formatted(TABLE, CELL, CELL));
-        assertTrue(find(root, "t").w >= 200 - 0.01f, "w=" + find(root, "t").w);
-        assertEquals(find(root, "t").w / 2, find(root, "a").w, 0.01f);
+        assertTrue(find(root, "t").w() >= 200 - 0.01f, "w=" + find(root, "t").w());
+        assertEquals(find(root, "t").w() / 2, find(root, "a").w(), 0.01f);
     }
 
     @Test
@@ -105,8 +105,8 @@ public class TablePercentColumnTest {
                   <div id="b" style="%sheight: 10px;"></div>
                 </div></div>
                 """.formatted(TABLE, CELL, CELL));
-        assertEquals(50, find(root, "a").w, 0.01f);
-        assertEquals(150, find(root, "b").w, 0.01f);
+        assertEquals(50, find(root, "a").w(), 0.01f);
+        assertEquals(150, find(root, "b").w(), 0.01f);
     }
 
     @Test
@@ -118,7 +118,7 @@ public class TablePercentColumnTest {
                 """);
         LayoutBox t = find(root, "t");
         assertTrue(t.isCollapsedTable());
-        assertTrue(t.scrollWidth <= t.w, "scrollWidth=" + t.scrollWidth + " w=" + t.w);
+        assertTrue(t.scrollWidth() <= t.w(), "scrollWidth=" + t.scrollWidth() + " w=" + t.w());
     }
 
     private static LayoutBox layout(String html) {

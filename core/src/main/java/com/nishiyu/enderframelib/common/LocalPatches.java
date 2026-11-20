@@ -51,7 +51,7 @@ final class LocalPatches {
             if (n.text == null || n.text.isBlank() || !n.isConnected() || n.parent == null) return false;
             if (!isPatchableParent(n.parent)) return false;
             LayoutBox b = index.get(n);
-            if (b == null || b.displayText == null || b.displayText.isBlank()) return false;
+            if (b == null || b.displayText() == null || b.displayText().isBlank()) return false;
             patchedBoxes = List.of(b);
         } else {
             Set<HtmlNode> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -69,7 +69,7 @@ final class LocalPatches {
             if (found.size() != wanted.size() || found.containsValue(null)) return false;
             for (LayoutBox box : found.values()) {
                 // 前回の文字が空白だけだった箱は、前回の木に今の形で入っていたか分からない
-                if (box.displayText == null || box.displayText.isBlank()) return false;
+                if (box.displayText() == null || box.displayText().isBlank()) return false;
             }
             patchedBoxes = found.values();
         }
@@ -94,7 +94,7 @@ final class LocalPatches {
                     view.scrollState.setScroll(k, f != null ? f[0] : 0f, f != null ? f[1] : 0f);
                 }
             }
-            RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio, view.scrollState, view.fontResolver(),
+            RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
                     patchedBoxes);
             for (int i = 0, cn = changed.size(); i < cn; i++) view.interactionState.clearStyleDirty(changed.get(i));
             view.publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
@@ -310,7 +310,7 @@ final class LocalPatches {
         for (HtmlNode n : allowed) view.interactionState.clearStyleDirty(n);
         view.applyOverrides();
         // 3. 変わった親だけを測り直して配置し直す
-        RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio, view.scrollState, view.fontResolver(),
+        RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
                 changedParents, new java.util.HashSet<>(changedParents));
         view.publishLayoutToDom();
         long layoutDone = System.nanoTime();
@@ -374,7 +374,7 @@ final class LocalPatches {
         long startedAt = System.nanoTime();
         view.applyOverrides();
         List<LayoutBox> changedBoxes = new ArrayList<>(RenderPipeline.layoutChangedBoxes());
-        RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio, view.scrollState, view.fontResolver(),
+        RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
                 changedBoxes);
         view.setLayoutRoot(view.layoutRoot);
         long layoutDone = System.nanoTime();

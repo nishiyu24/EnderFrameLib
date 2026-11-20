@@ -100,10 +100,10 @@ public class BoxTreeTest {
         assertEquals(1, wrap.children.size());
         LayoutBox table = wrap.children.getFirst();
         assertTrue(table.isAnonymous);
-        assertEquals(Display.Inner.TABLE, table.display.inner());
+        assertEquals(Display.Inner.TABLE, table.display().inner());
         LayoutBox row = table.children.getFirst();
         assertTrue(row.isAnonymous);
-        assertEquals(Display.Inner.TABLE_ROW, row.display.inner());
+        assertEquals(Display.Inner.TABLE_ROW, row.display().inner());
         assertEquals(List.of(findElement(root, "a"), findElement(root, "b")), row.children);
     }
 
@@ -200,9 +200,9 @@ public class BoxTreeTest {
         LayoutBox image = marker.children.getFirst();
         assertEquals("img", image.node.tag);
         assertEquals(svg, image.node.attrs.get("src"));
-        assertEquals(12, image.w, 0.01f);
-        assertEquals(10, image.h, 0.01f);
-        assertTrue(marker.w >= 12, "marker.w=" + marker.w);
+        assertEquals(12, image.w(), 0.01f);
+        assertEquals(10, image.h(), 0.01f);
+        assertTrue(marker.w() >= 12, "marker.w()=" + marker.w());
         // list-style-image: none は list-style-type の記号に戻る
         assertEquals("▪ ", markerText(findElement(root, "b")));
     }
@@ -214,9 +214,9 @@ public class BoxTreeTest {
                 """);
         LayoutBox li = findElement(root, "li");
         LayoutBox marker = li.children.getFirst();
-        assertTrue(marker.isOutsideMarker);
-        assertEquals(li.x, marker.x + marker.w, 0.01f, "マーカーの右端はリスト項目の左端");
-        assertEquals(20f, li.h, 0.01f, "外側のマーカーは高さに寄与しない");
+        assertTrue(marker.isOutsideMarker());
+        assertEquals(li.x(), marker.x() + marker.w(), 0.01f, "マーカーの右端はリスト項目の左端");
+        assertEquals(20f, li.h(), 0.01f, "外側のマーカーは高さに寄与しない");
         assertFalse(li.getFlowChildren().contains(marker));
     }
 
@@ -253,7 +253,7 @@ public class BoxTreeTest {
                 <ul style="list-style-position: inside;"><li id="li">text</li></ul>
                 """);
         LayoutBox marker = findElement(root, "li").children.getFirst();
-        assertFalse(marker.isOutsideMarker);
+        assertFalse(marker.isOutsideMarker());
         assertTrue(findElement(root, "li").getFlowChildren().contains(marker));
     }
 
@@ -309,9 +309,9 @@ public class BoxTreeTest {
         // W7 まではパーサが body を補わず、断片だけの文書では ua.css の body { margin: 8px } が効かなかった
         LayoutBox a = findElement(root, "a");
         assertEquals("body", a.parent.node.tag);
-        assertEquals(8, a.x, 0.01f);
-        assertEquals(8, a.y, 0.01f);
-        assertEquals(VIEWPORT_W - 16, a.w, 0.01f);
+        assertEquals(8, a.x(), 0.01f);
+        assertEquals(8, a.y(), 0.01f);
+        assertEquals(VIEWPORT_W - 16, a.w(), 0.01f);
     }
 
     @Test
@@ -331,7 +331,7 @@ public class BoxTreeTest {
         assertEquals("id", beforeText(t));
         LayoutBox before = t.elementChildren.getFirst();
         assertEquals("#111111", before.style.get(CssProperty.COLOR));
-        assertEquals(1f, before.pL, 0.01f, "後に書いたショートハンドが前のロングハンドに勝つ");
+        assertEquals(1f, before.pL(), 0.01f, "後に書いたショートハンドが前のロングハンドに勝つ");
 
         LayoutBox u = findElement(root, "u");
         assertEquals("type", beforeText(u));
@@ -355,7 +355,7 @@ public class BoxTreeTest {
         }
         LayoutBox d = findElement(root, "d");
         assertEquals("d_after", d.elementChildren.getLast().node.getId(), "空文字列の content は箱を作る");
-        assertEquals(3f, d.h, 0.01f);
+        assertEquals(3f, d.h(), 0.01f);
     }
 
     @Test
@@ -373,7 +373,7 @@ public class BoxTreeTest {
         assertEquals("<style>#a { height: 60px; }</style>", doc.root.getElementById("ta").getTextContent());
         assertTrue(doc.root.getElementById("pre").getTextContent().contains("<style>"));
         LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-        assertEquals(10f, findElement(root, "a").h, 0.01f);
+        assertEquals(10f, findElement(root, "a").h(), 0.01f);
     }
 
     @Test
@@ -414,7 +414,7 @@ public class BoxTreeTest {
         if (listItem.children.isEmpty()) return null;
         LayoutBox first = listItem.children.getFirst();
         if (!first.node.getId().endsWith("_marker")) return null;
-        return first.children.getFirst().displayText;
+        return first.children.getFirst().displayText();
     }
 
     private static String beforeText(LayoutBox element) {
@@ -423,6 +423,6 @@ public class BoxTreeTest {
             if (child.node.isPseudoNode && child.node.getId().endsWith("_before")) pseudo.add(child);
         }
         assertEquals(1, pseudo.size());
-        return pseudo.getFirst().elementChildren.getFirst().displayText;
+        return pseudo.getFirst().elementChildren.getFirst().displayText();
     }
 }

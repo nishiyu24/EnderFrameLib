@@ -202,7 +202,7 @@ final class RenderTreeBuilder {
             }
             box.elementChildren.clear();
             box.refreshStyle(computed);
-            if (box.display.isNone() || LayoutBox.isInternalTableBox(box)) {
+            if (box.display().isNone() || LayoutBox.isInternalTableBox(box)) {
                 box = null;
                 prevBefore = null;
                 prevAfter = null;
@@ -219,7 +219,7 @@ final class RenderTreeBuilder {
         // 使い回すと前回の寸法が残る（新しく作った箱は 0）。コンテナクエリの寸法などが読むので作り直す
         boolean entersTable = LayoutBox.recordReusableForBuild(inTableScope ? null : nextReusable, box);
         boolean childInTableScope = inTableScope || entersTable;
-        boolean stopChildReuse = childInTableScope || box.display.isNone();
+        boolean stopChildReuse = childInTableScope || box.display().isNone();
         LayoutBox.ReusableTable childPrevReusable = stopChildReuse ? null : prevReusable;
         LayoutBox.ReusableTable childNextReusable = childInTableScope ? null : nextReusable;
         box.hasInteractiveRules = hasInteractive;
@@ -327,7 +327,7 @@ final class RenderTreeBuilder {
                                                 Map<String, String> env, RenderPipeline.StyleScope childScope,
                                                 InteractionState interactionState, ContainerBox selfContainer) {
         HtmlNode node = box.node;
-        box.markerStyle = box.display.listItem()
+        box.markerStyle = box.display().listItem()
                 ? resolvePseudoStyle(node, PseudoType.MARKER, computed, sheet, env, childScope, interactionState, selfContainer)
                 : null;
         boolean textInput = "input".equals(node.tag) || "textarea".equals(node.tag);

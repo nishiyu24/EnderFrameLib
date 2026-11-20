@@ -21,26 +21,26 @@ public class GridAutoFitTest {
     @Test
     public void testAutoFillKeepsEmptyTracks() {
         LayoutBox root = layout(grid("auto-fill", "0"));
-        assertEquals(50, find(root, "a").w, 0.01f);
-        assertEquals(50, find(root, "b").w, 0.01f);
-        assertEquals(50, find(root, "b").x - find(root, "a").x, 0.01f);
+        assertEquals(50, find(root, "a").w(), 0.01f);
+        assertEquals(50, find(root, "b").w(), 0.01f);
+        assertEquals(50, find(root, "b").x() - find(root, "a").x(), 0.01f);
     }
 
     @Test
     public void testAutoFitCollapsesEmptyTracksSoItemsStretch() {
         LayoutBox root = layout(grid("auto-fit", "0"));
-        assertEquals(150, find(root, "a").w, 0.01f);
-        assertEquals(150, find(root, "b").w, 0.01f);
-        assertEquals(150, find(root, "b").x - find(root, "a").x, 0.01f);
+        assertEquals(150, find(root, "a").w(), 0.01f);
+        assertEquals(150, find(root, "b").w(), 0.01f);
+        assertEquals(150, find(root, "b").x() - find(root, "a").x(), 0.01f);
     }
 
     @Test
     public void testAutoFitGapsCollapseWithTheTracks() {
         // 幅 300・gap 10 → 5 本入る（5*50 + 4*10 = 290）。2 つ入ると残りは潰れ、gap は 1 本だけ
         LayoutBox root = layout(grid("auto-fit", "10px"));
-        assertEquals(145, find(root, "a").w, 0.01f);
-        assertEquals(145, find(root, "b").w, 0.01f);
-        assertEquals(155, find(root, "b").x - find(root, "a").x, 0.01f);
+        assertEquals(145, find(root, "a").w(), 0.01f);
+        assertEquals(145, find(root, "b").w(), 0.01f);
+        assertEquals(155, find(root, "b").x() - find(root, "a").x(), 0.01f);
     }
 
     @Test
@@ -52,9 +52,9 @@ public class GridAutoFitTest {
                 </div>
                 """);
         // 6 本のうち 1〜2 と 4 が使われ、3・5・6 が潰れて 3 本になる
-        assertEquals(200, find(root, "a").w, 0.01f);
-        assertEquals(100, find(root, "b").w, 0.01f);
-        assertEquals(200, find(root, "b").x - find(root, "a").x, 0.01f);
+        assertEquals(200, find(root, "a").w(), 0.01f);
+        assertEquals(100, find(root, "b").w(), 0.01f);
+        assertEquals(200, find(root, "b").x() - find(root, "a").x(), 0.01f);
     }
 
     private static String grid(String mode, String gap) {

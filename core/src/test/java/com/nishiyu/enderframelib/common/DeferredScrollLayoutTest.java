@@ -24,7 +24,7 @@ class DeferredScrollLayoutTest {
     }
 
     private static void collect(LayoutBox b, List<float[]> out) {
-        out.add(new float[]{b.x, b.y, b.w, b.h});
+        out.add(new float[]{b.x(), b.y(), b.w(), b.h()});
         for (LayoutBox c : b.children) collect(c, out);
     }
 

@@ -69,7 +69,7 @@ final class ChildSlicePatch {
         List<LayoutBox> addedBlockBoxes = new ArrayList<>();
         List<DisplayItem> addedInlineItems = new PaintSupport.CaptureList(16);
         List<LayoutBox> addedInlineBoxes = new ArrayList<>();
-        b.decor.setDevicePixelRatio(b.currentRoot.devicePixelRatio);
+        b.decor.setDevicePixelRatio(b.currentRoot.devicePixelRatio());
         ClipRect clip = b.order.contentClipOf(parentBox);
         String parentId = b.contentParentIdOf(parentBox);
 
@@ -233,8 +233,8 @@ final class ChildSlicePatch {
         // 表示リストの中の項目は、記憶の位置から appliedExactDx/appliedExactDy だけ動いている（箱の位置は記憶の基準を足して見る）
         final float ax = m.appliedFragOnly ? 0f : m.appliedExactDx, ay = m.appliedFragOnly ? 0f : m.appliedExactDy;
         final float fx = m.appliedExactDx, fy = m.appliedExactDy;
-        float dx = (m.nums != null && m.nums.length >= 2) ? (box.x - (m.nums[0] + ax)) : 0;
-        float dy = (m.nums != null && m.nums.length >= 2) ? (box.y - (m.nums[1] + ay)) : 0;
+        float dx = (m.nums != null && m.nums.length >= 2) ? (box.x() - (m.nums[0] + ax)) : 0;
+        float dy = (m.nums != null && m.nums.length >= 2) ? (box.y() - (m.nums[1] + ay)) : 0;
         boolean isTextNode = (box.node != null && box.node.nodeType == NodeType.TEXT);
         if (dx == 0 && dy == 0 && !box.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2) {
             LayoutBox.InlineFragment f0 = box.inlineFragments.get(0);
@@ -243,7 +243,7 @@ final class ChildSlicePatch {
         }
         // 絶対位置・固定の箱は、親の節が動いても自分は動かない。親相対の座標では項目を親の新しい原点へ付け替える（§6-119。差分ファズ layouts の
         // 種 1005: flex にした head を消して body が 20 上がり、画面に固定の位置の ab の項目が 20 ずれたまま残った）
-        if (dx == 0 && dy == 0 && !(relMode && (box.isAbsolute || box.isFixed) && parentOriginMoved(box, m))) return;
+        if (dx == 0 && dy == 0 && !(relMode && (box.isAbsolute() || box.isFixed()) && parentOriginMoved(box, m))) return;
         if (box.dlStart < 0 || box.dlEnd > list.size() || box.dlStart > box.dlEnd) return;
         DisplayListBuilder.STAT_TRANSLATED.increment();
 
@@ -258,16 +258,16 @@ final class ChildSlicePatch {
         }
 
         this.relMode = relMode;
-        curOx = Math.round(box.x);
-        curOy = Math.round(box.y);
+        curOx = Math.round(box.x());
+        curOy = Math.round(box.y());
         hasRelOrigin = relMode && PaintOrder.boxHasOwnNode(box);
         curPox = 0;
         curPoy = 0;
         if (relMode) {
             String bParentId = m.parentId != null ? m.parentId : b.parentIdForBox(box);
             LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, bParentId);
-            curPox = pNode != null ? Math.round(pNode.x) : 0;
-            curPoy = pNode != null ? Math.round(pNode.y) : 0;
+            curPox = pNode != null ? Math.round(pNode.x()) : 0;
+            curPoy = pNode != null ? Math.round(pNode.y()) : 0;
         }
         partOx = hasRelOrigin ? curOx : curPox;
         partOy = hasRelOrigin ? curOy : curPoy;
@@ -286,8 +286,8 @@ final class ChildSlicePatch {
     private boolean parentOriginMoved(LayoutBox box, BoxMemo m) {
         String bParentId = m.parentId != null ? m.parentId : b.parentIdForBox(box);
         LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, bParentId);
-        int pox = pNode != null ? Math.round(pNode.x) : 0;
-        int poy = pNode != null ? Math.round(pNode.y) : 0;
+        int pox = pNode != null ? Math.round(pNode.x()) : 0;
+        int poy = pNode != null ? Math.round(pNode.y()) : 0;
         return pox != m.parentOriginX || poy != m.parentOriginY;
     }
 
@@ -375,16 +375,16 @@ final class ChildSlicePatch {
     /** ブロック要素: 箱の移動量と寸法の変化を項目へ写す（下・右の枠線は端へ付ける）。 */
     private void shiftBlockItems(LayoutBox box, BoxMemo m, ClipRect expectedClip, float ax, float ay) {
         List<DisplayItem> list = b.currentDisplayList;
-        int targetTop = Math.round(box.y - partOy);
-        int targetLeft = Math.round(box.x - partOx);
-        float oldBoxY = m.nums != null && m.nums.length >= 2 ? m.nums[1] + ay : box.y;
-        float oldBoxX = m.nums != null && m.nums.length >= 2 ? m.nums[0] + ax : box.x;
-        float oldBoxH = m.nums != null && m.nums.length >= 4 ? m.nums[3] : box.h;
-        float oldBoxW = m.nums != null && m.nums.length >= 4 ? m.nums[2] : box.w;
+        int targetTop = Math.round(box.y() - partOy);
+        int targetLeft = Math.round(box.x() - partOx);
+        float oldBoxY = m.nums != null && m.nums.length >= 2 ? m.nums[1] + ay : box.y();
+        float oldBoxX = m.nums != null && m.nums.length >= 2 ? m.nums[0] + ax : box.x();
+        float oldBoxH = m.nums != null && m.nums.length >= 4 ? m.nums[3] : box.h();
+        float oldBoxW = m.nums != null && m.nums.length >= 4 ? m.nums[2] : box.w();
         int oldTop = Math.round(oldBoxY - oldPartOy);
         int oldLeft = Math.round(oldBoxX - oldPartOx);
-        int targetH = Math.round(box.y + box.h - partOy) - targetTop; // 項目の座標系（絶対なら 0、親相対なら親の原点）で見た下端から上端を引く（旧い式は、絶対座標で箱の位置を二重に引いて負になった）
-        int targetW = Math.round(box.x + box.w - partOx) - targetLeft;
+        int targetH = Math.round(box.y() + box.h() - partOy) - targetTop; // 項目の座標系（絶対なら 0、親相対なら親の原点）で見た下端から上端を引く（旧い式は、絶対座標で箱の位置を二重に引いて負になった）
+        int targetW = Math.round(box.x() + box.w() - partOx) - targetLeft;
         int oldHInt = Math.round(oldBoxY + oldBoxH - oldPartOy) - oldTop;
         int oldWInt = Math.round(oldBoxX + oldBoxW - oldPartOx) - oldLeft;
         int shiftX = targetLeft - oldLeft;
@@ -417,7 +417,7 @@ final class ChildSlicePatch {
             }
             RenderMeta meta = rebaseClip(it.meta(), m, expectedClip);
             if (meta != null && meta.hints() != null && meta.hints().scrollable()) {
-                meta = meta.withHints(meta.hints().withScroll(box.scrollWidth, box.scrollHeight));
+                meta = meta.withHints(meta.hints().withScroll(box.scrollWidth(), box.scrollHeight()));
             }
             list.set(idx, rebuilt(it, newX, newY, newW, newH, meta));
         }
@@ -433,8 +433,8 @@ final class ChildSlicePatch {
         List<DisplayItem> list = b.currentDisplayList;
         int odx = relMode ? (partOx - oldPartOx) : 0;
         int ody = relMode ? (partOy - oldPartOy) : 0;
-        float boxShiftX = (m.nums != null && m.nums.length >= 2) ? ((box.x - m.nums[0]) - odx) : 0f;
-        float boxShiftY = (m.nums != null && m.nums.length >= 2) ? ((box.y - m.nums[1]) - ody) : 0f;
+        float boxShiftX = (m.nums != null && m.nums.length >= 2) ? ((box.x() - m.nums[0]) - odx) : 0f;
+        float boxShiftY = (m.nums != null && m.nums.length >= 2) ? ((box.y() - m.nums[1]) - ody) : 0f;
         float fragShiftX = (!box.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2)
                 ? ((box.inlineFragments.get(0).x - m.fragNums[0]) - odx) : boxShiftX;
         float fragShiftY = (!box.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2)
@@ -443,8 +443,8 @@ final class ChildSlicePatch {
             DisplayItem cur = list.get(box.dlStart + i);
             float nx, ny;
             if (hasRelOrigin && i == 0 && cur.type() == ElementType.NODE && cur.hints().relativeOrigin()) {
-                nx = box.x - curPox;
-                ny = box.y - curPoy;
+                nx = box.x() - curPox;
+                ny = box.y() - curPoy;
             } else {
                 boolean isFragItem = !box.inlineFragments.isEmpty() && BoxMemo.movesWithFragment(cur);
                 nx = m.itemCoords[i * 4] + (isFragItem ? fragShiftX : boxShiftX);
@@ -471,8 +471,8 @@ final class ChildSlicePatch {
         m.appliedFragOnly = false;
         m.appliedNonUniform = false;
         if (m.nums != null && m.nums.length >= 2) {
-            m.nums[0] = box.x;
-            m.nums[1] = box.y;
+            m.nums[0] = box.x();
+            m.nums[1] = box.y();
         }
         if (relMode) {
             m.originX = curOx;
@@ -480,8 +480,8 @@ final class ChildSlicePatch {
             m.parentOriginX = curPox;
             m.parentOriginY = curPoy;
         }
-        m.scrollW = box.scrollWidth;
-        m.scrollH = box.scrollHeight;
+        m.scrollW = box.scrollWidth();
+        m.scrollH = box.scrollHeight();
         if (expectedClip != null) {
             m.clip = expectedClip;
         }
@@ -521,12 +521,12 @@ final class ChildSlicePatch {
             BoxMemo am = b.boxMemo.get(anc);
             if (am == null || am.nums == null || am.nums.length < 4) continue;
             float oldH = am.nums[3];
-            float newH = anc.h;
+            float newH = anc.h();
             boolean hChanged = Float.compare(oldH, newH) != 0;
-            boolean scrollChanged = Float.compare(am.scrollH, anc.scrollHeight) != 0 || Float.compare(am.scrollW, anc.scrollWidth) != 0;
+            boolean scrollChanged = Float.compare(am.scrollH, anc.scrollHeight()) != 0 || Float.compare(am.scrollW, anc.scrollWidth()) != 0;
             if (!((hChanged || scrollChanged) && anc.dlStart >= 0 && anc.dlEnd > anc.dlStart)) continue;
-            int targetTop = Math.round(anc.y);
-            int targetH = Math.round(anc.y + newH) - targetTop;
+            int targetTop = Math.round(anc.y());
+            int targetH = Math.round(anc.y() + newH) - targetTop;
             int oldTop = Math.round(am.nums[1]);
             int oldHInt = Math.round(am.nums[1] + oldH) - oldTop;
             int dh = targetH - oldHInt;
@@ -534,7 +534,7 @@ final class ChildSlicePatch {
                 DisplayItem it = list.get(idx);
                 RenderMeta meta = it.meta();
                 if (meta != null && meta.hints() != null && meta.hints().scrollable()) {
-                    meta = meta.withHints(meta.hints().withScroll(anc.scrollWidth, anc.scrollHeight));
+                    meta = meta.withHints(meta.hints().withScroll(anc.scrollWidth(), anc.scrollHeight()));
                 }
                 boolean itemChanged = false;
                 int nextH = it.height();
@@ -560,8 +560,8 @@ final class ChildSlicePatch {
                 }
             }
             am.nums[3] = newH;
-            am.scrollH = anc.scrollHeight;
-            am.scrollW = anc.scrollWidth;
+            am.scrollH = anc.scrollHeight();
+            am.scrollW = anc.scrollWidth();
             if (anc.dlStart >= 0 && anc.dlEnd >= anc.dlStart) {
                 int memoEnd = memoEndOf(anc);
                 BoxMemo.syncApplied(am); // 項目を今のリストから取り直すので、基準の位置も動いた分だけ進める
@@ -594,10 +594,10 @@ final class ChildSlicePatch {
 
     private boolean syncScrollbarsOf(LayoutBox anc, boolean relMode) {
         List<DisplayItem> list = b.currentDisplayList;
-        float scrollH = anc.scrollHeight;
-        float scrollW = anc.scrollWidth;
-        boolean wantsV = scrollH > anc.h + 2 && anc.h > 12;
-        boolean wantsH = scrollW > anc.w + 2 && anc.w > 12;
+        float scrollH = anc.scrollHeight();
+        float scrollW = anc.scrollWidth();
+        boolean wantsV = scrollH > anc.h() + 2 && anc.h() > 12;
+        boolean wantsH = scrollW > anc.w() + 2 && anc.w() > 12;
         // 6 部品は 64-bit 整数鍵（nodeHandle<<16 | 部品番号）で引く。文字列 equals を全項目 × 6 回しない
         int sbHandle = anc.node.nodeId();
         boolean byKey = sbHandle > 0;
@@ -651,16 +651,16 @@ final class ChildSlicePatch {
             return false;
         }
         ClipRect expectedClip = b.order.contentClipOf(anc.parent);
-        int ancOx = (relMode && PaintOrder.boxHasOwnNode(anc)) ? Math.round(anc.x) : 0;
-        int ancOy = (relMode && PaintOrder.boxHasOwnNode(anc)) ? Math.round(anc.y) : 0;
+        int ancOx = (relMode && PaintOrder.boxHasOwnNode(anc)) ? Math.round(anc.x()) : 0;
+        int ancOy = (relMode && PaintOrder.boxHasOwnNode(anc)) ? Math.round(anc.y()) : 0;
         int barThickness = 4;
         if (wantsV && vtIdx >= 0 && vIdx >= 0) {
             float curY = b.scrollState != null ? b.scrollState.getScrollY(anc.node) : 0f;
-            float trackX = anc.x + anc.w - anc.bR - barThickness - 2;
-            float trackY = anc.y + anc.bT + 2;
-            float trackH = anc.h - anc.bT - anc.bB - 4;
-            float thumbH = Math.round(Math.max(12, trackH * (anc.h / scrollH))); // 整数: つまみの位置で丸めの高さが揺れない（平行移動と作り直しで同じ大きさ）
-            float maxScrollY = Math.max(1f, scrollH - anc.h);
+            float trackX = anc.x() + anc.w() - anc.bR() - barThickness - 2;
+            float trackY = anc.y() + anc.bT() + 2;
+            float trackH = anc.h() - anc.bT() - anc.bB() - 4;
+            float thumbH = Math.round(Math.max(12, trackH * (anc.h() / scrollH))); // 整数: つまみの位置で丸めの高さが揺れない（平行移動と作り直しで同じ大きさ）
+            float maxScrollY = Math.max(1f, scrollH - anc.h());
             float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
             int vtLeft = Math.round(trackX - ancOx);
@@ -680,11 +680,11 @@ final class ChildSlicePatch {
         }
         if (wantsH && htIdx >= 0 && hIdx >= 0) {
             float curX = b.scrollState != null ? b.scrollState.getScrollX(anc.node) : 0f;
-            float trackX = anc.x + anc.bL + 2;
-            float trackY = anc.y + anc.h - anc.bB - barThickness - 2;
-            float trackW = anc.w - anc.bL - anc.bR - 4;
-            float thumbW = Math.round(Math.max(12, trackW * (anc.w / scrollW)));
-            float maxScrollX = Math.max(1f, scrollW - anc.w);
+            float trackX = anc.x() + anc.bL() + 2;
+            float trackY = anc.y() + anc.h() - anc.bB() - barThickness - 2;
+            float trackW = anc.w() - anc.bL() - anc.bR() - 4;
+            float thumbW = Math.round(Math.max(12, trackW * (anc.w() / scrollW)));
+            float maxScrollX = Math.max(1f, scrollW - anc.w());
             float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
             int htLeft = Math.round(trackX - ancOx);
@@ -707,9 +707,9 @@ final class ChildSlicePatch {
 
     /** つまみの節（スクロールする中身の移動用の NODE）を箱の外形へ。 */
     private void setNodeBounds(int idx, LayoutBox anc, int ancOx, int ancOy, ClipRect expectedClip) {
-        int left = Math.round(anc.x - ancOx);
-        int top = Math.round(anc.y - ancOy);
-        setBounds(idx, left, top, Math.round(anc.x - ancOx + anc.w) - left, Math.round(anc.y - ancOy + anc.h) - top, expectedClip);
+        int left = Math.round(anc.x() - ancOx);
+        int top = Math.round(anc.y() - ancOy);
+        setBounds(idx, left, top, Math.round(anc.x() - ancOx + anc.w()) - left, Math.round(anc.y() - ancOy + anc.h()) - top, expectedClip);
     }
 
     /** {@code idx} の項目の外形を書き、クリップがあれば親の中身のクリップへ付け替える。 */
@@ -729,7 +729,7 @@ final class ChildSlicePatch {
         if (list.isEmpty()) return;
         DisplayItem first = list.get(0);
         if ("bg_root".equals(first.id()) && b.currentRoot != null) {
-            int expectedH = Math.round(Math.max(b.currentRoot.h, (float) b.rootH));
+            int expectedH = Math.round(Math.max(b.currentRoot.h(), (float) b.rootH));
             if (first.height() != expectedH) {
                 list.set(0, rebuilt(first, first.x(), first.y(), first.width(), expectedH, first.meta()));
             }

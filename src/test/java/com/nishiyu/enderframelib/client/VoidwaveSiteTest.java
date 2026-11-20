@@ -128,10 +128,10 @@ public class VoidwaveSiteTest {
             LayoutBox track = findByClass(root, loop.box());
             assertNotNull(track, loop.box());
             float distance = keyframeDistance(doc, loop.keyframes());
-            float period = track.children.get(loop.period()).x - track.children.get(0).x;
+            float period = track.children.get(loop.period()).x() - track.children.get(0).x();
             assertEquals(period, distance, 0.5f, loop.keyframes() + ": 動く距離が 1 周期に等しい（ずれると、戻るときに飛ぶ）");
             LayoutBox last = track.children.get(track.children.size() - 1);
-            float contentRight = last.x + last.w - track.x;
+            float contentRight = last.x() + last.w() - track.x();
             assertTrue(contentRight >= distance + 1920, loop.keyframes() + ": 周期 + 画面の幅 (1920) 以上の内容があること (right=" + contentRight + ")");
         }
     }

@@ -249,9 +249,9 @@ class RealDocumentFramesTest {
     }
 
     private static double[] findScroll(LayoutBox b, LayoutBox root) {
-        if (b != root && b.isScrollContainer() && b.w > 20 && b.h > 20 && b.x >= 0 && b.y >= 0 && b.x + b.w / 2 < W && b.y + b.h / 2 < H
+        if (b != root && b.isScrollContainer() && b.w() > 20 && b.h() > 20 && b.x() >= 0 && b.y() >= 0 && b.x() + b.w() / 2 < W && b.y() + b.h() / 2 < H
                 && b.node != null && !"body".equals(b.node.tag) && !"html".equals(b.node.tag)) {
-            return new double[]{b.x + b.w / 2.0, b.y + b.h / 2.0};
+            return new double[]{b.x() + b.w() / 2.0, b.y() + b.h() / 2.0};
         }
         if (b.children != null) for (LayoutBox c : b.children) {
             double[] r = findScroll(c, root);

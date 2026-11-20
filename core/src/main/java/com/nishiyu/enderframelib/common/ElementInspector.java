@@ -47,7 +47,7 @@ public final class ElementInspector {
     public static Info inspect(UiView ui, HtmlNode node) {
         if (ui == null || node == null || node.nodeType != NodeType.ELEMENT) return null;
         LayoutBox box = find(ui.layoutRoot(), node);
-        if (box == null || (box.display != null && box.display.isNone())) return null;
+        if (box == null || (box.display() != null && box.display().isNone())) return null;
         Map<String, String> shown = new LinkedHashMap<>();
         ComputedStyle style = box.style;
         if (style != null) {
@@ -58,9 +58,9 @@ public final class ElementInspector {
         }
         String text = node.children.size() == 1 && node.children.getFirst().nodeType == NodeType.TEXT
                 ? node.children.getFirst().getTextContent().strip() : "";
-        return new Info(selectorOf(node), box.x, box.y, box.w, box.h,
-                new float[]{box.mT, box.mR, box.mB, box.mL}, new float[]{box.bT, box.bR, box.bB, box.bL},
-                new float[]{box.pT, box.pR, box.pB, box.pL}, shown, text);
+        return new Info(selectorOf(node), box.x(), box.y(), box.w(), box.h(),
+                new float[]{box.mT(), box.mR(), box.mB(), box.mL()}, new float[]{box.bT(), box.bR(), box.bB(), box.bL()},
+                new float[]{box.pT(), box.pR(), box.pB(), box.pL()}, shown, text);
     }
 
     /** {@code div#main.card.big}（タグ・id・class）。 */

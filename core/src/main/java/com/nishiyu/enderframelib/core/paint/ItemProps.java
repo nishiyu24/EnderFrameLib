@@ -451,7 +451,7 @@ final class ItemProps {
                 || overflowY == Overflow.SCROLL || overflowY == Overflow.AUTO
                 || "root".equals(box.node.tag) || "html".equals(box.node.tag) || "body".equals(box.node.tag);
         if (isScrollable) {
-            partsEvents.scroll(box.scrollWidth, box.scrollHeight);
+            partsEvents.scroll(box.scrollWidth(), box.scrollHeight());
         }
 
         if (box.node.hasEventAttributes()) {

@@ -84,8 +84,8 @@ public class ReplacedElementsTest {
         Rendered r = render("<svg id=\"s\" width=\"40\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#ff0000\"/>"
                 + "<rect x=\"20\" width=\"20\" height=\"20\" fill=\"#0000ff\"/></svg>");
         LayoutBox box = find(r.root, "s");
-        assertEquals(40, box.w, 0.01);
-        assertEquals(20, box.h, 0.01);
+        assertEquals(40, box.w(), 0.01);
+        assertEquals(20, box.h(), 0.01);
         DisplayItem svg = item(r, "s_svg");
         assertNotNull(svg);
         assertEquals(ElementType.IMAGE, svg.type());
@@ -104,11 +104,11 @@ public class ReplacedElementsTest {
 
     @Test
     public void svgWithoutSizeIs300By150AndViewBoxSetsTheRatio() {
-        assertEquals(300, find(render("<svg id=\"s\"></svg>").root, "s").w, 0.01);
-        assertEquals(150, find(render("<svg id=\"s\"></svg>").root, "s").h, 0.01);
+        assertEquals(300, find(render("<svg id=\"s\"></svg>").root, "s").w(), 0.01);
+        assertEquals(150, find(render("<svg id=\"s\"></svg>").root, "s").h(), 0.01);
         LayoutBox vb = find(render("<svg id=\"s\" viewBox=\"0 0 80 20\"></svg>").root, "s");
-        assertEquals(80, vb.w, 0.01);
-        assertEquals(20, vb.h, 0.01);
+        assertEquals(80, vb.w(), 0.01);
+        assertEquals(20, vb.h(), 0.01);
     }
 
     @Test
@@ -153,8 +153,8 @@ public class ReplacedElementsTest {
         String svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 30 10\"><rect width=\"15\" height=\"10\" fill=\"red\"/></svg>";
         Rendered r = render("<img id=\"i\" src=\"" + dataUri(svg) + "\">");
         LayoutBox box = find(r.root, "i");
-        assertEquals(30, box.w, 0.01);
-        assertEquals(10, box.h, 0.01);
+        assertEquals(30, box.w(), 0.01);
+        assertEquals(10, box.h(), 0.01);
         DisplayItem img = item(r, "i_img");
         assertTrue(RasterImageStore.isRasterSrc(img.text()), img.text());
         assertEquals(0xFFFF0000, pixel(img.text(), 5, 5));
@@ -266,10 +266,10 @@ public class ReplacedElementsTest {
     public void canvasHasDefaultAndAttributeSizesAndCarriesThemToThePainter() {
         Rendered d = render("<canvas id=\"c\"></canvas>");
         LayoutBox box = find(d.root, "c");
-        assertEquals(300, box.w, 0.01);
-        assertEquals(150, box.h, 0.01);
+        assertEquals(300, box.w(), 0.01);
+        assertEquals(150, box.h(), 0.01);
         Rendered a = render("<canvas id=\"c\" width=\"64\" height=\"32\" style=\"object-fit: contain\"></canvas>");
-        assertEquals(64, find(a.root, "c").w, 0.01);
+        assertEquals(64, find(a.root, "c").w(), 0.01);
         DisplayItem item = item(a, "c_canvas");
         assertEquals(ElementType.CANVAS, item.type());
         assertEquals(ImageFitMode.CONTAIN, item.fitMode());
@@ -280,7 +280,7 @@ public class ReplacedElementsTest {
     @Test
     public void cssSizeStretchesTheCanvasBitmapBox() {
         Rendered r = render("<canvas id=\"c\" width=\"10\" height=\"10\" style=\"width: 100px; height: 50px\"></canvas>");
-        assertEquals(100, find(r.root, "c").w, 0.01);
-        assertEquals(50, find(r.root, "c").h, 0.01);
+        assertEquals(100, find(r.root, "c").w(), 0.01);
+        assertEquals(50, find(r.root, "c").h(), 0.01);
     }
 }

@@ -1169,7 +1169,7 @@ public class UiView implements AutoCloseable {
             STAT_SCROLL_TRANSLATED.increment();
             return;
         }
-        if (scrollOnly && com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on() && !observed && !layoutRoot.subtreeHasContentAuto && rebuildWindowAtBoxFrame()) return;
+        if (scrollOnly && com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on() && !observed && !layoutRoot.subtreeHasContentAuto() && rebuildWindowAtBoxFrame()) return;
         layoutStale = false; // 後回しにした決め直しも、次の 1 回で済む（ensureLayoutFresh を呼ぶと同じ決め直しが 2 回走る）
         RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
                 rootW, rootH, scrollState, fontResolver());
@@ -2010,23 +2010,23 @@ public class UiView implements AutoCloseable {
         ScrollState state = scrollState;
 
         if (isVTrack) {
-            float trackY = box.y + box.bT + 2;
-            float trackH = box.h - box.bT - box.bB - 4;
-            float thumbH = Math.max(12, trackH * (box.h / (float) Math.max(1, box.scrollHeight)));
+            float trackY = box.y() + box.bT() + 2;
+            float trackH = box.h() - box.bT() - box.bB() - 4;
+            float thumbH = Math.max(12, trackH * (box.h() / (float) Math.max(1, box.scrollHeight())));
             float availH = Math.max(1, trackH - thumbH);
             float ratio = Math.clamp((float) (pixelY - trackY - thumbH / 2.0) / (float) availH, 0f, 1f);
-            float maxScrollY = Math.max(0, box.scrollHeight - box.h);
+            float maxScrollY = Math.max(0, box.scrollHeight() - box.h());
             float curX = state.getScrollX(scrollNode);
             state.setScroll(scrollNode, curX, ratio * maxScrollY);
             requestScrollReposition();
             return true;
         } else if (isHTrack) {
-            float trackX = box.x + box.bL + 2;
-            float trackW = box.w - box.bL - box.bR - 4;
-            float thumbW = Math.max(12, trackW * (box.w / (float) Math.max(1, box.scrollWidth)));
+            float trackX = box.x() + box.bL() + 2;
+            float trackW = box.w() - box.bL() - box.bR() - 4;
+            float thumbW = Math.max(12, trackW * (box.w() / (float) Math.max(1, box.scrollWidth())));
             float availW = Math.max(1, trackW - thumbW);
             float ratio = Math.clamp((float) (pixelX - trackX - thumbW / 2.0) / (float) availW, 0f, 1f);
-            float maxScrollX = Math.max(0, box.scrollWidth - box.w);
+            float maxScrollX = Math.max(0, box.scrollWidth() - box.w());
             float curY = state.getScrollY(scrollNode);
             state.setScroll(scrollNode, ratio * maxScrollX, curY);
             requestScrollReposition();
@@ -2058,23 +2058,23 @@ public class UiView implements AutoCloseable {
         ScrollState state = scrollState;
 
         if (isVThumb) {
-            float trackY = box.y + box.bT + 2;
-            float trackH = box.h - box.bT - box.bB - 4;
-            float thumbH = Math.max(12, trackH * (box.h / (float) Math.max(1, box.scrollHeight)));
+            float trackY = box.y() + box.bT() + 2;
+            float trackH = box.h() - box.bT() - box.bB() - 4;
+            float thumbH = Math.max(12, trackH * (box.h() / (float) Math.max(1, box.scrollHeight())));
             float availH = Math.max(1, trackH - thumbH);
             float ratio = Math.clamp((float) (pixelY - trackY - thumbH / 2.0) / (float) availH, 0f, 1f);
-            float maxScrollY = Math.max(0, box.scrollHeight - box.h);
+            float maxScrollY = Math.max(0, box.scrollHeight() - box.h());
             float curX = state.getScrollX(scrollNode);
             state.setScroll(scrollNode, curX, ratio * maxScrollY);
             requestScrollReposition();
             return true;
         } else if (isHThumb) {
-            float trackX = box.x + box.bL + 2;
-            float trackW = box.w - box.bL - box.bR - 4;
-            float thumbW = Math.max(12, trackW * (box.w / (float) Math.max(1, box.scrollWidth)));
+            float trackX = box.x() + box.bL() + 2;
+            float trackW = box.w() - box.bL() - box.bR() - 4;
+            float thumbW = Math.max(12, trackW * (box.w() / (float) Math.max(1, box.scrollWidth())));
             float availW = Math.max(1, trackW - thumbW);
             float ratio = Math.clamp((float) (pixelX - trackX - thumbW / 2.0) / (float) availW, 0f, 1f);
-            float maxScrollX = Math.max(0, box.scrollWidth - box.w);
+            float maxScrollX = Math.max(0, box.scrollWidth() - box.w());
             float curY = state.getScrollY(scrollNode);
             state.setScroll(scrollNode, ratio * maxScrollX, curY);
             requestScrollReposition();

@@ -212,8 +212,8 @@ public class StateStyleTest {
         LayoutBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
         LayoutBox box = findById(root, "box");
         assertNotNull(box);
-        assertEquals(4, box.pL);
-        float initialHeight = box.h;
+        assertEquals(4, box.pL());
+        float initialHeight = box.h();
 
         state.setHoveredNode(doc.root.getElementById("box"));
         RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
@@ -222,8 +222,8 @@ public class StateStyleTest {
 
         LayoutBox relaidRoot = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
         LayoutBox relaidBox = findById(relaidRoot, "box");
-        assertEquals(20, relaidBox.pL);
-        assertTrue(relaidBox.h > initialHeight, ":hover の padding 増加によりボックスの高さが増える");
+        assertEquals(20, relaidBox.pL());
+        assertTrue(relaidBox.h() > initialHeight, ":hover の padding 増加によりボックスの高さが増える");
     }
 
     @Test
@@ -605,7 +605,7 @@ public class StateStyleTest {
         LayoutBox before = findById(root, "b_before");
         assertNotNull(before);
         assertEquals("#123456", before.style.get(CssProperty.COLOR));
-        assertEquals("→", before.elementChildren.getFirst().displayText);
+        assertEquals("→", before.elementChildren.getFirst().displayText());
 
         state.setHoveredNode(null);
         res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
@@ -649,13 +649,13 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
         LayoutBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        assertEquals("off", findById(root, "t_after").elementChildren.getFirst().displayText);
+        assertEquals("off", findById(root, "t_after").elementChildren.getFirst().displayText());
 
         state.setFocusedNode(doc.root.getElementById("t"), false);
         RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.layoutRequired(), "content の変化は文字を評価し直すので再レイアウト");
         root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        assertEquals("on", findById(root, "t_after").elementChildren.getFirst().displayText);
+        assertEquals("on", findById(root, "t_after").elementChildren.getFirst().displayText());
     }
 
     @Test

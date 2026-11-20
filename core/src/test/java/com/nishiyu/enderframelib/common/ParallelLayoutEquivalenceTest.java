@@ -59,12 +59,12 @@ class ParallelLayoutEquivalenceTest {
 
     private static void assertTreesEqual(LayoutBox expected, LayoutBox actual, String path) {
         assertEquals(expected.node.tag, actual.node.tag, path + " tag");
-        assertEquals(expected.x, actual.x, path + " x");
-        assertEquals(expected.y, actual.y, path + " y");
-        assertEquals(expected.w, actual.w, path + " w");
-        assertEquals(expected.h, actual.h, path + " h");
-        assertEquals(expected.scrollWidth, actual.scrollWidth, path + " scrollWidth");
-        assertEquals(expected.scrollHeight, actual.scrollHeight, path + " scrollHeight");
+        assertEquals(expected.x(), actual.x(), path + " x");
+        assertEquals(expected.y(), actual.y(), path + " y");
+        assertEquals(expected.w(), actual.w(), path + " w");
+        assertEquals(expected.h(), actual.h(), path + " h");
+        assertEquals(expected.scrollWidth(), actual.scrollWidth(), path + " scrollWidth");
+        assertEquals(expected.scrollHeight(), actual.scrollHeight(), path + " scrollHeight");
         assertEquals(expected.inlineFragments.size(), actual.inlineFragments.size(), path + " fragCount");
         for (int i = 0; i < expected.inlineFragments.size(); i++) {
             InlineFragment ef = expected.inlineFragments.get(i);

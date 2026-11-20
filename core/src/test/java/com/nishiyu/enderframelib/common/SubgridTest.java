@@ -30,11 +30,11 @@ public class SubgridTest {
                   </div>
                 </div>
                 """);
-        assertEquals(300, find(root, "s").w, 0.01f);
-        assertEquals(200, find(root, "a").w, 0.01f);
-        assertEquals(100, find(root, "b").w, 0.01f);
-        assertEquals(200, find(root, "b").x - find(root, "a").x, 0.01f);
-        assertEquals(100, find(root, "a").x - find(root, "s").x + 100, 0.01f); // サブグリッドの左端 = 2 本目の線
+        assertEquals(300, find(root, "s").w(), 0.01f);
+        assertEquals(200, find(root, "a").w(), 0.01f);
+        assertEquals(100, find(root, "b").w(), 0.01f);
+        assertEquals(200, find(root, "b").x() - find(root, "a").x(), 0.01f);
+        assertEquals(100, find(root, "a").x() - find(root, "s").x() + 100, 0.01f); // サブグリッドの左端 = 2 本目の線
     }
 
     @Test
@@ -51,12 +51,12 @@ public class SubgridTest {
                 </div>
                 """);
         // 親の列 = 80 / 50（stretch なし: justify-content: start でも auto は残りを分けるので下限だけ確認）
-        assertTrue(find(root, "c").w >= 80 - 0.01f, "親の 1 列目はサブグリッドの子の幅以上: " + find(root, "c").w);
-        assertTrue(find(root, "d").w >= 50 - 0.01f);
+        assertTrue(find(root, "c").w() >= 80 - 0.01f, "親の 1 列目はサブグリッドの子の幅以上: " + find(root, "c").w());
+        assertTrue(find(root, "d").w() >= 50 - 0.01f);
         // サブグリッドの子と、親の次の行の項目は同じ列に揃う
-        assertEquals(find(root, "c").x, find(root, "a").x, 0.01f);
-        assertEquals(find(root, "d").x, find(root, "b").x, 0.01f);
-        assertEquals(find(root, "c").w, find(root, "a").w, 0.01f);
+        assertEquals(find(root, "c").x(), find(root, "a").x(), 0.01f);
+        assertEquals(find(root, "d").x(), find(root, "b").x(), 0.01f);
+        assertEquals(find(root, "c").w(), find(root, "a").w(), 0.01f);
     }
 
     @Test
@@ -77,13 +77,13 @@ public class SubgridTest {
                 </div>
                 """);
         // 行 = max(20,40) / max(80,30) / 10
-        assertEquals(find(root, "h1").y, find(root, "h2").y, 0.01f);
-        assertEquals(find(root, "b1").y, find(root, "b2").y, 0.01f);
-        assertEquals(find(root, "f1").y, find(root, "f2").y, 0.01f);
-        assertEquals(40, find(root, "b1").y - find(root, "h1").y, 0.01f);
-        assertEquals(80, find(root, "f1").y - find(root, "b1").y, 0.01f);
-        assertEquals(130, find(root, "c1").h, 0.01f);
-        assertEquals(130, find(root, "c2").h, 0.01f);
+        assertEquals(find(root, "h1").y(), find(root, "h2").y(), 0.01f);
+        assertEquals(find(root, "b1").y(), find(root, "b2").y(), 0.01f);
+        assertEquals(find(root, "f1").y(), find(root, "f2").y(), 0.01f);
+        assertEquals(40, find(root, "b1").y() - find(root, "h1").y(), 0.01f);
+        assertEquals(80, find(root, "f1").y() - find(root, "b1").y(), 0.01f);
+        assertEquals(130, find(root, "c1").h(), 0.01f);
+        assertEquals(130, find(root, "c2").h(), 0.01f);
     }
 
     @Test
@@ -97,9 +97,9 @@ public class SubgridTest {
                   </div>
                 </div>
                 """);
-        assertEquals(110, find(root, "a").w, 0.01f);
-        assertEquals(110, find(root, "b").w, 0.01f);
-        assertEquals(110, find(root, "b").x - find(root, "a").x, 0.01f);
+        assertEquals(110, find(root, "a").w(), 0.01f);
+        assertEquals(110, find(root, "b").w(), 0.01f);
+        assertEquals(110, find(root, "b").x() - find(root, "a").x(), 0.01f);
     }
 
     @Test
@@ -112,8 +112,8 @@ public class SubgridTest {
                   </div>
                 </div>
                 """);
-        assertEquals(100, find(root, "a").w, 0.01f);
-        assertEquals(120, find(root, "b").x - find(root, "a").x, 0.01f);
+        assertEquals(100, find(root, "a").w(), 0.01f);
+        assertEquals(120, find(root, "b").x() - find(root, "a").x(), 0.01f);
     }
 
     @Test
@@ -127,12 +127,12 @@ public class SubgridTest {
                   </div>
                 </div>
                 """);
-        assertEquals(300, find(root, "s").w, 0.01f);
+        assertEquals(300, find(root, "s").w(), 0.01f);
         // 端の項目は padding ぶん内側へ寄り、幅はその分だけ狭い
-        assertEquals(90, find(root, "a").w, 0.01f);
-        assertEquals(190, find(root, "b").w, 0.01f);
-        assertEquals(10, find(root, "a").x - find(root, "s").x, 0.01f);
-        assertEquals(100, find(root, "b").x - find(root, "s").x, 0.01f);
+        assertEquals(90, find(root, "a").w(), 0.01f);
+        assertEquals(190, find(root, "b").w(), 0.01f);
+        assertEquals(10, find(root, "a").x() - find(root, "s").x(), 0.01f);
+        assertEquals(100, find(root, "b").x() - find(root, "s").x(), 0.01f);
     }
 
     @Test
@@ -147,8 +147,8 @@ public class SubgridTest {
                   <div id="c" style="height: 10px;"></div>
                 </div>
                 """);
-        assertEquals(60, find(root, "c").w, 0.01f);
-        assertEquals(100, find(root, "s").w, 0.01f);
+        assertEquals(60, find(root, "c").w(), 0.01f);
+        assertEquals(100, find(root, "s").w(), 0.01f);
     }
 
     @Test
@@ -160,8 +160,8 @@ public class SubgridTest {
                   </div>
                 </div>
                 """);
-        assertEquals(200, find(root, "x").w, 0.01f);
-        assertEquals(100, find(root, "x").x - find(root, "s").x, 0.01f);
+        assertEquals(200, find(root, "x").w(), 0.01f);
+        assertEquals(100, find(root, "x").x() - find(root, "s").x(), 0.01f);
     }
 
     @Test
@@ -173,7 +173,7 @@ public class SubgridTest {
                   </div>
                 </div>
                 """);
-        assertEquals(200, find(root, "x").w, 0.01f);
+        assertEquals(200, find(root, "x").w(), 0.01f);
     }
 
     @Test
@@ -186,7 +186,7 @@ public class SubgridTest {
                   </div>
                 </div>
                 """);
-        assertEquals(300, find(root, "a").w, 0.01f);
+        assertEquals(300, find(root, "a").w(), 0.01f);
     }
 
     @Test
@@ -201,8 +201,8 @@ public class SubgridTest {
                 </div>
                 """);
         // 暗黙の列は作られず、はみ出した c は最後のトラック（200px）に入る
-        assertEquals(200, find(root, "c").w, 0.01f);
-        assertEquals(100, find(root, "c").x - find(root, "s").x, 0.01f);
+        assertEquals(200, find(root, "c").w(), 0.01f);
+        assertEquals(100, find(root, "c").x() - find(root, "s").x(), 0.01f);
     }
 
     @Test
@@ -218,9 +218,9 @@ public class SubgridTest {
                   </div>
                 </div>
                 """);
-        assertEquals(200, find(root, "t").w, 0.01f);
-        assertEquals(200, find(root, "g").w, 0.01f);
-        assertEquals(100, find(root, "g").x - find(root, "s").x, 0.01f);
+        assertEquals(200, find(root, "t").w(), 0.01f);
+        assertEquals(200, find(root, "g").w(), 0.01f);
+        assertEquals(100, find(root, "g").x() - find(root, "s").x(), 0.01f);
     }
 
     @Test
@@ -237,11 +237,11 @@ public class SubgridTest {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html.formatted(200), "", VIEWPORT_W, VIEWPORT_H);
         LayoutBox first = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-        assertEquals(100, find(first, "a").w, 0.01f);
+        assertEquals(100, find(first, "a").w(), 0.01f);
         Document doc2 = parser.parseDocument("<style>body { margin: 0; }</style>" + html.formatted(400), "", VIEWPORT_W, VIEWPORT_H);
         LayoutBox second = parser.layoutDocument(doc2, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-        assertEquals(200, find(second, "a").w, 0.01f);
-        assertEquals(200, find(second, "b").w, 0.01f);
+        assertEquals(200, find(second, "a").w(), 0.01f);
+        assertEquals(200, find(second, "b").w(), 0.01f);
     }
 
     private static LayoutBox layout(String html) {

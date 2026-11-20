@@ -42,7 +42,7 @@ class WhitespaceAndFloatFragmentsTest {
     @Test
     void whitespaceBetweenFlexItemsIsNotAnItem() {
         LayoutBox root = layout("<div style='display:flex;flex-direction:column'><div id=a style='height:10px'></div> <div id=b style='height:10px'></div></div>");
-        assertEquals(find(root, "a").y + 10, find(root, "b").y, 0.01f);
+        assertEquals(find(root, "a").y() + 10, find(root, "b").y(), 0.01f);
     }
 
     /** 直前が空白で終わっていれば、次の run の先頭の空白は畳まれる（"a " + " b" は 1 つの空白）。 */

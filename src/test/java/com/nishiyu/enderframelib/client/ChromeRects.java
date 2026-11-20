@@ -64,7 +64,7 @@ final class ChromeRects {
 
     private static void collect(LayoutBox b, Map<String, Rect> out) {
         if (b.node != null && !b.isAnonymous && b.node.attrs.containsKey("id")) {
-            out.putIfAbsent(b.node.attrs.get("id"), new Rect(b.x, b.y, b.w, b.h));
+            out.putIfAbsent(b.node.attrs.get("id"), new Rect(b.x(), b.y(), b.w(), b.h()));
         }
         for (LayoutBox c : b.children) collect(c, out);
     }

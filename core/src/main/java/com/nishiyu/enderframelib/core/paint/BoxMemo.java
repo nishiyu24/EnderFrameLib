@@ -134,20 +134,20 @@ static final int NUMS_LENGTH = 13;
 
     static float[] fillNums(LayoutBox b, float[] reuse) {
         float[] a = reuse != null && reuse.length == NUMS_LENGTH ? reuse : new float[NUMS_LENGTH];
-        a[0] = b.x; a[1] = b.y; a[2] = b.w; a[3] = b.h;
-        a[4] = b.pL; a[5] = b.pT; a[6] = b.pR; a[7] = b.pB;
-        a[8] = b.bL; a[9] = b.bT; a[10] = b.bR; a[11] = b.bB;
-        a[12] = b.lineHeightPx;
+        a[0] = b.x(); a[1] = b.y(); a[2] = b.w(); a[3] = b.h();
+        a[4] = b.pL(); a[5] = b.pT(); a[6] = b.pR(); a[7] = b.pB();
+        a[8] = b.bL(); a[9] = b.bT(); a[10] = b.bR(); a[11] = b.bB();
+        a[12] = b.lineHeightPx();
         return a;
     }
 
     /** {@link #numsOf} の i 番目を、配列を作らずに返す（{@link #match} が箱ごとに配列を確保しないため）。 */
     static float numAt(LayoutBox b, int i) {
         return switch (i) {
-            case 0 -> b.x; case 1 -> b.y; case 2 -> b.w; case 3 -> b.h;
-            case 4 -> b.pL; case 5 -> b.pT; case 6 -> b.pR; case 7 -> b.pB;
-            case 8 -> b.bL; case 9 -> b.bT; case 10 -> b.bR; case 11 -> b.bB;
-            case 12 -> b.lineHeightPx;
+            case 0 -> b.x(); case 1 -> b.y(); case 2 -> b.w(); case 3 -> b.h();
+            case 4 -> b.pL(); case 5 -> b.pT(); case 6 -> b.pR(); case 7 -> b.pB();
+            case 8 -> b.bL(); case 9 -> b.bT(); case 10 -> b.bR(); case 11 -> b.bB();
+            case 12 -> b.lineHeightPx();
             default -> throw new IndexOutOfBoundsException(i);
         };
     }
@@ -370,8 +370,8 @@ static final int NUMS_LENGTH = 13;
                 && (m.fragNums == null || box.inlineFragments.isEmpty() || (box.inlineFragments.get(0).x == m.fragNums[0] && box.inlineFragments.get(0).y == m.fragNums[1]))) {
             return;
         }
-        m.nums[0] = box.x;
-        m.nums[1] = box.y;
+        m.nums[0] = box.x();
+        m.nums[1] = box.y();
         m.originX = curOx;
         m.originY = curOy;
         m.parentOriginX = curPox;
@@ -498,7 +498,7 @@ static final int NUMS_LENGTH = 13;
                                 haveLastClip = true;
                             }
                             RenderHints nextHints = meta.hints();
-                            if (updScroll) nextHints = nextHints.withScroll(box.scrollWidth, box.scrollHeight);
+                            if (updScroll) nextHints = nextHints.withScroll(box.scrollWidth(), box.scrollHeight());
                             if (updGrad) nextHints = nextHints.withShaderGradient(nextHints.shaderGradient().offset(fracDx, fracDy));
                             if (!sameClip(nextClip, curMetaClip) || nextHints != meta.hints()) {
                                 nextMeta = new RenderMeta(nextClip, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(),
@@ -538,8 +538,8 @@ static final int NUMS_LENGTH = 13;
                 DisplayItem it = items.get(i);
                 if (i == 0 && it.type() == ElementType.NODE) {
                     if (!it.hints().relativeOrigin()) {
-                        m.itemCoords[0] = box.x - curPox;
-                        m.itemCoords[1] = box.y - curPoy;
+                        m.itemCoords[0] = box.x() - curPox;
+                        m.itemCoords[1] = box.y() - curPoy;
                     }
                     continue;
                 }
@@ -555,14 +555,14 @@ static final int NUMS_LENGTH = 13;
                 m.fragNums[j * 8 + 1] = f.y;
             }
         }
-        m.nums[0] = box.x;
-        m.nums[1] = box.y;
+        m.nums[0] = box.x();
+        m.nums[1] = box.y();
         m.originX = curOx;
         m.originY = curOy;
         m.parentOriginX = curPox;
         m.parentOriginY = curPoy;
-        m.scrollW = box.scrollWidth;
-        m.scrollH = box.scrollHeight;
+        m.scrollW = box.scrollWidth();
+        m.scrollH = box.scrollHeight();
         if (clipChanged) m.clip = newClip;
         m.appliedDx = m.appliedDy = 0;
         m.appliedExactDx = m.appliedExactDy = 0f;
@@ -610,7 +610,7 @@ static final int NUMS_LENGTH = 13;
             if (meta != null) {
                 RenderHints h = meta.hints();
                 if (scrollChanged && h != null && h.scrollable()) {
-                    h = h.withScroll(box.scrollWidth, box.scrollHeight);
+                    h = h.withScroll(box.scrollWidth(), box.scrollHeight());
                 }
                 if (!isRelNode && h != null && h.shadowShape() != null && (moves && (dx != 0 || dy != 0))) {
                     h = h.withShadowShape(h.shadowShape().offset(dx, dy));
@@ -622,8 +622,8 @@ static final int NUMS_LENGTH = 13;
                 if (c != null) {
                     if (parentRel) {
                         LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, m.parentId);
-                        int curPox = pNode != null ? Math.round(pNode.x) : 0;
-                        int curPoy = pNode != null ? Math.round(pNode.y) : 0;
+                        int curPox = pNode != null ? Math.round(pNode.x()) : 0;
+                        int curPoy = pNode != null ? Math.round(pNode.y()) : 0;
                         c = PaintSupport.rebaseSubClip(c, m.clip, newClip,
                                 hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy,
                                 (hasOwnNode || !moves) ? 0f : dx, (hasOwnNode || !moves) ? 0f : dy);
@@ -761,16 +761,16 @@ static final int NUMS_LENGTH = 13;
         for (LayoutBox anc = parentBox; anc != null; anc = anc.parent) {
             BoxMemo am = memoOf.get(anc);
             // 寸法が 0 になった祖先は、全体の作り直しでは中身ごと描かれない（⑧は寸法を合わせるだけで項目を消さない。§6-112。nested の種 64: body を消した html）
-            if (am != null && (anc.w <= 0 || anc.h <= 0)) return false;
+            if (am != null && (anc.w() <= 0 || anc.h() <= 0)) return false;
             // 逆に、描かれていなかった祖先（float しか持たず高さ 0 の div）が子を足して寸法を持つと、全体の作り直しは祖先自身も描く（§6-119）
-            if (am == null && !anc.isAnonymous && anc.w > 0 && anc.h > 0 && anc.parent != null
+            if (am == null && !anc.isAnonymous && anc.w() > 0 && anc.h() > 0 && anc.parent != null
                     && !(anc.dlOrder >= 0 && anc.dlOrder < rendered.size() && rendered.get(anc.dlOrder) == anc)) return false;
-            if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[2], anc.w) != 0) return false;
-            if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[3], anc.h) != 0 && paintedAfterItsFlow(anc, order)) return false;
-            if (anc.display == null || anc.display.isBlockContainer()) continue; // ブロックの流れでは兄弟の寸法は互いに響かない（float は計画で除いてある）
+            if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[2], anc.w()) != 0) return false;
+            if (am != null && am.nums != null && am.nums.length >= 4 && Float.compare(am.nums[3], anc.h()) != 0 && paintedAfterItsFlow(anc, order)) return false;
+            if (anc.display() == null || anc.display().isBlockContainer()) continue; // ブロックの流れでは兄弟の寸法は互いに響かない（float は計画で除いてある）
             for (LayoutBox c : anc.children) {
                 BoxMemo cm = memoOf.get(c);
-                if (cm != null && cm.nums != null && cm.nums.length >= 4 && (Float.compare(cm.nums[2], c.w) != 0 || Float.compare(cm.nums[3], c.h) != 0)) return false;
+                if (cm != null && cm.nums != null && cm.nums.length >= 4 && (Float.compare(cm.nums[2], c.w()) != 0 || Float.compare(cm.nums[3], c.h()) != 0)) return false;
             }
         }
         return true;
@@ -782,7 +782,7 @@ static final int NUMS_LENGTH = 13;
      * 箱の子を消した）。float は後ろの行の折り返し（＝兄弟の高さ）も変える（layouts の種 33）。§6-112。
      */
     private static boolean paintedAfterItsFlow(LayoutBox box, PaintOrder order) {
-        if (box.isAbsolute || box.isFixed) return false;
+        if (box.isAbsolute() || box.isFixed()) return false;
         return BlockLayoutEngine.isFloating(box) || PaintOrder.isPositioned(box) || order.createsStackingContext(box);
     }
 

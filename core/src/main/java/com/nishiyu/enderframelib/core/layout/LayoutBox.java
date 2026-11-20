@@ -46,10 +46,10 @@ public class LayoutBox {
     public final HtmlNode node;
     public ComputedStyle style;
     /** {@code display} を outer / inner に分けたもの。{@link #updateStyle} が算出スタイルから決める。 */
-    public Display display;
+    Display display;
     public LayoutBox parent = null;
     /** ルートの箱だけが使う: この木をレイアウトしたときのデバイスピクセル比（描画が同じ値で候補を選ぶ）。 */
-    public float devicePixelRatio = 1f;
+    float devicePixelRatio = 1f;
     /**
      * ボックスツリーの子。レイアウトと描画はこちらを読む。
      *
@@ -71,22 +71,22 @@ public class LayoutBox {
      * 縦書きの根（{@code writing-mode: vertical-*} を持ち、親は横書き）。内容は {@link #isVerticalWrapper} の箱 1 つに包まれ、
      * {@link VerticalWritingEngine} が論理（横書き）の軸で組んだ内容を回して置く。{@code BoxTreeBuilder} が組み立てのたびに立てる。
      */
-    public boolean isVerticalRoot;
+    boolean isVerticalRoot;
 
     /** 縦書きの中に置かれた {@code writing-mode: horizontal-tb} の根（縦中横・直交ネスト）。内容は {@link #isVerticalWrapper} に包まれ、{@link HorizontalReturnEngine} が逆回転で水平へ戻して置く。 */
-    public boolean isHorizontalReturnRoot;
+    boolean isHorizontalReturnRoot;
 
     /** {@link #isHorizontalReturnRoot} を包んでいた親の書字方向（{@link com.nishiyu.enderframelib.core.css.WritingModes} の定数）。 */
-    public byte orthogonalParentFlow;
+    byte orthogonalParentFlow;
 
     /** 縦書き／直交戻しの根の内容を包む、回転を持つ生成箱（DOM に無い）。 */
-    public boolean isVerticalWrapper;
+    boolean isVerticalWrapper;
 
     /**
      * 縦書きラッパー（{@code _vw}）の内側でレイアウト・描画される箱の書字方向（0 なら通常の水平座標、非 0 なら
      * {@link #axisStyle()} が物理プロパティをローカル軸へ写像したスタイルを返す）。
      */
-    public byte verticalAxisFlow;
+    byte verticalAxisFlow;
 
     /** 物理寸法・余白・枠線・角丸・overflow をローカル座標軸で読むスタイル（横書き・ラッパー自身では {@link #style}）。 */
     public ComputedStyle axisStyle() {
@@ -97,17 +97,17 @@ public class LayoutBox {
      * {@code list-style-position: outside} の {@code ::marker}。通常フローに入らず、
      * リスト項目の最初の行の左に置かれる。
      */
-    public boolean isOutsideMarker = false;
+    boolean isOutsideMarker = false;
     /** 子の中に {@code isOutsideMarker} を持つ箱があるか（{@link BlockLayoutEngine#placeOutsideMarkers} の短絡用）。 */
-    public boolean hasOutsideMarker = false;
+    boolean hasOutsideMarker = false;
     /** 子の中に {@code isAbsolute} を持つ箱があるか（{@link #layout} の絶対配置走査の短絡用）。 */
-    public boolean hasAbsoluteChild = false;
+    boolean hasAbsoluteChild = false;
     /** 子の親リンクの再確認が必要か（レイアウト時の {@code adopt} ループの短絡用）。 */
-    public boolean needsAdoption = true;
+    boolean needsAdoption = true;
     /** 部分木に匿名ボックス・::marker を含むか（{@link BoxTreeBuilder} の再利用収集の枝刈り用）。 */
     boolean subtreeHasGenerated = false;
     /** 自分または子孫に {@code content-visibility: auto} を持つ箱があるか。 */
-    public boolean subtreeHasContentAuto = false;
+    boolean subtreeHasContentAuto = false;
     /** {@code content-visibility: auto} により現在画面外として子の測定・配置・描画をスキップ中か。 */
     public boolean contentAutoSkipped = false;
     /** {@code content-visibility: auto} のスキップ中に DOM の子の構築を遅延している（未具現）か。 */
@@ -132,12 +132,12 @@ public class LayoutBox {
      * fieldset の描画される legend（HTML §15.3.13 の rendered legend）。通常フローに入らず、
      * fieldset の上の枠線に重ねて置かれる。{@link BoxTreeBuilder} が決める。
      */
-    public boolean isRenderedLegend = false;
+    boolean isRenderedLegend = false;
     /**
      * この箱がブロック整形コンテキスト（BFC）を作るか。測定のたびに {@link BoxMeasurer} が決める。
      * BFC を作る箱は子のマージンを自分の外へ貫通させない。
      */
-    public boolean establishesBfc = false;
+    boolean establishesBfc = false;
     /**
      * 「子孫（同じ BFC の中）に float があるか」の結果のメモ（{@link BlockLayoutEngine#containsFloats}）。
      * {@link #floatsMemoEpoch} が {@link #shapeEpoch()} と一致するときだけ有効。
@@ -201,7 +201,7 @@ public class LayoutBox {
     }
 
     /** 親リンクを張る。変わるときだけ世代を進める（毎回同じ値を書き直す経路で無効化しないため）。 */
-    private void adopt(LayoutBox child) {
+    void adopt(LayoutBox child) {
         if (child.parent != this) {
             child.parent = this;
             bumpShapeEpoch();
@@ -236,14 +236,14 @@ public class LayoutBox {
      * null でなければ {@link BoxMeasurer} は {@code border-*-width} の代わりにこれを使い、描画もこの幅で描く。
      * 表のエンジンがセルと表自身に入れる。
      */
-    public float[] collapsedBorders;
+    float[] collapsedBorders;
     /**
      * 段組（multicol）が列に割り当てた、単位（子の配置・行）ごとの移動量 {x, y}。鍵は {@code BlockLayoutEngine} の
      * 配置と行の実体（同一性で比べる）。持ち主の配置のときに足す。段組でなければ null。
      */
-    public java.util.Map<Object, float[]> columnShifts;
+    Map<Object, float[]> columnShifts;
     /** 段組の列の間の線の矩形 {x, y, w, h}（ビューポート座標）。無ければ null。 */
-    public float[][] columnRules;
+    float[][] columnRules;
     /** 内容を縦にずらす量（px）。表のセルの {@code vertical-align} を表のエンジンが入れる。 */
     float contentOffsetY = 0;
     /**
@@ -264,7 +264,7 @@ public class LayoutBox {
      */
     float contentBlockExtent = 0;
     /** 相殺する前の上下マージン（px）。親子のマージン相殺は解き直すたびにここから始める。 */
-    public float ownMarginTop, ownMarginBottom;
+    float ownMarginTop, ownMarginBottom;
 
     public void addChild(LayoutBox child) {
         if (child != null) {
@@ -417,7 +417,7 @@ public class LayoutBox {
     /** {@code ::first-line} の算出スタイル（ブロックコンテナだけ。規則が無ければ null）。 */
     public ComputedStyle firstLineStyle = null;
     /** 1 行目に {@code ::first-line} 背景があるときの描画矩形 {@code [x, y, w, h]}。無ければ null。 */
-    public float[] firstLineBgRect = null;
+    float[] firstLineBgRect = null;
 
     /**
      * 疑似要素（{@code ::before} / {@code ::after} / {@code ::marker} / {@code ::placeholder}）のスタイルを解いたときの
@@ -428,28 +428,28 @@ public class LayoutBox {
     /** {@link #displayText} を作ったときの節の文字（同じなら {@link #refreshStyle} は作り直さない）。 */
     private String displaySource;
 
-    public float x, y, w, h;
-    public String displayText = "";
+    float x, y, w, h;
+    String displayText = "";
 
     /** margin / padding / border の 4 辺（解決済みのピクセル値）。 */
-    public float mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
+    float mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
     /** row-gap: 行（ブロック方向）の間隔 / column-gap: 列（インライン方向）の間隔 */
-    public float rowGap, columnGap;
+    float rowGap, columnGap;
 
-    public boolean isAbsolute = false, isFixed = false, isRelative = false, isSticky = false;
+    boolean isAbsolute = false, isFixed = false, isRelative = false, isSticky = false;
     /**
      * 絶対配置の静的位置（通常フローに置かれたはずのマージンボックスの左上、絶対座標）。
      * inset が両方 auto の軸はここに置く。親のエンジンが子を並べるときに入れる。
      */
-    public float staticX = Float.NaN, staticY = Float.NaN;
+    float staticX = Float.NaN, staticY = Float.NaN;
     /** テキストの箱の最初の行のベースライン（箱の上端から。測ったときに入る。テキストでなければ NaN）。 */
-    public float textBaseline = Float.NaN;
+    float textBaseline = Float.NaN;
     /**
      * 静的位置が点ではなく領域のとき（grid / flex 容器の子。css-grid §9.4・css-flexbox §4.1）の領域の大きさと、
      * その中での揃え（0 = 始点、0.5 = 中央、1 = 終点）。{@link #staticX} / {@link #staticY} は領域の左上。点なら NaN。
      */
-    public float staticAreaW = Float.NaN, staticAreaH = Float.NaN, staticAlignX, staticAlignY;
-    public int zIndex = 0;
+    float staticAreaW = Float.NaN, staticAreaH = Float.NaN, staticAlignX, staticAlignY;
+    int zIndex = 0;
 
     /** 静的位置の領域の中で、マージンボックスの幅 {@code marginBoxW} の箱を揃えるための横のずれ。 */
     public float staticOffsetX(float marginBoxW) {
@@ -472,19 +472,21 @@ public class LayoutBox {
      * 自分で複数行を並べる要素（textarea）と描画側の行送りがこれを読む。
      * 以前は描画側が line-height を独自に解析していて、% / em / normal で食い違っていた。
      */
-    public float lineHeightPx = 0;
+    float lineHeightPx = 0;
     /**
      * テキストノードの整形結果。幅・ベースライン・行高を各行が持つ。
      *
      * 以前は折り返した文字列（{@code List<String>}）だけを持っていたため、
      * 描画側が行の幅と行送りを自前で測り直していた。
      */
-    public List<ShapedLine> shapedLines = null;
+    List<ShapedLine> shapedLines = null;
 
-    public List<InlineFragment> inlineFragments = new CompactList<>();
+    public final List<InlineFragment> inlineFragments = new CompactList<>();
     private int fragmentCursor = 0;
     /** {@link #resetPlacementsFast} で遅延消去待ちにされた断片があるか（{@link #startFragmentPass} で解除）。 */
-    public boolean fragmentsStale = false;
+    boolean fragmentsStale = false;
+
+    void resetFragmentCursor() { fragmentCursor = 0; }
 
     /** インライン断片の再配置パスを開始する。既存の断片オブジェクトを捨てずに再利用カーソルをリセットする。 */
     public void startFragmentPass() {
@@ -625,47 +627,49 @@ public class LayoutBox {
     }
 
     /** エンジン固有の状態（グリッドの行列など）。 */
-    public LayoutEngineState engineState;
+    LayoutEngineState engineState;
 
     /**
      * サブグリッド（{@code grid-template-*: subgrid}）の軸を持つ。トラックの寸法を親グリッドから受け取るため、
      * 制約が同じでも結果が変わる。測定・仮の測定の再利用を止める。{@link GridLayoutEngine} が測定のたびに立て直す。
      */
-    boolean subgridDependent;
-    public SizingMode sizingMode = SizingMode.SHRINK_TO_FIT;
+    SizingMode sizingMode = SizingMode.SHRINK_TO_FIT;
 
-    public float scrollWidth = 0;
-    public float scrollHeight = 0;
+    float scrollWidth = 0;
+    float scrollHeight = 0;
 
     /**
      * この箱が直接持つ行の文字の、内容領域の下端（座標系は {@link #y} と同じ）。行の高さが書体の高さより小さいとき、
      * 文字は行の下にはみ出し、スクロール範囲（{@link #scrollHeight}）に入る。行が無ければ負の無限大。
      */
-    public float inlineContentBottom = Float.NEGATIVE_INFINITY;
+    float inlineContentBottom = Float.NEGATIVE_INFINITY;
     /**
      * 子孫の境界ボックスの右端・下端（この箱の左上からの距離）。クリップされない子孫のはみ出しを含み、
      * マージンと内側の padding は含まない。親の {@link #scrollWidth} / {@link #scrollHeight} が読む。
      */
-    private float descendantOverflowRight = 0;
-    private float descendantOverflowBottom = 0;
+    float descendantOverflowRight = 0;
+    float descendantOverflowBottom = 0;
 
-    /** min-content 幅のメモ化。flex の shrink ループから何度も問われるため。 */
-    private float cachedMinContentWidth = -1;
-    private long cachedMinContentKey = Long.MIN_VALUE;
+    /** 測定の記憶（A7: 読み書きを MeasureMemo 1 クラスへ閉じる）。 */
+    final MeasureMemo measureMemo = new MeasureMemo();
+    /** 配置の記憶（A7: 未配置のテキスト・インライン要素では確保しない遅延生成）。 */
+    PlacementMemo placementMemo;
+    ConstraintSpace contentSpaceCache, childSpaceCache;
 
-    // ==========================================
-    // 描画の変更印（paint stamp）＆ 表示リストスライス範囲（Segmented DisplayList）
-    // ==========================================
-    //
-    // 箱の「描画に効く入力（位置・大きさ・スタイル・文字）」が書き換わりうる地点で、全体で単調に増える通し番号を書く。
-    // 描画側（DisplayListBuilder）は、記憶を作った時点の通し番号より新しい印が自分にも祖先にも無い箱を「変わっていない」
-    // とみなして、署名の比較を省ける。印は layout の再利用判定（measure を使い回す・配置を飛ばす）と同じ地点で付けるので、
-    // レイアウトが「触っていない」と言う部分木は印も付かない。付け漏れは DisplayListBuilder の検証モードで検出する。
+    PlacementMemo ensurePlacementMemo() {
+        PlacementMemo pm = placementMemo;
+        if (pm == null) placementMemo = pm = new PlacementMemo();
+        return pm;
+    }
 
-    /**
-     * 直近の描画でこの箱自身が生成した DisplayItem の表示リスト上でのスライス範囲 [dlStart, dlEnd)。
-     * 項目を持たない、または未描画の箱は dlStart = dlEnd = -1。
-     */
+    void invalidatePlacementValid() {
+        if (placementMemo != null) placementMemo.invalidateValid();
+    }
+
+    void invalidatePlacementOnDisplayChange() {
+        if (placementMemo != null) placementMemo.invalidateOnDisplayChange();
+    }
+
     /** 窓・画面外で項目を省いた（この作り直しで NODE を出していない）箱か。子が動いていて残ると、親相対の原点に使えない。 */
     public boolean paintCulled;
     public int dlStart = -1;
@@ -682,7 +686,7 @@ public class LayoutBox {
 
     private static final java.util.concurrent.atomic.AtomicLong PAINT_EPOCH = new java.util.concurrent.atomic.AtomicLong();
     /** 最後に描画入力が書き換わりうる地点を通った時の通し番号。新しい箱は常に新しい。 */
-    public long paintStamp = PAINT_EPOCH.incrementAndGet();
+    long paintStamp = PAINT_EPOCH.incrementAndGet();
     /** 算出スタイル（と文字）が差し替わった時の通し番号。子の描画が祖先から読むのはスタイルだけなので、祖先についてはこちらを見る。 */
     private long styleStamp = paintStamp;
     /** 祖先のスタイルの印の最大値の、描画ごとのキャッシュ（{@link #pathPaintStamp}）。 */
@@ -756,14 +760,14 @@ public class LayoutBox {
                 || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.TEXT_TRANSFORM), newStyle.get(CssPropertyIndex.TEXT_TRANSFORM))) {
             // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
             WhiteSpace ws = WhiteSpace.of(newStyle.get(CssPropertyIndex.WHITE_SPACE));
-            String text = TextShaper.normalize(ws.collapses() ? trimNewlineEdges(node.text) : node.text, ws);
+            String text = TextShaper.normalize(ws.collapses() ? IntrinsicSizing.trimNewlineEdges(node.text) : node.text, ws);
             String transformed = LayoutMetrics.applyTextTransform(text, newStyle);
             // capitalize は語の頭だけを大文字にする。語が要素の境目をまたぐ（p<span></span>ass）なら、続きの頭は大文字にしない
             if (!transformed.isEmpty() && !text.isEmpty() && transformed.charAt(0) != text.charAt(0)
-                    && Character.isLetterOrDigit(text.charAt(0)) && endsWithWordChar(node)) {
+                    && Character.isLetterOrDigit(text.charAt(0)) && IntrinsicSizing.endsWithWordChar(node)) {
                 transformed = text.charAt(0) + transformed.substring(1);
             }
-            this.displayText = stripIgnorable(transformed);
+            this.displayText = IntrinsicSizing.stripIgnorable(transformed);
         }
 
         String pos = newStyle.getOrDefault(CssPropertyIndex.POSITION, "static");
@@ -786,7 +790,7 @@ public class LayoutBox {
                         || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.FLOAT), newStyle.get(CssPropertyIndex.FLOAT)))) {
             bumpShapeEpoch();
         }
-        if (displayBefore != null && !display.equals(displayBefore)) for (LayoutBox c : children) { c.lastLayoutX = c.lastLayoutY = Float.NaN; c.placementPure = c.keptPure = c.placementValid = false; } // 子は別の整形コンテキストで置かれていた（flex の項目だった文字など。§6-109）
+        if (displayBefore != null && !display.equals(displayBefore)) for (LayoutBox c : children) c.invalidatePlacementOnDisplayChange(); // 子は別の整形コンテキストで置かれていた（flex の項目だった文字など。§6-109）
         if (traitsBefore != structTraits()) STRUCT_EPOCH.incrementAndGet(); if (containerBefore != containerTraits()) CONTAINER_EPOCH.incrementAndGet();
     }
 
@@ -842,264 +846,15 @@ public class LayoutBox {
     }
 
     /**
-     * これ以上縮められない幅（min-content）。
-     *
-     * flex の shrink 解決ループから 1 要素あたり最大 10 回問われ、そのたびに
-     * 部分木全体を再帰していたため、ビューポートごとに結果をメモ化する。
+     * これ以上縮められない幅（min-content）。実装は {@link IntrinsicSizing}。
      */
-    /**
-     * 既定で無視される書式文字（双方向の制御 U+202A–202E・U+2066–2069、ゼロ幅の U+200B–200F・U+2060–2064、U+FEFF）を除く。
-     * 幅を持たず描かれない文字で、字形の無い書体では豆腐（□）として描かれていた（双方向の並べ替え自体は行わない）。
-     */
-    /**
-     * 空白を畳むときの原文の端: 改行で始まる先頭の空白・改行で終わる末尾の空白を落とす（ソースの字下げと行末）。
-     * DOM は原文を持ち（white-space: pre 系で空白と tab を残すため）、従来パーサが行っていた端の扱いをここで再現する。
-     */
-    static String trimNewlineEdges(String s) {
-        int n = s.length();
-        if (n == 0) return s;
-        int start = 0, end = n;
-        char first = s.charAt(0), last = s.charAt(n - 1);
-        if (s.isBlank()) return " "; // 要素の間の空白だけの節は空白 1 つ（インラインどうしの隙間。ブロックの間ならボックスツリーが捨てる）
-        if (first == '\n' || first == '\r') while (start < end && Character.isWhitespace(s.charAt(start))) start++;
-        if (last == '\n' || last == '\r') while (end > start && Character.isWhitespace(s.charAt(end - 1))) end--;
-        return start == 0 && end == n ? s : s.substring(start, end);
-    }
-
-    /** 文書順でこの節の直前にある文字（文字の無い要素は飛ばす）が、語の途中の文字（英数字）か。 */
-    private static boolean endsWithWordChar(HtmlNode node) {
-        for (HtmlNode n = node; n != null && n.parent != null; n = n.parent) {
-            List<HtmlNode> sib = n.parent.children;
-            for (int i = sib.indexOf(n) - 1; i >= 0; i--) {
-                int c = lastChar(sib.get(i));
-                if (c >= 0) return Character.isLetterOrDigit(c);
-            }
-            if (n.parent.nodeType == NodeType.ELEMENT && !"span".equals(n.parent.tag) && !"b".equals(n.parent.tag)
-                    && !"i".equals(n.parent.tag) && !"a".equals(n.parent.tag) && !"em".equals(n.parent.tag)) return false;
-        }
-        return false;
-    }
-
-    /** 部分木の最後の文字（無ければ -1）。 */
-    private static int lastChar(HtmlNode n) {
-        if (n.nodeType == NodeType.TEXT) return n.text == null || n.text.isEmpty() ? -1 : n.text.charAt(n.text.length() - 1);
-        for (int i = n.children.size() - 1; i >= 0; i--) {
-            int c = lastChar(n.children.get(i));
-            if (c >= 0) return c;
-        }
-        return -1;
-    }
-
-    static String stripIgnorable(String s) {
-        int n = s.length();
-        int i = 0;
-        while (i < n && !isIgnorableFormat(s.charAt(i))) i++;
-        if (i == n) return s;
-        StringBuilder sb = new StringBuilder(n);
-        sb.append(s, 0, i);
-        for (; i < n; i++) {
-            char c = s.charAt(i);
-            if (!isIgnorableFormat(c)) sb.append(c);
-        }
-        return sb.toString();
-    }
-
-    private static boolean isIgnorableFormat(char c) {
-        if (c < 0x200B) return false;
-        return c <= 0x200F || (c >= 0x202A && c <= 0x202E) || (c >= 0x2060 && c <= 0x2064) || (c >= 0x2066 && c <= 0x2069) || c == 0xFEFF;
-    }
-
     public float getMinContentWidth(LayoutContext ctx) {
-        if (tentativeStashed && measuredMinContentVar) {
-            settleTentative();
-        }
-        long key = ((long) ctx.viewport().rootW() << 32) | (ctx.viewport().rootH() & 0xFFFFFFFFL);
-        key = key * 31 + Float.floatToIntBits(ctx.viewport().devicePixelRatio());
-        if (cachedMinContentKey == key && cachedMinContentWidth >= 0) return cachedMinContentWidth;
-
-        float result = computeMinContentWidth(ctx);
-        cachedMinContentKey = key;
-        cachedMinContentWidth = result;
-        return result;
-    }
-
-    private float computeMinContentWidth(LayoutContext ctx) {
-        if (effectiveContainsInlineSize()) {
-            return horizontalDecoration() + containIntrinsicInlinePx(ctx.viewport().rootW(), ctx.viewport().rootH());
-        }
-        float rootW = ctx.viewport().rootW();
-        float rootH = ctx.viewport().rootH();
-
-        // min-content / auto などのキーワードは長さとして解けないので、内容から計算する経路に落とす
-        ComputedStyle ax = axisStyle();
-        String minWidthDecl = ax.get(CssPropertyIndex.MIN_WIDTH);
-        // 表は min-width より内容の列が広ければ広がる（CSS 2.2 §17.5.2.1）ので、近道を使わず列から測る
-        if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl) && display.inner() != Display.Inner.TABLE) {
-            // 枠線ボックスは padding と border より細くならない（min-width: 0 でも装飾の分は残る）
-            float min = ax.length(CssPropertyIndex.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
-            return ax.isBorderBox() ? Math.max(min, horizontalDecoration()) : min + horizontalDecoration();
-        }
-
-        String tag = node.tag;
-        if (tag.equals("select")) {
-            // 閉じた select の幅は最も長い選択肢と開閉の印（描画は「ラベル ▾」）。
-            // 何が壊れていたか: 以前は選択肢によらず 90px で、指定幅のある select が flex で縮みすぎていた
-            return selectLabelWidth(ctx) + horizontalDecoration();
-        }
-        if (tag.equals("input") || tag.equals("progress")) {
-            float inputW = 90;
-            String type = node.attrs.getOrDefault("type", "text");
-            if (tag.equals("input") && (type.equals("checkbox") || type.equals("radio"))) {
-                inputW = LayoutMetrics.FALLBACK_REPLACED_SIZE;
-            } else if (node.attrs.containsKey("size")) {
-                try {
-                    inputW = Integer.parseInt(node.attrs.get("size")) * 8;
-                } catch (NumberFormatException ignored) {
-                }
-            }
-            return inputW + horizontalDecoration();
-        }
-
-        if (node.nodeType == NodeType.TEXT) {
-            // これ以上縮められない幅 = 最も長い「折り返し候補で切れない塊」の幅
-            TextStyle textStyle = ctx.textStyleFor(style);
-            FontFace face = ctx.faceFor(style);
-            FontStyle font = textStyle.font();
-            float maxWordW = 0;
-            if (!textStyle.whiteSpace().wraps()) {
-                // nowrap / pre は行の中で折り返さないので、行全体が 1 つの塊
-                if (this.displayText.indexOf('\n') < 0) {
-                    String l = textStyle.whiteSpace().collapses() ? this.displayText.strip() : this.displayText;
-                    return l.isEmpty() ? 0 : face.advance(l, font);
-                }
-                for (String line : this.displayText.split("\n", -1)) {
-                    String l = textStyle.whiteSpace().collapses() ? line.strip() : line;
-                    if (!l.isEmpty()) maxWordW = Math.max(maxWordW, face.advance(l, font));
-                }
-                return maxWordW;
-            }
-            // 語の幅は段落の下ごしらえ（キャッシュ）の値。前後の空白を除いた語が空なら 0 で、最大値には響かない
-            return TextShaper.segmented(this.displayText, face, font, textStyle.wordBreak()).maxStrippedW();
-        }
-
-        if (children.isEmpty()) {
-            // 置換要素は測った幅が固有の幅。子を持たない普通の箱の min-content は装飾だけ（今の w を読むと、親が先に
-            // 測った箱と後で測る箱で値が変わり、差分レイアウトが一から組んだ結果とずれる）
-            if (!ReplacedElements.isReplacedTag(node.tag) && !node.tag.equals("canvas") && !node.tag.equals("svg")
-                    && !node.tag.equals("img") && !node.tag.equals("video") && !node.tag.equals("iframe")) {
-                return horizontalDecoration();
-            }
-            float image = BoxMeasurer.replacedImageWidth(this, ctx);
-            if (!Float.isNaN(image)) return image;
-            return this.w > 0 ? this.w : LayoutMetrics.FALLBACK_REPLACED_SIZE;
-        }
-
-        // 折り返さない行方向の flex コンテナは、アイテムの寄与の和と間隔（CSS Flexbox §9.9.1）。
-        // 何が壊れていたか: 以前は常に最大値を返していたので、flex アイテムになった flex コンテナ
-        // （検索欄のような横並び）が自動の最小寸法を下回って潰れ、中身が箱の外へはみ出していた
-        boolean sumItems = display != null && display.inner() == Display.Inner.FLEX && isSingleLineRowFlex();
-        float max = 0, sum = 0;
-        int count = 0;
-        for (LayoutBox c : children) {
-            if (!c.participatesInFlow()) continue;
-            if (sumItems && FlexLayoutEngine.isCollapsed(c)) continue;
-            float contribution = c.minContentContribution(ctx) + c.intrinsicInlineMargins(ctx);
-            max = Math.max(max, contribution);
-            sum += contribution;
-            count++;
-        }
-        // fieldset の legend は内容と別に置かれるが、fieldset の幅は legend より細くならない
-        LayoutBox legend = renderedLegend();
-        float legendW = legend == null ? 0 : legend.minContentContribution(ctx) + legend.ownInlineMargins(ctx);
-        if (sumItems) return Math.max(legendW, sum + columnGap * Math.max(0, count - 1)) + horizontalDecoration();
-        return Math.max(legendW, max) + horizontalDecoration();
-    }
-
-    /**
-     * 親の min-content に足し込む幅（CSS Sizing 3 §5.1）。{@code width} が確定した長さならその幅、
-     * そうでなければ min-content。百分率は親の幅に依存して循環するので auto と同じに扱う。
-     */
-    private float minContentContribution(LayoutContext ctx) {
-        ComputedStyle ax = axisStyle();
-        String width = ax.get(CssPropertyIndex.WIDTH);
-        if (width == null || width.contains("%") || LayoutMetrics.isIntrinsicSizeKeyword(width)) {
-            return getMinContentWidth(ctx);
-        }
-        float v = ax.length(CssPropertyIndex.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
-        float borderBox = ax.isBorderBox() ? Math.max(v, horizontalDecoration()) : v + horizontalDecoration();
-        String minWidth = ax.get(CssPropertyIndex.MIN_WIDTH);
-        if (minWidth != null && !minWidth.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(minWidth)) {
-            float min = ax.length(CssPropertyIndex.MIN_WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
-            borderBox = Math.max(borderBox, ax.isBorderBox() ? min : min + horizontalDecoration());
-        }
-        return borderBox;
-    }
-
-    private boolean isSingleLineRowFlex() {
-        String direction = style.getOrDefault(CssPropertyIndex.FLEX_DIRECTION, "row").trim();
-        String wrap = style.getOrDefault(CssPropertyIndex.FLEX_WRAP, "nowrap").trim();
-        return direction.startsWith("row") && "nowrap".equals(wrap);
-    }
-
-    /** 閉じた select に描くラベル（選択肢の文字列と「 ▾」）の最大幅。 */
-    private float selectLabelWidth(LayoutContext ctx) {
-        FontFace face = ctx.faceFor(style);
-        FontStyle font = ctx.fontStyleFor(style);
-        float max = face.advance(" ▾", font);
-        for (HtmlNode option : node.children) {
-            if ("optgroup".equals(option.tag)) {
-                for (HtmlNode o : option.children) {
-                    if ("option".equals(o.tag)) max = Math.max(max, optionLabelWidth(o, face, font));
-                }
-            } else if ("option".equals(option.tag)) {
-                max = Math.max(max, optionLabelWidth(option, face, font));
-            }
-        }
-        return max;
-    }
-
-    private static float optionLabelWidth(HtmlNode o, FontFace face, FontStyle font) {
-        String label = o.attrs.containsKey("label") ? o.attrs.get("label") : o.getTextContent();
-        label = label == null ? "" : collapseSelectSpaces(label);
-        return face.advance(label + " ▾", font);
-    }
-
-    /** 正規表現コンパイルを避けて前後の空白を落とし、内部の連続空白を単一スペースに潰す。 */
-    private static String collapseSelectSpaces(String s) {
-        int len = s.length();
-        int start = 0;
-        while (start < len && Character.isWhitespace(s.charAt(start))) start++;
-        int end = len;
-        while (end > start && Character.isWhitespace(s.charAt(end - 1))) end--;
-        if (start == end) return "";
-        StringBuilder sb = null;
-        boolean prevSpace = false;
-        for (int i = start; i < end; i++) {
-            char c = s.charAt(i);
-            if (Character.isWhitespace(c)) {
-                if (prevSpace || c != ' ') {
-                    if (sb == null) {
-                        sb = new StringBuilder(end - start);
-                        sb.append(s, start, i);
-                    }
-                    if (!prevSpace) sb.append(' ');
-                } else if (sb != null) {
-                    sb.append(' ');
-                }
-                prevSpace = true;
-            } else {
-                if (sb != null) sb.append(c);
-                prevSpace = false;
-            }
-        }
-        if (sb != null) return sb.toString();
-        return (start == 0 && end == len) ? s : s.substring(start, end);
+        return IntrinsicSizing.getMinContentWidth(this, ctx);
     }
 
     /** 寸法が変わるため、測定パスの先頭でメモ化を捨てる。 */
     void invalidateMinContentCache() {
-        cachedMinContentKey = Long.MIN_VALUE;
-        cachedMinContentWidth = -1;
+        measureMemo.invalidateMinContentCache();
     }
 
     public void applyRelativeOffset(float dx, float dy) {
@@ -1109,7 +864,7 @@ public class LayoutBox {
         for (LayoutBox child : children) {
             // 祖先のずらしは子孫の原点の記録（lastLayoutX / Y）に入らないので、記録と位置の差がずれる。祖先が相対位置でなくなった
             // 次の layout で、平行移動（shiftSubtree）がこの差を保ったまま動かし、効かなくなったずらしが残る（§6-118）。記録を消して置き直させる
-            child.lastLayoutX = Float.NaN;
+            if (child.placementMemo != null) child.placementMemo.clearLastLayoutX();
             child.applyRelativeOffset(dx, dy);
         }
         for (InlineFragment frag : inlineFragments) {
@@ -1119,1207 +874,95 @@ public class LayoutBox {
     }
 
     /**
-     * 寸法を決める。実装は {@link BoxMeasurer}。
-     * エンジンが子に対して再帰的に呼ぶため、入口はここに残している。
+     * 寸法を決める。実装は {@link BoxMeasurer}、記憶は {@link MeasureMemo}。
      */
     public void measure(ConstraintSpace space, LayoutContext ctx) {
-        measureWith(space, ctx, true);
+        measureMemo.measureWith(this, space, ctx, true);
     }
 
-    /**
-     * @param restoreOk 親のエンジンが測定を実行している最中の呼び出し（親は子の測定のあとに stretch・auto マージン・相殺などを
-     *                  改めて書く）。子の前回の測定を使い回すとき、親が書き換えた出力を自然な測定結果へ戻してよい。
-     *                  親が測り直さない下降（{@link #remeasureChanged}）では false: 戻すと親の書き換えが消えるので、
-     *                  出力が測定時と違う子は従来どおり測り直す。
-     */
-    private void measureWith(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        // 親が決めた寸法は制約で受け取る。測定の中身は従来どおり overrideWidth / overrideHeight を読むので、測定の間だけ写す
-        // （測定の外では常に NaN。入れ子の測定は別の箱のフィールドなので干渉しない）
-        overrideWidth = space.fixedInlineSize();
-        overrideHeight = space.fixedBlockSize();
-        boolean fixedWidth = !Float.isNaN(overrideWidth);
-        long probe = LayoutParallelProbe.enter(this, LayoutParallelProbe.MEASURE);
-        try {
-            measureCore(space, ctx, restoreOk);
-        } finally {
-            LayoutParallelProbe.exit(LayoutParallelProbe.MEASURE, probe);
-            overrideWidth = Float.NaN;
-            overrideHeight = Float.NaN;
-        }
-        noteFitToParent(measuredFitNeed, fixedWidth);
-    }
-
-    /** 並列ワーカー向けの測定入口。親への {@code noteFitToParent} は結合後に親スレッドが順に行う。 */
     void measureParallel(ConstraintSpace space, LayoutContext ctx) {
-        overrideWidth = space.fixedInlineSize();
-        overrideHeight = space.fixedBlockSize();
-        long probe = LayoutParallelProbe.enter(this, LayoutParallelProbe.MEASURE);
-        try {
-            measureCore(space, ctx, true);
-        } finally {
-            LayoutParallelProbe.exit(LayoutParallelProbe.MEASURE, probe);
-            overrideWidth = Float.NaN;
-            overrideHeight = Float.NaN;
-        }
+        measureMemo.measureParallel(this, space, ctx);
     }
 
     void applyFitToParent(boolean fixedWidth) {
-        noteFitToParent(measuredFitNeed, fixedWidth);
+        measureMemo.applyFitToParent(this, fixedWidth);
     }
 
     boolean needsParallelMeasureWork() {
-        return subtreeChanged || layoutChanged || !measurementValid;
+        return measureMemo.needsParallelWork();
     }
 
     boolean needsParallelLayoutWork(float parentX, float parentY, LayoutContext ctx) {
-        return !ctx.reuseMeasurements() || subtreeChanged || layoutChanged
-                || lastLayoutX != parentX || lastLayoutY != parentY
-                || !canKeepPlacement(ctx.layoutRun());
+        return PlacementMemo.needsWork(this, parentX, parentY, ctx);
     }
 
-    /**
-     * 親の測定の最中に、親が渡した制約（上書き寸法なし）で測られた子が、使える幅に依らない（{@link #measuredFitNeed} が有限か、
-     * 幅が確定している）かを親に伝える。親の fit 判定は、子の最終状態（flex が後から上書き幅で測り直した記録）ではなく、
-     * 親の寸法を決めた測定のときの子の状態で行う（最終状態は親の寸法に依って決まり、使える幅への依存を隠す）。
-     */
-    private void noteFitToParent(float need, boolean fixedWidth) {
-        LayoutBox p = parent;
-        if (p == null || fixedWidth) return;
-        if (need == Float.POSITIVE_INFINITY) {
-            if (!(measuredWidthFree && com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on())) p.childFitBlocked = true;
-        } else if (need > p.childFitNeedMax) {
-            // 子が切られずに済む使える幅（子の使える幅は親の内容幅）。親の必要幅は、これに親の装飾を足した幅以上
-            p.childFitNeedMax = need;
-        }
-    }
-
-    /** 親（fill 幅ブロック）が、自分の内容が収まる幅の境目を数えるときに使うこの子の必要幅。 */
     float blockChildFitWidth() {
-        return (measuredWidthFree && com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on()) ? (w + mL + mR) : measuredFitNeed;
+        return measureMemo.blockChildFitWidth(this);
     }
-
-    /** 直近の測定で、親が渡した制約で測られた子が、切られずに済むために必要とした使える幅の最大。測定の始めに 0 に戻す。 */
-    private float childFitNeedMax;
-
-    /** 直近の測定で、使える幅に依る子（折り返す・切られる・幅を埋める）があった。測定の始めに下ろし、子の測定が立てる。 */
-    private boolean childFitBlocked;
-
-    /** 1 回のレイアウトで、箱 1 つあたりに許す測り直しの数。float を含む入れ子の flex は測定キャッシュに当たらず 2^深さに膨らむ（W9）ので、その上限。 */
-    private static final int FUEL_PER_BOX = 200;
-    /** 小さな文書で使い切らないための下駄。 */
-    private static final int FUEL_BASE = 50_000;
-    private static final java.util.concurrent.atomic.LongAdder FUEL_REUSED = new java.util.concurrent.atomic.LongAdder();
-    /** スレッドごとの {実行番号, 測った回数, 初めて測った箱の数}。 */
-    private static final ThreadLocal<long[]> FUEL = ThreadLocal.withInitial(() -> new long[]{-1, 0, 0});
 
     /** 燃料切れのために前回の測定を使った回数の累計（診断・テスト用）。 */
     public static long measureFuelReused() {
-        return FUEL_REUSED.sum();
+        return MeasureMemo.fuelReused();
     }
-
-    /** この測定を 1 回分として数え、箱の数に比べて測りすぎで、かつこの箱に前回の測定があるなら true（測ったことのない箱は必ず測る）。 */
-    private boolean measureFuelExhausted(LayoutContext ctx) {
-        long[] f = FUEL.get();
-        if (f[0] != ctx.layoutRun()) {
-            f[0] = ctx.layoutRun();
-            f[1] = 0;
-            f[2] = 0;
-        }
-        f[1]++;
-        if (measuredSpace == null) {
-            f[2]++;
-            return false;
-        }
-        return f[1] > FUEL_BASE + (long) FUEL_PER_BOX * f[2];
-    }
-
-    private void measureCore(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        restoreTentativeStash();
-        if (needsAdoption) {
-            for (int i = 0, n = children.size(); i < n; i++) adopt(children.get(i));
-            needsAdoption = false;
-        }
-        if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx, restoreOk)) {
-            if (restoreOk) restoreNaturalOutputs();
-            if (!(subtreeChanged && ctx.firstPass())) return;
-            int[] depth = DESCENT.get();
-            depth[0]++;
-            try {
-                remeasureChanged(ctx);
-            } finally {
-                depth[0]--;
-            }
-            // 子孫の測り直しの結果が外寸に出て、自分の測定が当てはまらなくなったら、下で測り直す
-            if (measurementValid) return;
-        }
-        if (ctx.reuseMeasurements() && (reuseDefiniteTentative(space, ctx, restoreOk)
-                || fillFitReuse(space, ctx, restoreOk))) {
-            return;
-        }
-        if (measureFuelExhausted(ctx)) {
-            // 測定の燃料切れ（W9）: これ以上の測り直しはせず、前回の測定を使う（測ったことのない箱は 1 回だけ測るので、全体は箱の数で終わる）
-            FUEL_REUSED.increment();
-            if (restoreOk) restoreNaturalOutputs();
-            return;
-        }
-        MEASUREMENTS_COMPUTED.increment();
-        if (layoutChanged || hasUnmeasuredSubtreeChange(ctx)) tentatives = null; // 中身が変わった。前の仮の測定の産物は当てはまらない
-        touchPaint();
-        childFitBlocked = false;
-        childFitNeedMax = 0;
-        BoxMeasurer.measure(this, space, ctx);
-        // エンジンが確定させ損ねた子（高さを測らない箱など）を、親が測り終える前に必ず確定させる
-        if (hasTentativeChildren) settleTentativeChildren();
-        recordMeasurement(space, ctx);
-        touchPaint();
-    }
-
-    // ==========================================
-    // 仮の測定の産物の再利用（flex の 2 段の測定）
-    // ==========================================
-    //
-    // flex の項目は「仮の測定（利用可能幅）→ 確定幅での測り直し」の 2 つの制約で測られる。測定の結果を 1 つしか持たないので、
-    // 次のレイアウトの最初の仮の測定が前回の確定測定を追い出し、中身が同じ項目まで毎回 2 回測り直していた。
-    // 仮の測定が親に渡すのは箱自身の寸法・余白・装飾・sizingMode・内容の高さだけなので、中身が変わっていなければ
-    // その産物だけを前回の値に差し替え（部分木は確定測定の状態のまま触らない）、確定の測り直しが来れば元に戻して使い回す。
-    // 確定の測り直しが来なかった子は、親が settleTentative で本当に測る（部分木を仮の測定の状態で終えない）。
-
-    /** 仮の測定が親へ渡す産物。再測定時は既存インスタンスを破壊的に更新して使い回す。 */
-    static final class BoxOutputs {
-        float w, h, mT, mR, mB, mL;
-        float pT, pR, pB, pL, bT, bR, bB, bL;
-        float legendSpill, contentBlockExtent, ownMarginTop, ownMarginBottom;
-        SizingMode sizingMode;
-
-        static BoxOutputs capture(LayoutBox b) {
-            return new BoxOutputs().captureFrom(b);
-        }
-
-        static BoxOutputs captureOrUpdate(BoxOutputs existing, LayoutBox b) {
-            return existing != null ? existing.captureFrom(b) : capture(b);
-        }
-
-        BoxOutputs captureFrom(LayoutBox b) {
-            this.w = b.w; this.h = b.h; this.mT = b.mT; this.mR = b.mR; this.mB = b.mB; this.mL = b.mL;
-            this.pT = b.pT; this.pR = b.pR; this.pB = b.pB; this.pL = b.pL;
-            this.bT = b.bT; this.bR = b.bR; this.bB = b.bB; this.bL = b.bL;
-            this.legendSpill = b.legendSpill;
-            this.contentBlockExtent = b.contentBlockExtent;
-            this.ownMarginTop = b.ownMarginTop;
-            this.ownMarginBottom = b.ownMarginBottom;
-            this.sizingMode = b.sizingMode;
-            return this;
-        }
-
-        void apply(LayoutBox b) {
-            b.w = w; b.h = h; b.mT = mT; b.mR = mR; b.mB = mB; b.mL = mL;
-            b.pT = pT; b.pR = pR; b.pB = pB; b.pL = pL; b.bT = bT; b.bR = bR; b.bB = bB; b.bL = bL;
-            b.legendSpill = legendSpill; b.contentBlockExtent = contentBlockExtent;
-            b.ownMarginTop = ownMarginTop; b.ownMarginBottom = ownMarginBottom; b.sizingMode = sizingMode;
-        }
-    }
-
-    enum TentativeKind { TENTATIVE, DEFINITE }
-
-    static boolean sameFixedSizes(ConstraintSpace a, ConstraintSpace b) {
-        return sameLength(a.fixedInlineSize(), b.fixedInlineSize()) && sameLength(a.fixedBlockSize(), b.fixedBlockSize());
-    }
-
-    private static boolean sameParentContext(FormattingContext a, FormattingContext b, boolean shrinkFree) {
-        return a.equals(b) || (shrinkFree && a.parentDisplay() == b.parentDisplay() && a.stretch() == b.stretch());
-    }
-
-    static boolean sameBlockPercentAndParent(ConstraintSpace a, ConstraintSpace b, boolean percentFree, boolean shrinkFree) {
-        return (percentFree || Float.floatToIntBits(a.percentageBlockSize()) == Float.floatToIntBits(b.percentageBlockSize()))
-                && sameParentContext(a.parent(), b.parent(), shrinkFree);
-    }
-
-    /** 効かない高さの % の基準や親の shrink 指示を除いて、制約が同じ。 */
-    static boolean sameIgnoringPercentAndShrink(ConstraintSpace a, ConstraintSpace b, boolean percentFree, boolean shrinkFree) {
-        if (!percentFree && !shrinkFree) return false;
-        return Float.floatToIntBits(a.availableInlineSize()) == Float.floatToIntBits(b.availableInlineSize())
-                && sameBlockPercentAndParent(a, b, percentFree, shrinkFree);
-    }
-
-    /**
-     * この箱の測定が、親が渡す「高さの % の基準」に依らない（{@link StyleFacts#blockPercentFree} が自分と全ての子孫で真）。
-     * 測ったとき（{@link #recordMeasurement}）に決める。
-     */
-    private boolean measuredBlockPercentFree;
-
-    private boolean computeBlockPercentFree() {
-        StyleFacts f = axisStyle().layoutFacts();
-        // 横方向の割合・内在サイズのキーワードは、親の現在の幅（子の割合 padding の基準・最小内容幅のキャッシュ）を通して
-        // 測定時の状態に隠れて依存する。高さの基準を無視して測り直しを省くと、その状態の更新まで省いてしまうので、含まない
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.BLOCK_PERCENT_FREE.on() || !f.blockPercentFree || f.percentGeometry
-                || f.intrinsicWidthKind != StyleFacts.IW_NONE || renderedLegend() != null) return false;
-        for (int i = 0, n = children.size(); i < n; i++) {
-            LayoutBox c = children.get(i);
-            if (c.style.facts().displayNone) continue;
-            if (!c.measuredBlockPercentFree) return false;
-        }
-        return true;
-    }
-
-
-    /** 仮の測定・確定の測定の産物。仮は最大 {@link #MAX_TENTATIVES}、確定は最大 {@link #MAX_DEFINITE_TENTATIVES} を別枠で保つ。 */
-    private Tentative[] tentatives;
-    private static final int MAX_TENTATIVES = 4;
-    private static final int MAX_DEFINITE_TENTATIVES = 2;
-    private static final int MAX_TOTAL_TENTATIVES = MAX_TENTATIVES + MAX_DEFINITE_TENTATIVES;
-    /** 仮の産物に差し替えている間、差し替える前（確定測定の状態）の産物を退避する領域。 */
-    private BoxOutputs tentativeStash;
-    private boolean tentativeStashed;
-    private ConstraintSpace tentativeSpace;
-    private LayoutContext tentativeCtx;
-    /** 子に差し替え中の箱がある（親が測り終える前に確定させるための印）。 */
-    private boolean hasTentativeChildren;
-
-    private static final java.util.concurrent.atomic.LongAdder TENTATIVE_SKIPPED =
-            new java.util.concurrent.atomic.LongAdder();
 
     /** 仮の測定を飛ばした回数（効き具合を測るテスト・診断用）。 */
     public static long tentativeSkipped() {
-        return TENTATIVE_SKIPPED.sum();
+        return MeasureMemo.tentativeSkipped();
     }
 
-    /**
-     * {@code space} での測定を、前回の産物で済ませられるなら済ませて true。済ませた箱は、親が {@link #settleTentative} するか
-     * 確定の {@link #measure} が来るまで、産物だけが仮の値になっている（部分木は前回の確定測定のまま）。
-     * 前提は {@link #canReuseMeasurement} と同じで、制約と上書き寸法の比べ方だけが違う（上書きなしで測った産物と比べる）。
-     */
     boolean measureTentatively(ConstraintSpace space, LayoutContext ctx) {
-        restoreTentativeStash();
-        Tentative[] all = tentatives;
-        if (subgridDependent || !com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.on() || all == null || !ctx.reuseMeasurements() || parent == null) return false;
-        Tentative t = null;
-        for (Tentative candidate : all) {
-            if (candidate != null && candidate.kind() == TentativeKind.TENTATIVE && candidate.matches(space)) {
-                t = candidate;
-                break;
-            }
-        }
-        if (t == null) return false;
-        if (!Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) return false;
-        if (!measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx) || measuredHasTable) return false;
-        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.on())) return false;
-        if (t.epoch() != MEASUREMENT_EPOCH.get() || measuredEpoch != t.epoch()
-                || floatSpace != null || collapsedBorders != null
-                || !t.matches(space)
-                || !t.sameViewport(ctx.viewport()) || ctx.fonts() != t.fonts()
-                || ctx.intrinsicResolver() != t.intrinsics()) {
-            return false;
-        }
-        if (needsAdoption) {
-            for (int i = 0, n = children.size(); i < n; i++) adopt(children.get(i));
-            needsAdoption = false;
-        }
-        tentativeStash = BoxOutputs.captureOrUpdate(tentativeStash, this);
-        tentativeStashed = true;
-        tentativeSpace = space;
-        tentativeCtx = ctx;
-        t.outputs().apply(this);
-        if (t.fillFit()) this.w = Math.max(0, space.availableInlineSize() - mL - mR);
-        invalidateMinContentCache();
-        parent.hasTentativeChildren = true;
-        TENTATIVE_SKIPPED.increment();
-        noteFitToParent(t.fitNeed(), false);
-        return true;
+        return measureMemo.measureTentatively(this, space, ctx);
     }
 
-    /** 仮の測定を使う親（flex / grid）の子か。それ以外の箱は産物を記録しない（割り当てを増やさない）。 */
-    private boolean parentUsesTentatives() {
-        if (parent == null || parent.display == null) return false;
-        Display.Inner inner = parent.display.inner();
-        return inner == Display.Inner.FLEX || inner == Display.Inner.GRID;
-    }
-
-    /** 仮の産物に差し替え中（確定測定のやり直し待ち）か。 */
     boolean isTentativeStashed() {
-        return tentativeStashed;
+        return measureMemo.isTentativeStashed();
     }
 
-    /** 差し替えた産物を確定測定の状態に戻す。 */
-    private void restoreTentativeStash() {
-        if (!tentativeStashed) return;
-        tentativeStashed = false;
-        tentativeCtx = null;
-        tentativeStash.apply(this);
-        invalidateMinContentCache();
-    }
-
-    /** 仮の産物のままの箱を、本当に測って確定させる（確定の測り直しが来なかった項目）。 */
     void settleTentative() {
-        if (!tentativeStashed) return;
-        ConstraintSpace s = tentativeSpace;
-        LayoutContext c = tentativeCtx;
-        restoreTentativeStash();
-        measure(s, c);
+        measureMemo.settleTentative(this);
     }
-
-    private void settleTentativeChildren() {
-        hasTentativeChildren = false;
-        for (int i = 0; i < children.size(); i++) children.get(i).settleTentative();
-    }
-
-    /**
-     * 自分の measure を使い回したが、再レイアウト境界の中だけが変わっている（境界の寸法は変わらないので祖先は使い回せる）。
-     * 境界まで降りて、中身だけを前回と同じ制約で測り直す。
-     */
-    private void remeasureChanged(LayoutContext ctx) {
-        for (int i = 0; i < children.size(); i++) {
-            LayoutBox child = children.get(i);
-            if (!child.subtreeChanged || child.measuredSpace == null) continue;
-            // 境界・外寸の変化を親が吸収できる箱（cutoff）・測り直しの印が付いた箱は、自分で測り直す。
-            // 結果が外寸に出れば直接の親の測定が無効になり、親は呼び出し側（この関数の後）で測り直す
-            if (child.layoutChanged || child.isRelayoutBoundary() || child.isCutoffEligible()) {
-                child.measureWith(child.measuredSpace, ctx, false);
-            } else {
-                child.remeasureChanged(ctx);
-                // 降りた先の結果で、この子の測定が当てはまらなくなったなら、ここで測り直す（取り残さない）
-                if (!child.measurementValid) child.measureWith(child.measuredSpace, ctx, false);
-            }
-        }
-    }
-
-    /** 測り直しの結果を、直接の親の無効化だけで伝える下降（{@link #remeasureChanged}）の深さ。スレッドごと。 */
-    private static final ThreadLocal<int[]> DESCENT = ThreadLocal.withInitial(() -> new int[1]);
-
-    /**
-     * 経路の印付けで、cutoff できない祖先に当たっても、その親に「測り直し」を前払いで付けない（結果が外寸に出たときの動的な
-     * 無効化に任せる）。false なら従来どおり前払いで付ける（切り分け用）。
-     */
-    private static final boolean lazyThroughIneligible = com.nishiyu.enderframelib.core.kernel.EngineFlags.LAZY_THROUGH_INELIGIBLE;
-
-
-    /**
-     * 子の中身が変わって測り直しても外寸（幅・高さ・マージン）が前回と同じなら、親の測定はそのまま使える箱か。
-     * 親が子から読むのは外寸だけ（配置・ベースラインは layout で組み直す）という前提が成り立つ場合に限る:
-     * ブロックレベルの流れの子で、親がブロックフロー（表・段組でない）、float・絶対配置・位置指定・上書き寸法が無く、
-     * 祖先のどこでも float が流れの外へ漏れない（float を避ける行・高さの解き直しが親の状態に依るため）。
-     * 親が flex（行方向）のときは、アイテムの仮の主軸の寸法が中身に依らない場合だけ（{@link FlexLayoutEngine#cutoffSafeItem}）。
-     */
-    private boolean isCutoffEligible() {
-        LayoutBox p = parent;
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.on() || p == null || display == null || p.display == null) return false;
-        if (node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT || display.isInlineLevel() || display.isNone()
-                || isAbsolute || isRelative || isSticky || isOutsideMarker || isRenderedLegend
-                || isTableBox(this) || collapsedBorders != null || everLaidOutAsTable || floatSpace != null
-                || !Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) {
-            return false;
-        }
-        Display.Inner pi = p.display.inner();
-        if (pi == Display.Inner.FLEX) {
-            // flex コンテナは、仮の主軸の寸法が中身に依らないアイテムの変化なら、外寸が同じ限り吸収できる
-            if (!FlexLayoutEngine.cutoffSafeItem(p, this)) return false;
-        } else if (pi != Display.Inner.FLOW && pi != Display.Inner.FLOW_ROOT) {
-            return false;
-        }
-        if (isTableBox(p) || MulticolLayout.isMulticol(p) || BlockLayoutEngine.isFloating(this)) return false;
-        for (LayoutBox a = p; a != null; a = a.parent) {
-            if (!a.measuredFlowFloatFree) return false;
-        }
-        if (LayoutEngine.contentSizedAncestor(p)) return false;
-        return !BlockLayoutEngine.containsFloats(this);
-    }
-
-    /** 測ったとき、どの子も float ではなく、子孫の float が流れに漏れてもいない。{@link #isCutoffEligible} が祖先を通して見る。 */
-    private boolean measuredFlowFloatFree;
-
-    private static final java.util.concurrent.atomic.LongAdder MEASUREMENTS_COMPUTED =
-            new java.util.concurrent.atomic.LongAdder();
 
     /** これまでに使い回さずに計算した measure の回数（差分レイアウトの効き具合を測るテスト・診断用）。 */
     public static long measurementsComputed() {
-        return MEASUREMENTS_COMPUTED.sum();
+        return MeasureMemo.measurementsComputed();
     }
-
-    // ==========================================
-    // 差分レイアウト（measure の結果の再利用）
-    // ==========================================
-    //
-    // Chromium の LayoutNG の「レイアウト結果のキャッシュ」と同じ考え方。箱の measure は、
-    //   入力: 制約（ConstraintSpace）・親が決めた寸法（override*）・ビューポート・書体
-    //   中身: 自分の算出スタイル・表示する文字・属性・子の並び（とその子孫）
-    // だけで決まる。前回の measure から入力も中身も変わっていなければ、箱と子孫の状態は前回の measure の
-    // 直後のまま使える。汚れの判定は「誰が変えたか」（サーバーの変異・クライアントの操作）ではなく、
-    // 前回測ったときの署名と今の状態を比べて決めるので、どの経路で DOM が変わっても同じ結果になる。
-
-    /** 外から測り直しを強いる世代（画像の読み込み・書体の登録など、箱の外の資源が変わったとき）。 */
-    private static final java.util.concurrent.atomic.AtomicInteger MEASUREMENT_EPOCH =
-            new java.util.concurrent.atomic.AtomicInteger();
 
     /** 全ての箱の measure の結果を捨てさせる（次の差分レイアウトは全部測り直す）。 */
     public static void invalidateAllMeasurements() {
-        MEASUREMENT_EPOCH.incrementAndGet();
+        MeasureMemo.invalidateAll();
     }
 
-    /** 前回の measure の結果が今の状態に当てはまるか。子孫の measure や外からの書き換えで false になる。 */
-    private boolean measurementValid = false;
-    /** 前回の measure の後に、自分か子孫の中身が変わった（{@link #markLayoutChanges} が決める）。 */
-    private boolean layoutChanged = true;
-    private ConstraintSpace measuredSpace;
-    /** エンジンへ渡す内容の制約と子へ渡す制約の再利用用（値が同じ間は確保し直さない）。 */
-    public ConstraintSpace contentSpaceCache, childSpaceCache;
-
-    /** 前回の測定で、親が高さを固定していない（自然な高さで測った）か。 */
     boolean measuredWithoutFixedHeight() {
-        return measuredSpace != null && Float.isNaN(measuredSpace.fixedBlockSize());
-    }
-    private float measuredOverrideW = Float.NaN, measuredOverrideH = Float.NaN;
-    private Viewport measuredViewport;
-    private FontResolver measuredFonts;
-    private IntrinsicSizeResolver measuredIntrinsics;
-    private int measuredEpoch;
-    private long measuredRun = -1;
-    /** measure を終えたときの自分の寸法。親が後から書き換えた（stretch・表の行の高さ）なら使い回さない。 */
-    private float measuredW, measuredH, measuredMT, measuredMR, measuredMB, measuredML;
-    /** 測定を終えたときの自然な出力の全部（親が後から書き換える前）。 */
-    private BoxOutputs measuredOutputs;
-    /** measure を終えたときの中身の署名。 */
-    private ComputedStyle measuredStyle;
-    private ComputedStyle measuredPlaceholderStyle;
-    private String measuredText;
-    private int measuredContentHash;
-    private boolean measuredOutsideMarker, measuredRenderedLegend;
-    private boolean measuredContentAutoSkipped;
-    /**
-     * 表（か表の中の箱）として測ったことがあるか。表のエンジンは中の箱へ枠線の分担・縦の揃えを直接書き込むので、
-     * 一度でも表として測った箱は使い回さない。再スタイルが前回の木の算出スタイルをその場で書き換えるため、
-     * 今の display だけでは前回表だったかが分からない（クライアントの class 変更がこの経路を通る）。
-     */
-    private boolean everLaidOutAsTable;
-    private static final LayoutBox[] EMPTY_BOX_ARRAY = new LayoutBox[0];
-    private LayoutBox[] measuredChildren;
-    private boolean measuredFirstFlowChild;
-    private boolean measuredHadFloatChild;
-
-    /**
-     * 表を含む（自分か子孫が表の箱）か。表は measure の後に行の高さ・列幅を子へ書き戻し、2 回目のパスがそれを入力として
-     * 読み直すので、同じ run の中では表を含む部分木を使い回さない（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#SAME_PASS_REUSE}）。測り終えたときに決める。
-     */
-    private boolean measuredHasTable;
-
-
-    /** この箱の測定が、親の使える幅とビューポートの幅に依らない（前回の測定を記録した時点）。 */
-    private boolean measuredWidthFree;
-    /** この部分木が、箱の外の寸法（ビューポート／コンテナ単位・絶対配置）を読まない。幅に依らない測定の判定の材料。 */
-    private boolean measuredOutsideFree;
-
-
-    private boolean sameViewportForMeasure(Viewport vp) {
-        Viewport old = measuredViewport;
-        if (old == null) return false;
-        if (vp.equals(old)) return true;
-        return com.nishiyu.enderframelib.core.kernel.Shortcut.VIEWPORT_WIDTH_FREE_REUSE.on() && measuredOutsideFree && vp.rootH() == old.rootH()
-                && vp.devicePixelRatio() == old.devicePixelRatio();
-    }
-
-    /** この箱の測定が、親の整形コンテキストの shrink 指示（{@link FormattingContext#isShrink()}）に依らないか。 */
-    private boolean measuredShrinkIndependent;
-    private static boolean isFallbackReplacedForMinContent(LayoutBox c) {
-        String t = c.node.tag;
-        return ReplacedElements.isReplacedTag(t) || BoxMeasurer.isReplacedImage(t)
-                || "video".equals(t) || "iframe".equals(t);
-    }
-
-    /** 子の % パディング等で、仮測定で子を飛ばすと {@link #getMinContentWidth} の結果が変わり得るか。 */
-    private boolean measuredMinContentVar;
-
-    private boolean widthOnlyChange(ConstraintSpace space, LayoutContext ctx) {
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on() || !measuredWidthFree || measuredSpace == null || measuredViewport == null) return false;
-        Viewport vp = ctx.viewport(), old = measuredViewport;
-        return (measuredBlockPercentFree || Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize()))
-                && sameParentContext(space.parent(), measuredSpace.parent(), measuredShrinkIndependent)
-                && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
-    }
-
-
-    /** この使える幅以上なら測定の結果が同じ（無限大は当てはまらない）。測り終えたときに決める。 */
-    private float measuredFitNeed = Float.POSITIVE_INFINITY;
-    /** fit 判定時に箱自身の幅も不変か（shrink-to-fit・上書き幅・テキスト）。false なら fill 幅（再測定を省くときは幅だけ更新）。 */
-    private boolean measuredFitFixedW;
-    /** fill 幅で、幅以外の出力と子の幅が {@link #measuredFitNeed} 以上で不変であり、測定を省いて幅だけ更新できるか。 */
-    private boolean measuredFillFitReusable;
-
-    private boolean fitReuse(ConstraintSpace space, LayoutContext ctx) {
-        return measuredFitFixedW && matchesFitConstraint(space, ctx);
-    }
-
-    private boolean matchesFitConstraint(ConstraintSpace space, LayoutContext ctx) {
-        float need = measuredFitNeed;
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on() || need == Float.POSITIVE_INFINITY || measuredSpace == null || measuredViewport == null) return false;
-        if (!(space.availableInlineSize() >= need) || !(measuredSpace.availableInlineSize() >= need)) return false;
-        Viewport vp = ctx.viewport(), old = measuredViewport;
-        // 文字は整形した行の幅・高さだけが結果で、親の整形コンテキスト（shrink かどうか）や % の基準には依らない
-        boolean sameContext = node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
-                || ((measuredBlockPercentFree || Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize()))
-                        && sameParentContext(space.parent(), measuredSpace.parent(), measuredShrinkIndependent));
-        return sameContext && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
-    }
-
-    /**
-     * fill 幅のブロック（{@code width: auto}）で、内容が収まり切り子の幅も親の幅に依らないなら、
-     * {@link BoxMeasurer#measure} を省いて自然な出力を戻した上で自分の幅だけを新しい使える幅に更新する。
-     */
-    private boolean fillFitReuse(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        if (subgridDependent || !restoreOk || !measuredFillFitReusable || !Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) {
-            return false;
-        }
-        if (!measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx)) return false;
-        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || (com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.on() && !measuredHasTable))) return false;
-        if (measuredEpoch != MEASUREMENT_EPOCH.get() || floatSpace != null || collapsedBorders != null) return false;
-        if (ctx.fonts() != measuredFonts || ctx.intrinsicResolver() != measuredIntrinsics) return false;
-        if (!matchesFitConstraint(space, ctx)) return false;
-        restoreNaturalOutputs();
-        float newW = Math.max(0, space.availableInlineSize() - mL - mR);
-        if (newW != w) {
-            w = newW;
-            invalidateMinContentCache();
-            touchPaint();
-            placementValid = false;
-        }
-        measuredSpace = space;
-        measuredViewport = ctx.viewport();
-        measuredRun = ctx.layoutRun();
-        measuredW = w;
-        measuredOutputs = BoxOutputs.captureOrUpdate(measuredOutputs, this);
-        return true;
-    }
-
-    private float computeFitNeed() {
-        final float none = Float.POSITIVE_INFINITY;
-        measuredFitFixedW = false;
-        measuredFillFitReusable = false;
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.FIT_REUSE.on() || parent == null || !measuredOutsideFree || measuredHasTable) return none;
-        if (floatSpace != null || collapsedBorders != null
-                || isAbsolute || isFixed || isRenderedLegend || isOutsideMarker || display == null || display.isNone()) return none;
-        ComputedStyle ax = axisStyle();
-        StyleFacts f = ax.layoutFacts();
-        boolean textNode = node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT;
-        if (!Float.isNaN(overrideWidth)) {
-            // 幅は親が決めて渡した値（flex の伸縮・stretch）。中身はその幅で測るので、使える幅は余白・パディングの % と
-            // auto の余白にしか効かない。BFC を作れば中の float も外に出ない。文字は使える幅で整形した行を持つので当てはまらない
-            if (!textNode && !f.floating && f.edgesAvailableFree && (measuredFlowFloatFree || establishesBfc)) {
-                measuredFitFixedW = true;
-                return 0f;
-            }
-            return none;
-        }
-        if (!f.fitCandidate) return none;
-        if (textNode) {
-            // 折り返さずに 1 行に収まった文字は、使える幅がその行の幅以上なら同じ 1 行になる
-            List<ShapedLine> lines = shapedLines;
-            if (lines == null || lines.size() != 1 || hasActiveMaxWidth(ax)) return none;
-            measuredFitFixedW = true;
-            return w + mL + mR;
-        }
-        Display.Inner inner = display.inner();
-        if (inner != Display.Inner.FLOW && inner != Display.Inner.FLOW_ROOT && inner != Display.Inner.FLEX) return none;
-        // 内容の幅が使える幅で切られていない（切られていれば w + 余白が使える幅ちょうどになる）ことは、
-        // 呼び出し側の「前回の使える幅 >= need」の判定で確かめる。shrink-to-fit では自分の BFC・ブロック流れの中に
-        // 閉じた float も親の幅に依らない（floatSpace == null）。fill 幅は幅変化で float 位置が変わるため従来通り除外する
-        if (measuredClamped || renderedLegend() != null || MulticolLayout.isMulticol(this)
-                || effectiveContainsInlineSize() || childFitBlocked) {
-            return none;
-        }
-        for (int i = 0, n = children.size(); i < n; i++) {
-            LayoutBox c = children.get(i);
-            if (c.style.facts().displayNone) continue;
-            if (c.isOutsideMarker || c.isAbsolute) return none;
-        }
-        if (sizingMode == SizingMode.SHRINK_TO_FIT) {
-            // min/max-width で切り詰めた w ではなく、切り詰め前の内容の幅と実際の外幅の大きい方が、使える幅に届くかの境目
-            if (Float.isNaN(naturalInlineSize)) return none;
-            measuredFitFixedW = true;
-            return Math.max(Math.max(w, naturalInlineSize) + mL + mR, childFitNeedMax + horizontalDecoration() + mL + mR);
-        }
-        if (f.floating || !measuredFlowFloatFree) return none;
-        for (int i = 0, n = children.size(); i < n; i++) {
-            LayoutBox c = children.get(i);
-            if (c.style.facts().displayNone) continue;
-            if (BlockLayoutEngine.isFloating(c)) return none;
-        }
-        if (sizingMode != SizingMode.DEFINITE || isFillWidthExcludedTag(node.tag) || Float.isNaN(naturalFitInnerWidth)) {
-            return none;
-        }
-        if (hasActiveMaxWidth(ax) || hasNonZeroMinWidth(ax) || ax.containsKey(CssPropertyIndex.ASPECT_RATIO)) {
-            return none;
-        }
-        float innerNeed = Math.max(naturalFitInnerWidth, childFitNeedMax);
-        float need = innerNeed + horizontalDecoration() + mL + mR + (innerNeed > 0 ? 0.02f : 0f);
-        measuredFillFitReusable = Float.isNaN(overrideHeight) && allChildrenWidthInvariantForFill(inner);
-        return need;
-    }
-
-    private boolean allChildrenWidthInvariantForFill(Display.Inner inner) {
-        if (inner == Display.Inner.FLEX) return true; // FlexLayoutEngine が grow=0・wrap なし・auto 余白なしの行方向だけ naturalFitInnerWidth を入れる
-        for (int i = 0, n = children.size(); i < n; i++) {
-            LayoutBox c = children.get(i);
-            if (c.style.facts().displayNone) continue;
-            if (!(c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
-                    || (c.measuredWidthFree && com.nishiyu.enderframelib.core.kernel.Shortcut.WIDTH_INDEPENDENT_REUSE.on()) || c.sizingMode == SizingMode.SHRINK_TO_FIT)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean hasActiveMaxWidth(ComputedStyle s) {
-        if (!s.containsKey(CssPropertyIndex.MAX_WIDTH)) return false;
-        String v = s.get(CssPropertyIndex.MAX_WIDTH);
-        return v != null && !"none".equalsIgnoreCase(v.trim());
-    }
-
-    private static boolean hasNonZeroMinWidth(ComputedStyle s) {
-        if (!s.containsKey(CssPropertyIndex.MIN_WIDTH)) return false;
-        String v = s.get(CssPropertyIndex.MIN_WIDTH);
-        if (v == null) return false;
-        String t = v.trim();
-        return !t.equalsIgnoreCase("auto") && !t.equals("0") && !t.equals("0px");
-    }
-
-    private static boolean isFillWidthExcludedTag(String tag) {
-        return tag == null || tag.equals("img") || tag.equals("svg") || tag.equals("canvas")
-                || tag.equals("input") || tag.equals("select") || tag.equals("progress")
-                || ReplacedElements.isHostImageLike(tag) || ReplacedElements.isHostScene(tag);
-    }
-
-    private void recordWidthIndependence() {
-        StyleFacts f = axisStyle().layoutFacts();
-        // 画像の候補選び（srcset / sizes）はビューポートの幅を読む
-        boolean outside = !isAbsolute && !f.usesViewportUnits && !(node != null && ("img".equals(node.tag) || "picture".equals(node.tag)));
-        for (int i = 0, n = children.size(); outside && i < n; i++) {
-            LayoutBox c = children.get(i);
-            outside = c.style.facts().displayNone || c.measuredOutsideFree;
-        }
-        measuredOutsideFree = outside;
-        boolean free = outside && f.horizontalFixed && !isFixed && node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
-                && !measuredHasTable && !isTableBox(this)
-                && (!display.isInlineLevel() || BlockLayoutEngine.isAtomicInline(this));
-        measuredWidthFree = free;
-    }
-
-    private boolean computeShrinkIndependent(FormattingContext parentFmt) {
-        if (node == null || display == null) return false;
-        StyleFacts f = axisStyle().layoutFacts();
-        if (!Float.isNaN(overrideWidth)) return true;
-        if (f.widthPercent) return false;
-        if (!f.widthAuto || f.hasIntrinsicWidth()) return true;
-        if (isAbsolute || isRenderedLegend || isHorizontalReturnRoot || isVerticalRoot
-                || BlockLayoutEngine.isFloating(this) || display.isInlineLevel() || display.inner() == Display.Inner.TABLE) {
-            return true;
-        }
-        if (parentFmt.isFlexRow()) return true;
-        String tag = node.tag;
-        return node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
-                || BoxMeasurer.isReplacedImage(tag) || ReplacedElements.isHostScene(tag)
-                || "input".equals(tag) || "select".equals(tag) || "progress".equals(tag);
-    }
-
-    private boolean sameConstraintForReuse(ConstraintSpace a, ConstraintSpace b) {
-        if (b == null) return false;
-        if (a.equals(b)) return true;
-        if (!sameFixedSizes(a, b)) return false;
-        if (Float.floatToIntBits(a.availableInlineSize()) != Float.floatToIntBits(b.availableInlineSize())) return false;
-        if (!sameParentContext(a.parent(), b.parent(), measuredShrinkIndependent)) return false;
-        return measuredBlockPercentFree
-                || Float.floatToIntBits(a.percentageBlockSize()) == Float.floatToIntBits(b.percentageBlockSize());
-    }
-
-    private boolean hasUnmeasuredSubtreeChange(LayoutContext ctx) {
-        return subtreeChanged && measuredRun != ctx.layoutRun();
+        return measureMemo.measuredWithoutFixedHeight();
     }
 
     boolean canPreserveMeasurementForEmptyFloatFlow(ConstraintSpace space, LayoutContext ctx) {
-        if (subgridDependent || !measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx)
-                || measuredSpace == null || measuredHasTable || contentAutoSkipped
-                || measuredEpoch != MEASUREMENT_EPOCH.get()
-                || !Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)
-                || !Float.isNaN(measuredOverrideW) || !Float.isNaN(measuredOverrideH)) {
-            return false;
-        }
-        float avail = space.availableInlineSize();
-        float prevAvail = measuredSpace.availableInlineSize();
-        boolean sameWidth = Float.floatToIntBits(avail) == Float.floatToIntBits(prevAvail)
-                || (measuredFitFixedW && measuredFitNeed != Float.POSITIVE_INFINITY
-                        && avail >= measuredFitNeed && prevAvail >= measuredFitNeed);
-        return sameWidth
-                && (measuredBlockPercentFree
-                        || Float.floatToIntBits(measuredSpace.percentageBlockSize()) == Float.floatToIntBits(space.percentageBlockSize()))
-                && sameViewportForMeasure(ctx.viewport())
-                && ctx.fonts() == measuredFonts
-                && ctx.intrinsicResolver() == measuredIntrinsics;
+        return measureMemo.canPreserveForEmptyFloatFlow(this, space, ctx);
     }
 
     boolean outputsMatchRecordedMeasurement() {
-        BoxOutputs o = measuredOutputs;
-        return measurementValid && w == measuredW && h == measuredH
-                && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML
-                && (o == null || contentBlockExtent == o.contentBlockExtent);
+        return measureMemo.outputsMatchRecorded(this);
     }
 
-    private boolean canReuseMeasurement(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        return !subgridDependent
-                && measurementValid
-                && !layoutChanged
-                && (ctx.firstPass() || measuredRun != ctx.layoutRun() || (com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.on() && !measuredHasTable))
-                && measuredEpoch == MEASUREMENT_EPOCH.get()
-                && floatSpace == null
-                && collapsedBorders == null
-                && ((sameConstraintForReuse(space, measuredSpace) && sameViewportForMeasure(ctx.viewport()))
-                        || widthOnlyChange(space, ctx) || fitReuse(space, ctx))
-                && sameLength(overrideWidth, measuredOverrideW)
-                && sameLength(overrideHeight, measuredOverrideH)
-                && contentAutoSkipped == measuredContentAutoSkipped
-                && ctx.fonts() == measuredFonts
-                && ctx.intrinsicResolver() == measuredIntrinsics
-                && (restoreOk || (w == measuredW && h == measuredH
-                        && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML));
-    }
-
-    /** 測定を使い回すとき、親が書き換えた出力（stretch の高さ・auto/相殺の余白など）を、測定したときの自然な結果へ戻す。 */
-    private void restoreNaturalOutputs() {
-        BoxOutputs natural = measuredOutputs;
-        if (natural == null) return;
-        if (w == measuredW && h == measuredH && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML
-                && contentBlockExtent == natural.contentBlockExtent) {
-            return;
-        }
-        natural.apply(this);
-        invalidateMinContentCache();
-        touchPaint();
-    }
-
-    private static boolean sameLength(float a, float b) {
-        return Float.isNaN(a) ? Float.isNaN(b) : a == b;
-    }
-
-    /**
-     * measure を通らずに箱の中身を組み直した（{@link BoxMeasurer#resolveFlexibleHeights}）。この箱と祖先の
-     * 前回の measure の結果は使わせない。
-     */
     void invalidateMeasurement() {
-        touchPaint();
-        for (LayoutBox b = this; b != null; b = b.parent) {
-            b.measurementValid = false;
-            b.placementValid = false;
-        }
+        MeasureMemo.invalidate(this);
     }
 
-    /** 記録済みの子の並び（配列）が、今の子と同じ箱を同じ順に並べているか（同じなら配列を作り直さない）。 */
-    private boolean sameChildren(LayoutBox[] recorded) {
-        if (recorded == null || recorded.length != children.size()) return false;
-        for (int i = 0; i < recorded.length; i++) if (recorded[i] != children.get(i)) return false;
-        return true;
-    }
-
-    private void recordMeasurement(ConstraintSpace space, LayoutContext ctx) {
-        // 再レイアウト境界が中身だけを測り直し、外から見える寸法が前回と同じなら、祖先の測定は無効にならない
-        boolean outerSizeStable = measuredStyle != null && w == measuredW && h == measuredH
-                && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML;
-        measuredBlockPercentFree = computeBlockPercentFree();
-        measuredSpace = space;
-        measuredOverrideW = overrideWidth;
-        measuredOverrideH = overrideHeight;
-        measuredViewport = ctx.viewport();
-        measuredFonts = ctx.fonts();
-        measuredIntrinsics = ctx.intrinsicResolver();
-        measuredEpoch = MEASUREMENT_EPOCH.get();
-        measuredRun = ctx.layoutRun();
-        measuredOutputs = BoxOutputs.captureOrUpdate(measuredOutputs, this);
-        measuredW = w;
-        measuredH = h;
-        measuredMT = mT;
-        measuredMR = mR;
-        measuredMB = mB;
-        measuredML = mL;
-        measuredStyle = style;
-        measuredPlaceholderStyle = placeholderStyle;
-        measuredText = displayText;
-        measuredContentHash = contentHash();
-        measuredOutsideMarker = isOutsideMarker;
-        measuredRenderedLegend = isRenderedLegend;
-        measuredContentAutoSkipped = contentAutoSkipped;
-        everLaidOutAsTable |= isTableBox(this) || collapsedBorders != null;
-        measuredChildren = sameChildren(measuredChildren) ? measuredChildren
-                : children.isEmpty() ? EMPTY_BOX_ARRAY : children.toArray(EMPTY_BOX_ARRAY);
-        measuredFirstFlowChild = BlockLayoutEngine.isFirstFlowChild(this);
-        measuredHadFloatChild = hasFloatingChild();
-        boolean floatFree = true;
-        for (int i = 0, n = children.size(); i < n && floatFree; i++) {
-            LayoutBox c = children.get(i);
-            floatFree = !BlockLayoutEngine.isFloating(c) && !BlockLayoutEngine.containsFloats(c);
-        }
-        measuredFlowFloatFree = floatFree;
-        layoutChanged = false;
-        boolean hasTable = everLaidOutAsTable || isTableBox(this) || collapsedBorders != null;
-        boolean minContentVar = false;
-        for (int i = 0, n = children.size(); i < n; i++) {
-            LayoutBox c = children.get(i);
-            if (!hasTable && c.measuredHasTable) hasTable = true;
-            if (!minContentVar && (c.participatesInFlow() || c.isRenderedLegend)) {
-                minContentVar = c.measuredMinContentVar
-                        || c.axisStyle().layoutFacts().percentGeometry
-                        || (c.children.isEmpty() && isFallbackReplacedForMinContent(c));
-            }
-        }
-        measuredHasTable = hasTable;
-        measuredMinContentVar = minContentVar;
-        recordWidthIndependence();
-        measuredShrinkIndependent = computeShrinkIndependent(space.parent());
-        measuredFitNeed = computeFitNeed();
-        if (com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.on() && parentUsesTentatives() && floatSpace == null && collapsedBorders == null) {
-            boolean tentativePhase = Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight);
-            if (tentativePhase || isDefiniteCacheableLeaf()) {
-                TentativeKind kind = tentativePhase ? TentativeKind.TENTATIVE : TentativeKind.DEFINITE;
-                boolean fillFit = tentativePhase && measuredFillFitReusable;
-                float tentFitNeed = tentativePhase
-                        ? ((measuredFitFixedW || fillFit) ? measuredFitNeed : Float.POSITIVE_INFINITY)
-                        : (!Float.isNaN(overrideWidth) && !axisStyle().layoutFacts().edgesAvailableFree
-                                ? Float.POSITIVE_INFINITY : measuredFitNeed);
-                Tentative slot = obtainTentativeSlot(kind, space, tentativePhase ? MAX_TENTATIVES : MAX_DEFINITE_TENTATIVES);
-                slot.set(kind, space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(),
-                        measuredEpoch, this, measuredBlockPercentFree, measuredShrinkIndependent,
-                        measuredOutsideFree, measuredWidthFree, tentFitNeed, fillFit, overrideWidth, overrideHeight);
-            }
-        }
-        measurementValid = true;
-        // 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。
-        // いま祖先が測っている途中なら、祖先は測り終えたときに記録し直す
-        boolean absorbed = outerSizeStable && (isRelayoutBoundary() || isCutoffEligible());
-        if (DESCENT.get()[0] > 0) invalidateParentOnly(!absorbed);
-        else invalidateAncestors(!(outerSizeStable && isRelayoutBoundary()));
-    }
-
-    /** 子を持たない要素だけ、BoxOutputs が測定状態のすべてなので確定測定を別枠で使い回せる。 */
-    private boolean isDefiniteCacheableLeaf() {
-        return com.nishiyu.enderframelib.core.kernel.Shortcut.DEFINITE_LEAF_REUSE.on() && children.isEmpty()
-                && node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
-                && floatSpace == null && collapsedBorders == null && !measuredHasTable
-                && !isTableBox(this) && renderedLegend() == null;
-    }
-
-    private Tentative obtainTentativeSlot(TentativeKind kind, ConstraintSpace space, int maxForKind) {
-        if (tentatives == null) {
-            tentatives = new Tentative[MAX_TENTATIVES];
-            return tentatives[0] = new Tentative();
-        }
-        int firstNull = -1, countForKind = 0, oldestOfKind = -1;
-        for (int i = 0; i < tentatives.length; i++) {
-            Tentative old = tentatives[i];
-            if (old == null) {
-                if (firstNull < 0) firstNull = i;
-                continue;
-            }
-            if (old.kind() == kind) {
-                if (old.matches(space)) {
-                    return old;
-                }
-                if (oldestOfKind < 0) oldestOfKind = i;
-                countForKind++;
-            }
-        }
-        if (countForKind < maxForKind) {
-            if (firstNull >= 0) {
-                return tentatives[firstNull] = new Tentative();
-            }
-            int nextLen = Math.min(MAX_TOTAL_TENTATIVES, tentatives.length + 2);
-            tentatives = java.util.Arrays.copyOf(tentatives, nextLen);
-            return tentatives[tentatives.length - 2] = new Tentative();
-        }
-        // この種類の枠がいっぱい: この種類で一番古いものを落とし、他種類の後ろを詰めて末尾へ置く
-        Tentative recycled = tentatives[oldestOfKind];
-        int lastNonNull = oldestOfKind;
-        for (int i = oldestOfKind + 1; i < tentatives.length && tentatives[i] != null; i++) {
-            tentatives[i - 1] = tentatives[i];
-            lastNonNull = i;
-        }
-        tentatives[lastNonNull] = recycled;
-        return recycled;
-    }
-
-    /**
-     * 仮の測定が {@link #measuredSpace} を上書きしたあとでも、確定測定の別枠（{@link TentativeKind#DEFINITE}）に
-     * 同じ制約の記録があり部分木を持たない葉なら、再測定を省いて確定結果を戻す。
-     */
-    private boolean reuseDefiniteTentative(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        if (subgridDependent || !com.nishiyu.enderframelib.core.kernel.Shortcut.TENTATIVE_REUSE.on() || tentatives == null || (Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight))) {
-            return false;
-        }
-        if (!measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx) || !isDefiniteCacheableLeaf()) return false;
-        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || com.nishiyu.enderframelib.core.kernel.Shortcut.SAME_PASS_REUSE.on())) return false;
-        int epoch = MEASUREMENT_EPOCH.get();
-        if (measuredEpoch != epoch) return false;
-        Tentative match = null;
-        for (Tentative t : tentatives) {
-            if (t == null || t.kind() != TentativeKind.DEFINITE) continue;
-            if (t.epoch() == epoch && t.fonts() == ctx.fonts() && t.intrinsics() == ctx.intrinsicResolver()
-                    && sameLength(t.overrideW(), overrideWidth) && sameLength(t.overrideH(), overrideHeight)
-                    && t.matches(space) && t.sameViewport(ctx.viewport())) {
-                match = t;
-                break;
-            }
-        }
-        if (match == null) return false;
-        BoxOutputs o = match.outputs();
-        boolean outputsDiffer = w != o.w || h != o.h || mT != o.mT || mR != o.mR || mB != o.mB || mL != o.mL
-                || contentBlockExtent != o.contentBlockExtent;
-        if (!restoreOk && outputsDiffer) return false;
-        if (restoreOk && outputsDiffer) {
-            o.apply(this);
-            invalidateMinContentCache();
-            touchPaint();
-        }
-        measuredBlockPercentFree = match.percentFree();
-        measuredOutsideFree = match.outsideFree();
-        measuredWidthFree = match.widthFree();
-        measuredSpace = space;
-        measuredOverrideW = overrideWidth;
-        measuredOverrideH = overrideHeight;
-        measuredViewport = ctx.viewport();
-        measuredFonts = match.fonts();
-        measuredIntrinsics = match.intrinsics();
-        measuredEpoch = epoch;
-        measuredRun = ctx.layoutRun();
-        // 記録（Tentative.outputs）と同じ実体を持たない: 以降の captureOrUpdate がその場で書き換えて記録を壊す
-        measuredOutputs = BoxOutputs.captureOrUpdate(measuredOutputs, this);
-        measuredW = w;
-        measuredH = h;
-        measuredMT = mT;
-        measuredMR = mR;
-        measuredMB = mB;
-        measuredML = mL;
-        measuredFitNeed = match.fitNeed();
-        measuredFitFixedW = !Float.isNaN(overrideWidth) && measuredFitNeed != Float.POSITIVE_INFINITY;
-        measuredFillFitReusable = false;
-        measuredClamped = false;
-        childFitBlocked = false;
-        childFitNeedMax = 0;
-        return true;
-    }
-
-    /**
-     * 変化を子から親へ 1 段ずつ伝える下降（{@link #remeasureChanged}）の中で測り直したとき。配置の記録は祖先の全てで捨てるが、
-     * 測定が当てはまらなくなるのは外寸が変わったときの直接の親だけ。親は下降の呼び出し元として、戻ってから自分の測定が
-     * 無効になっていれば測り直し、その結果でさらに上へ伝える。
-     */
-    private void invalidateParentOnly(boolean measureAffected) {
-        for (LayoutBox p = parent; p != null; p = p.parent) p.placementValid = false;
-        if (measureAffected && parent != null) parent.measurementValid = false;
-    }
-
-    private void markVisibilityChangedForStabilize() {
-        this.measurementValid = false;
-        this.layoutChanged = true;
-        this.subtreeChanged = true;
-        invalidateMinContentCache();
-        for (LayoutBox p = parent; p != null; p = p.parent) {
-            p.subtreeChanged = true;
-            p.invalidateMinContentCache();
-        }
-        invalidateAncestors(true);
-    }
-
-    /**
-     * 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。ただし再レイアウト境界から上は、
-     * 境界の寸法が変わらないので測定は有効なまま（配置の記録だけは全ての祖先で捨てる）。
-     */
-    private void invalidateAncestors(boolean measureAffected) {
-        boolean measureStillValid = measureAffected;
-        for (LayoutBox p = parent; p != null; p = p.parent) {
-            p.placementValid = false;
-            if (measureStillValid) {
-                p.measurementValid = false;
-                if (p.isRelayoutBoundary()) measureStillValid = false;
-            }
-        }
-    }
-
-    /**
-     * measure が読む、スタイルと子の箱以外の中身（属性・フォーム部品の中身）。
-     * style / class はカスケードを通して算出スタイルに出るので数えない（描画だけの変化で測り直さないため）。
-     */
-    /** 属性（style / class を除く）のハッシュ。属性の版番号が同じ間は使い回す。 */
-    private int attrHash;
-    private int attrHashVersion = -1;
-    private HtmlNode attrHashNode;
-
-    private int contentHash() {
-        if (node == null) return 0;
-        int version = node.attrVersion();
-        if (attrHashVersion != version || attrHashNode != node) {
-            int hash = 1;
-            for (java.util.Map.Entry<String, String> attr : node.attrs.entrySet()) {
-                String key = attr.getKey();
-                if ("style".equals(key) || "class".equals(key)) continue;
-                hash = 31 * hash + key.hashCode();
-                hash = 31 * hash + java.util.Objects.hashCode(attr.getValue());
-            }
-            attrHash = hash;
-            attrHashVersion = version;
-            attrHashNode = node;
-        }
-        int hash = attrHash;
-        // 文字を子の箱に持たないフォーム部品は、DOM の中身から測る
-        String tag = node.tag;
-        if ("textarea".equals(tag) || "select".equals(tag) || "option".equals(tag)) {
-            hash = 31 * hash + node.getTextContent().hashCode();
-        }
-        return hash;
-    }
-
-    /**
-     * layout（位置決め）の前に、前回の layout が残した配置の結果を新しく作った箱と同じ状態に戻す。
-     * layout がたどらない箱（行に入らなくなった箱・インラインの中のブロックなど）には前回の位置・行の断片・
-     * スクロール範囲が残り、描画がそれを読んでしまう（新しく作った箱なら初期値）。measure はこれらを読まないので、
-     * 差分レイアウトが使い回す measure の結果には影響しない。
-     */
+    /** 位置決め（layout）の前に、前回の配置の結果を初期化する。実装は {@link PlacementMemo}。 */
     public static void resetPlacements(LayoutBox box) {
-        resetPlacements(box, -1);
+        PlacementMemo.resetPlacements(box, -1);
     }
 
-    /**
-     * @param keepRun 0 以上なら、この run で測り直されていない純粋な箱は配置を残す（{@link #layout} が原点を比べて、
-     *                同じなら飛ばし、違えば自分で捨ててから置き直す）。負なら全てを捨てる
-     */
     public static void resetPlacements(LayoutBox box, long keepRun) {
-        if (keepRun >= 0 && box.canKeepPlacement(keepRun)) return;
-        // 配置を捨てた箱は、前回の layout の記録も無効にする（子を飛ばして古い 0,0 のまま残さない）。keepRun >= 0 でも、
-        // ここで使い回せなかった箱は位置を 0 にするので、自分の配置は使い回させない（placementValid）。残すと、後の layout が
-        // 同じ原点と見て配置を飛ばし、位置が 0 のまま残る（その間に兄弟の float が消えるなどで使い回しの条件が揃うと起きる。§6-118）。
-        // 原点の記録（lastLayoutX）は消さない: 消すと自分の原点が変わったと見て子の配置を全部捨て、子の使い回しまで失う
-        box.touchPaint();
-        box.placementValid = false;
-        if (keepRun < 0) {
-            box.placementPure = false;
-            box.keptPure = false;
-            box.lastLayoutX = Float.NaN;
-        }
-        box.discardFragments();
-        box.fragmentsStale = false;
-        box.fragmentCursor = 0;
-        box.x = 0;
-        box.y = 0;
-        box.staticX = Float.NaN;
-        box.staticY = Float.NaN;
-        box.staticAreaW = Float.NaN;
-        box.staticAreaH = Float.NaN;
-        box.scrollWidth = 0;
-        box.scrollHeight = 0;
-        box.descendantOverflowRight = 0;
-        box.descendantOverflowBottom = 0;
-        box.inlineContentBottom = Float.NEGATIVE_INFINITY;
-        if (box.engineState instanceof VirtualFlowState vf && vf.canResetSparse()) {
-            vf.resetPlacedChildren(keepRun, false, false, null);
-            return;
-        }
-        List<LayoutBox> kids = box.children;
-        int n = kids.size();
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
-            int grain = LayoutTaskPool.grainFor(n, 8);
-            LayoutTaskPool.forRange(n, grain, null, i -> resetPlacements(kids.get(i), keepRun));
-            return;
-        }
-        for (int i = 0; i < n; i++) resetPlacements(kids.get(i), keepRun);
+        PlacementMemo.resetPlacements(box, keepRun);
     }
 
-    private static void resetChildrenPlacements(List<LayoutBox> kids) {
-        int n = kids.size();
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
-            int grain = LayoutTaskPool.grainFor(n, 8);
-            LayoutTaskPool.forRange(n, grain, null, i -> resetPlacements(kids.get(i), -1));
-            return;
-        }
-        for (int i = 0; i < n; i++) resetPlacements(kids.get(i), -1);
-    }
-
-    /** {@link #resetPlacementsFast} 等から仮想フローの範囲だけを O(K) でリセットする補助。 */
-    static void resetPlacementChildFast(LayoutBox child, long keepRun, boolean nextOffset, boolean nextBfcFloat,
-                                        List<LayoutBox> staleFrags) {
-        if (staleFrags == null) resetPlacements(child, keepRun);
-        else resetPlacementsFast(child, keepRun, nextOffset, nextBfcFloat, staleFrags);
-    }
-
-    /**
-     * {@link #resetPlacements(LayoutBox, long)} の高速版。
-     * 祖先から float / 相対配置の障害を O(1) で伝播し、断片の {@link #discardFragments()} は
-     * 今回の layout が触れなかった箱だけへ遅延する（全箱の出し入れを省く）。
-     */
     public static void resetPlacementsFast(LayoutBox box, long keepRun, List<LayoutBox> staleFrags) {
-        resetPlacementsFast(box, keepRun, false, false, staleFrags);
+        PlacementMemo.resetPlacementsFast(box, keepRun, staleFrags);
     }
 
-    private static void resetPlacementsFast(LayoutBox box, long keepRun,
-                                            boolean ancestorOffset, boolean inBfcFloat,
-                                            List<LayoutBox> staleFrags) {
-        if (keepRun >= 0 && box.canKeepPlacement(keepRun, ancestorOffset || inBfcFloat)) return;
-        box.touchPaint();
-        box.placementValid = false; // 位置を 0 にするので、自分の配置は使い回させない（resetPlacements と同じ。§6-118）
-        if (keepRun < 0) {
-            box.placementPure = false;
-            box.keptPure = false;
-            box.lastLayoutX = Float.NaN;
-        }
-        if (!box.inlineFragments.isEmpty()) {
-            box.fragmentsStale = true;
-            staleFrags.add(box);
-        }
-        box.fragmentCursor = 0;
-        box.x = 0;
-        box.y = 0;
-        box.staticX = Float.NaN;
-        box.staticY = Float.NaN;
-        box.staticAreaW = Float.NaN;
-        box.staticAreaH = Float.NaN;
-        box.scrollWidth = 0;
-        box.scrollHeight = 0;
-        box.descendantOverflowRight = 0;
-        box.descendantOverflowBottom = 0;
-        box.inlineContentBottom = Float.NEGATIVE_INFINITY;
-        List<LayoutBox> kids = box.children;
-        int n = kids.size();
-        if (n == 0) return;
-        boolean nextOffset = ancestorOffset || box.isRelative || box.isSticky;
-        boolean nextBfcFloat = box.establishesBfc ? box.hasFloatChild : (inBfcFloat || box.hasFloatChild);
-        if (box.engineState instanceof VirtualFlowState vf && vf.canResetSparse()) {
-            vf.resetPlacedChildren(keepRun, nextOffset, nextBfcFloat, staleFrags);
-            return;
-        }
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
-            int chunks = LayoutTaskPool.chunksFor(n, 16);
-            @SuppressWarnings("unchecked")
-            List<LayoutBox>[] perChunk = new List[chunks];
-            LayoutTaskPool.forChunks(n, chunks, null, span -> {
-                int c = LayoutTaskPool.spanChunk(span);
-                int start = LayoutTaskPool.spanStart(span);
-                int end = LayoutTaskPool.spanEnd(span);
-                List<LayoutBox> local = new java.util.ArrayList<>();
-                for (int i = start; i < end; i++) {
-                    resetPlacementsFast(kids.get(i), keepRun, nextOffset, nextBfcFloat, local);
-                }
-                if (!local.isEmpty()) perChunk[c] = local;
-            });
-            for (int c = 0; c < chunks; c++) {
-                if (perChunk[c] != null) staleFrags.addAll(perChunk[c]);
-            }
-            return;
-        }
-        for (int i = 0; i < n; i++) {
-            resetPlacementsFast(kids.get(i), keepRun, nextOffset, nextBfcFloat, staleFrags);
-        }
-    }
-
-    /** {@link #resetPlacementsFast} で遅延印を付けたうち、今回の layout が再構築しなかった断片だけを捨てる。 */
     public static void finishResetPlacements(List<LayoutBox> staleFrags) {
-        for (int i = 0, n = staleFrags.size(); i < n; i++) {
-            LayoutBox b = staleFrags.get(i);
-            if (b.fragmentsStale) {
-                b.discardFragments();
-                b.fragmentsStale = false;
-            }
-        }
-        staleFrags.clear();
+        PlacementMemo.finishResetPlacements(staleFrags);
     }
 
     /**
@@ -2441,7 +1084,7 @@ public class LayoutBox {
 
     public boolean isInTableScope() {
         for (LayoutBox cur = this; cur != null; cur = cur.parent) {
-            if (isTableBox(cur) || cur.everLaidOutAsTable) return true;
+            if (isTableBox(cur) || cur.measureMemo.everLaidOutAsTable()) return true;
         }
         return false;
     }
@@ -2455,7 +1098,7 @@ public class LayoutBox {
                 && !isInternalTableBox(box)) {
             out.putIfAbsent(box.node, box);
         }
-        return table || box.everLaidOutAsTable;
+        return table || box.measureMemo.everLaidOutAsTable();
     }
 
     private static void collectReusableBoxes(LayoutBox box, ReusableTable out) {
@@ -2463,7 +1106,7 @@ public class LayoutBox {
         boolean table = isTableBox(box);
         if (isInternalTableBox(box)) return;
         out.putIfAbsent(box.node, box);
-        if (table || box.everLaidOutAsTable) return;
+        if (table || box.measureMemo.everLaidOutAsTable()) return;
         List<LayoutBox> kids = box.elementChildren;
         for (int i = 0, n = kids.size(); i < n; i++) collectReusableBoxes(kids.get(i), out);
     }
@@ -2489,13 +1132,13 @@ public class LayoutBox {
         boolean table = isTableBox(box);
         if (table && box.display.inner() != Display.Inner.TABLE) return;
         out.putIfAbsent(box.node, box);
-        if (table || box.everLaidOutAsTable) return;
+        if (table || box.measureMemo.everLaidOutAsTable()) return;
         for (LayoutBox child : box.elementChildren) collectReusableBoxes(child, out);
     }
 
     /** 前回か今、表のエンジンの書き込みを受けた（受けうる）箱か。匿名の箱や差分レイアウトで使い回すかどうかの判断に使う。 */
     public boolean touchedByTableEngine() {
-        return isTableBox(this) || everLaidOutAsTable || collapsedBorders != null;
+        return isTableBox(this) || measureMemo.everLaidOutAsTable() || collapsedBorders != null;
     }
 
     /** {@code ::first-line} の所有者（インライン以外のブロックコンテナ等）になれる箱か。 */
@@ -2521,7 +1164,7 @@ public class LayoutBox {
      */
     public void resetEngineOutputs() {
         collapsedBorders = null;
-        if (isTableBox(this) || !everLaidOutAsTable) return;
+        if (isTableBox(this) || !measureMemo.everLaidOutAsTable()) return;
         engineState = null;
         contentOffsetY = 0;
     }
@@ -2532,274 +1175,42 @@ public class LayoutBox {
                 || box.display.inner() == Display.Inner.TABLE_CAPTION;
     }
 
-    /** 描画だけに効くプロパティ（色など）以外が変わったか。片方だけ null なら変わった。 */
-    private static boolean affectsLayout(ComputedStyle before, ComputedStyle after) {
-        return com.nishiyu.enderframelib.core.css.StyleResolver.isLayoutAffectingChange(before, after);
-    }
-
-    /** 測ったときから、子の並び以外の中身（署名）が変わったか。一度も測っていない箱は変わったとみなす。 */
-    private boolean selfSignatureChanged() {
-        if (measuredStyle == null) return true;
-        if (style != measuredStyle && affectsLayout(measuredStyle, style)) return true;
-        if (placeholderStyle != measuredPlaceholderStyle
-                && affectsLayout(measuredPlaceholderStyle, placeholderStyle)) return true;
-        if (!java.util.Objects.equals(displayText, measuredText)) return true;
-        if (isOutsideMarker != measuredOutsideMarker || isRenderedLegend != measuredRenderedLegend) return true;
-        return contentHash() != measuredContentHash;
-    }
-
-    /** 測ったときから、子の箱の並び（増減・入れ替え）が変わったか。 */
-    private boolean childListChanged() {
-        if (measuredChildren == null || measuredChildren.length != children.size()) return true;
-        for (int i = 0; i < measuredChildren.length; i++) {
-            if (measuredChildren[i] != children.get(i)) return true;
-        }
-        return false;
-    }
-
-    private boolean hasFloatingChild() {
-        List<LayoutBox> ch = children;
-        for (int i = 0, n = ch.size(); i < n; i++) {
-            if (ch.get(i).style.facts().floating) return true;
-        }
-        return false;
-    }
-
-    /** 測ったときと、親の最初のフローの子であるかどうかが違うか（親との相殺に効く）。 */
-    private boolean firstFlowStatusChanged() {
-        return BlockLayoutEngine.isFirstFlowChild(this) != measuredFirstFlowChild;
-    }
-
     /**
      * 箱の木を組み直した後、measure の前に呼ぶ。前回の measure から中身が変わった箱と、その祖先に印を付ける。
-     * 中身の変わった箱の子にも印を付ける（子の measure は親の display・揃え・兄弟の並びを読むため）。
      *
      * @return この部分木のどこかが変わったか
      */
     public static boolean markLayoutChanges(LayoutBox root) {
-        return markLayoutChanges(root, false);
+        return MeasureChanges.markLayoutChanges(root);
     }
 
     /**
-     * 親の署名が変わったときだけ、全ての子に印を付ける。子の並びだけが変わったとき（行の追加・削除）は、
-     * 兄弟の並びを読む子（親の最初のフローの子かどうか）と、float が関わるとき（行が float を避けるため）だけ。
-     * 他の子の measure は、制約（幅・パーセントの基準・親の整形コンテキスト）が同じなら前回と同じ。
-     */
-    private static boolean markLayoutChanges(LayoutBox box, boolean forcedByParent) {
-        if (forcedByParent && box.children.isEmpty() && !box.isRelayoutBoundary()) {
-            box.layoutChanged = true;
-            box.subtreeChanged = true;
-            box.invalidateMinContentCache();
-            return true;
-        }
-        boolean selfChanged = box.selfSignatureChanged();
-        boolean listChanged = box.childListChanged();
-        // 子の並びの変化を兄弟に伝えなくてよいのは、子をブロックフローで並べる親だけ。flex / grid / 表は
-        // 兄弟の数と大きさで子の寸法を決める（伸縮・stretch・列幅）ので、従来どおり全ての子を測り直す
-        boolean blockFlow = box.display != null && !isTableBox(box)
-                && (box.display.inner() == Display.Inner.FLOW || box.display.inner() == Display.Inner.FLOW_ROOT);
-        boolean forceAllChildren = selfChanged
-                || (listChanged && (!blockFlow || box.measuredHadFloatChild || box.hasFloatingChild()));
-        boolean childAffects = false;
-        boolean subtreeChanged = false;
-        List<LayoutBox> kids = box.children;
-        int n = kids.size();
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
-            int chunks = LayoutTaskPool.chunksFor(n, 16);
-            boolean[] flags = new boolean[chunks * 2];
-            LayoutTaskPool.forChunks(n, chunks, null, span -> {
-                int c = LayoutTaskPool.spanChunk(span);
-                int start = LayoutTaskPool.spanStart(span);
-                int end = LayoutTaskPool.spanEnd(span);
-                boolean ca = false;
-                boolean sc = false;
-                for (int i = start; i < end; i++) {
-                    LayoutBox child = kids.get(i);
-                    boolean force = forceAllChildren || (listChanged && child.firstFlowStatusChanged());
-                    ca |= markLayoutChanges(child, force);
-                    sc |= child.subtreeChanged;
-                }
-                flags[c * 2] = ca;
-                flags[c * 2 + 1] = sc;
-            });
-            for (int c = 0; c < chunks; c++) {
-                childAffects |= flags[c * 2];
-                subtreeChanged |= flags[c * 2 + 1];
-            }
-        } else {
-            for (int i = 0; i < n; i++) {
-                LayoutBox child = kids.get(i);
-                boolean force = forceAllChildren || (listChanged && child.firstFlowStatusChanged());
-                childAffects |= markLayoutChanges(child, force);
-                subtreeChanged |= child.subtreeChanged;
-            }
-        }
-        boolean remeasure = selfChanged || listChanged || forcedByParent || childAffects || !box.measurementValid;
-        box.layoutChanged = remeasure;
-        box.subtreeChanged = remeasure || subtreeChanged;
-        if (box.subtreeChanged) box.invalidateMinContentCache();
-        // 再レイアウト境界の中の変化は、境界の寸法を変えないので祖先の測り直しには及ばない
-        // （境界自身の署名が変わったときだけ祖先へ伝える）
-        return box.isRelayoutBoundary() ? selfChanged : remeasure;
-    }
-
-    /**
-     * 変わった箱が分かっているとき（文字の局所パッチ）の {@link #markLayoutChanges(LayoutBox)} の代わり。木全体をたどらず、
-     * 変わった箱から根までの経路だけに印を付ける。印の付け方は全体版と同じ（境界から上へは測り直しを伝えない）。
-     *
-     * <p>経路の祖先の署名・子の並びが変わっていたり、変わった箱が子を持っていたり、根へたどれなかったりして
-     * 経路だけでは決まらないときは null を返す。呼び出し側は {@link #markLayoutChanges(LayoutBox)} に退く
-     * （付けた印は「測り直す」側にしか倒れないので、そのまま全体版で上書きしてよい）。</p>
-     *
-     * @return 印を付けた経路の箱（測り終えたら {@link #clearSubtreeMarks} に渡す）。null なら全体版へ退く
+     * 変わった箱が分かっているときの {@link #markLayoutChanges(LayoutBox)} の代わり（経路だけに印を付ける）。
+     * 経路だけでは決まらないときは null を返す。
      */
     public static List<LayoutBox> markLayoutChangesAlong(LayoutBox root, java.util.Collection<LayoutBox> changed) {
-        return markLayoutChangesAlong(root, changed, java.util.Set.of());
+        return MeasureChanges.markLayoutChangesAlong(root, changed, java.util.Set.of());
     }
 
-    /**
-     * @param shallow {@code changed} のうち、子の並びだけが変わった箱（子の箱自体は前回のまま）。子を持っていても、部分木を全体版で
-     *                印付けせず、葉と同じ扱い（自分の測り直しだけ）にする。新しく入った子は未測定なので測られる
-     */
+    /** {@code shallow} 指定付きの経路印付け（測り終えたら {@link #clearSubtreeMarks} に渡す）。 */
     public static List<LayoutBox> markLayoutChangesAlong(LayoutBox root, java.util.Collection<LayoutBox> changed,
                                                          java.util.Set<LayoutBox> shallow) {
-        List<LayoutBox> path = new java.util.ArrayList<>();
-        for (LayoutBox leaf : changed) {
-            if (leaf == null || leaf == root) return null;
-            boolean selfChanged = leaf.selfSignatureChanged();
-            boolean affects;
-            if (leaf.children.isEmpty() || shallow.contains(leaf)) {
-                boolean remeasure = selfChanged || leaf.childListChanged() || !leaf.measurementValid;
-                leaf.layoutChanged |= remeasure;
-                leaf.subtreeChanged = true;
-                leaf.invalidateMinContentCache();
-                affects = leaf.isRelayoutBoundary() ? selfChanged : remeasure;
-            } else {
-                // 子を持つ箱（再スタイルで寸法の入力が変わった要素）: 自分の署名が変わったなら全ての子孫を測り直す。
-                // この部分木だけは全体版と同じ印付けをする（部分木の外は経路だけ）
-                affects = markLayoutChanges(leaf, false);
-                leaf.subtreeChanged = true;
-                leaf.invalidateMinContentCache();
-            }
-            path.add(leaf);
-            boolean reachedRoot = false;
-            // lazy: 直前の箱が、測り直した外寸が変わらなければ親が吸収できる箱（cutoff）で、結果が出るまで親に印を付けない
-            boolean lazy = affects && leaf.isCutoffEligible();
-            for (LayoutBox a = leaf.parent; a != null; a = a.parent) {
-                if (a.selfSignatureChanged() || a.childListChanged()) return null;
-                a.subtreeChanged = true;
-                a.invalidateMinContentCache();
-                path.add(a);
-                if (lazy) {
-                    // 子の結果が外寸に出れば a の測定が無効になり、a は下降（remeasureChanged）の戻りで測り直す。
-                    // a の親がそれを同じように受けられる（a も cutoff）間は、印を付けずに結果を待つ。
-                    // 受けられなければ、a の親を測り直しの対象にして、a はその下で測られる
-                    if (a.isRelayoutBoundary()) {
-                        affects = false;
-                        lazy = false;
-                    } else if (!a.isCutoffEligible() && !lazyThroughIneligible) {
-                        affects = true;
-                        lazy = false;
-                    }
-                } else {
-                    a.layoutChanged |= affects;
-                    if (a.isRelayoutBoundary()) affects = false;
-                    else if (affects && a.isCutoffEligible()) lazy = true;
-                }
-                if (a == root) { reachedRoot = true; break; }
-            }
-            if (!reachedRoot) return null;
-        }
-        return path;
+        return MeasureChanges.markLayoutChangesAlong(root, changed, shallow);
     }
 
-    /**
-     * {@code relayoutRootOnly} 専用: 根以外のスタイル・構造・属性が変わっていない前提で、
-     * 根と直接の子だけを印付けし、残りのクリーンな部分木走査を省く。
-     */
+    /** {@code relayoutRootOnly} 専用: 根と直接の子だけを印付けする。 */
     public static boolean markRootRestyleChanges(LayoutBox rootBox) {
-        boolean selfChanged = rootBox.selfSignatureChanged();
-        boolean listChanged = rootBox.childListChanged();
-        boolean blockFlow = rootBox.display != null && !isTableBox(rootBox)
-                && (rootBox.display.inner() == Display.Inner.FLOW || rootBox.display.inner() == Display.Inner.FLOW_ROOT);
-        boolean forceAllChildren = selfChanged
-                || (listChanged && (!blockFlow || rootBox.measuredHadFloatChild || rootBox.hasFloatingChild()));
-        boolean childAffects = false;
-        boolean subtreeChanged = false;
-        List<LayoutBox> kids = rootBox.children;
-        for (int i = 0, n = kids.size(); i < n; i++) {
-            LayoutBox child = kids.get(i);
-            boolean force = forceAllChildren || (listChanged && child.firstFlowStatusChanged());
-            if (child.isAnonymous || child.subtreeChanged || child.selfSignatureChanged() || child.childListChanged()) {
-                childAffects |= markLayoutChanges(child, force);
-            } else {
-                boolean cRemeasure = force || !child.measurementValid;
-                child.layoutChanged = cRemeasure;
-                child.subtreeChanged = cRemeasure;
-                if (cRemeasure) child.invalidateMinContentCache();
-                childAffects |= !child.isRelayoutBoundary() && cRemeasure;
-            }
-            subtreeChanged |= child.subtreeChanged;
-        }
-        boolean remeasure = selfChanged || listChanged || childAffects || !rootBox.measurementValid;
-        rootBox.layoutChanged = remeasure;
-        rootBox.subtreeChanged = remeasure || subtreeChanged;
-        if (rootBox.subtreeChanged) rootBox.invalidateMinContentCache();
-        return remeasure;
+        return MeasureChanges.markRootRestyleChanges(rootBox);
     }
 
-    /** 配置まで終えたあと、木全体の「変わった」印を外す（測り直した印の残っていない箱だけ。{@link #clearSubtreeMarks} の全体版）。 */
+    /** 配置まで終えたあと、木全体の「変わった」印を外す。 */
     public static void clearAllSubtreeMarks(LayoutBox root) {
-        if (!root.subtreeChanged) return;
-        if (!root.layoutChanged) root.subtreeChanged = false;
-        if (root.engineState instanceof VirtualFlowState vf) {
-            int start = vf.placedRangeStart();
-            int end = vf.placedRangeEnd();
-            List<LayoutBox> kids = root.children;
-            int n = kids.size();
-            if (start >= 0 && end >= start) {
-                int limit = Math.min(end, n - 1);
-                for (int i = start; i <= limit; i++) clearAllSubtreeMarks(kids.get(i));
-            }
-            for (int k = 0, m = vf.extraPlacedCount(); k < m; k++) {
-                int idx = vf.extraPlacedAt(k);
-                if (idx >= 0 && idx < n && (idx < start || idx > end)) clearAllSubtreeMarks(kids.get(idx));
-            }
-            return;
-        }
-        List<LayoutBox> kids = root.children;
-        int n = kids.size();
-        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
-            int grain = LayoutTaskPool.grainFor(n, 8);
-            LayoutTaskPool.forRange(n, grain, null, i -> clearAllSubtreeMarks(kids.get(i)));
-            return;
-        }
-        for (int i = 0; i < n; i++) clearAllSubtreeMarks(kids.get(i));
+        MeasureChanges.clearAllSubtreeMarks(root);
     }
 
-    /** {@link #markLayoutChangesAlong} が付けた印を、測り終えた箱から外す（次の全体版が「変化なし」と付けるのと同じ）。 */
+    /** {@link #markLayoutChangesAlong} が付けた印を、測り終えた箱から外す。 */
     public static void clearSubtreeMarks(List<LayoutBox> path) {
-        for (LayoutBox b : path) {
-            if (!b.layoutChanged) b.subtreeChanged = false;
-        }
-    }
-
-    /** 前回の measure の後に、自分か子孫の何かが変わった（境界を越えて伝わる。配置の使い回しの判定に使う）。 */
-    private boolean subtreeChanged = true;
-    /** 前回の layout の後に、子孫の再測定が起きていない（境界を越えて祖先まで切れる）。 */
-    private boolean placementValid = false;
-
-    /**
-     * 自分の寸法が子孫に依らず、中身の変化が祖先の layout の入力にならない箱（再レイアウト境界）。
-     * 中身の大きさで決まらない寸法（size containment・確定した幅と高さのスクロールコンテナ）を持ち、
-     * 独立した整形コンテキストを作る（float や margin が外へ及ばない）ブロックレベルの箱。
-     */
-    boolean isRelayoutBoundary() {
-        if (parent == null || display == null || display.isInlineLevel() || isTableBox(this) || !establishesBfc) return false;
-        if (effectiveContainsInlineSize() && effectiveContainsBlockSize()) return true;
-        if (!isScrollContainer()) return false;
-        StyleFacts facts = style.facts();
-        return facts.definiteWidth && facts.definiteHeight;
+        MeasureChanges.clearSubtreeMarks(path);
     }
 
     /** {@link #measure(ConstraintSpace, LayoutContext)} の制約を個別に渡す形（テストと HUD の入口）。 */
@@ -2825,57 +1236,19 @@ public class LayoutBox {
 
     private void layoutImpl(float parentX, float parentY, float parentOuterW, float parentOuterH, LayoutContext ctx) {
         if (style.facts().displayNone) return;
-        settleTentative();
-        if (hasTentativeChildren) settleTentativeChildren();
+        measureMemo.settleTentative(this);
+        if (measureMemo.hasTentativeChildren()) measureMemo.settleTentativeChildren(this);
         if (needsAdoption) {
             for (int i = 0, n = children.size(); i < n; i++) adopt(children.get(i));
             needsAdoption = false;
         }
-        // 親の外寸（パーセントの基準）は、位置指定・スクロールコンテナ・float を含まない部分木（placementPure）の配置には効かない。
-        // 中身が増えて親の高さが変わっても、子の配置の入力は変わらない
-        // スクロールコンテナは、自分のスクロール量も配置の入力になる（子の位置が -scroll だけずれる）。量が前回と同じなら入力は同じ
-        boolean sameScroll = !isScrollContainer() || ctx.scrollState().getScrollX(node) == lastScrollX
-                && ctx.scrollState().getScrollY(node) == lastScrollY;
-        boolean sameMargins = lastLayoutML == mL && lastLayoutMR == mR && lastLayoutMT == mT && lastLayoutMB == mB;
-        boolean sameInputs = lastLayoutX == parentX && lastLayoutY == parentY && sameScroll && sameMargins
-                && (keptPure || (lastLayoutOuterW == parentOuterW && lastLayoutOuterH == parentOuterH));
         LayoutContext.AutoVisibilitySession av = ctx.autoVisibility();
         boolean checkAutoSubtree = av != null && (subtreeHasContentAuto || style.facts().contentVisibilityAuto);
-        if (ctx.reuseMeasurements() && !checkAutoSubtree && sameInputs && canKeepPlacement(ctx.layoutRun())) {
-            LAYOUTS_SKIPPED.increment();
+        if (PlacementMemo.tryReuseOrShift(this, parentX, parentY, parentOuterW, parentOuterH, ctx, checkAutoSubtree)) {
             return;
         }
-        // 原点だけが違い、部分木の配置が前回と同じ（原点からの相対位置が変わらない）なら、置き直さず部分木ごと平行移動する
-        // （行の挿入・削除で後続の行が動くだけのとき、各行の内側を組み直さない）
-        if (!sameInputs && !checkAutoSubtree && sameScroll && sameMargins && com.nishiyu.enderframelib.core.kernel.Shortcut.SHIFT.on() && ctx.reuseMeasurements()
-                && canKeepPlacement(ctx.layoutRun())
-                && !Float.isNaN(lastLayoutX) && !Float.isNaN(lastLayoutY)
-                && isShiftableDelta(parentX, lastLayoutX) && isShiftableDelta(parentY, lastLayoutY)
-                && isShiftableSubtree(parentX != lastLayoutX, parentY != lastLayoutY)) {
-            shiftSubtree(parentX - lastLayoutX, parentY - lastLayoutY);
-            lastLayoutX = parentX;
-            lastLayoutY = parentY;
-            LAYOUTS_SHIFTED.increment();
-            return;
-        }
-        // 原点か包含ブロックの寸法が変わったので、前回の配置を引き継いだ子孫の位置はどれも古い。先に捨てる
-        // （自分の staticX / staticY は親が layout の前に置くので消さない）。入力が同じで、子孫の変化のために
-        // 置き直すだけなら、子はそれぞれの入力を見て飛ばすか置き直すかを決める
-        if (com.nishiyu.enderframelib.core.kernel.Shortcut.KEEP_PLACEMENTS.on() && keptPure && !sameInputs) {
-            resetChildrenPlacements(children);
-        }
-
-        if (BlockLayoutEngine.containsFloats(this)) {
-            hasFloatChild = false;
-            for (int i = 0, n = children.size(); i < n; i++) {
-                if (children.get(i).style.facts().floating) {
-                    hasFloatChild = true;
-                    break;
-                }
-            }
-        } else {
-            hasFloatChild = false;
-        }
+        PlacementMemo pm = ensurePlacementMemo();
+        pm.setHasFloatChild(computeHasFloatChild());
         touchPaint();
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
@@ -2911,23 +1284,23 @@ public class LayoutBox {
                     this.contentAutoSkipped = false;
                     if (this.childrenDeferred) av.materialize(this);
                 }
-                markVisibilityChangedForStabilize();
+                measureMemo.markVisibilityChangedForStabilize(this);
                 av.noteNonVirtualVisibilityChanged();
             } else if (!shouldSkip && this.childrenDeferred) {
                 av.materialize(this);
-                markVisibilityChangedForStabilize();
+                measureMemo.markVisibilityChangedForStabilize(this);
                 av.noteNonVirtualVisibilityChanged();
             }
         }
 
         if (this.contentAutoSkipped) {
-            applyRelativePositioning(parentOuterW, parentOuterH, rootW, rootH);
-            if (this.isSticky) applyStickyOffset(ctx);
+            ScrollExtentCalc.applyRelativePositioning(this, parentOuterW, parentOuterH, rootW, rootH);
+            if (this.isSticky) ScrollExtentCalc.applyStickyOffset(this, ctx);
             this.descendantOverflowRight = this.w;
             this.descendantOverflowBottom = this.h;
             this.scrollWidth = Math.max(this.w, pL + bL + pR + bR);
             this.scrollHeight = Math.max(this.h, pT + bT + pB + bB);
-            recordPlacement(parentX, parentY, parentOuterW, parentOuterH, false, scrollX, scrollY);
+            pm.record(this, parentX, parentY, parentOuterW, parentOuterH, false, scrollX, scrollY);
             return;
         }
 
@@ -2936,7 +1309,7 @@ public class LayoutBox {
 
         float prevClipL = 0, prevClipT = 0, prevClipR = 0, prevClipB = 0;
         boolean savedClip = false;
-        if (av != null && (this.isFixed || clipsOverflow())) {
+        if (av != null && (this.isFixed || ScrollExtentCalc.clipsOverflow(this))) {
             prevClipL = av.clipLeft();
             prevClipT = av.clipTop();
             prevClipR = av.clipRight();
@@ -2946,7 +1319,7 @@ public class LayoutBox {
             float baseT = this.isFixed ? 0f : prevClipT;
             float baseR = this.isFixed ? rootW : prevClipR;
             float baseB = this.isFixed ? rootH : prevClipB;
-            if (clipsOverflow()) {
+            if (ScrollExtentCalc.clipsOverflow(this)) {
                 float boxL = this.x + bL;
                 float boxT = this.y + bT;
                 float boxR = Math.max(boxL, this.x + this.w - bR);
@@ -2982,369 +1355,58 @@ public class LayoutBox {
                 }
             }
             legend = renderedLegend();
-            if (legend != null) placeRenderedLegend(legend, ctx);
+            if (legend != null) ScrollExtentCalc.placeRenderedLegend(this, legend, ctx);
         } finally {
             if (savedClip) av.setClip(prevClipL, prevClipT, prevClipR, prevClipB);
         }
         if (isCvAuto) recordRememberedSize();
 
-        applyRelativePositioning(parentOuterW, parentOuterH, rootW, rootH);
-        if (this.isSticky) applyStickyOffset(ctx);
-        updateScrollExtent(scrollX, scrollY);
-        recordPlacement(parentX, parentY, parentOuterW, parentOuterH, legend != null, scrollX, scrollY);
+        ScrollExtentCalc.applyRelativePositioning(this, parentOuterW, parentOuterH, rootW, rootH);
+        if (this.isSticky) ScrollExtentCalc.applyStickyOffset(this, ctx);
+        ScrollExtentCalc.updateScrollExtent(this, scrollX, scrollY);
+        pm.record(this, parentX, parentY, parentOuterW, parentOuterH, legend != null, scrollX, scrollY);
     }
 
-    // ==========================================
-    // 差分レイアウト（layout の結果の再利用）
-    // ==========================================
-    //
-    // measure を使い回した箱は、寸法も子の並びも前回の layout のときと同じ。配置（layout）の入力は
-    // 親から渡る原点と包含ブロックの寸法だけなので、これも前回と同じなら、部分木の配置は前回の結果のまま使える。
-    // 箱の位置が祖先の外の何か（絶対配置の包含ブロック・float・スクロール量・sticky のポート）に依るときは使い回せない:
-    // そうした箱を部分木に含む箱は placementPure ではない。
-
-    private static final java.util.concurrent.atomic.LongAdder LAYOUTS_SKIPPED =
-            new java.util.concurrent.atomic.LongAdder();
-
-    private static final java.util.concurrent.atomic.LongAdder LAYOUTS_SHIFTED =
-            new java.util.concurrent.atomic.LongAdder();
-
-
-    /** 原点だけが違うので部分木ごと平行移動した layout の回数（診断・テスト用）。 */
-    public static long layoutsShifted() {
-        return LAYOUTS_SHIFTED.sum();
-    }
-
-    /**
-     * 部分木が、位置を原点からの相対だけで持つレイアウトエンジン（通常フロー・flex・grid。段組・表を持たない）か。
-     * 平行移動で済ませる前に、移動してはならない状態（絶対位置を持つエンジンの状態）が無いことを確かめる。
-     */
-    private boolean isShiftableSubtree(boolean needGridX, boolean needGridY) {
-        if ((needGridX || needGridY) && !isGridAligned(needGridX, needGridY)) return false;
-        if (columnShifts != null || collapsedBorders != null || hasLegendBox()) return false;
-        if (engineState != null && !(engineState instanceof BlockLayoutEngine.FlowState
-                || engineState instanceof FlexLayoutEngine.FlexState
-                || engineState instanceof GridLayoutEngine.GridState)) return false;
-        if (display != null && display.inner() != Display.Inner.FLOW && display.inner() != Display.Inner.FLOW_ROOT
-                && display.inner() != Display.Inner.FLEX && display.inner() != Display.Inner.GRID) return false;
-        for (LayoutBox child : children) {
-            if (child.style.facts().displayNone) continue;
-            if (!child.isShiftableSubtree(needGridX, needGridY)) return false;
-        }
-        return true;
-    }
-
-    /** 整数ぶんだけの移動か（丸めの境目に当たらないので、置き直した結果と同じ丸めになる）。 */
-    private static boolean isIntegral(float v) {
-        return v == Math.rint(v);
-    }
-
-    /**
-     * 移動量が、置き直しとビット単位で一致する平行移動になるか。整数ぶんなら従来どおり（丸めの境目に当たらない）。
-     * 小数ぶんは、移動量と両方の原点が {@link LayoutUnit} の格子に載っているときに限る
-     * （その場合に限り float の加算が厳密。部分木の側は {@link #isGridAligned} で確かめる）。
-     */
-    private static boolean isShiftableDelta(float parentCoord, float lastCoord) {
-        float d = parentCoord - lastCoord;
-        if (isIntegral(d)) return true;
-        float limit = LayoutUnit.EXACT_LIMIT - LayoutUnit.SHIFT_MARGIN;
-        return Math.abs(parentCoord) < limit && Math.abs(lastCoord) < limit
-                && LayoutUnit.isOnGrid(parentCoord) && LayoutUnit.isOnGrid(lastCoord) && LayoutUnit.isOnGrid(d);
-    }
-
-    /** この箱が平行移動で動かす値（必要な軸の座標・静的位置・行の下端・断片・前回の配置）がすべて格子に載っているか。 */
-    private boolean isGridAligned(boolean checkX, boolean checkY) {
-        boolean isText = node != null && node.nodeType == NodeType.TEXT;
-        if (checkX) {
-            if (!isText && !LayoutUnit.isOnGrid(x)) return false;
-            if (!Float.isNaN(staticX) && !LayoutUnit.isOnGrid(staticX)) return false;
-            for (int i = 0, n = inlineFragments.size(); i < n; i++) {
-                if (!LayoutUnit.isOnGrid(inlineFragments.get(i).x)) return false;
-            }
-            if (!Float.isNaN(lastLayoutX) && !LayoutUnit.isOnGrid(lastLayoutX)) return false;
-        }
-        if (checkY) {
-            if (!isText && !LayoutUnit.isOnGrid(y)) return false;
-            if (inlineContentBottom > Float.NEGATIVE_INFINITY && !LayoutUnit.isOnGrid(inlineContentBottom)) return false;
-            if (!Float.isNaN(staticY) && !LayoutUnit.isOnGrid(staticY)) return false;
-            for (int i = 0, n = inlineFragments.size(); i < n; i++) {
-                if (!LayoutUnit.isOnGrid(inlineFragments.get(i).y)) return false;
-            }
-            if (!Float.isNaN(lastLayoutY) && !LayoutUnit.isOnGrid(lastLayoutY)) return false;
-        }
-        return true;
-    }
-
-    private boolean hasLegendBox() {
-        return renderedLegend() != null;
-    }
-
-    /**
-     * layout を通らずに置かれるインライン要素として {@link BlockLayoutEngine} の {@code fitToFragments} が
-     * 再帰・配置できる箱か。途中で非インライン（display:flex 等）を挟むと {@code fitToFragments} が打ち切られ、
-     * その箱も子孫のインライン要素も置き直しで (0, 0) のまま残る。
-     */
-    private boolean canRecurseFitToFragments() {
-        if (node == null || node.nodeType == NodeType.TEXT || "br".equals(node.tag)) return false;
-        if (isAbsolute || isFixed || style.facts().displayNone || style.facts().floating) return false;
-        if (display == null || !display.isInlineLevel()) return false;
-        return !BlockLayoutEngine.isAtomicInline(this);
-    }
-
-    private boolean hasNonTextFragment() {
-        for (int i = 0, n = inlineFragments.size(); i < n; i++) {
-            if (!inlineFragments.get(i).isText()) return true;
+    private boolean computeHasFloatChild() {
+        if (!BlockLayoutEngine.containsFloats(this)) return false;
+        for (int i = 0, n = children.size(); i < n; i++) {
+            if (children.get(i).style.facts().floating) return true;
         }
         return false;
     }
 
-    /** 部分木の位置（箱・断片・行の下端・前回の配置の記録）を {@code (dx, dy)} だけ動かす。描画の変更印も進める。 */
-    private void shiftSubtree(float dx, float dy) {
-        shiftSubtree(dx, dy, true);
-    }
-
-    private void shiftSubtree(float dx, float dy, boolean fitReachable) {
-        // layout を通った箱（lastLayoutX が NaN でない）は常に動く。
-        // layout を通らない箱は fitToFragments が到達し、かつ文字以外の断片を 1 つ以上持つインライン要素だけが動く。
-        boolean laidOut = !Float.isNaN(lastLayoutX);
-        boolean canFit = !laidOut && fitReachable && canRecurseFitToFragments();
-        if (laidOut || (canFit && hasNonTextFragment())) {
-            this.x += dx;
-            this.y += dy;
-        }
-        boolean nextFitReachable = laidOut || canFit;
-        if (inlineContentBottom > Float.NEGATIVE_INFINITY) inlineContentBottom += dy;
-        if (!Float.isNaN(staticX)) staticX += dx;
-        if (!Float.isNaN(staticY)) staticY += dy;
-        for (InlineFragment frag : inlineFragments) {
-            frag.x += dx;
-            frag.y += dy;
-        }
-        touchPaint();
-        for (LayoutBox child : children) {
-            if (child.style.facts().displayNone) continue;
-            if (!Float.isNaN(child.lastLayoutX)) {
-                child.lastLayoutX += dx;
-                child.lastLayoutY += dy;
-            }
-            child.shiftSubtree(dx, dy, nextFitReachable);
-        }
+    /** 原点だけが違うので部分木ごと平行移動した layout の回数（診断・テスト用）。 */
+    public static long layoutsShifted() {
+        return PlacementMemo.layoutsShifted();
     }
 
     /** これまでに使い回して飛ばした layout の回数（差分レイアウトの効き具合を測るテスト・診断用）。 */
     public static long layoutsSkipped() {
-        return LAYOUTS_SKIPPED.sum();
+        return PlacementMemo.layoutsSkipped();
     }
-
 
     /** 前回の layout の配置を使い回せる状態か（再利用が有効で、前回の部分木が外の状態に依らなかった）。 */
     public boolean holdsPlacement() {
-        return com.nishiyu.enderframelib.core.kernel.Shortcut.KEEP_PLACEMENTS.on() && placementPure;
+        return PlacementMemo.holdsPlacement(this);
     }
 
     public String debugInfo() {
-        return node.tag + "#" + node.key() + " disp=" + display + " pure=" + placementPure + " lastX=" + lastLayoutX + " lastY=" + lastLayoutY + " x=" + x + " y=" + y + " valid=" + measurementValid + " runM=" + measuredRun + " anon=" + isAnonymous;
-    }
-
-    /** 部分木の配置が、この箱の外の状態に依らず親の渡す原点だけで決まる（前回の layout で確かめた）。 */
-    private boolean placementPure = false;
-    /**
-     * 自分の配置を使い回せる（{@link #placementPure} から、自分のスクロールコンテナであることだけを除いた条件）。祖先は
-     * 子孫のスクロール量の変化を見ないので、祖先から見た純粋さ（{@link #placementPure}）はスクロールコンテナで切れるが、
-     * そのコンテナ自身は、スクロール量が前回と同じなら配置を飛ばせる。
-     */
-    private boolean keptPure = false;
-    private float lastScrollX = Float.NaN, lastScrollY = Float.NaN;
-    private float lastLayoutX = Float.NaN, lastLayoutY = Float.NaN, lastLayoutOuterW = Float.NaN, lastLayoutOuterH = Float.NaN;
-    private float lastLayoutML = Float.NaN, lastLayoutMR = Float.NaN, lastLayoutMT = Float.NaN, lastLayoutMB = Float.NaN;
-
-    private void recordPlacement(float parentX, float parentY, float parentOuterW, float parentOuterH, boolean hasLegend,
-                                 float scrollXAtPlacement, float scrollYAtPlacement) {
-        lastLayoutX = parentX;
-        lastLayoutY = parentY;
-        lastLayoutOuterW = parentOuterW;
-        lastLayoutOuterH = parentOuterH;
-        lastLayoutML = mL;
-        lastLayoutMR = mR;
-        lastLayoutMT = mT;
-        lastLayoutMB = mB;
-        placementPure = !hasLegend && subtreeIsSelfContained(true);
-        keptPure = placementPure || !hasLegend && isScrollContainer() && subtreeIsSelfContained(false);
-        if (isScrollContainer()) {
-            lastScrollX = scrollXAtPlacement;
-            lastScrollY = scrollYAtPlacement;
-        }
-        placementValid = true;
-    }
-
-    /**
-     * この箱とその子孫が、外の状態（絶対配置の包含ブロック・float・スクロール量・sticky のポート・表の分担）に
-     * 位置を依存しないか。layout を通らない子（行に流れるテキストやインラインの箱）は構造だけで見る。
-     */
-    private boolean subtreeIsSelfContained(boolean selfScrollBreaks) {
-        if (isAbsolute || isFixed || isRelative || isSticky || selfScrollBreaks && isScrollContainer() || floatSpace != null
-                || isTableBox(this) || collapsedBorders != null
-                || style.facts().floating) {
-            return false;
-        }
-        for (int i = 0, n = children.size(); i < n; i++) {
-            LayoutBox child = children.get(i);
-            if (child.style.facts().displayNone) continue;
-            boolean laidOutByLayout = !Float.isNaN(child.lastLayoutX);
-            if (laidOutByLayout ? !child.placementPure : !child.subtreeIsSelfContained(true)) return false;
-        }
-        return true;
-    }
-
-    /**
-     * 前回の layout の配置をそのまま使えるか（原点が同じかは呼び出し側が確かめる）。この run で測り直されておらず
-     * （測り直した箱と、その祖先の測定は無効になる）、親がブロックコンテナで、前回の配置が純粋だったときだけ。
-     */
-    private boolean canKeepPlacement(long run) {
-        return canKeepPlacement(run, floatsAffectPlacement());
-    }
-
-    private boolean canKeepPlacement(long run, boolean floatsOrOffset) {
-        return com.nishiyu.enderframelib.core.kernel.Shortcut.KEEP_PLACEMENTS.on() && keptPure && placementValid && measurementValid && measuredRun != run
-                && !layoutChanged && !subtreeChanged
-                && parent != null && parent.display != null
-                && (parent.display.inner() == Display.Inner.FLOW || parent.display.inner() == Display.Inner.FLOW_ROOT
-                        || parent.display.inner() == Display.Inner.FLEX)
-                && !display.isInlineLevel()
-                && !floatsOrOffset;
-    }
-
-    /** 自分の子に float があるか。{@link #layout} の始めに決め直す。 */
-    private boolean hasFloatChild = false;
-
-    /**
-     * 同じ BFC の中に float があると、後に続く箱の行は float を避けて置かれる。float の位置は layout の途中の状態で、
-     * 原点や包含ブロックの寸法には現れないので、祖先（BFC の根まで）に float を子に持つ箱があれば使い回さない。
-     */
-    private boolean floatsAffectPlacement() {
-        boolean inBfc = true;
-        for (LayoutBox p = parent; p != null; p = p.parent) {
-            // 相対配置・sticky の祖先は、子孫を置いた後でまとめてずらす。ずれは子孫の位置に残るので、
-            // ずれが変わった（なくなった）ときに古いずれを引き継がない
-            if (p.isRelative || p.isSticky) return true;
-            if (inBfc && p.hasFloatChild) return true;
-            if (p.establishesBfc) inBfc = false;
-        }
-        return false;
-    }
-
-    /**
-     * fieldset の legend を上の枠線に重ねて置く（HTML §15.3.13）。
-     *
-     * <ul>
-     *   <li>縦: border box を上の枠線の中央に置く。legend の方が高ければ fieldset の上端に揃え、
-     *       枠線は描画側が legend の中央へ下げる。上マージンは数えない（Chrome の実測）</li>
-     *   <li>横: 内容ボックスの左端から。{@code margin-left / margin-right: auto} で中央・右へ寄せる</li>
-     * </ul>
-     * スクロールしても動かない（スクロールするのは内容だけ）。
-     */
-    private void placeRenderedLegend(LayoutBox legend, LayoutContext ctx) {
-        float contentW = Math.max(0, w - horizontalDecoration());
-        boolean autoLeft = "auto".equals(legend.style.get(CssPropertyIndex.MARGIN_LEFT));
-        boolean autoRight = "auto".equals(legend.style.get(CssPropertyIndex.MARGIN_RIGHT));
-        float free = contentW - legend.w - (autoLeft ? 0 : legend.mL) - (autoRight ? 0 : legend.mR);
-        if (autoLeft && autoRight) {
-            legend.mL = Math.max(0, free / 2);
-        } else if (autoLeft) {
-            legend.mL = Math.max(0, free);
-        }
-        float top = this.y + Math.max(0, (bT - legend.h) / 2);
-        legend.layout(this.x + bL + pL, top - legend.mT, contentW, Math.max(0, h - verticalDecoration()), ctx);
+        return PlacementMemo.debugInfo(this);
     }
 
     /** auto を 0 とした左右のマージン（px）。 */
     float ownInlineMargins(LayoutContext ctx) {
-        float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
-        ComputedStyle ax = axisStyle();
-        float l = "auto".equals(ax.get(CssPropertyIndex.MARGIN_LEFT)) ? 0 : ax.length(CssPropertyIndex.MARGIN_LEFT, 0, rootW, rootH);
-        float r = "auto".equals(ax.get(CssPropertyIndex.MARGIN_RIGHT)) ? 0 : ax.length(CssPropertyIndex.MARGIN_RIGHT, 0, rootW, rootH);
-        return l + r;
+        return IntrinsicSizing.ownInlineMargins(this, ctx);
     }
 
     /**
-     * {@code position: sticky} のずれ。通常フローの位置に置いたあと、最も近いスクロールコンテナの
-     * スクロールポート（無ければビューポート）の端から inset だけ内側に留まるようずらし、
-     * 親の内容ボックスからははみ出させない（CSS Positioned Layout 3 §3.4）。
-     * relative と同じく描画位置だけを動かし、後続の配置には影響しない。
+     * 直近の配置で sticky として足した縦のずれ・足す前の y・足した後の y。sticky でない箱では意味を持たない。
      */
-    private void applyStickyOffset(LayoutContext ctx) {
-        float rootW = ctx.viewport().rootW();
-        float rootH = ctx.viewport().rootH();
-        float portX = 0, portY = 0, portW = rootW, portH = rootH;
-        for (LayoutBox cur = parent; cur != null; cur = cur.parent) {
-            if (cur.isScrollContainer()) {
-                portX = cur.x + cur.bL;
-                portY = cur.y + cur.bT;
-                portW = Math.max(0, cur.w - cur.bL - cur.bR);
-                portH = Math.max(0, cur.h - cur.bT - cur.bB);
-                break;
-            }
-        }
-        if (parent == null) return;
-        float cbTop = parent.y + parent.bT + parent.pT;
-        float cbBottom = parent.y + parent.h - parent.bB - parent.pB;
-        float cbLeft = parent.x + parent.bL + parent.pL;
-        float cbRight = parent.x + parent.w - parent.bR - parent.pR;
+    float stickyDy, stickyUnstuckY, stickyPlacedY;
 
-        ComputedStyle ax = axisStyle();
-        float dx = 0, dy = 0;
-        if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.TOP)) {
-            float limit = portY + ax.length(CssPropertyIndex.TOP, portH, rootW, rootH);
-            if (y < limit) dy = Math.max(0, Math.min(limit - y, cbBottom - (y + h + mB)));
-        } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.BOTTOM)) {
-            float limit = portY + portH - ax.length(CssPropertyIndex.BOTTOM, portH, rootW, rootH);
-            if (y + h > limit) dy = -Math.max(0, Math.min(y + h - limit, y - mT - cbTop));
-        }
-        if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.LEFT)) {
-            float limit = portX + ax.length(CssPropertyIndex.LEFT, portW, rootW, rootH);
-            if (x < limit) dx = Math.max(0, Math.min(limit - x, cbRight - (x + w + mR)));
-        } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.RIGHT)) {
-            float limit = portX + portW - ax.length(CssPropertyIndex.RIGHT, portW, rootW, rootH);
-            if (x + w > limit) dx = -Math.max(0, Math.min(x + w - limit, x - mL - cbLeft));
-        }
-        stickyDy = dy;
-        stickyUnstuckY = y;
-        if (dx != 0 || dy != 0) applyRelativeOffset(dx, dy);
-        stickyPlacedY = y;
-    }
-
-    /**
-     * 直近の配置で sticky として足した縦のずれ・足す前の y・足した後の y（{@link #applyStickyOffset}）。sticky でない箱では意味を持たない。
-     * 足した後の y が今の y と違えば、その後に（平行移動の近道などで）動いていて、ずれは今の位置の式の値ではない。
-     */
-    public float stickyDy, stickyUnstuckY, stickyPlacedY;
-
-    /**
-     * B12: この sticky の箱が、スクロールコンテナ {@code port} の縦のスクロールだけで {@link #applyStickyOffset} と同じ式で動くときの値
-     * {@code {上の限界, 包含ブロックの下端, 貼り付く前の y, h, 下の余白, 親がスクロールで動くなら 1}}（今の配置での値）。
-     * 上の inset だけで決まり（下・左・右は auto）、いちばん近いスクロールコンテナが {@code port} のときだけ。それ以外は null。
-     */
+    /** B12: この sticky の箱の、スクロールコンテナ {@code port} に対する貼り付きパラメータを返す。 */
     public float[] stickyScrollParams(LayoutBox port, float rootW, float rootH) {
-        if (!isSticky || parent == null || port == null) return null;
-        LayoutBox near = null;
-        for (LayoutBox cur = parent; cur != null; cur = cur.parent) {
-            if (cur.isScrollContainer()) {
-                near = cur;
-                break;
-            }
-        }
-        if (near != port) return null;
-        ComputedStyle ax = axisStyle();
-        if (BoxMeasurer.isAutoInset(ax, CssPropertyIndex.TOP) || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.BOTTOM)
-                || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.LEFT) || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.RIGHT)) {
-            return null;
-        }
-        float portY = port.y + port.bT;
-        float portH = Math.max(0, port.h - port.bT - port.bB);
-        float limit = portY + ax.length(CssPropertyIndex.TOP, portH, rootW, rootH);
-        float cbBottom = parent.y + parent.h - parent.bB - parent.pB;
-        if (Float.floatToIntBits(y) != Float.floatToIntBits(stickyPlacedY)) return null; // 貼り付けたあとに動いた
-        return new float[]{limit, cbBottom, stickyUnstuckY, h, mB, parent != port ? 1f : 0f};
+        return ScrollExtentCalc.stickyScrollParams(this, port, rootW, rootH);
     }
 
     /**
@@ -3398,7 +1460,7 @@ public class LayoutBox {
         inlineFragments.clear();
         hasOutsideMarker = false;
         hasAbsoluteChild = false;
-        hasFloatChild = false;
+        if (placementMemo != null) placementMemo.setHasFloatChild(false);
         needsAdoption = false;
         STRUCT_EPOCH.incrementAndGet();
         bumpShapeEpoch();
@@ -3432,185 +1494,102 @@ public class LayoutBox {
         return style.facts().scrollContainer;
     }
 
-    private void applyRelativePositioning(float parentOuterW, float parentOuterH, float rootW, float rootH) {
-        if (!this.isRelative) return;
-
-        ComputedStyle ax = axisStyle();
-        float offX = 0, offY = 0;
-        if (ax.containsKey(CssPropertyIndex.LEFT)) offX += ax.length(CssPropertyIndex.LEFT, parentOuterW, rootW, rootH);
-        else if (ax.containsKey(CssPropertyIndex.RIGHT)) offX -= ax.length(CssPropertyIndex.RIGHT, parentOuterW, rootW, rootH);
-        if (ax.containsKey(CssPropertyIndex.TOP)) offY += ax.length(CssPropertyIndex.TOP, parentOuterH, rootW, rootH);
-        else if (ax.containsKey(CssPropertyIndex.BOTTOM)) offY -= ax.length(CssPropertyIndex.BOTTOM, parentOuterH, rootW, rootH);
-
-        if (offX != 0 || offY != 0) applyRelativeOffset(offX, offY);
-    }
-
-    /**
-     * スクロール範囲を更新する。
-     * エンジン固有の子（グリッドアイテムなど）は {@link LayoutEngineState} が自分で足し込む。
-     */
-    private void updateScrollExtent(float scrollX, float scrollY) {
-        if (children.isEmpty() && engineState == null && inlineContentBottom <= Float.NEGATIVE_INFINITY) {
-            this.descendantOverflowRight = this.w;
-            this.descendantOverflowBottom = this.h;
-            if (isCollapsedTable()) {
-                this.scrollWidth = pL + bL;
-                this.scrollHeight = pT + bT;
-            } else {
-                this.scrollWidth = Math.max(this.w, pL + bL + pR + bR);
-                this.scrollHeight = Math.max(this.h, pT + bT + pB + bB);
-            }
-            return;
-        }
-
-        float extRight = this.x + pL + bL;
-        float extBottom = this.y + pT + bT;
-        float descRight = this.x + this.w;
-        float descBottom = this.y + this.h;
-
-        boolean marginEscapes = !establishesBfc && pB == 0 && bB == 0 && !hasDefiniteHeight();
-        if (engineState instanceof VirtualFlowState vf) {
-            float contentOriginY = this.y + pT + bT + contentOffsetY + legendSpill;
-            float virtualBottom = contentOriginY + vf.contentExtentBottom(marginEscapes);
-            if (virtualBottom > extBottom) extBottom = virtualBottom;
-            if (virtualBottom > descBottom) descBottom = virtualBottom;
-            for (int k = 0, m = vf.placedCount(); k < m; k++) {
-                LayoutBox child = vf.placedChildAt(k);
-                if (child == null || child.style.facts().displayNone || child.isAbsolute) continue;
-                float r = child.x + child.w + child.mR + scrollX;
-                float b = child.y + child.h + child.mB + scrollY;
-                if (r > extRight) extRight = r;
-                if (b > extBottom) extBottom = b;
-                float cr = child.x + child.w + scrollX;
-                float cb = child.y + child.h + scrollY;
-                if (cr > descRight) descRight = cr;
-                if (cb > descBottom) descBottom = cb;
-                if (!child.clipsOverflow()) {
-                    float ovR = child.x + child.descendantOverflowRight + scrollX;
-                    float ovB = child.y + child.descendantOverflowBottom + scrollY;
-                    if (ovR > descRight) descRight = ovR;
-                    if (ovB > descBottom) descBottom = ovB;
-                }
-            }
-        } else {
-            LayoutBox lastInFlow = null;
-            if (marginEscapes) {
-                for (int i = children.size() - 1; i >= 0; i--) {
-                    LayoutBox child = children.get(i);
-                    if (!child.style.facts().displayNone && !child.isAbsolute
-                            && !child.display.isInlineLevel()) {
-                        lastInFlow = child;
-                        break;
-                    }
-                }
-            }
-            for (int i = 0, n = children.size(); i < n; i++) {
-                LayoutBox child = children.get(i);
-                if (child.style.facts().displayNone || child.isAbsolute) continue;
-                if (child.node != null && child.node.nodeType == NodeType.TEXT) {
-                    // 文字の塊の箱は位置を持たない（x / y は 0 のまま。置かれるのは断片）。箱の x / y / h を読むと、相対配置・sticky で
-                    // 祖先が動いたとき（その分だけ箱も平行移動される）スクロール範囲にそのずれが入り、sticky ではスクロールするほど
-                    // 範囲が伸び続ける。断片の端を取り込む
-                    List<InlineFragment> frags = child.inlineFragments;
-                    for (int j = 0, m = frags.size(); j < m; j++) {
-                        InlineFragment frag = frags.get(j);
-                        float right = frag.x + frag.w + scrollX;
-                        float bottom = Math.max(frag.y + frag.h, frag.y + frag.baseline + frag.descent) + scrollY;
-                        if (right > extRight) extRight = right;
-                        if (bottom > extBottom) extBottom = bottom;
-                        if (right > descRight) descRight = right;
-                        if (bottom > descBottom) descBottom = bottom;
-                    }
-                    continue;
-                }
-                if (child.isVerticalWrapper) {
-                    // 回転して置かれる箱: 回転前の箱（右へ・下へ張り出して置く）ではなく、回転後の物理の範囲で数える。
-                    int flow = isHorizontalReturnRoot
-                            ? (orthogonalParentFlow & 0xFF)
-                            : com.nishiyu.enderframelib.core.css.WritingModes.flowOf(style);
-                    boolean tr = com.nishiyu.enderframelib.core.css.WritingModes.isTransposed(flow);
-                    boolean parentCcw = com.nishiyu.enderframelib.core.css.WritingModes.isCounterClockwise(flow);
-                    // 直交戻し（horizontal-tb）は親の回転を打ち消す逆回転を持つ
-                    boolean ccw = isHorizontalReturnRoot ? (!tr && !parentCcw) : parentCcw;
-                    float along = Math.max(child.w, child.descendantOverflowRight);
-                    float across = Math.max(child.h, child.descendantOverflowBottom);
-                    float r = (ccw || tr ? child.x + across : child.x) + scrollX;
-                    float b = (ccw ? child.y : child.y + along) + scrollY;
-                    if (r > extRight) extRight = r;
-                    if (b > extBottom) extBottom = b;
-                    if (r > descRight) descRight = r;
-                    if (b > descBottom) descBottom = b;
-                    continue;
-                }
-                if (child == lastInFlow) {
-                    float r = child.x + child.w + child.mR + scrollX;
-                    float b = child.y + child.h + scrollY;
-                    if (r > extRight) extRight = r;
-                    if (b > extBottom) extBottom = b;
-                } else {
-                    float r = child.x + child.w + child.mR + scrollX;
-                    float b = child.y + child.h + child.mB + scrollY;
-                    if (r > extRight) extRight = r;
-                    if (b > extBottom) extBottom = b;
-                }
-                float cr = child.x + child.w + scrollX;
-                float cb = child.y + child.h + scrollY;
-                if (cr > descRight) descRight = cr;
-                if (cb > descBottom) descBottom = cb;
-                if (!child.clipsOverflow()) {
-                    float ovR = child.x + child.descendantOverflowRight + scrollX;
-                    float ovB = child.y + child.descendantOverflowBottom + scrollY;
-                    if (ovR > descRight) descRight = ovR;
-                    if (ovB > descBottom) descBottom = ovB;
-                }
-            }
-        }
-        if (engineState != null && engineState.contributesScrollExtent()) {
-            ScrollExtent extent = new ScrollExtent(extRight, extBottom);
-            engineState.contributeScrollExtent(extent, scrollX, scrollY);
-            extRight = extent.right();
-            extBottom = extent.bottom();
-        }
-        if (inlineContentBottom > Float.NEGATIVE_INFINITY) {
-            float b = inlineContentBottom + scrollY;
-            if (b > extBottom) extBottom = b;
-        }
-
-        this.descendantOverflowRight = descRight - this.x;
-        this.descendantOverflowBottom = descBottom - this.y;
-        if (isCollapsedTable()) {
-            // 枠線を重ねる表のスクロール範囲は、セルの端まで（表の外周の枠線の半分は含めず、表の箱の大きさで下限も切らない）
-            this.scrollWidth = extRight - this.x;
-            this.scrollHeight = extBottom - this.y;
-            return;
-        }
-        this.scrollWidth = Math.max(Math.max(this.w, extRight - this.x + pR + bR), descendantOverflowRight);
-        this.scrollHeight = Math.max(Math.max(this.h, extBottom - this.y + pB + bB), descendantOverflowBottom);
-    }
-
     /**
      * {@code border-collapse: collapse} の表か。この表の外周の枠線は、表の箱の中に半分だけあるが
      * {@code clientLeft} などには数えない（ブラウザと同じ。{@code clientWidth} は箱の幅のまま）。
      * {@code overflow} でクリップする表は普通の箱と同じに扱う。
      */
     public boolean isCollapsedTable() {
-        return display != null && display.inner() == Display.Inner.TABLE && style != null && !clipsOverflow()
+        return display != null && display.inner() == Display.Inner.TABLE && style != null
+                && !ScrollExtentCalc.clipsOverflow(this)
                 && style.keywordOf(CssPropertyIndex.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) == CssKeywords.BorderCollapse.COLLAPSE;
     }
 
-    private boolean hasDefiniteHeight() {
-        ComputedStyle ax = axisStyle();
-        String height = ax.get(CssPropertyIndex.HEIGHT);
-        if (height != null && !height.isBlank() && !"auto".equalsIgnoreCase(height.trim())) return true;
-        String minHeight = ax.get(CssPropertyIndex.MIN_HEIGHT);
-        return minHeight != null && !minHeight.isBlank() && !"0".equals(minHeight.trim()) && !"0px".equals(minHeight.trim())
-                && !"auto".equalsIgnoreCase(minHeight.trim());
+    // ==========================================
+    // 読み取り専用アクセサと描画用一時境界（A7）
+    // ==========================================
+
+    public float x() { return x; }
+    public float y() { return y; }
+    public float w() { return w; }
+    public float h() { return h; }
+    public float mT() { return mT; }
+    public float mR() { return mR; }
+    public float mB() { return mB; }
+    public float mL() { return mL; }
+    public float pT() { return pT; }
+    public float pR() { return pR; }
+    public float pB() { return pB; }
+    public float pL() { return pL; }
+    public float bT() { return bT; }
+    public float bR() { return bR; }
+    public float bB() { return bB; }
+    public float bL() { return bL; }
+    public float rowGap() { return rowGap; }
+    public float columnGap() { return columnGap; }
+    public float scrollWidth() { return scrollWidth; }
+    public float scrollHeight() { return scrollHeight; }
+    public boolean isAbsolute() { return isAbsolute; }
+    public boolean isFixed() { return isFixed; }
+    public boolean isRelative() { return isRelative; }
+    public boolean isSticky() { return isSticky; }
+    public int zIndex() { return zIndex; }
+    public Display display() { return display; }
+    public String displayText() { return displayText; }
+    public float lineHeightPx() { return lineHeightPx; }
+    public List<ShapedLine> shapedLines() { return shapedLines; }
+    public float[] collapsedBorders() { return collapsedBorders; }
+    public float[][] columnRules() { return columnRules; }
+    public float[] firstLineBgRect() { return firstLineBgRect; }
+    public float stickyDy() { return stickyDy; }
+    public boolean isVerticalRoot() { return isVerticalRoot; }
+    public boolean isHorizontalReturnRoot() { return isHorizontalReturnRoot; }
+    public boolean isVerticalWrapper() { return isVerticalWrapper; }
+    public boolean isOutsideMarker() { return isOutsideMarker; }
+    public boolean establishesBfc() { return establishesBfc; }
+    public long paintStamp() { return paintStamp; }
+    public boolean fragmentsStale() { return fragmentsStale; }
+    public ConstraintSpace contentSpaceCache() { return contentSpaceCache; }
+    public ConstraintSpace childSpaceCache() { return childSpaceCache; }
+    public boolean subtreeHasContentAuto() { return subtreeHasContentAuto; }
+    public float devicePixelRatio() { return devicePixelRatio; }
+
+    /** 描画パイプラインからの DPI スケール更新用。 */
+    public void setDevicePixelRatio(float dpr) {
+        this.devicePixelRatio = dpr;
     }
 
-    /** はみ出しを切る・スクロールさせる（{@code overflow} が {@code visible} 以外）か。切られた中身は親のはみ出しにならない。 */
-    private boolean clipsOverflow() {
-        ComputedStyle ax = axisStyle();
-        return ax.overflowX().clips() || ax.overflowY().clips();
+    /** 描画中の部分矩形・fieldset 枠補正に限り、アクションの実行中だけ一時的に外寸・padding/border を差し替え、例外時も必ず元に戻す。 */
+    public void withPaintBounds(float tempX, float tempY, float tempW, float tempH, boolean zeroEdges, Runnable action) {
+        float x0 = this.x, y0 = this.y, w0 = this.w, h0 = this.h;
+        float pl = this.pL, pr = this.pR, pt = this.pT, pb = this.pB;
+        float bl = this.bL, br = this.bR, bt = this.bT, bb = this.bB;
+        this.x = tempX;
+        this.y = tempY;
+        this.w = tempW;
+        this.h = tempH;
+        if (zeroEdges) {
+            this.pL = this.pR = this.pT = this.pB = 0;
+            this.bL = this.bR = this.bT = this.bB = 0;
+        }
+        try {
+            action.run();
+        } finally {
+            this.x = x0;
+            this.y = y0;
+            this.w = w0;
+            this.h = h0;
+            if (zeroEdges) {
+                this.pL = pl;
+                this.pR = pr;
+                this.pT = pt;
+                this.pB = pb;
+                this.bL = bl;
+                this.bR = br;
+                this.bT = bt;
+                this.bB = bb;
+            }
+        }
     }
 
     /** インライン整形で 1 行に置かれた断片（テキスト 1 語、インラインブロック 1 つ、またはインラインボックスの 1 行分）。 */

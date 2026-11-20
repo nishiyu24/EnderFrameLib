@@ -57,7 +57,7 @@ class FractionalShiftEquivalenceTest {
     }
 
     private static void collect(LayoutBox b, List<float[]> out, List<String> texts) {
-        out.add(new float[] {b.x, b.y, b.w, b.h});
+        out.add(new float[] {b.x(), b.y(), b.w(), b.h()});
         for (LayoutBox.InlineFragment f : b.inlineFragments) {
             out.add(new float[] {f.x, f.y, f.w, f.h, f.baseline, f.descent});
             texts.add(f.text);
@@ -85,8 +85,8 @@ class FractionalShiftEquivalenceTest {
         int checked = 0;
         while (!stack.isEmpty()) {
             LayoutBox b = stack.remove(stack.size() - 1);
-            if (b.lineHeightPx > 0) {
-                assertTrue(LayoutUnit.isOnGrid(b.lineHeightPx), "lineHeightPx=" + b.lineHeightPx);
+            if (b.lineHeightPx() > 0) {
+                assertTrue(LayoutUnit.isOnGrid(b.lineHeightPx()), "lineHeightPx=" + b.lineHeightPx());
                 checked++;
             }
             stack.addAll(b.children);
@@ -214,12 +214,12 @@ class FractionalShiftEquivalenceTest {
         int checked = 0;
         while (!stack.isEmpty()) {
             LayoutBox b = stack.remove(stack.size() - 1);
-            assertTrue(LayoutUnit.isOnGrid(b.pT), "pT=" + b.pT);
-            assertTrue(LayoutUnit.isOnGrid(b.pL), "pL=" + b.pL);
-            assertTrue(LayoutUnit.isOnGrid(b.mT), "mT=" + b.mT);
-            assertTrue(LayoutUnit.isOnGrid(b.mL), "mL=" + b.mL);
-            assertTrue(LayoutUnit.isOnGrid(b.rowGap), "rowGap=" + b.rowGap);
-            assertTrue(LayoutUnit.isOnGrid(b.columnGap), "columnGap=" + b.columnGap);
+            assertTrue(LayoutUnit.isOnGrid(b.pT()), "pT=" + b.pT());
+            assertTrue(LayoutUnit.isOnGrid(b.pL()), "pL=" + b.pL());
+            assertTrue(LayoutUnit.isOnGrid(b.mT()), "mT=" + b.mT());
+            assertTrue(LayoutUnit.isOnGrid(b.mL()), "mL=" + b.mL());
+            assertTrue(LayoutUnit.isOnGrid(b.rowGap()), "rowGap=" + b.rowGap());
+            assertTrue(LayoutUnit.isOnGrid(b.columnGap()), "columnGap=" + b.columnGap());
             checked++;
             stack.addAll(b.children);
         }

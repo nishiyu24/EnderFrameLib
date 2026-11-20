@@ -68,13 +68,13 @@ public final class VirtualFlowState implements LayoutEngine.LayoutEngineState {
         if (placedStart >= 0 && placedEnd >= placedStart) {
             int end = Math.min(placedEnd, n - 1);
             for (int i = placedStart; i <= end; i++) {
-                LayoutBox.resetPlacementChildFast(kids.get(i), keepRun, nextOffset, nextBfcFloat, staleFrags);
+                PlacementMemo.resetPlacementChildFast(kids.get(i), keepRun, nextOffset, nextBfcFloat, staleFrags);
             }
         }
         for (int k = 0; k < extraPlacedCount; k++) {
             int idx = extraPlaced[k];
             if (idx >= 0 && idx < n && (idx < placedStart || idx > placedEnd)) {
-                LayoutBox.resetPlacementChildFast(kids.get(idx), keepRun, nextOffset, nextBfcFloat, staleFrags);
+                PlacementMemo.resetPlacementChildFast(kids.get(idx), keepRun, nextOffset, nextBfcFloat, staleFrags);
             }
         }
     }

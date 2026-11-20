@@ -80,7 +80,7 @@ public class ShowcaseChromeParityTest {
             if (cls != null) {
                 for (String c : cls.trim().split("\\s+")) {
                     int i = counters.merge(c, 1, Integer::sum) - 1;
-                    out.put(c + "[" + i + "]", new Rect(b.x, b.y, b.w, b.h));
+                    out.put(c + "[" + i + "]", new Rect(b.x(), b.y(), b.w(), b.h()));
                 }
             }
         }

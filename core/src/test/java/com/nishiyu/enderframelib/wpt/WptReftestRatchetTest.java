@@ -275,7 +275,7 @@ class WptReftestRatchetTest {
     private static void dump(com.nishiyu.enderframelib.core.layout.LayoutBox b, int depth, StringBuilder sb) {
         sb.append("  ".repeat(depth)).append(b.isAnonymous ? "(anon)" : b.node == null ? "?" : b.node.tag)
                 .append(b.node != null && b.node.getAttribute("id") != null ? "#" + b.node.getAttribute("id") : "")
-                .append(String.format(" [%.1f,%.1f %.1fx%.1f] m=%.0f,%.0f,%.0f,%.0f", b.x, b.y, b.w, b.h, b.mT, b.mR, b.mB, b.mL));
+                .append(String.format(" [%.1f,%.1f %.1fx%.1f] m=%.0f,%.0f,%.0f,%.0f", b.x(), b.y(), b.w(), b.h(), b.mT(), b.mR(), b.mB(), b.mL()));
         for (var f : b.inlineFragments) sb.append(String.format(" {'%s' %.1f,%.1f %.1fx%.1f}", f.text == null ? "" : f.text.replace("\n", "\\n"), f.x, f.y, f.w, f.h));
         sb.append('\n');
         for (var c : b.children) dump(c, depth + 1, sb);

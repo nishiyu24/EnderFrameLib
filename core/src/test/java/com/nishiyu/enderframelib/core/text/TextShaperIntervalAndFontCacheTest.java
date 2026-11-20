@@ -182,8 +182,8 @@ class TextShaperIntervalAndFontCacheTest {
                 box2.measure(800, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, false), ctx);
                 box2.layout(0, 0, 800, 600, ctx);
 
-                assertEquals(box1.w, box2.w, 0.0001f);
-                assertEquals(box1.h, box2.h, 0.0001f);
+                assertEquals(box1.w(), box2.w(), 0.0001f);
+                assertEquals(box1.h(), box2.h(), 0.0001f);
                 assertEquals(box1.children.size(), box2.children.size());
                 for (int i = 0; i < box1.children.size(); i++) {
                     LayoutBox c1 = box1.children.get(i);

@@ -22,7 +22,7 @@ class StaleTextPatchTest {
     }
 
     private static void collect(LayoutBox b, List<String> out) {
-        out.add(b.x + "," + b.y + "," + b.w + "," + b.h);
+        out.add(b.x() + "," + b.y() + "," + b.w() + "," + b.h());
         for (LayoutBox c : b.children) collect(c, out);
     }
 

@@ -405,8 +405,8 @@ public class IncrementalLayoutTest {
     }
 
     private static void dumpBoxes(LayoutBox box, String path, List<String> out) {
-        out.add(path + " " + box.node.tag + "#" + box.node.getId() + " x=" + box.x + " y=" + box.y + " w=" + box.w
-                + " h=" + box.h + " m=" + box.mT + "," + box.mR + "," + box.mB + "," + box.mL
+        out.add(path + " " + box.node.tag + "#" + box.node.getId() + " x=" + box.x() + " y=" + box.y() + " w=" + box.w()
+                + " h=" + box.h() + " m=" + box.mT() + "," + box.mR() + "," + box.mB() + "," + box.mL()
                 + " display=" + box.style.get("display") + " style#" + box.style.asMap().hashCode());
         for (int i = 0; i < box.children.size(); i++) dumpBoxes(box.children.get(i), path + "/" + i, out);
     }

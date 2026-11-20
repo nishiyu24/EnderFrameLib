@@ -91,12 +91,12 @@ public class PaintModelTest {
                 <div id="d" style="border: thin solid;"></div>
                 <div id="e" style="border: 2px hidden; border-left-style: dashed;"></div>
                 """);
-        assertEquals(0, find(r.root, "a").bT, 0.01f);
-        assertEquals(3, find(r.root, "b").bT, 0.01f);
-        assertEquals(0, find(r.root, "c").bT, 0.01f);
-        assertEquals(1, find(r.root, "d").bT, 0.01f);
-        assertEquals(0, find(r.root, "e").bT, 0.01f);
-        assertEquals(2, find(r.root, "e").bL, 0.01f);
+        assertEquals(0, find(r.root, "a").bT(), 0.01f);
+        assertEquals(3, find(r.root, "b").bT(), 0.01f);
+        assertEquals(0, find(r.root, "c").bT(), 0.01f);
+        assertEquals(1, find(r.root, "d").bT(), 0.01f);
+        assertEquals(0, find(r.root, "e").bT(), 0.01f);
+        assertEquals(2, find(r.root, "e").bL(), 0.01f);
     }
 
     @Test
@@ -122,9 +122,9 @@ public class PaintModelTest {
         }
         // 両端が線で終わる
         LayoutBox a = find(r.root, "a");
-        assertEquals(Math.round(a.x), dashes.getFirst().x());
+        assertEquals(Math.round(a.x()), dashes.getFirst().x());
         DisplayItem last = dashes.getLast();
-        assertEquals(Math.round(a.x + a.w), last.x() + last.width());
+        assertEquals(Math.round(a.x() + a.w()), last.x() + last.width());
 
         List<DisplayItem> dots = parts(r, "b_b_left");
         assertTrue(dots.size() > 2);
@@ -140,8 +140,8 @@ public class PaintModelTest {
         assertEquals(2, lines.size());
         LayoutBox a = find(r.root, "a");
         assertEquals(2, lines.get(0).height());
-        assertEquals(Math.round(a.y), lines.get(0).y());
-        assertEquals(Math.round(a.y + 4), lines.get(1).y());
+        assertEquals(Math.round(a.y()), lines.get(0).y());
+        assertEquals(Math.round(a.y() + 4), lines.get(1).y());
         // 内側の線は左右の辺の内側の線と角で接する（幅 6 の 2/3 = 4 ずつ縮む）
         assertEquals(lines.get(0).width() - 8, lines.get(1).width());
     }
@@ -150,11 +150,11 @@ public class PaintModelTest {
     public void testOutlineIsDrawnOutsideTheBorderBoxWithoutAffectingLayout() {
         Rendered r = render("<div id=\"a\" style=\"margin: 10px; width: 50px; height: 20px; outline: 2px solid rgb(255, 0, 0); outline-offset: 3px;\"></div>");
         LayoutBox a = find(r.root, "a");
-        assertEquals(50, a.w, 0.01f);
+        assertEquals(50, a.w(), 0.01f);
         DisplayItem top = DisplayItem.resolveAbsolute(r.elements, element(r, "a_o_top"));
         assertNotNull(top);
-        assertEquals(Math.round(a.x - 5), top.x());
-        assertEquals(Math.round(a.y - 5), top.y());
+        assertEquals(Math.round(a.x() - 5), top.x());
+        assertEquals(Math.round(a.y() - 5), top.y());
         assertEquals(60, top.width());
         assertEquals(2, top.height());
         assertEquals(RED, top.bgColor());
@@ -185,19 +185,19 @@ public class PaintModelTest {
         LayoutBox a = find(r.root, "a");
         for (int i = 0; i < 4; i++) {
             DisplayItem absTile = DisplayItem.resolveAbsolute(r.elements, tiles.get(i));
-            assertEquals(Math.round(a.x + i * 10), absTile.x());
+            assertEquals(Math.round(a.x() + i * 10), absTile.x());
             assertEquals(ElementType.IMAGE, absTile.type());
             assertEquals("a.png", absTile.text());
         }
         // 描画領域（border-box）で切る
-        assertEquals(a.x + a.w, tiles.getLast().meta().clipRect().maxX(), 0.01f);
+        assertEquals(a.x() + a.w(), tiles.getLast().meta().clipRect().maxX(), 0.01f);
 
         List<DisplayItem> centered = parts(r, "b_bgl0");
         assertEquals(1, centered.size());
         LayoutBox b = find(r.root, "b");
         DisplayItem absCentered = DisplayItem.resolveAbsolute(r.elements, centered.getFirst());
-        assertEquals(Math.round(b.x + 15), absCentered.x());
-        assertEquals(Math.round(b.y + 15), absCentered.y());
+        assertEquals(Math.round(b.x() + 15), absCentered.x());
+        assertEquals(Math.round(b.y() + 15), absCentered.y());
         assertEquals(10, absCentered.width());
     }
 
@@ -211,7 +211,7 @@ public class PaintModelTest {
         DisplayItem color = element(r, "a_bgl1_0");
         assertNotNull(color);
         assertEquals(RED, color.bgColor());
-        assertEquals(Math.round(a.x + 5), color.x());
+        assertEquals(Math.round(a.x() + 5), color.x());
         assertEquals(20, color.width());
     }
 
@@ -235,21 +235,21 @@ public class PaintModelTest {
         assertEquals(6, ring.meta().borderRadii().topLeft());
 
         // 片は枠の領域だけを覆う: 中央の行は左右の 2px だけ、どの片も内側の矩形に食い込まない
-        List<BoxDecorations.Span> spans = BoxDecorations.roundedBorderSpans(a.x, a.y, a.w, a.h,
+        List<BoxDecorations.Span> spans = BoxDecorations.roundedBorderSpans(a.x(), a.y(), a.w(), a.h(),
                 new float[]{6, 6, 6, 6}, new float[]{2, 2, 2, 2});
-        float midY = a.y + a.h / 2;
+        float midY = a.y() + a.h() / 2;
         List<BoxDecorations.Span> middle = spans.stream().filter(s -> s.y() <= midY && s.y() + s.h() >= midY).toList();
         assertEquals(2, middle.size());
         for (BoxDecorations.Span s : middle) assertEquals(2, s.w(), 0.01f);
         for (BoxDecorations.Span s : spans) {
-            boolean overlapsInner = s.x() < a.x + a.w - 6 && s.x() + s.w() > a.x + 6
-                    && s.y() < a.y + a.h - 2 && s.y() + s.h() > a.y + 2;
+            boolean overlapsInner = s.x() < a.x() + a.w() - 6 && s.x() + s.w() > a.x() + 6
+                    && s.y() < a.y() + a.h() - 2 && s.y() + s.h() > a.y() + 2;
             assertTrue(!overlapsInner, "枠の片が内側を塗っている: " + s);
         }
         // 面積は「外側の角丸矩形 − 内側の角丸矩形」に近い（content-box なので枠線ボックスは 44 × 24）
         double area = spans.stream().mapToDouble(s -> s.w() * s.h()).sum();
-        double outer = a.w * a.h - (4 - Math.PI) * 36;
-        double inner = (a.w - 4) * (a.h - 4) - (4 - Math.PI) * 16;
+        double outer = a.w() * a.h() - (4 - Math.PI) * 36;
+        double inner = (a.w() - 4) * (a.h() - 4) - (4 - Math.PI) * 16;
         assertEquals(outer - inner, area, 6.0);
     }
 
@@ -260,7 +260,7 @@ public class PaintModelTest {
         DisplayItem bg = element(r, "a_bg");
         assertNotNull(bg);
         assertEquals(0x8000FF00, bg.bgColor());
-        assertEquals(Math.round(a.w), bg.width());
+        assertEquals(Math.round(a.w()), bg.width());
         // 枠線は背景の後（上）に描く
         assertTrue(r.elements.indexOf(bg) < r.elements.indexOf(element(r, "a_b_round")));
     }
@@ -275,19 +275,19 @@ public class PaintModelTest {
         LayoutBox a = find(r.root, "a");
         ClipRect c = element(r, "c_bg").meta().clipRect();
         assertNotNull(c, "overflow-y: auto の中身が切られていない");
-        assertEquals(a.y + a.h, c.maxY(), 0.01f);
+        assertEquals(a.y() + a.h(), c.maxY(), 0.01f);
 
         LayoutBox b = find(r.root, "b");
         ClipRect d = element(r, "d_bg").meta().clipRect();
         assertNotNull(d, "overflow: hidden の中身が切られていない");
-        assertEquals(b.y + b.h, d.maxY(), 0.01f);
+        assertEquals(b.y() + b.h(), d.maxY(), 0.01f);
 
         // overflow-x: clip（もう片方は visible）は横だけを切る
         LayoutBox e = find(r.root, "e");
         ClipRect f = element(r, "f_bg").meta().clipRect();
         assertNotNull(f);
-        assertEquals(e.x + e.w, f.maxX(), 0.01f);
-        assertTrue(f.maxY() > e.y + 1000, "overflow-x: clip が縦も切っている: " + f);
+        assertEquals(e.x() + e.w(), f.maxX(), 0.01f);
+        assertTrue(f.maxY() > e.y() + 1000, "overflow-x: clip が縦も切っている: " + f);
         // スクロールバーは overflow-y: auto の箱にだけ出る
         assertNotNull(element(r, "a_sb_v"));
         assertTrue(r.elements.stream().noneMatch(x -> x.id().startsWith("b_sb_")));
@@ -314,7 +314,7 @@ public class PaintModelTest {
         LayoutBox o2 = find(r.root, "o2");
         ClipRect inner = element(r, "inner_bg").meta().clipRect();
         assertNotNull(inner);
-        assertEquals(o2.y + o2.h, inner.maxY(), 0.01f);
+        assertEquals(o2.y() + o2.h(), inner.maxY(), 0.01f);
     }
 
     @Test
@@ -348,7 +348,7 @@ public class PaintModelTest {
         assertNotNull(element(r, "v_bg"), "visible に戻した子孫が描かれていない");
         assertEquals(null, element(r, "i_bg"), "visibility を継いだ子が描かれている");
         // 場所は取る
-        assertTrue(find(r.root, "after").y >= find(r.root, "h").y + 30);
+        assertTrue(find(r.root, "after").y() >= find(r.root, "h").y() + 30);
     }
 
     @Test
@@ -386,8 +386,8 @@ public class PaintModelTest {
         assertEquals(1, parts.size(), "ぼかしの無い影は 1 枚");
         DisplayItem shadow = parts.getFirst();
         DisplayItem absShadow = DisplayItem.resolveAbsolute(r.elements, shadow);
-        assertEquals(Math.round(a.x + 5 - 2), absShadow.x());
-        assertEquals(Math.round(a.y + 6 - 2), absShadow.y());
+        assertEquals(Math.round(a.x() + 5 - 2), absShadow.x());
+        assertEquals(Math.round(a.y() + 6 - 2), absShadow.y());
         assertEquals(44, absShadow.width());
         assertEquals(24, absShadow.height());
         assertEquals(0xFF000000, shadow.bgColor());
@@ -411,8 +411,8 @@ public class PaintModelTest {
         List<DisplayItem> shadows = r.elements.stream().filter(e -> e.id().startsWith("a_shadow_in")).toList();
         assertEquals(1, shadows.size(), "内側の影は 1 枚（穴の外をシェーダーが減衰させて塗る）");
         DisplayItem shadow = shadows.getFirst();
-        assertEquals(Math.round(a.x + 2), shadow.x());
-        assertEquals(Math.round(a.y + 2), shadow.y());
+        assertEquals(Math.round(a.x() + 2), shadow.x());
+        assertEquals(Math.round(a.y() + 2), shadow.y());
         assertEquals(40, shadow.width());
         assertEquals(20, shadow.height());
         assertEquals(RED, shadow.bgColor());
@@ -421,10 +421,10 @@ public class PaintModelTest {
         assertNotNull(hole);
         assertTrue(hole.inset());
         // 穴 = パディングボックスをオフセット (1, 2) だけずらして広がり 3 だけ縮めた矩形。角丸（内側 4px）は広がりの分だけ小さい
-        assertEquals(a.x + 2 + 1 + 3, hole.x0(), 0.01);
-        assertEquals(a.y + 2 + 2 + 3, hole.y0(), 0.01);
-        assertEquals(a.x + 2 + 40 + 1 - 3, hole.x1(), 0.01);
-        assertEquals(a.y + 2 + 20 + 2 - 3, hole.y1(), 0.01);
+        assertEquals(a.x() + 2 + 1 + 3, hole.x0(), 0.01);
+        assertEquals(a.y() + 2 + 2 + 3, hole.y0(), 0.01);
+        assertEquals(a.x() + 2 + 40 + 1 - 3, hole.x1(), 0.01);
+        assertEquals(a.y() + 2 + 20 + 2 - 3, hole.y1(), 0.01);
         assertEquals(1f, hole.rTL(), 0.01);
         assertTrue(r.elements.indexOf(shadow) > r.elements.indexOf(element(r, "a_bg")), "内側の影が背景より下");
         assertTrue(r.elements.indexOf(shadow) < r.elements.indexOf(r.elements.stream().filter(e -> e.id().startsWith("a_b_")).findFirst().orElseThrow()), "内側の影が枠線より上");
@@ -437,9 +437,9 @@ public class PaintModelTest {
         ShadowShape hole = parts(r, "a_shadow").getFirst().hints().shadowShape();
         assertNotNull(hole, "ぼかした外側の影は箱の形を穴として持つ（透明な箱の内側に影が透けない）");
         assertEquals(false, hole.inset());
-        float ox = Math.round(a.x), oy = Math.round(a.y);
-        assertEquals(a.x - ox, hole.x0(), 0.01);
-        assertEquals(a.y + a.h - oy, hole.y1(), 0.01);
+        float ox = Math.round(a.x()), oy = Math.round(a.y());
+        assertEquals(a.x() - ox, hole.x0(), 0.01);
+        assertEquals(a.y() + a.h() - oy, hole.y1(), 0.01);
         assertEquals(5f, hole.rTL(), 0.01);
     }
 

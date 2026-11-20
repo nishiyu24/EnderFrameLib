@@ -70,7 +70,7 @@ public class EngineScrollClipRotationTest {
     }
 
     private static LayoutBox findScroller(LayoutBox b) {
-        if (b.isScrollContainer() && b.scrollHeight > 1500) return b;
+        if (b.isScrollContainer() && b.scrollHeight() > 1500) return b;
         for (LayoutBox c : b.children) {
             LayoutBox r = findScroller(c);
             if (r != null) return r;
@@ -91,12 +91,12 @@ public class EngineScrollClipRotationTest {
         LayoutBox root = compiler.layoutDocument(doc, 800, 600, Map.of(), ss, FontResolver.FALLBACK, new InteractionState());
         LayoutBox sc = findScroller(root);
         assertNotNull(sc);
-        float expected = sc.scrollHeight;
+        float expected = sc.scrollHeight();
         assertEquals(3040f, expected, 1f, "固定の高さの合計");
         for (int k = 1; k <= 6; k++) {
             ss.setScroll(sc.node, 0, 400f * k);
             RenderPipeline.repositionLayout(root, 800, 600, ss, FontResolver.FALLBACK);
-            assertEquals(expected, sc.scrollHeight, 0.5f, "スクロール " + (400 * k) + " でも範囲は同じ");
+            assertEquals(expected, sc.scrollHeight(), 0.5f, "スクロール " + (400 * k) + " でも範囲は同じ");
         }
     }
 

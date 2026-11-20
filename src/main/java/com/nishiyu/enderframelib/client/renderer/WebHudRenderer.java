@@ -399,8 +399,8 @@ public class WebHudRenderer {
         LayoutBox layoutBox = com.nishiyu.enderframelib.common.RenderPipeline.layoutSubtree(
                 instanceNode, doc.sheet, 1000, 1000, null, scrollState, WebFontManager.McFontResolver.INSTANCE);
 
-        cache.width = Math.round(layoutBox.w);
-        cache.height = Math.round(layoutBox.h);
+        cache.width = Math.round(layoutBox.w());
+        cache.height = Math.round(layoutBox.h());
         cache.elements = com.nishiyu.enderframelib.common.RenderPipeline.renderBox(
                 layoutBox, cache.width, cache.height, doc.sheet.keyframes, scrollState);
     }

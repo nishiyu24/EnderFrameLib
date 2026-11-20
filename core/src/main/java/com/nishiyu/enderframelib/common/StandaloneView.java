@@ -589,7 +589,7 @@ public final class StandaloneView implements AutoCloseable {
             float limit = Math.max(0, box.hints().scrollHeight() - box.height());
             if (limit <= 0) continue;
             float cur = ui.scrollState().getScrollY(p);
-            float next = snapTarget(clamp(cur + (targetBox.y - box.y()), limit), limit);
+            float next = snapTarget(clamp(cur + (targetBox.y() - box.y()), limit), limit);
             scrollTargets.put(p, new float[]{ui.scrollState().getScrollX(p), next});
             return true;
         }

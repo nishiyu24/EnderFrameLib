@@ -65,7 +65,7 @@ public class HtmlNodeSerializerTest {
     private static void collectVisibleTextBoxes(LayoutBox box, List<LayoutBox> out) {
         if ("none".equals(box.style.get("display"))) return;
         if ("select".equals(box.node.tag) || "option".equals(box.node.tag)) return;
-        if (box.node.nodeType == NodeType.TEXT && box.displayText != null && !box.displayText.isBlank()) {
+        if (box.node.nodeType == NodeType.TEXT && box.displayText() != null && !box.displayText().isBlank()) {
             out.add(box);
         }
         for (LayoutBox child : box.children) {
@@ -133,12 +133,12 @@ public class HtmlNodeSerializerTest {
 
         // すべての可視テキストボックスが w > 0 かつ h > 0（または inlineFragments 非空）であること
         long renderableCount = textBoxes.stream()
-                .filter(b -> (b.w > 0 && b.h > 0) || !b.inlineFragments.isEmpty())
+                .filter(b -> (b.w() > 0 && b.h() > 0) || !b.inlineFragments.isEmpty())
                 .count();
         assertEquals(textBoxes.size(), renderableCount,
                 "すべての可視テキストボックスが描画可能なサイズまたは inlineFragments を持つこと");
 
-        assertTrue(textBoxes.stream().anyMatch(b -> b.displayText.contains("EnderFrame")),
+        assertTrue(textBoxes.stream().anyMatch(b -> b.displayText().contains("EnderFrame")),
                 "showcase.html のヘッダーテキストがレイアウトツリーに含まれていること");
 
         List<HtmlNode> selectNodes = new ArrayList<>();

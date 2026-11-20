@@ -68,7 +68,7 @@ public class RestyleTextAndInheritCacheTest {
         HtmlNode boxNode = view.root().getNodeById("box");
         LayoutBox textBox = findFirstTextBox(view.ui().layoutRoot(), boxNode);
         assertNotNull(textBox);
-        String initialText = textBox.displayText;
+        String initialText = textBox.displayText();
         assertEquals("  hello   world  ", initialText);
 
         // color のみ変更: displayText インスタンスごとそのまま保たれる（再正規化・大文字小文字変換を省略）
@@ -76,32 +76,32 @@ public class RestyleTextAndInheritCacheTest {
         view.ui().flushInvalidation();
         LayoutBox afterColor = findFirstTextBox(view.ui().layoutRoot(), boxNode);
         assertSame(textBox, afterColor);
-        assertSame(initialText, afterColor.displayText);
+        assertSame(initialText, afterColor.displayText());
 
         // text-transform 変更: 大文字化される
         boxNode.setAttribute("style", "color:blue;white-space:pre;text-transform:uppercase");
         view.ui().flushInvalidation();
         LayoutBox afterTransform = findFirstTextBox(view.ui().layoutRoot(), boxNode);
-        assertEquals("  HELLO   WORLD  ", afterTransform.displayText);
+        assertEquals("  HELLO   WORLD  ", afterTransform.displayText());
 
         // white-space: normal 変更: 連続空白が畳まれる
         boxNode.setAttribute("style", "color:blue;white-space:normal;text-transform:uppercase");
         view.ui().flushInvalidation();
         LayoutBox afterNormal = findFirstTextBox(view.ui().layoutRoot(), boxNode);
-        assertEquals(" HELLO WORLD ", afterNormal.displayText);
+        assertEquals(" HELLO WORLD ", afterNormal.displayText());
 
         // LayoutBox.updateStyle を直接呼んで white-space 変化時にも再正規化されることを確かめる
         com.nishiyu.enderframelib.core.css.ComputedStyle preStyle =
                 new com.nishiyu.enderframelib.core.css.ComputedStyle(java.util.Map.of("white-space", "pre", "text-transform", "uppercase"));
         afterNormal.updateStyle(preStyle);
-        assertEquals("  HELLO   WORLD  ", afterNormal.displayText);
+        assertEquals("  HELLO   WORLD  ", afterNormal.displayText());
 
         // 本文テキスト変更: 新しいテキストで再計算される
         boxNode.setAttribute("style", "color:blue;white-space:pre;text-transform:uppercase");
         boxNode.setTextContent("  abc  ");
         view.ui().flushInvalidation();
         LayoutBox afterText = findFirstTextBox(view.ui().layoutRoot(), boxNode);
-        assertEquals("  ABC  ", afterText.displayText);
+        assertEquals("  ABC  ", afterText.displayText());
     }
 
     private static LayoutBox findFirstTextBox(LayoutBox root, HtmlNode owner) {

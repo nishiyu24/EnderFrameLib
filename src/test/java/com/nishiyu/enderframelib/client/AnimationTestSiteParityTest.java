@@ -171,9 +171,9 @@ public class AnimationTestSiteParityTest {
             LayoutBox btn = findBoxByClass("trans-button");
             // Webサイト上: Chrome 実測値 height = 34.0px (padding: 10px 0 + font-size + border)
             // CSS が脱落した未適用状態: height = 17.0px (padding: 0)
-            assertEquals(34.0f, btn.h, 4.0f,
-                    String.format(".trans-button の高さが Web（34px）と乖離しています (実際: %.1fpx)", btn.h));
-            assertEquals(10.0f, btn.pT, 1.0f, ".trans-button の paddingTop が 10px であること");
+            assertEquals(34.0f, btn.h(), 4.0f,
+                    String.format(".trans-button の高さが Web（34px）と乖離しています (実際: %.1fpx)", btn.h()));
+            assertEquals(10.0f, btn.pT(), 1.0f, ".trans-button の paddingTop が 10px であること");
         }
 
         @Test
@@ -184,12 +184,12 @@ public class AnimationTestSiteParityTest {
 
             // Webサイト上: Chrome 実測値 card height = 66.5px, mc-item-box = 36.0 x 36.0px (横並び)
             // CSS 脱落状態: card height = 36.4px, mc-item-box width = 384.7px (親幅いっぱい、縦積み崩壊)
-            assertEquals(66.5f, card.h, 6.0f,
-                    String.format(".mc-item-card の高さが Web（約66.5px）と乖離しています (実際: %.1fpx)", card.h));
-            assertEquals(36.0f, itemBox.w, 2.0f,
-                    String.format(".mc-item-box の幅が 36px の正方形ではなく親幅いっぱいに広がっています (実際: %.1fpx)", itemBox.w));
-            assertEquals(36.0f, itemBox.h, 2.0f,
-                    String.format(".mc-item-box の高さが 36px を維持していません (実際: %.1fpx)", itemBox.h));
+            assertEquals(66.5f, card.h(), 6.0f,
+                    String.format(".mc-item-card の高さが Web（約66.5px）と乖離しています (実際: %.1fpx)", card.h()));
+            assertEquals(36.0f, itemBox.w(), 2.0f,
+                    String.format(".mc-item-box の幅が 36px の正方形ではなく親幅いっぱいに広がっています (実際: %.1fpx)", itemBox.w()));
+            assertEquals(36.0f, itemBox.h(), 2.0f,
+                    String.format(".mc-item-box の高さが 36px を維持していません (実際: %.1fpx)", itemBox.h()));
         }
 
         @Test
@@ -198,8 +198,8 @@ public class AnimationTestSiteParityTest {
             LayoutBox toast = findBoxByClass("toast-pill");
             // Webサイト上: Chrome 実測値 height = 30.4px (padding: 6px 12px)
             // CSS 脱落状態: height = 18.2px (padding: 0)
-            assertEquals(30.4f, toast.h, 4.0f,
-                    String.format(".toast-pill の高さが Web（約30.4px）と乖離しています (実際: %.1fpx)", toast.h));
+            assertEquals(30.4f, toast.h(), 4.0f,
+                    String.format(".toast-pill の高さが Web（約30.4px）と乖離しています (実際: %.1fpx)", toast.h()));
         }
 
         @Test
@@ -210,10 +210,10 @@ public class AnimationTestSiteParityTest {
 
             // Webサイト上: Chrome 実測値 header height = 56.0px, brand-name height = 20.9px (1行)
             // エンジン現状: brand-name が "EnderFrame " と "Lab" に 2 行折り返し、header height = 90.1px に肥大化
-            assertEquals(56.0f, header.h, 6.0f,
-                    String.format(".lab-header の高さが Web（56px）より大幅に肥大化しています (実際: %.1fpx)", header.h));
-            assertEquals(20.9f, brandName.h, 3.0f,
-                    String.format(".brand-name が 1 行に収まらず 2 行に折り返しています (実際: %.1fpx)", brandName.h));
+            assertEquals(56.0f, header.h(), 6.0f,
+                    String.format(".lab-header の高さが Web（56px）より大幅に肥大化しています (実際: %.1fpx)", header.h()));
+            assertEquals(20.9f, brandName.h(), 3.0f,
+                    String.format(".brand-name が 1 行に収まらず 2 行に折り返しています (実際: %.1fpx)", brandName.h()));
         }
     }
 
@@ -229,10 +229,10 @@ public class AnimationTestSiteParityTest {
         void testGridColumnsEqual() {
             List<LayoutBox> cols = findBoxesByClass("lab-col");
             assertEquals(3, cols.size(), ".lab-col が 3 列存在すること");
-            float w0 = cols.get(0).w;
+            float w0 = cols.get(0).w();
             for (int i = 1; i < cols.size(); i++) {
-                assertEquals(w0, cols.get(i).w, 1.0f,
-                        String.format("カラム #%d の幅 (%.1f) がカラム #0 の幅 (%.1f) と一致しません", i, cols.get(i).w, w0));
+                assertEquals(w0, cols.get(i).w(), 1.0f,
+                        String.format("カラム #%d の幅 (%.1f) がカラム #0 の幅 (%.1f) と一致しません", i, cols.get(i).w(), w0));
             }
         }
 
@@ -247,13 +247,13 @@ public class AnimationTestSiteParityTest {
             // flex: 1; min-height: 0 のグリッドの auto 行は確定した高さに収まり、
             // min-height: 0; overflow-y: auto の列は行の高さになって中身がスクロールする
             // 修正前: col0.h = 855.2px に縦伸びし、グリッドの外へ突き抜けていた
-            assertEquals(grid.h, col0.h, 0.5f,
-                    String.format(".lab-col の高さがグリッドの行に制約されずに突き抜けています (実際: %.1fpx, グリッド: %.1fpx)", col0.h, grid.h));
-            assertEquals(659.6f, col0.h, 1.0f, String.format(".lab-col の高さ (実際: %.1fpx)", col0.h));
-            assertTrue(col0.scrollHeight > col0.h, ".lab-col の中身はスクロールで見えること");
-            assertTrue(footer.y >= grid.y + grid.h, ".lab-footer がグリッドの下にあること");
-            assertTrue(footer.y + footer.h <= VIEWPORT_H,
-                    String.format(".lab-footer がビューポート (800px) の外にはみ出しています (実際下端: %.1fpx)", footer.y + footer.h));
+            assertEquals(grid.h(), col0.h(), 0.5f,
+                    String.format(".lab-col の高さがグリッドの行に制約されずに突き抜けています (実際: %.1fpx, グリッド: %.1fpx)", col0.h(), grid.h()));
+            assertEquals(659.6f, col0.h(), 1.0f, String.format(".lab-col の高さ (実際: %.1fpx)", col0.h()));
+            assertTrue(col0.scrollHeight() > col0.h(), ".lab-col の中身はスクロールで見えること");
+            assertTrue(footer.y() >= grid.y() + grid.h(), ".lab-footer がグリッドの下にあること");
+            assertTrue(footer.y() + footer.h() <= VIEWPORT_H,
+                    String.format(".lab-footer がビューポート (800px) の外にはみ出しています (実際下端: %.1fpx)", footer.y() + footer.h()));
         }
 
         @Test
@@ -270,8 +270,8 @@ public class AnimationTestSiteParityTest {
             LayoutBox col0 = boxes.stream().filter(b -> hasClass(b, "lab-col")).findFirst().orElseThrow();
             LayoutBox footer = boxes.stream().filter(b -> hasClass(b, "lab-footer")).findFirst().orElseThrow();
 
-            assertEquals(564.6f, col0.h, 1.0f, String.format(".lab-col の高さ (実際: %.1fpx)", col0.h));
-            assertEquals(656.6f, footer.y, 1.0f, String.format(".lab-footer の y (実際: %.1fpx)", footer.y));
+            assertEquals(564.6f, col0.h(), 1.0f, String.format(".lab-col の高さ (実際: %.1fpx)", col0.h()));
+            assertEquals(656.6f, footer.y(), 1.0f, String.format(".lab-footer の y (実際: %.1fpx)", footer.y()));
         }
 
         private static boolean hasClass(LayoutBox b, String clsName) {
@@ -365,12 +365,12 @@ public class AnimationTestSiteParityTest {
             for (String lane : lanes) {
                 LayoutBox runner = findBoxByClass(lane);
                 LayoutBox laneBox = findBoxByClass("track-lane");
-                assertTrue(runner.w > 0 && runner.h > 0, lane + " のランナーに大きさがあること");
+                assertTrue(runner.w() > 0 && runner.h() > 0, lane + " のランナーに大きさがあること");
 
                 DisplayItem item = displayItems.stream()
                         .filter(i -> i.animDef() != null && i.animDef().durationMs() == 2000
                                 && i.type() != ElementType.TEXT
-                                && Math.abs(i.x() - runner.x) < 1 && Math.abs(i.y() - runner.y) < 1)
+                                && Math.abs(i.x() - runner.x()) < 1 && Math.abs(i.y() - runner.y()) < 1)
                         .findFirst().orElse(null);
                 assertNotNull(item, lane + " のランナーに AnimationSpec が付いた DisplayItem があること");
                 String sessionId = "test_lane_" + lane;
@@ -399,7 +399,7 @@ public class AnimationTestSiteParityTest {
                 LayoutBox runner = findBoxByClass(lane);
                 DisplayItem runnerItem = displayItems.stream()
                         .filter(i -> i.animDef() != null && i.animDef().durationMs() == 2000
-                                && Math.abs(i.x() - runner.x) < 1 && Math.abs(i.y() - runner.y) < 1)
+                                && Math.abs(i.x() - runner.x()) < 1 && Math.abs(i.y() - runner.y()) < 1)
                         .findFirst().orElseThrow();
                 List<DisplayItem> layers = displayItems.stream()
                         .filter(i -> runnerItem.id().equals(i.hints().parentId()))

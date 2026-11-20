@@ -37,7 +37,7 @@ public class TopLayerTest {
     /** 描かれる箱（{@code display: none} の箱は無いものとして扱う）。 */
     private static LayoutBox find(LayoutBox box, String id) {
         if (id.equals(box.node.attrs.get("id"))) {
-            return box.display != null && box.display.outer() == LayoutBox.Display.Outer.NONE ? null : box;
+            return box.display() != null && box.display().outer() == LayoutBox.Display.Outer.NONE ? null : box;
         }
         for (LayoutBox c : box.elementChildren) {
             LayoutBox h = find(c, id);
@@ -58,8 +58,8 @@ public class TopLayerTest {
         c.el("d").showModal();
         LayoutBox d = find(c.layout(), "d");
         assertNotNull(d);
-        assertEquals((W - 100) / 2f, d.x, 0.5f);
-        assertEquals((H - 40) / 2f, d.y, 0.5f);
+        assertEquals((W - 100) / 2f, d.x(), 0.5f);
+        assertEquals((H - 40) / 2f, d.y(), 0.5f);
         c.el("d").close();
         assertNull(find(c.layout(), "d"));
     }
@@ -71,7 +71,7 @@ public class TopLayerTest {
         c.el("p").showPopover();
         LayoutBox p = find(c.layout(), "p");
         assertNotNull(p);
-        assertEquals((W - 100) / 2f, p.x, 0.5f);
+        assertEquals((W - 100) / 2f, p.x(), 0.5f);
         assertTrue(c.el("p").togglePopover() == false);
         assertNull(find(c.layout(), "p"));
     }

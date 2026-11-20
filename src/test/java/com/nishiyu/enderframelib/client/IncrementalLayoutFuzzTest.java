@@ -182,17 +182,17 @@ public class IncrementalLayoutFuzzTest {
             String d = firstDiff(live.children.get(i), full.children.get(i));
             if (d != null) return d;
         }
-        if (live.x != full.x || live.y != full.y || live.w != full.w || live.h != full.h) {
+        if (live.x() != full.x() || live.y() != full.y() || live.w() != full.w() || live.h() != full.h()) {
             StringBuilder kids = new StringBuilder();
             for (int i = 0; i < live.children.size(); i++) {
                 LayoutBox l = live.children.get(i), f = full.children.get(i);
-                kids.append(" [").append(l.node.tag).append('#').append(l.node.getId()).append(" live=(").append(l.x).append(',').append(l.y)
-                        .append(',').append(l.w).append(',').append(l.h).append(") frags=").append(l.inlineFragments.size())
-                        .append(" full=(").append(f.x).append(',').append(f.y).append(',').append(f.w).append(',').append(f.h)
+                kids.append(" [").append(l.node.tag).append('#').append(l.node.getId()).append(" live=(").append(l.x()).append(',').append(l.y())
+                        .append(',').append(l.w()).append(',').append(l.h()).append(") frags=").append(l.inlineFragments.size())
+                        .append(" full=(").append(f.x()).append(',').append(f.y()).append(',').append(f.w()).append(',').append(f.h())
                         .append(") frags=").append(f.inlineFragments.size()).append(']');
             }
-            return live.debugInfo() + " live=(" + live.x + "," + live.y + "," + live.w + "," + live.h + ") full=("
-                    + full.x + "," + full.y + "," + full.w + "," + full.h + ") kids:" + kids;
+            return live.debugInfo() + " live=(" + live.x() + "," + live.y() + "," + live.w() + "," + live.h() + ") full=("
+                    + full.x() + "," + full.y() + "," + full.w() + "," + full.h() + ") kids:" + kids;
         }
         return null;
     }

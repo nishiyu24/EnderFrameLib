@@ -161,15 +161,18 @@ public class InteractionPipelineTest {
     void testScrollbarInteraction() {
         SessionContext session = ClientWebManager.getOrCreateSession("testScrollSession");
 
-        Document doc = new UiDocumentCompiler().parseDocument("<div id=\"scrollBox\"></div>", "", 100, 100);
+        Document doc = new UiDocumentCompiler().parseDocument(
+                "<div id=\"scrollBox\" style=\"width:100px;height:100px;overflow:auto;\"><div style=\"height:300px;\"></div></div>",
+                "", 100, 100);
         session.setDocument(doc);
         HtmlNode containerNode = doc.root.getElementById("scrollBox");
 
-        com.nishiyu.enderframelib.core.layout.LayoutBox box =
-                new com.nishiyu.enderframelib.core.layout.LayoutBox(containerNode, new com.nishiyu.enderframelib.core.css.ComputedStyle(Map.of()));
-        box.x = 0; box.y = 0; box.w = 100; box.h = 100;
-        box.scrollWidth = 100;
-        box.scrollHeight = 300; // 300px のコンテンツ（可視 100px なので最大スクロール量は 200px）
+        com.nishiyu.enderframelib.core.layout.LayoutBox box = com.nishiyu.enderframelib.common.RenderPipeline.layoutSubtree(
+                containerNode, doc.sheet, 100, 100, null, session.scrollState(),
+                com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+        assertEquals(100f, box.w(), 0.01f);
+        assertEquals(100f, box.h(), 0.01f);
+        assertEquals(300f, box.scrollHeight(), 0.01f);
 
         session.setLayoutRoot(box);
 

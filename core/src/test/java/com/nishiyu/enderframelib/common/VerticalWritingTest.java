@@ -99,23 +99,23 @@ public class VerticalWritingTest {
                 + "aaaa ".repeat(40) + "</div>");
         LayoutBox v = find(c.layout(), "v");
         assertNotNull(v);
-        assertTrue(v.isVerticalRoot);
-        assertEquals(200, v.h, 0.01f, "物理の高さ = 行の長さ");
-        assertTrue(v.w >= 40 && Math.abs(v.w % 20) < 0.01f, "物理の幅は行数 × 20px: " + v.w);
+        assertTrue(v.isVerticalRoot());
+        assertEquals(200, v.h(), 0.01f, "物理の高さ = 行の長さ");
+        assertTrue(v.w() >= 40 && Math.abs(v.w() % 20) < 0.01f, "物理の幅は行数 × 20px: " + v.w());
     }
 
     @Test
     public void moreTextMeansMoreLinesAndWiderBox() {
         Ctx a = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px'>" + "aaaa ".repeat(10) + "</div>");
         Ctx b = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px'>" + "aaaa ".repeat(40) + "</div>");
-        assertTrue(find(b.layout(), "v").w > find(a.layout(), "v").w);
+        assertTrue(find(b.layout(), "v").w() > find(a.layout(), "v").w());
     }
 
     @Test
     public void shorterHeightWrapsMore() {
         Ctx tall = new Ctx("<div id=v style='writing-mode:vertical-rl;height:400px'>" + "aaaa ".repeat(30) + "</div>");
         Ctx shortBox = new Ctx("<div id=v style='writing-mode:vertical-rl;height:100px'>" + "aaaa ".repeat(30) + "</div>");
-        assertTrue(find(shortBox.layout(), "v").w > find(tall.layout(), "v").w, "行の長さが短いほど行が増えて幅が増える");
+        assertTrue(find(shortBox.layout(), "v").w() > find(tall.layout(), "v").w(), "行の長さが短いほど行が増えて幅が増える");
     }
 
     @Test
@@ -123,12 +123,12 @@ public class VerticalWritingTest {
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px;padding:5px'>aaaa aaaa aaaa</div>");
         LayoutBox v = find(c.layout(), "v");
         LayoutBox wrapper = v.children.get(0);
-        assertTrue(wrapper.isVerticalWrapper);
+        assertTrue(wrapper.isVerticalWrapper());
         // 回転後の見た目は根の内容ボックスに収まる: 箱は右へ h だけずらして置く（90° 回転は左へ h 張り出す）
-        assertEquals(v.x + 5 + wrapper.h, wrapper.x, 0.01f);
-        assertEquals(v.y + 5, wrapper.y, 0.01f);
-        assertEquals(200, wrapper.w, 0.01f, "論理のインライン寸法 = 根の内容の高さ");
-        assertEquals(wrapper.h + 10, v.w, 0.01f, "根の幅 = 論理のブロック寸法 + padding");
+        assertEquals(v.x() + 5 + wrapper.h(), wrapper.x(), 0.01f);
+        assertEquals(v.y() + 5, wrapper.y(), 0.01f);
+        assertEquals(200, wrapper.w(), 0.01f, "論理のインライン寸法 = 根の内容の高さ");
+        assertEquals(wrapper.h() + 10, v.w(), 0.01f, "根の幅 = 論理のブロック寸法 + padding");
     }
 
     @Test
@@ -136,8 +136,8 @@ public class VerticalWritingTest {
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:100px;width:300px'>abc</div>");
         LayoutBox v = find(c.layout(), "v");
         LayoutBox wrapper = v.children.get(0);
-        assertEquals(300, v.w, 0.01f);
-        assertEquals(v.x + 300, wrapper.x, 0.01f, "最初の行は右端（block-start）");
+        assertEquals(300, v.w(), 0.01f);
+        assertEquals(v.x() + 300, wrapper.x(), 0.01f, "最初の行は右端（block-start）");
     }
 
     @Test
@@ -146,8 +146,8 @@ public class VerticalWritingTest {
         LayoutBox root = c.layout();
         LayoutBox v = find(root, "v");
         LayoutBox wrapper = v.children.get(0);
-        assertEquals(v.x + 3, wrapper.x, 0.01f, "行は左端から積む");
-        assertEquals(v.y + 3 + wrapper.w, wrapper.y, 0.01f, "-90° 回転は上へ w だけ張り出す");
+        assertEquals(v.x() + 3, wrapper.x(), 0.01f, "行は左端から積む");
+        assertEquals(v.y() + 3 + wrapper.w(), wrapper.y(), 0.01f, "-90° 回転は上へ w だけ張り出す");
         DisplayItem n = item(c.render(root), wrapper.node.key());
         assertNotNull(n);
         assertEquals(-90f, n.rotate(), 0.001f);
@@ -158,26 +158,26 @@ public class VerticalWritingTest {
         Ctx c = new Ctx("<div id=h style='width:100px'>abc def</div>");
         LayoutBox root = c.layout();
         LayoutBox h = find(root, "h");
-        assertFalse(h.isVerticalRoot);
-        assertFalse(h.children.stream().anyMatch(b -> b.isVerticalWrapper));
+        assertFalse(h.isVerticalRoot());
+        assertFalse(h.children.stream().anyMatch(b -> b.isVerticalWrapper()));
         assertTrue(texts(c.render(root)).stream().allMatch(t -> t.rotate() == 0f));
     }
 
     @Test
     public void flexAndGridAndTableCanBeVerticalRoots() {
         Ctx cf = new Ctx("<div id=f style='display:flex;writing-mode:vertical-rl;height:100px'><div>x</div></div>");
-        assertTrue(find(cf.layout(), "f").isVerticalRoot, "flex コンテナも縦書きの根になる");
+        assertTrue(find(cf.layout(), "f").isVerticalRoot(), "flex コンテナも縦書きの根になる");
         Ctx cg = new Ctx("<div id=g style='display:grid;writing-mode:vertical-rl;height:100px'><div>x</div></div>");
-        assertTrue(find(cg.layout(), "g").isVerticalRoot, "grid コンテナも縦書きの根になる");
+        assertTrue(find(cg.layout(), "g").isVerticalRoot(), "grid コンテナも縦書きの根になる");
         Ctx ct = new Ctx("<table id=t style='writing-mode:vertical-rl;height:100px'><tr><td>x</td></tr></table>");
-        assertTrue(find(ct.layout(), "t").isVerticalRoot, "table コンテナも縦書きの根になる");
+        assertTrue(find(ct.layout(), "t").isVerticalRoot(), "table コンテナも縦書きの根になる");
     }
 
     @Test
     public void nestedVerticalDoesNotRotateTwice() {
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:100px'><p id=p>abc def</p><p id=q>ghi</p></div>");
         LayoutBox root = c.layout();
-        assertFalse(find(root, "p").isVerticalRoot, "子は祖先の縦書きの内側（回転は根の 1 回だけ）");
+        assertFalse(find(root, "p").isVerticalRoot(), "子は祖先の縦書きの内側（回転は根の 1 回だけ）");
         long wrappers = c.render(root).stream().filter(i -> i.id().endsWith("_vw")).count();
         assertEquals(1, wrappers);
     }
@@ -188,8 +188,8 @@ public class VerticalWritingTest {
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:100px'><p id=a>aaa</p><p id=b>bbb</p></div>");
         LayoutBox root = c.layout();
         LayoutBox a = find(root, "a"), b = find(root, "b");
-        assertEquals(20, b.y - a.y, 0.01f, "論理の座標では下へ積む（描画時に回転して左へ並ぶ）");
-        assertEquals(40, find(root, "v").w, 0.01f);
+        assertEquals(20, b.y() - a.y(), 0.01f, "論理の座標では下へ積む（描画時に回転して左へ並ぶ）");
+        assertEquals(40, find(root, "v").w(), 0.01f);
     }
 
     // ------------------------------------------------------------------ 表示項目
@@ -445,7 +445,7 @@ public class VerticalWritingTest {
         // 内容が収まる縦書きの overflow:auto 箱に、回転前の箱（右へ張り出して置く）が原因の横スクロールを作らない
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px;width:80px;overflow:auto'>abc def</div>");
         LayoutBox v = find(c.layout(), "v");
-        assertTrue(v.scrollWidth <= v.w + 0.5f, "横の内容幅 " + v.scrollWidth + " が箱の幅 " + v.w + " を超えない");
+        assertTrue(v.scrollWidth() <= v.w() + 0.5f, "横の内容幅 " + v.scrollWidth() + " が箱の幅 " + v.w() + " を超えない");
     }
 
     // ------------------------------------------------------------------ vertical-lr（転置）
@@ -477,8 +477,8 @@ public class VerticalWritingTest {
         assertNotNull(mid, "2 行目は 1 行目の右");
         Ctx c = new Ctx(html);
         LayoutBox v = find(c.layout(), "v");
-        assertEquals(v.x, v.children.get(0).x, 0.01f, "転置は左上に置く（張り出さない）");
-        assertEquals(60, v.w, 0.01f);
+        assertEquals(v.x(), v.children.get(0).x(), 0.01f, "転置は左上に置く（張り出さない）");
+        assertEquals(60, v.w(), 0.01f);
     }
 
     @Test
@@ -557,7 +557,7 @@ public class VerticalWritingTest {
         LayoutBox root = c.layout();
         LayoutBox h = find(root, "h");
         assertNotNull(h);
-        assertTrue(h.isHorizontalReturnRoot, "縦書き内の horizontal-tb は直交戻しの根になる");
+        assertTrue(h.isHorizontalReturnRoot(), "縦書き内の horizontal-tb は直交戻しの根になる");
 
         int[] px = paint(html);
         int[] ink = inkBounds(px);
@@ -577,7 +577,7 @@ public class VerticalWritingTest {
             Ctx c = new Ctx(html);
             LayoutBox root = c.layout();
             LayoutBox t = find(root, "t");
-            assertTrue(t.isHorizontalReturnRoot, mode + " の中の縦中横");
+            assertTrue(t.isHorizontalReturnRoot(), mode + " の中の縦中横");
 
             int[] px = paint("<div style='position:absolute;left:100px;top:100px;writing-mode:" + mode
                     + ";width:40px;height:200px;font:bold 24px/24px monospace'>"
@@ -596,9 +596,9 @@ public class VerticalWritingTest {
                 + "<div id=v2 style='writing-mode:vertical-rl;height:100px'>abc</div></div></div>";
         Ctx c = new Ctx(html);
         LayoutBox root = c.layout();
-        assertTrue(find(root, "v1").isVerticalRoot);
-        assertTrue(find(root, "h1").isHorizontalReturnRoot);
-        assertTrue(find(root, "v2").isVerticalRoot);
+        assertTrue(find(root, "v1").isVerticalRoot());
+        assertTrue(find(root, "h1").isHorizontalReturnRoot());
+        assertTrue(find(root, "v2").isVerticalRoot());
     }
 
     @Test
@@ -607,8 +607,8 @@ public class VerticalWritingTest {
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px;width:150px;overflow:auto'>"
                 + "<div id=h style='writing-mode:horizontal-tb;width:100px;height:40px;overflow:auto'>abc</div></div>");
         LayoutBox h = find(c.layout(), "h");
-        assertTrue(h.scrollWidth <= h.w + 0.5f, "scrollWidth=" + h.scrollWidth + " <= h.w=" + h.w);
-        assertTrue(h.scrollHeight <= h.h + 0.5f, "scrollHeight=" + h.scrollHeight + " <= h.h=" + h.h);
+        assertTrue(h.scrollWidth() <= h.w() + 0.5f, "scrollWidth=" + h.scrollWidth() + " <= h.w()=" + h.w());
+        assertTrue(h.scrollHeight() <= h.h() + 0.5f, "scrollHeight=" + h.scrollHeight() + " <= h.h()=" + h.h());
     }
 
     // ------------------------------------------------------------------ 縦書き子孫の物理プロパティ

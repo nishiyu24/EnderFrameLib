@@ -322,9 +322,9 @@ public class RenderPipeline {
             InteractionState.StateFlags flags = interactionState.get(box.node);
             ContainerBox container = flags == null ? null : interactionState.containerOf(box.node);
             if (container != null && container.isSizeContainer()) {
-                float width = Math.max(0, box.w - box.pL - box.pR - box.bL - box.bR);
+                float width = Math.max(0, box.w() - box.pL() - box.pR() - box.bL() - box.bR());
                 float height = container.type() == ContainerType.INLINE_SIZE
-                        ? Float.NaN : Math.max(0, box.h - box.pT - box.pB - box.bT - box.bB);
+                        ? Float.NaN : Math.max(0, box.h() - box.pT() - box.pB() - box.bT() - box.bB());
                 changed |= interactionState.setContainerSize(box.node, width, height);
             }
         }
@@ -363,7 +363,7 @@ public class RenderPipeline {
         // （測定と配置が子を迎えるたびに adopt するので、増えた箱も張られる）
         if (linkParents) rootBox.linkParents();
         Viewport viewport = new Viewport(rootW, rootH, devicePixelRatio);
-        rootBox.devicePixelRatio = viewport.devicePixelRatio();
+        rootBox.setDevicePixelRatio(viewport.devicePixelRatio());
         long run = LAYOUT_RUNS.incrementAndGet();
         LayoutContext.AutoVisibilitySession av = new LayoutContext.AutoVisibilitySession(
                 rootW, rootH,
@@ -499,7 +499,7 @@ public class RenderPipeline {
      */
     public static void repositionLayout(LayoutBox rootBox, Document doc, Map<String, String> env, InteractionState interactionState,
                                         int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
-        Viewport viewport = new Viewport(rootW, rootH, rootBox.devicePixelRatio);
+        Viewport viewport = new Viewport(rootW, rootH, rootBox.devicePixelRatio());
         LayoutContext.AutoVisibilitySession av = new LayoutContext.AutoVisibilitySession(
                 rootW, rootH,
                 doc != null ? b -> RenderTreeBuilder.materializeAutoContent(b, doc.sheet, env, rootW, rootH, interactionState) : null);
@@ -551,7 +551,7 @@ public class RenderPipeline {
             if (!Float.isNaN(box.rememberedInnerW)) flags.lastRememberedWidth = box.rememberedInnerW;
             if (!Float.isNaN(box.rememberedInnerH)) flags.lastRememberedHeight = box.rememberedInnerH;
         }
-        if (!box.subtreeHasContentAuto || box.contentAutoSkipped) return;
+        if (!box.subtreeHasContentAuto() || box.contentAutoSkipped) return;
         VirtualFlowState vf = box.virtualFlowState();
         if (vf != null) {
             int start = vf.placedRangeStart();
@@ -1124,7 +1124,7 @@ public class RenderPipeline {
             ComputedStyle prevBackdropStyle = box.backdropStyle;
             ComputedStyle prevFirstLineStyle = box.firstLineStyle;
             RenderTreeBuilder.resolveHighlightPseudos(box, computed, sheet, env, scope.enter(node, computed), interactionState, selfContainer);
-            if (box.display.listItem() && prevMarkerStyle != box.markerStyle) {
+            if (box.display().listItem() && prevMarkerStyle != box.markerStyle) {
                 styleChanged = true;
                 if (StyleResolver.isLayoutAffectingChange(prevMarkerStyle, box.markerStyle)) {
                     layoutRequired = true;

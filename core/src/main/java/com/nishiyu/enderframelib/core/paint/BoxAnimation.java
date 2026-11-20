@@ -111,7 +111,7 @@ final class BoxAnimation {
                 && (sc == null || sc.isEmpty()) && (tf == null || tf.isEmpty())) {
             return IDENTITY_TRS;
         }
-        Transforms.Context ctx = new Transforms.Context(box.w, box.h, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
+        Transforms.Context ctx = new Transforms.Context(box.w(), box.h(), rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
         return Transforms.toTrs(Transforms.compose(tr, rot, sc, tf, ctx));
     }
 
@@ -367,7 +367,7 @@ final class BoxAnimation {
             if (!Objects.equals(inherited, a.style.get(CssPropertyIndex.COLOR))) break;
             if (a.style.get(CssPropertyIndex.ANIMATION) != null || a.style.get(CssPropertyIndex.ANIMATION_NAME) != null) {
                 int color = a.style.color(CssPropertyIndex.COLOR, 0xFF000000);
-                AnimationSpec anim = parseAnimationDef(a.style, a.w, a.h, color, 0).withChannels(AnimationSpec.CH_COLOR);
+                AnimationSpec anim = parseAnimationDef(a.style, a.w(), a.h(), color, 0).withChannels(AnimationSpec.CH_COLOR);
                 if (!anim.isEmpty()) return anim;
             }
             // 祖先の要素が自分の色を宣言していれば、その上の祖先の色は継承されない

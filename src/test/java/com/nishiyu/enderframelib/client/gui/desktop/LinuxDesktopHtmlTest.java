@@ -54,8 +54,8 @@ public class LinuxDesktopHtmlTest {
                 doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new InteractionState()
         );
         assertNotNull(rootBox, "レイアウトツリーが構築できること");
-        assertEquals(854, (int) rootBox.w);
-        assertEquals(480, (int) rootBox.h);
+        assertEquals(854, (int) rootBox.w());
+        assertEquals(480, (int) rootBox.h());
     }
 
     /** LinuxDesktopScreen#syncAllStates と同じ形の状態を DOM に適用してレイアウトした結果。 */
@@ -124,22 +124,22 @@ public class LinuxDesktopHtmlTest {
     public void testEveryDocTabStacksContentVertically() {
         for (String tab : List.of("overview", "desktop", "terminal", "web", "commands")) {
             Laid laid = layoutWithState(tab, false);
-            List<LayoutBox> pages = find(laid.root(), b -> b.node.hasClass("docs-page") && b.w > 0 && b.h > 0);
+            List<LayoutBox> pages = find(laid.root(), b -> b.node.hasClass("docs-page") && b.w() > 0 && b.h() > 0);
             assertEquals(1, pages.size(), tab + ": 表示中のページは 1 つだけ");
             LayoutBox page = pages.get(0);
             LayoutBox content = byClass(laid.root(), "docs-content");
 
             List<LayoutBox> blocks = page.children.stream().filter(c -> c.node != null && c.node.tag != null
-                    && !c.node.tag.startsWith("#") && c.h > 0).toList();
+                    && !c.node.tag.startsWith("#") && c.h() > 0).toList();
             assertTrue(blocks.size() >= 3, tab + ": 見出し・本文・カード/表が並ぶこと");
             for (int i = 1; i < blocks.size(); i++) {
                 LayoutBox prev = blocks.get(i - 1);
                 LayoutBox cur = blocks.get(i);
-                assertTrue(cur.y >= prev.y + prev.h - 0.5f,
+                assertTrue(cur.y() >= prev.y() + prev.h() - 0.5f,
                         tab + ": <" + cur.node.tag + "> は前の <" + prev.node.tag + "> の下に積まれること (縦並び)");
-                assertEquals(page.x, cur.x, 1.0f, tab + ": 子要素の左端がそろうこと");
+                assertEquals(page.x(), cur.x(), 1.0f, tab + ": 子要素の左端がそろうこと");
             }
-            assertTrue(page.w <= content.w + 0.5f, tab + ": ページが本文領域の幅に収まること");
+            assertTrue(page.w() <= content.w() + 0.5f, tab + ": ページが本文領域の幅に収まること");
         }
     }
 
@@ -149,15 +149,15 @@ public class LinuxDesktopHtmlTest {
 
         LayoutBox clock = byClass(laid.root(), "top-center");
         float[] clockTr = DisplayListBuilderAccess.translate(clock);
-        assertEquals(427f, clock.x + clockTr[0] + clock.w / 2f, 1.5f, "時計がトップパネルの中央にあること");
+        assertEquals(427f, clock.x() + clockTr[0] + clock.w() / 2f, 1.5f, "時計がトップパネルの中央にあること");
 
         LayoutBox dock = byId(laid.root(), "dock");
         float[] dockTr = DisplayListBuilderAccess.translate(dock);
-        assertEquals(427f, dock.x + dockTr[0] + dock.w / 2f, 1.5f, "ドックが画面下部の中央にあること");
+        assertEquals(427f, dock.x() + dockTr[0] + dock.w() / 2f, 1.5f, "ドックが画面下部の中央にあること");
 
         DisplayItem dockItem = laid.items().stream().filter(i -> "dock".equals(i.id())).findFirst().orElse(null);
         assertNotNull(dockItem, "ドックの描画要素があること");
-        assertEquals(-dock.w / 2f, dockItem.translateX(), 1.0f, "描画要素に translate(-50%, 0) が反映されること");
+        assertEquals(-dock.w() / 2f, dockItem.translateX(), 1.0f, "描画要素に translate(-50%, 0) が反映されること");
     }
 
     @Test
@@ -170,10 +170,10 @@ public class LinuxDesktopHtmlTest {
         List<LayoutBox> menuItems = find(menu, b -> b.node.hasClass("menu-item"));
         assertEquals(4, menuItems.size());
         LayoutBox last = menuItems.get(3);
-        assertTrue(last.y + last.h > 260, "4 番目の項目は y=260 より下まで伸びる（旧判定ではメニュー外扱いだった）");
+        assertTrue(last.y() + last.h() > 260, "4 番目の項目は y=260 より下まで伸びる（旧判定ではメニュー外扱いだった）");
         for (LayoutBox item : menuItems) {
-            double cx = item.x + item.w / 2.0;
-            double cy = item.y + item.h / 2.0;
+            double cx = item.x() + item.w() / 2.0;
+            double cy = item.y() + item.h() / 2.0;
             assertFalse(DesktopLayout.shouldCloseAppMenu(cx, cy, menuRect.rect(), DisplayLayoutRect.of(laid.items(), "app-menu-btn").rect()),
                     "メニュー項目の上の押下でメニューを閉じないこと: y=" + cy);
         }
@@ -192,8 +192,8 @@ public class LinuxDesktopHtmlTest {
         List<LayoutBox> menuItems = find(byId(laid.root(), "app-menu"), b -> b.node.hasClass("menu-item"));
         assertEquals(4, menuItems.size());
         for (LayoutBox item : menuItems) {
-            double cx = item.x + 40;
-            double cy = item.y + item.h / 2.0;
+            double cx = item.x() + 40;
+            double cy = item.y() + item.h() / 2.0;
             UIHitResult hit = index.hitTest("desktop_hit", cx, cy);
             assertNotNull(hit, "メニュー項目の上で何かに当たること");
             HtmlNode node = laid.doc().root.getNodeById(hit.element().baseId());
@@ -218,7 +218,7 @@ public class LinuxDesktopHtmlTest {
     private static final class DisplayListBuilderAccess {
         static float[] translate(LayoutBox box) {
             return com.nishiyu.enderframelib.core.paint.TransformParseTestBridge.translate(
-                    box.style.get(CssProperty.TRANSFORM), box.w, box.h);
+                    box.style.get(CssProperty.TRANSFORM), box.w(), box.h());
         }
     }
 

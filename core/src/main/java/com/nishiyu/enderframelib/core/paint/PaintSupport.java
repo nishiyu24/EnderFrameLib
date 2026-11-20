@@ -24,15 +24,15 @@ import com.nishiyu.enderframelib.core.css.model.TextAlign;
 final class PaintSupport {
     /** flex / grid アイテムは位置指定が無くても z-index でコンテキストを作る（CSS Flexbox §5.4 / Grid §9.5）。 */
     static boolean isFlexOrGridItem(LayoutBox box) {
-        if (box.parent == null || box.isAbsolute) return false;
-        LayoutBox.Display.Inner inner = box.parent.display.inner();
+        if (box.parent == null || box.isAbsolute()) return false;
+        LayoutBox.Display.Inner inner = box.parent.display().inner();
         return inner == LayoutBox.Display.Inner.FLEX || inner == LayoutBox.Display.Inner.GRID;
     }
 
     /** 中身ごと 1 つの単位として描くインラインレベルの箱（inline-block / inline-flex など）と flex / grid アイテム。 */
     static boolean isAtomicInline(LayoutBox box) {
         if (isFlexOrGridItem(box)) return true;
-        return box.display.isInlineLevel() && box.display.inner() != LayoutBox.Display.Inner.FLOW;
+        return box.display().isInlineLevel() && box.display().inner() != LayoutBox.Display.Inner.FLOW;
     }
 
     /**
@@ -49,7 +49,7 @@ final class PaintSupport {
      * {@code border-collapse: separate} の表のセルだけで、中身が空白だけ（子孫に要素も語も無い）のもの。
      */
     static boolean hidesEmptyCell(LayoutBox box) {
-        if (box.display == null || box.display.inner() != LayoutBox.Display.Inner.TABLE_CELL || box.collapsedBorders != null) return false;
+        if (box.display() == null || box.display().inner() != LayoutBox.Display.Inner.TABLE_CELL || box.collapsedBorders() != null) return false;
         if (!"hide".equalsIgnoreCase(String.valueOf(box.style.get(CssPropertyIndex.EMPTY_CELLS)).trim())) return false;
         return hasNoContent(box);
     }
@@ -59,7 +59,7 @@ final class PaintSupport {
             if (!f.isText() || !f.text.isBlank()) return false;
         }
         for (LayoutBox c : box.children) {
-            if (c.display != null && c.display.isNone()) continue;
+            if (c.display() != null && c.display().isNone()) continue;
             if (c.node != null && c.node.tag != null && !c.node.tag.isEmpty() && !c.node.tag.startsWith("#")) return false;
             if (!hasNoContent(c)) return false;
         }

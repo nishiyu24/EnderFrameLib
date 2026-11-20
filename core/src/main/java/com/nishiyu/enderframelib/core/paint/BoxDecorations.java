@@ -330,12 +330,12 @@ public final class BoxDecorations {
 
     /** {@code border-box} / {@code padding-box} / {@code content-box} の矩形。 */
     public static Rect boxArea(LayoutBox box, String which) {
-        float x = box.x, y = box.y, w = box.w, h = box.h;
+        float x = box.x(), y = box.y(), w = box.w(), h = box.h();
         if ("padding-box".equals(which) || "content-box".equals(which)) {
-            x += box.bL; y += box.bT; w -= box.bL + box.bR; h -= box.bT + box.bB;
+            x += box.bL(); y += box.bT(); w -= box.bL() + box.bR(); h -= box.bT() + box.bB();
         }
         if ("content-box".equals(which)) {
-            x += box.pL; y += box.pT; w -= box.pL + box.pR; h -= box.pT + box.pB;
+            x += box.pL(); y += box.pT(); w -= box.pL() + box.pR(); h -= box.pT() + box.pB();
         }
         return new Rect(x, y, Math.max(0, w), Math.max(0, h));
     }

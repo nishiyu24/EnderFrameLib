@@ -22,7 +22,7 @@ public class R9MiscLayoutTest {
         // block-size の min-content / max-content / fit-content は auto と同じ（CSS Sizing 3 §5.1）
         for (String keyword : new String[]{"min-content", "max-content", "fit-content", "fit-content(100px)"}) {
             LayoutBox root = layout("<div id=a style='height:" + keyword + ";width:100px'><div style='height:30px'></div></div>");
-            assertEquals(30, find(root, "a").h, 0.01f, keyword);
+            assertEquals(30, find(root, "a").h(), 0.01f, keyword);
         }
     }
 
@@ -32,8 +32,8 @@ public class R9MiscLayoutTest {
         LayoutBox root = layout("<div style='display:flex;flex-direction:column;height:100px;width:100px'>"
                 + "<div id=a style='height:200px'><div style='height:30px'></div></div>"
                 + "<div id=b style='height:20px'></div></div>");
-        assertEquals(100f * 200 / 220, find(root, "a").h, 0.05f);
-        assertEquals(100f * 20 / 220, find(root, "b").h, 0.05f);
+        assertEquals(100f * 200 / 220, find(root, "a").h(), 0.05f);
+        assertEquals(100f * 20 / 220, find(root, "b").h(), 0.05f);
     }
 
     @Test
@@ -42,10 +42,10 @@ public class R9MiscLayoutTest {
         LayoutBox root = layout("<div style='display:flex;flex-direction:column;height:100px;width:100px'>"
                 + "<div id=a style='height:200px'><div style='height:80px'></div></div>"
                 + "<div id=b style='height:20px'></div></div>");
-        assertEquals(90.91f, find(root, "a").h, 0.05f);
+        assertEquals(90.91f, find(root, "a").h(), 0.05f);
         LayoutBox tight = layout("<div style='display:flex;flex-direction:column;height:60px;width:100px'>"
                 + "<div id=a style='height:200px'><div style='height:80px'></div></div></div>");
-        assertEquals(80, find(tight, "a").h, 0.01f);
+        assertEquals(80, find(tight, "a").h(), 0.01f);
     }
 
     @Test
@@ -54,9 +54,9 @@ public class R9MiscLayoutTest {
                 + "<tr id=r1><td id=a style='padding:0;height:20px;width:30px'></td></tr>"
                 + "<tr id=r2 style='visibility:collapse'><td id=b style='padding:0;height:40px;width:30px'></td></tr>"
                 + "<tr id=r3><td id=c style='padding:0;height:20px;width:30px'></td></tr></table>");
-        assertEquals(40, find(root, "t").h, 0.01f);
-        assertEquals(20, find(root, "c").y - find(root, "a").y, 0.01f);
-        assertEquals(0, find(root, "r2").h, 0.01f);
+        assertEquals(40, find(root, "t").h(), 0.01f);
+        assertEquals(20, find(root, "c").y() - find(root, "a").y(), 0.01f);
+        assertEquals(0, find(root, "r2").h(), 0.01f);
     }
 
     @Test
@@ -66,8 +66,8 @@ public class R9MiscLayoutTest {
                 + "<tr><td id=a style='padding:0;height:10px;width:30px'></td>"
                 + "<td id=b style='padding:0;height:10px;width:50px'></td>"
                 + "<td id=c style='padding:0;height:10px;width:20px'></td></tr></table>");
-        assertEquals(50, find(root, "t").w, 0.01f);
-        assertEquals(30, find(root, "c").x - find(root, "a").x, 0.01f);
+        assertEquals(50, find(root, "t").w(), 0.01f);
+        assertEquals(30, find(root, "c").x() - find(root, "a").x(), 0.01f);
     }
 
     @Test
@@ -75,10 +75,10 @@ public class R9MiscLayoutTest {
         String cells = "<td id=a style='padding:0;width:30px;height:10px;border:4px solid'></td>"
                 + "<td id=b style='padding:0;width:30px;height:10px;border:2px %s'></td>";
         LayoutBox plain = layout("<table style='border-collapse:collapse'><tr>" + cells.formatted("solid") + "</tr></table>");
-        assertEquals(2, find(plain, "a").bR, 0.01f);
+        assertEquals(2, find(plain, "a").bR(), 0.01f);
         LayoutBox hidden = layout("<table style='border-collapse:collapse'><tr>" + cells.formatted("hidden") + "</tr></table>");
-        assertEquals(0, find(hidden, "a").bR, 0.01f);
-        assertEquals(0, find(hidden, "b").bL, 0.01f);
+        assertEquals(0, find(hidden, "a").bR(), 0.01f);
+        assertEquals(0, find(hidden, "b").bL(), 0.01f);
     }
 
     private static LayoutBox layout(String html) {

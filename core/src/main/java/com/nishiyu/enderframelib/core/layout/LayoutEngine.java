@@ -220,7 +220,7 @@ public abstract class LayoutEngine {
             }
             if (a.sizingMode == LayoutBox.SizingMode.SHRINK_TO_FIT && Float.isNaN(a.overrideWidth)) return true;
             // 幅が px で決まった箱・再レイアウト境界より上へは、中身の内在幅が届かない
-            if (a.isRelayoutBoundary() || hasPxWidth(a)) return false;
+            if (MeasureChanges.isRelayoutBoundary(a) || hasPxWidth(a)) return false;
         }
         return false;
     }

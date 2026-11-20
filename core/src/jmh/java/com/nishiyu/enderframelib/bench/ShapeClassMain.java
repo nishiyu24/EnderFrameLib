@@ -79,10 +79,10 @@ public final class ShapeClassMain {
                 st.runs++;
                 st.runRows += j - i;
                 boolean uniform = true;
-                float h0 = b.children.get(i).h;
+                float h0 = b.children.get(i).h();
                 long nodes = 0;
                 for (int k = i; k < j; k++) {
-                    if (Math.abs(b.children.get(k).h - h0) > 0.01f) uniform = false;
+                    if (Math.abs(b.children.get(k).h() - h0) > 0.01f) uniform = false;
                     nodes += subtreeSize(b.children.get(k));
                 }
                 st.runNodes += (int) nodes;

@@ -42,10 +42,10 @@ final class ControlPainter {
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
-        float innerX = box.x + border.bwLeft();
-        float innerY = box.y + border.bwTop();
-        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x() + border.bwLeft();
+        float innerY = box.y() + border.bwTop();
+        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
 
         ItemProps sceneEvents = partsEvents.copy();
         if (box.node.attrs.containsKey("data-blocks")) sceneEvents.put("data-blocks", box.node.attrs.get("data-blocks"));
@@ -96,16 +96,16 @@ final class ControlPainter {
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             CircleBorderSpec cbSpec = new CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
             long cbKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_BORDER) : 0L;
-            addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
+            addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x(), box.y(), box.w(), box.h(), bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
                     new RenderMeta(normalizedClip, radii, cbSpec, fontHVal, ox, oy, 1, false), cbKey);
         } else {
             decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
 
-        float innerX = box.x + border.bwLeft();
-        float innerY = box.y + border.bwTop();
-        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x() + border.bwLeft();
+        float innerY = box.y() + border.bwTop();
+        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
 
         // SVG は固有サイズ（viewBox）の縦横比で、描く大きさのビットマップにしてから置く。届くまでは何も描かない
         if ("img".equals(box.node.tag) && SvgImage.looksLikeSvg(src)) {
@@ -145,10 +145,10 @@ final class ControlPainter {
                         BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                         int transDur, AnimationSpec colorBgAnim) {
         decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
-        float innerX = box.x + border.bwLeft();
-        float innerY = box.y + border.bwTop();
-        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x() + border.bwLeft();
+        float innerY = box.y() + border.bwTop();
+        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
         String src = RasterPainting.svgSrc(box.node, innerW, innerH, ImageFitMode.FILL, innerW, innerH, color, decor.devicePixelRatio());
         long svgKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_MEDIA) : 0L;
         addElement(elements, id, id + "_svg", ElementType.IMAGE, ImageFitMode.FILL, innerX, innerY, innerW, innerH, src, color, bgColor,
@@ -160,10 +160,10 @@ final class ControlPainter {
                                    BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
         decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
-        float innerX = box.x + border.bwLeft();
-        float innerY = box.y + border.bwTop();
-        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x() + border.bwLeft();
+        float innerY = box.y() + border.bwTop();
+        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
         // canvas の画素の大きさは width / height 属性（既定 300×150）。内容ボックスへは object-fit で収める
         ItemProps canvasEvents = partsEvents.copy();
         canvasEvents.put("canvas-width", box.node.attrs.getOrDefault("width", ""));
@@ -180,10 +180,10 @@ final class ControlPainter {
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim) {
         String val = box.node.attrs.getOrDefault("value", box.node.getTextContent());
-        float innerX = box.x + border.bwLeft();
-        float innerY = box.y + border.bwTop();
-        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x() + border.bwLeft();
+        float innerY = box.y() + border.bwTop();
+        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
 
         ItemProps taEvents = partsEvents.copy();
         if (box.node.attrs.containsKey("data-syntax")) taEvents.put("data-syntax", box.node.attrs.get("data-syntax"));
@@ -194,7 +194,7 @@ final class ControlPainter {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
             addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, innerX, innerY, innerW, innerH, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, taKey);
         } else {
-            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, box.x, box.y, box.w, box.h, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, taKey);
+            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, box.x(), box.y(), box.w(), box.h(), val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, taKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }
@@ -205,15 +205,15 @@ final class ControlPainter {
                                    int transDur, AnimationSpec colorBgAnim) {
         String currentVal = box.node.attrs.getOrDefault("value", "");
         String displayLabel = DomUtils.resolveSelectDisplayLabel(box.node, currentVal) + " \u25be";
-        float innerX = box.x + border.bwLeft(), innerY = box.y + border.bwTop();
-        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x() + border.bwLeft(), innerY = box.y() + border.bwTop();
+        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
 
         long selKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_SELECT) : 0L;
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
             addElement(elements, id, id + "_select", ElementType.SELECT, innerX, innerY, innerW, innerH, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, selKey);
         } else {
-            addElement(elements, id, id + "_select", ElementType.SELECT, box.x, box.y, box.w, box.h, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, selKey);
+            addElement(elements, id, id + "_select", ElementType.SELECT, box.x(), box.y(), box.w(), box.h(), displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, selKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }
@@ -228,10 +228,10 @@ final class ControlPainter {
         String inputType = box.node.attrs.getOrDefault("type", "text");
         String val = resolveLiveInputValue(id, box.node.attrs.getOrDefault("value", ""));
 
-        float innerX = box.x + border.bwLeft();
-        float innerY = box.y + border.bwTop();
-        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x() + border.bwLeft();
+        float innerY = box.y() + border.bwTop();
+        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
 
         ItemProps innerEvents = partsEvents.copy();
 
@@ -249,7 +249,7 @@ final class ControlPainter {
                     String placeholderText = val.isEmpty() ? box.node.attrs.get("placeholder") : "";
                     // 入力欄の内容領域をそのまま渡す。縦方向の中央寄せは書体の
                     // ascent / descent を知っている描画側が 1 箇所で行う
-                    float phX = box.x + border.bwLeft() + 4;
+                    float phX = box.x() + border.bwLeft() + 4;
                     ItemProps phEvents = passiveBorderEvents.copy();
                     phEvents.pointerEventsNone();
                     // ::placeholder の color（UA の既定は #aaa）。規則が掛からなければ既定の色
@@ -289,8 +289,8 @@ final class ControlPainter {
         boolean darkAccent = accent != null && contrastRatio(accent, NATIVE_WHITE) < 3f;
         int strong = (checked || mixed) && accent != null ? shadeAccent(accent, stateColor, darkAccent) : stateColor;
 
-        float size = Math.min(box.w, box.h);
-        float x = box.x + (box.w - size) / 2, y = box.y + (box.h - size) / 2;
+        float size = Math.min(box.w(), box.h());
+        float x = box.x() + (box.w() - size) / 2, y = box.y() + (box.h() - size) / 2;
         int radius = radio ? Math.round(size / 2) : Math.min(NATIVE_CHECKBOX_RADIUS, Math.round(size / 2));
         Corners corners = Corners.all(radius);
         RenderMeta meta = new RenderMeta(baseMeta.clipRect(), corners, null,
@@ -395,7 +395,7 @@ final class ControlPainter {
         RenderMeta meta = new RenderMeta(baseMeta.clipRect(), null, null, baseMeta.fontHeight(), 0f, 0f,
                 baseMeta.originX(), baseMeta.originY(), 1, false, trackBorder);
         long rangeKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_INPUT) : 0L;
-        addElement(elements, id, id + "_input", ElementType.RANGE, box.x, box.y, box.w, box.h, rangeData, strong, fill,
+        addElement(elements, id, id + "_input", ElementType.RANGE, box.x(), box.y(), box.w(), box.h(), rangeData, strong, fill,
                 partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, rangeKey);
     }
 
@@ -465,7 +465,7 @@ final class ControlPainter {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
             addElement(elements, id, ctrlId, type, innerX, innerY, innerW, innerH, text, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, ctrlKey);
         } else {
-            addElement(elements, id, ctrlId, type, box.x, box.y, box.w, box.h, text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, ctrlKey);
+            addElement(elements, id, ctrlId, type, box.x(), box.y(), box.w(), box.h(), text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, ctrlKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }
@@ -483,16 +483,9 @@ final class ControlPainter {
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows) {
         LayoutBox legend = box.renderedLegend();
-        float shift = legend == null ? 0 : Math.max(0, (legend.h - box.bT) / 2);
-        float y = box.y, h = box.h;
-        box.y += shift;
-        box.h = Math.max(0, h - shift);
-        try {
-            decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy,
-                    partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
-        } finally {
-            box.y = y;
-            box.h = h;
-        }
+        float shift = legend == null ? 0 : Math.max(0, (legend.h() - box.bT()) / 2);
+        box.withPaintBounds(box.x(), box.y() + shift, box.w(), Math.max(0, box.h() - shift), false,
+                () -> decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy,
+                        partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows));
     }
 }

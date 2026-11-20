@@ -109,7 +109,7 @@ public class GridLayoutEngine extends LayoutEngine {
         }
         gs.colSub = pItem != null && pItem.colSub;
         gs.rowSub = pItem != null && pItem.rowSub;
-        box.subgridDependent = gs.colSub || gs.rowSub;
+        box.measureMemo.setSubgridDependent(gs.colSub || gs.rowSub);
         if (gs.colSub) {
             gs.columns = subgridTracks(box.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS), pgs.columns, pItem.colStart, pItem.colSpan);
             if (isNormalGap(box.style.get(CssPropertyIndex.COLUMN_GAP))) box.columnGap = box.parent.columnGap;

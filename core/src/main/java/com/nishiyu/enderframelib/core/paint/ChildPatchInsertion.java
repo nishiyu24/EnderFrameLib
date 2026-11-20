@@ -91,7 +91,7 @@ final class ChildPatchInsertion {
                 }
             }
             if (lastBlock != null) break;
-            if (drawn(c) && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) {
+            if (drawn(c) && !c.display().isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) {
                 lastBlock = c;
                 break;
             }
@@ -166,7 +166,7 @@ final class ChildPatchInsertion {
         for (LayoutBox x : b.blockPhaseOf(c)) {
             if (x.dlStart >= 0 && x.dlOrder >= 0) return x;
         }
-        if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) return c;
+        if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display().isInlineLevel() && !PaintSupport.isAtomicInline(c) && !com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(c) && !PaintOrder.isPositioned(c)) return c;
         return null;
     }
 
@@ -218,7 +218,7 @@ final class ChildPatchInsertion {
         for (LayoutBox cur = parentBox; cur != null; cur = cur.parent) {
             boolean closed = com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(cur) || PaintOrder.isPositioned(cur)
                     || b.order.createsStackingContext(cur) || PaintSupport.isAtomicInline(cur);
-            if (!cur.isAnonymous && (closed || !cur.display.isInlineLevel()) && drawn(cur)) {
+            if (!cur.isAnonymous && (closed || !cur.display().isInlineLevel()) && drawn(cur)) {
                 insertBlockPos = cur.dlEnd;
                 insertBlockOrder = cur.dlOrder + 1;
                 return true;
@@ -268,14 +268,14 @@ final class ChildPatchInsertion {
         for (LayoutBox anc = parentBox; anc != null && anc.parent != null; anc = anc.parent) {
             if (com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.isFloating(anc) || PaintOrder.isPositioned(anc) || b.order.createsStackingContext(anc) || PaintSupport.isAtomicInline(anc)) return false;
             // 木の順で直前は「自分（祖先）の項目」→「祖先の前の兄弟」。インラインの層で描かれる祖先（span）なら、その項目の直後
-            boolean ancInline = anc.display != null && anc.display.isInlineLevel() || anc.node != null && anc.node.nodeType == NodeType.TEXT;
+            boolean ancInline = anc.display() != null && anc.display().isInlineLevel() || anc.node != null && anc.node.nodeType == NodeType.TEXT;
             if (ancInline && drawn(anc)) {
                 insertInlinePos = anc.dlEnd;
                 insertInlineOrder = anc.dlOrder + 1;
                 return true;
             }
             // インラインの中のブロックは、親の span の項目との前後が木の順と一致しないことがあるので、手がかりにせず退く
-            if (!ancInline && anc.parent.display != null && anc.parent.display.isInlineLevel()) return false;
+            if (!ancInline && anc.parent.display() != null && anc.parent.display().isInlineLevel()) return false;
             List<LayoutBox> sibs = anc.parent.children;
             int idx = sibs.indexOf(anc);
             for (int i = idx - 1; i >= 0; i--) {

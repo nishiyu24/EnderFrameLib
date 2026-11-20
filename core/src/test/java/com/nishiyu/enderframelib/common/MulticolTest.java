@@ -34,7 +34,7 @@ public class MulticolTest {
         assertRect(root, "d", 100, 20, 100, 20);
         assertRect(root, "e", 200, 0, 100, 20);
         assertRect(root, "f", 200, 20, 100, 20);
-        assertEquals(40, find(root, "m").h, 0.01f);
+        assertEquals(40, find(root, "m").h(), 0.01f);
     }
 
     @Test
@@ -68,7 +68,7 @@ public class MulticolTest {
         assertRect(root, "c", 0, 40, 100, 20);
         assertRect(root, "d", 100, 0, 100, 20);
         assertRect(root, "e", 100, 20, 100, 20);
-        assertEquals(60, find(root, "m").h, 0.01f);
+        assertEquals(60, find(root, "m").h(), 0.01f);
     }
 
     @Test
@@ -80,7 +80,7 @@ public class MulticolTest {
         assertRect(root, "s", 0, 20, 200, 30);
         assertRect(root, "c", 0, 50, 100, 20);
         assertRect(root, "d", 100, 50, 100, 20);
-        assertEquals(70, find(root, "m").h, 0.01f);
+        assertEquals(70, find(root, "m").h(), 0.01f);
     }
 
     @Test
@@ -93,14 +93,14 @@ public class MulticolTest {
         for (int i = 4; i < 7; i++) assertEquals(100, lines.get(i)[0], 0.01f, "line " + i);
         assertEquals(lines.get(0)[1], lines.get(4)[1], 0.01f);
         assertEquals(lines.get(0)[1] + 60, lines.get(3)[1], 0.01f);
-        assertEquals(80, find(root, "m").h, 0.01f);
+        assertEquals(80, find(root, "m").h(), 0.01f);
     }
 
     @Test
     public void testBlockChildrenGoToSeparateColumns() {
         LayoutBox root = layout("<div id=m style='column-count:2;column-gap:0;width:200px'>"
                 + "<p id=p1>a1<br>a2<br>a3<br>a4</p><p id=p2>b1<br>b2<br>b3<br>b4</p></div>");
-        assertEquals(80, find(root, "m").h, 0.01f);
+        assertEquals(80, find(root, "m").h(), 0.01f);
         for (float[] o : lineOrigins(find(root, "p2"))) assertEquals(100, o[0], 0.01f);
         for (float[] o : lineOrigins(find(root, "p1"))) assertEquals(0, o[0], 0.01f);
     }
@@ -114,7 +114,7 @@ public class MulticolTest {
         for (int i = 0; i < 3; i++) assertEquals(0, lines.get(i)[0], 0.01f);
         for (int i = 3; i < 5; i++) assertEquals(110, lines.get(i)[0], 0.01f);
         assertEquals(lines.get(0)[1], lines.get(3)[1], 0.01f);
-        assertEquals(60, find(root, "m").h, 0.01f);
+        assertEquals(60, find(root, "m").h(), 0.01f);
     }
 
     @Test
@@ -124,7 +124,7 @@ public class MulticolTest {
                 + blocks("a", "b") + "</div><div id=after style='height:10px'></div>");
         assertRect(root, "a", 0, 0, 100, 20);
         assertRect(root, "b", 100, 0, 100, 20);
-        assertEquals(7 + 5 + 20 + 5, find(root, "after").y, 0.01f);
+        assertEquals(7 + 5 + 20 + 5, find(root, "after").y(), 0.01f);
     }
 
     @Test
@@ -132,10 +132,10 @@ public class MulticolTest {
         LayoutBox root = layout("<div id=m style='columns:2;column-gap:10px;column-rule:2px solid red;width:210px'>"
                 + blocks("a", "b") + "</div>");
         LayoutBox m = find(root, "m");
-        assertNotNull(m.columnRules);
-        assertEquals(1, m.columnRules.length);
-        float[] rule = m.columnRules[0];
-        assertEquals(m.x + 104, rule[0], 0.01f);
+        assertNotNull(m.columnRules());
+        assertEquals(1, m.columnRules().length);
+        float[] rule = m.columnRules()[0];
+        assertEquals(m.x() + 104, rule[0], 0.01f);
         assertEquals(2, rule[2], 0.01f);
         assertEquals(20, rule[3], 0.01f);
     }
@@ -143,7 +143,7 @@ public class MulticolTest {
     @Test
     public void testNoRuleWithoutStyle() {
         LayoutBox root = layout("<div id=m style='columns:2;column-gap:10px;column-rule-width:2px;width:210px'>" + blocks("a", "b") + "</div>");
-        assertNull(find(root, "m").columnRules);
+        assertNull(find(root, "m").columnRules());
     }
 
     @Test
@@ -160,7 +160,7 @@ public class MulticolTest {
                 + "<div id=y style='background:#ccc'><div class=b></div><div class=b></div></div></div>");
         assertRect(root, "x", 0, 0, 100, 40);
         assertRect(root, "y", 100, 0, 100, 40);
-        assertTrue(find(root, "m").h >= 40 - 0.01f);
+        assertTrue(find(root, "m").h() >= 40 - 0.01f);
     }
 
     // ==========================================
@@ -176,11 +176,11 @@ public class MulticolTest {
         LayoutBox b = find(root, id);
         assertNotNull(b, id);
         LayoutBox m = find(root, "m");
-        float ox = m.x + m.bL + m.pL, oy = m.y + m.bT + m.pT;
-        assertEquals(x, b.x - ox, 0.02f, id + ".x");
-        assertEquals(y, b.y - oy, 0.02f, id + ".y");
-        assertEquals(w, b.w, 0.02f, id + ".w");
-        assertEquals(h, b.h, 0.02f, id + ".h");
+        float ox = m.x() + m.bL() + m.pL(), oy = m.y() + m.bT() + m.pT();
+        assertEquals(x, b.x() - ox, 0.02f, id + ".x");
+        assertEquals(y, b.y() - oy, 0.02f, id + ".y");
+        assertEquals(w, b.w(), 0.02f, id + ".w");
+        assertEquals(h, b.h(), 0.02f, id + ".h");
     }
 
     /** 要素の下のテキスト断片（行ごと）の左上。{@code m} の内容ボックスが原点。文書順。 */
@@ -188,7 +188,7 @@ public class MulticolTest {
         List<float[]> out = new ArrayList<>();
         LayoutBox m = box;
         while (m.parent != null && !"m".equals(m.node.attrs.get("id"))) m = m.parent;
-        collectFragments(box, m.x + m.bL + m.pL, m.y + m.bT + m.pT, out);
+        collectFragments(box, m.x() + m.bL() + m.pL(), m.y() + m.bT() + m.pT(), out);
         return out;
     }
 

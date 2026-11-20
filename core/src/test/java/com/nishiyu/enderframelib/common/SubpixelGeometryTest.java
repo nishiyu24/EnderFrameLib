@@ -53,10 +53,10 @@ public class SubpixelGeometryTest {
     public void testLayoutKeepsFractionalWidths() {
         LayoutBox root = layout(THIRDS);
         float third = 100f / 3f;
-        assertEquals(third, findById(root, "a").w, 0.01f);
-        assertEquals(third, findById(root, "b").w, 0.01f);
-        assertEquals(third, findById(root, "c").w, 0.01f);
-        assertEquals(2 * third, findById(root, "c").x - findById(root, "row").x, 0.01f);
+        assertEquals(third, findById(root, "a").w(), 0.01f);
+        assertEquals(third, findById(root, "b").w(), 0.01f);
+        assertEquals(third, findById(root, "c").w(), 0.01f);
+        assertEquals(2 * third, findById(root, "c").x() - findById(root, "row").x(), 0.01f);
     }
 
     @Test
@@ -66,7 +66,7 @@ public class SubpixelGeometryTest {
                 <div id="outer" style="width: 101px;"><div id="half" style="width: 50%; height: 1px;"></div></div>
                 """);
         // 以前は 50 に切り捨てていた
-        assertEquals(50.5f, findById(root, "half").w, 0.001f);
+        assertEquals(50.5f, findById(root, "half").w(), 0.001f);
     }
 
     @Test

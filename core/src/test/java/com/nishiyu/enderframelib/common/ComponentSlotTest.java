@@ -125,7 +125,7 @@ public class ComponentSlotTest {
         assertTrue(!"#123456".equals(other.style.get(CssProperty.COLOR)), "外の h3 は当たらない");
         LayoutBox em = find(box, "e");
         assertNotNull(em);
-        assertTrue(em.w > 0 && em.h > 0, "投影した要素にも寸法がある");
+        assertTrue(em.w() > 0 && em.h() > 0, "投影した要素にも寸法がある");
         assertNull(find(box, "missing"));
     }
 

@@ -34,7 +34,7 @@ public class SessionAnimationFlowTest {
         assertNotNull(node);
         LayoutBox box = session.layoutRoot().findByNode(node);
         assertNotNull(box);
-        return box.w;
+        return box.w();
     }
 
     @Test

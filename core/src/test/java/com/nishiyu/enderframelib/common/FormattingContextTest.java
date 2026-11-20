@@ -48,13 +48,13 @@ public class FormattingContextTest {
                 """);
         LayoutBox table = find(root, "t");
         // 以前は ua.css が flex の行として組んでいた
-        assertEquals(Display.Inner.TABLE, table.display.inner());
+        assertEquals(Display.Inner.TABLE, table.display().inner());
         LayoutBox a = find(root, "a"), b = find(root, "b"), c = find(root, "c");
         // ua.css の border-spacing: 2px（HTML 標準の既定値）がセルの間に入る
-        assertEquals(a.x + 30 + 2, b.x, 0.01f);
-        assertEquals(30 + 2 + 20, c.w, 0.01f);
-        assertEquals(a.x, c.x, 0.01f);
-        assertEquals(a.y + 10 + 2, c.y, 0.01f);
+        assertEquals(a.x() + 30 + 2, b.x(), 0.01f);
+        assertEquals(30 + 2 + 20, c.w(), 0.01f);
+        assertEquals(a.x(), c.x(), 0.01f);
+        assertEquals(a.y() + 10 + 2, c.y(), 0.01f);
     }
 
     @Test
@@ -66,8 +66,8 @@ public class FormattingContextTest {
                 </div></div>
                 """);
         LayoutBox m = find(root, "m");
-        assertEquals(40, m.h, 0.01f);
-        assertEquals(m.y + 15, find(root, "inner").y, 0.01f);
+        assertEquals(40, m.h(), 0.01f);
+        assertEquals(m.y() + 15, find(root, "inner").y(), 0.01f);
     }
 
     @Test
@@ -81,9 +81,9 @@ public class FormattingContextTest {
                 """);
         LayoutBox a = find(root, "a"), b = find(root, "b");
         // 行は float の右の 60px に入り、2 つ目は次の行（まだ float の横）へ折り返す
-        assertEquals(40, a.x, 0.01f);
-        assertEquals(40, b.x, 0.01f);
-        assertEquals(a.y + 10, b.y, 0.01f);
+        assertEquals(40, a.x(), 0.01f);
+        assertEquals(40, b.x(), 0.01f);
+        assertEquals(a.y() + 10, b.y(), 0.01f);
     }
 
     @Test
@@ -95,9 +95,9 @@ public class FormattingContextTest {
                 """);
         LayoutBox abs = find(root, "abs");
         // 以前は絶対配置の span がインラインの祖先として平坦化され、位置が決まらなかった
-        assertEquals(7, abs.x, 0.01f);
-        assertEquals(5, abs.y, 0.01f);
-        assertEquals(3, abs.w, 0.01f);
+        assertEquals(7, abs.x(), 0.01f);
+        assertEquals(5, abs.y(), 0.01f);
+        assertEquals(3, abs.w(), 0.01f);
     }
 
     // ==========================================
@@ -111,9 +111,9 @@ public class FormattingContextTest {
                   <div id="item" style="box-sizing: border-box; padding: 10px 0; border-top: 5px solid;"><div id="c" style="height: 50%;"></div></div>
                 </div>
                 """);
-        assertEquals(100, find(root, "item").h, 0.01f);
+        assertEquals(100, find(root, "item").h(), 0.01f);
         // 基準は stretch した高さから上下の装飾を引いた内容ボックス（100 - 10 - 10 - 5）
-        assertEquals(37.5f, find(root, "c").h, 0.01f);
+        assertEquals(37.5f, find(root, "c").h(), 0.01f);
     }
 
     @Test
@@ -122,7 +122,7 @@ public class FormattingContextTest {
         LayoutBox root = layout("""
                 <div style="height: 100px;"><div><div id="c" style="height: 50%;"></div></div></div>
                 """);
-        assertEquals(0, find(root, "c").h, 0.01f);
+        assertEquals(0, find(root, "c").h(), 0.01f);
     }
 
     @Test
@@ -136,8 +136,8 @@ public class FormattingContextTest {
                 """);
         FontStyle font = new FontStyle(16f, false, false, 0f);
         // 以前は改行を区切らず、全行を横に繋げた幅になっていた
-        assertEquals(FontFace.FALLBACK.advance("aaaaaaaa", font), find(root, "br").w, 0.01f);
-        assertEquals(FontFace.FALLBACK.advance("aaaaaa", font), find(root, "pre").w, 0.01f);
+        assertEquals(FontFace.FALLBACK.advance("aaaaaaaa", font), find(root, "br").w(), 0.01f);
+        assertEquals(FontFace.FALLBACK.advance("aaaaaa", font), find(root, "pre").w(), 0.01f);
     }
 
     @Test
@@ -149,11 +149,11 @@ public class FormattingContextTest {
                 </div>
                 """);
         LayoutBox c = find(root, "c"), a = find(root, "a"), b = find(root, "b");
-        assertEquals(25, c.w, 0.01f);
+        assertEquals(25, c.w(), 0.01f);
         // order の順に列を作る: b が 1 列目、a が 2 列目
-        assertEquals(c.x, b.x, 0.01f);
-        assertEquals(c.x + 15, a.x, 0.01f);
-        assertEquals(c.y, a.y, 0.01f);
+        assertEquals(c.x(), b.x(), 0.01f);
+        assertEquals(c.x() + 15, a.x(), 0.01f);
+        assertEquals(c.y(), a.y(), 0.01f);
     }
 
     private static LayoutBox layout(String html) {

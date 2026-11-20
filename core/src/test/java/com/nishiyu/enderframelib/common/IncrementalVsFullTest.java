@@ -231,13 +231,13 @@ class IncrementalVsFullTest {
             com.nishiyu.enderframelib.core.layout.LayoutBox[] innerTable = {null};
             java.util.function.Consumer<com.nishiyu.enderframelib.core.layout.LayoutBox>[] walk = new java.util.function.Consumer[1];
             walk[0] = b -> {
-                if (b.isAnonymous && b.display != null && b.display.inner() == com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner.TABLE) innerTable[0] = b;
+                if (b.isAnonymous && b.display() != null && b.display().inner() == com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner.TABLE) innerTable[0] = b;
                 for (var c : b.children) walk[0].accept(c);
             };
             walk[0].accept(v.ui().layoutRoot());
             assertNotNull(innerTable[0], "tr{display:block} の中の td は匿名の表に包まれる");
             var cell = innerTable[0].parent.parent; // 匿名の表 → tr（block）→ 匿名のセル
-            assertTrue(cell.w + 0.01f >= innerTable[0].w, "匿名のセル " + cell.w + " が中の表 " + innerTable[0].w + " より狭い");
+            assertTrue(cell.w() + 0.01f >= innerTable[0].w(), "匿名のセル " + cell.w() + " が中の表 " + innerTable[0].w() + " より狭い");
         }
     }
 
