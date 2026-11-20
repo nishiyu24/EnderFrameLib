@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.content;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser.VoidElements;
-import com.nishiyu.enderframelib.core.dom.HostElementProvider;
+import com.nishiyu.enderframelib.api.spi.ElementProvider;
 import com.nishiyu.enderframelib.core.layout.ReplacedElements;
 import java.util.Map;
 import java.util.ServiceLoader;
@@ -15,10 +15,10 @@ class McHostElementsTest {
     @Test
     void serviceLoaderFindsTheMinecraftProvider() {
         boolean found = false;
-        for (HostElementProvider p : ServiceLoader.load(HostElementProvider.class)) {
+        for (ElementProvider p : ServiceLoader.load(ElementProvider.class)) {
             if (p instanceof McHostElements) found = true;
         }
-        assertTrue(found, "META-INF/services/...HostElementProvider に McHostElements が登録されていること");
+        assertTrue(found, "META-INF/services/...api.spi.ElementProvider に McHostElements が登録されていること");
     }
 
     @Test

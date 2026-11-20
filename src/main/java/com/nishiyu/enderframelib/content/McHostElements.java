@@ -1,21 +1,22 @@
 package com.nishiyu.enderframelib.content;
 
-import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
-import com.nishiyu.enderframelib.core.dom.HostElementProvider;
-import com.nishiyu.enderframelib.core.dom.ReplacedKind;
-import com.nishiyu.enderframelib.core.dom.node.TagMacro;
+import com.nishiyu.enderframelib.api.spi.ElementPainter;
+import com.nishiyu.enderframelib.api.spi.ElementProvider;
+import com.nishiyu.enderframelib.api.spi.ReplacedKind;
+import com.nishiyu.enderframelib.api.spi.TagTemplate;
 import java.util.Map;
 import java.util.Set;
 
 /**
  * Minecraft ホストが持ち込む独自タグ（{@code mc-fluid} / {@code mc-entity} / {@code mc-scene} と、空要素の
- * {@code mc-slot} など）をエンジンへ宣言する。エンジン本体（core）はこれらのタグ名を知らない。
+ * {@code mc-slot} など）をエンジンへ宣言する。公開 SPI（{@code api.spi}）だけで書かれ、エンジン内部の型には触れない。
+ * エンジン本体（core）はこれらのタグ名を知らない。
  */
-public final class McHostElements implements HostElementProvider {
+public final class McHostElements implements ElementProvider {
 
     /** {@code <mc-fluid fluid="...">} → {@code fluid:...} のように参照先へ接頭辞を付ける画像系の置換要素。 */
-    private static CustomElementPainter prefixed(String prefix, String attr, String emptyDefault) {
-        return new CustomElementPainter() {
+    private static ElementPainter prefixed(String prefix, String attr, String emptyDefault) {
+        return new ElementPainter() {
             @Override public ReplacedKind kind() { return ReplacedKind.IMAGE_LIKE; }
             @Override public String resolveSrc(Map<String, String> attrs, String src) {
                 if (src.startsWith(prefix)) return src;
@@ -24,12 +25,12 @@ public final class McHostElements implements HostElementProvider {
         };
     }
 
-    private static final CustomElementPainter SCENE = new CustomElementPainter() {
+    private static final ElementPainter SCENE = new ElementPainter() {
         @Override public ReplacedKind kind() { return ReplacedKind.SCENE; }
     };
 
     @Override
-    public Map<String, CustomElementPainter> replacedElements() {
+    public Map<String, ElementPainter> replacedElements() {
         return Map.of(
                 // 流体は属性が無いときだけ src を使う（空なら空のまま）
                 "mc-fluid", prefixed("fluid:", "fluid", ""),
@@ -38,8 +39,8 @@ public final class McHostElements implements HostElementProvider {
     }
 
     @Override
-    public Map<String, TagMacro> tagMacros() {
-        return McTagMacros.all();
+    public Map<String, TagTemplate> tagTemplates() {
+        return McTagTemplates.all();
     }
 
     @Override

@@ -21,6 +21,16 @@ public interface EnginePlatform {
 
     WebViewSurface create(Spec spec);
 
+    /** {@link EnderEngine#createEvent} の実体。 */
+    default com.nishiyu.enderframelib.api.event.Event createEvent(String type, boolean bubbles, boolean cancelable) {
+        throw new UnsupportedOperationException("createEvent");
+    }
+
+    /** {@link EnderEngine#createAbortController} の実体。 */
+    default com.nishiyu.enderframelib.api.event.AbortSignal.Controller createAbortController() {
+        throw new UnsupportedOperationException("createAbortController");
+    }
+
     /** {@link EnderEngine#workerThreads} の実体。 */
     default void workerThreads(int threads) {}
 }

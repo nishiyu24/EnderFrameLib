@@ -4,6 +4,8 @@
 public final class api.EnderEngine
     public static api.EnderEngine$Builder api.EnderEngine.empty()
     public static api.EnderEngine$Builder api.EnderEngine.html(java.lang.String)
+    public static api.event.AbortSignal$Controller api.EnderEngine.createAbortController()
+    public static api.event.Event api.EnderEngine.createEvent(java.lang.String,boolean,boolean)
     public static void api.EnderEngine.workerThreads(int)
 public static final class api.EnderEngine$Builder
     public api.EnderEngine$Builder api.EnderEngine$Builder.clearColor(int)
@@ -31,6 +33,8 @@ public static final enum api.EnderEngine$Target
     public static final api.EnderEngine$Target api.EnderEngine$Target.SOFTWARE
 public abstract interface api.EnginePlatform
     public abstract api.WebViewSurface api.EnginePlatform.create(api.EnginePlatform$Spec)
+    public default api.event.AbortSignal$Controller api.EnginePlatform.createAbortController()
+    public default api.event.Event api.EnginePlatform.createEvent(java.lang.String,boolean,boolean)
     public default void api.EnginePlatform.workerThreads(int)
 public static final record api.EnginePlatform$Spec
     public boolean api.EnginePlatform$Spec.systemFonts()

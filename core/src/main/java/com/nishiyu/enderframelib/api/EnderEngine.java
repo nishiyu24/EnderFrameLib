@@ -62,6 +62,22 @@ public final class EnderEngine {
         platform().workerThreads(threads);
     }
 
+    /**
+     * 合成イベントを作る（{@code new Event(type, {bubbles, cancelable})} に当たる）。{@link com.nishiyu.enderframelib.api.dom.EventTarget#dispatchEvent}
+     * へ渡すイベントはこれで作る。{@code stopPropagation} / {@code stopImmediatePropagation} / {@code getEventPhase} /
+     * {@code getCurrentTarget} / {@code composedPath} が効くのはエンジンが作ったイベントだけで、
+     * {@code Event} を自分で実装して渡すと配送はされるが、これらは効かない。
+     * なお、リスナーの種類の照合は大文字小文字を区別しない（WHATWG DOM は区別する。この版の仕様）。
+     */
+    public static com.nishiyu.enderframelib.api.event.Event createEvent(String type, boolean bubbles, boolean cancelable) {
+        return platform().createEvent(Objects.requireNonNull(type, "type"), bubbles, cancelable);
+    }
+
+    /** {@code new AbortController()} に当たるものを作る（{@link com.nishiyu.enderframelib.api.event.AddEventListenerOptions} の {@code signal} などへ渡す）。 */
+    public static com.nishiyu.enderframelib.api.event.AbortSignal.Controller createAbortController() {
+        return platform().createAbortController();
+    }
+
     private static EnginePlatform platform() {
         for (EnginePlatform p : ServiceLoader.load(EnginePlatform.class, EnginePlatform.class.getClassLoader())) {
             return p;
