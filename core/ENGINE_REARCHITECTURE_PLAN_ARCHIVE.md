@@ -1769,6 +1769,8 @@ Chrome の `res-*.json` は `.gitignore` 対象の出力なので、計測のた
 
 > **最終更新**: 2026-11-20（**A9 完了: ホスト拡張の SPI を `api` へ出した**。①公開 SPI `api.spi`〔`ElementProvider`・`ElementPainter`・`ReplacedKind`・`TagTemplate`〕と `common.ApiSpiBridge` ②`Builder.i18n`・`Builder.resources` ③Minecraft 側の `mc-*` を公開 SPI へ移行〔`McTagMacros` → `McTagTemplates`。`McHostElements` は `api.spi.ElementProvider`〕④`api` だけを参照するサンプル〔`core/src/apiSample`〕⑤§6-114 の決定〔`EnderEngine.createEvent`・`createAbortController`〕。`:core` とルートの全テスト緑・`build` 成功）。直前は S3 完了〔同日〕。これより前の更新の経緯は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) の末尾「本編冒頭の更新履歴」。この行は日付と直近 1 件だけにする（運用ルール 3）。
 
+> **最終更新**: 2026-11-20（**A13 第 3 段完了**: `GlyphUnits`・`ReplacedElements`・`LocalEnvironment` の static 登録を面ごとの `HostServices` へ移設し、static setter は `5 → 4`。残りは `UI.setStyle`〔DOM 操作の名前〕・`DomUtils`・`DisplayListBuilder`〔層の逆転の結線〕・`LayoutTaskPool`〔プロセス共有の池〕）。直前は A13 第 2 段完了〔同日〕。
+
 ---
 
 ## 付録 2: 2026-11-20 本編整理時の退避（旧 KPI・完了済み設計詳細・§4 詳細実装記録）

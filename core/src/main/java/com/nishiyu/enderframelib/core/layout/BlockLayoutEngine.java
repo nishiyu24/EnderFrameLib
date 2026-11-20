@@ -653,7 +653,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         int epoch = LayoutBox.shapeEpoch();
         if (box.floatsMemoEpoch == epoch) {
             floatMemoHits++;
-            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.on() && box.floatsMemo != scanFloatsUncached(box)) {
+            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on() && box.floatsMemo != scanFloatsUncached(box)) {
                 throw new AssertionError("float メモが古い: 箱 " + box.node.key() + " メモ=" + box.floatsMemo);
             }
             return box.floatsMemo;

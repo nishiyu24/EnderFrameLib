@@ -72,6 +72,18 @@ class ViewportWidthFreeReuseTest {
 
     @Test
     void resultMatchesFreshLayoutAndNeverMeasuresMore() {
+        // 測定回数を比べるので、検証モード（測り直しが回数に混ざる）は切る
+        var verify = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO;
+        boolean verifyWas = verify.on();
+        verify.set(false);
+        try {
+            resultMatchesFreshLayoutAndNeverMeasuresMoreBody();
+        } finally {
+            verify.set(verifyWas);
+        }
+    }
+
+    private void resultMatchesFreshLayoutAndNeverMeasuresMoreBody() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         var doc = parser.parseDocument(html(), "", 800, H);
 

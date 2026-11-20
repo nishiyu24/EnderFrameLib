@@ -55,7 +55,7 @@ class ShortcutSwitchRatchetTest {
                     + " static final boolean X = !Boolean.getBoolean(\"enderframe.layout.noalpha\");\n"
                     + " static final boolean Y = Boolean.getBoolean( \"enderframe.sheetcache.off\" );\n"
                     + " static final boolean G = Boolean.getBoolean(\"enderframe.gl.noreplay\");\n"      // GPU 面: 対象外
-                    + " static final boolean V = Boolean.getBoolean(\"enderframe.layout.verifyfloats\");\n" // 近道ではない
+                    + " static final boolean V = Boolean.getBoolean(\"enderframe.verify.memo\");\n" // 近道ではない
                     + "}\n");
             assertEquals(List.of("enderframe.layout.noalpha", "enderframe.sheetcache.off"), ShortcutMatrixMain.findSwitches(dir));
         } finally {

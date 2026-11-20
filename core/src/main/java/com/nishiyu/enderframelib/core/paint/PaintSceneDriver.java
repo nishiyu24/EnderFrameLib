@@ -1381,9 +1381,11 @@ public final class PaintSceneDriver {
         if (com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.on() && prev != null && geometryStatic && prevStatic[i] && prevParentRes[i] == parent
                 && ((idle && prevIdle[i]) || prev.anim() == (animVals = st.getInterpolatedValues(now)))) {
             r = prev;
+            AnimatedValues av2 = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on() ? (animVals != null ? animVals : st.getInterpolatedValues(now)) : null;
+            if (av2 != null) { long b = posesBuilt; PoseVerifier.check(el.id(), prev, parent != null && el.type() != ElementType.NODE && PoseVerifier.identityGeometry(av2) ? parent : build(el, i, parent, av2)); posesBuilt = b; }
         } else {
             AnimatedValues av = animVals != null ? animVals : st.getInterpolatedValues(now);
-            r = com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.on() && parent != null && el.type() != ElementType.NODE && identityGeometry(av) ? parent : build(el, i, parent, av);
+            r = com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.on() && parent != null && el.type() != ElementType.NODE && PoseVerifier.identityGeometry(av) ? parent : build(el, i, parent, av);
             prevRes[i] = r;
             prevParentRes[i] = parent;
             prevStatic[i] = geometryStatic; // 「前回も姿勢が動いていなかった」
@@ -1392,11 +1394,6 @@ public final class PaintSceneDriver {
         curRes[i] = r;
         curStamp[i] = frameStamp;
         return r;
-    }
-
-    /** 変形・不透明度が恒等（葉の項目なら {@link #build} の結果が親の姿勢と同じ値になる）。 */
-    private static boolean identityGeometry(AnimatedValues a) {
-        return a.opacity() == 1f && a.tx() == 0f && a.ty() == 0f && a.sx() == 1f && a.sy() == 1f && a.rot() == 0f && a.skew() == 0f;
     }
 
     private final double[] poseScratch = new double[6];

@@ -30,6 +30,12 @@ class HoverPatchKeepsScrollNodeTest {
         return items.stream().filter(i -> i.type() == ElementType.NODE && i.id().endsWith("_scrollc")).count();
     }
 
+    /** 同じ id の項目が 2 つ並ばない（差分パッチが箱の記憶へ節を混ぜると、次の通常の組み立てで二重に出る）。 */
+    private static void assertNoDuplicateIds(List<DisplayItem> items, String where) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (DisplayItem it : items) assertTrue(seen.add(it.id()), where + ": 同じ id の項目が 2 つある: " + it.id());
+    }
+
     @Test
     void hoverAfterScrollKeepsEveryScrollContentNode() {
         StandaloneView view = new StandaloneView(html(), 320, 240, FontResolver.FALLBACK);
@@ -44,6 +50,7 @@ class HoverPatchKeepsScrollNodeTest {
                 if (i % 3 == 0) view.scroll(0, -1, sid);
                 for (int k = 0; k < 4; k++) { now += 16; view.frame(now, backend, true); }
                 assertEquals(before, contentNodes(view.items()), "手 " + i + ": ホバーの差し替えでスクロールの節が減った");
+                assertNoDuplicateIds(view.items(), "手 " + i);
             }
         } finally {
             view.close();

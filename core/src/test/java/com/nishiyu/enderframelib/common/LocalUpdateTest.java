@@ -354,14 +354,14 @@ public class LocalUpdateTest {
     public void probeTextChange() {
         // テストでは検証モードが常時ON（全箱を走査し直す）。実測では切る
         boolean stamps = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on();
-        boolean floats = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.on();
+        boolean floats = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
         com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(false);
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(false);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(false);
         try {
             probe();
         } finally {
             com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(stamps);
-            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(floats);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(floats);
         }
     }
 
@@ -369,9 +369,9 @@ public class LocalUpdateTest {
     @Test
     public void sampleHotSpots() throws Exception {
         boolean stamps = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on();
-        boolean floats = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.on();
+        boolean floats = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
         com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(false);
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(false);
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(false);
         try {
             int rows = 5000;
             StandaloneView v = open(rows);
@@ -417,7 +417,7 @@ public class LocalUpdateTest {
                     .forEach(e -> System.out.println("[hot] self " + e.getValue() + " " + e.getKey()));
         } finally {
             com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(stamps);
-            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_FLOATS.set(floats);
+            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(floats);
         }
     }
 

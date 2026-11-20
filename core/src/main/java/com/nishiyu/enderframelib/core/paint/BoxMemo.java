@@ -84,6 +84,8 @@ static final int NUMS_LENGTH = 13;
     int rootW, rootH;
     boolean viewportSensitive;
     List<DisplayItem> items;
+    /** 記憶を作ったときの箱のノードの鍵（項目の id・鍵の元。ノードの鍵が変わったら記憶は使えない）。 */
+    String nodeKey;
     com.nishiyu.enderframelib.core.css.ComputedStyle style;
     com.nishiyu.enderframelib.core.css.ComputedStyle firstLineStyle;
     com.nishiyu.enderframelib.core.css.ComputedStyle placeholderStyle;

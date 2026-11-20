@@ -77,6 +77,18 @@ final class MeasureMemo {
         private float stLegendSpill, stContentBlockExtent, stOwnMarginTop, stOwnMarginBottom;
         private LayoutBox.SizingMode stSizingMode;
 
+        TentativeSlots copy() {
+            TentativeSlots c = new TentativeSlots();
+            c.entries = entries == null ? null : entries.clone();
+            c.stashedSpace = stashedSpace; c.stashedCtx = stashedCtx; c.stashed = stashed;
+            c.stW = stW; c.stH = stH; c.stMT = stMT; c.stMR = stMR; c.stMB = stMB; c.stML = stML;
+            c.stPT = stPT; c.stPR = stPR; c.stPB = stPB; c.stPL = stPL;
+            c.stBT = stBT; c.stBR = stBR; c.stBB = stBB; c.stBL = stBL;
+            c.stLegendSpill = stLegendSpill; c.stContentBlockExtent = stContentBlockExtent;
+            c.stOwnMarginTop = stOwnMarginTop; c.stOwnMarginBottom = stOwnMarginBottom; c.stSizingMode = stSizingMode;
+            return c;
+        }
+
         void captureStash(LayoutBox b) {
             stW = b.w; stH = b.h; stMT = b.mT; stMR = b.mR; stMB = b.mB; stML = b.mL;
             stPT = b.pT; stPR = b.pR; stPB = b.pB; stPL = b.pL;
@@ -268,7 +280,10 @@ final class MeasureMemo {
         }
         if (ctx.reuseMeasurements() && canReuseMeasurement(box, space, ctx, restoreOk)) {
             if (restoreOk) restoreNaturalOutputs(box);
-            if (!(flag(F_SUBTREE_CHANGED) && ctx.firstPass())) return;
+            if (!(flag(F_SUBTREE_CHANGED) && ctx.firstPass())) {
+                if (Shortcut.VERIFY_MEMO.on()) verifyReused(box, space, ctx, "reuse");
+                return;
+            }
             int[] depth = DESCENT.get();
             depth[0]++;
             try {
@@ -280,6 +295,7 @@ final class MeasureMemo {
         }
         if (ctx.reuseMeasurements() && (reuseDefiniteTentative(box, space, ctx, restoreOk)
                 || fillFitReuse(box, space, ctx, restoreOk))) {
+            if (Shortcut.VERIFY_MEMO.on()) verifyReused(box, space, ctx, "tentative/fillfit");
             return;
         }
         if (measureFuelExhausted(ctx)) {
@@ -299,6 +315,23 @@ final class MeasureMemo {
         recordMeasurement(box, space, ctx);
         box.touchPaint();
     }
+
+    /** 検証モード（{@code VERIFY_MEMO}）: 記憶で飛ばした箱を測り直して比べる（{@link MeasureVerifier}）。計数は進めない。 */
+    private void verifyReused(LayoutBox box, ConstraintSpace space, LayoutContext ctx, String how) {
+        if (MeasureVerifier.active() || box.floatSpace != null || box.collapsedBorders != null) return;
+        long[] fuel = FUEL.get();
+        long[] savedFuel = fuel.clone();
+        long computedBefore = MEASUREMENTS_COMPUTED.sum();
+        try {
+            MeasureVerifier.verify(box, space, ctx, how);
+        } finally {
+            MEASUREMENTS_COMPUTED.add(-(MEASUREMENTS_COMPUTED.sum() - computedBefore));
+            System.arraycopy(savedFuel, 0, fuel, 0, fuel.length);
+        }
+    }
+    Object snapshotSlots() { return tentativeSlots == null ? null : tentativeSlots.copy(); }
+
+    void restoreSlots(Object snapshot) { tentativeSlots = snapshot == null ? null : ((TentativeSlots) snapshot).copy(); }
 
     // ------------------------------------------------------------------ 仮測定・確定葉スロット
 
@@ -684,6 +717,7 @@ final class MeasureMemo {
         }
         setFlag(F_VALID, true);
         boolean absorbed = outerSizeStable && (MeasureChanges.isRelayoutBoundary(box) || MeasureAnalysis.isCutoffEligible(box));
+        if (MeasureVerifier.active()) return;
         if (DESCENT.get()[0] > 0) invalidateParentOnly(box, !absorbed);
         else invalidateAncestors(box, !(outerSizeStable && MeasureChanges.isRelayoutBoundary(box)));
     }

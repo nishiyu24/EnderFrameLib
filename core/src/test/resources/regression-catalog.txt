@@ -46,6 +46,9 @@ be95cfe, A6b | IncrementalVsFullTest#canvasBackgroundFollowsBodyHoverStyleInTheS
 e626eb7 | CpuFallbackOfRareShapesTest#cpuFallbackShapeKeepsTheDrawingOrderBetweenGpuShapes | CPU へ回した稀な図形が GPU の図形との描画順を崩した
 §6-103, T2b | BoxBlurEdgeTest#largeBlurBackdropAtTheScreenEdgeHasNoHalo, BoxBlurEdgeTest#smallBlurBackdropAtTheScreenEdgeHasNoHalo | CPU の大きなぼかし（ボックス 3 回）だけが画面の端を透明として扱い、端が薄くなった
 
+§6-125 | PatchedMemoNoDuplicateItemsTest#noFrameHasTwoItemsWithTheSameId | 差分パッチが箱の記憶の項目リストへスクロール内容の節（_scrollc）を混ぜ、次の通常の組み立てで同じ id の項目が 2 つ並んだ（画素は同じ）
+§6-125 | NoHtmlSiteTest#buildsAndInteractsWithFullSiteWithoutAnyHtml | ノードの鍵が変わった箱で、古い id・鍵の項目の記憶が当たっていた（箱の項目の検証 VERIFY_BOX_MEMO が見つけた）
+
 # --- ヒットテスト ---
 §6-95, T2 | HitTestFrameClockTest#animatedElementIsHitWhereItWasDrawnAtTheFrameTime | ヒットテストが描画と別の時計（壁時計）でアニメーションを評価し、当たる位置が見えている位置とずれた
 §6-96, T2 | ScrollNodeClipRegressionTest#textInNestedClipIsHitWhereItIsDrawnAfterOuterScroll | 動く節の下の入れ子のクリップを作ったときの位置で比べ、文字ではなく親の箱に当たった

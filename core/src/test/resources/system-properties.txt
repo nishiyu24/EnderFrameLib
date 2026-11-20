@@ -26,7 +26,8 @@ enderframe.layout.notentative | SHORTCUT | core/kernel/EngineFlags.java | Layout
 enderframe.layout.noviewportwidthfree | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.viewportWidthFreeReuse（Q6）
 enderframe.layout.nowidthreuse | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.widthIndependentReuse
 enderframe.layout.probe | DIAGNOSTIC | core/kernel/EngineFlags.java | LayoutParallelProbe（並列化の採取）
-enderframe.layout.verifyfloats | DIAGNOSTIC | core/kernel/EngineFlags.java | BlockLayoutEngine.verifyFloatMemo（:core:test が立てる）
+enderframe.verify.memo | DIAGNOSTIC | core/kernel/EngineFlags.java | 検証モード VERIFY_MEMO: 記憶が当たった所を計算し直して比べる（float メモ・測定の記憶。:core:test が立てる）
+enderframe.verify.boxmemo | DIAGNOSTIC | core/kernel/EngineFlags.java | 検証モード VERIFY_BOX_MEMO: 箱の項目の記憶を作り直して比べる（:core:test が立てる。実文書のテストだけ切る）
 enderframe.paint.cullmargin | TUNING | core/kernel/EngineFlags.java | DisplayListBuilder.CULL_MARGIN（画面外の間引きの余白 px。既定 640）
 enderframe.paint.nochunks | SHORTCUT | core/kernel/EngineFlags.java | PaintOrder.chunksEnabled
 enderframe.paint.nocullrange | SHORTCUT | core/kernel/EngineFlags.java | PaintSceneDriver.cullRecordedRanges

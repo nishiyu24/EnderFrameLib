@@ -55,8 +55,18 @@ class RealDocumentFramesTest {
         return name.endsWith(".md") ? MarkdownParser.toHtml(text) : text;
     }
 
+    private boolean verifyBoxMemoWas;
+
+    /** 実文書（フォーム部品・画像・キャンバス）では、箱の項目の検証の再描画が状態を乱して差分の結果がずれる（§6-124）ので切る。 */
+    @org.junit.jupiter.api.BeforeEach
+    void disableBoxMemoVerification() {
+        verifyBoxMemoWas = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_BOX_MEMO.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_BOX_MEMO.set(false);
+    }
+
     @AfterEach
     void restoreShortcuts() throws ReflectiveOperationException {
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_BOX_MEMO.set(verifyBoxMemoWas);
         setShortcuts(true);
     }
 

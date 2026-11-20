@@ -1333,7 +1333,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         m.rootH = rootH;
         m.viewportSensitive = box.parent == null || box.style.usesViewportUnits();
         m.parentBox = box.parent;
-        m.items = items;
+        m.items = items; m.nodeKey = box.node.key();
         m.itemsMutable = itemsMutable;
         m.style = box.style;
         m.firstLineStyle = box.firstLineStyle;
@@ -1442,6 +1442,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             return;
         }
         BoxMemo m = boxMemo.get(box);
+        if (m != null && !m.nodeKey.equals(box.node.key())) m = null; // 箱のノードの鍵が変わった（項目の id・鍵が古い）
         int kind;
         if (useChangeStamps && m != null && !translating && stampClean(m, box, clipRect, parentId)) {
             kind = 1;
@@ -1463,6 +1464,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             m.appliedNonUniform = false;
             m.generation = generation;
             m.epoch = buildEpoch;
+            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_BOX_MEMO.on() && !translating) BoxMemoVerifier.check(elements, m, box, list -> drawBoxSelfUncached(list, box, clipRect, parentId), fragIds);
             appendItems(elements, m.items);
             return;
         }
@@ -2351,6 +2353,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             if (sc != null) {
                 for (int i = b.dlStart; i < b.dlEnd; i++) {
                     if (sc.contentId.equals(currentDisplayList.get(i).id())) {
+                        if (stored.items == newItems) { stored.items = new ArrayList<>(newItems); stored.itemsMutable = false; } // 記憶のリストへ節を混ぜない
                         int prevOx = newItems.originX, prevOy = newItems.originY;
                         if (relMode && PaintOrder.boxHasOwnNode(b)) {
                             newItems.setOrigin(Math.round(b.x()), Math.round(b.y()));
