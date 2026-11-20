@@ -759,7 +759,7 @@ public final class PaintOrder {
     void collectChildren(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
                          boolean ancestorOrSelfMoving) {
         String tag = box.node.tag;
-        if ("select".equalsIgnoreCase(tag) || "textarea".equalsIgnoreCase(tag) || "input".equalsIgnoreCase(tag)) return;
+        if (com.nishiyu.enderframelib.core.dom.ElementTraits.isValueControl(tag)) return;
 
         ClipRect computedClip = computeChildClipRect(box, clip);
         // 切らない箱は親のクリップをそのまま返す（すでにそろえてある）。新しく作った分だけそろえる

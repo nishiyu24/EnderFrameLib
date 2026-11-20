@@ -218,8 +218,7 @@ public final class FormController {
     }
 
     private static boolean isFormControl(HtmlElement node) {
-        String tag = node.getTagName().toLowerCase(Locale.ROOT);
-        return tag.equals("input") || tag.equals("button") || tag.equals("select") || tag.equals("textarea");
+        return ElementTraits.isFormControl(node.getTagName());
     }
 
     private static HtmlNode getRoot(HtmlNode node) {

@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.event;
 
 import com.nishiyu.enderframelib.api.event.UIEvents;
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 
@@ -266,9 +267,7 @@ public class StandardDefaultActions {
     }
 
     private static boolean isFormControl(HtmlNode node) {
-        if (node == null) return false;
-        String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
-        return tag.equals("input") || tag.equals("button") || tag.equals("select") || tag.equals("textarea");
+        return ElementTraits.isFormControl(node);
     }
 
     private static HtmlNode findSelfOrAncestor(HtmlNode node, String tag) {
@@ -297,7 +296,7 @@ public class StandardDefaultActions {
 
     private static void findRadiosByName(HtmlNode root, String name, List<HtmlNode> out) {
         if (root == null) return;
-        if ("input".equalsIgnoreCase(root.tag) && "radio".equalsIgnoreCase(root.attrs.get("type"))
+        if (ElementTraits.isRadio(root)
                 && name.equals(root.attrs.get("name"))) {
             out.add(root);
         }

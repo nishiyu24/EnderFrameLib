@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.scene3d.CameraOrbit;
 
@@ -1075,18 +1076,11 @@ public final class StandaloneView implements AutoCloseable {
     }
 
     private static boolean isCheckable(HtmlNode node) {
-        if (!"input".equalsIgnoreCase(node.tag)) return false;
-        String type = node.attrs.getOrDefault("type", "").toLowerCase(Locale.ROOT);
-        return type.equals("checkbox") || type.equals("radio");
+        return ElementTraits.isCheckable(node);
     }
 
     private static boolean isTextControl(HtmlNode node) {
-        if ("textarea".equalsIgnoreCase(node.tag)) return true;
-        if (!"input".equalsIgnoreCase(node.tag)) return false;
-        return switch (node.attrs.getOrDefault("type", "text").toLowerCase(Locale.ROOT)) {
-            case "text", "search", "url", "email", "password", "tel", "number", "" -> true;
-            default -> false;
-        };
+        return ElementTraits.isTextControl(node);
     }
 
     /** {@code Tab} 順（{@code tabindex} の正の値が先、続いて文書順）の次／前へ。 */

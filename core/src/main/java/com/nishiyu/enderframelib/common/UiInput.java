@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.api.event.Event;
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -510,9 +511,7 @@ public class UiInput {
     }
 
     public static boolean isCheckable(HtmlNode node) {
-        if (node == null || !"input".equalsIgnoreCase(node.tag)) return false;
-        String type = node.attrs.getOrDefault("type", "");
-        return "checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type);
+        return ElementTraits.isCheckable(node);
     }
 
     public static String formatPoint(double x, double y) {

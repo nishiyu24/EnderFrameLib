@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.dom.ElementTraits;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.ColorParser;
@@ -67,11 +68,6 @@ public class DisplayListBuilder {
     public static void setParentRelativeSource(java.util.function.BooleanSupplier source) {
         parentRelativeSource = source != null ? source : () -> true;
     }
-
-    private static final Set<String> NON_FRAGMENT_TAGS = Set.of(
-            "#text", "img",
-            "input", "select", "progress", "meter", "textarea", "canvas", "svg"
-    );
 
     private int rootW;
 
@@ -1677,7 +1673,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             }
             passiveBorderEvents.reuseCandidate(prevPassiveHints != null ? prevPassiveHints : prevPartsHints);
 
-            if (!box.inlineFragments.isEmpty() && !NON_FRAGMENT_TAGS.contains(box.node.tag) && !ReplacedElements.isHost(box.node.tag) && !BlockLayoutEngine.isAtomicInline(box)) {
+            if (!box.inlineFragments.isEmpty() && !ElementTraits.isNonFragmented(box.node.tag) && !ReplacedElements.isHost(box.node.tag) && !BlockLayoutEngine.isAtomicInline(box)) {
                 decor.drawInlineFragments(elements, box, id, color, bgColor, rawRadii, normalizedClip, fontHVal, ox, oy, itemCount, interactive,
                         partsEvents, passiveBorderEvents, transDur, colorBgAnim);
                 return;

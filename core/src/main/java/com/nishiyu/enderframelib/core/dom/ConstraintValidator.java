@@ -61,7 +61,7 @@ public final class ConstraintValidator {
     public static boolean willValidate(HtmlElement element) {
         if (element == null) return false;
         String tag = element.getTagName().toLowerCase(Locale.ROOT);
-        if (!tag.equals("input") && !tag.equals("button") && !tag.equals("select") && !tag.equals("textarea")) {
+        if (!ElementTraits.isFormControl(tag)) {
             return false;
         }
         if (element.hasAttribute("disabled")) return false;

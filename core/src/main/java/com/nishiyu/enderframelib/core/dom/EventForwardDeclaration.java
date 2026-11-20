@@ -154,8 +154,7 @@ public record EventForwardDeclaration(String eventType, Payload payload, String 
 
     private static boolean isValueControl(HtmlNode node) {
         if (node.nodeType != NodeType.ELEMENT) return false;
-        String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
-        return tag.equals("input") || tag.equals("textarea") || tag.equals("select");
+        return ElementTraits.isValueControl(node.tag);
     }
 
     private static void addActionHead(Set<String> names, @Nullable String action) {
