@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.vulkan;
 
 import com.nishiyu.enderframelib.core.paint.gpu.CpuFallback;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
+import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.software.PaintResources;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;

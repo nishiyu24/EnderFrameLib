@@ -1,13 +1,13 @@
 package com.nishiyu.enderframelib.core.paint.gl;
 
-import com.nishiyu.enderframelib.core.paint.BlendMode;
-import com.nishiyu.enderframelib.core.paint.FilterOp;
+import com.nishiyu.enderframelib.core.paint.model.BlendMode;
+import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
+import com.nishiyu.enderframelib.core.paint.port.GpuClip;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuRenderBackend;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
+import com.nishiyu.enderframelib.core.paint.port.GpuScrollLayer;
+import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.gpu.RectStream;
 import com.nishiyu.enderframelib.core.paint.gpu.Scene3DRenderer;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
