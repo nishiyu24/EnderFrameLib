@@ -181,7 +181,7 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
 }
 
 private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen, List<DisplayItem> sink) {
-    buildSerial++;
+    com.nishiyu.enderframelib.core.layout.PaintStamps.settle(box); // レイアウトの仮の印のうち、出力が変わった箱だけ本当の印にする
     buildEpoch = LayoutBox.paintEpoch();
     // 大きい文書は、スクロール時でなくても画面（と余白）の外の箱の項目を作らない（窓付きの表示リスト。項目数が可視範囲に比例する）
     if (lastOwnerCount == 0 && com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.on()) lastOwnerCount = countBoxes(box, WINDOW_MIN_OWNERS); // 最初の描画だけ、箱の数を数えて判定する
@@ -256,6 +256,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
     /** 箱（文字の塊は持ち主の箱）の位置が、画面と余白の範囲に掛かるか。 */
     /** 診断: 断片の記憶（部分木ごと組み立てを飛ばした）が当たった回数の累計。 */
+    /** 経路の観測口（箱ごとの {@code FragmentPaint.PATH_*}）。C7 の予測テスト用。 */
+    public void setPathRecorder(java.util.function.ObjIntConsumer<LayoutBox> recorder) { fragmentPaint.setPathRecorder(recorder); }
+
     public static long fragmentOwnReused() { return FragmentPaint.OWN_REUSED.sum(); }
 
     public static long fragmentMemoHits() { return FragmentPaint.MEMO_HITS.sum(); }
@@ -455,7 +458,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     boolean parentRelative = true;
 
     long buildEpoch;
-    int buildSerial;
     /** 診断: 描画順の分類用のスタイル値を新しく算出した回数の累計（キャッシュ退行の検出用）。 */
     public static long styleFactsComputed() {
         return PaintOrder.STAT_FACTS_COMPUTED.sum();

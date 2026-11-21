@@ -324,6 +324,7 @@ final class RenderTreeBuilder {
                                                 Map<String, String> env, RenderPipeline.StyleScope childScope,
                                                 InteractionState interactionState, ContainerBox selfContainer) {
         HtmlNode node = box.node;
+        ComputedStyle prevMarker = box.markerStyle, prevPlaceholder = box.placeholderStyle, prevBackdrop = box.backdropStyle, prevFirstLine = box.firstLineStyle;
         box.markerStyle = box.display().listItem()
                 ? resolvePseudoStyle(node, PseudoType.MARKER, computed, sheet, env, childScope, interactionState, selfContainer)
                 : null;
@@ -339,6 +340,16 @@ final class RenderTreeBuilder {
         box.firstLineStyle = isFirstLineContainer(box)
                 ? resolvePseudoStyle(node, PseudoType.FIRST_LINE, computed, sheet, env, childScope, interactionState, selfContainer)
                 : null;
+        // 疑似要素のスタイルは updateStyle の外で代入される。値として変わったときだけ描画の印を進める（同じなら描画も同じ）
+        if (!sameValue(prevMarker, box.markerStyle) || !sameValue(prevPlaceholder, box.placeholderStyle)
+                || !sameValue(prevBackdrop, box.backdropStyle) || !sameValue(prevFirstLine, box.firstLineStyle)) {
+            box.touchPaint();
+        }
+    }
+
+    private static boolean sameValue(ComputedStyle a, ComputedStyle b) {
+        if (a == b) return true;
+        return a != null && b != null && a.fontSizePx() == b.fontSizePx() && a.rootFontSizePx() == b.rootFontSizePx() && ComputedStyle.sameDeclarations(a, b);
     }
 
     private static boolean isFirstLineContainer(LayoutBox box) {

@@ -686,14 +686,10 @@ public class LayoutBox {
         dlOrder = -1;
     }
 
-    private static final java.util.concurrent.atomic.AtomicLong PAINT_EPOCH = new java.util.concurrent.atomic.AtomicLong();
+    static final java.util.concurrent.atomic.AtomicLong PAINT_EPOCH = new java.util.concurrent.atomic.AtomicLong();
     /** 最後に描画入力が書き換わりうる地点を通った時の通し番号。新しい箱は常に新しい。 */
     long paintStamp = PAINT_EPOCH.incrementAndGet();
-    /** 算出スタイル（と文字）が差し替わった時の通し番号。子の描画が祖先から読むのはスタイルだけなので、祖先についてはこちらを見る。 */
-    private long styleStamp = paintStamp;
-    /** 祖先のスタイルの印の最大値の、描画ごとのキャッシュ（{@link #pathPaintStamp}）。 */
-    private long ancestorStyleStampCache;
-    private int ancestorStyleStampSerial = -1;
+    volatile int layoutDirty; long layoutSig; LayoutBox[] settledKids; java.util.concurrent.ConcurrentLinkedQueue<LayoutBox> ledger; // PaintStamps の箱ごとの状態（ledger は根の箱だけ）
 
     /** 現在の通し番号（これ以下の印は、いまの描画に反映済みとみなせる）。 */
     public static long paintEpoch() {
@@ -729,10 +725,10 @@ public class LayoutBox {
 
     /** 子の増減など、自分の描画入力は変わらないが部分木の中身が変わったことを、祖先へ伝える（{@link #paintStamp} は進めない）。 */
     void touchSubtree() {
-        bubbleSubtreeStamp(PAINT_EPOCH.incrementAndGet());
+        PaintStamps.mark(this, PaintStamps.DIRTY_STRUCTURE);
     }
 
-    private void bubbleSubtreeStamp(long s) {
+    void bubbleSubtreeStamp(long s) {
         long boundary = renderBoundary;
         for (LayoutBox a = this; a != null; a = a.parent) {
             long cur = a.subtreeStamp;
@@ -742,20 +738,11 @@ public class LayoutBox {
     }
 
     /**
-     * 自分の印と、祖先のスタイルの印の最大値。祖先の位置や大きさの変化は、子の layout が走る（子の印が付く）か、
-     * クリップの比較に出るので、祖先についてはスタイルだけを見ればよい。{@code serial} が同じ間はキャッシュする。
+     * 自分の印。子の描画が祖先から読むもの（動く祖先・位置・クリップ・親 id）は記憶の鍵にあり、継承されるスタイルは子の算出スタイルへ
+     * 入って子自身の更新で印が付くので、祖先の印は見ない（見ると、祖先が動くたびに子孫の全部が外れる）。
      */
-    public long pathPaintStamp(int serial) {
-        return Math.max(paintStamp, parent == null ? 0L : parent.ancestorStyleStamp(serial));
-    }
-
-    private long ancestorStyleStamp(int serial) {
-        if (ancestorStyleStampSerial == serial) return ancestorStyleStampCache;
-        long v = styleStamp;
-        if (parent != null) v = Math.max(v, parent.ancestorStyleStamp(serial));
-        ancestorStyleStampCache = v;
-        ancestorStyleStampSerial = serial;
-        return v;
+    public long ownPaintStamp() {
+        return paintStamp;
     }
 
     public LayoutBox(HtmlNode node, ComputedStyle style) {
@@ -777,10 +764,16 @@ public class LayoutBox {
      * 算出スタイルを更新する（再スタイル時にジオメトリを保ったまま描画属性だけ差し替える用途を含む）。
      */
     public void updateStyle(ComputedStyle newStyle) {
+        ComputedStyle before = this.style;
+        if (before != null && newStyle != before && display != null && java.util.Objects.equals(node.text, displaySource)
+                && before.fontSizePx() == newStyle.fontSizePx() && before.rootFontSizePx() == newStyle.rootFontSizePx()
+                && ComputedStyle.sameDeclarations(before, newStyle)) {
+            this.style = newStyle; // 宣言が同じなら配置も描画も変わらない。印は進めない（疑似要素の変化は resolveHighlightPseudos が印を進める）
+            return;
+        }
         int traitsBefore = structTraits(), containerBefore = containerTraits();
         touchPaint();
         invalidateMinContentCache();
-        styleStamp = paintStamp;
         ComputedStyle prevStyle = this.style;
         Display displayBefore = this.display;
         boolean absoluteBefore = this.isAbsolute;
@@ -1287,7 +1280,7 @@ public class LayoutBox {
         }
         PlacementMemo pm = ensurePlacementMemo();
         pm.setHasFloatChild(computeHasFloatChild());
-        touchPaint();
+        PaintStamps.touchLayout(this);
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 

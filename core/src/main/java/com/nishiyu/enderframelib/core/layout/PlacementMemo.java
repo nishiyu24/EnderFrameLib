@@ -290,7 +290,7 @@ final class PlacementMemo {
             frag.x += dx;
             frag.y += dy;
         }
-        box.touchPaint();
+        PaintStamps.touchLayout(box);
         List<LayoutBox> kids = box.children;
         for (int i = 0, n = kids.size(); i < n; i++) {
             LayoutBox child = kids.get(i);
@@ -308,7 +308,7 @@ final class PlacementMemo {
 
     static void resetPlacements(LayoutBox box, long keepRun) {
         if (keepRun >= 0 && canKeepPlacement(box, keepRun)) return;
-        box.touchPaint();
+        PaintStamps.touchLayout(box);
         if (box.placementMemo != null) box.placementMemo.onReset(keepRun < 0);
         box.discardFragments();
         box.fragmentsStale = false;
@@ -362,7 +362,7 @@ final class PlacementMemo {
                                             boolean ancestorOffset, boolean inBfcFloat,
                                             List<LayoutBox> staleFrags) {
         if (keepRun >= 0 && canKeepPlacement(box, keepRun, ancestorOffset || inBfcFloat)) return;
-        box.touchPaint();
+        PaintStamps.touchLayout(box);
         PlacementMemo pm = box.placementMemo;
         if (pm != null) pm.onReset(keepRun < 0);
         if (!box.inlineFragments.isEmpty()) {

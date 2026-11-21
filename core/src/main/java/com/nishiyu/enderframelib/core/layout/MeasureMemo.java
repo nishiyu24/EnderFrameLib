@@ -307,13 +307,13 @@ final class MeasureMemo {
         if ((flag(F_LAYOUT_CHANGED) || hasUnmeasuredSubtreeChange(ctx)) && tentativeSlots != null) {
             tentativeSlots.entries = null;
         }
-        box.touchPaint();
+        PaintStamps.touchLayout(box);
         setFlag(F_CHILD_FIT_BLOCKED, false);
         childFitNeedMax = 0;
         BoxMeasurer.measure(box, space, ctx);
         if (flag(F_HAS_TENTATIVE_CHILDREN)) settleTentativeChildren(box);
         recordMeasurement(box, space, ctx);
-        box.touchPaint();
+        PaintStamps.touchLayout(box);
     }
 
     /** 検証モード（{@code VERIFY_MEMO}）: 記憶で飛ばした箱を測り直して比べる（{@link MeasureVerifier}）。計数は進めない。 */
@@ -490,7 +490,7 @@ final class MeasureMemo {
         if (restoreOk && outputsDiffer) {
             o.apply(box);
             invalidateMinContentCache();
-            box.touchPaint();
+            PaintStamps.touchLayout(box);
         }
         setFlag(F_BLOCK_PERCENT_FREE, match.percentFree());
         setFlag(F_OUTSIDE_FREE, match.outsideFree());
@@ -554,7 +554,7 @@ final class MeasureMemo {
         if (newW != box.w) {
             box.w = newW;
             invalidateMinContentCache();
-            box.touchPaint();
+            PaintStamps.touchLayout(box);
             box.invalidatePlacementValid();
         }
         measuredSpace = space;
@@ -628,7 +628,7 @@ final class MeasureMemo {
         box.ownMarginTop = outOwnMarginTop; box.ownMarginBottom = outOwnMarginBottom;
         box.sizingMode = outSizingMode;
         invalidateMinContentCache();
-        box.touchPaint();
+        PaintStamps.touchLayout(box);
     }
 
     private void capturePrimaryOutputs(LayoutBox b) {
@@ -725,7 +725,7 @@ final class MeasureMemo {
     // ------------------------------------------------------------------ 無効化・署名照合
 
     static void invalidate(LayoutBox box) {
-        box.touchPaint();
+        PaintStamps.touchLayout(box);
         for (LayoutBox b = box; b != null; b = b.parent) {
             b.measureMemo.setFlag(F_VALID, false);
             b.invalidatePlacementValid();

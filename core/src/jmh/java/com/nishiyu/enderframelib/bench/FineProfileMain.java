@@ -363,22 +363,8 @@ public final class FineProfileMain {
             // ホストが実際に通る経路（StandaloneView.resize → requestResize → flushInvalidation の resize 分岐）。
             // recomputeLayout の直呼びと違い、表示項目の厳密な平行移動（exactTranslation）が有効になる
             case "resizeframe" -> v.resize(Workloads.VIEWPORT_W - (i & 1), Workloads.VIEWPORT_H);
-            // flushInvalidation の resize 分岐と同じく exactTranslation を立てて recomputeLayout する（resizeframe は壁時計の間引きで
-            // 連続フレームではレイアウトが走らないため、その分岐の中身だけを直接再現する）
-            case "resizeexact" -> {
-                try {
-                    var f = UiView.class.getDeclaredField("exactTranslation");
-                    f.setAccessible(true);
-                    f.setBoolean(v.ui(), true);
-                    try {
-                        v.ui().recomputeLayout(Workloads.VIEWPORT_W - (i & 1), Workloads.VIEWPORT_H);
-                    } finally {
-                        f.setBoolean(v.ui(), false);
-                    }
-                } catch (ReflectiveOperationException e) {
-                    throw new IllegalStateException(e);
-                }
-            }
+            // 旧: 厳密な平行移動つきの resize 分岐の再現。平行移動の再利用を削除した（C1m）ので recomputeLayout と同じ。costGate の行名のために残す
+            case "resizeexact" -> v.ui().recomputeLayout(Workloads.VIEWPORT_W - (i & 1), Workloads.VIEWPORT_H);
             case "open" -> {
                 view[0] = newView(html);
                 return view[0].frame(now[0] += 16, backend, true);

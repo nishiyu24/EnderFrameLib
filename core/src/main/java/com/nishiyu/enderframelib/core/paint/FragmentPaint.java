@@ -40,6 +40,10 @@ final class FragmentPaint {
         int attrVersion;
         float scrollW, scrollH, f0x, f0y;
         boolean canvasSource, interactive, suppressShadow;
+        /** 中身を 1 つの節にまとめるスクロール箱だったか。子孫の状態〔固定・粘着・絶対配置〕で決まるので、箱自身の項目の鍵に入れる。 */
+        boolean oneNode;
+        /** 先頭の断片が ::first-line を受けるときの、持ち主〔祖先〕の算出スタイルと ::first-line のスタイル。子が祖先から読む唯一のスタイル。 */
+        Object flStyle, flPseudo;
         Object placeholder;
         /** 箱自身の項目を作るときに登録されたスクロールの節（項目を使い回すとき再登録する）。 */
         PaintOrder.ScrollContent[] ownScrolls;
@@ -73,7 +77,21 @@ final class FragmentPaint {
     }
 
     /** {@code root} を断片の木で描き、{@code elements} へ項目を足して箱の記録を書く。返り値は持ち主（描く箱）の数。 */
+    /**
+     * 経路の観測口（C7 の予測テスト用）。箱ごとに、選ばれた経路を {@link #PATH_HIT}・{@link #PATH_OWN}・{@link #PATH_REBUILD} で受け取る。
+     * 描画の開始で {@code (null, -1)}。{@code null}（既定）なら何もしない。
+     */
+    private java.util.function.ObjIntConsumer<LayoutBox> pathRecorder;
+    static final int PATH_HIT = 0, PATH_OWN = 1, PATH_REBUILD = 2;
+    /** 直近の {@link #buildFresh} が、箱自身の項目を前回のまま使った（または持たない）か。 */
+    private boolean lastOwnKept;
+
+    void setPathRecorder(java.util.function.ObjIntConsumer<LayoutBox> recorder) {
+        this.pathRecorder = recorder;
+    }
+
     int paint(LayoutBox root, List<DisplayItem> elements, boolean cull, boolean windowed) {
+        if (pathRecorder != null) pathRecorder.accept(null, -1);
         Fragment top = buildTop(root, cull, windowed);
         int base = elements.size();
         DisplayItem[] flat = new DisplayItem[top.size()];
@@ -159,14 +177,19 @@ final class FragmentPaint {
         Memo m = hint != null && hint.box == box ? hint : memos.get(box); // 配列の位置の記憶が、この箱のものでなければ引き直す
         boolean ctxOk = false;
         if (m != null && (parentCtxOk ? sameContextCheap(m, box, clip, parentId, moving) : sameContext(m, box, clip, parentId, moving))) {
-            if (box.subtreePaintStamp() <= m.epoch) return reuse(m);
-            ctxOk = sameKids(m.kids, box.children); // 子の並びが同じなら、子の記憶の位置対応と前回の層の列が使える
+            if (box.subtreePaintStamp() <= m.epoch) {
+                if (pathRecorder != null) pathRecorder.accept(box, PATH_HIT);
+                return reuse(m);
+            }
+            // 簡易確認は親の文脈が同じことを前提に印を見ないので、子へ「文脈が同じ」と伝える前に、自分の印を確かめる
+            ctxOk = sameKids(m.kids, box.children) && box.ownPaintStamp() <= m.epoch; // 並びが同じなら、子の記憶の位置対応と前回の層の列が使える
         }
         MEMO_MISSES.increment();
         int owners0 = owners, scroll0 = order.scrollContentCount();
         stack.add(box);
         try {
             Fragment f = buildFresh(box, clip, parentId, moving, ctxOk ? m : null);
+            if (pathRecorder != null) pathRecorder.accept(box, lastOwnKept ? PATH_OWN : PATH_REBUILD);
             if (!tainted.contains(box)) store(box, f, clip, parentId, moving, owners - owners0, scroll0);
             return f;
         } finally {
@@ -177,15 +200,22 @@ final class FragmentPaint {
     /** 親の文脈が同じとき、子の文脈の確認（位置・大きさ・クリップ・動く祖先・親 id・スクロール量）。子の並びは親が見ている。 */
     private boolean sameContextCheap(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving) {
         if (m.parent != box.parent || m.clip != clip || m.moving != moving || !java.util.Objects.equals(m.parentId, parentId)) return false;
-        if (m.attrVersion != box.node.attrVersion()) return false;
-        if (Float.compare(m.x, box.x()) != 0 || Float.compare(m.y, box.y()) != 0 || Float.compare(m.w, box.w()) != 0 || Float.compare(m.h, box.h()) != 0) return false;
+        if (m.attrVersion != box.node.attrVersion() || !sameFirstLine(m, box)) return false;
+        // 無名の箱は自分の項目を持たないので、位置・大きさは見ない（子が自分の位置を見る）
+        if (!box.isAnonymous && (Float.compare(m.x, box.x()) != 0 || Float.compare(m.y, box.y()) != 0 || Float.compare(m.w, box.w()) != 0 || Float.compare(m.h, box.h()) != 0)) return false;
         return scrollSame(m);
+    }
+
+    /** 先頭の断片が ::first-line を受けるなら、持ち主〔祖先〕のスタイルと ::first-line のスタイルが前回と同じか（子が祖先から読む唯一のスタイル）。 */
+    private static boolean sameFirstLine(Memo m, LayoutBox box) {
+        LayoutBox owner = box.inlineFragments.isEmpty() ? null : box.inlineFragments.get(0).firstLineOwner;
+        return owner == null ? m.flStyle == null : m.flStyle == owner.style && m.flPseudo == owner.firstLineStyle;
     }
 
     /** 箱自身の文脈（部分木の印を除く全部）が前回と同じか: 位置・クリップ・親 id・動く祖先・自分と祖先のスタイルの印・親相対の原点・子の並び・スクロール量。 */
     private boolean sameContext(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving) {
         if (!sameContextCheap(m, box, clip, parentId, moving)) return false;
-        if (box.pathPaintStamp(b.buildSerial) > m.epoch) return false;
+        if (box.ownPaintStamp() > m.epoch) return false;
         if (b.parentRelative) {
             LayoutBox p = PaintOrder.effectiveParentNodeBox(box, parentId);
             if ((p != null ? Math.round(p.x()) : 0) != m.pox || (p != null ? Math.round(p.y()) : 0) != m.poy) return false;
@@ -247,6 +277,10 @@ final class FragmentPaint {
         m.canvasSource = box == b.canvasBackgroundSource;
         m.interactive = box.hasInteractiveRules;
         m.suppressShadow = b.suppressTextShadow;
+        m.oneNode = order.scrollContentOf(box) != null;
+        LayoutBox flOwner = box.inlineFragments.isEmpty() ? null : box.inlineFragments.get(0).firstLineOwner;
+        m.flStyle = flOwner == null ? null : flOwner.style;
+        m.flPseudo = flOwner == null ? null : flOwner.firstLineStyle;
         m.placeholder = box.placeholderStyle;
         m.scrolls = order.scrollContentCount() == scroll0 ? NO_SCROLLS : order.scrollContentsSince(scroll0).toArray(NO_SCROLLS);
     }
@@ -276,7 +310,7 @@ final class FragmentPaint {
     /** 箱自身の項目が前回のまま使えるか: 箱の外の入力（属性・中身の大きさ・先頭の断片・描画側の旗）が前回と同じで、記憶できる種類の箱。 */
     private boolean ownReusable(Memo m, LayoutBox box) {
         // 子の確認は親の文脈が同じなら位置・クリップ等だけで済ませるので、箱自身（と祖先のスタイル）の印はここで見る
-        if (box.pathPaintStamp(b.buildSerial) > m.epoch) return false;
+        if (box.ownPaintStamp() > m.epoch) return false;
         if (!DisplayListBuilder.memoizable(box) || m.attrVersion != box.node.attrVersion()) return false;
         if (Float.compare(m.scrollW, box.scrollWidth()) != 0 || Float.compare(m.scrollH, box.scrollHeight()) != 0) return false;
         float fx = 0f, fy = 0f;
@@ -287,7 +321,8 @@ final class FragmentPaint {
         }
         return Float.compare(m.f0x, fx) == 0 && Float.compare(m.f0y, fy) == 0
                 && m.canvasSource == (box == b.canvasBackgroundSource) && m.interactive == box.hasInteractiveRules
-                && m.suppressShadow == b.suppressTextShadow && m.placeholder == box.placeholderStyle;
+                && m.suppressShadow == b.suppressTextShadow && m.placeholder == box.placeholderStyle
+                && m.oneNode == (order.scrollContentOf(box) != null);
     }
 
     /** 検証モード（{@code VERIFY_BOX_MEMO}）: 使い回した項目を、記憶を使わず作り直して比べる。 */
@@ -299,7 +334,7 @@ final class FragmentPaint {
         DisplayItem[] fresh = scratch.toArray(new DisplayItem[0]);
         b.fragIds.set(saved);
         String diff = OwnItemsVerifier.firstDifference(List.of(reused), List.of(fresh));
-        if (diff != null) throw new AssertionError("箱の項目の記憶が古い: box=" + box.node.tag + "#" + box.node.key() + " " + diff);
+        if (diff != null) throw new AssertionError("箱の項目の記憶が古い: box=" + box.node.tag + "#" + box.node.key() + " " + diff + (reused.length != fresh.length ? " 記憶=" + java.util.Arrays.stream(reused).map(DisplayItem::id).toList() + " 作り直し=" + java.util.Arrays.stream(fresh).map(DisplayItem::id).toList() : ""));
     }
 
     /** {@code stale}: 文脈は同じで部分木だけが変わった前回の記憶（無ければ null）。 */
@@ -314,10 +349,12 @@ final class FragmentPaint {
         DisplayItem[] own = Fragment.NONE;
         boolean drawn = false;
         PaintOrder.ScrollContent[] ownScrolls = NO_SCROLLS;
+        boolean ownKept = stale != null && !hasSelf;
         if (hasSelf) {
             owners++;
             if (cull && layer == null && !moving && !b.inWindowGeometry(box)) {
                 markCulled(box);
+                ownKept = stale != null;
             } else {
                 // 子の親相対の原点は、親の「描いた」印（paintCulled）を読んで決まる（PaintOrder.effectiveParentNodeBox）。旧経路は親を
                 // 先に実行して印を書いてから子を実行するので、ここでも子を描く前に書く（範囲 dl* は展開のとき）
@@ -325,6 +362,7 @@ final class FragmentPaint {
                 if (stale != null && stale.frag.drawn && ownReusable(stale, box)) {
                     // 文脈も箱の外の入力も前回と同じ（部分木の中だけが変わった）: 箱自身の項目は前回のものをそのまま使う
                     OWN_REUSED.increment();
+                    ownKept = true;
                     own = stale.frag.own;
                     ownScrolls = stale.ownScrolls;
                     for (PaintOrder.ScrollContent c : ownScrolls) order.reregister(c);
@@ -348,6 +386,7 @@ final class FragmentPaint {
         }
         int z = kind == Fragment.Kind.STACKING ? (PaintOrder.isZIndexAuto(box) ? 0 : box.zIndex()) : 0;
         lastOwnScrolls = ownScrolls; // 直後に build が記憶へ移す（再帰の後に書くので上書きされない）
+        lastOwnKept = ownKept;
         return new Fragment(box, own, after, drawn, kind, z, layer, DisplayListBuilder::withLayer, extras(box, kind, layer), kids, Fragment.aggregateFrom(stale == null ? null : stale.frag, kids));
     }
 
