@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint.software;
+package com.nishiyu.enderframelib.core.paint.emit;
 
 import com.nishiyu.enderframelib.core.paint.model.BlendMode;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
@@ -14,16 +14,16 @@ import java.util.List;
  * {@link GpuAttempt} の層版で、{@link SoftwareRenderBackend} は {@link GpuSink} を直接呼ばず、ここを通す。
  * 受け取られた（true）なら層の画素は GPU が持ち、CPU は層を確保しない。{@code sink} が null なら常に false。
  */
-final class GpuLayerAttempt {
+public final class GpuLayerAttempt {
     private GpuLayerAttempt() {}
 
     /** マスクの層を GPU で開けるか。 */
-    static boolean beginMask(GpuSink sink) {
+    public static boolean beginMask(GpuSink sink) {
         return sink != null && sink.beginMask();
     }
 
     /** グループの層を GPU で開けるか（フィルター・クリップ・backdrop・混合モード・マスク有無を伝える）。 */
-    static boolean beginGroup(GpuSink sink, Group g) {
+    public static boolean beginGroup(GpuSink sink, Group g) {
         if (sink == null) return false;
         LayerSpec spec = g.spec();
         GpuSink.GroupExtras extras = spec != null && (spec.clip() != null || spec.hasBackdrop())
@@ -35,36 +35,36 @@ final class GpuLayerAttempt {
     }
 
     /** GPU が持つ層（マスクならマスク）を閉じる。 */
-    static void end(GpuSink sink, boolean mask) {
+    public static void end(GpuSink sink, boolean mask) {
         if (mask) sink.endMask();
         else sink.endGroup();
     }
 
     /** スクロール保持層の方針。{@code sink} がなければ NONE。 */
-    static RetainPlan planScroll(GpuSink sink, GpuScrollLayer info) {
+    public static RetainPlan planScroll(GpuSink sink, GpuScrollLayer info) {
         return sink == null ? RetainPlan.NONE : sink.planScrollLayer(info);
     }
 
     /** 境界矩形だけでスクロール保持層の方針を問い合わせる（対応していなければ null）。 */
-    static RetainPlan planScrollBounds(GpuSink sink, String key, Object token, com.nishiyu.enderframelib.core.raster.Matrix2D pose,
+    public static RetainPlan planScrollBounds(GpuSink sink, String key, Object token, com.nishiyu.enderframelib.core.raster.Matrix2D pose,
                                        int x0, int y0, int x1, int y1) {
         return sink == null ? RetainPlan.NONE : sink.planScrollLayerBounds(key, token, pose, x0, y0, x1, y1);
     }
 
     /** 保持済みのスクロール層を重ねる。 */
-    static void drawScroll(GpuSink sink, GpuScrollLayer l) {
+    public static void drawScroll(GpuSink sink, GpuScrollLayer l) {
         if (l != null && sink != null) sink.drawScrollLayer(l);
     }
 
     /** 保持層への記録を始める。始めたら true。 */
-    static boolean beginScroll(GpuSink sink, GpuScrollLayer l) {
+    public static boolean beginScroll(GpuSink sink, GpuScrollLayer l) {
         if (l == null || sink == null) return false;
         sink.beginScrollLayer(l);
         return true;
     }
 
     /** 保持層への記録を終える。保持できなければ false（層は捨てられる）。{@code l} か {@code sink} がなければ true。 */
-    static boolean endScroll(GpuSink sink, GpuScrollLayer l) {
+    public static boolean endScroll(GpuSink sink, GpuScrollLayer l) {
         return l == null || sink == null || sink.endScrollLayer(l);
     }
 }

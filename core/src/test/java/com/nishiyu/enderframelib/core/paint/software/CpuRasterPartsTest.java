@@ -1,5 +1,10 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.paint.emit.SoftShapes;
+
+import com.nishiyu.enderframelib.core.paint.emit.Clip;
+import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.raster.Matrix2D;

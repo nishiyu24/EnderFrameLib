@@ -1,5 +1,9 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.paint.emit.SoftShapes;
+
+import com.nishiyu.enderframelib.core.paint.emit.Clip;
+
 import com.nishiyu.enderframelib.core.paint.ShaderGradientEmulator;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;

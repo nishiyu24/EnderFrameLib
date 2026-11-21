@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint.software;
+package com.nishiyu.enderframelib.core.paint.emit;
 
 /**
  * ソフトウェア描画の図形計算。角ごとに楕円の半径を持つ角丸矩形の符号付き距離（SDF）と、
@@ -6,14 +6,14 @@ package com.nishiyu.enderframelib.core.paint.software;
  *
  * <p>角の順はすべて 左上・右上・右下・左下。
  */
-final class SoftShapes {
+public final class SoftShapes {
     private SoftShapes() {}
 
     /**
      * 角丸矩形 {@code (x0,y0)-(x1,y1)} までの符号付き距離（外が正）。{@code rx} / {@code ry} は角ごとの横・縦の半径で、
      * どちらかが 0 以下の角は直角。楕円の角は一次近似の距離（円なら厳密）。
      */
-    static float sdRoundRect(float px, float py, float x0, float y0, float x1, float y1, float[] rx, float[] ry) {
+    public static float sdRoundRect(float px, float py, float x0, float y0, float x1, float y1, float[] rx, float[] ry) {
         float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
         boolean right = px > cx, bottom = py > cy;
         int k = bottom ? (right ? 2 : 3) : (right ? 1 : 0);
@@ -37,18 +37,18 @@ final class SoftShapes {
     }
 
     /** {@code Math.hypot} の代わり。float 2 つの二乗和は double で正確に持てるので、桁落ちも溢れもなく {@code StrictMath} より速い。 */
-    static float hypot(float x, float y) {
+    public static float hypot(float x, float y) {
         return (float) Math.sqrt((double) x * x + (double) y * y);
     }
 
     /** 距離 {@code sd}（レイアウト単位）の縁の被覆率。{@code scale} は 1 単位が何画素か。 */
-    static float coverage(float sd, float scale) {
+    public static float coverage(float sd, float scale) {
         float c = 0.5f - sd * scale;
         return c <= 0f ? 0f : (c >= 1f ? 1f : c);
     }
 
     /** 相補誤差関数（Abramowitz-Stegun 7.1.26。誤差 1.5e-7 以下）。 */
-    static float erfc(float x) {
+    public static float erfc(float x) {
         float z = Math.abs(x);
         float t = 1f / (1f + 0.3275911f * z);
         float poly = ((((1.061405429f * t - 1.453152027f) * t + 1.421413741f) * t - 0.284496736f) * t + 0.254829592f) * t;
@@ -57,13 +57,13 @@ final class SoftShapes {
     }
 
     /** ガウスぼかし（標準偏差 {@code sigma}）をかけた図形の縁の濃さ。{@code sd} は図形までの符号付き距離。 */
-    static float blurredEdge(float sd, float sigma) {
+    public static float blurredEdge(float sd, float sigma) {
         if (sigma <= 0f) return sd <= 0f ? 1f : 0f;
         return 0.5f * erfc(sd / (sigma * 1.41421356f));
     }
 
     /** 事前乗算の ARGB に係数 {@code k}（0〜1）を掛ける。 */
-    static int scalePremul(int pm, float k) {
+    public static int scalePremul(int pm, float k) {
         if (k >= 1f) return pm;
         if (k <= 0f) return 0;
         int f = Math.round(k * 256f);
@@ -73,7 +73,7 @@ final class SoftShapes {
     }
 
     /** {@code src} を {@code dst} に重ねる（どちらも事前乗算の ARGB。source-over）。 */
-    static int over(int src, int dst) {
+    public static int over(int src, int dst) {
         int sa = src >>> 24;
         if (sa == 255) return src;
         if (sa == 0) return dst;
@@ -90,7 +90,7 @@ final class SoftShapes {
     }
 
     /** 配列の最大値（空・全て負なら 0）。 */
-    static float maxOf(float[] v) {
+    public static float maxOf(float[] v) {
         float m = 0f;
         for (float f : v) m = Math.max(m, f);
         return m;

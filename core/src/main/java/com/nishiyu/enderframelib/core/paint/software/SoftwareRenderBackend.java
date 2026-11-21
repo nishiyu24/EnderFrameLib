@@ -1,14 +1,17 @@
 package com.nishiyu.enderframelib.core.paint.software;
+
+import com.nishiyu.enderframelib.core.paint.emit.SoftShapes;
+import com.nishiyu.enderframelib.core.paint.emit.Clip;
+import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
+import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
+import com.nishiyu.enderframelib.core.paint.emit.GpuRoute;
+import com.nishiyu.enderframelib.core.paint.emit.GpuLayerAttempt;
 import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
-
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
 import java.util.function.LongFunction;
-
 import com.nishiyu.enderframelib.core.paint.AnimatedValues;
-
 import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
-
 import com.nishiyu.enderframelib.core.paint.port.GpuClip;
 import com.nishiyu.enderframelib.core.paint.port.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.port.GpuSink;
@@ -31,7 +34,6 @@ import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -71,7 +73,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private final TextRaster textRaster = new TextRaster(this);
     /** 項目の種類ごとの塗り（{@link ItemRaster}）。 */
     private final ItemRaster itemRaster = new ItemRaster(this);
-
     private static final AtomicInteger SESSIONS = new AtomicInteger();
 
     /** 画素の置き場（根・描画先・層のスタック・汚れ範囲・層の合成）。根は CPU が実際に塗るまで確保しない。 */
@@ -82,7 +83,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private final String sessionId;
     final PaintResources resources;
     int clearColor = 0;
-
     final GlyphCache glyphCache = new GlyphCache();
 
     // 1 フレームの間だけ使う状態

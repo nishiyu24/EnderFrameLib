@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint.software;
+package com.nishiyu.enderframelib.core.paint.emit;
 
 import com.nishiyu.enderframelib.core.paint.AnimatedValues;
 import com.nishiyu.enderframelib.core.paint.BorderDashPattern;
@@ -20,7 +20,7 @@ import com.nishiyu.enderframelib.core.raster.Pixmap;
  * {@code drawShadow} が、幾何の算出・GPU 試行・CPU 記録を 1 メソッドで行っていたうちの「幾何」だけを、コードを変えずに移した。
  * 状態を持たず、{@code GpuSink} も {@code Pixmap} の画素も知らない。
  */
-final class ShapeGeometry {
+public final class ShapeGeometry {
     private static final float[] ZERO_F4 = new float[4];
 
     private ShapeGeometry() {}
@@ -29,12 +29,12 @@ final class ShapeGeometry {
      * 角丸の枠線の形。外側の箱 {@code (x0,y0,x1,y1)}・内側の箱・内側の角半径（{@code irx/iry}）・辺ごとの事前乗算色と太さ・
      * 破線（4 辺が同じ太さで破線／点線のときだけ。それ以外は {@code dash == null}）と、その経路のパラメータ。
      */
-    record Border(float x0, float y0, float x1, float y1, float ix0, float iy0, float ix1, float iy1, boolean innerEmpty,
+    public     record Border(float x0, float y0, float x1, float y1, float ix0, float iy0, float ix1, float iy1, boolean innerEmpty,
                   float[] irx, float[] iry, int[] colors, float[] widths,
                   BorderDashPattern dash, float bx, float by, float cxm, float cym, float[] pcx, float[] pcy) {}
 
     /** 角丸枠線の形（{@code rx/ry} は外側の角半径、{@code w/h} は箱の幅・高さ）。 */
-    static Border border(float x0, float y0, float w, float h, RoundedBorderSpec spec, float[] rx, float[] ry) {
+    public static Border border(float x0, float y0, float w, float h, RoundedBorderSpec spec, float[] rx, float[] ry) {
         float x1 = x0 + w, y1 = y0 + h;
         float wt = spec.widthTop(), wr = spec.widthRight(), wb = spec.widthBottom(), wl = spec.widthLeft();
         float ix0 = x0 + wl, iy0 = y0 + wt, ix1 = x1 - wr, iy1 = y1 - wb;
@@ -87,10 +87,10 @@ final class ShapeGeometry {
     }
 
     /** 外側の影の形: 影の角丸矩形 {@code (sx0,sy0,sx1,sy1)} と、その角半径（{@code srx/sry}）。影が消える所より狭ければ null。 */
-    record OuterShadow(float sx0, float sy0, float sx1, float sy1, float[] srx, float[] sry) {}
+    public     record OuterShadow(float sx0, float sy0, float sx1, float sy1, float[] srx, float[] sry) {}
 
     /** 要素の矩形 {@code (qx0,qy0,qx1,qy1)} とぼかし半径 {@code blur}、箱の角半径から外側の影の形を求める。 */
-    static OuterShadow outerShadow(float qx0, float qy0, float qx1, float qy1, float blur, float[] rx, float[] ry) {
+    public static OuterShadow outerShadow(float qx0, float qy0, float qx1, float qy1, float blur, float[] rx, float[] ry) {
         float reach = BoxDecorationPainter.SHADOW_REACH * blur;
         float sx0 = qx0 + reach, sy0 = qy0 + reach, sx1 = qx1 - reach, sy1 = qy1 - reach;
         if (sx1 <= sx0 || sy1 <= sy0) return null;
@@ -106,11 +106,11 @@ final class ShapeGeometry {
     // ------------------------------------------------------------------ 円の枠線
 
     /** 円の枠線の形。{@code straight} は非乗算の 4 方向（上・右・下・左）の色、{@code premul} は事前乗算色。範囲は箱を 1 単位広げたもの。 */
-    record Circle(int[] straight, int[] premul, float cx, float cy, float outerR, float innerR,
+    public     record Circle(int[] straight, int[] premul, float cx, float cy, float outerR, float innerR,
                   float bx0, float by0, float bx1, float by1) {}
 
     /** 円の枠線の形。枠線の指定もアニメーションの色も無ければ null。 */
-    static Circle circle(DisplayItem el, AnimatedValues anim) {
+    public static Circle circle(DisplayItem el, AnimatedValues anim) {
         CircleBorderSpec cb = el.meta() != null ? el.meta().circleBorder() : null;
         if (cb == null && anim.circleColors == null) return null;
         int[] colors = new int[4];
@@ -136,14 +136,14 @@ final class ShapeGeometry {
     // ------------------------------------------------------------------ 画像
 
     /** 画像の置き方: 貼る位置 {@code (px0,py0)}・大きさ・局所 1 単位あたりの画像の画素数・縮小時の標本数・描く範囲。 */
-    record Image(float px0, float py0, float plW, float plH, float sx, float sy, int taps,
+    public     record Image(float px0, float py0, float plW, float plH, float sx, float sy, int taps,
                  float bx0, float by0, float bx1, float by1) {}
 
     /**
      * 画像（実寸 {@code iw x ih} CSS 単位、画素 {@code pmW x pmH}）を箱 {@code el} に {@code object-fit} で置く形。
      * 貼る大きさが 0 以下なら null。描く範囲は箱を 1 画素ぶん広げたものと画像の範囲との交わり。
      */
-    static Image image(DisplayItem el, float iw, float ih, int pmW, int pmH, float scale) {
+    public static Image image(DisplayItem el, float iw, float ih, int pmW, int pmH, float scale) {
         float x0 = el.x(), y0 = el.y(), w = el.width(), h = el.height();
         String position = el.events() != null ? el.events().get("object-position") : null;
         float fontPx = el.meta() != null && el.meta().fontHeight() > 0 ? el.meta().fontHeight() : 16f;
@@ -161,12 +161,12 @@ final class ShapeGeometry {
     // ------------------------------------------------------------------ 字形の置き方
 
     /** 回転・せん断・縦横で違う拡縮が無ければ、字をデバイス画素の格子に揃えて置ける。 */
-    static boolean glyphAxisAligned(Matrix2D pose) {
+    public static boolean glyphAxisAligned(Matrix2D pose) {
         return Math.abs(pose.b()) < 1e-9 && Math.abs(pose.c()) < 1e-9 && pose.a() > 0 && Math.abs(pose.a() - pose.d()) < 1e-6;
     }
 
     /** デバイス x 座標 {@code devX} の字を置く、画素の格子の x（整数）。サブピクセルが 1 画素に繰り上がるときは次の画素。 */
-    static float glyphOriginX(double devX) {
+    public static float glyphOriginX(double devX) {
         double whole = Math.floor(devX);
         int sub = (int) Math.round((devX - whole) * LoadedFace.SUBPIXEL_STEPS);
         if (sub == LoadedFace.SUBPIXEL_STEPS) whole += 1;
@@ -174,19 +174,19 @@ final class ShapeGeometry {
     }
 
     /** {@link #glyphOriginX} と対になる、1/{@code SUBPIXEL_STEPS} 画素のサブピクセル位置（0 以上 STEPS 未満）。 */
-    static int glyphSubpixel(double devX) {
+    public static int glyphSubpixel(double devX) {
         double whole = Math.floor(devX);
         int sub = (int) Math.round((devX - whole) * LoadedFace.SUBPIXEL_STEPS);
         return sub == LoadedFace.SUBPIXEL_STEPS ? 0 : sub;
     }
 
     /** 字形の y（デバイス）を画素の行へ四捨五入する。 */
-    static float glyphOriginY(double devY) {
+    public static float glyphOriginY(double devY) {
         return Math.round(devY);
     }
 
     /** 回転・せん断の姿勢で貼る字形の、局所の描画範囲 {@code {x0,y0,x1,y1}}（外接矩形を 1 単位広げたもの）。{@code s} は局所 1 単位あたりの字形の画素数。 */
-    static float[] glyphLocalBounds(GlyphBitmap g, float ox, float oy, float s) {
+    public static float[] glyphLocalBounds(GlyphBitmap g, float ox, float oy, float s) {
         float lx0 = ox + g.left() / s, ly0 = oy - g.top() / s;
         float lx1 = ox + (g.left() + g.width()) / s, ly1 = oy + (g.height() - g.top()) / s;
         return new float[]{lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1};

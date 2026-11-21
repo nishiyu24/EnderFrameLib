@@ -1,4 +1,10 @@
 package com.nishiyu.enderframelib.core.paint.software;
+
+import com.nishiyu.enderframelib.core.paint.emit.SoftShapes;
+
+import com.nishiyu.enderframelib.core.paint.emit.Clip;
+import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
+import com.nishiyu.enderframelib.core.paint.emit.ShapeGeometry;
 import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;

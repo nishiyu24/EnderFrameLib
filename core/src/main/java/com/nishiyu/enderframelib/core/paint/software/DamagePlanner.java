@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.paint.emit.Clip;
+
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter;

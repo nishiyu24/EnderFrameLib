@@ -11,13 +11,13 @@ import org.junit.jupiter.api.Test;
 
 /**
  * L5 の描画パイプラインの依存の向きのラチェット（ENGINE_REARCHITECTURE_PLAN S6）。
- * 共有の型（{@code paint.model}・{@code paint.resource}・{@code paint.port}）は描画実装（{@code paint.gpu}・{@code paint.software}）を知らず、
+ * 共有の型（{@code paint.model}・{@code paint.resource}・{@code paint.port}・{@code paint.emit}）は描画実装（{@code paint.gpu}・{@code paint.software}）を知らず、
  * GPU 実装と CPU 実装は互いのパッケージを参照しない（つなぎは {@code port} の口と {@code resource} の供給元だけ）。
  */
 class PaintPipelineDirectionRatchetTest {
     private static final String GPU = "core.paint.gpu";
     private static final String SOFTWARE = "core.paint.software";
-    private static final Set<String> SHARED = Set.of("core.paint.model", "core.paint.port", "core.paint.resource");
+    private static final Set<String> SHARED = Set.of("core.paint.model", "core.paint.port", "core.paint.resource", "core.paint.emit");
 
     private static Set<String> violations(Set<String> from, Set<String> forbidden) throws IOException {
         Map<String, Set<String>> g = PackageCycleRatchetTest.graph();
@@ -44,7 +44,7 @@ class PaintPipelineDirectionRatchetTest {
     @Test
     void thePackagesExistAndAreScanned() throws IOException {
         Map<String, Set<String>> g = PackageCycleRatchetTest.graph();
-        for (String p : Set.of(GPU, SOFTWARE, "core.paint.port", "core.paint.resource")) {
+        for (String p : Set.of(GPU, SOFTWARE, "core.paint.port", "core.paint.resource", "core.paint.emit")) {
             assertTrue(g.containsKey(p), p + " がグラフに無い（パッケージ名が変わったらこのテストも直す。空振りの合格を防ぐ）");
         }
     }

@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint.software;
+package com.nishiyu.enderframelib.core.paint.emit;
 
 import com.nishiyu.enderframelib.core.paint.port.GpuClip;
 import java.util.List;
@@ -8,7 +8,7 @@ import java.util.Objects;
  * 項目のクリップ（部品の列と、その外接・被覆率 1 の内側）。作った後は変わらない値で、等しさは値で決まる
  * （以前はレコード。GPU へ渡す形 {@link #gpuClips()} を 1 度だけ作って覚えるため、通常のクラスにした）。
  */
-final class Clip {
+public final class Clip {
     private final List<ClipPart> parts;
     private final int x0, y0, x1, y1;
     private final double ix0, iy0, ix1, iy1;
@@ -16,7 +16,7 @@ final class Clip {
     private GpuClip[] gpu;
     private boolean gpuComputed;
 
-    Clip(List<ClipPart> parts, int x0, int y0, int x1, int y1, double ix0, double iy0, double ix1, double iy1) {
+    public Clip(List<ClipPart> parts, int x0, int y0, int x1, int y1, double ix0, double iy0, double ix1, double iy1) {
         this.parts = parts;
         this.x0 = x0;
         this.y0 = y0;
@@ -28,21 +28,21 @@ final class Clip {
         this.iy1 = iy1;
     }
 
-    List<ClipPart> parts() { return parts; }
-    int x0() { return x0; }
-    int y0() { return y0; }
-    int x1() { return x1; }
-    int y1() { return y1; }
-    double ix0() { return ix0; }
-    double iy0() { return iy0; }
-    double ix1() { return ix1; }
-    double iy1() { return iy1; }
+    public List<ClipPart> parts() { return parts; }
+    public int x0() { return x0; }
+    public int y0() { return y0; }
+    public int x1() { return x1; }
+    public int y1() { return y1; }
+    public double ix0() { return ix0; }
+    public double iy0() { return iy0; }
+    public double ix1() { return ix1; }
+    public double iy1() { return iy1; }
 
-    boolean empty() {
+    public boolean empty() {
         return x1 <= x0 || y1 <= y0;
     }
 
-    float coverage(double dx, double dy) {
+    public float coverage(double dx, double dy) {
         if (dx >= ix0 && dx <= ix1 && dy >= iy0 && dy <= iy1) return 1f; // 全部の内側（軸平行のときだけ非空）
         float c = 1f;
         for (int i = 0; i < parts.size(); i++) {
@@ -56,7 +56,7 @@ final class Clip {
      * GPU へ渡せるクリップの列（{@link GpuAttempt#gpuClips} と同じ。多すぎれば null）。この {@link Clip} が同じ間は同じ配列を返す
      * （図形・字形ごとに作り直さない）。返した配列は読むだけ。1 つの描画スレッドが使う前提。
      */
-    GpuClip[] gpuClips() {
+    public GpuClip[] gpuClips() {
         if (!gpuComputed) {
             gpu = GpuAttempt.buildGpuClips(this);
             gpuComputed = true;

@@ -1,5 +1,12 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.paint.emit.SoftShapes;
+
+import com.nishiyu.enderframelib.core.paint.emit.Clip;
+import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
+import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
+import com.nishiyu.enderframelib.core.paint.emit.ShapeGeometry;
+
 import com.nishiyu.enderframelib.core.text.font.ColorBitmap;
 import com.nishiyu.enderframelib.core.text.font.ColorLayers;
 import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;

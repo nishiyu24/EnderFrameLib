@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.paint.emit.SoftShapes;
+
 /**
  * 距離を測らずに済む領域の記述（局所座標）。呼び出し側は、各領域の内側で {@code shader} が「その色」（色 0 は何も塗らない）を
  * 返すことを保証する。矩形の領域と、円の角を持つ角丸矩形の内側（行ごとに左右の端を解析的に求める）を持てる。

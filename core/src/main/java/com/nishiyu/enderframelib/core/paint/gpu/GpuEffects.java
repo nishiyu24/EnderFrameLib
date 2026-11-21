@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
 
-import com.nishiyu.enderframelib.core.paint.port.GpuSink.GroupExtras;
+import com.nishiyu.enderframelib.core.paint.port.GpuLayerSink.GroupExtras;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.LoadOp;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBindings;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuPass;

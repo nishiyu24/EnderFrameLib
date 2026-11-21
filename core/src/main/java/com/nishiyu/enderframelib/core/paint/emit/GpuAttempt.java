@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint.software;
+package com.nishiyu.enderframelib.core.paint.emit;
 
 import com.nishiyu.enderframelib.core.paint.port.GpuClip;
 import com.nishiyu.enderframelib.core.paint.port.GpuCoverage;
@@ -22,16 +22,16 @@ import java.util.List;
  * 渡せたら true（CPU は何も塗らない）、渡せなければ false（CPU が塗る）を返すだけの純粋な窓口。
  * 図形を 1 種類ずつここへ移していく（単色角丸矩形 → 影 → 枠線 → 字形 → 画像）。
  */
-final class GpuAttempt {
+public final class GpuAttempt {
     private GpuAttempt() {}
 
     /** GPU へ渡せるクリップの列。多すぎれば {@code null}（CPU が塗る）。同じ {@link Clip} では覚えた同じ配列を返す。 */
-    static GpuClip[] gpuClips(Clip clip) {
+    public static GpuClip[] gpuClips(Clip clip) {
         return clip.gpuClips();
     }
 
     /** {@link #gpuClips} の本体（{@link Clip#gpuClips} が 1 度だけ呼ぶ）。 */
-    static GpuClip[] buildGpuClips(Clip clip) {
+    public static GpuClip[] buildGpuClips(Clip clip) {
         List<ClipPart> parts = clip.parts();
         if (parts.size() > GpuSink.MAX_CLIPS) return null;
         GpuClip[] out = new GpuClip[parts.size()];
@@ -43,7 +43,7 @@ final class GpuAttempt {
     }
 
     /** 単色の角丸矩形を GPU が受け取ったら true。{@code sink} が無い・クリップが多すぎる・GPU が断った、のいずれかなら false。 */
-    static boolean fillRoundRect(GpuSink sink, Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
+    public static boolean fillRoundRect(GpuSink sink, Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                  int argb, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
@@ -51,12 +51,12 @@ final class GpuAttempt {
     }
 
     /** 影の穴の形の角の横半径（左上・右上・右下・左下）。 */
-    static float[] shapeRx(ShadowShape shape) {
+    public static float[] shapeRx(ShadowShape shape) {
         return new float[]{shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL()};
     }
 
     /** 影の穴の形の角の縦半径。 */
-    static float[] shapeRy(ShadowShape shape) {
+    public static float[] shapeRy(ShadowShape shape) {
         return new float[]{shape.rTLv(), shape.rTRv(), shape.rBRv(), shape.rBLv()};
     }
 
@@ -65,7 +65,7 @@ final class GpuAttempt {
     }
 
     /** 内側のぼかし影を GPU が受け取ったら true。{@code shape} は穴の形（内側の影では必ずある）。 */
-    static boolean insetShadow(GpuSink sink, Matrix2D pose, float qx0, float qy0, float qx1, float qy1, float[] rx, float[] ry,
+    public static boolean insetShadow(GpuSink sink, Matrix2D pose, float qx0, float qy0, float qx1, float qy1, float[] rx, float[] ry,
                                float sigma, ShadowShape shape, int argb, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
@@ -74,7 +74,7 @@ final class GpuAttempt {
     }
 
     /** 外側のぼかし影を GPU が受け取ったら true。{@code shape} は抜く穴（無ければ null）。 */
-    static boolean outerShadow(GpuSink sink, Matrix2D pose, float qx0, float qy0, float qx1, float qy1,
+    public static boolean outerShadow(GpuSink sink, Matrix2D pose, float qx0, float qy0, float qx1, float qy1,
                                float sx0, float sy0, float sx1, float sy1, float[] srx, float[] sry, float sigma,
                                ShadowShape shape, int argb, Clip clip, float opacity) {
         if (sink == null) return false;
@@ -90,7 +90,7 @@ final class GpuAttempt {
     }
 
     /** 実線の角丸枠を GPU が受け取ったら true。色は非乗算（上・右・下・左）。 */
-    static boolean roundBorder(GpuSink sink, Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
+    public static boolean roundBorder(GpuSink sink, Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                float ix0, float iy0, float ix1, float iy1, float[] irx, float[] iry, boolean innerEmpty,
                                RoundedBorderSpec spec, float[] widths, Clip clip, float opacity) {
         if (sink == null) return false;
@@ -100,7 +100,7 @@ final class GpuAttempt {
     }
 
     /** 破線・点線の角丸枠を GPU が受け取ったら true（4 辺が同じ太さ {@code thickness} のときだけ呼ぶ）。 */
-    static boolean dashedBorder(GpuSink sink, Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
+    public static boolean dashedBorder(GpuSink sink, Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                 float ix0, float iy0, float ix1, float iy1, float[] irx, float[] iry, boolean innerEmpty,
                                 RoundedBorderSpec spec, float[] widths,
                                 float bx, float by, float cxm, float cym, float[] pcx, float[] pcy,
@@ -113,7 +113,7 @@ final class GpuAttempt {
     }
 
     /** 円の枠を GPU が受け取ったら true。{@code straightColors} は非乗算の上・右・下・左。 */
-    static boolean circleBorder(GpuSink sink, Matrix2D pose, float cx, float cy, float outerR, float innerR,
+    public static boolean circleBorder(GpuSink sink, Matrix2D pose, float cx, float cy, float outerR, float innerR,
                                 float bx0, float by0, float bx1, float by1, int[] straightColors, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
@@ -124,7 +124,7 @@ final class GpuAttempt {
      * 字形 1 つ（デバイス画素の格子に揃える）を GPU が受け取った、または不透明度 0 で描くものが無ければ true。
      * {@code sink} が無い・クリップが多すぎる・GPU が断った、なら false（CPU が貼る）。原点は四捨五入で画素へ揃える。
      */
-    static boolean glyph(GpuSink sink, GlyphBitmap g, float originX, float originY, int argb, Clip clip, float opacity) {
+    public static boolean glyph(GpuSink sink, GlyphBitmap g, float originX, float originY, int argb, Clip clip, float opacity) {
         if (sink == null) return false;
         if (opacity <= 0f) return true;
         GpuClip[] gc = gpuClips(clip);
@@ -133,7 +133,7 @@ final class GpuAttempt {
     }
 
     /** 字形の縁取り（符号付き距離の字形 {@code sdf}）。戻り値の意味は {@link #glyph}。 */
-    static boolean glyphStroke(GpuSink sink, GlyphBitmap sdf, float originX, float originY, float half, int argb, Clip clip,
+    public static boolean glyphStroke(GpuSink sink, GlyphBitmap sdf, float originX, float originY, float half, int argb, Clip clip,
                                float opacity) {
         if (sink == null) return false;
         if (opacity <= 0f) return true;
@@ -143,7 +143,7 @@ final class GpuAttempt {
     }
 
     /** 回転・せん断の姿勢の字形。描く範囲は字形の局所の外接矩形を 1 単位広げたもの。戻り値の意味は {@link #glyph}。 */
-    static boolean glyphTransformed(GpuSink sink, GlyphBitmap g, float ox, float oy, float s, Matrix2D pose, int argb, Clip clip,
+    public static boolean glyphTransformed(GpuSink sink, GlyphBitmap g, float ox, float oy, float s, Matrix2D pose, int argb, Clip clip,
                                     float opacity) {
         if (sink == null) return false;
         if (opacity <= 0f) return true;
@@ -158,7 +158,7 @@ final class GpuAttempt {
      * {@code (sx,sy)} は局所 1 単位あたりの画像の画素数、{@code taps} は縮小時の標本数、{@code scale} は姿勢の平均拡大率。
      * 描く範囲は箱を 1 画素ぶん広げたものと画像の範囲との交わり。
      */
-    static boolean image(GpuSink sink, Matrix2D pose, Pixmap pm, float x0, float y0, float w, float h,
+    public static boolean image(GpuSink sink, Matrix2D pose, Pixmap pm, float x0, float y0, float w, float h,
                          float px0, float py0, float plW, float plH, float sx, float sy, float[] rx, float[] ry,
                          int taps, float scale, Clip clip, float opacity) {
         if (sink == null) return false;
@@ -175,7 +175,7 @@ final class GpuAttempt {
      * （テクスチャ全体の左上・画素を基準にした {@code px0/py0/sx/sy}）に織り込む。受け口が断る（CPU 版など）ときは false。
      * 貼る大きさが 0 のときは描くものが無いので、画像の項目としては描いたことにして true。
      */
-    static boolean externalTexture(GpuSink sink, DisplayItem el, TextureRef t, float[] rx, float[] ry, Matrix2D pose,
+    public static boolean externalTexture(GpuSink sink, DisplayItem el, TextureRef t, float[] rx, float[] ry, Matrix2D pose,
                                    Clip clip, float opacity, float scale) {
         if (sink == null) return false;
         float x0 = el.x(), y0 = el.y(), w = el.width(), h = el.height();
@@ -204,7 +204,7 @@ final class GpuAttempt {
     }
 
     /** 角丸矩形のシェーダーグラデーションを GPU が受け取ったら true。 */
-    static boolean gradient(GpuSink sink, Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
+    public static boolean gradient(GpuSink sink, Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                             ShaderGradient g, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
@@ -212,7 +212,7 @@ final class GpuAttempt {
     }
 
     /** {@code <scene-3d>} を GPU 側 FBO ＋ゼロコピーテクスチャ合成で描けたら true。 */
-    static boolean scene3D(GpuSink sink, Matrix2D pose,
+    public static boolean scene3D(GpuSink sink, Matrix2D pose,
                            com.nishiyu.enderframelib.core.scene3d.Scene3DWorld world,
                            int fboW, int fboH, float x0, float y0, float x1, float y1,
                            float[] rx, float[] ry, Clip clip, float opacity) {
@@ -222,7 +222,7 @@ final class GpuAttempt {
     }
 
     /** フォールバック合成用に 3D シーンの描画結果を事前乗算 ARGB ピクセルへ読み戻す。 */
-    static Pixmap renderScene3DPixmap(GpuSink sink, com.nishiyu.enderframelib.core.scene3d.Scene3DWorld world,
+    public static Pixmap renderScene3DPixmap(GpuSink sink, com.nishiyu.enderframelib.core.scene3d.Scene3DWorld world,
                                       int fboW, int fboH) {
         return sink == null ? null : sink.renderScene3DPixmap(world, fboW, fboH);
     }
