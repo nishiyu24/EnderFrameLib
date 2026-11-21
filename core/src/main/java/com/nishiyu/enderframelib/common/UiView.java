@@ -302,35 +302,14 @@ public class UiView implements AutoCloseable {
             paintBuilderW = width;
             paintBuilderH = height;
         }
-        builder.setUseChangeStamps(useChangeStamps);
-        builder.setExactTranslation(exactTranslation);
-        try {
-            com.nishiyu.enderframelib.core.paint.ImmutableItemList prev =
-                    this.baseRenderCache instanceof com.nishiyu.enderframelib.core.paint.ImmutableItemList il ? il : null;
-            return builder.renderImmutable(root, scrollOnly, prev);
-        } finally {
-            builder.setUseChangeStamps(false);
-            builder.setExactTranslation(false);
-        }
+        com.nishiyu.enderframelib.core.paint.ImmutableItemList prev =
+                this.baseRenderCache instanceof com.nishiyu.enderframelib.core.paint.ImmutableItemList il ? il : null;
+        return builder.renderImmutable(root, scrollOnly, prev);
     }
 
     /** 直近に表示リストを構築したビルダー。スライスパッチ判定やスクロール節情報参照に使用。 */
     public final com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder() {
         return paintBuilder;
-    }
-
-    /** 次の {@link #paintBoxes} だけ、箱の変更印で署名の比較を省く（変わった箱が分かっている文字の局所パッチ）。 */
-    boolean useChangeStamps;
-    /** 次の {@link #paintBoxes} だけ、整数ぶん動いた箱の項目を厳密に平行移動して使い回す（子の増減の局所パッチ）。 */
-    boolean exactTranslation;
-
-    protected final boolean exactTranslation() {
-        return exactTranslation;
-    }
-
-    /** 今の {@link #paintBoxes} が変更印を使ってよいか（文字の局所パッチの描画のとき）。 */
-    protected final boolean useChangeStamps() {
-        return useChangeStamps;
     }
 
     com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder;
@@ -1323,14 +1302,9 @@ public class UiView implements AutoCloseable {
         wanted.addAll(attrNodes);
         Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
         LocalPatches.collectTextBoxes(layoutRoot, wanted, found, false);
-        boolean stamps = com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.on() && !found.containsValue(null);
+        boolean stamps = !found.containsValue(null);
         for (LayoutBox box : found.values()) if (box != null) box.touchPaint();
-        useChangeStamps = stamps;
-        try {
-            repaintFromLayout();
-        } finally {
-            useChangeStamps = false;
-        }
+        repaintFromLayout();
         if (stamps) ATTR_PATCH_HITS.incrementAndGet();
     }
 
@@ -1447,12 +1421,7 @@ public class UiView implements AutoCloseable {
         }
         localPatches.combinedTextPatch = false;
         if (resize) {
-            exactTranslation = true;
-            try {
-                recomputeLayout(pendingResizeW, pendingResizeH);
-            } finally {
-                exactTranslation = false;
-            }
+            recomputeLayout(pendingResizeW, pendingResizeH);
             return;
         }
 

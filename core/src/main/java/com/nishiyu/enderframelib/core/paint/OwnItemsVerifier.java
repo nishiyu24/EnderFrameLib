@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 箱の項目の記憶（{@link BoxMemo}）の検証（ENGINE_REARCHITECTURE_PLAN C0 ②。{@code Shortcut.VERIFY_MEMO}）。
+ * 箱自身の項目の再利用（{@link FragmentPaint} の記憶）の検証（ENGINE_REARCHITECTURE_PLAN C0 ②。{@code Shortcut.VERIFY_MEMO}）。
  * 記憶の項目をそのまま出す箱を、記憶を使わずに作り直して比べる。
  *
  * <p>比べる形（正規形）は、「箱の描画入力だけで決まる値」に限る。次の 4 つは、記憶が意図的に近似する・後から書かれる
@@ -19,25 +19,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   <li>浮動小数は 0.001 以内で同じとみなす（原点の違う経路で 1 ULP ずれる）。</li>
  * </ul>
  */
-final class BoxMemoVerifier {
-    private BoxMemoVerifier() {}
+final class OwnItemsVerifier {
+    private OwnItemsVerifier() {}
 
     private static final float TOLERANCE = 1e-3f;
-
-    /** @param draw 箱の項目を渡した一覧へ作り直す処理（記憶を引かない版）。呼び出し元の一覧には触れない */
-    static void check(List<DisplayItem> elements, BoxMemo m, LayoutBox box, java.util.function.Consumer<List<DisplayItem>> draw, AtomicInteger fragIds) {
-        int savedFrag = fragIds.get();
-        fragIds.set(0);
-        PaintSupport.CaptureList scratch = new PaintSupport.CaptureList(m.items.size() + 4);
-        if (elements instanceof PaintSupport.CaptureList cap) scratch.setOrigin(cap.originX, cap.originY); // 親相対の原点は呼び出し元と同じ
-        try {
-            draw.accept(scratch);
-        } finally {
-            fragIds.set(savedFrag);
-        }
-        String diff = firstDifference(m.items, scratch);
-        if (diff != null) throw new AssertionError("箱の項目の記憶が古い: box=" + box.node.tag + "#" + box.node.key() + " " + diff);
-    }
 
     /** 正規形で違う最初の所（無ければ null）。テストが直接呼ぶ。同じ場合（ほとんど）は文字列を作らない速い比較だけで済ませる。 */
     static String firstDifference(List<DisplayItem> remembered, List<DisplayItem> fresh) {

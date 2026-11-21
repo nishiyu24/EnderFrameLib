@@ -9,7 +9,6 @@ enderframe.gl.noreplay | GPU | core/kernel/EngineFlags.java | RectStream.replayE
 enderframe.gl.rectcapacity | GPU | core/kernel/EngineFlags.java | RectStream の初期容量（図形数。既定 16384）
 enderframe.gl.recttrees | GPU | core/kernel/EngineFlags.java | GpuRenderBackend.rectTrees（"false" で切る）
 enderframe.gl.retainscroll | GPU | core/kernel/EngineFlags.java | GpuRenderBackend.retainedScroll（"false" で切る）
-enderframe.gpu.nodamage | GPU | core/kernel/EngineFlags.java | GpuRenderBackend.damageEnabled（損傷範囲だけの描画。B10）
 enderframe.layout.noblockpercentkey | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.blockPercentFreeEnabled
 enderframe.layout.nocutoff | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.cutoffEnabled
 enderframe.layout.nodefiniteleaf | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.definiteLeafReuse
@@ -30,17 +29,11 @@ enderframe.verify.memo | DIAGNOSTIC | core/kernel/EngineFlags.java | 検証モ�
 enderframe.verify.boxmemo | DIAGNOSTIC | core/kernel/EngineFlags.java | 検証モード VERIFY_BOX_MEMO: 箱の項目の記憶を作り直して比べる（:core:test が立てる）
 enderframe.paint.cullmargin | TUNING | core/kernel/EngineFlags.java | DisplayListBuilder.CULL_MARGIN（画面外の間引きの余白 px。既定 640）
 enderframe.paint.nocullrange | SHORTCUT | core/kernel/EngineFlags.java | PaintSceneDriver.cullRecordedRanges
-enderframe.paint.nodiffpatch | SHORTCUT | core/kernel/EngineFlags.java | PaintSceneDriver.patchDiffIndex
-enderframe.paint.nomemo | SHORTCUT | core/kernel/EngineFlags.java | DisplayListBuilder.MEMO_ENABLED・BoxAnimation.NO_MEMO
 enderframe.paint.noparentrelative | SHORTCUT | core/kernel/EngineFlags.java | EngineContext.parentRelativeDisplayItems（B3 の親相対化）
 enderframe.paint.noreplay | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.glReplay
 enderframe.paint.noscrollnode | SHORTCUT | core/kernel/EngineFlags.java | DisplayListBuilder.scrollContentNodes
-enderframe.paint.noshiftpatch | SHORTCUT | core/kernel/EngineFlags.java | PaintSceneDriver.patchShiftIndex
-enderframe.paint.nostamps | SHORTCUT | core/kernel/EngineFlags.java | UiView.changeStampsEnabled
 enderframe.paint.notextsetup | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.textSetupReuse（P9b）
-enderframe.paint.notranslate | SHORTCUT | core/kernel/EngineFlags.java | DisplayListBuilder.TRANSLATE_ENABLED
 enderframe.paint.nowindow | SHORTCUT | core/kernel/EngineFlags.java | DisplayListBuilder.WINDOWED_ENABLED（窓付き表示リスト）
-enderframe.paint.verifystamps | DIAGNOSTIC | core/kernel/EngineFlags.java | DisplayListBuilder.verifyStamps（:core:test が立てる）
 enderframe.paint.windowmin | TUNING | core/kernel/EngineFlags.java | DisplayListBuilder.WINDOW_MIN_OWNERS（窓付きにする最小の持ち主数。既定 800）
 enderframe.parser.dropnewlinews | COMPAT | core/kernel/EngineFlags.java | HtmlParser の要素の間の改行入りの空白を捨てる（A11 第 4 段より前の挙動）
 enderframe.profile | DIAGNOSTIC | core/kernel/EngineFlags.java | StageProfiler の段別計測

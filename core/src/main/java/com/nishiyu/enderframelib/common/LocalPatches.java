@@ -119,12 +119,7 @@ final class LocalPatches {
         }
         if (stale) view.ensureLayoutFresh(); // 局所パッチで済まなかったので、位置を決め直してから全体を描く
         if (elements == null) {
-            view.useChangeStamps = com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.on() && RenderPipeline.lastRelayoutWasLocal();
-            try {
-                elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
-            } finally {
-                view.useChangeStamps = false;
-            }
+            elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
         }
         if (elements == null) elements = new ArrayList<>();
         long paintDone = System.nanoTime();
@@ -313,15 +308,7 @@ final class LocalPatches {
         if (view.paintBuilder == null) UiView.SLICE_NO_BUILDER.incrementAndGet();
         else if (plans.size() != 1) UiView.SLICE_MULTI_PLAN.incrementAndGet();
         if (elements == null) {
-            view.useChangeStamps = com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.on() && RenderPipeline.lastRelayoutWasLocal();
-            // 属性は変わらず、後続の行が整数ぶん下へずれるだけの箱は、前回の項目を厳密に平行移動して使い回す
-            view.exactTranslation = true;
-            try {
-                elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
-            } finally {
-                view.useChangeStamps = false;
-                view.exactTranslation = false;
-            }
+            elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
         }
         if (elements == null) elements = new ArrayList<>();
         long paintDone = System.nanoTime();
@@ -356,13 +343,7 @@ final class LocalPatches {
         view.setLayoutRoot(view.layoutRoot);
         long layoutDone = System.nanoTime();
         // 再スタイルは変わった箱に updateStyle で印を付け、レイアウトは触った箱に印を付ける（検証モードが付け漏れを検出する）
-        view.useChangeStamps = com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.on();
-        List<DisplayItem> elements;
-        try {
-            elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
-        } finally {
-            view.useChangeStamps = false;
-        }
+        List<DisplayItem> elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
         if (elements == null) elements = new ArrayList<>();
         long paintDone = System.nanoTime();
         view.publishBuilt(elements);

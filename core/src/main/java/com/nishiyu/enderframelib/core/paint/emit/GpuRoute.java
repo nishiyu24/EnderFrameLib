@@ -42,31 +42,4 @@ public final class GpuRoute {
     public void leaveCpuLayer(boolean stillInsideCpuLayer) {
         if (!stillInsideCpuLayer) current = root;
     }
-
-    // 項目単位の差分再生（B3）。バックエンドは GpuSink を直接呼ばず、ここを通す。
-
-    /** 差分再生を始められるか（試行先があり、受け付けるとき）。 */
-    public boolean beginDiffPatch() {
-        return current != null && current.beginDiffPatch();
-    }
-
-    public void endDiffPatch() {
-        if (current != null) current.endDiffPatch();
-    }
-
-    public void abortDiffPatch() {
-        if (current != null) current.abortDiffPatch();
-    }
-
-    public boolean canPatchSpan(int index) {
-        return current != null && current.canPatchSpan(index);
-    }
-
-    public boolean patchSpanBegin(int index) {
-        return current != null && current.patchSpanBegin(index);
-    }
-
-    public boolean patchSpanEnd(int index, boolean ok) {
-        return current != null && current.patchSpanEnd(index, ok);
-    }
 }

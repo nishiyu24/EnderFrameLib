@@ -32,7 +32,6 @@ public enum Shortcut {
     ATTR_PATCH(true),
 
     /** 切り分け用: false なら文字の局所パッチでも変更印を使わない。 （以前の {@code UiView.changeStampsEnabled}） */
-    CHANGE_STAMPS(EngineFlags.CHANGE_STAMPS),
 
     /** スクロールだけの更新で箱の位置の決め直しを後回しにするか（切り分け用。見た目は変わらない）。 （以前の {@code UiView.deferScrollLayout}） */
     DEFER_SCROLL_LAYOUT(true),
@@ -55,7 +54,7 @@ public enum Shortcut {
     /** 検証モード: メモを使える場面でも走査し直し、メモと食い違えば {@link AssertionError}（無効化の付け漏れの検出）。 {@code -Denderframe.verify.memo=true}（{@code core/build.gradle} の {@code test} で常時有効）。 （以前の {@code BlockLayoutEngine.verifyFloatMemo}） */
     VERIFY_MEMO(EngineFlags.VERIFY_MEMO),
 
-    /** 検証モード: 記憶の項目をそのまま出す箱を、記憶を使わずに作り直して比べる（{@code BoxMemoVerifier}。{@code -Denderframe.verify.boxmemo=true}、{@code core/build.gradle} の {@code test} で有効）。再描画の費用が大きいので {@link #VERIFY_MEMO} と分けてある（計画の §6-124）。 */
+    /** 検証モード: 項目を使い回す箱を、記憶を使わずに作り直して比べる（{@code OwnItemsVerifier}。{@code -Denderframe.verify.boxmemo=true}、{@code core/build.gradle} の {@code test} で有効）。再描画の費用が大きいので {@link #VERIFY_MEMO} と分けてある（計画の §6-124）。 */
     VERIFY_BOX_MEMO(EngineFlags.VERIFY_BOX_MEMO),
 
     /** 切り分け用: false なら、幅が同じでも shrink-to-fit の項目を必ず測り直す（従来の動き）。 （以前の {@code FlexLayoutEngine.skipSameWidthRemeasure}） */
@@ -100,8 +99,6 @@ public enum Shortcut {
     /** スクロールコンテナの中身を 1 つの節にまとめるか。まとめると、スクロールだけの更新は表示リストを作り直さず、その節の 移動量を更新するだけで済む（{@code UiView} が行う）。false なら従来どおり、中身の項目はコンテナの節の直下に並び、 スクロールのたびに作り直す（疑うときの切り分け用。{@code -Denderframe.paint.noscrollnode=true} でも切れる）。結果は同じでなければならない。 （以前の {@code DisplayListBuilder.scrollContentNodes}） */
     SCROLL_CONTENT_NODES(EngineFlags.SCROLL_CONTENT_NODES),
 
-    /** 検証: 変更印が「変わっていない」と言った箱でも署名を比べ、食い違えば例外にする（{@code -Denderframe.paint.verifystamps=true}）。 （以前の {@code DisplayListBuilder.verifyStamps}） */
-    VERIFY_STAMPS(EngineFlags.VERIFY_STAMPS),
 
     /** 診断・切り分け用フラグ。 （以前の {@code GpuRenderBackend.rectTrees}） */
     GL_RECT_TREES(EngineFlags.GL_RECT_TREES),
@@ -116,7 +113,6 @@ public enum Shortcut {
     GL_RETAINED_SCROLL(EngineFlags.GL_RETAINED_SCROLL),
 
     /** 損傷範囲による部分描画を使うか（{@code -Denderframe.gpu.nodamage=true} で無効）。 （以前の {@code GpuRenderBackend.damageEnabled}） */
-    GPU_DAMAGE(EngineFlags.GPU_DAMAGE),
 
     /** 再生を使うか（切り分け用: {@code -Denderframe.gl.noreplay=true} で無効）。 （以前の {@code RectStream.replayEnabled}） */
     GL_REPLAY(EngineFlags.GL_REPLAY),
@@ -134,10 +130,6 @@ public enum Shortcut {
     RETAIN_SCROLL_LAYERS(true),
 
     /** 切り分け用: false なら、一般のリストの変化は常に索引の作り直しにする（従来の動き）。 （以前の {@code PaintSceneDriver.patchDiffIndex}） */
-    PATCH_DIFF_INDEX(EngineFlags.PATCH_DIFF_INDEX),
-
-    /** 切り分け用: false なら、サイズの異なるリストの局所挿入・削除に対する増分索引シフト（patchIndexByShift）を使わず作り直す。 （以前の {@code PaintSceneDriver.patchShiftIndex}） */
-    PATCH_SHIFT_INDEX(EngineFlags.PATCH_SHIFT_INDEX),
 
     /** 変更のあった項目の範囲だけを塗り直すか（{@code -Denderframe.soft.nodamage=true} で無効）。 無効にすると毎フレーム全面をクリアして描く（疑うときの切り分け用。絵は同じでなければならない）。 （以前の {@code SoftwareRenderBackend.damageEnabled}） */
     SOFT_DAMAGE(EngineFlags.SOFT_DAMAGE),

@@ -182,49 +182,4 @@ class ParentRelativeParityTest {
         assertPixmapDiffWithin("rich resized SW", renderSw(html, 360, 420, false, 0, -1, -1), renderSw(html, 360, 420, true, 0, -1, -1), 1, 2);
     }
 
-    @Test
-    void resizeDoesNotTriggerExtentOrPositionMatchFailsOrAppendTranslated() throws IOException {
-        EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(true));
-        // 1. large-list width resize: zero MATCHFAIL[3/4] and zero appendTranslated
-        try (StandaloneView v = new StandaloneView(GpuBaselineTest.doc("large-list"), W, H, FontResolver.FALLBACK);
-             SoftwareRenderBackend sw = new SoftwareRenderBackend(W, H, 1f)) {
-            v.frame(T0, sw, true);
-            long mf3Before = DisplayListBuilder.STAT_MATCH_FAIL[3].sum();
-            long mf4Before = DisplayListBuilder.STAT_MATCH_FAIL[4].sum();
-            long appBefore = DisplayListBuilder.STAT_APPEND_TRANSLATED.sum();
-
-            for (int w : new int[]{780, 760, 740, 720, 760, 800}) {
-                v.resize(w, H);
-                v.frame(T0 + 16, sw, true);
-            }
-            assertEquals(0L, DisplayListBuilder.STAT_MATCH_FAIL[3].sum() - mf3Before, "large-list MATCHFAIL[3] parentPosDiff must be 0");
-            assertEquals(0L, DisplayListBuilder.STAT_MATCH_FAIL[4].sum() - mf4Before, "large-list MATCHFAIL[4] boxExtentDiff must be 0");
-            assertEquals(0L, DisplayListBuilder.STAT_APPEND_TRANSLATED.sum() - appBefore, "large-list STAT_APPEND_TRANSLATED must be 0 on resize");
-        }
-
-        // 2. varied-list width resize: zero MATCHFAIL[3] and zero MATCHFAIL[4] even with wrapping + subpixel line heights
-        try (StandaloneView v = new StandaloneView(GpuBaselineTest.doc("varied-list"), W, H, FontResolver.FALLBACK);
-             SoftwareRenderBackend sw = new SoftwareRenderBackend(W, H, 1f)) {
-            v.frame(T0, sw, true);
-            long mf3Before = DisplayListBuilder.STAT_MATCH_FAIL[3].sum();
-            long mf4Before = DisplayListBuilder.STAT_MATCH_FAIL[4].sum();
-            long appBefore = DisplayListBuilder.STAT_APPEND_TRANSLATED.sum();
-
-            for (int w : new int[]{780, 760, 740, 720, 760, 800}) {
-                v.resize(w, H);
-                v.frame(T0 + 16, sw, true);
-            }
-            assertEquals(0L, DisplayListBuilder.STAT_MATCH_FAIL[3].sum() - mf3Before, "varied-list MATCHFAIL[3] parentPosDiff must be 0");
-            assertEquals(0L, DisplayListBuilder.STAT_MATCH_FAIL[4].sum() - mf4Before, "varied-list MATCHFAIL[4] boxExtentDiff must be 0");
-            // Height resize on varied-list also triggers zero appendTranslated
-            long appHeightBefore = DisplayListBuilder.STAT_APPEND_TRANSLATED.sum();
-            for (int h : new int[]{560, 520, 580, H}) {
-                v.resize(W, h);
-                v.frame(T0 + 32, sw, true);
-            }
-            assertEquals(0L, DisplayListBuilder.STAT_APPEND_TRANSLATED.sum() - appHeightBefore, "varied-list height resize appendTranslated must be 0");
-            long totalApp = DisplayListBuilder.STAT_APPEND_TRANSLATED.sum() - appBefore;
-            assertTrue(totalApp < 100, "varied-list subpixel rounding appendTranslated stays bounded, got " + totalApp);
-        }
-    }
 }

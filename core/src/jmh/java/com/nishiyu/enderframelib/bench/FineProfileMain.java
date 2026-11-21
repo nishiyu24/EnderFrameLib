@@ -243,8 +243,7 @@ public final class FineProfileMain {
                     + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
                     + " layoutsShifted=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted()
                     + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped()
-                    // T2: B12 の近道（スタッキングコンテキストの部分木の組み直し・描画側の索引の並びの入れ替え）
-                    + " indexMoves=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.STAT_MOVE_PATCHES.sum());
+                    + "");
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             {
@@ -254,19 +253,7 @@ public final class FineProfileMain {
                         com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted() / (double) n,
                         com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped() / (double) n);
             }
-            {
-                var D = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.class;
-                long n = frames + warmup;
-                System.out.printf("BOXMEMO per-frame exact=%.1f translated=%.1f miss=%.1f new=%.1f unmemoizable=%.1f stamped=%.1f%n",
-                        D_STAT(D, "STAT_EXACT") / (double) n, D_STAT(D, "STAT_TRANSLATED") / (double) n, D_STAT(D, "STAT_MISS") / (double) n,
-                        D_STAT(D, "STAT_NEW") / (double) n, D_STAT(D, "STAT_UNMEMOIZABLE") / (double) n, D_STAT(D, "STAT_STAMPED") / (double) n);
-            }
-            {
-                StringBuilder why = new StringBuilder("MATCHFAIL");
-                var fails = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_MATCH_FAIL;
-                for (int i = 1; i < fails.length; i++) if (fails[i].sum() > 0) why.append(' ').append(i).append('=').append(String.format("%.1f", fails[i].sum() / (double) (frames + warmup)));
-                System.out.println(why);
-            }
+            System.out.println("FRAGMENT memo hits=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() + " ownReused=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentOwnReused());
             System.out.println("RANGECULL planned=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_PLANNED.get()
                     + " ineligible=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_INELIGIBLE.get()
                     + " culledItems=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_CULLED_TOTAL.get());
@@ -304,8 +291,7 @@ public final class FineProfileMain {
                     + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
                     + " (ウォームアップ込み累計)");
             StringBuilder cant = new StringBuilder("CANTPATCH");
-            cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get()).append(" multiPlan=").append(UiView.SLICE_MULTI_PLAN.get())
-                    .append(" indexMoves=").append(com.nishiyu.enderframelib.core.paint.PaintSceneDriver.STAT_MOVE_PATCHES.sum());
+            cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get()).append(" multiPlan=").append(UiView.SLICE_MULTI_PLAN.get());
 
             System.out.println(cant);
         }

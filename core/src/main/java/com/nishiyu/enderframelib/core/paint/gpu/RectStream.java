@@ -61,10 +61,6 @@ public final class RectStream implements AutoCloseable {
     // 差分インプレース上書き
     private int prevFrameSlots, prevFrameCount, prevFrameClipCount;
     private boolean prevFrameValid;
-    private boolean patchMode, patchSpanOn, patchOverflow;
-    private int patchSlotCursor, patchSlotLimit, patchOrderCursor, patchOrderLimit, patchSpanIndex, patchOldShapes;
-    private int[] patchDoneIndices = new int[32];
-    private int patchDoneCount;
 
     private final float[] trs = new float[4];
     private GpuClip[] lastClips;
@@ -267,112 +263,8 @@ public final class RectStream implements AutoCloseable {
         runStart = 0;
         clipCount = 0;
         lastClips = null;
-        patchMode = false;
-        patchSpanOn = false;
-        patchOverflow = false;
         frameNo++;
         Arrays.fill(clipTable, -1);
-    }
-
-    public boolean beginDiffPatch() {
-        if (!prevFrameValid || prevFrameSlots > usableCapacity || count != 0 || slots != 0 || patchMode) return false;
-        slots = prevFrameSlots;
-        count = prevFrameCount;
-        clipCount = prevFrameClipCount;
-        runStart = 0;
-        lastClips = null;
-        for (int s = 0; s < clipCount; s++) insertClipSlot(s);
-        frameNo--;
-        patchMode = true;
-        patchSpanOn = false;
-        patchOverflow = false;
-        patchOldShapes = 0;
-        patchDoneCount = 0;
-        return true;
-    }
-
-    public boolean canPatchSpan(int index, int atlasResets) {
-        if (!patchMode || index < 0 || index >= spSlot0.length || spFrame[index] != frameNo) return false;
-        if (spSlot1[index] <= spSlot0[index] || spCount1[index] <= spCount0[index]) return false;
-        return atlasResets == spAtlas[index];
-    }
-
-    public boolean patchSpanBegin(int index, int atlasResets) {
-        if (!canPatchSpan(index, atlasResets)) return false;
-        patchSpanOn = true;
-        patchOverflow = false;
-        patchSpanIndex = index;
-        patchSlotCursor = spSlot0[index];
-        patchSlotLimit = spSlot1[index];
-        patchOrderCursor = spCount0[index];
-        patchOrderLimit = spCount1[index];
-        spanOn = true;
-        spanUnclean = false;
-        spanIndex = index;
-        spanAtlas = atlasResets;
-        spanOverflows = overflows;
-        spanRefCount = 0;
-        lastClips = null;
-        return true;
-    }
-
-    public boolean patchSpanEnd(int index, boolean ok, int atlasResets, int glyphs) {
-        if (!patchSpanOn || patchSpanIndex != index) return false;
-        patchSpanOn = false;
-        spanOn = false;
-        if (!ok || patchOverflow || spanUnclean || overflows != spanOverflows || atlasResets != spanAtlas) {
-            return false;
-        }
-        for (int p = patchOrderCursor; p < patchOrderLimit; p++) {
-            trees.order.putInt(p, 0, deadSlot);
-        }
-        patchOldShapes += patchOrderLimit - spCount0[index];
-        spAtlas[index] = atlasResets;
-        spGlyphs[index] = glyphs;
-        int[] refs = spRefs[index];
-        int[] vers = spRefVers[index];
-        if (refs == null || refs.length != spanRefCount) {
-            refs = new int[spanRefCount];
-            vers = new int[spanRefCount];
-            spRefs[index] = refs;
-            spRefVers[index] = vers;
-        }
-        System.arraycopy(spanRefs, 0, refs, 0, spanRefCount);
-        for (int i = 0; i < spanRefCount; i++) vers[i] = clipSlotVersion[refs[i]];
-        spFrame[index] = frameNo;
-        if (patchDoneCount == patchDoneIndices.length) {
-            patchDoneIndices = Arrays.copyOf(patchDoneIndices, patchDoneCount * 2);
-        }
-        patchDoneIndices[patchDoneCount++] = index;
-        return true;
-    }
-
-    public void abortDiffPatch() {
-        patchMode = false;
-        patchSpanOn = false;
-        spanOn = false;
-        patchOverflow = false;
-        frameNo++;
-        for (int k = 0; k < patchDoneCount; k++) spFrame[patchDoneIndices[k]] = -1;
-        patchDoneCount = 0;
-        slots = 0;
-        count = 0;
-        runStart = 0;
-        clipCount = 0;
-        lastClips = null;
-        Arrays.fill(clipTable, -1);
-        prevFrameValid = false;
-    }
-
-    public void endDiffPatch() {
-        if (!patchMode) return;
-        int reused = prevFrameCount - patchOldShapes;
-        if (reused > 0) {
-            accepted += reused;
-            replayedShapes += reused;
-        }
-        replayedItems += prevFrameCount;
-        patchMode = false;
     }
 
     public boolean accepts(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry, GpuClip[] clips, float opacity) {
@@ -394,12 +286,7 @@ public final class RectStream implements AutoCloseable {
             if (clips.length <= PropertyTrees.MAX_CLIPS_PER_PRIMITIVE) overflows++;
             return false;
         }
-        if (patchSpanOn) {
-            if (patchSlotCursor + slotsNeeded > patchSlotLimit || patchOrderCursor >= patchOrderLimit) {
-                patchOverflow = true;
-                return false;
-            }
-        } else if (slots + slotsNeeded > usableCapacity) { rejects[3]++; overflows++; return false; }
+        if (slots + slotsNeeded > usableCapacity) { rejects[3]++; overflows++; return false; }
         if (!(opacity > 0f) || !pose.isFinite() || !(x1 > x0) || !(y1 > y0)) { rejects[3]++; return false; }
         if (!decompose(pose)) { rejects[0]++; return false; }
         boolean rounded = false;
@@ -448,7 +335,7 @@ public final class RectStream implements AutoCloseable {
     }
 
     private int nextExtSlot() {
-        return patchSpanOn ? patchSlotCursor++ : slots++;
+        return slots++;
     }
 
     public void pushGlyphStroke(int bx, int by, int w, int h, int atlasX, int atlasY, float half, int argb, GpuClip[] clips, float opacity) {
@@ -514,7 +401,7 @@ public final class RectStream implements AutoCloseable {
 
     private int open(Matrix2D pose, int opcode, float x0, float y0, float x1, float y1, int argb, GpuClip[] clips, float opacity,
                      float margin) {
-        int k = patchSpanOn ? patchSlotCursor++ : slots++;
+        int k = slots++;
         trees.setTransformMatrix(k, (float) pose.a(), (float) pose.b(), (float) pose.c(), (float) pose.d(),
                 (float) pose.e(), (float) pose.f());
         int ef = PropertyTrees.NONE;
@@ -525,7 +412,7 @@ public final class RectStream implements AutoCloseable {
         trees.setPrimitive(k, opcode, k, clips == null ? 0 : clips.length, ef, x0, y0, x1 - x0, y1 - y0, argb, 0);
         trees.setPrimitiveMargin(k, margin);
         writeClips(k, clips);
-        trees.order.putInt(patchSpanOn ? patchOrderCursor++ : count++, 0, k);
+        trees.order.putInt(count++, 0, k);
         accepted++;
         return k;
     }

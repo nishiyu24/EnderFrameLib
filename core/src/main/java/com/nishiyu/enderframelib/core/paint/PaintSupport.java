@@ -83,9 +83,6 @@ final class PaintSupport {
                 x -= ox;
                 y -= oy;
             }
-            if (cap.capturing) {
-                cap.record(x, y, w, h);
-            }
         }
         int left = Math.round(x);
         int top = Math.round(y);
@@ -105,15 +102,10 @@ final class PaintSupport {
     }
 
     /**
-     * 記憶を作るときだけ {@link #addElement} が受け取る丸める前の {@code (x, y, w, h)} を隣に記録するリスト。
-     * 親相対座標のときは現在の節の原点 {@code (originX, originY)} も保持する。
+     * 親相対座標のときの、現在の節の原点 {@code (originX, originY)} も保持する。
      */
     static final class CaptureList extends java.util.ArrayList<DisplayItem> {
-        private static final float[] EMPTY_COORDS = new float[0];
-        boolean capturing;
         int originX, originY;
-        private float[] coords = new float[32];
-        private int coordCount;
 
         CaptureList(int initialCapacity) {
             super(initialCapacity);
@@ -121,10 +113,8 @@ final class PaintSupport {
 
         void resetForBuild() {
             clear();
-            capturing = false;
             originX = 0;
             originY = 0;
-            coordCount = 0;
         }
 
         void setOrigin(int ox, int oy) {
@@ -132,43 +122,6 @@ final class PaintSupport {
             this.originY = oy;
         }
 
-        void beginCapture() {
-            capturing = true;
-            coordCount = 0;
-        }
-
-        float[] finishCapture() {
-            return finishCaptureReuse(null);
-        }
-
-        float[] finishCaptureReuse(float[] reuse) {
-            capturing = false;
-            int n = coordCount;
-            coordCount = 0;
-            if (n == 0) return EMPTY_COORDS;
-            if (reuse != null && reuse.length == n) {
-                System.arraycopy(coords, 0, reuse, 0, n);
-                return reuse;
-            }
-            return java.util.Arrays.copyOf(coords, n);
-        }
-
-        void discardCapture() {
-            capturing = false;
-            coordCount = 0;
-        }
-
-        void record(float x, float y, float w, float h) {
-            int needed = coordCount + 4;
-            if (needed > coords.length) {
-                coords = java.util.Arrays.copyOf(coords, Math.max(needed, coords.length * 2));
-            }
-            coords[coordCount] = x;
-            coords[coordCount + 1] = y;
-            coords[coordCount + 2] = w;
-            coords[coordCount + 3] = h;
-            coordCount = needed;
-        }
     }
 
     static void addElement(List<DisplayItem> elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,

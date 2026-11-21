@@ -64,12 +64,6 @@ public final class EngineFlags {
     /** {@code enderframe.paint.nocullrange}: PaintSceneDriver.cullRecordedRanges（使う所: {@code PaintSceneDriver}） */
     public static final boolean CULL_RECORDED_RANGES = !Boolean.getBoolean("enderframe.paint.nocullrange");
 
-    /** {@code enderframe.paint.nodiffpatch}: PaintSceneDriver.patchDiffIndex（使う所: {@code PaintSceneDriver}） */
-    public static final boolean PATCH_DIFF_INDEX = !Boolean.getBoolean("enderframe.paint.nodiffpatch");
-
-    /** {@code enderframe.paint.nomemo}: DisplayListBuilder.MEMO_ENABLED・BoxAnimation.NO_MEMO（使う所: {@code BoxAnimation}） */
-    public static final boolean NO_PAINT_MEMO = Boolean.getBoolean("enderframe.paint.nomemo");
-
     /** {@code enderframe.paint.noparentrelative}: EngineContext.parentRelativeDisplayItems（B3 の親相対化）（使う所: {@code EngineContext}） */
     public static final boolean PARENT_RELATIVE = !Boolean.getBoolean("enderframe.paint.noparentrelative");
 
@@ -79,17 +73,8 @@ public final class EngineFlags {
     /** {@code enderframe.paint.noscrollnode}: DisplayListBuilder.scrollContentNodes（使う所: {@code DisplayListBuilder}） */
     public static final boolean SCROLL_CONTENT_NODES = !Boolean.getBoolean("enderframe.paint.noscrollnode");
 
-    /** {@code enderframe.paint.noshiftpatch}: PaintSceneDriver.patchShiftIndex（使う所: {@code PaintSceneDriver}） */
-    public static final boolean PATCH_SHIFT_INDEX = !Boolean.getBoolean("enderframe.paint.noshiftpatch");
-
-    /** {@code enderframe.paint.nostamps}: UiView.changeStampsEnabled（使う所: {@code UiView}） */
-    public static final boolean CHANGE_STAMPS = !Boolean.getBoolean("enderframe.paint.nostamps");
-
     /** {@code enderframe.paint.notextsetup}: SoftwareRenderBackend.textSetupReuse（P9b）（使う所: {@code SoftwareRenderBackend}） */
     public static final boolean TEXT_SETUP_REUSE = !Boolean.getBoolean("enderframe.paint.notextsetup");
-
-    /** {@code enderframe.paint.notranslate}: DisplayListBuilder.TRANSLATE_ENABLED（使う所: {@code DisplayListBuilder}） */
-    public static final boolean PAINT_TRANSLATE = !Boolean.getBoolean("enderframe.paint.notranslate");
 
     /** {@code enderframe.paint.nowindow}: DisplayListBuilder.WINDOWED_ENABLED（窓付き表示リスト）（使う所: {@code DisplayListBuilder}） */
     public static final boolean WINDOWED = !Boolean.getBoolean("enderframe.paint.nowindow");
@@ -157,9 +142,6 @@ public final class EngineFlags {
     /** {@code enderframe.verify.boxmemo}: 検証モード VERIFY_BOX_MEMO（箱の項目の記憶を作り直して比べる。再描画の費用が大きいので VERIFY_MEMO と分ける）（使う所: {@code DisplayListBuilder}） */
     public static final boolean VERIFY_BOX_MEMO = Boolean.getBoolean("enderframe.verify.boxmemo");
 
-    /** {@code enderframe.paint.verifystamps}: DisplayListBuilder.verifyStamps（:core:test が立てる）（使う所: {@code DisplayListBuilder}） */
-    public static final boolean VERIFY_STAMPS = Boolean.getBoolean("enderframe.paint.verifystamps");
-
     /** {@code enderframe.profile}: StageProfiler の段別計測（使う所: {@code StageProfiler}） */
     public static final boolean PROFILE = Boolean.getBoolean("enderframe.profile");
 
@@ -189,6 +171,4 @@ public final class EngineFlags {
     /** {@code enderframe.gl.retainscroll}: GpuRenderBackend.retainedScroll（"false" で切る）（使う所: {@code GpuRenderBackend}） */
     public static final boolean GL_RETAINED_SCROLL = !"false".equals(System.getProperty("enderframe.gl.retainscroll"));
 
-    /** {@code enderframe.gpu.nodamage}: GpuRenderBackend.damageEnabled（損傷範囲だけの描画。B10）（使う所: {@code GpuRenderBackend}） */
-    public static final boolean GPU_DAMAGE = !Boolean.getBoolean("enderframe.gpu.nodamage");
 }

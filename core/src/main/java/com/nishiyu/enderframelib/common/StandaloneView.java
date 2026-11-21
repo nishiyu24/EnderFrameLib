@@ -56,7 +56,6 @@ import java.util.function.Consumer;
 public final class StandaloneView implements AutoCloseable {
     private static final float WHEEL_PIXELS = 40f;
     /** スクロールが止まってから、平行移動で使い回した項目を厳密に作り直すまでの待ち（ms）。 */
-    private static final long SETTLE_DELAY_MS = 120;
 
     /** 窓のための {@link UiView}。フォントと、時計（フレームの時刻）と、画面外の箱を省く描画だけ差し込む。 */
     private final class Ui extends UiView {
@@ -76,19 +75,12 @@ public final class StandaloneView implements AutoCloseable {
 
         @Override
         protected List<DisplayItem> paintBoxes(LayoutBox root, int w, int h, boolean scrollOnly) {
-            List<DisplayItem> items = super.paintBoxes(root, w, h, scrollOnly);
-            DisplayListBuilder b = paintBuilder();
-            settlePending = scrollOnly && b != null && b.translatedHits() > 0;
-            lastScrollPaintAt = lastNow;
-            return items;
+            return super.paintBoxes(root, w, h, scrollOnly);
         }
     }
 
     private int width;
     private int height;
-    /** 直近のスクロールの作り直しが前回の項目の平行移動を含む（止まったら厳密に描き直す）。 */
-    private boolean settlePending;
-    private long lastScrollPaintAt;
     private final FontResolver fonts;
     private final Ui ui;
     private final UiInput input;
@@ -263,7 +255,7 @@ public final class StandaloneView implements AutoCloseable {
 
     /** 見た目が変わりうる状態か（入力の反映待ち・アニメーション・タイマー）。false なら描き直さなくてよい。 */
     public boolean needsFrame() {
-        return redraw || animating || settlePending || lastNow < compositorUntil || !scrollTargets.isEmpty()
+        return redraw || animating || lastNow < compositorUntil || !scrollTargets.isEmpty()
                 || ui.invalidationLevel() != UiView.InvalidationLevel.NONE || interaction.hasDirtyNodes()
                 || !ui.timers().isEmpty() || ui.scene3dChangeSignature() != sceneSignature;
     }
@@ -309,12 +301,6 @@ public final class StandaloneView implements AutoCloseable {
         ui.timers().runAnimationFrames((double) nowMs);
         ui.timers().runDueTimers();
         stepScroll(prevNow == 0 ? 16 : nowMs - prevNow);
-        // スクロールが止まって少し経ったら、平行移動で使い回した項目を厳密な位置の項目に作り直す
-        if (settlePending && scrollTargets.isEmpty() && nowMs - lastScrollPaintAt >= SETTLE_DELAY_MS
-                && ui.invalidationLevel() == UiView.InvalidationLevel.NONE) {
-            ui.markInvalidation(UiView.InvalidationLevel.REPAINT);
-        }
-
         List<DisplayItem> before = ui.renderCache();
         long t0 = System.nanoTime();
         ui.flushInvalidation();

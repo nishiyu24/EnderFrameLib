@@ -76,7 +76,7 @@ public class DisplayListBuilder {
     final ScrollState scrollState;
 
     /** 要素の部品の id（{@code _txt_3} など）に振る通し番号。描画のたびに 0 から数える。 */
-    private final AtomicInteger fragIds = new AtomicInteger();
+    final AtomicInteger fragIds = new AtomicInteger();
     private final BoxAnimation anim;
     final BoxDecorationPainter decor;
     private final ControlPainter controls;
@@ -93,7 +93,7 @@ public class DisplayListBuilder {
     /**
      * ビューポートの大きさが変わった（ウィンドウのリサイズ）。箱ごとの記憶は残す: ビューポート基準の単位（{@code vw} など）を
      * 使わない箱の項目は、ビューポートの大きさに依らないので、位置・寸法・スタイルが同じなら使い回せる
-     * （{@link BoxMemo#viewportSensitive}）。部分木の保持は箱の記憶と別の鍵なので、捨てる。
+     * （断片の記憶の枠組みの鍵 {@code memoFrameKey}）。部分木の保持は箱の記憶と別の鍵なので、捨てる。
      */
     public void setViewport(int rootW, int rootH) {
         if (this.rootW == rootW && this.rootH == rootH) return;
@@ -181,10 +181,8 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
 }
 
 private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen, List<DisplayItem> sink) {
-    generation++;
     buildSerial++;
     buildEpoch = LayoutBox.paintEpoch();
-    translating = cullOffscreen && TRANSLATE_ENABLED;
     // 大きい文書は、スクロール時でなくても画面（と余白）の外の箱の項目を作らない（窓付きの表示リスト。項目数が可視範囲に比例する）
     if (lastOwnerCount == 0 && com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.on()) lastOwnerCount = countBoxes(box, WINDOW_MIN_OWNERS); // 最初の描画だけ、箱の数を数えて判定する
     boolean windowed = !cullOffscreen && com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.on() && lastOwnerCount >= WINDOW_MIN_OWNERS;
@@ -192,7 +190,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     if (windowed) STAT_WINDOWED_BUILDS.increment();
     boolean cull = cullOffscreen || windowed;
     int ownerCount = 0;
-    translatedHits = 0;
     renderedBoxes.clear();
     scrollBoxes.clear();
     currentRoot = box;
@@ -201,9 +198,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     order.setParentRelative(relMode);
     // 前回と同じ件数で足りることが多い。倍々に伸ばしながら全件を写し直すのを避ける
     List<DisplayItem> elements = sink != null ? sink
-            : ((MEMO_ENABLED || relMode)
-            ? new PaintSupport.CaptureList(lastElementCount + (lastElementCount >> 4) + 16)
-            : new ArrayList<>(lastElementCount + (lastElementCount >> 4) + 16));
+            : new PaintSupport.CaptureList(lastElementCount + (lastElementCount >> 4) + 16);
         canvasBackgroundSource = null;
         decor.setDevicePixelRatio(box.devicePixelRatio());
 
@@ -225,12 +220,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
         // 部分木の保持は、全ての箱を描く描画でだけ（平行移動・画面外の省略では項目が欠ける／動く）。再利用は変更印が使える描画でだけ
         ownerCount += fragmentPaint.paint(box, elements, cull, windowed);
-        // 今回使われなかった箱（木から消えた箱）の記憶を捨てる
-        // 掃除は数回に 1 度（毎回全件を辿るとリストの規模に比例する）。保持された部分木の中の箱は、部分木が使われていれば残す
-        if (generation % PaintOrder.SWEEP_EVERY == 0) {
-            boxMemo.entrySet().removeIf(e -> e.getValue().generation != generation && !fragmentPaint.hasMemo(e.getKey())); // 断片の記憶が生きている箱の項目の記憶は残す
-        }
-
         lastElementCount = elements.size();
         lastOwnerCount = ownerCount;
         this.currentDisplayList = elements;
@@ -258,16 +247,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     /** 直近の表示リストが窓付き（画面外の箱の項目が無い）か。 */
     public boolean isWindowed() { return windowedBuild; }
 
-    /** 記憶の項目を出力へ足す。数個なら直接足す（{@code addAll} は毎回 {@code toArray} で写しを作る）。 */
-    static void appendItems(List<DisplayItem> elements, List<DisplayItem> items) {
-        int n = items.size();
-        if (n > 8) {
-            elements.addAll(items);
-        } else {
-            for (int i = 0; i < n; i++) elements.add(items.get(i));
-        }
-    }
-
     /** 画面の外へ表示項目を作っておく幅（px）。スクロールを節の移動で済ませる範囲（UiView）はこれより小さく取る。広いほど、作り直しが起きる間隔が長い。 */
     public static final float CULL_MARGIN = com.nishiyu.enderframelib.core.kernel.EngineFlags.CULL_MARGIN;
     static final int[] MOVING_PROPS = {
@@ -277,6 +256,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
     /** 箱（文字の塊は持ち主の箱）の位置が、画面と余白の範囲に掛かるか。 */
     /** 診断: 断片の記憶（部分木ごと組み立てを飛ばした）が当たった回数の累計。 */
+    public static long fragmentOwnReused() { return FragmentPaint.OWN_REUSED.sum(); }
+
     public static long fragmentMemoHits() { return FragmentPaint.MEMO_HITS.sum(); }
 
     /**
@@ -285,7 +266,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
      */
     int memoFrameKey(boolean cull, boolean windowed) {
         if (!windowShift.isEmpty()) return Integer.MIN_VALUE;
-        int k = (cull ? 1 : 0) | (windowed ? 2 : 0) | (translating ? 4 : 0) | (parentRelative ? 8 : 0) | (exactTranslation ? 16 : 0);
+        int k = (cull ? 1 : 0) | (windowed ? 2 : 0) | (parentRelative ? 4 : 0);
         return (k * 31 + rootW) * 31 + rootH;
     }
 
@@ -361,12 +342,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
     int lastElementCount;
 
-    private static java.util.concurrent.atomic.LongAdder[] newAdders(int n) {
-        java.util.concurrent.atomic.LongAdder[] a = new java.util.concurrent.atomic.LongAdder[n];
-        for (int i = 0; i < n; i++) a[i] = new java.util.concurrent.atomic.LongAdder();
-        return a;
-    }
-
     private boolean offscreen(LayoutBox box) {
         if (inWindowGeometry(box)) return false;
         return !hasMovingAncestor(box);
@@ -431,7 +406,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     /** 文字の影を出さない（マスクに影が混ざらないように）。 */
-    private boolean suppressTextShadow;
+    boolean suppressTextShadow;
 
     private void maskText(List<DisplayItem> elements, LayoutBox box, String id, ItemProps events) {
         for (LayoutBox child : box.children) {
@@ -479,51 +454,15 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
     boolean parentRelative = true;
 
-    final java.util.IdentityHashMap<LayoutBox, BoxMemo> boxMemo = new java.util.IdentityHashMap<>();
-    /** 子の挿入・削除の差分パッチ（{@link #patchChildSlices}）。A8 で切り出した。 */
-    int generation;
-    /** 変更印で署名の比較を省くか（呼び出し側が、変わった箱が分かっている局所更新のときだけ true にする）。 */
-    private boolean useChangeStamps;
     long buildEpoch;
     int buildSerial;
-    /** 診断: 変更印で比較を省いた箱の累計。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_STAMPED = new java.util.concurrent.atomic.LongAdder();
-
     /** 診断: 描画順の分類用のスタイル値を新しく算出した回数の累計（キャッシュ退行の検出用）。 */
     public static long styleFactsComputed() {
         return PaintOrder.STAT_FACTS_COMPUTED.sum();
     }
 
-    /** 次の {@link #render} だけ変更印を使う。 */
-    /**
-     * 次の {@link #render} だけ、整数ぶんだけ動いた箱の項目を厳密に平行移動して使い回す（子の増減で後続の行が下へずれるとき）。
-     * スクロール用の平行移動（{@link #translating}）と違って丸めず、動きが整数でない箱は使い回さない（結果は描き直しと完全に同じ）。
-     */
-    public void setExactTranslation(boolean exact) {
-        this.exactTranslation = exact;
-    }
 
-    private boolean exactTranslation;
-
-    public void setUseChangeStamps(boolean use) {
-        this.useChangeStamps = use;
-    }
-    /** 診断: 箱ごとの記憶の使われ方の累計（そのまま・平行移動・新規・不一致）。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_EXACT = new java.util.concurrent.atomic.LongAdder(), STAT_TRANSLATED = new java.util.concurrent.atomic.LongAdder(),
-            STAT_NEW = new java.util.concurrent.atomic.LongAdder(), STAT_MISS = new java.util.concurrent.atomic.LongAdder(), STAT_UNMEMOIZABLE = new java.util.concurrent.atomic.LongAdder();
-    /** 位置だけが変わった作り直し（{@link #render(LayoutBox, boolean)} の {@code cullOffscreen}）か。 */
-    boolean translating;
-    private int translatedHits;
-
-    /** 直近の描画で、前回の項目を平行移動して使った箱の数（0 でなければ、位置が最大 1 画素ずれうる）。 */
-    public int translatedHits() {
-        return translatedHits;
-    }
-    private static final boolean MEMO_ENABLED = !com.nishiyu.enderframelib.core.kernel.EngineFlags.NO_PAINT_MEMO;
-    /** 切り分け用: {@code -Denderframe.paint.notranslate=true} で、位置が動いた箱の項目を平行移動で使い回さない。 */
-    private static final boolean TRANSLATE_ENABLED = com.nishiyu.enderframelib.core.kernel.EngineFlags.PAINT_TRANSLATE;
-
-    private static boolean memoizable(LayoutBox box) {
+    static boolean memoizable(LayoutBox box) {
         String tag = box.node.tag;
         if (tag == null) return false;
         if (tag.indexOf('-') >= 0) {
@@ -562,465 +501,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
 
-    /**
-     * 変更印から、記憶が今の箱にそのまま使えると言えるか。記憶を作った後に、自分にも祖先にもレイアウトが触れておらず
-     * （印が記憶の通し番号以下）、親の箱・クリップ・親の id・描画側の旗が同じ。属性の変更は印に出ないので、
-     * 属性が変わらない更新（文字の局所パッチ）でだけ呼び出し側が有効にする。
-     */
-    private boolean stampClean(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
-        if (m.viewportSensitive && (m.rootW != rootW || m.rootH != rootH)) return false;
-        if (m.nums != null && m.nums.length >= 4) {
-            if (Float.compare(box.x(), m.nums[0]) != 0 || Float.compare(box.y(), m.nums[1]) != 0
-                    || Float.compare(box.w(), m.nums[2]) != 0 || Float.compare(box.h(), m.nums[3]) != 0) {
-                return false;
-            }
-        }
-        if (m.carriesContentExtent && (Float.compare(m.scrollW, box.scrollWidth()) != 0 || Float.compare(m.scrollH, box.scrollHeight()) != 0)) {
-            return false;
-        }
-        if (!box.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2) {
-            LayoutBox.InlineFragment f0 = box.inlineFragments.get(0);
-            if (Float.compare(f0.x, m.fragNums[0]) != 0 || Float.compare(f0.y, m.fragNums[1]) != 0) {
-                return false;
-            }
-        }
-        if (m.parentRelative != parentRelative || m.parentBox != box.parent || box.pathPaintStamp(buildSerial) > m.epoch
-                || m.attrVersion != box.node.attrVersion()
-                || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
-                || m.suppressShadow != suppressTextShadow || !BoxMemo.sameClip(m.clip, clip)
-                || !BoxMemo.sameStyle(m.placeholderStyle, box.placeholderStyle)
-                || !java.util.Objects.equals(m.parentId, parentId)) {
-            return false;
-        }
-        if (parentRelative) {
-            LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, parentId);
-            int curPox = pNode != null ? Math.round(pNode.x()) : 0;
-            int curPoy = pNode != null ? Math.round(pNode.y()) : 0;
-            if (curPox != m.parentOriginX || curPoy != m.parentOriginY) return false;
-        }
-        return true;
-    }
-
-    /** 平行移動で使い回すときの、箱の動き（{@link #match} が 2 を返したとき有効）。 */
-    private float hitDx, hitDy;
-    private int hitIntDx, hitIntDy;
-    private boolean hitFragmentsOnly;
-    private boolean hitPerItem;
-    private int[] hitRects = new int[32];
-    private boolean hitParentRelReuse;
-    private boolean hitRelPosChanged, hitScrollChanged, hitClipChanged, hitReuseFragOnly;
-    private int hitNewRelX, hitNewRelY, hitCurOx, hitCurOy, hitCurPox, hitCurPoy;
-    private int hitNewRelW, hitNewRelH, hitPartDx, hitPartDy;
-    private float hitReuseFracDx, hitReuseFracDy;
-
-    /**
-     * 記憶が今の箱に使えるか。0: 使えない / 1: 項目をそのまま使える / 2: 箱がまるごと {@code (hitDx, hitDy)} だけ動いただけ
-     * （または、クリップだけが違う）なので、前回の項目を平行移動して使える。
-     * 2 を返すのは {@link #translating}（スクロールなど位置だけが変わる作り直し）か、{@link #exactTranslation} で
-     * 整数移動、または小数移動でも各項目の丸め後の差が均一かつ寸法が変わらない箱のとき。
-     */
-    /** 診断: {@link #match} が 0（使えない）を返した理由別の回数（添字は match 内の return 0 の出現順。1 始まり、[0] は未使用）。 */
-    public static final java.util.concurrent.atomic.LongAdder[] STAT_MATCH_FAIL = newAdders(24);
-    /** 診断: {@link #appendTranslated}（全項目の複製を伴う平行移動）を実行した回数。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_APPEND_TRANSLATED = new java.util.concurrent.atomic.LongAdder();
-
-    private static int matchFail(int reason) {
-        STAT_MATCH_FAIL[reason].increment();
-        return 0;
-    }
-
-    private int match(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
-        hitParentRelReuse = false;
-        hitPerItem = false;
-        if (m.parentRelative != parentRelative) return matchFail(5);
-        if (m.viewportSensitive && (m.rootW != rootW || m.rootH != rootH)) return matchFail(1);
-        if (!BoxMemo.sameStyle(m.style, box.style) || !BoxMemo.sameStyle(m.firstLineStyle, box.firstLineStyle)
-                || !BoxMemo.sameStyle(m.placeholderStyle, box.placeholderStyle)
-                || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
-                || m.suppressShadow != suppressTextShadow) return matchFail(2);
-        boolean scrollChanged = m.carriesContentExtent
-                && (Float.compare(m.scrollW, box.scrollWidth()) != 0 || Float.compare(m.scrollH, box.scrollHeight()) != 0);
-        if (!parentRelative && scrollChanged) return matchFail(3);
-        float dx = box.x() - m.nums[0], dy = box.y() - m.nums[1];
-        float effDx = dx, effDy = dy;
-        int curOx = Math.round(box.x()), curOy = Math.round(box.y());
-        int curPox = 0, curPoy = 0;
-        boolean relPosChanged = false;
-        float localDx = dx, localDy = dy;
-        boolean hasOwnNode = parentRelative && PaintOrder.boxHasOwnNode(box);
-        if (parentRelative) {
-            LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, parentId);
-            curPox = pNode != null ? Math.round(pNode.x()) : 0;
-            curPoy = pNode != null ? Math.round(pNode.y()) : 0;
-            relPosChanged = (curOx - curPox) != (m.originX - m.parentOriginX)
-                    || (curOy - curPoy) != (m.originY - m.parentOriginY);
-            localDx = dx - (hasOwnNode ? (curOx - m.originX) : (curPox - m.parentOriginX));
-            localDy = dy - (hasOwnNode ? (curOy - m.originY) : (curPoy - m.parentOriginY));
-        }
-        // 文字の箱は自分の位置を持たず、断片だけが置かれる。箱が動かないのに断片が動いたときは、断片の動きを箱の動きとして見る
-        // （後続の行が下へずれるとき、文字の箱が毎回描き直しになるのを避ける）。断片どうしの動きが揃っているかは下で確かめる
-        // 箱の位置で置かれる NODE の項目は動かさず、断片の位置で置かれる TEXT の項目だけを動かす（hitFragmentsOnly）
-        boolean fragmentsOnly = false;
-        if (dx == 0 && dy == 0 && m.nodeAndTextOnly && m.fragNums.length >= 2 && !box.inlineFragments.isEmpty()) {
-            LayoutBox.InlineFragment f0 = box.inlineFragments.get(0);
-            effDx = f0.x - m.fragNums[0];
-            effDy = f0.y - m.fragNums[1];
-            localDx = parentRelative && !hasOwnNode ? effDx - (curPox - m.parentOriginX) : effDx;
-            localDy = parentRelative && !hasOwnNode ? effDy - (curPoy - m.parentOriginY) : effDy;
-            fragmentsOnly = effDx != 0 || effDy != 0;
-        }
-        boolean moved = parentRelative ? (localDx != 0 || localDy != 0) : (effDx != 0 || effDy != 0);
-        boolean intMove = BoxMemo.isIntegerTranslation(localDx) && BoxMemo.isIntegerTranslation(localDy);
-        boolean exactFracCheck = false;
-        // スクロールの作り直しは丸めて動かす。リサイズ・子の増減では、整数移動に加えて小数移動も丸め後の差が一致する箱なら使い回す
-        boolean moveOk = m.translatable && (translating
-                || (exactTranslation && TRANSLATE_ENABLED && (!m.carriesContentExtent || parentRelative) && intMove));
-        if (moved && !moveOk && exactTranslation && TRANSLATE_ENABLED && (!m.carriesContentExtent || parentRelative)
-                && m.translatable && m.itemCoords != null && m.itemCoords.length == m.items.size() * 4) {
-            exactFracCheck = true;
-            moveOk = true;
-        }
-        if (moved && !moveOk) return matchFail(4);
-        if (m.nums.length != BoxMemo.NUMS_LENGTH) return matchFail(5);
-        for (int i = 2; i < BoxMemo.NUMS_LENGTH; i++) if (Float.compare(m.nums[i], BoxMemo.numAt(box, i)) != 0) return matchFail(6);
-        boolean clipSame = BoxMemo.sameClip(m.clip, clip);
-        boolean clipChainSame = clipSame || (parentRelative && BoxMemo.sameClipChain(m.clip, clip));
-        if (parentRelative) {
-            if (!clipChainSame && !moveOk) return matchFail(7);
-        } else {
-            if (!clipSame && !moveOk) return matchFail(7);
-        }
-        if (!java.util.Objects.equals(m.parentId, parentId)) return matchFail(8);
-        if (!java.util.Objects.equals(m.displayText, box.displayText()) || !java.util.Objects.equals(m.shaped, box.shapedLines())) return matchFail(9);
-        if (m.attrVersion != box.node.attrVersion()) return matchFail(10);
-        int depth = 0;
-        for (LayoutBox a = box.parent; a != null; a = a.parent, depth++) {
-            if (depth >= m.ancestors.length || !BoxMemo.sameStyle(m.ancestors[depth], a.style)) return matchFail(11);
-        }
-        if (depth != m.ancestors.length) return matchFail(12);
-        List<LayoutBox.InlineFragment> frags = box.inlineFragments;
-        if (m.fragText.length != frags.size()) return matchFail(13);
-        int r = 0;
-        for (int i = 0; i < frags.size(); i++) {
-            LayoutBox.InlineFragment f = frags.get(i);
-            int n = i * 8;
-            if (!java.util.Objects.equals(m.fragText[i], f.text)) return matchFail(14);
-            // 断片の位置は、箱と同じだけ動いていること（動き方が違う断片があれば、平行移動では済まない）
-            if ((effDx != 0 || effDy != 0) ? (Math.abs(f.x - m.fragNums[n] - effDx) > 1e-3f || Math.abs(f.y - m.fragNums[n + 1] - effDy) > 1e-3f)
-                    : (Float.compare(m.fragNums[n], f.x) != 0 || Float.compare(m.fragNums[n + 1], f.y) != 0)) return matchFail(15);
-            if (Float.compare(m.fragNums[n + 2], f.w) != 0 || Float.compare(m.fragNums[n + 3], f.h) != 0
-                    || Float.compare(m.fragNums[n + 4], f.baseline) != 0 || m.fragNums[n + 5] != (f.startEdge ? 1f : 0f)
-                    || m.fragNums[n + 6] != (f.endEdge ? 1f : 0f) || Float.compare(m.fragNums[n + 7], f.descent) != 0) return matchFail(16);
-            if (m.fragRefs[r++] != f.box || !BoxMemo.sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], f.box != null ? f.box.style : null)) return matchFail(17);
-            List<LayoutBox> parents = f.parents;
-            int pn = parents == null ? 0 : parents.size();
-            if (!(m.fragRefs[r++] instanceof Integer count) || count != pn) return matchFail(18);
-            for (int k = 0; k < pn; k++) {
-                if (m.fragRefs[r++] != parents.get(k) || !BoxMemo.sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], parents.get(k).style)) return matchFail(19);
-            }
-            com.nishiyu.enderframelib.core.css.ComputedStyle ownerFl = f.firstLineOwner != null ? f.firstLineOwner.firstLineStyle : null;
-            if (m.fragRefs[r++] != f.firstLineOwner || !BoxMemo.sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], ownerFl)) return matchFail(17);
-        }
-        if (parentRelative && !moved) {
-            if (!clipSame && BoxMemo.clipDifferenceOutsideItems(m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy, 0, 0, null)) {
-                clipSame = true;
-            }
-            if (!relPosChanged && !scrollChanged && clipSame) {
-                BoxMemo.syncParentRelPositionOnly(m, box, curOx, curOy, curPox, curPoy, dx, dy);
-                return 1;
-            }
-            if (clipChainSame || moveOk) {
-                hitParentRelReuse = true;
-                hitRelPosChanged = relPosChanged;
-                hitScrollChanged = scrollChanged;
-                hitClipChanged = !clipSame;
-                hitReuseFragOnly = false;
-                hitReuseFracDx = 0f;
-                hitReuseFracDy = 0f;
-                hitPartDx = 0;
-                hitPartDy = 0;
-                hitNewRelX = curOx - curPox;
-                hitNewRelY = curOy - curPoy;
-                hitCurOx = curOx;
-                hitCurOy = curOy;
-                hitCurPox = curPox;
-                hitCurPoy = curPoy;
-                hitDx = dx;
-                hitDy = dy;
-                return 2;
-            }
-        }
-        if (!moved && clipSame) return 1;
-        hitPerItem = false;
-        if (exactFracCheck) {
-            if (!computeItemShifts(m, localDx, localDy, fragmentsOnly, parentRelative, curOx - curPox, curOy - curPoy, box)) return matchFail(4);
-            if (parentRelative
-                    && (!translating || (!hitPerItem && hitIntDx == 0 && hitIntDy == 0))
-                    && !BoxMemo.hasMovingShadowShape(m.items, true, fragmentsOnly)) {
-                boolean effClipSame = clipSame || BoxMemo.clipDifferenceOutsideItems(
-                        m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy,
-                        hitIntDx, hitIntDy, hitPerItem ? hitRects : null);
-                hitParentRelReuse = true;
-                hitRelPosChanged = relPosChanged;
-                hitScrollChanged = scrollChanged;
-                hitClipChanged = !effClipSame;
-                hitReuseFragOnly = fragmentsOnly;
-                hitReuseFracDx = localDx;
-                hitReuseFracDy = localDy;
-                hitPartDx = hitIntDx;
-                hitPartDy = hitIntDy;
-                hitNewRelX = curOx - curPox;
-                hitNewRelY = curOy - curPoy;
-                hitCurOx = curOx;
-                hitCurOy = curOy;
-                hitCurPox = curPox;
-                hitCurPoy = curPoy;
-                hitDx = dx;
-                hitDy = dy;
-                return 2;
-            }
-        } else {
-            hitIntDx = Math.round(localDx);
-            hitIntDy = Math.round(localDy);
-            if (parentRelative && !translating && localDx == hitIntDx && localDy == hitIntDy
-                    && !BoxMemo.hasMovingShadowShape(m.items, true, fragmentsOnly)) {
-                boolean effClipSame = clipSame || BoxMemo.clipDifferenceOutsideItems(
-                        m, clip, box, scrollState, hasOwnNode ? curOx : curPox, hasOwnNode ? curOy : curPoy,
-                        hitIntDx, hitIntDy, null);
-                hitParentRelReuse = true;
-                hitRelPosChanged = relPosChanged;
-                hitScrollChanged = scrollChanged;
-                hitClipChanged = !effClipSame;
-                hitReuseFragOnly = fragmentsOnly;
-                hitReuseFracDx = localDx;
-                hitReuseFracDy = localDy;
-                hitPartDx = hitIntDx;
-                hitPartDy = hitIntDy;
-                hitNewRelX = curOx - curPox;
-                hitNewRelY = curOy - curPoy;
-                hitCurOx = curOx;
-                hitCurOy = curOy;
-                hitCurPox = curPox;
-                hitCurPoy = curPoy;
-                hitDx = dx;
-                hitDy = dy;
-                return 2;
-            }
-        }
-        hitDx = localDx;
-        hitDy = localDy;
-        hitFragmentsOnly = fragmentsOnly;
-        hitRelPosChanged = relPosChanged;
-        hitScrollChanged = scrollChanged;
-        hitClipChanged = !clipSame;
-        hitNewRelX = curOx - curPox;
-        hitNewRelY = curOy - curPoy;
-        hitCurOx = curOx;
-        hitCurOy = curOy;
-        hitCurPox = curPox;
-        hitCurPoy = curPoy;
-        hitNewRelW = Math.round(box.x() + box.w()) - curOx;
-        hitNewRelH = Math.round(box.y() + box.h()) - curOy;
-        return 2;
-    }
-
-    /** {@link #computeItemShifts(BoxMemo, float, float, boolean, boolean, int, int, LayoutBox)} の互換版。 */
-    private boolean computeItemShifts(BoxMemo m, float dx, float dy, boolean fragmentsOnly) {
-        return computeItemShifts(m, dx, dy, fragmentsOnly, false, 0, 0, null);
-    }
-
-    /**
-     * 小数移動 {@code (dx, dy)} で、全移動対象項目について {@link PaintSupport#addElement} と同じ両端丸めを適用し、
-     * 整数移動量と整数寸法を求める。全項目の移動量と寸法が一致すれば一括平行移動、項目ごとにずれる場合も
-     * .5 境界を跨ぐ恐れがなければ項目ごとの丸め結果として平行移動を許す。
-     */
-    private boolean computeItemShifts(BoxMemo m, float dx, float dy, boolean fragmentsOnly,
-                                      boolean parentRel, int newRelX, int newRelY, LayoutBox box) {
-        List<DisplayItem> items = m.items;
-        float[] coords = m.itemCoords;
-        if (coords == null || coords.length != items.size() * 4) return false;
-        int n = items.size();
-        if (hitRects.length < n * 4) hitRects = new int[n * 4];
-        boolean hasShift = false;
-        int uniformX = 0, uniformY = 0;
-        boolean uniform = true;
-        for (int i = 0; i < n; i++) {
-            DisplayItem it = items.get(i);
-            int base = i * 4;
-            boolean isBoxNode = parentRel && i == 0 && it.type() == ElementType.NODE;
-            if (!isBoxNode && fragmentsOnly && !BoxMemo.movesWithFragment(it)) {
-                hitRects[base] = it.x();
-                hitRects[base + 1] = it.y();
-                hitRects[base + 2] = it.width();
-                hitRects[base + 3] = it.height();
-                continue;
-            }
-            int left, top, nw, nh;
-            if (isBoxNode) {
-                if (box != null) {
-                    float bdx = box.x() - m.nums[0], bdy = box.y() - m.nums[1];
-                    if ((bdx != 0f || bdy != 0f)
-                            && (BoxMemo.nearHalfBoundary(box.x(), m.nums[0], bdx) || BoxMemo.nearHalfBoundary(box.y(), m.nums[1], bdy)
-                            || BoxMemo.nearHalfBoundary(box.x() + box.w(), m.nums[0] + m.nums[2], bdx)
-                            || BoxMemo.nearHalfBoundary(box.y() + box.h(), m.nums[1] + m.nums[3], bdy))) {
-                        return false;
-                    }
-                    int boxOx = Math.round(box.x()), boxOy = Math.round(box.y());
-                    nw = Math.round(box.x() + box.w()) - boxOx;
-                    nh = Math.round(box.y() + box.h()) - boxOy;
-                } else {
-                    nw = it.width();
-                    nh = it.height();
-                }
-                left = newRelX;
-                top = newRelY;
-                hitRects[base] = left;
-                hitRects[base + 1] = top;
-                hitRects[base + 2] = nw;
-                hitRects[base + 3] = nh;
-                if (nw != it.width() || nh != it.height()) uniform = false;
-                continue;
-            } else {
-                float fx = coords[base], fy = coords[base + 1], fw = coords[base + 2], fh = coords[base + 3];
-                float nx = fx + dx, ny = fy + dy;
-                if (BoxMemo.nearHalfBoundary(nx, fx, dx) || BoxMemo.nearHalfBoundary(ny, fy, dy)
-                        || BoxMemo.nearHalfBoundary(nx + fw, fx + fw, dx) || BoxMemo.nearHalfBoundary(ny + fh, fy + fh, dy)) {
-                    return false;
-                }
-                left = Math.round(nx);
-                top = Math.round(ny);
-                nw = Math.round(nx + fw) - left;
-                nh = Math.round(ny + fh) - top;
-            }
-            hitRects[base] = left;
-            hitRects[base + 1] = top;
-            hitRects[base + 2] = nw;
-            hitRects[base + 3] = nh;
-            if (nw != it.width() || nh != it.height()) {
-                uniform = false;
-            } else {
-                int sx = left - it.x();
-                int sy = top - it.y();
-                if (!hasShift) {
-                    uniformX = sx;
-                    uniformY = sy;
-                    hasShift = true;
-                } else if (sx != uniformX || sy != uniformY) {
-                    uniform = false;
-                }
-            }
-        }
-        hitPerItem = !uniform;
-        hitIntDx = uniform && hasShift ? uniformX : 0;
-        hitIntDy = uniform && hasShift ? uniformY : 0;
-        return true;
-    }
-
-    /**
-     * 項目が平行移動だけで作り直せるか: 座標を持つのが x・y と（前回のクリップそのものの）クリップだけで、
-     * 箱の座標で決まる図形（影・グラデーション・clip-path・backdrop）や、画面に固定の背景を持たない。
-     */
-    private static final String[] EMPTY_STRINGS = new String[0];
-    private static final float[] EMPTY_FLOATS = new float[0];
-    private static final Object[] EMPTY_OBJECTS = new Object[0];
-
-    private BoxMemo remember(LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> items) {
-        return remember(null, box, clip, parentId, items, false);
-    }
-
-    private BoxMemo remember(BoxMemo reuse, LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> items, boolean itemsMutable) {
-        BoxMemo m = reuse != null ? reuse : new BoxMemo();
-        m.appliedDx = m.appliedDy = 0;
-        m.appliedExactDx = m.appliedExactDy = 0f;
-        m.appliedOriginDx = m.appliedOriginDy = 0;
-        m.appliedFragOnly = false;
-        m.appliedNonUniform = false;
-        m.itemCoords = null;
-        m.epoch = buildEpoch;
-        m.rootW = rootW;
-        m.rootH = rootH;
-        m.viewportSensitive = box.parent == null || box.style.usesViewportUnits();
-        m.parentBox = box.parent;
-        m.items = items; m.nodeKey = box.node.key();
-        m.itemsMutable = itemsMutable;
-        m.style = box.style;
-        m.firstLineStyle = box.firstLineStyle;
-        m.placeholderStyle = box.placeholderStyle;
-        m.ancestors = BoxMemo.ancestorStyles(box, m.ancestors);
-        m.nums = BoxMemo.fillNums(box, m.nums);
-        m.scrollW = box.scrollWidth();
-        m.scrollH = box.scrollHeight();
-        m.clip = clip;
-        m.parentId = parentId;
-        m.attrVersion = box.node.attrVersion();
-        m.displayText = box.displayText();
-        if (box.shapedLines() == null) {
-            m.shaped = null;
-        } else if (box.shapedLines().isEmpty()) {
-            m.shaped = List.of();
-        } else if (!(m.shaped instanceof List<?> prevShaped && prevShaped.equals(box.shapedLines()))) {
-            m.shaped = List.copyOf(box.shapedLines());
-        }
-        List<LayoutBox.InlineFragment> frags = box.inlineFragments;
-        int fn = frags.size();
-        if (fn == 0) {
-            m.fragText = EMPTY_STRINGS;
-            m.fragNums = EMPTY_FLOATS;
-            m.fragRefs = EMPTY_OBJECTS;
-        } else {
-            m.fragText = (m.fragText != null && m.fragText.length == fn) ? m.fragText : new String[fn];
-            m.fragNums = (m.fragNums != null && m.fragNums.length == fn * 8) ? m.fragNums : new float[fn * 8];
-            int refLen = 0;
-            for (int i = 0; i < fn; i++) {
-                List<LayoutBox> ps = frags.get(i).parents;
-                refLen += 5 + (ps == null ? 0 : ps.size() * 2);
-            }
-            Object[] refs = (m.fragRefs != null && m.fragRefs.length == refLen) ? m.fragRefs : new Object[refLen];
-            int r = 0;
-            for (int i = 0; i < fn; i++) {
-                LayoutBox.InlineFragment f = frags.get(i);
-                m.fragText[i] = f.text;
-                int n = i * 8;
-                m.fragNums[n] = f.x;
-                m.fragNums[n + 1] = f.y;
-                m.fragNums[n + 2] = f.w;
-                m.fragNums[n + 3] = f.h;
-                m.fragNums[n + 4] = f.baseline;
-                m.fragNums[n + 5] = f.startEdge ? 1f : 0f;
-                m.fragNums[n + 6] = f.endEdge ? 1f : 0f;
-                m.fragNums[n + 7] = f.descent;
-                refs[r++] = f.box;
-                refs[r++] = f.box != null ? f.box.style : null;
-                List<LayoutBox> ps = f.parents;
-                int pn = ps == null ? 0 : ps.size();
-                refs[r++] = pn;
-                for (int k = 0; k < pn; k++) {
-                    LayoutBox p = ps.get(k);
-                    refs[r++] = p;
-                    refs[r++] = p.style;
-                }
-                refs[r++] = f.firstLineOwner;
-                refs[r++] = f.firstLineOwner != null ? f.firstLineOwner.firstLineStyle : null;
-            }
-            m.fragRefs = refs;
-        }
-        m.canvasSource = box == canvasBackgroundSource;
-        m.interactive = box.hasInteractiveRules;
-        m.suppressShadow = suppressTextShadow;
-        m.translatable = BoxMemo.survivesTranslation(box, clip, items, parentRelative);
-        m.carriesContentExtent = BoxMemo.carriesContentExtent(items);
-        m.nodeAndTextOnly = BoxMemo.onlyNodeAndText(items);
-        m.parentRelative = parentRelative;
-        if (parentRelative) {
-            m.originX = Math.round(box.x());
-            m.originY = Math.round(box.y());
-            LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, parentId);
-            m.parentOriginX = pNode != null ? Math.round(pNode.x()) : 0;
-            m.parentOriginY = pNode != null ? Math.round(pNode.y()) : 0;
-        }
-        m.generation = generation;
-        return m;
-    }
 
     /** 直近の描画で、中身を 1 つの節にまとめたスクロールコンテナの記録（スクロールだけの更新で、表示リストを作り直さずに済ませる）。 */
     public List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> scrollContents() {
@@ -1043,88 +523,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     private void drawBoxSelfMemo(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
-        if (!MEMO_ENABLED || !memoizable(box)) {
-            STAT_UNMEMOIZABLE.increment();
-            fragIds.set(0);
-            drawBoxSelfUncached(elements, box, clipRect, parentId);
-            return;
-        }
-        BoxMemo m = boxMemo.get(box);
-        if (m != null && !m.nodeKey.equals(box.node.key())) m = null; // 箱のノードの鍵が変わった（項目の id・鍵が古い）
-        int kind;
-        if (useChangeStamps && m != null && !translating && stampClean(m, box, clipRect, parentId)) {
-            kind = 1;
-            STAT_STAMPED.increment();
-            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on()) {
-                int check = match(m, box, clipRect, parentId);
-                if (check != 1) throw new AssertionError("変更印は変わっていないと言ったが署名が違う: box=" + box.node.tag + "#" + box.node.key()
-                        + " match=" + check + " stamp=" + box.pathPaintStamp(buildSerial) + " epoch=" + m.epoch);
-            }
-        } else {
-            kind = m == null ? 0 : match(m, box, clipRect, parentId);
-        }
-        if (kind == 1) {
-            STAT_EXACT.increment();
-            m.appliedDx = m.appliedDy = 0;
-            m.appliedExactDx = m.appliedExactDy = 0f;
-            m.appliedOriginDx = m.appliedOriginDy = 0;
-            m.appliedFragOnly = false;
-            m.appliedNonUniform = false;
-            m.generation = generation;
-            m.epoch = buildEpoch;
-            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_BOX_MEMO.on() && !translating) BoxMemoVerifier.check(elements, m, box, list -> drawBoxSelfUncached(list, box, clipRect, parentId), fragIds);
-            appendItems(elements, m.items);
-            return;
-        }
-        if (kind == 2) { // 箱が動いただけ。記憶は動く前のまま残す（差が積もっても、丸めの誤差は 1 画素以内）
-            m.generation = generation;
-            if (hitParentRelReuse) {
-                m.epoch = buildEpoch;
-                BoxMemo.appendNodePatched(elements, m, box, clipRect, hitNewRelX, hitNewRelY,
-                        hitCurOx, hitCurOy, hitCurPox, hitCurPoy,
-                        hitRelPosChanged, hitScrollChanged, hitClipChanged,
-                        hitPartDx, hitPartDy, hitPerItem ? hitRects : null,
-                        hitReuseFracDx, hitReuseFracDy, hitReuseFragOnly);
-            } else {
-                m.appliedDx = hitIntDx;
-                m.appliedDy = hitIntDy;
-                m.appliedExactDx = hitDx;
-                m.appliedExactDy = hitDy;
-                m.appliedOriginDx = parentRelative ? (hitCurOx - m.originX) : 0;
-                m.appliedOriginDy = parentRelative ? (hitCurOy - m.originY) : 0;
-                m.appliedFragOnly = hitFragmentsOnly;
-                m.appliedNonUniform = hitPerItem;
-                BoxMemo.appendTranslated(elements, m, clipRect, hitDx, hitDy, hitIntDx, hitIntDy, hitFragmentsOnly,
-                        hitPerItem ? hitRects : null, parentRelative, hitNewRelX, hitNewRelY, hitNewRelW, hitNewRelH,
-                        hitCurOx, hitCurOy, box, hitScrollChanged, hitClipChanged);
-            }
-            translatedHits++;
-            STAT_TRANSLATED.increment();
-            return;
-        }
-        (m == null ? STAT_NEW : STAT_MISS).increment();
         fragIds.set(0); // 部品の ID は箱ごとに数える
-        int start = elements.size();
-        PaintSupport.CaptureList cap = elements instanceof PaintSupport.CaptureList c ? c : null;
-        if (cap != null) cap.beginCapture();
-        boolean committed = false;
-        float[] prevCoords = m != null ? m.itemCoords : null;
-        try {
-            drawBoxSelfUncached(elements, box, clipRect, parentId, m != null ? m.items : null);
-            int count = elements.size() - start;
-            List<DisplayItem> built = BoxMemo.sliceCopy(m, elements, start);
-            BoxMemo stored = remember(m, box, clipRect, parentId, built, count >= 3);
-            if (cap != null && cap.capturing) {
-                stored.itemCoords = (stored.translatable && !stored.carriesContentExtent)
-                        ? cap.finishCaptureReuse(prevCoords)
-                        : null;
-                if (cap.capturing) cap.discardCapture();
-            }
-            committed = true;
-            if (stored != m) boxMemo.put(box, stored);
-        } finally {
-            if (!committed && cap != null && cap.capturing) cap.discardCapture();
-        }
+        drawBoxSelfUncached(elements, box, clipRect, parentId, null);
     }
 
     private static RenderMeta reuseMeta(RenderMeta prev, ClipRect clipRect, Corners borderRadii,
@@ -1548,27 +948,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     // Segmented DisplayList: 差分スライスパッチ API (P0-4 / 戦略 T2)
     // ==========================================
 
-    ClipRect clipForBox(LayoutBox box) {
-        BoxMemo m = boxMemo.get(box);
-        if (m != null && m.clip != null) return m.clip;
-        // 記憶が無い箱（記憶を切った構成・記憶できない箱）は、親の中身の clip を組み立て直す（A6b ④）。
-        // 以前は祖先の記憶の clip を探していたが、それは祖先「自身の」項目の clip で、祖先が overflow で切る箱（スクロールする箱）なら
-        // 子の clip とは違う。祖先にも記憶が無いと null になり、:hover が外れて描き直した行がスクロールする箱の外へはみ出して描かれた
-        return box.parent != null ? order.contentClipOf(box.parent) : null;
-    }
-
     String contentParentIdOf(LayoutBox box) {
         if (box == null) return null;
         PaintOrder.ScrollContent sc = order.scrollContentOf(box);
         if (sc != null) return sc.contentId;
         return box.node != null ? box.node.key() : null;
-    }
-
-    String parentIdForBox(LayoutBox box) {
-        BoxMemo m = boxMemo.get(box);
-        if (m != null && m.parentId != null) return m.parentId;
-        if (box.parent == null) return null;
-        return contentParentIdOf(box.parent);
     }
 
 }

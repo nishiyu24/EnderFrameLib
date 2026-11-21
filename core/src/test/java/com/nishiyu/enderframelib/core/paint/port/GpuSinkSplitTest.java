@@ -35,8 +35,7 @@ class GpuSinkSplitTest {
             assertTrue(layer.contains(n), "層の口に無い: " + n);
             assertFalse(sink.contains(n) || replay.contains(n), "層の口の外にある: " + n);
         }
-        for (String n : Set.of("spanReplay", "spanBegin", "spanEnd", "beginDiffPatch", "canPatchSpan", "patchSpanBegin",
-                "patchSpanEnd", "abortDiffPatch", "endDiffPatch", "snapsScrollOffsets")) {
+        for (String n : Set.of("spanReplay", "spanBegin", "spanEnd", "snapsScrollOffsets")) {
             assertTrue(replay.contains(n), "再生の口に無い: " + n);
             assertFalse(sink.contains(n) || layer.contains(n), "再生の口の外にある: " + n);
         }
@@ -59,7 +58,6 @@ class GpuSinkSplitTest {
         assertTrue(s.endScrollLayer(null));
         assertFalse(s.spanReplay(0, false));
         assertFalse(s.spanBegin(0));
-        assertFalse(s.beginDiffPatch());
         assertFalse(s.snapsScrollOffsets());
         assertEquals(4, GpuSink.MAX_CLIPS);
     }

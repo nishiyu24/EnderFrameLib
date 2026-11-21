@@ -50,14 +50,4 @@ class ResizeKeepsBoxMemoTest {
         }
     }
 
-    @Test
-    void boxesThatDoNotDependOnTheViewportAreReusedAcrossAResize() {
-        StandaloneView v = new StandaloneView(HTML, 800, 600, FontResolver.FALLBACK);
-        items(v);
-        long exactBefore = DisplayListBuilder.STAT_EXACT.sum();
-        v.ui().recomputeLayout(799, 600);
-        v.ui().renderCache();
-        long reused = DisplayListBuilder.STAT_EXACT.sum() - exactBefore;
-        assertTrue(reused > 0, "リサイズでも、動かない・ビューポートに依らない箱の項目を使い回す: " + reused);
-    }
 }

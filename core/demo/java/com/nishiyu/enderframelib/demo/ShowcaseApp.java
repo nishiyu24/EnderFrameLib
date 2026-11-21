@@ -226,9 +226,7 @@ public final class ShowcaseApp {
             }
             // Windows の ThreadMXBean は 15.6ms 刻みなので、中央値ではなく合計から平均を出す
             var D = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.class;
-            System.out.println("memo: exact=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_EXACT.sum() + " translated=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_TRANSLATED.sum()
-                    + " miss=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_MISS.sum() + " new=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_NEW.sum()
-                    + " unmemoizable=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_UNMEMOIZABLE.sum());
+            System.out.println("memo: fragment hits=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() + " ownReused=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentOwnReused());
             System.out.println("scroll: translated=" + com.nishiyu.enderframelib.common.UiView.STAT_SCROLL_TRANSLATED.sum() + " fallback=" + com.nishiyu.enderframelib.common.UiView.STAT_SCROLL_FALLBACK.sum()
                     + " other=" + com.nishiyu.enderframelib.common.UiView.STAT_REPOSITION_OTHER.sum());
             double cpuMean = java.util.Arrays.stream(cpu).sum() / n, wallMean = java.util.Arrays.stream(wall).sum() / n;

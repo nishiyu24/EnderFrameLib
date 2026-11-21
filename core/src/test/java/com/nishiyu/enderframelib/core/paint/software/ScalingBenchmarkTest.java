@@ -124,14 +124,11 @@ class ScalingBenchmarkTest {
     @Test
     void scaling() {
         // テスト JVM は検証モード（全箱の署名の再計算・float の再走査）が常時有効で、計測が数倍に膨らむ。測る間は切る
-        boolean stamps = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on();
         boolean floats = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(false);
         com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(false);
         try {
             run();
         } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.set(stamps);
             com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(floats);
         }
     }

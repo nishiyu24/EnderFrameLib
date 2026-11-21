@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.kernel.Shortcut;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
@@ -14,7 +15,7 @@ import java.util.List;
  * 層（付録 E）へ組み立てて 1 本の列に展開する。経路はこの 1 本で、増分の更新（パッチ）は持たない。
  *
  * <ul>
- *   <li>箱の項目は {@code painter.draw}（箱ごとの記憶 {@code BoxMemo} つき）で作る。中身の文脈（クリップ・親 id・スクロールの節の登録）は
+ *   <li>箱の項目は {@code painter.draw} で作る（文脈が前回と同じなら、断片の記憶の項目をそのまま使う）。中身の文脈（クリップ・親 id・スクロールの節の登録）は
  *       {@link PaintOrder#enterChildren} が決める。</li>
  *   <li>窓の外・画面外の省略、箱ごとの範囲（{@code dl*}）・描画順の一覧・スクロールバーの箱の記録は、組み立てたあとの展開で書く。</li>
  *   <li>レイヤーの錨（{@link FragSeq.Layered}）・マスクの項目・Top Layer の持ち上げ（{@link Fragment.Extras}）も、断片の組み立ての中で表す。</li>
@@ -35,13 +36,20 @@ final class FragmentPaint {
         /** {@link #kids} と同じ並びの、子の記憶（まだ無い子は null）。親の文脈が同じとき、子の確認がハッシュ引きなしで済む。 */
         Memo[] kidMemos;
         PaintOrder.ScrollContent[] scrolls;
+        /** 箱自身の項目（{@link Fragment#own}）を作ったときの、箱の外の入力（属性・中身の大きさ・先頭の断片・描画側の旗）。 */
+        int attrVersion;
+        float scrollW, scrollH, f0x, f0y;
+        boolean canvasSource, interactive, suppressShadow;
+        Object placeholder;
+        /** 箱自身の項目を作るときに登録されたスクロールの節（項目を使い回すとき再登録する）。 */
+        PaintOrder.ScrollContent[] ownScrolls;
     }
 
     private static final LayoutBox[] NO_BOXES = new LayoutBox[0];
     private static final PaintOrder.ScrollContent[] NO_SCROLLS = new PaintOrder.ScrollContent[0];
 
     /** 診断: 記憶が当たった数・作り直した数（テストと計測用）。 */
-    static final java.util.concurrent.atomic.LongAdder MEMO_HITS = new java.util.concurrent.atomic.LongAdder(),
+    static final java.util.concurrent.atomic.LongAdder MEMO_HITS = new java.util.concurrent.atomic.LongAdder(), OWN_REUSED = new java.util.concurrent.atomic.LongAdder(),
             MEMO_MISSES = new java.util.concurrent.atomic.LongAdder();
 
     private final java.util.IdentityHashMap<LayoutBox, Memo> memos = new java.util.IdentityHashMap<>();
@@ -70,7 +78,7 @@ final class FragmentPaint {
         int base = elements.size();
         DisplayItem[] flat = new DisplayItem[top.size()];
         top.emitted.copyTo(flat, 0, (box, s, e) -> recordOwner(box, base + s, base + e));
-        DisplayListBuilder.appendItems(elements, Arrays.asList(flat));
+        elements.addAll(Arrays.asList(flat));
         return owners;
     }
 
@@ -169,6 +177,7 @@ final class FragmentPaint {
     /** 親の文脈が同じとき、子の文脈の確認（位置・大きさ・クリップ・動く祖先・親 id・スクロール量）。子の並びは親が見ている。 */
     private boolean sameContextCheap(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving) {
         if (m.parent != box.parent || m.clip != clip || m.moving != moving || !java.util.Objects.equals(m.parentId, parentId)) return false;
+        if (m.attrVersion != box.node.attrVersion()) return false;
         if (Float.compare(m.x, box.x()) != 0 || Float.compare(m.y, box.y()) != 0 || Float.compare(m.w, box.w()) != 0 || Float.compare(m.h, box.h()) != 0) return false;
         return scrollSame(m);
     }
@@ -223,12 +232,23 @@ final class FragmentPaint {
             m.kidMemos = new Memo[m.kids.length];
         }
         m.owners = ownersHere;
+        m.ownScrolls = lastOwnScrolls;
+        m.attrVersion = box.node.attrVersion();
+        m.scrollW = box.scrollWidth();
+        m.scrollH = box.scrollHeight();
+        float fx = 0f, fy = 0f;
+        if (!box.inlineFragments.isEmpty()) {
+            LayoutBox.InlineFragment f0 = box.inlineFragments.get(0);
+            fx = f0.x;
+            fy = f0.y;
+        }
+        m.f0x = fx;
+        m.f0y = fy;
+        m.canvasSource = box == b.canvasBackgroundSource;
+        m.interactive = box.hasInteractiveRules;
+        m.suppressShadow = b.suppressTextShadow;
+        m.placeholder = box.placeholderStyle;
         m.scrolls = order.scrollContentCount() == scroll0 ? NO_SCROLLS : order.scrollContentsSince(scroll0).toArray(NO_SCROLLS);
-    }
-
-    /** 箱の記憶の掃除が、断片の記憶が生きている箱の項目の記憶を残すための問い合わせ。 */
-    boolean hasMemo(LayoutBox box) {
-        return memos.containsKey(box);
     }
 
     private static boolean sameKids(LayoutBox[] a, List<LayoutBox> b) {
@@ -251,6 +271,37 @@ final class FragmentPaint {
         }
     }
 
+    private PaintOrder.ScrollContent[] lastOwnScrolls = NO_SCROLLS;
+
+    /** 箱自身の項目が前回のまま使えるか: 箱の外の入力（属性・中身の大きさ・先頭の断片・描画側の旗）が前回と同じで、記憶できる種類の箱。 */
+    private boolean ownReusable(Memo m, LayoutBox box) {
+        // 子の確認は親の文脈が同じなら位置・クリップ等だけで済ませるので、箱自身（と祖先のスタイル）の印はここで見る
+        if (box.pathPaintStamp(b.buildSerial) > m.epoch) return false;
+        if (!DisplayListBuilder.memoizable(box) || m.attrVersion != box.node.attrVersion()) return false;
+        if (Float.compare(m.scrollW, box.scrollWidth()) != 0 || Float.compare(m.scrollH, box.scrollHeight()) != 0) return false;
+        float fx = 0f, fy = 0f;
+        if (!box.inlineFragments.isEmpty()) {
+            LayoutBox.InlineFragment f0 = box.inlineFragments.get(0);
+            fx = f0.x;
+            fy = f0.y;
+        }
+        return Float.compare(m.f0x, fx) == 0 && Float.compare(m.f0y, fy) == 0
+                && m.canvasSource == (box == b.canvasBackgroundSource) && m.interactive == box.hasInteractiveRules
+                && m.suppressShadow == b.suppressTextShadow && m.placeholder == box.placeholderStyle;
+    }
+
+    /** 検証モード（{@code VERIFY_BOX_MEMO}）: 使い回した項目を、記憶を使わず作り直して比べる。 */
+    private void verifyOwn(LayoutBox box, ClipRect clip, String parentId, DisplayItem[] reused) {
+        if (order.scrollContentOf(box) != null) return; // 作り直すとスクロールの節を二重に登録するので、検証しない
+        int saved = b.fragIds.get();
+        scratch.resetForBuild();
+        order.drawSelf(scratch, box, clip, parentId);
+        DisplayItem[] fresh = scratch.toArray(new DisplayItem[0]);
+        b.fragIds.set(saved);
+        String diff = OwnItemsVerifier.firstDifference(List.of(reused), List.of(fresh));
+        if (diff != null) throw new AssertionError("箱の項目の記憶が古い: box=" + box.node.tag + "#" + box.node.key() + " " + diff);
+    }
+
     /** {@code stale}: 文脈は同じで部分木だけが変わった前回の記憶（無ければ null）。 */
     private Fragment buildFresh(LayoutBox box, ClipRect clip, String parentId, boolean moving, Memo stale) {
         Fragment.Kind kind = Fragment.kindOf(box, order);
@@ -262,6 +313,7 @@ final class FragmentPaint {
 
         DisplayItem[] own = Fragment.NONE;
         boolean drawn = false;
+        PaintOrder.ScrollContent[] ownScrolls = NO_SCROLLS;
         if (hasSelf) {
             owners++;
             if (cull && layer == null && !moving && !b.inWindowGeometry(box)) {
@@ -270,9 +322,20 @@ final class FragmentPaint {
                 // 子の親相対の原点は、親の「描いた」印（paintCulled）を読んで決まる（PaintOrder.effectiveParentNodeBox）。旧経路は親を
                 // 先に実行して印を書いてから子を実行するので、ここでも子を描く前に書く（範囲 dl* は展開のとき）
                 box.paintCulled = false;
-                scratch.resetForBuild();
-                order.drawSelf(scratch, box, clip, parentId);
-                own = scratch.toArray(new DisplayItem[0]);
+                if (stale != null && stale.frag.drawn && ownReusable(stale, box)) {
+                    // 文脈も箱の外の入力も前回と同じ（部分木の中だけが変わった）: 箱自身の項目は前回のものをそのまま使う
+                    OWN_REUSED.increment();
+                    own = stale.frag.own;
+                    ownScrolls = stale.ownScrolls;
+                    for (PaintOrder.ScrollContent c : ownScrolls) order.reregister(c);
+                    if (Shortcut.VERIFY_BOX_MEMO.on()) verifyOwn(box, clip, parentId, own);
+                } else {
+                    int scroll0 = order.scrollContentCount();
+                    scratch.resetForBuild();
+                    order.drawSelf(scratch, box, clip, parentId);
+                    own = scratch.toArray(new DisplayItem[0]);
+                    ownScrolls = order.scrollContentCount() == scroll0 ? NO_SCROLLS : order.scrollContentsSince(scroll0).toArray(NO_SCROLLS);
+                }
                 drawn = true;
             }
         }
@@ -284,6 +347,7 @@ final class FragmentPaint {
             after = scratch.toArray(new DisplayItem[0]);
         }
         int z = kind == Fragment.Kind.STACKING ? (PaintOrder.isZIndexAuto(box) ? 0 : box.zIndex()) : 0;
+        lastOwnScrolls = ownScrolls; // 直後に build が記憶へ移す（再帰の後に書くので上書きされない）
         return new Fragment(box, own, after, drawn, kind, z, layer, DisplayListBuilder::withLayer, extras(box, kind, layer), kids, Fragment.aggregateFrom(stale == null ? null : stale.frag, kids));
     }
 
@@ -333,8 +397,6 @@ final class FragmentPaint {
 
     /** 画面外・窓の外で項目を省いた箱の記録（旧経路の {@code executeTasks} と同じ）。 */
     private void markCulled(LayoutBox owner) {
-        BoxMemo kept = b.boxMemo.get(owner);
-        if (kept != null) kept.generation = b.generation; // 省いた箱の記憶は、画面に戻ってくるまで残す
         owner.dlStart = -1;
         owner.paintCulled = true;
         owner.dlEnd = -1;

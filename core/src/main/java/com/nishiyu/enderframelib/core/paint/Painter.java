@@ -39,12 +39,6 @@ public interface Painter {
     default void beginRetained(DisplayItem node, int nodeIndex, int from, int to) {}
 
     /**
-     * 前フレームと項目構成が同一で、変更された位置が {@code indices[0..count)} に限られているとき、
-     * 変更分だけを高速に再描画できたら true。できない（または非対応の）ときは false を返して通常走査へフォールバックする。
-     */
-    default boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) { return false; }
-
-    /**
      * {@link RetainPlan#RECORD}: 範囲を描き終えた。層を保存して重ねたら true。保持できなかった（描き方が層に向かない）なら、層を捨てて false を返す。
      * false のとき、ドライバは同じ範囲をふつうに描き直す。
      */

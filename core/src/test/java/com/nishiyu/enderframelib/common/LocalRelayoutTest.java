@@ -31,7 +31,6 @@ public class LocalRelayoutTest {
     @AfterEach
     void restore() {
         com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withInPlaceRestyleRelayout(true));
-        com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(true);
     }
 
     private static String mixed() {
@@ -219,10 +218,10 @@ public class LocalRelayoutTest {
         v.ui().flushInvalidation();
         HtmlNode fill = v.root().getNodeById("fill");
         for (int i = 0; i < 30; i++) { fill.setAttribute("style", "width:" + (i % 100) + "%"); v.ui().flushInvalidation(); }
-        long stamped0 = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum();
+        long stamped0 = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits();
         long t0 = System.nanoTime();
         for (int i = 0; i < ITERS; i++) { fill.setAttribute("style", "width:" + (i % 100) + "%"); v.ui().flushInvalidation(); }
         long ms = (System.nanoTime() - t0) / 1_000_000;
-        System.out.println("[local-relayout benchmark] 1500 rows, 200 style-width updates: " + ms + "ms; stamped-skips/frame=" + (com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum() - stamped0) / ITERS + "; " + v.ui().lastBreakdown());
+        System.out.println("[local-relayout benchmark] 1500 rows, 200 style-width updates: " + ms + "ms; stamped-skips/frame=" + (com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() - stamped0) / ITERS + "; " + v.ui().lastBreakdown());
     }
 }

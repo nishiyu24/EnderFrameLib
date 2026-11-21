@@ -50,7 +50,7 @@ surface_test.html/scrollBack	ed469f20
 surface_test.html/textLong	e91cc18b
 surface_test.html/textShort	6c46669e
 surface_test.html/textBack	16c2f6cc
-surface_test.html/resize700	237d5262
+surface_test.html/resize700	22d46b9e
 animation_test.html/open	d788c340
 animation_test.html/hover0a	445ab846
 animation_test.html/hover0b	702cdb2e
@@ -67,7 +67,7 @@ animation_test.html/scrollBack	ab477202
 animation_test.html/textLong	10bd690
 animation_test.html/textShort	54bd5e7f
 animation_test.html/textBack	96750618
-animation_test.html/resize700	2f76d4fa
+animation_test.html/resize700	cb14e20b
 media_test.html/open	fc3571ed
 media_test.html/hover0a	fc3571ed
 media_test.html/hover0b	fc3571ed

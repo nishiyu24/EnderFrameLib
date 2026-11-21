@@ -121,13 +121,9 @@ final class BoxAnimation {
         }
         // 結果はスタイルと（@keyframes・基準の大きさと色）だけで決まるので、スタイルの置き場に覚える。
         // 描画のたびに全箱の animation を字句解析し直していた（表示リスト作りの 3 割）
-        if (NO_MEMO) return resolveAnimationDef(style, baseW, baseH, baseColor, baseBgColor);
         Object memoKey = new AnimKey(keyframes, keyframes.size(), baseW, baseH, baseColor, baseBgColor);
         return style.paintMemo(memoKey, k -> resolveAnimationDef(style, baseW, baseH, baseColor, baseBgColor));
     }
-
-    /** 切り分け用: {@code -Denderframe.paint.nomemo=true} でメモを使わない。 */
-    private static final boolean NO_MEMO = EngineFlags.NO_PAINT_MEMO;
 
     /** {@link #parseAnimationDef} のメモのキー。{@code @keyframes} の表は同一性で比べる（中身の比較は重い）。 */
     private static final class AnimKey {

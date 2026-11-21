@@ -385,11 +385,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
             recordOwner = null;
             return GpuLayerAttempt.endScroll(route.current(), retainInfo.get(nodeIndex));
         }
-
-        @Override
-        public boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) {
-            return SoftwareRenderBackend.this.tryPatchItems(items, indices, count);
-        }
     };
 
     // ------------------------------------------------------------------ スクロール層の保持
@@ -690,14 +685,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
         AnimatedValues anim = driver.animAt(index);
         boolean canFastStatic = index >= 0 && !recordExtents && !partialActive && recordOwner == null && driver.idleAt(index);
         GpuSink spanSink = null;
-        if (canFastStatic && index < spanEl.length && ItemDiff.unchanged(spanEl[index], el, spanEpoch[index]) && spanRes[index] == res) {
-            if (spanCulled[index]) {
-                if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && fastClipUnchanged(index, spanClip[index])) {
+        if (canFastStatic && replay.sameItemAndPose(index, el, res)) {
+            if (replay.culled(index)) {
+                if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && fastClipUnchanged(index, replay.clip(index))) {
                     culledItems++;
                     return;
                 }
-            } else if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_GL_REPLAY.on() && replayableType(el.type()) && spanFlat[index] == flat
-                    && fastClipUnchanged(index, spanClip[index])) {
+            } else if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_GL_REPLAY.on() && replayableType(el.type()) && replay.flat(index) == flat
+                    && fastClipUnchanged(index, replay.clip(index))) {
                 spanSink = route.current();
                 if (spanSink != null && spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
                     cpuOpsOrdered = cpuOps;
@@ -722,11 +717,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (clip.empty()) return;
         if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && outsideClip(el, res.pose(), clip)) {
             if (canFastStatic) {
-                ensureSpanKeys(index);
-                setSpanItem(index, el);
-                spanRes[index] = res;
-                spanClip[index] = clip;
-                spanCulled[index] = true;
+                replay.remember(index, el, res, clip, 1f, true);
             }
             culledItems++;
             return;
@@ -738,8 +729,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             boolean idle = driver.idleAt(index);
             if (spanSink == null) spanSink = route.current();
             if (spanSink != null) {
-                ensureSpanKeys(index);
-                if (idle && !spanCulled[index] && ItemDiff.unchanged(spanEl[index], el, spanEpoch[index]) && spanRes[index] == res && spanClip[index] == clip && spanFlat[index] == flat) {
+                if (idle && replay.replayable(index, el, res, clip, flat)) {
                     if (spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
                         cpuOpsOrdered = cpuOps;
                         return;
@@ -747,136 +737,26 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 }
                 if (!spanSink.spanBegin(index)) spanSink = null;
             }
-        } else if (index >= 0 && index < spanEl.length) {
-            spanEl[index] = null;
-            spanCulled[index] = false;
+        } else {
+            replay.forget(index);
         }
         long cpuBefore = cpuOps;
         drawItemBody(el, anim, res, clip, opacity);
         if (spanSink != null) {
             boolean ok = cpuOps == cpuBefore;
             spanSink.spanEnd(index, ok);
-            if (ok) {
-                setSpanItem(index, el);
-                spanRes[index] = res;
-                spanClip[index] = clip;
-                spanFlat[index] = flat;
-                spanCulled[index] = false;
-            } else {
-                spanEl[index] = null;
-                spanCulled[index] = false;
-            }
+            // 動いている最中の出力は、次のフレームの止まった出力と同じとは限らない（色の補間の終わりの 1 フレームなど）ので、止まっている項目だけ覚える
+            if (ok && driver.idleAt(index)) replay.remember(index, el, res, clip, flat, false);
+            else replay.forget(index);
         }
-    }
-
-    private boolean tryPatchItems(List<DisplayItem> items, int[] indices, int count) {
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.on() || !com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_GL_REPLAY.on()) return false;
-        if (recordExtents || partialActive || recordOwner != null) return false;
-        if (!route.beginDiffPatch()) return false;
-        syncClipGeneration();
-        boolean okAll = true;
-        try {
-            for (int k = 0; k < count; k++) {
-                int index = indices[k];
-                DisplayItem el = items.get(index);
-                if (el.type() == ElementType.NODE) {
-                    Resolved before = driver.peekPrevRes(index);
-                    Resolved res = driver.resolveAt(index);
-                    if (before == null || before != res || !res.groups().isEmpty()) {
-                        okAll = false;
-                        break;
-                    }
-                    continue;
-                }
-                Resolved res = driver.resolveAt(index);
-                if (!res.groups().isEmpty()) {
-                    okAll = false;
-                    break;
-                }
-                if (!replayableType(el.type())) {
-                    okAll = false;
-                    break;
-                }
-                float flat = 1f;
-                if (index < spanEl.length && spanEl[index] != null && !spanCulled[index] && spanFlat[index] != 1f) {
-                    okAll = false;
-                    break;
-                }
-                boolean visible = res.opacity() > 0.005f && res.residual() > 0.005f;
-                AnimatedValues anim = driver.animAt(index);
-                Clip clip = visible ? buildClip(index, el, anim) : null;
-                boolean culled = !visible || clip.empty() || (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && outsideClip(el, res.pose(), clip));
-                if (culled) {
-                    if (route.canPatchSpan(index)) {
-                        if (!route.patchSpanBegin(index) || !route.patchSpanEnd(index, true)) {
-                            okAll = false;
-                            break;
-                        }
-                        ensureSpanKeys(index);
-                        setSpanItem(index, el);
-                        spanRes[index] = res;
-                        spanClip[index] = clip;
-                        spanFlat[index] = flat;
-                        spanCulled[index] = false;
-                    } else if (index < spanEl.length && spanEl[index] != null && !spanCulled[index]) {
-                        okAll = false;
-                        break;
-                    } else if (clip != null) {
-                        ensureSpanKeys(index);
-                        setSpanItem(index, el);
-                        spanRes[index] = res;
-                        spanClip[index] = clip;
-                        spanFlat[index] = flat;
-                        spanCulled[index] = true;
-                    }
-                    continue;
-                }
-                if (!route.patchSpanBegin(index)) {
-                    okAll = false;
-                    break;
-                }
-                long cpuBefore = cpuOps;
-                drawItemBody(el, anim, res, clip, res.residual());
-                if (cpuOps != cpuBefore || !route.patchSpanEnd(index, true)) {
-                    okAll = false;
-                    break;
-                }
-                ensureSpanKeys(index);
-                setSpanItem(index, el);
-                spanRes[index] = res;
-                spanClip[index] = clip;
-                spanFlat[index] = flat;
-                spanCulled[index] = false;
-            }
-        } catch (RuntimeException ex) {
-            route.abortDiffPatch();
-            throw ex;
-        }
-        if (!okAll) {
-            route.abortDiffPatch();
-            return false;
-        }
-        route.endDiffPatch();
-        cpuOpsOrdered = cpuOps;
-        return true;
     }
 
     /** CPU の図形描画を行った回数（項目単位の再生が、項目の描画に CPU 描画が混じったかを知るため）。 */
     long cpuOps;
     /** 再生の直前に、CPU の層を重ねる順序づけを済ませた時点の {@link #cpuOps}（それ以降に CPU 描画があれば、再生の前に順序づけが要る）。 */
     private long cpuOpsOrdered;
-    private DisplayItem[] spanEl = new DisplayItem[0];
-    /** {@link #spanEl} の項目を覚えたときの {@link DisplayItem#paintEpoch()}（塗りがセルへ書かれたら同じ項目でも再生しない）。 */
-    private int[] spanEpoch = new int[0];
-
-    private void setSpanItem(int index, DisplayItem el) {
-        spanEl[index] = el;
-        spanEpoch[index] = el.paintEpoch();
-    }
-    private Resolved[] spanRes = new Resolved[0];
-    private Clip[] spanClip = new Clip[0];
-    private float[] spanFlat = new float[0];
-    private boolean[] spanCulled = new boolean[0];
+    /** 項目ごとの再生の鍵（{@link ReplayKeys}）。 */
+    private final ReplayKeys replay = new ReplayKeys();
 
     private boolean fastClipUnchanged(int index, Clip cachedClip) {
         if (cachedClip == null || index >= clipCache.length) return false;
@@ -890,17 +770,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
             if ((ow < 0 ? null : driver.resolveAt(ow)) != ce.ownerRes[k]) return false;
         }
         return true;
-    }
-
-    private void ensureSpanKeys(int index) {
-        if (index < spanEl.length) return;
-        int n = Math.max(index + 1, spanEl.length * 2 + 64);
-        spanEl = java.util.Arrays.copyOf(spanEl, n);
-        spanEpoch = java.util.Arrays.copyOf(spanEpoch, n);
-        spanRes = java.util.Arrays.copyOf(spanRes, n);
-        spanClip = java.util.Arrays.copyOf(spanClip, n);
-        spanFlat = java.util.Arrays.copyOf(spanFlat, n);
-        spanCulled = java.util.Arrays.copyOf(spanCulled, n);
     }
 
     /** 再生してよい項目の種類（出力が GPU の図形・字形だけで、画像・入力・時間に依らないもの）。 */

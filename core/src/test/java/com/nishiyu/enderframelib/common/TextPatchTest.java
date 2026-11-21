@@ -193,21 +193,17 @@ public class TextPatchTest {
         String[] ids = {"hp", "para", "hp", "para", "para", "hp", "hp", "para"};
         String[] texts = {"HP 9", "now this paragraph is long enough that it wraps onto several lines in a 150px box",
                 "HP 100 / 100", "tiny", "wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap", "7", "8", "end"};
-        long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum() + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits();
-        try {
+        long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentOwnReused();
+        {
             for (int i = 0; i < ids.length; i++) {
-                com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(true);
                 ((HtmlText) textChild(stamped, ids[i])).setData(texts[i]);
                 List<String> a = sigs(stamped);
-                com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(false);
                 ((HtmlText) textChild(plain, ids[i])).setData(texts[i]);
                 List<String> b = sigs(plain);
                 assertEquals(b, a, "手順 " + i + " (" + ids[i] + ")");
             }
-        } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(true);
         }
-        long skipped = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum() + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() - before;
+        long skipped = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentOwnReused() - before;
         assertTrue(skipped > 100, "変更印で比較を省いた箱の数: " + skipped);
     }
 
