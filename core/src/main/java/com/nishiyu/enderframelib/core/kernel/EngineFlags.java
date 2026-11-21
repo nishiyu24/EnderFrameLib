@@ -61,9 +61,6 @@ public final class EngineFlags {
     /** {@code enderframe.layout.nowidthreuse}: LayoutBox.widthIndependentReuse（使う所: {@code LayoutBox}） */
     public static final boolean WIDTH_INDEPENDENT_REUSE = !Boolean.getBoolean("enderframe.layout.nowidthreuse");
 
-    /** {@code enderframe.paint.nochunks}: PaintOrder.chunksEnabled（使う所: {@code PaintOrder}） */
-    public static final boolean PAINT_CHUNKS = !Boolean.getBoolean("enderframe.paint.nochunks");
-
     /** {@code enderframe.paint.nocullrange}: PaintSceneDriver.cullRecordedRanges（使う所: {@code PaintSceneDriver}） */
     public static final boolean CULL_RECORDED_RANGES = !Boolean.getBoolean("enderframe.paint.nocullrange");
 
@@ -75,9 +72,6 @@ public final class EngineFlags {
 
     /** {@code enderframe.paint.noparentrelative}: EngineContext.parentRelativeDisplayItems（B3 の親相対化）（使う所: {@code EngineContext}） */
     public static final boolean PARENT_RELATIVE = !Boolean.getBoolean("enderframe.paint.noparentrelative");
-
-    /** {@code enderframe.paint.noprune}: DisplayListBuilder.PRUNE_ENABLED（使う所: {@code DisplayListBuilder}） */
-    public static final boolean PRUNE = !Boolean.getBoolean("enderframe.paint.noprune");
 
     /** {@code enderframe.paint.noreplay}: SoftwareRenderBackend.glReplay（使う所: {@code SoftwareRenderBackend}） */
     public static final boolean SOFT_GL_REPLAY = !Boolean.getBoolean("enderframe.paint.noreplay");

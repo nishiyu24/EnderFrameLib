@@ -51,7 +51,6 @@ import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
-import com.nishiyu.enderframelib.core.paint.RenderTask;
 
 /**
  * 箱の記憶。{@code generation} は最後に使われた描画の世代（古いものは描画の終わりに捨てる）。
@@ -112,8 +111,6 @@ static final int NUMS_LENGTH = 13;
     boolean parentRelative;
     int originX, originY;
     int parentOriginX, parentOriginY;
-    /** この箱を含む、保持された部分木。再利用されている間は、箱ごとに世代を書かなくても記憶は捨てられない。 */
-    Chunk chunk;
     boolean itemsMutable;
 
 

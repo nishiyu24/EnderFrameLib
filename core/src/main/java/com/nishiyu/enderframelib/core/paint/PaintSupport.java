@@ -101,16 +101,6 @@ final class PaintSupport {
         RenderMeta finalMeta = meta == null && hints == RenderHints.NONE ? null : (meta != null ? meta : RenderMeta.EMPTY).withHints(hints);
         long itemKey = key == 0L ? DisplayItem.keyOf(id) : key;
         // 差分パッチの再構築: 前の項目が塗り以外同じなら、作らずに塗りだけを書いて使い回す（B9 の M3b）。
-        // 文字は下ごしらえが項目の同一性で引くので対象外
-        if (elements instanceof CaptureList reuseCap && reuseCap.reusePrev != null && type != ElementType.TEXT) {
-            DisplayItem prev = reuseCap.reusable(itemKey);
-            if (prev != null && prev.sameExceptPaint(id, baseNodeId, type, left, top, width, height, text, events.attrs(), radius,
-                    tx, ty, sx, sy, rot, trans, animDef, fitMode, finalMeta, itemKey)) {
-                if (prev.repaint(color, bgColor, opacity)) DisplayListBuilder.STAT_REPAINT_IN_PLACE.increment();
-                elements.add(prev);
-                return;
-            }
-        }
         elements.add(new DisplayItem(id, baseNodeId, type, left, top, width, height, text, color, bgColor, events.attrs(), radius, opacity, tx, ty, sx, sy, rot, trans, animDef, fitMode, finalMeta, itemKey));
     }
 
@@ -122,30 +112,6 @@ final class PaintSupport {
         private static final float[] EMPTY_COORDS = new float[0];
         boolean capturing;
         int originX, originY;
-        /** 差分パッチで再構築する箱の前の項目（無ければ null）。{@link #addElement} が塗り以外同じ項目をここから使い回す。 */
-        List<DisplayItem> reusePrev;
-
-        /** {@link #reusePrev} のうち、もう使い回した項目（同じ項目を 2 度リストへ入れない）。先頭 64 個ぶん。 */
-        private long reusedMask;
-
-        /** {@link #reusePrev} から、まだ使い回していない鍵 {@code key} の項目を探して印を付ける（スライスは数個〜十数個）。無ければ null。 */
-        DisplayItem reusable(long key) {
-            List<DisplayItem> p = reusePrev;
-            for (int i = 0, n = Math.min(p.size(), 64); i < n; i++) {
-                if ((reusedMask & (1L << i)) != 0) continue;
-                DisplayItem it = p.get(i);
-                if (it.key() == key) {
-                    reusedMask |= 1L << i;
-                    return it;
-                }
-            }
-            return null;
-        }
-
-        void setReusePrev(List<DisplayItem> prev) {
-            reusePrev = prev;
-            reusedMask = 0L;
-        }
         private float[] coords = new float[32];
         private int coordCount;
 

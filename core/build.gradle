@@ -126,6 +126,11 @@ def configureCoreTest = { Test t, List<String> includeTagList, List<String> excl
     t.systemProperty 'enderframe.verify.memo', String.valueOf(findProperty('verify.memo') ?: 'true')
     // 箱の項目の記憶（DisplayListBuilder の箱ごとの記憶）も作り直して比べる（計画の §6-124・125）
     t.systemProperty 'enderframe.verify.boxmemo', String.valueOf(findProperty('verify.boxmemo') ?: 'true')
+    // 影モード: 全面の描画のたびに断片の木を組み直して旧経路の表示リストと比べる（C1 の F1。切るときは -Pverify.fragment=false）
+    t.systemProperty 'enderframe.verify.fragment', String.valueOf(findProperty('verify.fragment') ?: 'true')
+    // 全面の描画を断片の木で行う経路で全件を流す（C1 の F1b・B 案。既定は旧経路。-Pfragment.build=true）
+    if (findProperty('fragment.build') != null) t.systemProperty 'enderframe.paint.fragments', String.valueOf(findProperty('fragment.build'))
+    if (findProperty('fragment.strict') != null) t.systemProperty 'enderframe.paint.fragments.strict', String.valueOf(findProperty('fragment.strict'))
     t.workingDir = rootProject.projectDir
     t.testLogging { showStandardStreams = true }
     ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees', 'enderframe.paint.noparentrelative', 'gpu.baseline.exact', 'gpu.baseline.update', 'wpt.reftest.update', 'wpt.reftest.diag', 'wpt.reftest.strict', 'wpt.reftest.dump', 'enderframe.parser.dropnewlinews', 'ratchet.update'].each { key ->
@@ -485,6 +490,7 @@ tasks.register('mutationFuzz', JavaExec) {
     // 検証モードも併走させる（鍵の漏れを「どの記憶か」つきで報告する。切るときは -Pverify.memo=false / -Pverify.boxmemo=false）
     systemProperty 'enderframe.verify.memo', String.valueOf(findProperty('verify.memo') ?: 'true')
     systemProperty 'enderframe.verify.boxmemo', String.valueOf(findProperty('verify.boxmemo') ?: 'true')
+    systemProperty 'enderframe.verify.fragment', String.valueOf(findProperty('verify.fragment') ?: 'true')
     if (project.hasProperty('fuzz.jvmArgs')) jvmArgs project.property('fuzz.jvmArgs').toString().split(' ')
 }
 

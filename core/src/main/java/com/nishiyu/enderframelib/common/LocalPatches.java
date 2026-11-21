@@ -98,11 +98,7 @@ final class LocalPatches {
             for (int i = 0, cn = changed.size(); i < cn; i++) view.interactionState.clearStyleDirty(changed.get(i));
             view.publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
             layoutDone = System.nanoTime();
-            if (view.paintBuilder == null) {
-                UiView.SLICE_NO_BUILDER.incrementAndGet();
-            } else if (view.paintBuilder.canPatchBoxes(patchedBoxes)) {
-                elements = view.paintBuilder.patchBoxes(patchedBoxes);
-            }
+            if (view.paintBuilder == null) UiView.SLICE_NO_BUILDER.incrementAndGet();
         } finally {
             if (stale) {
                 for (HtmlNode k : scrollKeys) {
@@ -316,24 +312,6 @@ final class LocalPatches {
         List<DisplayItem> elements = null;
         if (view.paintBuilder == null) UiView.SLICE_NO_BUILDER.incrementAndGet();
         else if (plans.size() != 1) UiView.SLICE_MULTI_PLAN.incrementAndGet();
-        if (view.paintBuilder != null && plans.size() == 1) {
-            ChildPlan plan = plans.get(0);
-            List<LayoutBox> addedBoxes = built.get(0);
-            LayoutBox previousBox = null;
-            // 直前の兄弟が箱を作らない節（ブロックの間の空白など）なら、箱のある兄弟まで遡る
-            HtmlNode pn = plan.previousNode();
-            while (pn != null && previousBox == null) {
-                for (LayoutBox b : plan.parentBox().children) {
-                    if (b.node == pn) { previousBox = b; break; }
-                }
-                if (previousBox != null || pn.parent == null) break;
-                int at = pn.parent.children.indexOf(pn);
-                pn = at > 0 ? pn.parent.children.get(at - 1) : null;
-            }
-            if (view.paintBuilder.canPatchChildSlices(plan.parentBox(), plan.removed(), addedBoxes, previousBox)) {
-                elements = view.paintBuilder.patchChildSlices(plan.parentBox(), plan.removed(), addedBoxes, previousBox);
-            }
-        }
         if (elements == null) {
             view.useChangeStamps = com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.on() && RenderPipeline.lastRelayoutWasLocal();
             // 属性は変わらず、後続の行が整数ぶん下へずれるだけの箱は、前回の項目を厳密に平行移動して使い回す

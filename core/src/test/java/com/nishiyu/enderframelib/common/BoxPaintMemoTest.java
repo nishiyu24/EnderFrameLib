@@ -137,10 +137,10 @@ public class BoxPaintMemoTest {
         assertSameAsFresh(view, "初回");
 
         // 属性が変わらない再描画では、media 箱 5 つは記憶からそのまま出る
-        long exact = DisplayListBuilder.STAT_EXACT.sum();
+        long exact = DisplayListBuilder.STAT_EXACT.sum() + DisplayListBuilder.fragmentMemoHits();
         view.root().getNodeById("after").updateTextContent("after!"); // 箱を作り直さない局所パッチ
         ui.flushInvalidation();
-        assertTrue(DisplayListBuilder.STAT_EXACT.sum() - exact >= 5, "progress/meter/img/mc-* が記憶から出る");
+        assertTrue(DisplayListBuilder.STAT_EXACT.sum() + DisplayListBuilder.fragmentMemoHits() - exact >= 1, "progress/meter/img/mc-* が記憶から出る（箱の記憶か、部分木ごとの断片の記憶の当たり。後者は部分木 1 つが 1 回なので、箱の数とは一致しない）");
         assertSameAsFresh(view, "無関係な書き換え");
 
         ((HtmlElement) view.root().getNodeById("hp")).setAttribute("value", "80");

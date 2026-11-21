@@ -55,11 +55,9 @@ import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
-import com.nishiyu.enderframelib.core.paint.RenderTask;
 
 public class DisplayListBuilder {
     /** StackingSubtreePatch（切り出した協力クラス）。 */
-    private final StackingSubtreePatch stackingPatch = new StackingSubtreePatch(this);
     // 単位なしの 0（例: translate(-50%, 0)）も受け付けるため単位は省略可能（省略時は px 扱い）
 
     static volatile java.util.function.BooleanSupplier parentRelativeSource =
@@ -117,53 +115,21 @@ public class DisplayListBuilder {
         this.order = new PaintOrder(rootW, rootH, scrollState, fragIds, this::drawBoxSelf,
                 box -> PaintOrder.factsOf(box.style).hasAnimation()
                         && (anim.parseAnimationDef(box.style, box.w(), box.h(), 0, 0).animatedChannels() & AnimationSpec.CH_OPACITY) != 0);
-        this.order.configureChunks(new PaintOrder.MemoKeeper() {
-            @Override
-            public void owned(LayoutBox box, Chunk chunk) {
-                BoxMemo m = boxMemo.get(box);
-                if (m != null) m.chunk = chunk;
-            }
-        }, DisplayListBuilder::memoizable);
-    }
-
-    /** 診断: 部分木の保持を再利用した回数の累計。 */
-    public static long chunksReplayed() {
-        return PaintOrder.STAT_CHUNK_REPLAYED.sum();
+        this.fragmentPaint = new FragmentPaint(this, order);
     }
 
     /** 直近に描画またはパッチされた完全な表示リスト（Segmented DisplayList）。 */
     List<DisplayItem> currentDisplayList;
     /** 直近に描画されたボックス（描画順 = 表示リスト上の dlStart 昇順）。 */
     final List<LayoutBox> renderedBoxes = new ArrayList<>();
+    /** VERIFY_FRAGMENT 用: スクロールバーの項目の範囲（全面の描画ごとに作り直す）と、影の前回の断片の木。 */
+    /** 全面の描画を断片の木で行う経路（Shortcut.FRAGMENT_BUILD）。 */
+    private final FragmentPaint fragmentPaint;
     /** スクロールバーを持ちうる（overflow: scroll / auto）描画済みの箱。差分パッチで全箱を走査せずに済ませるための集合（描画のたびに作り直し、子の増減で更新する）。 */
     final Set<LayoutBox> scrollBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
-    /** 窓付きの描画で項目を省いた箱（画面外）。差分パッチが、窓の出入りが無いかを調べるのに使う。 */
-    final List<LayoutBox> culledBoxes = new ArrayList<>();
     /** 直近の描画のルートボックス。 */
     LayoutBox currentRoot;
 
-    /** 診断: 表示リストの差分スライスパッチ成功回数（全ボックス走査スキップ）。 */
-    /** 差分パッチで、項目を作り直さず塗りをセルへ書いて済ませた項目の数（B9 の M3）。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_REPAINT_IN_PLACE = new java.util.concurrent.atomic.LongAdder();
-    public static final java.util.concurrent.atomic.LongAdder STAT_SLICE_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
-    public static final java.util.concurrent.atomic.LongAdder STAT_CHILD_SLICE_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
-    /** パッチ不成立の理由別カウンタ（計測用）。[0]=canPatchBoxes、[1]=canPatchChildSlices。添字は各判定内の if の出現順。 */
-    public static final java.util.concurrent.atomic.LongAdder[][] STAT_CANT_PATCH = {
-        newAdders(16), newAdders(16)
-    };
-
-    private static java.util.concurrent.atomic.LongAdder[] newAdders(int n) {
-        java.util.concurrent.atomic.LongAdder[] a = new java.util.concurrent.atomic.LongAdder[n];
-        for (int i = 0; i < n; i++) a[i] = new java.util.concurrent.atomic.LongAdder();
-        return a;
-    }
-
-    private static boolean cant(int which, int reason) {
-        STAT_CANT_PATCH[which][reason].increment();
-        return false;
-    }
-
-    public static final java.util.concurrent.atomic.LongAdder STAT_SLICE_PATCH_FALLBACKS = new java.util.concurrent.atomic.LongAdder();
 
     /** 現在保持されている完全な表示リストを取得する（未描画時は null）。 */
     public List<DisplayItem> currentDisplayList() {
@@ -172,7 +138,7 @@ public class DisplayListBuilder {
 
     /** 箱を描く順（スタッキングコンテキストの順）に並べた箱。 */
     public List<LayoutBox> paintOrder(LayoutBox root) {
-        return order.paintOrder(root);
+        return fragmentPaint.paintOrder(root);
     }
 
 public List<DisplayItem> render(LayoutBox box) {
@@ -229,7 +195,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     translatedHits = 0;
     renderedBoxes.clear();
     scrollBoxes.clear();
-    culledBoxes.clear();
     currentRoot = box;
     boolean relMode = parentRelativeSource.getAsBoolean();
     this.parentRelative = relMode;
@@ -259,25 +224,12 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         }
 
         // 部分木の保持は、全ての箱を描く描画でだけ（平行移動・画面外の省略では項目が欠ける／動く）。再利用は変更印が使える描画でだけ
-        order.beginRender(buildSerial, buildEpoch, generation, !translating && !windowed, useChangeStamps && !translating);
-        prunedOwners = 0;
-        pruneWindowed = windowed;
-        pruneSweeping = generation % PaintOrder.SWEEP_EVERY == 0;
-        order.subtreePruner = cull && com.nishiyu.enderframelib.core.kernel.Shortcut.PRUNE.on() ? pruner : null;
-        List<RenderTask> paintTaskList;
-        try {
-            paintTaskList = order.paintTasks(box);
-        } finally {
-            order.subtreePruner = null;
-        }
-        ownerCount += prunedOwners;
-        ownerCount += executeTasks(paintTaskList, elements, cull, windowed, 0, renderedBoxes);
+        ownerCount += fragmentPaint.paint(box, elements, cull, windowed);
         // 今回使われなかった箱（木から消えた箱）の記憶を捨てる
         // 掃除は数回に 1 度（毎回全件を辿るとリストの規模に比例する）。保持された部分木の中の箱は、部分木が使われていれば残す
         if (generation % PaintOrder.SWEEP_EVERY == 0) {
-            boxMemo.values().removeIf(m -> m.generation != generation && (m.chunk == null || m.chunk.generation != generation));
+            boxMemo.entrySet().removeIf(e -> e.getValue().generation != generation && !fragmentPaint.hasMemo(e.getKey())); // 断片の記憶が生きている箱の項目の記憶は残す
         }
-        order.endRender();
 
         lastElementCount = elements.size();
         lastOwnerCount = ownerCount;
@@ -286,372 +238,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return elements;
     }
 
-    /**
-     * 描画順のタスク（{@link PaintOrder#paintTasks} / {@link PaintOrder#stackingSubtreeTasks}）を順に実行して項目を出し、
-     * 箱ごとのスライス（{@code dlStart} / {@code dlEnd} / {@code dlOrder}）・描画順の箱の一覧・窓の外の記録を付ける。
-     * レイヤーに描く箱は、錨の項目に出し終えた項目の数（span）を書く。全体の作り直しと部分木の組み直し（B12）で同じ手順を使う。
-     *
-     * @param orderBase 描画順の箱の一覧での、{@code outBoxes} の先頭の位置（全体なら 0）
-     * @return 持ち主（箱を持つタスク）の数
-     */
-    int executeTasks(List<RenderTask> paintTaskList, List<DisplayItem> elements, boolean cull, boolean windowed,
-                             int orderBase, List<LayoutBox> outBoxes) {
-        int ownerCount = 0;
-        // レイヤーに描く箱: 開始の印の次に出る錨の位置を覚え、終了の印でそこから出し終えた項目の数（span）を錨に書く
-        int[] openLayerStarts = null;
-        LayerSpec[] openSpecs = null;
-        LayoutBox[] openBoxes = null;
-        int layerDepth = 0;
-        for (int ti = 0, tn = paintTaskList.size(); ti < tn; ti++) {
-            RenderTask task = paintTaskList.get(ti);
-            if (task.layerStart() != null) {
-                if (openLayerStarts == null) {
-                    openLayerStarts = new int[8];
-                    openSpecs = new LayerSpec[8];
-                    openBoxes = new LayoutBox[8];
-                } else if (layerDepth == openLayerStarts.length) {
-                    int next = layerDepth << 1;
-                    openLayerStarts = java.util.Arrays.copyOf(openLayerStarts, next);
-                    openSpecs = java.util.Arrays.copyOf(openSpecs, next);
-                    openBoxes = java.util.Arrays.copyOf(openBoxes, next);
-                }
-                openLayerStarts[layerDepth] = elements.size();
-                openSpecs[layerDepth] = task.layerStart();
-                openBoxes[layerDepth] = task.layerBox();
-                layerDepth++;
-                continue;
-            }
-            if (task.layerEnd()) {
-                layerDepth--;
-                int start = openLayerStarts[layerDepth];
-                LayerSpec spec = openSpecs[layerDepth];
-                LayoutBox layerBox = openBoxes[layerDepth];
-                openSpecs[layerDepth] = null;
-                openBoxes[layerDepth] = null;
-                if (elements.size() - start > 0) {
-                    // マスクは、箱の中身を出し終えたあとに足す（描画側は maskFrom 以降をマスク用の描画先へ描く）
-                    if (spec.wantsMask()) {
-                        int maskFrom = elements.size() - start;
-                        fragIds.set(MASK_ID_BASE); // 箱の本体の部品（0 から）と ID が重ならないように
-                        drawMaskItems(elements, layerBox);
-                        spec = spec.withMaskFrom(elements.size() - start > maskFrom ? maskFrom : -1);
-                    }
-                    DisplayItem anchor = elements.get(start);
-                    elements.set(start, withLayer(anchor, spec.withSpan(elements.size() - start)));
-                }
-                continue;
-            }
-            LayoutBox owner = task.box();
-            if (owner == null) {
-                order.executeTask(task, elements);
-                continue;
-            }
-            ownerCount++;
-            if (cull && !containsBox(openBoxes, layerDepth, owner) && !task.hasMovingAncestor() && !inWindowGeometry(owner)) {
-                BoxMemo kept = boxMemo.get(owner);
-                if (kept != null) kept.generation = generation; // 省いた箱の記憶は、画面に戻ってくるまで残す
-                owner.dlStart = -1;
-                owner.paintCulled = true;
-                owner.dlEnd = -1;
-                owner.dlOrder = -1;
-                if (windowed && isGeometryOwner(owner)) culledBoxes.add(owner);
-                continue;
-            }
-            int start = elements.size();
-            order.executeTask(task, elements);
-            int end = elements.size();
-            owner.dlStart = start;
-            owner.paintCulled = false;
-            owner.dlEnd = end;
-            owner.dlOrder = orderBase + outBoxes.size();
-            outBoxes.add(owner);
-            if (owner.node != null && PaintOrder.factsOf(owner.style).scrollbars()) scrollBoxes.add(owner);
-        }
-        return ownerCount;
-    }
-
-    private static boolean containsBox(LayoutBox[] boxes, int len, LayoutBox target) {
-        if (boxes == null) return false;
-        for (int i = 0; i < len; i++) if (boxes[i] == target) return true;
-        return false;
-    }
-
-    private int prunedOwners;
-    /** 診断: 部分木ごと省いた回数。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_PRUNED_SUBTREES = new java.util.concurrent.atomic.LongAdder();
-    private boolean pruneWindowed;
-    private boolean pruneSweeping;
-
-    /**
-     * 画面外の箱を、部分木ごと分類せずに省く。省けるのは、箱とその子孫の全てが、変形・アニメーション・フィルター・スタッキングコンテキスト・
-     * 固定/粘着配置を持たず、窓の判定を動かすスクロールの対象でもなく、位置が箱の枠の内に収まるとき（このとき子孫も全て、
-     * 箱ごとの判定で省かれる）。省いた箱は、箱ごとに省いたときと同じ記録（項目の位置の取り消し・記憶の保持・窓の外の記録）を残す。
-     */
-    private boolean pruneOffscreenSubtree(LayoutBox c, boolean ancestorHasMoving, Object[] prepared, int index) {
-        Object pre = prepared != null ? prepared[index] : null;
-        if (pre == PREP_REJECT || pre == PREP_NOT_CULLABLE) return false;
-        if (pre == null && !prunableRoot(c, ancestorHasMoving)) return false; // PREP_KNOWN と走査済みは入口の条件を通っている
-        PrunedSubtree known = pruneCache.get(c);
-        if (known != null && known.stillValid() && !known.anyShifted()) { // 部分木のどの箱にも描画の印が付いていない（中身も位置も同じ）ので、前の判定がそのまま使える
-            if (!pruneSweeping && known.recordedSerial == buildSerial - 1 && known.recordedWindowed == pruneWindowed) {
-                // 直前の作り直しでも省いていて、その記録（項目の位置の取り消し）がそのまま残っている。箱を 1 つずつ触らずに、数と窓の外の記録だけを足す
-                prunedOwners += known.ownerCount;
-                if (pruneWindowed) culledBoxes.addAll(java.util.Arrays.asList(known.geometryOwners));
-            } else {
-                known.record();
-            }
-            known.recordedSerial = buildSerial;
-            known.recordedWindowed = pruneWindowed;
-            STAT_PRUNED_SUBTREES.increment();
-            return true;
-        }
-        PrunedSubtree fresh;
-        if (pre instanceof PrunedSubtree p) {
-            fresh = p; // 先に並列で走査済み（覚えが無いか古いと分かった箱だけ）
-        } else {
-            pruneScrolls.clear();
-            pruneVisited.clear();
-            if (!cullableSubtree(c, c, pruneVisited, pruneScrolls)) return false;
-            fresh = new PrunedSubtree(
-                    pruneVisited.isEmpty() ? EMPTY_BOX_ARRAY : pruneVisited.toArray(EMPTY_BOX_ARRAY),
-                    pruneScrolls.isEmpty() ? EMPTY_NODE_ARRAY : pruneScrolls.toArray(EMPTY_NODE_ARRAY),
-                    LayoutBox.paintEpoch());
-        }
-        if (fresh.scrolls.length <= 8) {
-            if (pruneCache.size() > Math.max(8192, lastOwnerCount)) pruneCache.clear(); // 消えた箱の分が溜まり続けないように
-            pruneCache.put(c, fresh);
-        }
-        if (fresh.premarked) {
-            fresh.applyRecord(); // 箱ごとの書き込みは先の並列の判定で済んでいる
-            fresh.premarked = false;
-        } else {
-            fresh.record();
-        }
-        fresh.recordedSerial = buildSerial;
-        fresh.recordedWindowed = pruneWindowed;
-        STAT_PRUNED_SUBTREES.increment();
-        return true;
-    }
-
-    /** 部分木ごと省く判定の入口の条件（箱そのものが持ち主になりうる・動かない・窓の判定に掛からない）。 */
-    private boolean prunableRoot(LayoutBox c, boolean ancestorHasMoving) {
-        if (c.isAnonymous || c.node == null || c.display() == null || c.style == null || c.display().isNone()
-                || "#text".equals(c.node.tag)) {
-            return false;
-        }
-        return !ancestorHasMoving && !PaintOrder.hasMovingProps(c.style) && !inWindowGeometry(c);
-    }
-
-    /** 先の判定の結果: 入口の条件で外れた／部分木が省けない／入口は通り、覚えがまだ使える。 */
-    private static final Object PREP_REJECT = new Object();
-    private static final Object PREP_NOT_CULLABLE = new Object();
-    private static final Object PREP_KNOWN = new Object();
-    /** 先に並列で判定する子の並びの下限（これ未満は配る費用の方が大きい）。 */
-    static final int PREPARE_MIN_CHILDREN = 64;
-    /** 診断: 先の並列の判定で走査し、箱ごとの記録まで済ませた部分木の数（並列が無効〔{@code -Denderframe.layout.noparallel=true}〕なら直列の判定だけになる）。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_PREPARED_SUBTREES = new java.util.concurrent.atomic.LongAdder();
-
-    private final PaintOrder.SubtreePruner pruner = new PaintOrder.SubtreePruner() {
-        @Override
-        public boolean prune(LayoutBox box, boolean ancestorHasMoving, Object[] prepared, int index) {
-            return pruneOffscreenSubtree(box, ancestorHasMoving, prepared, index);
-        }
-
-        @Override
-        public Object[] prepare(List<LayoutBox> kids, boolean ancestorHasMoving) {
-            return preparePrune(kids, ancestorHasMoving);
-        }
-    };
-
-    /**
-     * 大きな子の並びについて、部分木ごと省けるかの走査（{@link #cullableSubtree}）を先に並列で済ませる（B11）。全行が
-     * 測り直されるフレーム（{@code font-size} の変更）では全部の箱に描画の印が付き、画面外の行ごとの覚えが毎回外れて、
-     * 2,000 行の走査が表示リストの組み立て（直列）の大半を占めていた。各要素は、入口の条件で外れた・覚えがまだ使える（null）・
-     * 省けない・省ける（走査済みの {@link PrunedSubtree}、まだ記録していない）のどれか。走査は箱の木・位置・スタイルを読むだけで、
-     * 書くのは各行の結果の欄だけ（組み立ての状態には触れない）。記録・覚えへの登録は従来どおり直列の {@link #pruneOffscreenSubtree}。
-     */
-    private Object[] preparePrune(List<LayoutBox> kids, boolean ancestorHasMoving) {
-        int n = kids.size();
-        if (n < PREPARE_MIN_CHILDREN || !com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on()
-                || com.nishiyu.enderframelib.core.layout.LayoutTaskPool.participants() < 2 || com.nishiyu.enderframelib.core.layout.LayoutTaskPool.inWorker()) {
-            return null;
-        }
-        Object[] out = new Object[n];
-        long epoch = LayoutBox.paintEpoch();
-        int grain = com.nishiyu.enderframelib.core.layout.LayoutTaskPool.grainFor(n, 16);
-        com.nishiyu.enderframelib.core.layout.LayoutTaskPool.forRange(n, grain, null, i -> {
-            LayoutBox c = kids.get(i);
-            if (!prunableRoot(c, ancestorHasMoving)) {
-                out[i] = PREP_REJECT;
-                return;
-            }
-            PrunedSubtree known = pruneCache.get(c);
-            if (known != null && known.stillValidAt(epoch) && !known.anyShifted()) { // 覚えが使える（直列側で使う）
-                out[i] = PREP_KNOWN;
-                return;
-            }
-            ArrayList<LayoutBox> visited = new ArrayList<>();
-            ArrayList<com.nishiyu.enderframelib.core.dom.node.HtmlNode> scrolls = new ArrayList<>(0);
-            if (!cullableSubtree(c, c, visited, scrolls)) {
-                out[i] = PREP_NOT_CULLABLE;
-                return;
-            }
-            PrunedSubtree fresh = new PrunedSubtree(visited.toArray(EMPTY_BOX_ARRAY),
-                    scrolls.isEmpty() ? EMPTY_NODE_ARRAY : scrolls.toArray(EMPTY_NODE_ARRAY), epoch);
-            // 走査済みの部分木は直列側で必ず省かれる（覚えは古いと分かっている）ので、箱ごとの書き込みもここで済ませる
-            visited.clear(); // 走査に使ったリストを、持ち主の作業用に使い回す
-            fresh.markBoxes(visited);
-            fresh.premarked = true;
-            out[i] = fresh;
-            STAT_PREPARED_SUBTREES.increment();
-        });
-        return out;
-    }
-
-    private static final LayoutBox[] EMPTY_BOX_ARRAY = new LayoutBox[0];
-    private static final com.nishiyu.enderframelib.core.dom.node.HtmlNode[] EMPTY_NODE_ARRAY =
-            new com.nishiyu.enderframelib.core.dom.node.HtmlNode[0];
-    /** 直列の記録（{@link PrunedSubtree#record}）が窓の外の持ち主を集める作業用のリスト。 */
-    private final List<LayoutBox> pruneGeoScratch = new ArrayList<>();
-
-    /** 窓の判定のために、このスクロールコンテナの節の位置がずれているか（ずれが 0 なら窓の判定には響かない）。 */
-    private boolean shifted(com.nishiyu.enderframelib.core.dom.node.HtmlNode node) {
-        if (windowShift.isEmpty()) return false;
-        float[] d = windowShift.get(node);
-        return d != null && (d[0] != 0f || d[1] != 0f);
-    }
-
-    /** 省けた部分木の判定: 子孫の持ち主の箱と、中のスクロールコンテナの節（窓の動きに依る分）。 */
-    private final class PrunedSubtree {
-        final LayoutBox[] boxes;
-        final com.nishiyu.enderframelib.core.dom.node.HtmlNode[] scrolls;
-        long epoch;
-        /** 最後に記録を残した作り直し（{@code buildSerial}）と、そのとき窓付きだったか。 */
-        long recordedSerial = -1;
-        boolean recordedWindowed;
-        int ownerCount;
-        LayoutBox[] geometryOwners = EMPTY_BOX_ARRAY;
-
-        /** 先の並列の判定（{@link #preparePrune}）で {@link #markBoxes} を済ませ、まだ {@link #applyRecord} していない。 */
-        boolean premarked;
-
-        /** 部分木の箱ごとの記録を残す（箱ごとに省いたときと同じ）。 */
-        void record() {
-            markBoxes(pruneGeoScratch);
-            applyRecord();
-        }
-
-        /**
-         * 記録のうち、箱ごとの書き込み（項目の位置の取り消し・記憶の保持）。書くのは部分木の箱と、その箱の記憶だけなので、
-         * 別々の部分木なら並列に呼べる（{@code scratch} はスレッドごとに別のもの）。持ち主の数と窓の外の記録に入れる箱を自分に覚える。
-         */
-        void markBoxes(List<LayoutBox> scratch) {
-            scratch.clear();
-            int n = 0;
-            for (LayoutBox b : boxes) {
-                if (!isPruneOwner(b)) continue;
-                n++;
-                markPruned(b);
-                if (isGeometryOwner(b)) scratch.add(b);
-            }
-            ownerCount = n;
-            geometryOwners = scratch.isEmpty() ? EMPTY_BOX_ARRAY : scratch.toArray(EMPTY_BOX_ARRAY);
-            scratch.clear();
-        }
-
-        /** 記録のうち、組み立て全体の数と窓の外の一覧へ足す分（直列。木の順に足す）。 */
-        void applyRecord() {
-            prunedOwners += ownerCount;
-            if (pruneWindowed) for (LayoutBox b : geometryOwners) culledBoxes.add(b); // addAll(asList) は包みと配列の写しを確保する
-        }
-
-        PrunedSubtree(LayoutBox[] boxes, com.nishiyu.enderframelib.core.dom.node.HtmlNode[] scrolls, long epoch) {
-            this.boxes = boxes;
-            this.scrolls = scrolls;
-            this.epoch = epoch;
-        }
-
-        /** 判定したあとに、部分木のどの箱にも描画の印（位置・スタイルの変更）が付いていないか。 */
-        boolean stillValid() {
-            long now = LayoutBox.paintEpoch();
-            if (now == epoch) return true;
-            for (LayoutBox b : boxes) if (b.paintStamp() > epoch) return false;
-            epoch = now;
-            return true;
-        }
-
-        /** {@link #stillValid} と同じ判定で、覚えの世代を書き換えない（並列の先の判定用）。 */
-        boolean stillValidAt(long now) {
-            if (now == epoch) return true;
-            for (LayoutBox b : boxes) if (b.paintStamp() > epoch) return false;
-            return true;
-        }
-
-        boolean anyShifted() {
-            for (com.nishiyu.enderframelib.core.dom.node.HtmlNode n : scrolls) if (shifted(n)) return true;
-            return false;
-        }
-    }
-
-    private final ArrayList<com.nishiyu.enderframelib.core.dom.node.HtmlNode> pruneScrolls = new ArrayList<>();
-
-    /**
-     * 省けた部分木の判定の保持。判定は箱の木と位置・スタイルだけで決まり、それらが変わると描画の印が付く
-     * （{@link LayoutBox#paintEpoch}）ので、印が進んだら捨てる。窓の位置には依らないが、中のスクロールコンテナの節がずれていると
-     * 窓の判定が変わるので、使うときに確かめる。
-     */
-    private final java.util.IdentityHashMap<LayoutBox, PrunedSubtree> pruneCache = new java.util.IdentityHashMap<>();
-    private final ArrayList<LayoutBox> pruneVisited = new ArrayList<>();
-
-    private static boolean isPruneOwner(LayoutBox b) {
-        return b.w() > 0 && b.h() > 0 && !b.isAnonymous && !(b.display() != null && b.display().isNone());
-    }
-
-    /**
-     * {@code top} の部分木を丸ごと省けるか。辿った箱を {@code visited}、中のスクロールコンテナの節を {@code scrolls} へ足す。
-     * 読むだけで組み立ての状態を書かないので、別々の部分木なら並列に呼べる（{@link #preparePrune}）。
-     */
-    private boolean cullableSubtree(LayoutBox b, LayoutBox top, List<LayoutBox> visited,
-                                    List<com.nishiyu.enderframelib.core.dom.node.HtmlNode> scrolls) {
-        visited.add(b);
-        if (b.display() != null && b.display().isNone()) return true;
-        if (b.style != null && b.isScrollContainer()) scrolls.add(b.node);
-        if (b.style == null || b.node == null) return false;
-        String tag = b.node.tag;
-        boolean text = "#text".equals(tag);
-        if (!text && !b.isAnonymous) {
-            if (PaintOrder.factsOf(b.style).hasMovingProps() || b.isFixed() || b.isSticky() || order.createsStackingContext(b)) return false;
-            if (shifted(b.node)) return false;
-            if (b != top && (b.x() < top.x() || b.y() < top.y() || b.x() + b.w() > top.x() + top.w() || b.y() + b.h() > top.y() + top.h())) return false;
-        } else if (b.style != null && !text && PaintOrder.factsOf(b.style).hasMovingProps()) {
-            return false;
-        }
-        if (b.contentAutoSkipped) return true;
-        if (b.isVirtualizedFlow()) return false;
-        if (b.children != null) {
-            List<LayoutBox> kids = b.children;
-            for (int i = 0, cn = kids.size(); i < cn; i++) {
-                if (!cullableSubtree(kids.get(i), top, visited, scrolls)) return false;
-            }
-        }
-        return true;
-    }
-
-    /** 部分木ごと省いた箱の、箱ごとに省いたときと同じ記録のうち、箱の側の書き込み（数と窓の外の一覧は {@link PrunedSubtree#applyRecord}）。 */
-    private void markPruned(LayoutBox b) {
-        if (pruneSweeping) { // 記憶の掃除はこの世代でだけ使われを見る。それ以外の世代では、記憶を引かずに済ませる
-            BoxMemo kept = boxMemo.get(b);
-            if (kept != null) kept.generation = generation;
-        }
-        b.dlStart = -1;
-        b.paintCulled = true;
-        b.dlEnd = -1;
-        b.dlOrder = -1;
-    }
-
-    /** 直近の描画で出した項目の数（次の描画の出力リストの初期容量に使う）。 */
-    int lastElementCount;
-    /** 直近の描画の、項目を持ちうる箱の数（省いた箱も含む）。窓付きの表示リストにするかの判定に使う。 */
     private int lastOwnerCount;
     /** 窓付きで作った表示リストの数（検証用）。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_WINDOWED_BUILDS = new java.util.concurrent.atomic.LongAdder();
@@ -690,7 +276,20 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             CssPropertyIndex.PERSPECTIVE};
 
     /** 箱（文字の塊は持ち主の箱）の位置が、画面と余白の範囲に掛かるか。 */
-    private boolean inWindowGeometry(LayoutBox box) {
+    /** 診断: 断片の記憶（部分木ごと組み立てを飛ばした）が当たった回数の累計。 */
+    public static long fragmentMemoHits() { return FragmentPaint.MEMO_HITS.sum(); }
+
+    /**
+     * 断片の記憶の鍵のうち、描画の枠組み（省略・窓・親相対・平行移動の方式・ビューポート）。変わったら記憶は全部外れる。
+     * 窓がスクロールの分だけずれている間は記憶を使えないので {@code Integer.MIN_VALUE}（毎回変わる値）を返す。
+     */
+    int memoFrameKey(boolean cull, boolean windowed) {
+        if (!windowShift.isEmpty()) return Integer.MIN_VALUE;
+        int k = (cull ? 1 : 0) | (windowed ? 2 : 0) | (translating ? 4 : 0) | (parentRelative ? 8 : 0) | (exactTranslation ? 16 : 0);
+        return (k * 31 + rootW) * 31 + rootH;
+    }
+
+    boolean inWindowGeometry(LayoutBox box) {
         LayoutBox at = box;
         while (at.parent != null && ("#text".equals(at.node.tag) || at.isAnonymous)) at = at.parent;
         float sx = 0, sy = 0;
@@ -760,6 +359,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return moving;
     }
 
+    int lastElementCount;
+
+    private static java.util.concurrent.atomic.LongAdder[] newAdders(int n) {
+        java.util.concurrent.atomic.LongAdder[] a = new java.util.concurrent.atomic.LongAdder[n];
+        for (int i = 0; i < n; i++) a[i] = new java.util.concurrent.atomic.LongAdder();
+        return a;
+    }
+
     private boolean offscreen(LayoutBox box) {
         if (inWindowGeometry(box)) return false;
         return !hasMovingAncestor(box);
@@ -785,6 +392,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     /** 箱の {@code mask-image} のレイヤーを項目にして足す（背景画像と同じ手順。クリップは箱の外へは出さない）。 */
+    void drawMask(List<DisplayItem> out, LayoutBox box) { fragIds.set(MASK_ID_BASE); drawMaskItems(out, box); } // 断片の描画用（ID の振り方は旧経路と同じ）
+
     private void drawMaskItems(List<DisplayItem> elements, LayoutBox box) {
         PaintSupport.CaptureList cap = (parentRelative && PaintOrder.boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
         int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
@@ -837,7 +446,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     }
 
     /** 錨の項目にレイヤーの指定を載せる。 */
-    private static DisplayItem withLayer(DisplayItem anchor, LayerSpec spec) {
+    static DisplayItem withLayer(DisplayItem anchor, LayerSpec spec) {
         RenderMeta meta = anchor.meta() != null ? anchor.meta() : RenderMeta.EMPTY;
         RenderMeta withLayer = meta.withHints(meta.hints().withLayer(spec));
         return new DisplayItem(anchor.id(), anchor.baseNodeId(), anchor.type(), anchor.x(), anchor.y(), anchor.width(), anchor.height(),
@@ -872,7 +481,6 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
     final java.util.IdentityHashMap<LayoutBox, BoxMemo> boxMemo = new java.util.IdentityHashMap<>();
     /** 子の挿入・削除の差分パッチ（{@link #patchChildSlices}）。A8 で切り出した。 */
-    private final ChildSlicePatch childPatch = new ChildSlicePatch(this);
     int generation;
     /** 変更印で署名の比較を省くか（呼び出し側が、変わった箱が分かっている局所更新のときだけ true にする）。 */
     private boolean useChangeStamps;
@@ -1857,34 +1465,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         addElement(elements, id, id + "_txt_" + mainPart, ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, flipY, rot, transDur, colorAnim, meta, mainKey);
     }
 
-    /** {@code -webkit-text-stroke-width} の CSS px（{@code thin / medium / thick} は 1 / 3 / 5）。無い・0 以下は 0。 */
-    static float textStrokeWidth(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
-        String v = style.get(CssPropertyIndex.WEBKIT_TEXT_STROKE_WIDTH);
-        if (v == null) return 0f;
-        v = v.trim().toLowerCase(java.util.Locale.ROOT);
-        try {
-            float w = switch (v) {
-                case "thin" -> 1f;
-                case "medium" -> 3f;
-                case "thick" -> 5f;
-                default -> v.endsWith("rem") ? Float.parseFloat(v.substring(0, v.length() - 3)) * style.rootFontSizePx()
-                        : v.endsWith("em") ? Float.parseFloat(v.substring(0, v.length() - 2)) * style.fontSizePx()
-                        : v.endsWith("px") ? Float.parseFloat(v.substring(0, v.length() - 2))
-                        : Float.parseFloat(v);
-            };
-            return w > 0f && Float.isFinite(w) ? w : 0f;
-        } catch (NumberFormatException e) {
-            return 0f;
-        }
-    }
-
     private ItemProps textPropsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps partsEvents, int resolvedColor) {
         ItemProps props = partsEvents.copy();
         if (style.containsKey(CssPropertyIndex.FONT_WEIGHT)) props.put("font-weight", style.get(CssPropertyIndex.FONT_WEIGHT));
         if (style.containsKey(CssPropertyIndex.FONT_FAMILY)) props.fontFamily(style.get(CssPropertyIndex.FONT_FAMILY));
         if (style.containsKey(CssPropertyIndex.TEXT_DECORATION)) props.put("text-decoration", style.get(CssPropertyIndex.TEXT_DECORATION));
         putFontEvents(style, props);
-        float strokeWidth = textStrokeWidth(style);
+        float strokeWidth = com.nishiyu.enderframelib.core.css.TextStroke.widthPx(style);
         if (strokeWidth > 0f) {
             String colorValue = style.get(CssPropertyIndex.WEBKIT_TEXT_STROKE_COLOR);
             int strokeColor = colorValue == null || colorValue.isBlank() || "currentcolor".equalsIgnoreCase(colorValue.trim())
@@ -1984,490 +1571,4 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return contentParentIdOf(box.parent);
     }
 
-    private static void collectSubtreeBoxes(LayoutBox b, List<LayoutBox> out) {
-        if (b == null) return;
-        if (b.dlStart >= 0) out.add(b);
-        if (b.contentAutoSkipped) return;
-        if (b.isVirtualizedFlow()) return;
-        if (b.children != null) {
-            for (LayoutBox c : b.children) collectSubtreeBoxes(c, out);
-        }
-    }
-
-    static final class SubtreeSlices {
-        final List<LayoutBox> blockBoxes = new ArrayList<>();
-        final List<LayoutBox> inlineBoxes = new ArrayList<>();
-    }
-
-    /**
-     * 兄弟の「ブロック層の末尾／先頭」を探すための収集。インラインレベルの箱・flex / grid アイテム（{@link PaintSupport#isAtomicInline}）・float・位置指定は
-     * 中身ごと後ろの層で描かれるので、その箱も子孫も入れない（入れると、層の末尾がリストの末尾を指してしまう）。
-     */
-    private void collectBlockPhaseBoxes(LayoutBox box, List<LayoutBox> out) {
-        if (box == null || box.w() <= 0 || box.h() <= 0 || (box.display() != null && box.display().isNone())) return;
-        if (!box.isAnonymous) {
-            if ((box.node != null && box.node.nodeType == NodeType.TEXT) || PaintSupport.isAtomicInline(box)
-                    || BlockLayoutEngine.isFloating(box) || PaintOrder.isPositioned(box) || order.createsStackingContext(box)) return; // float・位置指定は後ろの層（§6-109）
-            // インラインの箱（span）は自分はインラインの層だが、中のブロック（インラインの中のブロック）は同じ層の並びのブロックの層で描く
-            // （PaintOrder.collect は箱ごとに自分の display で層を決める）。中へ降りないと、足した兄弟がそのブロックの前に入る（§6-119。nested の種 1295）
-            if (!box.display().isInlineLevel()) out.add(box);
-        }
-        if (box.children != null) for (LayoutBox c : box.children) collectBlockPhaseBoxes(c, out);
-    }
-
-    /**
-     * {@link #collectBlockPhaseBoxes} の残り（インラインレベルの箱・アトミックな箱とその子孫）。木の順。
-     * 1 回の走査で、インライン層の箱の下にいるかを引数で運ぶ（以前はブロック層の集合を作って木の順の一覧から引いており、
-     * 兄弟ごとにリスト 3 つと IdentityHashMap を作って、子の増減 1 回で数十 KB を確保した）。
-     */
-    private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out) { collectInlinePhaseBoxes(box, out, false); }
-
-    private void collectInlinePhaseBoxes(LayoutBox box, List<LayoutBox> out, boolean underAtomic) {
-        if (box == null || box.w() <= 0 || box.h() <= 0 || (box.display() != null && box.display().isNone()) || PaintOrder.isPositioned(box) || order.createsStackingContext(box)
-                || (!underAtomic && BlockLayoutEngine.isFloating(box))) return; // 位置指定・float の中身はその層で描く（アトミックな箱の中の float はその箱の中。§6-109）
-        // アトミックな箱は中身ごとインラインの層で描く。インラインの箱（span）の中のブロックはブロックの層なので入れない（§6-119）
-        boolean atomic = underAtomic || (!box.isAnonymous && PaintSupport.isAtomicInline(box));
-        if (!box.isAnonymous && (atomic || box.display().isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT))) out.add(box);
-        if (box.children != null) for (LayoutBox c : box.children) collectInlinePhaseBoxes(c, out, atomic);
-    }
-
-    /** 挿入位置の探索で兄弟ごとに使い回す一覧（子パッチは描画のスレッドだけが走らせる）。 */
-    private final ArrayList<LayoutBox> phaseScratch = new ArrayList<>();
-
-    List<LayoutBox> blockPhaseOf(LayoutBox c) {
-        phaseScratch.clear();
-        collectBlockPhaseBoxes(c, phaseScratch);
-        return phaseScratch;
-    }
-
-    List<LayoutBox> inlinePhaseOf(LayoutBox c) {
-        phaseScratch.clear();
-        collectInlinePhaseBoxes(c, phaseScratch);
-        return phaseScratch;
-    }
-
-    void collectSubtreeSlices(LayoutBox box, SubtreeSlices out) {
-        if (box == null || box.w() <= 0 || box.h() <= 0 || (box.display() != null && box.display().isNone())) return;
-        if (!box.isAnonymous) {
-            if (box.display().isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT)) {
-                out.inlineBoxes.add(box);
-            } else {
-                out.blockBoxes.add(box);
-            }
-        }
-        if (box.children != null) {
-            for (LayoutBox c : box.children) {
-                collectSubtreeSlices(c, out);
-            }
-        }
-    }
-
-    void renderSubtreeSlices(LayoutBox box, ClipRect clip, String parentId, boolean ancestorHasMoving,
-                                    List<DisplayItem> outBlocks, List<LayoutBox> outBlockBoxes,
-                                    List<DisplayItem> outInlines, List<LayoutBox> outInlineBoxes) {
-        if (box == null || box.w() <= 0 || box.h() <= 0 || (box.display() != null && box.display().isNone())) return;
-
-        boolean selfOrAncestorMoving = ancestorHasMoving
-                || (box.style != null && PaintOrder.hasMovingProps(box.style));
-        if (!box.isAnonymous && windowedBuild && !selfOrAncestorMoving && !inWindowGeometry(box)) {
-            // 窓の外（画面外）の箱は、全体を窓付きで組み直したときと同じく、項目を作らない
-            box.dlStart = -1;
-            box.paintCulled = true;
-            box.dlEnd = -1;
-            box.dlOrder = -1;
-            if (isGeometryOwner(box)) culledBoxes.add(box);
-        } else if (!box.isAnonymous) {
-            boolean isInline = box.display().isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT);
-            List<DisplayItem> targetItems = isInline ? outInlines : outBlocks;
-            List<LayoutBox> targetBoxes = isInline ? outInlineBoxes : outBlockBoxes;
-
-            int start = targetItems.size();
-            fragIds.set(0);
-            drawBoxSelfUncached(targetItems, box, clip, parentId);
-            int end = targetItems.size();
-            box.dlStart = start;
-            box.paintCulled = false;
-            box.dlEnd = end;
-            targetBoxes.add(box);
-            boxMemo.put(box, remember(box, clip, parentId, List.copyOf(targetItems.subList(start, end))));
-        }
-
-        String childParent = (box.node != null && !box.isAnonymous) ? box.node.key() : parentId;
-        ClipRect childClip = clip;
-        if (box.children != null) {
-            for (LayoutBox child : box.children) {
-                renderSubtreeSlices(child, childClip, childParent, selfOrAncestorMoving,
-                        outBlocks, outBlockBoxes, outInlines, outInlineBoxes);
-            }
-        }
-    }
-
-    /**
-     * 窓付きの表示リストで、子の増減のあと（レイアウトは済んでいる）も、窓の出入りが無いか。
-     * 項目を作った箱は全て窓の中、省いた箱は全て窓の外のままなら、全体を窓付きで組み直した結果と同じ並びになる。
-     * 窓から出た箱・窓に入る箱があれば、組み直す（削除される箱は調べない）。
-     */
-    private boolean windowIntact(List<LayoutBox> removed) {
-        Set<LayoutBox> gone = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (LayoutBox r : removed) markSubtree(r, gone);
-        int prevEpoch = activeMovingEpoch;
-        activeMovingEpoch = ++movingEpochSeq;
-        try {
-            // 位置だけで決まる側（窓に掛かる箱は描く・掛からない箱は、変形などの動く祖先が無いかぎり省く）を先に見て、祖先の走査を避ける。
-            // 省いた箱の変形などの有無は、省いた時点から変わらない（スタイルの変更は別の経路で、子の増減のパッチには来ない）
-            for (LayoutBox b : renderedBoxes) {
-                if (!gone.contains(b) && !inWindowGeometry(b) && offscreen(b)) return false;
-            }
-            for (LayoutBox b : culledBoxes) {
-                if (!gone.contains(b) && inWindowGeometry(b)) return false;
-            }
-            return true;
-        } finally {
-            activeMovingEpoch = prevEpoch;
-        }
-    }
-
-    /** 文字の塊・匿名の箱は、窓に掛かるかを持ち主の箱の位置で決める（持ち主と同じ答えになる）ので、窓の出入りの確認では持ち主だけを見る。 */
-    private static boolean isGeometryOwner(LayoutBox b) {
-        return !b.isAnonymous && !(b.node != null && "#text".equals(b.node.tag));
-    }
-
-    static void markSubtree(LayoutBox b, Set<LayoutBox> out) {
-        if (b == null) return;
-        out.add(b);
-        if (b.children != null) for (LayoutBox c : b.children) markSubtree(c, out);
-    }
-
-    /** 窓付きの表示リストで、項目を省いた箱が今も画面外にある（＝表示リストに触れずに済む）か。 */
-    private boolean isCulledNoop(LayoutBox b) {
-        return windowedBuild && b.dlStart < 0 && b.dlEnd < 0 && b.dlOrder < 0 && offscreen(b);
-    }
-
-    /** スクロール付きの箱の、スクロール節・つまみの出方を決める性質（overflow・scrollbar-width）が前回の記憶と同じか。記憶が無ければ false。 */
-    private boolean scrollTraitsUnchanged(LayoutBox b) {
-        BoxMemo m = boxMemo.get(b);
-        if (m == null || m.style == null || b.style == null) return false;
-        var now = PaintOrder.factsOf(b.style);
-        var prev = PaintOrder.factsOf(m.style);
-        if (!prev.scrollbars() || !java.util.Objects.equals(now.overflowX(), prev.overflowX())
-                || !java.util.Objects.equals(now.overflowY(), prev.overflowY())) return false;
-        return b.style.keywordOf(CssPropertyIndex.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class)
-                == m.style.keywordOf(CssPropertyIndex.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class);
-    }
-
-    /**
-     * 指定されたボックス群のスライスパッチ妥当性を検証し、降順（dlStart の大きい順）にソートされた
-     * 有効パッチ対象のリストを返す。不適格な場合は cant カウンタを記録して null を返す。
-     * 画面外で項目を持たないボックス（isCulledNoop）は除外され、重複ボックスは 1 つにまとめられる。
-     */
-    List<LayoutBox> preparePatchBoxes(java.util.Collection<LayoutBox> boxes) {
-        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) {
-            cant(0, 0);
-            return null;
-        }
-        if (boxes == null || boxes.isEmpty()) {
-            cant(0, 1);
-            return null;
-        }
-        int listSize = currentDisplayList.size();
-        int boxCount = renderedBoxes.size();
-        int prevEpoch = activeMovingEpoch;
-        activeMovingEpoch = ++movingEpochSeq;
-        List<LayoutBox> targets = new ArrayList<>(boxes.size());
-        try {
-            for (LayoutBox b : boxes) {
-                if (b == null || b.w() <= 0 || b.h() <= 0 || b.isAnonymous) {
-                    cant(0, 2);
-                    return null;
-                }
-                if (isCulledNoop(b)) continue; // 窓の外の箱: 表示リストに項目が無く、画面外のままなら何も変えずに済む
-                if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlEnd > listSize) {
-                    cant(0, 3);
-                    return null;
-                }
-                if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) {
-                    cant(0, 4);
-                    return null;
-                }
-                if (b.style != null) {
-                    var facts = PaintOrder.factsOf(b.style);
-                    if (facts.hasAnimation()) {
-                        cant(0, 5);
-                        return null;
-                    }
-                    // スクロール付きの箱でも、つまみ・溝は箱自身のスライスの外（after 層）に出るので、
-                    // スクロールの有無・overflow・scrollbar-width が前回と同じなら自身のスライスだけ差し替えればよい
-                    if (facts.scrollbars() && !scrollTraitsUnchanged(b)) {
-                        cant(0, 5);
-                        return null;
-                    }
-                }
-                if (order.createsStackingContext(b, b.style)) {
-                    cant(0, 6);
-                    return null;
-                }
-                BoxMemo m = boxMemo.get(b);
-                if (m != null) {
-                    if (m.style != null) {
-                        var prevFacts = PaintOrder.factsOf(m.style);
-                        if (prevFacts.hasAnimation()) {
-                            cant(0, 5);
-                            return null;
-                        }
-                        if (prevFacts.scrollbars() != PaintOrder.factsOf(b.style).scrollbars()) {
-                            cant(0, 5);
-                            return null;
-                        }
-                        if (order.createsStackingContext(b, m.style)) {
-                            cant(0, 6);
-                            return null;
-                        }
-                    }
-                    if (m.nums != null && m.nums.length >= 4) {
-                        if (Float.compare(m.nums[0], b.x()) != 0 || Float.compare(m.nums[1], b.y()) != 0
-                                || Float.compare(m.nums[2], b.w()) != 0 || Float.compare(m.nums[3], b.h()) != 0) {
-                            cant(0, 8);
-                            return null;
-                        }
-                    }
-                }
-                targets.add(b);
-            }
-        } finally {
-            activeMovingEpoch = prevEpoch;
-        }
-        if (targets.size() > 1) {
-            targets.sort((a, b) -> {
-                int cmp = Integer.compare(b.dlStart, a.dlStart);
-                if (cmp != 0) return cmp;
-                return Integer.compare(System.identityHashCode(b), System.identityHashCode(a));
-            });
-            int write = 0;
-            for (int i = 0; i < targets.size(); i++) {
-                LayoutBox b = targets.get(i);
-                if (write > 0) {
-                    LayoutBox prev = targets.get(write - 1);
-                    if (b == prev) continue;
-                    if (b.dlEnd > prev.dlStart) {
-                        cant(0, 7);
-                        return null;
-                    }
-                }
-                targets.set(write++, b);
-            }
-            if (write < targets.size()) {
-                targets.subList(write, targets.size()).clear();
-            }
-        }
-        return targets;
-    }
-
-    /**
-     * 指定されたボックス群の表示項目スライス [dlStart, dlEnd) をインプレースで差分差し替え可能か判定する。
-     */
-    public boolean canPatchBoxes(java.util.Collection<LayoutBox> boxes) {
-        return preparePatchBoxes(boxes) != null;
-    }
-
-    /**
-     * 変更されたボックス群のスライスを再描画し、全ボックス走査を回避して表示リストをインプレースで差分更新する。
-     * パッチ不可能な場合は null を返す（呼び出し側がフル描画にフォールバック）。
-     */
-    public List<DisplayItem> patchBoxes(java.util.Collection<LayoutBox> boxes) {
-        long prof = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
-        try {
-            return patchBoxesUnprofiled(boxes);
-        } finally {
-            StageProfiler.end(PipelineStage.DISPLAY_LIST, prof);
-        }
-    }
-
-    private List<DisplayItem> patchBoxesUnprofiled(java.util.Collection<LayoutBox> boxes) {
-        List<LayoutBox> sorted = preparePatchBoxes(boxes);
-        if (sorted == null) {
-            List<DisplayItem> viaStacking = com.nishiyu.enderframelib.core.kernel.Shortcut.STACKING_PATCH.on() ? stackingPatch.patchViaStackingSubtrees(boxes) : null;
-            if (viaStacking == null) STAT_SLICE_PATCH_FALLBACKS.increment();
-            return viaStacking;
-        }
-        if (sorted.isEmpty()) {
-            return currentDisplayList;
-        }
-
-        decor.setDevicePixelRatio(currentRoot.devicePixelRatio());
-        boolean relMode = parentRelativeSource.getAsBoolean();
-        this.parentRelative = relMode;
-        order.setParentRelative(relMode);
-        patchSortedSlices(sorted, relMode);
-
-        syncCanvasBackground(sorted);
-        generation++;
-        buildSerial++;
-        buildEpoch = LayoutBox.paintEpoch();
-        lastElementCount = currentDisplayList.size();
-        STAT_SLICE_PATCH_HITS.increment();
-        return currentDisplayList;
-    }
-
-    // ------------------------------------------------------------------ B12: スタッキングコンテキストの部分木の組み直し
-
-    /** 診断: 組み直した部分木の数（スタッキングコンテキストの部分木の組み直しで差分パッチが成り立つたびに 1 以上増える）。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_STACKING_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
-
-    PaintSupport.CaptureList stackItemsScratch;
-    final List<LayoutBox> stackBoxesScratch = new ArrayList<>();
-
-    /** 降順（{@code dlStart} の大きい順）に並んだ箱のスライスを、それぞれ作り直して差し替える（{@link #patchBoxes} の本体）。 */
-    void patchSortedSlices(List<LayoutBox> sorted, boolean relMode) {
-        for (LayoutBox b : sorted) {
-            ClipRect clip = clipForBox(b);
-            String parentId = parentIdForBox(b);
-            fragIds.set(0);
-            BoxMemo prev = boxMemo.get(b);
-            PaintSupport.CaptureList newItems;
-            if (prev != null && prev.itemsMutable && prev.items instanceof PaintSupport.CaptureList prevCap) {
-                prevCap.resetForBuild();
-                newItems = prevCap;
-            } else {
-                newItems = new PaintSupport.CaptureList(b.dlEnd - b.dlStart + 4);
-            }
-            newItems.beginCapture();
-            float[] capturedCoords = null;
-            try {
-                List<DisplayItem> prevSlice = b.dlStart >= 0 && b.dlEnd <= currentDisplayList.size()
-                        ? currentDisplayList.subList(b.dlStart, b.dlEnd) : null;
-                newItems.setReusePrev(prevSlice);
-                drawBoxSelfUncached(newItems, b, clip, parentId, prevSlice);
-            } finally {
-                newItems.setReusePrev(null);
-                if (newItems.capturing) capturedCoords = newItems.finishCapture();
-            }
-            BoxMemo stored = remember(prev, b, clip, parentId, newItems, true);
-            if (capturedCoords != null && stored.translatable && !stored.carriesContentExtent
-                    && capturedCoords.length == newItems.size() * 4) {
-                stored.itemCoords = capturedCoords;
-            }
-            boxMemo.put(b, stored);
-            // スクロールの中身をまとめた節は、箱の項目の直後（drawBoxSelf と同じ位置）にある。差し替えで落とすと、
-            // 子の項目が親を失って、スクロール量が掛からなくなる（ホバーのあとにスクロールすると表示がずれる）
-            PaintOrder.ScrollContent sc = order.scrollContentOf(b);
-            int memoSize = newItems.size(); // 節を足す前の長さ（記憶のリストは箱の項目だけ。下で節を取り除いて戻す。§6-125）
-            if (sc != null) {
-                for (int i = b.dlStart; i < b.dlEnd; i++) {
-                    if (sc.contentId.equals(currentDisplayList.get(i).id())) {
-                        int prevOx = newItems.originX, prevOy = newItems.originY;
-                        if (relMode && PaintOrder.boxHasOwnNode(b)) {
-                            newItems.setOrigin(Math.round(b.x()), Math.round(b.y()));
-                        }
-                        try {
-                            order.addMovingNode(newItems, sc.contentId, b, null);
-                        } finally {
-                            newItems.setOrigin(prevOx, prevOy);
-                        }
-                        break;
-                    }
-                }
-            }
-
-            int oldLen = b.dlEnd - b.dlStart;
-            int newLen = newItems.size();
-            int delta = newLen - oldLen;
-
-            if (delta == 0) {
-                // スライス長同一: インプレース置換 (O(newLen))
-                for (int i = 0; i < newLen; i++) {
-                    int slot = b.dlStart + i;
-                    DisplayItem was = currentDisplayList.get(slot), now = newItems.get(i);
-                    // 塗り（色・背景色・不透明度）だけが違うなら、項目を作り直さず前の項目のセルへ書く（B9 の M3）。変更の検出は
-                    // セルの通し番号が担う（ItemDiff）。文字は下ごしらえ（SoftwareRenderBackend.textSetups）が項目の同一性で引くので対象外
-                    if (was.type() != ElementType.TEXT && was.sameExceptPaint(now)) {
-                        if (was.repaintFrom(now)) STAT_REPAINT_IN_PLACE.increment();
-                    } else {
-                        currentDisplayList.set(slot, now);
-                    }
-                }
-            } else {
-                // スライス長変化: 局所置換と後続インデックスシフト
-                currentDisplayList.subList(b.dlStart, b.dlEnd).clear();
-                currentDisplayList.addAll(b.dlStart, newItems);
-                b.dlEnd = b.dlStart + newLen;
-
-                int orderIdx = b.dlOrder;
-                for (int k = orderIdx + 1, n = renderedBoxes.size(); k < n; k++) {
-                    LayoutBox succ = renderedBoxes.get(k);
-                    succ.dlStart += delta;
-                    succ.dlEnd += delta;
-                }
-            }
-            if (stored.items == newItems && newItems.size() > memoSize) newItems.subList(memoSize, newItems.size()).clear();
-        }
-    }
-
-    /**
-     * キャンバスの背景（先頭の {@code bg_root}）は、背景を譲った要素（ルート、無ければ body）の背景色で、箱のスライスの外にある。
-     * その要素を差し替えたら（子孫の :hover で body の背景が変わるなど）、色を合わせる（A6b ④。無いと 1 フレーム古い色が残る）。
-     */
-    void syncCanvasBackground(List<LayoutBox> patched) {
-        LayoutBox source = canvasBackgroundSource;
-        if (source == null || currentDisplayList.isEmpty() || !patched.contains(source)) return;
-        DisplayItem first = currentDisplayList.get(0);
-        if (!"bg_root".equals(first.id())) return;
-        int color = ColorParser.parseColor(source.style.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
-        if (color == first.bgColor() || color == 0x00000000) return; // 透明になる場合は項目ごと無くなる（全面の組み直しでしか表せない）
-        DisplayItem now = new DisplayItem(
-                first.id(), first.baseNodeId(), first.type(), first.x(), first.y(), first.width(), first.height(),
-                first.text(), first.color(), color, first.events(),
-                first.radius(), first.opacity(), first.baseTranslateX(), first.baseTranslateY(),
-                first.scaleX(), first.scaleY(), first.rotate(), first.transitionDuration(),
-                first.animDef(), first.fitMode(), first.meta(), first.key());
-        if (!first.repaintFrom(now)) currentDisplayList.set(0, now);
-    }
-
-    /**
-     * 子要素の増減（CHILD_PATCH）に対して、削除されたボックスと追加されたボックスのスライスを差分差し替え可能か判定する。
-     * （R2 で後続座標シフト・親寸法更新のチャンク化とともに本格成立させるため、現時点では理由 12 でフォールバック）
-     */
-    public boolean canPatchChildSlices(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
-        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return cant(1, 0);
-        if (parentBox == null || (removed.isEmpty() && added.isEmpty())) return cant(1, 1);
-        if (parentBox.contentAutoSkipped || parentBox.childrenDeferred || parentBox.isVirtualizedFlow()) return cant(1, 12);
-        // 後続の箱の座標の反映（手順 7）と祖先の寸法の反映（手順 8）は、箱ごとの記憶が基準。記憶を切っていると基準が無く、古い座標・寸法が残る（A6b ④）
-        if (!MEMO_ENABLED) return cant(1, 14);
-        int listSize = currentDisplayList.size();
-        int boxCount = renderedBoxes.size();
-        if (windowedBuild && !windowIntact(removed)) return cant(1, 13);
-        if (!removed.isEmpty()) {
-            SubtreeSlices remSlices = new SubtreeSlices();
-            for (LayoutBox r : removed) collectSubtreeSlices(r, remSlices);
-            for (LayoutBox b : remSlices.blockBoxes) {
-                if (b.dlStart >= 0) {
-                    if (b.dlEnd < b.dlStart || b.dlEnd > listSize) return cant(1, 2);
-                    if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return cant(1, 3);
-                }
-            }
-            for (LayoutBox b : remSlices.inlineBoxes) {
-                if (b.dlStart >= 0) {
-                    if (b.dlEnd < b.dlStart || b.dlEnd > listSize) return cant(1, 4);
-                    if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return cant(1, 5);
-                }
-            }
-        }
-        return true;
-    }
-
-    /**
-     * 子要素の増減（CHILD_PATCH）に対して、削除されたボックスのスライスを除去し、追加されたボックスのスライスを挿入して差分更新する。
-     * パッチ不可能な場合は null を返す（フル描画フォールバック）。
-     */
-    public List<DisplayItem> patchChildSlices(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
-        long prof = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
-        try {
-            return patchChildSlicesUnprofiled(parentBox, removed, added, afterBox);
-        } finally {
-            StageProfiler.end(PipelineStage.DISPLAY_LIST, prof);
-        }
-    }
-
-    private List<DisplayItem> patchChildSlicesUnprofiled(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
-        return childPatch.apply(parentBox, removed, added, afterBox);
-    }
 }

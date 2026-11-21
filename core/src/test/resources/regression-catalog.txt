@@ -71,7 +71,6 @@ dcbad05 | WebControlInteractionTest#testClickingNonFocusableElementDoesNotFocusA
 78839af | GpuModulesTest#autoFallsThroughToAnotherApiWhenGlIsUnavailable | GL が使えない環境で AUTO が別の API へ進まなかった
 
 # --- テストと CI の不安定さ（エンジンではなくテストの不具合） ---
-§6-74, A5 | StaleTextPatchTest#textUpdatesWhileLayoutIsStaleMatchTheEagerResult | リサイズの保留（壁時計）に当たった回だけ比べる時点がずれた
 §6-105, A1 | TimingTagPolicyTest#wallClockAssertionsAreTaggedTiming, TimingTagPolicyTest#ciWorkflowsExcludeTimingTests | 実時間で合否を決めるテストが共有ランナーの CI で揺れた
 25daf63, e34304e, B11 | LayoutTaskPoolCallerParticipationTest#everyIndexRunsOnceAndTheCallerTakesAShare | 2 コアの CI で、ワーカーか呼び出し側が全部を取って相手が 0 件になった
 50bbf92, A1 | FontEnvironmentTest#comparesPixelsOnlyWhenTheRecordedEnvironmentMatches | OS の書体に依る画素のゴールデンが、書体の違う CI で赤くなった

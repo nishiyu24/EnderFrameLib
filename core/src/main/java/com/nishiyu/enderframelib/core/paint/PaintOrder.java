@@ -102,26 +102,6 @@ public final class PaintOrder {
     private List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> cachedScrollInfos;
     private List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> prevScrollInfos;
 
-    interface SubtreePruner {
-        /**
-         * @param prepared {@link #prepare} が返した配列（無ければ null）
-         * @param index    {@code prepared} の中の {@code box} の位置（{@code prepared} が null なら使わない）
-         */
-        boolean prune(LayoutBox box, boolean ancestorHasMoving, Object[] prepared, int index);
-
-        /**
-         * 子の並びの判定のうち重い部分（部分木の走査）を、先にまとめて（並列に）済ませる。返した配列を、同じ並びの
-         * {@link #prune} に位置と一緒に渡す。済ませない（並びが小さい・並列にできない）なら null。
-         */
-        Object[] prepare(List<LayoutBox> kids, boolean ancestorHasMoving);
-    }
-
-    /**
-     * 子の部分木ごと省ける（画面外で、中の箱も全て省かれる）か判定して、省いたら true を返す（描画側が持ち主の記録を済ませる）。
-     * 省いた子は分類しない（箱ごとにタスクを作って後で捨てるより安い）。null なら省かない。
-     */
-    SubtreePruner subtreePruner;
-
     // ==========================================
     // 部分木の保持（チャンク）
     // ==========================================
@@ -133,106 +113,13 @@ public final class PaintOrder {
     // 箱の数が同じなら、分類も箱の照合も飛ばして、保持した項目をそのまま出す。
     // 描画順の決まり方は変えない: 部分木の項目は、分類したときと同じ層の同じ位置に出る。
 
-    static final class BoxSlice {
-        LayoutBox box;
-        List<DisplayItem> items = List.of();
-        final ArrayList<DisplayItem> buf = new ArrayList<>(4);
-
-        void reset() {
-            box = null;
-            items = List.of();
-            buf.clear();
-        }
-    }
-
-    private final List<BoxSlice> slicePool = new ArrayList<>(64);
-
-    private BoxSlice borrowSlice() {
-        int n = slicePool.size();
-        return n > 0 ? slicePool.remove(n - 1) : new BoxSlice();
-    }
-
-    void recycleSlices(List<BoxSlice> list) {
-        for (int i = 0, n = list.size(); i < n; i++) {
-            BoxSlice s = list.get(i);
-            s.reset();
-            if (slicePool.size() < 1024) slicePool.add(s);
-        }
-        list.clear();
-    }
-
-    /** 描画側が持つ箱の記憶との橋渡し。 */
-    interface MemoKeeper {
-        /**
-         * 箱を記録中の部分木の中で描いた直後に呼ぶ。その箱の記憶を {@code chunk} のものとして印を付ける
-         * （記憶の生死は、部分木が再利用されている間は部分木の世代で決まる。箱ごとに世代を書き直さずに済む）。
-         */
-        void owned(LayoutBox box, Chunk chunk);
-    }
-
     /** 記憶と部分木の掃除は、毎回ではなくこの回数に 1 度（木から消えた箱の分が少し残るだけで、結果には響かない）。 */
     static final int SWEEP_EVERY = 8;
 
-    /** 1 つの部分木に含める箱の上限。これを超える部分木は保持せず、子ごとに判断する。 */
-    static final int CHUNK_MAX_BOXES = 128;
-    /** 診断: 部分木を再利用した回数・新しく記録した回数の累計。 */
-    static final java.util.concurrent.atomic.LongAdder STAT_CHUNK_REPLAYED = new java.util.concurrent.atomic.LongAdder(),
-            STAT_CHUNK_RECORDED = new java.util.concurrent.atomic.LongAdder();
-
-    private static final int CHUNK_POOL_MAX = 512;
-    private final Map<LayoutBox, Chunk> chunks = new IdentityHashMap<>();
-    private final List<Chunk> chunkPool = new ArrayList<>();
-    private final List<RenderTask> pooledTaskOut = new ArrayList<>();
-    private final List<RenderTask> taskPool = new ArrayList<>();
-    private final List<PaintNode> nodePool = new ArrayList<>();
-    private final List<PaintLayers> layerPool = new ArrayList<>();
     private final ItemProps scratchMovingProps = new ItemProps();
     private final ItemProps scratchSbProps = new ItemProps();
     private final ItemProps scratchThumbProps = new ItemProps();
-    private int taskCursor, nodeCursor, layerCursor;
-    private MemoKeeper memoKeeper;
-    private Predicate<LayoutBox> memoizable = b -> false;
-    private boolean chunksOn, replayAllowed, parentRelative;
-    private int renderSerial, renderGeneration;
-    private long renderEpoch;
-    private Chunk recording;
-    private int scanCount, scanInteractive;
-    private long scanMaxStamp;
-
-    private RenderTask borrowTask() {
-        if (taskCursor < taskPool.size()) return taskPool.get(taskCursor++);
-        RenderTask t = new RenderTask();
-        taskPool.add(t);
-        taskCursor++;
-        return t;
-    }
-
-    private PaintNode borrowNode(RenderTask self, boolean stackingContext, int z, PaintLayers layers, LayerSpec layerSpec, LayoutBox layerBox) {
-        PaintNode n;
-        if (nodeCursor < nodePool.size()) {
-            n = nodePool.get(nodeCursor++);
-        } else {
-            n = new PaintNode();
-            nodePool.add(n);
-            nodeCursor++;
-        }
-        n.reset(self, stackingContext, z, layers, layerSpec, layerBox);
-        return n;
-    }
-
-    private PaintLayers borrowLayers() {
-        PaintLayers l;
-        if (layerCursor < layerPool.size()) {
-            l = layerPool.get(layerCursor++);
-            l.reset();
-        } else {
-            l = new PaintLayers();
-            layerPool.add(l);
-            layerCursor++;
-        }
-        return l;
-    }
-
+    private boolean parentRelative;
     void setParentRelative(boolean parentRelative) {
         this.parentRelative = parentRelative;
     }
@@ -252,174 +139,6 @@ public final class PaintOrder {
             return boxHasOwnNode(a) && !a.paintCulled ? a : null;
         }
         return null;
-    }
-
-    void configureChunks(MemoKeeper keeper, Predicate<LayoutBox> memoizable) {
-        this.memoKeeper = keeper;
-        this.memoizable = memoizable;
-    }
-
-    /**
-     * 次の {@link #paintTasks} で部分木の保持を使うか。{@code enabled} は、描く箱が全件そろう描画のとき（スクロールの平行移動や
-     * 画面外の省略では、項目が欠けたり動いたりするので使わない）。{@code replay} は、変更印で「変わっていない」と言ってよい
-     * 描画のとき（属性の変更は印に出ないので、呼び出し側が有効にする）。
-     */
-    void beginRender(int serial, long epoch, int generation, boolean enabled, boolean replay) {
-        chunksOn = com.nishiyu.enderframelib.core.kernel.Shortcut.PAINT_CHUNKS.on() && enabled;
-        replayAllowed = replay;
-        renderSerial = serial;
-        renderEpoch = epoch;
-        renderGeneration = generation;
-        recording = null;
-    }
-
-    /** 描き終えた。木から消えた箱の部分木は捨てる（枠だけは {@link #chunkPool} へ戻す）。 */
-    void endRender() {
-        chunksOn = false;
-        recording = null;
-        if (!chunks.isEmpty() && renderGeneration % SWEEP_EVERY == 0) {
-            int g = renderGeneration;
-            var it = chunks.values().iterator();
-            while (it.hasNext()) {
-                Chunk c = it.next();
-                if (c.generation != g) {
-                    it.remove();
-                    if (chunkPool.size() < CHUNK_POOL_MAX) {
-                        c.release(this);
-                        chunkPool.add(c);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * 部分木 {@code box} の走査。箱の数・変更印の最大値・対話ルールを持つ箱の数を数える。箱が多すぎるか、
-     * {@code full} のとき保持できない箱があれば false。再利用の判定は {@code full=false}（保持できるかは記録時に確かめてある）。
-     */
-    private boolean scan(LayoutBox b, boolean full) {
-        if (++scanCount > CHUNK_MAX_BOXES) return false;
-        if (full && !chunkable(b)) return false;
-        if (b.paintStamp() > scanMaxStamp) scanMaxStamp = b.paintStamp();
-        if (b.hasInteractiveRules) scanInteractive++;
-        if (b.display() == null || b.display().isNone()) return true;
-        List<LayoutBox> kids = b.children;
-        for (int i = 0, n = kids.size(); i < n; i++) {
-            if (!scan(kids.get(i), full)) return false;
-        }
-        return true;
-    }
-
-    /** 純粋なフローの箱か（保持した項目が、箱の入力だけで決まり、描画順の外へ出ていかない）。 */
-    private boolean chunkable(LayoutBox b) {
-        if (b.display() == null || b.style == null || b.node.tag == null) return false;
-        switch (b.node.tag) {
-            case "html", "body", "root", "option", "optgroup", "select", "textarea", "input" -> {
-                return false;
-            }
-            default -> { }
-        }
-        if (!memoizable.test(b)) return false;
-        if (b.display().isNone()) return true;
-        StyleFacts f = factsOf(b.style);
-        if (f.displayNone()) return true;
-        if (f.scrollbars() || f.hasMovingProps() || !"visible".equals(f.overflowX()) || !"visible".equals(f.overflowY())) return false;
-        if (createsStackingContext(b) || isPositioned(b) || BlockLayoutEngine.isFloating(b) || isAtomicInline(b)) return false;
-        return !b.node.attrs.containsKey("data-pan-zoom");
-    }
-
-    /**
-     * 部分木を保持した項目で出す（できれば true）。保持が使えなければ、保持できる部分木なら記録しながら通常の分類をして true、
-     * 保持できない部分木は false（呼び出し側が通常の分類をする）。
-     */
-    private boolean tryChunk(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
-                             boolean ancestorMoving) {
-        LayoutBox pNode = parentRelative ? effectiveParentNodeBox(box, parentId) : null;
-        int curPox = pNode != null ? Math.round(pNode.x()) : 0;
-        int curPoy = pNode != null ? Math.round(pNode.y()) : 0;
-        Chunk c = chunks.get(box);
-        if (c != null && c.complete() && replayAllowed) {
-            scanCount = 0;
-            scanMaxStamp = 0;
-            scanInteractive = 0;
-            if (scan(box, false) && c.parentBox == box.parent
-                    && Float.compare(c.boxX, box.x()) == 0 && Float.compare(c.boxY, box.y()) == 0
-                    && c.clip == clip && java.util.Objects.equals(c.parentId, parentId)
-                    && c.parentRelative == parentRelative && c.parentOriginX == curPox && c.parentOriginY == curPoy
-                    && scanCount == c.boxCount && scanInteractive == c.interactiveCount
-                    && Math.max(scanMaxStamp, box.pathPaintStamp(renderSerial)) <= c.epoch) {
-                if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_STAMPS.on()) verifyChunk(c, box, clip, parentId, ancestorMoving);
-                c.generation = renderGeneration;
-                for (int i = 0, n = c.blockSlices.size(); i < n; i++) {
-                    BoxSlice slice = c.blockSlices.get(i);
-                    local.addBlock(borrowNode(borrowTask().setReplay(slice.box, slice.items, ancestorMoving), false, 0, null, null, null));
-                }
-                for (int i = 0, n = c.inlineSlices.size(); i < n; i++) {
-                    BoxSlice slice = c.inlineSlices.get(i);
-                    local.addInline(borrowNode(borrowTask().setReplay(slice.box, slice.items, ancestorMoving), false, 0, null, null, null));
-                }
-                STAT_CHUNK_REPLAYED.increment();
-                return true;
-            }
-        }
-        scanCount = 0;
-        scanMaxStamp = 0;
-        scanInteractive = 0;
-        if (!scan(box, true)) return false;
-        Chunk fresh;
-        if (c != null) {
-            fresh = c;
-            fresh.reset(box.parent, box.x(), box.y(), clip, parentId, parentRelative, curPox, curPoy,
-                    renderEpoch, scanCount, scanInteractive, this);
-        } else {
-            if (!chunkPool.isEmpty()) {
-                fresh = chunkPool.remove(chunkPool.size() - 1);
-                fresh.reset(box.parent, box.x(), box.y(), clip, parentId, parentRelative, curPox, curPoy,
-                        renderEpoch, scanCount, scanInteractive, this);
-            } else {
-                fresh = new Chunk(box.parent, box.x(), box.y(), clip, parentId, parentRelative, curPox, curPoy,
-                        renderEpoch, scanCount, scanInteractive);
-            }
-            chunks.put(box, fresh);
-        }
-        fresh.generation = renderGeneration;
-        recording = fresh;
-        try {
-            classifyPlain(box, clip, parentId, sc, local, ancestorMoving);
-        } finally {
-            recording = null;
-        }
-        STAT_CHUNK_RECORDED.increment();
-        return true;
-    }
-
-    /** 検証: 保持した項目が、通常の分類で作り直した項目と（層ごとに）同じであること。 */
-    private void verifyChunk(Chunk c, LayoutBox box, ClipRect clip, String parentId, boolean ancestorMoving) {
-        boolean was = chunksOn;
-        chunksOn = false;
-        PaintLayers tl = new PaintLayers();
-        List<DisplayItem> blocks = parentRelative ? new PaintSupport.CaptureList(c.blockItems.size()) : new ArrayList<>();
-        List<DisplayItem> inlines = parentRelative ? new PaintSupport.CaptureList(c.inlineItems.size()) : new ArrayList<>();
-        try {
-            classifyPlain(box, clip, parentId, tl, tl, ancestorMoving);
-        } finally {
-            chunksOn = was;
-        }
-        if (!tl.negative().isEmpty() || !tl.floats().isEmpty() || !tl.positioned().isEmpty() || !tl.positive().isEmpty() || !tl.after().isEmpty()) {
-            throw new AssertionError("保持した部分木が純粋なフローではない: " + box.node.tag + "#" + box.node.key());
-        }
-        runTasks(tl.blocks(), blocks);
-        runTasks(tl.inlines(), inlines);
-        if (!blocks.equals(c.blockItems) || !inlines.equals(c.inlineItems)) {
-            throw new AssertionError("保持した部分木の項目が作り直した項目と違う: " + box.node.tag + "#" + box.node.key()
-                    + " blocks " + c.blockItems.size() + "/" + blocks.size() + " inlines " + c.inlineItems.size() + "/" + inlines.size());
-        }
-    }
-
-    private void runTasks(List<PaintNode> nodes, List<DisplayItem> out) {
-        List<RenderTask> tasks = new ArrayList<>();
-        for (int i = 0, n = nodes.size(); i < n; i++) emit(nodes.get(i), tasks);
-        for (int i = 0, n = tasks.size(); i < n; i++) executeTask(tasks.get(i), out);
     }
 
     /** 箱が中身の節を持つスクロールコンテナなら、その記録。 */
@@ -581,18 +300,10 @@ public final class PaintOrder {
         return false;
     }
 
-    /** ビューポートの大きさが変わった。部分木の保持はビューポート基準の単位を使う箱の項目を含み得るので捨てる。 */
+    /** ビューポートの大きさが変わった。 */
     void setViewport(int rootW, int rootH) {
         this.rootW = rootW;
         this.rootH = rootH;
-        if (!chunks.isEmpty()) {
-            for (Chunk c : chunks.values()) {
-                if (chunkPool.size() >= CHUNK_POOL_MAX) break;
-                c.release(this);
-                chunkPool.add(c);
-            }
-            chunks.clear();
-        }
     }
 
     PaintOrder(int rootW, int rootH, ScrollState scrollState, AtomicInteger fragIds, BoxPainter painter,
@@ -603,21 +314,6 @@ public final class PaintOrder {
         this.fragIds = fragIds;
         this.painter = painter;
         this.animatesOpacity = animatesOpacity;
-    }
-
-    /**
-     * 箱の描画順（先に描くものが先頭）。{@link #render} と同じ並べ替えを通す。
-     *
-     * 忠実度コーパスが z-order をブラウザと突き合わせるための読み口
-     * （{@code FidelityDumper} の paint 列）。描画順の決め方を変えるときは
-     * ここも同じ経路を通るので、テストが描画と食い違うことはない。
-     */
-    public List<LayoutBox> paintOrder(LayoutBox root) {
-        List<LayoutBox> order = new ArrayList<>();
-        for (RenderTask task : paintTasks(root)) {
-            if (task.box() != null) order.add(task.box());
-        }
-        return order;
     }
 
     static LayoutBox canvasBackgroundSource(LayoutBox root) {
@@ -651,7 +347,8 @@ public final class PaintOrder {
      * コンテキストを作らず、位置指定されていないブロックの z-index も効き、
      * コンテキストの中の負の z-index は親の背景より下に潜っていた。
      */
-    List<RenderTask> paintTasks(LayoutBox root) {
+    /** 1 回の描画の前処理（部分木の記録・スクロールの節・クリップの表を空にする）。{@link #paintTasks} と断片の経路が共有する。 */
+    void beginPass() {
         fragIds.set(0);
         scrollContentOf.clear();
         scrollContents.clear();
@@ -659,58 +356,6 @@ public final class PaintOrder {
         cachedScrollInfos = null;
         contentClips.clear();
         blendDescendants.clear();
-        taskCursor = 0;
-        nodeCursor = 0;
-        layerCursor = 0;
-        pooledTaskOut.clear();
-        boolean rootMoving = root.style != null && factsOf(root.style).hasMovingProps();
-        PaintNode top;
-        topLayerRoot = null;
-        if ("root".equals(root.node.tag)) {
-            top = borrowNode(null, true, 0, borrowLayers(), null, null);
-            topLayerRoot = top.layers;
-            collectChildren(root, null, null, top.layers, top.layers, rootMoving);
-        } else {
-            top = borrowNode(selfTask(root, null, null, rootMoving), true, 0, borrowLayers(), null, null);
-            topLayerRoot = top.layers;
-            collectChildren(root, null, null, top.layers, top.layers, rootMoving);
-        }
-        topLayerRoot = null;
-        emit(top, pooledTaskOut);
-        return pooledTaskOut;
-    }
-
-    /**
-     * B12: スタッキングコンテキストを作る箱 {@code box} 1 つ分の描画タスク。全体の {@link #paintTasks} の中で、{@link #classify} が
-     * この箱に作るノード（自分のタスク・レイヤー・中身の層）を同じ手順で作り、付録 E の順に平らにする。スタッキングコンテキストの
-     * 項目は表示リストの中で連続するので、全体を組み直さずにこの範囲だけを差し替えられる（{@code DisplayListBuilder} の部分木の組み直し）。
-     * 引数は、全体の分類で {@code box} に渡る値（親の中身のクリップ・親の id・祖先が動くか）。部分木の保持（チャンク）と
-     * 画面外の部分木の省略は使わない（箱ごとの判定で、全体の作り直しと同じ結果になる）。Top Layer の箱は外へ出せないので、呼び出し側が除く。
-     */
-    List<RenderTask> stackingSubtreeTasks(LayoutBox box, ClipRect clip, String parentId, boolean ancestorMoving) {
-        fragIds.set(0);
-        blendDescendants.clear();
-        taskCursor = 0;
-        nodeCursor = 0;
-        layerCursor = 0;
-        pooledTaskOut.clear();
-        boolean prevChunks = chunksOn;
-        SubtreePruner prevPruner = subtreePruner;
-        chunksOn = false;
-        subtreePruner = null;
-        topLayerRoot = null;
-        try {
-            boolean selfOrAncestorMoving = ancestorMoving || (box.style != null && factsOf(box.style).hasMovingProps());
-            RenderTask self = selfTask(box, clip, parentId, selfOrAncestorMoving);
-            int z = isZIndexAuto(box) ? 0 : box.zIndex();
-            PaintNode node = borrowNode(self, true, z, borrowLayers(), self != null ? layerSpecFor(box) : null, box);
-            collectChildren(box, clip, parentId, node.layers, node.layers, selfOrAncestorMoving);
-            emit(node, pooledTaskOut);
-        } finally {
-            chunksOn = prevChunks;
-            subtreePruner = prevPruner;
-        }
-        return pooledTaskOut;
     }
 
     /** {@link #isTopLayer} の外向けの口（部分木の組み直しの対象から外すため）。 */
@@ -718,16 +363,13 @@ public final class PaintOrder {
         return isTopLayer(box);
     }
 
-    /** Top Layer の箱を載せる、文書の根のスタッキングコンテキストの層（{@link #paintTasks} の間だけ）。 */
-    private PaintLayers topLayerRoot;
-
     /**
      * Top Layer の箱（{@code dialog:modal} と表示中の {@code popover}。UA シートが {@link #TOP_LAYER_Z} を与える固定配置）。
      * 祖先のスタッキングコンテキストの外へ出て、文書の根のコンテキストの最前面に描かれる（HTML §4.11 / CSS Positioned Layout 3 §5）。
      */
     static final int TOP_LAYER_Z = Integer.MAX_VALUE;
 
-    private void drawBackdrop(List<DisplayItem> elements, LayoutBox box) {
+    void drawBackdrop(List<DisplayItem> elements, LayoutBox box) {
         int color = ColorParser.parseColor(box.backdropStyle.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
         float opacity = box.backdropStyle.number(CssPropertyIndex.OPACITY, 1.0f);
         if ((color >>> 24) == 0 || opacity <= 0f) return;
@@ -756,11 +398,15 @@ public final class PaintOrder {
      * @param sc    いちばん近い本物のスタッキングコンテキストの層（負・0・正の z-index と位置指定要素が入る）
      * @param local 今いる層（float・位置指定要素・不可分なインラインは自分の中身だけを持つ疑似コンテキストを作る）
      */
-    void collectChildren(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
-                         boolean ancestorOrSelfMoving) {
-        String tag = box.node.tag;
-        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isValueControl(tag)) return;
+    /** 子へ渡す文脈（中身に掛けるクリップ・子の項目の親の id）。 */
+    static final class ChildContext { ClipRect clip; String parentId; }
 
+    /**
+     * 箱 {@code box} の中身の文脈を決める。クリップの表（{@code contentClips}）とスクロールの節の登録も行う（子を分類・描画する前に呼ぶ）。
+     * 値の入力部品（子を持たない）には呼ばない。{@link #collectChildren} と断片の経路が共有する。
+     */
+    ChildContext enterChildren(LayoutBox box, ClipRect clip, String parentId, ChildContext into) {
+        String tag = box.node.tag;
         ClipRect computedClip = computeChildClipRect(box, clip);
         // 切らない箱は親のクリップをそのまま返す（すでにそろえてある）。新しく作った分だけそろえる
         ClipRect childClip = computedClip == clip ? clip : canonical(computedClip);
@@ -776,43 +422,24 @@ public final class PaintOrder {
             scrollContents.add(content);
             childParent = content.contentId;
         }
-        if (!box.contentAutoSkipped) {
-            SubtreePruner prune = subtreePruner;
-            com.nishiyu.enderframelib.core.layout.VirtualFlowState vf = box.virtualFlowState();
-            if (vf != null) {
-                int n = box.children.size();
-                int start = vf.placedRangeStart();
-                int end = vf.placedRangeEnd();
-                if (start >= 0 && end >= start) {
-                    int limit = Math.min(end, n - 1);
-                    for (int i = start; i <= limit; i++) {
-                        LayoutBox child = box.children.get(i);
-                        if (prune != null && prune.prune(child, ancestorOrSelfMoving, null, -1)) continue;
-                        classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
-                    }
-                }
-                for (int k = 0, m = vf.extraPlacedCount(); k < m; k++) {
-                    int idx = vf.extraPlacedAt(k);
-                    if (idx < 0 || idx >= n || (idx >= start && idx <= end)) continue;
-                    LayoutBox child = box.children.get(idx);
-                    if (prune != null && prune.prune(child, ancestorOrSelfMoving, null, -1)) continue;
-                    classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
-                }
-            } else {
-                List<LayoutBox> kids = box.children;
-                Object[] prepared = prune != null ? prune.prepare(kids, ancestorOrSelfMoving) : null;
-                for (int i = 0, n = kids.size(); i < n; i++) {
-                    LayoutBox child = kids.get(i);
-                    if (prune != null && prune.prune(child, ancestorOrSelfMoving, prepared, i)) continue;
-                    classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
-                }
-            }
-        }
+        into.clip = childClip;
+        into.parentId = childParent;
+        return into;
+    }
 
-        boolean scrollbars = factsOf(box.style).scrollbars();
-        if (!"root".equals(tag) && box.w() > 0 && box.h() > 0 && scrollbars && !isInvisible(box)) {
-            local.addAfter(borrowTask().setScrollbars(box, clip));
-        }
+    /** 断片の記憶が、部分木の中で登録されたスクロールの節を記録・再登録するための口。 */
+    int scrollContentCount() { return scrollContents.size(); }
+
+    List<ScrollContent> scrollContentsSince(int from) { return new ArrayList<>(scrollContents.subList(from, scrollContents.size())); }
+
+    void reregister(ScrollContent c) {
+        scrollContents.add(c);
+        scrollContentOf.put(c.box, c);
+    }
+
+    /** 箱のスクロールバーを描く（中身の層の後ろに出す）か。 */
+    static boolean wantsScrollbars(LayoutBox box) {
+        return !"root".equals(box.node.tag) && box.w() > 0 && box.h() > 0 && factsOf(box.style).scrollbars() && !isInvisible(box);
     }
 
     /**
@@ -829,133 +456,14 @@ public final class PaintOrder {
         return contentClips.containsKey(cb) ? contentClips.get(cb) : flowClip;
     }
 
-    /**
-     * 付録 E の分類。スタッキングコンテキストは z-index の符号で親のコンテキストの層 2 / 8 / 9 に入り、
-     * 中身を自分の層に閉じ込める。z-index: auto の位置指定要素（層 8）・float（層 5）・
-     * 不可分なインラインと flex / grid アイテム（層 7）は「コンテキストを作ったかのように」中身ごと描くが、
-     * 中の位置指定要素と本物のコンテキストは親のコンテキストに属する。
-     */
-    void classify(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
-                  boolean ancestorMoving) {
-        if (box.display().isNone() || factsOf(box.style).displayNone()) return;
-        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isOption(box.node.tag)) return;
-        boolean selfOrAncestorMoving = ancestorMoving || (box.style != null && factsOf(box.style).hasMovingProps());
-        // 記録の途中（部分木の中）では、中の箱を別に保持しない
-        if (chunksOn && recording == null && tryChunk(box, clip, parentId, sc, local, selfOrAncestorMoving)) return;
-        classifyPlain(box, clip, parentId, sc, local, selfOrAncestorMoving);
+    /** 箱自身の項目を持つか（大きさがあり、匿名でない）。 */
+    static boolean hasSelf(LayoutBox box) {
+        return box.w() > 0 && box.h() > 0 && !box.isAnonymous;
     }
 
-    /** {@link #classify} の本体（部分木の保持を試したあとの、通常の分類）。 */
-    private void classifyPlain(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
-                               boolean selfOrAncestorMoving) {
-        RenderTask self = selfTask(box, clip, parentId, selfOrAncestorMoving);
-        if (createsStackingContext(box)) {
-            int z = isZIndexAuto(box) ? 0 : box.zIndex();
-            PaintNode node = borrowNode(self, true, z, borrowLayers(), self != null ? layerSpecFor(box) : null, box);
-            // 部分木の記録の途中は外へ出せない（記録は部分木の中だけで完結する）
-            boolean hoist = recording == null && topLayerRoot != null && isTopLayer(box);
-            PaintLayers target = hoist ? topLayerRoot : sc;
-            if (hoist && box.backdropStyle != null) {
-                // ::backdrop は箱の直前（同じ z の中の先）に、ビューポート全面で描く
-                PaintNode backdrop = borrowNode(borrowTask().setBackdrop(box), false, 0, null, null, null);
-                if (z < 0) target.addNegative(backdrop); else if (z > 0) target.addPositive(backdrop); else target.addPositioned(backdrop);
-            }
-            if (z < 0) target.addNegative(node); else if (z > 0) target.addPositive(node); else target.addPositioned(node);
-            collectChildren(box, clip, parentId, node.layers, node.layers, selfOrAncestorMoving);
-        } else if (isPositioned(box)) {
-            // 先に入れてから中身を集める（中の位置指定要素は木の順で後ろに並ぶ）
-            PaintNode node = borrowNode(self, false, 0, borrowLayers(), null, null);
-            sc.addPositioned(node);
-            collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
-        } else if (BlockLayoutEngine.isFloating(box)) {
-            PaintNode node = borrowNode(self, false, 0, borrowLayers(), null, null);
-            local.addFloat(node);
-            collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
-        } else if (isAtomicInline(box)) {
-            PaintNode node = borrowNode(self, false, 0, borrowLayers(), null, null);
-            local.addInline(node);
-            collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
-        } else {
-            PaintNode leaf = borrowNode(self, false, 0, null, null, null);
-            if (box.display().isInlineLevel()) local.addInline(leaf); else local.addBlock(leaf);
-            collectChildren(box, clip, parentId, sc, local, selfOrAncestorMoving);
-        }
-    }
-
-    /** 付録 E の層の順に平らにする。z-index の並べ替えは安定（同じ値なら木の順）。 */
-    void emit(PaintNode node, List<RenderTask> out) {
-        // レイヤーに描く箱は、錨から子孫の最後までを開始と終了の印で挟む（スタッキングコンテキストの木は連続している）
-        if (node.layerSpec != null) out.add(borrowTask().setLayerStart(node.layerSpec, node.layerBox));
-        if (node.self != null) out.add(node.self);
-        PaintLayers l = node.layers;
-        if (l == null) {
-            if (node.layerSpec != null) out.add(RenderTask.LAYER_END);
-            return;
-        }
-        if (node.stackingContext) {
-            l.sortNegative();
-            List<PaintNode> neg = l.negative();
-            for (int i = 0, n = neg.size(); i < n; i++) emit(neg.get(i), out);
-        }
-        List<PaintNode> blks = l.blocks();
-        for (int i = 0, n = blks.size(); i < n; i++) emit(blks.get(i), out);
-        List<PaintNode> flts = l.floats();
-        for (int i = 0, n = flts.size(); i < n; i++) emit(flts.get(i), out);
-        List<PaintNode> inls = l.inlines();
-        for (int i = 0, n = inls.size(); i < n; i++) emit(inls.get(i), out);
-        if (node.stackingContext) {
-            List<PaintNode> pos = l.positioned();
-            for (int i = 0, n = pos.size(); i < n; i++) emit(pos.get(i), out);
-            l.sortPositive();
-            List<PaintNode> posZ = l.positive();
-            for (int i = 0, n = posZ.size(); i < n; i++) emit(posZ.get(i), out);
-        }
-        List<RenderTask> after = l.after();
-        for (int i = 0, n = after.size(); i < n; i++) out.add(after.get(i));
-        if (node.layerSpec != null) out.add(RenderTask.LAYER_END);
-    }
-
-    RenderTask selfTask(LayoutBox box, ClipRect clip, String parentId, boolean hasMovingAncestor) {
-        if (box.w() <= 0 || box.h() <= 0 || box.isAnonymous) return null;
-        Chunk rec = recording;
-        if (rec == null) return borrowTask().setDraw(box, clip, parentId, hasMovingAncestor);
-        // 部分木を記録している間は、描いた項目を（入る層ごとに）保持へ写す。保持できる部分木の箱は全て通常のブロック／インラインの葉
-        boolean inline = box.display().isInlineLevel();
-        rec.created++;
-        return borrowTask().setRecord(box, clip, parentId, rec, inline, hasMovingAncestor);
-    }
-
-    void executeTask(RenderTask task, List<DisplayItem> elements) {
-        switch (task.kind) {
-            case RenderTask.KIND_DRAW -> painter.draw(elements, task.box, task.clip, task.parentId);
-            case RenderTask.KIND_REPLAY -> DisplayListBuilder.appendItems(elements, task.replayItems);
-            case RenderTask.KIND_RECORD -> {
-                int start = elements.size();
-                painter.draw(elements, task.box, task.clip, task.parentId);
-                int count = elements.size() - start;
-                BoxSlice slice = borrowSlice();
-                slice.box = task.box;
-                if (count == 0) {
-                    slice.items = List.of();
-                } else {
-                    slice.buf.clear();
-                    List<DisplayItem> stampTarget = task.chunk.inlineItems != null
-                            ? (task.inline ? task.chunk.inlineItems : task.chunk.blockItems) : null;
-                    for (int i = start, end = elements.size(); i < end; i++) {
-                        DisplayItem item = elements.get(i);
-                        slice.buf.add(item);
-                        if (stampTarget != null) stampTarget.add(item);
-                    }
-                    slice.items = slice.buf;
-                }
-                (task.inline ? task.chunk.inlineSlices : task.chunk.blockSlices).add(slice);
-                if (memoKeeper != null) memoKeeper.owned(task.box, task.chunk);
-                task.chunk.executed++;
-            }
-            case RenderTask.KIND_SCROLLBARS -> drawScrollbarsIfNeeded(elements, task.box, task.clip);
-            case RenderTask.KIND_BACKDROP -> drawBackdrop(elements, task.box);
-            default -> {}
-        }
+    /** 箱自身の項目を {@code elements} へ描く（箱ごとの記憶つきの描画）。 */
+    void drawSelf(List<DisplayItem> elements, LayoutBox box, ClipRect clip, String parentId) {
+        painter.draw(elements, box, clip, parentId);
     }
 
     static boolean isPositioned(LayoutBox box) {
@@ -1124,30 +632,6 @@ public final class PaintOrder {
 
     static boolean isNone(String value) {
         return value == null || "none".equals(value) || value.isBlank() || "none".equalsIgnoreCase(value.trim());
-    }
-
-    /**
-     * {@code layers} が null なら箱自身だけ（中身は今の層に流れている）。{@code layerSpec} があれば、この箱は
-     * レイヤーに描いて合成する（スタッキングコンテキストだけが持つ）。
-     */
-    static final class PaintNode {
-        RenderTask self;
-        boolean stackingContext;
-        int z;
-        PaintLayers layers;
-        LayerSpec layerSpec;
-        LayoutBox layerBox;
-
-        void reset(RenderTask self, boolean stackingContext, int z, PaintLayers layers, LayerSpec layerSpec, LayoutBox layerBox) {
-            this.self = self;
-            this.stackingContext = stackingContext;
-            this.z = z;
-            this.layers = layers;
-            this.layerSpec = layerSpec;
-            this.layerBox = layerBox;
-        }
-
-        int z() { return z; }
     }
 
     /** 切らない軸のクリップの端（描画とヒットテストの座標に十分遠い値）。 */

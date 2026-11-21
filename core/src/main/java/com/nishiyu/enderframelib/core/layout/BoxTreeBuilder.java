@@ -160,6 +160,7 @@ public final class BoxTreeBuilder {
         int index = after == null ? 0 : indexOfBox(parent.children, after) + 1;
         parent.children.add(index, added);
         added.parent = parent;
+        parent.touchSubtree(); // 子の増減は、祖先の描画の記憶へ伝える
         parent.updateChildFlagsOnAdd(added);
         if (added.isAnonymous || added.subtreeHasGenerated) {
             for (LayoutBox a = parent.parent; a != null && !a.subtreeHasGenerated; a = a.parent) {
@@ -174,6 +175,7 @@ public final class BoxTreeBuilder {
         int index = indexOfBox(parent.children, removed);
         if (index >= 0) {
             parent.children.remove(index);
+            parent.touchSubtree();
             if (removed.isOutsideMarker || removed.isAbsolute) {
                 parent.recomputeChildFlags();
             }

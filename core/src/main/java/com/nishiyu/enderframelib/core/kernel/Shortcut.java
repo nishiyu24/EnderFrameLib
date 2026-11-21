@@ -94,9 +94,6 @@ public enum Shortcut {
     /** {@code -Denderframe.layout.noparallel=true} で並列実行を無効化する切り替え。 （以前の {@code LayoutTaskPool.parallelEnabled}） */
     LAYOUT_PARALLEL(EngineFlags.LAYOUT_PARALLEL),
 
-    /** 切り分け用: false なら、画面外の部分木も箱ごとに分類してから省く（従来の動き）。 （以前の {@code DisplayListBuilder.PRUNE_ENABLED}） */
-    PRUNE(EngineFlags.PRUNE),
-
     /** 切り分け用: false なら、大きい文書でも窓付きの表示リストにしない（従来の動き）。 （以前の {@code DisplayListBuilder.WINDOWED_ENABLED}） */
     WINDOWED(EngineFlags.WINDOWED),
 
@@ -105,9 +102,6 @@ public enum Shortcut {
 
     /** 検証: 変更印が「変わっていない」と言った箱でも署名を比べ、食い違えば例外にする（{@code -Denderframe.paint.verifystamps=true}）。 （以前の {@code DisplayListBuilder.verifyStamps}） */
     VERIFY_STAMPS(EngineFlags.VERIFY_STAMPS),
-
-    /** 切り分け用（テストが切り替える）: false ならスタッキングコンテキストの部分木の組み直しを使わない（全体の作り直しに落ちる。 結果は同じでなければならない。{@code StackingSubtreePatchTest}）。起動時のスイッチは足さない（近道のスイッチ数のラチェット）。 （以前の {@code DisplayListBuilder.STACKING_PATCH_ENABLED}） */
-    STACKING_PATCH(true),
 
     /** 診断・切り分け用フラグ。 （以前の {@code GpuRenderBackend.rectTrees}） */
     GL_RECT_TREES(EngineFlags.GL_RECT_TREES),
@@ -126,9 +120,6 @@ public enum Shortcut {
 
     /** 再生を使うか（切り分け用: {@code -Denderframe.gl.noreplay=true} で無効）。 （以前の {@code RectStream.replayEnabled}） */
     GL_REPLAY(EngineFlags.GL_REPLAY),
-
-    /** 切り分け用: false なら部分木の保持を使わない（結果は同じでなければならない。{@code -Denderframe.paint.nochunks=true} でも切れる）。 （以前の {@code PaintOrder.chunksEnabled}） */
-    PAINT_CHUNKS(EngineFlags.PAINT_CHUNKS),
 
     /** 切り分け用（テストが切り替える）: false なら sticky を含むコンテナは従来どおり節にまとめない（作り直す）。 （以前の {@code PaintOrder.STICKY_IN_SCROLL_NODE}） */
     STICKY_IN_SCROLL_NODE(true),

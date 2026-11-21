@@ -66,15 +66,6 @@ class PatchSiteRatchetTest {
     }
 
     @Test
-    void cantSitesDoNotGrow() throws IOException {
-        int actual = countCantSites(Files.readString(RatchetSupport.mainRoot().resolve(DLB), StandardCharsets.UTF_8));
-        int ceiling = Integer.parseInt(table().get("cant-sites")[0]);
-        assertTrue(actual >= 15, "検出器が壊れている（cant の箇所が少なすぎる）: " + actual);
-        assertTrue(actual <= ceiling, "DisplayListBuilder の cant(…) が増えた: " + actual + " > " + ceiling + "（パッチの退く条件を足さない）");
-        assertEquals(ceiling, actual, "減った: 表の cant-sites を " + actual + " へ下げる（-Dratchet.update=true）");
-    }
-
-    @Test
     void patchClassesDoNotGrow() throws IOException {
         List<String> problems = new ArrayList<>();
         for (var e : table().entrySet()) {

@@ -1178,33 +1178,9 @@ public class UiView implements AutoCloseable {
             STAT_TRANSLATE_AFTER_FRESH.increment();
         } else {
             (scrollOnly ? STAT_SCROLL_FALLBACK : STAT_REPOSITION_OTHER).increment();
-            repaintFromLayout(true);
+            repaintFromLayout(scrollOnly);
         }
         if (document.root instanceof HtmlDocument live) live.notifyLayoutObservers();
-    }
-
-    /**
-     * スクロールと同じ更新で見た目だけが変わった（スクロールで :hover の対象が替わった）とき、箱の位置は決め直さずに、
-     * 変わった箱のスライスだけを差し替え、スクロール量は節の移動で済ませる。できなければ false（何も変えていない）。
-     */
-    private boolean patchThenTranslate() {
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on() || paintBuilder == null || !com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() || scrollBase.isEmpty()) return false;
-        if (document == null || (document.root instanceof HtmlDocument live && live.hasLayoutObservers())) return false;
-        if (!canTranslateAll()) return false;
-        List<LayoutBox> changed = RenderPipeline.styleChangedBoxes();
-        if (changed.isEmpty()) return false;
-        List<DisplayItem> patched = paintBuilder.patchBoxes(changed);
-        if (patched == null) return false;
-        RESTYLE_REPAINT_PATCH.incrementAndGet();
-        setRenderCache(patched);
-        applyOverrides();
-        if (!tryScrollTranslate()) { // canTranslateAll で確かめてあるので通常は来ない。来たら位置を決め直して作り直す
-            repositionFromLayout(false);
-            return true;
-        }
-        layoutStale = true;
-        STAT_SCROLL_TRANSLATED.increment();
-        return true;
     }
 
     /** {@link #tryScrollTranslate} が成り立つか（表示リストを変えずに確かめる）。 */
@@ -1315,7 +1291,6 @@ public class UiView implements AutoCloseable {
         } else if (repositionRequested || res.repositionRequired()) {
             // 再スタイルで見た目が変わった・位置の指定が変わったときは、スクロールだけの更新ではない
             RESTYLE_REPOSITION.incrementAndGet();
-            if (scrollOnly && res.styleChanged() && !res.repositionRequired() && patchThenTranslate()) return;
             repositionFromLayout(scrollOnly && !res.styleChanged() && !res.repositionRequired());
         } else if (res.styleChanged()) {
             List<LayoutBox> changedBoxes = RenderPipeline.styleChangedBoxes();
@@ -1329,21 +1304,9 @@ public class UiView implements AutoCloseable {
                     changedBoxes = kept;
                 }
             }
-            List<DisplayItem> patched = null;
-            if (paintBuilder == null) {
-                SLICE_NO_BUILDER.incrementAndGet();
-            } else if (!changedBoxes.isEmpty()) {
-                patched = paintBuilder.patchBoxes(changedBoxes);
-            }
-            if (patched != null) {
-                RESTYLE_REPAINT_PATCH.incrementAndGet();
-                if (layoutStale) setRenderCache(patched); // 位置を後回しにしている間は、表示リストのスクロールの基準を動かさない
-                else publishBuilt(patched);
-                applyOverrides();
-            } else {
-                RESTYLE_REPAINT_FULL.incrementAndGet();
-                repaintFromLayout();
-            }
+            if (paintBuilder == null) SLICE_NO_BUILDER.incrementAndGet();
+            RESTYLE_REPAINT_FULL.incrementAndGet();
+            repaintFromLayout();
         } else if (!attrNodes.isEmpty()) {
             repaintAttrPatched(attrNodes);
         }

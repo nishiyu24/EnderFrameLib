@@ -18,16 +18,15 @@ class ShortcutTest {
         assertEquals(EngineFlags.CUTOFF, Shortcut.CUTOFF.initial());
         assertEquals(EngineFlags.CHILD_PATCH, Shortcut.CHILD_PATCH.initial());
         assertEquals(EngineFlags.VERIFY_STAMPS, Shortcut.VERIFY_STAMPS.initial());
-        assertTrue(Shortcut.STACKING_PATCH.initial(), "システムプロパティの無い切り替えは既定オン");
     }
 
     @Test
     void withAppliesOnlyInsideAndRestoresEvenOnException() {
-        boolean cutoff = Shortcut.CUTOFF.on(), prune = Shortcut.PRUNE.on();
-        String seen = Shortcut.with(Map.of(Shortcut.CUTOFF, !cutoff, Shortcut.PRUNE, !prune), () -> Shortcut.CUTOFF.on() + "/" + Shortcut.PRUNE.on());
-        assertEquals(!cutoff + "/" + !prune, seen);
+        boolean cutoff = Shortcut.CUTOFF.on(), reuse = Shortcut.SAME_PASS_REUSE.on();
+        String seen = Shortcut.with(Map.of(Shortcut.CUTOFF, !cutoff, Shortcut.SAME_PASS_REUSE, !reuse), () -> Shortcut.CUTOFF.on() + "/" + Shortcut.SAME_PASS_REUSE.on());
+        assertEquals(!cutoff + "/" + !reuse, seen);
         assertEquals(cutoff, Shortcut.CUTOFF.on());
-        assertEquals(prune, Shortcut.PRUNE.on());
+        assertEquals(reuse, Shortcut.SAME_PASS_REUSE.on());
 
         assertThrows(IllegalStateException.class, () -> Shortcut.with(Map.of(Shortcut.CUTOFF, !cutoff), (Runnable) () -> {
             throw new IllegalStateException();

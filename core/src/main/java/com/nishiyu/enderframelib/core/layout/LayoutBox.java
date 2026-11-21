@@ -276,11 +276,13 @@ public class LayoutBox {
             if (child.subtreeHasContentAuto) markContentAutoSubtree();
             bumpShapeEpoch();
             STRUCT_EPOCH.incrementAndGet();
+            touchSubtree();
         }
     }
 
     public void clearChildren() {
         STRUCT_EPOCH.incrementAndGet();
+        touchSubtree();
         this.children.clear();
         this.hasOutsideMarker = false;
         this.hasAbsoluteChild = false;
@@ -698,9 +700,45 @@ public class LayoutBox {
         return PAINT_EPOCH.get();
     }
 
-    /** 描画入力が書き換わりうる地点を通った印を付ける。 */
+    /** 自分と子孫の {@link #paintStamp} の最大値（{@link #touchPaint} が祖先へ伝える）。部分木の描画の記憶が「子孫が変わっていない」を O(1) で言うため。 */
+    private volatile long subtreeStamp = paintStamp;
+    private static final java.util.concurrent.atomic.AtomicLongFieldUpdater<LayoutBox> SUBTREE_STAMP =
+            java.util.concurrent.atomic.AtomicLongFieldUpdater.newUpdater(LayoutBox.class, "subtreeStamp");
+
+    public long subtreePaintStamp() {
+        return subtreeStamp;
+    }
+
+    /**
+     * これまでに描いた描画の通し番号（{@link #noteRendered}）の最大値。祖先の部分木の印がこれより新しければ、前回の描画のあとにすでに
+     * 印が付いている（その祖先より上も付いている）ので、伝播を止める。1 フレームで何千もの箱が触られても、伝播はほぼ O(1) になる。
+     */
+    private static volatile long renderBoundary;
+
+    /** 描画を始めた（記憶を作る）時点の通し番号を覚える。記憶の「作った時」はこの値以下になる。 */
+    public static void noteRendered(long epoch) {
+        if (epoch > renderBoundary) renderBoundary = epoch;
+    }
+
+    /** 描画入力が書き換わりうる地点を通った印を付ける（自分と、祖先の部分木の印）。 */
     public void touchPaint() {
-        paintStamp = PAINT_EPOCH.incrementAndGet();
+        long s = PAINT_EPOCH.incrementAndGet();
+        paintStamp = s;
+        bubbleSubtreeStamp(s);
+    }
+
+    /** 子の増減など、自分の描画入力は変わらないが部分木の中身が変わったことを、祖先へ伝える（{@link #paintStamp} は進めない）。 */
+    void touchSubtree() {
+        bubbleSubtreeStamp(PAINT_EPOCH.incrementAndGet());
+    }
+
+    private void bubbleSubtreeStamp(long s) {
+        long boundary = renderBoundary;
+        for (LayoutBox a = this; a != null; a = a.parent) {
+            long cur = a.subtreeStamp;
+            if (a != this && cur > boundary) return; // 祖先は、前回の描画のあとにすでに印が付いている
+            while (cur < s && !SUBTREE_STAMP.compareAndSet(a, cur, s)) cur = a.subtreeStamp; // 並列の layout から呼ばれる。大きい方を残す
+        }
     }
 
     /**

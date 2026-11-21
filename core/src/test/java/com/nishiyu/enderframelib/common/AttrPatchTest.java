@@ -53,7 +53,7 @@ public class AttrPatchTest {
         sigs(patched);
         sigs(full);
         long hits = UiView.ATTR_PATCH_HITS.get();
-        long skipped = DisplayListBuilder.STAT_STAMPED.sum();
+        long skipped = DisplayListBuilder.STAT_STAMPED.sum() + DisplayListBuilder.fragmentMemoHits();
         // value="0" は属性セレクタに掛かる（再スタイルで見た目が変わる）ので、パッチの経路でも結果は一致するはず
         String[][] steps = {{"hp", "value", "55"}, {"mp", "value", "7"}, {"hp", "value", "0"}, {"hp", "value", "80"},
                 {"mp", "max", "20"}, {"plain", "value", "5"}, {"hp", "max", "200"}, {"mp", "min", "2"}};
@@ -70,7 +70,7 @@ public class AttrPatchTest {
             }
         }
         assertTrue(UiView.ATTR_PATCH_HITS.get() - hits >= 4, "変更印の経路に乗った回数: " + (UiView.ATTR_PATCH_HITS.get() - hits));
-        assertTrue(DisplayListBuilder.STAT_STAMPED.sum() - skipped > 100, "比較を省いた箱の数");
+        assertTrue(DisplayListBuilder.STAT_STAMPED.sum() + DisplayListBuilder.fragmentMemoHits() - skipped > 100, "比較を省いた箱（断片の記憶の当たりを含む）の数");
     }
 
     @Test

@@ -193,7 +193,7 @@ public class TextPatchTest {
         String[] ids = {"hp", "para", "hp", "para", "para", "hp", "hp", "para"};
         String[] texts = {"HP 9", "now this paragraph is long enough that it wraps onto several lines in a 150px box",
                 "HP 100 / 100", "tiny", "wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap", "7", "8", "end"};
-        long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum();
+        long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum() + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits();
         try {
             for (int i = 0; i < ids.length; i++) {
                 com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(true);
@@ -207,7 +207,7 @@ public class TextPatchTest {
         } finally {
             com.nishiyu.enderframelib.core.kernel.Shortcut.CHANGE_STAMPS.set(true);
         }
-        long skipped = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum() - before;
+        long skipped = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum() + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() - before;
         assertTrue(skipped > 100, "変更印で比較を省いた箱の数: " + skipped);
     }
 

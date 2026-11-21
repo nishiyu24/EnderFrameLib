@@ -235,9 +235,6 @@ public final class FineProfileMain {
                     + " items=" + view[0].ui().renderCache().size()
                     + " textPatchHits=" + UiView.TEXT_PATCH_HITS.get() + " textPatchFallbacks=" + UiView.TEXT_PATCH_FALLBACKS.get()
                     + " childPatchHits=" + UiView.CHILD_PATCH_HITS.get() + " childPatchFallbacks=" + UiView.CHILD_PATCH_FALLBACKS.get()
-                    + " slicePatchHits=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_SLICE_PATCH_HITS.sum()
-                    + " childSlicePatchHits=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CHILD_SLICE_PATCH_HITS.sum()
-                    + " slicePatchFallbacks=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_SLICE_PATCH_FALLBACKS.sum()
                     + " restyleStructural=" + UiView.RESTYLE_STRUCTURAL.get()
                     + " relayoutFull=" + UiView.RESTYLE_RELAYOUT_FULL.get()
                     + " relayoutInplace=" + UiView.RESTYLE_RELAYOUT_INPLACE.get()
@@ -247,7 +244,6 @@ public final class FineProfileMain {
                     + " layoutsShifted=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted()
                     + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped()
                     // T2: B12 の近道（スタッキングコンテキストの部分木の組み直し・描画側の索引の並びの入れ替え）
-                    + " stackSubtrees=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STACKING_PATCH_HITS.sum()
                     + " indexMoves=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.STAT_MOVE_PATCHES.sum());
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
@@ -299,9 +295,7 @@ public final class FineProfileMain {
             double accounted = stageTotal / frames;
             System.out.printf("ACCOUNTED stages=%.4f ms/frame frame=%.4f ms explained=%.1f%% unaccounted=%.4f ms%n",
                     accounted, meanMs, 100.0 * accounted / meanMs, meanMs - accounted);
-            System.out.println("PATCH slice(style/text) hit=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_SLICE_PATCH_HITS.sum()
-                    + " child-slice hit=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CHILD_SLICE_PATCH_HITS.sum()
-                    + " slice-fallback=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_SLICE_PATCH_FALLBACKS.sum()
+            System.out.println("PATCH restyle:"
                     + " | restyle: structural=" + UiView.RESTYLE_STRUCTURAL.get()
                     + " relayoutFull=" + UiView.RESTYLE_RELAYOUT_FULL.get()
                     + " relayoutInplace=" + UiView.RESTYLE_RELAYOUT_INPLACE.get()
@@ -310,17 +304,7 @@ public final class FineProfileMain {
                     + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
                     + " (ウォームアップ込み累計)");
             StringBuilder cant = new StringBuilder("CANTPATCH");
-            for (int w = 0; w < 2; w++) {
-                cant.append(w == 0 ? " boxes[" : " child[");
-                for (int k = 0; k < 16; k++) {
-                    long c = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CANT_PATCH[w][k].sum();
-                    if (c > 0) cant.append(k).append('=').append(c).append(' ');
-                }
-                cant.append(']');
-            }
-            cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get()).append(" multiPlan=").append(UiView.SLICE_MULTI_PLAN.get());
-            // B12: スタッキングコンテキストの部分木の組み直し（組み直した部分木の数）・描画側の索引の並びの入れ替えの差分の回数
-            cant.append(" stackSubtrees=").append(com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STACKING_PATCH_HITS.sum())
+            cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get()).append(" multiPlan=").append(UiView.SLICE_MULTI_PLAN.get())
                     .append(" indexMoves=").append(com.nishiyu.enderframelib.core.paint.PaintSceneDriver.STAT_MOVE_PATCHES.sum());
 
             System.out.println(cant);
