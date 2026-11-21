@@ -1,35 +1,251 @@
 # EnderFrameLib
 
-An HTML/CSS UI library for Minecraft 1.21.1 (NeoForge).
+[![Java 21+](https://img.shields.io/badge/Java-21%2B-blue.svg)](https://openjdk.org/projects/jdk/21/)
+[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL_3.0-green.svg)](https://www.gnu.org/licenses/lgpl-3.0.html)
 
-EnderFrameLib ships a small browser engine — HTML tokenizer, CSS cascade, block /
-flex / grid layout, and a Minecraft renderer — so a mod can describe its screens
-and HUDs as HTML and CSS instead of hand-placing widgets and pixel offsets.
+**EnderFrameLib** is an **in-process, pure-Java 21 HTML/CSS UI rendering engine** (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`), accompanied by an **optional Minecraft 1.21.1 (NeoForge) integration mod** built on top of the engine.
 
-- **Screens, HUDs and in-world panels** are all the same document, driven from the
-  server, from a datapack, or entirely on the client.
-- **Headless server state for machine UIs.** The server keeps only a key/value
-  `UIState` — no HTML, no DOM — and sends just the keys that changed. The
-  template lives on the client (`assets/<namespace>/enderframe_ui/`).
-- **Hybrid execution model.** Clients can drive UI independently without network
-  overhead via `EnderFrameClientAPI`. Server-driven HTML sessions synchronize via
-  fine-grained DOM mutation records applied directly to the live DOM tree.
-- **Single DOM, no diff copies.** Client code, bindings and server packets all
-  mutate the same live DOM through the standard DOM API.
-- **No browser is embedded.** The engine is plain Java in the `:core` Gradle module
-  (`core/`), with no dependency on Minecraft, so it is unit-testable headlessly and
-  usable standalone (software, OpenGL or Vulkan rendering to PNG/Swing/GLFW; see
-  [core/README.md](core/README.md) and [docs/standalone-viewer.md](docs/standalone-viewer.md)). Text is laid out
-  with the fonts installed on the system, as a browser does.
+The core engine has **zero dependencies on Minecraft or NeoForge**. It parses HTML5 documents, cascades and animates CSS, runs Flexbox / Grid / Block / Table / Multicolumn / Vertical-writing layout, shapes text using OS or `@font-face` fonts, and renders through interchangeable CPU, OpenGL 3.2+, and Vulkan 1.1 backends — suitable for desktop tools, custom game engines, server-side headless image generation, and embedded UI overlays. The root project adds a full-featured Minecraft mod integration (GUI screens, HUDs, in-world block/hologram/item displays, headless `UIState` networking, and `<mc-*>` elements) as one host implementation of that engine.
 
-> Status: usable, pre-1.0 in practice. The supported surface is `api/`;
-> everything else is `@ApiStatus.Internal` and will move.
+> **Status:** Usable, pre-1.0 API evolution in practice (artifact version `2.0.0`). The supported public surface is `com.nishiyu.enderframelib.api.*`; everything outside `api/` is `@ApiStatus.Internal` and subject to change.
 
 ---
 
-## Installation
+## Table of Contents
 
-Published to a local Maven repository (`./repo`) by `./gradlew publish`.
+- [What Is EnderFrameLib?](#what-is-enderframelib)
+- [Why Not a Browser Wrapper or Hand-Coded Widgets?](#why-not-a-browser-wrapper-or-hand-coded-widgets)
+- [Modular Architecture](#modular-architecture)
+- [Core Engine Capabilities](#core-engine-capabilities)
+- [Optional Minecraft Integration (NeoForge Mod)](#optional-minecraft-integration-neoforge-mod)
+- [Scope, Performance, and Fidelity](#scope-performance-and-fidelity)
+- [Using the Standalone Engine (`:core`)](#using-the-standalone-engine-core)
+- [Using the Minecraft 1.21.1 Integration](#using-the-minecraft-1211-integration)
+- [Supported HTML, CSS, and Extensions](#supported-html-css-and-extensions)
+- [Migration & Breaking Changes](#migration--breaking-changes)
+- [Not Supported](#not-supported)
+- [Building from Source & Project Layout](#building-from-source--project-layout)
+- [Documentation Map](#documentation-map)
+- [Contributing & License](#contributing--license)
+
+---
+
+## What Is EnderFrameLib?
+
+Most Java applications that want modern, flexible interfaces face an awkward choice: either hand-place widgets with ad-hoc coordinate math, or embed an external browser process (CEF / Chromium / WebView2) that brings hundreds of megabytes of native runtime, cross-process IPC, and a JavaScript boundary.
+
+EnderFrameLib takes a third path: **a compact, deterministic HTML/CSS layout and rendering engine written directly in standard Java 21**, paired with a thin, API-neutral GPU abstraction (RHI) and a tile-parallel software rasterizer.
+
+At its heart, EnderFrameLib consists of two layers in one repository:
+
+1. **The Engine (`:core` + `:core-gl` / `:core-vulkan` / `:core-glfw`)** — A standalone Java library for embedding HTML/CSS surfaces into any JVM application, game engine, or headless pipeline. It exposes a clean Java API (`EnderEngine`, `WebViewSurface`, `Document`, `UI` DSL, and `api.spi` host extensions) with no game-specific assumptions.
+2. **The Minecraft Integration (Root `:EnderFrameLib` module)** — A NeoForge 1.21.1 mod built on top of `:core` that showcases what a host application can build with the engine: player screens, HUD overlays, interactive in-world multiblock panels, floating holograms, held-item displays, datapack UIs, and tick-synchronized server/client state.
+
+---
+
+## Why Not a Browser Wrapper or Hand-Coded Widgets?
+
+EnderFrameLib is designed specifically for **in-process, frame-budgeted UIs** (144 Hz overlays, game HUDs, interactive inspectors, diagnostic panels, automated PNG rendering) rather than arbitrary web browsing:
+
+- **Zero external browser runtime & zero JVM flags.** Runs on standard JDK 21 (`ByteBuffer` + `VarHandle`) with no preview APIs, no `java.lang.foreign`, no `--add-opens`, and no Chromium subprocesses.
+- **Direct Java-to-DOM ownership.** Application code, declarative UI builders (`api.ui.UI`), and data bindings mutate a single live DOM directly in Java — no JSON serialization over IPC and no virtual-DOM tree diffing.
+- **Frame-budget engineering.**
+  - **Idle-frame skipping:** When nothing changes, frames cost nothing (no restyle, no relayout, no draw).
+  - **Off-heap columnar arena & Bloom selector filtering:** Node flags and properties are packed for cache locality, and selector matching skips non-matching subtrees early.
+  - **Retained incremental patching:** `:hover`, text edits, child slice insertions/removals, and scroll offsets update only affected layout/display-list slices rather than rebuilding the whole page.
+- **Three interchangeable backends with pixel parity.** Run headlessly on CPU (no GPU or window server required in CI/servers), draw via OpenGL 3.2+ Core (`:core-gl`), or draw via Vulkan 1.1 (`:core-vulkan`). Both GPU backends share the same single-source SDF shader pipeline and fall back seamlessly to CPU rasterization for rare shapes.
+- **Host GPU & custom element interop.** Share an existing OpenGL or Vulkan device/context (`HostGpu`) without breaking host ownership, and register custom tags/painters via standard `ServiceLoader` SPI (`api.spi`).
+
+---
+
+## Modular Architecture
+
+The engine and its backends are cleanly split into five Gradle modules. `:core` does not depend on OpenGL, GLFW, Vulkan, or Minecraft; backends and window hosts are discovered dynamically via `ServiceLoader`.
+
+| Gradle Module | Artifact (`com.nishiyu.enderframelib`) | Responsibility | Dependencies |
+| :--- | :--- | :--- | :--- |
+| **`:core`** | `enderframelib-core` | HTML5 tree builder, CSS cascade/animations, Flexbox/Grid/Block/Table/Multicol/Vertical layout, text shaping, `<scene-3d>` core, 64×64 tile-parallel CPU rasterizer, RHI, public API & SPI | Pure Java 21 + LWJGL core/FreeType, JOML, FastUtil, Gson, JNA, SLF4J |
+| **`:core-gl`** | `enderframelib-core-gl` | OpenGL 3.2+ Core `GpuBackendProvider` (instanced SDF renderer + shared host GL context support) | `:core`, `lwjgl-opengl`, `lwjgl-glfw` |
+| **`:core-vulkan`** | `enderframelib-core-vulkan` | Vulkan 1.1 `GpuBackendProvider` (headless, swapchain, or borrowed host `VkDevice`) | `:core`, `lwjgl-vulkan` |
+| **`:core-glfw`** | `enderframelib-core-glfw` | Standalone GLFW `WindowHost` and `StandaloneViewer` desktop launcher | `:core`, `:core-gl`, `lwjgl-glfw` |
+| **Root (Mod)** | `enderframelib` | **Optional Minecraft 1.21.1 (NeoForge) host:** GUI screens, HUDs, in-world block/hologram/item surfaces, `UIState` sync, `/enderframe` commands, `<mc-*>` tags, DevKit export | `:core*`, NeoForge 21.1.248+, JNA |
+
+Inside `:core`, dependencies are strictly unidirectional across 7 architectural layers (`L1`–`L7`), mechanically enforced in CI by `LayerDependencyRatchetTest`, `PackageCycleRatchetTest`, `ModulePurityRatchetTest`, and `ApiBoundaryTest` (ensuring `api.*` never leaks internal implementation types).
+
+---
+
+## Core Engine Capabilities
+
+- **Standards-Compliant HTML & Markdown:** WHATWG-style HTML tree construction (implied `html`/`head`/`body`, adoption agency for misnested formatting tags, fragment `innerHTML` context parsing, all 2,231 named character references) plus CommonMark/GFM subset Markdown (`data-markdown`, `<script type="text/markdown">`).
+- **Rich CSS Engine:** CSS nesting (`&`), `@layer`, `@container` (size & `style()` queries), `@media`, `@supports`, `@property`, `@scope`, `@counter-style`, `@keyframes`, `transition`, CSS Color 4 (`oklab`, `oklch`, `lab`, `lch`, `color()`, `color-mix()`, relative colors), math/trigonometric functions (`calc()`, `min()`, `max()`, `clamp()`, `round()`, `sin()`, etc.), Flexbox, CSS Grid (including `subgrid`), Tables, Multicolumn, Anchor Positioning (`anchor()`, `position-area`, `position-try`), Top Layer (`<dialog>.showModal()`, `popover`), and Writing Modes (`vertical-rl`, `vertical-lr`, `sideways-*`).
+- **Typography & Color Emoji:** OS outline font matching, `@font-face` (TTF/OTF), UAX #14 line breaking, UAX #9 BiDi reordering, and color emoji via `COLR v1`, `COLR v0/CPAL`, and `CBDT`/`CBLC`/`sbix` bitmap strikes.
+- **Declarative Pure-Java UI DSL (`api.ui.UI`):** Hyperscript-style element builders (`div`, `button`, `p`, etc.) paired with fine-grained reactive `State<T>` / `RecordState` / `Ref` bindings that mutate live DOM nodes directly.
+- **Embedded 3D (`<scene-3d>`):** Declarative and Java-driven 3D scenes (`api.scene3d.Scene3DController`) with GGX PBR lighting, HDR Bloom (RGBA16F + Dual-Kawase + ACES tone mapping), glTF/GLB binary loading, BVH raycasting (`pickScene3d`), and parity across OpenGL, Vulkan, and software 3D rasterization.
+- **Input, Selection & IME:** Mouse, pointer, keyboard, wheel, focus management, text selection, `MutationObserver`, `ResizeObserver`, and multi-language IME composition (`compositionStart` / `compositionUpdate` / `compositionEnd` + `imeCursorRect()`).
+- **Host Extensibility SPI (`api.spi`):** External hosts can register custom replaced elements (`ElementProvider`, `ElementPainter`, `ReplacedKind`), HTML tag templates (`TagTemplate`), i18n dictionaries, and custom resource resolvers per `WebViewSurface` without modifying `:core`.
+
+---
+
+## Optional Minecraft Integration (NeoForge Mod)
+
+When installed in Minecraft 1.21.1 (NeoForge), the root module wires EnderFrameLib into the game as a complete mod and host showcase:
+
+- **Unified Document Surfaces:** Render the exact same HTML/CSS as player GUI screens, persistent HUD overlays, multiblock in-world block screens (`EnderScreenBlockEntity`), floating holograms (including interactive billboard menus), or held-item displays (`EnderScreenItem`).
+- **Headless Server State (`UIState`):** For machine/block UIs, keep HTML templates on the client (`assets/<modid>/enderframe_ui/`) and hold only typed key/value state on the server. Only changed keys are synced per server tick; viewers automatically close when the owner block is removed.
+- **Hybrid Client/Server Execution:** Drive documents locally on the client via `EnderFrameClientAPI` with zero network overhead, or mix server-owned and client-owned subtrees (`data-owner="server|client"`) with declared event forwarding (`data-forward`, `onclick="server:..."`) and `data-channel` pub/sub.
+- **Minecraft Custom Elements & Data Binding:** Built-in `<mc-slot>`, `<mc-slot-grid>`, `<mc-inventory>`, `<mc-bar>`, `<mc-energy>`, `<mc-tank>`, `<mc-entity>`, `<mc-scene>`, `<mc-fluid>`, `<img src="item:...">`, game `lang/*.json` i18n (`{{i18n:key}}`), and reactive `data-*` attributes.
+- **In-Game Tooling:** `/enderframe` commands for live opening/patching/publishing, plus `/enderframe devkit` to export a standalone browser preview kit (sharing the exact `ua.css` and built-in themes) so UI authors can iterate in Chrome/Edge/VS Code without launching the game.
+
+---
+
+## Scope, Performance, and Fidelity
+
+### Scope and Design Boundaries
+
+| Included in Scope | Deliberately Out of Scope |
+| :--- | :--- |
+| In-process HTML/CSS UI rendering for Java apps, tools, and games | General-purpose web browsing or untrusted web navigation |
+| WHATWG DOM & UI Events driven from Java | Embedded JavaScript engines (V8 / SpiderMonkey) |
+| Reactive Java UI DSL & host SPI (`api.spi`) | Multi-process sandboxing / cross-process IPC |
+| Headless CPU + OpenGL / Vulkan GPU backends with pixel parity | Bundled general media/WebRTC stacks (video in mod is optional/platform-specific) |
+
+### Performance Highlights & Honest Caveats
+
+Numbers below come from [BENCHMARK.md](BENCHMARK.md) (`:core` real-frame measurements on Windows, JDK 21, 24 hardware threads, 800×600, warm JVM, Arial font, median of 3 runs, ±10–15% run-to-run variance; headless Chrome 157 measured on the same documents):
+
+- **Idle frames:** Skipped completely (no restyle, layout, or draw).
+- **Incremental updates (OpenGL, real frame):** `scroll` takes `0.007 ms` on the showcase page and `0.09 ms` on a 2,000-row list (Chrome: `0.50 ms`); `:hover` toggle takes `0.10 ms` (Chrome: `1.24 ms`); text update takes `0.17 ms` (Chrome: `1.07 ms`); opening the showcase page in a warm JVM takes `4.19 ms` (Chrome: `5.30 ms`).
+- **Where `:core` is not faster than Chrome:**
+  - **Row insertion:** Inserting/removing a row in a 2,000-row list takes `1.44 ms` (Chrome: `1.34 ms`).
+  - **Core-count sensitivity on huge relayouts:** Restyling font size across 2,000 distinct rows takes `5.72 ms` with default workers and `6.71 ms` on 4 workers (Chrome: `39.35 ms`), rising to `7.32 ms` on 3 workers and `17.20 ms` on 1 worker. Configure workers with `EnderEngine.workerThreads(n)` or `-Denderframe.threads=N`.
+  - **Cold start:** `510–594 ms` process-to-first-frame on JDK 21 vs ~`300 ms` for Chrome (on JDK 24+, optional AOT cache `JEP 483` cuts cold start roughly in half; see [core/README.md](core/README.md)).
+  - **Retained heap:** Roughly 1.35–1.57× Chrome's on 2,000-row documents.
+  - **Continuous animations:** Pages that animate every frame bypass incremental caching (`voidwave.html` runs at 0.57–0.79× of Chrome's frame time).
+
+### Browser Fidelity Status
+
+Layout and rendering differences against real browsers are tracked mechanically by `WebFidelityTest` and `WptReftestRatchetTest` (see [FIDELITY.md](FIDELITY.md)):
+- On the tracked 260-pair WPT reftest subset, **160 pass (62%)**: Flexbox 106/120, Grid 23/80, Text 31/60.
+
+---
+
+## Using the Standalone Engine (`:core`)
+
+For the full engine guide, AOT cache instructions, and verified runnable snippets, see [core/README.md](core/README.md) and [docs/standalone-viewer.md](docs/standalone-viewer.md).
+
+### Publishing & Gradle Dependencies
+
+> Artifacts are not yet on Maven Central; publish locally from source first.
+
+```bash
+./gradlew publishMavenJavaPublicationToLocalRepoRepository   # publishes :core, :core-gl, :core-vulkan, :core-glfw to ./repo
+./gradlew :core:verifyPublishedModules                       # verifies POMs & runs scripts/consumer-check against ./repo
+```
+
+```kotlin
+repositories {
+    mavenCentral()
+    maven { url = uri("path/to/EnderFrameLib/repo") }
+}
+
+val lwjglVersion = "3.3.3"
+val lwjglNatives = "natives-windows" // or natives-linux, natives-macos, natives-macos-arm64
+
+dependencies {
+    // CPU software rendering only (headless / PNG / custom PixelSink)
+    implementation("com.nishiyu.enderframelib:enderframelib-core:2.0.0")
+    runtimeOnly("org.lwjgl:lwjgl::$lwjglNatives")
+    runtimeOnly("org.lwjgl:lwjgl-freetype::$lwjglNatives")
+
+    // Optional GPU rendering / GLFW desktop window
+    // implementation("com.nishiyu.enderframelib:enderframelib-core-gl:2.0.0")     // + lwjgl-opengl & lwjgl-glfw natives
+    // implementation("com.nishiyu.enderframelib:enderframelib-core-vulkan:2.0.0") // + lwjgl-vulkan natives on macOS
+    // implementation("com.nishiyu.enderframelib:enderframelib-core-glfw:2.0.0")   // GLFW window + StandaloneViewer
+}
+```
+
+### Quick Examples
+
+**1. Headless rendering to PNG (no GPU or display server required):**
+
+```java
+import com.nishiyu.enderframelib.api.EnderEngine;
+import com.nishiyu.enderframelib.api.WebViewSurface;
+import java.nio.file.Path;
+
+String html = """
+    <style>
+      body { margin: 0; padding: 24px; font-family: sans-serif; background: #0f172a; color: white; }
+      .card { background: #1e293b; border-radius: 12px; padding: 20px; }
+      h1 { margin: 0 0 8px; color: #38bdf8; }
+    </style>
+    <div class="card">
+      <h1>Hello EnderFrameLib!</h1>
+      <p>Pure Java HTML/CSS rendering.</p>
+    </div>
+    """;
+
+try (WebViewSurface surface = EnderEngine.html(html).size(600, 300).build()) {
+    surface.frame(0, true);
+    surface.writePng(Path.of("output.png"));
+}
+```
+
+**2. Embedding into Swing, JavaFX, or a custom renderer (`PixelSink`) / GPU (`Target.GPU`):**
+
+```java
+// Software pixel buffer callback (ARGB int[])
+EnderEngine.html(html)
+    .size(800, 600)
+    .sink((int[] pixels, int width, int height) -> { /* upload to host texture/image */ })
+    .build();
+
+// Or GPU offscreen / shared host device (requires :core-gl or :core-vulkan)
+try (WebViewSurface gpuSurface = EnderEngine.html(html)
+        .size(800, 600)
+        .target(EnderEngine.Target.GPU)
+        .gpu(GpuApi.AUTO) // GL, VULKAN, or AUTO; or .hostDevice(HostGpu.openGl(...) / HostGpu.vulkan(...))
+        .build()) {
+    gpuSurface.frame(0, true);
+    gpuSurface.texture().ifPresent(tex -> { /* native texture handle without pixel readback */ });
+}
+```
+
+**3. Standalone desktop window (requires `:core-glfw`) or CLI viewer:**
+
+```java
+// Blocks until closed; handles input, timers, and animations
+EnderEngine.html(html).size(1024, 768).openWindow();
+```
+
+```bash
+./gradlew :core:runViewer --args="src/main/resources/data/enderframelib/enderframe_ui/voidwave.html 1280 800"
+```
+
+**4. Pure-Java reactive UI DSL (`api.ui.UI`):**
+
+```java
+import static com.nishiyu.enderframelib.api.ui.UI.*;
+import com.nishiyu.enderframelib.api.ui.State;
+
+State<Integer> count = State.of(0);
+var app = div(cls("counter-card"),
+    h1("Counter"),
+    p("Count: ", count),
+    button(cls("btn"), onClick(e -> count.update(c -> c + 1)), "Increment")
+);
+mount(rootElement, app);
+```
+
+---
+
+## Using the Minecraft 1.21.1 Integration
+
+> This section applies only if you are using EnderFrameLib as a **Minecraft 1.21.1 (NeoForge) mod**. Detailed guides live in [docs/getting-started.md](docs/getting-started.md), [docs/headless-state.md](docs/headless-state.md), [docs/client-and-hybrid.md](docs/client-and-hybrid.md), and [docs/commands-and-devkit.md](docs/commands-and-devkit.md).
+
+### Mod Installation
+
+Publish to `./repo` with `./gradlew publish` (requires Minecraft 1.21.1, NeoForge 21.1.248+, Java 21):
 
 ```gradle
 repositories {
@@ -37,895 +253,149 @@ repositories {
 }
 
 dependencies {
-    implementation "com.nishiyu.enderframelib:enderframelib:1.0.3"
+    implementation "com.nishiyu.enderframelib:enderframelib:2.0.0"
 }
 ```
 
-Declare the dependency in `neoforge.mods.toml` as well:
+Declare the dependency in `neoforge.mods.toml`:
 
 ```toml
 [[dependencies.yourmod]]
 modId = "enderframelib"
 type = "required"
-versionRange = "[1.0.3,)"
+versionRange = "[2.0.0,)"
 ordering = "AFTER"
 side = "BOTH"
 ```
 
-Requires Minecraft 1.21.1, NeoForge 21.1.248+, Java 21.
+### Mod Entry Points Overview
+
+1. **Server-driven HTML & HUDs (`EnderFrameAPI`)** — Open ad-hoc HTML strings (`Ui.html(...)`) or datapack UIs (`Ui.datapack("mymod:menu")`), attach persistent HUDs (`hud(...)`), and push live updates via pub/sub channels (`publish(...)`) with ACL checks (`addSubscriptionCheck(...)`).
+2. **Machine UIs & In-World Surfaces with Headless `UIState` (Recommended)** — Ship the HTML template on the client (`assets/<modid>/enderframe_ui/<name>.html`), hold only key/value `UIState` on the server (`EnderFrameAPI.get().stateOf(blockEntity, "mymod:crusher")`), and bind values declaratively with `data-bind="key"` / `{{key}}` / `data-if`. The exact same model powers multiblock `EnderScreenBlockEntity` screens, interactive billboards (`Surfaces.hologram(...)`), and `EnderScreenItem` displays.
+3. **Client-Driven UI & Hybrid Ownership (`EnderFrameClientAPI`)** — Open client-only documents with `ClientSession`, mutate the live `Document` directly, schedule `requestAnimationFrame` / `setTimeout` / `setInterval`, and combine client-owned and server-owned subtrees (`data-owner="server|client"`, `data-forward`, `onclick="server:name"`).
+4. **In-Game Commands & Browser DevKit** — Use `/enderframe open`, `/enderframe hud`, `/enderframe patch`, `/enderframe publish`, `/enderframe desktop`, and `/enderframe devkit` (exports `<gameDir>/enderframe_devkit/` for live authoring in a regular browser). See [COMMAND_GUIDE.md](COMMAND_GUIDE.md).
 
 ---
 
-## Minimal example
+## Supported HTML, CSS, and Extensions
 
-Everything server-side goes through `EnderFrameAPI`. Call it from mod setup or
-later — never from a static initializer.
+**HTML Structure & Content**
+- **Structure:** `html` `head` `body` `div` `section` `main` `header` `footer` `article` `nav` `aside` `span` `template` (inert `DocumentFragment`)
+- **Text:** `h1`–`h6` `p` `br` `hr` `b` `strong` `i` `em` `s` `strike` `del` `u` `ins` `code` `kbd` `pre` `blockquote` `label` `output`
+- **Lists & Tables:** `ul` `ol` (`start`) `li` (`value`) `table` `caption` `thead` `tbody` `tfoot` `tr` `th` `td` (`colspan`, `rowspan`) `colgroup` `col` (`span`)
+- **Forms:** `form` `fieldset` `legend` `button` `input` (`text`, `number`, `checkbox`, `radio`, `range`, `color`) `select` `option` `textarea` `progress` `meter`
+- **Media, Grouping & 3D:** `img` `canvas` `video` `svg` `a` `details` `summary` `dialog` `figure` `figcaption` `<scene-3d>`
+- **Markdown:** CommonMark / GFM subset via `data-markdown`, `<script type="text/markdown">`, or `.md` files (headings, emphasis, inline/fenced code, blockquotes, GitHub alerts `> [!NOTE]`, flat lists, task lists, GFM tables, images, links, `<hr>`).
 
-```java
-import com.nishiyu.enderframelib.api.EnderFrameAPI;
-import com.nishiyu.enderframelib.api.Ui;
+**CSS**
+- **Selectors & Nesting:** Type, `.class`, `#id`, `*`, descendant, `>`, `+`, `~`, attribute selectors (`=`, `^=`, `$=`, `*=`, `~=`, `|=`, `i`/`s`), selector lists, CSS escapes, CSS nesting (`&`), and browser-compatible invalid-selector dropping.
+- **Pseudo-classes & Pseudo-elements:** `:hover` `:active` `:focus` `:focus-visible` `:focus-within` `:checked` `:disabled` `:enabled` `:indeterminate` `:open` `:required` `:optional` `:read-only` `:read-write` `:placeholder-shown` `:valid` `:invalid` `:in-range` `:out-of-range` `:link` `:any-link` `:visited` (never matches) `:target` `:defined` `:lang()` `:dir()` `:first-child` `:last-child` `:only-child` `:first-of-type` `:last-of-type` `:only-of-type` `:nth-child()` `:nth-last-child()` `:nth-of-type()` `:nth-last-of-type()` (`An+B`, `odd`, `even`, `of S`) `:empty` `:root` `:scope` `:not()` `:is()` `:where()` `:has()`; `::before` `::after` `::first-line` `::marker` `::placeholder` `::selection` `::backdrop`.
+- **Layout & Box Model:** `display` (`block`, `inline`, `inline-block`, `flow-root`, `flex`, `inline-flex`, `grid`, `inline-grid`, `table`, `inline-table`, `table-*`, `list-item`, `contents`, `none`, two-keyword forms), `position` (`static`, `relative`, `absolute`, `fixed`, `sticky`), `float`/`clear`, Flexbox, CSS Grid (`subgrid`, `minmax()`, `repeat()`, `auto-fill`/`auto-fit`, named lines/areas), Tables, Multicolumn, Anchor Positioning (`anchor-name`, `position-anchor`, `anchor()`, `anchor-size()`, `position-area`, `position-try`), `content-visibility: auto`, and Writing Modes (`writing-mode: horizontal-tb | vertical-rl | vertical-lr | sideways-rl | sideways-lr`, `text-orientation`, logical properties).
+- **Typography, Color & Paint:** System/custom fonts, UAX #14 wrapping, UAX #9 BiDi, `COLR v0/v1` and `CBDT`/`CBLC`/`sbix` color emoji, `filter` / `backdrop-filter`, `mix-blend-mode` (16 modes + `plus-lighter`), `isolation`, `clip-path`, `mask-*`, layered `background` + linear/radial/conic gradients (`in <colorspace>`), `box-shadow`, 2D/projected `transform`, `transition`, `@keyframes`, CSS Color 4 (`rgb`, `hsl`, `hwb`, `lab`, `lch`, `oklab`, `oklch`, `color()`, `color-mix()`, relative colors), math/trig functions, `@media`, `@supports`, `@container`, `@layer`, `@property`, `@scope`, `@counter-style`, `@import`, `@font-face`.
+- **Built-in Stylesheets:** `enderframelib:ua.css` (HTML standard defaults) and themes `enderframelib:dark.css`, `enderframelib:vanilla.css`, `enderframelib:brass.css`.
 
-// Open a screen for one player from an HTML string.
-EnderFrameAPI.get().open(player, Ui.html("""
-        <style>
-          body { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
-          button:hover { background-color: #e5e5e5; }
-        </style>
-        <h2>Hello</h2>
-        <p>Diamonds: <span id="count">0</span></p>
-        <button onclick="server:collect">Collect</button>
-        """).size(320, 200));
-```
-
-Reacting to a click, and updating the open document (the state-driven form below sends only what changed):
-
-```java
-// onclick="server:<name>[:<value>]" arrives here on the menu or block entity
-// (a WebActionReceiver) that owns the session. The server only accepts action
-// names that the document it sent declared.
-@Override
-public void onWebServerAction(ServerPlayer player, String action, String value, CompoundTag payload) {
-    if (action.equals("collect")) {
-        EnderFrameAPI.get().findSession(sessionId).loadHtml(updatedHtml);
-    }
-}
-```
-
-A UI shipped in a datapack at `data/mymod/enderframe_ui/menu.html`:
-
-```java
-EnderFrameAPI.get().open(player, Ui.datapack("mymod:menu").size(320, 200));
-```
-
-A persistent HUD overlay:
-
-```java
-EnderFrameAPI.get().hud(player, Ui.html(hudHtml));
-EnderFrameAPI.get().clearHud(player);
-```
-
-Pushing live values to every subscriber of a channel (only changed keys go on
-the wire):
-
-```java
-EnderFrameAPI.get().publish("mymod:stats", Map.of("kills", 12, "coins", 300));
-// In the document: <span data-channel="mymod:stats" data-bind="kills"></span>
-
-EnderFrameAPI.get().addSubscriptionCheck((player, channel) -> player.hasPermissions(2));
-```
+**Minecraft-Only Extensions (Mod Host)**
+- **Custom Elements:** `<mc-slot>`, `<mc-slot-grid>`, `<mc-inventory>`, `<mc-bar>`, `<mc-energy>`, `<mc-tank>`, `<mc-entity>`, `<mc-scene>`, `<mc-fluid>`, `<mc-markdown>`, `<img src="item:...">`, plus `var(--mc-*)` chat palette variables and `minecraft:default` / `minecraft:uniform` / `minecraft:alt` font families.
+- **Reactive Attributes & i18n:** `data-model`, `data-bind`, `data-if` (`mc-if`), `data-show`, `data-for`, `data-key`, `data-row-key`, `data-class`, `data-channel`, `data-list`, `data-i18n` (`{{i18n:key}}`), `data-item`, `data-tooltip`, `data-sound`, `data-markdown`, `data-syntax`, `data-hud`, `data-tracker`, `data-dropzone`, `data-slot`, `data-zoom`, `data-pan-zoom`, `data-owner`, `data-forward`, `data-forward-action`.
 
 ---
 
-## Machine UIs with headless state (recommended)
+## Migration & Breaking Changes
 
-For block entities and other fixed screens, ship the HTML with the client and keep
-only the values on the server. The server never parses HTML or holds a DOM; it
-tracks which keys changed and sends just those to the viewers at the end of each
-server tick.
+Compared to pre-1.0 / early Minecraft-only builds, the engine now follows standard browser defaults:
 
-The template is a client resource, `assets/mymod/enderframe_ui/crusher.html`:
+- **System fonts & CSS text metrics:** Documents default to system fonts and standard CSS `font-size` / `line-height` metrics (use `font-family: minecraft:default` for Minecraft's bitmap font).
+- **Standard UA stylesheet & HTML parsing:** `ua.css` uses browser defaults (`body { margin: 8px }`, transparent root background unless styled, standard `<style>`/`<script>` DOM retention, fragment implied `html`/`head`/`body`). Built-in themes (`dark.css`, `vanilla.css`, `brass.css`) carry the compact dark styling.
+- **Standard box tree, formatting contexts & stacking:** Anonymous block wrapping, true CSS tables (`<table>` is no longer a flex column), CSS 2.2 Appendix E paint order, sub-pixel layout snapped at paint time, and standard CSS color names (`red` = `#ff0000`, `#rrggbbaa` RGBA order).
+- **Live DOM & Headless State:** Virtual-DOM diffing and `setForwardEventsToServer` were replaced by single-DOM mutation records, declared forwarding (`data-forward` / `server:`), and `UIState` for machine/block UIs.
 
-```html
-<div class="machine">
-  <span data-bind="status">{{status}}</span>
-  <progress max="1" data-bind="value:progress"></progress>
-  <div data-if="running">Running</div>
-  <button onclick="server:toggle_power">Power</button>
-</div>
-```
-
-`data-bind="key"` sets the text, `data-bind="attr:key"` an attribute and
-`data-bind="style.width:key"` one style property; `{{key}}` works in text and
-attribute values.
-
-On the server:
-
-```java
-import com.nishiyu.enderframelib.api.state.UIState;
-
-// One state per block entity; its instance id is "block:x,y,z".
-UIState state = EnderFrameAPI.get().stateOf(blockEntity, "mymod:crusher");
-state.onAction("toggle_power", (player, payload) ->
-        state.set("running", !state.getBoolean("running", false)));
-
-// Opening adds the player as a viewer and sends the template id plus the current state.
-EnderFrameAPI.get().open(player, Ui.template("mymod:crusher").at(blockEntity));
-
-// From the block entity's tick: unchanged values are not sent.
-state.set("progress", 0.42).set("status", "Crushing");
-```
-
-Inside a headless session every action that client code did not handle is sent
-to the server, and only players who are viewing the state can trigger it. A state
-from `stateOf` is closed on the tick after its block entity is
-removed (broken or unloaded), and the viewers' screens close with it; call
-`state.close()` yourself for any other owner.
+Full details and upgrade steps are in [docs/migration.md](docs/migration.md).
 
 ---
 
-### In-world screens driven by state
+## Not Supported
 
-A block screen can be fed by the same template and `UIState` instead of a server-held HTML session. Extend
-`EnderScreenBlockEntity` (see `api/template`) and return the template id; register the renderer on the client with
-`Surfaces.block(modEventBus, () -> TYPE)`.
+Known gaps are documented here so you do not have to discover them by debugging; code-level `LIMITATION` markers and browser-measured differences are tracked in [FIDELITY.md](FIDELITY.md).
 
-```java
-public class PanelEntity extends EnderScreenBlockEntity {
-    public PanelEntity(BlockPos pos, BlockState state) { super(TYPE.get(), pos, state); }
-
-    @Override public String getTemplateId() { return "mymod:panel"; }   // assets/mymod/enderframe_ui/panel.html
-
-    @Override protected void onScreenFormed(int width, int height) {
-        UIState state = screenState();                    // shared by every block of the screen
-        state.set("status", "idle");
-        state.onAction("toggle", (player, payload) -> state.set("status", "running"));
-    }
-}
-```
-
-A block shows nothing until it is told to draw: `EnderScreenBlockEntity.draw(level, pos)` turns the connected blocks
-into a screen. When any block of a multiblock screen is broken, the whole screen is discarded (its session is dropped,
-the state's values are forgotten, viewers drop their session) and the remaining blocks go back to showing nothing until
-`draw` is called again.
-
-Players who track the chunk see the screen; there is no "open" call. `state.set(...)` sends only the changed keys, and a
-click on the surface reaches `onAction` like it does in a screen. The layout resolution is `getPixelsPerBlock()` (64) times
-the screen size in blocks. On an in-world surface, both the attack (left) and use (right) buttons produce `click`, so
-players can press buttons without breaking the block. Inside a screen the mouse follows the browser: only the left button
-produces `click`, the right button produces `contextmenu`.
-
-The state of a template screen is saved in the master block entity's NBT and restored when the chunk loads. Override
-`onScreenState(UIState)` to set defaults for missing keys and to register `onAction` handlers; it runs every time the
-state is created, after the saved values are back:
-
-```java
-@Override protected void onScreenState(UIState state) {
-    if (state.get("status") == null) state.set("status", "idle");
-    state.onAction("toggle", (p, payload) -> state.set("status", "running"));
-}
-```
-
-## Client-driven UI & Hybrid Execution Model
-
-EnderFrameLib 1.0+ supports a **hybrid execution model** where documents can be opened
-and mutated entirely on the client side without network communication, while seamlessly
-interoperating with server-driven sessions.
-
-### Client-driven screens & HUDs
-
-```java
-import com.nishiyu.enderframelib.api.ClientSession;
-import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
-import com.nishiyu.enderframelib.api.Ui;
-import com.nishiyu.enderframelib.api.dom.Document;
-import com.nishiyu.enderframelib.api.dom.Element;
-
-// Open a client-only screen; the session gives the live Document and its timers
-ClientSession session = EnderFrameClientAPI.get().open(Ui.html("""
-    <div id="container">
-      <h1 id="title">Client Panel</h1>
-      <button id="actionBtn">Click</button>
-    </div>
-    """).size(400, 300).session("mymod:client_menu"));
-Document doc = session.document();
-
-// Mutate the live DOM directly via standard DOM API
-Element title = doc.getElementById("title");
-title.setTextContent("Updated by Client!");
-
-// Client listeners run first; calling preventDefault() prevents server transfer
-Element btn = doc.getElementById("actionBtn");
-btn.addEventListener("click", evt -> {
-    System.out.println("Handled on client!");
-    evt.preventDefault(); // Do not transfer to server even if onclick="server:..." or data-forward is present
-});
-```
-
-### Client scheduler
-
-Client-driven documents can schedule rendering and game-tick tasks. All tasks are
-automatically cancelled when the document session is closed.
-
-```java
-// Run on the next render frame (equivalent to requestAnimationFrame)
-int frameTaskId = session.requestAnimationFrame(timestamp -> {
-    // High-frequency animation or rendering update
-});
-
-// Run after a delay in milliseconds, measured in client ticks
-int timerId = session.setTimeout(() -> {
-    doc.getElementById("title").setTextContent("Delayed update");
-}, 1000);
-
-// setInterval works the same way; session.cancel(handle) cancels any of the three.
-```
-
-### Server-sent HTML: ownership model & mutation sync
-
-This applies to documents sent from the server as HTML (`Ui.html`,
-`Ui.datapack`, `hud`, `WebSessionHandle`). Headless-state UIs above
-are client-owned templates and need none of it.
-
-- **Single DOM**: Both client scripts and server packets operate on the single live DOM tree; there are no template/virtual copies and no diff engine.
-- **Subtree Ownership**: every subtree is either server-owned or client-owned. Declare it with `data-owner="server|client"` (inherited by descendants); without it the document default applies — **server-owned** for a document synced from the server, **client-owned** for one opened on the client only (`EnderFrameClientAPI.open` / `hud` / `loadLocalHtml`).
-  - Client code *can* write into a server-owned subtree, but the next server mutation (or a full re-sync) wins and overwrites it. This is the contract, not a limitation.
-  - Server mutation records aimed at a client-owned subtree are dropped, and a re-sync keeps client-owned islands (moved to the same `id` in the new tree; they vanish only if the server removed their host).
-  - A client-opened document that the server also patches must mark those subtrees `data-owner="server"`.
-- **Server Sync** (internal, also behind `/enderframe patch`): `WebSession.patchText / patchAttribute / patchStyle / patchClass / patchInnerHtml` generate fine-grained `DomMutationRecord` packets that apply directly to target nodes without tree-wide diffing.
-- **Declared event forwarding**: an element forwards events to the server with `data-forward="<event>[:<payload>] …"` and `data-forward-action="<name[:arg]>"`; payload is one of `value`, `key`, `point`, `target`, `none` (default depends on the event). Client listeners run first; the event is sent only if nothing called `preventDefault()` and it actually reached the declaring element (bubbling and `stopPropagation()` apply).
-  `onclick="server:name"` is sugar for the same declaration, and inputs/textareas/selects inside server-owned subtrees implicitly forward `input`/`change` values for write-back. The server only accepts action names its own DOM declared (`data-forward-action` or `server:`), and the usual `canAccess` / rate-limit checks still apply.
-  The old `setForwardEventsToServer(...)` switch is gone; an unhandled action name without `server:` stays on the client.
-- **List Reuse**: `data-for` reuses existing node instances by key (`data-row-key` or index) to preserve node identity and internal state.
-
-
-### Commands
-
-Useful without writing any Java:
-
-```
-/enderframe open <players> <ui_id> [<session_id> [<width> <height>]]
-/enderframe open_inline <players> <html…>
-/enderframe hud set <players> <ui_id>
-/enderframe hud clear <players>
-/enderframe session load <session_id> <ui_id> [<width> <height>]
-/enderframe session clear <session_id>
-/enderframe patch text|html <session_id> <element_id> <value…>
-/enderframe patch style <session_id> <element_id> <property> <value…>
-/enderframe patch attr <session_id> <element_id> <name> <value…>
-/enderframe patch class <session_id> <element_id> add|remove|toggle <class>
-/enderframe publish <channel> <snbt>
-/enderframe desktop [<players>]    # open the bundled desktop demo
-/enderframe devkit                 # export the browser preview kit
-```
-
-Everything except `desktop` without a target needs permission level 2.
-
-### Browser preview
-
-`/enderframe devkit` writes `<gameDir>/enderframe_devkit/` with a standalone
-HTML/CSS/JS kit. Open `preview-playground.html` in Chrome, Edge, Firefox or VS
-Code Live Server and author your UI without launching Minecraft — the custom
-elements and the reactive attributes below are reimplemented there.
-
-The kit ships the engine's own user-agent sheet (`enderframe-ua.css`) and the
-built-in themes verbatim, and links them in the same order the game does, so the
-preview is not styled by a parallel set of defaults. It also contains
-`fidelity-dump.html`, which measures the fidelity corpus in your browser; the
-measured values are what [FIDELITY.md](FIDELITY.md) and `WebFidelityTest` compare
-the engine against.
+- **Scripting & `MutationObserver` timing.** No JavaScript anywhere. Behaviour is driven from Java (or server-side / reactive `data-*` attributes in the mod). `onclick` is read only as an action name in the mod host, never evaluated as JS. A Java-side `MutationObserver` API is available, with notifications batched and dispatched on tick/frame or manual flush rather than JS microtasks.
+- **HTML parsing in full.** Formatting elements are reconstructed by the adoption agency algorithm, but SVG and MathML elements are parsed without XML namespaces (tag and attribute names stay lower-case, e.g., `viewBox` becomes `viewbox`). Rules from `<style>` and an SVG's own `<style>` apply to presentation properties (`fill`, `stroke`, `opacity`, …), not `:hover`, pseudo-elements, `@container`, or `var()`.
+- **Nested lists in Markdown.** List parsing is flat; an indented sub-list becomes a sibling `<li>`. Write nested lists as HTML.
+- **Tables in full.** `border-collapse: collapse` merges cell and table borders by width only (not by `border-style` precedence) and ignores row, row-group, and column borders. A collapsed column keeps its `border-spacing`.
+- **Floats in full.** A line next to a float takes its available width from the float area at the top of the line, and a float inside an inline box that does not fit moves to the next line rather than an earlier one.
+- **Multi-column layout in full.** A block with a border, padding, or background is not split across columns, and neither is an empty block or image, so a tall one overflows its column. No `break-before` / `break-after`, `orphans` / `widows`, `direction: rtl` column order, or floats inside columns.
+- **Box-tree generation in full.** A block inside an inline box does not split the inline box, and text directly inside a flex or grid container is not wrapped in an anonymous item.
+- **List markers.** `list-style-image: url(...)` shows the image followed by a space; a failed load does not fall back to `list-style-type`. `@counter-style` does not support anonymous `symbols()` or image symbols (`url(...)`); unknown style names fall back to `decimal`.
+- **Flexbox in full.** `align-items: baseline` uses the first baseline of row items only. In a column, an item's automatic minimum height is its specified height if present, otherwise content height. Lines break by hypothetical sizes. In a flex container without a definite height, percentage heights resolve against the container's percentage basis instead of behaving as `auto`.
+- **Grid in full.** Simplified track sizing: an item spanning multiple content-sized tracks distributes its size evenly across them. `subgrid` is supported, but there are no implicit tracks before the explicit grid and no `baseline` alignment.
+- **Compositing on in-world Minecraft surfaces.** Screen-space surfaces (GUI screens, HUDs, standalone windows) composite `opacity < 1`, `filter`, `backdrop-filter`, `mix-blend-mode`, `isolation`, `clip-path`, `mask-image`, and rotated rounded clips via offscreen FBO layers (`url()` SVG references in `filter`/`clip-path` and `rect()`/`xywh()` are not read). On in-world surfaces (blocks, holograms, held items), offscreen FBO compositing is omitted to preserve world depth testing: `opacity` is applied per painted part, `overflow` clipping runs in each element's local transformed space, and flex/grid items paint in document order rather than `order`-modified order.
+- **Borders and outlines in full.** On boxes with `border-radius`, `solid`, `dashed`, and `dotted` borders follow the rounded/elliptical path, while `double`/`groove`/`ridge`/`inset`/`outset` draw solid; where adjacent sides of different colors meet at a rounded corner, color transitions at side width rather than along the diagonal. Outlines do not follow `border-radius` or inline fragment bounds. `inset`/`outset`/`groove`/`ridge` shading is approximated.
+- **Backgrounds in full.** Multiple layers, `url()` images, and `background-size / position / repeat / clip / origin` work on block boxes; inline boxes paint background colors and borders per line fragment without background images. Gradients in non-sRGB color spaces are approximated with 32 linear sRGB segments per stop pair and require the SDF shader. `background-attachment` is always `scroll`.
+- **Box shadows in full.** Blurred `box-shadow` uses a stepped Gaussian-like approximation in the SDF shader (outer blurred shadows cut out the border box; unblurred outer shadows still paint beneath translucent boxes).
+- **Native form controls.** Controls are rendered by EnderFrameLib (styled after Chromium's light theme) rather than OS native widgets.
+- **Glyph-level fidelity.** Text uses system or `@font-face` fonts without OpenType ligatures; `line-height: normal` ignores fallback font metrics; `font-weight: 500` without a 500 face picks Regular per spec. Line breaking follows UAX #14; BiDi text reorders per fragment (UAX #9) without Arabic contextual shaping or cross-element BiDi reordering. No `contenteditable`; color emoji ignore text `color`.
+- **Media features that need a display.** `color-gamut` is unknown (`false`); `prefers-color-scheme` is `light`; `prefers-reduced-motion` is `no-preference`; `hover` / `pointer` report a mouse; `prefers-contrast` / `forced-colors` report no preference.
+- **Pseudo-elements & selectors beyond supported set.** Unsupported pseudo-elements (`::first-letter`, `::file-selector-button`, etc.) parse for specificity but do not match; unsupported pseudo-classes (`:user-valid`, `:autofill`, `:fullscreen`, etc.) invalidate the selector list per CSS spec; no XML namespaces (`svg|rect`).
+- **Glyph-relative units & elliptical corners.** `ch`/`ex` measure from the element's font (falling back to `0.5em` without a font); `ic` is `1em` and `cap` is a fixed fraction of font size. Elliptical `border-radius` is drawn as true elliptical arcs on SDF backgrounds, borders, shadows, and clips, while images and non-SDF elements approximate with the smaller radius.
+- **Transforms in full.** 2D matrix plus `skew*` shear are composed; 3D rotations (`rotateX`/`rotateY`/`rotate3d`) project onto the 2D plane without `perspective()` or `translateZ()` depth.
+- **Clipping under rotation or scaling.** Ancestor clips are chained into local space. When an item is rotated or scaled relative to a clipping ancestor, the SDF shader applies one rounded clip exactly and further axis-aligned clips via hardware scissor (skipped if the ancestor is rotated); non-SDF items (text, images) use scissor clipping without rounded corners. In-world surfaces only apply translation-only clips.
+- **Video (Minecraft mod host).** Uses the bundled `lunex_video.dll` native decoder (Windows-only today). YouTube URLs require explicit opt-in (`allowExternalMedia` + `allowYtDlp`); when enabled, the official `yt-dlp` release is downloaded from GitHub, verified via `SHA2-256SUMS`, and invoked without self-updating (see [NOTICE](NOTICE)).
 
 ---
 
-## Supported HTML
-
-**Structure** `html` `head` `body` `div` `section` `main` `header` `footer`
-`article` `nav` `aside` `span` `template` (its content is an inert
-`DocumentFragment`: not rendered, not part of the document tree, and not
-reached by document queries)
-
-**Text** `h1`–`h6` `p` `br` `hr` `b` `strong` `i` `em` `s` `strike` `del` `u`
-`ins` `code` `kbd` `pre` `blockquote` `label` `output`
-
-**Lists / tables** `ul` `ol` `li` `table` `caption` `thead` `tbody` `tfoot`
-`tr` `th` `td` (`colspan`, `rowspan`) `colgroup` `col` (`span`)
-
-**Forms** `form` `fieldset` `legend` `button` `input`
-(`text` `number` `checkbox` `radio` `range` `color`) `select` `option`
-`textarea` `progress` `meter`
-
-**Media / grouping** `img` `canvas` `video` `a` `details` `summary` `dialog`
-`figure` `figcaption`
-
-**Minecraft custom elements**
-
-| Element | What it renders |
-|---|---|
-| `<mc-slot index="3">` | one inventory slot |
-| `<mc-slot-grid cols rows gap start>` | a slot grid |
-| `<mc-inventory>` | the 3×9 main inventory plus a 9-slot hotbar |
-| `<mc-bar value min max color bg label>` | a labelled progress bar |
-| `<mc-energy value max label>` | an energy bar; the label defaults to `value / max FE` (`label="none"` hides it) |
-| `<mc-tank value max fluid label>` | a fluid tank bar tinted by `fluid` (`water`, `lava`, `milk`, `honey`); the label defaults to `value / max mB` |
-| `<mc-entity>` / `<mc-scene>` | a live entity / block scene |
-| `<mc-fluid>` | a fluid texture |
-| `<img src="item:minecraft:diamond">` | an item stack as an image |
-
-**Translations.** `{{i18n:key}}` and `data-i18n="key"` use the game's language files (`assets/<modid>/lang/*.json`).
-Arguments fill `%s` in the translation: `{{i18n:mymod.progress, percent, 'Furnace'}}` takes `percent` from the state
-(a quoted argument is a literal) and updates when it changes. `{{statusKey|i18n}}` translates a state value.
-
-**Reactive attributes** (no scripting)
-
-`data-model` `data-bind` `data-if` `data-show` `data-for` `data-key`
-`data-row-key` `data-class` `data-channel` `data-list` `data-i18n`
-`data-item` `data-tooltip` `data-sound` `data-markdown` `data-syntax`
-`data-hud` `data-tracker` `data-dropzone` `data-slot` `data-zoom`
-`data-pan-zoom`, and for server-sent HTML `data-owner` `data-forward`
-`data-forward-action`
-
-- `data-if` (and the Minecraft host alias `mc-if`, declared through the `HostElementProvider` SPI): Toggles the HTML `hidden` boolean attribute on the element based on the condition expression.
-- `data-show`: Toggles inline `display: none` style on the element, restoring the original display property when condition is true.
-- `data-list`: Evaluates a list model or inline JSON array/object to expand children/templates.
-
-**Parsing** Documents are built with the HTML standard's tree-construction
-rules, as a browser's `DOMParser` would: `html`, `head` and `body` are implied
-when you write only a fragment (leading `<link>`, `<meta>` and `<title>` go
-into `head`); end tags may be omitted for `p`, `li`, `dt`, `dd`, `option`,
-`optgroup`, `tr`, `td`, `th`, the table sections and `colgroup`; a table gets
-its implied `tbody`, `tr` and `colgroup`; content misplaced inside a `<table>`
-is moved in front of it; and all 2,231 named character references are known.
-`innerHTML` patches are parsed in the context of their target element, so a
-`<tr>` patched into a `<tbody>` stays a row.
-
-**Markdown** CommonMark / GFM subset, via `data-markdown` on
-`<article>`/`<section>`, `<script type="text/markdown">`, `<mc-markdown>`, or a
-`.md` file in `enderframe_ui/`: headings, paragraphs, emphasis, inline code,
-fenced code blocks with a language class, blockquotes, GitHub alerts
-(`> [!NOTE]`), flat bullet/ordered/task lists, GFM tables, images, links,
-horizontal rules.
-
-## Supported CSS
-
-**Selectors** type, `.class`, `#id`, `*`, descendant, `>`, `+`, `~`, attribute
-(`[a]` `[a=v]` `[a^=v]` `[a$=v]` `[a*=v]` `[a~=v]` `[a|=v]`, with the `i` / `s`
-flags), selector lists, CSS escapes in names (`.sm\:hidden`), and CSS nesting
-(`&`, nested rules and their specificity). Specificity and cascade origin are
-tracked properly, and `!important` wins. A selector the engine does not
-understand is invalid, as in a browser: it matches nothing and drops the whole
-rule it is listed in.
-
-**Pseudo-classes** `:hover` `:active` `:focus` `:focus-visible` `:focus-within`
-`:checked` `:disabled` `:enabled` `:indeterminate` `:open` `:required`
-`:optional` `:read-only` `:read-write` `:placeholder-shown` `:valid` `:invalid`
-`:in-range` `:out-of-range` `:link` `:any-link` `:visited` (never matches)
-`:target` `:defined` `:lang()` `:dir()` `:first-child` `:last-child`
-`:only-child` `:first-of-type` `:last-of-type` `:only-of-type` `:nth-child()`
-`:nth-last-child()` `:nth-of-type()` `:nth-last-of-type()` (any `An+B`, `odd`,
-`even`, and `of S`) `:empty` `:root` `:scope` `:not()` `:is()` `:where()`
-`:has()` (selector lists, including complex and relative selectors)
-
-**Pseudo-elements** `::before` `::after` (`content` with strings, `attr()`,
-`counter()` and `counters()`; they follow the cascade like elements and update
-on state changes such as `:hover::after`); `::marker` on list items,
-`::placeholder` on text inputs, `::selection`
-
-**Lists and counters** `list-style-type` (`disc` `circle` `square` `decimal`
-`decimal-leading-zero` `lower-` / `upper-alpha` / `latin` / `roman`
-`lower-greek` `none`, a string, or an `@counter-style` name), `@counter-style`
-(`cyclic` `numeric` `alphabetic` `symbolic` `additive` `fixed` `extends`;
-`symbols` `additive-symbols` `negative` `prefix` `suffix` `range` `pad`
-`fallback`), `list-style-position`, `counter-reset` `counter-increment`
-`counter-set`, `<ol start>` and `<li value>`
-
-**Box model** `display` (`block` `inline` `inline-block` `flow-root` `flex`
-`inline-flex` `grid` `inline-grid` `table` `inline-table` `table-*`
-`list-item` `contents` `none`, and the two-keyword forms such as
-`inline flow-root`)
-`position` (`static` `relative` `absolute` `fixed` `sticky`) `top` `right`
-`bottom` `left` `z-index` `float` `clear` `width` `height` `min-*` `max-*` `margin` `padding` `border`
-`border-*-width` `border-style` (`solid` `dashed` `dotted` `double` `groove`
-`ridge` `inset` `outset` `none` `hidden`) `border-radius` and its per-corner
-longhands (`border-top-left-radius` …) `outline`
-`outline-offset` `box-sizing` `aspect-ratio` `overflow`
-`overflow-x` `overflow-y` `scrollbar-width` `visibility` `opacity`
-
-**Flexbox** `flex` `flex-grow` `flex-shrink` `flex-basis` `flex-direction`
-(including `*-reverse`) `flex-wrap` (including `wrap-reverse`) `flex-flow`
-`order` `justify-content` `align-items` `align-self` (including `baseline`)
-`align-content` `gap` `row-gap` `column-gap`, auto margins
-
-**Grid** `grid-template-columns` `grid-template-rows` (lengths, `%`, `fr`,
-`auto`, `min-content`, `max-content`, `fit-content()`, `minmax()`, `repeat()`
-including `auto-fill` and `auto-fit`, whose empty tracks collapse; named lines)
-`grid-template-areas` `grid-template` `grid` (the `auto-flow` forms too)
-`grid-auto-rows`
-`grid-auto-columns` `grid-auto-flow` (`row` `column` `dense`) `grid-row`
-`grid-column` `grid-area` and their `-start` / `-end` longhands (line numbers,
-negative numbers, names, `span`) `justify-items` `align-items` `justify-self`
-`align-self` `justify-content` `align-content` `place-*` `gap`
-
-**Tables** `table-layout` `border-collapse` `border-spacing` `caption-side`,
-`vertical-align` on cells, percentage column widths, `visibility: collapse` on
-rows and columns
-
-**Multi-column** `columns` `column-count` `column-width` `column-gap`
-`column-rule` `column-fill` `column-span: all`; columns are balanced, and
-break between lines and between blocks that have no border, padding or
-background
-
-**Text** `color` `font-size` `font-family` (fonts installed on the system,
-matched as in a browser, plus Minecraft's fonts and `@font-face`) `font-weight`
-`font-style` `font-kerning`
-`line-height` `letter-spacing` `text-align` `text-indent` `vertical-align`
-(`baseline` `top` `bottom` `middle` `sub` `super` `text-top` `text-bottom`,
-lengths, `%`) `text-decoration` `text-shadow` (offset, blur radius and colour,
-several shadows; `text-shadow: true` keeps the old dark-copy shadow)
-`text-transform` `white-space` (`normal` `nowrap` `pre` `pre-wrap` `pre-line`)
-`word-break` `overflow-wrap` `text-overflow` `direction`
-
-**Paint / effects** stacking contexts (positioned boxes with a `z-index`,
-flex and grid items with a `z-index`, `opacity` below 1, `transform`, `filter`,
-`isolation: isolate`, `mix-blend-mode`, and fixed / sticky boxes) painted in
-CSS 2.2 Appendix E order; `filter` and `backdrop-filter` (`blur()`,
-`brightness()`, `contrast()`, `grayscale()`, `hue-rotate()`, `invert()`,
-`opacity()`, `saturate()`, `sepia()`, `drop-shadow()`); `mix-blend-mode` (all
-16 blend modes plus `plus-lighter`) and `isolation`; `clip-path` (`inset()`
-with `round`, `circle()`, `ellipse()`, `polygon()`, `path()`, with
-`border-box` / `padding-box` / `content-box`); `mask` / `mask-image` /
-`mask-size` / `mask-position` / `mask-repeat` / `mask-clip` / `mask-origin` /
-`mask-mode` (`alpha` / `luminance`); `background` with multiple layers,
-`background-color` `background-image` (`url()`, `linear-gradient()`,
-`radial-gradient()`, `conic-gradient()` and their `repeating-` forms, with
-colour hints and `in <colorspace>`)
-`background-size` `background-position` `background-repeat` (including
-`space` and `round`) `background-clip` (including `text`, also as
-`-webkit-background-clip`; images and gradients on inline boxes are drawn per
-line fragment) `background-origin`; `box-shadow` `transform`
-(`translate` `scale` `rotate`) `transform-origin` `transition`
-`transition-delay` `transition-timing-function` `animation` with `@keyframes`
-(lengths, numbers and colours of any animatable property, including
-layout-affecting ones such as `width` and `margin`; no `steps()`,
-`transition-behavior` or `@starting-style` yet)
-`object-fit` `cursor` `content` `src`
-
-**Units & functions** `px` `%` `em` `rem` `ch` `ex` `cap` `ic` `lh` `rlh`
-`vw` `vh` `vmin` `vmax` `vi` `vb` and their `sv*` / `lv*` / `dv*` forms,
-container units (`cqw` `cqh` `cqi` `cqb` `cqmin` `cqmax`), `pt` `pc` `in` `cm`
-`mm` `Q` `fr`; `calc()` `min()` `max()` `clamp()` `round()` `mod()` `rem()`
-`abs()` `sign()` `pow()` `sqrt()` `hypot()` `log()` `exp()` and the
-trigonometric functions (nested in any combination, typed: an expression whose
-units do not fit is invalid); `var()` with custom properties (nested, with
-fallbacks; cycles make the declaration invalid).
-
-**Colours** `#rgb` `#rgba` `#rrggbb` `#rrggbbaa`, the 148 CSS named colors,
-`transparent`, `currentcolor`, `rgb()` `hsl()` `hwb()` `lab()` `lch()`
-`oklab()` `oklch()` `color()` (comma and space syntax, `/ alpha`, `none`),
-`color-mix()` and relative colours (`rgb(from red r g b)`). Colours outside sRGB
-are gamut-mapped as CSS Color 4 describes. Minecraft's 16 chat colours are
-`var(--mc-red)`, `var(--mc-gold)`, `var(--mc-dark-aqua)` and so on.
-
-**Cascade** origins, `!important`, cascade layers (`@layer`, nested and
-anonymous layers, `@import … layer()`), `inherit` `initial` `unset` `revert`
-`revert-layer` and `all`. Children inherit computed values, so
-`font-size: 2em` does not compound down the tree.
-
-**At-rules** `@media` with media types (`all`, `screen`, `print`), `width` /
-`height` / `aspect-ratio` (with `min-` / `max-` and the range syntax),
-`orientation`, `resolution`, `prefers-color-scheme`, `prefers-reduced-motion`,
-`hover` / `any-hover`, `pointer` / `any-pointer`; `@supports` (declarations,
-`selector()`, `and` / `or` / `not`); `@container` (`container-type`,
-`container-name`, size and `style()` queries); `@layer`; `@property`
-(registered custom properties are typed and animatable); `@import` (with
-`layer()`, `supports()` and a media list); `@keyframes`; `@font-face`
-
-**Built-in stylesheets** `enderframelib:ua.css` is the user-agent sheet, with
-the HTML standard's rendering defaults (`body { margin: 8px }`, `em`-based
-headings, `dl` / `dd`, `border-spacing: 2px` tables, `#0000ee` links, and so
-on); themes are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
-`enderframelib:brass.css`, and carry all the decoration.
-
-> **Breaking change — system fonts.** Text is now laid out and drawn with the
-> fonts installed on the system, chosen from `font-family` the way a browser
-> chooses them (an unstyled document gets the standard font Chrome on Windows
-> would use, form controls Arial, `code` / `pre` a monospace font), and rasterised at the
-> device pixel size. Line breaks, widths and line heights therefore follow
-> Chrome rather than Minecraft's font. To keep Minecraft's look, set
-> `font-family: minecraft:default` (or `minecraft:uniform` / `minecraft:alt`);
-> the metrics note below then applies.
-
-> **Breaking change — text metrics.** `font-size` and `line-height` now mean what
-> they mean in a browser. A given `font-size` renders about 1.3× larger than
-> before (1em is the font's natural 9px line box, not 12px), `line-height: normal`
-> reserves 1.15em instead of 1.375em, and `line-height: <length>` no longer scales
-> with `font-size`. Documents that were tuned against the old numbers need their
-> font sizes revisited. The reasoning is in [FIDELITY.md](FIDELITY.md).
-
-> **Breaking change — box tree.** Layout now runs on a box tree built from the
-> DOM, as in a browser. Inline content that sits next to a block is wrapped in an
-> anonymous block and stacks below or above it instead of overlapping it;
-> `display: contents` removes the element's own box; stray `table-cell` /
-> `table-row` boxes get anonymous table parents; and `display: flow-root`,
-> `overflow` other than `visible`, flex and grid items, inline-blocks and table
-> cells stop their children's margins from collapsing through them. List items
-> now draw a bullet or number (`ol` counts in `decimal`, nested `ul` use
-> `circle` then `square`); set `list-style: none` to remove it.
-
-> **Breaking change — formatting contexts.** `<table>` is now laid out as a CSS
-> table (it used to be a column of flex rows): columns are sized from their
-> cells' content instead of sharing the width equally, and `colspan` /
-> `rowspan` work. If you relied on equal columns, set `table-layout: fixed`
-> with a `width` on the table. `float` floats instead of stacking, `position:
-> relative` no longer pushes the following siblings, absolutely positioned
-> boxes with `auto` insets sit at their static position, flex items with a
-> `width` now shrink, and an inline-block's baseline is its last line of text
-> (or its bottom margin edge), so buttons on a line of text sit on its
-> baseline. Line boxes are at least as tall as their block's `line-height`
-> (the strut).
-
-> **Breaking change — painting.** Elements are painted in the browser's order.
-> A `z-index` no longer escapes the stacking context it is in (a child with
-> `z-index: 100` stays below its parent's `z-index: 2` sibling), `z-index` on a
-> non-positioned block has no effect (use `position: relative`), and `opacity`
-> below 1 or a `transform` makes a box a stacking context. In-flow block
-> backgrounds paint below all inline content of their stacking context. The
-> root element's background (or `<body>`'s, if the root has none) fills the
-> whole canvas; with neither, the canvas is transparent. Border widths follow
-> `border-style`: `border-width: 2px` alone draws nothing (add a style, e.g.
-> `border: 2px solid`), and `border-style: solid` alone is 3px wide. A border
-> without a colour uses `currentcolor` (it used to be invisible).
-
-> **Breaking change — user-agent stylesheet.** `ua.css` now holds the HTML
-> standard's defaults and nothing else, so unstyled HTML looks the way it does
-> in a browser: `body` has an 8px margin and no background, text is black,
-> links are `#0000ee`, `p` / lists / `blockquote` / `figure` / `pre` have 1em
-> vertical margins, lists are indented 40px, `dd` 40px, tables have
-> `border-spacing: 2px` and 1px cell padding (no border, no 100% width),
-> `pre` / `code` / `kbd` are plain monospace, `hr` is a 2px inset line,
-> `fieldset` has a grooved border, `summary` shows a disclosure triangle, and
-> focus is shown with an outline. Form controls take Chromium's sizes (button
-> padding `1px 6px`, text inputs `1px 2px`, checkboxes 13×13). The previous
-> look — compact margins, dark `pre` / `code`, styled tables, blockquotes,
-> GitHub alerts and task lists — moved to the built-in themes, which also reset
-> `body { margin: 0 }`. Link a theme (Markdown pages get `dark.css`
-> automatically) or restyle the elements yourself. Without a background on
-> `html` or `body`, a document is now transparent over the game instead of
-> white.
-
-> **Breaking change — HTML parsing.** Every document now has `html`, `head` and
-> `body` elements, even when you write only a fragment, so the user-agent
-> `body { margin: 8px }` applies (the built-in themes reset it to 0), and a
-> top-level `height: 100%` now resolves against `body`, whose height is `auto`:
-> add `html, body { height: 100%; }` (as in a browser) or use `100vh`.
-> `:root` matches only the `html` element. A trailing `/>` is ignored on
-> non-void elements, so `<div/>` opens a `div` that runs to its parent's end
-> tag. `<tr>` / `<td>` outside a table are dropped (their content is kept),
-> and text or elements written directly inside `<table>` move in front of the
-> table. `&nbsp;` is now U+00A0 (it does not collapse or break), named and
-> numeric references follow the standard (`&#65` without `;` is `A`), and when
-> an attribute is repeated the first one wins.
-
-> **Breaking change — clipping, visibility and decorations.** `overflow: hidden`
-> and the `overflow-x` / `overflow-y` longhands now clip children (only the
-> shorthand's literal value used to be read, so most clipping silently did
-> nothing), and a scroll container now cuts off its content. An absolutely
-> positioned descendant is clipped only by boxes that contain it, so a
-> dropdown inside a non-positioned `overflow: hidden` box is no longer cut off,
-> and `position: fixed` is not clipped by ancestors. `visibility: hidden` hides
-> a box (keeping its space) and stops it from receiving clicks, while a
-> `visibility: visible` descendant still shows. `pointer-events: none` now lets
-> clicks through. A rounded border paints only the border area, so a
-> transparent box with `border-radius` and a border is no longer filled with the
-> border colour. `box-shadow` follows its offsets, blur, spread, `inset` and
-> lists of shadows (it used to be a fixed small drop shadow), and
-> `linear-gradient()` uses its angle and every colour stop.
-
-> **Breaking change — dynamic restyling and pseudo-elements.** `::before` and
-> `::after` now go through the normal cascade (a later shorthand overrides an
-> earlier longhand, `!important` and CSS-wide keywords behave as on elements),
-> and element rules such as `span { ... }` no longer leak into them. They follow
-> state changes, so `:hover::before { content: "→" }` appears and disappears
-> and `:checked::after` changes colour; hovering a pseudo-element hovers its
-> element. A state change on one element now restyles its following siblings
-> when a rule needs it (`input:checked + label`, `.tab:hover ~ .panel`).
-> `<style>` and `<link rel="stylesheet">` are read from the parsed document in
-> document order (links used to come before every `<style>`), so markup inside
-> comments, `<textarea>` and `<template>` is no longer treated as CSS, and the
-> `<style>` / `<script>` elements stay in the DOM (hidden by the user-agent
-> sheet), which counts them for `:first-child`, `+` and the like as a browser
-> does.
-
-> **Breaking change — colours, selectors and values.** Named colours are the CSS
-> ones: `red` is `#ff0000` (it was Minecraft's `#ff5555`), `green` is `#008000`,
-> `gray` is `#808080`, `yellow` is `#ffff00`; use `var(--mc-red)` and friends for
-> Minecraft's palette. `#rrggbbaa` is read as red, green, blue, alpha (it used
-> to be taken as ARGB, so `#ff000080` came out dark blue), `#rgba` works, an
-> alpha of `0.5` rounds to 128 rather than 127, and `color: transparent` text is
-> invisible instead of off-white. A colour the engine cannot read makes the
-> declaration invalid (it used to paint white). An unknown pseudo-class
-> (`:has()`, a typo) or an `An+B` it cannot read now makes the selector match
-> nothing and drops the rule's whole selector list; previously the condition
-> was skipped and the rule applied to every element (`li:nth-child(3n)` styled
-> all items). `::placeholder`, `::marker` and other unrendered pseudo-elements
-> no longer style the element itself. Two conditions on the same attribute both
-> apply. `border-radius` is a shorthand for the four corner longhands, which
-> now take effect. A shorthand resets the longhands it does not mention (for
-> example `flex-flow: wrap` resets `flex-direction` to `row`), and `flex`
-> rejects values it cannot read instead of using them as `flex-basis`.
-
-> **Breaking change — inline boxes and layout edge cases.** An inline box such
-> as `<span>`, `<code>` or `<kbd>` now gets its left padding, border and margin
-> once, at its start, and its right ones once, at its end, with one background
-> per line: a multi-word `<span style="padding: 0 4px">` is no longer padded
-> around every word, and a box that wraps has its left edge only on the first
-> line and its right edge only on the last. Inline boxes now draw their borders
-> and rounded corners. Their vertical padding and borders no longer make the
-> line taller (they overlap the lines above and below, as in a browser); add
-> `line-height` or use `inline-block` if you relied on the extra space. Centred
-> and right-aligned lines ignore their trailing space. A percentage height now
-> resolves inside a stretched flex or grid item and inside an absolutely
-> positioned box sized by `top` and `bottom`. A shrink-to-fit box (inline-block,
-> float, flex item) containing `<br>` is as wide as its widest line rather than
-> all lines put together. In `flex-direction: column; flex-wrap: wrap` the
-> container is as wide as all its columns, and `justify-content: left / right /
-> start / end` keep their direction in `row-reverse` and `column-reverse`
-> (`row-reverse; justify-content: left` packs items to the left).
-
-> **Breaking change — sub-pixel geometry.** Lengths are no longer truncated to
-> whole pixels during layout: `33.33%`, `1.5em` and `line-height: normal`
-> (18.4px at 16px) keep their fractions, and positions are rounded once, when
-> drawn, by snapping each box's edges. Boxes that used to come out a pixel short
-> (or a few pixels short after several nested percentages) now line up with a
-> browser, and lines of text advance by their exact line height, so tall blocks
-> of text grow slightly. With `box-sizing: border-box`, padding and border wider
-> than `width` now widen the box instead of being squeezed into it.
-
----
-
-## Not supported
-
-Known gaps, listed so you do not have to discover them by debugging.
-Layout differences from a real browser are measured, case by case, in
-[FIDELITY.md](FIDELITY.md).
-
-- **Scripting & MutationObserver timing.** No JavaScript, anywhere. Behaviour is
-  server-side; the reactive `data-*` attributes above are the substitute. `onclick` is read only
-  as an action name, never evaluated. A Java-side `MutationObserver` API is available, but
-  notifications are batched and dispatched at client tick (before restyle) or manual flush rather
-  than via JavaScript microtasks.
-- **HTML parsing in full.** Formatting elements are reconstructed and misnested
-  ones are fixed by the adoption agency algorithm (`<p><b>x<p>y` makes the second
-  paragraph bold). SVG and MathML elements are parsed without a namespace (names
-  and attributes stay lower-case, so `viewBox` is read as `viewbox`). Rules from
-  the page's `<style>` and from an SVG's own `<style>` apply to its presentation
-  properties (`fill`, `stroke`, `opacity`, ...), but not `:hover` or other
-  state, pseudo-elements, `@container` or `var()`.
-- **Nested lists in Markdown.** List parsing is flat; an indented sub-list
-  becomes a sibling `<li>`. Write nested lists as HTML.
-- **Tables in full.** `border-collapse: collapse` merges cell and table borders by
-  width only (not by `border-style` precedence) and ignores row, row-group and
-  column borders. A collapsed column keeps its
-  `border-spacing`.
-- **Floats in full; writing modes.** A line next to a
-  float takes its width from the float area at the top of the line, and a
-  float inside an inline box that does not fit is moved to the next line
-  rather than back to an earlier one. No writing modes.
-- **Multi-column layout in full.** A block with a border, padding or background
-  is not split across columns, and neither is a box without lines (an empty
-  block or an image), so a tall one overflows its column. No `break-before` /
-  `break-after`, `orphans` / `widows`, `direction: rtl` column order, or floats
-  inside columns.
-- **Box-tree generation in full.** A block inside an inline box does not split
-  the inline box, and text directly inside a flex or grid container is not
-  wrapped in an anonymous item.
-- **List markers.** `list-style-image: url(...)` shows the image followed by a
-  space; a failed load does not fall back to the `list-style-type` marker.
-  `@counter-style` reads the systems and descriptors listed above, but not
-  `symbols()` anonymous styles or image symbols (`url(...)`); an unknown style
-  name counts as `decimal`.
-- **Flexbox in full.** `align-items: baseline` uses the first baseline of row
-  items only. In a column, an item's automatic minimum height is its specified
-  height if it has one, otherwise its content height. Lines are broken by the
-  items' hypothetical sizes. In a flex container whose height is not definite,
-  an item's percentage height resolves against the container's own percentage
-  basis instead of behaving as `auto`.
-- **Grid in full.** Track sizing is a simplified version of the spec's: an
-  item spanning several content-sized tracks spreads its size evenly over
-  them. Subgrid (`grid-template-columns` / `-rows: subgrid`) is supported, but
-  there are no implicit tracks before the explicit grid and no `baseline`
-  alignment.
-- **Compositing on in-world surfaces.** On screen-space surfaces (GUI screens
-  and HUDs), stacking contexts with `opacity < 1`, `filter`, `backdrop-filter`,
-  `mix-blend-mode`, `isolation`, `clip-path`, `mask-image`, or a rotated
-  rounded `overflow` clip are composited via offscreen FBO layers (`url()` SVG
-  references in `filter` / `clip-path` and `rect()` / `xywh()` are not read).
-  On in-world surfaces (blocks, holograms, held items), offscreen FBO
-  compositing is not used so depth testing against the world is preserved:
-  `opacity` is applied per painted part, and `overflow` clipping is applied in
-  each element's own transformed space. Flex and grid items paint in document
-  order, not `order`-modified order.
-- **Borders and outlines in full.** On a box with `border-radius`, `solid`,
-  `dashed` and `dotted` borders follow the rounded (or elliptical) path, while
-  other styles (`double`, `groove`, `ridge`, `inset`, `outset`) are drawn
-  solid, and where two sides of different colours meet in a rounded corner the
-  colour changes at the side's width rather than along the diagonal. Outlines
-  do not follow `border-radius` and are not drawn per line fragment on inline
-  boxes. The shading of `inset` / `outset` / `groove` / `ridge` is an
-  approximation (the spec leaves it to the user agent).
-- **Backgrounds in full.** Multiple layers, `url()` images and
-  `background-size / position / repeat / clip / origin` work on block-level
-  boxes; inline boxes paint their background colour and borders on each line
-  but no background images. Linear, radial and conic gradients (including
-  `repeating-*`, colour hints and `in <colorspace>`) are drawn per pixel by the
-  SDF shader (non-sRGB interpolation spaces are approximated with 32 linear
-  sRGB segments per stop pair, and nothing is drawn if the SDF shader is
-  unavailable). `background-attachment` is always `scroll`.
-- **Box shadows in full.** A blurred `box-shadow` is a Gaussian-like falloff
-  drawn by the SDF shader, a blurred outer shadow is cut out of the border box
-  (so it does not show through a translucent background), and an `inset` shadow
-  has the rounded hole and the same falloff. An outer shadow with no blur is
-  still painted under the whole box, so it shows through a transparent or
-  translucent background.
-- **Native form controls.** `ua.css` follows the HTML standard's rendering
-  defaults, but form controls are drawn by EnderFrameLib (sized after
-  Chromium's light theme) rather than by the operating system.
-- **Glyph-level fidelity.** Text uses the fonts installed on the system
-  (matched as CSS Fonts 4 §5.2 describes), but there are no ligatures,
-  `line-height: normal` ignores the metrics of fallback fonts, and
-  `font-weight: 500` on a family without a 500 face picks Regular as the
-  standard says (Chrome on Windows picks Semibold). Generic families
-  (`sans-serif` and so on) map to the fonts Chrome uses on Windows; on other
-  systems the installed fallbacks are used, so text can measure differently.
-  TTF / OTF fonts registered with `@font-face` go through the same path as the
-  system fonts (so they measure and draw the same on every OS); only the
-  `minecraft:*` families (and `@font-face` sources that are not TTF / OTF) are
-  drawn with Minecraft's bitmap font system. Line breaking follows UAX #14.
-  Text in a right-to-left script is reordered per text fragment (UAX #9, with
-  `direction: rtl` aligning blocks and `text-align: start / end`), but Arabic
-  letters are not joined into their contextual forms and a line that mixes
-  inline elements of both directions is not reordered across them. There is
-  no `writing-mode` (vertical text) or `contenteditable`; IME composition
-  (preedit and `composition*` events) is handled by the standalone viewer.
-  Colour emoji are drawn in colour when the emoji font stores them as COLR v1
-  paint graphs (gradients, transforms and compositing, as in Segoe UI Emoji on
-  Windows 11) or as COLR v0 layers; bitmap emoji (`sbix`, `CBDT`) are not, and
-  are drawn as plain glyphs. A colour emoji ignores the text `color`.
-  See [FIDELITY.md](FIDELITY.md) for what is measured.
-- **Media features that need a display.** `color-gamut` is unknown (and
-  therefore false). `prefers-color-scheme` is always `light` and
-  `prefers-reduced-motion` is always `no-preference`; `hover` / `pointer` report
-  a mouse, and `prefers-contrast` / `forced-colors` report no preference.
-- **Pseudo-elements beyond the supported ones.** `::first-line`,
-  `::first-letter`, `::file-selector-button` and friends parse
-  (and count toward specificity) but never match. (`::backdrop` matches on a
-  modal `<dialog>`.)
-- **Selectors in full.** Pseudo-classes not listed under *Supported CSS*
-  (`:user-valid`, `:autofill`, `:fullscreen` and so on) make the selector
-  invalid, as an unknown pseudo-class does in a browser. There are no
-  namespaces (`svg|rect`).
-- **Glyph-relative units and elliptical corners.** `ch` and `ex` are measured
-  from the element's font (the advance of "0", the x-height) in the game; where
-  no font is available (headless unit tests) they fall back to 0.5em. `ic` is
-  1em and `cap` a fixed fraction of the font size. Elliptical `border-radius`
-  (`10px / 20px`, or a percentage on a box that is not square) is drawn as true
-  elliptical arcs on SDF backgrounds, borders, shadows and clips; images and
-  other non-SDF elements approximate each corner with the smaller of its two
-  radii.
-- **Transforms in full.** `transform`, `translate`, `rotate` and `scale` are
-  composed in written order into a 2D matrix, and a box carries a translation,
-  a rotation, a `skewX` and a scale (`M = T·R·skewX·S`), so `skew*()` and the
-  shear of a `matrix()` are drawn and animate. 3D functions are projected onto
-  the screen plane: `rotateX()` / `rotateY()` / `rotate3d()` scale the height /
-  width by cos θ (and flip past 90°), but the perspective and depth part
-  (`perspective()`, `translateZ()`) is not drawn.
-- **Clipping under rotation or scaling.** Each ancestor's clip (`overflow`, a
-  box's own background) is kept as a chain and converted into the clipped
-  item's space one by one, so clips stay correct inside moving rails and under
-  translated, scaled or rotated boxes. What is still approximate, only when an
-  item is *rotated or scaled relative to* a clipping ancestor (for example a
-  spinning child inside a static rounded card): the shader applies **one** such
-  clip exactly, rounded corners included (the innermost one with a radius, else
-  the innermost); further ones of that kind are cut by an axis-aligned
-  hardware scissor when the ancestor itself is not rotated (corners are not
-  rounded) and are not applied when it is. Text, images and everything else
-  that does not go through the SDF shader is cut by that scissor only, so a
-  rounded ancestor's corners are not rounded for them. Clips on in-world
-  surfaces (blocks, holograms, held items) cannot use the scissor: only the
-  translation-only part of the chain applies there.
-- **Video** needs the bundled native decoder, which is Windows-only today, and
-  YouTube sources need the opt-in `allowExternalMedia` and `allowYtDlp` settings.
-  When both are enabled, the official yt-dlp release for the current platform is
-  downloaded from GitHub, verified against the release's
-  `SHA2-256SUMS`, and run. A binary you place in `<game dir>/enderframelib/` is
-  used as-is; EnderFrameLib does not self-update it (see [NOTICE](NOTICE)).
-
----
-
-## Project layout
-
-```
-core/     (Gradle module `:core`, sources in core/src) HTML, CSS, layout, markdown, text, painting
-          and the Minecraft-free render backends — plain Java, no Minecraft. Headlessly testable.
-          Holds the `core`, `common` and `api/dom`/`api/event`/`api/config` (annotations) packages;
-          the root project depends on it and bundles it into the mod JAR.
-api/      The supported surface: EnderFrameAPI, EnderFrameClientAPI, WebSessionHandle,
-          UIState (api/state), the DOM and event interfaces (api/dom, api/event), config.
-common/   Shared between sides: resource loading, custom-element expansion, the render
-          pipeline, DevKit export.
-server/   Headless UI state, HTML sessions, viewers, pub/sub, commands, datapack loading,
-          access control.
-client/   Rendering, input, screens, templates, media, reactivity.
-network/  The payloads: headless open / state delta / action, DOM sync and mutations,
-          HTML-session action, pub/sub update and subscribe.
-```
-
-`core/` must not import Minecraft, NeoForge, or the packages above it, and
-`api/` must not import the implementation packages. This is enforced by
-`ArchitectureTest` and `ApiBoundaryTest`, which run in CI. The internal
-structure is described in [ARCHITECTURE.md](ARCHITECTURE.md) (Japanese).
-
-## Building
+## Building from Source & Project Layout
 
 ```bash
-./gradlew build test          # what CI runs
-./gradlew runClient
-./gradlew runGameTestServer   # the server-side lifecycle game test
-./gradlew publish             # into ./repo
-./gradlew :core:test          # the Minecraft-free module alone
-./gradlew :core:jar           # standalone enderframelib-core jar
+./gradlew build test                                        # compile all modules + run CI test suite
+./gradlew :core:quickTest                                   # fast :core check (~2 min, skips slow & timing tags)
+./gradlew :core:test                                        # full Minecraft-free :core suite
+./gradlew :core:costGate                                    # allocation & fast-path regression gate
+./gradlew :core:verifyPublishedModules                      # publish engine modules to ./repo & verify standalone consumer
+./gradlew :core:runViewer --args="page.html 1280 800"       # launch standalone GLFW viewer
+./gradlew runClient                                         # launch Minecraft 1.21.1 client with the mod
+./gradlew runGameTestServer                                 # run server-side lifecycle GameTests
 ```
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the comment-language convention and
-for how known limitations are recorded, and [FIDELITY.md](FIDELITY.md) for the
-browser-measured divergence ledger.
-
-## License
-
-LGPL-3.0-only. See [LICENSE](LICENSE), and
-[LICENSE.GPL-3.0.txt](LICENSE.GPL-3.0.txt) whose terms LGPL-3.0 incorporates.
-
-Third-party components — the bundled `lunex_video` native decoder, the
-on-demand `yt-dlp`, JNA, and the NeoForge MDK template files — are
-attributed in [NOTICE](NOTICE). The bundled native binary is **not** covered by
-the LGPL grant.
-
-### Migration notes
-
-**Headless state**
-
-- Machine UIs that sent their HTML from the server with `Ui.html` and
-  updated it with `WebSessionHandle.patch*` can move to `UIState`: ship the
-  HTML as `assets/<namespace>/enderframe_ui/<name>.html`, replace each patched
-  element with a `data-bind` / `{{key}}` binding, and call `UIState.set`
-  instead of `patch*`. `Ui.html` and `WebSessionHandle` remain for ad-hoc HTML.
-
-**Live DOM and hybrid execution**
-
-- The old diff-apply engine, `SessionContext.virtualDom()/templateDom()` and `ClientWebManager.getVirtualRoot()/getTemplateRoot()` are removed; use `SessionContext.rootNode()` / `domDocument()` from `ClientWebManager.getSession(sessionId)`.
-- Inline actions (`on*` attributes) now run *after* propagation and only if the event was not cancelled. A `preventDefault()` in any listener suppresses both the local action and the server forward.
-- `ClientScreenInteractionManager.setForwardEventsToServer` is removed: use `data-forward` or the `server:` prefix.
-- A re-sync recreates server-owned nodes (hover/focus/scroll state tied to the old node objects is reset); fine-grained updates should use mutation records, which keep node identity.
-- Common screen helper operations (`setTextareaValue`, `setInputValue`, `toScreenRect`, etc.) on `AbstractEnderScreen` and `AbstractEnderContainerScreen` are extracted into the `EnderScreenHost` interface; downstream code keeps full binary and source compatibility.
-- Input event synthesis (pointer, mouse, click synthesis, scroll, keys, and text editing) is centralized into `SessionInput` (`session.input()`); GUI screens and in-world screens (blocks, items, HUD) share the exact same event synthesis pipeline.
-### Holograms and items driven by state
-
-Holograms and items show a template the same way a block does: the server keeps a `UIState` and the client renders.
-
-```java
-// server: a state without a block entity, shown to a player on a 640x360 surface
-UIState board = EnderFrameAPI.get().stateOf("mymod:board", "lobby");
-board.set("title", "Welcome");
-EnderFrameAPI.get().showSurface(player, Ui.template("mymod:board").instance("lobby"), 640, 360);
-// EnderFrameAPI.get().hideSurface(player, ...) stops it
-
-// client: the session is named by the instance id
-Surfaces.hologram("lobby", Hologram.at("lobby", new Vec3(x, y, z), 2f, 1.125f).asBillboard());
-// an item: ((EnderScreenItem) TABLET.get()).createStack("lobby")
-
-// make the hologram a menu you aim at and click (hover, buttons, drags; a text field opens the same invisible input as on a block screen)
-Surfaces.hologram("lobby", Hologram.at("lobby", pos, 2f, 1.125f).asBillboard().asInteractive());
+```text
+core/         (:core) Pure-Java 21 HTML/CSS engine, layout, DOM/events, UI DSL, <scene-3d>, CPU rasterizer, RHI, SPI
+core-gl/      (:core-gl) OpenGL 3.2+ Core GPU backend
+core-vulkan/  (:core-vulkan) Vulkan 1.1 GPU backend
+core-glfw/    (:core-glfw) GLFW WindowHost & StandaloneViewer
+src/          (Root NeoForge Mod) Optional Minecraft 1.21.1 integration:
+                api/      Mod-facing API (EnderFrameAPI, EnderFrameClientAPI, UIState, EnderScreenBlockEntity)
+                common/   Shared resource loading, <mc-*> custom elements, DevKit export
+                server/   Headless UIState, HTML sessions, pub/sub, commands, datapacks, ACL
+                client/   Minecraft screen/HUD/world rendering, input synthesis, media
+                network/  State delta, DOM mutation, action, and pub/sub payloads
+docs/         Task-oriented guides for both standalone engine & mod usage
 ```
 
-`showSurface` is for players you choose (who is near, who holds the item). Chunk-tracking players are handled
-automatically only for block screens.
+---
+
+## Documentation Map
+
+- **Standalone Engine (`:core`):**
+  - [core/README.md](core/README.md) — Standalone engine installation, Gradle setup, AOT cache, and compilable Java quick starts (English).
+  - [docs/standalone-viewer.md](docs/standalone-viewer.md) — Running HTML in a GLFW window or headless PNG without Minecraft (Japanese).
+  - [docs/build-and-run-commands.md](docs/build-and-run-commands.md) — Full Gradle command reference for builds, tests, demos, and viewers (Japanese).
+- **Minecraft Integration (`docs/`):**
+  - [docs/README.md](docs/README.md) — Documentation index and reading order (Japanese).
+  - [docs/getting-started.md](docs/getting-started.md) — Mod installation and first server-driven UI (English).
+  - [docs/headless-state.md](docs/headless-state.md) — Machine UIs and in-world screens with `UIState` (English).
+  - [docs/client-and-hybrid.md](docs/client-and-hybrid.md) — Client-driven UIs and hybrid server/client DOM ownership (English).
+  - [docs/commands-and-devkit.md](docs/commands-and-devkit.md) & [COMMAND_GUIDE.md](COMMAND_GUIDE.md) — `/enderframe` commands and DevKit browser preview.
+  - [docs/migration.md](docs/migration.md) — Detailed migration notes and breaking changes (English).
+- **Engineering & Quality:**
+  - [ARCHITECTURE.md](ARCHITECTURE.md) — Module layout, 7-layer dependency rules, and architectural ratchets (Japanese).
+  - [BENCHMARK.md](BENCHMARK.md) — Cross-engine benchmark methodology and measured numbers (Japanese).
+  - [FIDELITY.md](FIDELITY.md) — Browser-measured fidelity corpus and divergence ledger (Japanese).
+  - [CONTRIBUTING.md](CONTRIBUTING.md) — Language, comment, limitation, and testing conventions (Japanese).
+
+---
+
+## Contributing & License
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code conventions, test suites, and how known limitations are recorded across code, `FIDELITY.md`, and this README.
+
+**License:** `LGPL-3.0-only`. See [LICENSE](LICENSE) and [LICENSE.GPL-3.0.txt](LICENSE.GPL-3.0.txt).
+
+Third-party components — the bundled `lunex_video` native decoder (excluded from the LGPL grant), on-demand `yt-dlp`, JNA, and NeoForge MDK template files — are attributed in [NOTICE](NOTICE).
