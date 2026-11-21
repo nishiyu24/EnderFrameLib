@@ -45,7 +45,7 @@ class PathPredictionTest {
               <div class="card" id="i6">six <i id="e1">it</i></div>
             </div>
             """;
-    /** 取りこぼしの上限（40 種 × 40 手）。実測 1,049〔C7 ② の前は 17,102〕。 */
+    /** 取りこぼしの上限（40 種 × 40 手）。実測 1,104〔C7 ② の前は 17,102。C7 ④ で属性の版を署名へ足して 1,049 → 1,104〕。 */
     private static final long MISSED_CEILING = 1_200;
     private static final String[] CLASSES = {"", "card", "card hot", "card big", "card c", "card a", "rel", "big c"};
     private static final String[] STYLES = {"", "width:80px", "color:red", "padding:10px", "font-size:18px", "margin-left:7px"};

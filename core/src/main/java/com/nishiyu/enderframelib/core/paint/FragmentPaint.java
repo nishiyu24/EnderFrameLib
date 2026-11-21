@@ -43,7 +43,7 @@ final class FragmentPaint {
         /** 中身を 1 つの節にまとめるスクロール箱だったか。子孫の状態〔固定・粘着・絶対配置〕で決まるので、箱自身の項目の鍵に入れる。 */
         boolean oneNode;
         /** 先頭の断片が ::first-line を受けるときの、持ち主〔祖先〕の算出スタイルと ::first-line のスタイル。子が祖先から読む唯一のスタイル。 */
-        Object flStyle, flPseudo;
+        Object flStyle, flPseudo, flFrag;
         Object placeholder;
         /** 箱自身の項目を作るときに登録されたスクロールの節（項目を使い回すとき再登録する）。 */
         PaintOrder.ScrollContent[] ownScrolls;
@@ -209,6 +209,8 @@ final class FragmentPaint {
     /** 先頭の断片が ::first-line を受けるなら、持ち主〔祖先〕のスタイルと ::first-line のスタイルが前回と同じか（子が祖先から読む唯一のスタイル）。 */
     private static boolean sameFirstLine(Memo m, LayoutBox box) {
         LayoutBox owner = box.inlineFragments.isEmpty() ? null : box.inlineFragments.get(0).firstLineOwner;
+        Object own = box.inlineFragments.isEmpty() ? null : box.inlineFragments.get(0).firstLineStyle; // 持ち主が無いときは断片自身の指定を読む
+        if (m.flFrag != own) return false;
         return owner == null ? m.flStyle == null : m.flStyle == owner.style && m.flPseudo == owner.firstLineStyle;
     }
 
@@ -281,6 +283,7 @@ final class FragmentPaint {
         LayoutBox flOwner = box.inlineFragments.isEmpty() ? null : box.inlineFragments.get(0).firstLineOwner;
         m.flStyle = flOwner == null ? null : flOwner.style;
         m.flPseudo = flOwner == null ? null : flOwner.firstLineStyle;
+        m.flFrag = box.inlineFragments.isEmpty() ? null : box.inlineFragments.get(0).firstLineStyle;
         m.placeholder = box.placeholderStyle;
         m.scrolls = order.scrollContentCount() == scroll0 ? NO_SCROLLS : order.scrollContentsSince(scroll0).toArray(NO_SCROLLS);
     }

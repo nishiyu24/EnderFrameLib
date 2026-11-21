@@ -136,6 +136,7 @@ public final class PaintStamps {
                 | (b.hasOutsideMarker ? 16 : 0) | (b.isOutsideMarker ? 32 : 0) | (b.isRenderedLegend ? 64 : 0));
         h = h * 31 + b.displayText.hashCode();
         h = h * 31 + (b.node == null || b.node.text == null ? 0 : b.node.text.hashCode());
+        h = h * 31 + (b.node == null ? 0 : b.node.attrVersion()); // 属性（title・data-* など）は描画が直接読む入力。属性だけの変更は再スタイルを通らず、再レイアウトの経路で届く
         h = h * 31 + b.children.size();
         for (int i = 0, n = b.inlineFragments.size(); i < n; i++) {
             LayoutBox.InlineFragment f = b.inlineFragments.get(i);
@@ -143,6 +144,8 @@ public final class PaintStamps {
             h = h * 31 + (f.text == null ? 0 : f.text.hashCode());
             h = h * 31 + ((f.startEdge ? 1 : 0) | (f.endEdge ? 2 : 0));
             h = h * 31 + (f.parents == null ? -1 : f.parents.size());
+            h = h * 31 + System.identityHashCode(f.firstLineStyle); // 1 行目の断片が持つ ::first-line の実効スタイル（描画が持ち主の指定より先に読む）
+            h = h * 31 + System.identityHashCode(f.firstLineOwner);
         }
         return h;
     }
