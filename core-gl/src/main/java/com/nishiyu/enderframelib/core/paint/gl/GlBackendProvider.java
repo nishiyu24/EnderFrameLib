@@ -23,8 +23,11 @@ public final class GlBackendProvider implements GpuBackendProvider {
 
     @Override
     public RenderBackend create(Request r) {
-        LwjglGlRenderBackend b = r.hostWindow() != 0
-                ? LwjglGlRenderBackend.sharedWith(r.hostWindow(), r.widthCss(), r.heightCss(), r.devicePixelRatio())
+        if (r.host() != null && r.host().api() != GpuApiKind.GL) {
+            throw new IllegalArgumentException("GL 実装へ " + r.host().api() + " のホストデバイスは渡せない");
+        }
+        LwjglGlRenderBackend b = r.host() != null
+                ? LwjglGlRenderBackend.sharedWith(r.host().window(), r.widthCss(), r.heightCss(), r.devicePixelRatio())
                 : new LwjglGlRenderBackend(r.widthCss(), r.heightCss(), r.devicePixelRatio());
         return b.fonts(r.fonts()).images(r.images()).scene3dWorlds(r.scene3dWorlds());
     }

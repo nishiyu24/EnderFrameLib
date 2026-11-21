@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 /** G4: GPU 実装の選択ロジック（ServiceLoader の内側）。偽の実装で、優先順位・絞り込み・フォールバック・失敗の伝え方を確かめる。 */
 class GpuBackendsTest {
 
-    private static final GpuBackendProvider.Request REQ = new GpuBackendProvider.Request(64, 48, 1f, null, null, null, 0);
+    private static final GpuBackendProvider.Request REQ = new GpuBackendProvider.Request(64, 48, 1f, null, null, null);
 
     /** 実際のバックエンドは作らず、作った印の {@link RenderBackend}（プロキシ）を返す偽物。 */
     private static final class Fake implements GpuBackendProvider {

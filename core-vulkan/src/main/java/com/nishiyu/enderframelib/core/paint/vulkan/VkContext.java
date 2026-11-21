@@ -71,12 +71,90 @@ public final class VkContext implements AutoCloseable {
     private final AtomicInteger validationErrorCount = new AtomicInteger();
     private final List<String> validationMessages = new CopyOnWriteArrayList<>();
     private boolean closed;
+    /** false: ホストから借りたハンドル（{@link #adopt}）。{@link #close} は破棄しない。 */
+    private final boolean ownsHandles;
+
+    /** ホストが作った Vulkan のハンドルを借りる（A14）。インスタンス・デバイスはホストのもので、{@link #close} は破棄しない。 */
+    private VkContext(long instanceHandle, long physicalDeviceHandle, long deviceHandle, int queueFamily, long queueHandle) {
+        VK.getFunctionProvider();
+        this.ownsHandles = false;
+        VkPhysicalDeviceMemoryProperties memProps = null;
+        VkPhysicalDeviceProperties devProps = null;
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            // LWJGL のラッパーは「有効な拡張」の一覧から関数表を作る。ホストの一覧は分からないので、1.1 の中核関数だけを使う前提にする
+            VkApplicationInfo appInfo = VkApplicationInfo.calloc(stack)
+                    .sType(VK10.VK_STRUCTURE_TYPE_APPLICATION_INFO)
+                    .apiVersion(VK11.VK_API_VERSION_1_1);
+            VkInstanceCreateInfo ici = VkInstanceCreateInfo.calloc(stack)
+                    .sType(VK10.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO)
+                    .pApplicationInfo(appInfo);
+            VkInstance inst = withLargeStack(() -> new VkInstance(instanceHandle, ici));
+            VkPhysicalDevice phys = new VkPhysicalDevice(physicalDeviceHandle, inst);
+            VkDeviceCreateInfo dci = VkDeviceCreateInfo.calloc(stack).sType(VK10.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO);
+            org.lwjgl.vulkan.VkDevice dev = withLargeStack(() -> new org.lwjgl.vulkan.VkDevice(deviceHandle, phys, dci));
+
+            devProps = VkPhysicalDeviceProperties.calloc();
+            VK10.vkGetPhysicalDeviceProperties(phys, devProps);
+            if (devProps.apiVersion() < VK11.VK_API_VERSION_1_1) {
+                throw new IllegalArgumentException("ホストの Vulkan デバイスは 1.1 以上が必要（apiVersion=0x"
+                        + Integer.toHexString(devProps.apiVersion()) + "）");
+            }
+            memProps = VkPhysicalDeviceMemoryProperties.calloc();
+            VK10.vkGetPhysicalDeviceMemoryProperties(phys, memProps);
+
+            IntBuffer n = stack.mallocInt(1);
+            VK10.vkGetPhysicalDeviceQueueFamilyProperties(phys, n, null);
+            if (queueFamily >= n.get(0)) {
+                throw new IllegalArgumentException("queueFamily=" + queueFamily + " は存在しない（" + n.get(0) + " 個）");
+            }
+            VkQueueFamilyProperties.Buffer qfs = VkQueueFamilyProperties.calloc(n.get(0), stack);
+            VK10.vkGetPhysicalDeviceQueueFamilyProperties(phys, n, qfs);
+            if ((qfs.get(queueFamily).queueFlags() & VK10.VK_QUEUE_GRAPHICS_BIT) == 0) {
+                throw new IllegalArgumentException("queueFamily=" + queueFamily + " はグラフィックス非対応");
+            }
+
+            this.instance = inst;
+            this.physicalDevice = phys;
+            this.device = dev;
+            this.graphicsQueue = new VkQueue(queueHandle, dev);
+            this.graphicsQueueFamily = queueFamily;
+            this.memoryProperties = memProps;
+            this.deviceProperties = devProps;
+            this.swapchainEnabled = false;
+            this.validationActive = false;
+            this.depthFormat = pickDepthFormat(stack, phys);
+            this.debugMessenger = VK10.VK_NULL_HANDLE;
+            this.debugCallback = null;
+        } catch (Throwable t) {
+            if (memProps != null) memProps.free();
+            if (devProps != null) devProps.free();
+            throw t;
+        }
+    }
+
+    /**
+     * ホストが作った {@code VkInstance}・{@code VkPhysicalDevice}・{@code VkDevice}・グラフィックスキューの上にコンテキストを作る。
+     * ハンドルはホストの所有で、{@link #close} は破棄しない。Vulkan 1.1 以上・グラフィックス対応のキューファミリが必要。
+     *
+     * @throws IllegalArgumentException 1.1 未満・キューファミリがグラフィックス非対応のとき
+     */
+    public static VkContext adopt(long instance, long physicalDevice, long device, int queueFamily, long queue) {
+        return new VkContext(instance, physicalDevice, device, queueFamily, queue);
+    }
+
+    /** ホストへ渡す・テストが比べるためのネイティブハンドル。 */
+    public long instanceHandle() { return instance.address(); }
+    public long physicalDeviceHandle() { return physicalDevice.address(); }
+    public long deviceHandle() { return device.address(); }
+    public long queueHandle() { return graphicsQueue.address(); }
+    public int queueFamily() { return graphicsQueueFamily; }
 
     private VkContext(boolean requestValidation, Collection<String> instanceExtensions, boolean enableSwapchain) {
         VK.getFunctionProvider(); // ライブラリロードを明示確認
         boolean hasValidationLayer = false;
         boolean hasDebugUtils = false;
         boolean hasPortabilityEnum = false;
+        this.ownsHandles = true;
         VkInstance inst = null;
         long messenger = VK10.VK_NULL_HANDLE;
         VkDebugUtilsMessengerCallbackEXT callback = null;
@@ -451,10 +529,11 @@ public final class VkContext implements AutoCloseable {
     public void close() {
         if (closed) return;
         closed = true;
-        VK10.vkDeviceWaitIdle(device);
-        VK10.vkDestroyDevice(device, null);
         memoryProperties.free();
         deviceProperties.free();
+        if (!ownsHandles) return; // ホストのデバイス・インスタンスは壊さない（待ちも呼び出し側の VkDevice.close が済ませている）
+        VK10.vkDeviceWaitIdle(device);
+        VK10.vkDestroyDevice(device, null);
         if (debugMessenger != VK10.VK_NULL_HANDLE) {
             EXTDebugUtils.vkDestroyDebugUtilsMessengerEXT(instance, debugMessenger, null);
         }

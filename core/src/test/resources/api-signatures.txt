@@ -14,6 +14,7 @@ public static final class api.EnderEngine$Builder
     public api.EnderEngine$Builder api.EnderEngine$Builder.font(java.lang.String,byte[])
     public api.EnderEngine$Builder api.EnderEngine$Builder.font(java.lang.String,java.nio.file.Path)
     public api.EnderEngine$Builder api.EnderEngine$Builder.gpu(api.GpuApi)
+    public api.EnderEngine$Builder api.EnderEngine$Builder.hostDevice(api.HostGpu)
     public api.EnderEngine$Builder api.EnderEngine$Builder.hostDevice(long)
     public api.EnderEngine$Builder api.EnderEngine$Builder.i18n(java.util.function.Function<java.lang.String, java.lang.String>)
     public api.EnderEngine$Builder api.EnderEngine$Builder.images(api.ImageSource)
@@ -40,8 +41,9 @@ public static final record api.EnginePlatform$Spec
     public boolean api.EnginePlatform$Spec.systemFonts()
     public boolean api.EnginePlatform$Spec.webImages()
     public api.EnderEngine$Target api.EnginePlatform$Spec.target()
-    public api.EnginePlatform$Spec(java.lang.String,int,int,float,int,api.EnderEngine$Target,api.PixelSink,java.util.List<api.SurfaceFont>,boolean,api.ImageSource,boolean,api.GpuApi,long,java.util.function.Function<java.lang.String, java.lang.String>,java.util.function.Function<java.lang.String, java.lang.String>)
+    public api.EnginePlatform$Spec(java.lang.String,int,int,float,int,api.EnderEngine$Target,api.PixelSink,java.util.List<api.SurfaceFont>,boolean,api.ImageSource,boolean,api.GpuApi,api.HostGpu,java.util.function.Function<java.lang.String, java.lang.String>,java.util.function.Function<java.lang.String, java.lang.String>)
     public api.GpuApi api.EnginePlatform$Spec.gpuApi()
+    public api.HostGpu api.EnginePlatform$Spec.hostGpu()
     public api.ImageSource api.EnginePlatform$Spec.images()
     public api.PixelSink api.EnginePlatform$Spec.sink()
     public final boolean api.EnginePlatform$Spec.equals(java.lang.Object)
@@ -55,13 +57,34 @@ public static final record api.EnginePlatform$Spec
     public java.util.List<api.SurfaceFont> api.EnginePlatform$Spec.fonts()
     public java.util.function.Function<java.lang.String, java.lang.String> api.EnginePlatform$Spec.i18n()
     public java.util.function.Function<java.lang.String, java.lang.String> api.EnginePlatform$Spec.resources()
-    public long api.EnginePlatform$Spec.hostWindow()
 public final enum api.GpuApi
     public static api.GpuApi api.GpuApi.valueOf(java.lang.String)
     public static api.GpuApi[] api.GpuApi.values()
     public static final api.GpuApi api.GpuApi.AUTO
     public static final api.GpuApi api.GpuApi.GL
     public static final api.GpuApi api.GpuApi.VULKAN
+public abstract interface api.HostGpu
+    public abstract api.GpuApi api.HostGpu.api()
+    public static api.HostGpu api.HostGpu.openGl(long)
+    public static api.HostGpu api.HostGpu.vulkan(long,long,long,int,long)
+public static final record api.HostGpu$OpenGl implements api.HostGpu
+    public api.GpuApi api.HostGpu$OpenGl.api()
+    public api.HostGpu$OpenGl(long)
+    public final boolean api.HostGpu$OpenGl.equals(java.lang.Object)
+    public final int api.HostGpu$OpenGl.hashCode()
+    public final java.lang.String api.HostGpu$OpenGl.toString()
+    public long api.HostGpu$OpenGl.window()
+public static final record api.HostGpu$Vulkan implements api.HostGpu
+    public api.GpuApi api.HostGpu$Vulkan.api()
+    public api.HostGpu$Vulkan(long,long,long,int,long)
+    public final boolean api.HostGpu$Vulkan.equals(java.lang.Object)
+    public final int api.HostGpu$Vulkan.hashCode()
+    public final java.lang.String api.HostGpu$Vulkan.toString()
+    public int api.HostGpu$Vulkan.queueFamily()
+    public long api.HostGpu$Vulkan.device()
+    public long api.HostGpu$Vulkan.instance()
+    public long api.HostGpu$Vulkan.physicalDevice()
+    public long api.HostGpu$Vulkan.queue()
 public abstract interface api.ImageSource
     public abstract api.SurfaceImage api.ImageSource.load(java.lang.String)
 public final class api.KeyMods

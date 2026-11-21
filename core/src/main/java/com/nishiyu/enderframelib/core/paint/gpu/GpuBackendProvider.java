@@ -31,9 +31,17 @@ public interface GpuBackendProvider {
     /**
      * 作成の指定。
      *
-     * @param hostWindow ホストが持つ GL ウィンドウ（コンテキスト共有元）。{@code 0} なら自前で作る
+     * @param host ホストが持つ GPU デバイス。{@code null} なら自前で作る
      */
     record Request(int widthCss, int heightCss, float devicePixelRatio, FontResolver fonts,
                    com.nishiyu.enderframelib.core.paint.software.ImageProvider images,
-                   LongFunction<com.nishiyu.enderframelib.core.scene3d.Scene3DWorld> scene3dWorlds, long hostWindow) {}
+                   LongFunction<com.nishiyu.enderframelib.core.scene3d.Scene3DWorld> scene3dWorlds, HostDevice host) {
+
+        /** ホストデバイスなし。 */
+        public Request(int widthCss, int heightCss, float devicePixelRatio, FontResolver fonts,
+                       com.nishiyu.enderframelib.core.paint.software.ImageProvider images,
+                       LongFunction<com.nishiyu.enderframelib.core.scene3d.Scene3DWorld> scene3dWorlds) {
+            this(widthCss, heightCss, devicePixelRatio, fonts, images, scene3dWorlds, null);
+        }
+    }
 }

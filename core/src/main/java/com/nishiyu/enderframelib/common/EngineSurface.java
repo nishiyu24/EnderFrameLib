@@ -6,6 +6,7 @@ import java.util.function.LongFunction;
 import com.nishiyu.enderframelib.api.EnderEngine;
 import com.nishiyu.enderframelib.api.EnginePlatform;
 import com.nishiyu.enderframelib.api.GpuApi;
+import com.nishiyu.enderframelib.api.HostGpu;
 import com.nishiyu.enderframelib.api.TextureHandle;
 import com.nishiyu.enderframelib.api.TextureKind;
 import com.nishiyu.enderframelib.api.MouseButton;
@@ -27,6 +28,7 @@ import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuApiKind;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuBackendProvider;
+import com.nishiyu.enderframelib.core.paint.gpu.HostDevice;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuBackends;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import java.io.IOException;
@@ -164,11 +166,20 @@ public final class EngineSurface implements WebViewSurface {
         BackendFactory f = switch (s.target()) {
             case SOFTWARE -> (cw, ch, r) -> new SoftwareRenderBackend(cw, ch, r).clearColor(clear).fonts(fonts).images(images).scene3dWorlds(scene3dProvider);
             case GPU, GPU_OFFSCREEN -> {
+                HostDevice host = hostDevice(s.hostGpu());
                 GpuApiKind api = s.target() == EnderEngine.Target.GPU_OFFSCREEN ? GpuApiKind.GL : kind(s.gpuApi());
+                if (host != null) {
+                    // ホストのデバイスは API が決まっている。AUTO ならそれに合わせ、食い違う指定は黙って別 API へ逃がさず断る
+                    if (api == null) api = host.api();
+                    else if (api != host.api()) {
+                        throw new IllegalStateException("hostDevice(" + host.api() + ") と gpu(" + api + ") が食い違っている");
+                    }
+                }
+                final GpuApiKind chosen = api;
                 yield (cw, ch, r) -> {
-                    var req = new GpuBackendProvider.Request(cw, ch, r, fonts, images, scene3dProvider, s.hostWindow());
+                    var req = new GpuBackendProvider.Request(cw, ch, r, fonts, images, scene3dProvider, host);
                     if (gpuProvider[0] != null) return gpuProvider[0].create(req); // 最初に決めた実装を使い続ける
-                    GpuBackends.Created c = GpuBackends.create(api, req);
+                    GpuBackends.Created c = GpuBackends.create(chosen, req);
                     gpuProvider[0] = c.provider();
                     return c.backend();
                 };
@@ -219,6 +230,15 @@ public final class EngineSurface implements WebViewSurface {
             }
             return h;
         });
+    }
+
+    /** 公開 API の {@link HostGpu} を、core の中立な {@link HostDevice} へ。 */
+    private static HostDevice hostDevice(HostGpu h) {
+        if (h == null) return null;
+        return switch (h) {
+            case HostGpu.OpenGl g -> HostDevice.openGl(g.window());
+            case HostGpu.Vulkan v -> HostDevice.vulkan(v.instance(), v.physicalDevice(), v.device(), v.queueFamily(), v.queue());
+        };
     }
 
     /** 公開 API の選択を、実装の種類へ（AUTO は絞り込まない = null）。 */

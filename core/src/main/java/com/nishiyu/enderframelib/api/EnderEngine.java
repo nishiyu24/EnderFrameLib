@@ -105,7 +105,7 @@ public final class EnderEngine {
         private ImageSource images;
         private boolean webImages;
         private GpuApi gpuApi = GpuApi.AUTO;
-        private long hostWindow;
+        private HostGpu hostGpu;
         private java.util.function.Function<String, String> i18n;
         private java.util.function.Function<String, String> resources;
 
@@ -147,12 +147,23 @@ public final class EnderEngine {
         }
 
         /**
-         * ホストが持つ OpenGL ウィンドウ（GLFW の {@code long}）のコンテキストと共有して描く。結果は {@link WebViewSurface#texture()}
-         * でコピーなしに受け取れる。{@link Target#GPU} と {@link GpuApi#GL}（または AUTO で GL が選ばれる環境）でだけ使える。
+         * ホストが持つ OpenGL ウィンドウ（GLFW の {@code long}）のコンテキストと共有して描く。{@code hostDevice(HostGpu.openGl(window))} と同じ。
+         *
+         * @deprecated API 中立の {@link #hostDevice(HostGpu)} を使う
          */
+        @Deprecated
         public Builder hostDevice(long glfwWindow) {
             if (glfwWindow == 0) throw new IllegalArgumentException("window handle must be non-zero");
-            this.hostWindow = glfwWindow;
+            return hostDevice(HostGpu.openGl(glfwWindow));
+        }
+
+        /**
+         * ホストが持つ GPU デバイス（GL のウィンドウ／Vulkan のデバイスとキュー）の上に描く。結果は {@link WebViewSurface#texture()}
+         * でコピーなしに受け取れる。{@link Target#GPU} で使い、{@link #gpu} が {@link GpuApi#AUTO} なら {@code host.api()} の実装が選ばれる。
+         * {@link #gpu} がホストの API と食い違えば {@link #build} が {@link IllegalStateException} にする。
+         */
+        public Builder hostDevice(HostGpu host) {
+            this.hostGpu = Objects.requireNonNull(host, "host");
             return this;
         }
 
@@ -218,7 +229,7 @@ public final class EnderEngine {
         /** 面を作ってマウントする。 */
         public WebViewSurface build() {
             return platform().create(new EnginePlatform.Spec(html, width, height, dpr, clearColor, target, sink,
-                    java.util.List.copyOf(fonts), systemFonts, images, webImages, gpuApi, hostWindow, i18n, resources));
+                    java.util.List.copyOf(fonts), systemFonts, images, webImages, gpuApi, hostGpu, i18n, resources));
         }
 
         /** GLFW の窓に表示する。窓を閉じるまで戻らない（入力・描画ループは内蔵）。 */

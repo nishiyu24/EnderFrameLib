@@ -15,7 +15,7 @@ public interface EnginePlatform {
                 EnderEngine.Target target, @Nullable PixelSink sink,
                 java.util.List<SurfaceFont> fonts, boolean systemFonts,
                 @Nullable ImageSource images, boolean webImages,
-                GpuApi gpuApi, long hostWindow,
+                GpuApi gpuApi, @Nullable HostGpu hostGpu,
                 @Nullable java.util.function.Function<String, String> i18n,
                 @Nullable java.util.function.Function<String, String> resources) {}
 
