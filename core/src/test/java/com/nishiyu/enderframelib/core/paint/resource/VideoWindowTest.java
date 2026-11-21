@@ -1,4 +1,5 @@
-package com.nishiyu.enderframelib.core.paint.software;
+package com.nishiyu.enderframelib.core.paint.resource;
+import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 
 import com.nishiyu.enderframelib.core.media.NativeVideoApi;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;

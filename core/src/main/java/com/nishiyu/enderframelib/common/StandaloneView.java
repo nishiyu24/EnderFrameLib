@@ -142,7 +142,7 @@ public final class StandaloneView implements AutoCloseable {
         this.fonts = fonts;
         com.nishiyu.enderframelib.core.EngineContext.current().updateHost(h -> h.withPixelSizeFallback(com.nishiyu.enderframelib.core.paint.software.ImageSizes.STANDARD));
         this.ui = new Ui();
-        this.ui.alphaMaskProvider(com.nishiyu.enderframelib.core.paint.software.AlphaMasks.from(com.nishiyu.enderframelib.core.paint.software.ImageProvider.standard()));
+        this.ui.alphaMaskProvider(com.nishiyu.enderframelib.core.paint.software.AlphaMasks.from(com.nishiyu.enderframelib.core.paint.resource.ImageProvider.standard()));
         this.input = new UiInput(ui);
         this.interaction = ui.interactionState();
         long t0 = System.nanoTime();
@@ -279,9 +279,9 @@ public final class StandaloneView implements AutoCloseable {
     }
 
     /**
-     * 描画側と同じ画像の読み方を、透過ヒットテスト（{@code <img data-hit-alpha>}）にも使う。既定は {@link com.nishiyu.enderframelib.core.paint.software.ImageProvider#standard()}。
+     * 描画側と同じ画像の読み方を、透過ヒットテスト（{@code <img data-hit-alpha>}）にも使う。既定は {@link com.nishiyu.enderframelib.core.paint.resource.ImageProvider#standard()}。
      */
-    public StandaloneView images(com.nishiyu.enderframelib.core.paint.software.ImageProvider provider) {
+    public StandaloneView images(com.nishiyu.enderframelib.core.paint.resource.ImageProvider provider) {
         ui.alphaMaskProvider(com.nishiyu.enderframelib.core.paint.software.AlphaMasks.from(provider));
         return this;
     }

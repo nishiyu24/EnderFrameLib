@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint.software;
+package com.nishiyu.enderframelib.core.paint.resource;
 
 import com.nishiyu.enderframelib.core.paint.CropSrc;
 import com.nishiyu.enderframelib.core.raster.RasterImageEntry;
@@ -86,7 +86,7 @@ public interface ImageProvider {
         private final HttpImageFetcher fetcher;
         private final Standard delegate;
 
-        Web(boolean allowPrivate) {
+        public Web(boolean allowPrivate) {
             fetcher = new HttpImageFetcher(allowPrivate);
             delegate = new Standard(fetcher);
         }

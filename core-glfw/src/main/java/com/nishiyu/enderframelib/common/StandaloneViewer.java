@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.net.HttpPolicy;
 import com.nishiyu.enderframelib.core.net.SafeHttpClient;
-import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
+import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.text.font.FontFaceRules;
 import com.nishiyu.enderframelib.core.text.font.FontSources;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;

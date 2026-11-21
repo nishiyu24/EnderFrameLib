@@ -1,4 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
+import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
+import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
 import java.util.function.LongFunction;

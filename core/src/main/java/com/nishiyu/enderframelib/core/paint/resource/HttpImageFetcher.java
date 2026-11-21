@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint.software;
+package com.nishiyu.enderframelib.core.paint.resource;
 
 import com.nishiyu.enderframelib.core.net.HttpPolicy;
 import com.nishiyu.enderframelib.core.net.SafeHttpClient;

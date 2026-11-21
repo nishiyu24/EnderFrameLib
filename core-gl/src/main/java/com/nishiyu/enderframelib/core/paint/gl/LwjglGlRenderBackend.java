@@ -12,7 +12,7 @@ import com.nishiyu.enderframelib.core.paint.gpu.RectStream;
 import com.nishiyu.enderframelib.core.paint.gpu.Scene3DRenderer;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
-import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
+import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;

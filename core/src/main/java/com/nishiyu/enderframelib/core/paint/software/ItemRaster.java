@@ -1,4 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.software;
+import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;

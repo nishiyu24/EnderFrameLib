@@ -53,7 +53,7 @@ paint/Gradients.java#STOPS_MEMO | RACY_CACHE | 1 スロットの記憶。中身�
 paint/port/GpuCoverage.java#KINDS | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 paint/gpu/RectStream.java#ZERO4 | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 paint/model/Corners.java#ZERO_RAW | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-paint/software/CropImages.java#CACHE | LOCKED | アクセスするメソッドが synchronized
+paint/resource/CropImages.java#CACHE | LOCKED | アクセスするメソッドが synchronized
 paint/software/ShapeGeometry.java#ZERO_F4 | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 paint/software/TextRaster.java#NO_RADII | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 paint/software/SoftwareRenderBackend.java#ZERO4 | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）

@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.core.paint.gl;
 
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
+import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import org.junit.jupiter.api.Assumptions;

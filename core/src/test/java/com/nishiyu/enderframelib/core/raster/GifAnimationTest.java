@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.core.raster;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
+import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.IIOImage;

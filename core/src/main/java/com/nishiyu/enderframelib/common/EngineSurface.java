@@ -20,7 +20,7 @@ import com.nishiyu.enderframelib.api.ImageSource;
 import com.nishiyu.enderframelib.api.SurfaceFont;
 import com.nishiyu.enderframelib.api.SurfaceImage;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
-import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
+import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.software.OverrideImages;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import com.nishiyu.enderframelib.core.text.font.WebFonts;

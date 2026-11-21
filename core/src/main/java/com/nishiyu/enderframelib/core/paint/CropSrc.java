@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.paint;
 /**
  * 画像の一部（9-slice の区画）を指す {@code src}: {@code crop:<x>,<y>,<w>,<h>|<元の src>}（画素）。
  * 表示項目は文字列の {@code src} しか持てないので、切り出しもここへ載せる（どのバックエンドでも同じに解決できる）。
- * 切り出した画素の作成と覚えは {@code paint.software.CropImages}（画像を持つ側）。ここは文字列の符号化だけ。
+ * 切り出した画素の作成と覚えは {@code paint.resource.CropImages}（画像を持つ側）。ここは文字列の符号化だけ。
  */
 public final class CropSrc {
     public static final String PREFIX = "crop:";

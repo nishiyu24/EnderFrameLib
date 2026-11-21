@@ -1,4 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.gl;
+import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;

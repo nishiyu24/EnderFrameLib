@@ -34,12 +34,12 @@ public interface GpuBackendProvider {
      * @param host ホストが持つ GPU デバイス。{@code null} なら自前で作る
      */
     record Request(int widthCss, int heightCss, float devicePixelRatio, FontResolver fonts,
-                   com.nishiyu.enderframelib.core.paint.software.ImageProvider images,
+                   com.nishiyu.enderframelib.core.paint.resource.ImageProvider images,
                    LongFunction<com.nishiyu.enderframelib.core.scene3d.Scene3DWorld> scene3dWorlds, HostDevice host) {
 
         /** ホストデバイスなし。 */
         public Request(int widthCss, int heightCss, float devicePixelRatio, FontResolver fonts,
-                       com.nishiyu.enderframelib.core.paint.software.ImageProvider images,
+                       com.nishiyu.enderframelib.core.paint.resource.ImageProvider images,
                        LongFunction<com.nishiyu.enderframelib.core.scene3d.Scene3DWorld> scene3dWorlds) {
             this(widthCss, heightCss, devicePixelRatio, fonts, images, scene3dWorlds, null);
         }

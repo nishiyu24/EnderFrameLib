@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.core.paint.gpu;
 
 import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.software.PaintResources;
+import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 import java.util.List;
 
 /**

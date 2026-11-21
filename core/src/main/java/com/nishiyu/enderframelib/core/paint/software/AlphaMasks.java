@@ -1,4 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.software;
+import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 
 import com.nishiyu.enderframelib.core.paint.AlphaMask;
 import com.nishiyu.enderframelib.core.paint.AlphaMaskProvider;
