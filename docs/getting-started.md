@@ -1,4 +1,6 @@
-# Getting Started
+# Getting Started (Minecraft 1.21.1 NeoForge Mod)
+
+> Looking for the **standalone pure-Java engine** (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`, no Minecraft required)? See [core/README.md](../core/README.md) and [standalone-viewer.md](standalone-viewer.md).
 
 ## Installation
 
@@ -10,7 +12,7 @@ repositories {
 }
 
 dependencies {
-    implementation "com.nishiyu.enderframelib:enderframelib:1.0.3"
+    implementation "com.nishiyu.enderframelib:enderframelib:2.0.0"
 }
 ```
 
@@ -20,7 +22,7 @@ Declare the dependency in `neoforge.mods.toml` as well:
 [[dependencies.yourmod]]
 modId = "enderframelib"
 type = "required"
-versionRange = "[1.0.3,)"
+versionRange = "[2.0.0,)"
 ordering = "AFTER"
 side = "BOTH"
 ```

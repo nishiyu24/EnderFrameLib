@@ -8,11 +8,20 @@
 ## テスト
 
 ```bash
-# 全テスト（core + ルート。約 7 分）
-./gradlew test
+# CI と同等のフルビルド＋テスト（timing タグ除外は任意）
+./gradlew build test
 
-# core だけ（Minecraft 非依存の単体テスト）
+# core だけ（Minecraft 非依存の単体テスト全件）
 ./gradlew :core:test
+
+# 開発中の高速確認（slow・timing タグを除外して約 2 分）
+./gradlew :core:quickTest
+
+# 確保量と近道経路の回帰ゲート
+./gradlew :core:costGate
+
+# 単独 JVM での性能・メモリベンチマーク回帰判定
+./gradlew benchmark
 
 # クラス名・パターンで絞る
 ./gradlew :core:test --tests '*StandaloneMultiClickTest'
@@ -23,7 +32,7 @@
 ```
 
 テスト結果の XML は `core/build/test-results/test/` と `build/test-results/test/`、HTML レポートは `build/reports/tests/` に出ます。
-GL を作れない環境では `LwjglGlRenderBackendTest` などはスキップされます。
+GL / Vulkan を作れない環境では GPU 依存テストはスキップされます。Linux の CI 手順を WSL で再現する場合は `powershell -File scripts/ci-linux.ps1` を実行してください。
 
 ## スタンドアロンビューア（Minecraft なしで HTML を表示）
 
@@ -71,10 +80,13 @@ Java 側は時計・カウンタ・進捗バー・ログの追加と削除・表
 # core 単体ライブラリの jar（core/build/libs/enderframelib-core-<version>.jar）
 ./gradlew :core:jar
 
-# core を repo/ へ公開（ローカル Maven 形式）
-./gradlew :core:publish
+# 単体エンジン 4 モジュール（:core / :core-gl / :core-vulkan / :core-glfw）を ./repo へ公開
+./gradlew publishMavenJavaPublicationToLocalRepoRepository
 
-# Mod 本体（core のクラスを同梱した jar）
+# 公開物（POM・独立消費者プロジェクト）の整合検査
+./gradlew :core:verifyPublishedModules
+
+# Mod 本体（core 群のクラスを同梱した jar）
 ./gradlew build
 ```
 
@@ -86,6 +98,9 @@ Java 側は時計・カウンタ・進捗バー・ログの追加と削除・表
 
 # 開発サーバーを起動
 ./gradlew runServer
+
+# サーバー側ライフサイクルの GameTest を実行
+./gradlew runGameTestServer
 ```
 
 ## 便利なもの

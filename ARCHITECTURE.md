@@ -1,7 +1,6 @@
 # EnderFrameLib アーキテクチャ設計書
 
-EnderFrameLib は NeoForge 1.21.1 向けに、ブラウザ標準（HTML / CSS / UI Events / WHATWG DOM）に沿った
-パイプラインを純 Java で自前実装し、その上に Minecraft との連携層を載せたゲーム内 UI フレームワークです。
+EnderFrameLib は、ブラウザ標準（HTML / CSS / UI Events / WHATWG DOM）に沿ったレイアウト・描画パイプラインを純 Java 21 で実装した**独立の UI レンダリングエンジン**（`:core`・`:core-gl`・`:core-vulkan`・`:core-glfw`）と、その上に載る**任意の Minecraft 1.21.1（NeoForge）統合 Mod** で構成されています。
 
 本書は、構造整理（T0〜T7）と Headless State（H0〜H4）を経た**現在の**システムの全体像、パッケージ構成、
 責務分担、設計原則、および機械的に守っている管理指標を記述します。

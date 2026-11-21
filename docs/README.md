@@ -12,17 +12,17 @@
 
 ## 読む順の目安
 
-- **Mod から使う**: getting-started → headless-state（固定画面）／ client-and-hybrid（クライアント駆動）→ commands-and-devkit
+- **単体の Java アプリ・ゲームエンジンで使う（Minecraft 無し）**: [../core/README.md](../core/README.md) → standalone-viewer → build-and-run-commands
+- **Minecraft Mod（NeoForge）から使う**: getting-started → headless-state（固定画面）／ client-and-hybrid（クライアント駆動）→ commands-and-devkit
 - **バージョンを上げる**: migration
-- **単体の Java アプリで使う（Minecraft 無し）**: standalone-viewer → build-and-run-commands
 
 ## ルートの文書
 
 | 文書 | 内容 |
 |:---|:---|
-| [../README.md](../README.md) | 全体の説明・API |
+| [../README.md](../README.md) | 全体概要（純 Java エンジン＋任意の Minecraft 統合）と導入案内 |
 | [../ARCHITECTURE.md](../ARCHITECTURE.md) | 構造・層の責務・`ArchitectureTest` の上限 |
-| [../core/README.md](../core/README.md) | `:core` を単体で使う（導入・クイックスタート・対応範囲。英語） |
+| [../core/README.md](../core/README.md) | 単体エンジン（`:core` / `:core-gl` / `:core-vulkan` / `:core-glfw`）の導入・コード例（英語） |
 | [../FIDELITY.md](../FIDELITY.md) | ブラウザとの差異の台帳 |
 | [../BENCHMARK.md](../BENCHMARK.md) | 性能の基準値と実測 |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 規約（言語・コメント・テスト） |
