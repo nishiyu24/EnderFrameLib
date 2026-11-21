@@ -46,10 +46,11 @@ Where `:core` is not ahead:
 
 ## 📦 Installation
 
-> **Not yet on Maven Central.** Until it is published, build from source. Only `:core` has a Maven publication today; `:core-gl`, `:core-vulkan`, and `:core-glfw` are consumed as Gradle projects (composite build or source dependency).
+> **Not yet on Maven Central.** Until it is published, build from source. All four modules (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`) have Maven publications.
 
 ```
-./gradlew :core:publishMavenJavaPublicationToLocalRepoRepository   # writes to <repo root>/repo
+./gradlew publishMavenJavaPublicationToLocalRepoRepository   # writes all four modules to <repo root>/repo
+./gradlew :core:verifyPublishedModules                       # publishes, checks the POMs, and runs the Quick Start from a separate project that sees only repo/
 ```
 
 ### Gradle (Kotlin DSL)
@@ -69,10 +70,10 @@ dependencies {
     runtimeOnly("org.lwjgl:lwjgl::$lwjglNatives")
     runtimeOnly("org.lwjgl:lwjgl-freetype::$lwjglNatives")
 
-    // GPU rendering or a window: add the modules you use (Gradle projects for now, see above)
-    // implementation(project(":core-gl"))     + runtimeOnly lwjgl-opengl and lwjgl-glfw natives
-    // implementation(project(":core-vulkan")) + runtimeOnly lwjgl-vulkan natives on macOS
-    // implementation(project(":core-glfw"))   window + StandaloneViewer (brings :core-gl)
+    // GPU rendering or a window: add the modules you use (artifacts of the same version)
+    // implementation("com.nishiyu.enderframelib:enderframelib-core-gl:2.0.0")     + runtimeOnly lwjgl-opengl and lwjgl-glfw natives
+    // implementation("com.nishiyu.enderframelib:enderframelib-core-vulkan:2.0.0") + runtimeOnly lwjgl-vulkan natives on macOS
+    // implementation("com.nishiyu.enderframelib:enderframelib-core-glfw:2.0.0")   window + StandaloneViewer (brings core-gl)
 }
 ```
 

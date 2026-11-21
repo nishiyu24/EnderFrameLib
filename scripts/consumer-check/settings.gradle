@@ -1,0 +1,2 @@
+// A10: 公開した成果物（リポジトリ直下の repo/）だけを見る別プロジェクト。:core 等の project 依存は持たない。
+rootProject.name = 'consumer-check'

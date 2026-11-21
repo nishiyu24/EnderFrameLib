@@ -41,3 +41,7 @@ hs_err_pid*.log
 /core-gl/build/
 /core-vulkan/build/
 /core-glfw/build/
+
+# A10: 公開物の検査用プロジェクトの生成物
+/scripts/consumer-check/.gradle/
+/scripts/consumer-check/build/

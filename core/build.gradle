@@ -197,7 +197,7 @@ publishing {
     repositories {
         maven {
             name = 'localRepo'
-            url = "file://${rootProject.projectDir}/repo"
+            url = uri(rootProject.file('repo'))
         }
         if (System.getenv('MAVEN_REPO_URL') != null) {
             maven {
@@ -507,4 +507,55 @@ tasks.register('shortcutMatrix', JavaExec) {
     if (project.hasProperty('matrix.dumpfile')) { systemProperty 'matrix.dumpfile', project.property('matrix.dumpfile').toString(); systemProperty 'matrix.keeppixels', 'true' }
     if (project.hasProperty('matrix.dumpswitch')) systemProperty 'matrix.dumpswitch', project.property('matrix.dumpswitch').toString()
     if (project.hasProperty('matrix.parallel')) systemProperty 'matrix.parallel', project.property('matrix.parallel').toString()
+}
+
+// A10: GPU・窓モジュールも公開物として依存解決できることを確かめる。
+//   ./gradlew :core:verifyPublishedModules
+// 4 モジュール（:core・:core-gl・:core-vulkan・:core-glfw）を repo/ へ公開し、POM の依存（モジュール間・LWJGL の版）を検査したうえで、
+// project 依存を持たない別プロジェクト（scripts/consumer-check）が公開物だけで README のクイックスタート 4 例を動かす。
+def publishTaskPaths = [':core', ':core-gl', ':core-vulkan', ':core-glfw'].collect { it + ':publishMavenJavaPublicationToLocalRepoRepository' }
+def verifyPoms = tasks.register('verifyPublishedPoms') {
+    dependsOn publishTaskPaths
+    def repoDir = rootProject.file('repo')
+    def groupPath = mod_group_id.replace('.', '/')
+    def ver = mod_version
+    doLast {
+        def expectedDeps = [
+                'enderframelib-core'       : ['org.lwjgl:lwjgl', 'org.lwjgl:lwjgl-freetype'],
+                'enderframelib-core-gl'    : ['com.nishiyu.enderframelib:enderframelib-core', 'org.lwjgl:lwjgl-opengl', 'org.lwjgl:lwjgl-glfw'],
+                'enderframelib-core-vulkan': ['com.nishiyu.enderframelib:enderframelib-core', 'org.lwjgl:lwjgl-vulkan'],
+                'enderframelib-core-glfw'  : ['com.nishiyu.enderframelib:enderframelib-core', 'com.nishiyu.enderframelib:enderframelib-core-gl', 'org.lwjgl:lwjgl-glfw'],
+        ]
+        // :core は GPU・窓のライブラリを依存に持たない（G4）。逆に GPU・窓の POM が持つ
+        def forbiddenInCore = ['lwjgl-opengl', 'lwjgl-glfw', 'lwjgl-vulkan', 'enderframelib-core-gl', 'enderframelib-core-vulkan', 'enderframelib-core-glfw']
+        expectedDeps.each { artifact, deps ->
+            def dir = new File(repoDir, "${groupPath}/${artifact}/${ver}")
+            def pom = new File(dir, "${artifact}-${ver}.pom")
+            if (!pom.isFile()) throw new GradleException("公開物が無い: ${pom}")
+            ['', '-sources', '-javadoc'].each { suffix ->
+                if (!new File(dir, "${artifact}-${ver}${suffix}.jar").isFile()) throw new GradleException("${artifact}${suffix}.jar が無い")
+            }
+            def xml = new groovy.xml.XmlSlurper().parse(pom)
+            def found = xml.dependencies.dependency.collect { "${it.groupId.text()}:${it.artifactId.text()}".toString() }
+            deps.each { d ->
+                if (!found.contains(d)) throw new GradleException("${artifact} の POM に依存 ${d} が無い（あるのは ${found}）")
+            }
+            if (artifact == 'enderframelib-core') {
+                def bad = found.findAll { f -> forbiddenInCore.any { f.endsWith(it) } }
+                if (!bad.isEmpty()) throw new GradleException(":core の POM に GPU・窓の依存が混ざっている: ${bad}")
+            }
+            ['name', 'description', 'url'].each { f ->
+                if (xml."${f}".text().trim().isEmpty()) throw new GradleException("${artifact} の POM に ${f} が無い")
+            }
+            if (xml.licenses.license.size() == 0 || xml.scm.url.text().isEmpty()) throw new GradleException("${artifact} の POM にライセンスか scm が無い")
+        }
+    }
+}
+tasks.register('verifyPublishedModules', GradleBuild) {
+    group = 'verification'
+    description = 'GPU・窓モジュールを含む公開物だけで、別プロジェクトが README のクイックスタートを動かせることを確かめる（A10）'
+    dependsOn verifyPoms
+    dir = rootProject.file('scripts/consumer-check')
+    tasks = ['run']
+    startParameter.projectProperties = ['efl.version': mod_version.toString()]
 }

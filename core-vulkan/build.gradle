@@ -3,6 +3,8 @@ plugins {
     id 'java-library'
 }
 
+ext.publishDescription = 'Vulkan 1.1 GPU backend for EnderFrameLib core (headless, swapchain, or host-owned VkDevice).'
+
 group = mod_group_id
 version = mod_version
 
@@ -28,3 +30,6 @@ dependencies {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+
+// 公開設定（A10）は archivesName の後で読む
+apply from: rootProject.file('gradle/publish-core-module.gradle')

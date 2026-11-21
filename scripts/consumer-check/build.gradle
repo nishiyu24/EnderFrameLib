@@ -1,0 +1,35 @@
+plugins {
+    id 'application'
+}
+
+def publishedRepo = file('../../repo')
+def lwjglVersion = '3.3.3'
+def os = System.getProperty('os.name').toLowerCase()
+def arch = System.getProperty('os.arch').toLowerCase()
+def natives = os.contains('win') ? (arch.contains('aarch64') ? 'natives-windows-arm64' : 'natives-windows')
+        : os.contains('mac') ? (arch.contains('aarch64') ? 'natives-macos-arm64' : 'natives-macos')
+        : (arch.contains('aarch64') ? 'natives-linux-arm64' : 'natives-linux')
+def version = providers.gradleProperty('efl.version').get()
+
+java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
+
+repositories {
+    maven { url = uri(publishedRepo) }   // 公開物。ここに無い成果物はクラスパスに入らない
+    mavenCentral()
+}
+
+dependencies {
+    implementation "com.nishiyu.enderframelib:enderframelib-core:${version}"
+    implementation "com.nishiyu.enderframelib:enderframelib-core-gl:${version}"
+    implementation "com.nishiyu.enderframelib:enderframelib-core-vulkan:${version}"
+    implementation "com.nishiyu.enderframelib:enderframelib-core-glfw:${version}"
+    runtimeOnly "org.lwjgl:lwjgl::${natives}"
+    runtimeOnly "org.lwjgl:lwjgl-freetype::${natives}"
+    runtimeOnly "org.lwjgl:lwjgl-glfw::${natives}"
+    runtimeOnly "org.lwjgl:lwjgl-opengl::${natives}"
+    if (natives.startsWith('natives-macos')) runtimeOnly "org.lwjgl:lwjgl-vulkan::${natives}"
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.9'
+}
+
+application { mainClass = 'ConsumerCheck' }
+tasks.withType(JavaExec).configureEach { defaultCharacterEncoding = 'UTF-8' }
