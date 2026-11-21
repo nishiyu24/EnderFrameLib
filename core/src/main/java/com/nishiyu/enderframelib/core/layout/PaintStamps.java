@@ -78,6 +78,36 @@ public final class PaintStamps {
         }
     }
 
+    /**
+     * 署名が含める箱の出力の欄（{@link #signature} の読み口と 1 対 1）。描画が読む欄は、これか「別の経路で見張る欄」
+     * （{@link #COVERED_ELSEWHERE}）に必ず入る。{@code PaintReadSetTest} が、描画が実際に読む欄を実測で洗い出して照合し、
+     * この一覧の各欄が本当に署名を変えることも確かめる（C7 ③）。
+     */
+    public static final java.util.Set<String> SIGNATURE_FIELDS = java.util.Set.of(
+            "x", "y", "w", "h", "mT", "mR", "mB", "mL", "pT", "pR", "pB", "pL", "bT", "bR", "bB", "bL",
+            "rowGap", "columnGap", "textBaseline", "lineHeightPx", "scrollWidth", "scrollHeight", "inlineContentBottom",
+            "descendantOverflowRight", "descendantOverflowBottom", "contentOffsetY", "legendSpill", "contentBlockExtent",
+            "ownMarginTop", "ownMarginBottom", "overrideWidth", "overrideHeight", "rememberedInnerW", "rememberedInnerH",
+            "collapsedBorders", "columnRules", "firstLineBgRect", "sizingMode", "zIndex", "virtualChildIndex",
+            "measuredClamped", "contentAutoSkipped", "childrenDeferred", "hasAbsoluteChild", "hasOutsideMarker", "isOutsideMarker",
+            "isRenderedLegend", "displayText");
+
+    /** 署名には入れず、別の経路で見張る欄と、その理由（スタイル・属性は印、箱の並びは鍵、など）。 */
+    public static final java.util.Map<String, String> COVERED_ELSEWHERE = java.util.Map.ofEntries(
+            java.util.Map.entry("isAbsolute", "position から導出。スタイルの更新（updateStyle）が書き、スタイルの印が進む"),
+            java.util.Map.entry("isFixed", "position から導出。スタイルの印"),
+            java.util.Map.entry("isRelative", "position から導出。スタイルの印"),
+            java.util.Map.entry("isSticky", "position から導出。スタイルの印"),
+            java.util.Map.entry("isVerticalRoot", "書字方向から導出。BoxTreeBuilder が木の構築で書く（箱を作り直すので新しい箱の記憶になる）"),
+            java.util.Map.entry("isHorizontalReturnRoot", "書字方向から導出。BoxTreeBuilder が木の構築で書く"),
+            java.util.Map.entry("hasInteractiveRules", "スタイルシートの規則から導出。記憶の鍵 interactive（箱自身の項目）とスタイルの印"),
+            java.util.Map.entry("subtreeHasContentAuto", "子の並びと content-visibility から導出。構造の印（子の増減）とスタイルの印"));
+
+    /** テスト用: 署名そのもの。 */
+    public static long signatureOf(LayoutBox b) {
+        return signature(b);
+    }
+
     private static long mix(long h, float v) {
         return h * 1_000_003L + Float.floatToIntBits(v);
     }
