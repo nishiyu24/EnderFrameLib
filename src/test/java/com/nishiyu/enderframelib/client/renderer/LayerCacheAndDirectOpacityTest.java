@@ -140,6 +140,18 @@ public class LayerCacheAndDirectOpacityTest {
         assertTrue(childMovedProbe.boxRect() == null, "子要素が外部平行移動で動いた時は固定の boxRect を使わない");
     }
 
+    @Test
+    void paintRequestFreezesMutablePaintOffsetsAtHostBoundary() {
+        var mutable = new com.nishiyu.enderframelib.core.paint.model.PaintOffsets();
+        mutable.set("w", 10f, 20f);
+        var req = new PaintRequest(List.of(), mutable, 100, 100, new com.mojang.blaze3d.vertex.PoseStack(),
+                null, 0, 0, true, true, true, 0f, 0f, "", 0, false, null, false, false, "s", null, false, false);
+        assertTrue(req.paintOffsets().isImmutable());
+        mutable.set("w", 99f, 99f);
+        assertEquals(10f, req.paintOffsets().dx("w"));
+        assertEquals(20f, req.paintOffsets().dy("w"));
+    }
+
     private static long signature(DisplayItem anchor, DisplayItem child, LayerSpec spec) {
         return DisplayItemDrawer.probeLayer(List.of(anchor, child), 0, spec, "sig-test-" + System.nanoTime(), "", null, 1f).signature();
     }

@@ -2,9 +2,12 @@ package com.nishiyu.enderframelib.core.paint;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.PaintCell;
+import com.nishiyu.enderframelib.core.paint.model.PaintFrame;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -29,11 +32,24 @@ class PaintCellRatchetTest {
 
     @Test
     void displayItemAndPaintCellAreCompletelyImmutable() {
-        for (Class<?> cls : List.of(DisplayItem.class, PaintCell.class)) {
+        for (Class<?> cls : List.of(DisplayItem.class, PaintCell.class, PaintFrame.class)) {
             for (Field f : cls.getDeclaredFields()) {
                 if (Modifier.isStatic(f.getModifiers())) continue;
                 assertTrue(Modifier.isFinal(f.getModifiers()), cls.getSimpleName() + "." + f.getName() + " must be final");
             }
+        }
+    }
+
+    @Test
+    void uiViewNeverExposesMutablePaintOffsetsOutside() {
+        StandaloneView view = new StandaloneView("<div id='x'>hi</div>", 80, 60, FontResolver.FALLBACK);
+        try {
+            assertTrue(view.ui().paintOffsets().isImmutable());
+            view.ui().setPaintOffset("x", 3f, 4f);
+            assertTrue(view.ui().paintOffsets().isImmutable());
+            assertThrows(UnsupportedOperationException.class, () -> view.ui().paintOffsets().set("x", 9f, 9f));
+        } finally {
+            view.close();
         }
     }
 

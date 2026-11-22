@@ -22,8 +22,11 @@ public final class PaintOffsets {
     private final boolean immutable;
     private String[] ids;
     private long[] keys;
-    private float[] dxs;
-    private float[] dys;
+    private float[] coords;
+    private PaintOffsets cachedSnapshot;
+    private String[] snapIds;
+    private long[] snapKeys;
+    private int snapKeysVersion = -1;
     private volatile int size;
     private volatile int version;
     private volatile int keysVersion;
@@ -36,19 +39,22 @@ public final class PaintOffsets {
         this.immutable = immutable;
         this.ids = EMPTY_IDS;
         this.keys = EMPTY_KEYS;
-        this.dxs = EMPTY_FLOATS;
-        this.dys = EMPTY_FLOATS;
+        this.coords = EMPTY_FLOATS;
     }
 
-    private PaintOffsets(String[] ids, long[] keys, float[] dxs, float[] dys, int size, int version, int keysVersion) {
+    private PaintOffsets(String[] ids, long[] keys, float[] coords, int size, int version, int keysVersion) {
         this.immutable = true;
         this.ids = ids;
         this.keys = keys;
-        this.dxs = dxs;
-        this.dys = dys;
-        this.size = size;
+        this.coords = coords;
         this.version = version;
         this.keysVersion = keysVersion;
+        this.size = size;
+    }
+
+    /** スナップショット等で凍結済みの不変表なら {@code true}。 */
+    public boolean isImmutable() {
+        return immutable;
     }
 
     /**
@@ -56,31 +62,48 @@ public final class PaintOffsets {
      * 新規追加で {@code (0, 0)} を入れた場合は鍵集合の版（{@link #keysVersion()}）だけを進め、値の版は進めない。
      */
     public synchronized boolean set(String id, float dx, float dy) {
+        return put(id, dx, dy, false);
+    }
+
+    /** 未登録で {@code (0, 0)} のときは登録せず、既存項目の更新または非ゼロ値だけを記録する。 */
+    public synchronized boolean setIfActive(String id, float dx, float dy) {
+        return put(id, dx, dy, true);
+    }
+
+    private boolean put(String id, float dx, float dy, boolean skipZeroNew) {
         if (immutable) throw new UnsupportedOperationException("PaintOffsets is immutable");
         if (id == null || id.isEmpty()) return false;
         int n = size;
         for (int i = 0; i < n; i++) {
             if (ids[i] == id || ids[i].equals(id)) {
-                if (Float.compare(dxs[i], dx) == 0 && Float.compare(dys[i], dy) == 0) return false;
-                dxs[i] = dx;
-                dys[i] = dy;
+                int ci = i * 2;
+                if (Float.compare(coords[ci], dx) == 0 && Float.compare(coords[ci + 1], dy) == 0) return false;
+                coords[ci] = dx;
+                coords[ci + 1] = dy;
                 version++;
+                cachedSnapshot = null;
                 return true;
             }
         }
+        if (skipZeroNew && dx == 0f && dy == 0f) return false;
+        return append(n, id, dx, dy);
+    }
+
+    private boolean append(int n, String id, float dx, float dy) {
         if (n == ids.length) {
             int nextCap = n == 0 ? 8 : n * 2;
             ids = Arrays.copyOf(ids, nextCap);
             keys = Arrays.copyOf(keys, nextCap);
-            dxs = Arrays.copyOf(dxs, nextCap);
-            dys = Arrays.copyOf(dys, nextCap);
+            coords = Arrays.copyOf(coords, nextCap * 2);
         }
         ids[n] = id;
         keys[n] = DisplayItem.keyOf(id);
-        dxs[n] = dx;
-        dys[n] = dy;
+        int ci = n * 2;
+        coords[ci] = dx;
+        coords[ci + 1] = dy;
         size = n + 1;
         keysVersion++;
+        cachedSnapshot = null;
         if (dx != 0f || dy != 0f) {
             version++;
             return true;
@@ -95,17 +118,20 @@ public final class PaintOffsets {
         int n = size;
         for (int i = 0; i < n; i++) {
             if (ids[i] == id || ids[i].equals(id)) {
-                boolean wasNonZero = dxs[i] != 0f || dys[i] != 0f;
+                int ci = i * 2;
+                boolean wasNonZero = coords[ci] != 0f || coords[ci + 1] != 0f;
                 int last = n - 1;
                 if (i != last) {
+                    int clast = last * 2;
                     ids[i] = ids[last];
                     keys[i] = keys[last];
-                    dxs[i] = dxs[last];
-                    dys[i] = dys[last];
+                    coords[ci] = coords[clast];
+                    coords[ci + 1] = coords[clast + 1];
                 }
                 ids[last] = null;
                 size = last;
                 keysVersion++;
+                cachedSnapshot = null;
                 if (wasNonZero) version++;
                 return wasNonZero;
             }
@@ -119,8 +145,8 @@ public final class PaintOffsets {
         int n = size;
         if (n == 0) return;
         boolean anyNonZero = false;
-        for (int i = 0; i < n; i++) {
-            if (dxs[i] != 0f || dys[i] != 0f) {
+        for (int i = 0, m = n * 2; i < m; i++) {
+            if (coords[i] != 0f) {
                 anyNonZero = true;
                 break;
             }
@@ -128,27 +154,33 @@ public final class PaintOffsets {
         Arrays.fill(ids, 0, n, null);
         size = 0;
         keysVersion++;
+        cachedSnapshot = null;
         if (anyNonZero) version++;
     }
 
     public float dx(String id) {
-        if (size == 0 || id == null) return 0f;
+        int n = size;
+        if (n == 0 || id == null) return 0f;
+        if (immutable) return lookupCoord(n, id, 0);
         synchronized (this) {
-            for (int i = 0, n = size; i < n; i++) {
-                if (ids[i] == id || ids[i].equals(id)) return dxs[i];
-            }
-            return 0f;
+            return lookupCoord(size, id, 0);
         }
     }
 
     public float dy(String id) {
-        if (size == 0 || id == null) return 0f;
+        int n = size;
+        if (n == 0 || id == null) return 0f;
+        if (immutable) return lookupCoord(n, id, 1);
         synchronized (this) {
-            for (int i = 0, n = size; i < n; i++) {
-                if (ids[i] == id || ids[i].equals(id)) return dys[i];
-            }
-            return 0f;
+            return lookupCoord(size, id, 1);
         }
+    }
+
+    private float lookupCoord(int n, String id, int axis) {
+        for (int i = 0; i < n; i++) {
+            if (ids[i] == id || ids[i].equals(id)) return coords[i * 2 + axis];
+        }
+        return 0f;
     }
 
     public float dx(DisplayItem el) {
@@ -162,15 +194,24 @@ public final class PaintOffsets {
     }
 
     public boolean hasOffset(DisplayItem el) {
-        if (size == 0 || el == null || el.type() != ElementType.NODE) return false;
+        int n = size;
+        if (n == 0 || el == null || el.type() != ElementType.NODE) return false;
         String id = el.id();
         if (id == null) return false;
+        if (immutable) return hasNonZero(n, id);
         synchronized (this) {
-            for (int i = 0, n = size; i < n; i++) {
-                if (ids[i] == id || ids[i].equals(id)) return dxs[i] != 0f || dys[i] != 0f;
-            }
-            return false;
+            return hasNonZero(size, id);
         }
+    }
+
+    private boolean hasNonZero(int n, String id) {
+        for (int i = 0; i < n; i++) {
+            if (ids[i] == id || ids[i].equals(id)) {
+                int ci = i * 2;
+                return coords[ci] != 0f || coords[ci + 1] != 0f;
+            }
+        }
+        return false;
     }
 
     /** 項目自身の基準移動量にこの表の平行移動を足した実効 X 移動量。 */
@@ -190,19 +231,48 @@ public final class PaintOffsets {
     public int version() { return version; }
     public int keysVersion() { return keysVersion; }
 
-    public synchronized String idAt(int i) { return ids[i]; }
-    public synchronized long keyAt(int i) { return keys[i]; }
-    public synchronized float dxAt(int i) { return dxs[i]; }
-    public synchronized float dyAt(int i) { return dys[i]; }
-
-    public synchronized void copyKeysInto(Set<String> dst) {
-        for (int i = 0, n = size; i < n; i++) dst.add(ids[i]);
+    public String idAt(int i) {
+        if (immutable) { int ignored = size; return ids[i]; }
+        synchronized (this) { return ids[i]; }
     }
 
-    /** この時点の値を持つ不変の写し（フレームの記録・検証用）。 */
+    public long keyAt(int i) {
+        if (immutable) { int ignored = size; return keys[i]; }
+        synchronized (this) { return keys[i]; }
+    }
+
+    public float dxAt(int i) {
+        if (immutable) { int ignored = size; return coords[i * 2]; }
+        synchronized (this) { return coords[i * 2]; }
+    }
+
+    public float dyAt(int i) {
+        if (immutable) { int ignored = size; return coords[i * 2 + 1]; }
+        synchronized (this) { return coords[i * 2 + 1]; }
+    }
+
+    public void copyKeysInto(Set<String> dst) {
+        int n = size;
+        if (immutable) {
+            for (int i = 0; i < n; i++) dst.add(ids[i]);
+            return;
+        }
+        synchronized (this) {
+            for (int i = 0, sz = size; i < sz; i++) dst.add(ids[i]);
+        }
+    }
+
+    /** この時点の値を持つ不変の写し（フレームの記録・検証・フレーム境界越え用）。 */
     public synchronized PaintOffsets snapshot() {
+        if (immutable) return this;
         int n = size;
         if (n == 0) return EMPTY;
-        return new PaintOffsets(Arrays.copyOf(ids, n), Arrays.copyOf(keys, n), Arrays.copyOf(dxs, n), Arrays.copyOf(dys, n), n, version, keysVersion);
+        if (cachedSnapshot != null) return cachedSnapshot;
+        if (snapKeysVersion != keysVersion || snapIds == null || snapIds.length != n) {
+            snapIds = Arrays.copyOf(ids, n);
+            snapKeys = Arrays.copyOf(keys, n);
+            snapKeysVersion = keysVersion;
+        }
+        return cachedSnapshot = new PaintOffsets(snapIds, snapKeys, Arrays.copyOf(coords, n * 2), n, version, keysVersion);
     }
 }

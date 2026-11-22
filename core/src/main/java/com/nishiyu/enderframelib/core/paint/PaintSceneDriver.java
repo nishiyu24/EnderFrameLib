@@ -572,17 +572,11 @@ public final class PaintSceneDriver {
         }
         int newCount = 0;
         if (!eff.isEmpty()) {
-            synchronized (eff) {
-                int esz = eff.size();
-                if (scratchOffIdx.length < esz) { scratchOffIdx = new int[esz]; scratchOffX = new float[esz]; scratchOffY = new float[esz]; }
-                for (int k = 0; k < esz; k++) {
-                    int idx = indexOf.getOrDefault(eff.keyAt(k), -1);
-                    if (idx >= 0 && idx < items.size()) {
-                        DisplayItem it = items.get(idx);
-                        if (it.type() == ElementType.NODE && eff.idAt(k).equals(it.id())) {
-                            scratchOffIdx[newCount] = idx; scratchOffX[newCount] = eff.dxAt(k); scratchOffY[newCount] = eff.dyAt(k); newCount++;
-                        }
-                    }
+            if (eff.isImmutable()) {
+                newCount = collectOffsets(eff, items);
+            } else {
+                synchronized (eff) {
+                    newCount = collectOffsets(eff, items);
                 }
             }
         }
@@ -607,6 +601,22 @@ public final class PaintSceneDriver {
         }
         activeOffCount = outCount;
         if (anyChanged) invalidateRangeBounds();
+    }
+
+    private int collectOffsets(PaintOffsets eff, List<DisplayItem> items) {
+        int esz = eff.size();
+        if (scratchOffIdx.length < esz) { scratchOffIdx = new int[esz]; scratchOffX = new float[esz]; scratchOffY = new float[esz]; }
+        int count = 0;
+        for (int k = 0; k < esz; k++) {
+            int idx = indexOf.getOrDefault(eff.keyAt(k), -1);
+            if (idx >= 0 && idx < items.size()) {
+                DisplayItem it = items.get(idx);
+                if (it.type() == ElementType.NODE && eff.idAt(k).equals(it.id())) {
+                    scratchOffIdx[count] = idx; scratchOffX[count] = eff.dxAt(k); scratchOffY[count] = eff.dyAt(k); count++;
+                }
+            }
+        }
+        return count;
     }
 
     private void ensureCapacity(int minCap) {

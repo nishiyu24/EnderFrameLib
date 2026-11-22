@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.FrozenItemList;
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.List;
@@ -11,7 +12,7 @@ import java.util.RandomAccess;
  * パッチ更新（同じ長さで少数の項目だけが差し替わったとき）では、変わったブロックだけをコピーして
  * 新しい不変リストを作るため、全体の {@code List.copyOf} による O(N) 配列確保を避けられる。
  */
-public final class ImmutableItemList extends AbstractList<DisplayItem> implements RandomAccess {
+public final class ImmutableItemList extends AbstractList<DisplayItem> implements RandomAccess, FrozenItemList {
     static final int CHUNK_SHIFT = 5;
     static final int CHUNK_SIZE = 1 << CHUNK_SHIFT;
     static final int CHUNK_MASK = CHUNK_SIZE - 1;

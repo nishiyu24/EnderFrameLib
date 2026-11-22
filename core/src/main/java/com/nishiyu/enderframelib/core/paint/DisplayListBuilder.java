@@ -305,48 +305,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         windowShift = shift != null ? shift : java.util.Map.of();
     }
 
-    int movingEpochSeq;
-    int activeMovingEpoch;
-    private final ArrayList<LayoutBox> movingPathScratch = new ArrayList<>();
-
-    boolean hasMovingAncestor(LayoutBox box) {
-        if (box == null) return false;
-        if (box.movingStamped) return box.selfOrAncestorMoving;
-        int epoch = activeMovingEpoch;
-        if (epoch == 0) {
-            for (LayoutBox b = box; b != null; b = b.parent) {
-                if (b.style != null && PaintOrder.hasMovingProps(b.style)) return true;
-            }
-            return false;
-        }
-        movingPathScratch.clear();
-        boolean moving = false;
-        for (LayoutBox b = box; b != null; b = b.parent) {
-            if (b.movingMemoEpoch == epoch) {
-                moving = b.movingMemoResult;
-                break;
-            }
-            movingPathScratch.add(b);
-            if (b.style != null && PaintOrder.hasMovingProps(b.style)) {
-                moving = true;
-                break;
-            }
-        }
-        for (int i = movingPathScratch.size() - 1; i >= 0; i--) {
-            LayoutBox b = movingPathScratch.get(i);
-            b.movingMemoEpoch = epoch;
-            b.movingMemoResult = moving;
-        }
-        movingPathScratch.clear();
-        return moving;
-    }
-
     int lastElementCount;
-
-    private boolean offscreen(LayoutBox box) {
-        if (inWindowGeometry(box)) return false;
-        return !hasMovingAncestor(box);
-    }
 
     private static final Object CORNERS_MEMO_KEY = new Object();
 
@@ -651,7 +610,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         PaintSupport.CaptureList cap = (parentRelative && elements instanceof PaintSupport.CaptureList c) ? c : null;
         int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
         if (cap != null) {
-            LayoutBox pNode = PaintOrder.effectiveParentNodeBox(box, parentId);
+            LayoutBox pNode = order.effectiveParentNodeBox(box, parentId);
             cap.setOrigin(pNode != null ? Math.round(pNode.x()) : 0, pNode != null ? Math.round(pNode.y()) : 0);
         }
         try {

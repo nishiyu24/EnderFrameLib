@@ -131,12 +131,12 @@ public final class DocumentArena {
         if (!isLive(id)) return;
         owners[id] = null;
         live--;
-        generation.set(id, generation.get(id) + 1);
         if (id >= staticCount) {
+            generation.set(id, generation.get(id) + 1);
             nextFree.set(id, freeHead);
             freeHead = id;
         } else {
-            nextFree.set(id, -2); // 静的な欠番（再利用しない）
+            nextFree.set(id, -2); // 静的な欠番（再利用しない。同じ節が戻ったときの NodeSlots 保持のため世代は進めない）
         }
         parent.set(id, NONE);
         firstChild.set(id, NONE);
@@ -320,24 +320,62 @@ public final class DocumentArena {
      */
     @SuppressWarnings("unchecked")
     public <T> NodeSlots<T> slots(Object owner) {
-        java.lang.ref.WeakReference<NodeSlots<?>> ref = tables.get(owner);
-        NodeSlots<?> existing = ref != null ? ref.get() : null;
-        if (existing != null) return (NodeSlots<T>) existing;
-        NodeSlots<T> created = new NodeSlots<>(this);
-        tables.put(owner, new java.lang.ref.WeakReference<>(created));
-        return created;
+        synchronized (tables) {
+            java.lang.ref.WeakReference<NodeSlots<?>> ref = tables.get(owner);
+            NodeSlots<?> existing = ref != null ? ref.get() : null;
+            if (existing != null) return (NodeSlots<T>) existing;
+            NodeSlots<T> created = new NodeSlots<>(this);
+            tables.put(owner, new java.lang.ref.WeakReference<>(created));
+            return created;
+        }
+    }
+
+    /** 持ち主がこのアリーナ上に表を既に持っているか（無いなら表を作らず false）。 */
+    public boolean hasSlots(Object owner) {
+        synchronized (tables) {
+            java.lang.ref.WeakReference<NodeSlots<?>> ref = tables.get(owner);
+            return ref != null && ref.get() != null;
+        }
     }
 
     /** 持ち主が手放すとき。 */
     public void dropSlots(Object owner) {
-        tables.remove(owner);
+        synchronized (tables) {
+            tables.remove(owner);
+        }
+    }
+
+    /** 別のアリーナへノードが移るとき、このアリーナ上の全持ち主の登録状態を {@code dst} へ移す。 */
+    @SuppressWarnings("unchecked")
+    public void migrateSlots(int oldId, DocumentArena dst, int newId) {
+        if (dst == null || dst == this) return;
+        java.util.List<java.util.Map.Entry<Object, NodeSlots<?>>> entries = null;
+        synchronized (tables) {
+            if (tables.isEmpty()) return;
+            for (var e : tables.entrySet()) {
+                NodeSlots<?> s = e.getValue().get();
+                if (s != null) {
+                    if (entries == null) entries = new java.util.ArrayList<>(tables.size());
+                    entries.add(java.util.Map.entry(e.getKey(), s));
+                }
+            }
+        }
+        if (entries == null) return;
+        for (var e : entries) {
+            Object val = e.getValue().take(oldId);
+            if (val != null) ((NodeSlots<Object>) dst.slots(e.getKey())).put(newId, val);
+        }
     }
 
     public static final class NodeSlots<T> {
+        private static final java.lang.invoke.VarHandle VALUES =
+                java.lang.invoke.MethodHandles.arrayElementVarHandle(Object[].class);
+
+        private record Slot<T>(int gen, T value) {}
+
         private final DocumentArena arena;
-        private Object[] values = new Object[16];
-        private int[] gens = new int[16];
-        private int epoch;
+        private volatile Object[] values = new Object[16];
+        private volatile int epoch;
 
         private NodeSlots(DocumentArena arena) {
             this.arena = arena;
@@ -346,45 +384,62 @@ public final class DocumentArena {
 
         @SuppressWarnings("unchecked")
         public T get(int id) {
-            if (id < 0 || id >= values.length) return null;
+            Object[] a = values;
+            if (id < 0 || id >= a.length) return null;
             if (epoch != arena.epoch) { clear(); return null; }
-            Object v = values[id];
-            if (v == null) return null;
-            if (gens[id] != arena.generation(id)) { values[id] = null; return null; }
-            return (T) v;
-        }
-
-        public void put(int id, T value) {
-            if (epoch != arena.epoch) clear();
-            if (id >= values.length) {
-                int n = values.length;
-                while (n <= id) n *= 2;
-                values = java.util.Arrays.copyOf(values, n);
-                gens = java.util.Arrays.copyOf(gens, n);
+            Slot<T> s = (Slot<T>) VALUES.getAcquire(a, id);
+            if (s == null) return null;
+            if (s.gen != arena.generation(id)) {
+                VALUES.compareAndSet(a, id, s, null);
+                return null;
             }
-            values[id] = value;
-            gens[id] = arena.generation(id);
+            if (!arena.isLive(id)) return null;
+            return s.value;
         }
 
-        public void remove(int id) {
-            if (id >= 0 && id < values.length) values[id] = null;
+        public synchronized void put(int id, T value) {
+            if (epoch != arena.epoch) clear();
+            Object[] a = values;
+            Slot<T> entry = value == null ? null : new Slot<>(arena.generation(id), value);
+            if (id >= a.length) {
+                int n = a.length;
+                while (n <= id) n *= 2;
+                a = java.util.Arrays.copyOf(a, n);
+                a[id] = entry;
+                values = a;
+                return;
+            }
+            VALUES.setRelease(a, id, entry);
         }
 
-        public void clear() {
+        synchronized T take(int id) {
+            T v = get(id);
+            if (v != null) remove(id);
+            return v;
+        }
+
+        public synchronized void remove(int id) {
+            Object[] a = values;
+            if (id >= 0 && id < a.length) VALUES.setRelease(a, id, null);
+        }
+
+        public synchronized void clear() {
             java.util.Arrays.fill(values, null);
             epoch = arena.epoch;
         }
 
         /** 世代が合う値を順に渡す。 */
         @SuppressWarnings("unchecked")
-        public void forEach(java.util.function.BiConsumer<Integer, T> visitor) {
+        public synchronized void forEach(java.util.function.BiConsumer<Integer, T> visitor) {
             if (epoch != arena.epoch) { clear(); return; }
-            int n = Math.min(values.length, arena.highWater);
+            Object[] a = values;
+            int n = Math.min(a.length, arena.highWater);
             for (int i = 0; i < n; i++) {
-                Object v = values[i];
-                if (v == null) continue;
-                if (gens[i] != arena.generation(i)) { values[i] = null; continue; }
-                visitor.accept(i, (T) v);
+                Slot<T> s = (Slot<T>) a[i];
+                if (s == null) continue;
+                if (s.gen != arena.generation(i)) { a[i] = null; continue; }
+                if (!arena.isLive(i)) continue;
+                visitor.accept(i, s.value);
             }
         }
     }

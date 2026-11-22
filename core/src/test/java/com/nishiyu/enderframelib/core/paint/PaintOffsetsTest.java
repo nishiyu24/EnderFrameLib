@@ -70,8 +70,13 @@ class PaintOffsetsTest {
         assertEquals(0f, off.translateX(r));
         assertEquals(0f, off.translateY(r));
 
-        // snapshot は元の表の変更を受けない不変写し
+        // snapshot は元の表の変更を受けない不変写し（変更が無ければ同じ実体を返し、再設定時だけ新しくする）
+        assertFalse(off.isImmutable());
+        assertTrue(PaintOffsets.EMPTY.isImmutable());
         PaintOffsets snap = off.snapshot();
+        assertTrue(snap.isImmutable());
+        assertSame(snap, off.snapshot(), "変更が無ければ同じスナップショットを共有する");
+        assertSame(snap, snap.snapshot());
         assertTrue(off.clear("win"));
         assertEquals(20f, snap.dx("win"));
         assertEquals(0f, off.dx("win"));
@@ -133,5 +138,32 @@ class PaintOffsetsTest {
         } finally {
             view.close();
         }
+    }
+
+    @Test
+    void setIfActiveSkipsDeadZeroEntriesAndUpdatesExistingBackToZero() {
+        PaintOffsets off = new PaintOffsets();
+        assertFalse(off.setIfActive("idle", 0f, 0f));
+        assertTrue(off.isEmpty());
+        assertEquals(0, off.version());
+        assertEquals(0, off.keysVersion());
+
+        assertTrue(off.setIfActive("box", 4f, -8f));
+        assertEquals(1, off.size());
+        assertEquals(1, off.version());
+        assertEquals(1, off.keysVersion());
+
+        PaintOffsets snap1 = off.snapshot();
+        assertEquals(4f, snap1.dx("box"));
+        assertTrue(off.setIfActive("box", 0f, 0f));
+        assertEquals(2, off.version());
+        assertEquals(1, off.keysVersion());
+        assertEquals(0f, off.dx("box"));
+        assertEquals(0f, off.dy("box"));
+        assertEquals(4f, snap1.dx("box"));
+
+        PaintOffsets snap2 = off.snapshot();
+        assertThrows(UnsupportedOperationException.class, () -> PaintOffsets.EMPTY.setIfActive("x", 1f, 0f));
+        assertThrows(UnsupportedOperationException.class, () -> snap2.setIfActive("x", 1f, 0f));
     }
 }

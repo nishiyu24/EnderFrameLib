@@ -39,7 +39,7 @@ record PaintRequest(
         boolean screenSpaceText
 ) {
     PaintRequest {
-        if (paintOffsets == null) paintOffsets = PaintOffsets.EMPTY;
+        paintOffsets = paintOffsets == null ? PaintOffsets.EMPTY : paintOffsets.snapshot();
     }
 
     /** 項目の一覧だけを差し替えた複製（親相対のまま GPU 経路へ渡し、描けなければ絶対座標へ直して従来の経路へ渡す）。 */

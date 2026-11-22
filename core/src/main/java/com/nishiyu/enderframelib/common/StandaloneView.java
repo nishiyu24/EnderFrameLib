@@ -21,6 +21,7 @@ import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
+import com.nishiyu.enderframelib.core.paint.model.PaintFrame;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
@@ -87,6 +88,7 @@ public final class StandaloneView implements AutoCloseable {
     private final InteractionState interaction;
 
     private List<DisplayItem> items;
+    private PaintFrame lastFrame;
     private boolean drawn;
     private boolean redraw = true;
     private boolean animating;
@@ -216,6 +218,14 @@ public final class StandaloneView implements AutoCloseable {
     /** 直近のフレームのディスプレイリスト。 */
     public List<DisplayItem> items() {
         return items;
+    }
+
+    /** 直近のフレームの不変境界スナップショット PDU（{@link PaintFrame}）。 */
+    public PaintFrame frameSnapshot() {
+        PaintOffsets off = ui.paintOffsets();
+        PaintFrame f = lastFrame;
+        if (f != null && f.items() == items && f.offsets() == off) return f;
+        return lastFrame = PaintFrame.of(items, off);
     }
 
     /** {@code requestAnimationFrame} / {@code setTimeout} の登録簿。 */

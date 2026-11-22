@@ -313,9 +313,9 @@ public class UiView implements AutoCloseable {
     private int paintBuilderW, paintBuilderH;
     private Object paintBuilderKeyframes, paintBuilderScroll;
 
-    /** この画面の描画上の平行移動表（不変の {@link DisplayItem} の外に持つ）。 */
+    /** この画面の描画上の平行移動表の不変スナップショット（フレーム境界越え用、{@link DisplayItem} の外に持つ）。 */
     public PaintOffsets paintOffsets() {
-        return paintOffsets;
+        return paintOffsets.snapshot();
     }
 
     public List<DisplayItem> renderCache() {
@@ -1024,14 +1024,14 @@ public class UiView implements AutoCloseable {
         for (ScrollContentInfo info : scrollBase) {
             float dx = scrollState.getScrollX(info.node()) - info.sx0();
             float dy = scrollState.getScrollY(info.node()) - info.sy0();
-            setPaintOffset(info.contentId(), -dx, -dy);
+            paintOffsets.setIfActive(info.contentId(), -dx, -dy);
             // つまみは作り直したときと同じ整数の位置へ（小数のまま動かすと角の縁の画素が作り直しと違う。A6b ⑤）
-            if (info.thumbVId() != null) setPaintOffset(info.thumbVId(), 0f, Math.round(info.fy0() + info.ky() * dy));
-            if (info.thumbHId() != null) setPaintOffset(info.thumbHId(), Math.round(info.fx0() + info.kx() * dx), 0f);
+            if (info.thumbVId() != null) paintOffsets.setIfActive(info.thumbVId(), 0f, Math.round(info.fy0() + info.ky() * dy));
+            if (info.thumbHId() != null) paintOffsets.setIfActive(info.thumbHId(), Math.round(info.fx0() + info.kx() * dx), 0f);
             // 中身の中の sticky の箱: 中身と一緒に動いた分に、貼り付きのずれの増減を足す（作り直したときの式と同じ。B12）
             for (int k = 0, sn = info.stickies().size(); k < sn; k++) {
                 var st = info.stickies().get(k);
-                setPaintOffset(st.nodeId(), 0f, st.extraAt(dy));
+                paintOffsets.setIfActive(st.nodeId(), 0f, st.extraAt(dy));
             }
         }
         return true;

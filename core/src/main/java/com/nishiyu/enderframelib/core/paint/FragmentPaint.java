@@ -279,7 +279,7 @@ final class FragmentPaint {
     private boolean sameContextHeader(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving) {
         if (!sameContextCheap(m, box, clip, parentId, moving) || box.ownPaintStamp() > m.epoch) return false;
         if (b.parentRelative) {
-            LayoutBox p = PaintOrder.effectiveParentNodeBox(box, parentId);
+            LayoutBox p = order.effectiveParentNodeBox(box, parentId);
             if ((p != null ? Math.round(p.x()) : 0) != m.pox || (p != null ? Math.round(p.y()) : 0) != m.poy) return false;
         }
         return true;
@@ -308,7 +308,7 @@ final class FragmentPaint {
         m.frag = f; m.box = box; m.parent = box.parent;
         m.x = box.x(); m.y = box.y(); m.w = box.w(); m.h = box.h();
         m.clip = clip; m.parentId = parentId; m.moving = moving;
-        LayoutBox p = b.parentRelative ? PaintOrder.effectiveParentNodeBox(box, parentId) : null;
+        LayoutBox p = b.parentRelative ? order.effectiveParentNodeBox(box, parentId) : null;
         m.pox = p != null ? Math.round(p.x()) : 0; m.poy = p != null ? Math.round(p.y()) : 0;
         m.pass = passNo; m.epoch = b.buildEpoch;
         m.childContextSet = lastChildContextSet; m.childClip = lastChildClip; m.childParentId = lastChildParentId;
@@ -442,13 +442,13 @@ final class FragmentPaint {
         if (diff != null) throw new AssertionError("箱の項目の記憶が古い: box=" + box.node.tag + "#" + box.node.key() + " " + diff);
     }
 
-    private static LayoutBox childParentNodeBox(LayoutBox box, String childParentId) {
+    private LayoutBox childParentNodeBox(LayoutBox box, String childParentId) {
         if (childParentId == null || "root".equals(box.node.tag)) return null;
-        if (!box.isAnonymous) return PaintOrder.boxHasOwnNode(box) && !box.paintCulled ? box : null;
+        if (!box.isAnonymous) return PaintOrder.boxHasOwnNode(box) && !order.isCulled(box) ? box : null;
         for (LayoutBox a = box.parent; a != null; a = a.parent) {
             if (a.node != null && "root".equals(a.node.tag)) return null;
             if (a.isAnonymous) continue;
-            return PaintOrder.boxHasOwnNode(a) && !a.paintCulled ? a : null;
+            return PaintOrder.boxHasOwnNode(a) && !order.isCulled(a) ? a : null;
         }
         return null;
     }
@@ -484,15 +484,16 @@ final class FragmentPaint {
 
         DisplayItem[] own = Fragment.NONE;
         boolean drawn = false;
+        boolean culledSelf = false;
         PaintOrder.ScrollContent[] ownScrolls = NO_SCROLLS;
         boolean ownKept = sameKidList && !hasSelf;
         if (hasSelf) {
             owners++;
             if (cull && layer == null && !moving && !b.inWindowGeometry(box)) {
-                markCulled(box);
+                order.pushCulled(box);
+                culledSelf = true;
                 ownKept = sameKidList;
             } else {
-                box.paintCulled = false;
                 if (sameKidList && m != null && m.frag.drawn && ownReusable(m, box)) {
                     OWN_REUSED.increment();
                     ownKept = true;
@@ -515,36 +516,40 @@ final class FragmentPaint {
             }
         }
 
-        int childPox = 0, childPoy = 0;
-        boolean kidsCtxOk = false;
-        if (!valueControl) {
-            if (b.parentRelative) {
-                LayoutBox cp = childParentNodeBox(box, cc.parentId);
-                if (cp != null) { childPox = Math.round(cp.x()); childPoy = Math.round(cp.y()); }
+        try {
+            int childPox = 0, childPoy = 0;
+            boolean kidsCtxOk = false;
+            if (!valueControl) {
+                if (b.parentRelative) {
+                    LayoutBox cp = childParentNodeBox(box, cc.parentId);
+                    if (cp != null) { childPox = Math.round(cp.x()); childPoy = Math.round(cp.y()); }
+                }
+                kidsCtxOk = m != null && m.frag != null && m.childContextSet && m.moving == moving
+                        && m.flexOrGridContainer == isFlexOrGridContainer(box)
+                        && m.childClip == cc.clip && java.util.Objects.equals(m.childParentId, cc.parentId)
+                        && (!b.parentRelative || (m.childPox == childPox && m.childPoy == childPoy));
             }
-            kidsCtxOk = m != null && m.frag != null && m.childContextSet && m.moving == moving
-                    && m.flexOrGridContainer == isFlexOrGridContainer(box)
-                    && m.childClip == cc.clip && java.util.Objects.equals(m.childParentId, cc.parentId)
-                    && (!b.parentRelative || (m.childPox == childPox && m.childPoy == childPoy));
-        }
 
-        Fragment.Extras ex = extras(box, kind, layer);
-        boolean selfVp = selfViewportSensitive(box, ex, ownScroll);
-        DisplayItem[] after = Fragment.NONE;
-        if (!valueControl && PaintOrder.wantsScrollbars(box)) {
-            scratch.resetForBuild();
-            order.drawScrollbarsIfNeeded(scratch, box, clip);
-            after = scratch.toArray(new DisplayItem[0]);
-        }
-        int z = kind == Fragment.Kind.STACKING ? (PaintOrder.isZIndexAuto(box) ? 0 : box.zIndex()) : 0;
-        Fragment result = buildKidsAndFinish(box, cc, moving, m, sameKidList, kidsCtxOk, valueControl,
-                own, after, drawn, kind, z, layer, ex, selfVp, fs);
+            Fragment.Extras ex = extras(box, kind, layer);
+            boolean selfVp = selfViewportSensitive(box, ex, ownScroll);
+            DisplayItem[] after = Fragment.NONE;
+            if (!valueControl && PaintOrder.wantsScrollbars(box)) {
+                scratch.resetForBuild();
+                order.drawScrollbarsIfNeeded(scratch, box, clip);
+                after = scratch.toArray(new DisplayItem[0]);
+            }
+            int z = kind == Fragment.Kind.STACKING ? (PaintOrder.isZIndexAuto(box) ? 0 : box.zIndex()) : 0;
+            Fragment result = buildKidsAndFinish(box, cc, moving, m, sameKidList, kidsCtxOk, valueControl,
+                    own, after, drawn, kind, z, layer, ex, selfVp, fs);
 
-        lastOwnScrolls = ownScrolls; lastOwnKept = ownKept; lastSelfVp = selfVp;
-        lastChildContextSet = !valueControl;
-        lastChildClip = valueControl ? null : cc.clip; lastChildParentId = valueControl ? null : cc.parentId;
-        lastChildPox = childPox; lastChildPoy = childPoy; lastDepth = depth;
-        return result;
+            lastOwnScrolls = ownScrolls; lastOwnKept = ownKept; lastSelfVp = selfVp;
+            lastChildContextSet = !valueControl;
+            lastChildClip = valueControl ? null : cc.clip; lastChildParentId = valueControl ? null : cc.parentId;
+            lastChildPox = childPox; lastChildPoy = childPoy; lastDepth = depth;
+            return result;
+        } finally {
+            if (culledSelf) order.popCulled();
+        }
     }
 
     private Fragment buildKidsAndFinish(LayoutBox box, PaintOrder.ChildContext cc, boolean moving, Memo m,
@@ -748,6 +753,4 @@ final class FragmentPaint {
         if (!drawn && after.length == 0 && ex == null && agg == Fragment.NO_KIDS) return Fragment.EMPTY;
         return new Fragment(box, own, after, drawn, kind, z, layer, DisplayListBuilder::withLayer, ex, c, small, big, agg);
     }
-
-    private void markCulled(LayoutBox owner) { owner.paintCulled = true; }
 }

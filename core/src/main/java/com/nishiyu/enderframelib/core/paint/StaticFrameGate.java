@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintFrame;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 
 import java.util.List;
@@ -34,6 +35,12 @@ public final class StaticFrameGate {
         return canSkip(current, PaintOffsets.EMPTY, fontGen);
     }
 
+    /** 前回の描画結果をそのまま使えるか（{@link PaintFrame} PDU 版）。 */
+    public boolean canSkip(PaintFrame frame, int fontGen) {
+        PaintFrame eff = frame != null ? frame : PaintFrame.EMPTY;
+        return canSkip(eff.items(), eff.offsets(), fontGen);
+    }
+
     /** 前回の描画結果をそのまま使えるか。 */
     public boolean canSkip(List<DisplayItem> current, PaintOffsets offsets, int fontGen) {
         if (!enabled || !settled || count < 0 || fontGeneration != fontGen || count != current.size()) return false;
@@ -52,6 +59,12 @@ public final class StaticFrameGate {
     /** 描いた直後に呼ぶ（平行移動なし版）。 */
     public void painted(List<DisplayItem> current, int fontGen, boolean backendStillAnimating) {
         painted(current, PaintOffsets.EMPTY, fontGen, backendStillAnimating);
+    }
+
+    /** 描いた直後に呼ぶ（{@link PaintFrame} PDU 版）。 */
+    public void painted(PaintFrame frame, int fontGen, boolean backendStillAnimating) {
+        PaintFrame eff = frame != null ? frame : PaintFrame.EMPTY;
+        painted(eff.items(), eff.offsets(), fontGen, backendStillAnimating);
     }
 
     /**

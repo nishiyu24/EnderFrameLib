@@ -482,7 +482,7 @@ final class ControlPainter {
                                      int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows) {
         LayoutBox legend = box.renderedLegend();
         float shift = legend == null ? 0 : Math.max(0, (legend.h() - box.bT()) / 2);
-        box.withPaintBounds(box.x(), box.y() + shift, box.w(), Math.max(0, box.h() - shift), false,
+        decor.withBounds(box, box.x(), box.y() + shift, box.w(), Math.max(0, box.h() - shift), false,
                 () -> decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy,
                         partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows));
     }

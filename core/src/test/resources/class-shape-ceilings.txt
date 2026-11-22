@@ -4,13 +4,13 @@
 #   setters   = public static void setXxx(...)（static な配線）
 #   pubStatic = public static で final でない欄（グローバルな切り替え・状態）
 # 増やさない。減ったら下げる（-Dratchet.update=true で現在値へ書き直す）。
-core/layout/LayoutBox.java | 40 | 174 | 0 | 0
-common/UiView.java | 16 | 161 | 0 | 1
+core/layout/LayoutBox.java | 34 | 171 | 0 | 0
+common/UiView.java | 16 | 156 | 0 | 1
 api/ui/UI.java | 0 | 132 | 1 | 0
 core/raster/canvas/CanvasRenderingContext2D.java | 0 | 128 | 0 | 0
 core/css/ComputedStyle.java | 0 | 127 | 0 | 0
+core/dom/node/HtmlNode.java | 6 | 115 | 0 | 0
 core/paint/gpu/GpuRenderBackend.java | 0 | 105 | 0 | 1
-core/dom/node/HtmlNode.java | 8 | 115 | 0 | 0
 core/paint/CssAnimator.java | 44 | 0 | 0 | 0
 core/css/Selector.java | 32 | 0 | 0 | 0
 core/dom/InteractionState.java | 31 | 0 | 0 | 0
@@ -33,8 +33,8 @@ common/UiPubSub.java | 1 | 0 | 0 | 0
 common/UiTimers.java | 1 | 0 | 0 | 0
 core/css/CssParser.java | 0 | 0 | 0 | 1
 core/css/StyleResolver.java | 0 | 0 | 0 | 1
-core/dom/node/HtmlDocument.java | 1 | 0 | 0 | 0
 core/dom/node/DomUtils.java | 0 | 0 | 1 | 1
+core/dom/node/HtmlDocument.java | 1 | 0 | 0 | 0
 core/layout/TableLayoutEngine.java | 1 | 0 | 0 | 0
 core/paint/DisplayListBuilder.java | 0 | 0 | 0 | 1
 core/paint/gpu/ImageTextureCache.java | 1 | 0 | 0 | 0

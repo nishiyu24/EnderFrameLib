@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintFrame;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.raster.PngEncoder;
@@ -25,6 +26,12 @@ public interface RenderBackend extends AutoCloseable {
     /** 描画先を塗り直し、描画上の平行移動 {@code offsets} を載せて {@code items} を時刻 {@code nowMs} で描く。 */
     default void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
         render(items, nowMs);
+    }
+
+    /** 不変フレーム PDU（{@link PaintFrame}）を時刻 {@code nowMs} で描く（S7 ③ / B7 フレーム境界入口）。 */
+    default void render(PaintFrame frame, long nowMs) {
+        PaintFrame eff = frame != null ? frame : PaintFrame.EMPTY;
+        render(eff.items(), eff.offsets(), nowMs);
     }
 
     /**

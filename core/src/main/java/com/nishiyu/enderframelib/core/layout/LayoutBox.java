@@ -462,9 +462,6 @@ public class LayoutBox {
     public float staticOffsetY(float marginBoxH) {
         return Float.isNaN(staticAreaH) ? 0 : staticAlignY * (staticAreaH - marginBoxH);
     }
-    /** DisplayListBuilder が同じ検証バッチ内で祖先からの moving 判定を O(1) で使い回すための一時印。 */
-    public int movingMemoEpoch = 0;
-    public boolean movingMemoResult = false;
     /** RenderPipeline が再帰で親から引き継いで記録する「祖先 / 自身または祖先に moving 指定があるか」。 */
     public boolean ancestorMoving = false;
     public boolean selfOrAncestorMoving = false;
@@ -670,20 +667,6 @@ public class LayoutBox {
 
     void invalidatePlacementOnDisplayChange() {
         if (placementMemo != null) placementMemo.invalidateOnDisplayChange();
-    }
-
-    /** 窓・画面外で項目を省いた（この作り直しで NODE を出していない）箱か。子が動いていて残ると、親相対の原点に使えない。 */
-    public boolean paintCulled;
-    public int dlStart = -1;
-    public int dlEnd = -1;
-    /** この箱が直近の描画で記録された順序（DisplayListBuilder.renderedBoxes 上でのインデックス）。未記録は -1。 */
-    public int dlOrder = -1;
-
-    /** 表示リストスライス範囲をリセットする。 */
-    public void clearDlSlice() {
-        dlStart = -1;
-        dlEnd = -1;
-        dlOrder = -1;
     }
 
     static final java.util.concurrent.atomic.AtomicLong PAINT_EPOCH = new java.util.concurrent.atomic.AtomicLong();
@@ -1584,39 +1567,6 @@ public class LayoutBox {
     /** 描画パイプラインからの DPI スケール更新用。 */
     public void setDevicePixelRatio(float dpr) {
         this.devicePixelRatio = dpr;
-    }
-
-    /** 描画中の部分矩形・fieldset 枠補正に限り、アクションの実行中だけ一時的に外寸・padding/border を差し替え、例外時も必ず元に戻す。 */
-    public void withPaintBounds(float tempX, float tempY, float tempW, float tempH, boolean zeroEdges, Runnable action) {
-        float x0 = this.x, y0 = this.y, w0 = this.w, h0 = this.h;
-        float pl = this.pL, pr = this.pR, pt = this.pT, pb = this.pB;
-        float bl = this.bL, br = this.bR, bt = this.bT, bb = this.bB;
-        this.x = tempX;
-        this.y = tempY;
-        this.w = tempW;
-        this.h = tempH;
-        if (zeroEdges) {
-            this.pL = this.pR = this.pT = this.pB = 0;
-            this.bL = this.bR = this.bT = this.bB = 0;
-        }
-        try {
-            action.run();
-        } finally {
-            this.x = x0;
-            this.y = y0;
-            this.w = w0;
-            this.h = h0;
-            if (zeroEdges) {
-                this.pL = pl;
-                this.pR = pr;
-                this.pT = pt;
-                this.pB = pb;
-                this.bL = bl;
-                this.bR = br;
-                this.bT = bt;
-                this.bB = bb;
-            }
-        }
     }
 
     /** インライン整形で 1 行に置かれた断片（テキスト 1 語、インラインブロック 1 つ、またはインラインボックスの 1 行分）。 */

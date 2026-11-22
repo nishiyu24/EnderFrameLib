@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.dom.node;
 
-
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlComment;
 import com.nishiyu.enderframelib.api.dom.DOMException;
@@ -115,9 +114,6 @@ public class HtmlNode implements Node {
     /** class 属性のトークンを atom にしたもの。属性が変わるたびに 1 回だけ作り直す。 */
     private int[] classAtoms = NO_ATOMS;
     private static final int[] NO_ATOMS = new int[0];
-    /** 対話状態の持ち主とその実体（{@code InteractionState} が使う。節と一緒に回収される）。 */
-    public Object interactionOwner;
-    public Object interactionFlags;
     /** 派生鍵の接頭辞。作者の id にまず現れない文字で始める。 */
     public static final char DERIVED_KEY_PREFIX = '~';
     /** テキスト節の派生鍵の接頭辞（{@code ~t番号}）。描画では文字の節だけ位置を持たないので、鍵から区別できるようにする。 */
@@ -340,9 +336,15 @@ public class HtmlNode implements Node {
         Node prevSibling = (refChild != null) ? refChild.getPreviousSibling() : getLastChild();
         Node nextSibling = refChild;
 
-        // すでに親がある場合は旧親から取り外す
+        // すでに親がある場合は旧親から取り外す（挿入先にもアリーナがあるなら番号と状態を保つ）
         if (newChild.parent != null) {
-            newChild.parent.removeChild(newChild);
+            DocumentArena dstArena = treeArena(false);
+            if (dstArena != null && newChild.hasNodeId()) newChild.movingInArena = true;
+            try {
+                newChild.parent.removeChild(newChild);
+            } finally {
+                newChild.movingInArena = false;
+            }
         }
 
         int insertIndex = refChild != null ? children.indexOf(refChild) : children.size();
@@ -551,7 +553,7 @@ public class HtmlNode implements Node {
         DocumentArena a = child.arena;
         if (a != null && child.nodeId >= 0 && a.owner(child.nodeId) == child) {
             a.detach(child.nodeId);
-            releaseSubtree(child);
+            if (!child.movingInArena) releaseSubtree(child);
         }
         relinkIfNumbered();
     }
@@ -568,11 +570,9 @@ public class HtmlNode implements Node {
         for (HtmlNode c : n.children) releaseSubtree(c);
     }
 
-    /**
-     * 子の並びに本当に載っている節か。描画が作る仮想の節（疑似要素・匿名ボックス・マーカー）は {@code parent} だけを
-     * 持ち、親の {@code children} には載らない。そういう節を親の木のアリーナに数えない。
-     */
+    /** 子の並びに載っている節か。疑似要素・匿名等の仮想節は親の子の並びに載らず番号を持たない。 */
     private boolean listed;
+    private boolean movingInArena;
 
     /** 子の並びを根へ向かって辿った先。仮想の節は自分が根。 */
     HtmlNode treeTop() {
@@ -581,9 +581,10 @@ public class HtmlNode implements Node {
         return top;
     }
 
-    /** 描画が作る仮想の節か（{@code parent} は持つが、親の子の並びには載らない）。アリーナの番号は振らない。 */
+    /** 描画が作る仮想の節か（{@code parent} は持つが親の子の並びには載らない節とその子孫）。アリーナの番号は振らない。 */
     public boolean isVirtualNode() {
-        return parent != null && !listed;
+        HtmlNode top = parent != null && listed ? treeTop() : this;
+        return top.parent != null && !top.listed;
     }
 
     /** アリーナ上に番号を持っているか（番号を振らずに調べる）。 */
@@ -597,8 +598,7 @@ public class HtmlNode implements Node {
 
     /** この節の木（根まで辿った先）のアリーナ。文書の根は常に作る。断片の根は {@code create} のときだけ作り、木ごと番号を振る。 */
     private DocumentArena treeArena(boolean create) {
-        HtmlNode top = this;
-        top = top.treeTop();
+        HtmlNode top = treeTop();
         if (top.rootArena() == null && (create || top instanceof HtmlDocument)) {
             DocumentArena a = top.ensureRootArena();
             if (!(top instanceof HtmlDocument)) numberTree(top, a);
@@ -619,9 +619,16 @@ public class HtmlNode implements Node {
         if (n.arena == a && n.nodeId >= 0 && (a.owner(n.nodeId) == n || a.reclaimStatic(n.nodeId, n))) {
             // 取り戻した番号をそのまま使う
         } else {
+            DocumentArena oldArena = n.arena;
+            int oldId = n.nodeId;
+            boolean migrate = oldArena != null && oldArena != a && oldId >= 0 && oldArena.owner(oldId) == n;
             n.nodeId = a.allocate(n);
             n.arena = a;
             n.derivedKey = null;
+            if (migrate) {
+                oldArena.migrateSlots(oldId, a, n.nodeId);
+                oldArena.free(oldId);
+            }
         }
         n.refreshIdentity();
         if (recurse) for (HtmlNode c : n.children) assignSubtree(c, a, true);
@@ -1365,16 +1372,13 @@ public class HtmlNode implements Node {
         }
 
         DeferredRunnables deferredOutbound = new DeferredRunnables();
-        boolean notPrevented = EventDispatcher.dispatchEvent(
-                this,
-                event,
+        return EventDispatcher.dispatchEvent(this, event,
                 (node, action) -> deferredOutbound.add(() -> sink.run(node, event, action)),
                 (node, declaration) -> deferredOutbound.add(() -> sink.forward(node, event, declaration)),
                 ev -> {
                     deferredOutbound.runAll();
                     if (defaultActions != null) defaultActions.executeDefaultAction(ev);
                 });
-        return notPrevented;
     }
 
     private static final class DeferredRunnables {

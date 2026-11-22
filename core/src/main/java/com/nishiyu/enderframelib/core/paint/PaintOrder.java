@@ -10,7 +10,6 @@ import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
-import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -102,25 +101,21 @@ public final class PaintOrder {
     private List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> cachedScrollInfos;
     private List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> prevScrollInfos;
 
-    // ==========================================
-    // 部分木の保持（チャンク）
-    // ==========================================
-    //
-    // 描画は毎回、全ての箱を分類して描画順のタスクを作り直す。1 か所の文字を変えただけでも、5000 行のリストなら 5000 行ぶんの
-    // 分類木・タスク・ラムダを作り、断片の記憶と突き合わせる（局所更新の約 6 割）。
-    // そこで、小さくて「純粋なフロー」の部分木（スタッキングコンテキスト・位置指定・float・スクロール・アニメーション・表・入力部品を
-    // 含まない）の項目を、層（blocks / inlines）ごとに保持する。部分木のどの箱にも変更印が付いておらず、親・クリップ・親の id・
-    // 箱の数が同じなら、分類も箱の照合も飛ばして、保持した項目をそのまま出す。
-    // 描画順の決まり方は変えない: 部分木の項目は、分類したときと同じ層の同じ位置に出る。
-
-
-    private final ItemProps scratchMovingProps = new ItemProps();
-    private final ItemProps scratchSbProps = new ItemProps();
-    private final ItemProps scratchThumbProps = new ItemProps();
-    private boolean parentRelative;
-    void setParentRelative(boolean parentRelative) {
-        this.parentRelative = parentRelative;
+    /** 現在走査中の、窓・画面外で項目を省いた（NODE を出していない）祖先の箱。 */
+    private LayoutBox[] culledStack = new LayoutBox[16];
+    private int culledDepth;
+    void pushCulled(LayoutBox box) {
+        if (culledDepth == culledStack.length) culledStack = java.util.Arrays.copyOf(culledStack, culledDepth * 2);
+        culledStack[culledDepth++] = box;
     }
+    void popCulled() { culledStack[--culledDepth] = null; }
+    boolean isCulled(LayoutBox box) {
+        for (int i = culledDepth - 1; i >= 0; i--) if (culledStack[i] == box) return true;
+        return false;
+    }
+    private final ItemProps scratchMovingProps = new ItemProps(), scratchSbProps = new ItemProps(), scratchThumbProps = new ItemProps();
+    private boolean parentRelative;
+    void setParentRelative(boolean parentRelative) { this.parentRelative = parentRelative; }
 
     static boolean boxHasOwnNode(LayoutBox b) {
         return b != null && !b.isAnonymous && b.w() > 0 && b.h() > 0 && b.node != null
@@ -128,13 +123,13 @@ public final class PaintOrder {
     }
 
     /** 項目が親として辿る実 {@code ElementType.NODE} を持つ祖先の箱（匿名・root・0サイズ箱はスキップ）。 */
-    static LayoutBox effectiveParentNodeBox(LayoutBox box, String parentId) {
+    LayoutBox effectiveParentNodeBox(LayoutBox box, String parentId) {
         if (parentId == null || box == null) return null;
         for (LayoutBox a = box.parent; a != null; a = a.parent) {
             if (a.node != null && "root".equals(a.node.tag)) return null;
             if (a.isAnonymous) continue;
-            // 窓で項目を省いた祖先（paintCulled）の NODE は表示リストに無い。子はその親を引けず根の座標で描かれるので、原点は 0（絶対）
-            return boxHasOwnNode(a) && !a.paintCulled ? a : null;
+            // 窓で項目を省いた祖先（isCulled）の NODE は表示リストに無い。子はその親を引けず根の座標で描かれるので、原点は 0（絶対）
+            return boxHasOwnNode(a) && !isCulled(a) ? a : null;
         }
         return null;
     }
@@ -348,6 +343,10 @@ public final class PaintOrder {
      */
     /** 1 回の描画の前処理（部分木の記録・スクロールの節・クリップの表を空にする）。{@link #paintTasks} と断片の経路が共有する。 */
     void beginPass() {
+        if (culledDepth > 0) {
+            java.util.Arrays.fill(culledStack, 0, culledDepth, null);
+            culledDepth = 0;
+        }
         fragIds.set(0);
         scrollContentOf.clear();
         scrollContents.clear();

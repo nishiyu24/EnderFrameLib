@@ -1,17 +1,14 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.media.ImageChoice;
-import com.nishiyu.enderframelib.core.media.ImageSources;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
-import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.paint.model.*;
-
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-
+import com.nishiyu.enderframelib.core.media.ImageChoice;
+import com.nishiyu.enderframelib.core.media.ImageSources;
+import com.nishiyu.enderframelib.core.paint.model.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -330,23 +327,21 @@ public final class BoxDecorations {
 
     /** {@code border-box} / {@code padding-box} / {@code content-box} の矩形。 */
     public static Rect boxArea(LayoutBox box, String which) {
-        float x = box.x(), y = box.y(), w = box.w(), h = box.h();
-        if ("padding-box".equals(which) || "content-box".equals(which)) {
-            x += box.bL(); y += box.bT(); w -= box.bL() + box.bR(); h -= box.bT() + box.bB();
-        }
-        if ("content-box".equals(which)) {
-            x += box.pL(); y += box.pT(); w -= box.pL() + box.pR(); h -= box.pT() + box.pB();
-        }
+        return boxArea(box.x(), box.y(), box.w(), box.h(), box.bL(), box.bT(), box.bR(), box.bB(),
+                box.pL(), box.pT(), box.pR(), box.pB(), which);
+    }
+
+    /** {@code border-box} / {@code padding-box} / {@code content-box} の矩形。 */
+    public static Rect boxArea(float x, float y, float w, float h, float bL, float bT, float bR, float bB,
+                               float pL, float pT, float pR, float pB, String which) {
+        if ("padding-box".equals(which) || "content-box".equals(which)) { x += bL; y += bT; w -= bL + bR; h -= bT + bB; }
+        if ("content-box".equals(which)) { x += pL; y += pT; w -= pL + pR; h -= pT + pB; }
         return new Rect(x, y, Math.max(0, w), Math.max(0, h));
     }
 
     /** 1 レイヤーに並べるタイルの上限（巨大な箱に小さな画像を敷き詰めても要素が爆発しないように）。 */
     static final int MAX_TILES = 400;
 
-    /**
-     * レイヤーのタイルを並べる。{@code intrinsic} は画像の固有サイズ（不明・グラデーションなら null）。
-     * 返すタイルは描画領域（{@code background-clip} の箱）と重なるものだけで、描画側はさらにその箱で切る。
-     */
     private static final String[] REPEAT_BOTH = {"repeat", "repeat"};
     private static final String[] REPEAT_NO = {"no-repeat", "no-repeat"};
     private static final String[] REPEAT_X_PAIR = {"repeat", "no-repeat"};
@@ -359,8 +354,12 @@ public final class BoxDecorations {
 
     public static List<Rect> tiles(BackgroundLayer layer, LayoutBox box, int[] intrinsic, float rootW, float rootH,
                                    float fontSize, float rootFontSize) {
-        Rect area = boxArea(box, layer.origin());
-        Rect paint = boxArea(box, layer.clip());
+        return tiles(layer, boxArea(box, layer.origin()), boxArea(box, layer.clip()),
+                intrinsic, rootW, rootH, fontSize, rootFontSize);
+    }
+
+    public static List<Rect> tiles(BackgroundLayer layer, Rect area, Rect paint, int[] intrinsic, float rootW, float rootH,
+                                   float fontSize, float rootFontSize) {
         if (area.w() <= 0 || area.h() <= 0 || paint.w() <= 0 || paint.h() <= 0) return List.of();
 
         float[] scratch = SCRATCH_PAIR.get();
