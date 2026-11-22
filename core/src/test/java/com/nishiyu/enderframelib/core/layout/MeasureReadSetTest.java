@@ -328,6 +328,7 @@ class MeasureReadSetTest {
         firstText(fv, "ft").setData("longunbreakablewordwideword");
         signatures(fv);
         fv.resize(60, 120);
+        com.nishiyu.enderframelib.common.ResizeSettle.flushUntilApplied(fv); // リサイズの反映は実時間で間引かれる（§6-178）
         assertEquals(
                 signatures(new StandaloneView(String.format(fitHtml, "longunbreakablewordwideword"), 60, 120, FontResolver.FALLBACK)),
                 signatures(fv));

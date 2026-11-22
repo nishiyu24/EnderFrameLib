@@ -86,6 +86,7 @@ class IncrementalVsFullTest {
             v.frame(now += 16, be, true);
             change.accept(v);
             v.frame(now += 16, be, true);
+            ResizeSettle.frameUntilApplied(v, be, now); // リサイズの反映は実時間で間引かれる（§6-178）
             List<String> incremental = v.items().stream().map(MutationScenario::sig).toList();
             v.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
             v.frame(now, be, true);

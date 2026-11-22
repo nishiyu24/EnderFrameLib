@@ -105,6 +105,7 @@ class GoldenFrameTest {
                         v.frame(t += 500, sw, true);
                         try { Thread.sleep(40); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                     }
+                    com.nishiyu.enderframelib.common.ResizeSettle.frameUntilApplied(v, sw, t); // 6 フレームで反映されなかった場合も待つ（§6-178）
                     record(out, doc + "/resize" + w, v, sw, t += 500);
                 }
                 v.invalidate();
