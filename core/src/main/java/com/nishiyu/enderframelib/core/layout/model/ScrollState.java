@@ -14,6 +14,11 @@ import java.util.WeakHashMap;
 public class ScrollState {
     private final Map<HtmlNode, float[]> offsetsByNode = Collections.synchronizedMap(new WeakHashMap<>());
 
+    /** どれかのスクロール位置が変わるたびに増える版（全面共通。配置の記憶が「子孫のスクロールが前回のまま」を 1 回の比較で確かめる。C9）。 */
+    private static final java.util.concurrent.atomic.AtomicInteger VERSION = new java.util.concurrent.atomic.AtomicInteger();
+
+    public static int version() { return VERSION.get(); }
+
     /** 一度でも位置が書かれたか。書かれていなければ、レイアウトが箱ごとに引く同期付きの弱参照の表を見ずに 0 を返す。 */
     private volatile boolean anyScroll;
 
@@ -35,9 +40,11 @@ public class ScrollState {
         synchronized (offsetsByNode) {
             float[] cur = offsetsByNode.get(node);
             if (cur != null) {
+                if (cur[0] != x || cur[1] != y) VERSION.incrementAndGet();
                 cur[0] = x;
                 cur[1] = y;
             } else {
+                if (x != 0f || y != 0f) VERSION.incrementAndGet();
                 offsetsByNode.put(node, new float[]{x, y});
             }
         }
@@ -82,6 +89,7 @@ public class ScrollState {
     }
 
     public void clear() {
+        VERSION.incrementAndGet();
         offsetsByNode.clear();
         anyScroll = false;
     }

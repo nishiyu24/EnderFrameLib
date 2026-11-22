@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.kernel.Shortcut;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,11 +21,14 @@ final class PlacementMemo {
     private static final byte F_PURE = 1 << 1;
     private static final byte F_KEPT_PURE = 1 << 2;
     private static final byte F_HAS_FLOAT_CHILD = 1 << 3;
+    /** 部分木に（自分以外の）スクロールコンテナがあり、保持できるのは {@link #scrollVersion} がスクロール量の版と同じときだけ（C9）。 */
+    private static final byte F_SCROLL_DEP = 1 << 4;
 
     private static final LongAdder LAYOUTS_SKIPPED = new LongAdder();
     private static final LongAdder LAYOUTS_SHIFTED = new LongAdder();
 
     private byte flags;
+    private int scrollVersion;
     private float lastScrollX = Float.NaN, lastScrollY = Float.NaN;
     private float lastLayoutX = Float.NaN, lastLayoutY = Float.NaN;
     private float lastLayoutOuterW = Float.NaN, lastLayoutOuterH = Float.NaN;
@@ -52,13 +56,13 @@ final class PlacementMemo {
     void invalidateOnDisplayChange() {
         lastLayoutX = Float.NaN;
         lastLayoutY = Float.NaN;
-        flags &= ~(F_PURE | F_KEPT_PURE | F_VALID);
+        flags &= ~(F_PURE | F_KEPT_PURE | F_SCROLL_DEP | F_VALID);
     }
 
     private void onReset(boolean full) {
         flags &= ~F_VALID;
         if (full) {
-            flags &= ~(F_PURE | F_KEPT_PURE);
+            flags &= ~(F_PURE | F_KEPT_PURE | F_SCROLL_DEP);
             lastLayoutX = Float.NaN;
         }
     }
@@ -137,10 +141,12 @@ final class PlacementMemo {
         lastLayoutMR = box.mR;
         lastLayoutMT = box.mT;
         lastLayoutMB = box.mB;
-        boolean pure = !hasLegend && subtreeIsSelfContained(box, true);
-        boolean kept = pure || (!hasLegend && box.isScrollContainer() && subtreeIsSelfContained(box, false));
+        int below = hasLegend ? IMPURE : selfContained(box, false); // 自分のスクロールは tryReuseOrShift が比べるので数えない
+        boolean pure = below == PURE && !box.isScrollContainer();
         setFlag(F_PURE, pure);
-        setFlag(F_KEPT_PURE, kept);
+        setFlag(F_KEPT_PURE, below != IMPURE);
+        setFlag(F_SCROLL_DEP, below == SCROLL_DEP);
+        scrollVersion = ScrollState.version();
         if (box.isScrollContainer()) {
             lastScrollX = scrollXAtPlacement;
             lastScrollY = scrollYAtPlacement;
@@ -148,22 +154,26 @@ final class PlacementMemo {
         setFlag(F_VALID, true);
     }
 
-    private static boolean subtreeIsSelfContained(LayoutBox box, boolean selfScrollBreaks) {
-        if (box.isAbsolute || box.isFixed || box.isRelative || box.isSticky
-                || (selfScrollBreaks && box.isScrollContainer()) || box.floatSpace != null
+    /** 部分木の純粋性: 外の状態に依らず置ける（{@code PURE}）・スクロール量が前回のままなら置ける（{@code SCROLL_DEP}）・どちらでもない（{@code IMPURE}）。 */
+    private static final int IMPURE = 0, PURE = 1, SCROLL_DEP = 2;
+
+    private static int selfContained(LayoutBox box, boolean selfScrollBreaks) {
+        if (box.isAbsolute || box.isFixed || box.isRelative || box.isSticky || box.floatSpace != null
                 || LayoutBox.isTableBox(box) || box.collapsedBorders != null
                 || box.style.facts().floating) {
-            return false;
+            return IMPURE;
         }
+        int level = selfScrollBreaks && box.isScrollContainer() ? SCROLL_DEP : PURE;
         List<LayoutBox> kids = box.children;
         for (int i = 0, n = kids.size(); i < n; i++) {
             LayoutBox child = kids.get(i);
             if (child.style.facts().displayNone) continue;
             PlacementMemo cpm = child.placementMemo;
-            boolean laidOutByLayout = cpm != null && cpm.isLaidOut();
-            if (laidOutByLayout ? !cpm.isPure() : !subtreeIsSelfContained(child, true)) return false;
+            int r = cpm != null && cpm.isLaidOut() ? (cpm.isPure() ? PURE : cpm.isKeptPure() ? SCROLL_DEP : IMPURE) : selfContained(child, true);
+            if (r == IMPURE) return IMPURE;
+            level = Math.max(level, r);
         }
-        return true;
+        return level;
     }
 
     private static boolean canKeepPlacement(LayoutBox box, long run) {
@@ -173,7 +183,7 @@ final class PlacementMemo {
     private static boolean canKeepPlacement(LayoutBox box, long run, boolean floatsOrOffset) {
         PlacementMemo pm = box.placementMemo;
         return pm != null && Shortcut.KEEP_PLACEMENTS.on()
-                && pm.flag(F_KEPT_PURE) && pm.flag(F_VALID)
+                && pm.flag(F_KEPT_PURE) && pm.flag(F_VALID) && (!pm.flag(F_SCROLL_DEP) || pm.scrollVersion == ScrollState.version())
                 && box.measureMemo.isValid() && box.measureMemo.measuredRun() != run
                 && !box.measureMemo.isLayoutChanged() && !box.measureMemo.isSubtreeChanged()
                 && box.parent != null && box.parent.display != null
