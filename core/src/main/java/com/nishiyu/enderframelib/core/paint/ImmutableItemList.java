@@ -68,6 +68,55 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
         return new ImmutableItemList(chunks, n, clock);
     }
 
+    /** 配列 {@code src[0..n)} を持つ不変リストを返す（{@code prev} が同じサイズなら未変更ブロックを共有する）。 */
+    static ImmutableItemList fromArray(ImmutableItemList prev, DisplayItem[] src, int n) {
+        if (prev != null && prev.size == n) {
+            return patchArray(prev, src);
+        }
+        int numChunks = (n + CHUNK_MASK) >>> CHUNK_SHIFT;
+        ChunkClock clock = new ChunkClock(numChunks);
+        DisplayItem[][] chunks = new DisplayItem[numChunks][];
+        for (int c = 0; c < numChunks; c++) {
+            int base = c << CHUNK_SHIFT;
+            int len = Math.min(CHUNK_SIZE, n - base);
+            DisplayItem[] block = new DisplayItem[len];
+            for (int j = 0; j < len; j++) {
+                DisplayItem it = src[base + j];
+                block[j] = it;
+                it.attach(clock, base + j);
+            }
+            chunks[c] = block;
+        }
+        return new ImmutableItemList(chunks, n, clock);
+    }
+
+    private static ImmutableItemList patchArray(ImmutableItemList prev, DisplayItem[] src) {
+        int n = prev.size;
+        DisplayItem[][] oldChunks = prev.chunks;
+        DisplayItem[][] nextChunks = null;
+        int numChunks = oldChunks.length;
+        for (int c = 0; c < numChunks; c++) {
+            DisplayItem[] ob = oldChunks[c];
+            int base = c << CHUNK_SHIFT;
+            int len = ob.length;
+            DisplayItem[] nb = null;
+            for (int j = 0; j < len; j++) {
+                DisplayItem cur = src[base + j];
+                if (ItemDiff.replaced(ob[j], cur)) {
+                    if (nb == null) nb = Arrays.copyOf(ob, len);
+                    nb[j] = cur;
+                    cur.attach(prev.clock, base + j);
+                }
+            }
+            if (nb != null) {
+                if (nextChunks == null) nextChunks = oldChunks.clone();
+                nextChunks[c] = nb;
+            }
+        }
+        if (nextChunks != null) return new ImmutableItemList(nextChunks, n, prev.clock);
+        return prev.clock.maxPaintEpoch() > prev.epoch ? new ImmutableItemList(oldChunks, n, new Object(), prev.clock) : prev;
+    }
+
     private static ImmutableItemList patch(ImmutableItemList prev, List<DisplayItem> src) {
         int n = prev.size;
         DisplayItem[][] oldChunks = prev.chunks;

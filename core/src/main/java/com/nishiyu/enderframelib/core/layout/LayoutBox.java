@@ -689,7 +689,7 @@ public class LayoutBox {
     static final java.util.concurrent.atomic.AtomicLong PAINT_EPOCH = new java.util.concurrent.atomic.AtomicLong();
     /** 最後に描画入力が書き換わりうる地点を通った時の通し番号。新しい箱は常に新しい。 */
     long paintStamp = PAINT_EPOCH.incrementAndGet();
-    volatile int layoutDirty; long layoutSig; LayoutBox[] settledKids; java.util.concurrent.ConcurrentLinkedQueue<LayoutBox> ledger; // PaintStamps の箱ごとの状態（ledger は根の箱だけ）
+    volatile int layoutDirty; long layoutSig; LayoutBox[] settledKids; int settledKidCount; volatile LayoutBox dirtyHead; LayoutBox dirtyNext; volatile PaintStamps.DirtyKids dirtyKids; // PaintStamps の箱ごとの状態（dirtyHead は根の箱だけ）
 
     /** 現在の通し番号（これ以下の印は、いまの描画に反映済みとみなせる）。 */
     public static long paintEpoch() {
@@ -697,8 +697,8 @@ public class LayoutBox {
     }
 
     /** 自分と子孫の {@link #paintStamp} の最大値（{@link #touchPaint} が祖先へ伝える）。部分木の描画の記憶が「子孫が変わっていない」を O(1) で言うため。 */
-    private volatile long subtreeStamp = paintStamp;
-    private static final java.util.concurrent.atomic.AtomicLongFieldUpdater<LayoutBox> SUBTREE_STAMP =
+    volatile long subtreeStamp = paintStamp;
+    static final java.util.concurrent.atomic.AtomicLongFieldUpdater<LayoutBox> SUBTREE_STAMP =
             java.util.concurrent.atomic.AtomicLongFieldUpdater.newUpdater(LayoutBox.class, "subtreeStamp");
 
     public long subtreePaintStamp() {
@@ -709,7 +709,7 @@ public class LayoutBox {
      * これまでに描いた描画の通し番号（{@link #noteRendered}）の最大値。祖先の部分木の印がこれより新しければ、前回の描画のあとにすでに
      * 印が付いている（その祖先より上も付いている）ので、伝播を止める。1 フレームで何千もの箱が触られても、伝播はほぼ O(1) になる。
      */
-    private static volatile long renderBoundary;
+    static volatile long renderBoundary;
 
     /** 描画を始めた（記憶を作る）時点の通し番号を覚える。記憶の「作った時」はこの値以下になる。 */
     public static void noteRendered(long epoch) {
@@ -729,12 +729,7 @@ public class LayoutBox {
     }
 
     void bubbleSubtreeStamp(long s) {
-        long boundary = renderBoundary;
-        for (LayoutBox a = this; a != null; a = a.parent) {
-            long cur = a.subtreeStamp;
-            if (a != this && cur > boundary) return; // 祖先は、前回の描画のあとにすでに印が付いている
-            while (cur < s && !SUBTREE_STAMP.compareAndSet(a, cur, s)) cur = a.subtreeStamp; // 並列の layout から呼ばれる。大きい方を残す
-        }
+        PaintStamps.bubbleSubtreeStamp(this, s);
     }
 
     /**
@@ -765,9 +760,10 @@ public class LayoutBox {
      */
     public void updateStyle(ComputedStyle newStyle) {
         ComputedStyle before = this.style;
-        if (before != null && newStyle != before && display != null && java.util.Objects.equals(node.text, displaySource)
-                && before.fontSizePx() == newStyle.fontSizePx() && before.rootFontSizePx() == newStyle.rootFontSizePx()
-                && ComputedStyle.sameDeclarations(before, newStyle)) {
+        if (before != null && display != null && java.util.Objects.equals(node.text, displaySource)
+                && (newStyle == before || (before.fontSizePx() == newStyle.fontSizePx()
+                    && before.rootFontSizePx() == newStyle.rootFontSizePx()
+                    && ComputedStyle.sameDeclarations(before, newStyle)))) {
             this.style = newStyle; // 宣言が同じなら配置も描画も変わらない。印は進めない（疑似要素の変化は resolveHighlightPseudos が印を進める）
             return;
         }

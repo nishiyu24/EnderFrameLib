@@ -21,7 +21,7 @@ class SliceWriteSiteRatchetTest {
     /** 書き込み箇所（代入・複合代入・増減・{@code clearDlSlice()} の呼び出し）の上限。ここに無いファイルは 0。 */
     private static final Map<String, Integer> LIMITS = Map.of(
             // B 案: 断片の経路が旧経路の executeTasks と同じ記録を書く（旧経路の削除で、この行と DisplayListBuilder の書き込みが消える）
-            "core/paint/FragmentPaint.java", 8,
+            "core/paint/FragmentPaint.java", 2,
             "core/layout/LayoutBox.java", 7);
 
     private static final Pattern WRITE = Pattern.compile(

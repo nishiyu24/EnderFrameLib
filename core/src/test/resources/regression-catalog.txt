@@ -50,6 +50,7 @@ e626eb7 | CpuFallbackOfRareShapesTest#cpuFallbackShapeKeepsTheDrawingOrderBetwee
 §6-125 | NoHtmlSiteTest#buildsAndInteractsWithFullSiteWithoutAnyHtml | ノードの鍵が変わった箱で、古い id・鍵の項目の記憶が当たっていた（箱の項目の検証 VERIFY_BOX_MEMO が見つけた）
 
 §6-131 | WorkerContextPropagationTest#parallelLayoutInAScopedContextMatchesSerialLayout | 並列のワーカーが面の文脈を引き継がず、面に登録した置換要素を取り違えて並列と直列の結果がずれた
+§6-164, C1p | FragmentPaintC1pTest#flexToBlockParentSwitchReclassifiesUnmovedChildKind, MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout | 親の flex/grid↔block 切替で位置・スタイル不変の子の Fragment.Kind（ATOMIC↔BLOCK 等）が変わるのに FragmentPaint.Memo の鍵に isFlexOrGridItem が無く描画順がずれた
 
 # --- ヒットテスト ---
 §6-95, T2 | HitTestFrameClockTest#animatedElementIsHitWhereItWasDrawnAtTheFrameTime | ヒットテストが描画と別の時計（壁時計）でアニメーションを評価し、当たる位置が見えている位置とずれた

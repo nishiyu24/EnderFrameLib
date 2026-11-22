@@ -626,6 +626,32 @@ JFR で、時間と確保の原因を測ってから直した。
 
 **構造の変更の下限（C4 の対象）**: 子の挿入で後続の兄弟が全て動く（`layoutsShifted` 約 1,750/フレーム）と、親相対の座標が変わるので、動いた箱ごとに項目を作り直す（箱ごとの記憶の平行移動＋断片）。これは断片の記憶では消えず、配置を親相対の不変の結果にする **C4** で消える。C1p の残りは、兄弟の走査（large-2000 の表示リスト `0.07 ms`）と、全面の再レイアウトの確保（showcase `resizeexact` 約 `0.5 ms`・`290 KB`）。
 
+### 19.5 C1p の第 2 弾（2026-11-22。完了）
+
+パッチを足さず（`PatchSiteRatchetTest`・`ShortcutSwitchRatchetTest` 維持）、記憶の粒度と組み立てのホットパスの確保を 3 本柱＋オーバーヘッド削減で回収した。
+
+- **第 1 柱（祖先の項目再利用・永続ベクタの増分・子の配列の再利用）**: `FragmentPaint.buildFresh` の子の文脈一致判定（`kidsCtxOk`）を親自身のスタイル・項目の再利用（`ownReusable`）から切り離し、`class`/文字変更された子の祖先で `Fragment.own` が不要に作り直される無駄を除去した。子の挿入・削除は `FragSeq.Vec`（32 分岐永続木）の `insert` / `remove` と `Fragment.aggregateDiff`（疎 `set` + 継ぎ木）で組み、`FragSeq.Layered` に錨の実体・`span` キャッシュを持たせて不変のレイヤー錨を使い回す。親の `Memo.kids` / `kidMemos` と前後のプレフィックス／サフィックス整列で配列を再利用。
+- **第 2 柱（多兄弟の部分木スキップ。`DIRTY_MIN_KIDS = 64`）**: `LayoutBox` / `PaintStamps` に Treiber スタック式の汚れた親の連結リスト（`dirtyHead` / `dirtyNext`）と親ごとの汚れ配列 `DirtyKids`（上限 8 件、溢れや `position: absolute` 変更・`nullFlip`・`AttributeMap.treeNonStyleAttrVersion` 変化時は通常経路へフォールバック）を持たせ、`Fragment` の `bigKids`（32 分岐チャンク）＋ `replaceChunks` / `aggregateReplaced` により未変更兄弟の走査を飛ばして O(dirtyCount) で親の断片を組み直す。64 フレームごとの GC スイープ時は `refreshKidPasses` で飛ばした子の `pass` も更新して誤回収を防ぐ。
+- **第 3 柱（部分木単位のビューポート感度）**: `FragmentPaint.Memo` が `selfVpSensitive` / `subtreeVpSensitive` を記憶し、非カリングのリサイズ（`memoFrameKey` が `rootW`/`rootH` を鍵から外す）では `memos.clear()` をせず固定寸法の部分木をそのまま再利用する。
+- **ホットパスと境界書き込みの整理**: `DisplayListBuilder.flatBuf` へ `FragmentPaint.paintInto` が直接展開して `ImmutableItemList.fromArray` で包み、`prevOwn` 渡しを `ArrayView`（非確保）、作業配列を深さごとの `FrameScratch`、`Fragment.EMPTY` を単一例にした。死んでいた `LayoutBox.{dlStart, dlEnd, dlOrder}` 書き込みを削除して `SliceWriteSiteRatchetTest` の上限を `8 → 2`（`paintCulled` の 2 か所のみ）へ下げ、`LayoutBox.updateStyle` の `newStyle == before` 短絡と `textPropsForStyle` 再利用を入れた。
+- **差分ファズが見つけた鍵漏れ**: `nested/39` 手 33（親 `n4` の `display: flex → block` 切替で位置・スタイル不変の子 `d1` が `ATOMIC → BLOCK` に変わるのに古い `Fragment` を返した）を受け、`PaintSupport.isFlexOrGridItem` が読む親の `display.inner()` 依存を `Memo.flexOrGridItem`（`sameContextCheap`）と `Memo.flexOrGridContainer`（`kidsCtxOk`）へ追加した。
+
+実測結果（2026-11-22。`FineProfileMain` `null` バックエンド、および `:core:costGate` 56 シナリオ基準値）:
+
+| シナリオ | `FineProfileMain`（frame / dl / alloc） | `costGate` 確保（C1p 前 → C1p 後） |
+| :-- | :-- | :--: |
+| showcase `hover` (2000f) | `0.0612 ms` (`p50 0.0489`) / dl `0.039 ms` / `8.7 KB` | `32,559 → 9,046 B`（`-72%`） |
+| showcase `style` (2000f) | `0.0873 ms` / dl `0.041 ms` / `12.8 KB` | `21,470 → 13,465 B`（`-37%`） |
+| showcase `text` (2000f) | `0.1086 ms` / dl `0.042 ms` / `10.7 KB` | `20,874 → 11,039 B`（`-47%`） |
+| showcase `resizeexact` (1000f) | `0.5550 ms` / dl `0.337 ms` / `241.7 KB` (`hits 6,397`) | `473,861 → 248,287 B`（`-48%`） |
+| large-list-2000 `hover` (1000f) | `0.1271 ms` / dl **`0.031 ms`** (`p50 0.020`) / `2.4 KB` | `10,260 → 2,457 B`（`-76%`） |
+| large-list-2000 `style` (1000f) | `0.1663 ms` / dl `0.036 ms` / `7.5 KB` | `15,240 → 7,753 B`（`-49%`） |
+| large-list-2000 `text` (1000f) | `0.2641 ms` / dl `0.027 ms` / `7.7 KB` | `13,434 → 5,650 B`（`-58%`） |
+| large-list-2000 `child` (400f) | `2.1132 ms` / dl `1.252 ms` / `143.7 KB` (`hits 249,000`) | `162,860 → 43,074 B`（`-74%`） |
+| voidwave.html `hover` (1000f) | `0.1854 ms` / dl `0.140 ms` / `25.3 KB` | `96,718 → 25,983 B`（`-73%`） |
+
+残る構造変更の下限（`large-list-2000` `child` で動く後続兄弟 `layoutsShifted 1,751`/フレームの再構築）は **C4**（親相対の配置）で回収する。`PathPredictionTest` の取りこぼしは `1,104 → 266`（不健全 0）へ下がった。
+
 ---
 
 ## 20. 再利用の仕組みの統合と、無効化の鍵（C1m。2026-11-22）

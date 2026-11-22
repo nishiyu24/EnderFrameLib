@@ -1,13 +1,17 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
- * 描画の印の確定（ENGINE_REARCHITECTURE_PLAN C7 ②）。レイアウトは、出力を書きうる地点を通るたびに箱へ「仮の印」を付ける
+ * 描画の印の確定（ENGINE_REARCHITECTURE_PLAN C7 ②・C1p）。レイアウトは、出力を書きうる地点を通るたびに箱へ「仮の印」を付ける
  * （{@link LayoutBox#touchLayout}・子の増減の {@code touchSubtree}）。印（{@link LayoutBox#touchPaint}）はすぐには進めず、
  * 描画の直前に {@link #settle} が、出力の署名・子の並びが前回の確定と違う箱だけ本当の印にする。測定・配置は結果が同じでも
  * 書きうる地点を通るので、すぐに印を進めると、変わっていない箱まで描画の記憶が外れる（予測テストの取りこぼしの約 8 割）。
+ *
+ * <p>また、子が {@link #DIRTY_MIN_KIDS} 以上ある親には、前回の描画以降に印が付いた子の短いリスト（{@link DirtyKids}）を
+ * 記録し、表示リストの再構築で変わらない大多数の兄弟を走査せずに飛ばせるようにする（C1p）。</p>
  *
  * <p>前提: 描画が読む出力の書き込みは、必ず仮の印の後にある。署名は描画が読む出力の上位集合にしておく（足りないと古い項目が出る。
  * {@code PathPredictionTest}・{@code OwnItemsVerifier} が見張る）。</p>
@@ -16,45 +20,127 @@ public final class PaintStamps {
     private PaintStamps() {}
 
     static final int DIRTY_LAYOUT = 1, DIRTY_STRUCTURE = 2;
+    /** 変わった子のリストを保持し始める子の数（{@code FragmentPaint} / {@code Fragment} のチャンク・B 木境界と合わせる）。 */
+    public static final int DIRTY_MIN_KIDS = 64;
+    /** 親 1 つあたり保持する変わった子の最大数（超えたら通常の全子走査へ戻す）。 */
+    public static final int DIRTY_CAP = 8;
+
     private static final AtomicIntegerFieldUpdater<LayoutBox> DIRTY =
             AtomicIntegerFieldUpdater.newUpdater(LayoutBox.class, "layoutDirty");
+    private static final AtomicReferenceFieldUpdater<LayoutBox, LayoutBox> DIRTY_HEAD =
+            AtomicReferenceFieldUpdater.newUpdater(LayoutBox.class, LayoutBox.class, "dirtyHead");
+
+    /** 兄弟の多い親が保持する、前回描画以降に印が付いた子のエポック付き記録。 */
+    static final class DirtyKids {
+        final LayoutBox[] items = new LayoutBox[DIRTY_CAP];
+        int count;
+        long sinceEpoch;
+        long lastEpoch;
+        volatile long overflowEpoch;
+    }
 
     /** レイアウトが出力を書きうる地点を通った仮の印。 */
     public static void touchLayout(LayoutBox box) {
         mark(box, DIRTY_LAYOUT);
     }
 
-    /** 並列のレイアウトから呼ばれる。同じ箱は、確定までに 1 回だけ待ち行列へ入る。 */
+    /** 並列のレイアウトから呼ばれる。同じ箱は、確定までに 1 回だけ待ちリストへ入る。 */
     static void mark(LayoutBox box, int bit) {
         for (;;) {
             int cur = box.layoutDirty;
             if ((cur & bit) != 0) return;
             if (DIRTY.compareAndSet(box, cur, cur | bit)) {
-                if (cur == 0) ledgerOf(box).add(box);
+                if (cur == 0) push(box);
                 return;
             }
         }
     }
 
-    /** 文書（根の箱）ごとの待ち行列。ビューが別スレッドで動いても互いの確定に干渉せず、文書が消えれば行列も消える。 */
-    private static ConcurrentLinkedQueue<LayoutBox> ledgerOf(LayoutBox box) {
+    /** 文書（根の箱）の侵入型ロックフリー単方向リストへ積む（ノード・配列確保なし）。 */
+    private static void push(LayoutBox box) {
         LayoutBox root = box;
         while (root.parent != null) root = root.parent;
-        ConcurrentLinkedQueue<LayoutBox> q = root.ledger;
-        if (q == null) {
-            synchronized (root) {
-                q = root.ledger;
-                if (q == null) root.ledger = q = new ConcurrentLinkedQueue<>();
+        for (;;) {
+            LayoutBox h = root.dirtyHead;
+            box.dirtyNext = h;
+            if (DIRTY_HEAD.compareAndSet(root, h, box)) return;
+        }
+    }
+
+    /** {@code start} と祖先の部分木の印を進め、兄弟の多い親には変わった子を書き留める。 */
+    static void bubbleSubtreeStamp(LayoutBox start, long s) {
+        long boundary = LayoutBox.renderBoundary;
+        LayoutBox prev = null;
+        for (LayoutBox a = start; a != null; a = a.parent) {
+            // 既にこのフレーム内で印が付いた親でも、別の枝の子は必ず記録してから打ち切る
+            if (prev != null && a.children.size() >= DIRTY_MIN_KIDS) {
+                recordDirtyKid(a, prev, s, boundary);
+            }
+            long cur = a.subtreeStamp;
+            if (a != start && cur > boundary) return;
+            while (cur < s && !LayoutBox.SUBTREE_STAMP.compareAndSet(a, cur, s)) cur = a.subtreeStamp;
+            prev = a;
+        }
+    }
+
+    private static void recordDirtyKid(LayoutBox parent, LayoutBox child, long s, long boundary) {
+        DirtyKids fast = parent.dirtyKids;
+        if (fast != null && fast.overflowEpoch > boundary) return;
+        synchronized (parent) {
+            DirtyKids dk = parent.dirtyKids;
+            if (dk == null) {
+                dk = new DirtyKids();
+                dk.sinceEpoch = boundary;
+                parent.dirtyKids = dk;
+            } else if (dk.lastEpoch <= boundary && dk.overflowEpoch <= boundary) {
+                if (dk.count > 0) Arrays.fill(dk.items, 0, dk.count, null);
+                dk.count = 0;
+                dk.sinceEpoch = boundary;
+            }
+            if (dk.overflowEpoch > boundary) return;
+            for (int i = 0; i < dk.count; i++) {
+                if (dk.items[i] == child) {
+                    if (s > dk.lastEpoch) dk.lastEpoch = s;
+                    return;
+                }
+            }
+            if (dk.count < DIRTY_CAP) {
+                dk.items[dk.count++] = child;
+                if (s > dk.lastEpoch) dk.lastEpoch = s;
+            } else {
+                Arrays.fill(dk.items, 0, dk.count, null);
+                dk.count = 0;
+                dk.overflowEpoch = s;
             }
         }
-        return q;
+    }
+
+    /**
+     * 記憶の時点 {@code epoch} 以降に印が付いた {@code parent} の子を {@code out} に写し、件数を返す。
+     * 溢れ・別描画器によるリセット等で完全な記録が無ければ {@code -1}（呼び出し側は全子を走査する）。
+     */
+    public static int copyDirtyKidsSince(LayoutBox parent, long epoch, LayoutBox[] out) {
+        DirtyKids dk = parent.dirtyKids;
+        if (dk == null) return -1;
+        synchronized (parent) {
+            if (dk.overflowEpoch > epoch || dk.sinceEpoch > epoch) return -1;
+            int n = 0;
+            for (int i = 0; i < dk.count; i++) {
+                LayoutBox c = dk.items[i];
+                if (c != null && c.subtreePaintStamp() > epoch) out[n++] = c;
+            }
+            return n;
+        }
     }
 
     /** 描画の直前に、描く木の箱 {@code anyBox} から呼ぶ。仮の印の付いた箱のうち、出力が変わった箱だけ本当の印にする。 */
     public static void settle(LayoutBox anyBox) {
-        ConcurrentLinkedQueue<LayoutBox> pending = ledgerOf(anyBox);
-        LayoutBox b;
-        while ((b = pending.poll()) != null) {
+        LayoutBox root = anyBox;
+        while (root.parent != null) root = root.parent;
+        LayoutBox head = DIRTY_HEAD.getAndSet(root, null);
+        for (LayoutBox b = head; b != null; ) {
+            LayoutBox next = b.dirtyNext;
+            b.dirtyNext = null;
             int bits = b.layoutDirty;
             b.layoutDirty = 0;
             boolean touched = false;
@@ -67,14 +153,21 @@ public final class PaintStamps {
                 }
             }
             if ((bits & DIRTY_STRUCTURE) != 0) { // 子の並びが前回の確定と違うときだけ、祖先の部分木の印へ伝える
+                int n = b.children.size();
                 LayoutBox[] was = b.settledKids;
-                boolean same = was != null && was.length == b.children.size();
-                for (int i = 0; same && i < was.length; i++) same = was[i] == b.children.get(i);
+                boolean same = was != null && b.settledKidCount == n;
+                for (int i = 0; same && i < n; i++) same = was[i] == b.children.get(i);
                 if (!same) {
-                    b.settledKids = b.children.toArray(new LayoutBox[0]);
+                    if (was == null || was.length < n) {
+                        was = b.settledKids = new LayoutBox[Math.max(n, Math.max(16, n + (n >> 3)))];
+                    }
+                    for (int i = 0; i < n; i++) was[i] = b.children.get(i);
+                    if (b.settledKidCount > n) Arrays.fill(was, n, b.settledKidCount, null);
+                    b.settledKidCount = n;
                     if (!touched) b.bubbleSubtreeStamp(LayoutBox.PAINT_EPOCH.incrementAndGet());
                 }
             }
+            b = next;
         }
     }
 

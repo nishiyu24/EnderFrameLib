@@ -575,7 +575,7 @@ public class HtmlNode implements Node {
     private boolean listed;
 
     /** 子の並びを根へ向かって辿った先。仮想の節は自分が根。 */
-    private HtmlNode treeTop() {
+    HtmlNode treeTop() {
         HtmlNode top = this;
         while (top.parent != null && top.listed) top = top.parent;
         return top;
@@ -823,7 +823,7 @@ public class HtmlNode implements Node {
      * 属性の表。{@code id} の増減だけを見て id 索引を保つ。{@code put} / {@code remove} 以外の
      * 変更（{@code compute} 系・{@code replace} 系）も、前後の {@code id} を比べて同じ扱いにする。
      */
-    int attrVersion;
+    int attrVersion, nonStyleAttrVer;
 
     /** 数値バインディングの直接書き込み値を持つ節の重ね先（無ければ null）。 */
     public InlineStyleOverlay inlineOverlay;
@@ -831,6 +831,7 @@ public class HtmlNode implements Node {
     /** 直接書き込み値が変わった。属性は変わらないが、属性に依存する算出結果の使い回しは捨てさせる。 */
     public void touchInlineOverlay() {
         attrVersion++;
+        this.treeTop().nonStyleAttrVer++;
     }
 
     /** 属性を書き換えるたびに増える版番号（属性に依存する算出結果の使い回しの目印）。 */

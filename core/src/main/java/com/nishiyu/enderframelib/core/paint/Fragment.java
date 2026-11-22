@@ -1,17 +1,15 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 /**
- * 断片（C1。設計: {@code core/DESIGN_FRAGMENT_TREE.md} §3。現段階 F1 は影モードで、{@link FragmentVerifier} だけが使う）。{@code PaintOrder.classifyPlain} の分類を、
+ * 断片（C1・C1p。設計: {@code core/DESIGN_FRAGMENT_TREE.md} §3）。{@code PaintOrder.classifyPlain} の分類を、
  * 「箱が親へ渡す層別の列（{@link #out}）」という形で写したもの。
  *
  * <ul>
@@ -21,42 +19,68 @@ import java.util.Map;
  *   <li>スタッキングコンテキストの箱は、中身を z で整列して 1 つにまとめ、親の sc の層（負・0・正）へ足す。</li>
  * </ul>
  *
- * 箱の木と同じ形の不変の木で、各層は子の寄与を子の順に並べた永続ベクタ（{@link FragSeq.Vec}）。1 つの子が変わると、道の上の節で
- * 該当の要素だけを差し替える。レイヤー（フィルタ・ブレンド・クリップ）・マスク・Top Layer・スクロールバー・仮想化した並びは対象外。
+ * <p>C1p: 子が 64 個以上の断片は 32 個単位のチャンク配列 {@link #bigKids} と永続 B 木ベクタ {@link FragSeq.Vec} で保持し、
+ * 少数の子・挿入・削除で配列全体と全層を作り直さない。</p>
  */
 final class Fragment {
     static final DisplayItem[] NONE = new DisplayItem[0];
+    static final int CHUNK_SHIFT = 5, CHUNK_SIZE = 1 << CHUNK_SHIFT, CHUNK_MASK = CHUNK_SIZE - 1;
+    static final Fragment[] NO_KIDS_ARRAY = new Fragment[0];
 
     enum Kind { ROOT, BLOCK, INLINE, FLOAT, ATOMIC, POSITIONED, STACKING }
 
     static final int BLOCKS = 0, FLOATS = 1, INLINES = 2, NEG = 3, POS0 = 4, POSZ = 5, AFTER = 6, HOIST = 7, LAYERS = 8;
 
-    final LayoutBox box;
+    /** 子を持たない箱の寄与（全層が空。読むだけで書き換えない）。 */
+    static final FragSeq[] NO_KIDS = emptyLayers();
+    /** 項目も子も持たない空の断片（画面外の省略などで共有する）。 */
+    static final Fragment EMPTY = new Fragment();
+
     final DisplayItem[] own;
     /** 自分のスクロールバーの項目。 */
     final DisplayItem[] ownAfter;
-    /** 描いた箱か（項目が 0 件でも、旧経路の {@code executeTasks} が持ち主として範囲を記録する箱）。影モードでは使わない（false）。 */
+    /** 描いた箱か（項目が 0 件でも、持ち主として範囲を記録する箱）。 */
     final boolean drawn;
     final Kind kind;
     final int z;
-    /** レイヤーに描く箱（スタッキングコンテキストのみ）の仕様。null なら錨の書き換えをしない（影モードは出力にすでに入っている）。 */
+    /** レイヤーに描く箱（スタッキングコンテキストのみ）の仕様。null なら錨の書き換えをしない。 */
     final LayerSpec layer;
     final FragSeq.Anchor anchor;
-    final Fragment[] kids;
-    /** 子の寄与を子の順に並べた層（{@link FragSeq.Vec}、全部空なら {@link FragSeq#EMPTY}）。 */
+    final int kidCount;
+    /** 子が 64 未満のときの子の断片（64 以上のときは null）。 */
+    final Fragment[] smallKids;
+    /** 子が 64 以上のときの 32 個単位チャンク（64 未満のときは null）。 */
+    final Fragment[][] bigKids;
+    /** 子の寄与を子の順に並べた層（{@link FragSeq.Vec} 等、全部空なら {@link FragSeq#EMPTY}）。 */
     final FragSeq[] agg;
     /** 親へ渡す層。 */
-    final FragSeq[] out = new FragSeq[LAYERS];
-    /** この箱が 1 つにまとめた出力（ROOT・STACKING・疑似コンテキストだけ。それ以外は null）。 */
+    final FragSeq[] out;
+    /** この箱が 1 つにまとめた出力（ROOT・STACKING・疑似コンテキストだけ。EMPTY 以外は BLOCK/INLINE で null）。 */
     final FragSeq emitted;
 
+    private Fragment() {
+        this.own = NONE;
+        this.ownAfter = NONE;
+        this.drawn = false;
+        this.kind = Kind.BLOCK;
+        this.z = 0;
+        this.layer = null;
+        this.anchor = null;
+        this.kidCount = 0;
+        this.smallKids = NO_KIDS_ARRAY;
+        this.bigKids = null;
+        this.agg = NO_KIDS;
+        this.out = NO_KIDS;
+        this.emitted = FragSeq.EMPTY;
+    }
+
     Fragment(LayoutBox box, DisplayItem[] own, DisplayItem[] ownAfter, Kind kind, int z, Fragment[] kids, FragSeq[] agg) {
-        this(box, own, ownAfter, false, kind, z, null, null, kids, agg);
+        this(box, own, ownAfter, false, kind, z, null, null, null, kids.length, kids, null, agg);
     }
 
     Fragment(LayoutBox box, DisplayItem[] own, DisplayItem[] ownAfter, boolean drawn, Kind kind, int z, LayerSpec layer,
              FragSeq.Anchor anchor, Fragment[] kids, FragSeq[] agg) {
-        this(box, own, ownAfter, drawn, kind, z, layer, anchor, (Extras) null, kids, agg);
+        this(box, own, ownAfter, drawn, kind, z, layer, anchor, null, kids.length, kids, null, agg);
     }
 
     /**
@@ -68,8 +92,12 @@ final class Fragment {
 
     Fragment(LayoutBox box, DisplayItem[] own, DisplayItem[] ownAfter, boolean drawn, Kind kind, int z, LayerSpec layer,
              FragSeq.Anchor anchor, Extras extras, Fragment[] kids, FragSeq[] agg) {
+        this(box, own, ownAfter, drawn, kind, z, layer, anchor, extras, kids.length, kids, null, agg);
+    }
+
+    Fragment(LayoutBox box, DisplayItem[] own, DisplayItem[] ownAfter, boolean drawn, Kind kind, int z, LayerSpec layer,
+             FragSeq.Anchor anchor, Extras extras, int kidCount, Fragment[] smallKids, Fragment[][] bigKids, FragSeq[] agg) {
         DisplayItem[] layerMask = extras == null ? null : extras.layerMask();
-        this.box = box;
         this.own = own;
         this.ownAfter = ownAfter;
         this.drawn = drawn;
@@ -77,11 +105,14 @@ final class Fragment {
         this.z = z;
         this.layer = layer;
         this.anchor = anchor;
-        this.kids = kids;
+        this.kidCount = kidCount;
+        this.smallKids = smallKids;
+        this.bigKids = bigKids;
         this.agg = agg;
+        this.out = new FragSeq[LAYERS];
         FragSeq ownSeq = drawn ? new FragSeq.Owned(box, own) : own.length == 0 ? FragSeq.EMPTY : new FragSeq.Leaf(own);
-        FragSeq afterSeq = cat(agg[AFTER], ownAfter.length == 0 ? FragSeq.EMPTY : new FragSeq.Leaf(ownAfter)); // 子のあとに自分のスクロールバー
-        java.util.Arrays.fill(out, FragSeq.EMPTY);
+        FragSeq afterSeq = cat(agg[AFTER], ownAfter.length == 0 ? FragSeq.EMPTY : new FragSeq.Leaf(ownAfter));
+        Arrays.fill(out, FragSeq.EMPTY);
         FragSeq em = null;
         switch (kind) {
             case ROOT -> em = stackingEmit(ownSeq, afterSeq);
@@ -108,13 +139,13 @@ final class Fragment {
             case POSITIONED -> {
                 em = plainEmit(ownSeq, afterSeq);
                 passSc();
-                out[POS0] = cat(em, agg[POS0]); // 自分が先、中の位置指定は木の順で後ろ
+                out[POS0] = cat(em, agg[POS0]);
             }
             case STACKING -> {
                 em = stackingEmit(ownSeq, afterSeq);
                 if (layer != null) {
                     LayerSpec spec = layer;
-                    if (layer.wantsMask() && em.items() > 0) { // マスクは、箱の中身を出し終えたあとに足す（描画側は maskFrom 以降をマスク用の描画先へ描く）
+                    if (layer.wantsMask() && em.items() > 0) {
                         boolean has = layerMask != null && layerMask.length > 0;
                         spec = layer.withMaskFrom(has ? em.items() : -1);
                         if (has) em = cat(em, new FragSeq.Leaf(layerMask));
@@ -122,7 +153,7 @@ final class Fragment {
                     em = new FragSeq.Layered(spec, em, anchor);
                 }
                 passHoist();
-                if (extras != null && extras.hoist()) { // Top Layer: backdrop（箱の直前）→箱の順で、根へ持ち上げる。中の Top Layer の箱はそのあと
+                if (extras != null && extras.hoist()) {
                     FragSeq bd = extras.backdrop() == null || extras.backdrop().length == 0 ? FragSeq.EMPTY : new FragSeq.Owned(box, extras.backdrop());
                     out[HOIST] = cat(cat(bd.empty() ? bd : new FragSeq.ZSeq(z, bd), new FragSeq.ZSeq(z, em)), agg[HOIST]);
                 } else if (z < 0) out[NEG] = new FragSeq.ZSeq(z, em);
@@ -133,6 +164,10 @@ final class Fragment {
         this.emitted = em;
     }
 
+    Fragment kidAt(int i) {
+        return smallKids != null ? smallKids[i] : bigKids[i >>> CHUNK_SHIFT][i & CHUNK_MASK];
+    }
+
     private void passThrough() {
         out[FLOATS] = agg[FLOATS];
         out[INLINES] = agg[INLINES];
@@ -140,7 +175,6 @@ final class Fragment {
         passSc();
     }
 
-    /** 子孫の Top Layer の箱は、この箱を越えて根へ通り抜ける。 */
     private void passHoist() {
         out[HOIST] = agg[HOIST];
     }
@@ -164,24 +198,20 @@ final class Fragment {
         return r;
     }
 
-    /** {@code PaintOrder.emit} の非スタッキング（自分・ブロック・float・インライン）。 */
     private FragSeq plainEmit(FragSeq ownSeq, FragSeq afterSeq) {
         return cat(ownSeq, agg[BLOCKS], agg[FLOATS], agg[INLINES], afterSeq);
     }
 
-    /** {@code PaintOrder.emit} のスタッキング（自分・負の z・ブロック・float・インライン・位置指定・正の z）。 */
     private FragSeq stackingEmit(FragSeq ownSeq, FragSeq afterSeq) {
-        // 文書の根は、Top Layer の箱（持ち上げられてきたもの）を最前面の正の z として並べる（z は最大なので、通常の正の z のあと）
         FragSeq positive = kind == Kind.ROOT ? cat(agg[POSZ], agg[HOIST]) : agg[POSZ];
         return cat(ownSeq, sortedZ(agg[NEG]), agg[BLOCKS], agg[FLOATS], agg[INLINES], agg[POS0], sortedZ(positive), afterSeq);
     }
 
-    /** z の昇順（同じ値は木の順）に並べた 1 本の列。 */
     static FragSeq sortedZ(FragSeq layer) {
         if (layer.empty()) return FragSeq.EMPTY;
         List<FragSeq.ZSeq> es = new ArrayList<>();
         collectZ(layer, es);
-        es.sort((x, y) -> Integer.compare(x.z, y.z)); // 安定
+        es.sort((x, y) -> Integer.compare(x.z, y.z));
         FragSeq r = FragSeq.EMPTY;
         for (FragSeq.ZSeq e : es) r = cat(r, e.inner);
         return r;
@@ -194,58 +224,231 @@ final class Fragment {
         else if (s instanceof FragSeq.Vec v) for (FragSeq c : v.slots) collectZ(c, out);
     }
 
-    // ------------------------------------------------------------ 全面の組み立て（記憶が空の増分）
-
-    /** 子を持たない箱の寄与（全層が空。読むだけで書き換えない）。 */
-    private static final FragSeq[] NO_KIDS = emptyLayers();
-
     private static FragSeq[] emptyLayers() {
         FragSeq[] a = new FragSeq[LAYERS];
-        java.util.Arrays.fill(a, FragSeq.EMPTY);
+        Arrays.fill(a, FragSeq.EMPTY);
         return a;
     }
 
-    /**
-     * 子の断片が前回の {@code prev} と同じ実体の位置が大半なら、層の列は前回のものから、変わった子だけを差し替える（永続ベクタの
-     * {@code set}）。変わった子が多い・子が少ないときは全面の {@link #aggregate} と同じ。結果は常に同じ（組み立ての段の最適化）。
-     */
-    static FragSeq[] aggregateFrom(Fragment prev, Fragment[] kids) {
-        if (prev == null || prev.kids.length != kids.length || kids.length < 64) return aggregate(kids);
-        int diff = 0;
-        for (int i = 0; i < kids.length; i++) if (prev.kids[i] != kids[i] && ++diff > 8) return aggregate(kids);
-        if (diff == 0) return prev.agg;
-        FragSeq[] ag = prev.agg.clone();
-        for (int i = 0; i < kids.length; i++) {
-            if (prev.kids[i] == kids[i]) continue;
-            for (int l = 0; l < LAYERS; l++) {
-                FragSeq now = kids[i].out[l], was = prev.kids[i].out[l];
-                if (now == was) continue;
-                ag[l] = ag[l] instanceof FragSeq.Vec v ? v.set(i, now) : layerOf(kids, l);
+    static boolean sameArray(Fragment[] a, Fragment[] b, int len) {
+        for (int i = 0; i < len; i++) if (a[i] != b[i]) return false;
+        return true;
+    }
+
+    private static boolean sameRange(Fragment[] chunk, Fragment[] src, int from, int len) {
+        for (int i = 0; i < len; i++) if (chunk[i] != src[from + i]) return false;
+        return true;
+    }
+
+    static Fragment[][] chunkifyFrom(Fragment prev, Fragment[] src, int n) {
+        int groups = (n + CHUNK_MASK) >>> CHUNK_SHIFT;
+        Fragment[][] prevChunks = prev != null ? prev.bigKids : null;
+        Fragment[][] chunks = new Fragment[groups][];
+        boolean allReused = prevChunks != null && prevChunks.length == groups;
+        for (int g = 0; g < groups; g++) {
+            int from = g << CHUNK_SHIFT;
+            int len = Math.min(CHUNK_SIZE, n - from);
+            Fragment[] pc = prevChunks != null && g < prevChunks.length ? prevChunks[g] : null;
+            if (pc != null && pc.length == len && sameRange(pc, src, from, len)) {
+                chunks[g] = pc;
+            } else {
+                chunks[g] = Arrays.copyOfRange(src, from, from + len);
+                allReused = false;
             }
         }
-        return ag;
+        return allReused ? prevChunks : chunks;
+    }
+
+    /** 64 以上で少数のインデックスだけ入れ替わったとき、該当チャンクだけ複製する。 */
+    static Fragment[][] replaceChunks(Fragment[][] base, int[] indices, Fragment[] newFrags, int count) {
+        if (count == 0) return base;
+        Fragment[][] next = null;
+        for (int k = 0; k < count; k++) {
+            int idx = indices[k];
+            int g = idx >>> CHUNK_SHIFT;
+            int slot = idx & CHUNK_MASK;
+            Fragment[] cur = (next != null ? next : base)[g];
+            if (cur[slot] == newFrags[k]) continue;
+            if (next == null) next = base.clone();
+            if (next[g] == base[g]) next[g] = base[g].clone();
+            next[g][slot] = newFrags[k];
+        }
+        return next != null ? next : base;
+    }
+
+    /** 64 以上で指定インデックスの断片だけ入れ替わったときの層更新（{@link FragSeq.Vec#set}）。 */
+    static FragSeq[] aggregateReplaced(FragSeq[] prevAgg, int kidCount, int[] indices,
+                                       Fragment[] oldFrags, Fragment[] newFrags, int count) {
+        if (count == 0) return prevAgg;
+        FragSeq[] ag = null;
+        for (int k = 0; k < count; k++) {
+            int idx = indices[k];
+            Fragment of = oldFrags[k], nf = newFrags[k];
+            if (of == nf) continue;
+            for (int l = 0; l < LAYERS; l++) {
+                FragSeq now = nf.out[l], was = of.out[l];
+                if (now == was || (now.empty() && was.empty())) continue;
+                if (ag == null) ag = prevAgg.clone();
+                if (ag[l] instanceof FragSeq.Vec v) {
+                    FragSeq.Vec updated = v.set(idx, now);
+                    ag[l] = updated.empty() ? FragSeq.EMPTY : updated;
+                } else {
+                    ag[l] = FragSeq.Vec.emptyOfLen(kidCount).set(idx, now);
+                }
+            }
+        }
+        return ag != null ? ag : prevAgg;
+    }
+
+    /** 子の前後一致・少数差分・挿入・削除を考慮して層を組み立てる（全件作り直しを極力避ける）。 */
+    static FragSeq[] aggregateDiff(Fragment prev, Fragment[] smallKids, Fragment[][] bigKids, int n) {
+        if (n == 0) return NO_KIDS;
+        if (prev == null || n < 64 || prev.kidCount < 64) {
+            return smallKids != null ? aggregateSmall(smallKids, n) : aggregateBig(bigKids, n);
+        }
+        int pn = prev.kidCount;
+        int minN = Math.min(pn, n);
+        int pre = 0;
+        while (pre < minN && prev.kidAt(pre) == (smallKids != null ? smallKids[pre] : bigKids[pre >>> CHUNK_SHIFT][pre & CHUNK_MASK])) {
+            pre++;
+        }
+        if (pn == n && pre == n) return prev.agg;
+        int suf = 0;
+        while (suf < minN - pre) {
+            Fragment pf = prev.kidAt(pn - 1 - suf);
+            Fragment nf = bigKids[(n - 1 - suf) >>> CHUNK_SHIFT][(n - 1 - suf) & CHUNK_MASK];
+            if (pf != nf) break;
+            suf++;
+        }
+        if (pn == n) {
+            int diffCount = 0;
+            int[] diffIdx = new int[16];
+            int end = n - suf;
+            for (int i = pre; i < end; i++) {
+                if (prev.kidAt(i) != bigKids[i >>> CHUNK_SHIFT][i & CHUNK_MASK]) {
+                    if (diffCount >= 16) return aggregateBig(bigKids, n);
+                    diffIdx[diffCount++] = i;
+                }
+            }
+            Fragment[] olds = new Fragment[diffCount];
+            Fragment[] news = new Fragment[diffCount];
+            for (int k = 0; k < diffCount; k++) {
+                int idx = diffIdx[k];
+                olds[k] = prev.kidAt(idx);
+                news[k] = bigKids[idx >>> CHUNK_SHIFT][idx & CHUNK_MASK];
+            }
+            return aggregateReplaced(prev.agg, n, diffIdx, olds, news, diffCount);
+        }
+        int oldMid = pn - pre - suf, newMid = n - pre - suf;
+        if (oldMid <= 16 && newMid <= 16) {
+            return patchSplice(prev, prev.agg, bigKids, n, pre, oldMid, newMid);
+        }
+        return aggregateBig(bigKids, n);
+    }
+
+    private static FragSeq[] patchSplice(Fragment prev, FragSeq[] prevAgg, Fragment[][] bigKids, int n, int pre, int oldMid, int newMid) {
+        int common = Math.min(oldMid, newMid);
+        FragSeq[] ag = null;
+        for (int l = 0; l < LAYERS; l++) {
+            boolean layerDiff = false;
+            for (int k = 0; k < common; k++) {
+                FragSeq now = bigKids[(pre + k) >>> CHUNK_SHIFT][(pre + k) & CHUNK_MASK].out[l];
+                FragSeq was = prev.kidAt(pre + k).out[l];
+                if (now != was && !(now.empty() && was.empty())) { layerDiff = true; break; }
+            }
+            if (!layerDiff) {
+                if (newMid > oldMid) {
+                    for (int k = oldMid; k < newMid; k++) {
+                        if (!bigKids[(pre + k) >>> CHUNK_SHIFT][(pre + k) & CHUNK_MASK].out[l].empty()) { layerDiff = true; break; }
+                    }
+                } else {
+                    for (int k = newMid; k < oldMid; k++) {
+                        if (!prev.kidAt(pre + k).out[l].empty()) { layerDiff = true; break; }
+                    }
+                }
+            }
+            if (!layerDiff && !(prevAgg[l] instanceof FragSeq.Vec)) continue;
+            if (!layerDiff && oldMid == newMid) continue;
+            if (ag == null) ag = prevAgg.clone();
+            FragSeq.Vec v = ag[l] instanceof FragSeq.Vec vv ? vv : FragSeq.Vec.emptyOfLen(prev.kidCount);
+            for (int k = 0; k < common; k++) {
+                FragSeq now = bigKids[(pre + k) >>> CHUNK_SHIFT][(pre + k) & CHUNK_MASK].out[l];
+                FragSeq was = prev.kidAt(pre + k).out[l];
+                if (now != was && !(now.empty() && was.empty())) v = v.set(pre + k, now);
+            }
+            if (newMid > oldMid) {
+                for (int k = oldMid; k < newMid; k++) {
+                    v = v.insert(pre + k, bigKids[(pre + k) >>> CHUNK_SHIFT][(pre + k) & CHUNK_MASK].out[l]);
+                }
+            } else {
+                for (int k = oldMid - 1; k >= newMid; k--) v = v.remove(pre + k);
+            }
+            ag[l] = v.empty() ? FragSeq.EMPTY : v;
+        }
+        return ag != null ? ag : prevAgg;
     }
 
     static FragSeq[] aggregate(Fragment[] kids) {
-        if (kids.length == 0) return NO_KIDS;
-        FragSeq[] agg = new FragSeq[LAYERS];
-        for (int l = 0; l < LAYERS; l++) agg[l] = layerOf(kids, l);
-        return agg;
+        return aggregate(kids, kids.length);
     }
 
-    /** 層 {@code l} の、子の寄与の並び。全部空なら {@link FragSeq#EMPTY}。 */
-    private static FragSeq layerOf(Fragment[] kids, int l) {
-        boolean any = false;
-        for (Fragment k : kids) {
-            if (!k.out[l].empty()) { any = true; break; }
+    static FragSeq[] aggregate(Fragment[] kids, int n) {
+        if (n == 0) return NO_KIDS;
+        if (n < 64) return aggregateSmall(kids, n);
+        FragSeq[] agg = null;
+        for (int l = 0; l < LAYERS; l++) {
+            boolean any = false;
+            for (int i = 0; i < n; i++) if (!kids[i].out[l].empty()) { any = true; break; }
+            if (any) {
+                if (agg == null) agg = emptyLayers();
+                agg[l] = FragSeq.Vec.ofLayer(kids, n, l);
+            }
         }
-        if (!any) return FragSeq.EMPTY; // 寄与する子が無い層は、リストを作らない
-        List<FragSeq> xs = new ArrayList<>(kids.length);
-        for (Fragment k : kids) xs.add(k.out[l]);
-        return FragSeq.Vec.of(xs);
+        return agg != null ? agg : NO_KIDS;
     }
 
-    /** 付録 E の分類（{@code createsStackingContext} → 位置指定 → float → 不可分なインライン → ブロック/インライン の順）。 */
+    private static FragSeq[] aggregateSmall(Fragment[] kids, int n) {
+        if (n == 0) return NO_KIDS;
+        FragSeq[] agg = null;
+        for (int l = 0; l < LAYERS; l++) {
+            FragSeq seq = layerOf(kids, n, l);
+            if (seq != FragSeq.EMPTY) {
+                if (agg == null) agg = emptyLayers();
+                agg[l] = seq;
+            }
+        }
+        return agg != null ? agg : NO_KIDS;
+    }
+
+    private static FragSeq[] aggregateBig(Fragment[][] chunks, int n) {
+        if (n == 0) return NO_KIDS;
+        FragSeq[] agg = null;
+        for (int l = 0; l < LAYERS; l++) {
+            boolean any = false;
+            for (Fragment[] ch : chunks) {
+                for (Fragment f : ch) if (!f.out[l].empty()) { any = true; break; }
+                if (any) break;
+            }
+            if (any) {
+                if (agg == null) agg = emptyLayers();
+                agg[l] = FragSeq.Vec.ofLayer(chunks, n, l);
+            }
+        }
+        return agg != null ? agg : NO_KIDS;
+    }
+
+    private static FragSeq layerOf(Fragment[] kids, int n, int l) {
+        FragSeq single = null;
+        int count = 0;
+        for (int i = 0; i < n; i++) {
+            FragSeq s = kids[i].out[l];
+            if (!s.empty()) { single = s; count++; }
+        }
+        if (count == 0) return FragSeq.EMPTY;
+        if (n < 64 && count == 1) return single;
+        return FragSeq.Vec.ofLayer(kids, n, l);
+    }
+
     static Kind kindOf(LayoutBox b, PaintOrder order) {
         if (order.createsStackingContext(b)) return Kind.STACKING;
         if (PaintOrder.isPositioned(b)) return Kind.POSITIONED;
@@ -254,19 +457,15 @@ final class Fragment {
         return b.display().isInlineLevel() ? Kind.INLINE : Kind.BLOCK;
     }
 
-    // ------------------------------------------------------------ 読み出し
-
-    /** 根の出力の項目数。 */
     int size() { return emitted.items(); }
 
-    /** 平らな配列へ（消費者へ渡す {@code FragmentList} の中身）。 */
     DisplayItem[] flatten() {
         DisplayItem[] out = new DisplayItem[size()];
-        flattenInto(out);
+        flattenInto(out, 0);
         return out;
     }
 
-    int flattenInto(DisplayItem[] out) {
-        return emitted.copyTo(out, 0);
+    int flattenInto(DisplayItem[] out, int off) {
+        return emitted.copyTo(out, off);
     }
 }

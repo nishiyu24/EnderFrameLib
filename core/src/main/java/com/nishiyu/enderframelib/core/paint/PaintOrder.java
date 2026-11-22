@@ -39,7 +39,7 @@ public final class PaintOrder {
     /** 箱 1 つ自身（背景・枠・部品）を描画項目にする。 */
     @FunctionalInterface
     interface BoxPainter {
-        void draw(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId);
+        void draw(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId, List<DisplayItem> prevItems);
     }
 
     private int rootW;
@@ -267,7 +267,8 @@ public final class PaintOrder {
 
     private boolean hasUnscrollableDescendant(LayoutBox container, LayoutBox box, boolean underSticky) {
         if (box.contentAutoSkipped || box.isVirtualizedFlow()) return box.isVirtualizedFlow();
-        for (LayoutBox child : box.children) {
+        for (int i = 0, n = box.children.size(); i < n; i++) {
+            LayoutBox child = box.children.get(i);
             if (child.display() != null && child.display().isNone()) continue;
             if (child.subtreeHasContentAuto()) return true;
             if (child.isFixed()) return true;
@@ -460,8 +461,8 @@ public final class PaintOrder {
     }
 
     /** 箱自身の項目を {@code elements} へ描く（箱ごとの記憶つきの描画）。 */
-    void drawSelf(List<DisplayItem> elements, LayoutBox box, ClipRect clip, String parentId) {
-        painter.draw(elements, box, clip, parentId);
+    void drawSelf(List<DisplayItem> elements, LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> prevItems) {
+        painter.draw(elements, box, clip, parentId, prevItems);
     }
 
     static boolean isPositioned(LayoutBox box) {
@@ -613,7 +614,8 @@ public final class PaintOrder {
         Boolean cached = blendDescendants.get(box);
         if (cached != null) return cached;
         boolean found = false;
-        for (LayoutBox child : box.children) {
+        for (int i = 0, n = box.children.size(); i < n; i++) {
+            LayoutBox child = box.children.get(i);
             if (child.display().isNone()) continue;
             if (!"normal".equals(child.style.keyword(CssPropertyIndex.MIX_BLEND_MODE, "normal"))) {
                 found = true;
@@ -658,10 +660,8 @@ public final class PaintOrder {
 
     ClipRect computeChildClipRect(LayoutBox box, ClipRect parentClip) {
         String tag = box.node.tag;
-        boolean isRootElement = "root".equals(tag) || "html".equals(tag) || "body".equals(tag);
-        if (isRootElement) return parentClip;
-
-        boolean panZoom = "true".equalsIgnoreCase(box.node.attrs.get("data-pan-zoom"));
+        if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag) || "#text".equals(tag)) return parentClip;
+        boolean panZoom = !box.node.attrs.isEmpty() && "true".equalsIgnoreCase(box.node.attrs.get("data-pan-zoom"));
         StyleFacts facts = factsOf(box.axisStyle());
         boolean clipX = panZoom || !"visible".equals(facts.overflowX());
         boolean clipY = panZoom || !"visible".equals(facts.overflowY());

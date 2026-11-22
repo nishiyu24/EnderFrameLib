@@ -25,6 +25,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -67,9 +68,7 @@ public class DisplayListBuilder {
         parentRelativeSource = source != null ? source : () -> true;
     }
 
-    private int rootW;
-
-    int rootH;
+    int rootW, rootH;
 
     private final Map<String, Keyframes> keyframes;
 
@@ -120,13 +119,8 @@ public class DisplayListBuilder {
 
     /** 直近に描画またはパッチされた完全な表示リスト（Segmented DisplayList）。 */
     List<DisplayItem> currentDisplayList;
-    /** 直近に描画されたボックス（描画順 = 表示リスト上の dlStart 昇順）。 */
-    final List<LayoutBox> renderedBoxes = new ArrayList<>();
-    /** VERIFY_FRAGMENT 用: スクロールバーの項目の範囲（全面の描画ごとに作り直す）と、影の前回の断片の木。 */
     /** 全面の描画を断片の木で行う経路（Shortcut.FRAGMENT_BUILD）。 */
     private final FragmentPaint fragmentPaint;
-    /** スクロールバーを持ちうる（overflow: scroll / auto）描画済みの箱。差分パッチで全箱を走査せずに済ませるための集合（描画のたびに作り直し、子の増減で更新する）。 */
-    final Set<LayoutBox> scrollBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
     /** 直近の描画のルートボックス。 */
     LayoutBox currentRoot;
 
@@ -151,21 +145,28 @@ public List<DisplayItem> render(LayoutBox box) {
  * 変形・アニメーション・フィルターを持つ祖先の下は、動いて画面に入ってくるので省かない。
  */
 private static final ItemProps EMPTY_PROPS = new ItemProps();
-private PaintSupport.CaptureList reusableCaptureList;
+private DisplayItem[] flatBuf = Fragment.NONE;
+private int lastFlatLen;
+private final PaintSupport.CaptureList bgScratch = new PaintSupport.CaptureList(1);
+
+DisplayItem[] ensureFlatBuf(int needed) {
+    if (flatBuf.length < needed) flatBuf = Arrays.copyOf(flatBuf, Math.max(needed, flatBuf.length + (flatBuf.length >> 1) + 16));
+    return flatBuf;
+}
+
+private void clearFlatTail(int total) {
+    if (lastFlatLen > total) Arrays.fill(flatBuf, total, Math.min(lastFlatLen, flatBuf.length), null);
+    lastFlatLen = total;
+}
 
 public ImmutableItemList renderImmutable(LayoutBox box, boolean cullOffscreen, ImmutableItemList prev) {
     long prof = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
     try {
-        int cap = lastElementCount + (lastElementCount >> 4) + 16;
-        PaintSupport.CaptureList list = reusableCaptureList;
-        if (list == null) {
-            reusableCaptureList = list = new PaintSupport.CaptureList(cap);
-        } else {
-            list.resetForBuild();
-            list.ensureCapacity(cap);
-        }
-        renderUnprofiled(box, cullOffscreen, list);
-        return ImmutableItemList.from(prev, list);
+        int total = renderToFlatBuf(box, cullOffscreen);
+        ImmutableItemList out = ImmutableItemList.fromArray(prev, flatBuf, total);
+        clearFlatTail(total);
+        this.currentDisplayList = out;
+        return out;
     } finally {
         StageProfiler.end(PipelineStage.DISPLAY_LIST, prof);
     }
@@ -174,58 +175,55 @@ public ImmutableItemList renderImmutable(LayoutBox box, boolean cullOffscreen, I
 public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
     long prof = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
     try {
-        return renderUnprofiled(box, cullOffscreen, null);
+        int total = renderToFlatBuf(box, cullOffscreen);
+        List<DisplayItem> list = total == 0 ? new ArrayList<>() : new ArrayList<>(Arrays.asList(Arrays.copyOf(flatBuf, total)));
+        clearFlatTail(total);
+        this.currentDisplayList = list;
+        return list;
     } finally {
         StageProfiler.end(PipelineStage.DISPLAY_LIST, prof);
     }
 }
 
-private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen, List<DisplayItem> sink) {
-    com.nishiyu.enderframelib.core.layout.PaintStamps.settle(box); // レイアウトの仮の印のうち、出力が変わった箱だけ本当の印にする
+private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
+    com.nishiyu.enderframelib.core.layout.PaintStamps.settle(box);
     buildEpoch = LayoutBox.paintEpoch();
-    // 大きい文書は、スクロール時でなくても画面（と余白）の外の箱の項目を作らない（窓付きの表示リスト。項目数が可視範囲に比例する）
-    if (lastOwnerCount == 0 && com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.on()) lastOwnerCount = countBoxes(box, WINDOW_MIN_OWNERS); // 最初の描画だけ、箱の数を数えて判定する
+    if (lastOwnerCount == 0 && com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.on()) lastOwnerCount = countBoxes(box, WINDOW_MIN_OWNERS);
     boolean windowed = !cullOffscreen && com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.on() && lastOwnerCount >= WINDOW_MIN_OWNERS;
     windowedBuild = windowed;
     if (windowed) STAT_WINDOWED_BUILDS.increment();
     boolean cull = cullOffscreen || windowed;
-    int ownerCount = 0;
-    renderedBoxes.clear();
-    scrollBoxes.clear();
     currentRoot = box;
     boolean relMode = parentRelativeSource.getAsBoolean();
     this.parentRelative = relMode;
     order.setParentRelative(relMode);
-    // 前回と同じ件数で足りることが多い。倍々に伸ばしながら全件を写し直すのを避ける
-    List<DisplayItem> elements = sink != null ? sink
-            : new PaintSupport.CaptureList(lastElementCount + (lastElementCount >> 4) + 16);
-        canvasBackgroundSource = null;
-        decor.setDevicePixelRatio(box.devicePixelRatio());
-
-        if ("root".equals(box.node.tag)) {
-            // キャンバスの背景はルート要素の背景、それが透明なら body の背景（CSS Backgrounds 3 §2.11.2）。
-            // 背景を譲った要素は自分の箱には背景色を描かない
-            int canvasBg = DEFAULT_CANVAS_COLOR;
-            LayoutBox source = canvasBackgroundSource(box);
-            if (source != null) {
-                canvasBg = ColorParser.parseColor(source.style.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
-                canvasBackgroundSource = source;
-            }
-            if (canvasBg != 0x00000000) {
-                long bgRootKey = source != null && source.node != null ? DisplayItem.bgKeyOf(source.node.nodeId()) : 0L;
-                addElement(elements, "bg_root", "bg_root", ElementType.RECT, box.x(), box.y(), Math.max(box.w(), rootW), Math.max(box.h(), rootH),
-                        "", 0, canvasBg, EMPTY_PROPS, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, RenderMeta.EMPTY, bgRootKey);
-            }
+    canvasBackgroundSource = null;
+    decor.setDevicePixelRatio(box.devicePixelRatio());
+    int base = 0;
+    DisplayItem bgItem = null;
+    if ("root".equals(box.node.tag)) {
+        int canvasBg = DEFAULT_CANVAS_COLOR;
+        LayoutBox source = canvasBackgroundSource(box);
+        if (source != null) {
+            canvasBg = ColorParser.parseColor(source.style.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
+            canvasBackgroundSource = source;
         }
-
-        // 部分木の保持は、全ての箱を描く描画でだけ（平行移動・画面外の省略では項目が欠ける／動く）。再利用は変更印が使える描画でだけ
-        ownerCount += fragmentPaint.paint(box, elements, cull, windowed);
-        lastElementCount = elements.size();
-        lastOwnerCount = ownerCount;
-        this.currentDisplayList = elements;
-        this.currentRoot = box;
-        return elements;
+        if (canvasBg != 0x00000000) {
+            long bgRootKey = source != null && source.node != null ? DisplayItem.bgKeyOf(source.node.nodeId()) : 0L;
+            bgScratch.resetForBuild();
+            addElement(bgScratch, "bg_root", "bg_root", ElementType.RECT, box.x(), box.y(), Math.max(box.w(), rootW), Math.max(box.h(), rootH),
+                    "", 0, canvasBg, EMPTY_PROPS, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, RenderMeta.EMPTY, bgRootKey);
+            bgItem = bgScratch.get(0);
+            base = 1;
+        }
     }
+    int total = fragmentPaint.paintInto(box, base, cull, windowed);
+    if (base == 1) flatBuf[0] = bgItem;
+    lastElementCount = total;
+    lastOwnerCount = fragmentPaint.lastOwners();
+    this.currentRoot = box;
+    return total;
+}
 
     private int lastOwnerCount;
     /** 窓付きで作った表示リストの数（検証用）。 */
@@ -270,7 +268,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
     int memoFrameKey(boolean cull, boolean windowed) {
         if (!windowShift.isEmpty()) return Integer.MIN_VALUE;
         int k = (cull ? 1 : 0) | (windowed ? 2 : 0) | (parentRelative ? 4 : 0);
-        return (k * 31 + rootW) * 31 + rootH;
+        return cull ? (k * 31 + rootW) * 31 + rootH : k;
     }
 
     boolean inWindowGeometry(LayoutBox box) {
@@ -416,7 +414,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             if (child.display().isNone()) continue;
             if ("#text".equals(child.node.tag)) {
                 float fontH = Math.max(1f, child.style.fontSizePx());
-                drawTextNodeElement(elements, child, id, 0xFFFFFFFF, 0, null, fontH, 0.5f, 0.5f, events, 0, AnimationSpec.NONE);
+                drawTextNodeElement(elements, child, id, 0xFFFFFFFF, 0, null, fontH, 0.5f, 0.5f, events, 0, AnimationSpec.NONE, null);
             } else {
                 maskText(elements, child, id, events);
             }
@@ -509,8 +507,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return order.scrollContentInfos();
     }
 
-    private void drawBoxSelf(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
-        drawBoxSelfMemo(elements, box, clipRect, parentId);
+    private void drawBoxSelf(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId, List<DisplayItem> prevItems) {
+        drawBoxSelfMemo(elements, box, clipRect, parentId, prevItems);
         PaintOrder.ScrollContent content = order.scrollContentOf(box);
         if (content != null) {
             PaintSupport.CaptureList cap = (parentRelative && PaintOrder.boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
@@ -524,9 +522,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         }
     }
 
-    private void drawBoxSelfMemo(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
+    private void drawBoxSelfMemo(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId, List<DisplayItem> prevItems) {
         fragIds.set(0); // 部品の ID は箱ごとに数える
-        drawBoxSelfUncached(elements, box, clipRect, parentId, null);
+        drawBoxSelfUncached(elements, box, clipRect, parentId, prevItems);
     }
 
     private static RenderMeta reuseMeta(RenderMeta prev, ClipRect clipRect, Corners borderRadii,
@@ -549,13 +547,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 itemCount, interactiveState, null, hints);
     }
 
-    private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
-        drawBoxSelfUncached(elements, box, clipRect, parentId, null);
-    }
-
     /**
-     * @param prevItems この箱が前に出した項目（無ければ null）。メタ・ヒントを作り直さず使い回す候補（{@code reuseMeta}・{@code hintsReuse}）。
-     *                  差分パッチ（{@link #patchBoxes}）でも、表示リストの前のスライスを渡す（以前は null で、hover のたびに全部作り直していた）
+     * @param prevItems この箱が前に出した項目（無ければ null）。メタ・ヒントを作り直さず使い回す候補。
      */
     private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId, List<DisplayItem> prevItems) {
         Corners radii = cornersShared(box.axisStyle(), box.w(), box.h(), rootW, rootH);
@@ -674,7 +667,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             if (pointerEventsNone) partsEvents.pointerEventsNone();
             partsEvents.reuseCandidate(prevPartsHints);
             if ("#text".equals(box.node.tag)) {
-                drawTextNodeElement(elements, box, id, color, bgColor, normalizedClip, fontHVal, ox, oy, partsEvents, transDur, anim.textColorAnimation(box, animDef));
+                drawTextNodeElement(elements, box, id, color, bgColor, normalizedClip, fontHVal, ox, oy, partsEvents, transDur, anim.textColorAnimation(box, animDef), prevItems);
                 return;
             }
             ItemProps passiveBorderEvents = ItemProps.populateForPassiveBorder(scratchPassiveProps, id, nodeKey, transSpec);
@@ -867,8 +860,12 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         addElement(elements, id, id + "_txt_" + mainPart, ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, flipY, rot, transDur, colorAnim, meta, mainKey);
     }
 
-    private ItemProps textPropsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps partsEvents, int resolvedColor) {
+    private ItemProps textPropsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps partsEvents, int resolvedColor, DisplayItem prevItem) {
         ItemProps props = partsEvents.copy();
+        if (prevItem != null) {
+            props.reuseAttrs(prevItem.events());
+            props.reuseCandidate(prevItem.hints());
+        }
         if (style.containsKey(CssPropertyIndex.FONT_WEIGHT)) props.put("font-weight", style.get(CssPropertyIndex.FONT_WEIGHT));
         if (style.containsKey(CssPropertyIndex.FONT_FAMILY)) props.fontFamily(style.get(CssPropertyIndex.FONT_FAMILY));
         if (style.containsKey(CssPropertyIndex.TEXT_DECORATION)) props.put("text-decoration", style.get(CssPropertyIndex.TEXT_DECORATION));
@@ -893,39 +890,59 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         return list;
     }
 
+    private static DisplayItem prevTextItem(List<DisplayItem> prevItems, int idx) {
+        if (prevItems == null || idx >= prevItems.size()) return null;
+        DisplayItem cand = prevItems.get(idx);
+        return cand.type() == ElementType.TEXT ? cand : null;
+    }
+
+    private static RenderMeta reuseTextMeta(DisplayItem prevItem, ClipRect clipRect, float fontHeight, float baseline,
+                                            float lineHeight, float originX, float originY, RenderHints hints) {
+        RenderMeta prev = prevItem != null ? prevItem.meta() : null;
+        if (prev != null && prev.circleBorder() == null && prev.roundedBorder() == null && prev.borderRadii() == null
+                && prev.itemCount() == 1 && !prev.interactiveState()
+                && Float.compare(prev.fontHeight(), fontHeight) == 0 && Float.compare(prev.baseline(), baseline) == 0
+                && Float.compare(prev.lineHeight(), lineHeight) == 0 && Float.compare(prev.originX(), originX) == 0
+                && Float.compare(prev.originY(), originY) == 0
+                && java.util.Objects.equals(prev.clipRect(), clipRect) && java.util.Objects.equals(prev.hints(), hints)) {
+            return prev;
+        }
+        return new RenderMeta(clipRect, null, null, fontHeight, baseline, lineHeight, originX, originY, 1, false, null, hints);
+    }
+
     private void drawTextNodeElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor,
                                      ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
-                                     int transDur, AnimationSpec colorAnim) {
+                                     int transDur, AnimationSpec colorAnim, List<DisplayItem> prevItems) {
         ItemProps baseTextEvents = null;
         List<BoxDecorations.Shadow> baseTextShadows = null;
+        int prevIdx = 1;
 
         if (!box.inlineFragments.isEmpty()) {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                 if (frag.text == null || frag.text.isBlank()) continue;
                 com.nishiyu.enderframelib.core.css.ComputedStyle fl = frag.effectiveFirstLineStyle(box);
+                DisplayItem prevItem = prevTextItem(prevItems, prevIdx);
+                int before = elements.size();
                 if (fl != null) {
                     int flColor = fl.color(CssPropertyIndex.COLOR, color);
                     float flFontH = Math.max(1.0f, fl.fontSizePx());
-                    ItemProps flEvents = textPropsForStyle(fl, partsEvents, flColor);
+                    ItemProps flEvents = textPropsForStyle(fl, partsEvents, flColor, prevItem);
                     List<BoxDecorations.Shadow> flShadows = textShadowsForStyle(fl, flColor, flEvents);
-                    RenderMeta fragMeta = new RenderMeta(
-                            normalizedClip, null, null, flFontH, frag.baseline, frag.h, ox, oy, 1, false);
+                    RenderMeta fragMeta = reuseTextMeta(prevItem, normalizedClip, flFontH, frag.baseline, frag.h, ox, oy, flEvents.hints());
                     addTextRun(elements, box, fl, id, frag.x, frag.y, frag.w, frag.h, frag.text, flColor, bgColor, flEvents, fragMeta, transDur, AnimationSpec.NONE, flShadows);
                 } else {
                     if (baseTextEvents == null) {
-                        baseTextEvents = textPropsForStyle(box.style, partsEvents, color);
+                        baseTextEvents = textPropsForStyle(box.style, partsEvents, color, prevItem);
                         baseTextShadows = textShadowsForStyle(box.style, color, baseTextEvents);
                     }
-                    RenderMeta fragMeta = new RenderMeta(
-                            normalizedClip, null, null, fontHVal, frag.baseline, frag.h, ox, oy, 1, false);
+                    RenderMeta fragMeta = reuseTextMeta(prevItem, normalizedClip, fontHVal, frag.baseline, frag.h, ox, oy, baseTextEvents.hints());
                     addTextRun(elements, box, box.style, id, frag.x, frag.y, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, baseTextShadows);
                 }
+                prevIdx += elements.size() - before;
             }
         } else if (box.shapedLines() != null && !box.shapedLines().isEmpty()) {
-            baseTextEvents = textPropsForStyle(box.style, partsEvents, color);
+            baseTextEvents = textPropsForStyle(box.style, partsEvents, color, prevTextItem(prevItems, prevIdx));
             baseTextShadows = textShadowsForStyle(box.style, color, baseTextEvents);
-            // 行の文字列・幅・ベースラインは整形器（TextShaper）が確定済み。
-            // ここがするのは text-align の offset と丸めだけで、描画側は測り直さない。
             TextAlign align = box.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class);
             boolean rtl = "rtl".equalsIgnoreCase(box.style.getOrDefault(CssPropertyIndex.DIRECTION, "ltr").trim());
             float contentX = box.x() + box.pL() + box.bL();
@@ -934,27 +951,17 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
 
             for (ShapedLine line : box.shapedLines()) {
                 if (!line.text().isBlank()) {
+                    DisplayItem prevItem = prevTextItem(prevItems, prevIdx);
+                    int before = elements.size();
                     float lineW = line.width();
                     float lineX = contentX + alignOffset(align, rtl, availableW, lineW);
-                    RenderMeta lineMeta = new RenderMeta(
-                            normalizedClip, null, null, fontHVal, line.baseline(), line.height(), ox, oy, 1, false);
-                    // text-transform は displayText を作る時点で適用済み（測定と描画で同じ文字列）
+                    RenderMeta lineMeta = reuseTextMeta(prevItem, normalizedClip, fontHVal, line.baseline(), line.height(), ox, oy, baseTextEvents.hints());
                     addTextRun(elements, box, box.style, id, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, lineMeta, transDur, colorAnim, baseTextShadows);
+                    prevIdx += elements.size() - before;
                 }
                 lineY += line.height();
             }
         }
-    }
-
-    // ==========================================
-    // Segmented DisplayList: 差分スライスパッチ API (P0-4 / 戦略 T2)
-    // ==========================================
-
-    String contentParentIdOf(LayoutBox box) {
-        if (box == null) return null;
-        PaintOrder.ScrollContent sc = order.scrollContentOf(box);
-        if (sc != null) return sc.contentId;
-        return box.node != null ? box.node.key() : null;
     }
 
 }

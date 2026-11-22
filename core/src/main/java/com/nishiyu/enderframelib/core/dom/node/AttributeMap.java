@@ -18,7 +18,12 @@ import java.util.function.Supplier;
  * 要素ごとの属性数を 0〜数個想定で抑える線形ペア配列マップ。
  * {@link LinkedHashMap} と同じ挿入順を保ちつつ、空のテキスト節では追加配列を確保しない。
  */
-final class AttributeMap extends AbstractMap<String, String> {
+public final class AttributeMap extends AbstractMap<String, String> {
+
+    /** 文書木内の style/class 以外の属性変更の通し番号（表示リストの部分木スキップの安全弁）。 */
+    public static int treeNonStyleAttrVersion(HtmlNode node) {
+        return node == null ? 0 : node.treeTop().nonStyleAttrVer;
+    }
 
     /** 属性の持ち主（A8 で {@code HtmlNode} の内部クラスから分けた。以前の暗黙の外側参照と同じ 1 欄）。 */
     private final HtmlNode owner;
@@ -129,7 +134,12 @@ final class AttributeMap extends AbstractMap<String, String> {
     }
 
     private <R> R trackingId(Supplier<R> mutation) {
+        return trackingId(null, mutation);
+    }
+
+    private <R> R trackingId(String key, Supplier<R> mutation) {
         owner.attrVersion++;
+        if (!"style".equals(key) && !"class".equals(key)) owner.treeTop().nonStyleAttrVer++;
         String before = rawGet("id");
         String classBefore = rawGet("class");
         R result = mutation.get();
@@ -146,12 +156,12 @@ final class AttributeMap extends AbstractMap<String, String> {
 
     @Override
     public String put(String key, String value) {
-        return trackingId(() -> rawPut(key, value));
+        return trackingId(key, () -> rawPut(key, value));
     }
 
     @Override
     public String putIfAbsent(String key, String value) {
-        return trackingId(() -> {
+        return trackingId(key, () -> {
             int idx = indexOfKey(key);
             if (idx >= 0) {
                 String cur = pairs[(idx << 1) + 1];
@@ -176,12 +186,12 @@ final class AttributeMap extends AbstractMap<String, String> {
 
     @Override
     public String remove(Object key) {
-        return trackingId(() -> rawRemove(key));
+        return trackingId(key instanceof String s ? s : null, () -> rawRemove(key));
     }
 
     @Override
     public boolean remove(Object key, Object value) {
-        return trackingId(() -> {
+        return trackingId(key instanceof String s ? s : null, () -> {
             int idx = indexOfKey(key);
             if (idx < 0 || !Objects.equals(pairs[(idx << 1) + 1], value)) return false;
             removeAt(idx);
@@ -199,7 +209,7 @@ final class AttributeMap extends AbstractMap<String, String> {
 
     @Override
     public String replace(String key, String value) {
-        return trackingId(() -> {
+        return trackingId(key, () -> {
             int idx = indexOfKey(key);
             if (idx < 0) return null;
             int vIdx = (idx << 1) + 1;
@@ -211,7 +221,7 @@ final class AttributeMap extends AbstractMap<String, String> {
 
     @Override
     public boolean replace(String key, String oldValue, String newValue) {
-        return trackingId(() -> {
+        return trackingId(key, () -> {
             int idx = indexOfKey(key);
             if (idx < 0 || !Objects.equals(pairs[(idx << 1) + 1], oldValue)) return false;
             pairs[(idx << 1) + 1] = newValue;

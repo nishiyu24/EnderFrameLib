@@ -90,5 +90,98 @@ class FragSeqPropertyTest {
         FragSeq.Vec v = FragSeq.Vec.of(List.of(FragSeq.EMPTY, FragSeq.EMPTY));
         assertThrows(IndexOutOfBoundsException.class, () -> v.set(2, FragSeq.EMPTY));
         assertThrows(IndexOutOfBoundsException.class, () -> v.set(-1, FragSeq.EMPTY));
+        assertThrows(IndexOutOfBoundsException.class, () -> v.insert(3, FragSeq.EMPTY));
+        assertThrows(IndexOutOfBoundsException.class, () -> v.insert(-1, FragSeq.EMPTY));
+        assertThrows(IndexOutOfBoundsException.class, () -> v.remove(2));
+        assertThrows(IndexOutOfBoundsException.class, () -> v.remove(-1));
+    }
+
+    @Test
+    void randomInsertRemoveSetMatchesArrayList() {
+        for (int seed = 0; seed < 300; seed++) {
+            Random r = new Random(seed + 1000L);
+            int[] counter = {0};
+            int initN = seed < 35 ? seed : r.nextInt(3500);
+            List<FragSeq> model = new ArrayList<>();
+            for (int i = 0; i < initN; i++) model.add(leaf(r, counter));
+            FragSeq.Vec v = FragSeq.Vec.of(model);
+
+            for (int step = 0; step < 50; step++) {
+                int op = model.isEmpty() ? 1 : r.nextInt(4); // 0=set, 1=insert, 2=remove, 3=insert/remove near edges
+                FragSeq.Vec prev = v;
+                int checkIdx = model.isEmpty() ? -1 : r.nextInt(model.size());
+                FragSeq snapAt = checkIdx >= 0 ? model.get(checkIdx) : null;
+                if (op == 0) {
+                    int idx = r.nextInt(model.size());
+                    FragSeq e = leaf(r, counter);
+                    v = v.set(idx, e);
+                    model.set(idx, e);
+                } else if (op == 1 || model.size() < 2) {
+                    int idx = r.nextInt(model.size() + 1);
+                    FragSeq e = leaf(r, counter);
+                    v = v.insert(idx, e);
+                    model.add(idx, e);
+                } else if (op == 2) {
+                    int idx = r.nextInt(model.size());
+                    v = v.remove(idx);
+                    model.remove(idx);
+                } else {
+                    int idx = r.nextBoolean() ? 0 : model.size() - 1;
+                    if (r.nextBoolean()) {
+                        FragSeq e = leaf(r, counter);
+                        v = v.insert(idx, e);
+                        model.add(idx, e);
+                    } else {
+                        v = v.remove(idx);
+                        model.remove(idx);
+                    }
+                }
+                // Immutability check on previous version
+                if (checkIdx >= 0) assertSame(snapAt, prev.get(checkIdx), "prev mutated seed=" + seed + " step=" + step);
+                assertEquals(model.size(), v.len(), "len seed=" + seed + " step=" + step);
+            }
+
+            int total = 0;
+            boolean anyNonEmpty = false;
+            for (FragSeq s : model) {
+                total += s.items();
+                if (!s.empty()) anyNonEmpty = true;
+            }
+            assertEquals(total, v.items(), "items seed=" + seed);
+            assertEquals(!anyNonEmpty, v.empty(), "empty seed=" + seed);
+            DisplayItem[] got = new DisplayItem[v.items()];
+            assertEquals(total, v.copyTo(got, 0));
+            assertArrayEquals(flat(model), got, "order seed=" + seed);
+            for (int i = 0; i < model.size(); i += Math.max(1, model.size() / 20)) {
+                assertSame(model.get(i), v.get(i));
+            }
+        }
+    }
+
+    @Test
+    void insertRemoveSharesUntouchedBranchesAndEmptyOfLen() {
+        Random r = new Random(99);
+        int[] counter = {0};
+        List<FragSeq> model = new ArrayList<>();
+        for (int i = 0; i < 2000; i++) model.add(leaf(r, counter));
+        FragSeq.Vec v = FragSeq.Vec.of(model);
+        FragSeq extra = new FragSeq.Leaf(new DisplayItem[]{item("ins")});
+        FragSeq.Vec ins = v.insert(10, extra);
+        assertEquals(2001, ins.len());
+        assertSame(extra, ins.get(10));
+        assertSame(v.get(1500), ins.get(1501));
+        assertSame(v.slots[v.slots.length - 1], ins.slots[ins.slots.length - 1]);
+
+        FragSeq.Vec rem = ins.remove(10);
+        assertEquals(2000, rem.len());
+        assertSame(v.get(1500), rem.get(1500));
+
+        assertEquals(0, FragSeq.Vec.emptyOfLen(0).len());
+        FragSeq.Vec empty2000 = FragSeq.Vec.emptyOfLen(2000);
+        assertEquals(2000, empty2000.len());
+        assertEquals(0, empty2000.items());
+        assertEquals(true, empty2000.empty());
+        assertEquals(false, empty2000.set(1999, extra).empty());
+        assertSame(extra, empty2000.set(1999, extra).get(1999));
     }
 }
