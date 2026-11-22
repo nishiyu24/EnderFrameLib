@@ -345,7 +345,7 @@ final class MeasureMemo {
     }
 
     private void measureCore(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        restoreTentativeStash(box);
+        restoreTentativeStash(box); MemoKpi.MEASURE_CALLS.increment();
         if (box.needsAdoption) {
             for (int i = 0, n = box.children.size(); i < n; i++) box.adopt(box.children.get(i));
             box.needsAdoption = false;

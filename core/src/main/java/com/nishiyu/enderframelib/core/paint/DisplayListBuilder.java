@@ -259,7 +259,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
 
     public static long fragmentOwnReused() { return FragmentPaint.OWN_REUSED.sum(); }
 
-    public static long fragmentMemoHits() { return FragmentPaint.MEMO_HITS.sum(); }
+    public static long fragmentMemoHits() { return FragmentPaint.MEMO_HITS.sum(); } public static long fragmentMemoMisses() { return FragmentPaint.MEMO_MISSES.sum(); }
 
     /**
      * 断片の記憶の鍵のうち、描画の枠組み（省略・窓・親相対・平行移動の方式・ビューポート）。変わったら記憶は全部外れる。

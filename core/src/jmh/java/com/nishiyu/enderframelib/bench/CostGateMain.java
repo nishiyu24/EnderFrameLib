@@ -29,6 +29,10 @@ import java.util.concurrent.Future;
  * ./gradlew :core:costGate -Pcostgate.jvmArgs="-Denderframe.layout.nofitreuse=true"   子 JVM へ引数を足す（ゲートが効くことの確認用）
  * </pre>
  * 確保量が減った場合も赤にする（基準値を更新して、良くなった値を固定するため）。
+ *
+ * <p><b>記憶の増幅率</b>（C 系の最終目標。計画書 §3 冒頭）: {@code COST} 行の {@code memo*} は、開いた後の 1,200 フレームで再計算した箱の数（style・測定・配置・断片）。
+ * シナリオごとの変更元の数（{@link #CHANGE_SOURCES}）で割った 1 フレームあたりの比の最悪値が {@value #AMP_LIMIT} を超えたら赤にする。
+ * 既に超えている行は基準値の {@code memoCeil=N} を上限にし、更新は上限を下げる方向にだけ許す（上げるには {@code -Pcostgate.allowAmpRise}）。</p>
  */
 public final class CostGateMain {
     private CostGateMain() { }
@@ -38,6 +42,15 @@ public final class CostGateMain {
     /** 基準値の行ごとの allocBytes の許容（%）。Windows と Linux で JIT の違いから確保量が揺れる行にだけ付ける（経路の回数は完全一致のまま）。 */
     static final String ALLOC_TOL_KEY = "allocTol";
     private static final int FRAMES = 600;
+    /** 開く以外のシナリオのウォームアップ（{@code FineProfileMain} と同じ値）。{@code memo*} は FRAMES + これのフレームぶん。 */
+    private static final int WARMUP = 600;
+    /** 増幅率（変更元 1 つあたりの再計算数 / フレーム）の合否線。 */
+    static final double AMP_LIMIT = 10;
+    /** 基準値の行ごとの増幅率の上限（{@link #AMP_LIMIT} を超えている既知の行だけに付く）。 */
+    static final String AMP_CEIL_KEY = "memoCeil";
+    /** シナリオごとの変更元の数。ここに無いシナリオ（全箱が本当に変わる inherited・fontsize・resizeexact・open）は増幅率の対象外。0 は再計算数そのものを見る。 */
+    private static final Map<String, Integer> CHANGE_SOURCES = Map.of("idle", 0, "scroll", 0, "hover", 2, "style", 1, "text", 1, "child", 2);
+    private static final String[] AMP_KEYS = {"memoStyleRecomputed", "memoMeasureComputed", "memoPlaced", "memoFragMisses"};
 
     /** 文書・シナリオ［・バックエンド］。バックエンドの既定は null（パイプラインだけ）。cpu 行は名前に {@code " cpu"} が付く。 */
     private static final String[][] RUNS = {
@@ -115,10 +128,21 @@ public final class CostGateMain {
             sb.append("# 条件: 新しい JVM・ワーカー 1 本・FontResolver.FALLBACK・null バックエンド（cpu の行だけソフトウェア描画）・ウォームアップ 600 + 計測 ").append(FRAMES).append(" フレーム。\n");
             sb.append("# allocBytes は ±5%（+").append(ALLOC_SLACK_BYTES).append(" B の余裕）、ほかの項目は完全一致で比べる。\n");
             sb.append("# ").append(ALLOC_TOL_KEY).append("=N の行は allocBytes を ±N% で比べる（OS・JDK の JIT の違いで確保量が揺れる小さな行。経路の回数は同じ）。更新しても保つ。\n");
+            sb.append("# memo* は開いた後の再計算数（完全一致）。memoCeil=N の行は記憶の増幅率が合否線 ").append((long) AMP_LIMIT).append(" を超える既知の行で、N を上限にする（下げる方向にだけ更新できる）。\n");
             for (var e : measured.entrySet()) {
                 sb.append(e.getKey()).append(" | ").append(format(e.getValue()));
                 Long tol = old.getOrDefault(e.getKey(), Map.of()).get(ALLOC_TOL_KEY);
                 if (tol != null) sb.append(' ').append(ALLOC_TOL_KEY).append('=').append(tol);
+                double amp = worstAmplification(scenarioOf(e.getKey()), e.getValue());
+                if (amp > AMP_LIMIT) {
+                    long ceil = (long) Math.ceil(amp);
+                    Long oldCeil = old.getOrDefault(e.getKey(), Map.of()).get(AMP_CEIL_KEY);
+                    if ((oldCeil == null || ceil > oldCeil) && !Boolean.getBoolean("costgate.allowAmpRise")) {
+                        throw new IllegalStateException(e.getKey() + ": 増幅率 " + String.format("%.1f", amp) + " が " + (oldCeil == null ? "合否線 " + (long) AMP_LIMIT : "上限 " + oldCeil)
+                                + " を超える（上げる更新は -Pcostgate.allowAmpRise で明示する）");
+                    }
+                    sb.append(' ').append(AMP_CEIL_KEY).append('=').append(oldCeil == null ? ceil : Math.min(oldCeil, ceil));
+                }
                 sb.append('\n');
             }
             Files.writeString(BASELINE, sb.toString(), StandardCharsets.UTF_8);
@@ -152,6 +176,12 @@ public final class CostGateMain {
                 }
             }
         }
+        for (var e : measured.entrySet()) {
+            double amp = worstAmplification(scenarioOf(e.getKey()), e.getValue());
+            Long ceil = baseline.getOrDefault(e.getKey(), Map.of()).get(AMP_CEIL_KEY);
+            double limit = ceil != null ? Math.max(ceil, AMP_LIMIT) : AMP_LIMIT;
+            if (amp > limit) failures.add(String.format("%s: 記憶の増幅率 %.1f > %s（変更元あたりの再計算数。計画書 §3 C 系の最終目標）", e.getKey(), amp, ceil != null ? "上限 " + ceil : "合否線 " + (long) AMP_LIMIT));
+        }
         if (only.isEmpty()) for (String key : baseline.keySet()) if (!measured.containsKey(key)) failures.add(key + ": 基準値にあるが測っていない");
         if (failures.isEmpty()) {
             System.out.println("COSTGATE OK (" + measured.size() + " scenarios)");
@@ -167,6 +197,23 @@ public final class CostGateMain {
         }
         System.out.println("意図した変化なら ./gradlew :core:costGate -Pcostgate.update で基準値を更新する。");
         System.exit(1);
+    }
+
+    /** 変更元あたりの再計算数（1 フレーム）の最悪値。増幅率の対象外のシナリオは -1。 */
+    static double worstAmplification(String scenario, Map<String, Long> m) {
+        Integer src = CHANGE_SOURCES.get(scenario);
+        if (src == null) return -1;
+        double worst = 0;
+        for (String k : AMP_KEYS) {
+            Long v = m.get(k);
+            if (v != null) worst = Math.max(worst, v / ((double) (FRAMES + WARMUP) * Math.max(src, 1)));
+        }
+        return worst;
+    }
+
+    private static String scenarioOf(String key) {
+        String[] p = key.split(" ");
+        return p.length > 1 ? p[1] : "";
     }
 
     /** 新しい JVM で 1 シナリオを走らせて COST 行を読む。 */

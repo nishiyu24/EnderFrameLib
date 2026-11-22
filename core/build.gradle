@@ -470,6 +470,7 @@ tasks.register('costGate', JavaExec) {
     if (project.hasProperty('costgate.update')) systemProperty 'costgate.update', 'true'
     if (project.hasProperty('costgate.tolerance')) systemProperty 'costgate.tolerance', project.property('costgate.tolerance').toString()
     if (project.hasProperty('costgate.jvmArgs')) systemProperty 'costgate.jvmArgs', project.property('costgate.jvmArgs').toString()
+    if (project.hasProperty('costgate.allowAmpRise')) systemProperty 'costgate.allowAmpRise', 'true'
     if (project.hasProperty('costgate.only')) systemProperty 'costgate.only', project.property('costgate.only').toString()
     if (project.hasProperty('costgate.parallel')) systemProperty 'costgate.parallel', project.property('costgate.parallel').toString()
 }

@@ -95,7 +95,7 @@ final class PlacementMemo {
     static boolean tryReuseOrShift(LayoutBox box, float parentX, float parentY,
                                    float parentOuterW, float parentOuterH,
                                    LayoutContext ctx, boolean checkAutoSubtree) {
-        PlacementMemo pm = box.placementMemo;
+        PlacementMemo pm = box.placementMemo; com.nishiyu.enderframelib.core.layout.MemoKpi.PLACE_CALLS.increment();
         if (pm == null) return false;
         boolean sameScroll = !box.isScrollContainer()
                 || (ctx.scrollState().getScrollX(box.node) == pm.lastScrollX

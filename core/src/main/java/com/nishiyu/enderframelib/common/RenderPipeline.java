@@ -1037,7 +1037,7 @@ public class RenderPipeline {
                                                      ContainerBox parentSizeContainer, boolean ancestorHasMoving,
                                                      List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList,
                                                      boolean workerShare) {
-        HtmlNode node = box.node;
+        HtmlNode node = box.node; com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_VISITED.increment();
         InteractionState.StateFlags flags = interactionState.getOrCreate(node);
         StyleCache cache = force != FORCE_NONE ? StyleCache.INVALID : styleCacheState(flags, parentFontSize, scope);
         boolean isDirty = cache != StyleCache.VALID;
@@ -1055,7 +1055,7 @@ public class RenderPipeline {
         ContainerBox selfContainer;
         boolean selfOrAncestorMoving;
 
-        if (isDirty) {
+        if (isDirty) { com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_RECOMPUTED.increment();
             ComputedStyle prevStyle = box.style;
             ContainerBox container = parentSizeContainer;
             // StyleSet は表を引けなかったとき（computeEntry）だけ作る
@@ -1082,7 +1082,7 @@ public class RenderPipeline {
                     ? flags.hasInteractiveRules : StyleResolver.hasInteractiveRules(node, sheet));
 
             if (prevStyle == null || !ComputedStyle.sameDeclarations(prevStyle, computed)) {
-                styleChanged = true;
+                styleChanged = true; com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_CHANGED.increment();
                 if (StyleResolver.isLayoutAffectingChange(prevStyle, computed)) {
                     if (isPositionOnlyChange(prevStyle, computed)) {
                         repositionRequired = true;

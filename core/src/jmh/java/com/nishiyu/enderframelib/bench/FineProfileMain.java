@@ -107,6 +107,7 @@ public final class FineProfileMain {
             long[] now = {1000};
             view[0].frame(now[0], backend, true);
             Target t = Target.find(view[0], doc);
+            long[] memo0 = memoSnapshot(); // 開く分（初回の組み立て）を除くため、計測の前に取っておく
 
             com.sun.management.ThreadMXBean mx = (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
             long tid = Thread.currentThread().getId();
@@ -243,7 +244,7 @@ public final class FineProfileMain {
                     + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
                     + " layoutsShifted=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted()
                     + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped()
-                    + "");
+                    + memoCostKeys(memoSnapshot(), memo0));
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             {
@@ -253,7 +254,16 @@ public final class FineProfileMain {
                         com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted() / (double) n,
                         com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped() / (double) n);
             }
-            System.out.println("FRAGMENT memo hits=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() + " ownReused=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentOwnReused());
+            {
+                // C 系の KPI（記憶の効き具合）: 段ごとの 1 フレームあたりの呼び出し・使い回し・再計算（開いた後のウォームアップ＋計測の差分 / フレーム）
+                double n = frames + warmup;
+                long[] d = memoSnapshot();
+                for (int k = 0; k < d.length; k++) d[k] -= memo0[k];
+                System.out.printf("MEMO per-frame style(visited=%.1f recomputed=%.1f changed=%.1f) measure(calls=%.1f computed=%.1f) place(calls=%.1f placed=%.1f) fragment(hits=%.1f misses=%.1f) items=%d%n",
+                        d[0] / n, d[1] / n, d[2] / n, d[3] / n, d[4] / n, d[5] / n, d[6] / n, d[7] / n, d[8] / n, view[0].ui().renderCache().size());
+            }
+            System.out.println("FRAGMENT memo hits=" +com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() + " ownReused=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentOwnReused()
+                    + " misses=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoMisses());
             System.out.println("RANGECULL planned=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_PLANNED.get()
                     + " ineligible=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_INELIGIBLE.get()
                     + " culledItems=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_CULLED_TOTAL.get());
@@ -301,6 +311,24 @@ public final class FineProfileMain {
         int c = n instanceof HtmlElement ? 1 : 0;
         for (HtmlNode ch : n.children) c += countElements(ch);
         return c;
+    }
+
+    /** 記憶の KPI のカウンタ（累計）: style 訪問・再計算・変化 / 測定 呼び出し・計算 / 配置 呼び出し・配置し直し / 断片 hit・miss。 */
+    private static long[] memoSnapshot() {
+        long pc = com.nishiyu.enderframelib.core.layout.MemoKpi.PLACE_CALLS.sum();
+        long placed = pc - com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped() - com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted();
+        return new long[]{
+                com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_VISITED.sum(), com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_RECOMPUTED.sum(),
+                com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_CHANGED.sum(),
+                com.nishiyu.enderframelib.core.layout.MemoKpi.MEASURE_CALLS.sum(), com.nishiyu.enderframelib.core.layout.LayoutBox.measurementsComputed(),
+                pc, placed,
+                com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits(), com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoMisses()};
+    }
+
+    /** {@code COST} 行の末尾に足す、回帰ゲートが完全一致で比べる記憶の個数（再計算した数。開く分を除く）。 */
+    private static String memoCostKeys(long[] now, long[] base) {
+        return " memoStyleRecomputed=" + (now[1] - base[1]) + " memoMeasureComputed=" + (now[4] - base[4])
+                + " memoPlaced=" + (now[6] - base[6]) + " memoFragMisses=" + (now[8] - base[8]);
     }
 
     private static StandaloneView newView(String html) {
