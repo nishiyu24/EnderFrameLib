@@ -28,6 +28,7 @@ import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.model.RoundedBorderSpec;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
@@ -99,8 +100,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** このフレームで塗り直す範囲（タイル境界まで広げた外接矩形）。 */
     final DamageRegion damage = new DamageRegion();
-    /** 前のフレームの {@link DamagePlanner#planDamage} を始めた時点の塗り・移動量の書き込みの通し番号。 */
-    int prevEpoch;
     /** 前のフレームの表示リスト（項目の同一性の比較と、旧範囲の持ち主）。 */
     List<DisplayItem> prevItems;
     boolean prevValid;
@@ -177,48 +176,16 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     /** 根の画素を確保済みか（診断・テスト用）。 */
-    public boolean isRootAllocated() {
-        return raster.isRootAllocated();
-    }
-
-    public SoftwareRenderBackend fonts(FontResolver resolver) {
-        resources.fonts(resolver);
-        return this;
-    }
-
-    public SoftwareRenderBackend images(ImageProvider provider) {
-        resources.images(provider);
-        return this;
-    }
-
-    public SoftwareRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) {
-        resources.scene3dWorlds(provider);
-        return this;
-    }
-
-    public Scene3DWorld scene3dWorld(long worldId) {
-        return resources.scene3dWorld(worldId);
-    }
-
+    public boolean isRootAllocated() { return raster.isRootAllocated(); }
+    public SoftwareRenderBackend fonts(FontResolver resolver) { resources.fonts(resolver); return this; }
+    public SoftwareRenderBackend images(ImageProvider provider) { resources.images(provider); return this; }
+    public SoftwareRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) { resources.scene3dWorlds(provider); return this; }
+    public Scene3DWorld scene3dWorld(long worldId) { return resources.scene3dWorld(worldId); }
     /** フレームの最初に塗る色（非乗算の ARGB。既定は透明）。 */
-    public SoftwareRenderBackend clearColor(int argb) {
-        this.clearColor = Pixmap.premultiply(argb);
-        return this;
-    }
-
-    /** 描画先（事前乗算の ARGB）。 */
-    @Override
-    public Pixmap pixmap() { return raster.root(); }
-
-    @Override
-    public float devicePixelRatio() { return dpr; }
-
-    // ------------------------------------------------------------------ フレーム
-
-    @Override
-    public String sessionId() {
-        return sessionId;
-    }
+    public SoftwareRenderBackend clearColor(int argb) { this.clearColor = Pixmap.premultiply(argb); return this; }
+    @Override public Pixmap pixmap() { return raster.root(); }
+    @Override public float devicePixelRatio() { return dpr; }
+    @Override public String sessionId() { return sessionId; }
 
     /**
      * 描画先を {@link #clearColor} で塗り直し、{@code items} を時刻 {@code nowMs}（ミリ秒）の見た目で描く。
@@ -228,14 +195,17 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * {@link Painter#skipItem} で走査から外す。見積もりが外れた（変更項目がダメージの外へ塗った）ときは
      * 全面を描き直すので、絵は常に全面描画と同じになる。</p>
      */
+    @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, nowMs); }
+
     @Override
-    public void render(List<DisplayItem> items, long nowMs) {
+    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
         if (items == null || items.isEmpty()) {
             raster.clearAll(clearColor);
             prevValid = false;
             prevItems = null;
             return;
         }
+        PaintOffsets eff = offsets != null ? offsets : PaintOffsets.EMPTY;
         route.begin(null);
         driver.setScrollSnapDpr(0f);
         raster.beginFrame();
@@ -243,13 +213,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
         boolean partial = false;
         recordExtents = true;
         try {
-            driver.prepare(items, nowMs, frame);
-            partial = damagePlanner.planDamage(items, nowMs);
+            driver.prepare(items, eff, nowMs, frame);
+            partial = damagePlanner.planDamage(items, eff, nowMs);
             if (partial) raster.clearTiles(damage, clearColor);
             else raster.clearAll(clearColor);
             partialActive = partial;
             damageAbort = false;
-            driver.run(items, nowMs, frame, painter);
+            driver.run(items, eff, nowMs, frame, painter);
             queue.flush();
             if (partial && damageAbort) { // 見積もりより外へ塗った: 全面でやり直す（絵は同じ）
                 abortedFrames++;
@@ -258,7 +228,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 damageAbort = false;
                 raster.clearAll(clearColor);
                 damagePlanner.resetCurExtents(items.size());
-                driver.run(items, nowMs, frame, painter);
+                driver.run(items, eff, nowMs, frame, painter);
                 queue.flush();
             }
         } finally {
@@ -275,19 +245,22 @@ public final class SoftwareRenderBackend implements RenderBackend {
         byte m = driver.fillActivity(activity, items.size(), nowMs);
         frameHadActive = m != PaintSceneDriver.ACT_IDLE;
         frameHadGeometryActive = m == PaintSceneDriver.ACT_OPACITY;
-        damagePlanner.commitFrame(items, partial);
+        damagePlanner.commitFrame(items, eff, partial);
     }
+
+    /** 描画先を塗り直さずに {@code items} を重ねる（平行移動なし版）。 */
+    public void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink) { renderOnto(items, PaintOffsets.EMPTY, nowMs, sink); }
 
     /**
      * 描画先を塗り直さずに {@code items} を重ねる。{@code sink} があれば、単色の角丸矩形と角丸の枠線はそちらへ渡す
      * （受け取られなかったものだけ CPU が描く）。GPU 版が文字・画像などの CPU 描画を重ねるのに使う。
      */
-    public void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink) {
+    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, long nowMs, GpuSink sink) {
         // 全面を塗っていない・別の描画先かもしれないので、差分描画の前提を捨てる
         prevValid = false;
         prevItems = null;
         cpuOpsOrdered = cpuOps - 1; // フレームの頭は必ず順序づけを確かめる
-        drawFrame(items, nowMs, sink);
+        drawFrame(items, offsets != null ? offsets : PaintOffsets.EMPTY, nowMs, sink);
     }
 
     /** CPU が描いた範囲 {@code {x0, y0, x1, y1}}（x1・y1 は含まない）。何も描いていなければ {@code null}。 */
@@ -311,7 +284,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (!frameParts.isEmpty()) frameParts.clear();
     }
 
-    private void drawFrame(List<DisplayItem> items, long nowMs, GpuSink gpu) {
+    private void drawFrame(List<DisplayItem> items, PaintOffsets offsets, long nowMs, GpuSink gpu) {
         if (items == null || items.isEmpty()) return;
         partialActive = false;
         recordExtents = false;
@@ -321,7 +294,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         beginFrame(items);
         try {
             // 走査（アニメーション補間・親子の変形・グループの鎖）は PaintSceneDriver が受け持ち、ここは画素を塗るだけ
-            driver.run(items, nowMs, frame, painter);
+            driver.run(items, offsets, nowMs, frame, painter);
             queue.flush(); // 開いたままの層の中身も、層を捨てる前に書き切る
         } finally {
             queue.discard(); // 例外のときは捨てる（描画先は不定）
@@ -412,7 +385,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private String cachedOwnerKeyOf(DisplayItem node, int nodeIndex) {
-        Object token = driver.contentToken();
+        Object token = driver.items();
         if (eligibleToken != token) {
             eligibleToken = token;
             java.util.Arrays.fill(retainEligible, (byte) 0);
@@ -433,7 +406,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) {
         if (route.current() == null || recordOwner != null) return RetainPlan.NONE;
-        Object token = driver.contentToken();
+        Object token = driver.items();
         if (eligibleToken != token) {
             eligibleToken = token;
             java.util.Arrays.fill(retainEligible, (byte) 0);
@@ -687,12 +660,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
         GpuSink spanSink = null;
         if (canFastStatic && replay.sameItemAndPose(index, el, res)) {
             if (replay.culled(index)) {
-                if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && fastClipUnchanged(index, replay.clip(index))) {
+                if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && fastClipUnchanged(index, el, replay.clip(index))) {
                     culledItems++;
                     return;
                 }
             } else if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_GL_REPLAY.on() && replayableType(el.type()) && replay.flat(index) == flat
-                    && fastClipUnchanged(index, replay.clip(index))) {
+                    && fastClipUnchanged(index, el, replay.clip(index))) {
                 spanSink = route.current();
                 if (spanSink != null && spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
                     cpuOpsOrdered = cpuOps;
@@ -758,11 +731,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 項目ごとの再生の鍵（{@link ReplayKeys}）。 */
     private final ReplayKeys replay = new ReplayKeys();
 
-    private boolean fastClipUnchanged(int index, Clip cachedClip) {
+    private boolean fastClipUnchanged(int index, DisplayItem el, Clip cachedClip) {
         if (cachedClip == null || index >= clipCache.length) return false;
         ClipEntry ce = clipCache[index];
         if (ce == null || ce.clip != cachedClip || ce.w != raster.targetWidth() || ce.h != raster.targetHeight()
-                || ce.generation != clipGeneration || ce.version != driver.itemVersion(index)) {
+                || ce.generation != clipGeneration || !ItemDiff.unchanged(ce.item, el)) {
             return false;
         }
         for (int k = 0; k < ce.owner.length; k++) {
@@ -850,21 +823,22 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ クリップ
 
-    /** 項目のクリップの結果と、それを作ったときの前提（描画先の大きさ・持ち主の姿勢）。前提が同じ間は作り直さない。 */
+    /** クリップ無しの項目に使う {@link ClipEntry#source} の番兵。 */
+    private static final String NO_CLIP_SOURCE = "";
+
+    /** 項目のクリップの結果と、それを作ったときの前提（描画先の大きさ・持ち主の姿勢・作った項目と元）。前提が同じ間は作り直さない。 */
     private static final class ClipEntry {
         Clip clip;
         int[] owner;
         Resolved[] ownerRes;
         int w, h;
-        /** 作ったときの世代と、クリップの元（{@link ClipRect} の同一インスタンス。動くクリップは null）。 */
+        /** 作ったときの世代と項目、クリップの元（{@link ClipRect} の同一インスタンス。無クリップは {@link #NO_CLIP_SOURCE}）。 */
         long generation;
-        /** 作ったときの項目の版（{@link PaintSceneDriver#itemVersion}）。世代が同じでも、差し替わった項目の結果は使わない。 */
-        int version;
+        DisplayItem item;
         Object source;
         /** 持ち主の id があるのに見つからなかった（後から現れると結果が変わるので世代をまたいで使い回さない）。 */
         boolean unresolvedOwner;
     }
-
 
     void syncClipGeneration() {
         if (clipGeneration != driver.generation()) {
@@ -876,11 +850,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
     Clip buildClip(int index, DisplayItem el, AnimatedValues anim) {
         ClipEntry ce = clipCache[index];
         RenderMeta m0 = el.meta();
-        Object source = m0 != null ? m0.clipRect() : null;
-        // 項目の並びが変わった世代をまたぐときは、元の ClipRect が同一インスタンスのものだけ使い回す（添字が同じでも別の項目かもしれない）
+        ClipRect cr0 = m0 != null ? m0.clipRect() : null;
+        Object source = cr0 != null ? cr0 : (anim.clipData == null ? NO_CLIP_SOURCE : null);
+        // 項目の並びが変わった世代をまたぐときは、元の ClipRect（または無クリップ番兵）が同じものだけ使い回す
         boolean recording = recordOwner != null; // 保持する層へ記録中は、コンテナの切り取りを外すので使い回しの覚えを使わない
         if (!recording && ce != null && ce.w == raster.targetWidth() && ce.h == raster.targetHeight()
-                && ((ce.generation == clipGeneration && ce.version == driver.itemVersion(index))
+                && ((ce.generation == clipGeneration && ItemDiff.unchanged(ce.item, el))
                         || (source != null && ce.source == source && !ce.unresolvedOwner))) {
             boolean same = true;
             for (int k = 0; k < ce.owner.length && same; k++) {
@@ -889,7 +864,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             if (same) return ce.clip;
         }
         int tw = raster.targetWidth(), th = raster.targetHeight();
-        boolean share = com.nishiyu.enderframelib.core.kernel.Shortcut.CLIP_SHARE.on() && !recording && source != null;
+        boolean share = com.nishiyu.enderframelib.core.kernel.Shortcut.CLIP_SHARE.on() && !recording && cr0 != null;
         if (share) {
             SharedClip sc = frameClips.get(source);
             if (sc != null && sc.w() == tw && sc.h() == th && ownersUnchanged(sc.owner(), sc.ownerRes())) {
@@ -901,7 +876,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 ce.owner = sc.owner();
                 ce.ownerRes = sc.ownerRes();
                 ce.generation = clipGeneration;
-                ce.version = driver.itemVersion(index);
+                ce.item = el;
                 ce.source = source;
                 ce.unresolvedOwner = false;
                 ce.w = tw;
@@ -932,7 +907,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         ce.clip = finishClip(parts);
         ce.owner = clipOwnerCount == 0 ? NO_OWNERS : java.util.Arrays.copyOf(clipOwnerScratch, clipOwnerCount);
         ce.generation = clipGeneration;
-        ce.version = driver.itemVersion(index);
+        ce.item = el;
         ce.source = source;
         ce.unresolvedOwner = sawUnresolvedOwner;
         ce.ownerRes = clipOwnerCount == 0 ? NO_OWNER_RES : java.util.Arrays.copyOf(clipOwnerResScratch, clipOwnerCount);

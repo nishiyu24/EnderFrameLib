@@ -717,6 +717,16 @@ JFR で、時間と確保の原因を測ってから直した。
 - 順序: ①死んだ塗りの書き込みを削除〔動作不変〕→ ②平行移動の表を作り、項目から読む所を表へ向ける〔両方を同時には持たない: 書き口は表だけにして、セルの `offset` を消す〕→ ③ `itemVersion` → ④ 「前に見た番号」。各段で全件・3 者画素一致・Linux CI。
 - 期待: スクロールの確保・時間は悪化しない〔今も項目を複製せず書き込むだけ。表の書き込みも同じ量〕。`ImmutableItemList` のブロック時計が無くなり、索引の照合は同一ブロックの参照比較だけになる。
 
+### 21.5 完了記録（C6、2026-11-22）
+
+設計 21.3 ①〜④ をそのまま完了した。
+
+- **① 死んだ塗りの書き込みを削除＋項目の完全不変化**: `PaintCell` の `WRITES`・`epoch`・`geomEpoch`・`clock`・`pos`・`offsetX`・`offsetY`・`currentEpoch`・`writePaint`・`writeOffset`・`copy` と、`DisplayItem` の `paintEpoch`・`geomEpoch`・`sameExceptPaint`・`repaint`・`repaintFrom`・`attach`・`baseTranslateX/Y`・`setPaintOffset`・`frozen` を削除し、`PaintCell`・`DisplayItem` の全非静的欄を `final` 化した。
+- **② 平行移動の外部表 `PaintOffsets`**: `UiView` の平行移動〔スクロール・窓のドラッグ・sticky〕は `PaintOffsets`（要素 ID 鍵・キャッシュ済み長整数鍵・表全体の `version` と鍵増減 `keysVersion`・`EMPTY` 不変番兵）に集約し、`UiView.renderCache()` は不変スナップショットそのものを返す（`baseRenderCache`・`publishRenderCache`・`applyPendingPaintOffsets`・`baseIndexById` 等を削除、`UiView` `2,087` 行へ縮小）。描画（`PaintSceneDriver`・`SoftwareRenderBackend`・`DamagePlanner`・`GpuRenderBackend`・`LwjglGlRenderBackend`・`VkRenderBackend`・`StandaloneView`・ホスト `PaintRequest`/`DisplayItemDrawer`/`LinuxDesktopScreen`）と `HitTestIndex`・`StaticFrameGate` は項目本体ではなく外側の `PaintOffsets` を参照する。`StaticFrameGate` は同一 `PaintOffsets` インスタンスのクリアを取りこぼさないよう `paintedOffsetsEmpty` も保持する。
+- **③ `ItemDiff` と `itemVersion` の縮退**: `ItemDiff.unchanged(prev, cur)` は `prev == cur` の 2 引数へ簡素化し、`ImmutableItemList.{touched, attach, epoch, token, clock}`・`ChunkClock`〔`ChunkClockTest` 含む〕・`contentToken`・`PaintSceneDriver.itemVersion`・`indexedBase`・`snapScrollContent` を削除。`SoftwareRenderBackend` のクリップ記憶 `ClipEntry` は `version` を `DisplayItem item`（＋ `NO_CLIP_SOURCE` 番兵）＋ `ItemDiff.unchanged(ce.item, el)` 比較へ置換した。
+- **④ 「前に見た番号」4 か所の畳み込み**: `CssAnimator.seenEpoch`・`ReplayKeys.epoch`・`PaintSceneDriver.indexedEpoch`・`DamagePlanner.prevEpoch` を廃止し、位置変化の検出は `DamagePlanner` と `StaticFrameGate` が `PaintOffsets` の `version` と前回スナップショットの差分だけで行う。
+- **検証・計測**: `PaintCellRatchetTest`（`DisplayItem`/`PaintCell` 全欄 `final`・`PaintOffsets` 書換箇所制限）と `PaintOffsetsTest` を整備。`costGate` で `voidwave.html scroll` `-61.7%`（`2,352 → 901 B`）・`machine_ui.html scroll` `-6.2%`（`47,695 → 44,759 B`）・`varied-list-500 inherited` `-6.9%`（`195,473 → 181,897 B`）・`showcase inherited` `-5.2%`（`55,365 → 52,474 B`）を確認し基準値を更新（56 シナリオ `COSTGATE OK`）、`mutationFuzz` 450 回ずれ 0。
+
 ---
 
 ## 22. 変更の計算と経路の予測（C7。2026-11-22）

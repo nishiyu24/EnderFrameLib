@@ -6,6 +6,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 
@@ -72,6 +73,7 @@ public final class PaintSceneDriver {
     private boolean isNeutral(DisplayItem el, int i) {
         if (el.translateX() != 0f || el.translateY() != 0f || el.scaleX() != 1f || el.scaleY() != 1f || el.rotate() != 0f
                 || el.opacity() != 1f || el.hints().skew() != 0f) return false;
+        if (i < itemOffX.length && (itemOffX[i] != 0f || itemOffY[i] != 0f)) return false;
         if (el.animDef() != null && !com.nishiyu.enderframelib.core.css.model.AnimationSpec.NONE.equals(el.animDef())) return false;
         if (el.type() == ElementType.NODE && ItemDiff.hasFx(el.hints().layer())) return false;
         if (el.type() == ElementType.SCENE) return false;
@@ -201,11 +203,15 @@ public final class PaintSceneDriver {
     private Resolved[] curRes = new Resolved[0], prevRes = new Resolved[0], prevParentRes = new Resolved[0];
     private boolean[] prevStatic = new boolean[0], prevIdle = new boolean[0], visiting = new boolean[0];
     private CssAnimator.AnimState[] states = new CssAnimator.AnimState[0];
-    /**
-     * 項目ごとの版。{@link #reconcileIndex} が差し替えた位置だけ増える（索引を作り直すと 0 に戻る）。
-     * 項目の添字で引く外部のキャッシュ（クリップ）が、世代が同じまま差し替わった項目の古い結果を返さないための印。
-     */
-    private int[] itemVersion = new int[0];
+    /** 外部 {@link PaintOffsets} から解決した、項目添字ごとの描画上の平行移動。 */
+    private float[] itemOffX = new float[0], itemOffY = new float[0];
+    private int[] activeOffIdx = new int[8];
+    private int activeOffCount;
+    private int[] scratchOffIdx = new int[8];
+    private float[] scratchOffX = new float[8], scratchOffY = new float[8];
+    private PaintOffsets seenOffsets;
+    private int seenOffsetsVersion = -1;
+    private float seenSnapDpr;
     private int[] diffBuf = new int[64];
     /** 差のある位置の数がこれを超える（項目数に対する割合）なら、差分の更新より作り直しの方が安い。 */
     private static final int PATCH_MAX_DIFF_DIVISOR = 4;
@@ -228,72 +234,49 @@ public final class PaintSceneDriver {
     /** 項目の索引を作り直すたび（リストが変わったとき）に増える。項目の位置で引く外部のキャッシュの無効化に使う。 */
     public long generation() { return generation; }
 
-    /** 項目 {@code i} の版（{@link #itemVersion}）。 */
-    public int itemVersion(int i) { return i < itemVersion.length ? itemVersion[i] : 0; }
-
     /** 項目 {@code i} の親（{@link ElementType#NODE} の項目）の位置。無ければ -1。 */
     public int parentIndex(int i) { return i >= 0 && i < parentIdx.length ? parentIdx[i] : -1; }
 
-    /**
-     * 項目 {@code el} に、時刻 {@code nowMs} でまだ動いている補間・キーフレームがあるか。
-     * 描画側が「変化がないフレームを飛ばせるか」を、項目ごとに確かめるために使う。
-     */
-    public static boolean itemActiveAt(String sessionId, DisplayItem el, long nowMs) {
-        return CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs);
-    }
-
+    /** 項目 {@code el} に、時刻 {@code nowMs} でまだ動いている補間・キーフレームがあるか。静止判定用。 */
+    public static boolean itemActiveAt(String sessionId, DisplayItem el, long nowMs) { return CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs); }
     /** 走査中の、フレーム全体の変換（CSS px → デバイス画素）。 */
     public Matrix2D frame() { return frame; }
-
     /** 走査中の、ノードハンドルと部品番号から項目を引く。 */
     public DisplayItem item(int nodeHandle, int partOrdinal) { return byId.get(DisplayItem.keyOf(nodeHandle, partOrdinal)); }
-
     /** ノードハンドルと部品番号の項目の位置。無ければ -1。 */
-    public int indexOf(int nodeHandle, int partOrdinal) {
-        return indexOf.getOrDefault(DisplayItem.keyOf(nodeHandle, partOrdinal), -1);
-    }
-
+    public int indexOf(int nodeHandle, int partOrdinal) { return indexOf.getOrDefault(DisplayItem.keyOf(nodeHandle, partOrdinal), -1); }
     /** 走査中の、id から項目を引く。 */
     public DisplayItem itemById(String id) { return byId.get(DisplayItem.keyOf(id)); }
-
     /** 走査中の、鍵から項目を引く（文字列のハッシュを使わない）。 */
     public DisplayItem itemByKey(long key) { return byId.get(key); }
-
     /** id の項目の位置。無ければ -1。 */
     public int indexOf(String id) { return indexOf.getOrDefault(DisplayItem.keyOf(id), -1); }
-
     /** 鍵の項目の位置。無ければ -1。 */
     public int indexOfKey(long key) { return indexOf.getOrDefault(key, -1); }
 
-    /**
-     * {@code items} の索引を（前回と同じなら差分で）整え、このフレームの時刻と変換を設定する。
-     * 描画側が先に姿勢（{@link #resolveAt}）や親子（{@link #parentIndex}）を読んで、描く範囲を決めたいときに使う。
-     * 直後に {@link #run} を呼ぶと、索引の作り直しとフレーム番号の更新を繰り返さない。
-     */
-    public void prepare(List<DisplayItem> items, long nowMs, Matrix2D frame) {
+    /** {@code items} の索引を（前回と同じなら差分で）整え、このフレームの時刻と変換を設定する。直後に {@link #run} を呼ぶと索引更新を省ける。 */
+    public void prepare(List<DisplayItem> items, long nowMs, Matrix2D frame) { prepare(items, PaintOffsets.EMPTY, nowMs, frame); }
+
+    /** 描画上の平行移動 {@code offsets} 付きで索引とこのフレームの準備を行う。 */
+    public void prepare(List<DisplayItem> items, PaintOffsets offsets, long nowMs, Matrix2D frame) {
         if (items == null || items.isEmpty()) return;
         this.now = nowMs;
         this.frame = frame;
         CssAnimator.cleanup(sessionId, items);
-        // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
-        // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
         if ((items != indexedItems || !isImmutable(items)) && !reconcileIndex(items)) rebuildIndex(items);
-        snapScrollContent(items);
-        // 次のフレームは、ここまでに書かれたもの（このフレームの発行・スナップ）を「見た」ものとして、後の書き込みだけを変化とみなす
-        indexedEpoch = com.nishiyu.enderframelib.core.paint.model.PaintCell.currentEpoch();
+        syncOffsets(items, offsets != null ? offsets : PaintOffsets.EMPTY);
         this.byId = indexedById;
         if (++frameStamp == 0) { Arrays.fill(curStamp, 0); frameStamp = 1; }
         prepared = true;
     }
 
-    /**
-     * {@code items} を時刻 {@code nowMs} の見た目で先頭から走査し、{@code painter} へ渡す。
-     *
-     * @param frame フレーム全体の変換（普通は {@code dpr} 倍の拡縮）
-     */
-    public void run(List<DisplayItem> items, long nowMs, Matrix2D frame, Painter painter) {
+    /** {@code items} を時刻 {@code nowMs} の見た目で先頭から走査し、{@code painter} へ渡す。 */
+    public void run(List<DisplayItem> items, long nowMs, Matrix2D frame, Painter painter) { run(items, PaintOffsets.EMPTY, nowMs, frame, painter); }
+
+    /** 描画上の平行移動 {@code offsets} 付きで {@code items} を走査する。 */
+    public void run(List<DisplayItem> items, PaintOffsets offsets, long nowMs, Matrix2D frame, Painter painter) {
         if (items == null || items.isEmpty()) return;
-        if (!prepared) prepare(items, nowMs, frame);
+        if (!prepared) prepare(items, offsets, nowMs, frame);
         prepared = false;
         this.byId = indexedById;
         try {
@@ -554,56 +537,77 @@ public final class PaintSceneDriver {
         retainNodes = order;
     }
 
-    /** 走査中の、いまの表示リスト。 */
+    /** 走査中の、いまの表示リスト（不変リストなら、これ自身が中身の同一性の印になる）。 */
     public List<DisplayItem> items() { return indexedItems; }
-
-    /**
-     * 中身の同一性の印。同じ印の間は、描画の上だけの移動量（{@link ImmutableItemList#touched}）を除いて表示リストの中身は同じ。
-     * スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う。
-     */
-    public Object contentToken() { return indexedBase; }
 
     /** スクロールの中身の節の移動量を丸める先のデバイス画素比（0 以下なら丸めない）。GPU のスクロール層の保持が使う。 */
     private float scrollSnapDpr;
-    private Object snapPositionsToken;
-    private int snapPositionsSize = -1;
-    private int[] snapPositions = new int[0];
 
     /**
      * スクロールの中身の節（{@link #SCROLL_CONTENT_SUFFIX}）の見える移動量を、デバイス画素の整数倍へ丸める（{@code dpr} が 0 以下なら丸めない）。
-     * 保持した層をずらして使うとき、小数の位置だと層の境で 1 画素ずれるため。丸めは項目のセルへ書く（以前は描画のたびに丸めた項目を作っていた。B9）。
+     * 保持した層をずらして使うとき、小数の位置だと層の境で 1 画素ずれるため。項目や {@link PaintOffsets} は書き換えず {@link #build} の姿勢だけに適用する。
      */
     public void setScrollSnapDpr(float dpr) { this.scrollSnapDpr = dpr; }
 
-    private void snapScrollContent(List<DisplayItem> items) {
-        if (scrollSnapDpr <= 0f) return;
-        Object token = ItemDiff.contentTokenOf(items);
-        if (snapPositionsToken != token || snapPositionsSize != items.size()) {
-            int n = 0;
-            int[] buf = snapPositions.length >= 8 ? snapPositions : new int[8];
-            for (int i = 0, sz = items.size(); i < sz; i++) {
-                DisplayItem it = items.get(i);
-                if (it.type() != ElementType.NODE || it.id() == null || !it.id().endsWith(SCROLL_CONTENT_SUFFIX)) continue;
-                if (n == buf.length) buf = Arrays.copyOf(buf, n * 2);
-                buf[n++] = i;
-            }
-            snapPositions = Arrays.copyOf(buf, n);
-            snapPositionsToken = token;
-            snapPositionsSize = items.size();
-        }
-        float dpr = scrollSnapDpr;
-        for (int p : snapPositions) {
-            DisplayItem it = items.get(p);
-            float rx = Math.round(it.translateX() * dpr) / dpr, ry = Math.round(it.translateY() * dpr) / dpr;
-            if (rx == it.translateX() && ry == it.translateY()) continue;
-            it.setPaintOffset(rx - it.baseTranslateX(), ry - it.baseTranslateY());
-        }
+    private static boolean isScrollContent(DisplayItem it) {
+        return DisplayItem.partOrdinalOf(it.key()) == DisplayItem.PART_SCROLL_CONTENT
+                || (it.id() != null && it.id().endsWith(SCROLL_CONTENT_SUFFIX));
     }
 
-    /** 索引を作ったときの表示リストの中身の印（{@link ItemDiff#contentTokenOf}）。移動量だけが変わったリストは同じ印。 */
-    private Object indexedBase;
-    /** 索引を最後に更新した時点の塗り・移動量の書き込みの通し番号（これより後に書かれた項目が「変わった」ものになる）。 */
-    private int indexedEpoch;
+    private void invalidatePoseAt(int idx) {
+        prevRes[idx] = null;
+        prevStatic[idx] = false;
+        stateVerified[idx] = false;
+    }
+
+    private void syncOffsets(List<DisplayItem> items, PaintOffsets eff) {
+        int ver = eff.version();
+        boolean snapChanged = Float.compare(scrollSnapDpr, seenSnapDpr) != 0;
+        if (eff == seenOffsets && ver == seenOffsetsVersion && !snapChanged) return;
+        seenOffsets = eff;
+        seenOffsetsVersion = ver;
+        seenSnapDpr = scrollSnapDpr;
+        if (snapChanged) {
+            for (int i = 0, n = items.size(); i < n; i++) if (isScrollContent(items.get(i))) invalidatePoseAt(i);
+        }
+        int newCount = 0;
+        if (!eff.isEmpty()) {
+            synchronized (eff) {
+                int esz = eff.size();
+                if (scratchOffIdx.length < esz) { scratchOffIdx = new int[esz]; scratchOffX = new float[esz]; scratchOffY = new float[esz]; }
+                for (int k = 0; k < esz; k++) {
+                    int idx = indexOf.getOrDefault(eff.keyAt(k), -1);
+                    if (idx >= 0 && idx < items.size()) {
+                        DisplayItem it = items.get(idx);
+                        if (it.type() == ElementType.NODE && eff.idAt(k).equals(it.id())) {
+                            scratchOffIdx[newCount] = idx; scratchOffX[newCount] = eff.dxAt(k); scratchOffY[newCount] = eff.dyAt(k); newCount++;
+                        }
+                    }
+                }
+            }
+        }
+        boolean anyChanged = snapChanged;
+        for (int a = 0; a < activeOffCount; a++) {
+            int idx = activeOffIdx[a];
+            boolean kept = false;
+            for (int b = 0; b < newCount; b++) { if (scratchOffIdx[b] == idx) { kept = true; break; } }
+            if (!kept && idx < itemOffX.length && (itemOffX[idx] != 0f || itemOffY[idx] != 0f)) {
+                itemOffX[idx] = 0f; itemOffY[idx] = 0f; invalidatePoseAt(idx); anyChanged = true;
+            }
+        }
+        int outCount = 0;
+        if (activeOffIdx.length < newCount) activeOffIdx = new int[Math.max(newCount, activeOffIdx.length * 2)];
+        for (int b = 0; b < newCount; b++) {
+            int idx = scratchOffIdx[b];
+            float nx = scratchOffX[b], ny = scratchOffY[b];
+            if (Float.compare(itemOffX[idx], nx) != 0 || Float.compare(itemOffY[idx], ny) != 0) {
+                itemOffX[idx] = nx; itemOffY[idx] = ny; invalidatePoseAt(idx); anyChanged = true;
+            }
+            if (nx != 0f || ny != 0f) activeOffIdx[outCount++] = idx;
+        }
+        activeOffCount = outCount;
+        if (anyChanged) invalidateRangeBounds();
+    }
 
     private void ensureCapacity(int minCap) {
         if (curRes.length >= minCap) return;
@@ -616,7 +620,8 @@ public final class PaintSceneDriver {
         prevIdle = Arrays.copyOf(prevIdle, newCap);
         visiting = Arrays.copyOf(visiting, newCap);
         states = Arrays.copyOf(states, newCap);
-        itemVersion = Arrays.copyOf(itemVersion, newCap);
+        itemOffX = Arrays.copyOf(itemOffX, newCap);
+        itemOffY = Arrays.copyOf(itemOffY, newCap);
         stateVerified = Arrays.copyOf(stateVerified, newCap);
         parentIdx = Arrays.copyOf(parentIdx, newCap);
     }
@@ -633,7 +638,6 @@ public final class PaintSceneDriver {
         // 可変のリストは、索引を作ってから中身を書き換えられうる（前回のリストを基準にした差が当てにならない）ので、毎回作り直す。
         // 表示リストは不変のリスト（List.copyOf 系）で届く
         if (!isImmutable(old) || !isImmutable(items)) return false;
-        final int seen = indexedEpoch;
         int n = items.size();
 
         // 第 1 パス: 差分がある位置の構造が一致しているか全件確認（ImmutableItemList 同士は同一ブロックを飛ばす）
@@ -644,12 +648,11 @@ public final class PaintSceneDriver {
             for (int c = 0; c < chunks; c++) {
                 DisplayItem[] ob = oi.chunkAt(c);
                 DisplayItem[] nb = ni.chunkAt(c);
-                // 同じブロックでも、前に見たあとに項目のセルが書かれていれば（時計の印）項目ごとに調べる
-                if (ob == nb && ni.clock().chunkEpoch(c) <= seen) continue;
+                if (ob == nb) continue;
                 int base = c << ImmutableItemList.CHUNK_SHIFT;
                 for (int j = 0, len = ob.length; j < len; j++) {
                     DisplayItem was = ob[j], is = nb[j];
-                    if (ItemDiff.unchanged(was, is, seen)) continue;
+                    if (ItemDiff.unchanged(was, is)) continue;
                     if (!(was.key() == is.key() && ItemDiff.sameStructure(was, is))) return false;
                     if (count < diffBuf.length) diffBuf[count] = base + j;
                     count++;
@@ -658,7 +661,7 @@ public final class PaintSceneDriver {
         } else {
             for (int i = 0; i < n; i++) {
                 DisplayItem was = old.get(i), is = items.get(i);
-                if (ItemDiff.unchanged(was, is, seen)) continue;
+                if (ItemDiff.unchanged(was, is)) continue;
                 if (!(was.key() == is.key() && ItemDiff.sameStructure(was, is))) return false;
                 if (count < diffBuf.length) diffBuf[count] = i;
                 count++;
@@ -680,28 +683,21 @@ public final class PaintSceneDriver {
             for (int i = 0; i < n; i++) {
                 DisplayItem prevItem = old.get(i);
                 DisplayItem is = items.get(i);
-                if (ItemDiff.unchanged(prevItem, is, seen)) continue;
+                if (ItemDiff.unchanged(prevItem, is)) continue;
                 updateDiffSlot(i, prevItem, is);
             }
         }
         invalidateRangeBounds();
         indexedItems = items;
-        // 中身が変わった印（スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う）は、作り直しと同じく進める
-        indexedBase = ItemDiff.contentTokenOf(items);
         return true;
     }
 
     private int resolveParentIndex(DisplayItem item) {
-        int pidx = -1;
         long pKey = item.hints().parentKey();
-        if (pKey != 0L) {
-            pidx = indexOf.getOrDefault(pKey, -1);
-        }
+        int pidx = pKey != 0L ? indexOf.getOrDefault(pKey, -1) : -1;
         if (pidx < 0) {
             String pid = item.hints().parentId();
-            if (pid != null) {
-                pidx = indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
-            }
+            if (pid != null) pidx = indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
         }
         return pidx;
     }
@@ -730,7 +726,6 @@ public final class PaintSceneDriver {
             if (it.type() == ElementType.NODE && ItemDiff.hasFx(it.hints().layer())) fxAnchors.add(i);
         }
         indexedItems = items;
-        indexedBase = ItemDiff.contentTokenOf(items);
 
         ensureCapacity(n);
         for (int i = 0; i < n; i++) {
@@ -745,8 +740,13 @@ public final class PaintSceneDriver {
         Arrays.fill(prevIdle, 0, n, false);
         Arrays.fill(visiting, 0, n, false);
         Arrays.fill(states, 0, n, null);
-        Arrays.fill(itemVersion, 0, n, 0);
+        Arrays.fill(itemOffX, 0, n, 0f);
+        Arrays.fill(itemOffY, 0, n, 0f);
         Arrays.fill(stateVerified, 0, n, false);
+        activeOffCount = 0;
+        seenOffsets = null;
+        seenOffsetsVersion = -1;
+        seenSnapDpr = Float.NaN;
         rangeBounds.clear();
         generation++;
     }
@@ -758,17 +758,13 @@ public final class PaintSceneDriver {
             long strKey = DisplayItem.keyOf(curItem.id());
             if (strKey != key) indexedById.put(strKey, curItem);
         }
-        if (prevRes[i] != null && prevStatic[i] && ItemDiff.sameGeometryWithoutTransition(prevItem, curItem, indexedEpoch)) {
+        if (prevRes[i] != null && prevStatic[i] && ItemDiff.sameGeometryWithoutTransition(prevItem, curItem)) {
             states[i] = null;
             prevIdle[i] = false;
-            Object prevClip = prevItem.meta() != null ? prevItem.meta().clipRect() : null;
-            Object curClip = curItem.meta() != null ? curItem.meta().clipRect() : null;
-            if (!java.util.Objects.equals(prevClip, curClip)) itemVersion[i]++;
         } else {
             states[i] = null;
             prevRes[i] = null;
             prevStatic[i] = false;
-            itemVersion[i]++;
             stateVerified[i] = false;
         }
     }
@@ -825,26 +821,13 @@ public final class PaintSceneDriver {
      * 直近に描いた {@code items} のうち、時刻 {@code nowMs} でまだ補間やキーフレームが動いている項目があるか。
      * false なら、項目リストが変わらない限り、次の描画も同じ絵になる（再描画を飛ばせる）。
      */
-    public boolean anyActiveAt(List<DisplayItem> items, long nowMs) {
-        return anyActiveAt(sessionId, items, nowMs);
-    }
-
-    /**
-     * セッション {@code sessionId} の状態で、{@code items} に時刻 {@code nowMs} でまだ動いているアニメーションがあるか。
-     * 描画器を持たない呼び出し側（GPU 版）が、CPU 版を介さずに問える。
-     */
+    public boolean anyActiveAt(List<DisplayItem> items, long nowMs) { return anyActiveAt(sessionId, items, nowMs); }
+    /** セッション {@code sessionId} の状態で、{@code items} に時刻 {@code nowMs} でまだ動いているアニメーションがあるか。 */
     public static boolean anyActiveAt(String sessionId, List<DisplayItem> items, long nowMs) {
-        for (DisplayItem el : items) {
-            if (CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs)) return true;
-        }
+        for (DisplayItem el : items) if (CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs)) return true;
         return false;
     }
-
-    /**
-     * 直近に {@link #resolveAt} で解決した項目の状態だけを走査し、時刻 {@code nowMs} でまだ動いているものがあるか。
-     * 状態の表を読むだけで id の表を引かない（毎フレームの差分描画の可否判定に使う）。差し替わった項目の状態は
-     * 索引の更新で消えているので、その項目は呼び出し側が {@link #itemActiveAt} で別に確かめる。
-     */
+    /** 直近に解決した項目の状態だけを走査し、時刻 {@code nowMs} で動いているものがあるか。 */
     public boolean anyCachedActiveAt(long nowMs) {
         int n = indexedItems != null ? indexedItems.size() : states.length;
         for (int i = 0; i < n; i++) {
@@ -853,20 +836,10 @@ public final class PaintSceneDriver {
         }
         return false;
     }
-
     /** 項目の動きの種類（{@link #fillActivity}・{@link #activityAt}）。 */
     public static final byte ACT_IDLE = 0, ACT_PAINT_ONLY = 1, ACT_GEOMETRY = 2, ACT_OPACITY = 3;
-
-    private static byte activityOf(CssAnimator.AnimState st, long nowMs) {
-        if (st == null || !st.isActiveAt(nowMs)) return ACT_IDLE;
-        return (byte) st.motionKindAt(nowMs);
-    }
-
-    /**
-     * 直近に {@link #resolveAt} で解決した項目の状態から、時刻 {@code nowMs} の各項目の動きを {@code out[0..n)} に入れ、
-     * 最大値を返す（{@link #anyCachedActiveAt} の項目別版）。{@link #ACT_PAINT_ONLY} は色などの塗りだけが補間される項目で、
-     * 姿勢と不透明度は動かない（{@link #ACT_GEOMETRY} は変形が動く、{@link #ACT_OPACITY} は不透明度が動く）。差し替わった項目の状態は索引の更新で消えているので、その項目は {@link #activityAt} で確かめる。
-     */
+    private static byte activityOf(CssAnimator.AnimState st, long nowMs) { return (st == null || !st.isActiveAt(nowMs)) ? ACT_IDLE : (byte) st.motionKindAt(nowMs); }
+    /** 時刻 {@code nowMs} の各項目の動きを {@code out[0..n)} に入れ、最大値を返す。 */
     public byte fillActivity(byte[] out, int n, long nowMs) {
         byte max = ACT_IDLE;
         int lim = Math.min(n, states.length);
@@ -878,19 +851,12 @@ public final class PaintSceneDriver {
         for (int i = lim; i < n; i++) out[i] = ACT_IDLE;
         return max;
     }
-
-    /** 項目 {@code el} の、時刻 {@code nowMs} の動き。状態が無ければ（目標との突き合わせも含めて）作って確かめる。 */
-    public byte activityAt(DisplayItem el, long nowMs) {
-        return activityOf(CssAnimator.stateFor(sessionId, el, nowMs), nowMs);
-    }
-
-    /** 項目 {@code i} が、いまのフレームで止まっている（補間値が確定済み）か。{@link #resolveAt} をそのフレームで呼んだあとに読む。 */
+    /** 項目 {@code el} の時刻 {@code nowMs} の動き。 */
+    public byte activityAt(DisplayItem el, long nowMs) { return activityOf(CssAnimator.stateFor(sessionId, el, nowMs), nowMs); }
+    /** 項目 {@code i} がいまのフレームで止まっているか。 */
     public boolean idleAt(int i) { return prevIdle[i]; }
-
     /** 項目の直近の解決済み姿勢（呼び出しは {@link #resolveAt} の前後に限る）。 */
-    public Resolved peekPrevRes(int i) {
-        return i >= 0 && i < prevRes.length ? prevRes[i] : null;
-    }
+    public Resolved peekPrevRes(int i) { return i >= 0 && i < prevRes.length ? prevRes[i] : null; }
 
     /** 項目 {@code i} の補間値（色など）。姿勢を親と共有する項目でも、その項目自身のもの。 */
     public AnimatedValues animAt(int i) {
@@ -963,9 +929,16 @@ public final class PaintSceneDriver {
         List<Group> parentGroups = parent != null ? parent.groups() : List.of();
         Matrix2D pose;
         boolean relOrigin = el.type() == ElementType.NODE && el.hints().relativeOrigin();
+        float oxOff = index >= 0 && index < itemOffX.length ? itemOffX[index] : 0f;
+        float oyOff = index >= 0 && index < itemOffY.length ? itemOffY[index] : 0f;
+        float atx = anim.tx() + oxOff, aty = anim.ty() + oyOff;
+        if (scrollSnapDpr > 0f && el.type() == ElementType.NODE && isScrollContent(el)) {
+            atx = Math.round(atx * scrollSnapDpr) / scrollSnapDpr;
+            aty = Math.round(aty * scrollSnapDpr) / scrollSnapDpr;
+        }
         if (anim.rot() == 0f && anim.skew() == 0f && anim.sx() == 1f && anim.sy() == 1f) {
-            float tx = anim.tx() + (relOrigin ? el.x() : 0f);
-            float ty = anim.ty() + (relOrigin ? el.y() : 0f);
+            float tx = atx + (relOrigin ? el.x() : 0f);
+            float ty = aty + (relOrigin ? el.y() : 0f);
             if (tx == 0f && ty == 0f) {
                 pose = base;
             } else {
@@ -984,7 +957,7 @@ public final class PaintSceneDriver {
             // （結果はビット単位で同じ。動く項目ごとに毎フレーム 4〜6 個の行列を作っていた。B12）
             double[] m = poseScratch;
             m[0] = base.a(); m[1] = base.b(); m[2] = base.c(); m[3] = base.d(); m[4] = base.e(); m[5] = base.f();
-            mulInto(m, 1, 0, 0, 1, px + lx + anim.tx(), py + ly + anim.ty());
+            mulInto(m, 1, 0, 0, 1, px + lx + atx, py + ly + aty);
             if (anim.rot() != 0f) {
                 double rad = Math.toRadians(anim.rot()), cos = Math.cos(rad), sin = Math.sin(rad);
                 mulInto(m, cos, sin, -sin, cos, 0, 0);

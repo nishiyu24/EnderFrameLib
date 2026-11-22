@@ -12,6 +12,7 @@ import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -179,7 +180,7 @@ public class DisplayItemDrawer {
     static AncestorTransform resolveAncestorTransform(PoseStack poseStack, String id, String hoveredId, String sessionId,
                                                               Map<String, DisplayItem> elementMap,
                                                               Map<String, AncestorTransform> memo, boolean layersEnabled,
-                                                              Set<String> directOpacity) {
+                                                              Set<String> directOpacity, PaintOffsets offsets) {
         AncestorTransform cached = memo.get(id);
         if (cached != null) return cached;
         DisplayItem el = elementMap.get(id);
@@ -190,14 +191,14 @@ public class DisplayItemDrawer {
             float[] cumulativeOpacity = {1.0f};
             String parentId = el.hints().parentId();
             if (parentId != null) {
-                AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, sessionId, elementMap, memo, layersEnabled, directOpacity);
+                AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, sessionId, elementMap, memo, layersEnabled, directOpacity, offsets);
                 if (parent != null) {
                     poseStack.last().pose().set(parent.pose());
                     poseStack.last().normal().set(parent.normal());
                     cumulativeOpacity[0] = parent.opacity();
                 }
             }
-            applyOwnTransform(poseStack, el, hoveredId, sessionId, cumulativeOpacity, layersEnabled, directOpacity);
+            applyOwnTransform(poseStack, el, hoveredId, sessionId, cumulativeOpacity, layersEnabled, directOpacity, offsets);
             AncestorTransform result = new AncestorTransform(new Matrix4f(poseStack.last().pose()),
                     new Matrix3f(poseStack.last().normal()), cumulativeOpacity[0]);
             memo.put(id, result);
@@ -208,7 +209,7 @@ public class DisplayItemDrawer {
     }
 
     static void applyOwnTransform(PoseStack poseStack, DisplayItem el, String hoveredId, String sessionId, float[] cumulativeOpacity,
-                                  boolean layersEnabled, Set<String> directOpacity) {
+                                  boolean layersEnabled, Set<String> directOpacity, PaintOffsets offsets) {
         String baseId = el.baseId();
         boolean isHovered = baseId.equals(hoveredId);
         SessionContext session = ClientWebManager.getSession(sessionId);
@@ -222,7 +223,7 @@ public class DisplayItemDrawer {
         float cx = el.x() + el.width() * originX;
         float cy = el.y() + el.height() * originY;
 
-        poseStack.translate(cx + anim.tx(), cy + anim.ty(), 0);
+        poseStack.translate(cx + anim.tx() + offsets.dx(el), cy + anim.ty() + offsets.dy(el), 0);
         if (anim.rot() != 0) poseStack.mulPose(Axis.ZP.rotationDegrees(anim.rot()));
         if (anim.sx() != 1.0f || anim.sy() != 1.0f) poseStack.scale(anim.sx(), anim.sy(), 1.0f);
         poseStack.translate(-cx, -cy, 0);
@@ -298,6 +299,7 @@ public class DisplayItemDrawer {
         String resolvedTooltipText = null;
         String animSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         SessionContext session = ClientWebManager.getSession(animSessionId);
+        PaintOffsets offsets = pass.paintOffsets();
 
         // 世界内の面は、SDF の Quad を画面を描き終える（endPass）まで積んで、まとめて描く。
         // GUI などは従来どおり、Quad ごとに描く（バッファの吐き出しも Quad ごと。描く順が要素の順のまま保たれる）
@@ -339,7 +341,7 @@ public class DisplayItemDrawer {
                         wantsLayer = false;
                     }
                     AncestorTransform anchor = spec.hasBackdrop() || wantsLayer
-                            ? resolveAncestorTransform(poseStack, el.id(), hoveredId, animSessionId, elementMap, ancestorTransforms, true, directOpacity)
+                            ? resolveAncestorTransform(poseStack, el.id(), hoveredId, animSessionId, elementMap, ancestorTransforms, true, directOpacity, offsets)
                             : null;
                     // backdrop-filter は、箱の後ろの画素を加工して箱の形に貼る。箱自身の描画（と子孫）より前に、直前の深さの少し上で
                     if (anchor != null && spec.hasBackdrop()) {
@@ -348,7 +350,7 @@ public class DisplayItemDrawer {
                     }
                     boolean opened = false;
                     if (anchor != null && wantsLayer) {
-                        LayerProbe probe = probeLayer(uiElements, elementIndex, spec, animSessionId, hoveredId, session, anchor.opacity());
+                        LayerProbe probe = probeLayer(uiElements, elementIndex, spec, animSessionId, hoveredId, session, anchor.opacity(), offsets);
                         LayerCompositor.CacheRequest cache = probe.cacheable()
                                 ? new LayerCompositor.CacheRequest(animSessionId + '|' + el.id(), uiElements, elementIndex, spec.span(), probe.signature())
                                 : null;
@@ -433,13 +435,14 @@ public class DisplayItemDrawer {
             // 変形する祖先・要素自身の変形があると、項目は元の位置とは違う所へ描かれる。レイアウトの空間のクリップ矩形（と元の位置）で
             // 捨てると、動いて画面へ入ってくる項目まで捨ててしまう（流れるリボンやカルーセルの右側が空になる）。
             // 変形のある項目は、描く空間へ直したクリップで、後で判定する
-            boolean ownTransform = anim.tx() != 0 || anim.ty() != 0 || anim.rot() != 0 || anim.sx() != 1.0f || anim.sy() != 1.0f;
+            float atx = anim.tx() + offsets.dx(el), aty = anim.ty() + offsets.dy(el);
+            boolean ownTransform = atx != 0 || aty != 0 || anim.rot() != 0 || anim.sx() != 1.0f || anim.sy() != 1.0f;
             boolean hasParentPose = el.hints().parentId() != null;
             Matrix4f framePose = new Matrix4f(poseStack.last().pose());
             boolean moved = ownTransform;
             if (!moved && hasParentPose) {
                 AncestorTransform parentAt = resolveAncestorTransform(poseStack, el.hints().parentId(), hoveredId, animSessionId,
-                        elementMap, ancestorTransforms, layersEnabled, directOpacity);
+                        elementMap, ancestorTransforms, layersEnabled, directOpacity, offsets);
                 moved = parentAt != null && !samePose(framePose, parentAt.pose());
             }
             if (!moved && (el.x() + el.width() < clipMinX || el.x() > clipMaxX || el.y() + el.height() < clipMinY || el.y() > clipMaxY)) {
@@ -482,7 +485,7 @@ public class DisplayItemDrawer {
             String clipOwner = meta != null && meta.clipRect() != null ? meta.clipRect().ownerId() : null;
             if (clipOwner != null && basePose != null) {
                 AncestorTransform owner = resolveAncestorTransform(poseStack, clipOwner, hoveredId, animSessionId,
-                        elementMap, ancestorTransforms, layersEnabled, directOpacity);
+                        elementMap, ancestorTransforms, layersEnabled, directOpacity, offsets);
                 if (owner != null) basePose = new Matrix4f(owner.pose());
             }
 
@@ -493,7 +496,7 @@ public class DisplayItemDrawer {
                 String parentId = el.hints().parentId();
                 if (parentId != null) {
                     AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, animSessionId,
-                            elementMap, ancestorTransforms, layersEnabled, directOpacity);
+                            elementMap, ancestorTransforms, layersEnabled, directOpacity, offsets);
                     if (parent != null) {
                         poseStack.last().pose().set(parent.pose());
                         poseStack.last().normal().set(parent.normal());
@@ -506,7 +509,7 @@ public class DisplayItemDrawer {
                 float cx = el.x() + el.width() * originX;
                 float cy = el.y() + el.height() * originY;
 
-                poseStack.translate(cx + anim.tx(), cy + anim.ty(), 0);
+                poseStack.translate(cx + atx, cy + aty, 0);
                 if (anim.rot() != 0) poseStack.mulPose(Axis.ZP.rotationDegrees(anim.rot()));
                 if (anim.sx() != 1.0f || anim.sy() != 1.0f) poseStack.scale(anim.sx(), anim.sy(), 1.0f);
                 poseStack.translate(-cx, -cy, 0);
@@ -516,7 +519,7 @@ public class DisplayItemDrawer {
                     // 祖先のクリップは 1 つ 1 つ持ち主の空間にある。持ち主ごとの姿勢で項目の空間へ直してから当てる
                     ClipResolver.Result res = ClipResolver.resolve(chainClip.chain(), framePose, poseStack.last().pose(), owner -> {
                         AncestorTransform at = resolveAncestorTransform(poseStack, owner, hoveredId, animSessionId, elementMap,
-                                ancestorTransforms, layersEnabled, directOpacity);
+                                ancestorTransforms, layersEnabled, directOpacity, offsets);
                         return at == null ? null : at.pose();
                     });
                     if (res.local() != null) {
@@ -702,10 +705,16 @@ public class DisplayItemDrawer {
 
     static LayerProbe probeLayer(List<DisplayItem> items, int anchorIndex, LayerSpec spec, String sessionId, String hoveredId,
                                  SessionContext session, float anchorOpacity) {
+        return probeLayer(items, anchorIndex, spec, sessionId, hoveredId, session, anchorOpacity, PaintOffsets.EMPTY);
+    }
+
+    static LayerProbe probeLayer(List<DisplayItem> items, int anchorIndex, LayerSpec spec, String sessionId, String hoveredId,
+                                 SessionContext session, float anchorOpacity, PaintOffsets offsets) {
         float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
         int end = Math.min(items.size(), anchorIndex + spec.span());
         boolean moved = false;
         boolean cacheable = !spec.masked() && spec.span() <= MAX_CACHED_SPAN;
+        PaintOffsets eff = offsets != null ? offsets : PaintOffsets.EMPTY;
         long sig = 1125899906842597L * 31 + Float.floatToIntBits(anchorOpacity);
         for (int i = anchorIndex; i < end; i++) {
             DisplayItem item = items.get(i);
@@ -715,13 +724,14 @@ public class DisplayItemDrawer {
             boolean active = session != null && session.isPressedBase(baseId);
             boolean focused = session != null && (session.isActiveInput(item.id()) || session.isFocusedBase(baseId));
             AnimatedValues a = CssAnimator.getValues(sessionId, item, hovered, active, focused);
-            if (i > anchorIndex && (a.tx() != 0 || a.ty() != 0 || a.rot() != 0 || a.sx() != 1.0f || a.sy() != 1.0f)) moved = true;
+            float atx = a.tx() + eff.dx(item), aty = a.ty() + eff.dy(item);
+            if (i > anchorIndex && (atx != 0 || aty != 0 || a.rot() != 0 || a.sx() != 1.0f || a.sy() != 1.0f)) moved = true;
             // 錨自身の不透明度・変形は、合成のときに掛ける（変形は箱の写り = 変換として別に比べる）だけで、中身の絵は変わらない
             // （フェード・移動・回転・拡縮の最中も使い回せる）。子孫のものは中身に入る
             if (i != anchorIndex) sig = sig * 31 + Float.floatToIntBits(a.opacity());
             if (i != anchorIndex) {
-                sig = sig * 31 + Float.floatToIntBits(a.tx());
-                sig = sig * 31 + Float.floatToIntBits(a.ty());
+                sig = sig * 31 + Float.floatToIntBits(atx);
+                sig = sig * 31 + Float.floatToIntBits(aty);
                 sig = sig * 31 + Float.floatToIntBits(a.sx());
                 sig = sig * 31 + Float.floatToIntBits(a.sy());
                 sig = sig * 31 + Float.floatToIntBits(a.rot());

@@ -48,7 +48,7 @@ class ScrollContainerPatchTest {
                 HitTestIndex idx = view.ui().hitTestIndex();
                 if (step > 5 && idx == previous) reused++;
                 previous = idx;
-                HitTestIndex fresh = new HitTestIndex(view.ui().renderCache(), idx.dynamicIds());
+                HitTestIndex fresh = new HitTestIndex(view.ui().renderCache(), idx.dynamicIds(), view.ui().paintOffsets());
                 for (int i = 0; i < 60; i++) {
                     double x = rnd.nextDouble() * W, y = rnd.nextDouble() * H;
                     assertEquals(ids(fresh.scrollContainersAt(sid, x, y)), ids(idx.scrollContainersAt(sid, x, y)), "step " + step + " (" + x + "," + y + ")");

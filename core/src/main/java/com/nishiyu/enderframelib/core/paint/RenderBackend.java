@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.raster.PngEncoder;
 
@@ -20,6 +21,11 @@ public interface RenderBackend extends AutoCloseable {
 
     /** 描画先を塗り直し、{@code items} を時刻 {@code nowMs}（ミリ秒）の見た目で描く。 */
     void render(List<DisplayItem> items, long nowMs);
+
+    /** 描画先を塗り直し、描画上の平行移動 {@code offsets} を載せて {@code items} を時刻 {@code nowMs} で描く。 */
+    default void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
+        render(items, nowMs);
+    }
 
     /**
      * 直近のフレームの画素（事前乗算の ARGB、左上原点）。GPU 版は呼んだ時点で読み戻す。

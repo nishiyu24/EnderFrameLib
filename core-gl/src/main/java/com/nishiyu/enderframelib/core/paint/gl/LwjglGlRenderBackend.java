@@ -11,6 +11,7 @@ import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.gpu.RectStream;
 import com.nishiyu.enderframelib.core.paint.gpu.Scene3DRenderer;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
@@ -113,7 +114,13 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     @Override
     public void render(List<DisplayItem> items, long nowMs) {
         syncFlags();
-        gpu.render(items, nowMs);
+        gpu.render(items, PaintOffsets.EMPTY, nowMs);
+    }
+
+    @Override
+    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
+        syncFlags();
+        gpu.render(items, offsets, nowMs);
     }
 
     @Override public Pixmap pixmap() { return gpu.pixmap(); }

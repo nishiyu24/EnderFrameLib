@@ -8,6 +8,7 @@ import com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry;
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import org.jetbrains.annotations.Nullable;
@@ -40,12 +41,13 @@ public final class SurfaceRenderer {
         SessionContext session = ClientWebManager.getSession(sessionId);
         // GPU 経路は親相対のまま読める。従来の経路へ落ちたときだけ、paint の中で絶対座標へ直す
         List<DisplayItem> elements = session != null ? session.relativeElements() : List.of();
+        PaintOffsets offsets = session != null ? session.paintOffsets() : PaintOffsets.EMPTY;
         float step = switch (style.depth()) {
             case SurfaceStyle.Depth.Geometry g -> geometry.zStep() * g.scale();
             case SurfaceStyle.Depth.Fixed f -> f.step();
         };
         float sub = style.depth() instanceof SurfaceStyle.Depth.Fixed f ? f.sub() : step * 0.5f;
-        return paint(sessionId, elements, geometry.paintBlocksW(), geometry.paintBlocksH(), step, sub, style, poseStack, buffer);
+        return paint(sessionId, elements, offsets, geometry.paintBlocksW(), geometry.paintBlocksH(), step, sub, style, poseStack, buffer);
     }
 
     /**
@@ -57,10 +59,12 @@ public final class SurfaceRenderer {
         if (!(style.depth() instanceof SurfaceStyle.Depth.Fixed f)) {
             throw new IllegalArgumentException("a surface without geometry needs a fixed depth");
         }
-        return paint(sessionId, elements, widthBlocks, heightBlocks, f.step(), f.sub(), style, poseStack, buffer);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        PaintOffsets offsets = session != null ? session.paintOffsets() : PaintOffsets.EMPTY;
+        return paint(sessionId, elements, offsets, widthBlocks, heightBlocks, f.step(), f.sub(), style, poseStack, buffer);
     }
 
-    private static boolean paint(String sessionId, List<DisplayItem> elements, int widthBlocks, int heightBlocks,
+    private static boolean paint(String sessionId, List<DisplayItem> elements, PaintOffsets paintOffsets, int widthBlocks, int heightBlocks,
                                  float step, float sub, SurfaceStyle style, PoseStack poseStack, MultiBufferSource buffer) {
         boolean empty = elements == null || elements.isEmpty();
         // 遠距離の塗りだけは、要素が無くても描く
@@ -68,7 +72,7 @@ public final class SurfaceRenderer {
         String hovered = style.hovered() != null ? style.hovered() : ClientScreenInteractionManager.getHoveredId(sessionId);
         SurfaceStyle.Detail detail = style.detail();
         SurfaceStyle.Audio audio = style.audio();
-        PaintRequest request = new PaintRequest(empty ? List.of() : elements, widthBlocks, heightBlocks, poseStack, buffer,
+        PaintRequest request = new PaintRequest(empty ? List.of() : elements, paintOffsets, widthBlocks, heightBlocks, poseStack, buffer,
                 style.light(), style.overlay(), detail.items(), detail.text(), detail.rounded(),
                 step, sub, hovered != null ? hovered : "", style.lodColor(), style.lodActive(),
                 Minecraft.getInstance().level, audio.play(), audio.twoD(), sessionId, audio.pos(),

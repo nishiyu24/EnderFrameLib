@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -89,6 +90,23 @@ class StaticFrameGateTest {
         assertFalse(g.canSkip(a, 0));
         g.painted(a, 0, false);
         assertTrue(g.canSkip(a, 0));
+    }
+
+    @Test
+    void paintOffsetsChangeForcesRepaintAndReSettles() {
+        List<DisplayItem> a = items("<div id='box'>a</div>");
+        PaintOffsets off = new PaintOffsets();
+        StaticFrameGate g = new StaticFrameGate(true);
+        g.painted(a, off, 0, false);
+        assertTrue(g.canSkip(a, off, 0));
+
+        off.set("box", 10f, 0f);
+        assertFalse(g.canSkip(a, off, 0), "PaintOffsets の版が進めば描き直す");
+        g.painted(a, off, 0, false);
+        assertTrue(g.canSkip(a, off, 0), "新しい版を描き終えれば再び飛ばせる");
+
+        off.clear("box");
+        assertFalse(g.canSkip(a, off, 0), "オフセットを消せば描き直す");
     }
 
     /** 控えの配列を使い回しても、長さの違うリストを行き来して誤って飛ばさない・古い参照を引きずらない。 */

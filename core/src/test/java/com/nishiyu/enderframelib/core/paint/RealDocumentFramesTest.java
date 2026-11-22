@@ -9,6 +9,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.dom.parser.MarkdownParser;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.io.IOException;
@@ -61,8 +62,8 @@ class RealDocumentFramesTest {
     }
 
     /** 1 フレームの記録。画素は比べるときだけ持つ（ゴールデンはハッシュだけ）。 */
-    record Frame(String name, int[] pixels, List<DisplayItem> items, String hits) {
-        String itemsKey() { return Long.toHexString(itemsHash(items)) + " " + items.size() + " " + Long.toHexString(crc(hits)); }
+    record Frame(String name, int[] pixels, List<DisplayItem> items, PaintOffsets offsets, String hits) {
+        String itemsKey() { return Long.toHexString(itemsHash(items, offsets)) + " " + items.size() + " " + Long.toHexString(crc(hits)); }
         String pixelsKey() { return Long.toHexString(pixelsHash(pixels)); }
     }
 
@@ -178,9 +179,9 @@ class RealDocumentFramesTest {
         void frame(String name, long now) {
             frameUnrecorded(now);
             int[] px = backend.pixmap().pixels().clone();
-            List<DisplayItem> items = new ArrayList<>(v.ui().renderCache().size());
-            for (DisplayItem it : v.ui().renderCache()) items.add(it.frozen());
-            sink.accept(new Frame(doc + "/" + name, keepPixels ? px : new int[]{(int) pixelsHash(px)}, items, hits(v)));
+            List<DisplayItem> items = List.copyOf(v.ui().renderCache());
+            sink.accept(new Frame(doc + "/" + name, keepPixels ? px : new int[]{(int) pixelsHash(px)},
+                    items, v.ui().paintOffsets().snapshot(), hits(v)));
         }
     }
 
@@ -298,6 +299,11 @@ class RealDocumentFramesTest {
 
     /** {@code GoldenFrameTest} と同じ要約（key() はプロセス内の採番なので ID 文字列で）。 */
     static long itemsHash(List<DisplayItem> items) {
+        return itemsHash(items, PaintOffsets.EMPTY);
+    }
+
+    static long itemsHash(List<DisplayItem> items, PaintOffsets offsets) {
+        PaintOffsets off = offsets != null ? offsets : PaintOffsets.EMPTY;
         CRC32 c = new CRC32();
         StringBuilder sb = new StringBuilder();
         for (DisplayItem it : items) {
@@ -306,7 +312,7 @@ class RealDocumentFramesTest {
                     .append(it.x()).append(',').append(it.y()).append(',').append(it.width()).append(',').append(it.height()).append('|')
                     .append(it.color()).append(',').append(it.bgColor()).append(',').append(it.radius()).append('|')
                     .append(Float.floatToIntBits(it.opacity())).append('|')
-                    .append(Float.floatToIntBits(it.translateX())).append(',').append(Float.floatToIntBits(it.translateY())).append(',')
+                    .append(Float.floatToIntBits(off.translateX(it))).append(',').append(Float.floatToIntBits(off.translateY(it))).append(',')
                     .append(Float.floatToIntBits(it.scaleX())).append(',').append(Float.floatToIntBits(it.scaleY())).append(',')
                     .append(Float.floatToIntBits(it.rotate())).append('|').append(it.text()).append('\n');
             c.update(sb.toString().getBytes(StandardCharsets.UTF_8));
@@ -411,7 +417,8 @@ class RealDocumentFramesTest {
      * 中身の節の移動量で持ち、全体の作り直しは子の位置に焼き込むので、項目の欄をそのまま比べると表現の違いで食い違う。
      * クリップは合成の仕方が同じ理由で違いうるので比べない（画素で比べる）。
      */
-    private static List<String> visibleValues(List<DisplayItem> items) {
+    private static List<String> visibleValues(List<DisplayItem> items, PaintOffsets offsets) {
+        PaintOffsets off = offsets != null ? offsets : PaintOffsets.EMPTY;
         Map<String, DisplayItem> byId = new java.util.HashMap<>(items.size() * 2);
         for (DisplayItem it : items) byId.putIfAbsent(it.id(), it);
         List<String> out = new ArrayList<>(items.size());
@@ -429,14 +436,14 @@ class RealDocumentFramesTest {
                 if (anc == null) break;
                 if (anc.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.NODE) {
                     if (anc.hints().relativeOrigin()) { x += anc.x(); y += anc.y(); }
-                    x += anc.translateX();
-                    y += anc.translateY();
+                    x += off.translateX(anc);
+                    y += off.translateY(anc);
                 }
                 pid = anc.hints().parentId();
             }
             out.add(it.id() + "|" + it.type() + "|" + x + "," + y + "," + it.width() + "," + it.height() + "|"
                     + Integer.toHexString(it.color()) + "," + Integer.toHexString(it.bgColor()) + "," + it.radius() + "," + it.opacity() + "|"
-                    + (node ? "" : it.translateX() + "," + it.translateY() + ",") + it.scaleX() + "," + it.scaleY() + "," + it.rotate() + "|" + it.text());
+                    + (node ? "" : off.translateX(it) + "," + off.translateY(it) + ",") + it.scaleX() + "," + it.scaleY() + "," + it.rotate() + "|" + it.text());
         }
         return out;
     }
@@ -466,7 +473,7 @@ class RealDocumentFramesTest {
                 else if (!withItems) { }
                 else if (e.items().size() != a.items().size()) why = "項目数 " + e.items().size() + " ≠ " + a.items().size();
                 else {
-                    List<String> ev = visibleValues(e.items()), av = visibleValues(a.items());
+                    List<String> ev = visibleValues(e.items(), e.offsets()), av = visibleValues(a.items(), a.offsets());
                     for (int i = 0; i < ev.size() && why == null; i++) {
                         if (!ev.get(i).equals(av.get(i))) why = "項目 " + i + "\n  full: " + ev.get(i) + "\n  incr: " + av.get(i);
                     }

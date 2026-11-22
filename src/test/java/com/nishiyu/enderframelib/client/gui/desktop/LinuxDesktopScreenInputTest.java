@@ -219,8 +219,8 @@ public class LinuxDesktopScreenInputTest {
         assertEquals(domXBefore, screen.state.get("docs_x"), "ドラッグ中は DOM の位置を変えない（毎フレーム再レイアウトしない）");
         DisplayItem shown = node("win-docs");
         assertNotNull(shown);
-        assertEquals(200f, shown.translateX(), 0.01f, "描画上はカーソルに付いて動いていること");
-        assertEquals(50f, shown.translateY(), 0.01f);
+        assertEquals(200f, session.paintOffsets().translateX(shown), 0.01f, "描画上はカーソルに付いて動いていること");
+        assertEquals(50f, session.paintOffsets().translateY(shown), 0.01f);
 
         // ヒットテストも描画上の位置に付いてくる（移動後の見出しの上で同じウィンドウに当たる）
         UIHitResult hit = session.hitTest(pressX + 200, pressY + 50);
@@ -230,7 +230,7 @@ public class LinuxDesktopScreenInputTest {
         release(pressX + 200, pressY + 50);
         assertEquals((startX + 200) + "px", screen.state.get("docs_x"), "離したら DOM に位置を確定する");
         DisplayItem committed = node("win-docs");
-        assertEquals(0f, committed.translateX(), 0.01f, "確定後は描画上の平行移動を外す");
+        assertEquals(0f, session.paintOffsets().translateX(committed), 0.01f, "確定後は描画上の平行移動を外す");
         assertEquals(startX + 200, committed.x(), 1.0f, "レイアウト上の位置が移動先になっていること");
     }
 
@@ -413,7 +413,7 @@ public class LinuxDesktopScreenInputTest {
         }
         int checked = (memory > 0 ? 1 : 0) + (terminal > 0 ? 1 : 0);
         assertTrue(checked >= 2, "Memory の値とターミナルの出力の両方を確かめたこと: " + checked);
-        assertEquals(200f, node("win-sysmon").translateX(), 0.01f, "ドラッグ中のウィンドウに平行移動が掛かっていること");
+        assertEquals(200f, session.paintOffsets().translateX(node("win-sysmon")), 0.01f, "ドラッグ中のウィンドウに平行移動が掛かっていること");
         release(win("sysmon").x + 60, win("sysmon").y + 12);
     }
 }

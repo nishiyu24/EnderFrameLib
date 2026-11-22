@@ -101,15 +101,15 @@ public final class CoreGpuSurface {
             if (StageProfiler.enabled() && GPU_TIMED.add(backend)) backend.enableGpuTiming();
             StaticFrameGate gate = PAINTED.computeIfAbsent(backend, b -> new StaticFrameGate(SKIP_STATIC));
             int fontGen = WebFontManager.McFontResolver.generation();
-            if (gate.canSkip(items, fontGen)) {
+            if (gate.canSkip(items, pass.paintOffsets(), fontGen)) {
                 // 変化もアニメも無い: 前回描いたテクスチャをそのまま貼る（GPU の描画も CPU 側の組み立ても無し）
                 StageProfiler.end(PipelineStage.SURFACE_CORE_SKIPPED, StageProfiler.begin(PipelineStage.SURFACE_CORE_SKIPPED));
             } else {
                 long tRender = StageProfiler.begin(PipelineStage.SURFACE_CORE_RENDER);
                 try {
                     long now = net.minecraft.Util.getMillis();
-                    backend.render(items, now);
-                    gate.painted(items, fontGen, backend.hasActiveAnimation(items, now));
+                    backend.render(items, pass.paintOffsets(), now);
+                    gate.painted(items, pass.paintOffsets(), fontGen, backend.hasActiveAnimation(items, now));
                 } finally {
                     StageProfiler.end(PipelineStage.SURFACE_CORE_RENDER, tRender);
                 }

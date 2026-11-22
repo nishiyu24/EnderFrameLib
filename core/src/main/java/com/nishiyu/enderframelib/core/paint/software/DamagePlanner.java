@@ -10,6 +10,7 @@ import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Resolved;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.RenderHints;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
@@ -24,9 +25,26 @@ import java.util.List;
  */
 final class DamagePlanner {
     private final SoftwareRenderBackend backend;
+    private PaintOffsets prevOffsets = PaintOffsets.EMPTY;
+    private int prevOffsetsVersion = -1;
+    private String[] prevOffIds = new String[0];
+    private float[] prevOffX = new float[0], prevOffY = new float[0];
+    private int prevOffCount;
 
     DamagePlanner(SoftwareRenderBackend backend) {
         this.backend = backend;
+    }
+
+    private boolean offsetChangedFor(DisplayItem el, PaintOffsets cur, boolean offsetsChanged) {
+        if (!offsetsChanged || el.type() != ElementType.NODE) return false;
+        String id = el.id();
+        if (id == null || id.isEmpty()) return false;
+        float cx = cur.dx(id), cy = cur.dy(id);
+        float px = 0f, py = 0f;
+        for (int i = 0; i < prevOffCount; i++) {
+            if (prevOffIds[i] == id || prevOffIds[i].equals(id)) { px = prevOffX[i]; py = prevOffY[i]; break; }
+        }
+        return Float.compare(cx, px) != 0 || Float.compare(cy, py) != 0;
     }
 
     // ------------------------------------------------------------------ 差分描画の計画
@@ -42,7 +60,7 @@ final class DamagePlanner {
      * このフレームを差分で描けるか決め、描けるなら {@link SoftwareRenderBackend#damage} に塗り直す範囲を、{@link SoftwareRenderBackend#skipBuf} に描かない項目を入れる。
      * 描けない（初回・項目の増減・種類の変化・アニメーション中・層を要する項目がある）なら false を返す。
      */
-    boolean planDamage(List<DisplayItem> items, long nowMs) {
+    boolean planDamage(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
         int n = items.size();
         if (backend.activity.length != n) backend.activity = new byte[n];
         byte maxAct = backend.driver.fillActivity(backend.activity, n, nowMs);
@@ -63,10 +81,10 @@ final class DamagePlanner {
         }
 
         int oldN = backend.prevItems.size();
-        final int seen = backend.prevEpoch;
+        PaintOffsets eff = offsets != null ? offsets : PaintOffsets.EMPTY;
+        boolean offsetsChanged = !(eff.isEmpty() && prevOffCount == 0)
+                && (eff != prevOffsets || eff.version() != prevOffsetsVersion);
         boolean sameSize = oldN == n;
-        // 次のフレームは、ここまでに書かれたものを見たものとして、後の書き込みだけを変化とみなす
-        backend.prevEpoch = com.nishiyu.enderframelib.core.paint.model.PaintCell.currentEpoch();
         int[] oldIndexOf = null;
         if (!sameSize) {
             // サイズ不一致時: 64-bit 整数鍵を用いたインデックスマッピング（ブロック層・インライン層の複数スライスに対応）
@@ -134,7 +152,7 @@ final class DamagePlanner {
                     resetCurExtents(n);
                     return false;
                 }
-                if (ItemDiff.changed(old, cur, seen) && mayAnimate(cur)) {
+                if (ItemDiff.changed(old, cur) && mayAnimate(cur)) {
                     // 差し替わった項目は状態が消えているので、目標との突き合わせから確かめる
                     byte act = backend.driver.activityAt(cur, nowMs);
                     if (act != PaintSceneDriver.ACT_IDLE) {
@@ -162,11 +180,12 @@ final class DamagePlanner {
             boolean itemChanged;
             if (!sameSize) {
                 int oldI = oldIndexOf[i];
-                itemChanged = (oldI < 0) || ItemDiff.changed(backend.prevItems.get(oldI), cur, seen);
+                itemChanged = (oldI < 0) || ItemDiff.changed(backend.prevItems.get(oldI), cur) || offsetChangedFor(cur, eff, offsetsChanged);
             } else {
                 DisplayItem old = backend.prevItems.get(i);
                 // 塗りだけが動く遷移の途中の項目と、前のフレームで動いていた項目（遷移が終わって最終色へ変わる）は塗り直す
-                itemChanged = ItemDiff.changed(old, cur, seen) || volatileItem(cur) || backend.activity[i] != 0 || backend.prevActivity[i] != 0;
+                itemChanged = ItemDiff.changed(old, cur) || offsetChangedFor(cur, eff, offsetsChanged)
+                        || volatileItem(cur) || backend.activity[i] != 0 || backend.prevActivity[i] != 0;
             }
             boolean nodeChanged = itemChanged && cur.type() == ElementType.NODE;
             backend.movedBuf[i] = parentMoved || nodeChanged;
@@ -180,8 +199,9 @@ final class DamagePlanner {
         if (sameSize) {
             for (int i = 0; i < n; i++) {
                 DisplayItem cur = items.get(i), old = backend.prevItems.get(i);
-                if (ItemDiff.changed(old, cur, seen) && isScrollContent(cur)) {
-                    if (ItemDiff.translationChanged(old, cur)) {
+                boolean offChg = offsetChangedFor(cur, eff, offsetsChanged);
+                if ((ItemDiff.changed(old, cur) || offChg) && isScrollContent(cur)) {
+                    if (offChg || ItemDiff.translationChanged(old, cur)) {
                         if (scrollContentIdx == -1) {
                             scrollContentIdx = i;
                         } else {
@@ -386,7 +406,8 @@ final class DamagePlanner {
                 DisplayItem cur = items.get(i);
                 if (cur.type() == ElementType.NODE) continue;
                 int oldIdx = (oldIndexOf != null) ? oldIndexOf[i] : i;
-                boolean changed = oldIdx < 0 || ItemDiff.changed(backend.prevItems.get(oldIdx), cur, seen) || backend.movedBuf[i]
+                boolean changed = oldIdx < 0 || ItemDiff.changed(backend.prevItems.get(oldIdx), cur)
+                        || offsetChangedFor(cur, eff, offsetsChanged) || backend.movedBuf[i]
                         || (oldIndexOf == null && (backend.activity[i] != 0 || backend.prevActivity[i] != 0));
                 Resolved r = backend.driver.resolveAt(i);
                 int[] cb = planClip(i, cur, r, changed);
@@ -413,11 +434,24 @@ final class DamagePlanner {
         return true;
     }
 
-    void commitFrame(List<DisplayItem> items, boolean partial) {
+    void commitFrame(List<DisplayItem> items, PaintOffsets offsets, boolean partial) {
         if (partial) backend.partialFrames++;
         else backend.fullFrames++;
         backend.prevItems = items;
         backend.prevValid = true;
+        PaintOffsets eff = offsets != null ? offsets : PaintOffsets.EMPTY;
+        prevOffsets = eff;
+        prevOffsetsVersion = eff.version();
+        if (eff.isEmpty()) {
+            prevOffCount = 0;
+        } else {
+            synchronized (eff) {
+                int sz = eff.size();
+                if (prevOffIds.length < sz) { prevOffIds = new String[sz]; prevOffX = new float[sz]; prevOffY = new float[sz]; }
+                for (int i = 0; i < sz; i++) { prevOffIds[i] = eff.idAt(i); prevOffX[i] = eff.dxAt(i); prevOffY[i] = eff.dyAt(i); }
+                prevOffCount = sz;
+            }
+        }
         backend.prevHadActive = backend.frameHadActive;
         backend.prevHadGeometryActive = backend.frameHadGeometryActive;
         byte[] ta = backend.prevActivity;

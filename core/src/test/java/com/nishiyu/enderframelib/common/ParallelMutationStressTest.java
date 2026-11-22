@@ -54,9 +54,7 @@ class ParallelMutationStressTest {
 
     private static List<DisplayItem> flush(StandaloneView v) {
         v.ui().flushInvalidation();
-        List<DisplayItem> out = new ArrayList<>();
-        for (DisplayItem it : v.ui().renderCache()) out.add(it.frozen());
-        return out;
+        return List.copyOf(v.ui().renderCache());
     }
 
     private static HtmlElement wrap(HtmlNode root) {

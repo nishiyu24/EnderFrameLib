@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.paint.vulkan;
 import com.nishiyu.enderframelib.core.paint.gpu.CpuFallback;
 import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import java.util.List;
@@ -20,7 +21,12 @@ final class VkCpuFallback implements CpuFallback {
 
     @Override
     public void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink) {
-        raster.renderOnto(items, nowMs, sink);
+        raster.renderOnto(items, PaintOffsets.EMPTY, nowMs, sink);
+    }
+
+    @Override
+    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, long nowMs, GpuSink sink) {
+        raster.renderOnto(items, offsets, nowMs, sink);
     }
 
     @Override

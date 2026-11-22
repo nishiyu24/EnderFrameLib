@@ -33,11 +33,13 @@ class PaintOffsetHitTestCacheTest {
             for (int i = 1; i <= 5; i++) {                               // 値だけの更新
                 view.ui().setPaintOffset("b", 100 + i * 10, i * 5);
                 HitTestIndex idx = view.ui().hitTestIndex();
-                assertSame(i1, idx, "値だけの更新では索引を作り直さない（patch）: " + i);
+                assertSame(i1, idx, "値だけの更新では索引を作り直さない: " + i);
                 assertTrue(idx.dynamicIds().contains("b"));
                 float expectX = 100 + i * 10;
-                boolean moved = view.ui().renderCache().stream().anyMatch(it -> it.id().equals("b") && it.translateX() == expectX);
-                assertTrue(moved, "表示リストの b が最新の移動量を持つ");
+                float expectY = i * 5;
+                assertEquals(expectX, view.ui().paintOffsets().dx("b"), "外部表が最新の移動量を持つ");
+                assertEquals("kb", idx.hitTest(view.ui().sessionId(), 10 + expectX + 10, 10 + expectY + 10).element().baseId(),
+                        "再利用した索引でも外部表の最新位置で当たる");
             }
 
             view.ui().setPaintOffset("c", 0, -150);                      // 2 つ目の鍵
@@ -50,7 +52,7 @@ class PaintOffsetHitTestCacheTest {
             view.ui().clearPaintOffset("c");
             HitTestIndex i4 = view.ui().hitTestIndex();
             assertTrue(i4.dynamicIds().containsAll(java.util.Set.of("b", "c")), "動きうる節の集合は上位集合のままでよい（索引は使い回せる）");
-            assertEquals(0f, view.ui().renderCache().stream().filter(it -> it.id().equals("b")).findFirst().orElseThrow().translateX());
+            assertEquals(0f, view.ui().paintOffsets().dx("b"));
         } finally {
             view.close();
         }

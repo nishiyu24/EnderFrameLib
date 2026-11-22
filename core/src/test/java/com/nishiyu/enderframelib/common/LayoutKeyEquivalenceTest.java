@@ -30,11 +30,8 @@ class LayoutKeyEquivalenceTest {
         return snapshot(v);
     }
 
-    /** 塗り・位置・寸法は項目のセルへ書かれうる（B9 の M3〜M5）ので、後のステップの影響を受けない値の写しを取る。 */
     private static List<DisplayItem> snapshot(StandaloneView v) {
-        List<DisplayItem> out = new ArrayList<>();
-        for (DisplayItem it : v.ui().renderCache()) out.add(it.frozen());
-        return out;
+        return List.copyOf(v.ui().renderCache());
     }
 
     private static void sameItems(List<DisplayItem> expected, List<DisplayItem> actual, String what) {

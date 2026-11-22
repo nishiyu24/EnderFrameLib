@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
@@ -43,9 +44,9 @@ class PaintSceneDriverPatchTest {
     }
 
     /** 走査の出力を 1 本の文字列の列にする。 */
-    private static List<String> trace(PaintSceneDriver d, List<DisplayItem> items, long now) {
+    private static List<String> trace(PaintSceneDriver d, List<DisplayItem> items, PaintOffsets offsets, long now) {
         List<String> out = new ArrayList<>();
-        d.run(items, now, Matrix2D.IDENTITY, new Painter() {
+        d.run(items, offsets, now, Matrix2D.IDENTITY, new Painter() {
             @Override public void syncLayers(List<PaintSceneDriver.Group> want) {
                 StringBuilder sb = new StringBuilder("layers:");
                 for (var g : want) sb.append(g.id()).append('@').append(g.opacity()).append(',');
@@ -53,7 +54,8 @@ class PaintSceneDriverPatchTest {
             }
             @Override public void drawItem(DisplayItem el, int index, float flat) {
                 var r = d.resolveAt(index);
-                out.add(el.id() + "|" + index + "|" + flat + "|" + r.pose() + "|" + r.opacity() + "|" + r.residual() + "|" + el.translateX() + "," + el.translateY());
+                out.add(el.id() + "|" + index + "|" + flat + "|" + r.pose() + "|" + r.opacity() + "|" + r.residual()
+                        + "|" + offsets.translateX(el) + "," + offsets.translateY(el));
             }
         });
         return out;
@@ -61,7 +63,7 @@ class PaintSceneDriverPatchTest {
 
     @Test
     void incrementalTraversalMatchesAFullRebuildEveryFrame() {
-        // スクロールの移動量は項目のセルへ書かれ、リストの項目は同じまま（B9 の M4）。各フレームで、前のフレームから引き継いだ
+        // スクロールの移動量は外部表の PaintOffsets へ入り、不変リストの項目は同じまま（C6）。各フレームで、前のフレームから引き継いだ
         // 索引（差分で更新）と、そのフレームで作り直した索引の走査が、その場で同じ出力になることを確かめる
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try (var backend = new NoDraw()) {
@@ -78,10 +80,11 @@ class PaintSceneDriverPatchTest {
                 now += 16;
                 view.frame(now, backend, true);
                 List<DisplayItem> items = view.ui().renderCache();
+                PaintOffsets offsets = view.ui().paintOffsets().snapshot();
                 t += 16;
-                List<String> expect = trace(new PaintSceneDriver("drv-rebuilt-" + step), items, t);
+                List<String> expect = trace(new PaintSceneDriver("drv-rebuilt-" + step), items, offsets, t);
                 long gen = incremental.generation();
-                List<String> actual = trace(incremental, items, t);
+                List<String> actual = trace(incremental, items, offsets, t);
                 if (incremental.generation() == gen && step > 0) patchedFrames++;
                 assertEquals(expect, actual, "frame " + step);
             }

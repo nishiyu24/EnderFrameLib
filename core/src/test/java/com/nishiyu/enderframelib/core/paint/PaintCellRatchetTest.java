@@ -4,7 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.PaintCell;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -13,11 +16,11 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
-/** B9 M2: 変わりやすい欄はセル経由。セルは項目ごとに 1 つで、項目の外で作ったり共有したりしない。 */
+/** B9 M2 + C6: 項目とセルは完全に不変（全欄 final・事後書き込み 0）。描画上の平行移動は外部表（UiView の PaintOffsets）だけに書く。 */
 class PaintCellRatchetTest {
 
-    /** 項目へ移動量を書く呼び出し（引数 2 つ）。{@code UiView.setPaintOffset(id, dx, dy)}（引数 3 つ）は別の API。 */
     private static final java.util.regex.Pattern ITEM_OFFSET = java.util.regex.Pattern.compile("\\.setPaintOffset\\([^,()]+,[^,()]+\\)");
+    private static final java.util.regex.Pattern OFFSETS_WRITE = java.util.regex.Pattern.compile("(?:paintOffsets|offsets)\\.(?:set|clear|clearAll)\\s*\\(");
 
     private static DisplayItem item() {
         return new DisplayItem("a", "a", ElementType.RECT, 1, 2, 30, 40, "t", 0xFF112233, 0xFF445566, Map.of(), 4, 0.5f,
@@ -25,14 +28,24 @@ class PaintCellRatchetTest {
     }
 
     @Test
-    void everyItemHasItsOwnCell() {
+    void displayItemAndPaintCellAreCompletelyImmutable() {
+        for (Class<?> cls : List.of(DisplayItem.class, PaintCell.class)) {
+            for (Field f : cls.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())) continue;
+                assertTrue(Modifier.isFinal(f.getModifiers()), cls.getSimpleName() + "." + f.getName() + " must be final");
+            }
+        }
+    }
+
+    @Test
+    void everyItemHasACellAndDerivedGeometryGetsNewCell() {
         DisplayItem a = item();
         assertNotNull(a.cell());
         DisplayItem moved = a.withPosition(9, 9);
         DisplayItem text = a.withText("u");
         DisplayItem meta = a.withMeta(null).withPosition(1, 1);
         assertNotSame(a.cell(), moved.cell());
-        assertNotSame(a.cell(), text.cell());
+        assertSame(a.cell(), text.cell(), "セルは完全不変なので文字だけの派生は同じセルを共有できる");
         assertNotSame(a.cell(), meta.cell());
         assertThrows(NullPointerException.class,
                 () -> new DisplayItem("a", "a", ElementType.RECT, "t", Map.of(), 0, null, null, null, 1L, null));
@@ -59,12 +72,6 @@ class PaintCellRatchetTest {
         assertEquals(10f, a.rotate());
         assertNotEquals(a, a.withPosition(2, 2));
         assertEquals(a, a.withPosition(1, 2));
-        DisplayItem moved = item();
-        moved.setPaintOffset(2f, 0f);
-        assertNotEquals(a, moved, "オフセットも値の等価性に入る");
-        assertEquals(a.translateX() + 2f, moved.translateX());
-        assertEquals(a.baseTranslateX(), moved.baseTranslateX());
-        assertEquals(a.translateX(), a.baseTranslateX());
     }
 
     @Test
@@ -87,30 +94,32 @@ class PaintCellRatchetTest {
         assertTrue(hits.isEmpty(), "セルは DisplayItem の内側だけで作り、外から取り出さない: " + hits);
     }
 
-    /** 塗りをセルへ書く（項目の同一性を保ったまま値を変える）のは、通し番号を保証する DisplayListBuilder の差分パッチだけ。 */
+    /** 死んだセル書き込み経路（repaint / repaintFrom / writePaint / writeOffset / 2 引数 setPaintOffset）は完全に削除済み。 */
     @Test
-    void paintWritesOnlyFromTheDiffPatch() throws IOException {
+    void noLegacyCellWriteCallsExist() throws IOException {
         List<String> hits = new ArrayList<>();
         for (String root : List.of("core/src/main", "core-gl/src/main", "core-vulkan/src/main", "src/main")) {
             Path r = Path.of(root);
             if (!Files.isDirectory(r)) continue;
             try (Stream<Path> files = Files.walk(r)) {
                 for (Path f : (Iterable<Path>) files.filter(p -> p.toString().endsWith(".java"))::iterator) {
-                    String n = f.getFileName().toString();
-                    if (n.equals("DisplayItem.java") || n.equals("DisplayListBuilder.java") || n.equals("PaintSupport.java")) continue;
                     List<String> lines = Files.readAllLines(f);
                     for (int i = 0; i < lines.size(); i++) {
-                        if (lines.get(i).contains(".repaintFrom(") || lines.get(i).contains(".writePaint(") || lines.get(i).contains(".repaint(") || lines.get(i).contains(".writeOffset(")) hits.add(f + ":" + (i + 1));
+                        String l = lines.get(i);
+                        if (l.contains(".repaintFrom(") || l.contains(".writePaint(") || l.contains(".repaint(")
+                                || l.contains(".writeOffset(") || ITEM_OFFSET.matcher(l).find()) {
+                            hits.add(f + ":" + (i + 1));
+                        }
                     }
                 }
             }
         }
-        assertTrue(hits.isEmpty(), "塗りの書き込みは差分パッチの再構築（DisplayListBuilder・PaintSupport.addElement）だけ: " + hits);
+        assertTrue(hits.isEmpty(), "セルへの書き込み口は C6 で全廃済み: " + hits);
     }
 
-    /** 描画の上だけの移動量を書くのは、発行（UiView）と GPU 用のスクロール丸め（PaintSceneDriver）だけ。 */
+    /** 外部の平行移動表（{@link com.nishiyu.enderframelib.core.paint.model.PaintOffsets}）への書き込み口は UiView 1 か所だけ。 */
     @Test
-    void offsetWritesOnlyFromPublishAndSnap() throws IOException {
+    void paintOffsetsWritesLiveOnlyInUiView() throws IOException {
         List<String> hits = new ArrayList<>();
         for (String root : List.of("core/src/main", "core-gl/src/main", "core-vulkan/src/main", "src/main")) {
             Path r = Path.of(root);
@@ -118,14 +127,15 @@ class PaintCellRatchetTest {
             try (Stream<Path> files = Files.walk(r)) {
                 for (Path f : (Iterable<Path>) files.filter(p -> p.toString().endsWith(".java"))::iterator) {
                     String n = f.getFileName().toString();
-                    if (n.equals("DisplayItem.java") || n.equals("UiView.java") || n.equals("PaintSceneDriver.java")) continue;
+                    if (n.equals("PaintOffsets.java") || n.equals("UiView.java")) continue;
                     List<String> lines = Files.readAllLines(f);
                     for (int i = 0; i < lines.size(); i++) {
-                        if (ITEM_OFFSET.matcher(lines.get(i)).find()) hits.add(f + ":" + (i + 1));
+                        String l = lines.get(i);
+                        if (l.contains("new PaintOffsets(") || OFFSETS_WRITE.matcher(l).find()) hits.add(f + ":" + (i + 1));
                     }
                 }
             }
         }
-        assertTrue(hits.isEmpty(), "移動量の書き込みは UiView の発行と PaintSceneDriver の丸めだけ: " + hits);
+        assertTrue(hits.isEmpty(), "PaintOffsets への書き込みは UiView だけ: " + hits);
     }
 }

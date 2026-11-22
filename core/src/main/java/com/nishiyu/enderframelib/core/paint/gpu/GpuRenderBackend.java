@@ -333,69 +333,59 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
 
     // ------------------------------------------------------------------ フレーム実行
 
+    @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, nowMs); }
+
     @Override
-    public void render(List<DisplayItem> items, long nowMs) {
+    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
         if (closed) throw new IllegalStateException("closed");
         host.enter();
         try {
             host.beginTiming();
             try {
-                renderLocked(items, nowMs);
+                readbackValid = false;
+                cpu.clearDirty();
+                for (Entry left : layerStack) releaseEntry(left);
+                layerStack.clear();
+                layerPool.clear();
+                layerPool.addAll(allLayers);
+                rectRunImg = null;
+                frameLayerOps = 0;
+                frameHadImg = false;
+                if (rects != null) rects.begin();
+
+                activeMainCleared = false;
+                mainScissor = null;
+                activeFrame = device.beginFrame();
+                boolean ended = false;
+                try {
+                    activePass = activeFrame.beginPass(mainTarget, LoadOp.CLEAR, clearPremul, null);
+                    activeMainCleared = true;
+                    cpu.renderOnto(items, offsets, nowMs, this);
+                    while (!layerStack.isEmpty()) endGroup();
+                    flushAll();
+                    endPass();
+                    activeFrame.end();
+                    ended = true;
+                } finally {
+                    if (activePass != null) { activePass.end(); activePass = null; }
+                    if (!ended && activeFrame != null) activeFrame.end();
+                    activeFrame = null;
+                }
+
+                if (rects != null && rects.overflows != seenOverflows) {
+                    seenOverflows = rects.overflows;
+                    if (com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on() && !retainOverflow) {
+                        retainOverflow = true;
+                        releaseRetained();
+                    }
+                }
+                host.publishFrame();
             } finally {
                 host.endTiming();
             }
         } finally {
             host.exit();
         }
-    }
-
-    private void renderLocked(List<DisplayItem> items, long nowMs) {
-        readbackValid = false;
-        cpu.clearDirty();
-        for (Entry left : layerStack) releaseEntry(left);
-        layerStack.clear();
-        layerPool.clear();
-        layerPool.addAll(allLayers);
-        rectRunImg = null;
-        frameLayerOps = 0;
-        frameHadImg = false;
-        long overlay0 = overlayFlushes, readbacks0 = readbacks, scrollOps0 = scrollLayersSkipped + scrollLayersRecorded;
-        if (rects != null) rects.begin();
-
-        activeMainCleared = false;
-        mainScissor = null;
-        activeFrame = device.beginFrame();
-        boolean ended = false;
-        try {
-            // 根のターゲットはクリアしておく（何も描かれないフレームでも確定させる）
-            activePass = activeFrame.beginPass(mainTarget, LoadOp.CLEAR, clearPremul, null);
-            activeMainCleared = true;
-
-            cpu.renderOnto(items, nowMs, this);
-            while (!layerStack.isEmpty()) endGroup();
-            flushAll();
-            endPass();
-            activeFrame.end();
-            ended = true;
-        } finally {
-            if (activePass != null) {
-                activePass.end();
-                activePass = null;
-            }
-            if (!ended && activeFrame != null) {
-                activeFrame.end();
-            }
-            activeFrame = null;
-        }
-
-        if (rects != null && rects.overflows != seenOverflows) {
-            seenOverflows = rects.overflows;
-            if (com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on() && !retainOverflow) {
-                retainOverflow = true;
-                releaseRetained();
-            }
-        }
-        host.publishFrame();
     }
 
     GpuTexture currentTarget() {

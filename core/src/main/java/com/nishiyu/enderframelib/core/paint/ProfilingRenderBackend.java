@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.paint;
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 
 import java.util.List;
@@ -29,9 +30,14 @@ public final class ProfilingRenderBackend implements RenderBackend {
 
     @Override
     public void render(List<DisplayItem> items, long nowMs) {
+        render(items, PaintOffsets.EMPTY, nowMs);
+    }
+
+    @Override
+    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
         long t0 = StageProfiler.begin(PipelineStage.PAINT);
         try {
-            delegate.render(items, nowMs);
+            delegate.render(items, offsets, nowMs);
         } finally {
             StageProfiler.end(PipelineStage.PAINT, t0);
         }

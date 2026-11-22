@@ -427,7 +427,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         RenderMeta withLayer = meta.withHints(meta.hints().withLayer(spec));
         return new DisplayItem(anchor.id(), anchor.baseNodeId(), anchor.type(), anchor.x(), anchor.y(), anchor.width(), anchor.height(),
                 anchor.text(), anchor.color(), anchor.bgColor(), anchor.events(), anchor.radius(), anchor.opacity(),
-                anchor.baseTranslateX(), anchor.baseTranslateY(), anchor.scaleX(), anchor.scaleY(), anchor.rotate(),
+                anchor.translateX(), anchor.translateY(), anchor.scaleX(), anchor.scaleY(), anchor.rotate(),
                 anchor.transitionDuration(), anchor.animDef(), anchor.fitMode(), withLayer, anchor.key());
     }
 

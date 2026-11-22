@@ -6,6 +6,7 @@ import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -74,6 +75,7 @@ public class ScrollTranslateTest {
     private static Frame snapshot(StandaloneView view, int[][] probes) {
         Map<String, DisplayItem> byId = new HashMap<>();
         List<DisplayItem> current = view.ui().renderCache(); // ヒットテストが読むのと同じリスト
+        PaintOffsets offsets = view.ui().paintOffsets();
         for (DisplayItem it : current) byId.put(it.id(), it);
         Map<String, float[]> pos = new HashMap<>();
         Map<String, String> body = new HashMap<>();
@@ -82,8 +84,8 @@ public class ScrollTranslateTest {
             if (synthetic(it.id())) continue;
             // テキストノードの NODE 項目は位置を持たない（常に 0,0 に出る。文字は親の断片が持つ）ので、比べない
             if (it.type() == ElementType.NODE && (it.id().startsWith("~t") || it.id().endsWith("_txt"))) continue;
-            // 描画では、項目自身と祖先の節の移動量（変形・スクロール節・sticky の貼り付きの増減〔B12〕）が掛かる
-            float ex = it.x() + it.translateX(), ey = it.y() + it.translateY();
+            // 描画では、項目自身と祖先の節の移動量（変形・スクロール節・sticky の貼り付きの増減〔B12〕＋ PaintOffsets）が掛かる
+            float ex = it.x() + offsets.translateX(it), ey = it.y() + offsets.translateY(it);
             String parent = it.hints().parentId();
             for (int guard = 0; parent != null && guard < 64; guard++) {
                 DisplayItem p = byId.get(parent);
@@ -92,11 +94,11 @@ public class ScrollTranslateTest {
                     break;
                 }
                 if (synthetic(p.id())) {
-                    ex += p.translateX();
-                    ey += p.translateY();
+                    ex += offsets.translateX(p);
+                    ey += offsets.translateY(p);
                 } else if (p.type() == ElementType.NODE) {
-                    ex += p.translateX();
-                    ey += p.translateY();
+                    ex += offsets.translateX(p);
+                    ey += offsets.translateY(p);
                     if (p.hints().relativeOrigin()) {
                         ex += p.x();
                         ey += p.y();

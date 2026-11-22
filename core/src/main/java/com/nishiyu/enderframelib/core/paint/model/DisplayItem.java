@@ -20,7 +20,7 @@ public record DisplayItem(
         ImageFitMode fitMode,
         RenderMeta meta,
         long key,
-        /** 変わりやすい欄（位置・寸法・色・不透明度・変形）の置き場。必ずある（B9 の M2）。読み出しは下のアクセサ経由。 */
+        /** 不変の値オブジェクト {@link PaintCell}。読み出しは下のアクセサ経由。 */
         PaintCell cell
 ) {
     /** 互換用: {@code key} を {@link #keyOf(String)} で導く。 */
@@ -47,65 +47,6 @@ public record DisplayItem(
         if (key == 0L) key = keyOf(id);
     }
 
-    /** 塗りの欄（色・背景色・不透明度）が最後に書かれたときの通し番号。書かれていなければ 0。 */
-    public int paintEpoch() { return cell.epoch; }
-
-    /**
-     * {@code next} が、塗りの 3 欄（色・背景色・不透明度）以外は同じ項目か（id・種類・文字・イベント・メタ・鍵・位置・寸法・変形がすべて同じ）。
-     * 同じなら、項目を作り直さず {@link #repaintFrom} で塗りだけを書ける。
-     */
-    public boolean sameExceptPaint(DisplayItem next) {
-        if (this == next) return true;
-        PaintCell a = cell, b = next.cell;
-        return key == next.key && type == next.type && transitionDuration == next.transitionDuration && fitMode == next.fitMode
-                && a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height && a.radius == b.radius
-                && Float.compare(a.translateX, b.translateX) == 0 && Float.compare(a.translateY, b.translateY) == 0
-                && Float.compare(a.scaleX, b.scaleX) == 0 && Float.compare(a.scaleY, b.scaleY) == 0
-                && Float.compare(a.rotate, b.rotate) == 0
-                && java.util.Objects.equals(id, next.id) && java.util.Objects.equals(baseNodeId, next.baseNodeId)
-                && java.util.Objects.equals(text, next.text) && java.util.Objects.equals(events, next.events)
-                && java.util.Objects.equals(animDef, next.animDef) && java.util.Objects.equals(meta, next.meta);
-    }
-
-    /**
-     * これから作ろうとしている項目の値（{@code DisplayItem} の引数）が、塗りの 3 欄以外はこの項目と同じか。同じなら、作らずに
-     * {@link #repaint} で塗りだけを書いてこの項目を使い回せる（構築側の再利用。B9 の M3b）。値の比較だけで何も確保しない。
-     */
-    public boolean sameExceptPaint(String nid, String nBase, ElementType nType, int nx, int ny, int nw, int nh, String nText,
-                                   Map<String, String> nEvents, int nRadius, float ntx, float nty, float nsx, float nsy, float nrot,
-                                   int nTrans, AnimationSpec nAnim, ImageFitMode nFit, RenderMeta nMeta, long nKey) {
-        PaintCell a = cell;
-        if (type != nType || transitionDuration != nTrans || fitMode != nFit || key != nKey
-                || a.x != nx || a.y != ny || a.width != nw || a.height != nh || a.radius != nRadius
-                || Float.compare(a.translateX, ntx) != 0 || Float.compare(a.translateY, nty) != 0
-                || Float.compare(a.scaleX, nsx) != 0 || Float.compare(a.scaleY, nsy) != 0 || Float.compare(a.rotate, nrot) != 0) {
-            return false;
-        }
-        return java.util.Objects.equals(id, nid) && java.util.Objects.equals(baseNodeId, nBase)
-                && java.util.Objects.equals(text, nText) && java.util.Objects.equals(events, nEvents)
-                && java.util.Objects.equals(animDef, nAnim) && java.util.Objects.equals(meta, nMeta);
-    }
-
-    /** 塗りの 3 欄を書く（{@link #sameExceptPaint} が true のときだけ呼ぶ）。変わったら true。 */
-    public boolean repaint(int newColor, int newBgColor, float newOpacity) {
-        return cell.writePaint(newColor, newBgColor, newOpacity);
-    }
-
-    /** 塗りの 3 欄を {@code next} の値で書く（{@link #sameExceptPaint} が true のときだけ呼ぶ）。変わったら true。 */
-    public boolean repaintFrom(DisplayItem next) {
-        if (this == next) return false;
-        return cell.writePaint(next.cell.color, next.cell.bgColor, next.cell.opacity);
-    }
-
-    /**
-     * この項目をスナップショットの位置 {@code pos}（時計 {@code clock}）に入れたことを覚える。以後、塗り・移動量を書くたびに時計へ印が付く。
-     * {@code ImmutableItemList} だけが呼ぶ。
-     */
-    public void attach(ChunkClock clock, int pos) {
-        cell.clock = clock;
-        cell.pos = pos;
-    }
-
     public int x() { return cell.x; }
     public int y() { return cell.y; }
     public int width() { return cell.width; }
@@ -114,22 +55,8 @@ public record DisplayItem(
     public int bgColor() { return cell.bgColor; }
     public int radius() { return cell.radius; }
     public float opacity() { return cell.opacity; }
-    /** 見える平行移動（基準の移動量＋描画の上だけのオフセット）。 */
-    public float translateX() { return cell.offsetX == 0f ? cell.translateX : cell.translateX + cell.offsetX; }
-    public float translateY() { return cell.offsetY == 0f ? cell.translateY : cell.translateY + cell.offsetY; }
-    /** 表示リストの構築が決めた移動量（オフセットを含まない）。構築側が派生の項目を作るときはこちらを使う。 */
-    public float baseTranslateX() { return cell.translateX; }
-    public float baseTranslateY() { return cell.translateY; }
-    /** 姿勢に関わる欄（移動量）が最後に書かれたときの通し番号。書かれていなければ 0。 */
-    public int geomEpoch() { return cell.geomEpoch; }
-
-    /**
-     * 描画の上だけの平行移動を書く（{@code UiView.setPaintOffset}・スクロール）。項目は作り直さない。変わったら true。
-     * 構築した項目に載せるだけで、{@link #baseTranslateX} は変わらない。
-     */
-    public boolean setPaintOffset(float dx, float dy) {
-        return cell.writeOffset(dx, dy);
-    }
+    public float translateX() { return cell.translateX; }
+    public float translateY() { return cell.translateY; }
     public float scaleX() { return cell.scaleX; }
     public float scaleY() { return cell.scaleY; }
     public float rotate() { return cell.rotate; }
@@ -242,16 +169,8 @@ public record DisplayItem(
         return meta != null && meta.interactiveState();
     }
 
-    /**
-     * 今の値を固定した写し（別のセルを持つ）。塗りは項目の作り直しなしにセルへ書かれうる（B9 の M3）ので、
-     * 後の描画の影響を受けない「ある時点の見た目」を残したいとき（テストの比較用の控えなど）に使う。
-     */
-    public DisplayItem frozen() {
-        return new DisplayItem(id, baseNodeId, type, text, events, transitionDuration, animDef, fitMode, meta, key, cell.copy());
-    }
-
     public DisplayItem withText(String newText) {
-        return new DisplayItem(id, baseNodeId, type, newText, events, transitionDuration, animDef, fitMode, meta, key, cell.copy());
+        return new DisplayItem(id, baseNodeId, type, newText, events, transitionDuration, animDef, fitMode, meta, key, cell);
     }
 
     public DisplayItem withPosition(int newX, int newY) {
@@ -262,7 +181,7 @@ public record DisplayItem(
 
     public DisplayItem withMeta(RenderMeta newMeta) {
         if (meta == newMeta) return this;
-        return new DisplayItem(id, baseNodeId, type, text, events, transitionDuration, animDef, fitMode, newMeta, key, cell.copy());
+        return new DisplayItem(id, baseNodeId, type, text, events, transitionDuration, animDef, fitMode, newMeta, key, cell);
     }
 
     public DisplayItem withPositionAndMeta(int newX, int newY, RenderMeta newMeta) {

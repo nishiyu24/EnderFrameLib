@@ -4,6 +4,7 @@ import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.gui.AbstractEnderScreen;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -370,8 +371,9 @@ public class LinuxDesktopScreen extends AbstractEnderScreen {
     private DesktopLayout.Rect elementRect(String elementId) {
         SessionContext session = ClientWebManager.getSession(this.sessionId);
         if (session == null) return null;
+        PaintOffsets offsets = session.paintOffsets();
         for (DisplayItem item : session.absoluteRenderCache()) {
-            if (elementId.equals(item.id())) return DesktopLayout.Rect.of(item);
+            if (elementId.equals(item.id())) return DesktopLayout.Rect.of(item, offsets);
         }
         return null;
     }
@@ -832,8 +834,14 @@ public class LinuxDesktopScreen extends AbstractEnderScreen {
 
             /** 描画要素の外形。transform の平行移動を含める（拡大・回転は扱わない）。 */
             public static @Nullable Rect of(@Nullable DisplayItem item) {
+                return of(item, PaintOffsets.EMPTY);
+            }
+
+            /** 描画上の平行移動表 {@code offsets} を含めた描画要素の外形。 */
+            public static @Nullable Rect of(@Nullable DisplayItem item, PaintOffsets offsets) {
                 if (item == null) return null;
-                return new Rect(item.x() + item.translateX(), item.y() + item.translateY(), item.width(), item.height());
+                PaintOffsets eff = offsets != null ? offsets : PaintOffsets.EMPTY;
+                return new Rect(item.x() + eff.translateX(item), item.y() + eff.translateY(item), item.width(), item.height());
             }
 
             public static Rect of(DesktopWindowManager.WindowState win) {

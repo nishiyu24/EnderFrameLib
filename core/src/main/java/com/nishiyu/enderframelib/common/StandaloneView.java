@@ -14,7 +14,6 @@ import com.nishiyu.enderframelib.core.dom.node.DefaultActionContext;
 import com.nishiyu.enderframelib.core.dom.node.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
-import com.nishiyu.enderframelib.core.paint.ItemDiff;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
@@ -22,6 +21,7 @@ import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
@@ -91,7 +91,7 @@ public final class StandaloneView implements AutoCloseable {
     private boolean redraw = true;
     private boolean animating;
     private long compositorUntil;
-    private Object compositorBase;
+    private int lastOffsetsVersion = -1;
     private long lastNow;
     private String timings = "";
     /** ホイールで動かしている最中のスクロール先（節 → {x, y}）。毎フレーム少しずつ近づける。 */
@@ -152,6 +152,7 @@ public final class StandaloneView implements AutoCloseable {
         edits.clear();
         ui.loadLocalHtml(html, width, height);
         items = ui.renderCache();
+        lastOffsetsVersion = -1;
         redraw = true;
         drawn = false;
     }
@@ -306,18 +307,18 @@ public final class StandaloneView implements AutoCloseable {
         ui.flushInvalidation();
         List<DisplayItem> after = ui.renderCache();
         boolean rebuilt = before != after;
+        PaintOffsets offsets = ui.paintOffsets();
+        int offsetsVer = offsets.version();
+        boolean offsetsChanged = offsetsVer != lastOffsetsVersion;
         boolean running = interaction.animator().isRunning(nowMs);
         if (rebuilt) {
             items = after;
+            compositorUntil = compositorUntil(after, nowMs);
+        }
+        if (rebuilt || offsetsChanged) {
             lastFlushNs = System.nanoTime() - t0;
             lastFlushItems = items.size();
             lastFlushBreakdown = ui.lastBreakdown();
-            // レイアウト中に新しく走り出したアニメーションも拾う（移動量だけが書かれた表示リストは中身の印が同じなので再走査しない）
-            Object compToken = ItemDiff.contentTokenOf(after);
-            if (compToken != compositorBase) {
-                compositorBase = compToken;
-                compositorUntil = compositorUntil(after, nowMs);
-            }
         }
         long sceneSig = ui.scene3dChangeSignature();
         if (sceneSig != sceneSignature) { // 3D のノード・カメラ・ライトなどが変わった（DOM は変わらないので、ここで拾う）
@@ -328,10 +329,11 @@ public final class StandaloneView implements AutoCloseable {
         animating = running;
         boolean wasRedraw = redraw;
         redraw = false;
-        if (!rebuilt && !force && !wasRedraw && drawn && !wasAnimating && prevNow >= compositorUntil) {
+        if (!rebuilt && !offsetsChanged && !force && !wasRedraw && drawn && !wasAnimating && prevNow >= compositorUntil) {
             return false; // 窓を抜けた最初の1枚は最終値のために描く
         }
-        backend.render(withOverlays(items), nowMs);
+        lastOffsetsVersion = offsetsVer;
+        backend.render(withOverlays(items), offsets, nowMs);
         // 描画自身が世界を更新することがある（初回にビューポートの縦横比をカメラへ入れる）。それは描いた絵に含まれるので、
         // 次のフレームで「3D が変わった」と数えて一度余計に描かないよう、ここで署名を取り直す
         sceneSignature = ui.scene3dChangeSignature();

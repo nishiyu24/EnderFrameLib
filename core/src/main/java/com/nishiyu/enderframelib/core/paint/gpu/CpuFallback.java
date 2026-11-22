@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.core.paint.gpu;
 
 import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 import java.util.List;
 
@@ -16,6 +17,10 @@ public interface CpuFallback {
     }
 
     void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink);
+
+    default void renderOnto(List<DisplayItem> items, PaintOffsets offsets, long nowMs, GpuSink sink) {
+        renderOnto(items, nowMs, sink);
+    }
 
     int[] dirtyBounds();
 

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.io.IOException;
@@ -29,7 +30,8 @@ class GoldenFrameTest {
     private static final long T0 = 10_000L;
     private static final String RESOURCE = "/golden/frames.txt";
 
-    private static long itemsHash(List<DisplayItem> items) {
+    private static long itemsHash(List<DisplayItem> items, PaintOffsets offsets) {
+        PaintOffsets off = offsets != null ? offsets : PaintOffsets.EMPTY;
         CRC32 c = new CRC32();
         StringBuilder sb = new StringBuilder();
         for (DisplayItem it : items) {
@@ -38,7 +40,7 @@ class GoldenFrameTest {
                     .append(it.x()).append(',').append(it.y()).append(',').append(it.width()).append(',').append(it.height()).append('|')
                     .append(it.color()).append(',').append(it.bgColor()).append(',').append(it.radius()).append('|')
                     .append(Float.floatToIntBits(it.opacity())).append('|')
-                    .append(Float.floatToIntBits(it.translateX())).append(',').append(Float.floatToIntBits(it.translateY())).append(',')
+                    .append(Float.floatToIntBits(off.translateX(it))).append(',').append(Float.floatToIntBits(off.translateY(it))).append(',')
                     .append(Float.floatToIntBits(it.scaleX())).append(',').append(Float.floatToIntBits(it.scaleY())).append(',')
                     .append(Float.floatToIntBits(it.rotate())).append('|').append(it.text()).append('\n');
             c.update(sb.toString().getBytes(StandardCharsets.UTF_8));
@@ -59,7 +61,8 @@ class GoldenFrameTest {
     private static void record(Map<String, String> out, String name, StandaloneView v, SoftwareRenderBackend sw, long now) {
         v.frame(now, sw, true);
         List<DisplayItem> items = v.items();
-        out.put(name, Long.toHexString(pixelsHash(sw.pixmap().pixels())) + " " + Long.toHexString(itemsHash(items)) + " " + items.size());
+        out.put(name, Long.toHexString(pixelsHash(sw.pixmap().pixels())) + " "
+                + Long.toHexString(itemsHash(items, v.ui().paintOffsets())) + " " + items.size());
     }
 
     /** 全シナリオを実行して「名前 → 画素ハッシュ 項目ハッシュ 項目数」を返す。 */

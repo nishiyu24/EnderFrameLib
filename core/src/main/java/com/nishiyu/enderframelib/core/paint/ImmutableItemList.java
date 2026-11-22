@@ -1,8 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.model.ChunkClock;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.PaintCell;
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.List;
@@ -20,29 +18,10 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
 
     private final DisplayItem[][] chunks;
     private final int size;
-    /** 作った時点の塗りの書き込みの通し番号（{@link PaintCell#currentEpoch()}）。これより後に書かれた項目が「変わった」ものになる。 */
-    private final int epoch;
-    /**
-     * 中身の同一性の印。作り直し・差分パッチで新しくなり、{@link #touched}（描画の上だけの移動量の書き込み）では引き継がれる。
-     * スクロール層の保持などが「中身が変わっていない」ことを、スナップショットの同一性ではなくこの印で判定する。
-     */
-    private final Object token;
-    /**
-     * ブロックごとの書き込みの通し番号の時計（B9 の M6）。項目のセルが書かれるたびに印が付くので、消費者は書き込みを知るために
-     * ブロックを複製してもらう必要が無い。同じ長さの差分パッチと {@link #touched} の間は同じ時計を共有する。
-     */
-    private final ChunkClock clock;
 
-    private ImmutableItemList(DisplayItem[][] chunks, int size, ChunkClock clock) {
-        this(chunks, size, new Object(), clock);
-    }
-
-    private ImmutableItemList(DisplayItem[][] chunks, int size, Object token, ChunkClock clock) {
+    private ImmutableItemList(DisplayItem[][] chunks, int size) {
         this.chunks = chunks;
         this.size = size;
-        this.token = token;
-        this.clock = clock;
-        this.epoch = PaintCell.currentEpoch();
     }
 
     /** {@code src} の要素を持つ不変リストを返す（{@code prev} が同じサイズなら未変更ブロックを共有する）。 */
@@ -52,20 +31,17 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
             return patch(prev, src);
         }
         int numChunks = (n + CHUNK_MASK) >>> CHUNK_SHIFT;
-        ChunkClock clock = new ChunkClock(numChunks);
         DisplayItem[][] chunks = new DisplayItem[numChunks][];
         for (int c = 0; c < numChunks; c++) {
             int base = c << CHUNK_SHIFT;
             int len = Math.min(CHUNK_SIZE, n - base);
             DisplayItem[] block = new DisplayItem[len];
             for (int j = 0; j < len; j++) {
-                DisplayItem it = src.get(base + j);
-                block[j] = it;
-                it.attach(clock, base + j);
+                block[j] = src.get(base + j);
             }
             chunks[c] = block;
         }
-        return new ImmutableItemList(chunks, n, clock);
+        return new ImmutableItemList(chunks, n);
     }
 
     /** 配列 {@code src[0..n)} を持つ不変リストを返す（{@code prev} が同じサイズなら未変更ブロックを共有する）。 */
@@ -74,20 +50,15 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
             return patchArray(prev, src);
         }
         int numChunks = (n + CHUNK_MASK) >>> CHUNK_SHIFT;
-        ChunkClock clock = new ChunkClock(numChunks);
         DisplayItem[][] chunks = new DisplayItem[numChunks][];
         for (int c = 0; c < numChunks; c++) {
             int base = c << CHUNK_SHIFT;
             int len = Math.min(CHUNK_SIZE, n - base);
             DisplayItem[] block = new DisplayItem[len];
-            for (int j = 0; j < len; j++) {
-                DisplayItem it = src[base + j];
-                block[j] = it;
-                it.attach(clock, base + j);
-            }
+            System.arraycopy(src, base, block, 0, len);
             chunks[c] = block;
         }
-        return new ImmutableItemList(chunks, n, clock);
+        return new ImmutableItemList(chunks, n);
     }
 
     private static ImmutableItemList patchArray(ImmutableItemList prev, DisplayItem[] src) {
@@ -102,10 +73,9 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
             DisplayItem[] nb = null;
             for (int j = 0; j < len; j++) {
                 DisplayItem cur = src[base + j];
-                if (ItemDiff.replaced(ob[j], cur)) {
+                if (ItemDiff.changed(ob[j], cur)) {
                     if (nb == null) nb = Arrays.copyOf(ob, len);
                     nb[j] = cur;
-                    cur.attach(prev.clock, base + j);
                 }
             }
             if (nb != null) {
@@ -113,8 +83,7 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
                 nextChunks[c] = nb;
             }
         }
-        if (nextChunks != null) return new ImmutableItemList(nextChunks, n, prev.clock);
-        return prev.clock.maxPaintEpoch() > prev.epoch ? new ImmutableItemList(oldChunks, n, new Object(), prev.clock) : prev;
+        return nextChunks != null ? new ImmutableItemList(nextChunks, n) : prev;
     }
 
     private static ImmutableItemList patch(ImmutableItemList prev, List<DisplayItem> src) {
@@ -129,10 +98,9 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
             DisplayItem[] nb = null;
             for (int j = 0; j < len; j++) {
                 DisplayItem cur = src.get(base + j);
-                if (ItemDiff.replaced(ob[j], cur)) {
+                if (ItemDiff.changed(ob[j], cur)) {
                     if (nb == null) nb = Arrays.copyOf(ob, len);
                     nb[j] = cur;
-                    cur.attach(prev.clock, base + j);
                 }
             }
             if (nb != null) {
@@ -140,33 +108,7 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
                 nextChunks[c] = nb;
             }
         }
-        if (nextChunks != null) return new ImmutableItemList(nextChunks, n, prev.clock);
-        // 項目の差し替えは無い。セルへ書かれていれば（時計が進んでいれば）、ブロックを複製せず新しいスナップショットだけを返す
-        // （消費者は塗りの変化を、リストの同一性が変わったことと時計で知る）。何も書かれていなければ同じリスト
-        return prev.clock.maxPaintEpoch() > prev.epoch ? new ImmutableItemList(oldChunks, n, new Object(), prev.clock) : prev;
-    }
-
-    /**
-     * 項目の移動量が書き換わったことを表す新しいスナップショット（消費者がリストの同一性で変化に気づく）。項目もブロックも時計も
-     * 同じものを指し（どの項目が変わったかは時計の印で分かる）、中身の印は引き継ぐ。
-     */
-    public ImmutableItemList touched() {
-        return new ImmutableItemList(chunks, size, token, clock);
-    }
-
-    /** ブロックごとの書き込みの時計。 */
-    public ChunkClock clock() {
-        return clock;
-    }
-
-    /** 中身の同一性の印（{@link #touched} では変わらない）。 */
-    public Object token() {
-        return token;
-    }
-
-    /** 作った時点の塗りの書き込みの通し番号。 */
-    public int epoch() {
-        return epoch;
+        return nextChunks != null ? new ImmutableItemList(nextChunks, n) : prev;
     }
 
     int chunkCount() {

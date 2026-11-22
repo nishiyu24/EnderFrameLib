@@ -104,10 +104,8 @@ public class UiView implements AutoCloseable {
 
     private volatile String sessionId;
     private volatile List<DisplayItem> renderCache = Collections.emptyList();
-    /** レイアウトから作った描画要素（描画上の平行移動 {@link #paintOffsets} を掛ける前）。 */
-    private volatile List<DisplayItem> baseRenderCache = Collections.emptyList();
-    private final Map<String, float[]> paintOffsets = new ConcurrentHashMap<>();
-    private volatile boolean paintOffsetsDirty = false;
+    /** 描画の上だけの平行移動（スクロール・ドラッグ）の外部表（C6）。 */
+    private final PaintOffsets paintOffsets = new PaintOffsets();
     Document document;
     private final Map<Long, Scene3DWorld> scene3dWorlds = new ConcurrentHashMap<>();
     /** ワールドごとのレイキャスト（BVH を持つので使い回す）。 */
@@ -302,8 +300,7 @@ public class UiView implements AutoCloseable {
             paintBuilderW = width;
             paintBuilderH = height;
         }
-        com.nishiyu.enderframelib.core.paint.ImmutableItemList prev =
-                this.baseRenderCache instanceof com.nishiyu.enderframelib.core.paint.ImmutableItemList il ? il : null;
+        ImmutableItemList prev = this.renderCache instanceof ImmutableItemList il ? il : null;
         return builder.renderImmutable(root, scrollOnly, prev);
     }
 
@@ -316,95 +313,36 @@ public class UiView implements AutoCloseable {
     private int paintBuilderW, paintBuilderH;
     private Object paintBuilderKeyframes, paintBuilderScroll;
 
+    /** この画面の描画上の平行移動表（不変の {@link DisplayItem} の外に持つ）。 */
+    public PaintOffsets paintOffsets() {
+        return paintOffsets;
+    }
+
     public List<DisplayItem> renderCache() {
-        applyPendingPaintOffsets();
         return renderCache;
     }
 
     public void setRenderCache(List<DisplayItem> renderCache) {
         if (renderCache == null || renderCache.isEmpty()) {
-            this.baseRenderCache = Collections.emptyList();
+            this.renderCache = Collections.emptyList();
         } else if (renderCache instanceof ImmutableItemList) {
-            this.baseRenderCache = renderCache;
+            this.renderCache = renderCache;
         } else {
-            ImmutableItemList prev = this.baseRenderCache instanceof ImmutableItemList il ? il : null;
-            this.baseRenderCache = ImmutableItemList.from(prev, renderCache);
+            ImmutableItemList prev = this.renderCache instanceof ImmutableItemList il ? il : null;
+            this.renderCache = ImmutableItemList.from(prev, renderCache);
         }
-        publishRenderCache();
     }
 
     /**
-     * 要素を描画の上だけで平行移動する（レイアウトも DOM も変えない）。
-     *
-     * <p>要素本体の描画要素（id が一致する NODE）の translate に足すので、子孫・クリップ・ヒットテストも
-     * 親の連鎖を通して一緒に動く。ウィンドウのドラッグのように毎フレーム位置が変わる操作で、
-     * 1 フレームごとの再レイアウトを避けるために使う。再レイアウトで描画要素が作り直されても掛け続け、
-     * {@link #clearPaintOffset(String)} で外す。反映は次に描画要素を読んだとき（1 フレームに 1 回）。</p>
+     * 要素を描画の上だけで平行移動する（レイアウトも表示リストも変えない）。
+     * 移動量は {@link PaintOffsets} に記録し、不変の {@link DisplayItem} は作り直さない。
      */
     public void setPaintOffset(String elementId, float dx, float dy) {
-        if (elementId == null || elementId.isEmpty()) return;
-        float[] cur = paintOffsets.get(elementId);
-        if (cur != null) {
-            if (cur[0] != dx || cur[1] != dy) {
-                cur[0] = dx;
-                cur[1] = dy;
-                paintOffsetsDirty = true;
-            }
-            return;
-        }
-        paintOffsets.put(elementId, new float[]{dx, dy});
-        paintKeysVersion.incrementAndGet();
-        paintOffsetsDirty = true;
+        paintOffsets.set(elementId, dx, dy);
     }
 
     public void clearPaintOffset(String elementId) {
-        if (elementId != null && paintOffsets.remove(elementId) != null) { paintKeysVersion.incrementAndGet(); paintOffsetsDirty = true; }
-    }
-
-    private void applyPendingPaintOffsets() {
-        if (paintOffsetsDirty) publishRenderCache();
-    }
-
-    /** いま移動量（{@link #paintOffsets}）を書いてある項目（id → 項目）。外れたときに 0 へ戻す。 */
-    private final Map<String, DisplayItem> offsetApplied = new java.util.HashMap<>();
-
-    private void publishRenderCache() {
-        paintOffsetsDirty = false;
-        List<DisplayItem> base = this.baseRenderCache;
-        if (base.isEmpty() || (paintOffsets.isEmpty() && offsetApplied.isEmpty())) {
-            this.renderCache = base;
-            return;
-        }
-        // 描画の上だけの移動量は、項目を作り直さず項目のセルへ書く（B9 の M4）。動く節は 1〜数個で、書き換えた位置だけを
-        // 新しいスナップショットに載せる（消費者は通し番号とブロックで変化を知る）。レイアウトで項目が作り直されても、
-        // 発行のたびに載せ直す（新しい項目には移動量が無い）
-        ImmutableItemList list = base instanceof ImmutableItemList il ? il : ImmutableItemList.from(null, base);
-        Map<String, Integer> byId = baseIndexById(list);
-        int count = 0;
-        // 外れた項目は 0 へ戻す（まだリストにある項目だけが位置を持つ）
-        for (java.util.Iterator<Map.Entry<String, DisplayItem>> it = offsetApplied.entrySet().iterator(); it.hasNext(); ) {
-            Map.Entry<String, DisplayItem> e = it.next();
-            if (paintOffsets.containsKey(e.getKey())) continue;
-            it.remove();
-            if (e.getValue().setPaintOffset(0f, 0f) && byId.containsKey(e.getKey())) count++;
-        }
-        for (Map.Entry<String, float[]> e : paintOffsets.entrySet()) {
-            Integer idxBox = byId.get(e.getKey());
-            if (idxBox == null) continue;
-            DisplayItem el = list.get(idxBox);
-            if (el.type() != ElementType.NODE) continue;
-            float[] off = e.getValue();
-            offsetApplied.put(e.getKey(), el);
-            if (el.setPaintOffset(off[0], off[1])) count++;
-        }
-        if (count > 0) {
-            list = list.touched();
-            this.baseRenderCache = list;
-        } else if (list != base) {
-            this.baseRenderCache = list;
-        }
-        this.renderCache = list;
-        // ヒットテストの索引は引かれたときに、同じ基底の上の差し替えだけが変わったなら作り直さず patch する（hitTestIndex()）
+        paintOffsets.clear(elementId);
     }
 
     /**
@@ -412,13 +350,12 @@ public class UiView implements AutoCloseable {
      * （基底を作った時点で分かっている。まだ動いていなくても、次のスクロールで動くので最初から動きうる節として扱う）。
      */
     private java.util.Set<String> dynamicNodeIds() {
-        // 移動量を持つ節の集合（値でなく鍵）と scrollBase が変わらない限り、同じ不変の集合を返す（スクロールのたびに作らない。
-        // HitTestIndex が Set.copyOf で持つので、同一インスタンスなら包含の検査も省ける）
-        int version = paintKeysVersion.get();
+        int version = paintOffsets.keysVersion();
         java.util.Set<String> cached = dynamicIdsCache;
         List<ScrollContentInfo> base = scrollBase;
         if (cached != null && dynamicIdsVersion == version && dynamicIdsBase == base) return cached;
-        java.util.Set<String> ids = new java.util.HashSet<>(paintOffsets.keySet());
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        paintOffsets.copyKeysInto(ids);
         for (ScrollContentInfo info : base) {
             ids.add(info.contentId());
             if (info.thumbVId() != null) ids.add(info.thumbVId());
@@ -432,28 +369,9 @@ public class UiView implements AutoCloseable {
         return cached;
     }
 
-    /** {@link #paintOffsets} の鍵が増減するたびに増える（値の更新では増えない）。 */
-    private final java.util.concurrent.atomic.AtomicInteger paintKeysVersion = new java.util.concurrent.atomic.AtomicInteger();
     private java.util.Set<String> dynamicIdsCache;
-    private int dynamicIdsVersion;
+    private int dynamicIdsVersion = -1;
     private List<ScrollContentInfo> dynamicIdsBase;
-
-    /** 基底リストの id → 位置。基底が変わるまで使い回す（スクロールのたびには作らない）。 */
-    private Map<String, Integer> baseIndexById(List<DisplayItem> base) {
-        Map<String, Integer> m = baseIndexCache;
-        Object token = ItemDiff.contentTokenOf(base); // 移動量の書き込みだけで別のスナップショットになっても、位置は同じ
-        if (m != null && baseIndexSource == token) return m;
-        m = new java.util.HashMap<>(base.size() * 2);
-        for (int i = 0; i < base.size(); i++) m.put(base.get(i).id(), i);
-        baseIndexCache = m;
-        baseIndexSource = token;
-        return m;
-    }
-
-    private Map<String, Integer> baseIndexCache;
-    private Object baseIndexSource;
-    /** {@link #hitTestIndex} を作ったときの基底リスト。 */
-    private volatile Object hitTestIndexBase;
 
     /** 画像の透過ヒットテスト（{@code <img data-hit-alpha>}）が不透明度を引く先。ホストが画像の読み方を差し込む。 */
     private volatile com.nishiyu.enderframelib.core.paint.AlphaMaskProvider alphaMaskProvider;
@@ -486,29 +404,17 @@ public class UiView implements AutoCloseable {
     }
 
     public HitTestIndex hitTestIndex() {
-        applyPendingPaintOffsets();
         List<DisplayItem> current = this.renderCache;
         HitTestIndex idx = this.hitTestIndex;
-        if (idx != null && hitTestIndexSource == current) return idx;
-        // 同じ基底の上で、描画の上だけ動く節の移動量が変わっただけなら、索引は作り直さず該当の節だけを差し替える
         java.util.Set<String> dynamic = dynamicNodeIds();
-        if (idx != null && hitTestIndexBase == ItemDiff.contentTokenOf(baseRenderCache) && (idx.dynamicIds() == dynamic || idx.dynamicIds().containsAll(dynamic))) {
-            Map<String, Integer> byId = baseIndexById(baseRenderCache);
-            List<DisplayItem> now = new ArrayList<>(idx.dynamicIds().size());
-            for (String id : idx.dynamicIds()) {
-                Integer at = byId.get(id);
-                if (at != null) now.add(current.get(at));
-            }
-            if (idx.patch(now)) {
-                this.hitTestIndexSource = current;
-                return idx;
-            }
+        if (idx != null && hitTestIndexSource == current
+                && (idx.dynamicIds() == dynamic || idx.dynamicIds().containsAll(dynamic))) {
+            return idx;
         }
-        idx = new HitTestIndex(current, dynamic);
+        idx = new HitTestIndex(current, dynamic, paintOffsets);
         idx.alphaMaskProvider(alphaMaskProvider);
         idx.animationClock(interactionState::animationTimeMs); // 描いたフレームと同じ時刻の姿勢で当てる（T2）
         this.hitTestIndexSource = current;
-        this.hitTestIndexBase = ItemDiff.contentTokenOf(baseRenderCache);
         return this.hitTestIndex = idx;
     }
 
@@ -847,7 +753,6 @@ public class UiView implements AutoCloseable {
      */
     public List<DisplayItem> elements() {
         beforeElements();
-        applyPendingPaintOffsets();
         return absolute(renderCache);
     }
 
@@ -857,7 +762,6 @@ public class UiView implements AutoCloseable {
      */
     public List<DisplayItem> relativeElements() {
         beforeElements();
-        applyPendingPaintOffsets();
         return renderCache;
     }
 
@@ -878,20 +782,17 @@ public class UiView implements AutoCloseable {
     /** 親相対の項目 {@code item}（{@link #relativeElements()} の要素）の絶対位置を解いた項目。公開ごとの索引を使うので、全体を直さずに済む。 */
     public DisplayItem toAbsolute(DisplayItem item) {
         if (item == null) return null;
-        applyPendingPaintOffsets();
         return DisplayItem.resolveAbsolute(itemsById(), item);
     }
 
     /** 描画 ID が {@code id} の NODE 項目（絶対位置）。無ければ null。 */
     public DisplayItem nodeItemAbsolute(String id) {
-        applyPendingPaintOffsets();
         DisplayItem it = itemsById().get(id);
         return it != null && it.type() == ElementType.NODE ? DisplayItem.resolveAbsolute(itemsById(), it) : null;
     }
 
     /** {@link #elements()} と同じ絶対座標のリストを、前処理なしで返す。 */
     public List<DisplayItem> absoluteRenderCache() {
-        applyPendingPaintOffsets();
         return absolute(renderCache);
     }
 
@@ -2047,8 +1948,8 @@ public class UiView implements AutoCloseable {
         if (target != null && !Objects.equals(target.attrs.get("value"), domValue)) {
             DomUtils.updateAttribute(target, "value", domValue, false);
         }
-        // 書き戻し先は平行移動を掛ける前の一覧（掛けた後を戻すと二重に掛かる）
-        List<DisplayItem> elements = baseRenderCache;
+        // 書き戻し先の不変リスト（平行移動は外部の PaintOffsets にある）
+        List<DisplayItem> elements = renderCache;
         if (elements != null && !elements.isEmpty()) {
             String phId = baseId + "_ph";
             String inputRenderId = baseId + "_input";
@@ -2097,11 +1998,9 @@ public class UiView implements AutoCloseable {
     @Override
     public void close() {
         renderCache = Collections.emptyList();
-        baseRenderCache = Collections.emptyList();
-        paintOffsets.clear();
-        paintKeysVersion.incrementAndGet();
-        paintOffsetsDirty = false;
+        paintOffsets.clearAll();
         hitTestIndex = null;
+        hitTestIndexSource = null;
         if (document != null && document.root instanceof HtmlDocument liveDocument) {
             liveDocument.setDomChangeListener(null);
         }
