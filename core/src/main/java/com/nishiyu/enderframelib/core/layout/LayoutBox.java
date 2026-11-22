@@ -1240,7 +1240,7 @@ public class LayoutBox {
         }
     }
 
-    private void layoutImpl(float parentX, float parentY, float parentOuterW, float parentOuterH, LayoutContext ctx) {
+    void layoutImpl(float parentX, float parentY, float parentOuterW, float parentOuterH, LayoutContext ctx) {
         if (style.facts().displayNone) return;
         measureMemo.settleTentative(this);
         if (measureMemo.hasTentativeChildren()) measureMemo.settleTentativeChildren(this);
@@ -1251,7 +1251,7 @@ public class LayoutBox {
         LayoutContext.AutoVisibilitySession av = ctx.autoVisibility();
         boolean checkAutoSubtree = av != null && (subtreeHasContentAuto || style.facts().contentVisibilityAuto);
         if (PlacementMemo.tryReuseOrShift(this, parentX, parentY, parentOuterW, parentOuterH, ctx, checkAutoSubtree)) {
-            return;
+            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_PLACEMENT.on()) PlacementVerifier.verify(this, parentX, parentY, parentOuterW, parentOuterH, ctx); return;
         }
         PlacementMemo pm = ensurePlacementMemo();
         pm.setHasFloatChild(computeHasFloatChild());

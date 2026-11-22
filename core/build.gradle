@@ -124,6 +124,7 @@ def configureCoreTest = { Test t, List<String> includeTagList, List<String> excl
     // 検証モード VERIFY_MEMO: 記憶（float メモ・測定の記憶・姿勢の使い回し）が当たった所を計算し直し、食い違えば AssertionError（鍵の漏れの検出。costGate・計測では無効）
     // 検証の費用を測る・切り分けるときは -Pverify.memo=false / -Pverify.boxmemo=false で個別に切れる
     t.systemProperty 'enderframe.verify.memo', String.valueOf(findProperty('verify.memo') ?: 'true')
+    t.systemProperty 'enderframe.verify.placement', String.valueOf(findProperty('verify.placement') ?: 'true')
     // 箱の項目の記憶（DisplayListBuilder の箱ごとの記憶）も作り直して比べる（計画の §6-124・125）
     t.systemProperty 'enderframe.verify.boxmemo', String.valueOf(findProperty('verify.boxmemo') ?: 'true')
     // 影モード: 全面の描画のたびに断片の木を組み直して旧経路の表示リストと比べる（C1 の F1。切るときは -Pverify.fragment=false）
@@ -490,6 +491,7 @@ tasks.register('mutationFuzz', JavaExec) {
     if (project.hasProperty('fuzz.record')) systemProperty 'fuzz.record', 'true'
     // 検証モードも併走させる（鍵の漏れを「どの記憶か」つきで報告する。切るときは -Pverify.memo=false / -Pverify.boxmemo=false）
     systemProperty 'enderframe.verify.memo', String.valueOf(findProperty('verify.memo') ?: 'true')
+    systemProperty 'enderframe.verify.placement', String.valueOf(findProperty('verify.placement') ?: 'true')
     systemProperty 'enderframe.verify.boxmemo', String.valueOf(findProperty('verify.boxmemo') ?: 'true')
     systemProperty 'enderframe.verify.fragment', String.valueOf(findProperty('verify.fragment') ?: 'true')
     if (project.hasProperty('fuzz.jvmArgs')) jvmArgs project.property('fuzz.jvmArgs').toString().split(' ')

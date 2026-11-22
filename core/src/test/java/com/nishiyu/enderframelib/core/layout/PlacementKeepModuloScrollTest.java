@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
  */
 class PlacementKeepModuloScrollTest {
 
-    private static final String HTML = "<style>body{margin:0;font-size:12px}.sc{width:200px;height:50px;overflow:auto}.row{height:20px}</style>"
+    static final String HTML = "<style>body{margin:0;font-size:12px}.sc{width:200px;height:50px;overflow:auto}.row{height:20px}</style>"
             + "<div id=a>one</div>"
             + "<div id=wrap><div id=sc class=sc><div class=row>r1</div><div class=row>r2</div><div class=row>r3</div><div class=row>r4</div>"
             + "<div class=row>r5</div><div class=row>r6</div><div class=row>r7</div><div class=row>r8</div></div><div id=b>two</div></div>"
@@ -89,7 +89,7 @@ class PlacementKeepModuloScrollTest {
     }
 
     /** 入れ子のスクロールコンテナ: 内側だけ・外側だけ・両方を動かしても、文字の変更の後でも、最初から作った結果と同じ。 */
-    private static final String NESTED = "<style>body{margin:0;font-size:12px}.sc{width:200px;height:60px;overflow:auto}.in{width:150px;height:30px;overflow:auto}.row{height:20px}</style>"
+    static final String NESTED = "<style>body{margin:0;font-size:12px}.sc{width:200px;height:60px;overflow:auto}.in{width:150px;height:30px;overflow:auto}.row{height:20px}</style>"
             + "<div id=a>one</div><div id=wrap><div id=sc class=sc><div class=row>o1</div>"
             + "<div id=inner class=in><div class=row>i1</div><div class=row>i2</div><div class=row>i3</div><div class=row>i4</div></div>"
             + "<div class=row>o2</div><div class=row>o3</div><div class=row>o4</div></div></div><div id=c>three</div>";

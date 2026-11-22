@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.kernel.Shortcut;
@@ -23,12 +24,18 @@ final class PlacementMemo {
     private static final byte F_HAS_FLOAT_CHILD = 1 << 3;
     /** 部分木に（自分以外の）スクロールコンテナがあり、保持できるのは {@link #scrollVersion} がスクロール量の版と同じときだけ（C9）。 */
     private static final byte F_SCROLL_DEP = 1 << 4;
+    /** 最後の配置で、インセットを持つ relative として子孫の座標へオフセットを足した（足したオフセットは保持した子孫に残る）。 */
+    private static final byte F_REL_INSET = 1 << 5;
+    /** {@code cbUp}: 部分木の絶対配置が必要とする包含ブロックの、この箱から数えた段数（1 以上は部分木の外。{@code CB_OUTSIDE} は初期包含ブロック）。無ければ {@code NO_CB}。 */
+    private static final int NO_CB = Integer.MIN_VALUE / 2, CB_OUTSIDE = 1 << 20;
 
     private static final LongAdder LAYOUTS_SKIPPED = new LongAdder();
     private static final LongAdder LAYOUTS_SHIFTED = new LongAdder();
 
-    private byte flags;
-    private int scrollVersion;
+    private byte flags, levelNoCb;
+    private int scrollVersion, cbUp = NO_CB;
+    /** 記録の途中の作業欄（{@link #record} が使う）: 絶対配置か relative を含む＝厳密な純粋性ではない。 */
+    private boolean strictBroken;
     private float lastScrollX = Float.NaN, lastScrollY = Float.NaN;
     private float lastLayoutX = Float.NaN, lastLayoutY = Float.NaN;
     private float lastLayoutOuterW = Float.NaN, lastLayoutOuterH = Float.NaN;
@@ -141,8 +148,13 @@ final class PlacementMemo {
         lastLayoutMR = box.mR;
         lastLayoutMT = box.mT;
         lastLayoutMB = box.mB;
-        int below = hasLegend ? IMPURE : selfContained(box, false); // 自分のスクロールは tryReuseOrShift が比べるので数えない
-        boolean pure = below == PURE && !box.isScrollContainer();
+        cbUp = NO_CB; // 部分木の絶対配置が必要とする包含ブロックの最大の段数を selfContained が集める（確保しないよう自分の欄へ）
+        strictBroken = false;
+        int below = hasLegend ? IMPURE : selfContained(box, false, 0, this); // 自分のスクロールは tryReuseOrShift が比べるので数えない
+        levelNoCb = (byte) below;
+        if (below != IMPURE && cbUp > 0) below = IMPURE; // 絶対配置の包含ブロックが部分木の外にある: 外の幾何に依る
+        boolean pure = below == PURE && !box.isScrollContainer() && !strictBroken;
+        setFlag(F_REL_INSET, box.isRelative && relInset(box));
         setFlag(F_PURE, pure);
         setFlag(F_KEPT_PURE, below != IMPURE);
         setFlag(F_SCROLL_DEP, below == SCROLL_DEP);
@@ -157,11 +169,20 @@ final class PlacementMemo {
     /** 部分木の純粋性: 外の状態に依らず置ける（{@code PURE}）・スクロール量が前回のままなら置ける（{@code SCROLL_DEP}）・どちらでもない（{@code IMPURE}）。 */
     private static final int IMPURE = 0, PURE = 1, SCROLL_DEP = 2;
 
-    private static int selfContained(LayoutBox box, boolean selfScrollBreaks) {
-        if (box.isAbsolute || box.isFixed || box.isRelative || box.isSticky || box.floatSpace != null
-                || LayoutBox.isTableBox(box) || box.collapsedBorders != null
-                || box.style.facts().floating) {
+    /**
+     * 部分木の純粋性（外の幾何に依らず置けるか）。絶対配置は、包含ブロックが部分木の内側ならその部分木の中で完結する〔包含ブロックの必要段数を {@code acc.cbUp} に集め、
+     * 呼び出し側が部分木の外を指していないか見る〕。アンカー位置指定・ビューポート単位・{@code fixed}・インセットを持つ relative・sticky・float・表は外へ出る。
+     * {@code depth} は記録する根からの段数。
+     */
+    private static int selfContained(LayoutBox box, boolean selfScrollBreaks, int depth, PlacementMemo acc) {
+        if (box.isFixed || box.isSticky || box.floatSpace != null || LayoutBox.isTableBox(box) || box.collapsedBorders != null
+                || box.style.facts().floating || (box.isRelative && relInset(box))) {
             return IMPURE;
+        }
+        if (box.isAbsolute || box.isRelative) acc.strictBroken = true;
+        if (box.isAbsolute) {
+            if (anchored(box) || box.style.usesViewportUnits()) return IMPURE;
+            acc.cbUp = Math.max(acc.cbUp, stepsToContainingBlock(box) - depth);
         }
         int level = selfScrollBreaks && box.isScrollContainer() ? SCROLL_DEP : PURE;
         List<LayoutBox> kids = box.children;
@@ -169,7 +190,14 @@ final class PlacementMemo {
             LayoutBox child = kids.get(i);
             if (child.style.facts().displayNone) continue;
             PlacementMemo cpm = child.placementMemo;
-            int r = cpm != null && cpm.isLaidOut() ? (cpm.isPure() ? PURE : cpm.isKeptPure() ? SCROLL_DEP : IMPURE) : selfContained(child, true);
+            int r;
+            if (cpm != null && cpm.isLaidOut()) {
+                r = cpm.levelNoCb == IMPURE ? IMPURE : Math.max(cpm.levelNoCb, child.isScrollContainer() ? SCROLL_DEP : PURE); // 子自身のスクロールは親から見ると外の状態
+                if (!cpm.isPure()) acc.strictBroken = true;
+                if (cpm.cbUp != NO_CB) acc.cbUp = Math.max(acc.cbUp, cpm.cbUp - (depth + 1));
+            } else {
+                r = selfContained(child, true, depth + 1, acc);
+            }
             if (r == IMPURE) return IMPURE;
             level = Math.max(level, r);
         }
@@ -194,10 +222,42 @@ final class PlacementMemo {
                 && !floatsOrOffset;
     }
 
+    /** relative がオフセットを決めるインセット（left / right / top / bottom）を 1 つでも持つか。{@code applyRelativePositioning} と同じ見方。 */
+    private static boolean relInset(LayoutBox b) {
+        var ax = b.axisStyle();
+        return ax.containsKey(CssPropertyIndex.LEFT) || ax.containsKey(CssPropertyIndex.RIGHT) || ax.containsKey(CssPropertyIndex.TOP) || ax.containsKey(CssPropertyIndex.BOTTOM);
+    }
+
+    /** 子孫の座標にオフセットが入っている（前回の配置でインセット付きの relative だった）か、今回入る。保持した子孫へ足し直すと二重にずれる。 */
+    private static boolean relOffsetEmbedded(LayoutBox p) {
+        return (p.placementMemo != null && p.placementMemo.flag(F_REL_INSET)) || (p.isRelative && relInset(p));
+    }
+
+    /** アンカー位置指定（位置・寸法がほかの箱に依る）・位置の試行は、部分木の外の箱を読む。 */
+    private static boolean anchored(LayoutBox b) {
+        var s = b.style;
+        if (isSet(s.get(CssPropertyIndex.POSITION_ANCHOR)) || isSet(s.get(CssPropertyIndex.POSITION_AREA)) || isSet(s.get(CssPropertyIndex.POSITION_TRY_FALLBACKS))) return true;
+        for (int id : ANCHOR_REFS) { String v = s.get(id); if (v != null && v.contains("anchor")) return true; }
+        return false;
+    }
+
+    private static final int[] ANCHOR_REFS = {CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM, CssPropertyIndex.WIDTH, CssPropertyIndex.HEIGHT};
+
+    private static boolean isSet(String v) { return v != null && !v.isBlank() && !"none".equalsIgnoreCase(v.trim()); }
+
+    /** 絶対配置の箱から包含ブロックまでの段数（初期包含ブロックは {@code CB_OUTSIDE}）。 */
+    private static int stepsToContainingBlock(LayoutBox box) {
+        LayoutBox cb = box.findContainingBlock();
+        if (cb == null) return CB_OUTSIDE;
+        int n = 0;
+        for (LayoutBox p = box; p != null && p != cb; p = p.parent) n++;
+        return n;
+    }
+
     private static boolean floatsAffectPlacement(LayoutBox box) {
         boolean inBfc = true;
         for (LayoutBox p = box.parent; p != null; p = p.parent) {
-            if (p.isRelative || p.isSticky) return true;
+            if (p.isSticky || relOffsetEmbedded(p)) return true;
             if (inBfc && p.placementMemo != null && p.placementMemo.hasFloatChild()) return true;
             if (p.establishesBfc) inBfc = false;
         }
@@ -394,7 +454,7 @@ final class PlacementMemo {
         List<LayoutBox> kids = box.children;
         int n = kids.size();
         if (n == 0) return;
-        boolean nextOffset = ancestorOffset || box.isRelative || box.isSticky;
+        boolean nextOffset = ancestorOffset || relOffsetEmbedded(box) || box.isSticky;
         boolean hasFloat = pm != null && pm.hasFloatChild();
         boolean nextBfcFloat = box.establishesBfc ? hasFloat : (inBfcFloat || hasFloat);
         if (box.engineState instanceof VirtualFlowState vf && vf.canResetSparse()) {

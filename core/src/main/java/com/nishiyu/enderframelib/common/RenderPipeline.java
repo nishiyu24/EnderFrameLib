@@ -1083,7 +1083,7 @@ public class RenderPipeline {
 
             if (prevStyle == null || !ComputedStyle.sameDeclarations(prevStyle, computed)) {
                 styleChanged = true; com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_CHANGED.increment();
-                if (StyleResolver.isLayoutAffectingChange(prevStyle, computed)) {
+                if (StyleResolver.isLayoutAffectingChange(prevStyle, computed) || com.nishiyu.enderframelib.core.layout.ContainingBlockFlip.relayout(box, prevStyle, computed)) {
                     if (isPositionOnlyChange(prevStyle, computed)) {
                         repositionRequired = true;
                     } else {

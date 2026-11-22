@@ -26,6 +26,7 @@ enderframe.layout.noviewportwidthfree | SHORTCUT | core/kernel/EngineFlags.java 
 enderframe.layout.nowidthreuse | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.widthIndependentReuse
 enderframe.layout.probe | DIAGNOSTIC | core/kernel/EngineFlags.java | LayoutParallelProbe（並列化の採取）
 enderframe.verify.memo | DIAGNOSTIC | core/kernel/EngineFlags.java | 検証モード VERIFY_MEMO: 記憶が当たった所を計算し直して比べる（float メモ・測定の記憶。:core:test が立てる）
+enderframe.verify.placement | DIAGNOSTIC | core/kernel/EngineFlags.java | 検証モード VERIFY_PLACEMENT: 配置を飛ばした・平行移動した部分木を記憶なしで置き直して比べる（:core:test が立てる）
 enderframe.verify.boxmemo | DIAGNOSTIC | core/kernel/EngineFlags.java | 検証モード VERIFY_BOX_MEMO: 箱の項目の記憶を作り直して比べる（:core:test が立てる）
 enderframe.paint.cullmargin | TUNING | core/kernel/EngineFlags.java | DisplayListBuilder.CULL_MARGIN（画面外の間引きの余白 px。既定 640）
 enderframe.paint.nocullrange | SHORTCUT | core/kernel/EngineFlags.java | PaintSceneDriver.cullRecordedRanges
