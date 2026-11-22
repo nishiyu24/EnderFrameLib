@@ -4,6 +4,7 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.ExternalEpochs;
 import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
@@ -39,7 +40,7 @@ class MeasureMemoTest {
 
     @Test
     void measureOutputsAndTentativeAreImmutableByType() {
-        for (Class<?> cls : List.of(MeasureOutputs.class, MeasureKey.class, Tentative.class)) {
+        for (Class<?> cls : List.of(MeasureOutputs.class, MeasureKey.class, Tentative.class, ExternalEpochs.class)) {
             assertTrue(cls.isRecord(), cls.getSimpleName() + " must be an immutable record");
             for (Field f : cls.getDeclaredFields()) {
                 assertTrue(Modifier.isFinal(f.getModifiers()),

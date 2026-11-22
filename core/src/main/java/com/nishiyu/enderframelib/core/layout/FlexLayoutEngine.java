@@ -53,10 +53,12 @@ public class FlexLayoutEngine extends LayoutEngine {
         float maxChildW = 0, sumChildW = 0;
         int count = 0;
         boolean fillFitCandidate = axes.row && !axes.wrap;
+        boolean flexUsesAvail = false;
         for (int i = 0, n = box.children.size(); i < n; i++) {
             LayoutBox child = box.children.get(i);
             if (!child.participatesInFlow()) continue;
             if (isCollapsed(child)) continue;
+            if (axes.row && !child.axisStyle().layoutFacts().edgesAvailableFree) flexUsesAvail = true;
             if (fillFitCandidate && (grow(child) > 0 || !child.axisStyle().layoutFacts().edgesAvailableFree)) {
                 fillFitCandidate = false;
             }
@@ -93,7 +95,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             return w;
         }
         float sum = sumChildW + (count > 1 ? box.columnGap * (count - 1) : 0);
-        if (tentativeInnerW > 0 && sum > tentativeInnerW) box.measuredClamped = true; // 使える幅で切られた（縮み・折り返しが使える幅に依る）
+        if (flexUsesAvail || (tentativeInnerW > 0 && sum > tentativeInnerW)) box.measuredClamped = true; // 使える幅で切られた（縮み・折り返し・子の% flex-basis が使える幅に依る）
         if (fillFitCandidate && !box.measuredClamped) box.naturalFitInnerWidth = sum;
         // shrink-to-fit は利用できる幅で止まる（アイテムは伸縮長の解決で縮む）
         return tentativeInnerW > 0 ? Math.min(sum, tentativeInnerW) : sum;
@@ -464,39 +466,6 @@ public class FlexLayoutEngine extends LayoutEngine {
         return true;
     }
 
-    /**
-     * 中身が変わっても、flex コンテナの測定（行の折り返し・伸縮・行の交差軸の寸法）に響かないアイテムか。
-     * コンテナがアイテムから読むのは主軸の仮の寸法・外寸・（baseline 揃えのときだけ）ベースラインで、
-     * 行方向で次のとき、仮の主軸の寸法は中身に依らない: 幅が px で確定・flex-basis が auto・最小寸法が確定している
-     * （スクロールコンテナは 0）・最大寸法が確定している。この条件で外寸が変わらない子の変化は、コンテナが吸収できる。
-     * アイテムが stretch で高さを固定されて測られているときは、自然な高さが見えないので吸収しない。
-     */
-    static boolean cutoffSafeItem(LayoutBox parent, LayoutBox child) {
-        if (!Axes.of(parent.style).row) return false;
-        if (!child.measuredWithoutFixedHeight()) return false;
-        if (alignSelfOf(child, alignItemsOf(parent.style)) == CssKeywords.Alignment.BASELINE) return false;
-        ComputedStyle cs = child.axisStyle();
-        if (!isPxLength(cs.get(CssPropertyIndex.WIDTH))) return false;
-        String basis = cs.get(CssPropertyIndex.FLEX_BASIS);
-        if (basis != null && !basis.isBlank() && !"auto".equalsIgnoreCase(basis.trim())) return false;
-        String min = cs.get(CssPropertyIndex.MIN_WIDTH);
-        boolean minAuto = min == null || min.isBlank() || "auto".equalsIgnoreCase(min.trim());
-        if (minAuto ? !child.isScrollContainer() : !isPxLength(min)) return false;
-        String max = cs.get(CssPropertyIndex.MAX_WIDTH);
-        return max == null || max.isBlank() || "none".equalsIgnoreCase(max.trim()) || isPxLength(max);
-    }
-
-    private static boolean isPxLength(String v) {
-        if (v == null) return false;
-        String t = v.trim().toLowerCase();
-        if (!t.endsWith("px") || t.length() < 3) return false;
-        for (int i = 0, n = t.length() - 2; i < n; i++) {
-            char c = t.charAt(i);
-            if (!(c >= '0' && c <= '9' || c == '.')) return false;
-        }
-        return true;
-    }
-
     /** 主軸の寸法を決めて測り直す。行方向なら幅を固定して高さを、列方向なら高さを固定する。 */
     private static void setMainSize(LayoutBox child, Axes axes, float size, ConstraintSpace space, LayoutContext ctx) {
         if (axes.row) {
@@ -507,6 +476,7 @@ public class FlexLayoutEngine extends LayoutEngine {
                     // 仮の測定（shrink-to-fit）で出た幅が、伸縮で決まった幅と同じ。同じ幅で測り直しても同じ箱になるので省く。
                     // 確定測定の状態（DEFINITE）にだけ揃える。測り直しが来なかった項目は、呼び出し側の settleTentative が終わらせる
                     child.sizingMode = SizingMode.DEFINITE;
+                    child.measureMemo.noteParentReadStretched();
                     return;
                 }
                 remeasure(child, size, Float.NaN, axes, space, ctx);
@@ -613,11 +583,11 @@ public class FlexLayoutEngine extends LayoutEngine {
             LayoutBox b = item.box;
             ComputedStyle bs = b.axisStyle();
             if (axes.row) {
-                if (isAuto(bs, CssPropertyIndex.MARGIN_LEFT)) b.mL = autoMargin;
-                if (isAuto(bs, CssPropertyIndex.MARGIN_RIGHT)) b.mR = autoMargin;
+                if (isAuto(bs, CssPropertyIndex.MARGIN_LEFT)) { b.mL = autoMargin; b.measureMemo.noteParentReadStretched(); }
+                if (isAuto(bs, CssPropertyIndex.MARGIN_RIGHT)) { b.mR = autoMargin; b.measureMemo.noteParentReadStretched(); }
             } else {
-                if (isAuto(bs, CssPropertyIndex.MARGIN_TOP)) b.mT = autoMargin;
-                if (isAuto(bs, CssPropertyIndex.MARGIN_BOTTOM)) b.mB = autoMargin;
+                if (isAuto(bs, CssPropertyIndex.MARGIN_TOP)) { b.mT = autoMargin; b.measureMemo.noteParentReadStretched(); }
+                if (isAuto(bs, CssPropertyIndex.MARGIN_BOTTOM)) { b.mB = autoMargin; b.measureMemo.noteParentReadStretched(); }
             }
             float outerMain = mainSize(b, axes.row) + (axes.row ? b.mL + b.mR : b.mT + b.mB);
             float main = axes.reverse ? innerMain - pos - outerMain : pos;
@@ -636,6 +606,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         boolean autoStart = isAuto(b.style, startSide);
         boolean autoEnd = isAuto(b.style, endSide);
         if (autoStart || autoEnd) {
+            b.measureMemo.noteParentReadStretched();
             float free = Math.max(0, line.cross - outer);
             float startMargin = autoStart && autoEnd ? free / 2 : (autoStart ? free : 0);
             float endMargin = autoStart && autoEnd ? free / 2 : (autoEnd ? free : 0);
@@ -681,6 +652,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             }
             // content（不定の基準に対する % を含む）は指定の寸法を使わず内容の寸法（CSS Flexbox §9.2 3E）。列方向は内容の高さ
             if (!row && (b.equals("content") || percentOfIndefinite) && child.node.nodeType != NodeType.TEXT && child.hasFlowChildren()) {
+                child.measureMemo.noteParentReadContentExtent();
                 return child.contentBlockExtent;
             }
         }
@@ -702,7 +674,8 @@ public class FlexLayoutEngine extends LayoutEngine {
         // 表は内容より小さくなれない（表の幅・高さは下限として働く。CSS 2.2 §17.5.2・§17.5.3）。min-width / min-height が 0 でも
         // 列の最小幅の和・行の高さの和までしか縮まない
         if (child.display.inner() == LayoutBox.Display.Inner.TABLE) {
-            m = Math.max(m, row ? child.getMinContentWidth(ctx) : child.contentBlockExtent);
+            if (!row) child.measureMemo.noteParentReadContentExtent();
+            m = Math.max(m, row ? IntrinsicSizing.readChildMinContentWidth(child, ctx) : child.contentBlockExtent);
         }
         return m;
     }
@@ -725,10 +698,11 @@ public class FlexLayoutEngine extends LayoutEngine {
         if (row) {
             boolean hasContent = child.node.nodeType == NodeType.TEXT || child.hasFlowChildren()
                     || isReplaced(child);
-            content = hasContent ? child.getMinContentWidth(ctx) : decoration;
+            content = hasContent ? IntrinsicSizing.readChildMinContentWidth(child, ctx) : decoration;
         } else {
             boolean hasFlow = child.node.nodeType != NodeType.TEXT && child.hasFlowChildren();
             // 指定の高さより内容が低ければ、内容の高さまで縮められる（Flexbox §4.5）
+            if (hasFlow) child.measureMemo.noteParentReadContentExtent();
             content = hasFlow ? child.contentBlockExtent
                     : hasSize(childStyle, sizeProp) ? decoration : child.h;
         }

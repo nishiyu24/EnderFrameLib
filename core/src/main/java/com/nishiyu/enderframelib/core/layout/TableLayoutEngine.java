@@ -1,10 +1,8 @@
 package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 import com.nishiyu.enderframelib.core.layout.model.*;
-
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
-import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
@@ -13,16 +11,10 @@ import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.ScrollExtent;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import com.nishiyu.enderframelib.core.css.model.Overflow;
-import com.nishiyu.enderframelib.core.css.model.TextAlign;
-import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * 表の整形（{@code display: table} / {@code inline-table} と、その中の行グループ・行）。CSS 2.2 §17。
@@ -127,11 +119,15 @@ public class TableLayoutEngine extends LayoutEngine {
 
         // 列幅でセルを測り直す
         for (CellSlot slot : state.cells) {
+            slot.cell.measureMemo.noteParentReadOpaque();
             float w = spanWidth(state, slot.col, slot.colSpan);
             slot.cell.measure(new ConstraintSpace(w, parentH, FIXED_CELL).withFixed(w, Float.NaN), ctx);
             slot.naturalHeight = slot.cell.h;
         }
-        for (LayoutBox caption : state.captions) caption.measure(new ConstraintSpace(contentW, parentH, FormattingContext.BLOCK), ctx);
+        for (LayoutBox caption : state.captions) {
+            caption.measureMemo.noteParentReadOpaque();
+            caption.measure(new ConstraintSpace(contentW, parentH, FormattingContext.BLOCK), ctx);
+        }
         // 表の min-content は幅を決める段でセルを測る前の装飾から求め、自分では測られない行・行グループに残る。測った後に捨てる（§6-112。layouts の種 49）
         box.invalidateMinContentCache();
         for (LayoutBox row : state.rows) row.invalidateMinContentCache();
@@ -476,7 +472,7 @@ public class TableLayoutEngine extends LayoutEngine {
             boolean hasWidth = fixedWidth(cell.axisStyle(), rootW, rootH) != null;
             float cellMax = cell.w;
             boolean hasContent = cell.node.nodeType == NodeType.TEXT || cell.hasFlowChildren();
-            float cellMin = hasContent ? cell.getMinContentWidth(ctx) : cell.horizontalDecoration();
+            float cellMin = hasContent ? IntrinsicSizing.readChildMinContentWidth(cell, ctx) : cell.horizontalDecoration();
             if (hasWidth) cellMin = Math.max(cellMin, cell.w);
             slot.minWidth = cellMin;
             slot.maxWidth = Math.max(cellMin, cellMax);

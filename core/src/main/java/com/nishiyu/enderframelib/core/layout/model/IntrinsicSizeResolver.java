@@ -7,4 +7,9 @@ package com.nishiyu.enderframelib.core.layout.model;
  */
 public interface IntrinsicSizeResolver {
     int[] getSize(String src);
+
+    /** 固有サイズ解決の結果が変わりうるたびに進む世代。同じ世代の間は同じ src に同じサイズを返す。 */
+    default long resolveGeneration() {
+        return 0L;
+    }
 }

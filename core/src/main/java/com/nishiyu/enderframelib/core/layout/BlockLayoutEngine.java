@@ -5,10 +5,7 @@ import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.layout.FenwickVirtualList;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
 import com.nishiyu.enderframelib.core.layout.model.*;
-
-import com.nishiyu.enderframelib.core.text.model.FontFace;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
-import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
@@ -16,16 +13,10 @@ import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.InlineFragment;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.text.model.FontStyle;
-
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.text.*;
 import java.util.ArrayList;
 import java.util.List;
-
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.css.model.TextAlign;
 
 /**
  * ブロックとインラインの整形（float と BFC を含む）。
@@ -102,21 +93,19 @@ public class BlockLayoutEngine extends LayoutEngine {
         for (int i = 0; i < n; i++) {
             LayoutBox child = kids.get(i);
             if (child.isAbsolute || child.isRenderedLegend || isDisplayNone(child.style)) continue;
+            if (columns != null) child.measureMemo.noteParentReadOpaque();
             if (child.isOutsideMarker) {
-                // 外側のマーカーは通常フローの外にあり、リスト項目の幅に寄与しない
+                child.measureMemo.noteParentReadOpaque();
                 child.measure(new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, childParentH, MARKER_CONTEXT), ctx);
                 continue;
             }
-            ConstraintSpace childSpace = sharedChildSpace != null && !MulticolLayout.isSpanner(child)
-                    ? sharedChildSpace
+            ConstraintSpace childSpace = sharedChildSpace != null && !MulticolLayout.isSpanner(child) ? sharedChildSpace
                     : new ConstraintSpace(columns != null && !MulticolLayout.isSpanner(child) ? columns.width() : tentativeInnerW, childParentH, childCtx);
-            if (premeasured != null && premeasured[i]) {
-                child.applyFitToParent(sharedFixedWidth);
-            } else {
-                child.measure(childSpace, ctx);
-            }
+            if (premeasured != null && premeasured[i]) child.measureMemo.noteParallelMeasured(child, childSpace, sharedFixedWidth);
+            else child.measure(childSpace, ctx);
             // float は行の内容と同じく横に並ぶので、shrink-to-fit の幅には横に足して数える
             if (isInlineBox(child) || isFloating(child)) {
+                child.measureMemo.noteParentReadOpaque();
                 float[] wScratch = INLINE_WIDTH_SCRATCH.get();
                 wScratch[0] = lineCur; wScratch[1] = lineMax; wScratch[2] = linePend;
                 addInlineWidth(child, wScratch, ctx, false);
@@ -580,11 +569,8 @@ public class BlockLayoutEngine extends LayoutEngine {
             if (!marker.isOutsideMarker || isDisplayNone(marker.style)) continue;
             float markerX = box.x - marker.w - marker.mR;
             marker.layout(markerX - marker.mL, 0, marker.w, marker.h, ctx);
-            Float markerBaseline = placedFirstBaseline(marker);
-            Float lineBaseline = placedFirstBaseline(box);
-            float y = (markerBaseline != null && lineBaseline != null)
-                    ? lineBaseline - (markerBaseline - marker.y)
-                    : innerY;
+            Float markerBaseline = placedFirstBaseline(marker), lineBaseline = placedFirstBaseline(box);
+            float y = (markerBaseline != null && lineBaseline != null) ? lineBaseline - (markerBaseline - marker.y) : innerY;
             marker.layout(markerX - marker.mL, y - marker.mT, marker.w, marker.h, ctx);
         }
     }
@@ -773,14 +759,19 @@ public class BlockLayoutEngine extends LayoutEngine {
      * flex / grid の {@code baseline} 揃えが読む。
      */
     public static Float firstBaseline(LayoutBox box) {
-        if (synthesizesBaseline(box)) return null;
-        if (box.engineState instanceof FlexLayoutEngine.FlexState) return FlexLayoutEngine.containerFirstBaseline(box);
-        if (!(box.engineState instanceof FlowState state)) return null;
-        for (Object item : state.items) {
-            Float b = baselineOf(box, item);
-            if (b != null) return b;
+        Float res = null;
+        if (!synthesizesBaseline(box)) {
+            if (box.engineState instanceof FlexLayoutEngine.FlexState) {
+                res = FlexLayoutEngine.containerFirstBaseline(box);
+            } else if (box.engineState instanceof FlowState state) {
+                for (Object item : state.items) {
+                    Float b = baselineOf(box, item);
+                    if (b != null) { res = b; break; }
+                }
+            }
         }
-        return null;
+        if (MeasureReads.currentMeasuringBox() != null) box.measureMemo.noteParentReadFirstBaseline(res != null ? res : Float.NaN);
+        return res;
     }
 
     /**
@@ -1027,18 +1018,22 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     /** 最後の行のベースライン（border box の上端から）。インラインブロックのベースラインになる。 */
     static Float lastBaseline(LayoutBox box) {
-        if (synthesizesBaseline(box) || !(box.engineState instanceof FlowState state)) return null;
-        for (int i = state.items.size() - 1; i >= 0; i--) {
-            Object item = state.items.get(i);
-            if (item instanceof Placement p && !isFloating(p.box())) {
-                Float b = lastBaseline(p.box());
-                if (b != null) return box.bT + box.pT + box.legendSpill + p.y() + p.box().mT + b;
-            } else if (item instanceof LineRun run && !run.lines().isEmpty()) {
-                InlineLine line = run.lines().getLast();
-                return box.bT + box.pT + box.legendSpill + line.top() + line.baseline();
+        Float res = null;
+        if (!synthesizesBaseline(box) && box.engineState instanceof FlowState state) {
+            for (int i = state.items.size() - 1; i >= 0; i--) {
+                Object item = state.items.get(i);
+                if (item instanceof Placement p && !isFloating(p.box())) {
+                    Float b = lastBaseline(p.box());
+                    if (b != null) { res = box.bT + box.pT + box.legendSpill + p.y() + p.box().mT + b; break; }
+                } else if (item instanceof LineRun run && !run.lines().isEmpty()) {
+                    InlineLine line = run.lines().getLast();
+                    res = box.bT + box.pT + box.legendSpill + line.top() + line.baseline();
+                    break;
+                }
             }
         }
-        return null;
+        if (MeasureReads.currentMeasuringBox() != null) box.measureMemo.noteParentReadLastBaseline(res != null ? res : Float.NaN);
+        return res;
     }
 
     private static Float baselineOf(LayoutBox box, Object item) {

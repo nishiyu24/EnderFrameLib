@@ -55,6 +55,7 @@ final class VerticalWritingEngine extends LayoutEngine {
         } else if (!Float.isNaN(parentH) && parentH > 0) {
             h = parentH - box.mT - box.mB - deco;
         } else {
+            MeasureReads.recordInput(MeasureReads.READ_VIEWPORT_H);
             h = rootH - box.mT - box.mB - deco;
         }
         if (style.containsKey(CssPropertyIndex.MAX_HEIGHT)) {
@@ -73,6 +74,7 @@ final class VerticalWritingEngine extends LayoutEngine {
         float inline = inlineSize(box, space, ctx);
         box.engineState = new State(inline);
         if (wrapper == null) return 0;
+        wrapper.measureMemo.noteParentReadOpaque();
         float definiteBlock = box.sizingMode == LayoutBox.SizingMode.DEFINITE
                 ? Math.max(0, box.w - box.horizontalDecoration())
                 : Float.NaN;

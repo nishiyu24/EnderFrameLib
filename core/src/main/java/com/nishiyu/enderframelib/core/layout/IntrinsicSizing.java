@@ -13,24 +13,69 @@ import com.nishiyu.enderframelib.core.text.model.TextStyle;
 import java.util.List;
 
 /**
- * 内在幅（min-content）・表示用テキストの正規化に関する算出処理（A7）。
+ * 内在幅（min-content）・表示用テキストの正規化に関する算出処理（A7・C3）。
  */
 final class IntrinsicSizing {
     private IntrinsicSizing() {}
+
+    private static long minContentKey(LayoutContext ctx) {
+        long key = ((long) ctx.viewport().rootW() << 32) | (ctx.viewport().rootH() & 0xFFFFFFFFL);
+        return key * 31 + Float.floatToIntBits(ctx.viewport().devicePixelRatio());
+    }
 
     static float getMinContentWidth(LayoutBox box, LayoutContext ctx) {
         MeasureMemo mm = box.measureMemo;
         if (mm.isTentativeStashed() && mm.isMinContentVar()) {
             mm.settleTentative(box);
         }
-        long key = ((long) ctx.viewport().rootW() << 32) | (ctx.viewport().rootH() & 0xFFFFFFFFL);
-        key = key * 31 + Float.floatToIntBits(ctx.viewport().devicePixelRatio());
+        long key = minContentKey(ctx);
         float cached = mm.cachedMinContentWidth(key);
         if (cached >= 0) return cached;
 
         float result = computeMinContentWidth(box, ctx);
         mm.cacheMinContentWidth(key, result);
         return result;
+    }
+
+    /** 親（または祖先）の測定中に子の min-content 幅を読み、子および寄与する子孫へ読み取り印と値を記録する（C3 ②）。 */
+    static float readChildMinContentWidth(LayoutBox child, LayoutContext ctx) {
+        if (MeasureReads.currentMeasuringBox() == null) return getMinContentWidth(child, ctx);
+        MeasureMemo mm = child.measureMemo;
+        boolean hadRead = mm.hasParentReadMinContent();
+        if (mm.isTentativeStashed() && mm.isMinContentVar()) {
+            mm.settleTentative(child);
+        }
+        long key = minContentKey(ctx);
+        float w = mm.cachedMinContentWidth(key);
+        if (w < 0) {
+            w = computeMinContentWidth(child, ctx);
+            mm.cacheMinContentWidth(key, w);
+        } else if (!hadRead && (!child.children.isEmpty() || child.renderedLegend() != null)) {
+            propagateCachedMinContentReads(child, ctx);
+        }
+        mm.noteParentReadMinContent(w);
+        return w;
+    }
+
+    private static void propagateCachedMinContentReads(LayoutBox box, LayoutContext ctx) {
+        if (box.effectiveContainsInlineSize()) return;
+        ComputedStyle ax = box.axisStyle();
+        String minWidthDecl = ax.get(CssPropertyIndex.MIN_WIDTH);
+        if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)
+                && box.display.inner() != LayoutBox.Display.Inner.TABLE) {
+            return;
+        }
+        if (!Float.isNaN(ElementSizing.minContentWidth(box, ctx))
+                || box.node.nodeType == NodeType.TEXT || box.children.isEmpty()) {
+            return;
+        }
+        for (int i = 0, n = box.children.size(); i < n; i++) {
+            LayoutBox c = box.children.get(i);
+            if (!c.participatesInFlow()) continue;
+            minContentContribution(c, ctx);
+        }
+        LayoutBox legend = box.renderedLegend();
+        if (legend != null) minContentContribution(legend, ctx);
     }
 
     private static float computeMinContentWidth(LayoutBox box, LayoutContext ctx) {
@@ -100,8 +145,11 @@ final class IntrinsicSizing {
         ComputedStyle ax = box.axisStyle();
         String width = ax.get(CssPropertyIndex.WIDTH);
         if (width == null || width.contains("%") || LayoutMetrics.isIntrinsicSizeKeyword(width)) {
-            return getMinContentWidth(box, ctx);
+            return MeasureReads.currentMeasuringBox() != null
+                    ? readChildMinContentWidth(box, ctx)
+                    : getMinContentWidth(box, ctx);
         }
+        if (MeasureReads.currentMeasuringBox() != null) box.measureMemo.noteParentReadOuter();
         float v = ax.length(CssPropertyIndex.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
         float borderBox = ax.isBorderBox() ? Math.max(v, box.horizontalDecoration()) : v + box.horizontalDecoration();
         String minWidth = ax.get(CssPropertyIndex.MIN_WIDTH);

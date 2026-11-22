@@ -87,7 +87,7 @@ final class MeasureChanges {
             }
             path.add(leaf);
             boolean reachedRoot = false;
-            boolean lazy = affects && MeasureAnalysis.isCutoffEligible(leaf);
+            boolean lazy = affects && lm.canAttemptCutoff(leaf);
             for (LayoutBox a = leaf.parent; a != null; a = a.parent) {
                 MeasureMemo am = a.measureMemo;
                 if (am.selfSignatureChanged(a) || am.childListChanged(a)) return null;
@@ -97,14 +97,14 @@ final class MeasureChanges {
                     if (isRelayoutBoundary(a)) {
                         affects = false;
                         lazy = false;
-                    } else if (!MeasureAnalysis.isCutoffEligible(a) && !MeasureMemo.LAZY_THROUGH_INELIGIBLE) {
+                    } else if (!am.canAttemptCutoff(a) && !MeasureMemo.LAZY_THROUGH_INELIGIBLE) {
                         affects = true;
                         lazy = false;
                     }
                 } else {
                     am.orLayoutChanged(affects);
                     if (isRelayoutBoundary(a)) affects = false;
-                    else if (affects && MeasureAnalysis.isCutoffEligible(a)) lazy = true;
+                    else if (affects && am.canAttemptCutoff(a)) lazy = true;
                 }
                 if (a == root) {
                     reachedRoot = true;

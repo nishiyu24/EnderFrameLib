@@ -19,6 +19,10 @@ import java.util.RandomAccess;
  * 種類（{@link Fragment.Kind}）ごとに層（付録 E）へ組み立てて 1 本の列に展開する。経路はこの 1 本で、増分の更新（パッチ）は持たない。
  */
 final class FragmentPaint {
+    /**
+     * 断片と表示項目の再利用キーおよび帳簿（キー欄は {@link com.nishiyu.enderframelib.core.layout.PaintBoxInputs#ALL} を
+     * 唯一の宣言源とし、{@code PaintReadSetTest} が全欄を機械照合する）。
+     */
     private static final class Memo {
         Fragment frag;
         LayoutBox box, parent;

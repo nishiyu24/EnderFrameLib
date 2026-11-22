@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBoxInputs;
 import com.nishiyu.enderframelib.core.layout.PaintStamps;
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -162,5 +163,42 @@ class PaintReadSetTest {
             }
         }
         assertEquals(Set.of(), dead, "署名の欄に挙げたのに、署名を変えない欄");
+    }
+
+    @Test
+    void paintBoxInputsMatchesFragmentPaintMemoKeys() throws Exception {
+        Class<?> memoCls = Class.forName("com.nishiyu.enderframelib.core.paint.FragmentPaint$Memo");
+        Set<String> declaredMemoFields = new TreeSet<>();
+        for (Field f : memoCls.getDeclaredFields()) {
+            if (!Modifier.isStatic(f.getModifiers())) declaredMemoFields.add(f.getName());
+        }
+        Set<String> bookkeeping = Set.of(
+                "frag", "box", "childClip", "childParentId", "pass", "owners",
+                "kidCount", "childPox", "childPoy", "kidsOwners", "epoch",
+                "childContextSet", "selfVpSensitive", "subtreeVpSensitive",
+                "allKidsMemoized", "hasFirstLine", "kidsHaveScrolls", "kidsSkipped",
+                "kidMemos", "kidIndex", "ownScrolls");
+        Set<String> keyFields = PaintBoxInputs.memoKeyFields();
+        Set<String> intersection = new TreeSet<>(keyFields);
+        intersection.retainAll(bookkeeping);
+        assertEquals(Set.of(), intersection, "memoKeyFields and bookkeeping must be disjoint");
+
+        Set<String> missingInMemo = new TreeSet<>(keyFields);
+        missingInMemo.removeAll(declaredMemoFields);
+        assertEquals(Set.of(), missingInMemo, "PaintBoxInputs declares missing FragmentPaint.Memo fields");
+
+        Set<String> union = new TreeSet<>(keyFields);
+        union.addAll(bookkeeping);
+        assertEquals(declaredMemoFields, union, "FragmentPaint.Memo fields must partition into PaintBoxInputs keys + bookkeeping");
+
+        Set<String> boxFields = new TreeSet<>();
+        for (Field f : LayoutBox.class.getDeclaredFields()) {
+            if (!Modifier.isStatic(f.getModifiers())) boxFields.add(f.getName());
+        }
+        for (PaintBoxInputs.Entry e : PaintBoxInputs.ALL) {
+            if (!e.name().contains(":")) {
+                assertTrue(boxFields.contains(e.name()), "PaintBoxInputs references missing LayoutBox field: " + e.name());
+            }
+        }
     }
 }

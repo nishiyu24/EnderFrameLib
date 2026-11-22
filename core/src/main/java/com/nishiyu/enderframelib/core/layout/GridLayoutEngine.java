@@ -2,16 +2,11 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.layout.model.*;
-
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
-import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.ScrollExtent;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 
 import java.util.ArrayList;
@@ -126,6 +121,7 @@ public class GridLayoutEngine extends LayoutEngine {
         boolean colsFromParent = gs.colSub && pgs.colsFinal && pItem.colStart + pItem.colSpan <= pgs.colSizes.length;
         // サブグリッドの子の寄与は親のトラックへ回すので、サブグリッドの列を持つ項目は先に（仮の幅で）測って寄与を得る
         for (GridItem item : gs.items) {
+            item.box.measureMemo.noteParentReadOpaque();
             if (item.colSub) {
                 item.box.measure(new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, parentH, CONTRIBUTION_CONTEXT), ctx);
             } else if (!colsFromParent && spansIntrinsic(colDefs, item.colStart, item.colSpan)) {
@@ -753,7 +749,7 @@ public class GridLayoutEngine extends LayoutEngine {
             return b.w + margins;
         }
         boolean hasContent = b.node.nodeType == NodeType.TEXT || b.hasFlowChildren() || isReplaced(b);
-        return (hasContent ? b.getMinContentWidth(ctx) : b.horizontalDecoration()) + margins;
+        return (hasContent ? IntrinsicSizing.readChildMinContentWidth(b, ctx) : b.horizontalDecoration()) + margins;
     }
 
     private static boolean isReplaced(LayoutBox b) {
@@ -868,6 +864,7 @@ public class GridLayoutEngine extends LayoutEngine {
         float margins = (autoStart ? 0 : (inline ? b.mL : b.mT)) + (autoEnd ? 0 : (inline ? b.mR : b.mB));
         float free = area - size - margins;
         if (autoStart || autoEnd) {
+            b.measureMemo.noteParentReadStretched();
             float share = Math.max(0, free) / ((autoStart ? 1 : 0) + (autoEnd ? 1 : 0));
             if (inline) {
                 if (autoStart) b.mL = share;

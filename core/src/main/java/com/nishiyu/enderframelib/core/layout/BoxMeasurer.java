@@ -82,6 +82,7 @@ public final class BoxMeasurer {
         resolveBoxEdges(box, parentW, parentH, rootW, rootH);
 
         StyleFacts facts = style.layoutFacts();
+        recordStyleAndContextReads(box, facts);
         boolean autoLeft = facts.marginLeftAuto;
         boolean autoRight = facts.marginRightAuto;
         boolean isBorderBox = isBorderBox(style);
@@ -89,11 +90,16 @@ public final class BoxMeasurer {
         // min-content / max-content / fit-content は長さではなく内容から決まる（W2 以前は 0 px に解けていた）
         byte intrinsicWidth = facts.intrinsicWidthKind;
         boolean hasWidth = !facts.widthAuto && intrinsicWidth == StyleFacts.IW_NONE;
-        boolean isPercentWidthAndShrinking = hasWidth && facts.widthPercent && fmtCtx.isShrink();
+        boolean isPercentWidthAndShrinking = false;
+        if (hasWidth && facts.widthPercent) {
+            if (Float.isNaN(box.overrideWidth)) MeasureReads.recordInput(MeasureReads.READ_SHRINK);
+            isPercentWidthAndShrinking = fmtCtx.isShrink();
+        }
         boolean bfc = establishesBfc(box, fmtCtx);
         if (box.establishesBfc != bfc) {
             box.establishesBfc = bfc;
-            LayoutBox.bumpShapeEpoch(); // 親の float メモ（containsFloats）が読む
+            if (box.measureMemo.measuredSpace() != null) LayoutBox.bumpShapeEpoch(); // 親の float メモ（containsFloats）が読む
+            else LayoutBox.invalidateFloats(box);
         }
 
         resolveWidth(box, ctx, parentW, rootW, rootH, hasWidth, intrinsicWidth != StyleFacts.IW_NONE,
@@ -132,6 +138,7 @@ public final class BoxMeasurer {
                 : engine.measureContent(box, contentSpace, ctx);
         LayoutBox legend = skipByAuto ? null : box.renderedLegend();
         if (legend != null) {
+            legend.measureMemo.noteParentReadOpaque();
             measureLegend(legend, engineInnerW, ctx);
             contentW = Math.max(contentW, legend.w + legend.ownInlineMargins(ctx));
         }
@@ -324,14 +331,14 @@ public final class BoxMeasurer {
                     + style.length(CssPropertyIndex.RIGHT, parentW, rootW, rootH);
             box.w = Math.max(box.horizontalDecoration(), parentW - insets - box.mL - box.mR);
             box.sizingMode = SizingMode.DEFINITE;
-        } else if (box.isAbsolute || box.isRenderedLegend || fmtCtx.isFlexRow() || fmtCtx.isShrink() || BlockLayoutEngine.isFloating(box)
+        } else if (box.isAbsolute || box.isRenderedLegend || fmtCtx.isFlexRow() || BlockLayoutEngine.isFloating(box)
                 || box.display.isInlineLevel() || box.display.inner() == Inner.TABLE
-                || box.isVerticalRoot) {
+                || box.isVerticalRoot || readShrink(box, fmtCtx)) {
             // 縦書きの根の幅（物理）は論理のブロック寸法＝行を積んだ高さで決まる（直交フロー）
             // インラインレベルの箱・float・表・fieldset の legend は shrink-to-fit（表の幅は列幅の合計）
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;
-        } else if (fmtCtx.isFlexColumn() && !fmtCtx.stretch()) {
+        } else if (fmtCtx.isFlexColumn() && !readStretch(box, fmtCtx)) {
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;
         } else {
@@ -730,6 +737,39 @@ public final class BoxMeasurer {
         return style.isBorderBox();
     }
 
+    private static boolean readShrink(LayoutBox box, FormattingContext fmtCtx) {
+        if (Float.isNaN(box.overrideWidth)) MeasureReads.recordInput(MeasureReads.READ_SHRINK);
+        return fmtCtx.isShrink();
+    }
+
+    private static boolean readStretch(LayoutBox box, FormattingContext fmtCtx) {
+        if (Float.isNaN(box.overrideWidth)) MeasureReads.recordInput(MeasureReads.READ_STRETCH);
+        return fmtCtx.stretch();
+    }
+
+    private static void recordStyleAndContextReads(LayoutBox box, StyleFacts facts) {
+        int mask = 0;
+        if (box.parent == null || box.isFixed || box.isAbsolute || facts.usesViewportUnits
+                || box.isVerticalRoot || box.isHorizontalReturnRoot
+                || (box.node != null && com.nishiyu.enderframelib.core.dom.node.ElementTraits.selectsImageCandidates(box.node.tag))
+                || box.effectiveContainsInlineSize() || box.effectiveContainsBlockSize()) {
+            mask |= MeasureReads.READ_VIEWPORT_W | MeasureReads.READ_VIEWPORT_H;
+        }
+        if (!facts.blockPercentFree || facts.percentGeometry || facts.intrinsicWidthKind != StyleFacts.IW_NONE
+                || box.renderedLegend() != null || box.parent == null || box.isFixed
+                || box.isVerticalRoot || box.isHorizontalReturnRoot
+                || LayoutBox.isTableBox(box) || box.collapsedBorders != null
+                || MulticolLayout.isMulticol(box)) {
+            mask |= MeasureReads.READ_PERCENT_BLOCK;
+        }
+        if (!facts.horizontalFixed || box.isFixed || box.node.nodeType == NodeType.TEXT
+                || LayoutBox.isTableBox(box) || box.collapsedBorders != null
+                || (box.display.isInlineLevel() && !BlockLayoutEngine.isAtomicInline(box))
+                || box.isHorizontalReturnRoot || box.isVerticalRoot || box.verticalAxisFlow != 0) {
+            mask |= MeasureReads.READ_AVAIL_INLINE;
+        }
+        if (mask != 0) MeasureReads.recordInput(mask);
+    }
 
     private static boolean isDisplayNone(ComputedStyle style) {
         return style.layoutFacts().displayNone;

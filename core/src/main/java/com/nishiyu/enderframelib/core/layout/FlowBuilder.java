@@ -72,6 +72,7 @@ final class FlowBuilder {
             floats = box.floatSpace;
             ox = box.floatSpaceX;
             oy = box.floatSpaceY;
+            MeasureReads.recordInput(MeasureReads.READ_SHAPE_EPOCH);
         } else {
             floats = BlockLayoutEngine.EMPTY_FLOAT_SPACE;
             ox = 0;
@@ -137,17 +138,21 @@ final class FlowBuilder {
             LayoutBox child = children.get(i);
             if ("none".equals(child.style.get(CssPropertyIndex.DISPLAY)) || child.isOutsideMarker || child.isRenderedLegend) continue;
             if (child.isAbsolute) {
+                child.measureMemo.noteParentReadOpaque();
                 // 行の中の絶対配置は、行を組むときにその位置を静的位置として記録する
                 if (!run.isEmpty()) run.add(child);
                 else state.items.add(new BlockLayoutEngine.StaticPosition(child, 0, cursor + pendingResolve()));
                 continue;
             }
             if (BlockLayoutEngine.isInlineBox(child) || (BlockLayoutEngine.isFloating(child) && !run.isEmpty())) {
+                child.measureMemo.noteParentReadOpaque();
                 run.add(child);
                 continue;
             }
             if (!run.isEmpty()) flushRun(run);
             if (BlockLayoutEngine.isFloating(child)) {
+                child.measureMemo.noteParentReadOpaque();
+                MeasureReads.recordInput(MeasureReads.READ_SHAPE_EPOCH);
                 placeFloat(child, cursor + (hasContent || !collapseTop ? pendingResolve() : 0));
             } else {
                 placeBlock(child);
@@ -171,8 +176,11 @@ final class FlowBuilder {
 
     void placeBlock(LayoutBox child) {
         boolean intoParentTop = !hasContent && collapseTop;
+        if (!floats.isEmpty()) MeasureReads.recordInput(MeasureReads.READ_SHAPE_EPOCH);
         if (!child.establishesBfc && LayoutEngine.getEngine(child.display) instanceof BlockLayoutEngine
                 && (!floats.isEmpty() || BlockLayoutEngine.containsFloats(child))) {
+            MeasureReads.recordInput(MeasureReads.READ_SHAPE_EPOCH);
+            child.measureMemo.noteParentReadOpaque();
             // BFC を作らない子は同じ float 領域の中で組み直す（float を避け、自分の float を置く）。
             // 高さ 0 で自分を貫通する箱の中の float も親の領域に入る
             boolean hadIncomingFloats = !floats.isEmpty();
@@ -214,6 +222,7 @@ final class FlowBuilder {
 
         float x = 0;
         if (child.establishesBfc && !floats.isEmpty()) {
+            child.measureMemo.noteParentReadOpaque();
             // BFC の border box は float と重ならない。横の残り幅に入らなければ float の下へ下げる
             boolean autoWidth = "auto".equals(child.axisStyle().getOrDefault(CssPropertyIndex.WIDTH, "auto").trim());
             for (int guard = 0; guard < 256; guard++) {

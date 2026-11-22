@@ -30,10 +30,12 @@ final class MeasureVerifier {
                 false, ctx.layoutRun(), ctx.firstPass(), ctx.autoVisibility());
         MeasureOutputs actual;
         DEPTH.get()[0]++;
+        int vSlot = MeasureReads.pushMeasuring(null);
         try {
             BoxMeasurer.measure(box, space, fresh);
             actual = MeasureOutputs.capture(box);
         } finally {
+            MeasureReads.popMeasuring(vSlot);
             DEPTH.get()[0]--;
             for (Saved s : saved) s.restore();
         }

@@ -3,26 +3,24 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.kernel.Shortcut;
 import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
-import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
+import com.nishiyu.enderframelib.core.layout.model.ExternalEpochs;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
- * ボックスの測定結果・仮測定・確定葉スロット・変更印を一元管理する記憶（A7）。
+ * ボックスの測定結果・仮測定・確定葉スロット・読み取り集合・変更印を一元管理する記憶（A7・C3）。
  *
  * <p>すべての記憶欄を {@code private} としてこのクラスに閉じ、誰がいつ書き換えたかを型で追えるようにする。
- * 主スロットの自然出力はフィールドに展開して再確保を省き、仮測定／確定測定の複数スロット（{@link TentativeSlots}）は
- * 必要な flex / grid の子でのみ遅延生成する。</p>
+ * 鍵（{@link MeasureKey}＋{@link ExternalEpochs}）・入力読み取り集合（{@code readMask}）・親が子から読んだ出力集合
+ * （{@code parentReadMask}）を一体で持ち、免除と cutoff の規則を 1 箇所から導出する。</p>
  */
 final class MeasureMemo {
 
@@ -37,23 +35,17 @@ final class MeasureMemo {
     private static final int F_FIRST_FLOW_CHILD = 1 << 8;
     private static final int F_HAD_FLOAT_CHILD = 1 << 9;
     private static final int F_HAS_TABLE = 1 << 10;
-    private static final int F_WIDTH_FREE = 1 << 11;
-    private static final int F_OUTSIDE_FREE = 1 << 12;
-    private static final int F_SHRINK_INDEPENDENT = 1 << 13;
-    private static final int F_MIN_CONTENT_VAR = 1 << 14;
-    private static final int F_FIT_FIXED_W = 1 << 15;
-    private static final int F_FILL_FIT_REUSABLE = 1 << 16;
-    private static final int F_BLOCK_PERCENT_FREE = 1 << 17;
-    private static final int F_FLOW_FLOAT_FREE = 1 << 18;
-    private static final int F_HAS_TENTATIVE_CHILDREN = 1 << 19;
-    private static final int F_CHILD_FIT_BLOCKED = 1 << 20;
-    private static final int F_SUBGRID_DEPENDENT = 1 << 21;
+    private static final int F_MIN_CONTENT_VAR = 1 << 11;
+    private static final int F_FLOW_FLOAT_FREE = 1 << 12;
+    private static final int F_HAS_TENTATIVE_CHILDREN = 1 << 13;
+    private static final int F_CHILD_FIT_BLOCKED = 1 << 14;
+    private static final int F_SUBGRID_DEPENDENT = 1 << 15;
+    private static final int F_OUT_BFC = 1 << 16;
 
     private static final int FUEL_PER_BOX = 200;
     private static final int FUEL_BASE = 50_000;
     private static final int MAX_TENTATIVES = 4;
     private static final int MAX_DEFINITE_TENTATIVES = 2;
-    private static final int MAX_TOTAL_TENTATIVES = MAX_TENTATIVES + MAX_DEFINITE_TENTATIVES;
     private static final LayoutBox[] EMPTY_BOX_ARRAY = new LayoutBox[0];
 
     /** 外から測り直しを強いる世代（画像の読み込み・書体の登録など、箱の外の資源が変わったとき）。 */
@@ -61,59 +53,19 @@ final class MeasureMemo {
     private static final LongAdder MEASUREMENTS_COMPUTED = new LongAdder();
     private static final LongAdder TENTATIVE_SKIPPED = new LongAdder();
     private static final LongAdder FUEL_REUSED = new LongAdder();
-    /** スレッドごとの {実行番号, 測った回数, 初めて測った箱の数}。 */
-    private static final ThreadLocal<long[]> FUEL = ThreadLocal.withInitial(() -> new long[]{-1, 0, 0});
-    /** 測り直しの結果を、直接の親の無効化だけで伝える下降（{@link #remeasureChanged}）の深さ。スレッドごと。 */
-    private static final ThreadLocal<int[]> DESCENT = ThreadLocal.withInitial(() -> new int[1]);
     static final boolean LAZY_THROUGH_INELIGIBLE = EngineFlags.LAZY_THROUGH_INELIGIBLE;
 
-    private static final class TentativeSlots {
-        private Tentative[] entries;
-        private ConstraintSpace stashedSpace;
-        private LayoutContext stashedCtx;
-        private boolean stashed;
-        private float stW, stH, stMT, stMR, stMB, stML;
-        private float stPT, stPR, stPB, stPL, stBT, stBR, stBB, stBL;
-        private float stLegendSpill, stContentBlockExtent, stOwnMarginTop, stOwnMarginBottom;
-        private LayoutBox.SizingMode stSizingMode;
-
-        TentativeSlots copy() {
-            TentativeSlots c = new TentativeSlots();
-            c.entries = entries == null ? null : entries.clone();
-            c.stashedSpace = stashedSpace; c.stashedCtx = stashedCtx; c.stashed = stashed;
-            c.stW = stW; c.stH = stH; c.stMT = stMT; c.stMR = stMR; c.stMB = stMB; c.stML = stML;
-            c.stPT = stPT; c.stPR = stPR; c.stPB = stPB; c.stPL = stPL;
-            c.stBT = stBT; c.stBR = stBR; c.stBB = stBB; c.stBL = stBL;
-            c.stLegendSpill = stLegendSpill; c.stContentBlockExtent = stContentBlockExtent;
-            c.stOwnMarginTop = stOwnMarginTop; c.stOwnMarginBottom = stOwnMarginBottom; c.stSizingMode = stSizingMode;
-            return c;
-        }
-
-        void captureStash(LayoutBox b) {
-            stW = b.w; stH = b.h; stMT = b.mT; stMR = b.mR; stMB = b.mB; stML = b.mL;
-            stPT = b.pT; stPR = b.pR; stPB = b.pB; stPL = b.pL;
-            stBT = b.bT; stBR = b.bR; stBB = b.bB; stBL = b.bL;
-            stLegendSpill = b.legendSpill; stContentBlockExtent = b.contentBlockExtent;
-            stOwnMarginTop = b.ownMarginTop; stOwnMarginBottom = b.ownMarginBottom; stSizingMode = b.sizingMode;
-        }
-
-        void applyStash(LayoutBox b) {
-            b.w = stW; b.h = stH; b.mT = stMT; b.mR = stMR; b.mB = stMB; b.mL = stML;
-            b.pT = stPT; b.pR = stPR; b.pB = stPB; b.pL = stPL;
-            b.bT = stBT; b.bR = stBR; b.bB = stBB; b.bL = stBL;
-            b.legendSpill = stLegendSpill; b.contentBlockExtent = stContentBlockExtent;
-            b.ownMarginTop = stOwnMarginTop; b.ownMarginBottom = stOwnMarginBottom; b.sizingMode = stSizingMode;
-        }
-    }
-
     private int flags = F_LAYOUT_CHANGED | F_SUBTREE_CHANGED;
-    private ConstraintSpace measuredSpace;
-    private float measuredOverrideW = Float.NaN, measuredOverrideH = Float.NaN;
-    private Viewport measuredViewport;
-    private FontResolver measuredFonts;
-    private IntrinsicSizeResolver measuredIntrinsics;
-    private int measuredEpoch;
+    private MeasureKey measuredKey;
+    private int readMask;
     private long measuredRun = -1;
+
+    // 親が自分から読んだ出力集合（前回の測定パス中に親が記録する）
+    private int parentReadMask;
+    private ConstraintSpace parentFirstSpace;
+    private float parentReadMinContent = Float.NaN;
+    private float parentReadFirstBaseline = Float.NaN;
+    private float parentReadLastBaseline = Float.NaN;
 
     // 主スロットの自然な出力（親が stretch 等で後から書き換える前）
     private float outW, outH, outMT, outMR, outMB, outML;
@@ -161,18 +113,22 @@ final class MeasureMemo {
     boolean isSubtreeChanged() { return flag(F_SUBTREE_CHANGED); }
     boolean hasTable() { return flag(F_HAS_TABLE); }
     boolean everLaidOutAsTable() { return flag(F_EVER_TABLE); }
-    boolean isBlockPercentFree() { return flag(F_BLOCK_PERCENT_FREE); }
-    boolean isOutsideFree() { return flag(F_OUTSIDE_FREE); }
-    boolean isWidthFree() { return flag(F_WIDTH_FREE); }
+    boolean isBlockPercentFree() { return (readMask & MeasureReads.READ_PERCENT_BLOCK) == 0; }
+    boolean isOutsideFree() { return (readMask & MeasureReads.READ_VIEWPORT_W) == 0; }
+    boolean isWidthFree() { return (readMask & (MeasureReads.READ_AVAIL_INLINE | MeasureReads.READ_VIEWPORT_W)) == 0; }
     boolean isFlowFloatFree() { return flag(F_FLOW_FLOAT_FREE); }
     boolean isMinContentVar() { return flag(F_MIN_CONTENT_VAR); }
     boolean hasTentativeChildren() { return flag(F_HAS_TENTATIVE_CHILDREN); }
     boolean isTentativeStashed() { return tentativeSlots != null && tentativeSlots.stashed; }
-    boolean measuredWithoutFixedHeight() { return measuredSpace != null && Float.isNaN(measuredSpace.fixedBlockSize()); }
+    boolean measuredWithoutFixedHeight() { return measuredKey != null && Float.isNaN(measuredKey.space().fixedBlockSize()); }
     boolean needsParallelWork() { return flag(F_SUBTREE_CHANGED | F_LAYOUT_CHANGED) || !flag(F_VALID); }
     void setSubgridDependent(boolean v) { setFlag(F_SUBGRID_DEPENDENT, v); }
-    ConstraintSpace measuredSpace() { return measuredSpace; }
+    ConstraintSpace measuredSpace() { return measuredKey != null ? measuredKey.space() : null; }
     long measuredRun() { return measuredRun; }
+    int readMask() { return readMask; }
+    int parentReadMask() { return parentReadMask; }
+    int transitiveReads() { return readMask & MeasureReads.TRANSITIVE_MASK; }
+    boolean hasParentReadMinContent() { return (parentReadMask & MeasureReads.PARENT_READ_MIN_CONTENT) != 0; }
 
     void markDirtyLeaf() { flags |= F_LAYOUT_CHANGED | F_SUBTREE_CHANGED; invalidateMinContentCache(); }
     void markDirtyAlong(boolean remeasure) { flags |= F_SUBTREE_CHANGED | (remeasure ? F_LAYOUT_CHANGED : 0); invalidateMinContentCache(); }
@@ -190,16 +146,13 @@ final class MeasureMemo {
     void cacheMinContentWidth(long key, float width) { cachedMinContentKey = key; cachedMinContentWidth = width; }
 
     /** テスト・検証用: 主スロットの不変な鍵（未測定は null）。 */
-    MeasureKey primaryKey() {
-        return measuredSpace == null ? null : new MeasureKey(measuredSpace, measuredOverrideW, measuredOverrideH, outSizingMode);
-    }
+    MeasureKey primaryKey() { return measuredKey; }
 
     /** テスト・検証用: 主スロットの不変な出力（未記録は null）。 */
     MeasureOutputs primaryOutputs() {
         if (!flag(F_HAS_OUTPUTS)) return null;
         return new MeasureOutputs(
-                outW, outH, outMT, outMR, outMB, outML,
-                outPT, outPR, outPB, outPL, outBT, outBR, outBB, outBL,
+                outW, outH, outMT, outMR, outMB, outML, outPT, outPR, outPB, outPL, outBT, outBR, outBB, outBL,
                 outLegendSpill, outContentBlockExtent, outOwnMarginTop, outOwnMarginBottom, outSizingMode);
     }
 
@@ -211,16 +164,143 @@ final class MeasureMemo {
         return n;
     }
 
+    // ------------------------------------------------------------------ 親が子から読んだ集合の記録と cutoff
+
+    private void resetParentReads() {
+        parentReadMask = 0;
+        parentFirstSpace = null;
+        parentReadMinContent = parentReadFirstBaseline = parentReadLastBaseline = Float.NaN;
+    }
+
+    private static void beginParentReadOfChildren(LayoutBox box) {
+        List<LayoutBox> kids = box.children;
+        for (int i = 0, n = kids.size(); i < n; i++) kids.get(i).measureMemo.resetParentReads();
+    }
+
+    void noteParentMeasured(ConstraintSpace space) {
+        parentReadMask |= MeasureReads.PARENT_READ_OUTER;
+        if (parentFirstSpace == null) parentFirstSpace = space;
+        else if (!parentFirstSpace.equals(space)) parentReadMask |= MeasureReads.PARENT_READ_MULTI_SPACE;
+        if (!Float.isNaN(space.fixedInlineSize()) || !Float.isNaN(space.fixedBlockSize())) parentReadMask |= MeasureReads.PARENT_READ_STRETCHED;
+    }
+
+    void noteParentReadOuter() { parentReadMask |= MeasureReads.PARENT_READ_OUTER; }
+    void noteParentReadContentExtent() { parentReadMask |= MeasureReads.PARENT_READ_CONTENT_EXTENT; }
+    void noteParentReadFitNeed() { parentReadMask |= MeasureReads.PARENT_READ_FIT_NEED; }
+    void noteParentReadStretched() { parentReadMask |= MeasureReads.PARENT_READ_STRETCHED; }
+    void noteParentReadOpaque() { parentReadMask |= MeasureReads.PARENT_READ_OPAQUE; }
+    void noteParentReadMinContent(float w) { parentReadMask |= MeasureReads.PARENT_READ_MIN_CONTENT; parentReadMinContent = w; }
+    void noteParentReadFirstBaseline(float b) { parentReadMask |= MeasureReads.PARENT_READ_FIRST_BASELINE; parentReadFirstBaseline = b; }
+    void noteParentReadLastBaseline(float b) { parentReadMask |= MeasureReads.PARENT_READ_LAST_BASELINE; parentReadLastBaseline = b; }
+
+    boolean canAttemptCutoff(LayoutBox box) {
+        if (!Shortcut.CUTOFF.on() || box.parent == null || measuredKey == null) return false;
+        MeasureMemo pm = box.parent.measureMemo;
+        if (!pm.isValid() || MeasureReads.isOnStack(box.parent)) return false;
+        if (parentReadMask == 0 || (parentReadMask & MeasureReads.PARENT_CUTOFF_BLOCKERS) != 0) return false;
+        if (box.node == null || box.node.nodeType == NodeType.TEXT || box.display == null || box.display.isNone()
+                || box.display.isInlineLevel() || box.isAbsolute || box.isRelative || box.isSticky
+                || box.isOutsideMarker || box.isRenderedLegend || LayoutBox.isTableBox(box)
+                || box.collapsedBorders != null || flag(F_EVER_TABLE) || box.floatSpace != null
+                || BlockLayoutEngine.isFloating(box) || BlockLayoutEngine.containsFloats(box)) {
+            return false;
+        }
+        int relayoutExtraMask = MeasureReads.PARENT_READ_CONTENT_EXTENT | MeasureReads.PARENT_READ_MIN_CONTENT
+                | MeasureReads.PARENT_READ_FIRST_BASELINE | MeasureReads.PARENT_READ_LAST_BASELINE;
+        for (LayoutBox a = box.parent; a != null; a = a.parent) {
+            MeasureMemo am = a.measureMemo;
+            if (!am.isFlowFloatFree()) return false;
+            if (a.parent != null && (am.parentReadMask & MeasureReads.PARENT_CUTOFF_BLOCKERS) != 0) {
+                if (MeasureChanges.isRelayoutBoundary(a) && (am.parentReadMask & relayoutExtraMask) == 0) break;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean extraParentReadsMatch(LayoutBox box, LayoutContext ctx) {
+        if ((parentReadMask & MeasureReads.PARENT_READ_CONTENT_EXTENT) != 0 && box.contentBlockExtent != outContentBlockExtent) return false;
+        int slot = MeasureReads.pushMeasuring(null);
+        try {
+            if ((parentReadMask & MeasureReads.PARENT_READ_MIN_CONTENT) != 0
+                    && Float.floatToIntBits(IntrinsicSizing.getMinContentWidth(box, ctx)) != Float.floatToIntBits(parentReadMinContent)) return false;
+            if ((parentReadMask & MeasureReads.PARENT_READ_FIRST_BASELINE) != 0) {
+                Float cur = BlockLayoutEngine.firstBaseline(box);
+                if (Float.floatToIntBits(cur != null ? cur : Float.NaN) != Float.floatToIntBits(parentReadFirstBaseline)) return false;
+            }
+            if ((parentReadMask & MeasureReads.PARENT_READ_LAST_BASELINE) != 0) {
+                Float cur = BlockLayoutEngine.lastBaseline(box);
+                if (Float.floatToIntBits(cur != null ? cur : Float.NaN) != Float.floatToIntBits(parentReadLastBaseline)) return false;
+            }
+            return true;
+        } finally {
+            MeasureReads.popMeasuring(slot);
+        }
+    }
+
+    private boolean parentReadStillMatches(LayoutBox box, LayoutContext ctx, boolean selfChanged) {
+        if (measuredStyle == null || selfChanged || !canAttemptCutoff(box)) return false;
+        if ((parentReadMask & MeasureReads.PARENT_READ_OUTER) != 0 && (!outputsMatchOuter(box) || box.sizingMode != outSizingMode)) return false;
+        return extraParentReadsMatch(box, ctx);
+    }
+
+    private boolean outputsMatchOuter(LayoutBox box) {
+        return box.w == outW && box.h == outH && box.mT == outMT && box.mR == outMR && box.mB == outMB && box.mL == outML
+                && box.pT == outPT && box.pR == outPR && box.pB == outPB && box.pL == outPL && box.bT == outBT
+                && box.bR == outBR && box.bB == outBB && box.bL == outBL && box.legendSpill == outLegendSpill
+                && box.establishesBfc == flag(F_OUT_BFC);
+    }
+
+    private void refreshTransitiveParentReads(LayoutBox box, LayoutContext ctx) {
+        int slot = MeasureReads.pushMeasuring(box.parent);
+        try {
+            if ((parentReadMask & MeasureReads.PARENT_READ_FIRST_BASELINE) != 0) BlockLayoutEngine.firstBaseline(box);
+            if ((parentReadMask & MeasureReads.PARENT_READ_LAST_BASELINE) != 0) BlockLayoutEngine.lastBaseline(box);
+            if ((parentReadMask & MeasureReads.PARENT_READ_MIN_CONTENT) != 0) IntrinsicSizing.readChildMinContentWidth(box, ctx);
+        } finally {
+            MeasureReads.popMeasuring(slot);
+        }
+    }
+
+    private void propagateFitNeedOnCutoff(LayoutBox box) {
+        if ((parentReadMask & MeasureReads.PARENT_READ_FIT_NEED) == 0) return;
+        float needForParent = blockChildFitWidth(box);
+        for (LayoutBox a = box.parent; a != null; a = a.parent) {
+            MeasureMemo am = a.measureMemo;
+            if (!am.isValid()) break;
+            if (needForParent == Float.POSITIVE_INFINITY) {
+                am.setFlag(F_CHILD_FIT_BLOCKED, true);
+                am.measuredFitNeed = Float.POSITIVE_INFINITY;
+                am.readMask &= ~(MeasureReads.READ_FIT_BOUNDED | MeasureReads.READ_FILL_FIT);
+            } else {
+                if (needForParent > am.childFitNeedMax) am.childFitNeedMax = needForParent;
+                if (am.measuredFitNeed != Float.POSITIVE_INFINITY) {
+                    float ancNeed = needForParent + a.horizontalDecoration() + a.mL + a.mR + (needForParent > 0 ? 0.02f : 0f);
+                    if (ancNeed > am.measuredFitNeed) am.measuredFitNeed = ancNeed;
+                }
+            }
+            if ((am.parentReadMask & MeasureReads.PARENT_READ_FIT_NEED) == 0) break;
+            needForParent = am.blockChildFitWidth(a);
+        }
+    }
+
     // ------------------------------------------------------------------ 測定入口・中心ループ
 
     void measureWith(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        boolean fixedWidth = !Float.isNaN(space.fixedInlineSize());
+        boolean fixedWidth = !Float.isNaN(space.fixedInlineSize()), fromParent = MeasureReads.currentMeasuringBox() == box.parent && box.parent != null;
+        if (fromParent) noteParentMeasured(space);
         measureCoreWithOverrides(box, space, ctx, restoreOk);
+        if (fromParent) { MeasureReads.propagateChildReads(box); if (!fixedWidth) noteParentReadFitNeed(); }
         noteFitToParent(box, measuredFitNeed, fixedWidth);
     }
 
-    void measureParallel(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
-        measureCoreWithOverrides(box, space, ctx, true);
+    void measureParallel(LayoutBox box, ConstraintSpace space, LayoutContext ctx) { measureCoreWithOverrides(box, space, ctx, true); }
+
+    void noteParallelMeasured(LayoutBox box, ConstraintSpace childSpace, boolean fixedWidth) {
+        if (MeasureReads.currentMeasuringBox() == box.parent && box.parent != null) {
+            noteParentMeasured(childSpace); MeasureReads.propagateChildReads(box); if (!fixedWidth) noteParentReadFitNeed();
+        }
+        noteFitToParent(box, measuredFitNeed, fixedWidth);
     }
 
     private void measureCoreWithOverrides(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
@@ -236,12 +316,8 @@ final class MeasureMemo {
         }
     }
 
-    void applyFitToParent(LayoutBox box, boolean fixedWidth) {
-        noteFitToParent(box, measuredFitNeed, fixedWidth);
-    }
-
     float blockChildFitWidth(LayoutBox box) {
-        return (flag(F_WIDTH_FREE) && Shortcut.WIDTH_INDEPENDENT_REUSE.on()) ? (box.w + box.mL + box.mR) : measuredFitNeed;
+        return (isWidthFree() && Shortcut.WIDTH_INDEPENDENT_REUSE.on()) ? (box.w + box.mL + box.mR) : measuredFitNeed;
     }
 
     private static void noteFitToParent(LayoutBox box, float need, boolean fixedWidth) {
@@ -249,27 +325,23 @@ final class MeasureMemo {
         if (p == null || fixedWidth) return;
         MeasureMemo pm = p.measureMemo;
         if (need == Float.POSITIVE_INFINITY) {
-            if (!(box.measureMemo.flag(F_WIDTH_FREE) && Shortcut.WIDTH_INDEPENDENT_REUSE.on())) {
-                pm.setFlag(F_CHILD_FIT_BLOCKED, true);
-            }
-        } else if (need > pm.childFitNeedMax) {
-            pm.childFitNeedMax = need;
-        }
+            if (!(box.measureMemo.isWidthFree() && Shortcut.WIDTH_INDEPENDENT_REUSE.on())) pm.setFlag(F_CHILD_FIT_BLOCKED, true);
+        } else if (need > pm.childFitNeedMax) pm.childFitNeedMax = need;
     }
 
     private boolean measureFuelExhausted(LayoutContext ctx) {
-        long[] f = FUEL.get();
-        if (f[0] != ctx.layoutRun()) {
-            f[0] = ctx.layoutRun();
-            f[1] = 0;
-            f[2] = 0;
+        MeasureReads.ThreadState st = MeasureReads.state();
+        if (st.fuelRun != ctx.layoutRun()) {
+            st.fuelRun = ctx.layoutRun();
+            st.fuelCount = 0;
+            st.fuelFirstBoxes = 0;
         }
-        f[1]++;
-        if (measuredSpace == null) {
-            f[2]++;
+        st.fuelCount++;
+        if (measuredKey == null) {
+            st.fuelFirstBoxes++;
             return false;
         }
-        return f[1] > FUEL_BASE + (long) FUEL_PER_BOX * f[2];
+        return st.fuelCount > FUEL_BASE + (long) FUEL_PER_BOX * st.fuelFirstBoxes;
     }
 
     private void measureCore(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
@@ -284,12 +356,12 @@ final class MeasureMemo {
                 if (Shortcut.VERIFY_MEMO.on()) verifyReused(box, space, ctx, "reuse");
                 return;
             }
-            int[] depth = DESCENT.get();
-            depth[0]++;
+            MeasureReads.ThreadState st = MeasureReads.state();
+            st.descentDepth++;
             try {
                 remeasureChanged(box, ctx);
             } finally {
-                depth[0]--;
+                st.descentDepth--;
             }
             if (flag(F_VALID)) return;
         }
@@ -310,57 +382,77 @@ final class MeasureMemo {
         PaintStamps.touchLayout(box);
         setFlag(F_CHILD_FIT_BLOCKED, false);
         childFitNeedMax = 0;
-        BoxMeasurer.measure(box, space, ctx);
-        if (flag(F_HAS_TENTATIVE_CHILDREN)) settleTentativeChildren(box);
-        recordMeasurement(box, space, ctx);
+        int mSlot = MeasureReads.pushMeasuring(box);
+        beginParentReadOfChildren(box);
+        int recordedReads;
+        try {
+            BoxMeasurer.measure(box, space, ctx);
+            if (flag(F_HAS_TENTATIVE_CHILDREN)) settleTentativeChildren(box);
+        } finally {
+            recordedReads = MeasureReads.popMeasuring(mSlot);
+        }
+        recordMeasurement(box, space, ctx, recordedReads);
         PaintStamps.touchLayout(box);
     }
 
     /** 検証モード（{@code VERIFY_MEMO}）: 記憶で飛ばした箱を測り直して比べる（{@link MeasureVerifier}）。計数は進めない。 */
     private void verifyReused(LayoutBox box, ConstraintSpace space, LayoutContext ctx, String how) {
         if (MeasureVerifier.active() || box.floatSpace != null || box.collapsedBorders != null) return;
-        long[] fuel = FUEL.get();
-        long[] savedFuel = fuel.clone();
+        MeasureReads.ThreadState st = MeasureReads.state();
+        long savedRun = st.fuelRun, savedCount = st.fuelCount, savedFirst = st.fuelFirstBoxes;
         long computedBefore = MEASUREMENTS_COMPUTED.sum();
         try {
             MeasureVerifier.verify(box, space, ctx, how);
         } finally {
             MEASUREMENTS_COMPUTED.add(-(MEASUREMENTS_COMPUTED.sum() - computedBefore));
-            System.arraycopy(savedFuel, 0, fuel, 0, fuel.length);
+            st.fuelRun = savedRun;
+            st.fuelCount = savedCount;
+            st.fuelFirstBoxes = savedFirst;
         }
     }
-    Object snapshotSlots() { return tentativeSlots == null ? null : tentativeSlots.copy(); }
 
+    Object snapshotSlots() { return tentativeSlots == null ? null : tentativeSlots.copy(); }
     void restoreSlots(Object snapshot) { tentativeSlots = snapshot == null ? null : ((TentativeSlots) snapshot).copy(); }
 
-    // ------------------------------------------------------------------ 仮測定・確定葉スロット
+    // ------------------------------------------------------------------ 鍵照合・仮測定・確定葉スロット
+
+    private boolean matchesCurrent(MeasureKey key, ConstraintSpace s, float ow, float oh, LayoutContext ctx,
+                                   boolean autoSkipped, int mask, float fitNeed, boolean isText, boolean allowFillFit) {
+        return key.matches(s, ow, oh, ctx.viewport(), MEASUREMENT_EPOCH.get(), LayoutBox.shapeEpoch(),
+                ctx.fonts(), MeasureReads.fontGeneration(ctx), ctx.intrinsicResolver(), MeasureReads.intrinsicGeneration(ctx),
+                autoSkipped, mask, fitNeed, isText, allowFillFit);
+    }
+
+    private void refreshMeasuredKey(ConstraintSpace space, float ow, float oh, Viewport vp, ExternalEpochs ep, boolean autoSkipped) {
+        if (measuredKey == null || !measuredKey.matchesExact(space, ow, oh, vp, ep, autoSkipped)) {
+            measuredKey = new MeasureKey(space, ow, oh, vp, ep, autoSkipped);
+        }
+    }
 
     boolean measureTentatively(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         restoreTentativeStash(box);
         TentativeSlots ts = tentativeSlots;
         Tentative[] all = ts == null ? null : ts.entries;
         if (flag(F_SUBGRID_DEPENDENT) || !Shortcut.TENTATIVE_REUSE.on() || all == null
-                || !ctx.reuseMeasurements() || box.parent == null) {
-            return false;
-        }
+                || !ctx.reuseMeasurements() || box.parent == null || measuredKey == null) return false;
+        if (!Float.isNaN(box.overrideWidth) || !Float.isNaN(box.overrideHeight)) return false;
+        if (!flag(F_VALID) || flag(F_LAYOUT_CHANGED) || hasUnmeasuredSubtreeChange(ctx) || flag(F_HAS_TABLE)) return false;
+        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || Shortcut.SAME_PASS_REUSE.on())) return false;
+        if (box.floatSpace != null || box.collapsedBorders != null) return false;
+        int mEpoch = MEASUREMENT_EPOCH.get();
+        if (measuredKey.epochs().measurementEpoch() != mEpoch) return false;
+
+        boolean isText = box.node.nodeType == NodeType.TEXT;
         Tentative t = null;
         for (Tentative candidate : all) {
-            if (candidate != null && candidate.kind() == Tentative.Kind.TENTATIVE && candidate.matches(space)) {
+            if (candidate != null && candidate.kind() == Tentative.Kind.TENTATIVE
+                    && matchesCurrent(candidate.key(), space, Float.NaN, Float.NaN, ctx,
+                            box.contentAutoSkipped, candidate.readMask(), candidate.fitNeed(), isText, true)) {
                 t = candidate;
                 break;
             }
         }
         if (t == null) return false;
-        if (!Float.isNaN(box.overrideWidth) || !Float.isNaN(box.overrideHeight)) return false;
-        if (!flag(F_VALID) || flag(F_LAYOUT_CHANGED) || hasUnmeasuredSubtreeChange(ctx) || flag(F_HAS_TABLE)) return false;
-        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || Shortcut.SAME_PASS_REUSE.on())) return false;
-        if (t.epoch() != MEASUREMENT_EPOCH.get() || measuredEpoch != t.epoch()
-                || box.floatSpace != null || box.collapsedBorders != null
-                || !t.matches(space)
-                || !t.sameViewport(ctx.viewport()) || ctx.fonts() != t.fonts()
-                || ctx.intrinsicResolver() != t.intrinsics()) {
-            return false;
-        }
         if (box.needsAdoption) {
             for (int i = 0, n = box.children.size(); i < n; i++) box.adopt(box.children.get(i));
             box.needsAdoption = false;
@@ -370,10 +462,15 @@ final class MeasureMemo {
         ts.stashedSpace = space;
         ts.stashedCtx = ctx;
         t.outputs().apply(box);
-        if (t.fillFit()) box.w = Math.max(0, space.availableInlineSize() - box.mL - box.mR);
+        if (t.isFillFit()) box.w = Math.max(0, space.availableInlineSize() - box.mL - box.mR);
         invalidateMinContentCache();
         box.parent.measureMemo.setFlag(F_HAS_TENTATIVE_CHILDREN, true);
         TENTATIVE_SKIPPED.increment();
+        if (MeasureReads.currentMeasuringBox() == box.parent) {
+            noteParentMeasured(space);
+            MeasureReads.propagateChildReads(box);
+            noteParentReadFitNeed();
+        }
         noteFitToParent(box, t.fitNeed(), false);
         return true;
     }
@@ -399,86 +496,38 @@ final class MeasureMemo {
     void settleTentativeChildren(LayoutBox box) {
         setFlag(F_HAS_TENTATIVE_CHILDREN, false);
         List<LayoutBox> kids = box.children;
-        for (int i = 0, n = kids.size(); i < n; i++) {
-            LayoutBox child = kids.get(i);
-            child.measureMemo.settleTentative(child);
-        }
+        for (int i = 0, n = kids.size(); i < n; i++) kids.get(i).measureMemo.settleTentative(kids.get(i));
     }
 
-    private void storeTentativeSlot(Tentative.Kind kind, ConstraintSpace space, Viewport viewport, FontResolver fonts,
-                                    IntrinsicSizeResolver intrinsics, int epoch, LayoutBox box, boolean percentFree,
-                                    boolean shrinkFree, boolean outsideFree, boolean widthFree, float fitNeed,
-                                    boolean fillFit, float overrideW, float overrideH) {
+    private void storeTentativeSlot(Tentative.Kind kind, MeasureKey key, LayoutBox box, int slotMask, float fitNeed) {
         TentativeSlots ts = tentativeSlots;
         if (ts == null) tentativeSlots = ts = new TentativeSlots();
         int maxForKind = kind == Tentative.Kind.TENTATIVE ? MAX_TENTATIVES : MAX_DEFINITE_TENTATIVES;
-        int idx = obtainTentativeSlotIndex(ts, kind, space, maxForKind);
+        int idx = ts.obtainSlotIndex(kind, key.space(), maxForKind);
         Tentative old = ts.entries[idx];
-        if (old != null && old.matchesExactRecord(kind, space, viewport, fonts, intrinsics, epoch, box,
-                percentFree, shrinkFree, outsideFree, widthFree, fitNeed, fillFit, overrideW, overrideH)) {
-            return;
-        }
-        MeasureOutputs outputs = (old != null && old.outputs().matchesAll(box))
-                ? old.outputs()
-                : MeasureOutputs.capture(box);
-        ts.entries[idx] = new Tentative(kind, space, viewport, fonts, intrinsics, epoch, outputs,
-                percentFree, shrinkFree, outsideFree, widthFree, fitNeed, fillFit, overrideW, overrideH);
-    }
-
-    private static int obtainTentativeSlotIndex(TentativeSlots ts, Tentative.Kind kind, ConstraintSpace space, int maxForKind) {
-        if (ts.entries == null) {
-            ts.entries = new Tentative[MAX_TENTATIVES];
-            return 0;
-        }
-        Tentative[] entries = ts.entries;
-        int firstNull = -1, countForKind = 0, oldestOfKind = -1;
-        for (int i = 0; i < entries.length; i++) {
-            Tentative old = entries[i];
-            if (old == null) {
-                if (firstNull < 0) firstNull = i;
-                continue;
-            }
-            if (old.kind() == kind) {
-                if (old.matches(space)) return i;
-                if (oldestOfKind < 0) oldestOfKind = i;
-                countForKind++;
-            }
-        }
-        if (countForKind < maxForKind) {
-            if (firstNull >= 0) return firstNull;
-            int nextLen = Math.min(MAX_TOTAL_TENTATIVES, entries.length + 2);
-            ts.entries = Arrays.copyOf(entries, nextLen);
-            return ts.entries.length - 2;
-        }
-        int lastNonNull = oldestOfKind;
-        for (int i = oldestOfKind + 1; i < entries.length && entries[i] != null; i++) {
-            entries[i - 1] = entries[i];
-            lastNonNull = i;
-        }
-        entries[lastNonNull] = null;
-        return lastNonNull;
+        if (old != null && old.matchesExactRecord(kind, key, box, slotMask, fitNeed)) return;
+        MeasureOutputs outputs = (old != null && old.outputs().matchesAll(box)) ? old.outputs() : MeasureOutputs.capture(box);
+        ts.entries[idx] = new Tentative(kind, key, outputs, slotMask, fitNeed);
     }
 
     private boolean reuseDefiniteTentative(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
         TentativeSlots ts = tentativeSlots;
         if (flag(F_SUBGRID_DEPENDENT) || !Shortcut.TENTATIVE_REUSE.on() || ts == null || ts.entries == null
-                || (Float.isNaN(box.overrideWidth) && Float.isNaN(box.overrideHeight))) {
+                || measuredKey == null || (Float.isNaN(box.overrideWidth) && Float.isNaN(box.overrideHeight))) {
             return false;
         }
-        if (!flag(F_VALID) || flag(F_LAYOUT_CHANGED) || hasUnmeasuredSubtreeChange(ctx)
-                || !MeasureAnalysis.isDefiniteCacheableLeaf(box)) {
+        if (!flag(F_VALID) || flag(F_LAYOUT_CHANGED) || hasUnmeasuredSubtreeChange(ctx) || !MeasureAnalysis.isDefiniteCacheableLeaf(box)) {
             return false;
         }
         if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || Shortcut.SAME_PASS_REUSE.on())) return false;
-        int epoch = MEASUREMENT_EPOCH.get();
-        if (measuredEpoch != epoch) return false;
+        int mEpoch = MEASUREMENT_EPOCH.get();
+        if (measuredKey.epochs().measurementEpoch() != mEpoch) return false;
+        boolean isText = box.node.nodeType == NodeType.TEXT;
         Tentative match = null;
         for (Tentative t : ts.entries) {
-            if (t == null || t.kind() != Tentative.Kind.DEFINITE) continue;
-            if (t.epoch() == epoch && t.fonts() == ctx.fonts() && t.intrinsics() == ctx.intrinsicResolver()
-                    && MeasureAnalysis.sameLength(t.overrideW(), box.overrideWidth)
-                    && MeasureAnalysis.sameLength(t.overrideH(), box.overrideHeight)
-                    && t.matches(space) && t.sameViewport(ctx.viewport())) {
+            if (t != null && t.kind() == Tentative.Kind.DEFINITE
+                    && matchesCurrent(t.key(), space, box.overrideWidth, box.overrideHeight, ctx,
+                            box.contentAutoSkipped, t.readMask(), t.fitNeed(), isText, false)) {
                 match = t;
                 break;
             }
@@ -488,25 +537,16 @@ final class MeasureMemo {
         boolean outputsDiffer = !o.matchesNatural(box);
         if (!restoreOk && outputsDiffer) return false;
         if (restoreOk && outputsDiffer) {
-            o.apply(box);
-            invalidateMinContentCache();
-            PaintStamps.touchLayout(box);
+            o.apply(box); invalidateMinContentCache(); PaintStamps.touchLayout(box);
         }
-        setFlag(F_BLOCK_PERCENT_FREE, match.percentFree());
-        setFlag(F_OUTSIDE_FREE, match.outsideFree());
-        setFlag(F_WIDTH_FREE, match.widthFree());
-        measuredSpace = space;
-        measuredOverrideW = box.overrideWidth;
-        measuredOverrideH = box.overrideHeight;
-        measuredViewport = ctx.viewport();
-        measuredFonts = match.fonts();
-        measuredIntrinsics = match.intrinsics();
-        measuredEpoch = epoch;
+        measuredFitNeed = match.fitNeed();
+        int nextMask = match.readMask() & ~(MeasureReads.READ_FIT_BOUNDED | MeasureReads.READ_FILL_FIT);
+        if (!Float.isNaN(box.overrideWidth) && measuredFitNeed != Float.POSITIVE_INFINITY) nextMask |= MeasureReads.READ_FIT_BOUNDED;
+        readMask = nextMask;
+        refreshMeasuredKey(space, box.overrideWidth, box.overrideHeight, ctx.viewport(),
+                MeasureReads.currentEpochs(ctx, mEpoch, LayoutBox.shapeEpoch()), box.contentAutoSkipped);
         measuredRun = ctx.layoutRun();
         capturePrimaryOutputs(box);
-        measuredFitNeed = match.fitNeed();
-        setFlag(F_FIT_FIXED_W, !Float.isNaN(box.overrideWidth) && measuredFitNeed != Float.POSITIVE_INFINITY);
-        setFlag(F_FILL_FIT_REUSABLE, false);
         box.measuredClamped = false;
         setFlag(F_CHILD_FIT_BLOCKED, false);
         childFitNeedMax = 0;
@@ -520,35 +560,30 @@ final class MeasureMemo {
         for (int i = 0, n = kids.size(); i < n; i++) {
             LayoutBox child = kids.get(i);
             MeasureMemo cm = child.measureMemo;
-            if (!cm.flag(F_SUBTREE_CHANGED) || cm.measuredSpace == null) continue;
-            if (cm.flag(F_LAYOUT_CHANGED) || MeasureChanges.isRelayoutBoundary(child) || MeasureAnalysis.isCutoffEligible(child)) {
-                cm.measureWith(child, cm.measuredSpace, ctx, false);
+            if (!cm.flag(F_SUBTREE_CHANGED) || cm.measuredKey == null) continue;
+            if (cm.flag(F_LAYOUT_CHANGED) || MeasureChanges.isRelayoutBoundary(child) || cm.canAttemptCutoff(child)) {
+                cm.measureWith(child, cm.measuredKey.space(), ctx, false);
             } else {
                 cm.remeasureChanged(child, ctx);
-                if (!cm.flag(F_VALID)) cm.measureWith(child, cm.measuredSpace, ctx, false);
+                if (!cm.flag(F_VALID)) {
+                    if (cm.canAttemptCutoff(child) || MeasureChanges.isRelayoutBoundary(child)) cm.measureWith(child, cm.measuredKey.space(), ctx, false);
+                    else setFlag(F_VALID, false);
+                }
             }
         }
     }
 
-    private boolean hasUnmeasuredSubtreeChange(LayoutContext ctx) {
-        return flag(F_SUBTREE_CHANGED) && measuredRun != ctx.layoutRun();
-    }
+    private boolean hasUnmeasuredSubtreeChange(LayoutContext ctx) { return flag(F_SUBTREE_CHANGED) && measuredRun != ctx.layoutRun(); }
 
     private boolean fillFitReuse(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        if (flag(F_SUBGRID_DEPENDENT) || !restoreOk || !flag(F_FILL_FIT_REUSABLE)
-                || !Float.isNaN(box.overrideWidth) || !Float.isNaN(box.overrideHeight)) {
-            return false;
-        }
+        if (flag(F_SUBGRID_DEPENDENT) || !restoreOk || measuredKey == null
+                || (readMask & MeasureReads.READ_FILL_FIT) == 0
+                || !Float.isNaN(box.overrideWidth) || !Float.isNaN(box.overrideHeight)) return false;
         if (!flag(F_VALID) || flag(F_LAYOUT_CHANGED) || hasUnmeasuredSubtreeChange(ctx)) return false;
-        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || (Shortcut.SAME_PASS_REUSE.on() && !flag(F_HAS_TABLE)))) {
-            return false;
-        }
-        if (measuredEpoch != MEASUREMENT_EPOCH.get() || box.floatSpace != null || box.collapsedBorders != null) return false;
-        if (ctx.fonts() != measuredFonts || ctx.intrinsicResolver() != measuredIntrinsics) return false;
-        if (!MeasureAnalysis.matchesFitConstraint(box, space, ctx, measuredFitNeed,
-                flag(F_BLOCK_PERCENT_FREE), flag(F_SHRINK_INDEPENDENT), measuredSpace, measuredViewport)) {
-            return false;
-        }
+        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || (Shortcut.SAME_PASS_REUSE.on() && !flag(F_HAS_TABLE)))) return false;
+        if (box.floatSpace != null || box.collapsedBorders != null) return false;
+        if (!matchesCurrent(measuredKey, space, box.overrideWidth, box.overrideHeight, ctx,
+                box.contentAutoSkipped, readMask, measuredFitNeed, false, true)) return false;
         restoreNaturalOutputs(box);
         float newW = Math.max(0, space.availableInlineSize() - box.mL - box.mR);
         if (newW != box.w) {
@@ -557,8 +592,8 @@ final class MeasureMemo {
             PaintStamps.touchLayout(box);
             box.invalidatePlacementValid();
         }
-        measuredSpace = space;
-        measuredViewport = ctx.viewport();
+        refreshMeasuredKey(space, box.overrideWidth, box.overrideHeight, ctx.viewport(),
+                MeasureReads.currentEpochs(ctx, MEASUREMENT_EPOCH.get(), LayoutBox.shapeEpoch()), box.contentAutoSkipped);
         measuredRun = ctx.layoutRun();
         capturePrimaryOutputs(box);
         return true;
@@ -566,23 +601,10 @@ final class MeasureMemo {
 
     boolean canPreserveForEmptyFloatFlow(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         if (flag(F_SUBGRID_DEPENDENT) || !flag(F_VALID) || flag(F_LAYOUT_CHANGED) || hasUnmeasuredSubtreeChange(ctx)
-                || measuredSpace == null || flag(F_HAS_TABLE) || box.contentAutoSkipped
-                || measuredEpoch != MEASUREMENT_EPOCH.get()
-                || !Float.isNaN(box.overrideWidth) || !Float.isNaN(box.overrideHeight)
-                || !Float.isNaN(measuredOverrideW) || !Float.isNaN(measuredOverrideH)) {
-            return false;
-        }
-        float avail = space.availableInlineSize();
-        float prevAvail = measuredSpace.availableInlineSize();
-        boolean sameWidth = Float.floatToIntBits(avail) == Float.floatToIntBits(prevAvail)
-                || (flag(F_FIT_FIXED_W) && measuredFitNeed != Float.POSITIVE_INFINITY
-                        && avail >= measuredFitNeed && prevAvail >= measuredFitNeed);
-        return sameWidth
-                && (flag(F_BLOCK_PERCENT_FREE)
-                        || Float.floatToIntBits(measuredSpace.percentageBlockSize()) == Float.floatToIntBits(space.percentageBlockSize()))
-                && MeasureAnalysis.sameViewportForMeasure(ctx.viewport(), measuredViewport, flag(F_OUTSIDE_FREE))
-                && ctx.fonts() == measuredFonts
-                && ctx.intrinsicResolver() == measuredIntrinsics;
+                || measuredKey == null || flag(F_HAS_TABLE) || box.contentAutoSkipped
+                || !Float.isNaN(box.overrideWidth) || !Float.isNaN(box.overrideHeight)) return false;
+        return matchesCurrent(measuredKey, space, Float.NaN, Float.NaN, ctx, false,
+                readMask & ~MeasureReads.READ_FILL_FIT, measuredFitNeed, box.node.nodeType == NodeType.TEXT, false);
     }
 
     boolean outputsMatchRecorded(LayoutBox box) {
@@ -592,25 +614,11 @@ final class MeasureMemo {
     }
 
     private boolean canReuseMeasurement(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        boolean pctFree = flag(F_BLOCK_PERCENT_FREE);
-        boolean shrinkInd = flag(F_SHRINK_INDEPENDENT);
-        return !flag(F_SUBGRID_DEPENDENT)
-                && flag(F_VALID)
-                && !flag(F_LAYOUT_CHANGED)
+        return !flag(F_SUBGRID_DEPENDENT) && flag(F_VALID) && !flag(F_LAYOUT_CHANGED) && measuredKey != null
                 && (ctx.firstPass() || measuredRun != ctx.layoutRun() || (Shortcut.SAME_PASS_REUSE.on() && !flag(F_HAS_TABLE)))
-                && measuredEpoch == MEASUREMENT_EPOCH.get()
-                && box.floatSpace == null
-                && box.collapsedBorders == null
-                && ((MeasureAnalysis.sameConstraintForReuse(space, measuredSpace, pctFree, shrinkInd)
-                                && MeasureAnalysis.sameViewportForMeasure(ctx.viewport(), measuredViewport, flag(F_OUTSIDE_FREE)))
-                        || MeasureAnalysis.widthOnlyChange(space, ctx, flag(F_WIDTH_FREE), pctFree, shrinkInd, measuredSpace, measuredViewport)
-                        || (flag(F_FIT_FIXED_W) && MeasureAnalysis.matchesFitConstraint(box, space, ctx,
-                                measuredFitNeed, pctFree, shrinkInd, measuredSpace, measuredViewport)))
-                && MeasureAnalysis.sameLength(box.overrideWidth, measuredOverrideW)
-                && MeasureAnalysis.sameLength(box.overrideHeight, measuredOverrideH)
-                && box.contentAutoSkipped == flag(F_CONTENT_AUTO_SKIPPED)
-                && ctx.fonts() == measuredFonts
-                && ctx.intrinsicResolver() == measuredIntrinsics
+                && box.floatSpace == null && box.collapsedBorders == null
+                && matchesCurrent(measuredKey, space, box.overrideWidth, box.overrideHeight, ctx,
+                        box.contentAutoSkipped, readMask, measuredFitNeed, box.node.nodeType == NodeType.TEXT, false)
                 && (restoreOk || (box.w == outW && box.h == outH
                         && box.mT == outMT && box.mR == outMR && box.mB == outMB && box.mL == outML));
     }
@@ -618,9 +626,7 @@ final class MeasureMemo {
     private void restoreNaturalOutputs(LayoutBox box) {
         if (!flag(F_HAS_OUTPUTS)) return;
         if (box.w == outW && box.h == outH && box.mT == outMT && box.mR == outMR && box.mB == outMB && box.mL == outML
-                && box.contentBlockExtent == outContentBlockExtent) {
-            return;
-        }
+                && box.contentBlockExtent == outContentBlockExtent) return;
         box.w = outW; box.h = outH; box.mT = outMT; box.mR = outMR; box.mB = outMB; box.mL = outML;
         box.pT = outPT; box.pR = outPR; box.pB = outPB; box.pL = outPL;
         box.bT = outBT; box.bR = outBR; box.bB = outBB; box.bL = outBL;
@@ -635,25 +641,26 @@ final class MeasureMemo {
         outW = b.w; outH = b.h; outMT = b.mT; outMR = b.mR; outMB = b.mB; outML = b.mL;
         outPT = b.pT; outPR = b.pR; outPB = b.pB; outPL = b.pL;
         outBT = b.bT; outBR = b.bR; outBB = b.bB; outBL = b.bL;
-        outLegendSpill = b.legendSpill;
-        outContentBlockExtent = b.contentBlockExtent;
-        outOwnMarginTop = b.ownMarginTop;
-        outOwnMarginBottom = b.ownMarginBottom;
+        outLegendSpill = b.legendSpill; outContentBlockExtent = b.contentBlockExtent;
+        outOwnMarginTop = b.ownMarginTop; outOwnMarginBottom = b.ownMarginBottom;
         outSizingMode = b.sizingMode;
+        setFlag(F_OUT_BFC, b.establishesBfc);
         setFlag(F_HAS_OUTPUTS, true);
     }
 
-    private void recordMeasurement(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+    private void recordMeasurement(LayoutBox box, ConstraintSpace space, LayoutContext ctx, int recordedReads) {
+        boolean selfChanged = selfSignatureChanged(box);
         boolean outerSizeStable = measuredStyle != null && box.w == outW && box.h == outH
                 && box.mT == outMT && box.mR == outMR && box.mB == outMB && box.mL == outML;
-        setFlag(F_BLOCK_PERCENT_FREE, MeasureAnalysis.computeBlockPercentFree(box));
-        measuredSpace = space;
-        measuredOverrideW = box.overrideWidth;
-        measuredOverrideH = box.overrideHeight;
-        measuredViewport = ctx.viewport();
-        measuredFonts = ctx.fonts();
-        measuredIntrinsics = ctx.intrinsicResolver();
-        measuredEpoch = MEASUREMENT_EPOCH.get();
+        boolean cutoffMatched = !MeasureVerifier.active()
+                && MeasureReads.state().descentDepth > 0
+                && parentReadStillMatches(box, ctx, selfChanged);
+        boolean boundaryAbsorbed = !MeasureVerifier.active()
+                && outerSizeStable && MeasureChanges.isRelayoutBoundary(box)
+                && extraParentReadsMatch(box, ctx);
+
+        ExternalEpochs epochs = MeasureReads.currentEpochs(ctx, MEASUREMENT_EPOCH.get(), LayoutBox.shapeEpoch());
+        refreshMeasuredKey(space, box.overrideWidth, box.overrideHeight, ctx.viewport(), epochs, box.contentAutoSkipped);
         measuredRun = ctx.layoutRun();
         capturePrimaryOutputs(box);
         measuredStyle = box.style;
@@ -663,8 +670,7 @@ final class MeasureMemo {
         setFlag(F_OUTSIDE_MARKER, box.isOutsideMarker);
         setFlag(F_RENDERED_LEGEND, box.isRenderedLegend);
         setFlag(F_CONTENT_AUTO_SKIPPED, box.contentAutoSkipped);
-        boolean isTbl = LayoutBox.isTableBox(box) || box.collapsedBorders != null;
-        if (isTbl) setFlag(F_EVER_TABLE, true);
+        if (LayoutBox.isTableBox(box) || box.collapsedBorders != null) setFlag(F_EVER_TABLE, true);
         measuredChildren = MeasureAnalysis.sameChildren(measuredChildren, box.children) ? measuredChildren
                 : box.children.isEmpty() ? EMPTY_BOX_ARRAY : box.children.toArray(EMPTY_BOX_ARRAY);
         setFlag(F_FIRST_FLOW_CHILD, BlockLayoutEngine.isFirstFlowChild(box));
@@ -677,8 +683,7 @@ final class MeasureMemo {
         }
         setFlag(F_FLOW_FLOAT_FREE, floatFree);
         setFlag(F_LAYOUT_CHANGED, false);
-        boolean hasTable = flag(F_EVER_TABLE);
-        boolean minContentVar = false;
+        boolean hasTable = flag(F_EVER_TABLE), minContentVar = false;
         for (int i = 0, n = kids.size(); i < n; i++) {
             LayoutBox c = kids.get(i);
             if (!hasTable && c.measureMemo.flag(F_HAS_TABLE)) hasTable = true;
@@ -690,50 +695,61 @@ final class MeasureMemo {
         }
         setFlag(F_HAS_TABLE, hasTable);
         setFlag(F_MIN_CONTENT_VAR, minContentVar);
-        boolean outsideFree = MeasureAnalysis.computeOutsideFree(box);
-        setFlag(F_OUTSIDE_FREE, outsideFree);
-        setFlag(F_WIDTH_FREE, MeasureAnalysis.computeWidthFree(box, outsideFree, hasTable));
-        setFlag(F_SHRINK_INDEPENDENT, MeasureAnalysis.computeShrinkIndependent(box, space.parent()));
-        float fitNeed = MeasureAnalysis.computeFitNeed(box, outsideFree, hasTable, floatFree,
-                flag(F_CHILD_FIT_BLOCKED), childFitNeedMax);
+
+        int mask = recordedReads;
+        if (hasTable) mask |= MeasureReads.READ_AVAIL_INLINE | MeasureReads.READ_PERCENT_BLOCK;
+        if (!floatFree || box.floatSpace != null) mask |= MeasureReads.READ_SHAPE_EPOCH;
+        float fitNeed = MeasureAnalysis.computeFitNeed(box, (mask & MeasureReads.READ_VIEWPORT_W) == 0,
+                hasTable, floatFree, flag(F_CHILD_FIT_BLOCKED), childFitNeedMax);
         measuredFitNeed = fitNeed;
-        setFlag(F_FIT_FIXED_W, MeasureAnalysis.isFitFixedW(box, fitNeed));
-        setFlag(F_FILL_FIT_REUSABLE, MeasureAnalysis.isFillFitReusable(box, fitNeed));
+        boolean fitFixedW = MeasureAnalysis.isFitFixedW(box, fitNeed);
+        boolean fillFitReusable = MeasureAnalysis.isFillFitReusable(box, fitNeed);
+        if (fitFixedW) mask |= MeasureReads.READ_FIT_BOUNDED;
+        if (fillFitReusable) mask |= MeasureReads.READ_FILL_FIT;
+        readMask = mask;
+
         if (Shortcut.TENTATIVE_REUSE.on() && MeasureAnalysis.parentUsesTentatives(box)
                 && box.floatSpace == null && box.collapsedBorders == null) {
             boolean tentativePhase = Float.isNaN(box.overrideWidth) && Float.isNaN(box.overrideHeight);
             if (tentativePhase || MeasureAnalysis.isDefiniteCacheableLeaf(box)) {
                 Tentative.Kind kind = tentativePhase ? Tentative.Kind.TENTATIVE : Tentative.Kind.DEFINITE;
-                boolean fillFit = tentativePhase && flag(F_FILL_FIT_REUSABLE);
+                boolean fillFit = tentativePhase && fillFitReusable;
                 float tentFitNeed = tentativePhase
-                        ? ((flag(F_FIT_FIXED_W) || fillFit) ? measuredFitNeed : Float.POSITIVE_INFINITY)
+                        ? ((fitFixedW || fillFit) ? measuredFitNeed : Float.POSITIVE_INFINITY)
                         : (!Float.isNaN(box.overrideWidth) && !box.axisStyle().layoutFacts().edgesAvailableFree
                                 ? Float.POSITIVE_INFINITY : measuredFitNeed);
-                storeTentativeSlot(kind, space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(),
-                        measuredEpoch, box, flag(F_BLOCK_PERCENT_FREE), flag(F_SHRINK_INDEPENDENT),
-                        outsideFree, flag(F_WIDTH_FREE), tentFitNeed, fillFit,
-                        box.overrideWidth, box.overrideHeight);
+                int slotMask = mask & ~(MeasureReads.READ_FIT_BOUNDED | MeasureReads.READ_FILL_FIT);
+                if (tentFitNeed != Float.POSITIVE_INFINITY) {
+                    if (fillFit) slotMask |= MeasureReads.READ_FILL_FIT;
+                    if (fitFixedW || !tentativePhase) slotMask |= MeasureReads.READ_FIT_BOUNDED;
+                }
+                storeTentativeSlot(kind, measuredKey, box, slotMask, tentFitNeed);
             }
         }
         setFlag(F_VALID, true);
-        boolean absorbed = outerSizeStable && (MeasureChanges.isRelayoutBoundary(box) || MeasureAnalysis.isCutoffEligible(box));
+        boolean absorbed = cutoffMatched || boundaryAbsorbed;
+        if (absorbed && (parentReadMask & (MeasureReads.PARENT_READ_FIRST_BASELINE
+                | MeasureReads.PARENT_READ_LAST_BASELINE | MeasureReads.PARENT_READ_MIN_CONTENT)) != 0) {
+            refreshTransitiveParentReads(box, ctx);
+        }
+        if (absorbed) propagateFitNeedOnCutoff(box);
         if (MeasureVerifier.active()) return;
-        if (DESCENT.get()[0] > 0) invalidateParentOnly(box, !absorbed);
-        else invalidateAncestors(box, !(outerSizeStable && MeasureChanges.isRelayoutBoundary(box)));
+        if (MeasureReads.state().descentDepth > 0) invalidateParentOnly(box, !absorbed);
+        else invalidateAncestors(box, !boundaryAbsorbed);
     }
 
     // ------------------------------------------------------------------ 無効化・署名照合
 
     static void invalidate(LayoutBox box) {
         PaintStamps.touchLayout(box);
-        for (LayoutBox b = box; b != null; b = b.parent) {
-            b.measureMemo.setFlag(F_VALID, false);
-            b.invalidatePlacementValid();
-        }
+        for (LayoutBox b = box; b != null; b = b.parent) { b.measureMemo.setFlag(F_VALID, false); b.invalidatePlacementValid(); }
     }
 
     private static void invalidateParentOnly(LayoutBox box, boolean measureAffected) {
-        for (LayoutBox p = box.parent; p != null; p = p.parent) p.invalidatePlacementValid();
+        for (LayoutBox p = box.parent; p != null; p = p.parent) {
+            p.invalidatePlacementValid();
+            if (p.measureMemo.tentativeSlots != null && !MeasureReads.isOnStack(p)) p.measureMemo.tentativeSlots.entries = null;
+        }
         if (measureAffected && box.parent != null) box.parent.measureMemo.setFlag(F_VALID, false);
     }
 
@@ -741,20 +757,13 @@ final class MeasureMemo {
         boolean measureStillValid = measureAffected;
         for (LayoutBox p = box.parent; p != null; p = p.parent) {
             p.invalidatePlacementValid();
-            if (measureStillValid) {
-                p.measureMemo.setFlag(F_VALID, false);
-                if (MeasureChanges.isRelayoutBoundary(p)) measureStillValid = false;
-            }
+            if (measureStillValid) { p.measureMemo.setFlag(F_VALID, false); if (MeasureChanges.isRelayoutBoundary(p)) measureStillValid = false; }
         }
     }
 
     void markVisibilityChangedForStabilize(LayoutBox box) {
-        setFlag(F_VALID, false);
-        flags |= F_LAYOUT_CHANGED | F_SUBTREE_CHANGED;
-        invalidateMinContentCache();
-        for (LayoutBox p = box.parent; p != null; p = p.parent) {
-            p.measureMemo.markSubtreeChanged();
-        }
+        setFlag(F_VALID, false); flags |= F_LAYOUT_CHANGED | F_SUBTREE_CHANGED; invalidateMinContentCache();
+        for (LayoutBox p = box.parent; p != null; p = p.parent) p.measureMemo.markSubtreeChanged();
         invalidateAncestors(box, true);
     }
 
@@ -763,23 +772,14 @@ final class MeasureMemo {
         if (node == null) return 0;
         int version = node.attrVersion();
         if (attrHashVersion != version || attrHashNode != node) {
-            int hash = 1;
-            for (Map.Entry<String, String> attr : node.attrs.entrySet()) {
-                String key = attr.getKey();
-                if ("style".equals(key) || "class".equals(key)) continue;
-                hash = 31 * hash + key.hashCode();
-                hash = 31 * hash + Objects.hashCode(attr.getValue());
-            }
-            attrHash = hash;
+            attrHash = MeasureAnalysis.computeAttrHash(node);
             attrHashVersion = version;
             attrHashNode = node;
         }
         int hash = attrHash;
-        String tag = node.tag;
-        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.contentTextAffectsMeasure(tag)) {
-            hash = 31 * hash + node.getTextContent().hashCode();
-        }
-        return hash;
+        return com.nishiyu.enderframelib.core.dom.node.ElementTraits.contentTextAffectsMeasure(node.tag)
+                ? 31 * hash + node.getTextContent().hashCode()
+                : hash;
     }
 
     boolean selfSignatureChanged(LayoutBox box) {

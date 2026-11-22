@@ -894,10 +894,6 @@ public class LayoutBox {
         measureMemo.measureParallel(this, space, ctx);
     }
 
-    void applyFitToParent(boolean fixedWidth) {
-        measureMemo.applyFitToParent(this, fixedWidth);
-    }
-
     boolean needsParallelMeasureWork() {
         return measureMemo.needsParallelWork();
     }

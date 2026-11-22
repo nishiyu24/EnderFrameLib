@@ -24,8 +24,15 @@ final class HorizontalReturnEngine extends LayoutEngine {
     public float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         LayoutBox wrapper = wrapperOf(box);
         if (wrapper == null) return 0;
+        wrapper.measureMemo.noteParentReadOpaque();
         float parentW = space.percentageBlockSize();
-        float availW = !Float.isNaN(parentW) && parentW > 0 ? parentW : ctx.viewport().rootW();
+        float availW;
+        if (!Float.isNaN(parentW) && parentW > 0) {
+            availW = parentW;
+        } else {
+            MeasureReads.recordInput(MeasureReads.READ_VIEWPORT_W);
+            availW = ctx.viewport().rootW();
+        }
         float availH = space.availableInlineSize();
         wrapper.measure(ConstraintSpace.block(availW, availH), ctx);
         return wrapper.h;

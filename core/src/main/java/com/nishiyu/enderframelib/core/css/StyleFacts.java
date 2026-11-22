@@ -172,6 +172,7 @@ public final class StyleFacts {
         String flexBasis = s.get(CssPropertyIndex.FLEX_BASIS);
         edgesAvailableFree = !usesViewportUnits && !percentGeometry
                 && (flexBasis == null || (flexBasis.indexOf('%') < 0 && !flexBasis.contains("calc")))
+                && noBlockPercent(s.get(CssPropertyIndex.COLUMN_GAP))
                 && !autoMarginT && !autoMarginR && !autoMarginB && !autoMarginL
                 && (wm == null || KeywordMatch.trimmedStartsWith(wm, "horizontal"));
         fitCandidate = edgesAvailableFree && widthAuto && intrinsicWidthKind == IW_NONE;
