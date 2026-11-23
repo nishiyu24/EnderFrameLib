@@ -39,6 +39,8 @@ final class FragmentPaint {
         int[] kidIndex;
         PaintOrder.ScrollContent[] scrolls, ownScrolls;
         Object flStyle, flPseudo, flFrag, placeholder;
+        /** K4: 窓の外で断片が空になった部分木のインク境界（{@link InkBounds}。作るのは平行移動が起きたとき）。空でないときは {@code null}。 */
+        float[] ink;
     }
 
     private static final class DirtyBuf {
@@ -222,7 +224,7 @@ final class FragmentPaint {
         boolean sameKidList = false;
         if (m != null && (parentCtxOk ? sameContextCheap(m, box, clip, parentId, moving) : sameContextHeader(m, box, clip, parentId, moving))) {
             boolean vpOk = !m.subtreeVpSensitive || (m.vpW == b.rootW && m.vpH == b.rootH);
-            if (box.subtreePaintStamp() <= m.epoch && vpOk && (parentCtxOk || sameKids(m, box.children))) {
+            if ((box.subtreePaintStamp() <= m.epoch || onlyPlacementChanged(m, box)) && vpOk && (parentCtxOk || sameKids(m, box.children))) {
                 if (pathRecorder != null) pathRecorder.accept(box, PATH_HIT);
                 lastBuiltMemo = m;
                 return reuse(m);
@@ -263,14 +265,42 @@ final class FragmentPaint {
         }
     }
 
+    /**
+     * K4: 箱自身の印も子の部分木の印も記憶より古く、子の並びも同じ（部分木の印が新しいのは、箱自身の平行移動の印〔{@code PaintStamps.settle}〕だけ）。
+     * 窓の外で空の部分木（{@link Memo#ink}）にだけ使う。位置が動いたかどうかは {@link #sameContextCheap} が窓の外への平行移動として判定する。
+     */
+    private static boolean onlyPlacementChanged(Memo m, LayoutBox box) {
+        if (m.ink == null || box.ownPaintStamp() > m.epoch || !sameKids(m, box.children)) return false;
+        List<LayoutBox> ch = box.children;
+        for (int i = 0, n = ch.size(); i < n; i++) if (ch.get(i).subtreePaintStamp() > m.epoch) return false;
+        return true;
+    }
+
     private boolean sameContextCheap(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving) {
         if (m.parent != box.parent || m.clip != clip || m.moving != moving
                 || m.flexOrGridItem != PaintSupport.isFlexOrGridItem(box)
                 || !java.util.Objects.equals(m.parentId, parentId)) return false;
         if (m.attrVersion != box.node.attrVersion() || !sameFirstLine(m, box)) return false;
-        if (Float.compare(m.x, box.x()) != 0 || Float.compare(m.y, box.y()) != 0
-                || Float.compare(m.w, box.w()) != 0 || Float.compare(m.h, box.h()) != 0) return false;
+        if (Float.compare(m.w, box.w()) != 0 || Float.compare(m.h, box.h()) != 0) return false;
+        if ((Float.compare(m.x, box.x()) != 0 || Float.compare(m.y, box.y()) != 0) && !translatedOutsideWindow(m, box)) return false;
         return scrollSame(m);
+    }
+
+    /**
+     * K4: 断片が空の部分木が、平行移動しただけで、移動後も全ての箱が窓の外にある（空のまま）。窓の外の部分木を O(1) で再利用する代理。
+     * 部分木の中が変わったかは呼び出し側の部分木の印が見る。窓が動いている間は記憶ごと捨てられる（{@code memoFrameKey}）。
+     */
+    private boolean translatedOutsideWindow(Memo m, LayoutBox box) {
+        float[] ink = m.ink;
+        if (ink == null || ink == InkBounds.NONE || m.scrolls.length != 0 || !onlyPlacementChanged(m, box)) return false;
+        if (ink == InkBounds.PENDING) {
+            // 部分木の中は記憶の時点と同じ（上の印の確認）なので、いまの幾何から作った相対の境界が記憶の時点の境界と等しい
+            float[] made = InkBounds.compute(box);
+            m.ink = made != null ? made : InkBounds.NONE;
+            if (made == null) return false;
+            ink = made;
+        }
+        return InkBounds.stillOutside(ink, box.x(), box.y(), b.rootW, b.rootH, DisplayListBuilder.CULL_MARGIN);
     }
 
     private static boolean sameFirstLine(Memo m, LayoutBox box) {
@@ -357,6 +387,7 @@ final class FragmentPaint {
         m.flFrag = box.inlineFragments.isEmpty() ? null : box.inlineFragments.get(0).firstLineStyle;
         m.placeholder = box.placeholderStyle;
         m.scrolls = order.scrollContentCount() == scroll0 ? NO_SCROLLS : order.scrollContentsSince(scroll0).toArray(NO_SCROLLS);
+        m.ink = f != Fragment.EMPTY || !cull ? null : ownersHere == 0 ? InkBounds.UNCONSTRAINED : InkBounds.PENDING;
         return m;
     }
 
@@ -531,7 +562,8 @@ final class FragmentPaint {
                 kidsCtxOk = m != null && m.frag != null && m.childContextSet && m.moving == moving
                         && m.flexOrGridContainer == isFlexOrGridContainer(box)
                         && m.childClip == cc.clip && java.util.Objects.equals(m.childParentId, cc.parentId)
-                        && (!b.parentRelative || (m.childPox == childPox && m.childPoy == childPoy));
+                        && (!b.parentRelative || (m.childPox == childPox && m.childPoy == childPoy))
+                        && Float.compare(m.x, box.x()) == 0 && Float.compare(m.y, box.y()) == 0;
             }
 
             Fragment.Extras ex = extras(box, kind, layer);

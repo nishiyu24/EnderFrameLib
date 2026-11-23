@@ -106,7 +106,8 @@ public final class PaintBoxInputs {
             key("ctx:scrollContentOneNode", "oneNode", "1 ノードまとめスクロール節の対象か"),
             key("ctx:flexOrGridItem", "flexOrGridItem", "親が flex / grid コンテナか"),
             key("ctx:flexOrGridContainer", "flexOrGridContainer", "自身が flex / grid コンテナか"),
-            key("ctx:scrollOffsets", "scrolls", "子孫スクロール領域と記憶時スクロール量")
+            key("ctx:scrollOffsets", "scrolls", "子孫スクロール領域と記憶時スクロール量"),
+            key("ink:subtreeBounds", "ink", "K4: 断片が空の部分木のインク境界（窓の外への平行移動の代理。InkBounds）")
     );
 
     /** {@link PaintStamps#SIGNATURE_FIELDS} に入る {@code LayoutBox} 欄名の集合。 */

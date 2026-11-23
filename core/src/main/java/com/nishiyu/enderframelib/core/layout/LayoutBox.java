@@ -641,7 +641,7 @@ public class LayoutBox {
     static final java.util.concurrent.atomic.AtomicLong PAINT_EPOCH = new java.util.concurrent.atomic.AtomicLong();
     /** 最後に描画入力が書き換わりうる地点を通った時の通し番号。新しい箱は常に新しい。 */
     long paintStamp = PAINT_EPOCH.incrementAndGet();
-    volatile int layoutDirty; long layoutSig; LayoutBox[] settledKids; int settledKidCount; volatile LayoutBox dirtyHead; LayoutBox dirtyNext; volatile PaintStamps.DirtyKids dirtyKids; // PaintStamps の箱ごとの状態（dirtyHead は根の箱だけ）
+    volatile int layoutDirty; long layoutSig, layoutPosSig; LayoutBox[] settledKids; int settledKidCount; volatile LayoutBox dirtyHead; LayoutBox dirtyNext; volatile PaintStamps.DirtyKids dirtyKids; // PaintStamps の箱ごとの状態（dirtyHead は根の箱だけ）
 
     /** 現在の通し番号（これ以下の印は、いまの描画に反映済みとみなせる）。 */
     public static long paintEpoch() {

@@ -145,10 +145,17 @@ public final class PaintStamps {
             b.layoutDirty = 0;
             boolean touched = false;
             if ((bits & DIRTY_LAYOUT) != 0) {
-                long sig = signature(b);
-                if (sig != b.layoutSig) {
-                    b.layoutSig = sig;
+                long shape = shape(b), pos = pos(b);
+                if (shape != b.layoutSig) {
+                    b.layoutSig = shape;
+                    b.layoutPosSig = pos;
                     b.touchPaint();
+                    touched = true;
+                } else if (pos != b.layoutPosSig) {
+                    // 平行移動だけ（親相対の位置だけが違う。K4）: 箱自身の印は進めず、部分木の印（と祖先・変わった子の記録）だけを進める。
+                    // 窓の外で空の部分木は、移動後も窓の外なら作り直さず再利用できる（FragmentPaint のインク境界の代理）
+                    b.layoutPosSig = pos;
+                    b.bubbleSubtreeStamp(LayoutBox.PAINT_EPOCH.incrementAndGet());
                     touched = true;
                 }
             }
@@ -180,20 +187,30 @@ public final class PaintStamps {
     /** 署名には入れず、別の経路で見張る欄と、その理由（{@link PaintBoxInputs#ALL} から導出）。 */
     public static final java.util.Map<String, String> COVERED_ELSEWHERE = java.util.Map.copyOf(PaintBoxInputs.coveredElsewhere());
 
-    /** テスト用: 署名そのもの。 */
+    /** テスト用: 署名そのもの（形と位置）。 */
     public static long signatureOf(LayoutBox b) {
         return signature(b);
+    }
+
+    /** 署名のうち親相対の位置（K4: 位置だけが変わったとき、箱自身の印は進めない）。無名の箱は自分の項目を持たないので位置も見ない。 */
+    static long pos(LayoutBox b) {
+        return b.isAnonymous ? 1 : mix(mix(17, b.x), b.y);
+    }
+
+    /** 描画が読むレイアウトの出力の署名（寸法・余白・行・断片・文字・位置）。値が同じなら描画は同じになる。 */
+    static long signature(LayoutBox b) {
+        return b.isAnonymous ? 1 : shape(b) * 31 + pos(b);
     }
 
     private static long mix(long h, float v) {
         return h * 1_000_003L + Float.floatToIntBits(v);
     }
 
-    /** 描画が読むレイアウトの出力の署名（寸法・余白・行・断片・文字）。値が同じなら描画は同じになる。 */
-    static long signature(LayoutBox b) {
+    /** 署名のうち位置（{@link #pos}）を除いた、箱の形・中身の部分。 */
+    static long shape(LayoutBox b) {
         if (b.isAnonymous) return 1; // 無名の箱は自分の項目を持たない（子の変化は子の印が伝える）
         long h = 17;
-        h = mix(h, b.x); h = mix(h, b.y); h = mix(h, b.w); h = mix(h, b.h);
+        h = mix(h, b.w); h = mix(h, b.h);
         h = mix(h, b.mT); h = mix(h, b.mR); h = mix(h, b.mB); h = mix(h, b.mL);
         h = mix(h, b.pT); h = mix(h, b.pR); h = mix(h, b.pB); h = mix(h, b.pL);
         h = mix(h, b.bT); h = mix(h, b.bR); h = mix(h, b.bB); h = mix(h, b.bL);
