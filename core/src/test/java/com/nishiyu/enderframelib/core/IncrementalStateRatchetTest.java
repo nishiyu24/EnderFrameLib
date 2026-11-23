@@ -238,4 +238,45 @@ class IncrementalStateRatchetTest {
         extra.removeAll(ALLOWED_TEST_SLEEP);
         assertEquals(Set.of(), extra, "テストに実時間の sleep を足さない（Clock.Manual を注入する。ResizeSettle を使う） " + RULE);
     }
+
+    /** 状態の予算（K4g）: 表示リストの記憶 {@code FragmentPaint.Memo} のフィールド数。増やすには同数を消す（状態は {@code InkState} のように 1 欄に畳む）。 */
+    private static final int MAX_FRAGMENT_MEMO_FIELDS = 52;
+
+    /** 状態の予算（K4g）: {@code LayoutBox} の描画の印の状態欄（{@code PaintStamps} の箱ごとの状態。{@code layoutDirty;} から始まる 1 行）の数。 */
+    private static final int MAX_PAINT_STAMP_STATE_FIELDS = 8;
+
+    @Test
+    void fragmentMemoFieldsOnlyShrink() throws IOException {
+        String src = Files.readString(root().resolve("core/paint/FragmentPaint.java"), StandardCharsets.UTF_8).replace("\r\n", "\n");
+        int a = src.indexOf("private static final class Memo {");
+        assertTrue(a >= 0, "検出器が壊れている（Memo が見つからない）");
+        String body = src.substring(a, src.indexOf("\n    }\n", a));
+        Pattern field = Pattern.compile("^[\\w.<>\\[\\]]+ ([^;(]*);");
+        int n = 0;
+        for (String line : body.split("\n")) {
+            String t = line.strip();
+            if (t.isEmpty() || t.startsWith("/**") || t.startsWith("*") || t.startsWith("//") || t.startsWith("private static final class Memo")) continue;
+            Matcher m = field.matcher(t);
+            if (m.find()) n += 1 + (int) m.group(1).chars().filter(c -> c == ',').count();
+        }
+        assertTrue(n >= 40, "検出器が壊れている（フィールドが少なすぎる）: " + n);
+        assertTrue(n <= MAX_FRAGMENT_MEMO_FIELDS, "表示リストの記憶のフィールドが増えた " + n + " > " + MAX_FRAGMENT_MEMO_FIELDS + " " + RULE);
+    }
+
+    @Test
+    void paintStampStateFieldsOnlyShrink() throws IOException {
+        String src = Files.readString(root().resolve("core/layout/LayoutBox.java"), StandardCharsets.UTF_8);
+        int i = src.indexOf("volatile int layoutDirty;");
+        assertTrue(i >= 0, "検出器が壊れている（印の状態欄が見つからない）");
+        int end = src.indexOf("//", i);
+        String line = src.substring(i, end > 0 ? end : src.indexOf('\n', i));
+        int n = 0;
+        for (String decl : line.split(";")) {
+            String d = decl.strip();
+            if (d.isEmpty()) continue;
+            n += 1 + (int) d.chars().filter(c -> c == ',').count();
+        }
+        assertTrue(n >= 6, "検出器が壊れている: " + n);
+        assertTrue(n <= MAX_PAINT_STAMP_STATE_FIELDS, "描画の印の状態欄が増えた " + n + " > " + MAX_PAINT_STAMP_STATE_FIELDS + " " + RULE);
+    }
 }

@@ -40,8 +40,8 @@ final class FragmentPaint {
         int[] kidIndex;
         PaintOrder.ScrollContent[] scrolls, ownScrolls;
         Object flStyle, flPseudo, flFrag, placeholder;
-        /** K4: 窓の外で断片が空になった部分木のインク境界（{@link InkBounds}。作るのは平行移動が起きたとき）。空でないときは {@code null}。 */
-        float[] ink;
+        /** K4g: 窓の外の代理の状態（{@link InkState}。状態機械）。 */
+        InkState ink = InkState.NOT_EMPTY;
     }
 
     private static final class DirtyBuf {
@@ -234,7 +234,7 @@ final class FragmentPaint {
         float ax = LayoutOrigin.resolvesLocally(box) ? LayoutOrigin.relX(box) : ox + LayoutOrigin.relX(box), ay = LayoutOrigin.resolvesLocally(box) ? LayoutOrigin.relY(box) : oy + LayoutOrigin.relY(box);
         if (m != null && (parentCtxOk ? sameContextCheap(m, box, clip, parentId, moving, ax, ay) : sameContextHeader(m, box, clip, parentId, moving, ax, ay))) {
             boolean vpOk = !m.subtreeVpSensitive || (m.vpW == b.rootW && m.vpH == b.rootH);
-            if ((box.subtreePaintStamp() <= m.epoch || onlyPlacementChanged(m, box)) && vpOk && (parentCtxOk || sameKids(m, box.children))) {
+            if (subtreeKeySame(m, box) && vpOk && (parentCtxOk || sameKids(m, box.children))) {
                 if (pathRecorder != null) pathRecorder.accept(box, PATH_HIT);
                 lastBuiltMemo = m;
                 return reuse(m);
@@ -278,12 +278,9 @@ final class FragmentPaint {
         }
     }
 
-    /** K4: 箱自身の印も子の部分木の印も記憶より古く子の並びも同じ（部分木の印が新しいのは自身の平行移動の印だけ）。窓の外で空の部分木（{@link Memo#ink}）用。 */
-    private static boolean onlyPlacementChanged(Memo m, LayoutBox box) {
-        if (m.ink == null || box.ownPaintStamp() > m.epoch || !sameKids(m, box.children)) return false;
-        List<LayoutBox> ch = box.children;
-        for (int i = 0, n = ch.size(); i < n; i++) if (ch.get(i).subtreePaintStamp() > m.epoch) return false;
-        return true;
+    /** 部分木の鍵が記憶と同じ（K4g: 部分木の印が古い、または新しいのが窓の外で空の部分木の自身の平行移動だけ）。再利用の判定の 1 つの言語。 */
+    private static boolean subtreeKeySame(Memo m, LayoutBox box) {
+        return box.subtreePaintStamp() <= m.epoch || m.ink.canTranslate() && InkState.quiet(box, m.epoch) && sameKids(m, box.children);
     }
 
     private boolean sameContextCheap(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving, float ax, float ay) {
@@ -296,18 +293,11 @@ final class FragmentPaint {
         return scrollSame(m);
     }
 
-    /** K4: 断片が空の部分木が平行移動しただけで、移動後も全ての箱が窓の外（空のまま）。窓の外の部分木の O(1) の代理。 */
+    /** K4: 断片が空の部分木が平行移動しただけで、移動後も全ての箱が窓の外（空のまま）。窓の外の部分木の O(1) の代理（状態は {@link InkState}）。 */
     private boolean translatedOutsideWindow(Memo m, LayoutBox box, float ax, float ay) {
-        float[] ink = m.ink;
-        if (ink == null || ink == InkBounds.NONE || m.scrolls.length != 0 || !onlyPlacementChanged(m, box)) return false;
-        if (ink == InkBounds.PENDING) {
-            // 部分木の中は記憶の時点と同じ（上の印の確認）なので、いまの幾何から作った相対の境界が記憶の時点の境界と等しい
-            float[] made = InkBounds.compute(box);
-            m.ink = made != null ? made : InkBounds.NONE;
-            if (made == null) return false;
-            ink = made;
-        }
-        return InkBounds.stillOutside(ink, ax, ay, b.rootW, b.rootH, DisplayListBuilder.CULL_MARGIN);
+        if (m.scrolls.length != 0 || !m.ink.canTranslate() || !InkState.quiet(box, m.epoch) || !sameKids(m, box.children)) return false;
+        m.ink = m.ink.resolved(box);
+        return m.ink.outside(ax, ay, b.rootW, b.rootH, DisplayListBuilder.CULL_MARGIN);
     }
 
     private static boolean sameFirstLine(Memo m, LayoutBox box) {
@@ -394,7 +384,7 @@ final class FragmentPaint {
         m.flFrag = box.inlineFragments.isEmpty() ? null : box.inlineFragments.get(0).firstLineStyle;
         m.placeholder = box.placeholderStyle;
         m.scrolls = order.scrollContentCount() == scroll0 ? NO_SCROLLS : order.scrollContentsSince(scroll0).toArray(NO_SCROLLS);
-        m.ink = f != Fragment.EMPTY || !cull ? null : ownersHere == 0 ? InkBounds.UNCONSTRAINED : InkBounds.PENDING;
+        m.ink = InkState.onStore(f == Fragment.EMPTY, cull, ownersHere);
         return m;
     }
 

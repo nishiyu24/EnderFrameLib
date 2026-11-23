@@ -18,13 +18,6 @@ import java.util.List;
 final class InkBounds {
     private InkBounds() {}
 
-    /** 窓の外の制約が要らない（部分木に項目を持つ箱が無い）ことを表す印。 */
-    static final float[] UNCONSTRAINED = new float[0];
-    /** 窓の外で空になった部分木で、境界をまだ作っていない印（平行移動が起きたときに初めて作る。組み立てごとの確保を避ける）。 */
-    static final float[] PENDING = new float[0];
-    /** 境界を作れなかった（平行移動で動かない子孫を含む等）印。代理を使わない。 */
-    static final float[] NONE = new float[0];
-
     private static final int MIN_X = 0, MIN_Y = 1, MAX_X = 2, MAX_Y = 3;
 
     /**
@@ -72,7 +65,6 @@ final class InkBounds {
      * 窓の判定は {@code x + w >= -margin && x <= rootW + margin && y + h >= -margin && y <= rootH + margin} で窓の中なので、その否定の十分条件。
      */
     static boolean stillOutside(float[] ink, float x, float y, float rootW, float rootH, float margin) {
-        if (ink == UNCONSTRAINED) return true;
         if (ink == null || ink.length < 4) return false;
         return x + ink[MAX_X] < -margin || x + ink[MIN_X] > rootW + margin
                 || y + ink[MAX_Y] < -margin || y + ink[MIN_Y] > rootH + margin;

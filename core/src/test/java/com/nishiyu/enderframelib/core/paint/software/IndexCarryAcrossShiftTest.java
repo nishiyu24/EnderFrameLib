@@ -75,6 +75,31 @@ class IndexCarryAcrossShiftTest {
         assertTrue(worst < 12_000, "索引の作り直しの確保が大きい: " + worst + " B / 項目 " + a.size());
     }
 
+    /**
+     * K4g: 索引の更新は {@code rebuildIndex} が基準で、{@code reconcileIndex} は差分が小さいときに同じ結果を安く作る最適化。
+     * 前回のリストから差分で整えた索引（鍵 → 位置・親の添字）が、毎回最初から作った索引と全項目で一致する。
+     */
+    @Test
+    void reconciledIndexEqualsAFreshRebuildForEveryList() {
+        var none = itemsWithHover("r5");
+        var a = itemsWithHover("a");
+        var b = itemsWithHover("b");
+        var seq = java.util.List.of(none, a, b, a, none, b, b, a, none);
+        PaintSceneDriver inc = new PaintSceneDriver("k4g-inc");
+        var frame = com.nishiyu.enderframelib.core.raster.Matrix2D.IDENTITY;
+        long t = 1000;
+        for (int step = 0; step < seq.size(); step++) {
+            var items = seq.get(step);
+            inc.prepare(items, t += 16, frame);
+            PaintSceneDriver fresh = new PaintSceneDriver("k4g-fresh" + step);
+            fresh.prepare(items, t, frame);
+            for (int i = 0; i < items.size(); i++) {
+                assertTrue(inc.indexOfKey(items.get(i).key()) == fresh.indexOfKey(items.get(i).key()), "鍵の位置が違う: 手 " + step + " 位置 " + i);
+                assertTrue(inc.parentIndex(i) == fresh.parentIndex(i), "親の添字が違う: 手 " + step + " 位置 " + i);
+            }
+        }
+    }
+
     private static double[] center(com.nishiyu.enderframelib.core.layout.LayoutBox b, String id) {
         if (b.node != null && !b.isAnonymous && id.equals(b.node.getId())) return new double[] {b.x() + b.w() / 2, b.y() + b.h() / 2};
         for (var c : b.children) {

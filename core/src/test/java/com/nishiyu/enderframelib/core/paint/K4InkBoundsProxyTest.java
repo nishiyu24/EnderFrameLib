@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.core.paint;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -325,7 +324,6 @@ class K4InkBoundsProxyTest {
         assertEquals(false, InkBounds.stillOutside(ink, 0f, H + m, W, H, m), "余白の縁に触れたら窓の中（窓の判定は y <= rootH + margin）");
         assertEquals(false, InkBounds.stillOutside(ink, 10f, 10f, W, H, m), "窓の中");
         assertEquals(false, InkBounds.stillOutside(null, 0f, H + m + 5000f, W, H, m), "境界が無ければ使わない");
-        assertTrue(InkBounds.stillOutside(InkBounds.UNCONSTRAINED, 0f, 0f, W, H, m), "項目を持つ箱が無い部分木は位置に依らない");
-        assertSame(InkBounds.UNCONSTRAINED, InkBounds.UNCONSTRAINED);
+        assertTrue(InkState.FREE.outside(0f, 0f, W, H, m), "項目を持つ箱が無い部分木は位置に依らない");
     }
 }
