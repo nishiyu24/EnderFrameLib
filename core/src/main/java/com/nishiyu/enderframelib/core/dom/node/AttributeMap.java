@@ -25,6 +25,11 @@ public final class AttributeMap extends AbstractMap<String, String> {
         return node == null ? 0 : node.treeTop().nonStyleAttrVer;
     }
 
+    /** K4f: 親 {@code p} の木の根 {@code pTop} が分かっているとき O(1) の木の根（親が違う・子の並びに載らない仮想の節は根まで辿る）。 */
+    public static HtmlNode treeTopBelow(HtmlNode node, HtmlNode p, HtmlNode pTop) {
+        return p != null && node.parent == p && node.listed ? pTop : node.treeTop();
+    }
+
     /** 属性の持ち主（A8 で {@code HtmlNode} の内部クラスから分けた。以前の暗黙の外側参照と同じ 1 欄）。 */
     private final HtmlNode owner;
 

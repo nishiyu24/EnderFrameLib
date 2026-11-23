@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.dom.node.AttributeMap;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
+import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.Shortcut;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutOrigin;
@@ -89,7 +89,7 @@ final class FragmentPaint {
             MEMO_MISSES = new java.util.concurrent.atomic.LongAdder();
 
     private final java.util.IdentityHashMap<LayoutBox, Memo> memos = new java.util.IdentityHashMap<>();
-    private final ArrayList<LayoutBox> stack = new ArrayList<>();
+    private final PaintDescent stack = new PaintDescent();
     private final java.util.Set<LayoutBox> tainted = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private final DisplayListBuilder b;
     private final PaintOrder order;
@@ -99,9 +99,6 @@ final class FragmentPaint {
     private java.util.function.ObjIntConsumer<LayoutBox> pathRecorder;
     static final int PATH_HIT = 0, PATH_OWN = 1, PATH_REBUILD = 2;
 
-    /** 木を下りる間の各深さの箱の絶対位置と子へ渡す原点（{@link LayoutOrigin}）、いま {@link #buildFresh} している箱の絶対位置。 */
-    private float[] stAx = new float[32], stAy = new float[32], stCx = new float[32], stCy = new float[32];
-    private float curAx, curAy;
     private int frameKey, passNo, owners;
     private boolean cull;
     private Memo lastBuiltMemo;
@@ -161,8 +158,7 @@ final class FragmentPaint {
         order.beginPass();
         boolean rootMoving = root.style != null && PaintOrder.factsOf(root.style).hasMovingProps();
         if ("root".equals(root.node.tag)) {
-            stack.add(root);
-            stAx[0] = root.x(); stAy[0] = root.y(); stCx[0] = LayoutOrigin.shiftX(root); stCy[0] = LayoutOrigin.shiftY(root);
+            stack.pushRoot(root);
             try {
                 FrameScratch fs = frameAt(0);
                 PaintOrder.ChildContext cc = order.enterChildren(root, null, null, fs.ctx);
@@ -182,7 +178,7 @@ final class FragmentPaint {
                 stack.clear();
             }
         }
-        curAx = root.x(); curAy = root.y();
+        stack.ax = root.x(); stack.ay = root.y();
         Fragment f = buildFresh(root, null, null, rootMoving, null, false);
         return new Fragment(root, f.own, f.ownAfter, f.drawn, Fragment.Kind.ROOT, 0, null, null, null, f.kidCount, f.smallKids, f.bigKids, f.agg);
     }
@@ -228,9 +224,7 @@ final class FragmentPaint {
         boolean moving = ancestorMoving || (box.style != null && PaintOrder.factsOf(box.style).hasMovingProps());
         Memo m = hint != null && hint.box == box ? hint : memos.get(box);
         boolean sameKidList = false;
-        int d = stack.size();
-        float ox, oy;
-        if (d > 0 && stack.get(d - 1) == box.parent) { ox = stCx[d - 1]; oy = stCy[d - 1]; } else { ox = LayoutOrigin.originX(box); oy = LayoutOrigin.originY(box); }
+        float ox = stack.originX(box), oy = stack.originY(box);
         float ax = LayoutOrigin.resolvesLocally(box) ? LayoutOrigin.relX(box) : ox + LayoutOrigin.relX(box), ay = LayoutOrigin.resolvesLocally(box) ? LayoutOrigin.relY(box) : oy + LayoutOrigin.relY(box);
         if (m != null && (parentCtxOk ? sameContextCheap(m, box, clip, parentId, moving, ax, ay) : sameContextHeader(m, box, clip, parentId, moving, ax, ay))) {
             boolean vpOk = !m.subtreeVpSensitive || (m.vpW == b.rootW && m.vpH == b.rootH);
@@ -244,11 +238,8 @@ final class FragmentPaint {
         }
         MEMO_MISSES.increment();
         int owners0 = owners, scroll0 = order.scrollContentCount();
-        stack.add(box);
-        if (stCx.length <= d) { stAx = Arrays.copyOf(stAx, d * 2); stAy = Arrays.copyOf(stAy, d * 2); stCx = Arrays.copyOf(stCx, d * 2); stCy = Arrays.copyOf(stCy, d * 2); }
-        stAx[d] = ax; stAy[d] = ay; stCx[d] = ox + LayoutOrigin.shiftX(box); stCy[d] = oy + LayoutOrigin.shiftY(box);
+        stack.push(box, ax, ay, ox, oy);
         try {
-            curAx = ax; curAy = ay;
             Fragment f = buildFresh(box, clip, parentId, moving, m, sameKidList);
             if (pathRecorder != null) pathRecorder.accept(box, lastOwnKept ? PATH_OWN : PATH_REBUILD);
             if (!tainted.contains(box)) {
@@ -274,7 +265,7 @@ final class FragmentPaint {
             }
             lastHasBuiltMemos = false;
             lastWasPillar2 = false;
-            stack.remove(stack.size() - 1);
+            stack.pop();
         }
     }
 
@@ -344,7 +335,7 @@ final class FragmentPaint {
         m.pass = passNo; m.epoch = b.buildEpoch;
         m.childContextSet = lastChildContextSet; m.childClip = lastChildClip; m.childParentId = lastChildParentId;
         m.childPox = lastChildPox; m.childPoy = lastChildPoy; m.kidsOwners = lastKidsOwners;
-        m.treeAttrVer = AttributeMap.treeNonStyleAttrVersion(box.node);
+        m.treeAttrVer = stack.treeAttrVer(box);
         m.vpW = b.rootW; m.vpH = b.rootH;
         m.selfVpSensitive = lastSelfVp; m.subtreeVpSensitive = lastSubtreeVp;
         m.allKidsMemoized = lastAllKidsMemo; m.hasFirstLine = lastHasFirstLine;
@@ -433,18 +424,14 @@ final class FragmentPaint {
     }
 
     private static boolean sameKids(Memo m, List<LayoutBox> ch) {
-        int n = ch.size();
-        if (m.kidCount != n) return false;
-        LayoutBox[] a = m.kids;
-        for (int i = 0; i < n; i++) if (a[i] != ch.get(i)) return false;
-        return true;
+        return CompactList.sameElements(ch, m.kids, m.kidCount);
     }
 
     private void taintAboveContainingBlock(LayoutBox abs) {
         LayoutBox cb = abs.findContainingBlock();
         if (cb == null) return;
-        for (int i = stack.size() - 1; i >= 0; i--) {
-            LayoutBox s = stack.get(i);
+        for (int i = stack.depth() - 1; i >= 0; i--) {
+            LayoutBox s = stack.at(i);
             if (s == cb) break;
             tainted.add(s);
         }
@@ -509,7 +496,7 @@ final class FragmentPaint {
         boolean hasSelf = PaintOrder.hasSelf(box);
         LayerSpec layer = kind == Fragment.Kind.STACKING && hasSelf ? order.layerSpecFor(box) : null;
         boolean valueControl = ElementTraits.isValueControl(box.node.tag);
-        int depth = stack.size();
+        int depth = stack.depth();
         FrameScratch fs = frameAt(depth);
         PaintOrder.ChildContext cc = valueControl ? null : order.enterChildren(box, clip, parentId, fs.ctx);
         PaintOrder.ScrollContent ownScroll = valueControl ? null : order.scrollContentOf(box);
@@ -521,7 +508,7 @@ final class FragmentPaint {
         boolean ownKept = sameKidList && !hasSelf;
         if (hasSelf) {
             owners++;
-            if (cull && layer == null && !moving && !b.inWindowGeometry(box, curAx, curAy)) {
+            if (cull && layer == null && !moving && !b.inWindowGeometry(box, stack.ax, stack.ay)) {
                 order.pushCulled(box);
                 culledSelf = true;
                 ownKept = sameKidList;
@@ -560,7 +547,7 @@ final class FragmentPaint {
                         && m.flexOrGridContainer == isFlexOrGridContainer(box)
                         && m.childClip == cc.clip && java.util.Objects.equals(m.childParentId, cc.parentId)
                         && (!b.parentRelative || (m.childPox == childPox && m.childPoy == childPoy))
-                        && Float.compare(m.x, curAx) == 0 && Float.compare(m.y, curAy) == 0;
+                        && Float.compare(m.x, stack.ax) == 0 && Float.compare(m.y, stack.ay) == 0;
             }
 
             Fragment.Extras ex = extras(box, kind, layer);
@@ -605,7 +592,7 @@ final class FragmentPaint {
                 && kidsCtxOk && m.allKidsMemoized && !m.hasFirstLine && box.firstLineStyle == null
                 && !m.kidsHaveScrolls && m.kidIndex != null
                 && !(m.subtreeVpSensitive && (m.vpW != b.rootW || m.vpH != b.rootH))
-                && AttributeMap.treeNonStyleAttrVersion(box.node) == m.treeAttrVer
+                && stack.treeAttrVer(box) == m.treeAttrVer
                 && sameKids(m, ch)) {
             DirtyBuf db = fs.dirty();
             int dc = PaintStamps.copyDirtyKidsSince(box, m.epoch, db.boxes);

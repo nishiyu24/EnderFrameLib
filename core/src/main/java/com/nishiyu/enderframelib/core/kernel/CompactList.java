@@ -26,6 +26,26 @@ public class CompactList<E> extends AbstractList<E> implements RandomAccess {
         return size;
     }
 
+    /**
+     * 先頭 {@code n} 個が {@code other} の先頭 {@code n} 個と参照で同じで、かつ要素数がちょうど {@code n} か（K4f）。
+     * 配列へ直接 {@link Arrays#mismatch} をかけ、1 要素ごとの添字検査と型変換を省く。{@code other} は {@code equals} を
+     * 上書きしない型（参照比較）に限る。
+     */
+    public boolean sameAs(Object[] other, int n) {
+        if (size != n) return false;
+        if (n == 0) return true;
+        if (array == null) return other[0] == sole;
+        return Arrays.mismatch(array, 0, n, other, 0, n) < 0;
+    }
+
+    /** {@link #sameAs} の一般の {@link java.util.List} 版（{@code CompactList} でなければ 1 要素ずつ比べる）。 */
+    public static boolean sameElements(java.util.List<?> list, Object[] other, int n) {
+        if (list instanceof CompactList<?> c) return c.sameAs(other, n);
+        if (list.size() != n) return false;
+        for (int i = 0; i < n; i++) if (other[i] != list.get(i)) return false;
+        return true;
+    }
+
     @Override
     @SuppressWarnings("unchecked")
     public E get(int index) {

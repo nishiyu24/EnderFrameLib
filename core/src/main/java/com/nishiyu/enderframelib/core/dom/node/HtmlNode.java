@@ -571,7 +571,7 @@ public class HtmlNode implements Node {
     }
 
     /** 子の並びに載っている節か。疑似要素・匿名等の仮想節は親の子の並びに載らず番号を持たない。 */
-    private boolean listed;
+    boolean listed;
     private boolean movingInArena;
 
     /** 子の並びを根へ向かって辿った先。仮想の節は自分が根。 */
@@ -826,10 +826,7 @@ public class HtmlNode implements Node {
         if (doc != null && this != doc) doc.reindexNode(this, oldId, newId);
     }
 
-    /**
-     * 属性の表。{@code id} の増減だけを見て id 索引を保つ。{@code put} / {@code remove} 以外の
-     * 変更（{@code compute} 系・{@code replace} 系）も、前後の {@code id} を比べて同じ扱いにする。
-     */
+    /** 属性の版（自分）と、木の根に置く非スタイル属性の版。 */
     int attrVersion, nonStyleAttrVer;
 
     /** 数値バインディングの直接書き込み値を持つ節の重ね先（無ければ null）。 */
