@@ -3,8 +3,5 @@
 #                              消したら、この行も消す（行だけ残っても赤）。
 #   #   lines:<ファイル>          = パッチ専用クラスの行数の上限（増やさない。C1/C5 で削除したら行も消す）
 # 新しいパッチを足さない（§1.2 原則 2）。増やす必要が出たら、先にメモ化で書けないかを §3.3 で検討する。
-switch:TEXT_PATCH | switch | C5 | IncrementalVsFullTest
-switch:ATTR_PATCH | switch | C5 | IncrementalVsFullTest
-switch:COMBINED_TEXT_PATCH | switch | C5 | StaleTextPatchTest
 switch:CHILD_PATCH | switch | C1 | ChildPatchTest
-lines:common/LocalPatches.java | 349 | C5 | StaleTextPatchTest
+lines:common/LocalPatches.java | 269 | C5 | StaleTextPatchTest

@@ -4,7 +4,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -36,11 +35,6 @@ public class TextPatchTest {
             <div id=tail class=box>tail</div>
             """;
 
-    @AfterEach
-    void restoreFlag() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
-    }
-
     private static String sig(DisplayItem i) {
         return i.id() + "|" + i.baseId() + "|" + i.type() + "|" + i.x() + "," + i.y() + "," + i.width() + "," + i.height()
                 + "|" + i.text() + "|" + i.color() + "|" + i.bgColor();
@@ -62,12 +56,8 @@ public class TextPatchTest {
     /** 局所パッチ側と全体再レイアウト側に同じ変更を加え、結果が一致することを確かめる。 */
     private static void step(StandaloneView patched, StandaloneView full, String name, Consumer<StandaloneView> mutate) {
         mutate.accept(patched);
-        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(false);
-        try {
-            mutate.accept(full);
-        } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
-        }
+        mutate.accept(full);
+        full.ui().requestRender(); // 基準側は文字の箱の測り直しに頼らず、箱の木を全体から作り直す
         List<String> a = sigs(patched);
         List<String> b = sigs(full);
         assertEquals(b.size(), a.size(), name + ": 項目の数");
@@ -114,16 +104,14 @@ public class TextPatchTest {
         for (int i = 0; i < 1500; i++) html.append("<div class=row><span>item ").append(i).append("</span> <b>x</b></div>");
         long[] ms = new long[2];
         for (int mode = 0; mode < 2; mode++) {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(mode == 0);
             StandaloneView v = new StandaloneView(html.toString(), 800, 600, FontResolver.FALLBACK);
             HtmlNode hp = v.root().getNodeById("hp");
-            for (int i = 0; i < 30; i++) { hp.updateTextContent("w" + i); v.ui().flushInvalidation(); }
+            for (int i = 0; i < 30; i++) { hp.updateTextContent("w" + i); if (mode == 1) v.ui().requestRender(); v.ui().flushInvalidation(); }
             long t0 = System.nanoTime();
-            for (int i = 0; i < 200; i++) { hp.updateTextContent("HP " + i); v.ui().flushInvalidation(); }
+            for (int i = 0; i < 200; i++) { hp.updateTextContent("HP " + i); if (mode == 1) v.ui().requestRender(); v.ui().flushInvalidation(); }
             ms[mode] = (System.nanoTime() - t0) / 1_000_000;
             System.out.println("[text-patch breakdown] mode=" + mode + " " + v.ui().lastBreakdown());
         }
-        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
         System.out.println("[text-patch benchmark] 1500 rows, 200 updates: patch=" + ms[0] + "ms full=" + ms[1] + "ms");
         // 局所の印付けと木全体の印付けを 1 フレームごとに交互に切り替えて比べる（機械の負荷の揺れを打ち消す）
         try {
@@ -281,12 +269,33 @@ public class TextPatchTest {
                 "ボタン・ラベルが局所パッチの経路に乗る: " + (UiView.TEXT_PATCH_HITS.get() - hitsBefore));
     }
 
+    /** K5: 文字の変更と、位置の指定・見た目・属性の変更が同じフレームに重なっても、全体を作り直した結果と同じ（文字の経路が他の分岐を飛ばさない）。 */
+    @Test
+    public void textAndOtherChangesInOneFrameMatchFullRelayout() {
+        StandaloneView patched = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK);
+        StandaloneView full = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK);
+        sigs(patched);
+        sigs(full);
+        step(patched, full, "文字＋位置の指定", v -> {
+            ((HtmlText) textChild(v, "hp")).setData("HP 42");
+            ((com.nishiyu.enderframelib.core.dom.node.HtmlElement) v.root().getNodeById("c")).setAttribute("style", "position:relative;left:9px;top:3px");
+        });
+        step(patched, full, "文字＋見た目だけ", v -> {
+            ((HtmlText) textChild(v, "tail")).setData("tail 2");
+            ((com.nishiyu.enderframelib.core.dom.node.HtmlElement) v.root().getNodeById("r")).setAttribute("style", "background:#fcc");
+        });
+        step(patched, full, "文字＋大きさ", v -> {
+            ((HtmlText) textChild(v, "r")).setData("right 3");
+            ((com.nishiyu.enderframelib.core.dom.node.HtmlElement) v.root().getNodeById("c")).setAttribute("style", "width:100px");
+        });
+    }
+
     @Test
     public void textOnlyChangeRaisesTextPatchNotRelayout() {
         StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK);
         sigs(v);
         v.root().getNodeById("hp").updateTextContent("HP 7");
-        assertEquals(UiView.InvalidationLevel.TEXT_PATCH, v.ui().invalidationLevel());
+        assertEquals(UiView.InvalidationLevel.RESTYLE, v.ui().invalidationLevel());
         // 文字が同じなら何も起きない
         v.ui().flushInvalidation();
         v.root().getNodeById("hp").updateTextContent("HP 7");

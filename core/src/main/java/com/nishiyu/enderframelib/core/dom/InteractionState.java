@@ -968,39 +968,6 @@ public class InteractionState implements StyledDocumentState {
     public boolean styleDirtyOnlyIn(java.util.Collection<HtmlNode> allowed) {
         int dirtyUpper = dirtyCount.get();
         if (dirtyUpper <= 0) return true;
-        if (allowed instanceof java.util.List<HtmlNode> list && list.size() <= 8) {
-            int n = list.size();
-            if (n == 1) {
-                HtmlNode only = list.get(0);
-                StateFlags f = get(only);
-                if (f != null && f.isStyleDirty() && 1 >= dirtyUpper) return true;
-                boolean[] outside = {false};
-                forEachFlags((node, flags) -> {
-                    if (flags.isStyleDirty() && node != only) outside[0] = true;
-                });
-                return !outside[0];
-            }
-            int inside = 0;
-            for (int i = 0; i < n; i++) {
-                HtmlNode candidate = list.get(i);
-                boolean dup = false;
-                for (int j = 0; j < i; j++) {
-                    if (list.get(j) == candidate) {
-                        dup = true;
-                        break;
-                    }
-                }
-                if (dup) continue;
-                StateFlags f = get(candidate);
-                if (f != null && f.isStyleDirty()) inside++;
-            }
-            if (inside >= dirtyUpper) return true;
-            boolean[] outside = {false};
-            forEachFlags((node, flags) -> {
-                if (flags.isStyleDirty() && !containsIdentity(list, node)) outside[0] = true;
-            });
-            return !outside[0];
-        }
         Set<HtmlNode> set = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         set.addAll(allowed);
         // dirtyCount は実数以上なので、allowed の中の汚れた節の数がそれに届けば、外に汚れた節は無い（全走査を省ける）
@@ -1018,13 +985,6 @@ public class InteractionState implements StyledDocumentState {
         return !outside[0];
     }
 
-    private static boolean containsIdentity(java.util.List<HtmlNode> list, HtmlNode target) {
-        for (int i = 0, n = list.size(); i < n; i++) {
-            if (list.get(i) == target) return true;
-        }
-        return false;
-    }
-
     /**
      * 文字の節の再スタイルの印を片付ける。文字の節のスタイルは親から継承するだけで、文字が変わっても規則の当たり方は
      * 変わらないので、箱の文字を差し替えれば済む（祖先の「子孫に汚れがある」印は、次の走査が片付ける）。
@@ -1037,8 +997,11 @@ public class InteractionState implements StyledDocumentState {
         flags.clearUnscoped();
     }
 
+    /** 汚れた節が残っているかもしれないか（O(1)。個数の帳簿は実数以上なので、false なら確実に無い）。 */
+    public boolean mayHaveDirtyNodes() { return dirtyCount.get() > 0; }
+
     public boolean hasDirtyNodes() {
-        if (dirtyCount.get() <= 0) return false; // 止まっている画面は、毎フレームここで O(1) で終わる
+        if (!mayHaveDirtyNodes()) return false; // 止まっている画面は、毎フレームここで O(1) で終わる
         boolean[] any = {false};
         forEachFlags((node, flags) -> {
             if (flags.isStyleDirty()) any[0] = true;

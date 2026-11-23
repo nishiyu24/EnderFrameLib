@@ -72,11 +72,6 @@ public class UiView implements AutoCloseable {
         REPAINT,
         REPOSITION,
         /**
-         * 既存の Text 節の文字だけが変わった（{@link HtmlNode#updateTextContent} / {@code Text.data} など）。箱の木を
-         * 作り直さず、その文字の箱だけ作り直して測り直す。条件に合わなければ {@link #RELAYOUT} と同じ処理になる。
-         */
-        TEXT_PATCH,
-        /**
          * 要素の子が増減した（{@code appendChild} / {@code removeChild} など）。箱の木を作り直さず、その親の子の並びだけを直す。
          * 条件に合わなければ {@link #RELAYOUT} と同じ処理になる。
          */
@@ -461,12 +456,12 @@ public class UiView implements AutoCloseable {
             }
             if (attributeName != null && isPresentationalAttribute(attributeName)) {
                 requestRestyle();
-            } else if (attributeName != null && com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.on() && isPaintOnlyAttribute(node, attributeName)) {
+            } else if (attributeName != null && isPaintOnlyAttribute(node, attributeName)) {
                 synchronized (pendingAttrNodes) {
                     pendingAttrNodes.add(node);
                 }
                 requestRestyle();
-            } else if (attributeName == null && com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.on() && node.nodeType == NodeType.TEXT) {
+            } else if (attributeName == null && node.nodeType == NodeType.TEXT) {
                 requestTextPatch(node);
             } else if (attributeName == null && com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.on() && node.nodeType == NodeType.ELEMENT) {
                 localPatches.requestChildPatch(node);
@@ -844,7 +839,7 @@ public class UiView implements AutoCloseable {
         invalidated();
     }
 
-    /** 既存の Text 節の文字が変わったことを知らせる（局所パッチの候補。条件に合わなければ flush で全体の再レイアウトにする）。 */
+    /** 既存の Text 節の文字が変わったことを知らせる（変わった箱の候補。条件に合わなければ flush で全体の再レイアウトにする）。 */
     private void requestTextPatch(HtmlNode textNode) {
         boolean overflow;
         synchronized (pendingTextNodes) {
@@ -855,8 +850,7 @@ public class UiView implements AutoCloseable {
             requestRender();
             return;
         }
-        markInvalidation(InvalidationLevel.TEXT_PATCH);
-        invalidated();
+        requestRestyle(); // 文字の箱は、再スタイルが見つけた変わった箱と同じ入口で測り直す（restyleAndUpdate）
     }
 
     /** DOM 変更やビューポート変更に伴う再レイアウトを要求する。 */
@@ -1153,29 +1147,56 @@ public class UiView implements AutoCloseable {
 
     /** 汚れた部分木を再スタイルし、結果に応じて必要な最小の段（全レイアウト / 位置だけ / 描き直しだけ）を走らせる。 */
     private void restyleAndUpdate(boolean repositionRequested, boolean scrollOnly, List<HtmlNode> attrNodes) {
-        UiDocumentCompiler parser = new UiDocumentCompiler();
-        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(
-                layoutRoot, document,
-                rootW, rootH,
-                env, interactionState);
+        // 文字だけが変わった節の箱は、再スタイルが見つけた変わった箱と一緒に測り直す（条件に合わなければ全体を作り直す）
+        List<LayoutBox> textBoxes = List.of();
+        if (TextChanges.hasPending(this)) {
+            List<HtmlNode> texts;
+            synchronized (pendingTextNodes) {
+                texts = new ArrayList<>(pendingTextNodes);
+                pendingTextNodes.clear();
+            }
+            ensureLayoutFresh();
+            List<LayoutBox> found = TextChanges.boxes(this, texts);
+            if (found == null) {
+                TEXT_PATCH_FALLBACKS.incrementAndGet();
+                recomputeLayout(rootW, rootH);
+                return;
+            }
+            textBoxes = found;
+            for (HtmlNode n : texts) interactionState.clearStyleDirty(n);
+            for (LayoutBox b : textBoxes) b.refreshStyle(b.style);
+        }
+        // 文字だけの更新（文字の節の印を消したあと、汚れた節が残っていない）は、再スタイルの走査をしない
+        RenderPipeline.RestyleResult res = !textBoxes.isEmpty() && !interactionState.mayHaveDirtyNodes()
+                ? RenderPipeline.RestyleResult.UNCHANGED
+                : new UiDocumentCompiler().restyleLayoutTree(layoutRoot, document, rootW, rootH, env, interactionState);
         // 箱を作り替えるのは構造が変わる再スタイルだけ（疑似要素・生成された箱）。それ以外は箱を使い回して refreshStyle するだけなので、索引は残す
         if (res.structural()) nodeBoxIndex = null;
-        if (res.layoutRequired()) {
+        if (res.layoutRequired() || !textBoxes.isEmpty()) {
             ensureLayoutFresh();
+            boolean textOnly = !res.layoutRequired();
             if (res.structural()) {
                 RESTYLE_STRUCTURAL.incrementAndGet();
                 recomputeLayout(rootW, rootH);
-            } else if (!localPatches.tryRelayoutInPlace()) {
-                RESTYLE_RELAYOUT_FULL.incrementAndGet();
-                recomputeLayout(rootW, rootH);
-            } else {
-                RESTYLE_RELAYOUT_INPLACE.incrementAndGet();
+                return;
             }
-        } else if (repositionRequested || res.repositionRequired()) {
+            if (!localPatches.tryRelayoutInPlace(textBoxes)) {
+                (textOnly ? TEXT_PATCH_FALLBACKS : RESTYLE_RELAYOUT_FULL).incrementAndGet();
+                recomputeLayout(rootW, rootH);
+                return;
+            }
+            if (!textBoxes.isEmpty()) TEXT_PATCH_HITS.incrementAndGet();
+            if (!textOnly) {
+                RESTYLE_RELAYOUT_INPLACE.incrementAndGet();
+                return;
+            }
+            // 文字だけが測り直された（表示リストも作り直した）。同じフレームに重なった位置の指定・属性の変更は、続けて下の分岐で済ませる
+        }
+        if (repositionRequested || res.repositionRequired()) {
             // 再スタイルで見た目が変わった・位置の指定が変わったときは、スクロールだけの更新ではない
             RESTYLE_REPOSITION.incrementAndGet();
             repositionFromLayout(scrollOnly && !res.styleChanged() && !res.repositionRequired());
-        } else if (res.styleChanged()) {
+        } else if (res.styleChanged() && textBoxes.isEmpty()) {
             List<LayoutBox> changedBoxes = RenderPipeline.styleChangedBoxes();
             // 空白だけのテキストの箱は描くものが無い（ブロックの間なら箱の木にも入らない）。継承の変更で混ざっても部分の描き直しを妨げない
             if (!changedBoxes.isEmpty()) {
@@ -1265,19 +1286,13 @@ public class UiView implements AutoCloseable {
             return;
         }
         scene3dSync.sync(document.root); // DOM（属性・束縛）が変わったかもしれないフレームだけ、3D の記述を世界へ写す
-        if (level != InvalidationLevel.TEXT_PATCH) {
-            // 文字の変更と再スタイルが同じフレームに重なったら、再スタイルの経路は文字の箱を差し替えないので全体にする
-            boolean hadPendingText;
+        // 文字の変更は再スタイルの経路で測り直す（RESTYLE・NONE のとき）。他の経路と重なったら全体を作り直すので、溜めた分は捨てる
+        boolean hadPendingText = TextChanges.hasPending(this);
+        if (hadPendingText && level != InvalidationLevel.RESTYLE && level != InvalidationLevel.NONE) {
             synchronized (pendingTextNodes) {
-                hadPendingText = !pendingTextNodes.isEmpty();
-                // 再スタイルだけと重なったときは、文字を先に局所パッチで反映してから再スタイルを進める（下の localPatches.combinedTextPatch）。残しておく
-                if (hadPendingText && (level == InvalidationLevel.RESTYLE || level == InvalidationLevel.NONE) && com.nishiyu.enderframelib.core.kernel.Shortcut.COMBINED_TEXT_PATCH.on()) {
-                    localPatches.combinedTextPatch = true;
-                } else {
-                    pendingTextNodes.clear();
-                }
+                pendingTextNodes.clear();
             }
-            if (hadPendingText && !localPatches.combinedTextPatch && level != InvalidationLevel.RELAYOUT) level = InvalidationLevel.RELAYOUT;
+            level = InvalidationLevel.RELAYOUT;
         }
         if (level != InvalidationLevel.CHILD_PATCH) {
             // 子の増減と再スタイルが同じフレームに重なったら、再スタイルの経路は箱を増減しないので全体にする
@@ -1300,42 +1315,27 @@ public class UiView implements AutoCloseable {
         if (layoutRoot == null) {
             level = InvalidationLevel.RELAYOUT;
             interactionState.markAllDirty();
+            synchronized (pendingTextNodes) {
+                pendingTextNodes.clear();
+            }
         }
         // 後回しにした位置の決め直しは、スクロールだけの更新以外の経路に入る前に済ませる
         // 汚れた節（:hover など）の再スタイルは、位置が古いままでも進められる（箱は表示リストを作ったときの位置のままで、表示リストと同じ座標）。
         // 見た目だけの変化は箱のスライスの差し替えで済み、位置が要る経路に落ちるときだけ restyleAndUpdate が決め直す
-        // 文字だけの更新（毎秒のタイマーなど）は、位置が古いままでも箱の座標で済ませられる（tryTextPatch が古い位置の枠で直す）。ここで決め直すと全箱の配置が走る
         if (layoutStale && (resize || level != InvalidationLevel.REPOSITION && level != InvalidationLevel.NONE && level != InvalidationLevel.RESTYLE
                 || !scrollOnly && level == InvalidationLevel.REPOSITION || !attrNodes.isEmpty())) {
             ensureLayoutFresh();
         }
-        if (localPatches.combinedTextPatch && !resize) {
-            localPatches.combinedTextPatch = false;
-            ensureLayoutFresh();
-            if (localPatches.tryTextPatch(true)) {
-                TEXT_PATCH_HITS.incrementAndGet();
-                COMBINED_TEXT_PATCH_HITS.incrementAndGet();
-            } else {
-                TEXT_PATCH_FALLBACKS.incrementAndGet();
-                level = InvalidationLevel.RELAYOUT;
-            }
-        }
-        localPatches.combinedTextPatch = false;
         if (resize) {
+            synchronized (pendingTextNodes) {
+                pendingTextNodes.clear();
+            }
             recomputeLayout(pendingResizeW, pendingResizeH);
             return;
         }
 
         switch (level) {
             case RELAYOUT -> recomputeLayout(rootW, rootH);
-            case TEXT_PATCH -> {
-                if (localPatches.tryTextPatch()) {
-                    TEXT_PATCH_HITS.incrementAndGet();
-                } else {
-                    TEXT_PATCH_FALLBACKS.incrementAndGet();
-                    recomputeLayout(rootW, rootH);
-                }
-            }
             case CHILD_PATCH -> {
                 if (localPatches.tryChildPatch(attrNodes, repositionRequested)) {
                     CHILD_PATCH_HITS.incrementAndGet();
@@ -1354,7 +1354,7 @@ public class UiView implements AutoCloseable {
             }
             case REPAINT -> repaintFromLayout();
             case NONE -> {
-                if (interactionState.hasDirtyNodes()) restyleAndUpdate(repositionRequested, scrollOnly, attrNodes);
+                if (interactionState.hasDirtyNodes() || hadPendingText) restyleAndUpdate(repositionRequested, scrollOnly, attrNodes);
             }
         }
     }
@@ -1366,8 +1366,6 @@ public class UiView implements AutoCloseable {
      * <p>条件: 文字以外の汚れが無い・コンテナクエリが無い・変わった文字の箱がすべて見つかる・文字の前後とも空白だけではない
      * （空白だけの Text は箱の木に入るかどうかが変わる）・表や入力部品、{@code <style>} の中ではない。</p>
      */
-    /** 診断: 重なった文字の変更を局所パッチで済ませた回数。 */
-    public static final java.util.concurrent.atomic.AtomicLong COMBINED_TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
 
 
 

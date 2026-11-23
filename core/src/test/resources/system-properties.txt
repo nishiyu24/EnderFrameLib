@@ -49,7 +49,6 @@ enderframe.split | TUNING | core/kernel/EngineFlags.java | LayoutTaskPool.SPLIT_
 enderframe.text.cache | TUNING | core/kernel/EngineFlags.java | TextShaper の整形キャッシュの容量（既定 4096）
 enderframe.threads | TUNING | core/kernel/EngineFlags.java | ワーカー数（A3。EnderEngine.workerThreads と同じ）
 enderframe.ui.nochildpatch | SHORTCUT | core/kernel/EngineFlags.java | UiView.childPatchEnabled
-enderframe.ui.nocombinedtext | SHORTCUT | core/kernel/EngineFlags.java | UiView.combinedTextPatchEnabled
 env:LOCALAPPDATA | PLATFORM | core/text/font/SystemFonts.java | 利用者の書体のフォルダ（Windows）
 env:WINDIR | PLATFORM | core/text/font/SystemFonts.java | システムの書体のフォルダ（Windows）
 os.arch | PLATFORM | core/media/NativeVideoApi.java, core/net/YtDlpProvisioner.java | 同梱の実行ファイルの選択

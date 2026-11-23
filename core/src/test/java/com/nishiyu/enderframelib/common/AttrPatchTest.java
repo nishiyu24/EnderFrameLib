@@ -4,7 +4,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -26,11 +25,6 @@ public class AttrPatchTest {
                 + "<meter id=mp value=3 min=0 max=10></meter><progress id=plain></progress>");
         for (int i = 0; i < rows; i++) h.append("<div class=row><span>item ").append(i).append("</span> <b>x</b></div>");
         return h.toString();
-    }
-
-    @AfterEach
-    void restore() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(true);
     }
 
     private static String sig(DisplayItem i) {
@@ -59,14 +53,10 @@ public class AttrPatchTest {
         for (String[] s : steps) {
             patched.root().getNodeById(s[0]).setAttribute(s[1], s[2]);
             List<String> a = sigs(patched);
-            com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(false);
-            try {
-                full.root().getNodeById(s[0]).setAttribute(s[1], s[2]);
-                List<String> b = sigs(full);
-                assertEquals(b, a, String.join(" ", s));
-            } finally {
-                com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(true);
-            }
+            full.root().getNodeById(s[0]).setAttribute(s[1], s[2]);
+            full.ui().requestRender(); // 基準側は箱の木を全体から作り直す
+            List<String> b = sigs(full);
+            assertEquals(b, a, String.join(" ", s));
         }
         assertTrue(UiView.ATTR_PATCH_HITS.get() - hits >= 4, "変更印の経路に乗った回数: " + (UiView.ATTR_PATCH_HITS.get() - hits));
         assertTrue(DisplayListBuilder.fragmentMemoHits() + DisplayListBuilder.fragmentOwnReused() - skipped > 100, "比較を省いた箱（断片の記憶の当たりを含む）の数");
@@ -81,8 +71,8 @@ public class AttrPatchTest {
         HtmlNode hp = patched.root().getNodeById("hp");
         hp.removeAttribute("value");
         List<String> a = sigs(patched);
-        com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(false);
         full.root().getNodeById("hp").removeAttribute("value");
+        full.ui().requestRender();
         List<String> b = sigs(full);
         assertEquals(b, a);
     }
@@ -91,12 +81,11 @@ public class AttrPatchTest {
     public void benchmarkGaugeInLargeDocument() {
         long[] ms = new long[2];
         for (int mode = 0; mode < 2; mode++) {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.ATTR_PATCH.set(mode == 0);
             StandaloneView v = new StandaloneView(html(1500), 800, 600, FontResolver.FALLBACK);
             HtmlNode hp = v.root().getNodeById("hp");
-            for (int i = 0; i < 30; i++) { hp.setAttribute("value", String.valueOf(i + 1)); v.ui().flushInvalidation(); }
+            for (int i = 0; i < 30; i++) { hp.setAttribute("value", String.valueOf(i + 1)); if (mode == 1) v.ui().requestRender(); v.ui().flushInvalidation(); }
             long t0 = System.nanoTime();
-            for (int i = 0; i < 200; i++) { hp.setAttribute("value", String.valueOf(i + 1)); v.ui().flushInvalidation(); }
+            for (int i = 0; i < 200; i++) { hp.setAttribute("value", String.valueOf(i + 1)); if (mode == 1) v.ui().requestRender(); v.ui().flushInvalidation(); }
             ms[mode] = (System.nanoTime() - t0) / 1_000_000;
         }
         System.out.println("[attr-patch benchmark] 1500 rows, 200 updates: patch=" + ms[0] + "ms full=" + ms[1] + "ms");

@@ -25,19 +25,10 @@ public enum Shortcut {
     /** 切り分け用: false ならテキストの節も要素と同じ経路（カスケード＋算出）で解く（結果は同じになるはず）。 （以前の {@code RenderPipeline.TEXT_STYLE_FROM_PARENT}） */
     TEXT_STYLE_FROM_PARENT(EngineFlags.TEXT_STYLE_FROM_PARENT),
 
-    /** TEXT_PATCH を使うか。false なら文字の変更も全体の再レイアウトにする（切り分け・比較用）。 （以前の {@code UiView.textPatchEnabled}） */
-    TEXT_PATCH(true),
-
-    /** 切り分け用: false なら描画だけの属性（progress / meter の value など）も全体の再レイアウトにする。 （以前の {@code UiView.attrPatchEnabled}） */
-    ATTR_PATCH(true),
-
     /** 切り分け用: false なら文字の局所パッチでも変更印を使わない。 （以前の {@code UiView.changeStampsEnabled}） */
 
     /** スクロールだけの更新で箱の位置の決め直しを後回しにするか（切り分け用。見た目は変わらない）。 （以前の {@code UiView.deferScrollLayout}） */
     DEFER_SCROLL_LAYOUT(true),
-
-    /** 文字の変更が再スタイルと同じフレームに重なったとき、文字を局所パッチで済ませてから再スタイルを進めるか（切り分け用）。 （以前の {@code UiView.combinedTextPatchEnabled}） */
-    COMBINED_TEXT_PATCH(EngineFlags.COMBINED_TEXT_PATCH),
 
     /** false なら子の増減は常に全体の再レイアウトにする（切り分け用。結果は同じでなければならない）。 （以前の {@code UiView.childPatchEnabled}） */
     CHILD_PATCH(EngineFlags.CHILD_PATCH),

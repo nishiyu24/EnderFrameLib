@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.function.Consumer;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -44,11 +43,6 @@ class FlexItemCutoffTest {
                 + "<div id=wrap>" + wrap + "</div><div id=base>" + base + "</div><div id=shrink>" + shrink + "</div><div id=after>after</div>";
     }
 
-    @AfterEach
-    void restore() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
-    }
-
     private static String sig(DisplayItem i) {
         return i.id() + "|" + i.type() + "|" + i.x() + "," + i.y() + "," + i.width() + "," + i.height() + "|" + i.text() + "|" + i.color() + "|" + i.bgColor();
     }
@@ -68,12 +62,8 @@ class FlexItemCutoffTest {
 
     private static void step(StandaloneView patched, StandaloneView full, String name, Consumer<StandaloneView> mutate) {
         mutate.accept(patched);
-        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(false);
-        try {
-            mutate.accept(full);
-        } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_PATCH.set(true);
-        }
+        mutate.accept(full);
+        full.ui().requestRender(); // 基準側は箱の木を全体から作り直す
         List<String> a = sigs(patched);
         List<String> b = sigs(full);
         assertEquals(b.size(), a.size(), name + ": 項目の数");

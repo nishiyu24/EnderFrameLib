@@ -16,7 +16,7 @@ core/paint/gpu/GpuRenderBackend.java | 1174
 core/layout/AnchorPositioning.java | 1152
 core/raster/canvas/CanvasRenderingContext2D.java | 1144
 common/StandaloneView.java | 1101
-core/dom/InteractionState.java | 1092
+core/dom/InteractionState.java | 1055
 core/text/TextShaper.java | 1065
 core/layout/BoxTreeBuilder.java | 1002
 core/kernel/gpu/shader/ShaderSources.java | 1001

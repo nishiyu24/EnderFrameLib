@@ -15,8 +15,8 @@ import org.junit.jupiter.api.Test;
  */
 class ShortcutSwitchRatchetTest {
 
-    /** 対象のスイッチ（GPU 面を除く）の数の上限。K3 で noshift を外し 29、K5 で STALE_TEXT_PATCH を外し 28 へ下げた。 */
-    private static final int MAX_SWITCHES = 28;
+    /** 対象のスイッチ（GPU 面を除く）の数の上限。K3 で noshift を外し 29、K5 で STALE_TEXT_PATCH・TEXT_PATCH・ATTR_PATCH・COMBINED_TEXT_PATCH を外し 27 へ下げた（TEXT_PATCH・ATTR_PATCH は元から対象外）。 */
+    private static final int MAX_SWITCHES = 27;
 
     private static Path mainSources() {
         Path p = Path.of("core/src/main/java");

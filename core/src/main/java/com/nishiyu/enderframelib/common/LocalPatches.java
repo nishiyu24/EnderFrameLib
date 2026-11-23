@@ -25,77 +25,6 @@ final class LocalPatches {
         this.view = view;
     }
 
-    boolean combinedTextPatch;
-
-    boolean tryTextPatch() {
-        return tryTextPatch(false);
-    }
-
-    /** @param allowOtherDirty true なら、文字の節以外に汚れた節（これから再スタイルする）があってもよい。 */
-    boolean tryTextPatch(boolean allowOtherDirty) {
-        List<HtmlNode> changed;
-        synchronized (view.pendingTextNodes) {
-            changed = new ArrayList<>(view.pendingTextNodes);
-            view.pendingTextNodes.clear();
-        }
-        Document doc = view.document;
-        if (changed.isEmpty() || view.layoutRoot == null || doc == null || doc.root == null || doc.sheet == null) return false;
-        if (doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries()) return false;
-        if (!allowOtherDirty && !view.interactionState.styleDirtyOnlyIn(changed)) return false;
-
-        Collection<LayoutBox> patchedBoxes;
-        Map<HtmlNode, LayoutBox> index = view.nodeBoxIndex();
-        if (changed.size() == 1) {
-            HtmlNode n = changed.get(0);
-            if (n.text == null || n.text.isBlank() || !n.isConnected() || n.parent == null) return false;
-            if (!isPatchableParent(n.parent)) return false;
-            LayoutBox b = index.get(n);
-            if (b == null || b.displayText() == null || b.displayText().isBlank()) return false;
-            patchedBoxes = List.of(b);
-        } else {
-            Set<HtmlNode> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
-            for (int i = 0, cn = changed.size(); i < cn; i++) {
-                HtmlNode n = changed.get(i);
-                if (n.text == null || n.text.isBlank() || !n.isConnected() || n.parent == null) return false;
-                if (!isPatchableParent(n.parent)) return false;
-                wanted.add(n);
-            }
-            Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
-            for (HtmlNode n : wanted) {
-                LayoutBox b = index.get(n);
-                if (b != null || index.containsKey(n)) found.put(n, b);
-            }
-            if (found.size() != wanted.size() || found.containsValue(null)) return false;
-            for (LayoutBox box : found.values()) {
-                // 前回の文字が空白だけだった箱は、前回の木に今の形で入っていたか分からない
-                if (box.displayText() == null || box.displayText().isBlank()) return false;
-            }
-            patchedBoxes = found.values();
-        }
-
-        long startedAt = view.clock.nanos();
-        for (LayoutBox box : patchedBoxes) box.refreshStyle(box.style);
-        view.applyOverrides();
-        // 位置の決め直しの後回し（layoutStale）は、呼び出し側が済ませてから入る（UiView.update）
-        RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
-                patchedBoxes);
-        for (int i = 0, cn = changed.size(); i < cn; i++) view.interactionState.clearStyleDirty(changed.get(i));
-        view.publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
-        long layoutDone = view.clock.nanos();
-        if (view.paintBuilder == null) UiView.SLICE_NO_BUILDER.incrementAndGet();
-        List<DisplayItem> elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
-        if (elements == null) elements = new ArrayList<>();
-        long paintDone = view.clock.nanos();
-        view.publishBuilt(elements);
-        int nodes = patchedBoxes.size();
-        long publishDone = view.clock.nanos();
-        view.lastBreakdown = () -> "text-patch nodes=" + nodes + " layout=" + UiView.ms(startedAt, layoutDone)
-                + "ms paint=" + UiView.ms(layoutDone, paintDone) + "ms publish=" + UiView.ms(paintDone, publishDone) + "ms";
-        view.applyOverrides();
-        view.lastLayoutFinishedNanos = view.clock.nanos();
-        view.lastLayoutCostNanos = view.lastLayoutFinishedNanos - startedAt;
-        return true;
-    }
     /** 1 回の局所パッチで直す親の最大数・親ごとに増減できる子の最大数（超えたら全体の再レイアウトの方が安い）。 */
     static final int CHILD_PATCH_MAX_PARENTS = 4;
     static final int CHILD_PATCH_MAX_CHANGES = 16;
@@ -291,7 +220,7 @@ final class LocalPatches {
      * 条件に合わないとき（false）は何も変えないので、呼び出し側が全体の再レイアウトに退く。
      * 箱の木の形を変える変化（表示の種類・生成内容など）は、呼び出し側が {@link RenderPipeline.RestyleResult#structural()} で除いてある。
      */
-    boolean tryRelayoutInPlace() {
+    boolean tryRelayoutInPlace(List<LayoutBox> textBoxes) {
         Document doc = view.document;
         if (!com.nishiyu.enderframelib.core.EngineContext.current().flags().inPlaceRestyleRelayout() || view.layoutRoot == null || doc == null || doc.root == null
                 || doc.sheet == null) {
@@ -301,9 +230,12 @@ final class LocalPatches {
         long startedAt = view.clock.nanos();
         view.applyOverrides();
         List<LayoutBox> changedBoxes = new ArrayList<>(RenderPipeline.layoutChangedBoxes());
+        for (LayoutBox t : textBoxes) if (!changedBoxes.contains(t)) changedBoxes.add(t);
         RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
                 changedBoxes);
-        view.setLayoutRoot(view.layoutRoot);
+        // 箱の木は作り替えていないので、節の箱の索引は捨てない（文字の更新ごとに全箱を索引し直さない）。文字の更新だけなら旧文字パッチと同じく残す
+        if (textBoxes.isEmpty() && view.layoutRoot.subtreeHasContentAuto()) view.nodeBoxIndex = null;
+        view.publishLayoutToDom();
         long layoutDone = view.clock.nanos();
         // 再スタイルは変わった箱に updateStyle で印を付け、レイアウトは触った箱に印を付ける（検証モードが付け漏れを検出する）
         List<DisplayItem> elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
@@ -318,18 +250,6 @@ final class LocalPatches {
         view.lastLayoutCostNanos = view.lastLayoutFinishedNanos - startedAt;
         UiView.INPLACE_RELAYOUT_HITS.incrementAndGet();
         return true;
-    }
-
-    /** 文字の箱の親が、局所パッチしてよい要素か（文字が箱の寸法以外の意味を持つ要素を除く）。 */
-    static boolean isPatchableParent(HtmlNode parent) {
-        if (parent.nodeType != NodeType.ELEMENT) return false;
-        String tag = parent.tag == null ? "" : parent.tag.toLowerCase(Locale.ROOT);
-        return switch (tag) {
-            case "textarea", "select", "option", "optgroup", "style", "script", "title", "noscript", "svg", "template",
-                 "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col",
-                 "legend", "summary", "details", "pre" -> false;
-            default -> true;
-        };
     }
 
     /** {@code wanted} の節が持つ文字の箱（匿名でない）を集める。表の中に入ったら何も集めない（退く）。 */

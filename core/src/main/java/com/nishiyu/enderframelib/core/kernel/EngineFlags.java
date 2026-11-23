@@ -97,9 +97,6 @@ public final class EngineFlags {
     /** {@code enderframe.ui.nochildpatch}: UiView.childPatchEnabled（使う所: {@code UiView}） */
     public static final boolean CHILD_PATCH = !Boolean.getBoolean("enderframe.ui.nochildpatch");
 
-    /** {@code enderframe.ui.nocombinedtext}: UiView.combinedTextPatchEnabled（使う所: {@code UiView}） */
-    public static final boolean COMBINED_TEXT_PATCH = !Boolean.getBoolean("enderframe.ui.nocombinedtext");
-
     // ---- 従来の挙動へ戻す切り替え（結果が変わる） ----
 
     /** {@code enderframe.css.textfullcascade}: RenderPipeline.TEXT_STYLE_FROM_PARENT を切り、文字の節にもカスケードを全部かける（使う所: {@code RenderPipeline}） */
