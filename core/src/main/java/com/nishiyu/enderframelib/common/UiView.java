@@ -509,7 +509,7 @@ public class UiView implements AutoCloseable {
         layoutStale = false;
         if (layoutRoot != null) {
             RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
-                    rootW, rootH, scrollState, fontResolver());
+                    rootW, rootH, scrollState, fontResolver(), true);
         }
     }
 
@@ -1054,7 +1054,7 @@ public class UiView implements AutoCloseable {
         if (scrollOnly && com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on() && !observed && !layoutRoot.subtreeHasContentAuto() && rebuildWindowAtBoxFrame()) return;
         layoutStale = false; // 後回しにした決め直しも、次の 1 回で済む（ensureLayoutFresh を呼ぶと同じ決め直しが 2 回走る）
         RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
-                rootW, rootH, scrollState, fontResolver());
+                rootW, rootH, scrollState, fontResolver(), scrollOnly);
         // スクロール量だけが変わったなら、表示リストは作り直さない（レイアウトは上で最新にしてある）
         if (scrollOnly && tryScrollTranslate()) {
             STAT_SCROLL_TRANSLATED.increment();
@@ -1143,7 +1143,7 @@ public class UiView implements AutoCloseable {
         if (!tryScrollTranslate()) { // 作った窓の中なので通常は来ない。来たら位置を決め直して作り直す
             layoutStale = false;
             RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
-                    rootW, rootH, scrollState, fontResolver());
+                    rootW, rootH, scrollState, fontResolver(), true);
             repaintFromLayout(true);
             return true;
         }
@@ -1305,16 +1305,13 @@ public class UiView implements AutoCloseable {
         // 汚れた節（:hover など）の再スタイルは、位置が古いままでも進められる（箱は表示リストを作ったときの位置のままで、表示リストと同じ座標）。
         // 見た目だけの変化は箱のスライスの差し替えで済み、位置が要る経路に落ちるときだけ restyleAndUpdate が決め直す
         // 文字だけの更新（毎秒のタイマーなど）は、位置が古いままでも箱の座標で済ませられる（tryTextPatch が古い位置の枠で直す）。ここで決め直すと全箱の配置が走る
-        boolean staleTextPatch = layoutStale && com.nishiyu.enderframelib.core.kernel.Shortcut.STALE_TEXT_PATCH.on() && (level == InvalidationLevel.TEXT_PATCH || localPatches.combinedTextPatch) && !resize
-                && attrNodes.isEmpty() && !repositionRequested
-                && !(document.root instanceof HtmlDocument liveDoc && liveDoc.hasLayoutObservers());
-        if (layoutStale && !staleTextPatch && (resize || level != InvalidationLevel.REPOSITION && level != InvalidationLevel.NONE && level != InvalidationLevel.RESTYLE
+        if (layoutStale && (resize || level != InvalidationLevel.REPOSITION && level != InvalidationLevel.NONE && level != InvalidationLevel.RESTYLE
                 || !scrollOnly && level == InvalidationLevel.REPOSITION || !attrNodes.isEmpty())) {
             ensureLayoutFresh();
         }
         if (localPatches.combinedTextPatch && !resize) {
             localPatches.combinedTextPatch = false;
-            if (!staleTextPatch) ensureLayoutFresh();
+            ensureLayoutFresh();
             if (localPatches.tryTextPatch(true)) {
                 TEXT_PATCH_HITS.incrementAndGet();
                 COMBINED_TEXT_PATCH_HITS.incrementAndGet();
@@ -1369,8 +1366,6 @@ public class UiView implements AutoCloseable {
      * <p>条件: 文字以外の汚れが無い・コンテナクエリが無い・変わった文字の箱がすべて見つかる・文字の前後とも空白だけではない
      * （空白だけの Text は箱の木に入るかどうかが変わる）・表や入力部品、{@code <style>} の中ではない。</p>
      */
-    /** 診断: 位置の決め直しを後回しにしたまま、文字の局所パッチで済ませた回数。 */
-    public static final java.util.concurrent.atomic.AtomicLong STALE_TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     /** 診断: 重なった文字の変更を局所パッチで済ませた回数。 */
     public static final java.util.concurrent.atomic.AtomicLong COMBINED_TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
 

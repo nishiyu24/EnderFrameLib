@@ -76,51 +76,14 @@ final class LocalPatches {
         long startedAt = view.clock.nanos();
         for (LayoutBox box : patchedBoxes) box.refreshStyle(box.style);
         view.applyOverrides();
-        // 位置の決め直しを後回しにしている間は、箱は表示リストを作ったときのスクロール位置のまま。同じ位置へ一時的に戻して、その枠で直す
-        boolean stale = view.layoutStale;
-        Map<HtmlNode, float[]> scrollNow = null;
-        Set<HtmlNode> scrollKeys = null;
-        List<DisplayItem> elements = null;
-        long layoutDone;
-        try {
-            if (stale) {
-                scrollNow = view.scrollState.snapshot();
-                scrollKeys = Collections.newSetFromMap(new IdentityHashMap<>());
-                scrollKeys.addAll(scrollNow.keySet());
-                scrollKeys.addAll(view.scrollAtBuild.keySet());
-                for (HtmlNode k : scrollKeys) {
-                    float[] f = view.scrollAtBuild.get(k);
-                    view.scrollState.setScroll(k, f != null ? f[0] : 0f, f != null ? f[1] : 0f);
-                }
-            }
-            RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
-                    patchedBoxes);
-            for (int i = 0, cn = changed.size(); i < cn; i++) view.interactionState.clearStyleDirty(changed.get(i));
-            view.publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
-            layoutDone = view.clock.nanos();
-            if (view.paintBuilder == null) UiView.SLICE_NO_BUILDER.incrementAndGet();
-        } finally {
-            if (stale) {
-                for (HtmlNode k : scrollKeys) {
-                    float[] n = scrollNow.get(k);
-                    view.scrollState.setScroll(k, n != null ? n[0] : 0f, n != null ? n[1] : 0f);
-                }
-            }
-        }
-        if (stale && elements != null) { // 表示リストのスクロールの基準は動かさない（位置は後回しのまま）
-            UiView.STALE_TEXT_PATCH_HITS.incrementAndGet();
-            view.setRenderCache(elements);
-            int nodes = patchedBoxes.size();
-            view.lastBreakdown = () -> "stale-text-patch nodes=" + nodes + " layout=" + UiView.ms(startedAt, layoutDone) + "ms";
-            view.applyOverrides();
-            view.lastLayoutFinishedNanos = view.clock.nanos();
-            view.lastLayoutCostNanos = view.lastLayoutFinishedNanos - startedAt;
-            return true;
-        }
-        if (stale) view.ensureLayoutFresh(); // 局所パッチで済まなかったので、位置を決め直してから全体を描く
-        if (elements == null) {
-            elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
-        }
+        // 位置の決め直しの後回し（layoutStale）は、呼び出し側が済ませてから入る（UiView.update）
+        RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
+                patchedBoxes);
+        for (int i = 0, cn = changed.size(); i < cn; i++) view.interactionState.clearStyleDirty(changed.get(i));
+        view.publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
+        long layoutDone = view.clock.nanos();
+        if (view.paintBuilder == null) UiView.SLICE_NO_BUILDER.incrementAndGet();
+        List<DisplayItem> elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
         if (elements == null) elements = new ArrayList<>();
         long paintDone = view.clock.nanos();
         view.publishBuilt(elements);

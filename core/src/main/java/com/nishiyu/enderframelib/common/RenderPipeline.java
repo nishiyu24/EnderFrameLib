@@ -57,14 +57,14 @@ public class RenderPipeline {
 
     private static final int LAYOUT_PASSES = 1;
     /** レイアウトの通し番号（{@link LayoutContext#layoutRun()}）。 */
-    private static final java.util.concurrent.atomic.AtomicLong LAYOUT_RUNS = new java.util.concurrent.atomic.AtomicLong();
+    static final java.util.concurrent.atomic.AtomicLong LAYOUT_RUNS = new java.util.concurrent.atomic.AtomicLong();
     private static final int MAX_CONTAINER_PASSES = 4;
 
     private static ILayoutBoxRenderer effectiveRenderer() {
         return com.nishiyu.enderframelib.core.EngineContext.current().host().boxRenderer();
     }
 
-    private static IntrinsicSizeResolver effectiveIntrinsicResolver() {
+    static IntrinsicSizeResolver effectiveIntrinsicResolver() {
         return com.nishiyu.enderframelib.core.EngineContext.current().host().intrinsicSizeResolver();
     }
 
@@ -335,7 +335,7 @@ public class RenderPipeline {
         return changed;
     }
 
-    private static final int MAX_CV_STABILIZE_PASSES = 4;
+    static final int MAX_CV_STABILIZE_PASSES = 4;
 
     public static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
         runLayoutPasses(rootBox, rootW, rootH, 1f, scrollState, fonts, false);
@@ -495,44 +495,19 @@ public class RenderPipeline {
         repositionLayout(rootBox, null, null, null, rootW, rootH, scrollState, fonts);
     }
 
-    /**
-     * 測った寸法はそのままに、位置だけを決め直す（{@code content-visibility: auto} の可視判定・遅延構築を含む）。
-     */
+    /** 測った寸法はそのままに、位置だけを決め直す（全箱の配置を捨てる。{@code content-visibility: auto} の可視判定・遅延構築を含む）。 */
     public static void repositionLayout(LayoutBox rootBox, Document doc, Map<String, String> env, InteractionState interactionState,
                                         int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
-        Viewport viewport = new Viewport(rootW, rootH, rootBox.devicePixelRatio());
-        LayoutContext.AutoVisibilitySession av = new LayoutContext.AutoVisibilitySession(
-                rootW, rootH,
-                doc != null ? b -> RenderTreeBuilder.materializeAutoContent(b, doc.sheet, env, rootW, rootH, interactionState) : null);
-        LayoutContext ctx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts,
-                false, LAYOUT_RUNS.get(), true, av);
-        long prof = StageProfiler.begin(PipelineStage.REPOSITION);
-        List<LayoutBox> staleFrags = STALE_FRAG_BOXES.get();
-        staleFrags.clear();
-        LayoutBox.resetPlacementsFast(rootBox, -1, staleFrags);
-        try {
-            rootBox.layout(0, 0, rootW, rootH, ctx);
-        } finally {
-            LayoutBox.finishResetPlacements(staleFrags);
-        }
-        for (int s = 0; s < MAX_CV_STABILIZE_PASSES && av.consumeNonVirtualVisibilityChanged(); s++) {
-            long nextRun = LAYOUT_RUNS.incrementAndGet();
-            LayoutContext stabilizeCtx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts,
-                    true, nextRun, true, av);
-            rootBox.measure(rootW, rootH, FormattingContext.BLOCK, stabilizeCtx);
-            staleFrags.clear();
-            LayoutBox.resetPlacementsFast(rootBox, nextRun, staleFrags);
-            try {
-                rootBox.layout(0, 0, rootW, rootH, stabilizeCtx);
-            } finally {
-                LayoutBox.finishResetPlacements(staleFrags);
-            }
-            LayoutBox.clearAllSubtreeMarks(rootBox);
-        }
-        if (av.hasContentAuto() && interactionState != null) {
-            syncContentVisibilityFlags(rootBox, interactionState);
-        }
-        StageProfiler.end(PipelineStage.REPOSITION, prof);
+        repositionLayout(rootBox, doc, env, interactionState, rootW, rootH, scrollState, fonts, false);
+    }
+
+    /**
+     * {@code scrollOnly} は、変わったのがスクロール量だけのとき true（K5）。配置の鍵〔{@code PlacementMemo}〕が読むスクロール量だけが入力なので、
+     * 他の箱の配置は使い回す。スタイルの {@code left}・{@code top} など位置の指定が変わった再配置では false〔鍵が見ないので全箱を捨てる〕。
+     */
+    public static void repositionLayout(LayoutBox rootBox, Document doc, Map<String, String> env, InteractionState interactionState,
+                                        int rootW, int rootH, ScrollState scrollState, FontResolver fonts, boolean scrollOnly) {
+        RepositionPass.run(rootBox, doc, env, interactionState, rootW, rootH, scrollState, fonts, scrollOnly);
     }
 
     static boolean isFocusWithin(HtmlNode node, InteractionState state) {
@@ -544,7 +519,7 @@ public class RenderPipeline {
         return false;
     }
 
-    private static void syncContentVisibilityFlags(LayoutBox box, InteractionState state) {
+    static void syncContentVisibilityFlags(LayoutBox box, InteractionState state) {
         if (box == null || state == null) return;
         if (box.node != null && !box.node.isPseudoNode && box.style != null && box.style.facts().contentVisibilityAuto) {
             InteractionState.StateFlags flags = state.getOrCreate(box.node);
@@ -682,7 +657,7 @@ public class RenderPipeline {
     private static final ThreadLocal<List<LayoutBox>> STYLE_CHANGED_BOXES = ThreadLocal.withInitial(ArrayList::new);
 
     /** resetPlacementsFast でフラグメント遅延破棄待ちになったボックスの一時リスト。 */
-    private static final ThreadLocal<List<LayoutBox>> STALE_FRAG_BOXES = ThreadLocal.withInitial(ArrayList::new);
+    static final ThreadLocal<List<LayoutBox>> STALE_FRAG_BOXES = ThreadLocal.withInitial(ArrayList::new);
 
     /** このスレッドの印付け用の一時リスト（複数のビューが別スレッドで再レイアウトしても混ざらない）。 */
     static List<LayoutBox> layoutChangedBoxes() {

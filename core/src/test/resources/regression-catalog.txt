@@ -84,3 +84,4 @@ T3 | MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout, Mutatio
 A6 | gradle:shortcutMatrix | 近道スイッチを 1 つ切ると出力が変わる 20 件（夜間。既知の表 shortcut-matrix-known.txt は空）
 A10, §6-136 | gradle:verifyPublishedModules | 公開先 URL が Windows のパスで解決できず :core を公開できなかった。公開物だけで別プロジェクトが動くことを検査する
 §6-195, K0b | IntrinsicAndScrollOracleTest#bodyFloatOnly, IntrinsicAndScrollOracleTest#collapsedWhitespaceTextAddsNoScrollExtent | 内在の幅が前回の測定の枠・余白を読み測っていない箱で 0 になった（shrink-to-fit の親の中の fieldset の幅が面で違う）・空白だけで畳まれた文字の箱の 1 行ぶんがスクロール範囲に入った（オラクルで検出）
+§6-194, §6-196, K5 | RepositionReuseTest#scrollOnlyUpdatesMatchAFreshBuildAtTheSameOffsets, StaleTextPatchTest#textChangeWhileScrollLayoutIsDeferredMatchesFreshBuild | スクロールだけの位置の決め直しが毎回全箱の配置を捨てていた（machine_ui scroll の増幅率 28）・古い位置の枠で文字を直す近道が不発のデッドコードだった

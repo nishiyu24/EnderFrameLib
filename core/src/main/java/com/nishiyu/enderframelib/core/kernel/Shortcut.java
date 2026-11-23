@@ -39,9 +39,6 @@ public enum Shortcut {
     /** 文字の変更が再スタイルと同じフレームに重なったとき、文字を局所パッチで済ませてから再スタイルを進めるか（切り分け用）。 （以前の {@code UiView.combinedTextPatchEnabled}） */
     COMBINED_TEXT_PATCH(EngineFlags.COMBINED_TEXT_PATCH),
 
-    /** 位置の決め直しを後回しにしている間の文字の局所パッチを、決め直さずに古い位置の枠で済ませるか（切り分け用）。 （以前の {@code UiView.staleTextPatchEnabled}） */
-    STALE_TEXT_PATCH(EngineFlags.STALE_TEXT_PATCH),
-
     /** false なら子の増減は常に全体の再レイアウトにする（切り分け用。結果は同じでなければならない）。 （以前の {@code UiView.childPatchEnabled}） */
     CHILD_PATCH(EngineFlags.CHILD_PATCH),
 
