@@ -93,12 +93,15 @@ public class ChangeLedgerTest {
         for (long seed = 1; seed <= 12; seed++) {
             Random rnd = new Random(seed);
             try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK); var be = new MutationScenario.NoDraw()) {
+                ResizeSettle.freezeClock(v); // 止めた時計: リサイズの間引きが実時間に依らない（遅い実行でだけ落ちた）
                 UiView ui = v.ui();
                 ChangeLedger l = ui.interactionState().changeLedger();
                 long now = 1000;
                 v.frame(now, be, true);
                 // 既存の入口は、フレームで取り除かれず残ることがある〔<style> の変更で全体の再レイアウトに入る経路など〕。残りかすは今の変更ではない
                 java.util.Set<HtmlNode> leftover = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                java.util.Set<HtmlNode> leftoverText = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                java.util.Set<HtmlNode> leftoverAttr = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
                 for (int step = 0; step < 40; step++) {
                     List<HtmlNode> all = new ArrayList<>();
                     walk(v.root(), all);
@@ -124,9 +127,9 @@ public class ChangeLedgerTest {
                     }
                     // 既存の入口に載ったものは、フレームを回す前に全て台帳に載っている
                     String where = "seed " + seed + " step " + step + " " + what;
-                    for (HtmlNode n : ui.pendingTextNodes) assertTrue(l.pendingHas(n, Kind.TEXT), where + ": 文字の節");
+                    for (HtmlNode n : ui.pendingTextNodes) assertTrue(l.pendingHas(n, Kind.TEXT) || leftoverText.contains(n), where + ": 文字の節");
                     for (HtmlNode n : ui.localPatches.pendingChildParents) assertTrue(l.pendingHas(n, Kind.CHILDREN) || leftover.contains(n), where + ": 子の増減の親 " + n.tag + "#" + n.getId() + " pending=" + java.util.Arrays.toString(l.pendingKinds()) + " count=" + l.pendingCount());
-                    for (HtmlNode n : ui.pendingAttrNodes) assertTrue(l.pendingHas(n, Kind.ATTR), where + ": 属性の節");
+                    for (HtmlNode n : ui.pendingAttrNodes) assertTrue(l.pendingHas(n, Kind.ATTR) || leftoverAttr.contains(n), where + ": 属性の節");
                     List<HtmlNode> nodes = new ArrayList<>();
                     walk(v.root(), nodes);
                     for (HtmlNode n : nodes) {
@@ -138,6 +141,10 @@ public class ChangeLedgerTest {
                     assertEquals(0, l.pendingCount(), where + ": フレームの始めに凍結される");
                     leftover.clear();
                     leftover.addAll(ui.localPatches.pendingChildParents);
+                    leftoverText.clear();
+                    leftoverText.addAll(ui.pendingTextNodes);
+                    leftoverAttr.clear();
+                    leftoverAttr.addAll(ui.pendingAttrNodes);
                 }
             }
         }
