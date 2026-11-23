@@ -61,11 +61,10 @@ class K2PlacementKeyTest {
             StandaloneView v = new StandaloneView(html, 800, 600, FontResolver.FALLBACK);
             v.ui().flushInvalidation();
             HtmlText target = findFirstTextOutsideButton(firstBody(v.root()));
-            long skipped0 = 0, shifted0 = 0;
+            long skipped0 = 0;
             for (int i = 0; i < 60; i++) {
                 if (i == 10) {
                     skipped0 = LayoutBox.layoutsSkipped();
-                    shifted0 = LayoutBox.layoutsShifted();
                 }
                 target.setData((i & 1) == 0 ? "Row item A with text " + (i & 7) : "Row item B with text " + (i & 7));
                 v.ui().flushInvalidation();
@@ -73,7 +72,7 @@ class K2PlacementKeyTest {
                     assertNull(FrameOracle.firstDifference(v), doc + " step " + i);
                 }
             }
-            long keptPerFrame = (LayoutBox.layoutsSkipped() - skipped0 + LayoutBox.layoutsShifted() - shifted0) / 50;
+            long keptPerFrame = (LayoutBox.layoutsSkipped() - skipped0) / 50;
             v.close();
             System.out.printf("K2 %-22s kept/f=%d (stats enabled=%s)%n", doc, keptPerFrame, Kernel.stats != null);
             assertTrue(keptPerFrame > 0, doc + " had 0 kept placements per frame");

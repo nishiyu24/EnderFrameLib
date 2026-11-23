@@ -1,6 +1,6 @@
 # 増分カーネル（Incremental Kernel）設計書 — 1 本化と KPI の両立（K 系）
 
-> **状態**: 設計（2026-11-23）。**K0・K1・K2 は完了**（K0 は計画書 §4・§6-182・§3 K0b、K1 は `ReadKind` 27 種・`LayoutReads`・`LayoutReadLedgerRatchetTest` ほか計画書 §4、K2 は `placeReadMask`・`PlacementDeps`・`PlacementMemo` 鍵駆動化・`PlacementVerifier` 削除・`K2PlacementKeyTest`）。K3 以降は着手前。計画書 §3 の C4・C5・C8・C10 をこの設計へ置き換える。
+> **状態**: 設計（2026-11-23）。**K0・K1・K2・K3 は完了**（K0 は計画書 §4・§6-182・§3 K0b、K1 は `ReadKind` 27 種・`LayoutReads`・`LayoutReadLedgerRatchetTest` ほか計画書 §4、K2 は `placeReadMask`・`PlacementDeps`・`PlacementMemo` 鍵駆動化・`PlacementVerifier` 削除・`K2PlacementKeyTest`、K3 は親相対座標化・`LayoutBox.x()/y()` 解決・`shiftSubtree`/`SHIFT`/`KEEP_PLACEMENTS`/`lastLayoutX/Y` 削除・`K3ParentRelativeLayoutTest`）。K4 以降は着手前。計画書 §3 の C4・C5・C8・C10 をこの設計へ置き換える。
 > **この文書の役割**: 「近道（フラグ）を足す → 費用を削る → 不具合が出る → 検証やフラグを足す」のループを、運用ではなく**構造**で断つための設計。
 > **書かないこと**: 手順の実装記録（運用ルール 2）。着手後は計画書 §3 の行と §4 に移し、この文書は設計の根拠と合否線だけを残す。
 > **前身**: 旧 `DESIGN_FRAGMENT_TREE.md`〔削除済み。要旨は付録 A〕の §0.5（保守性の原則 M1〜M8）。そこで書いた結論を、配置・測定・描画の**全段へ**広げる。
@@ -26,9 +26,9 @@
 | 無効化の言語 | **3**（①読み取り集合の鍵〔測定〕②構造の純粋性フラグ〔配置〕③印・世代〔描画・スタイル〕） | 同上 |
 | 回帰カタログのうち「古い結果が残る・記憶・増分・無効化・平行移動」に関わる行 | **26 / 69（38%）** | `regression-catalog.txt` |
 | 検証モードの個別クラス | **3**（`MeasureVerifier`・`OwnItemsVerifier`・`PoseVerifier`。`PlacementVerifier` は K2 で削除） | 同上 |
-| `PlacementMemo` の状態 | フラグ **2**（`F_VALID`・`F_HAS_FLOAT_CHILD`）＋鍵（`placeReadMask`＋`PlacementDeps`）、付帯欄 **0**（K2 で `F_PURE` 等 4 フラグと付帯欄 4 を削除） | 同上 |
+| `PlacementMemo` の状態 | フラグ **2**（`F_VALID`・`F_HAS_FLOAT_CHILD`）＋鍵（`placeReadMask`＋`PlacementDeps`）、インスタンス欄 **11**・付帯欄 **0**（K2 で 4 フラグと付帯欄 4 を削除、K3 で `lastLayoutX/Y` 削除） | 同上 |
 | `MeasureMemo` のフラグ | **17** | 同上 |
-| 近道スイッチ（`Shortcut`） | **37**（上限固定） | `ShortcutSwitchRatchetTest` |
+| 近道スイッチ（`Shortcut`） | 非 GPU **29**（上限固定。K3 で `enderframe.layout.noshift` を削除） | `ShortcutSwitchRatchetTest` |
 | 実時計を読むファイル（診断を除く） | **17**（リサイズの間引き・タイマー・アニメーション等。K0 で `Clock.java` の 1 つへ） | `System.nanoTime`/`currentTimeMillis` |
 | 配置が外から読むもの | スクロール **14 箇所**・包含ブロック **6**・親の外寸 **21**・アンカー **13**・float **22**（測定の台帳 `MeasureReads` は既に 18 種を追跡） | `core/layout` |
 
@@ -90,8 +90,8 @@ canReuse(key)   = for each bit in readMask: current(bit) == snapshot(bit)
 | :-- | :-- | :-- |
 | スタイル | `StateStyleMemo`（鍵）・`ComputedStyle` の各 memo | 変更なし（鍵方式）。§3.3 で「効く変更か」を読み取りから導く |
 | 測定 | `MeasureMemo`＋`MeasureKey`＋`MeasureReads`（読み取り集合）。フラグ 17 | **基準実装**。台帳へ取り込む。フラグは必要な分だけに |
-| 配置 | 鍵 1 つ（§3.2・K2 完了済み。`PlacementMemo` フラグ `2`＋`placeReadMask`＋`PlacementDeps`。純粋性の述語と `floatsAffectPlacement` を削除）。親相対の配置と位置の解決を分離（K3） | 鍵 1 つ（§3.2）。述語を全て削除済み（K2）。親相対の配置と位置の解決を分離（K3） |
-| 位置の解決 | 箱の `x, y` が絶対座標。`shiftSubtree` | 親相対＋解決の問い合わせ（親の絶対原点＋相対）。平行移動は式の評価（K3） |
+| 配置 | 鍵 1 つ（§3.2・K2 完了済み。`PlacementMemo` フラグ `2`＋`placeReadMask`＋`PlacementDeps`。純粋性の述語と `floatsAffectPlacement` を削除）。親相対化＋`shiftSubtree`・`lastLayoutX/Y` 削除（K3 完了済み） | 同左（K2・K3 で完了） |
+| 位置の解決 | 親相対＋解決の問い合わせ（`LayoutBox.x()/y()` が `originParent` 経由で解決。`shiftSubtree`・`SHIFT`・`KEEP_PLACEMENTS` 削除。K3 完了済み） | 同左（K3 で完了。解決 A/B `+2.2%` で遅延評価なし） |
 | 描画（断片） | 断片の記憶・`PaintStamps`・`PaintBoxInputs`（宣言表） | 鍵方式へ。窓の外・変わらない部分は O(1) の代理（インク境界つき）で、O(窓＋変わった箱)（K4） |
 | GL 再生・索引 | `ReplayKeys`・`ItemDiff` の同一性 | 同じ台帳の鍵へ（K6 以降。急がない） |
 
@@ -125,7 +125,7 @@ KPI を「構造」「定数倍」「仕組みの費用」「状態の予算」�
 | **K0 足場**（**完了**。計画書 §4。`FrameScheduler` と対象の拡大は K0b） | ①`Clock` 注入と `FrameScheduler`（リサイズの間引き・タイマーをコアから出す）②計器を `Kernel.stats` の入口へ一本化し既定オフ〔旧 C10〕③フレームのオラクル（§3.5）④状態の予算のラチェット（`F_*` フラグ・検証クラス・実時計は実装済み〔`IncrementalStateRatchetTest`〕。付帯欄・1 箱ごとの計器の検出が残り）⑤`scripts/ab-gate.ps1` | `MemoKpi` の散在・`ResizeSettle` の `sleep`・実時計を読むコア（17 → ≤ 3） | オラクルが**既知の欠陥の変異を全て殺す**（外の包含ブロックの検査・スクロール版・子のスクロール・包含ブロック切り替えの特例・純粋性の素通し）かつ偽陽性 0（ファズ種 1〜1500）／計器オフ A/B `≤ +1%`／大きさの違う文書で `large-list-2000` の `hover`・`text` が旧 `ea4dc204` 比 `+3%` 以内／テストに実時計の `sleep` 無し | オラクルが偽陽性で運用できない → 全体の木の比較をやめ、位置・大きさだけへ | M |
 | **K1 台帳**（**完了**。計画書 §4） | 読み取りの台帳（§3.1）。レイアウト・配置の外部読みを入口（`LayoutReads`）へ寄せ、**記録するだけ**で挙動は変えない | 入口の外の直接読み | 直接読みの箇所数: スクロール `14 → 0`・包含ブロック `6 → 0`・親の外寸 `21 → 0`・アンカー `13 → 0`／`costGate` の `memo*` が完全一致／A/B `≤ +2%`（対 `HEAD` 5 本で `-3.4%〜+0.7%`） | 記録の費用が `+3%` を超える → 種別を絞る（ビット集合のみ） | M |
 | **K2 配置の移行**（**完了**。旧 C9 置換・計画書 §4） | 配置の鍵（§3.2）。部分木外向きの `placeReadMask`＋不変スナップショット `PlacementDeps`（`ReadKind.isInsideSubtree` で包含ブロック・アンカー・sticky の内側参照を吸収）で再利用・`shiftSubtree`・`resetPlacementsFast` を駆動 | `F_PURE`・`F_KEPT_PURE`・`F_SCROLL_DEP`・`F_REL_INSET`・`levelNoCb`・`cbUp`・`scrollVersion`・`floatsAffectPlacement`・`PlacementVerifier` | スパイク: 現行保持 **100.0% 再現**・誤保持 0／本体: `PlacementMemo` フラグ `6 → 2`・インスタンス欄 `15 → 13`（付帯欄 `4 → 0`）・`:core:costGate` 全 56 シナリオ増加 0（`showcase text` `14 → 8`/f・`voidwave text` `14 → 9`/f・`surface text` `8 → 5`/f）・`FrameOracle`＋種 1〜300 緑 | 撤退条件は未発動（本体完了済み） | L |
-| **K3 親相対と位置の解決**（旧 C4） | 箱は親相対の幾何だけを持ち、絶対位置は解決の問い合わせ。平行移動は式の評価 | `shiftSubtree`・`SHIFT`・`KEEP_PLACEMENTS`・`lastLayoutX/Y` の記憶 | `child` の配置の増幅率 `≤ 10`／`FractionalShiftEquivalenceTest`・`ParentRelativeParityTest` 緑／`resizeexact` の時間 ±10%（A/B） | 解決の費用が `resizeexact` を `+10%` 超 → 解決を遅延評価へ | L |
+| ~~**K3 親相対と位置の解決**（旧 C4）~~ **完了（K3）** | 箱は親相対の幾何だけを持ち、絶対位置は解決の問い合わせ。平行移動は式の評価 | `shiftSubtree`・`SHIFT`・`KEEP_PLACEMENTS`・`lastLayoutX/Y` の記憶（削除済み） | `child` の配置の増幅率 `≤ 10`（`2.75` で達成）・`FractionalShiftEquivalenceTest`・`ParentRelativeParityTest`・`K3ParentRelativeLayoutTest` 緑／`resizeexact` の時間 `+7.0%`（±10% A/B 達成） | 解決の費用が `resizeexact` を `+10%` 超 → 解決を遅延評価へ（未発動） | L |
 | **K4 表示リストを窓＋変更で評価**（旧 C8） | 窓の外・変わらない部分木は O(1) の代理（インク境界つき）。断片も鍵へ | 窓外の箱の作り直し・`FragmentPaint` の個別の退く条件 | `child`・`inherited` の断片の増幅率 `≤ 10`／large-2000 `child` `≤ 1.1 ms`・varied `inherited` `≤ 1.5 ms`・`hover` `≤ 0.075 ms`（旧水準 +15%・A/B）／実文書 `hover` の確保 `≤ 100 KB` | インク境界が作れない（影・outline・変形の上限が定義できない）→ 窓外の代理をやめ、定数倍の削減だけにする | L |
 | **K5 局所パッチの撤去**（旧 C5・S8） | 文字・属性の変更を汚れの印＋通常経路へ。`LocalPatches` と近道スイッチの整理 | `LocalPatches`・パッチ系スイッチ | パッチ系スイッチ `0`・`Shortcut` `37 → ≤ 30`／`StaleTextPatchTest` を通常経路で緑／時間 A/B ±10% | — | M |
 | **K6 検証の統合** | 保持ごとの検証クラス 4 つを、鍵の汎用の照合とオラクルへ | `MeasureVerifier`・`OwnItemsVerifier`・`PoseVerifier` ほか | 検証クラス `4 → ≤ 1`・検証モード `3 → ≤ 1`／変異の全殺しを維持 | — | S |
@@ -140,7 +140,7 @@ KPI を「構造」「定数倍」「仕組みの費用」「状態の予算」�
 | :-- | --: | :-- |
 | `showcase text`・`voidwave text` の配置 | `14 → 8`・`9`（**K2 達成済み**） | **K2 完了**（原子的インライン保持と読み取り集合鍵で両文書とも `≤ 10` を達成、`memoCeil=14` 解消） |
 | `machine_ui scroll` | `28` | **K5**（スクロールの再配置経路が `reuseMeasurements=false`。通常経路へ統合） |
-| `child`（large-list・varied-500） | `254`・`464` | **K3＋K4**（位置のずれは式の評価、窓外は O(1)） |
+| `child`（large-list・varied-500） | 断片 `254`・`464`（配置 `2.75` は **K3 達成済み**） | **K4**（窓外は O(1) の断片代理。配置の増幅率は K3 で解決済み） |
 | `inherited`・`fontsize`（増幅率の対象外） | 比 `1.0` | **K4**（定数倍。1 miss `0.75 → 0.43 µs`） |
 
 ---

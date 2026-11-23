@@ -260,8 +260,8 @@ public class LayoutGoldenTest {
         parent.measure(800, 600, blockRoot(), ctx);
         parent.layout(100, 100, 800, 600, ctx);
 
-        assertEquals(110, child.x);
-        assertEquals(120, child.y);
+        assertEquals(110, child.x());
+        assertEquals(120, child.y());
         assertEquals(30, child.w);
         assertEquals(40, child.h);
     }

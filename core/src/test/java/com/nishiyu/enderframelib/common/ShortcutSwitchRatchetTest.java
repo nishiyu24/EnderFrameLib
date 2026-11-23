@@ -15,9 +15,8 @@ import org.junit.jupiter.api.Test;
  */
 class ShortcutSwitchRatchetTest {
 
-    /** 対象のスイッチ（GPU 面を除く）の数の上限。2026-11-17 の値。近道を足すときは先に {@code shortcutMatrix} を通し、
-     *  半年以上オンのままで単独オフの不一致が出ないものはスイッチごと消して、この値を下げる。 */
-    private static final int MAX_SWITCHES = 37;
+    /** 対象のスイッチ（GPU 面を除く）の数の上限。K3 で noshift を外し 29 へ下げた。 */
+    private static final int MAX_SWITCHES = 29;
 
     private static Path mainSources() {
         Path p = Path.of("core/src/main/java");
@@ -29,7 +28,7 @@ class ShortcutSwitchRatchetTest {
         List<String> found = ShortcutMatrixMain.findSwitches(mainSources());
         assertTrue(found.size() <= MAX_SWITCHES, "近道の切り分けスイッチが増えた: " + found.size() + " > " + MAX_SWITCHES + "\n" + found
                 + "\n（足すなら先に ./gradlew :core:shortcutMatrix で組み合わせの一致を確かめ、不要な古いスイッチを消して上限を保つ）");
-        assertTrue(found.size() >= 30, "検出器が壊れている（スイッチが少なすぎる）: " + found);
+        assertTrue(found.size() >= 25, "検出器が壊れている（スイッチが少なすぎる）: " + found);
     }
 
     @Test

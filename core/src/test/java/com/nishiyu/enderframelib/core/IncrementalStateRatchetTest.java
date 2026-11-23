@@ -55,14 +55,14 @@ class IncrementalStateRatchetTest {
 
     /** 状態の予算: 箱ごとの記憶の実体のフィールド数（付帯欄を含む。K0 ④）。増やすには同数を消す。 */
     private static final Map<String, Integer> MAX_MEMO_FIELDS = Map.of(
-            "core/layout/PlacementMemo.java", 13,
+            "core/layout/PlacementMemo.java", 11,
             "core/layout/MeasureMemo.java", 41);
 
     /** {@code new LongAdder()} の数（static の診断用の計数）をファイルごとに。増やさない。計器は {@code Kernel.stats} の入口へ（K0 ②）。 */
     private static final Map<String, Integer> MAX_STATIC_ADDERS = Map.ofEntries(
             Map.entry("common/UiView.java", 5), Map.entry("core/css/ComputedStyle.java", 4), Map.entry("core/kernel/Kernel.java", 5),
             Map.entry("core/layout/BlockLayoutEngine.java", 1), Map.entry("core/layout/MeasureMemo.java", 3),
-            Map.entry("core/layout/PlacementMemo.java", 2),
+            Map.entry("core/layout/PlacementMemo.java", 1),
             Map.entry("core/paint/AbsoluteItems.java", 1), Map.entry("core/paint/DisplayListBuilder.java", 1),
             Map.entry("core/paint/FragmentPaint.java", 3), Map.entry("core/paint/PaintOrder.java", 1),
             Map.entry("core/paint/gpu/RectStream.java", 1), Map.entry("core/paint/port/GpuCoverage.java", 1),

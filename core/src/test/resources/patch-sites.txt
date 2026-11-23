@@ -8,6 +8,4 @@ switch:ATTR_PATCH | switch | C5 | IncrementalVsFullTest
 switch:COMBINED_TEXT_PATCH | switch | C5 | StaleTextPatchTest
 switch:STALE_TEXT_PATCH | switch | C5 | StaleTextPatchTest
 switch:CHILD_PATCH | switch | C1 | ChildPatchTest
-switch:SHIFT | switch | C4 | FractionalShiftEquivalenceTest
-switch:KEEP_PLACEMENTS | switch | C4 | IncrementalVsFullTest
 lines:common/LocalPatches.java | 386 | C5 | StaleTextPatchTest

@@ -52,9 +52,6 @@ public final class EngineFlags {
     /** {@code enderframe.layout.nosamerun}: LayoutBox.samePassReuse（使う所: {@code LayoutBox}） */
     public static final boolean SAME_PASS_REUSE = !Boolean.getBoolean("enderframe.layout.nosamerun");
 
-    /** {@code enderframe.layout.noshift}: LayoutBox.SHIFT_ENABLED（部分木の平行移動）（使う所: {@code LayoutBox}） */
-    public static final boolean SHIFT = !Boolean.getBoolean("enderframe.layout.noshift");
-
     /** {@code enderframe.layout.notentative}: LayoutBox.tentativeReuse（使う所: {@code LayoutBox}） */
     public static final boolean TENTATIVE_REUSE = !Boolean.getBoolean("enderframe.layout.notentative");
 

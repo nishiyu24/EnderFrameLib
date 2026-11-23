@@ -241,9 +241,12 @@ final class FidelityDumper {
     private static boolean hits(LayoutBox box, float px, float py) {
         if (px < 0 || py < 0 || px >= VIEWPORT_W || py >= VIEWPORT_H) return false;
         if (!contains(box.x(), box.y(), box.w(), box.h(), px, py)) return false;
-        if (!box.inlineFragments.isEmpty()
-                && box.inlineFragments.stream().noneMatch(f -> contains(f.x, f.y, f.w, f.h, px, py))) {
-            return false;
+        if (!box.inlineFragments.isEmpty()) {
+            LayoutBox op = box.originParent();
+            float opX = op != null ? op.x() : 0f, opY = op != null ? op.y() : 0f;
+            if (box.inlineFragments.stream().noneMatch(f -> contains(f.x + opX, f.y + opY, f.w, f.h, px, py))) {
+                return false;
+            }
         }
         for (LayoutBox a = box.parent; a != null; a = a.parent) {
             String tag = a.node.tag;

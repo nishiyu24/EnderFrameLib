@@ -283,13 +283,12 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         }
         List<LayoutBox.InlineFragment> frags = at.inlineFragments;
         if (frags != null && !frags.isEmpty()) {
-            // 行に分かれた箱は、断片の範囲で判定する（A6b ⑤）。インラインの中の箱は箱自身の x / y が (0, 0) のまま
-            // （位置は断片にだけある）ことがあり、以前は窓の中と判定された。親（行・外側の span）は省かれて、
-            // この箱の項目だけが親の節なしで出て、スクロールする箱の上端に描かれた（scrolllist・noscrollnode・種 7）
+            // 行に分かれた箱は、断片の範囲で判定する（A6b ⑤）。インラインの中の箱は箱自身の x / y が (0, 0) のまま（位置は断片にだけある）ことがあり、以前は窓の中と判定された
+            LayoutBox op = at.originParent();
+            float fxOff = (op != null ? op.x() : 0f) - sx, fyOff = (op != null ? op.y() : 0f) - sy;
             for (int i = 0, n = frags.size(); i < n; i++) {
                 LayoutBox.InlineFragment f = frags.get(i);
-                if (f.x - sx + f.w >= -CULL_MARGIN && f.x - sx <= rootW + CULL_MARGIN
-                        && f.y - sy + f.h >= -CULL_MARGIN && f.y - sy <= rootH + CULL_MARGIN) return true;
+                if (f.x + fxOff + f.w >= -CULL_MARGIN && f.x + fxOff <= rootW + CULL_MARGIN && f.y + fyOff + f.h >= -CULL_MARGIN && f.y + fyOff <= rootH + CULL_MARGIN) return true;
             }
             return false;
         }
@@ -877,6 +876,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         int prevIdx = 1;
 
         if (!box.inlineFragments.isEmpty()) {
+            LayoutBox op = box.originParent(); float opX = op != null ? op.x() : 0f, opY = op != null ? op.y() : 0f;
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                 if (frag.text == null || frag.text.isBlank()) continue;
                 com.nishiyu.enderframelib.core.css.ComputedStyle fl = frag.effectiveFirstLineStyle(box);
@@ -888,14 +888,14 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
                     ItemProps flEvents = textPropsForStyle(fl, partsEvents, flColor, prevItem);
                     List<BoxDecorations.Shadow> flShadows = textShadowsForStyle(fl, flColor, flEvents);
                     RenderMeta fragMeta = reuseTextMeta(prevItem, normalizedClip, flFontH, frag.baseline, frag.h, ox, oy, flEvents.hints());
-                    addTextRun(elements, box, fl, id, frag.x, frag.y, frag.w, frag.h, frag.text, flColor, bgColor, flEvents, fragMeta, transDur, AnimationSpec.NONE, flShadows);
+                    addTextRun(elements, box, fl, id, frag.x + opX, frag.y + opY, frag.w, frag.h, frag.text, flColor, bgColor, flEvents, fragMeta, transDur, AnimationSpec.NONE, flShadows);
                 } else {
                     if (baseTextEvents == null) {
                         baseTextEvents = textPropsForStyle(box.style, partsEvents, color, prevItem);
                         baseTextShadows = textShadowsForStyle(box.style, color, baseTextEvents);
                     }
                     RenderMeta fragMeta = reuseTextMeta(prevItem, normalizedClip, fontHVal, frag.baseline, frag.h, ox, oy, baseTextEvents.hints());
-                    addTextRun(elements, box, box.style, id, frag.x, frag.y, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, baseTextShadows);
+                    addTextRun(elements, box, box.style, id, frag.x + opX, frag.y + opY, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, baseTextShadows);
                 }
                 prevIdx += elements.size() - before;
             }

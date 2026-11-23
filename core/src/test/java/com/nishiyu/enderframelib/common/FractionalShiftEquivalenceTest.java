@@ -120,7 +120,7 @@ class FractionalShiftEquivalenceTest {
         for (int i = 0; i < 300; i++) ids.add(i);
         StandaloneView v = open(ids);
         HtmlNode list = v.root().getNodeById("list");
-        long shifted0 = LayoutBox.layoutsShifted();
+        long skipped0 = LayoutBox.layoutsSkipped();
 
         // 先頭近くに小数の高さの行を挿入（後続の全行が小数ぶん下へ動く）
         HtmlElement inserted = newRow(1000);
@@ -128,8 +128,8 @@ class FractionalShiftEquivalenceTest {
         v.ui().flushInvalidation();
         ids.add(20, 1000);
         assertSameGeometry(open(ids).ui().layoutRoot(), v.ui().layoutRoot(), "挿入後");
-        long afterInsert = LayoutBox.layoutsShifted() - shifted0;
-        assertTrue(afterInsert > 100, "小数ぶんの移動でも後続の行を平行移動する: shifted=" + afterInsert);
+        long afterInsert = LayoutBox.layoutsSkipped() - skipped0;
+        assertTrue(afterInsert > 100, "小数ぶんの移動でも後続の行を親相対で再利用する: skipped=" + afterInsert);
 
         // 削除（逆向きの小数移動）
         list.removeChild(inserted);
@@ -225,8 +225,8 @@ class FractionalShiftEquivalenceTest {
         }
         assertTrue(checked >= 6);
 
-        // 水平・垂直両方での FLEX / GRID 部分木平行移動（直下 #text 節を含む）と全体再計算とのビット一致を検証
-        long shiftedBefore = LayoutBox.layoutsShifted();
+        // 水平・垂直両方での FLEX / GRID 部分木（直下 #text 節を含む）の親相対再利用と全体再計算とのビット一致を検証
+        long skippedBefore = LayoutBox.layoutsSkipped();
         HtmlNode banner = v.root().getNodeById("banner");
         for (int i = 1; i < widths.length; i++) {
             if (i == 2) {
@@ -247,7 +247,7 @@ class FractionalShiftEquivalenceTest {
             }
             assertSameGeometry(fresh.ui().layoutRoot(), v.ui().layoutRoot(), "width=" + widths[i]);
         }
-        assertTrue(LayoutBox.layoutsShifted() > shiftedBefore,
-                "FLEX / GRID コンテナを含む部分木平行移動が行われたこと");
+        assertTrue(LayoutBox.layoutsSkipped() > skippedBefore,
+                "FLEX / GRID コンテナを含む部分木の親相対再利用が行われたこと");
     }
 }

@@ -441,7 +441,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                     LayoutBox pb = p.box();
                     if (!pb.isAbsolute && !isFloating(pb)
                             && !pb.subtreeHasContentAuto && !pb.style.facts().contentVisibilityAuto
-                            && pb.needsParallelLayoutWork(innerX + p.x(), innerY + p.y(), ctx)) {
+                            && pb.needsParallelLayoutWork(ctx)) {
                         if (++work >= LayoutTaskPool.PARALLEL_THRESHOLD) break;
                     }
                 }
@@ -567,10 +567,10 @@ public class BlockLayoutEngine extends LayoutEngine {
         for (int i = 0, n = box.children.size(); i < n; i++) {
             LayoutBox marker = box.children.get(i);
             if (!marker.isOutsideMarker || isDisplayNone(marker.style)) continue;
-            float markerX = box.x - marker.w - marker.mR;
+            float markerX = -marker.w - marker.mR;
             marker.layout(markerX - marker.mL, 0, marker.w, marker.h, ctx);
             Float markerBaseline = placedFirstBaseline(marker), lineBaseline = placedFirstBaseline(box);
-            float y = (markerBaseline != null && lineBaseline != null) ? lineBaseline - (markerBaseline - marker.y) : innerY;
+            float y = (markerBaseline != null && lineBaseline != null) ? (lineBaseline - box.y()) - (markerBaseline - marker.y()) : innerY;
             marker.layout(markerX - marker.mL, y - marker.mT, marker.w, marker.h, ctx);
         }
     }
@@ -579,7 +579,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     private static Float placedFirstBaseline(LayoutBox box) {
         if (!box.fragmentsStale && !box.inlineFragments.isEmpty()) {
             InlineFragment first = box.inlineFragments.getFirst();
-            return first.y + first.baseline;
+            return PlacementMemo.originParentY(box) + first.y + first.baseline;
         }
         for (LayoutBox child : box.children) {
             if (child.isOutsideMarker || child.isRenderedLegend || child.isAbsolute || child.display.isNone()) continue;
@@ -894,8 +894,8 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
         LayoutContext.AutoVisibilitySession av = ctx.autoVisibility();
         float margin = LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN;
-        float localTop = Math.max(0f, (ctx.visibilityClipTop() - margin) - innerY);
-        float localBottom = Math.max(0f, (ctx.visibilityClipBottom() + margin) - innerY);
+        float absInnerY = box.y() + innerY, localTop = Math.max(0f, (ctx.visibilityClipTop() - margin) - absInnerY);
+        float localBottom = Math.max(0f, (ctx.visibilityClipBottom() + margin) - absInnerY);
         float totalH = vf.fenwick.totalHeight();
 
         int estStart = 0, estEnd = -1;
@@ -1420,32 +1420,29 @@ public class BlockLayoutEngine extends LayoutEngine {
         // テキストの箱は断片から位置を取らない（fitToFragments が飛ばす）ので、祖先の相対配置・sticky のずれだけが乗る。
         // 原点に戻してから足し直させないと、同じ木を配置し直すたびにずれが積み重なる
         if (box.node.nodeType == NodeType.TEXT) { box.x = 0; box.y = 0; }
-        boolean atomic = isAtomicInline(box);
-        if (atomic && box.holdsPlacement()) return; // 保持した原子的インラインの中身（子の断片・テキスト座標）は残す
-        boolean childrenInFlow = inFlow && !atomic;
+        // 不可分なインライン（inline-block 等）は中身を自分の整形コンテキストで管理するため、外側の行流しから子孫を触らない
+        if (isAtomicInline(box)) return;
         List<LayoutBox> children = box.children;
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox child = children.get(i);
             if (isFloating(child) || child.isAbsolute) continue;
-            // 配置を使い回せる箱（原子的インラインの中身など）は、自分の layout が置き直すか前回の配置を残すかを決める。
-            // ここで断片だけを消すと、残す側で断片が消えたままになる。ただし流れの中身（アトミックな箱を除く）は、前に flex の項目などとして
-            // 置かれた印が残っていても layout を通らないので消す（残すと遅延消去の印が解けず、行が足した断片が捨てられる。§6-119）
-            if (child.holdsPlacement() && (!childrenInFlow || isAtomicInline(child))) continue;
-            clearFragmentsRecursively(child, childrenInFlow);
+            if (child.holdsPlacement() && isAtomicInline(child)) continue;
+            clearFragmentsRecursively(child, inFlow);
         }
     }
 
     /**
-     * 配置を使い回せる印の箱は切り詰めない。流れの中の箱まで切り詰めると、断片を毎フレーム作り直して確保が増えた（costGate の
+     * 配置を使い回せる原子インラインは切り詰めない。流れの中の箱まで切り詰めると、断片を毎フレーム作り直して確保が増えた（costGate の
      * voidwave text +12%。§6-119）。
      */
     private static void finishFragmentsRecursively(LayoutBox box) {
         box.finishFragmentPass();
-        if (isAtomicInline(box) && box.holdsPlacement()) return;
+        if (isAtomicInline(box)) return;
         List<LayoutBox> children = box.children;
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox child = children.get(i);
-            if (child.holdsPlacement()) continue;
+            if (isFloating(child) || child.isAbsolute) continue;
+            if (child.holdsPlacement() && isAtomicInline(child)) continue;
             finishFragmentsRecursively(child);
         }
     }

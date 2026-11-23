@@ -268,8 +268,8 @@ final class FragmentPaint {
                 || m.flexOrGridItem != PaintSupport.isFlexOrGridItem(box)
                 || !java.util.Objects.equals(m.parentId, parentId)) return false;
         if (m.attrVersion != box.node.attrVersion() || !sameFirstLine(m, box)) return false;
-        if (!box.isAnonymous && (Float.compare(m.x, box.x()) != 0 || Float.compare(m.y, box.y()) != 0
-                || Float.compare(m.w, box.w()) != 0 || Float.compare(m.h, box.h()) != 0)) return false;
+        if (Float.compare(m.x, box.x()) != 0 || Float.compare(m.y, box.y()) != 0
+                || Float.compare(m.w, box.w()) != 0 || Float.compare(m.h, box.h()) != 0) return false;
         return scrollSame(m);
     }
 

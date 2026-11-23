@@ -32,12 +32,12 @@ public final class FrameOracle {
         @Override public String toString() { return where + "（今の面 " + live + " ≠ 最初から作った面 " + fresh + "）"; }
     }
 
-    /** 比べる範囲: 位置・大きさ・子の数は常に比べる。スクロール範囲は任意（既知の差があるため既定は外す。{@code FrameOracleTest} の既知の欠陥）。 */
+    /** 比べる範囲: 位置・大きさ・子の数は常に比べる。スクロール範囲も既定で比べる。 */
     public enum Scope { GEOMETRY, GEOMETRY_AND_SCROLL_EXTENTS }
 
-    /** {@link Scope#GEOMETRY} で比べる。 */
+    /** {@link Scope#GEOMETRY_AND_SCROLL_EXTENTS} で比べる。 */
     public static Difference firstDifference(StandaloneView live) {
-        return firstDifference(live, Scope.GEOMETRY);
+        return firstDifference(live, Scope.GEOMETRY_AND_SCROLL_EXTENTS);
     }
 
     /** {@code live} を最初から作った独立の面と比べ、最初に見つかった違い（無ければ null）を返す。{@code live} は触らない。 */

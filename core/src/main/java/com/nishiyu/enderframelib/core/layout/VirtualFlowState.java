@@ -105,8 +105,8 @@ public final class VirtualFlowState implements LayoutEngine.LayoutEngineState {
         int idx = child.virtualChildIndex;
         List<LayoutBox> kids = parent.children;
         if (idx < 0 || idx >= kids.size() || kids.get(idx) != child) return null;
-        float px = parent.x + parent.pL + parent.bL + xPos[idx] + child.mL;
-        float py = parent.y + parent.pT + parent.bT + parent.contentOffsetY + parent.legendSpill
+        float px = parent.x() + parent.pL + parent.bL + xPos[idx] + child.mL;
+        float py = parent.y() + parent.pT + parent.bT + parent.contentOffsetY + parent.legendSpill
                 + fenwick.offsetOf(idx) + gapBefore[idx];
         return new float[]{px, py};
     }

@@ -84,12 +84,6 @@ public enum Shortcut {
     /** 内容で寸法が決まる箱（{@code width: auto} の shrink-to-fit と、折り返さない 1 行の文字）の fit 再利用。 親が渡す使える幅が {@link #measuredFitNeed} 以上なら、前回の幅が何であっても測定の結果は同じ （使える幅に届かず折り返す・縮められる箱だけが、使える幅に依る）。Blink の LayoutNG が fit-content の結果を 使い回すのと同じ考え方で、flex の項目・インラインブロック・span のように、幅が 1px 変わっても中身が収まっている箱を 測り直さない。切り分け用: {@code -Denderframe.layout.nofitreuse=true} で無効。 （以前の {@code LayoutBox.fitReuseEnabled}） */
     FIT_REUSE(EngineFlags.FIT_REUSE),
 
-    /** 切り分け用: false なら、原点だけが違う部分木も置き直す（平行移動で済ませない）。 （以前の {@code LayoutBox.SHIFT_ENABLED}） */
-    SHIFT(EngineFlags.SHIFT),
-
-    /** layout の結果の再利用を使うか。false なら毎回置き直す（再利用を疑うときの切り分け用）。 （以前の {@code LayoutBox.keepPlacements}） */
-    KEEP_PLACEMENTS(true),
-
     /** {@code -Denderframe.layout.noparallel=true} で並列実行を無効化する切り替え。 （以前の {@code LayoutTaskPool.parallelEnabled}） */
     LAYOUT_PARALLEL(EngineFlags.LAYOUT_PARALLEL),
 

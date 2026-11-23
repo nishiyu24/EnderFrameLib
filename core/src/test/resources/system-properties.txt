@@ -20,7 +20,6 @@ enderframe.layout.nolazythrough | SHORTCUT | core/kernel/EngineFlags.java | Layo
 enderframe.layout.noparallel | SHORTCUT | core/kernel/EngineFlags.java | LayoutTaskPool.parallelEnabled（B2 の並列化）
 enderframe.layout.noresizeskip | SHORTCUT | core/kernel/EngineFlags.java | RenderPipeline.RESIZE_SKIP_REBUILD（Q7）
 enderframe.layout.nosamerun | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.samePassReuse
-enderframe.layout.noshift | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.SHIFT_ENABLED（部分木の平行移動）
 enderframe.layout.notentative | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.tentativeReuse
 enderframe.layout.noviewportwidthfree | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.viewportWidthFreeReuse（Q6）
 enderframe.layout.nowidthreuse | SHORTCUT | core/kernel/EngineFlags.java | LayoutBox.widthIndependentReuse

@@ -242,16 +242,14 @@ public final class FineProfileMain {
                     + " reposition=" + UiView.RESTYLE_REPOSITION.get()
                     + " repaintPatch=" + UiView.RESTYLE_REPAINT_PATCH.get()
                     + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
-                    + " layoutsShifted=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted()
                     + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped()
                     + memoCostKeys(memoSnapshot(), memo0));
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             {
                 long n = frames + warmup;
-                // 配置の近道の効き具合（プロセス累計 / フレーム）: shifted = 部分木の平行移動、skipped = 入力が同じで飛ばした
-                System.out.printf("LAYOUTSKIP per-frame shifted=%.1f skipped=%.1f%n",
-                        com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted() / (double) n,
+                // 配置の再利用（プロセス累計 / フレーム）: skipped = 親相対・読み取り鍵の一致で再配置を飛ばした
+                System.out.printf("LAYOUTSKIP per-frame skipped=%.1f%n",
                         com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped() / (double) n);
             }
             {
@@ -316,7 +314,7 @@ public final class FineProfileMain {
     /** 記憶の KPI のカウンタ（累計）: style 訪問・再計算・変化 / 測定 呼び出し・計算 / 配置 呼び出し・配置し直し / 断片 hit・miss。 */
     private static long[] memoSnapshot() {
         long pc = com.nishiyu.enderframelib.core.kernel.Kernel.stats.placeCalls();
-        long placed = pc - com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped() - com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted();
+        long placed = pc - com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped();
         return new long[]{
                 com.nishiyu.enderframelib.core.kernel.Kernel.stats.restyleVisited(), com.nishiyu.enderframelib.core.kernel.Kernel.stats.restyleRecomputed(),
                 com.nishiyu.enderframelib.core.kernel.Kernel.stats.restyleChanged(),

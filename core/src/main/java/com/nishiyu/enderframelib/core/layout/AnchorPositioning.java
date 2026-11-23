@@ -140,16 +140,20 @@ final class AnchorPositioning {
      */
     static void placeAbsolute(LayoutBox box, LayoutBox.ContainingBlock cb,
                               float rootW, float rootH, LayoutContext ctx) {
+        float opX = PlacementMemo.originParentX(box);
+        float opY = PlacementMemo.originParentY(box);
         String fallbacks = box.style.get(CssPropertyIndex.POSITION_TRY_FALLBACKS);
         if (fallbacks == null || fallbacks.isBlank() || "none".equalsIgnoreCase(fallbacks.trim())) {
-            placeWithoutFallbacks(box, cb, rootW, rootH, ctx);
-            return;
+            placeWithoutFallbacks(box, cb, rootW, rootH, opX, opY, ctx);
+        } else {
+            placeWithFallbacks(box, cb, rootW, rootH, opX, opY, fallbacks, ctx);
         }
-        placeWithFallbacks(box, cb, rootW, rootH, fallbacks, ctx);
+        box.x -= opX;
+        box.y -= opY;
     }
 
     private static void placeWithoutFallbacks(LayoutBox box, LayoutBox.ContainingBlock cb,
-                                              float rootW, float rootH, LayoutContext ctx) {
+                                              float rootW, float rootH, float opX, float opY, LayoutContext ctx) {
         ComputedStyle style = box.style;
         StyleFacts facts = style.facts();
         float refX = cb.x(), refY = cb.y(), refW = cb.w(), refH = cb.h();
@@ -200,7 +204,7 @@ final class AnchorPositioning {
             box.x = refX + refW - box.w - insetPx(box, CssPropertyIndex.RIGHT, refX, refW, rootW, rootH) - box.mR;
         } else {
             box.x = box.staticAreaW == STATIC_AREA_IS_CB ? refX + box.staticAlignX * (refW - (box.w + box.mL + box.mR)) + box.mL
-                    : (Float.isNaN(box.staticX) ? refX : box.staticX + box.staticOffsetX(box.w + box.mL + box.mR)) + box.mL;
+                    : (Float.isNaN(box.staticX) ? refX : opX + box.staticX + box.staticOffsetX(box.w + box.mL + box.mR)) + box.mL;
         }
 
         if (!topAuto) {
@@ -217,7 +221,7 @@ final class AnchorPositioning {
             box.y = refY + refH - box.h - insetPx(box, CssPropertyIndex.BOTTOM, refY, refH, rootW, rootH) - box.mB;
         } else {
             box.y = box.staticAreaH == STATIC_AREA_IS_CB ? refY + box.staticAlignY * (refH - (box.h + box.mT + box.mB)) + box.mT
-                    : (Float.isNaN(box.staticY) ? refY : box.staticY + box.staticOffsetY(box.h + box.mT + box.mB)) + box.mT;
+                    : (Float.isNaN(box.staticY) ? refY : opY + box.staticY + box.staticOffsetY(box.h + box.mT + box.mB)) + box.mT;
         }
 
         String[] area = parsePositionArea(style.get(CssPropertyIndex.POSITION_AREA));
@@ -231,7 +235,8 @@ final class AnchorPositioning {
     }
 
     private static void placeWithFallbacks(LayoutBox box, LayoutBox.ContainingBlock cb,
-                                           float rootW, float rootH, String fallbacksStr, LayoutContext ctx) {
+                                           float rootW, float rootH, float opX, float opY,
+                                           String fallbacksStr, LayoutContext ctx) {
         ComputedStyle style = box.style;
         StyleFacts facts = style.facts();
         float origW = box.w, origH = box.h;
@@ -253,7 +258,7 @@ final class AnchorPositioning {
         Map<String, PositionTryRule> tryRules = LayoutReads.positionTryRules(box);
         List<CandidateSpec> candidates = parseFallbacks(fallbacksStr, base, tryRules, box, cb, rootW, rootH);
 
-        PlacementResult baseRes = evaluate(box, base, cb, rootW, rootH, origW, origH, ctx);
+        PlacementResult baseRes = evaluate(box, base, cb, rootW, rootH, opX, opY, origW, origH, ctx);
         String order = style.get(CssPropertyIndex.POSITION_TRY_ORDER);
         String orderLower = order == null ? "normal" : order.trim().toLowerCase(Locale.ROOT);
 
@@ -264,7 +269,7 @@ final class AnchorPositioning {
             } else {
                 PlacementResult chosen = null;
                 for (int i = 0, n = candidates.size(); i < n; i++) {
-                    PlacementResult res = evaluate(box, candidates.get(i), cb, rootW, rootH, origW, origH, ctx);
+                    PlacementResult res = evaluate(box, candidates.get(i), cb, rootW, rootH, opX, opY, origW, origH, ctx);
                     if (res.fits) {
                         chosen = res;
                         break;
@@ -277,7 +282,7 @@ final class AnchorPositioning {
             PlacementResult best = baseRes.fits ? baseRes : null;
             float bestSize = best == null ? -1f : (horizontal ? best.imcbW : best.imcbH);
             for (int i = 0, n = candidates.size(); i < n; i++) {
-                PlacementResult res = evaluate(box, candidates.get(i), cb, rootW, rootH, origW, origH, ctx);
+                PlacementResult res = evaluate(box, candidates.get(i), cb, rootW, rootH, opX, opY, origW, origH, ctx);
                 if (!res.fits) continue;
                 float sz = horizontal ? res.imcbW : res.imcbH;
                 if (best == null || sz > bestSize) {
@@ -302,8 +307,8 @@ final class AnchorPositioning {
     }
 
     private static PlacementResult evaluate(LayoutBox box, CandidateSpec spec, LayoutBox.ContainingBlock cb,
-                                            float rootW, float rootH, float measuredW, float measuredH,
-                                            LayoutContext ctx) {
+                                            float rootW, float rootH, float opX, float opY,
+                                            float measuredW, float measuredH, LayoutContext ctx) {
         ComputedStyle style = box.style;
         StyleFacts facts = style.facts();
         boolean isBorderBox = style.isBorderBox();
@@ -388,7 +393,7 @@ final class AnchorPositioning {
         } else {
             imcbW = refW;
             x = box.staticAreaW == STATIC_AREA_IS_CB ? refX + box.staticAlignX * (refW - (w + ml + mr)) + ml
-                    : (Float.isNaN(box.staticX) ? refX : box.staticX + box.staticOffsetX(w + ml + mr)) + ml;
+                    : (Float.isNaN(box.staticX) ? refX : opX + box.staticX + box.staticOffsetX(w + ml + mr)) + ml;
         }
 
         float y, imcbH;
@@ -422,7 +427,7 @@ final class AnchorPositioning {
         } else {
             imcbH = refH;
             y = box.staticAreaH == STATIC_AREA_IS_CB ? refY + box.staticAlignY * (refH - (h + mt + mb)) + mt
-                    : (Float.isNaN(box.staticY) ? refY : box.staticY + box.staticOffsetY(h + mt + mb)) + mt;
+                    : (Float.isNaN(box.staticY) ? refY : opY + box.staticY + box.staticOffsetY(h + mt + mb)) + mt;
         }
 
         if (spec.area != null) {

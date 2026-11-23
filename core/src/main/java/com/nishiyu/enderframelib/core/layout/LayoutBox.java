@@ -839,14 +839,8 @@ public class LayoutBox {
     public void applyRelativeOffset(float dx, float dy) {
         this.x += dx;
         this.y += dy;
-        if (inlineContentBottom > Float.NEGATIVE_INFINITY) inlineContentBottom += dy;
-        for (LayoutBox child : children) {
-            // 祖先のずらしは子孫の原点の記録（lastLayoutX / Y）に入らないので、記録と位置の差がずれる。祖先が相対位置でなくなった
-            // 次の layout で、平行移動（shiftSubtree）がこの差を保ったまま動かし、効かなくなったずらしが残る（§6-118）。記録を消して置き直させる
-            if (child.placementMemo != null) child.placementMemo.invalidateValid();
-            child.applyRelativeOffset(dx, dy);
-        }
-        for (InlineFragment frag : inlineFragments) {
+        for (int i = 0, n = inlineFragments.size(); i < n; i++) {
+            InlineFragment frag = inlineFragments.get(i);
             frag.x += dx;
             frag.y += dy;
         }
@@ -867,8 +861,8 @@ public class LayoutBox {
         return measureMemo.needsParallelWork();
     }
 
-    boolean needsParallelLayoutWork(float parentX, float parentY, LayoutContext ctx) {
-        return PlacementMemo.needsWork(this, parentX, parentY, ctx);
+    boolean needsParallelLayoutWork(LayoutContext ctx) {
+        return PlacementMemo.needsWork(this, ctx);
     }
 
     float blockChildFitWidth() {
@@ -1219,7 +1213,7 @@ public class LayoutBox {
         }
         LayoutContext.AutoVisibilitySession av = ctx.autoVisibility();
         boolean checkAutoSubtree = av != null && (subtreeHasContentAuto || style.facts().contentVisibilityAuto);
-        if (PlacementMemo.tryReuseOrShift(this, parentX, parentY, parentOuterW, parentOuterH, ctx, checkAutoSubtree)) {
+        if (PlacementMemo.tryReuse(this, parentX, parentY, parentOuterW, parentOuterH, ctx, checkAutoSubtree)) {
             return;
         }
         MeasureReads.ThreadState readState = LayoutReads.state();
@@ -1248,16 +1242,18 @@ public class LayoutBox {
             boolean isCvAuto = style.facts().contentVisibilityAuto;
             if (isCvAuto && av != null) {
                 av.noteContentAuto();
+                float absX = this.x();
+                float absY = this.y();
                 boolean near;
                 if (this.isFixed) {
                     float rootW = LayoutReads.placeViewportW(ctx);
                     float rootH = LayoutReads.placeViewportH(ctx);
-                    near = this.x + Math.max(0f, this.w) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
-                            && this.x <= rootW + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
-                            && this.y + Math.max(0f, this.h) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
-                            && this.y <= rootH + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN;
+                    near = absX + Math.max(0f, this.w) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
+                            && absX <= rootW + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
+                            && absY + Math.max(0f, this.h) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
+                            && absY <= rootH + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN;
                 } else {
-                    near = av.isNearViewport(this.x, this.y, this.w, this.h);
+                    near = av.isNearViewport(absX, absY, this.w, this.h);
                 }
                 boolean relevant = cvForceRelevant || near;
                 boolean shouldSkip = !relevant;
@@ -1289,8 +1285,8 @@ public class LayoutBox {
                 return;
             }
 
-            float innerX = this.x + pL + bL - scrollX;
-            float innerY = this.y + pT + bT - scrollY + contentOffsetY + legendSpill;
+            float localInnerX = pL + bL - scrollX;
+            float localInnerY = pT + bT - scrollY + contentOffsetY + legendSpill;
 
             float prevClipL = 0, prevClipT = 0, prevClipR = 0, prevClipB = 0;
             boolean savedClip = false;
@@ -1305,10 +1301,12 @@ public class LayoutBox {
                 float baseR = this.isFixed ? LayoutReads.placeViewportW(ctx) : prevClipR;
                 float baseB = this.isFixed ? LayoutReads.placeViewportH(ctx) : prevClipB;
                 if (ScrollExtentCalc.clipsOverflow(this)) {
-                    float boxL = this.x + bL;
-                    float boxT = this.y + bT;
-                    float boxR = Math.max(boxL, this.x + this.w - bR);
-                    float boxB = Math.max(boxT, this.y + this.h - bB);
+                    float absX = this.x();
+                    float absY = this.y();
+                    float boxL = absX + bL;
+                    float boxT = absY + bT;
+                    float boxR = Math.max(boxL, absX + this.w - bR);
+                    float boxB = Math.max(boxT, absY + this.h - bB);
                     av.setClip(Math.max(baseL, boxL), Math.max(baseT, boxT),
                             Math.min(baseR, boxR), Math.min(baseB, boxB));
                 } else {
@@ -1321,21 +1319,21 @@ public class LayoutBox {
                     for (int i = 0, n = children.size(); i < n; i++) {
                         LayoutBox child = children.get(i);
                         if (child.isAbsolute) {
-                            child.staticX = innerX;
-                            child.staticY = innerY;
-                            AnchorPositioning.applyStaticArea(this, child, innerX, innerY);
+                            child.staticX = localInnerX;
+                            child.staticY = localInnerY;
+                            AnchorPositioning.applyStaticArea(this, child, localInnerX, localInnerY);
                         }
                     }
                 }
 
                 LayoutEngine engine = LayoutEngine.getEngine(this);
-                engine.arrangeChildren(this, innerX, innerY, ctx);
+                engine.arrangeChildren(this, localInnerX, localInnerY, ctx);
 
                 if (hasAbsoluteChild) {
                     for (int i = 0, n = children.size(); i < n; i++) {
                         LayoutBox child = children.get(i);
                         if (child.style.facts().displayNone) continue;
-                        if (child.isAbsolute) child.layout(this.x - scrollX, this.y - scrollY, this.w, this.h, ctx);
+                        if (child.isAbsolute) child.layout(-scrollX, -scrollY, this.w, this.h, ctx);
                     }
                 }
                 legend = renderedLegend();
@@ -1360,11 +1358,6 @@ public class LayoutBox {
             if (children.get(i).style.facts().floating) return true;
         }
         return false;
-    }
-
-    /** 原点だけが違うので部分木ごと平行移動した layout の回数（診断・テスト用）。 */
-    public static long layoutsShifted() {
-        return PlacementMemo.layoutsShifted();
     }
 
     /** これまでに使い回して飛ばした layout の回数（差分レイアウトの効き具合を測るテスト・診断用）。 */
@@ -1496,8 +1489,14 @@ public class LayoutBox {
     // 読み取り専用アクセサと描画用一時境界（A7）
     // ==========================================
 
-    public float x() { return x; }
-    public float y() { return y; }
+    /** 座標解決の基準となる親（平坦化される非原子的インライン要素を除く）。 */
+    public LayoutBox originParent() { return PlacementMemo.originParent(this); }
+
+    /** 親相対の座標（x / y）を親の絶対原点から解決した絶対 X 座標（px）。 */
+    public float x() { return parent == null ? x : PlacementMemo.resolveX(this); }
+
+    /** 親相対の座標（x / y）を親の絶対原点から解決した絶対 Y 座標（px）。 */
+    public float y() { return parent == null ? y : PlacementMemo.resolveY(this); }
     public float w() { return w; }
     public float h() { return h; }
     public float mT() { return mT; }

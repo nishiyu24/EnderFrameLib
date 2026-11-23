@@ -289,45 +289,45 @@ final class LayoutReads {
     static float parentContentTop(LayoutBox box) {
         recordPlace(ReadKind.PLACE_PARENT_OUTER);
         LayoutBox p = box.parent;
-        return p.y + p.bT + p.pT;
+        return p.y() + p.bT + p.pT;
     }
 
     static float parentContentBottom(LayoutBox box) {
         recordPlace(ReadKind.PLACE_PARENT_OUTER);
         LayoutBox p = box.parent;
-        return p.y + p.h - p.bB - p.pB;
+        return p.y() + p.h - p.bB - p.pB;
     }
 
     static float parentContentLeft(LayoutBox box) {
         recordPlace(ReadKind.PLACE_PARENT_OUTER);
         LayoutBox p = box.parent;
-        return p.x + p.bL + p.pL;
+        return p.x() + p.bL + p.pL;
     }
 
     static float parentContentRight(LayoutBox box) {
         recordPlace(ReadKind.PLACE_PARENT_OUTER);
         LayoutBox p = box.parent;
-        return p.x + p.w - p.bR - p.pR;
+        return p.x() + p.w - p.bR - p.pR;
     }
 
     static float peekParentContentTop(LayoutBox box) {
         LayoutBox p = box.parent;
-        return p.y + p.bT + p.pT;
+        return p.y() + p.bT + p.pT;
     }
 
     static float peekParentContentLeft(LayoutBox box) {
         LayoutBox p = box.parent;
-        return p.x + p.bL + p.pL;
+        return p.x() + p.bL + p.pL;
     }
 
     static float peekParentContentRight(LayoutBox box) {
         LayoutBox p = box.parent;
-        return p.x + p.w - p.bR - p.pR;
+        return p.x() + p.w - p.bR - p.pR;
     }
 
     static float peekParentContentBottom(LayoutBox box) {
         LayoutBox p = box.parent;
-        return p.y + p.h - p.bB - p.pB;
+        return p.y() + p.h - p.bB - p.pB;
     }
 
     static float peekViewportW(LayoutContext ctx) {
@@ -338,8 +338,8 @@ final class LayoutReads {
         return ctx.viewport().rootH();
     }
 
-    static float peekAnchorX(LayoutBox anchor) { return anchor.x; }
-    static float peekAnchorY(LayoutBox anchor) { return anchor.y; }
+    static float peekAnchorX(LayoutBox anchor) { return anchor.x(); }
+    static float peekAnchorY(LayoutBox anchor) { return anchor.y(); }
     static float peekAnchorW(LayoutBox anchor) { return anchor.w; }
     static float peekAnchorH(LayoutBox anchor) { return anchor.h; }
 
@@ -429,8 +429,8 @@ final class LayoutReads {
         } else {
             cbScrollX = containingBlockScrollX(cb, ctx);
             cbScrollY = containingBlockScrollY(cb, ctx);
-            float cbX = cb.x + cb.bL - cbScrollX;
-            float cbY = cb.y + cb.bT - cbScrollY;
+            float cbX = cb.x() + cb.bL - cbScrollX;
+            float cbY = cb.y() + cb.bT - cbScrollY;
             float cbW = Math.max(0, cb.w - cb.bL - cb.bR);
             float cbH = Math.max(0, cb.h - cb.bT - cb.bB);
             if (cb.display != null && cb.display.inner() == LayoutBox.Display.Inner.GRID) {
@@ -450,18 +450,20 @@ final class LayoutReads {
     }
 
     static boolean peekContainingBlockMatches(LayoutBox box, LayoutBox expectedCb, LayoutContext ctx,
+                                              float refBaseX, float refBaseY,
                                               float ex, float ey, float ew, float eh,
                                               float esx, float esy) {
         LayoutBox cb = findContainingBlockRaw(box);
         if (cb != expectedCb) return false;
         if (cb == null) {
-            return ex == 0f && ey == 0f && ew == ctx.viewport().rootW() && eh == ctx.viewport().rootH();
+            return (0f - refBaseX) == ex && (0f - refBaseY) == ey
+                    && ew == ctx.viewport().rootW() && eh == ctx.viewport().rootH();
         }
         float sx = peekScrollX(cb, ctx);
         float sy = peekScrollY(cb, ctx);
         if (sx != esx || sy != esy) return false;
-        float cx = cb.x + cb.bL - sx;
-        float cy = cb.y + cb.bT - sy;
+        float cx = cb.x() + cb.bL - sx;
+        float cy = cb.y() + cb.bT - sy;
         float cw = Math.max(0, cb.w - cb.bL - cb.bR);
         float ch = Math.max(0, cb.h - cb.bT - cb.bB);
         if (cb.display != null && cb.display.inner() == LayoutBox.Display.Inner.GRID) {
@@ -473,7 +475,7 @@ final class LayoutReads {
                 ch = area[3];
             }
         }
-        return cx == ex && cy == ey && cw == ew && ch == eh;
+        return (cx - refBaseX) == ex && (cy - refBaseY) == ey && cw == ew && ch == eh;
     }
 
     private static boolean hasTransformOrFilter(LayoutBox b) {
@@ -500,19 +502,19 @@ final class LayoutReads {
             anchor = id == null ? null : findInvoker(root, id);
         }
         pushPlaceRef(MeasureReads.state(), PlacementDeps.REF_ANCHOR, box, anchor,
-                anchor != null ? anchor.x : 0f, anchor != null ? anchor.y : 0f,
+                anchor != null ? anchor.x() : 0f, anchor != null ? anchor.y() : 0f,
                 anchor != null ? anchor.w : 0f, anchor != null ? anchor.h : 0f, 0f, 0f);
         return anchor;
     }
 
     static float anchorX(LayoutBox anchor) {
         recordPlace(ReadKind.PLACE_ANCHOR);
-        return anchor.x;
+        return anchor.x();
     }
 
     static float anchorY(LayoutBox anchor) {
         recordPlace(ReadKind.PLACE_ANCHOR);
-        return anchor.y;
+        return anchor.y();
     }
 
     static float anchorW(LayoutBox anchor) {
@@ -569,8 +571,8 @@ final class LayoutReads {
             }
         }
         pushPlaceRef(MeasureReads.state(), PlacementDeps.REF_STICKY, box, port,
-                port != null ? port.x + port.bL : 0f,
-                port != null ? port.y + port.bT : 0f,
+                port != null ? port.x() + port.bL : 0f,
+                port != null ? port.y() + port.bT : 0f,
                 port != null ? Math.max(0, port.w - port.bL - port.bR) : 0f,
                 port != null ? Math.max(0, port.h - port.bT - port.bB) : 0f,
                 0f, 0f);
@@ -578,13 +580,14 @@ final class LayoutReads {
     }
 
     static boolean peekStickyMatches(LayoutBox box, LayoutBox expectedPort, LayoutContext ctx,
+                                     float refBaseX, float refBaseY,
                                      float ex, float ey, float ew, float eh,
                                      float esx, float esy) {
         LayoutBox port = peekStickyScrollContainer(box);
         if (port != expectedPort) return false;
-        if (port == null) return true;
-        return ex == port.x + port.bL
-                && ey == port.y + port.bT
+        if (port == null) return (0f - refBaseX) == ex && (0f - refBaseY) == ey;
+        return ((port.x() + port.bL) - refBaseX) == ex
+                && ((port.y() + port.bT) - refBaseY) == ey
                 && ew == Math.max(0, port.w - port.bL - port.bR)
                 && eh == Math.max(0, port.h - port.bT - port.bB);
     }
@@ -598,12 +601,12 @@ final class LayoutReads {
 
     static float stickyPortX(LayoutBox port) {
         recordPlace(ReadKind.PLACE_STICKY);
-        return port.x + port.bL;
+        return port.x() + port.bL;
     }
 
     static float stickyPortY(LayoutBox port) {
         recordPlace(ReadKind.PLACE_STICKY);
-        return port.y + port.bT;
+        return port.y() + port.bT;
     }
 
     static float stickyPortW(LayoutBox port) {

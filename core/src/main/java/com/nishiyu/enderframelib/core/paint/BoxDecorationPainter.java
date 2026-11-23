@@ -193,8 +193,11 @@ public final class BoxDecorationPainter {
         BorderSpec border = parseBorderSpec(box, rawRadii, Corners.fromArray(rawRadii), color);
         String[] styles = border.styles();
         int[] colors = {border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft()};
+        LayoutBox op = box.originParent();
+        float opX = op != null ? op.x() : 0f, opY = op != null ? op.y() : 0f;
         for (LayoutBox.InlineFragment frag : box.inlineFragments) {
             if (frag.isText()) continue;
+            float fx = frag.x + opX, fy = frag.y + opY;
             int[] r = {
                     frag.startEdge ? rawRadii[0] : 0, frag.endEdge ? rawRadii[1] : 0,
                     frag.endEdge ? rawRadii[2] : 0, frag.startEdge ? rawRadii[3] : 0
@@ -202,23 +205,21 @@ public final class BoxDecorationPainter {
             Corners radii = Corners.fromArray(r);
             RenderMeta meta = new RenderMeta(clip, radii, null, fontHVal, 0f, box.lineHeightPx(), ox, oy, itemCount, interactive);
             int fragPart = fragIds.getAndIncrement();
-            addElement(elements, id, id + "_frag_" + fragPart, ElementType.RECT, frag.x, frag.y, frag.w, frag.h,
+            addElement(elements, id, id + "_frag_" + fragPart, ElementType.RECT, fx, fy, frag.w, frag.h,
                     "", color, bgColor, partsEvents, r[0], 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, decorationKey(box, FRAG_PART_BASE, fragPart));
-            drawFragmentImages(elements, box, id, frag, clip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
+            drawFragmentImages(elements, box, id, fx, fy, frag.w, frag.h, clip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
 
             float[] widths = {box.bT(), frag.endEdge ? box.bR() : 0, box.bB(), frag.startEdge ? box.bL() : 0};
             if (widths[0] <= 0 && widths[1] <= 0 && widths[2] <= 0 && widths[3] <= 0) continue;
             if (r[0] > 0 || r[1] > 0 || r[2] > 0 || r[3] > 0) {
-                RoundedBorderSpec spec = new RoundedBorderSpec(widths[0], widths[1], widths[2], widths[3],
-                        colors[0], colors[1], colors[2], colors[3]);
-                RenderMeta ringMeta = new RenderMeta(clip, radii, null,
-                        fontHVal, 0f, 0f, ox, oy, 1, false, spec);
+                RoundedBorderSpec spec = new RoundedBorderSpec(widths[0], widths[1], widths[2], widths[3], colors[0], colors[1], colors[2], colors[3]);
+                RenderMeta ringMeta = new RenderMeta(clip, radii, null, fontHVal, 0f, 0f, ox, oy, 1, false, spec);
                 int ringPart = fragIds.getAndIncrement();
-                addElement(elements, id, id + "_b_round_" + ringPart, ElementType.ROUNDED_BORDER, frag.x, frag.y, frag.w, frag.h,
+                addElement(elements, id, id + "_b_round_" + ringPart, ElementType.ROUNDED_BORDER, fx, fy, frag.w, frag.h,
                         "", 0, 0x00000000, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta,
                         decorationKey(box, FRAG_PART_BASE, ringPart));
             } else {
-                drawLines(elements, id, "_b_", frag.x, frag.y, frag.w, frag.h, widths, styles, colors, 0,
+                drawLines(elements, id, "_b_", fx, fy, frag.w, frag.h, widths, styles, colors, 0,
                         passiveBorderEvents, meta, transDur, true, box.node != null ? box.node.paintHandle() : 0);
             }
         }
@@ -229,14 +230,13 @@ public final class BoxDecorationPainter {
      * 背景のレイヤーを並べる（{@code box-decoration-break: clone} 相当。断片ごとに最初から並べ直す）。
      * 何が壊れていたか: インラインの箱は背景色の矩形と枠線しか出さず、{@code background-image} と {@code background-clip: text} が効かなかった。
      */
-    private void drawFragmentImages(List<DisplayItem> elements, LayoutBox box, String id, LayoutBox.InlineFragment frag, ClipRect clip,
-                                    Corners radii, BorderSpec border, ItemProps events, float fontHVal, float ox, float oy) {
+    private void drawFragmentImages(List<DisplayItem> elements, LayoutBox box, String id, float fx, float fy, float fw, float fh,
+                                    ClipRect clip, Corners radii, BorderSpec border, ItemProps events, float fontHVal, float ox, float oy) {
         List<BoxDecorations.BackgroundLayer> layers = BoxDecorations.layers(box.style, devicePixelRatio);
         boolean any = false;
         for (BoxDecorations.BackgroundLayer l : layers) any |= l.url() != null || l.isGradient();
         if (!any) return;
-        bounds.with(box, frag.x, frag.y, frag.w, frag.h, true,
-                () -> drawImageLayers(elements, box, id, layers, "_f" + fragIds.getAndIncrement() + "_bgl", clip, radii, border, events, fontHVal, ox, oy, null));
+        bounds.with(box, fx, fy, fw, fh, true, () -> drawImageLayers(elements, box, id, layers, "_f" + fragIds.getAndIncrement() + "_bgl", clip, radii, border, events, fontHVal, ox, oy, null));
     }
 
     /**
@@ -280,11 +280,11 @@ public final class BoxDecorationPainter {
         int c = colorProp == null ? color : ColorParser.parseColor(colorProp);
         String[] styles = {lineStyle, lineStyle, lineStyle, lineStyle};
         int[] colors = {c, c, c, c};
+        float bx = box.x(), by = box.y();
         for (int i = 0; i < rules.length; i++) {
             float[] r = rules[i];
             if (r[2] <= 0 || r[3] <= 0) continue;
-            drawLines(elements, id, "_cr" + i + "_", r[0], r[1], r[2], r[3], new float[]{0, 0, 0, r[2]}, styles, colors, 0,
-                    events, meta, transDur);
+            drawLines(elements, id, "_cr" + i + "_", r[0] + bx, r[1] + by, r[2], r[3], new float[]{0, 0, 0, r[2]}, styles, colors, 0, events, meta, transDur);
         }
     }
 
@@ -301,7 +301,7 @@ public final class BoxDecorationPainter {
         if ((bg >>> 24) == 0) return;
         int part = fragIds.getAndIncrement();
         long key = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), FRAG_PART_BASE + part) : 0L;
-        addElement(elements, id, id + "_flbg_" + part, ElementType.RECT, rect[0], rect[1], rect[2], rect[3],
+        addElement(elements, id, id + "_flbg_" + part, ElementType.RECT, rect[0] + box.x(), rect[1] + box.y(), rect[2], rect[3],
                 "", 0, bg, events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, meta, key);
     }
 

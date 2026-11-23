@@ -147,31 +147,21 @@ class FrameOracleTest {
         assertEquals(List.of(), bad);
     }
 
-    // ---- 既知の欠陥（オラクルが見つけたもの）----
+    // ---- 回帰: display 変更後のスクロール範囲（§6-182） ----
 
     /**
-     * 既知: {@code layouts} 種 1 の手 19（要素のクラスを {@code gr}〔display:grid〕へ変える）で、増分の面の {@code scrollHeight} が最初から作った面より
-     * 2px 大きい。位置・大きさは一致し、見えるのはスクロール範囲だけ（表示リストには出ない）。表示の型を変えたときにスクロール範囲を
-     * 古い値から作り直している疑い。直ったらこのテストが赤になる: {@code FrameOracle.Scope} の既定を {@code GEOMETRY_AND_SCROLL_EXTENTS} へ上げ、
-     * {@code regression-catalog.txt} の「既知:」を外す。
+     * 回帰（§6-182）: {@code layouts} 種 1・種 3 を含む display 型変更（{@code inline}→{@code grid}/{@code flex} など）後も、
+     * 遅延消去待ちの古い {@code inlineFragments} で {@code scrollWidth}/{@code scrollHeight} が壊れず、最初から作った面と一致する。
      */
     @Test
-    void knownScrollExtentDifferenceAfterDisplayTypeChange() {
+    void scrollExtentMatchesAfterDisplayTypeChange() {
         MutationFuzz.Doc doc = MutationFuzz.DOCS.get("layouts");
-        FrameOracle.Difference[] first = {null};
-        int[] at = {-1};
-        MutationScenario.STEP_HOOK = (step, view) -> {
-            if (first[0] != null) return;
-            assertNull(FrameOracle.firstDifference(view), "位置・大きさは一致している（手 " + step + "）");
-            FrameOracle.Difference d = FrameOracle.firstDifference(view, FrameOracle.Scope.GEOMETRY_AND_SCROLL_EXTENTS);
-            if (d != null) {
-                first[0] = d;
-                at[0] = step;
-            }
-        };
-        MutationScenario.run(doc.html(), doc.classes(), doc.styles(), 1, doc.steps(), false);
-        assertNotNull(first[0], "既知の差が消えた（直った？）。この既知の欠陥の扱いを更新する（テストの javadoc を参照）");
-        assertEquals(19, at[0]);
-        assertTrue(first[0].live().contains("scroll 104.0x20.953125") && first[0].fresh().contains("scroll 104.0x18.953125"), first[0].toString());
+        for (long seed : new long[]{1L, 3L}) {
+            MutationScenario.STEP_HOOK = (step, view) -> {
+                FrameOracle.Difference d = FrameOracle.firstDifference(view, FrameOracle.Scope.GEOMETRY_AND_SCROLL_EXTENTS);
+                assertNull(d, "layouts/" + seed + " 手 " + step + " (" + MutationScenario.lastLog() + "): " + d);
+            };
+            MutationScenario.run(doc.html(), doc.classes(), doc.styles(), seed, doc.steps(), false);
+        }
     }
 }

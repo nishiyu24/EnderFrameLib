@@ -25,11 +25,6 @@ final class PlacementDeps {
             | ReadKind.PLACE_FLOAT.stageBit()
             | ABSORBABLE_MASK;
 
-    static final int SHIFT_BLOCKERS =
-            ReadKind.PLACE_CONTAINING_BLOCK.stageBit()
-            | ReadKind.PLACE_ANCHOR.stageBit()
-            | ReadKind.PLACE_STICKY.stageBit();
-
     static int readKindBit(byte refKind) {
         return switch (refKind) {
             case REF_CB -> ReadKind.PLACE_CONTAINING_BLOCK.stageBit();
@@ -81,7 +76,18 @@ final class PlacementDeps {
                 || (box.display != null && box.display.inner() == LayoutBox.Display.Inner.TABLE_CELL);
     }
 
-    static PlacementDeps captureOrReuse(PlacementDeps prev, LayoutBox box, int mask, LayoutContext ctx,
+    private static float refAbsX(LayoutBox box, float relOriginX) {
+        float opX = PlacementMemo.originParentX(box);
+        return box.isAbsolute ? opX : opX + relOriginX + box.mL;
+    }
+
+    private static float refAbsY(LayoutBox box, float relOriginY) {
+        float opY = PlacementMemo.originParentY(box);
+        return box.isAbsolute ? opY : opY + relOriginY + box.mT;
+    }
+
+    static PlacementDeps captureOrReuse(PlacementDeps prev, LayoutBox box, float relOriginX, float relOriginY,
+                                        int mask, LayoutContext ctx,
                                         MeasureReads.ThreadState st, int refStart, int refEnd) {
         if (!needsDeps(box, mask)) return null;
         int sv = (mask & ReadKind.PLACE_DESCENDANT_SCROLL.stageBit()) != 0 ? LayoutReads.scrollVersion() : 0;
@@ -95,14 +101,16 @@ final class PlacementDeps {
         float sy = box.isAbsolute ? box.staticY : 0f;
         float saw = box.isAbsolute ? box.staticAreaW : 0f;
         float sah = box.isAbsolute ? box.staticAreaH : 0f;
-        float pcl = box.isSticky ? LayoutReads.peekParentContentLeft(box) : 0f;
-        float pct = box.isSticky ? LayoutReads.peekParentContentTop(box) : 0f;
-        float pcr = box.isSticky ? LayoutReads.peekParentContentRight(box) : 0f;
-        float pcb = box.isSticky ? LayoutReads.peekParentContentBottom(box) : 0f;
+        float bx = refAbsX(box, relOriginX);
+        float by = refAbsY(box, relOriginY);
+        float pcl = box.isSticky ? LayoutReads.peekParentContentLeft(box) - bx : 0f;
+        float pct = box.isSticky ? LayoutReads.peekParentContentTop(box) - by : 0f;
+        float pcr = box.isSticky ? LayoutReads.peekParentContentRight(box) - bx : 0f;
+        float pcb = box.isSticky ? LayoutReads.peekParentContentBottom(box) - by : 0f;
 
         int refCount = refEnd - refStart;
         if (prev != null && prev.matchesCaptured(sv, vw, vh, ow, oh, ocy, sx, sy, saw, sah,
-                pcl, pct, pcr, pcb, st, refStart, refCount)) {
+                pcl, pct, pcr, pcb, bx, by, st, refStart, refCount)) {
             return prev;
         }
         byte[] kinds = null;
@@ -123,13 +131,13 @@ final class PlacementDeps {
                 targets[i] = t;
                 int b = i * 6;
                 if (k == REF_ANCHOR && t != null) {
-                    coords[b] = LayoutReads.peekAnchorX(t);
-                    coords[b + 1] = LayoutReads.peekAnchorY(t);
+                    coords[b] = LayoutReads.peekAnchorX(t) - bx;
+                    coords[b + 1] = LayoutReads.peekAnchorY(t) - by;
                     coords[b + 2] = LayoutReads.peekAnchorW(t);
                     coords[b + 3] = LayoutReads.peekAnchorH(t);
                 } else {
-                    coords[b] = st.placeRefX[idx];
-                    coords[b + 1] = st.placeRefY[idx];
+                    coords[b] = st.placeRefX[idx] - bx;
+                    coords[b + 1] = st.placeRefY[idx] - by;
                     coords[b + 2] = st.placeRefW[idx];
                     coords[b + 3] = st.placeRefH[idx];
                     coords[b + 4] = st.placeRefScrollX[idx];
@@ -144,6 +152,7 @@ final class PlacementDeps {
     private boolean matchesCaptured(int sv, float vw, float vh, float ow, float oh, float ocy,
                                     float sx, float sy, float saw, float sah,
                                     float pcl, float pct, float pcr, float pcb,
+                                    float bx, float by,
                                     MeasureReads.ThreadState st, int refStart, int refCount) {
         if (scrollVersion != sv || vw != viewportW || vh != viewportH
                 || ow != ownW || oh != ownH || ocy != ownContentOffsetY
@@ -162,14 +171,14 @@ final class PlacementDeps {
             int b = i * 6;
             LayoutBox t = refTargets[i];
             if (k == REF_ANCHOR && t != null) {
-                if (refCoords[b] != LayoutReads.peekAnchorX(t)
-                        || refCoords[b + 1] != LayoutReads.peekAnchorY(t)
+                if (refCoords[b] != LayoutReads.peekAnchorX(t) - bx
+                        || refCoords[b + 1] != LayoutReads.peekAnchorY(t) - by
                         || refCoords[b + 2] != LayoutReads.peekAnchorW(t)
                         || refCoords[b + 3] != LayoutReads.peekAnchorH(t)) {
                     return false;
                 }
             } else {
-                if (refCoords[b] != st.placeRefX[idx] || refCoords[b + 1] != st.placeRefY[idx]
+                if (refCoords[b] != st.placeRefX[idx] - bx || refCoords[b + 1] != st.placeRefY[idx] - by
                         || refCoords[b + 2] != st.placeRefW[idx] || refCoords[b + 3] != st.placeRefH[idx]
                         || refCoords[b + 4] != st.placeRefScrollX[idx] || refCoords[b + 5] != st.placeRefScrollY[idx]) {
                     return false;
@@ -179,7 +188,7 @@ final class PlacementDeps {
         return true;
     }
 
-    boolean matches(LayoutBox box, int mask, LayoutContext ctx) {
+    boolean matches(LayoutBox box, float relOriginX, float relOriginY, int mask, LayoutContext ctx) {
         if ((mask & ReadKind.PLACE_DESCENDANT_SCROLL.stageBit()) != 0
                 && scrollVersion != LayoutReads.scrollVersion()) {
             return false;
@@ -199,37 +208,39 @@ final class PlacementDeps {
                 || bitsNe(staticAreaW, box.staticAreaW) || bitsNe(staticAreaH, box.staticAreaH))) {
             return false;
         }
-        if (box.isSticky && (parentContentL != LayoutReads.peekParentContentLeft(box)
-                || parentContentT != LayoutReads.peekParentContentTop(box)
-                || parentContentR != LayoutReads.peekParentContentRight(box)
-                || parentContentB != LayoutReads.peekParentContentBottom(box))) {
+        float bx = (box.isSticky || refKinds != null) ? refAbsX(box, relOriginX) : 0f;
+        float by = (box.isSticky || refKinds != null) ? refAbsY(box, relOriginY) : 0f;
+        if (box.isSticky && (parentContentL != LayoutReads.peekParentContentLeft(box) - bx
+                || parentContentT != LayoutReads.peekParentContentTop(box) - by
+                || parentContentR != LayoutReads.peekParentContentRight(box) - bx
+                || parentContentB != LayoutReads.peekParentContentBottom(box) - by)) {
             return false;
         }
         if (refKinds != null) {
             for (int i = 0; i < refKinds.length; i++) {
-                if (!refMatches(i, ctx)) return false;
+                if (!refMatches(i, bx, by, ctx)) return false;
             }
         }
         return true;
     }
 
-    private boolean refMatches(int i, LayoutContext ctx) {
+    private boolean refMatches(int i, float bx, float by, LayoutContext ctx) {
         byte k = refKinds[i];
         LayoutBox reader = refReaders[i];
         LayoutBox target = refTargets[i];
         int b = i * 6;
         return switch (k) {
             case REF_CB -> LayoutReads.peekContainingBlockMatches(
-                    reader, target, ctx,
+                    reader, target, ctx, bx, by,
                     refCoords[b], refCoords[b + 1], refCoords[b + 2], refCoords[b + 3],
                     refCoords[b + 4], refCoords[b + 5]);
             case REF_ANCHOR -> target != null
-                    && refCoords[b] == LayoutReads.peekAnchorX(target)
-                    && refCoords[b + 1] == LayoutReads.peekAnchorY(target)
+                    && refCoords[b] == LayoutReads.peekAnchorX(target) - bx
+                    && refCoords[b + 1] == LayoutReads.peekAnchorY(target) - by
                     && refCoords[b + 2] == LayoutReads.peekAnchorW(target)
                     && refCoords[b + 3] == LayoutReads.peekAnchorH(target);
             case REF_STICKY -> LayoutReads.peekStickyMatches(
-                    reader, target, ctx,
+                    reader, target, ctx, bx, by,
                     refCoords[b], refCoords[b + 1], refCoords[b + 2], refCoords[b + 3],
                     refCoords[b + 4], refCoords[b + 5]);
             default -> false;

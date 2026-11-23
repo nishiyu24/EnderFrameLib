@@ -30,7 +30,7 @@
 4949e89 | WidthOnlyReuseTest#emptyBoxMinContentDoesNotDependOnItsCurrentWidth | 空の箱の min-content が現在の幅を読んだ
 A6b | IncrementalVsFullTest#absoluteCoordinatesPatchMatchesFullRelayoutAndNeverGoesNegative | 絶対座標の局所パッチで新しい高さを二重に引き、枠線の高さが -150 になった
 
-§6-182, K0 | FrameOracleTest#knownScrollExtentDifferenceAfterDisplayTypeChange | 既知: display の型を変えた箱のスクロール範囲（scrollHeight）が、最初から作った面より 2px 大きいまま残る（layouts 種 1 手 19・フレームのオラクルが発見。位置・大きさは一致し表示に出ない。直るとテストが赤になる）
+§6-182, K3 | FrameOracleTest#scrollExtentMatchesAfterDisplayTypeChange | display の型を変えた箱の子テキストに残る遅延消去待ちの inlineFragments を ScrollExtentCalc が読み、scrollHeight 等が大きく残った（layouts 種 1・種 3）
 
 # --- 描画（表示リスト・差分パッチ・クリップ） ---
 §6-27, R5 | ItemReplayPixelTest#replayDoesNotChangeAnyPixelAcrossTheSequence | 項目の再生が補間中の色・上書きされたクリップ slot・CPU 層との順序を見落とした

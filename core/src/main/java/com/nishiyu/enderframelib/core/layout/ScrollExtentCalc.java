@@ -23,13 +23,22 @@ final class ScrollExtentCalc {
         } else if (autoLeft) {
             legend.mL = Math.max(0, free);
         }
-        float top = box.y + Math.max(0, (box.bT - legend.h) / 2);
-        legend.layout(box.x + box.bL + box.pL, top - legend.mT, contentW, Math.max(0, box.h - box.verticalDecoration()), ctx);
+        float top = Math.max(0, (box.bT - legend.h) / 2);
+        legend.layout(box.bL + box.pL, top - legend.mT, contentW, Math.max(0, box.h - box.verticalDecoration()), ctx);
     }
 
     static void applyRelativePositioning(LayoutBox box, LayoutContext ctx) {
         if (!box.isRelative) return;
+        applyRelativeWithOuter(box, 0f, 0f, ctx, false);
+    }
 
+    static void applyRelativeOnReuse(LayoutBox box, float cbW, float cbH, LayoutContext ctx) {
+        if (!box.isRelative) return;
+        applyRelativeWithOuter(box, cbW, cbH, ctx, true);
+    }
+
+    private static void applyRelativeWithOuter(LayoutBox box, float outerW, float outerH,
+                                               LayoutContext ctx, boolean reuse) {
         ComputedStyle ax = box.axisStyle();
         boolean hasL = ax.containsKey(CssPropertyIndex.LEFT), hasR = !hasL && ax.containsKey(CssPropertyIndex.RIGHT);
         boolean hasT = ax.containsKey(CssPropertyIndex.TOP), hasB = !hasT && ax.containsKey(CssPropertyIndex.BOTTOM);
@@ -37,17 +46,17 @@ final class ScrollExtentCalc {
 
         float rootW = 0f, rootH = 0f;
         if (box.style.usesViewportUnits()) {
-            rootW = LayoutReads.placeViewportW(ctx);
-            rootH = LayoutReads.placeViewportH(ctx);
+            rootW = reuse ? LayoutReads.peekViewportW(ctx) : LayoutReads.placeViewportW(ctx);
+            rootH = reuse ? LayoutReads.peekViewportH(ctx) : LayoutReads.placeViewportH(ctx);
         }
         float offX = 0, offY = 0;
         if (hasL || hasR) {
-            float cbW = LayoutReads.parentOuterW();
+            float cbW = reuse ? outerW : LayoutReads.parentOuterW();
             offX = hasL ? ax.length(CssPropertyIndex.LEFT, cbW, rootW, rootH)
                     : -ax.length(CssPropertyIndex.RIGHT, cbW, rootW, rootH);
         }
         if (hasT || hasB) {
-            float cbH = LayoutReads.parentOuterH();
+            float cbH = reuse ? outerH : LayoutReads.parentOuterH();
             offY = hasT ? ax.length(CssPropertyIndex.TOP, cbH, rootW, rootH)
                     : -ax.length(CssPropertyIndex.BOTTOM, cbH, rootW, rootH);
         }
@@ -56,35 +65,45 @@ final class ScrollExtentCalc {
     }
 
     static void applyStickyOffset(LayoutBox box, LayoutContext ctx) {
+        applySticky(box, ctx, false);
+    }
+
+    static void applyStickyOnReuse(LayoutBox box, LayoutContext ctx) {
+        applySticky(box, ctx, true);
+    }
+
+    private static void applySticky(LayoutBox box, LayoutContext ctx, boolean reuse) {
         if (box.parent == null) return;
-        float rootW = LayoutReads.placeViewportW(ctx);
-        float rootH = LayoutReads.placeViewportH(ctx);
-        LayoutBox port = LayoutReads.stickyScrollContainer(box);
-        float portX = port != null ? LayoutReads.stickyPortX(port) : 0f;
-        float portY = port != null ? LayoutReads.stickyPortY(port) : 0f;
-        float portW = port != null ? LayoutReads.stickyPortW(port) : rootW;
-        float portH = port != null ? LayoutReads.stickyPortH(port) : rootH;
+        float rootW = reuse ? LayoutReads.peekViewportW(ctx) : LayoutReads.placeViewportW(ctx);
+        float rootH = reuse ? LayoutReads.peekViewportH(ctx) : LayoutReads.placeViewportH(ctx);
+        LayoutBox port = reuse ? LayoutReads.peekStickyScrollContainer(box) : LayoutReads.stickyScrollContainer(box);
+        float portX = port != null ? (reuse ? port.x() + port.bL : LayoutReads.stickyPortX(port)) : 0f;
+        float portY = port != null ? (reuse ? port.y() + port.bT : LayoutReads.stickyPortY(port)) : 0f;
+        float portW = port != null ? (reuse ? Math.max(0, port.w - port.bL - port.bR) : LayoutReads.stickyPortW(port)) : rootW;
+        float portH = port != null ? (reuse ? Math.max(0, port.h - port.bT - port.bB) : LayoutReads.stickyPortH(port)) : rootH;
 
-        float cbTop = LayoutReads.parentContentTop(box);
-        float cbBottom = LayoutReads.parentContentBottom(box);
-        float cbLeft = LayoutReads.parentContentLeft(box);
-        float cbRight = LayoutReads.parentContentRight(box);
+        float cbTop = reuse ? LayoutReads.peekParentContentTop(box) : LayoutReads.parentContentTop(box);
+        float cbBottom = reuse ? LayoutReads.peekParentContentBottom(box) : LayoutReads.parentContentBottom(box);
+        float cbLeft = reuse ? LayoutReads.peekParentContentLeft(box) : LayoutReads.parentContentLeft(box);
+        float cbRight = reuse ? LayoutReads.peekParentContentRight(box) : LayoutReads.parentContentRight(box);
 
+        float bx = box.x();
+        float by = box.y();
         ComputedStyle ax = box.axisStyle();
         float dx = 0, dy = 0;
         if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.TOP)) {
             float limit = portY + ax.length(CssPropertyIndex.TOP, portH, rootW, rootH);
-            if (box.y < limit) dy = Math.max(0, Math.min(limit - box.y, cbBottom - (box.y + box.h + box.mB)));
+            if (by < limit) dy = Math.max(0, Math.min(limit - by, cbBottom - (by + box.h + box.mB)));
         } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.BOTTOM)) {
             float limit = portY + portH - ax.length(CssPropertyIndex.BOTTOM, portH, rootW, rootH);
-            if (box.y + box.h > limit) dy = -Math.max(0, Math.min(box.y + box.h - limit, box.y - box.mT - cbTop));
+            if (by + box.h > limit) dy = -Math.max(0, Math.min(by + box.h - limit, by - box.mT - cbTop));
         }
         if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.LEFT)) {
             float limit = portX + ax.length(CssPropertyIndex.LEFT, portW, rootW, rootH);
-            if (box.x < limit) dx = Math.max(0, Math.min(limit - box.x, cbRight - (box.x + box.w + box.mR)));
+            if (bx < limit) dx = Math.max(0, Math.min(limit - bx, cbRight - (bx + box.w + box.mR)));
         } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.RIGHT)) {
             float limit = portX + portW - ax.length(CssPropertyIndex.RIGHT, portW, rootW, rootH);
-            if (box.x + box.w > limit) dx = -Math.max(0, Math.min(box.x + box.w - limit, box.x - box.mL - cbLeft));
+            if (bx + box.w > limit) dx = -Math.max(0, Math.min(bx + box.w - limit, bx - box.mL - cbLeft));
         }
         box.stickyDy = dy;
         box.stickyUnstuckY = box.y;
@@ -101,12 +120,13 @@ final class ScrollExtentCalc {
                 || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.LEFT) || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.RIGHT)) {
             return null;
         }
-        float portY = port.y + port.bT;
+        float portY = port.y() + port.bT;
         float portH = Math.max(0, port.h - port.bT - port.bB);
         float limit = portY + ax.length(CssPropertyIndex.TOP, portH, rootW, rootH);
         float cbBottom = LayoutReads.peekParentContentBottom(box);
         if (Float.floatToIntBits(box.y) != Float.floatToIntBits(box.stickyPlacedY)) return null;
-        return new float[]{limit, cbBottom, box.stickyUnstuckY, box.h, box.mB, box.parent != port ? 1f : 0f};
+        float unstuckAbsY = PlacementMemo.originParentY(box) + box.stickyUnstuckY;
+        return new float[]{limit, cbBottom, unstuckAbsY, box.h, box.mB, box.parent != port ? 1f : 0f};
     }
 
     static void updateScrollExtent(LayoutBox box, float scrollX, float scrollY) {
@@ -123,14 +143,14 @@ final class ScrollExtentCalc {
             return;
         }
 
-        float extRight = box.x + box.pL + box.bL;
-        float extBottom = box.y + box.pT + box.bT;
-        float descRight = box.x + box.w;
-        float descBottom = box.y + box.h;
+        float extRight = box.pL + box.bL;
+        float extBottom = box.pT + box.bT;
+        float descRight = box.w;
+        float descBottom = box.h;
 
         boolean marginEscapes = !box.establishesBfc && box.pB == 0 && box.bB == 0 && !hasDefiniteHeight(box);
         if (box.engineState instanceof VirtualFlowState vf) {
-            float contentOriginY = box.y + box.pT + box.bT + box.contentOffsetY + box.legendSpill;
+            float contentOriginY = box.pT + box.bT + box.contentOffsetY + box.legendSpill;
             float virtualBottom = contentOriginY + vf.contentExtentBottom(marginEscapes);
             if (virtualBottom > extBottom) extBottom = virtualBottom;
             if (virtualBottom > descBottom) descBottom = virtualBottom;
@@ -166,7 +186,8 @@ final class ScrollExtentCalc {
             for (int i = 0, n = box.children.size(); i < n; i++) {
                 LayoutBox child = box.children.get(i);
                 if (child.style.facts().displayNone || child.isAbsolute) continue;
-                if (child.node != null && child.node.nodeType == NodeType.TEXT) {
+                if (child.node != null && child.node.nodeType == NodeType.TEXT
+                        && !child.fragmentsStale && !child.inlineFragments.isEmpty()) {
                     List<LayoutBox.InlineFragment> frags = child.inlineFragments;
                     for (int j = 0, m = frags.size(); j < m; j++) {
                         LayoutBox.InlineFragment frag = frags.get(j);
@@ -230,15 +251,15 @@ final class ScrollExtentCalc {
             if (b > extBottom) extBottom = b;
         }
 
-        box.descendantOverflowRight = descRight - box.x;
-        box.descendantOverflowBottom = descBottom - box.y;
+        box.descendantOverflowRight = descRight;
+        box.descendantOverflowBottom = descBottom;
         if (box.isCollapsedTable()) {
-            box.scrollWidth = extRight - box.x;
-            box.scrollHeight = extBottom - box.y;
+            box.scrollWidth = extRight;
+            box.scrollHeight = extBottom;
             return;
         }
-        box.scrollWidth = Math.max(Math.max(box.w, extRight - box.x + box.pR + box.bR), box.descendantOverflowRight);
-        box.scrollHeight = Math.max(Math.max(box.h, extBottom - box.y + box.pB + box.bB), box.descendantOverflowBottom);
+        box.scrollWidth = Math.max(Math.max(box.w, extRight + box.pR + box.bR), box.descendantOverflowRight);
+        box.scrollHeight = Math.max(Math.max(box.h, extBottom + box.pB + box.bB), box.descendantOverflowBottom);
     }
 
     private static boolean hasDefiniteHeight(LayoutBox box) {

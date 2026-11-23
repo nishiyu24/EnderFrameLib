@@ -271,10 +271,10 @@ class MeasureMemoTest {
         child.layout(0f, 0f, 400f, 400f, ctx(true, 2));
         assertEquals(skippedBefore + 1, LayoutBox.layoutsSkipped(), "Same inputs must skip layout");
 
-        // 整数デルタの親座標変化は shift で再利用される
-        long shiftedBefore = LayoutBox.layoutsShifted();
+        // 親相対座標の変化でも配置を再利用して skip し、位置だけが更新される
+        long skippedOnMove = LayoutBox.layoutsSkipped();
         child.layout(25f, 15f, 400f, 400f, ctx(true, 3));
-        assertEquals(shiftedBefore + 1, LayoutBox.layoutsShifted(), "Integer origin delta must shift layout");
+        assertEquals(skippedOnMove + 1, LayoutBox.layoutsSkipped(), "Origin delta must reuse placement via parent-relative coordinates");
         assertEquals(25f, child.x(), 0.01f);
         assertEquals(15f, child.y(), 0.01f);
 
