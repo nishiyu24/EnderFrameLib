@@ -83,3 +83,4 @@ dcbad05 | WebControlInteractionTest#testClickingNonFocusableElementDoesNotFocusA
 T3 | MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout, MutationSeedRegressionTest#knownSeedsStillMismatchUntilFixed, gradle:mutationFuzz | 夜間のファズで見つかった種を固定の種として毎回の CI で回す（直せていない種は「既知:」で残し、直ると赤）
 A6 | gradle:shortcutMatrix | 近道スイッチを 1 つ切ると出力が変わる 20 件（夜間。既知の表 shortcut-matrix-known.txt は空）
 A10, §6-136 | gradle:verifyPublishedModules | 公開先 URL が Windows のパスで解決できず :core を公開できなかった。公開物だけで別プロジェクトが動くことを検査する
+§6-195, K0b | IntrinsicAndScrollOracleTest#bodyFloatOnly, IntrinsicAndScrollOracleTest#collapsedWhitespaceTextAddsNoScrollExtent | 内在の幅が前回の測定の枠・余白を読み測っていない箱で 0 になった（shrink-to-fit の親の中の fieldset の幅が面で違う）・空白だけで畳まれた文字の箱の 1 行ぶんがスクロール範囲に入った（オラクルで検出）

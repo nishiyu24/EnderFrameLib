@@ -186,8 +186,9 @@ final class ScrollExtentCalc {
             for (int i = 0, n = box.children.size(); i < n; i++) {
                 LayoutBox child = box.children.get(i);
                 if (child.style.facts().displayNone || child.isAbsolute) continue;
+                // 断片を持たず幅 0 の文字（空白だけで畳まれた文字）は何も描かない。箱の高さ（1 行ぶん）をスクロール範囲へ足さない
                 if (child.node != null && child.node.nodeType == NodeType.TEXT
-                        && !child.fragmentsStale && !child.inlineFragments.isEmpty()) {
+                        && !child.fragmentsStale && (!child.inlineFragments.isEmpty() || child.w == 0)) {
                     List<LayoutBox.InlineFragment> frags = child.inlineFragments;
                     for (int j = 0, m = frags.size(); j < m; j++) {
                         LayoutBox.InlineFragment frag = frags.get(j);

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -80,7 +81,7 @@ final class IntrinsicSizing {
 
     private static float computeMinContentWidth(LayoutBox box, LayoutContext ctx) {
         if (box.effectiveContainsInlineSize()) {
-            return box.horizontalDecoration() + box.containIntrinsicInlinePx(ctx.viewport().rootW(), ctx.viewport().rootH());
+            return inlineDecoration(box, ctx) + box.containIntrinsicInlinePx(ctx.viewport().rootW(), ctx.viewport().rootH());
         }
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
@@ -90,7 +91,7 @@ final class IntrinsicSizing {
         if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)
                 && box.display.inner() != LayoutBox.Display.Inner.TABLE) {
             float min = ax.length(CssPropertyIndex.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
-            return ax.isBorderBox() ? Math.max(min, box.horizontalDecoration()) : min + box.horizontalDecoration();
+            return ax.isBorderBox() ? Math.max(min, inlineDecoration(box, ctx)) : min + inlineDecoration(box, ctx);
         }
 
         float control = ElementSizing.minContentWidth(box, ctx);
@@ -117,7 +118,7 @@ final class IntrinsicSizing {
 
         if (box.children.isEmpty()) {
             if (!ReplacedElements.isReplacedTag(box.node.tag) && !com.nishiyu.enderframelib.core.dom.node.ElementTraits.isBuiltinReplacedMedia(box.node.tag)) {
-                return box.horizontalDecoration();
+                return inlineDecoration(box, ctx);
             }
             float image = BoxMeasurer.replacedImageWidth(box, ctx);
             if (!Float.isNaN(image)) return image;
@@ -137,8 +138,8 @@ final class IntrinsicSizing {
         }
         LayoutBox legend = box.renderedLegend();
         float legendW = legend == null ? 0 : minContentContribution(legend, ctx) + ownInlineMargins(legend, ctx);
-        if (sumItems) return Math.max(legendW, sum + box.columnGap * Math.max(0, count - 1)) + box.horizontalDecoration();
-        return Math.max(legendW, max) + box.horizontalDecoration();
+        if (sumItems) return Math.max(legendW, sum + box.columnGap * Math.max(0, count - 1)) + inlineDecoration(box, ctx);
+        return Math.max(legendW, max) + inlineDecoration(box, ctx);
     }
 
     private static float minContentContribution(LayoutBox box, LayoutContext ctx) {
@@ -151,13 +152,26 @@ final class IntrinsicSizing {
         }
         if (MeasureReads.currentMeasuringBox() != null) box.measureMemo.noteParentReadOuter();
         float v = ax.length(CssPropertyIndex.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
-        float borderBox = ax.isBorderBox() ? Math.max(v, box.horizontalDecoration()) : v + box.horizontalDecoration();
+        float borderBox = ax.isBorderBox() ? Math.max(v, inlineDecoration(box, ctx)) : v + inlineDecoration(box, ctx);
         String minWidth = ax.get(CssPropertyIndex.MIN_WIDTH);
         if (minWidth != null && !minWidth.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(minWidth)) {
             float min = ax.length(CssPropertyIndex.MIN_WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
-            borderBox = Math.max(borderBox, ax.isBorderBox() ? min : min + box.horizontalDecoration());
+            borderBox = Math.max(borderBox, ax.isBorderBox() ? min : min + inlineDecoration(box, ctx));
         }
         return borderBox;
+    }
+
+    /**
+     * 内在の幅に足す左右の枠と余白。スタイルだけから求める（% は 0。{@link LayoutBox#intrinsicInlineMargins} と同じ扱い）。
+     * 前回の測定が置いた {@code pL}・{@code bL} などを読まない: まだ測っていない箱は 0 で、使い回した箱とで内在の幅が食い違うため。
+     * 表は重ねた枠線を測定が置くので箱の値を使う。
+     */
+    static float inlineDecoration(LayoutBox box, LayoutContext ctx) {
+        if (box.display.inner() == LayoutBox.Display.Inner.TABLE) return box.horizontalDecoration();
+        float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
+        ComputedStyle s = box.axisStyle();
+        return LayoutUnit.snap(s.edgeLength(ComputedStyle.EDGE_PADDING_L, 0, rootW, rootH)) + LayoutUnit.snap(s.edgeLength(ComputedStyle.EDGE_PADDING_R, 0, rootW, rootH))
+                + LayoutUnit.snap(s.edgeLength(ComputedStyle.EDGE_BORDER_L, 0, rootW, rootH)) + LayoutUnit.snap(s.edgeLength(ComputedStyle.EDGE_BORDER_R, 0, rootW, rootH));
     }
 
     static float ownInlineMargins(LayoutBox box, LayoutContext ctx) {

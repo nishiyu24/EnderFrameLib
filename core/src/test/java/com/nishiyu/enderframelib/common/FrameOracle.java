@@ -93,8 +93,19 @@ public final class FrameOracle {
             out.add((b.node == null ? "(anon)" : b.node.tag) + " display:none");
             return;
         }
+        int kids = 0;
+        for (LayoutBox c : b.children) if (!invisibleText(c)) kids++;
         out.add((b.node == null ? "(anon)" : b.node.tag) + "@" + b.x() + "," + b.y() + " " + b.w() + "x" + b.h()
-                + (scrollExtents ? " scroll " + b.scrollWidth() + "x" + b.scrollHeight() : "") + " kids " + b.children.size());
-        for (LayoutBox c : b.children) walk(c, scrollExtents, out);
+                + (scrollExtents ? " scroll " + b.scrollWidth() + "x" + b.scrollHeight() : "") + " kids " + kids);
+        for (LayoutBox c : b.children) if (!invisibleText(c)) walk(c, scrollExtents, out);
+    }
+
+    /**
+     * 畳まれた空白だけの文字の箱（断片なし・幅 0）。何も描かず、スクロール範囲にも入らない。最初から作った面は子が空白だけの
+     * ブロックにこの箱を残し、増分で最後のブロックを消した面は残さない（箱の木の作り方の差で、観測できる差ではない）ので数えない。
+     */
+    private static boolean invisibleText(LayoutBox c) {
+        return c.node != null && c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
+                && c.inlineFragments.isEmpty() && c.w() == 0 && (c.node.text == null || c.node.text.isBlank());
     }
 }
