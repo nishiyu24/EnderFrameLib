@@ -57,10 +57,10 @@ animation_test.html/hover0b	466ac106
 animation_test.html/hover1a	316571ca
 animation_test.html/hover1b	4675e452
 animation_test.html/hover2a	671f8735
-animation_test.html/hover2b	eb9d4f6
+animation_test.html/hover2b	2fc6eccd
 animation_test.html/leave	3f0aa95f
 animation_test.html/scrollA	d664a637
-animation_test.html/scrollB	32abbe7b
+animation_test.html/scrollB	31d8dbfa
 animation_test.html/innerScrollA	372614fd
 animation_test.html/innerScrollB	cd117ea
 animation_test.html/scrollBack	cbc15703
