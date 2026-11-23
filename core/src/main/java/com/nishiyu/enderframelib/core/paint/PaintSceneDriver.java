@@ -98,10 +98,10 @@ public final class PaintSceneDriver {
         if (rb.valid) return rb.eligible ? rb : null;
         rb.valid = true;
         rb.eligible = false;
-        int from = retainFrom[c], to = retainTo[c], n = to - from;
+        int from = retain.from[c], to = retain.to[c], n = to - from;
         if (n <= 0) return null;
-        for (int k : retainNodes) { // 入れ子のスクロール節は姿勢が中立でない（スクロール量を持つ）ので対象外
-            if (k != c && retainFrom[k] >= from && retainFrom[k] < to) return null;
+        for (int k : retain.nodes) { // 入れ子のスクロール節は姿勢が中立でない（スクロール量を持つ）ので対象外
+            if (k != c && retain.from[k] >= from && retain.from[k] < to) return null;
         }
         if (rb.bottom.length != n) {
             rb.bottom = new double[n]; rb.top = new double[n]; rb.height = new double[n];
@@ -155,7 +155,7 @@ public final class PaintSceneDriver {
         // 項目の下端（デバイス）= d*下端 + f。下へ外れる条件: d*下端 + f + pad + 高さ < y0。上は d*上端 + f − pad − 高さ > y1
         double thrTop = w[0] - eps - w[2] - m.f();
         double thrBot = w[1] + eps + w[2] - m.f();
-        int n = retainTo[c] - retainFrom[c];
+        int n = retain.to[c] - retain.from[c];
         int skipped = 0;
         for (int b = 0; b < rb.keep.length; b++) {
             // ブロックの全項目が上へ外れている（鍵の最大が閾値未満）か、全項目が下へ外れている（鍵の最小が閾値超）
@@ -177,21 +177,14 @@ public final class PaintSceneDriver {
 
     private final String sessionId;
 
-    private final Long2IntOpenHashMap indexOf = new Long2IntOpenHashMap();
+    private Long2IntOpenHashMap indexOf = new Long2IntOpenHashMap();
     private final List<Integer> fxAnchors = new ArrayList<>();
     private final List<Integer> activeAnchors = new ArrayList<>();
     /** {@link #chainFor} が前へ進める錨の位置。 */
     private int anchorNext;
     private int[] parentIdx = new int[0];
-    /** スクロール節の添字 → 中身の範囲 {@code [from, to)}（表示リスト上で連続しているものだけ。無ければ from = -1）。 */
-    private int[] retainFrom = new int[0], retainTo = new int[0];
-    /** {@link #computeRetainRanges} の作業表（使い回す）。 */
-    private int[] retainMin = new int[0], retainMax = new int[0], retainCount = new int[0];
-    private boolean[] retainCandidate = new boolean[0];
-    /** 範囲の先頭の添字 → その範囲のスクロール節の添字（無ければ -1）。 */
-    private int[] retainNodeAt = new int[0];
-    /** スクロール節の添字（外側の節が先）。無ければ空。 */
-    private int[] retainNodes = new int[0];
+    /** スクロール節ごとの中身の範囲の表（{@link RetainRanges}）。 */
+    private final RetainRanges retain = new RetainRanges();
     /** {@link #run} の作業表（使い回し）。 */
     @SuppressWarnings("unchecked")
     private List<Group>[] chainBuf = new List[0];
@@ -299,14 +292,14 @@ public final class PaintSceneDriver {
             int winFrom = 0, winTo = 0;
             for (int i = 0; i < items.size(); i++) {
                 if (i < skipTo) continue;
-                int rn = retainNodeAt.length > i ? retainNodeAt[i] : -1;
+                int rn = retain.nodeAt.length > i ? retain.nodeAt[i] : -1;
                 if (rn >= 0 && plan != null && plan[rn] == RetainPlan.SKIP) {
-                    skipTo = retainTo[rn];
+                    skipTo = retain.to[rn];
                     continue;
                 }
                 if (rn >= 0) {
                     win = windows.isEmpty() ? null : windows.get(rn);
-                    if (win != null) { winFrom = retainFrom[rn]; winTo = retainTo[rn]; } else winTo = 0;
+                    if (win != null) { winFrom = retain.from[rn]; winTo = retain.to[rn]; } else winTo = 0;
                 }
                 if (win != null && i < winTo) {
                     int blk = (i - winFrom) >> BLOCK_SHIFT;
@@ -344,25 +337,25 @@ public final class PaintSceneDriver {
             int[] open = new int[4]; // 記録中の保持層の節の添字（入れ子の順）
             int openN = 0;
             for (int i = 0; i < items.size(); i++) {
-                int rn = retainNodeAt.length > i ? retainNodeAt[i] : -1;
+                int rn = retain.nodeAt.length > i ? retain.nodeAt[i] : -1;
                 if (rn >= 0) {
                     RetainPlan r = plan != null ? plan[rn] : null;
                     if (r == RetainPlan.SKIP) {
                         DisplayItem node = items.get(rn);
                         painter.syncLayers(List.of());
-                        painter.drawRetained(node, rn, retainFrom[rn], retainTo[rn]);
-                        i = retainTo[rn] - 1;
+                        painter.drawRetained(node, rn, retain.from[rn], retain.to[rn]);
+                        i = retain.to[rn] - 1;
                         continue;
                     }
                     if (r == RetainPlan.RECORD) {
                         DisplayItem node = items.get(rn);
                         painter.syncLayers(List.of());
-                        painter.beginRetained(node, rn, retainFrom[rn], retainTo[rn]);
+                        painter.beginRetained(node, rn, retain.from[rn], retain.to[rn]);
                         if (openN == open.length) open = java.util.Arrays.copyOf(open, openN * 2);
                         open[openN++] = rn;
                     }
                     win = windows.isEmpty() ? null : windows.get(rn);
-                    if (win != null) { winFrom = retainFrom[rn]; winTo = retainTo[rn]; } else winTo = 0;
+                    if (win != null) { winFrom = retain.from[rn]; winTo = retain.to[rn]; } else winTo = 0;
                 }
                 boolean culledRun = false;
                 if (win != null && i < winTo) {
@@ -393,13 +386,13 @@ public final class PaintSceneDriver {
                     }
                 }
                 // 記録中の保持層の範囲の終わり: 層を保存して重ねる。保持できなければ、範囲をふつうに描き直す
-                while (openN > 0 && retainTo[open[openN - 1]] == i + 1) {
+                while (openN > 0 && retain.to[open[openN - 1]] == i + 1) {
                     int node = open[--openN];
                     painter.syncLayers(List.of());
                     if (!painter.endRetained(items.get(node), node)) {
                         plan[node] = RetainPlan.NONE;
                         windows.remove(node);
-                        i = retainFrom[node] - 1;
+                        i = retain.from[node] - 1;
                         openN = 0;
                         win = null; // 描き直しは通常の走査（外した項目は鎖が無いので描かれない）
                         break;
@@ -419,11 +412,11 @@ public final class PaintSceneDriver {
      * 保持しない（NONE）場合でも、描画側が cullWindow を持っていれば画面外ブロックを走査から外す。
      */
     private RetainPlan[] planRetained(List<DisplayItem> items, Painter painter) {
-        if (retainNodes.length == 0) return null;
+        if (retain.nodes.length == 0) return null;
         RetainPlan[] plan = null;
         int coveredUntil = 0;
-        for (int c : retainNodes) {
-            int from = retainFrom[c], to = retainTo[c];
+        for (int c : retain.nodes) {
+            int from = retain.from[c], to = retain.to[c];
             if (from < coveredUntil) continue;
             if (insideFxAnchor(items, c)) continue;
             Resolved r = resolveAt(c);
@@ -460,81 +453,6 @@ public final class PaintSceneDriver {
             if (a < index && index < a + items.get(a).hints().layer().span()) return true;
         }
         return false;
-    }
-
-    /** スクロール節ごとの中身の範囲（子孫の添字の最小〜最大。個数と一致して連続しているものだけ）を求める。 */
-    private void computeRetainRanges(List<DisplayItem> items) {
-        int n = items.size();
-        IntArrayListLite nodes = new IntArrayListLite();
-        for (int i = 0; i < n; i++) {
-            DisplayItem it = items.get(i);
-            if (it.type() == ElementType.NODE && it.id().endsWith(SCROLL_CONTENT_SUFFIX)) nodes.add(i);
-        }
-        // 表は使い回す（索引を整えるたびに項目数ぶんの配列を 6 本作っていた。並びの入れ替えの差分は hover の毎フレーム走る。B12）。
-        // 大きさは項目数以上で、[0, n) だけを使う（読む側は添字 i < n だけを引く）
-        if (retainFrom.length < n) {
-            int cap = Math.max(n, retainFrom.length * 3 / 2);
-            retainFrom = new int[cap];
-            retainTo = new int[cap];
-            retainNodeAt = new int[cap];
-            retainMin = new int[cap];
-            retainMax = new int[cap];
-            retainCount = new int[cap];
-            retainCandidate = new boolean[cap];
-        }
-        java.util.Arrays.fill(retainFrom, -1);
-        java.util.Arrays.fill(retainTo, 0);
-        java.util.Arrays.fill(retainNodeAt, -1);
-        if (nodes.size == 0) {
-            if (retainNodes.length != 0) retainNodes = new int[0];
-            return;
-        }
-        boolean[] candidate = retainCandidate;
-        java.util.Arrays.fill(candidate, 0, n, false);
-        for (int k = 0; k < nodes.size; k++) candidate[nodes.a[k]] = true;
-        int[] min = retainMin, max = retainMax, count = retainCount;
-        java.util.Arrays.fill(min, 0, n, Integer.MAX_VALUE);
-        java.util.Arrays.fill(max, 0, n, -1);
-        java.util.Arrays.fill(count, 0, n, 0);
-        for (int j = 0; j < n; j++) {
-            int p = parentIdx[j];
-            for (int guard = 0; p >= 0 && guard < 128; guard++) {
-                if (candidate[p]) {
-                    if (j < min[p]) min[p] = j;
-                    if (j > max[p]) max[p] = j;
-                    count[p]++;
-                }
-                p = parentIdx[p];
-            }
-        }
-        IntArrayListLite valid = new IntArrayListLite();
-        for (int k = 0; k < nodes.size; k++) {
-            int c = nodes.a[k];
-            if (count[c] == 0 || max[c] - min[c] + 1 != count[c]) continue; // 連続していない（範囲を飛ばせない）
-            retainFrom[c] = min[c];
-            retainTo[c] = max[c] + 1;
-            valid.add(c);
-        }
-        // 範囲の先頭 → 節。同じ先頭を持つ入れ子は外側（範囲が大きい方）を採る
-        for (int k = 0; k < valid.size; k++) {
-            int c = valid.a[k];
-            int at = retainFrom[c];
-            int other = retainNodeAt[at];
-            if (other < 0 || retainTo[c] > retainTo[other]) retainNodeAt[at] = c;
-        }
-        // 問い合わせは外側の節が先（範囲の先頭の昇順、同じなら範囲の大きい方）
-        // 節は数個なので挿入整列（箱詰めの配列と比較の式を作らない）
-        int[] order = retainNodes.length == valid.size ? retainNodes : new int[valid.size];
-        for (int k = 0; k < valid.size; k++) {
-            int c = valid.a[k], j = k - 1;
-            while (j >= 0 && (retainFrom[order[j]] > retainFrom[c]
-                    || (retainFrom[order[j]] == retainFrom[c] && retainTo[order[j]] < retainTo[c]))) {
-                order[j + 1] = order[j];
-                j--;
-            }
-            order[j + 1] = c;
-        }
-        retainNodes = order;
     }
 
     /** 走査中の、いまの表示リスト（不変リストなら、これ自身が中身の同一性の印になる）。 */
@@ -712,53 +630,93 @@ public final class PaintSceneDriver {
         return pidx;
     }
 
+    /** 作り直しの間だけ前回の索引（鍵 → 位置）を持つ。{@link #indexOf} と入れ替えて使い、毎回の確保を避ける。 */
+    private Long2IntOpenHashMap prevIndexOf = new Long2IntOpenHashMap();
+    /** 作り直しで、前回の位置から今回の位置へ運ぶ記憶の作業表（作業のたびに {@link #prevRes} などと入れ替える）。 */
+    private Resolved[] nextRes = new Resolved[0], nextParentRes = new Resolved[0];
+    private boolean[] nextStatic = new boolean[0], nextIdle = new boolean[0], nextVerified = new boolean[0];
+    private CssAnimator.AnimState[] nextStates = new CssAnimator.AnimState[0];
+
+    /**
+     * 索引（鍵 → 位置・親の添字・節の範囲）を表示リストから作り直す。索引の更新はこの 1 本で、差分が小さいときは {@link #reconcileIndex} が
+     * 同じ結果をより安く作る。<b>位置が変わった項目の姿勢・補間状態は、前回の位置から鍵で引いて今回の位置へ運ぶ</b>（構造と中身が前回と同じなら）。
+     * ホバーで項目が出入りして間がずれるときも、変わらない項目の姿勢を作り直さない。前回の索引の表は入れ替えて使い回す。
+     */
     private void rebuildIndex(List<DisplayItem> items) {
         int n = items.size();
-        Long2ObjectOpenHashMap<DisplayItem> map = new Long2ObjectOpenHashMap<>(n * 2);
-        for (DisplayItem it : items) {
-            map.put(it.key(), it);
-            if (it.id() != null && !it.id().isEmpty()) {
-                long strKey = DisplayItem.keyOf(it.id());
-                if (strKey != it.key()) map.putIfAbsent(strKey, it);
-            }
-        }
-        indexedById = map;
+        List<DisplayItem> was = indexedItems;
+        // 同じリストを書き換えたもの・可変のリストは、前回の中身が当てにならない（運ぶ記憶を持たない）
+        if (was != null && (was == items || !isImmutable(was))) was = null;
+        int wasN = was != null ? Math.min(was.size(), prevRes.length) : 0;
+        // 前回の索引は退避し、今回の索引は入れ替えた空の表へ作る
+        Long2IntOpenHashMap fresh = prevIndexOf;
+        prevIndexOf = indexOf;
+        indexOf = fresh;
         indexOf.clear();
+        indexedById.clear();
+        indexedById.ensureCapacity(n * 2);
         fxAnchors.clear();
         for (int i = 0; i < n; i++) {
             DisplayItem it = items.get(i);
             long key = it.key();
+            indexedById.put(key, it);
             indexOf.put(key, i);
             if (it.id() != null && !it.id().isEmpty()) {
                 long strKey = DisplayItem.keyOf(it.id());
-                if (strKey != key) indexOf.putIfAbsent(strKey, i);
+                if (strKey != key) { indexedById.putIfAbsent(strKey, it); indexOf.putIfAbsent(strKey, i); }
             }
             if (it.type() == ElementType.NODE && ItemDiff.hasFx(it.hints().layer())) fxAnchors.add(i);
         }
-        indexedItems = items;
 
         ensureCapacity(n);
+        ensureNextCapacity(curRes.length);
+        for (int i = 0; i < n; i++) {
+            DisplayItem it = items.get(i);
+            int o = was != null ? prevIndexOf.getOrDefault(it.key(), -1) : -1;
+            nextRes[i] = null; nextParentRes[i] = null; nextStatic[i] = false; nextIdle[i] = false; nextStates[i] = null; nextVerified[i] = false;
+            if (o < 0 || o >= wasN || itemOffX[o] != 0f || itemOffY[o] != 0f) continue; // 描画上の平行移動を持つ項目の姿勢は運ばない（平行移動の同期が差を見る基準が 0 になるため）
+            DisplayItem prevItem = was.get(o);
+            if (prevItem == it || ItemDiff.unchanged(prevItem, it)) {
+                if (prevItem == it || ItemDiff.sameStructure(prevItem, it)) {
+                    nextRes[i] = prevRes[o]; nextParentRes[i] = prevParentRes[o]; nextStatic[i] = prevStatic[o];
+                    nextIdle[i] = prevIdle[o]; nextStates[i] = states[o]; nextVerified[i] = stateVerified[o];
+                }
+            } else if (ItemDiff.sameStructure(prevItem, it) && prevRes[o] != null && prevStatic[o] && ItemDiff.sameGeometryWithoutTransition(prevItem, it)) {
+                nextRes[i] = prevRes[o]; nextParentRes[i] = prevParentRes[o]; nextStatic[i] = true;
+            }
+        }
+        Resolved[] tr = prevRes; prevRes = nextRes; nextRes = tr;
+        tr = prevParentRes; prevParentRes = nextParentRes; nextParentRes = tr;
+        boolean[] tb = prevStatic; prevStatic = nextStatic; nextStatic = tb;
+        tb = prevIdle; prevIdle = nextIdle; nextIdle = tb;
+        tb = stateVerified; stateVerified = nextVerified; nextVerified = tb;
+        CssAnimator.AnimState[] ts = states; states = nextStates; nextStates = ts;
+        Arrays.fill(nextRes, null); Arrays.fill(nextParentRes, null); Arrays.fill(nextStates, null);
+        prevIndexOf.clear();
+        indexedItems = items;
+
         for (int i = 0; i < n; i++) {
             parentIdx[i] = resolveParentIndex(items.get(i));
         }
-        computeRetainRanges(items);
+        retain.compute(items, parentIdx);
         Arrays.fill(curRes, 0, n, null);
         Arrays.fill(curStamp, 0, n, 0);
-        Arrays.fill(prevRes, 0, n, null);
-        Arrays.fill(prevParentRes, 0, n, null);
-        Arrays.fill(prevStatic, 0, n, false);
-        Arrays.fill(prevIdle, 0, n, false);
         Arrays.fill(visiting, 0, n, false);
-        Arrays.fill(states, 0, n, null);
         Arrays.fill(itemOffX, 0, n, 0f);
         Arrays.fill(itemOffY, 0, n, 0f);
-        Arrays.fill(stateVerified, 0, n, false);
         activeOffCount = 0;
         seenOffsets = null;
         seenOffsetsVersion = -1;
         seenSnapDpr = Float.NaN;
-        rangeBounds.clear();
+        invalidateRangeBounds();
         generation++;
+    }
+
+    private void ensureNextCapacity(int cap) {
+        if (nextRes.length >= cap) return;
+        nextRes = new Resolved[cap]; nextParentRes = new Resolved[cap];
+        nextStatic = new boolean[cap]; nextIdle = new boolean[cap]; nextVerified = new boolean[cap];
+        nextStates = new CssAnimator.AnimState[cap];
     }
 
     private void updateDiffSlot(int i, DisplayItem prevItem, DisplayItem curItem) {

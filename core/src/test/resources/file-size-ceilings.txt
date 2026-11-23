@@ -20,7 +20,7 @@ core/dom/InteractionState.java | 1092
 core/text/TextShaper.java | 1065
 core/layout/BoxTreeBuilder.java | 1002
 core/kernel/gpu/shader/ShaderSources.java | 1001
-core/paint/PaintSceneDriver.java | 991
+core/paint/PaintSceneDriver.java | 949
 core/paint/BoxDecorations.java | 989
 core/paint/BoxDecorationPainter.java | 987
 core/dom/node/HtmlElement.java | 980
