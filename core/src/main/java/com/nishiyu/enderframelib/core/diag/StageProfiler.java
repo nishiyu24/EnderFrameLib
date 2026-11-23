@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.diag;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
@@ -101,14 +102,14 @@ public final class StageProfiler {
     public static long begin(PipelineStage stage) {
         if (!enabled) return 0L;
         if (trackAllocations) ALLOC_START.get()[stage.ordinal()] = threadAllocatedBytes();
-        long t = System.nanoTime();
+        long t = Clock.SYSTEM.nanos();
         return t == 0L ? 1L : t; // 0 は「無効」の印なので、まず起きないが 0 を避ける
     }
 
     /** {@link #begin} の対。 */
     public static void end(PipelineStage stage, long t0) {
         if (t0 == 0L) return;
-        long ns = System.nanoTime() - t0;
+        long ns = Clock.SYSTEM.nanos() - t0;
         long alloc = trackAllocations ? threadAllocatedBytes() - ALLOC_START.get()[stage.ordinal()] : -1;
         STATS[stage.ordinal()].add(ns, alloc);
     }

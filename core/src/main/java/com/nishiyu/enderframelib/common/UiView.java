@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.scene3d.Raycaster3D;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
@@ -170,6 +171,8 @@ public class UiView implements AutoCloseable {
     /** 直前の全レイアウト（描画要素の生成まで）にかかった時間と、それを終えた時刻（ナノ秒）。 */
     long lastLayoutCostNanos = 0L;
     long lastLayoutFinishedNanos = 0L;
+    /** このビューの時計（間引き・レイアウトの所要時間・アニメーション）。差し替えは {@code StandaloneView.clock}（K0 ①）。 */
+    Clock clock = Clock.SYSTEM;
 
     private String activeInputId = "";
     /** {@link #activeInputId} の持ち主の節の ID。描画 ID の綴りから逆算せず、入力欄を開いた時点の項目から取る。 */
@@ -268,7 +271,7 @@ public class UiView implements AutoCloseable {
 
     /** アニメーションを進める時刻（ms）。既定は現在時刻。時間をホストが握るとき（仮想時計）は上書きする。 */
     protected long nowMs() {
-        return System.currentTimeMillis();
+        return clock.millis();
     }
 
     /**
@@ -864,7 +867,7 @@ public class UiView implements AutoCloseable {
 
     /** 同期要求を送る間隔を空ける。送るべきなら true。 */
     public boolean shouldRequestSync() {
-        long now = System.currentTimeMillis();
+        long now = clock.millis();
         long lastReq = lastSyncRequestTime;
         if (now - lastReq > 2000) {
             lastSyncRequestTime = now;
@@ -1221,7 +1224,7 @@ public class UiView implements AutoCloseable {
             pendingResizeH = -1;
             return false;
         }
-        long sinceLastLayout = System.nanoTime() - lastLayoutFinishedNanos;
+        long sinceLastLayout = clock.nanos() - lastLayoutFinishedNanos;
         if (layoutRoot != null && sinceLastLayout < lastLayoutCostNanos * RESIZE_THROTTLE_FACTOR) {
             invalidated();
             return false;
@@ -1690,7 +1693,7 @@ public class UiView implements AutoCloseable {
 
         Document doc = document;
         if (doc != null && doc.root != null) {
-            long startedAt = System.nanoTime();
+            long startedAt = clock.nanos();
             UiDocumentCompiler parser = new UiDocumentCompiler();
 
             // @media はシートを読み直さず、新しいビューポートで条件だけ評価し直す
@@ -1710,16 +1713,16 @@ public class UiView implements AutoCloseable {
                     doc, newRootW, newRootH, env, scrollState, fontResolver(), interactionState,
                     layoutRoot);
             setLayoutRoot(rootBox);
-            long layoutDone = System.nanoTime();
+            long layoutDone = clock.nanos();
             long paintAlloc0 = com.nishiyu.enderframelib.core.EngineContext.current().flags().trackAllocations() ? RenderPipeline.threadAllocatedBytes() : 0;
             List<DisplayItem> elements = paintBoxes(rootBox, newRootW, newRootH, false);
             String breakdown = RenderPipeline.lastBuildStats()
-                    + (com.nishiyu.enderframelib.core.EngineContext.current().flags().trackAllocations() ? " paintAllocKB=" + (RenderPipeline.threadAllocatedBytes() - paintAlloc0) / 1024 : "") + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
+                    + (com.nishiyu.enderframelib.core.EngineContext.current().flags().trackAllocations() ? " paintAllocKB=" + (RenderPipeline.threadAllocatedBytes() - paintAlloc0) / 1024 : "") + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (clock.nanos() - layoutDone) / 1_000_000 + "ms";
             lastBreakdown = () -> breakdown;
             if (elements == null) elements = new ArrayList<>();
             publishBuilt(elements);
             applyOverrides();
-            lastLayoutFinishedNanos = System.nanoTime();
+            lastLayoutFinishedNanos = clock.nanos();
             lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
         }
     }

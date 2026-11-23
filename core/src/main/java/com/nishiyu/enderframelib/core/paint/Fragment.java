@@ -9,7 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 断片（C1・C1p。設計: {@code core/DESIGN_FRAGMENT_TREE.md} §3）。{@code PaintOrder.classifyPlain} の分類を、
+ * 断片（C1・C1p。設計: {@code core/DESIGN_INCREMENTAL_KERNEL.md} 付録 A.2）。{@code PaintOrder.classifyPlain} の分類を、
  * 「箱が親へ渡す層別の列（{@link #out}）」という形で写したもの。
  *
  * <ul>

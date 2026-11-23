@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
@@ -52,7 +53,7 @@ import java.util.function.Consumer;
  * キャレット移動・範囲選択（Shift・ドラッグ）・単語単位・Ctrl+A/C/X/V・複数行の上下移動ができる。
  * {@code <select>} は押すと {@link SelectPopup} が開き、クリックか {@code ↑↓ Enter} で選ぶ。キャレットの点滅はしない
  * （アイドル時は描き直さないため）。
- * タイマーは実時計（{@code System.currentTimeMillis()}）で数え、{@link #frame} のたびに期限が来たものを実行する。
+ * タイマーは実時計（{@code Clock.SYSTEM.millis()}）で数え、{@link #frame} のたびに期限が来たものを実行する。
  */
 public final class StandaloneView implements AutoCloseable {
     private static final float WHEEL_PIXELS = 40f;
@@ -115,7 +116,7 @@ public final class StandaloneView implements AutoCloseable {
     /** 左ボタンを押した位置が {@code data-orbit} の {@code <scene-3d>} なら、その世界（ドラッグでカメラを回している間だけ非 null）。 */
     private Scene3DWorld orbitWorld;
     private static final float ORBIT_RAD_PER_PIXEL = (float) Math.toRadians(0.4);
-    private java.util.function.LongSupplier clickClock = System::currentTimeMillis;
+    private java.util.function.LongSupplier clickClock = Clock.SYSTEM::millis;
     private long lastClickAt = Long.MIN_VALUE;
     private double lastClickX, lastClickY;
     private int clickCount;
@@ -139,10 +140,10 @@ public final class StandaloneView implements AutoCloseable {
         this.ui.alphaMaskProvider(com.nishiyu.enderframelib.core.paint.software.AlphaMasks.from(com.nishiyu.enderframelib.core.paint.resource.ImageProvider.standard()));
         this.input = new UiInput(ui);
         this.interaction = ui.interactionState();
-        long t0 = System.nanoTime();
+        long t0 = Clock.SYSTEM.nanos();
         ui.loadLocalHtml(html, width, height);
         this.items = ui.renderCache();
-        timings = "load=" + (System.nanoTime() - t0) / 1_000_000 + "ms items=" + items.size();
+        timings = "load=" + (Clock.SYSTEM.nanos() - t0) / 1_000_000 + "ms items=" + items.size();
     }
 
     /** 文書を別の HTML に差し替える（入力中の編集・ポップアップ・スクロール先は捨てる）。 */
@@ -313,7 +314,7 @@ public final class StandaloneView implements AutoCloseable {
         ui.timers().runDueTimers();
         stepScroll(prevNow == 0 ? 16 : nowMs - prevNow);
         List<DisplayItem> before = ui.renderCache();
-        long t0 = System.nanoTime();
+        long t0 = Clock.SYSTEM.nanos();
         ui.flushInvalidation();
         List<DisplayItem> after = ui.renderCache();
         boolean rebuilt = before != after;
@@ -326,7 +327,7 @@ public final class StandaloneView implements AutoCloseable {
             compositorUntil = compositorUntil(after, nowMs);
         }
         if (rebuilt || offsetsChanged) {
-            lastFlushNs = System.nanoTime() - t0;
+            lastFlushNs = Clock.SYSTEM.nanos() - t0;
             lastFlushItems = items.size();
             lastFlushBreakdown = ui.lastBreakdown();
         }
@@ -537,9 +538,16 @@ public final class StandaloneView implements AutoCloseable {
         return clickCount;
     }
 
+    /** このビューの時計を差し替える（間引き・アニメーション・ダブルクリック。テストは {@link Clock.Manual} を渡して実時間を待たない）。別の時計の時刻は比べられないので、直前のレイアウトの記録は捨てる。 */
+    public void clock(Clock c) {
+        ui.clock = c != null ? c : Clock.SYSTEM;
+        ui.lastLayoutCostNanos = ui.lastLayoutFinishedNanos = 0L;
+        this.clickClock = ui.clock::millis;
+    }
+
     /** ダブルクリックの判定に使う時計（ミリ秒）。テスト用。 */
     public void setClickClock(java.util.function.LongSupplier clock) {
-        this.clickClock = clock != null ? clock : System::currentTimeMillis;
+        this.clickClock = clock != null ? clock : Clock.SYSTEM::millis;
     }
 
     /**

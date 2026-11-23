@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.api.event.UIEvents;
@@ -162,7 +163,7 @@ public class UiInput {
             session.setHoveredElement(next != null ? next.key() : "");
         }
 
-        long now = System.currentTimeMillis();
+        long now = Clock.SYSTEM.millis();
         if (next != null && (enteredNewTarget || now - state.lastEventTime > MOVE_EVENT_INTERVAL_MS)) {
             next.dispatchEvent(CoreEvent.pointer("pointermove", localX, localY, 0, 0, false, false, false, false, null));
             next.dispatchEvent(CoreEvent.mouse("mousemove", localX, localY, 0, 0, false, false, false, false, null));
@@ -233,7 +234,7 @@ public class UiInput {
             return true;
         }
         UIHitResult dragHit = session.localCoords(state.draggingId, pixelX, pixelY);
-        long now = System.currentTimeMillis();
+        long now = Clock.SYSTEM.millis();
 
         if (dragHit != null) {
             DisplayItem draggedEl = dragHit.element();
@@ -420,7 +421,7 @@ public class UiInput {
         UiView.InputSessionState state = state();
         state.lastSubmittedId = baseId;
         state.lastSubmittedText = safeText;
-        state.lastSubmitTime = System.currentTimeMillis();
+        state.lastSubmitTime = Clock.SYSTEM.millis();
     }
 
     public void setLastCommittedValue(String elementId, String value) {
@@ -574,7 +575,7 @@ public class UiInput {
 
     private void dispatchDoubleClickIfRepeated(HtmlNode target, double x, double y) {
         UiView.InputSessionState state = state();
-        long now = System.currentTimeMillis();
+        long now = Clock.SYSTEM.millis();
         if (state.lastClickNode == target && now - state.lastClickTime <= DOUBLE_CLICK_INTERVAL_MS) {
             state.lastClickNode = null;
             target.dispatchEvent(CoreEvent.doubleClick(x, y, false, false, false, false));
@@ -686,7 +687,7 @@ public class UiInput {
             }
             state.lastSubmittedId = state.draggingId;
             state.lastSubmittedText = state.lastRangeText;
-            state.lastSubmitTime = System.currentTimeMillis();
+            state.lastSubmitTime = Clock.SYSTEM.millis();
         }
         if (dragged != null) {
             dragged.dispatchEvent(CoreEvent.mouse("dragend", state.lastSentX, state.lastSentY, 0, 0, false, false, false, false, null));
@@ -708,7 +709,7 @@ public class UiInput {
         if (!state.draggingId.isEmpty() && !state.lastRangeText.isEmpty()) {
             session.updateElementTextLocally(state.draggingId, state.lastRangeText);
         }
-        if (System.currentTimeMillis() - state.lastSubmitTime < 1500 && !state.lastSubmittedId.isEmpty()) {
+        if (Clock.SYSTEM.millis() - state.lastSubmitTime < 1500 && !state.lastSubmittedId.isEmpty()) {
             session.updateElementTextLocally(state.lastSubmittedId, state.lastSubmittedText);
         }
         String hoveredId = hoveredId();

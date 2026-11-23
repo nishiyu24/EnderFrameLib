@@ -7,7 +7,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 不変の項目の並び（C1・C1p）。設計: {@code core/DESIGN_FRAGMENT_TREE.md} §3.1・§0.5 M7。
+ * 不変の項目の並び（C1・C1p）。設計: {@code core/DESIGN_INCREMENTAL_KERNEL.md} 付録 A.2・A.1 M7。
  * 葉（項目の配列）・所有者つきの葉・2 つの連結・z 付きの寄与・レイヤーの錨の包み・32 分岐の永続 B 木ベクタ（{@link Vec}）。
  * どれも生成後は書き換えない。
  */

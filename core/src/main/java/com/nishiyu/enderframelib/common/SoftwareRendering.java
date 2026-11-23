@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
@@ -18,7 +19,7 @@ import java.util.Map;
  * パース → レイアウト → ディスプレイリスト → {@link SoftwareRenderBackend}。
  *
  * <pre>{@code
- * SoftwareRenderBackend img = SoftwareRendering.renderHtml(html, 800, 600, System.currentTimeMillis());
+ * SoftwareRenderBackend img = SoftwareRendering.renderHtml(html, 800, 600, Clock.SYSTEM.millis());
  * img.writePng(Path.of("out.png"));
  * }</pre>
  */

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.net;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,7 +46,7 @@ public final class YtDlpResolver {
 
     /** 古いキャッシュを捨てる。 */
     public static void expire() {
-        long now = System.currentTimeMillis();
+        long now = Clock.SYSTEM.millis();
         CACHE.entrySet().removeIf(e -> (now - e.getValue().timestamp) > SUCCESS_TTL_MS);
     }
 
@@ -66,7 +67,7 @@ public final class YtDlpResolver {
         // 外部プロセスに渡す URL は YouTube のホストに限定する（任意 URL でのプロセス起動を防ぐ）
         if (!MediaUrls.isYouTubeUrl(youtubeUrl) || !isUrlSafe.apply(youtubeUrl)) return null;
 
-        long now = System.currentTimeMillis();
+        long now = Clock.SYSTEM.millis();
         Cached cache = CACHE.get(youtubeUrl);
         if (cache != null) {
             if (cache.resolvedUrl != null && (now - cache.timestamp < SUCCESS_TTL_MS)) return cache.resolvedUrl;
@@ -114,7 +115,7 @@ public final class YtDlpResolver {
             // yt-dlp の出力も、ネイティブへ渡す前に HTTP(S) の絶対 URL であることだけ確認する。
             // 実際の取得時の SSRF・許可ドメイン検査はリレー側の SafeHttpClient が行う。
             if (rawUrl != null && MediaUrls.isSupportedExternalVideoUrl(rawUrl)) {
-                CACHE.put(youtubeUrl, new Cached(rawUrl, System.currentTimeMillis()));
+                CACHE.put(youtubeUrl, new Cached(rawUrl, Clock.SYSTEM.millis()));
                 return rawUrl;
             }
             fail(youtubeUrl);
@@ -134,7 +135,7 @@ public final class YtDlpResolver {
     }
 
     private static void fail(String url) {
-        CACHE.put(url, new Cached(null, System.currentTimeMillis()));
+        CACHE.put(url, new Cached(null, Clock.SYSTEM.millis()));
     }
 
     /** yt-dlp の出力から最初の http(s) の行を取る。 */

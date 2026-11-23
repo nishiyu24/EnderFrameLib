@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.dom.node;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.api.dom.Element;
 import com.nishiyu.enderframelib.api.dom.EventTarget;
@@ -40,7 +41,7 @@ public class CoreEvent implements Event {
         this.bubbles = bubbles;
         this.cancelable = cancelable;
         this.composed = composed;
-        this.timeStamp = System.currentTimeMillis();
+        this.timeStamp = Clock.SYSTEM.millis();
     }
 
     public CoreEvent(String type, boolean bubbles, boolean cancelable) {

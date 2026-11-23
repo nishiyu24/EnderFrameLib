@@ -223,6 +223,7 @@ public final class CostGateMain {
         cmd.add("-Dfile.encoding=UTF-8");
         cmd.add("-Dstdout.encoding=UTF-8");
         cmd.add("-Denderframe.threads=1");
+        cmd.add("-Denderframe.kernel.stats=true"); // 記憶の個数（memo*）を数える計器を立てる（K0 ②。既定オフ）
         cmd.add("-Xmx1g");
         if (!extraJvmArgs.isEmpty()) cmd.addAll(List.of(extraJvmArgs.split("\\s+")));
         cmd.add("-cp");

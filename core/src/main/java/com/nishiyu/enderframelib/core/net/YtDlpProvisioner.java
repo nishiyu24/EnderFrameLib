@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.net;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -124,7 +125,7 @@ public final class YtDlpProvisioner {
                 return target.toFile();
             }
 
-            long now = System.currentTimeMillis();
+            long now = Clock.SYSTEM.millis();
             if (target.equals(lastFailureTarget) && now - lastFailureAt < RETRY_COOLDOWN_MS) {
                 return null;
             }

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.EngineContext;
 import com.nishiyu.enderframelib.core.HostServices;
 import java.util.Collections;
@@ -54,7 +55,7 @@ public final class LocalEnvironment {
 
     /** 現在の変数の読み取り専用の写し（キーは {@code @} 付き）。 */
     public static Map<String, String> capture() {
-        long now = System.currentTimeMillis();
+        long now = Clock.SYSTEM.millis();
         HostServices host = EngineContext.current().host();
         Snapshot cached = cache;
         if (cached.host() == host && now - cached.time() < CACHE_MS && !cached.env().isEmpty()) {

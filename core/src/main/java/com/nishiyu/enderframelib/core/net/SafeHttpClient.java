@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.net;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
@@ -215,7 +216,7 @@ public final class SafeHttpClient {
         // 辿り直すと遅いので、解決済みの最終 URL を短時間だけメモリに覚える。
         FinalUrl cached = FINAL_URLS.get(urlString);
         if (cached != null) {
-            if (System.currentTimeMillis() < cached.expiresAt) {
+            if (Clock.SYSTEM.millis() < cached.expiresAt) {
                 AtomicBoolean started = new AtomicBoolean(false);
                 try {
                     streamRangeFrom(cached.uri, original, urlString, maxBytes, rangeHeader, consumer, started);
@@ -288,7 +289,7 @@ public final class SafeHttpClient {
 
                 if (!current.equals(original)) {
                     if (FINAL_URLS.size() >= MAX_FINAL_URLS) FINAL_URLS.clear();
-                    FINAL_URLS.put(cacheKey, new FinalUrl(current, System.currentTimeMillis() + FINAL_URL_TTL_MS));
+                    FINAL_URLS.put(cacheKey, new FinalUrl(current, Clock.SYSTEM.millis() + FINAL_URL_TTL_MS));
                 }
 
                 started.set(true);

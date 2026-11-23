@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.AnimationTiming;
 import com.nishiyu.enderframelib.core.css.model.EasingFunction;
@@ -72,15 +73,15 @@ public class CssAnimator {
     }
 
     public static AnimatedValues getValues(String sessionId, DisplayItem el) {
-        return getValuesAt(sessionId, el, System.currentTimeMillis());
+        return getValuesAt(sessionId, el, Clock.SYSTEM.millis());
     }
 
     public static AnimatedValues getValues(String sessionId, DisplayItem el, boolean isHovered) {
-        return getValuesAt(sessionId, el, System.currentTimeMillis());
+        return getValuesAt(sessionId, el, Clock.SYSTEM.millis());
     }
 
     public static AnimatedValues getValues(String sessionId, DisplayItem el, boolean isHovered, boolean isActive, boolean isFocused) {
-        return getValuesAt(sessionId, el, System.currentTimeMillis());
+        return getValuesAt(sessionId, el, Clock.SYSTEM.millis());
     }
 
     /**
@@ -125,7 +126,7 @@ public class CssAnimator {
         Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
         AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
         if (state != null) {
-            return state.getInterpolatedValues(System.currentTimeMillis());
+            return state.getInterpolatedValues(Clock.SYSTEM.millis());
         }
         AnimatedValues def = new AnimatedValues();
         def.set(el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.hints().skew(), el.color(), el.bgColor());
@@ -137,7 +138,7 @@ public class CssAnimator {
      * 候補ごとに呼ぶので、割り当てを避けるための版。状態があるときは補間の結果（新しい {@link AnimatedValues}）を返す。
      */
     public static AnimatedValues currentValuesInto(String sessionId, DisplayItem el, AnimatedValues scratch) {
-        return valuesAtInto(sessionId, el, scratch, System.currentTimeMillis());
+        return valuesAtInto(sessionId, el, scratch, Clock.SYSTEM.millis());
     }
 
     /**
@@ -160,7 +161,7 @@ public class CssAnimator {
         Map<String, AnimState> sessionMap = store().mapFor(sessionId, false);
         if (sessionMap == null || sessionMap.isEmpty()) return;
         // 毎フレームやると要素数分の集合を作り直すので、掃除は 1 秒に 1 回でよい（消えた要素の状態が少し残るだけ）
-        long now = System.nanoTime();
+        long now = Clock.SYSTEM.nanos();
         Long last = LAST_CLEANUP.get(sessionId);
         if (last != null && now - last < 1_000_000_000L) return;
         LAST_CLEANUP.put(sessionId, now);
@@ -304,7 +305,7 @@ public class CssAnimator {
         public int[] circleColors = null;
 
         public AnimState(DisplayItem el) {
-            this(el, System.currentTimeMillis());
+            this(el, Clock.SYSTEM.millis());
         }
 
         public AnimState(DisplayItem el, long now) {

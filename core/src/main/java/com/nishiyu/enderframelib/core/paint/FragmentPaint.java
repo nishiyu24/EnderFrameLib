@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.RandomAccess;
 
 /**
- * 表示リストの組み立て（C1・C1p。設計 {@code core/DESIGN_FRAGMENT_TREE.md}）。箱を再帰してその場で箱の項目を描き、
+ * 表示リストの組み立て（C1・C1p。設計 {@code core/DESIGN_INCREMENTAL_KERNEL.md} 付録 A）。箱を再帰してその場で箱の項目を描き、
  * 種類（{@link Fragment.Kind}）ごとに層（付録 E）へ組み立てて 1 本の列に展開する。経路はこの 1 本で、増分の更新（パッチ）は持たない。
  */
 final class FragmentPaint {

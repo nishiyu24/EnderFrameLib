@@ -136,13 +136,13 @@ class RealDocumentFramesTest {
             }
 
             // 幅の変更（ホストの経路。反映は実時間で間引かれるので、反映されるまで描いてから記録する）
+            com.nishiyu.enderframelib.common.ResizeSettle.freezeClock(v); // 止めた時計: 間引きは起きず、実時間を待たない（K0 ①）
             v.resize(700, H);
             // 反映は実時間で間引かれる（直前のレイアウトにかかった時間の 2 倍が過ぎるまで待つ）。毎フレーム再レイアウトを強制すると
             // 間引きが解けず、リサイズが一度も反映されない（full 側が 800 のままだった）ので、待つ間は強制しない。反映されるまで描き
             // （最大 200 回）、仮想時刻は最初の 6 回だけ進める（進めると、アニメーションの位相が実行の速さで変わる）
             for (int k = 0; k < 200 && (k < 6 || !widthApplied(v, 700)); k++) {
                 rec.frameWithoutForcedRelayout(k < 6 ? (t[0] += 500) : t[0]);
-                try { Thread.sleep(40); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             }
             for (int k = 0; k < 3; k++) rec.frameUnrecorded(t[0]); // 反映の直後の保留中の後処理を落ち着かせる（full は強制の再レイアウト）。時刻は進めない
             rec.frame("resize700", t[0] += 500);

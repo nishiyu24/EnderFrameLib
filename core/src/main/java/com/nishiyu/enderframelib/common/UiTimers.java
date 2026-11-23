@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,7 +48,7 @@ public final class UiTimers {
             this.runnable = runnable;
             this.intervalMs = intervalMs;
             this.recurring = recurring;
-            this.nextExecutionTime = System.currentTimeMillis() + delayMs;
+            this.nextExecutionTime = Clock.SYSTEM.millis() + delayMs;
         }
     }
 
@@ -141,9 +142,9 @@ public final class UiTimers {
         }
     }
 
-    /** 時刻が来たタイマーを実行する（{@code System.currentTimeMillis()} 基準）。 */
+    /** 時刻が来たタイマーを実行する（{@code Clock.SYSTEM.millis()} 基準）。 */
     public void runDueTimers() {
-        runDueTimers(System::currentTimeMillis);
+        runDueTimers(Clock.SYSTEM::millis);
     }
 
     public void runDueTimers(LongSupplier clock) {

@@ -106,7 +106,7 @@ final class PlacementMemo {
     static boolean tryReuseOrShift(LayoutBox box, float parentX, float parentY,
                                    float parentOuterW, float parentOuterH,
                                    LayoutContext ctx, boolean checkAutoSubtree) {
-        PlacementMemo pm = box.placementMemo; com.nishiyu.enderframelib.core.layout.MemoKpi.PLACE_CALLS.increment();
+        PlacementMemo pm = box.placementMemo; com.nishiyu.enderframelib.core.kernel.Kernel.stats.placeCall();
         if (pm == null) return false;
         boolean sameScroll = !box.isScrollContainer()
                 || (ctx.scrollState().getScrollX(box.node) == pm.lastScrollX
@@ -152,6 +152,7 @@ final class PlacementMemo {
         strictBroken = false;
         int below = hasLegend ? IMPURE : selfContained(box, false, 0, this); // 自分のスクロールは tryReuseOrShift が比べるので数えない
         levelNoCb = (byte) below;
+        if (LayoutBox.isTableBox(box) && box.display.inner() != LayoutBox.Display.Inner.TABLE) below = IMPURE; // 行・セルなどは表ごとにしか保持できない（親の整形が表）
         if (below != IMPURE && cbUp > 0) below = IMPURE; // 絶対配置の包含ブロックが部分木の外にある: 外の幾何に依る
         boolean pure = below == PURE && !box.isScrollContainer() && !strictBroken;
         setFlag(F_REL_INSET, box.isRelative && relInset(box));
@@ -175,11 +176,11 @@ final class PlacementMemo {
      * {@code depth} は記録する根からの段数。
      */
     private static int selfContained(LayoutBox box, boolean selfScrollBreaks, int depth, PlacementMemo acc) {
-        if (box.isFixed || box.isSticky || box.floatSpace != null || LayoutBox.isTableBox(box) || box.collapsedBorders != null
+        if (box.isFixed || box.isSticky || box.floatSpace != null
                 || box.style.facts().floating || (box.isRelative && relInset(box))) {
             return IMPURE;
         }
-        if (box.isAbsolute || box.isRelative) acc.strictBroken = true;
+        if (box.isAbsolute || box.isRelative || LayoutBox.isTableBox(box)) acc.strictBroken = true; // 表は F_PURE（厳密な純粋性）には入れない
         if (box.isAbsolute) {
             if (anchored(box) || box.style.usesViewportUnits()) return IMPURE;
             acc.cbUp = Math.max(acc.cbUp, stepsToContainingBlock(box) - depth);

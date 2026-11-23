@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.node.*;
@@ -948,7 +949,7 @@ public class InteractionState implements StyledDocumentState {
 
     /** 設定されていなければ現在時刻。 */
     public long animationTimeMs() {
-        return animationTimeMs != Long.MIN_VALUE ? animationTimeMs : System.currentTimeMillis();
+        return animationTimeMs != Long.MIN_VALUE ? animationTimeMs : Clock.SYSTEM.millis();
     }
 
     /**

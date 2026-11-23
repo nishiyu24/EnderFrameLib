@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 /**
  * B2 の着手条件の計測（ENGINE_REARCHITECTURE_PLAN）: 測定・配置の時間のうち、「互いに独立な部分木」の中で使われた割合。
@@ -64,7 +65,7 @@ public final class LayoutParallelProbe {
     public static long enter(LayoutBox box, int kind) {
         if (!enabled) return 0;
         long[] s = STATE.get()[kind];
-        long now = System.nanoTime();
+        long now = Clock.SYSTEM.nanos();
         long token = 1;
         if (s[0]++ == 0) {
             s[3] = now;
@@ -81,7 +82,7 @@ public final class LayoutParallelProbe {
     public static void exit(int kind, long token) {
         if (token == 0) return;
         long[] s = STATE.get()[kind];
-        long now = System.nanoTime();
+        long now = Clock.SYSTEM.nanos();
         s[0]--;
         synchronized (LayoutParallelProbe.class) {
             if ((token & 4) != 0) {

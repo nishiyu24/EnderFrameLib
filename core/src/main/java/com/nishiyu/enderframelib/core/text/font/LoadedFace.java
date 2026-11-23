@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.text.font;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import org.lwjgl.CLongBuffer;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -53,7 +54,7 @@ public final class LoadedFace implements ColrV1Renderer.Face {
     private FT_Face face;
     /** メモリから開いた書体（{@code @font-face}）の実体。FreeType はハンドルが生きている間これを参照し続ける。 */
     private ByteBuffer memory;
-    private volatile long lastUseNanos = System.nanoTime();
+    private volatile long lastUseNanos = Clock.SYSTEM.nanos();
     private final int unitsPerEm;
     private final float ascentEm;
     private final float descentEm;
@@ -229,7 +230,7 @@ public final class LoadedFace implements ColrV1Renderer.Face {
 
     /** ハンドルが閉じていれば開き直す。{@link #lock} の中で呼ぶ。開けなければ {@link IllegalStateException}。 */
     private void ensureOpen() {
-        lastUseNanos = System.nanoTime();
+        lastUseNanos = Clock.SYSTEM.nanos();
         if (face != null) return;
         Opened opened = openRecord(record);
         if (opened == null) throw new IllegalStateException("Cannot reopen font " + record.displayName());
@@ -276,7 +277,7 @@ public final class LoadedFace implements ColrV1Renderer.Face {
 
     /** {@code idleNanos} 以上使われていない面のハンドルを閉じる。閉じた数を返す。 */
     public static int releaseIdle(long idleNanos) {
-        long now = System.nanoTime();
+        long now = Clock.SYSTEM.nanos();
         int closed = 0;
         for (LoadedFace f : OPEN.values()) {
             // 使われた直後（idle でない）の面は待たずに飛ばす。release は面のロックを取るので、測定中の面とは競合しない

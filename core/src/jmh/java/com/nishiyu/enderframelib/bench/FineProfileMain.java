@@ -315,12 +315,12 @@ public final class FineProfileMain {
 
     /** 記憶の KPI のカウンタ（累計）: style 訪問・再計算・変化 / 測定 呼び出し・計算 / 配置 呼び出し・配置し直し / 断片 hit・miss。 */
     private static long[] memoSnapshot() {
-        long pc = com.nishiyu.enderframelib.core.layout.MemoKpi.PLACE_CALLS.sum();
+        long pc = com.nishiyu.enderframelib.core.kernel.Kernel.stats.placeCalls();
         long placed = pc - com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped() - com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted();
         return new long[]{
-                com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_VISITED.sum(), com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_RECOMPUTED.sum(),
-                com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_CHANGED.sum(),
-                com.nishiyu.enderframelib.core.layout.MemoKpi.MEASURE_CALLS.sum(), com.nishiyu.enderframelib.core.layout.LayoutBox.measurementsComputed(),
+                com.nishiyu.enderframelib.core.kernel.Kernel.stats.restyleVisited(), com.nishiyu.enderframelib.core.kernel.Kernel.stats.restyleRecomputed(),
+                com.nishiyu.enderframelib.core.kernel.Kernel.stats.restyleChanged(),
+                com.nishiyu.enderframelib.core.kernel.Kernel.stats.measureCalls(), com.nishiyu.enderframelib.core.layout.LayoutBox.measurementsComputed(),
                 pc, placed,
                 com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits(), com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoMisses()};
     }

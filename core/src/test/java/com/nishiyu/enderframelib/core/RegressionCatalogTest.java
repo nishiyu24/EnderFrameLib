@@ -34,6 +34,7 @@ class RegressionCatalogTest {
     private static final Pattern TEST_REF = Pattern.compile("(\\w+)#(\\w+)|gradle:(\\w+)");
     private static final Pattern TEST_ANNOTATION = Pattern.compile("@(?:Test|ParameterizedTest|RepeatedTest|TestFactory)\\b");
     private static final Pattern VOID_METHOD = Pattern.compile("\\bvoid\\s+(\\w+)\\s*\\(");
+    private static final Pattern ARCHIVED_ITEM = Pattern.compile("^§6-(\\d+[a-z]?)\\. (.*)$");
     private static final Pattern SECTION6_ITEM = Pattern.compile("^(\\d+[a-z]?)\\. (.*)$");
 
     record Entry(int line, List<String> sources, List<String> tests, String description) { }
@@ -120,7 +121,7 @@ class RegressionCatalogTest {
         assertEquals(List.of(), missing);
     }
 
-    /** 計画の §6 の項目（番号 → 本文）。 */
+    /** 計画の §6 の項目（番号 → 本文。本編と、補足資料の付録 3 の両方）。 */
     static Map<String, String> section6() throws IOException {
         Map<String, String> out = new HashMap<>();
         boolean in = false;
@@ -129,6 +130,14 @@ class RegressionCatalogTest {
             if (!in) continue;
             Matcher m = SECTION6_ITEM.matcher(l);
             if (m.matches()) assertEquals(null, out.put(m.group(1), m.group(2)), "§6 の番号が重複している（2 つ目には枝番 b を付ける）: " + m.group(1));
+        }
+        // 古い知見（付録 3）は補足資料へ移してある。そちらでは「§6-N. 本文」と書く
+        boolean inAppendix = false;
+        for (String l : Files.readAllLines(root().resolve("core/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md"), StandardCharsets.UTF_8)) {
+            if (l.startsWith("## ")) inAppendix = l.startsWith("## 付録 3");
+            if (!inAppendix) continue;
+            Matcher m = ARCHIVED_ITEM.matcher(l);
+            if (m.matches()) assertEquals(null, out.put(m.group(1), m.group(2)), "§6 の番号が本編と付録 3 で重複している: " + m.group(1));
         }
         return out;
     }

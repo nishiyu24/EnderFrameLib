@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer;
 import com.nishiyu.enderframelib.core.paint.PaintOrder;
@@ -154,7 +155,7 @@ public class RenderPipeline {
             LayoutBox.ReusableTable nextReusable = LayoutBox.ReusableTable.createForBuild(doc.root, prevReusable);
             stats().boxes = stats().restyled = stats().reused = 0;
             stats().allocResolve = stats().allocCompute = stats().allocAnimated = 0;
-            long tA = System.nanoTime();
+            long tA = Clock.SYSTEM.nanos();
             long profBuild = StageProfiler.begin(PipelineStage.STYLE_BUILD);
             boolean track = ctx().flags().trackAllocations();
             long aA = track ? threadAllocatedBytes() : 0;
@@ -171,22 +172,22 @@ public class RenderPipeline {
             nextReusable.releaseAfterBuild(prevReusable);
             rootBox.setReusableTable(nextReusable);
             rootBox.positionTryRules = doc.sheet.positionTryRules;
-            long tB = System.nanoTime();
+            long tB = Clock.SYSTEM.nanos();
             long aB = track ? threadAllocatedBytes() : 0;
             long profBox = StageProfiler.begin(PipelineStage.BOX_TREE);
             BoxTreeBuilder.build(rootBox, CounterStyles.of(doc.sheet.counterStyles));
             StageProfiler.end(PipelineStage.BOX_TREE, profBox);
             effectiveState.lastBuiltStructureVersion = effectiveState.domStructureVersion;
-            long tC = System.nanoTime();
+            long tC = Clock.SYSTEM.nanos();
             long aC = track ? threadAllocatedBytes() : 0;
             if (incremental) LayoutBox.markLayoutChanges(rootBox);
             rootBox.hasUnmarkedChanges = false;
             rootBox.hasStructuralPending = false;
-            long tD = System.nanoTime();
+            long tD = Clock.SYSTEM.nanos();
             runLayoutPasses(rootBox, doc, env, effectiveState, rootW, rootH,
                     doc.sheet.mediaEnvironment().resolution(), scrollState, fonts,
                     incremental || com.nishiyu.enderframelib.core.kernel.Shortcut.FRESH_LAYOUT_PASS_REUSE.on(), true, false);
-            long tE = System.nanoTime();
+            long tE = Clock.SYSTEM.nanos();
             long aE = track ? threadAllocatedBytes() : 0;
             stats().phases = "build=" + (tB - tA) / 1_000_000 + " boxTree=" + (tC - tB) / 1_000_000 + " mark=" + (tD - tC) / 1_000_000
                     + " passes=" + (tE - tD) / 1_000_000 + "(measure=" + stats().passMeasureMs + "/" + stats().passMeasured + "boxes layout=" + stats().passLayoutMs + ")"
@@ -269,7 +270,7 @@ public class RenderPipeline {
     private static LayoutBox relayoutRootOnly(Document doc, LayoutBox rootBox, int rootW, int rootH,
                                               Map<String, String> rootStyleRaw, Map<String, String> env,
                                               ScrollState scrollState, FontResolver fonts, InteractionState state) {
-        long tA = System.nanoTime();
+        long tA = Clock.SYSTEM.nanos();
         state.pruneRestyle = true;
         List<LayoutBox> layoutChangedList = layoutChangedBoxes();
         List<LayoutBox> styleChangedList = styleChangedBoxes();
@@ -288,7 +289,7 @@ public class RenderPipeline {
             state.pruneRestyle = false;
         }
         if ((result & RESTYLE_STRUCTURAL) != 0) return null;
-        long tB = System.nanoTime();
+        long tB = Clock.SYSTEM.nanos();
         if (!state.restyleDescended && !rootBox.hasUnmarkedChanges) LayoutBox.markRootRestyleChanges(rootBox);
         else {
             LayoutBox.markLayoutChanges(rootBox);
@@ -300,7 +301,7 @@ public class RenderPipeline {
         RESIZE_SKIPS.incrementAndGet();
         stats().boxes = stats().restyled = stats().reused = 0;
         stats().lastBuildStats = "boxes=0 restyled=0 reused=0 skipped=resize restyle=" + (tB - tA) / 1000 + "us "
-                + "passes=" + (System.nanoTime() - tB) / 1000 + "us";
+                + "passes=" + (Clock.SYSTEM.nanos() - tB) / 1000 + "us";
         return rootBox;
     }
 
@@ -371,13 +372,13 @@ public class RenderPipeline {
         LayoutContext ctx = null;
         FormattingContext fmtCtx = FormattingContext.BLOCK;
 
-        long m0 = System.nanoTime();
+        long m0 = Clock.SYSTEM.nanos();
         long measuredBefore = LayoutBox.measurementsComputed();
         for (int pass = 0; pass < LAYOUT_PASSES; pass++) {
             ctx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts, reuseMeasurements, run, pass == 0, av);
             rootBox.measure(rootW, rootH, fmtCtx, ctx);
         }
-        long m1 = System.nanoTime();
+        long m1 = Clock.SYSTEM.nanos();
         List<LayoutBox> staleFrags = STALE_FRAG_BOXES.get();
         staleFrags.clear();
         LayoutBox.resetPlacementsFast(rootBox, reuseMeasurements ? run : -1, staleFrags);
@@ -401,12 +402,12 @@ public class RenderPipeline {
         if (av.hasContentAuto() && interactionState != null) {
             syncContentVisibilityFlags(rootBox, interactionState);
         }
-        long m2 = System.nanoTime();
+        long m2 = Clock.SYSTEM.nanos();
         StageProfiler.record(PipelineStage.LAYOUT_MEASURE, m1 - m0);
         StageProfiler.record(PipelineStage.LAYOUT_PLACE, m2 - m1);
         stats().passMeasureMs = (m1 - m0) / 1_000_000;
         stats().passMeasured = LayoutBox.measurementsComputed() - measuredBefore;
-        stats().passLayoutMs = (System.nanoTime() - m1) / 1_000_000;
+        stats().passLayoutMs = (Clock.SYSTEM.nanos() - m1) / 1_000_000;
         if (clearMarks) LayoutBox.clearAllSubtreeMarks(rootBox);
     }
 
@@ -1037,7 +1038,7 @@ public class RenderPipeline {
                                                      ContainerBox parentSizeContainer, boolean ancestorHasMoving,
                                                      List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList,
                                                      boolean workerShare) {
-        HtmlNode node = box.node; com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_VISITED.increment();
+        HtmlNode node = box.node; com.nishiyu.enderframelib.core.kernel.Kernel.stats.restyleVisit();
         InteractionState.StateFlags flags = interactionState.getOrCreate(node);
         StyleCache cache = force != FORCE_NONE ? StyleCache.INVALID : styleCacheState(flags, parentFontSize, scope);
         boolean isDirty = cache != StyleCache.VALID;
@@ -1055,7 +1056,7 @@ public class RenderPipeline {
         ContainerBox selfContainer;
         boolean selfOrAncestorMoving;
 
-        if (isDirty) { com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_RECOMPUTED.increment();
+        if (isDirty) { com.nishiyu.enderframelib.core.kernel.Kernel.stats.restyleRecompute();
             ComputedStyle prevStyle = box.style;
             ContainerBox container = parentSizeContainer;
             // StyleSet は表を引けなかったとき（computeEntry）だけ作る
@@ -1082,7 +1083,7 @@ public class RenderPipeline {
                     ? flags.hasInteractiveRules : StyleResolver.hasInteractiveRules(node, sheet));
 
             if (prevStyle == null || !ComputedStyle.sameDeclarations(prevStyle, computed)) {
-                styleChanged = true; com.nishiyu.enderframelib.core.layout.MemoKpi.RESTYLE_CHANGED.increment();
+                styleChanged = true; com.nishiyu.enderframelib.core.kernel.Kernel.stats.restyleChange();
                 if (StyleResolver.isLayoutAffectingChange(prevStyle, computed) || com.nishiyu.enderframelib.core.layout.ContainingBlockFlip.relayout(box, prevStyle, computed)) {
                     if (isPositionOnlyChange(prevStyle, computed)) {
                         repositionRequired = true;

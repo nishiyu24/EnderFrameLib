@@ -19,6 +19,9 @@ public final class EngineFlags {
     /** {@code enderframe.layout.noblockpercentkey}: LayoutBox.blockPercentFreeEnabled（使う所: {@code LayoutBox}） */
     public static final boolean BLOCK_PERCENT_FREE = !Boolean.getBoolean("enderframe.layout.noblockpercentkey");
 
+    /** {@code enderframe.kernel.stats}: 増分エンジンの計器 {@code Kernel.stats} を動かす（診断。既定オフ。{@code costGate}・{@code profile} の子 JVM だけが立てる）。 */
+    public static final boolean KERNEL_STATS = Boolean.getBoolean("enderframe.kernel.stats");
+
     /** {@code enderframe.layout.nocutoff}: LayoutBox.cutoffEnabled（使う所: {@code LayoutBox}） */
     public static final boolean CUTOFF = !Boolean.getBoolean("enderframe.layout.nocutoff");
 

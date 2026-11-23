@@ -24,6 +24,11 @@ final class MutationScenario {
 
     private MutationScenario() {}
 
+    /** 直近の 1 手の説明（まだ無ければ空）。 */
+    static String lastLog() {
+        return LOG.isEmpty() ? "" : LOG.get(LOG.size() - 1);
+    }
+
     static String sig(DisplayItem i) {
         return i.id() + "|" + i.baseId() + "|" + i.type() + "|" + i.x() + "," + i.y() + "," + i.width() + "," + i.height()
                 + "|" + i.text() + "|" + i.color() + "|" + i.bgColor() + "|" + i.radius() + "|" + i.opacity()
@@ -79,7 +84,10 @@ final class MutationScenario {
         LOG.clear();
         PIXELS.clear();
         PIXEL_DATA.clear();
+        // 時間で動く文書（transition・animation）とホイールの手（スクロール量）は、履歴の無い新しい面と比べられない（FrameOracle の「使える場面」）ので、オラクルから外す
+        final boolean ORACLE = Boolean.getBoolean("verify.oracle") && !scroll && !html.contains("transition") && !html.contains("animation");
         StandaloneView view = new StandaloneView(html, 320, 240, FontResolver.FALLBACK);
+        ResizeSettle.freezeClock(view); // 止めた時計: リサイズの間引きは起きず、手順は実時間に依らず決定的（K0 ①）
         try (com.nishiyu.enderframelib.core.paint.RenderBackend backend = draw ? new SoftwareRenderBackend(400, 300, 1f) : new NoDraw()) {
             List<List<String>> out = new ArrayList<>();
             long now = 1000;
@@ -133,16 +141,6 @@ final class MutationScenario {
                 }
                 now += 30 + rnd.nextInt(400);
                 view.frame(now, backend, true);
-                // 連続したリサイズは、直前のレイアウトにかかった実時間に応じて次のフレームへ持ち越される（壁時計）。
-                // 手順を決定的にするため、反映されるまで同じ時刻のフレームを回す
-                for (int spin = 0; spin < 2000 && (view.ui().rootW() != view.width() || view.ui().rootH() != view.height()); spin++) {
-                    try {
-                        Thread.sleep(1);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                    view.frame(now, backend, true);
-                }
                 List<String> sigs = new ArrayList<>();
                 java.util.Set<String> ids = new java.util.HashSet<>();
                 for (DisplayItem it : view.items()) {
@@ -151,6 +149,11 @@ final class MutationScenario {
                 }
                 out.add(sigs);
                 if (STEP_HOOK != null) STEP_HOOK.accept(step, view);
+                if (ORACLE) {
+                    // K0 ③: -Dverify.oracle=true なら、毎手、最初から作った独立の面と箱の木を比べる（無効化の漏れも見つかる）
+                    FrameOracle.Difference d = FrameOracle.firstDifference(view);
+                    assertTrue(d == null, "seed " + seed + " step " + step + " (" + lastLog() + "): フレームのオラクル: " + d);
+                }
                 if (draw) {
                     PIXELS.add(java.util.Arrays.hashCode(backend.pixmap().pixels()));
                     if (Boolean.getBoolean("matrix.keeppixels")) PIXEL_DATA.add(backend.pixmap().pixels().clone());

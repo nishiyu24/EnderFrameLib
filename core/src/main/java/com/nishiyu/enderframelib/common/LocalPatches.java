@@ -73,7 +73,7 @@ final class LocalPatches {
             patchedBoxes = found.values();
         }
 
-        long startedAt = System.nanoTime();
+        long startedAt = view.clock.nanos();
         for (LayoutBox box : patchedBoxes) box.refreshStyle(box.style);
         view.applyOverrides();
         // 位置の決め直しを後回しにしている間は、箱は表示リストを作ったときのスクロール位置のまま。同じ位置へ一時的に戻して、その枠で直す
@@ -97,7 +97,7 @@ final class LocalPatches {
                     patchedBoxes);
             for (int i = 0, cn = changed.size(); i < cn; i++) view.interactionState.clearStyleDirty(changed.get(i));
             view.publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
-            layoutDone = System.nanoTime();
+            layoutDone = view.clock.nanos();
             if (view.paintBuilder == null) UiView.SLICE_NO_BUILDER.incrementAndGet();
         } finally {
             if (stale) {
@@ -113,7 +113,7 @@ final class LocalPatches {
             int nodes = patchedBoxes.size();
             view.lastBreakdown = () -> "stale-text-patch nodes=" + nodes + " layout=" + UiView.ms(startedAt, layoutDone) + "ms";
             view.applyOverrides();
-            view.lastLayoutFinishedNanos = System.nanoTime();
+            view.lastLayoutFinishedNanos = view.clock.nanos();
             view.lastLayoutCostNanos = view.lastLayoutFinishedNanos - startedAt;
             return true;
         }
@@ -122,14 +122,14 @@ final class LocalPatches {
             elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
         }
         if (elements == null) elements = new ArrayList<>();
-        long paintDone = System.nanoTime();
+        long paintDone = view.clock.nanos();
         view.publishBuilt(elements);
         int nodes = patchedBoxes.size();
-        long publishDone = System.nanoTime();
+        long publishDone = view.clock.nanos();
         view.lastBreakdown = () -> "text-patch nodes=" + nodes + " layout=" + UiView.ms(startedAt, layoutDone)
                 + "ms paint=" + UiView.ms(layoutDone, paintDone) + "ms publish=" + UiView.ms(paintDone, publishDone) + "ms";
         view.applyOverrides();
-        view.lastLayoutFinishedNanos = System.nanoTime();
+        view.lastLayoutFinishedNanos = view.clock.nanos();
         view.lastLayoutCostNanos = view.lastLayoutFinishedNanos - startedAt;
         return true;
     }
@@ -239,7 +239,7 @@ final class LocalPatches {
         }
         if (!view.interactionState.styleDirtyOnlyIn(allowed)) return "otherDirty";
 
-        long startedAt = System.nanoTime();
+        long startedAt = view.clock.nanos();
         // 1. 増える子の箱を単独で組む。差し込めない形ならここで退く（まだ木には触れていない）
         List<List<LayoutBox>> built = new ArrayList<>();
         for (ChildPlan plan : plans) {
@@ -303,7 +303,7 @@ final class LocalPatches {
         RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
                 changedParents, new java.util.HashSet<>(changedParents));
         view.publishLayoutToDom();
-        long layoutDone = System.nanoTime();
+        long layoutDone = view.clock.nanos();
         List<DisplayItem> elements = null;
         if (view.paintBuilder == null) UiView.SLICE_NO_BUILDER.incrementAndGet();
         else if (plans.size() != 1) UiView.SLICE_MULTI_PLAN.incrementAndGet();
@@ -311,14 +311,14 @@ final class LocalPatches {
             elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
         }
         if (elements == null) elements = new ArrayList<>();
-        long paintDone = System.nanoTime();
+        long paintDone = view.clock.nanos();
         view.publishBuilt(elements);
         int parentCount = plans.size();
-        long publishDone = System.nanoTime();
+        long publishDone = view.clock.nanos();
         view.lastBreakdown = () -> "child-patch parents=" + parentCount + " layout=" + UiView.ms(startedAt, layoutDone)
                 + "ms paint=" + UiView.ms(layoutDone, paintDone) + "ms publish=" + UiView.ms(paintDone, publishDone) + "ms";
         view.applyOverrides();
-        view.lastLayoutFinishedNanos = System.nanoTime();
+        view.lastLayoutFinishedNanos = view.clock.nanos();
         view.lastLayoutCostNanos = view.lastLayoutFinishedNanos - startedAt;
         return null;
     }
@@ -335,23 +335,23 @@ final class LocalPatches {
             return false;
         }
         if (doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries()) return false;
-        long startedAt = System.nanoTime();
+        long startedAt = view.clock.nanos();
         view.applyOverrides();
         List<LayoutBox> changedBoxes = new ArrayList<>(RenderPipeline.layoutChangedBoxes());
         RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
                 changedBoxes);
         view.setLayoutRoot(view.layoutRoot);
-        long layoutDone = System.nanoTime();
+        long layoutDone = view.clock.nanos();
         // 再スタイルは変わった箱に updateStyle で印を付け、レイアウトは触った箱に印を付ける（検証モードが付け漏れを検出する）
         List<DisplayItem> elements = view.paintBoxes(view.layoutRoot, view.rootW, view.rootH, false);
         if (elements == null) elements = new ArrayList<>();
-        long paintDone = System.nanoTime();
+        long paintDone = view.clock.nanos();
         view.publishBuilt(elements);
-        long publishDone = System.nanoTime();
+        long publishDone = view.clock.nanos();
         view.lastBreakdown = () -> "inplace-relayout layout=" + UiView.ms(startedAt, layoutDone)
                 + "ms paint=" + UiView.ms(layoutDone, paintDone) + "ms publish=" + UiView.ms(paintDone, publishDone) + "ms";
         view.applyOverrides();
-        view.lastLayoutFinishedNanos = System.nanoTime();
+        view.lastLayoutFinishedNanos = view.clock.nanos();
         view.lastLayoutCostNanos = view.lastLayoutFinishedNanos - startedAt;
         UiView.INPLACE_RELAYOUT_HITS.incrementAndGet();
         return true;

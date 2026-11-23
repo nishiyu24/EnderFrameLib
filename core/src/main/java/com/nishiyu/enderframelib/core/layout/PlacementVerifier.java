@@ -20,11 +20,13 @@ final class PlacementVerifier {
     private PlacementVerifier() {}
 
     private static final ThreadLocal<int[]> DEPTH = ThreadLocal.withInitial(() -> new int[1]);
-    private static final java.util.concurrent.atomic.LongAdder VERIFIED = new java.util.concurrent.atomic.LongAdder(), VERIFIED_BOXES = new java.util.concurrent.atomic.LongAdder();
+    private static final java.util.concurrent.atomic.LongAdder VERIFIED = new java.util.concurrent.atomic.LongAdder(), VERIFIED_BOXES = new java.util.concurrent.atomic.LongAdder(), VERIFIED_TABLES = new java.util.concurrent.atomic.LongAdder();
 
     /** 診断・テスト用: 検証した部分木の数と、その箱の延べ数（検証が実際に走ったかを確かめる）。 */
     static long verified() { return VERIFIED.sum(); }
     static long verifiedBoxes() { return VERIFIED_BOXES.sum(); }
+    /** 検証した部分木に含まれていた表の延べ数（表を保持して検証できているかを確かめる）。 */
+    static long verifiedTables() { return VERIFIED_TABLES.sum(); }
 
     /** 検証の置き直しの最中か（この間は入れ子の検証をしない）。 */
     static boolean active() { return DEPTH.get()[0] > 0; }
@@ -69,6 +71,7 @@ final class PlacementVerifier {
         kept.capture(box);
         VERIFIED.increment();
         VERIFIED_BOXES.add(kept.n);
+        for (int i = 0; i < kept.n; i += 8) if (kept.owner[i].display.inner() == LayoutBox.Display.Inner.TABLE) VERIFIED_TABLES.increment();
         LayoutContext fresh = new LayoutContext(ctx.viewport(), ctx.intrinsicResolver(), ctx.scrollState(), ctx.fonts(),
                 false, ctx.layoutRun(), ctx.firstPass(), ctx.autoVisibility());
         DEPTH.get()[0]++;
