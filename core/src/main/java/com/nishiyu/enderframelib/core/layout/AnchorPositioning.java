@@ -54,8 +54,8 @@ final class AnchorPositioning {
                 return;
             }
             // 容器が包含ブロックでなければ、内容ボックスの中で揃える（ブラウザの実装と WPT の参照に合わせる）
-            child.staticAreaW = Math.max(0, parent.w - parent.horizontalDecoration());
-            child.staticAreaH = Math.max(0, parent.h - parent.verticalDecoration());
+            child.staticAreaW = LayoutReads.parentInnerW(parent);
+            child.staticAreaH = LayoutReads.parentInnerH(parent);
             child.staticAlignX = selfFactor(selfValue(cs, CssPropertyIndex.JUSTIFY_SELF, ps, CssPropertyIndex.JUSTIFY_ITEMS), rtl, true, false);
             child.staticAlignY = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, false);
             return;
@@ -64,8 +64,8 @@ final class AnchorPositioning {
         boolean row = !dir.startsWith("column");
         boolean reverse = dir.endsWith("reverse");
         boolean wrapReverse = norm(ps.get(CssPropertyIndex.FLEX_WRAP)).equals("wrap-reverse");
-        child.staticAreaW = Math.max(0, parent.w - parent.horizontalDecoration());
-        child.staticAreaH = Math.max(0, parent.h - parent.verticalDecoration());
+        child.staticAreaW = LayoutReads.parentInnerW(parent);
+        child.staticAreaH = LayoutReads.parentInnerH(parent);
         String justify = norm(ps.get(CssPropertyIndex.JUSTIFY_CONTENT));
         // 項目が 1 つなら space-between は flex-start、space-around / space-evenly は center と同じ
         justify = switch (justify) {
@@ -222,7 +222,7 @@ final class AnchorPositioning {
 
         String[] area = parsePositionArea(style.get(CssPropertyIndex.POSITION_AREA));
         if (area != null) {
-            LayoutBox a = findAnchor(box, null, null);
+            LayoutBox a = LayoutReads.findAnchor(box, null, null);
             if (a != null) {
                 if (leftAuto && rightAuto) box.x = positionAreaX(area[0], a, box.w, box.mL, box.mR, box.x);
                 if (topAuto && bottomAuto) box.y = positionAreaY(area[1], a, box.h, box.mT, box.mB, box.y);
@@ -250,7 +250,7 @@ final class AnchorPositioning {
                 false, false, false
         );
 
-        Map<String, PositionTryRule> tryRules = rootBox(box).positionTryRules;
+        Map<String, PositionTryRule> tryRules = LayoutReads.positionTryRules(box);
         List<CandidateSpec> candidates = parseFallbacks(fallbacksStr, base, tryRules, box, cb, rootW, rootH);
 
         PlacementResult baseRes = evaluate(box, base, cb, rootW, rootH, origW, origH, ctx);
@@ -426,15 +426,15 @@ final class AnchorPositioning {
         }
 
         if (spec.area != null) {
-            LayoutBox a = findAnchor(box, null, spec.positionAnchor);
+            LayoutBox a = LayoutReads.findAnchor(box, null, spec.positionAnchor);
             if (a != null) {
                 if (leftAuto && rightAuto) {
                     x = positionAreaX(spec.area[0], a, w, ml, mr, x);
-                    imcbW = areaAvailable(spec.area[0], a.x, a.w, refX, refW);
+                    imcbW = areaAvailable(spec.area[0], LayoutReads.anchorX(a), LayoutReads.anchorW(a), refX, refW);
                 }
                 if (topAuto && bottomAuto) {
                     y = positionAreaY(spec.area[1], a, h, mt, mb, y);
-                    imcbH = areaAvailable(spec.area[1], a.y, a.h, refY, refH);
+                    imcbH = areaAvailable(spec.area[1], LayoutReads.anchorY(a), LayoutReads.anchorH(a), refY, refH);
                 }
             }
         }
@@ -797,10 +797,11 @@ final class AnchorPositioning {
             else if (!part.isEmpty() && side == null) side = part.toLowerCase(Locale.ROOT);
         }
         if (side == null) return 0;
-        LayoutBox anchor = findAnchor(box, name, overridePositionAnchor);
+        LayoutBox anchor = LayoutReads.findAnchor(box, name, overridePositionAnchor);
         if (anchor == null) return 0;
         boolean horizontal = prop == CssPropertyIndex.LEFT || prop == CssPropertyIndex.RIGHT;
-        float from = horizontal ? anchor.x : anchor.y, size = horizontal ? anchor.w : anchor.h;
+        float from = horizontal ? LayoutReads.anchorX(anchor) : LayoutReads.anchorY(anchor);
+        float size = horizontal ? LayoutReads.anchorW(anchor) : LayoutReads.anchorH(anchor);
         float coord;
         switch (side) {
             case "left", "top", "start", "self-start" -> coord = from;
@@ -833,12 +834,12 @@ final class AnchorPositioning {
             if (part.startsWith("--")) name = part;
             else if (!part.isEmpty() && dim == null) dim = part.toLowerCase(Locale.ROOT);
         }
-        LayoutBox anchor = findAnchor(box, name, overridePositionAnchor);
+        LayoutBox anchor = LayoutReads.findAnchor(box, name, overridePositionAnchor);
         if (anchor == null) return -1;
         if (dim == null) dim = horizontal ? "width" : "height";
         return switch (dim) {
-            case "width", "inline" -> anchor.w;
-            case "height", "block" -> anchor.h;
+            case "width", "inline" -> LayoutReads.anchorW(anchor);
+            case "height", "block" -> LayoutReads.anchorH(anchor);
             default -> -1;
         };
     }
@@ -871,23 +872,25 @@ final class AnchorPositioning {
     }
 
     private static float positionAreaX(String xTok, LayoutBox a, float w, float mL, float mR, float fallback) {
+        float ax = LayoutReads.anchorX(a), aw = LayoutReads.anchorW(a);
         return switch (xTok) {
-            case "left", "x-start", "x-self-start", "start", "self-start" -> a.x - w - mR;
-            case "right", "x-end", "x-self-end", "end", "self-end" -> a.x + a.w + mL;
-            case "span-left", "span-x-start", "span-start", "span-self-start" -> a.x + a.w - w - mR;
-            case "span-right", "span-x-end", "span-end", "span-self-end" -> a.x + mL;
-            case "center", "span-all" -> a.x + (a.w - w) / 2f;
+            case "left", "x-start", "x-self-start", "start", "self-start" -> ax - w - mR;
+            case "right", "x-end", "x-self-end", "end", "self-end" -> ax + aw + mL;
+            case "span-left", "span-x-start", "span-start", "span-self-start" -> ax + aw - w - mR;
+            case "span-right", "span-x-end", "span-end", "span-self-end" -> ax + mL;
+            case "center", "span-all" -> ax + (aw - w) / 2f;
             default -> fallback;
         };
     }
 
     private static float positionAreaY(String yTok, LayoutBox a, float h, float mT, float mB, float fallback) {
+        float ay = LayoutReads.anchorY(a), ah = LayoutReads.anchorH(a);
         return switch (yTok) {
-            case "top", "y-start", "y-self-start", "start", "self-start" -> a.y - h - mB;
-            case "bottom", "y-end", "y-self-end", "end", "self-end" -> a.y + a.h + mT;
-            case "span-top", "span-y-start", "span-start", "span-self-start" -> a.y + a.h - h - mB;
-            case "span-bottom", "span-y-end", "span-end", "span-self-end" -> a.y + mT;
-            case "center", "span-all" -> a.y + (a.h - h) / 2f;
+            case "top", "y-start", "y-self-start", "start", "self-start" -> ay - h - mB;
+            case "bottom", "y-end", "y-self-end", "end", "self-end" -> ay + ah + mT;
+            case "span-top", "span-y-start", "span-start", "span-self-start" -> ay + ah - h - mB;
+            case "span-bottom", "span-y-end", "span-end", "span-self-end" -> ay + mT;
+            case "center", "span-all" -> ay + (ah - h) / 2f;
             default -> fallback;
         };
     }
@@ -935,46 +938,7 @@ final class AnchorPositioning {
         };
     }
 
-    // ---- アンカー検索 & 寸法補助
-
-    static LayoutBox findAnchor(LayoutBox box, String name, String overridePositionAnchor) {
-        LayoutBox root = rootBox(box);
-        if (name == null) {
-            name = overridePositionAnchor != null ? overridePositionAnchor : box.style.get(CssPropertyIndex.POSITION_ANCHOR);
-        }
-        if (name != null && !name.isBlank() && !"auto".equalsIgnoreCase(name.trim())) {
-            return findAnchorNamed(root, box, name.trim());
-        }
-        String id = box.node != null && box.node.attrs != null ? box.node.attrs.get("id") : null;
-        return id == null ? null : findInvoker(root, id);
-    }
-
-    private static LayoutBox rootBox(LayoutBox box) {
-        LayoutBox root = box;
-        while (root.parent != null) root = root.parent;
-        return root;
-    }
-
-    private static LayoutBox findAnchorNamed(LayoutBox cur, LayoutBox self, String name) {
-        if (cur != self && cur.style != null) {
-            String n = cur.style.get(CssPropertyIndex.ANCHOR_NAME);
-            if (n != null && Arrays.asList(n.trim().split("[\\s,]+")).contains(name)) return cur;
-        }
-        for (int i = 0, n = cur.elementChildren.size(); i < n; i++) {
-            LayoutBox hit = findAnchorNamed(cur.elementChildren.get(i), self, name);
-            if (hit != null) return hit;
-        }
-        return null;
-    }
-
-    private static LayoutBox findInvoker(LayoutBox cur, String id) {
-        if (cur.node != null && cur.node.attrs != null && id.equals(cur.node.attrs.get("popovertarget"))) return cur;
-        for (int i = 0, n = cur.elementChildren.size(); i < n; i++) {
-            LayoutBox hit = findInvoker(cur.elementChildren.get(i), id);
-            if (hit != null) return hit;
-        }
-        return null;
-    }
+    // ---- 寸法補助
 
     private static float clampWidth(LayoutBox box, ComputedStyle style, float w, float cbW, float rootW, float rootH, boolean isBorderBox) {
         return applyMinMaxDecl(box, w, true, null, null, cbW, rootW, rootH, isBorderBox);

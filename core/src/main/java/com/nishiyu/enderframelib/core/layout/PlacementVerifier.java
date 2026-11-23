@@ -72,8 +72,7 @@ final class PlacementVerifier {
         VERIFIED.increment();
         VERIFIED_BOXES.add(kept.n);
         for (int i = 0; i < kept.n; i += 8) if (kept.owner[i].display.inner() == LayoutBox.Display.Inner.TABLE) VERIFIED_TABLES.increment();
-        LayoutContext fresh = new LayoutContext(ctx.viewport(), ctx.intrinsicResolver(), ctx.scrollState(), ctx.fonts(),
-                false, ctx.layoutRun(), ctx.firstPass(), ctx.autoVisibility());
+        LayoutContext fresh = LayoutReads.freshContext(ctx, false);
         DEPTH.get()[0]++;
         try {
             PlacementMemo.resetPlacements(box, -1);

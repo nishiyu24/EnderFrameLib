@@ -54,6 +54,16 @@ final class MeasureReads {
         LayoutBox[] boxStack = new LayoutBox[32];
         int[] readStack = new int[32];
         int depth;
+
+        // 配置の読み取りスタック（K1: 同じ ThreadLocal に載せ、static 欄を増やさない）
+        LayoutBox[] placeBoxStack = new LayoutBox[32];
+        int[] placeReadStack = new int[32];
+        float[] placeOriginX = new float[32];
+        float[] placeOriginY = new float[32];
+        float[] placeParentW = new float[32];
+        float[] placeParentH = new float[32];
+        int placeDepth;
+        LayoutReads.PlaceRecorder placeRecorder;
     }
 
     private static final ThreadLocal<ThreadState> STATE = ThreadLocal.withInitial(ThreadState::new);

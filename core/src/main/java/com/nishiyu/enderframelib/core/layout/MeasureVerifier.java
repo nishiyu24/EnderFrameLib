@@ -26,8 +26,7 @@ final class MeasureVerifier {
         MeasureOutputs expected = MeasureOutputs.capture(box);
         List<Saved> saved = new ArrayList<>();
         save(box, saved);
-        LayoutContext fresh = new LayoutContext(ctx.viewport(), ctx.intrinsicResolver(), ctx.scrollState(), ctx.fonts(),
-                false, ctx.layoutRun(), ctx.firstPass(), ctx.autoVisibility());
+        LayoutContext fresh = LayoutReads.freshContext(ctx, false);
         MeasureOutputs actual;
         DEPTH.get()[0]++;
         int vSlot = MeasureReads.pushMeasuring(null);

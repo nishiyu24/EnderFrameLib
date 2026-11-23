@@ -4,7 +4,6 @@ import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.kernel.Shortcut;
-import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -109,8 +108,8 @@ final class PlacementMemo {
         PlacementMemo pm = box.placementMemo; com.nishiyu.enderframelib.core.kernel.Kernel.stats.placeCall();
         if (pm == null) return false;
         boolean sameScroll = !box.isScrollContainer()
-                || (ctx.scrollState().getScrollX(box.node) == pm.lastScrollX
-                        && ctx.scrollState().getScrollY(box.node) == pm.lastScrollY);
+                || (LayoutReads.peekScrollX(box, ctx) == pm.lastScrollX
+                        && LayoutReads.peekScrollY(box, ctx) == pm.lastScrollY);
         boolean sameMargins = pm.lastLayoutML == box.mL && pm.lastLayoutMR == box.mR
                 && pm.lastLayoutMT == box.mT && pm.lastLayoutMB == box.mB;
         boolean keptPure = pm.flag(F_KEPT_PURE);
@@ -138,12 +137,12 @@ final class PlacementMemo {
         return false;
     }
 
-    void record(LayoutBox box, float parentX, float parentY, float parentOuterW, float parentOuterH,
-                boolean hasLegend, float scrollXAtPlacement, float scrollYAtPlacement) {
-        lastLayoutX = parentX;
-        lastLayoutY = parentY;
-        lastLayoutOuterW = parentOuterW;
-        lastLayoutOuterH = parentOuterH;
+    void record(LayoutBox box, boolean hasLegend, float scrollXAtPlacement, float scrollYAtPlacement,
+                MeasureReads.ThreadState readState, int pSlot) {
+        lastLayoutX = LayoutReads.peekOriginX(readState, pSlot);
+        lastLayoutY = LayoutReads.peekOriginY(readState, pSlot);
+        lastLayoutOuterW = LayoutReads.peekParentOuterW(readState, pSlot);
+        lastLayoutOuterH = LayoutReads.peekParentOuterH(readState, pSlot);
         lastLayoutML = box.mL;
         lastLayoutMR = box.mR;
         lastLayoutMT = box.mT;
@@ -159,7 +158,7 @@ final class PlacementMemo {
         setFlag(F_PURE, pure);
         setFlag(F_KEPT_PURE, below != IMPURE);
         setFlag(F_SCROLL_DEP, below == SCROLL_DEP);
-        scrollVersion = ScrollState.version();
+        scrollVersion = LayoutReads.scrollVersion();
         if (box.isScrollContainer()) {
             lastScrollX = scrollXAtPlacement;
             lastScrollY = scrollYAtPlacement;
@@ -212,7 +211,7 @@ final class PlacementMemo {
     private static boolean canKeepPlacement(LayoutBox box, long run, boolean floatsOrOffset) {
         PlacementMemo pm = box.placementMemo;
         return pm != null && Shortcut.KEEP_PLACEMENTS.on()
-                && pm.flag(F_KEPT_PURE) && pm.flag(F_VALID) && (!pm.flag(F_SCROLL_DEP) || pm.scrollVersion == ScrollState.version())
+                && pm.flag(F_KEPT_PURE) && pm.flag(F_VALID) && (!pm.flag(F_SCROLL_DEP) || pm.scrollVersion == LayoutReads.scrollVersion())
                 && box.measureMemo.isValid() && box.measureMemo.measuredRun() != run
                 && !box.measureMemo.isLayoutChanged() && !box.measureMemo.isSubtreeChanged()
                 && box.parent != null && box.parent.display != null
@@ -248,11 +247,7 @@ final class PlacementMemo {
 
     /** 絶対配置の箱から包含ブロックまでの段数（初期包含ブロックは {@code CB_OUTSIDE}）。 */
     private static int stepsToContainingBlock(LayoutBox box) {
-        LayoutBox cb = box.findContainingBlock();
-        if (cb == null) return CB_OUTSIDE;
-        int n = 0;
-        for (LayoutBox p = box; p != null && p != cb; p = p.parent) n++;
-        return n;
+        return LayoutReads.stepsToContainingBlock(box, CB_OUTSIDE);
     }
 
     private static boolean floatsAffectPlacement(LayoutBox box) {

@@ -342,25 +342,9 @@ public class LayoutBox {
         return null;
     }
 
-    /**
-     * 絶対配置・固定配置の包含ブロックを作る祖先。無ければ null（初期包含ブロック = ビューポート）。
-     *
-     * 位置指定要素は絶対配置の、transform / filter を持つ要素は固定配置を含むすべての位置指定の子孫の
-     * 包含ブロックになる（CSS Transforms 1 §2 / Filter Effects 1 §3）。何が壊れていたか: 以前は
-     * position だけを見ていたため、transform を持つ箱の中の絶対配置要素が外の祖先を基準に置かれていた。
-     */
+    /** 絶対配置・固定配置の包含ブロックを作る祖先。無ければ null（初期包含ブロック = ビューポート）。 */
     public LayoutBox findContainingBlock() {
-        LayoutBox cur = this.parent;
-        while (cur != null) {
-            // layout / paint containment を持つ箱は、絶対配置・固定配置の包含ブロックにもなる（CSS Containment 2 §3, §4）
-            boolean transformLike = cur.hasTransformOrFilter()
-                    || (cur.style.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0;
-            if (transformLike || (!this.isFixed && (cur.isRelative || cur.isAbsolute || cur.isSticky))) {
-                return cur;
-            }
-            cur = cur.parent;
-        }
-        return null;
+        return LayoutReads.findContainingBlockRaw(this);
     }
 
     private boolean hasTransformOrFilter() {
@@ -374,22 +358,7 @@ public class LayoutBox {
     public record ContainingBlock(float x, float y, float w, float h) {}
 
     public ContainingBlock resolveContainingBlock(LayoutContext ctx) {
-        LayoutBox cb = findContainingBlock();
-        if (cb == null) {
-            return new ContainingBlock(0, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
-        }
-        float cbScrollX = ctx.scrollState().getScrollX(cb.node);
-        float cbScrollY = ctx.scrollState().getScrollY(cb.node);
-        float cbX = cb.x + cb.bL - cbScrollX;
-        float cbY = cb.y + cb.bT - cbScrollY;
-        float cbW = Math.max(0, cb.w - cb.bL - cb.bR);
-        float cbH = Math.max(0, cb.h - cb.bT - cb.bB);
-        if (cb.display != null && cb.display.inner() == Display.Inner.GRID) {
-            // grid 容器が包含ブロックなら、grid-placement の線が示す領域（CSS Grid §10.1）
-            float[] area = GridLayoutEngine.absoluteArea(cb, this);
-            if (area != null) return new ContainingBlock(cbX + area[0], cbY + area[1], area[2], area[3]);
-        }
-        return new ContainingBlock(cbX, cbY, cbW, cbH);
+        return LayoutReads.resolveContainingBlock(this, ctx);
     }
 
     // ==========================================
@@ -1253,124 +1222,136 @@ public class LayoutBox {
         if (PlacementMemo.tryReuseOrShift(this, parentX, parentY, parentOuterW, parentOuterH, ctx, checkAutoSubtree)) {
             if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_PLACEMENT.on()) PlacementVerifier.verify(this, parentX, parentY, parentOuterW, parentOuterH, ctx); return;
         }
-        PlacementMemo pm = ensurePlacementMemo();
-        pm.setHasFloatChild(computeHasFloatChild());
-        PaintStamps.touchLayout(this);
-        float rootW = ctx.viewport().rootW();
-        float rootH = ctx.viewport().rootH();
-
-        if (this.isAbsolute) {
-            AnchorPositioning.placeAbsolute(this, resolveContainingBlock(ctx), rootW, rootH, ctx);
-        } else {
-            float refX = this.isFixed ? 0 : parentX;
-            float refY = this.isFixed ? 0 : parentY;
-            this.x = refX + mL;
-            this.y = refY + mT;
-        }
-
-        float scrollX = ctx.scrollState().getScrollX(node);
-        float scrollY = ctx.scrollState().getScrollY(node);
-
-        boolean isCvAuto = style.facts().contentVisibilityAuto;
-        if (isCvAuto && av != null) {
-            av.noteContentAuto();
-            boolean near = this.isFixed
-                    ? (this.x + Math.max(0f, this.w) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
-                        && this.x <= rootW + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
-                        && this.y + Math.max(0f, this.h) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
-                        && this.y <= rootH + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN)
-                    : av.isNearViewport(this.x, this.y, this.w, this.h);
-            boolean relevant = cvForceRelevant || near;
-            boolean shouldSkip = !relevant;
-            if (shouldSkip != this.contentAutoSkipped) {
-                if (shouldSkip) {
-                    releaseDeferredChildren();
-                    this.contentAutoSkipped = true;
-                } else {
-                    this.contentAutoSkipped = false;
-                    if (this.childrenDeferred) av.materialize(this);
-                }
-                measureMemo.markVisibilityChangedForStabilize(this);
-                av.noteNonVirtualVisibilityChanged();
-            } else if (!shouldSkip && this.childrenDeferred) {
-                av.materialize(this);
-                measureMemo.markVisibilityChangedForStabilize(this);
-                av.noteNonVirtualVisibilityChanged();
-            }
-        }
-
-        if (this.contentAutoSkipped) {
-            ScrollExtentCalc.applyRelativePositioning(this, parentOuterW, parentOuterH, rootW, rootH);
-            if (this.isSticky) ScrollExtentCalc.applyStickyOffset(this, ctx);
-            this.descendantOverflowRight = this.w;
-            this.descendantOverflowBottom = this.h;
-            this.scrollWidth = Math.max(this.w, pL + bL + pR + bR);
-            this.scrollHeight = Math.max(this.h, pT + bT + pB + bB);
-            pm.record(this, parentX, parentY, parentOuterW, parentOuterH, false, scrollX, scrollY);
-            return;
-        }
-
-        float innerX = this.x + pL + bL - scrollX;
-        float innerY = this.y + pT + bT - scrollY + contentOffsetY + legendSpill;
-
-        float prevClipL = 0, prevClipT = 0, prevClipR = 0, prevClipB = 0;
-        boolean savedClip = false;
-        if (av != null && (this.isFixed || ScrollExtentCalc.clipsOverflow(this))) {
-            prevClipL = av.clipLeft();
-            prevClipT = av.clipTop();
-            prevClipR = av.clipRight();
-            prevClipB = av.clipBottom();
-            savedClip = true;
-            float baseL = this.isFixed ? 0f : prevClipL;
-            float baseT = this.isFixed ? 0f : prevClipT;
-            float baseR = this.isFixed ? rootW : prevClipR;
-            float baseB = this.isFixed ? rootH : prevClipB;
-            if (ScrollExtentCalc.clipsOverflow(this)) {
-                float boxL = this.x + bL;
-                float boxT = this.y + bT;
-                float boxR = Math.max(boxL, this.x + this.w - bR);
-                float boxB = Math.max(boxT, this.y + this.h - bB);
-                av.setClip(Math.max(baseL, boxL), Math.max(baseT, boxT),
-                        Math.min(baseR, boxR), Math.min(baseB, boxB));
-            } else {
-                av.setClip(baseL, baseT, baseR, baseB);
-            }
-        }
-        LayoutBox legend;
+        MeasureReads.ThreadState readState = LayoutReads.state();
+        int pSlot = LayoutReads.pushPlacing(readState, this, parentX, parentY, parentOuterW, parentOuterH);
         try {
-            // 静的位置の既定は内容ボックスの原点。ブロックフローは通常フローの位置で上書きする
-            if (hasAbsoluteChild) {
-                for (int i = 0, n = children.size(); i < n; i++) {
-                    LayoutBox child = children.get(i);
-                    if (child.isAbsolute) {
-                        child.staticX = innerX;
-                        child.staticY = innerY;
-                        AnchorPositioning.applyStaticArea(this, child, innerX, innerY);
+            PlacementMemo pm = ensurePlacementMemo();
+            boolean hasFloat = computeHasFloatChild();
+            pm.setHasFloatChild(hasFloat);
+            if (hasFloat || this.floatSpace != null) LayoutReads.recordPlace(readState, pSlot, ReadKind.PLACE_FLOAT);
+            PaintStamps.touchLayout(this);
+
+            if (this.isAbsolute) {
+                AnchorPositioning.placeAbsolute(this, LayoutReads.resolveContainingBlock(this, ctx),
+                        LayoutReads.placeViewportW(ctx), LayoutReads.placeViewportH(ctx), ctx);
+            } else {
+                float refX = this.isFixed ? 0 : LayoutReads.originX(readState, pSlot);
+                float refY = this.isFixed ? 0 : LayoutReads.originY(readState, pSlot);
+                if (this.isFixed) LayoutReads.recordPlace(readState, pSlot, ReadKind.PLACE_VIEWPORT);
+                this.x = refX + mL;
+                this.y = refY + mT;
+            }
+
+            float scrollX = LayoutReads.selfScrollX(this, ctx, readState, pSlot);
+            float scrollY = LayoutReads.selfScrollY(this, ctx, readState, pSlot);
+
+            boolean isCvAuto = style.facts().contentVisibilityAuto;
+            if (isCvAuto && av != null) {
+                av.noteContentAuto();
+                boolean near;
+                if (this.isFixed) {
+                    float rootW = LayoutReads.placeViewportW(ctx);
+                    float rootH = LayoutReads.placeViewportH(ctx);
+                    near = this.x + Math.max(0f, this.w) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
+                            && this.x <= rootW + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
+                            && this.y + Math.max(0f, this.h) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
+                            && this.y <= rootH + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN;
+                } else {
+                    near = av.isNearViewport(this.x, this.y, this.w, this.h);
+                }
+                boolean relevant = cvForceRelevant || near;
+                boolean shouldSkip = !relevant;
+                if (shouldSkip != this.contentAutoSkipped) {
+                    if (shouldSkip) {
+                        releaseDeferredChildren();
+                        this.contentAutoSkipped = true;
+                    } else {
+                        this.contentAutoSkipped = false;
+                        if (this.childrenDeferred) av.materialize(this);
+                    }
+                    measureMemo.markVisibilityChangedForStabilize(this);
+                    av.noteNonVirtualVisibilityChanged();
+                } else if (!shouldSkip && this.childrenDeferred) {
+                    av.materialize(this);
+                    measureMemo.markVisibilityChangedForStabilize(this);
+                    av.noteNonVirtualVisibilityChanged();
+                }
+            }
+
+            if (this.contentAutoSkipped) {
+                ScrollExtentCalc.applyRelativePositioning(this, ctx);
+                if (this.isSticky) ScrollExtentCalc.applyStickyOffset(this, ctx);
+                this.descendantOverflowRight = this.w;
+                this.descendantOverflowBottom = this.h;
+                this.scrollWidth = Math.max(this.w, pL + bL + pR + bR);
+                this.scrollHeight = Math.max(this.h, pT + bT + pB + bB);
+                pm.record(this, false, scrollX, scrollY, readState, pSlot);
+                return;
+            }
+
+            float innerX = this.x + pL + bL - scrollX;
+            float innerY = this.y + pT + bT - scrollY + contentOffsetY + legendSpill;
+
+            float prevClipL = 0, prevClipT = 0, prevClipR = 0, prevClipB = 0;
+            boolean savedClip = false;
+            if (av != null && (this.isFixed || ScrollExtentCalc.clipsOverflow(this))) {
+                prevClipL = av.clipLeft();
+                prevClipT = av.clipTop();
+                prevClipR = av.clipRight();
+                prevClipB = av.clipBottom();
+                savedClip = true;
+                float baseL = this.isFixed ? 0f : prevClipL;
+                float baseT = this.isFixed ? 0f : prevClipT;
+                float baseR = this.isFixed ? LayoutReads.placeViewportW(ctx) : prevClipR;
+                float baseB = this.isFixed ? LayoutReads.placeViewportH(ctx) : prevClipB;
+                if (ScrollExtentCalc.clipsOverflow(this)) {
+                    float boxL = this.x + bL;
+                    float boxT = this.y + bT;
+                    float boxR = Math.max(boxL, this.x + this.w - bR);
+                    float boxB = Math.max(boxT, this.y + this.h - bB);
+                    av.setClip(Math.max(baseL, boxL), Math.max(baseT, boxT),
+                            Math.min(baseR, boxR), Math.min(baseB, boxB));
+                } else {
+                    av.setClip(baseL, baseT, baseR, baseB);
+                }
+            }
+            LayoutBox legend;
+            try {
+                if (hasAbsoluteChild) {
+                    for (int i = 0, n = children.size(); i < n; i++) {
+                        LayoutBox child = children.get(i);
+                        if (child.isAbsolute) {
+                            child.staticX = innerX;
+                            child.staticY = innerY;
+                            AnchorPositioning.applyStaticArea(this, child, innerX, innerY);
+                        }
                     }
                 }
-            }
 
-            LayoutEngine engine = LayoutEngine.getEngine(this);
-            engine.arrangeChildren(this, innerX, innerY, ctx);
+                LayoutEngine engine = LayoutEngine.getEngine(this);
+                engine.arrangeChildren(this, innerX, innerY, ctx);
 
-            if (hasAbsoluteChild) {
-                for (int i = 0, n = children.size(); i < n; i++) {
-                    LayoutBox child = children.get(i);
-                    if (child.style.facts().displayNone) continue;
-                    if (child.isAbsolute) child.layout(this.x - scrollX, this.y - scrollY, this.w, this.h, ctx);
+                if (hasAbsoluteChild) {
+                    for (int i = 0, n = children.size(); i < n; i++) {
+                        LayoutBox child = children.get(i);
+                        if (child.style.facts().displayNone) continue;
+                        if (child.isAbsolute) child.layout(this.x - scrollX, this.y - scrollY, this.w, this.h, ctx);
+                    }
                 }
+                legend = renderedLegend();
+                if (legend != null) ScrollExtentCalc.placeRenderedLegend(this, legend, ctx);
+            } finally {
+                if (savedClip) av.setClip(prevClipL, prevClipT, prevClipR, prevClipB);
             }
-            legend = renderedLegend();
-            if (legend != null) ScrollExtentCalc.placeRenderedLegend(this, legend, ctx);
-        } finally {
-            if (savedClip) av.setClip(prevClipL, prevClipT, prevClipR, prevClipB);
-        }
-        if (isCvAuto) recordRememberedSize();
+            if (isCvAuto) recordRememberedSize();
 
-        ScrollExtentCalc.applyRelativePositioning(this, parentOuterW, parentOuterH, rootW, rootH);
-        if (this.isSticky) ScrollExtentCalc.applyStickyOffset(this, ctx);
-        ScrollExtentCalc.updateScrollExtent(this, scrollX, scrollY);
-        pm.record(this, parentX, parentY, parentOuterW, parentOuterH, legend != null, scrollX, scrollY);
+            ScrollExtentCalc.applyRelativePositioning(this, ctx);
+            if (this.isSticky) ScrollExtentCalc.applyStickyOffset(this, ctx);
+            ScrollExtentCalc.updateScrollExtent(this, scrollX, scrollY);
+            pm.record(this, legend != null, scrollX, scrollY, readState, pSlot);
+        } finally {
+            LayoutReads.popPlacing(readState, pSlot);
+        }
     }
 
     private boolean computeHasFloatChild() {

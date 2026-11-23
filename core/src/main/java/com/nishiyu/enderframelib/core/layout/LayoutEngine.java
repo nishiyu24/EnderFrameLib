@@ -114,7 +114,7 @@ public abstract class LayoutEngine {
             LayoutBox child = ch.get(i);
             if (child.isAbsolute && !isDisplayNone(child.style)) {
                 child.measureMemo.noteParentReadOpaque();
-                LayoutBox cb = child.findContainingBlock();
+                LayoutBox cb = LayoutReads.containingBlockForMeasure(child);
                 float cbW, cbH;
                 if (cb == null) {
                     cbW = rootW;
