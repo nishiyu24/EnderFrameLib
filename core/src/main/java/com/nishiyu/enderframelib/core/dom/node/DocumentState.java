@@ -38,6 +38,9 @@ public interface DocumentState {
     /** ノードを汚れたとして印を付ける。 */
     void markDirty(HtmlNode node);
 
+    /** DOM の変更を追記する台帳（K5b。段が読む唯一の変更の入口）。 */
+    ChangeLedger changeLedger();
+
     /** 属性が変わった（再スタイルの無効化）。 */
     void invalidateAttribute(HtmlNode node, String name, String oldValue, String newValue);
 

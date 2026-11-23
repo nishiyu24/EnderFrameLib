@@ -54,7 +54,7 @@ import com.nishiyu.enderframelib.core.text.model.FontResolver;
  */
 public class UiView implements AutoCloseable {
     /** LocalPatches（切り出した協力クラス）。 */
-    private final LocalPatches localPatches = new LocalPatches(this);
+    final LocalPatches localPatches = new LocalPatches(this);
 
     /**
      * 画面更新の無効化段階（F3-2）。
@@ -86,7 +86,7 @@ public class UiView implements AutoCloseable {
     final Set<HtmlNode> pendingTextNodes = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** 次の flush で「描画だけ」の属性パッチをする節（同一性で比べる）。{@code synchronized (pendingAttrNodes)} で触る。 */
-    private final Set<HtmlNode> pendingAttrNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    final Set<HtmlNode> pendingAttrNodes = Collections.newSetFromMap(new IdentityHashMap<>());
     public static final java.util.concurrent.atomic.AtomicLong ATTR_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     /** 局所パッチが成功した回数 / 全体の再レイアウトへ退いた回数（調べる用）。 */
     public static final java.util.concurrent.atomic.AtomicLong TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
@@ -821,6 +821,7 @@ public class UiView implements AutoCloseable {
      * （範囲を越える・ほかに変化がある・中身を節にまとめていないコンテナが動くときは、作り直す）。
      */
     public void requestScrollReposition() {
+        interactionState.changeLedger().append(null, com.nishiyu.enderframelib.core.dom.node.ChangeLedger.Kind.SCROLL);
         repositionPending = true;
         markInvalidation(InvalidationLevel.REPOSITION);
         invalidated();
@@ -836,6 +837,7 @@ public class UiView implements AutoCloseable {
         if (width == rootW && height == rootH && pendingResizeW < 0) return;
         pendingResizeW = width;
         pendingResizeH = height;
+        interactionState.changeLedger().append(null, com.nishiyu.enderframelib.core.dom.node.ChangeLedger.Kind.ENV);
         invalidated();
     }
 
@@ -1274,6 +1276,7 @@ public class UiView implements AutoCloseable {
     /** 描画キューから呼ばれる、このセッション 1 回分の無効化処理。 */
     public void flushInvalidation() {
         if (document == null || document.root == null) return;
+        interactionState.changeLedger().freeze(); // 変更台帳を凍結（K5b L0: 観測だけ。この世代の変更を各段が読むのは L1 以降）
 
         // 時間で動くスタイル（opacity / transform / 色以外のトランジションと @keyframes）を進める。
         // 動いているうちは毎フレーム再スタイルを要求する（終わった要素は進めた時点で再スタイルの対象になる）

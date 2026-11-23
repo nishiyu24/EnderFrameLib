@@ -322,6 +322,7 @@ public class HtmlDocument extends HtmlNode implements Document {
             }
         }
         interactionState.invalidateAttribute(node, name, oldValue, newValue);
+        interactionState.changeLedger().append(node, ChangeLedger.Kind.ATTR);
         DomChangeListener listener = domChangeListener;
         if (listener != null) listener.onDomChanged(node, name);
     }
@@ -330,6 +331,7 @@ public class HtmlDocument extends HtmlNode implements Document {
     void childListChanged(HtmlNode parent, int index) {
         interactionState.notifyDomStructureChanged();
         interactionState.invalidateChildList(parent, index);
+        interactionState.changeLedger().append(parent, ChangeLedger.Kind.CHILDREN);
         DomChangeListener listener = domChangeListener;
         if (listener != null) listener.onDomChanged(parent, null);
     }
@@ -337,6 +339,9 @@ public class HtmlDocument extends HtmlNode implements Document {
     /** {@link HtmlNode#notifyDomChanged} から呼ばれる。汚れの印を付け（算出スタイルを使い回させない）、持ち主に知らせる。 */
     void nodeChanged(HtmlNode node, @Nullable String attributeName) {
         interactionState.markDirty(node);
+        // 文字の節 → TEXT。属性名の無い要素の変更（内容の差し替え）は、箱の木には子の増減として効く → CHILDREN
+        interactionState.changeLedger().append(node, node.nodeType == NodeType.TEXT ? ChangeLedger.Kind.TEXT
+                : attributeName == null ? ChangeLedger.Kind.CHILDREN : ChangeLedger.Kind.ATTR);
         DomChangeListener listener = domChangeListener;
         if (listener != null) listener.onDomChanged(node, attributeName);
     }

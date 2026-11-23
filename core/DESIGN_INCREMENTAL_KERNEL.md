@@ -1,6 +1,6 @@
 # 増分カーネル（Incremental Kernel）設計書 — 1 本化と KPI の両立（K 系）
 
-> **状態**: 設計（2026-11-23）。**K0・K1・K2・K3・K4 は完了**（K0 は計画書 §4・§6-182・§3 K0b、K1 は `ReadKind` 27 種・`LayoutReads`・`LayoutReadLedgerRatchetTest` ほか計画書 §4、K2 は `placeReadMask`・`PlacementDeps`・`PlacementMemo` 鍵駆動化・`PlacementVerifier` 削除・`K2PlacementKeyTest`、K3 は親相対座標化・`LayoutBox.x()/y()` 解決・`shiftSubtree`/`SHIFT`/`KEEP_PLACEMENTS`/`lastLayoutX/Y` 削除・`K3ParentRelativeLayoutTest`、K4 は窓の外の部分木の O(1) の代理〔`InkBounds`・`FragmentPaint.Memo.ink`・署名の形／位置の分割〕・`K4InkBoundsProxyTest`。定数倍の残りは計画書 §3 の K4b）。K5 以降は着手前。計画書 §3 の C4・C5・C8・C10 をこの設計へ置き換える。
+> **状態**: 設計（2026-11-23）。**K0・K1・K2・K3・K4 は完了**（K0 は計画書 §4・§6-182・§3 K0b、K1 は `ReadKind` 27 種・`LayoutReads`・`LayoutReadLedgerRatchetTest` ほか計画書 §4、K2 は `placeReadMask`・`PlacementDeps`・`PlacementMemo` 鍵駆動化・`PlacementVerifier` 削除・`K2PlacementKeyTest`、K3 は親相対座標化・`LayoutBox.x()/y()` 解決・`shiftSubtree`/`SHIFT`/`KEEP_PLACEMENTS`/`lastLayoutX/Y` 削除・`K3ParentRelativeLayoutTest`、K4 は窓の外の部分木の O(1) の代理〔`InkBounds`・`FragmentPaint.Memo.ink`・署名の形／位置の分割〕・`K4InkBoundsProxyTest`。定数倍の残りは計画書 §3 の K4b）。K5 以降は着手前。計画書 §3 の C4・C5・C8・C10 をこの設計へ置き換える。 **K5b〔変更台帳と段の状態機械〕は §3.6 に設計を追加（2026-11-24。実装は L0 から）。**
 > **この文書の役割**: 「近道（フラグ）を足す → 費用を削る → 不具合が出る → 検証やフラグを足す」のループを、運用ではなく**構造**で断つための設計。
 > **書かないこと**: 手順の実装記録（運用ルール 2）。着手後は計画書 §3 の行と §4 に移し、この文書は設計の根拠と合否線だけを残す。
 > **前身**: 旧 `DESIGN_FRAGMENT_TREE.md`〔削除済み。要旨は付録 A〕の §0.5（保守性の原則 M1〜M8）。そこで書いた結論を、配置・測定・描画の**全段へ**広げる。
@@ -99,6 +99,44 @@ canReuse(key)   = for each bit in readMask: current(bit) == snapshot(bit)
 
 テストの間だけ、フラッシュのたびに**独立の面**で最初から作り、箱の木（位置・大きさ・静的位置・スクロール範囲・断片を含む全体）と表示項目を比べる。部分木ではなく全体を別に作るので、断片の管理の人工物は出ない。**実装（K0）**: `FrameOracle`〔テスト側。DOM を `cloneNode(true)` で構造のまま複製し `installDocument` で新しい面へ入れる。HTML に書き出して読み直すとパーサが不正な入れ子を直して偽陽性になる〕。比べるのは箱の木〔種類・位置・大きさ・子の数。スクロール範囲は任意〕で、表示項目は比べない〔途中の色・半径が時間で動く〕。**使える場面は時間と対話の履歴に依らない場面だけ**〔`transition`・`animation`・ホバー・スクロール量・`display:none` の部分木は対象外〕。既存の `MutationFuzz`・`RealDocumentFramesTest` はオラクルの一種で、それを**全ての `StandaloneView` を使うテストの共通機構**にする（既定オフ・`-Pverify.oracle`。ファズと実文書は常時オン）。保持ごとの検証クラス 4 つは、鍵の生成側の**汎用の照合**（ヒットしたら再計算して比べる）とオラクルに置き換える（K6）。
 
+### 3.6 変更台帳と段の状態機械（K5b〔改〕。2026-11-24 追加）
+
+**診断（事実）**: 変更の入口が段ごとに別の物で、再利用の判定が段ごとに別の言語になっている。
+
+| 入口・状態 | 持ち主 | 何を表すか |
+| :-- | :-- | :-- |
+| `pendingTextNodes`・`pendingChildParents`・`pendingAttrNodes` | `UiView`・`LocalPatches` | 文字・子の増減・描画だけの属性が変わった節の集合（パッチの入力） |
+| `StateFlags` の `DIRTY_STYLE`・`DIRTY_SUBTREE`・`DIRTY_BELOW` | `InteractionState` | 再スタイルが要る節・部分木・「下に汚れがある」祖先の印（`DIRTY_BELOW` は祖先へ**伝播するフラグ**） |
+| `InvalidationLevel`（7 値）・`repositionPending`・`nonScrollRepositionPending` | `UiView` | どの経路へ流すかの水準（入口の種類から派生する値のはず） |
+| `domStructureVersion`・`lastBuiltStructureVersion` | `InteractionState` | 文書全体の構造の版（幅だけの変更で再構築を省く判定にだけ使う） |
+
+結果: ①文字・子の増減・属性ごとに専用の経路〔`LocalPatches`〕と成立条件が要る。②全再計算は、変わっていない箱も 2 つの段〔`RenderTreeBuilder`・`BoxTreeBuilder`〕で 1 回ずつ辿る〔`large-list child` を通常経路に落とすと確保 `317 KB`/f・時間 `+43%`。定数倍の除去後でも `+43%`。計画書 §6-198〕。③「部分木の下に変更が無い」を段ごとに別の仕組みで持つ〔スタイルは `DIRTY_BELOW`、描画は `PaintStamps`、測定は `MeasureMemo`〕。
+
+**却下した案（私の最初の案）**: 子の増減が起きた親・文字の節を、祖先まで印にした集合を `layoutDocument` へ渡し、集合に無い部分木を飛ばす。→ `pendingChildParents` と同種の状態をもう 1 つ足すだけで、`CHILD_PATCH` の成立条件を鍵として共有するのは**パッチの別名**。K1〔再利用の言語は 1 つ〕・状態の予算に反する。
+
+**設計**:
+
+1. **変更台帳 `ChangeLedger`（1 本）**: DOM の変更を**追記するだけ**の列。要素は `(節, 種別, 世代)`。種別は `STYLE_INPUT`〔class・style・属性・対話状態・疑似クラス〕・`TEXT`・`CHILDREN`〔子の増減〕・`PAINT_ATTR`〔描画だけの属性〕・`ENV`〔ビューポート・メディア〕・`SCROLL`。世代は 1 フレームごとに増える整数（`Clock` に依らない）。追記は同期した O(1)。**箱にも節にも新しい欄を足さない**。フレームの始めに台帳を**凍結**〔入れ替え〕し、その世代の変更を各段が読む。
+2. **問い合わせは台帳だけに聞く**: 各段は「この節の部分木の下に、前回この段が走った世代より新しい変更があるか」を `ledger.touches(節)` で聞く。実装は、凍結した台帳の節から祖先を辿った集合を**フレームごとに 1 回だけ**作る〔`O(変更数 × 深さ)`。フレームが終われば捨てる。節ごとの `DIRTY_BELOW` のような**持ち越すフラグではない**〕。変更が少ないフレーム〔通常〕は集合が小さい。大量の変更〔`markAllDirty`・`ENV`〕は「全て触れた」とする。
+3. **段の状態機械（1 本）**: フレームは `COLLECT`〔台帳を凍結・世代を進める〕→ `STYLE` → `BOX_TREE` → `MEASURE` → `PLACE` → `PAINT` の順に進む。各段は次の 1 つの規則だけで再利用する: **「部分木が台帳に触れられていない かつ 段の鍵〔§3.2〕が同じなら、前回の結果をそのまま返す。辿らない」**。段ごとのスイッチ・パッチ・個別の集合を持たない。水準 `InvalidationLevel` は、台帳の種別の集合から**導く値**になる〔`TEXT` だけ → 文字の箱の測り直し、など〕。
+4. **消えるもの**: `pendingTextNodes`・`pendingChildParents`・`pendingAttrNodes`・`InvalidationLevel` の入口側の切り分け・`repositionPending` 系・`LocalPatches` と `CHILD_PATCH`・`domStructureVersion`・`StateFlags` の汚れ 3 ビット〔最後〕。**状態の予算は増やさない**: 各段の移行は、足した欄と同数以上を消す〔`IncrementalStateRatchetTest`〕。
+5. **`CHILD_PATCH` が要らなくなる理由**: 子の増減は「親への `CHILDREN` の追記」で、`BOX_TREE` はその親の子リストだけを組み直す〔他の部分木は台帳に触れられていないので辿らない〕。パッチの成立条件〔≤ 4 親・≤ 16 変更・`canPatchChildren` の形〕は要らない。条件が成り立たない形〔表・疑似要素・`display: contents`〕は、その親が**触れられた部分木として普通に組み直される**だけで、別経路へ「退く」判断が無い。
+6. **段ごとの副作用の扱い〔未決を含む。§8-6〜8〕**: CSS カウンタは文書順の流れ込みがあるので、**シートがカウンタを使う文書では `BOX_TREE` の飛ばしをしない**〔文書の事実であって箱のフラグではない。現行の `CHILD_PATCH` も同じ除外〕。疑似要素・`display: contents` は部分木の内側で完結する。`nextReusable`〔次フレーム用の再利用表〕は、飛ばした部分木の箱も含める必要がある → 部分更新のとき前回の表を**そのまま引き継ぐ**〔登録し直さない〕形を検討する。
+
+**オラクル（K3）で守る**: ①`-Dverify.oracle=true` で、台帳を使った飛ばしが最初から作った結果と一致する〔既存の `FrameOracle`〕。②**台帳の取りこぼしの変異**〔変更を台帳へ追記せずに DOM だけ変える。`FrameOracleTest` の「通知なしの変異」と同じ作り〕を殺す。③台帳が空でない種別の組合せ〔文字＋子の増減＋属性＋位置の指定〕の乱数列で、通常の全再計算と一致する。
+
+**段取り〔各段は単独で出せる・計測で守る〕**:
+
+| 段 | 内容 | 消す物 | ゲート |
+| :-- | :-- | :-- | :-- |
+| **L0 台帳を観測として足す**（**完了**。計画書 §4・§6-199） | 既存の通知経路から台帳へ追記し、オラクルのテストの間だけ「台帳が触れた節の集合 ⊇ 既存の入口の集合」を比べる。挙動は変えない | — | 取りこぼし 0（乱数列）・追記の費用 `≤ +1%` |
+| **L1 文字・属性** | `TEXT`・`PAINT_ATTR` を台帳から読み、`pendingTextNodes`・`pendingAttrNodes` を削除。K5 第 2 段の経路をそのまま台帳の読み手にする | `pendingTextNodes`・`pendingAttrNodes` | `text` 系 A/B `±10%`・`costGate` 緑 |
+| **L2 子の増減と BOX_TREE の飛ばし** | `CHILDREN` を台帳から読み、`BOX_TREE`・`STYLE` の木の走査が触れられていない部分木を辿らない。`CHILD_PATCH`・`LocalPatches` を撤去 | `pendingChildParents`・`CHILD_PATCH`・`LocalPatches`・`planChildPatch` ほか | `large-list child`〔通常経路〕が時間 `≤ +10%`・確保 `≤ 2 倍`・パッチ系スイッチ `0` |
+| **L3 汚れ印と水準** | `STYLE_INPUT` を台帳から読み、`StateFlags` の汚れ 3 ビット・`InvalidationLevel` の入口の切り分け・`repositionPending` 系を削除 | `DIRTY_*`・`InvalidationLevel` の分岐 | 状態の予算が下がる・全テストとオラクル緑 |
+| **L4 構造の版** | `domStructureVersion`・`lastBuiltStructureVersion` を台帳の `ENV` 判定へ | 同左 | `resizeexact` A/B `±10%` |
+
+**撤退条件**: L0 で台帳の取りこぼしが乱数列で出る〔入口が台帳へ追記し忘れる〕なら、追記の入口を 1 か所〔`HtmlDocument` の変更通知〕へ寄せてから進む。L2 で `large-list child` が `+10%` に届かないなら、飛ばしの粒度〔節ごとか、親ごとの子リストか〕を見直す。**パッチへは戻らない**。
+
 ---
 
 ## 4. KPI の再定義と測り方
@@ -128,6 +166,7 @@ KPI を「構造」「定数倍」「仕組みの費用」「状態の予算」�
 | ~~**K3 親相対と位置の解決**（旧 C4）~~ **完了（K3）** | 箱は親相対の幾何だけを持ち、絶対位置は解決の問い合わせ。平行移動は式の評価 | `shiftSubtree`・`SHIFT`・`KEEP_PLACEMENTS`・`lastLayoutX/Y` の記憶（削除済み） | `child` の配置の増幅率 `≤ 10`（`2.75` で達成）・`FractionalShiftEquivalenceTest`・`ParentRelativeParityTest`・`K3ParentRelativeLayoutTest` 緑／`resizeexact` の時間 `+7.0%`（±10% A/B 達成） | 解決の費用が `resizeexact` を `+10%` 超 → 解決を遅延評価へ（未発動） | L |
 | ~~**K4 表示リストを窓＋変更で評価**（旧 C8）~~ **完了（K4 本体）** | 窓の外で断片が空になった部分木に、窓の判定が読む矩形〔箱・インラインの断片〕の和集合＝インク境界 `InkBounds` を持ち、平行移動しただけで移動後も窓の外なら O(1) で再利用。署名を形と位置へ分け、平行移動だけの箱は部分木の印だけ進める | 窓外の箱の作り直し（削除済み。`child` の断片 miss `507`/f → `5.0`/f） | `child` の断片の増幅率 `254`/`464 → 2.5`（`≤ 10` 達成。`costGate` の `memoCeil` 全解消）・`K4InkBoundsProxyTest`・`PathPredictionTest` 不健全 0／対 `HEAD` 交互 A/B（null・中央値）: large-list-2000 `child` `2.39 → 1.15 ms`（`-52%`）・`hover` 同等・`inherited` varied-2000 `+2.3%`（`+3%` 内）。**未達は K4b**（定数倍〔`inherited` の 1 miss・実文書 `hover` の確保 `≤ 100 KB`〕・`FragmentPaint` の個別の退く条件の整理） | 撤退条件は未発動。インク境界は「窓の判定が読む矩形」だけで足りた（影・outline・変形は窓の判定が箱の矩形しか見ない既存の規則と同じで、変形・アニメーションのある箱は窓で省かれない） | L |
 | **K5 局所パッチの撤去**（旧 C5・S8） | 文字・属性の変更を汚れの印＋通常経路へ。`LocalPatches` と近道スイッチの整理 | `LocalPatches`・パッチ系スイッチ | パッチ系スイッチ `0`・`Shortcut` `37 → ≤ 30`／`StaleTextPatchTest` を通常経路で緑／時間 A/B ±10% | — | M |
+| **K5b 変更台帳と段の状態機械**（§3.6。K5 の残りの前提） | 変更の入口を台帳 1 本へ。各段は「触れられていない部分木は辿らない」の 1 規則。L0〜L4 の順に単独で出す | `pendingTextNodes`・`pendingAttrNodes`・`pendingChildParents`・`CHILD_PATCH`・`LocalPatches`・汚れ 3 ビット・`domStructureVersion` | パッチ系スイッチ `1 → 0`・状態の予算が増えない・`large-list child`〔通常経路〕`≤ +10%`／台帳の取りこぼしの変異を全て殺す | L2 で `+10%` に届かない → 飛ばしの粒度を見直す〔パッチへは戻らない〕 | L |
 | **K6 検証の統合** | 保持ごとの検証クラス 4 つを、鍵の汎用の照合とオラクルへ | `MeasureVerifier`・`OwnItemsVerifier`・`PoseVerifier` ほか | 検証クラス `4 → ≤ 1`・検証モード `3 → ≤ 1`／変異の全殺しを維持 | — | S |
 
 **K2 のスパイクの具体**: 配置の鍵を「読み取りビット＋スナップショット」で実装し、**現行の `canKeepPlacement` と並べて**フレームごとに判定を比べる（保持するかしないか）。現行が保持するのに鍵が保持しない箱＝鍵の取りこぼし、鍵が保持するのに現行が保持しない箱＝新しく保持できる箱（効果）、鍵が保持して結果が違う箱＝誤保持（オラクルで検出）。最初に `voidwave`・`showcase`・`item_block`・`surface` の `text` と、`MutationFuzz` の種 1〜300 で測る。
@@ -164,6 +203,9 @@ KPI を「構造」「定数倍」「仕組みの費用」「状態の予算」�
 3. **インク境界（K4・解決済み）**: 影・outline・変形・絶対配置・overflow の上限を、測定の出力として持てるか → **窓の判定そのものが読む矩形（箱・インラインの断片）だけで足りた**。窓の判定は箱の矩形しか見ない既存の規則で、変形・アニメーションのある箱・レイヤーを持つ箱は窓で省かれず項目を持つ（空の断片に現れない）。位置指定・sticky の子孫は平行移動で動かないので境界を作らず（代理なし）、行に分かれた箱自身も原点の親が箱の外にあるので作らない。境界は窓付きの組み立ての空の部分木に限り、平行移動が起きたとき遅延して作る。窓なしの文書では空の断片が位置に依ることがある〔クリップ等〕ので代理を使わない。
 4. **オラクルの費用と作り方**〔K0 で解決: 箱の木の複製で足りた。`layouts` 種 1〜1500 × 45 手で偽陽性 0。履歴のある場面への拡大は K0b〕: 独立の面を作るには DOM の複製（スタイル・対話・スクロールの状態を含む）が要る。小さく作れなければ、箱の木の複製へ縮小する。
 5. **並列レイアウト**: 鍵のスナップショットの読み書きがワーカー間で競合しないこと（箱ごとの記憶は箱の持ち主のスレッドだけが書く前提を維持）。
+6. **台帳の「触れた節の集合」の作り方（K5b）**: フレームごとに祖先を辿った集合を作る案〔§3.6-2〕で、大量の変更・深い木での費用が許容か。`DocumentArena` の行きがけ番号と部分木の範囲で、集合を作らずに範囲検索で答える案もある〔ただし挿入で番号が連続でなくなる点を要確認〕。K5b の L0 で両方を測って決める。
+7. **`nextReusable`（次フレーム用の再利用表）の引き継ぎ（K5b）**: 部分更新で、飛ばした部分木の箱を登録し直さずに済む表の持ち方〔前回の表を引き継ぎ、組み直した部分木の分だけ差し替える〕。登録し直しは O(箱) で、飛ばしの利得を食う。
+8. **CSS カウンタ（K5b）**: 文書順の流れ込みがあり、部分木を飛ばすと後続のカウンタ値が変わりうる。当面は「シートがカウンタを使う文書では飛ばさない」〔文書の事実で判定〕。部分木ごとにカウンタの出入りの差分を鍵に持つ案は、使う文書が現れてから。
 
 ---
 
@@ -173,6 +215,7 @@ KPI を「構造」「定数倍」「仕組みの費用」「状態の予算」�
 - **フラグの追加と検証の追加を続ける（現状）**: §1.3 のとおり、足すたびに別の欠陥・費用が出る。ループの原因そのもの。
 - **検証モードの強化だけ**（K0 のオラクルのみで止める）: 無効化の漏れを見つける力は付くが、フラグが増え続ける構造は残る。K0 は必要条件で十分条件ではない。
 - **パッチへの退却**（局所パッチを増やす）: 計画書 §3.3 のとおり、全面と違う結果を許す前提を持ち込む。C1・C2 で選ばなかった。
+- **変更した親・節の集合を段へ渡して部分木を飛ばす（`CHILD_PATCH` の成立条件を鍵として共有する）**〔K5b の最初の案。却下〕: 入口別の集合〔`pendingChildParents` と同種〕を 1 つ足し、パッチの条件を別名で残す。K1〔再利用の言語は 1 つ〕・状態の予算に反する。変更台帳〔§3.6〕へ一本化する。
 
 ---
 

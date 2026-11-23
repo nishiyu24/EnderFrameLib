@@ -38,6 +38,12 @@ public class CompactList<E> extends AbstractList<E> implements RandomAccess {
         return Arrays.mismatch(array, 0, n, other, 0, n) < 0;
     }
 
+    /** 並びに条件を満たす要素があるか（{@code stream} は反復子・パイプラインを呼ぶたびに作るので、熱い経路では使わない）。 */
+    public static <T> boolean any(java.util.List<T> list, java.util.function.Predicate<? super T> test) {
+        for (int i = 0, n = list.size(); i < n; i++) if (test.test(list.get(i))) return true;
+        return false;
+    }
+
     /** {@link #sameAs} の一般の {@link java.util.List} 版（{@code CompactList} でなければ 1 要素ずつ比べる）。 */
     public static boolean sameElements(java.util.List<?> list, Object[] other, int n) {
         if (list instanceof CompactList<?> c) return c.sameAs(other, n);

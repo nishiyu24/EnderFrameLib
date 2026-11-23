@@ -222,7 +222,7 @@ public final class BoxTreeBuilder {
                 : horizontalReturnRoot ? WritingModes.HORIZONTAL
                 : activeFlow;
 
-        List<LayoutBox> items = new ArrayList<>();
+        List<LayoutBox> items = new ArrayList<>(box.elementChildren.size() + 1);
         LayoutBox marker = box.display.listItem() ? createMarker(box, counters) : null;
         if (marker != null) items.add(marker);
         collectItems(box, items, childFlow);
@@ -349,7 +349,7 @@ public final class BoxTreeBuilder {
      */
     private void collectItems(LayoutBox element, List<LayoutBox> out, int childFlow) {
         int mark = counters.mark();
-        for (LayoutBox child : element.elementChildren) {
+        for (int i = 0, n = element.elementChildren.size(); i < n; i++) { LayoutBox child = element.elementChildren.get(i); // 反復子を作らない（箱ごとに呼ばれる）
             counters.apply(child);
             if (child.node.isPseudoNode) evaluateGeneratedContent(child, counters);
             if (child.display.isContents()) {
@@ -387,7 +387,7 @@ public final class BoxTreeBuilder {
         if (inner == Inner.TABLE_ROW) {
             return wrapRuns(parent, dropTableWhitespace(items), c -> !c.display.isNone() && c.display.inner() != Inner.TABLE_CELL, "table-cell");
         }
-        if (items.stream().noneMatch(c -> c.display.isTableInternal())) return items;
+        if (!com.nishiyu.enderframelib.core.kernel.CompactList.any(items, c -> c.display.isTableInternal())) return items;
 
         // 行の外にあるセルの並びは匿名の行で、表の外にある行・行グループの並びは匿名の表で包む
         List<LayoutBox> withRows = wrapRuns(parent, items, c -> c.display.inner() == Inner.TABLE_CELL, "table-row");
@@ -463,9 +463,9 @@ public final class BoxTreeBuilder {
      * ブロックが「親の先頭の子」として親の上端に置かれていた（インラインと重なっていた）。
      */
     private List<LayoutBox> wrapInlineRuns(LayoutBox parent, List<LayoutBox> items) {
-        if (items.stream().noneMatch(BoxTreeBuilder::isInFlowBlockLevel)) return items;
+        if (!com.nishiyu.enderframelib.core.kernel.CompactList.any(items, BoxTreeBuilder::isInFlowBlockLevel)) return items;
 
-        List<LayoutBox> result = new ArrayList<>();
+        List<LayoutBox> result = new ArrayList<>(items.size());
         List<LayoutBox> run = new ArrayList<>();
         for (LayoutBox item : items) {
             if (isInFlowBlockLevel(item)) {
@@ -484,7 +484,7 @@ public final class BoxTreeBuilder {
 
     private void flushInlineRun(LayoutBox parent, List<LayoutBox> run, List<LayoutBox> out) {
         if (run.isEmpty()) return;
-        boolean hasContent = run.stream().anyMatch(c -> !isOutOfFlow(c) && !isCollapsibleWhitespace(c));
+        boolean hasContent = com.nishiyu.enderframelib.core.kernel.CompactList.any(run, c -> !isOutOfFlow(c) && !isCollapsibleWhitespace(c));
         if (hasContent) {
             LayoutBox anon = createAnonymous(parent, "block");
             for (LayoutBox child : run) anon.addChild(child);

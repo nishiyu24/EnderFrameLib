@@ -73,7 +73,8 @@ final class RenderTreeBuilder {
             boolean isOpen = interactionState != null
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");
-            for (HtmlNode child : node.children) {
+            for (int ci = 0, cn = node.children.size(); ci < cn; ci++) {
+                HtmlNode child = node.children.get(ci);
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
                 if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
                 box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, RenderPipeline.FORCE_SUBTREE,
@@ -111,8 +112,9 @@ final class RenderTreeBuilder {
         InteractionState.StateFlags flags = interactionState != null ? interactionState.getOrCreate(node) : null;
         RenderPipeline.StyleCache cache = force != RenderPipeline.FORCE_NONE ? RenderPipeline.StyleCache.INVALID : RenderPipeline.styleCacheState(flags, parentFontSize, scope);
         boolean needsRestyle = cache != RenderPipeline.StyleCache.VALID;
-        RenderPipeline.stats().boxes++;
-        if (needsRestyle) RenderPipeline.stats().restyled++;
+        var stats = RenderPipeline.stats();
+        stats.boxes++;
+        if (needsRestyle) stats.restyled++;
 
         ComputedStyle computed;
         boolean hasInteractive;
@@ -207,7 +209,7 @@ final class RenderTreeBuilder {
             } else {
                 box.resetEngineOutputs();
                 reusedBox = true;
-                RenderPipeline.stats().reused++;
+                stats.reused++;
             }
         }
         if (box == null) {
@@ -284,7 +286,8 @@ final class RenderTreeBuilder {
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");
             boolean siblingForceDirty = false;
-            for (HtmlNode child : node.children) {
+            for (int ci = 0, cn = node.children.size(); ci < cn; ci++) {
+                HtmlNode child = node.children.get(ci);
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
                 if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
                 boolean stateChanged = siblingInvalidation && RenderPipeline.isStateDirty(interactionState, child);

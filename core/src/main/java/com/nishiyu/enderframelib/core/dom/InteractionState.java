@@ -305,14 +305,14 @@ public class InteractionState implements StyledDocumentState {
     public int viewportFreeVersion;
     public boolean viewportFreeResult;
 
-    /** 子ノードの追加・削除など、DOMの木構造が変わるたびに進む版番号。 */
+    /** 子ノードの追加・削除など、DOMの木構造が変わるたびに進む版番号（K5b L4 で変更台帳へ置き換える）。 */
     public int domStructureVersion;
     /** 前回箱の木（BoxTreeBuilder）を組んだときの {@link #domStructureVersion}。 */
     public int lastBuiltStructureVersion;
+    public final ChangeLedger ledger = new ChangeLedger(); // 変更台帳（K5b L0。各段が読む唯一の変更の入口へ置き換えていく。設計書 §3.6）
+    @Override public ChangeLedger changeLedger() { return ledger; }
 
-    public void notifyDomStructureChanged() {
-        domStructureVersion++;
-    }
+    public void notifyDomStructureChanged() { domStructureVersion++; }
 
     /** 再スタイルの走査が、汚れていない部分木を飛ばしてよいか（走査のたびに {@code RenderPipeline} が決める）。 */
     public boolean pruneRestyle;
@@ -657,7 +657,7 @@ public class InteractionState implements StyledDocumentState {
      */
     public void markDirty(HtmlNode node) {
         if (node == null) return;
-        StateFlags flags = getOrCreate(node);
+        StateFlags flags = getOrCreate(node); ledger.append(node, ChangeLedger.Kind.STYLE);
         flags.markStyleDirty();
         flags.markSubtreeDirty();
         if (!flags.unscoped()) {
@@ -815,7 +815,7 @@ public class InteractionState implements StyledDocumentState {
     }
 
     private void dirty(HtmlNode node, boolean subtree) {
-        StateFlags flags = getOrCreate(node);
+        StateFlags flags = getOrCreate(node); ledger.append(node, ChangeLedger.Kind.STYLE);
         flags.markStyleDirty();
         if (subtree) flags.markSubtreeDirty();
         markAncestorsDirtyBelow(node);
@@ -830,7 +830,7 @@ public class InteractionState implements StyledDocumentState {
         return out;
     }
 
-    public void markAllDirty() {
+    public void markAllDirty() { ledger.appendWhole();
         forEachFlags((node, flags) -> {
             flags.markStyleDirty();
             flags.markSubtreeDirty();

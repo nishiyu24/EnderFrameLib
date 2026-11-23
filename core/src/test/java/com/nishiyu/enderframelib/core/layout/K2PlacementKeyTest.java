@@ -90,7 +90,7 @@ class K2PlacementKeyTest {
             assertNull(FrameOracle.firstDifference(vAbs), "abs step " + (i + 1));
         }
         vAbs.resize(520, 360);
-        vAbs.ui().flushInvalidation();
+        com.nishiyu.enderframelib.common.ResizeSettle.flushUntilApplied(vAbs); // 実時計の間引きで古い幅のまま比べない（全件の並列実行でだけ落ちた）
         assertNull(FrameOracle.firstDifference(vAbs), "abs resize");
         vAbs.close();
 
