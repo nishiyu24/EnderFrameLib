@@ -1419,11 +1419,10 @@ public class BlockLayoutEngine extends LayoutEngine {
         box.startFragmentPass();
         // テキストの箱は断片から位置を取らない（fitToFragments が飛ばす）ので、祖先の相対配置・sticky のずれだけが乗る。
         // 原点に戻してから足し直させないと、同じ木を配置し直すたびにずれが積み重なる
-        if (box.node.nodeType == NodeType.TEXT) {
-            box.x = 0;
-            box.y = 0;
-        }
-        boolean childrenInFlow = inFlow && !isAtomicInline(box);
+        if (box.node.nodeType == NodeType.TEXT) { box.x = 0; box.y = 0; }
+        boolean atomic = isAtomicInline(box);
+        if (atomic && box.holdsPlacement()) return; // 保持した原子的インラインの中身（子の断片・テキスト座標）は残す
+        boolean childrenInFlow = inFlow && !atomic;
         List<LayoutBox> children = box.children;
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox child = children.get(i);
@@ -1442,6 +1441,7 @@ public class BlockLayoutEngine extends LayoutEngine {
      */
     private static void finishFragmentsRecursively(LayoutBox box) {
         box.finishFragmentPass();
+        if (isAtomicInline(box) && box.holdsPlacement()) return;
         List<LayoutBox> children = box.children;
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox child = children.get(i);

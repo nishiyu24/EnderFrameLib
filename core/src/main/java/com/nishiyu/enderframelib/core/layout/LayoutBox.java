@@ -843,7 +843,7 @@ public class LayoutBox {
         for (LayoutBox child : children) {
             // 祖先のずらしは子孫の原点の記録（lastLayoutX / Y）に入らないので、記録と位置の差がずれる。祖先が相対位置でなくなった
             // 次の layout で、平行移動（shiftSubtree）がこの差を保ったまま動かし、効かなくなったずらしが残る（§6-118）。記録を消して置き直させる
-            if (child.placementMemo != null) child.placementMemo.clearLastLayoutX();
+            if (child.placementMemo != null) child.placementMemo.invalidateValid();
             child.applyRelativeOffset(dx, dy);
         }
         for (InlineFragment frag : inlineFragments) {
@@ -1220,7 +1220,7 @@ public class LayoutBox {
         LayoutContext.AutoVisibilitySession av = ctx.autoVisibility();
         boolean checkAutoSubtree = av != null && (subtreeHasContentAuto || style.facts().contentVisibilityAuto);
         if (PlacementMemo.tryReuseOrShift(this, parentX, parentY, parentOuterW, parentOuterH, ctx, checkAutoSubtree)) {
-            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_PLACEMENT.on()) PlacementVerifier.verify(this, parentX, parentY, parentOuterW, parentOuterH, ctx); return;
+            return;
         }
         MeasureReads.ThreadState readState = LayoutReads.state();
         int pSlot = LayoutReads.pushPlacing(readState, this, parentX, parentY, parentOuterW, parentOuterH);
@@ -1228,7 +1228,7 @@ public class LayoutBox {
             PlacementMemo pm = ensurePlacementMemo();
             boolean hasFloat = computeHasFloatChild();
             pm.setHasFloatChild(hasFloat);
-            if (hasFloat || this.floatSpace != null) LayoutReads.recordPlace(readState, pSlot, ReadKind.PLACE_FLOAT);
+            if (hasFloat || this.floatSpace != null || BlockLayoutEngine.isFloating(this)) LayoutReads.recordPlace(readState, pSlot, ReadKind.PLACE_FLOAT);
             PaintStamps.touchLayout(this);
 
             if (this.isAbsolute) {
@@ -1285,7 +1285,7 @@ public class LayoutBox {
                 this.descendantOverflowBottom = this.h;
                 this.scrollWidth = Math.max(this.w, pL + bL + pR + bR);
                 this.scrollHeight = Math.max(this.h, pT + bT + pB + bB);
-                pm.record(this, false, scrollX, scrollY, readState, pSlot);
+                pm.record(this, false, scrollX, scrollY, ctx, readState, pSlot);
                 return;
             }
 
@@ -1348,7 +1348,7 @@ public class LayoutBox {
             ScrollExtentCalc.applyRelativePositioning(this, ctx);
             if (this.isSticky) ScrollExtentCalc.applyStickyOffset(this, ctx);
             ScrollExtentCalc.updateScrollExtent(this, scrollX, scrollY);
-            pm.record(this, legend != null, scrollX, scrollY, readState, pSlot);
+            pm.record(this, legend != null, scrollX, scrollY, ctx, readState, pSlot);
         } finally {
             LayoutReads.popPlacing(readState, pSlot);
         }

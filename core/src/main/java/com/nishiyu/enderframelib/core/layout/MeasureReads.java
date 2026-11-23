@@ -62,6 +62,17 @@ final class MeasureReads {
         float[] placeOriginY = new float[32];
         float[] placeParentW = new float[32];
         float[] placeParentH = new float[32];
+        int[] placeRefStart = new int[32];
+        byte[] placeRefKind = new byte[32];
+        LayoutBox[] placeRefReader = new LayoutBox[32];
+        LayoutBox[] placeRefTarget = new LayoutBox[32];
+        float[] placeRefX = new float[32];
+        float[] placeRefY = new float[32];
+        float[] placeRefW = new float[32];
+        float[] placeRefH = new float[32];
+        float[] placeRefScrollX = new float[32];
+        float[] placeRefScrollY = new float[32];
+        int placeRefCount;
         int placeDepth;
         LayoutReads.PlaceRecorder placeRecorder;
     }

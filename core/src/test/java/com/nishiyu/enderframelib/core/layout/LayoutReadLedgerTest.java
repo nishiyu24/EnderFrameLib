@@ -128,11 +128,14 @@ class LayoutReadLedgerTest {
         int tip = masks.get("tip");
         assertHas(tip, ReadKind.PLACE_CONTAINING_BLOCK, ReadKind.PLACE_ANCHOR, ReadKind.PLACE_VIEWPORT);
 
+        // K2: st の粘着スクロール先は sc 自身の内側（sc 自身）なので ScopeRule.ABSORB_IF_INSIDE_SUBTREE で吸収される
         int sc = masks.get("sc");
-        assertHas(sc, ReadKind.PLACE_SELF_SCROLL, ReadKind.PLACE_STICKY);
+        assertHas(sc, ReadKind.PLACE_SELF_SCROLL);
+        assertLacks(sc, ReadKind.PLACE_STICKY);
 
         int wrapScroll = masks.get("wrapScroll");
-        assertHas(wrapScroll, ReadKind.PLACE_DESCENDANT_SCROLL, ReadKind.PLACE_STICKY);
+        assertHas(wrapScroll, ReadKind.PLACE_DESCENDANT_SCROLL);
+        assertLacks(wrapScroll, ReadKind.PLACE_STICKY);
 
         int st = masks.get("st");
         assertHas(st, ReadKind.PLACE_STICKY, ReadKind.PLACE_PARENT_OUTER, ReadKind.PLACE_VIEWPORT);

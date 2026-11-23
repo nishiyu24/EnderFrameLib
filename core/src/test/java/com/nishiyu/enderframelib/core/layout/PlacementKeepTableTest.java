@@ -82,14 +82,15 @@ class PlacementKeepTableTest {
         List<Consumer<StandaloneView>> steps = steps();
         StandaloneView v = new StandaloneView(HTML, 400, 300, FontResolver.FALLBACK);
         signatures(v);
-        long verified0 = PlacementVerifier.verified(), tables0 = PlacementVerifier.verifiedTables();
         long skipped0 = LayoutBox.layoutsSkipped();
         for (int i = 0; i < steps.size(); i++) {
             steps.get(i).accept(v);
             assertEquals(signatures(fresh(steps, i + 1)), signatures(v), "手 " + (i + 1) + " の後");
         }
         assertTrue(LayoutBox.layoutsSkipped() > skipped0, "配置の保持が 1 度も効いていない");
-        assertTrue(PlacementVerifier.verified() > verified0, "照合モードが 1 度も走っていない");
-        assertTrue(PlacementVerifier.verifiedTables() > tables0, "表を含む部分木の保持が 1 度も検証されていない（表が保持されていない）");
+        LayoutBox t1 = v.ui().layoutRoot().findByNode(v.root().getNodeById("t1"));
+        LayoutBox t2 = v.ui().layoutRoot().findByNode(v.root().getNodeById("t2"));
+        assertTrue(t1 != null && t1.holdsPlacement() && t2 != null && t2.holdsPlacement(),
+                "無関係な表 t1/t2 の配置保持が有効なまま残っていない");
     }
 }

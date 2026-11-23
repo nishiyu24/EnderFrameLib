@@ -333,7 +333,7 @@ final class MulticolLayout {
     /** 段組の中身を配置し、列の間の線の矩形を {@link LayoutBox#columnRules} に入れる。戻り値は文字の最下端。 */
     static float arrange(BlockLayoutEngine engine, LayoutBox box, State state, float innerX, float innerY,
                          LayoutContext ctx) {
-        float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
+        float rootW = 0f, rootH = 0f;
         float textBottom = Float.NEGATIVE_INFINITY;
         Geometry g = state.geometry;
         List<float[]> rules = new ArrayList<>();
@@ -341,6 +341,8 @@ final class MulticolLayout {
         float ruleW = 0;
         String ruleStyle = box.style.getOrDefault(CssPropertyIndex.COLUMN_RULE_STYLE, "none").trim().toLowerCase(Locale.ROOT);
         if (!ruleStyle.equals("none") && !ruleStyle.equals("hidden")) {
+            rootW = LayoutReads.placeViewportW(ctx);
+            rootH = LayoutReads.placeViewportH(ctx);
             ruleW = Math.max(0, box.style.length(CssPropertyIndex.COLUMN_RULE_WIDTH, 0, rootW, rootH));
         }
 

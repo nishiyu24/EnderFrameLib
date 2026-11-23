@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.kernel.Shortcut;
@@ -10,31 +9,23 @@ import java.util.List;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
- * ボックスの配置再利用・平行移動・リセットを一元管理する記憶（A7）。
+ * ボックスの配置再利用・平行移動・リセットを一元管理する記憶（A7・K2）。
  *
- * <p>すべての記憶欄を {@code private} としてこのクラスに閉じ、テキストノードや未配置の箱では
- * 遅延生成してヒープ消費 0 を保つ。</p>
+ * <p>K2 により、部分木ごとに記録した配置の読み取り集合（{@code placeReadMask} と外部依存 {@link PlacementDeps}）を
+ * 再配置の鍵として直接照合する。従来の純粋性判定（{@code selfContained} 等）と {@code PlacementVerifier} を置き換え、
+ * すべての記憶欄を {@code private} としてこのクラスに閉じ、未配置の箱では遅延生成してヒープ消費 0 を保つ。</p>
  */
 final class PlacementMemo {
 
     private static final byte F_VALID = 1 << 0;
-    private static final byte F_PURE = 1 << 1;
-    private static final byte F_KEPT_PURE = 1 << 2;
-    private static final byte F_HAS_FLOAT_CHILD = 1 << 3;
-    /** 部分木に（自分以外の）スクロールコンテナがあり、保持できるのは {@link #scrollVersion} がスクロール量の版と同じときだけ（C9）。 */
-    private static final byte F_SCROLL_DEP = 1 << 4;
-    /** 最後の配置で、インセットを持つ relative として子孫の座標へオフセットを足した（足したオフセットは保持した子孫に残る）。 */
-    private static final byte F_REL_INSET = 1 << 5;
-    /** {@code cbUp}: 部分木の絶対配置が必要とする包含ブロックの、この箱から数えた段数（1 以上は部分木の外。{@code CB_OUTSIDE} は初期包含ブロック）。無ければ {@code NO_CB}。 */
-    private static final int NO_CB = Integer.MIN_VALUE / 2, CB_OUTSIDE = 1 << 20;
+    private static final byte F_HAS_FLOAT_CHILD = 1 << 1;
 
     private static final LongAdder LAYOUTS_SKIPPED = new LongAdder();
     private static final LongAdder LAYOUTS_SHIFTED = new LongAdder();
 
-    private byte flags, levelNoCb;
-    private int scrollVersion, cbUp = NO_CB;
-    /** 記録の途中の作業欄（{@link #record} が使う）: 絶対配置か relative を含む＝厳密な純粋性ではない。 */
-    private boolean strictBroken;
+    private byte flags;
+    private int placeReadMask;
+    private PlacementDeps deps;
     private float lastScrollX = Float.NaN, lastScrollY = Float.NaN;
     private float lastLayoutX = Float.NaN, lastLayoutY = Float.NaN;
     private float lastLayoutOuterW = Float.NaN, lastLayoutOuterH = Float.NaN;
@@ -50,31 +41,33 @@ final class PlacementMemo {
     }
 
     boolean isValid() { return flag(F_VALID); }
-    boolean isPure() { return flag(F_PURE); }
-    boolean isKeptPure() { return flag(F_KEPT_PURE); }
     boolean hasFloatChild() { return flag(F_HAS_FLOAT_CHILD); }
     void setHasFloatChild(boolean v) { setFlag(F_HAS_FLOAT_CHILD, v); }
     boolean isLaidOut() { return !Float.isNaN(lastLayoutX); }
 
     void invalidateValid() { flags &= ~F_VALID; }
-    void clearLastLayoutX() { lastLayoutX = Float.NaN; }
 
     void invalidateOnDisplayChange() {
         lastLayoutX = Float.NaN;
         lastLayoutY = Float.NaN;
-        flags &= ~(F_PURE | F_KEPT_PURE | F_SCROLL_DEP | F_VALID);
+        flags &= ~F_VALID;
+        placeReadMask = 0;
+        deps = null;
     }
 
     private void onReset(boolean full) {
         flags &= ~F_VALID;
+        lastLayoutX = Float.NaN;
         if (full) {
-            flags &= ~(F_PURE | F_KEPT_PURE | F_SCROLL_DEP);
-            lastLayoutX = Float.NaN;
+            placeReadMask = 0;
+            deps = null;
         }
     }
 
     static boolean holdsPlacement(LayoutBox box) {
-        return Shortcut.KEEP_PLACEMENTS.on() && box.placementMemo != null && box.placementMemo.isPure();
+        return Shortcut.KEEP_PLACEMENTS.on() && box.placementMemo != null
+                && box.placementMemo.flag(F_VALID) && box.placementMemo.isLaidOut()
+                && (!box.display.isInlineLevel() || BlockLayoutEngine.isAtomicInline(box));
     }
 
     static boolean needsWork(LayoutBox box, float parentX, float parentY, LayoutContext ctx) {
@@ -84,15 +77,15 @@ final class PlacementMemo {
                 || box.measureMemo.isLayoutChanged()
                 || pm == null
                 || pm.lastLayoutX != parentX || pm.lastLayoutY != parentY
-                || !canKeepPlacement(box, ctx.layoutRun());
+                || !canKeepAtReset(box, ctx.layoutRun());
     }
 
     static String debugInfo(LayoutBox box) {
         PlacementMemo pm = box.placementMemo;
-        boolean pure = pm != null && pm.isPure();
+        boolean valid = pm != null && pm.flag(F_VALID);
         float lx = pm != null ? pm.lastLayoutX : Float.NaN;
         float ly = pm != null ? pm.lastLayoutY : Float.NaN;
-        return box.node.tag + "#" + box.node.key() + " disp=" + box.display + " pure=" + pure
+        return box.node.tag + "#" + box.node.key() + " disp=" + box.display + " pvalid=" + valid
                 + " lastX=" + lx + " lastY=" + ly + " x=" + box.x + " y=" + box.y
                 + " valid=" + box.measureMemo.isValid() + " runM=" + box.measureMemo.measuredRun()
                 + " anon=" + box.isAnonymous;
@@ -107,38 +100,63 @@ final class PlacementMemo {
                                    LayoutContext ctx, boolean checkAutoSubtree) {
         PlacementMemo pm = box.placementMemo; com.nishiyu.enderframelib.core.kernel.Kernel.stats.placeCall();
         if (pm == null) return false;
+        if (!ctx.reuseMeasurements() || checkAutoSubtree || !canKeepAtReset(box, ctx.layoutRun())) {
+            return false;
+        }
+        int mask = pm.placeReadMask;
         boolean sameScroll = !box.isScrollContainer()
                 || (LayoutReads.peekScrollX(box, ctx) == pm.lastScrollX
                         && LayoutReads.peekScrollY(box, ctx) == pm.lastScrollY);
         boolean sameMargins = pm.lastLayoutML == box.mL && pm.lastLayoutMR == box.mR
                 && pm.lastLayoutMT == box.mT && pm.lastLayoutMB == box.mB;
-        boolean keptPure = pm.flag(F_KEPT_PURE);
-        boolean sameInputs = pm.lastLayoutX == parentX && pm.lastLayoutY == parentY && sameScroll && sameMargins
-                && (keptPure || (pm.lastLayoutOuterW == parentOuterW && pm.lastLayoutOuterH == parentOuterH));
-        if (ctx.reuseMeasurements() && !checkAutoSubtree && sameInputs && canKeepPlacement(box, ctx.layoutRun())) {
-            LAYOUTS_SKIPPED.increment();
-            return true;
+        boolean outerOk = (mask & ReadKind.PLACE_PARENT_OUTER.stageBit()) == 0
+                || (pm.lastLayoutOuterW == parentOuterW && pm.lastLayoutOuterH == parentOuterH);
+        boolean depsOk = pm.deps == null || pm.deps.matches(box, mask, ctx);
+        if (sameScroll && sameMargins && outerOk && depsOk) {
+            if (pm.lastLayoutX == parentX && pm.lastLayoutY == parentY) {
+                LayoutReads.propagateReused(mask, pm.deps);
+                LAYOUTS_SKIPPED.increment();
+                return true;
+            }
+            if (Shortcut.SHIFT.on()
+                    && (mask & PlacementDeps.SHIFT_BLOCKERS) == 0
+                    && !box.isAbsolute && !box.isSticky && box.floatSpace == null
+                    && isShiftableDelta(parentX, pm.lastLayoutX) && isShiftableDelta(parentY, pm.lastLayoutY)
+                    && isShiftableSubtree(box, parentX != pm.lastLayoutX, parentY != pm.lastLayoutY)) {
+                shiftSubtree(box, parentX - pm.lastLayoutX, parentY - pm.lastLayoutY);
+                pm.lastLayoutX = parentX;
+                pm.lastLayoutY = parentY;
+                LayoutReads.propagateReused(mask, pm.deps);
+                LAYOUTS_SHIFTED.increment();
+                return true;
+            }
         }
-        if (!sameInputs && !checkAutoSubtree && sameScroll && sameMargins
-                && Shortcut.SHIFT.on() && ctx.reuseMeasurements()
-                && canKeepPlacement(box, ctx.layoutRun())
-                && !Float.isNaN(pm.lastLayoutX) && !Float.isNaN(pm.lastLayoutY)
-                && isShiftableDelta(parentX, pm.lastLayoutX) && isShiftableDelta(parentY, pm.lastLayoutY)
-                && isShiftableSubtree(box, parentX != pm.lastLayoutX, parentY != pm.lastLayoutY)) {
-            shiftSubtree(box, parentX - pm.lastLayoutX, parentY - pm.lastLayoutY);
-            pm.lastLayoutX = parentX;
-            pm.lastLayoutY = parentY;
-            LAYOUTS_SHIFTED.increment();
-            return true;
-        }
-        if (Shortcut.KEEP_PLACEMENTS.on() && keptPure && !sameInputs) {
-            resetChildrenPlacements(box.children);
-        }
+        // リセット時に子の保持を許して残したまま、この箱だけ再配置になったときは子の古い配置を捨てる
+        resetChildrenPlacements(box.children);
         return false;
     }
 
+    private static boolean isAllowedParent(LayoutBox box) {
+        if (box.parent == null || box.parent.display == null || box.display == null) return false;
+        if (box.display.isInlineLevel() && !BlockLayoutEngine.isAtomicInline(box)) return false;
+        LayoutBox.Display pd = box.parent.display;
+        LayoutBox.Display.Inner in = pd.inner();
+        return pd.isBlockContainer()
+                || in == LayoutBox.Display.Inner.FLEX
+                || in == LayoutBox.Display.Inner.GRID;
+    }
+
+    private static boolean canKeepAtReset(LayoutBox box, long run) {
+        PlacementMemo pm = box.placementMemo;
+        return pm != null && Shortcut.KEEP_PLACEMENTS.on()
+                && pm.flag(F_VALID) && pm.isLaidOut()
+                && box.measureMemo.isValid() && box.measureMemo.measuredRun() != run
+                && !box.measureMemo.isLayoutChanged() && !box.measureMemo.isSubtreeChanged()
+                && isAllowedParent(box);
+    }
+
     void record(LayoutBox box, boolean hasLegend, float scrollXAtPlacement, float scrollYAtPlacement,
-                MeasureReads.ThreadState readState, int pSlot) {
+                LayoutContext ctx, MeasureReads.ThreadState readState, int pSlot) {
         lastLayoutX = LayoutReads.peekOriginX(readState, pSlot);
         lastLayoutY = LayoutReads.peekOriginY(readState, pSlot);
         lastLayoutOuterW = LayoutReads.peekParentOuterW(readState, pSlot);
@@ -147,117 +165,18 @@ final class PlacementMemo {
         lastLayoutMR = box.mR;
         lastLayoutMT = box.mT;
         lastLayoutMB = box.mB;
-        cbUp = NO_CB; // 部分木の絶対配置が必要とする包含ブロックの最大の段数を selfContained が集める（確保しないよう自分の欄へ）
-        strictBroken = false;
-        int below = hasLegend ? IMPURE : selfContained(box, false, 0, this); // 自分のスクロールは tryReuseOrShift が比べるので数えない
-        levelNoCb = (byte) below;
-        if (LayoutBox.isTableBox(box) && box.display.inner() != LayoutBox.Display.Inner.TABLE) below = IMPURE; // 行・セルなどは表ごとにしか保持できない（親の整形が表）
-        if (below != IMPURE && cbUp > 0) below = IMPURE; // 絶対配置の包含ブロックが部分木の外にある: 外の幾何に依る
-        boolean pure = below == PURE && !box.isScrollContainer() && !strictBroken;
-        setFlag(F_REL_INSET, box.isRelative && relInset(box));
-        setFlag(F_PURE, pure);
-        setFlag(F_KEPT_PURE, below != IMPURE);
-        setFlag(F_SCROLL_DEP, below == SCROLL_DEP);
-        scrollVersion = LayoutReads.scrollVersion();
+        int mask = LayoutReads.absorbSelfAndMask(box, readState, pSlot);
+        if (hasLegend || (LayoutBox.isTableBox(box) && box.display.inner() != LayoutBox.Display.Inner.TABLE)) {
+            mask |= ReadKind.PLACE_PARENT_OUTER.stageBit();
+        }
+        placeReadMask = mask;
+        deps = PlacementDeps.captureOrReuse(deps, box, mask, ctx, readState,
+                readState.placeRefStart[pSlot], readState.placeRefCount);
         if (box.isScrollContainer()) {
             lastScrollX = scrollXAtPlacement;
             lastScrollY = scrollYAtPlacement;
         }
         setFlag(F_VALID, true);
-    }
-
-    /** 部分木の純粋性: 外の状態に依らず置ける（{@code PURE}）・スクロール量が前回のままなら置ける（{@code SCROLL_DEP}）・どちらでもない（{@code IMPURE}）。 */
-    private static final int IMPURE = 0, PURE = 1, SCROLL_DEP = 2;
-
-    /**
-     * 部分木の純粋性（外の幾何に依らず置けるか）。絶対配置は、包含ブロックが部分木の内側ならその部分木の中で完結する〔包含ブロックの必要段数を {@code acc.cbUp} に集め、
-     * 呼び出し側が部分木の外を指していないか見る〕。アンカー位置指定・ビューポート単位・{@code fixed}・インセットを持つ relative・sticky・float・表は外へ出る。
-     * {@code depth} は記録する根からの段数。
-     */
-    private static int selfContained(LayoutBox box, boolean selfScrollBreaks, int depth, PlacementMemo acc) {
-        if (box.isFixed || box.isSticky || box.floatSpace != null
-                || box.style.facts().floating || (box.isRelative && relInset(box))) {
-            return IMPURE;
-        }
-        if (box.isAbsolute || box.isRelative || LayoutBox.isTableBox(box)) acc.strictBroken = true; // 表は F_PURE（厳密な純粋性）には入れない
-        if (box.isAbsolute) {
-            if (anchored(box) || box.style.usesViewportUnits()) return IMPURE;
-            acc.cbUp = Math.max(acc.cbUp, stepsToContainingBlock(box) - depth);
-        }
-        int level = selfScrollBreaks && box.isScrollContainer() ? SCROLL_DEP : PURE;
-        List<LayoutBox> kids = box.children;
-        for (int i = 0, n = kids.size(); i < n; i++) {
-            LayoutBox child = kids.get(i);
-            if (child.style.facts().displayNone) continue;
-            PlacementMemo cpm = child.placementMemo;
-            int r;
-            if (cpm != null && cpm.isLaidOut()) {
-                r = cpm.levelNoCb == IMPURE ? IMPURE : Math.max(cpm.levelNoCb, child.isScrollContainer() ? SCROLL_DEP : PURE); // 子自身のスクロールは親から見ると外の状態
-                if (!cpm.isPure()) acc.strictBroken = true;
-                if (cpm.cbUp != NO_CB) acc.cbUp = Math.max(acc.cbUp, cpm.cbUp - (depth + 1));
-            } else {
-                r = selfContained(child, true, depth + 1, acc);
-            }
-            if (r == IMPURE) return IMPURE;
-            level = Math.max(level, r);
-        }
-        return level;
-    }
-
-    private static boolean canKeepPlacement(LayoutBox box, long run) {
-        return canKeepPlacement(box, run, floatsAffectPlacement(box));
-    }
-
-    private static boolean canKeepPlacement(LayoutBox box, long run, boolean floatsOrOffset) {
-        PlacementMemo pm = box.placementMemo;
-        return pm != null && Shortcut.KEEP_PLACEMENTS.on()
-                && pm.flag(F_KEPT_PURE) && pm.flag(F_VALID) && (!pm.flag(F_SCROLL_DEP) || pm.scrollVersion == LayoutReads.scrollVersion())
-                && box.measureMemo.isValid() && box.measureMemo.measuredRun() != run
-                && !box.measureMemo.isLayoutChanged() && !box.measureMemo.isSubtreeChanged()
-                && box.parent != null && box.parent.display != null
-                && (box.parent.display.inner() == LayoutBox.Display.Inner.FLOW
-                        || box.parent.display.inner() == LayoutBox.Display.Inner.FLOW_ROOT
-                        || box.parent.display.inner() == LayoutBox.Display.Inner.FLEX)
-                && !box.display.isInlineLevel()
-                && !floatsOrOffset;
-    }
-
-    /** relative がオフセットを決めるインセット（left / right / top / bottom）を 1 つでも持つか。{@code applyRelativePositioning} と同じ見方。 */
-    private static boolean relInset(LayoutBox b) {
-        var ax = b.axisStyle();
-        return ax.containsKey(CssPropertyIndex.LEFT) || ax.containsKey(CssPropertyIndex.RIGHT) || ax.containsKey(CssPropertyIndex.TOP) || ax.containsKey(CssPropertyIndex.BOTTOM);
-    }
-
-    /** 子孫の座標にオフセットが入っている（前回の配置でインセット付きの relative だった）か、今回入る。保持した子孫へ足し直すと二重にずれる。 */
-    private static boolean relOffsetEmbedded(LayoutBox p) {
-        return (p.placementMemo != null && p.placementMemo.flag(F_REL_INSET)) || (p.isRelative && relInset(p));
-    }
-
-    /** アンカー位置指定（位置・寸法がほかの箱に依る）・位置の試行は、部分木の外の箱を読む。 */
-    private static boolean anchored(LayoutBox b) {
-        var s = b.style;
-        if (isSet(s.get(CssPropertyIndex.POSITION_ANCHOR)) || isSet(s.get(CssPropertyIndex.POSITION_AREA)) || isSet(s.get(CssPropertyIndex.POSITION_TRY_FALLBACKS))) return true;
-        for (int id : ANCHOR_REFS) { String v = s.get(id); if (v != null && v.contains("anchor")) return true; }
-        return false;
-    }
-
-    private static final int[] ANCHOR_REFS = {CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM, CssPropertyIndex.WIDTH, CssPropertyIndex.HEIGHT};
-
-    private static boolean isSet(String v) { return v != null && !v.isBlank() && !"none".equalsIgnoreCase(v.trim()); }
-
-    /** 絶対配置の箱から包含ブロックまでの段数（初期包含ブロックは {@code CB_OUTSIDE}）。 */
-    private static int stepsToContainingBlock(LayoutBox box) {
-        return LayoutReads.stepsToContainingBlock(box, CB_OUTSIDE);
-    }
-
-    private static boolean floatsAffectPlacement(LayoutBox box) {
-        boolean inBfc = true;
-        for (LayoutBox p = box.parent; p != null; p = p.parent) {
-            if (p.isSticky || relOffsetEmbedded(p)) return true;
-            if (inBfc && p.placementMemo != null && p.placementMemo.hasFloatChild()) return true;
-            if (p.establishesBfc) inBfc = false;
-        }
-        return false;
     }
 
     // ------------------------------------------------------------------ 平行移動
@@ -291,6 +210,7 @@ final class PlacementMemo {
 
     private static boolean isShiftableDelta(float parentCoord, float lastCoord) {
         float d = parentCoord - lastCoord;
+        if (lastCoord + d != parentCoord) return false;
         if (isIntegral(d)) return true;
         float limit = LayoutUnit.EXACT_LIMIT - LayoutUnit.SHIFT_MARGIN;
         return Math.abs(parentCoord) < limit && Math.abs(lastCoord) < limit
@@ -335,10 +255,10 @@ final class PlacementMemo {
     }
 
     private static void shiftSubtree(LayoutBox box, float dx, float dy) {
-        shiftSubtree(box, dx, dy, true);
+        shiftSubtree(box, dx, dy, true, !BlockLayoutEngine.isAtomicInline(box));
     }
 
-    private static void shiftSubtree(LayoutBox box, float dx, float dy, boolean fitReachable) {
+    private static void shiftSubtree(LayoutBox box, float dx, float dy, boolean fitReachable, boolean shiftOwnFrags) {
         PlacementMemo pm = box.placementMemo;
         boolean laidOut = pm != null && pm.isLaidOut();
         boolean canFit = !laidOut && fitReachable && canRecurseFitToFragments(box);
@@ -350,11 +270,13 @@ final class PlacementMemo {
         if (box.inlineContentBottom > Float.NEGATIVE_INFINITY) box.inlineContentBottom += dy;
         if (!Float.isNaN(box.staticX)) box.staticX += dx;
         if (!Float.isNaN(box.staticY)) box.staticY += dy;
-        List<LayoutBox.InlineFragment> frags = box.inlineFragments;
-        for (int i = 0, n = frags.size(); i < n; i++) {
-            LayoutBox.InlineFragment frag = frags.get(i);
-            frag.x += dx;
-            frag.y += dy;
+        if (shiftOwnFrags) {
+            List<LayoutBox.InlineFragment> frags = box.inlineFragments;
+            for (int i = 0, n = frags.size(); i < n; i++) {
+                LayoutBox.InlineFragment frag = frags.get(i);
+                frag.x += dx;
+                frag.y += dy;
+            }
         }
         PaintStamps.touchLayout(box);
         List<LayoutBox> kids = box.children;
@@ -366,14 +288,14 @@ final class PlacementMemo {
                 cpm.lastLayoutX += dx;
                 cpm.lastLayoutY += dy;
             }
-            shiftSubtree(child, dx, dy, nextFitReachable);
+            shiftSubtree(child, dx, dy, nextFitReachable, true);
         }
     }
 
     // ------------------------------------------------------------------ リセット
 
     static void resetPlacements(LayoutBox box, long keepRun) {
-        if (keepRun >= 0 && canKeepPlacement(box, keepRun)) return;
+        if (keepRun >= 0 && canKeepAtReset(box, keepRun)) return;
         PaintStamps.touchLayout(box);
         if (box.placementMemo != null) box.placementMemo.onReset(keepRun < 0);
         box.discardFragments();
@@ -427,7 +349,7 @@ final class PlacementMemo {
     private static void resetPlacementsFast(LayoutBox box, long keepRun,
                                             boolean ancestorOffset, boolean inBfcFloat,
                                             List<LayoutBox> staleFrags) {
-        if (keepRun >= 0 && canKeepPlacement(box, keepRun, ancestorOffset || inBfcFloat)) return;
+        if (keepRun >= 0 && canKeepAtReset(box, keepRun)) return;
         PaintStamps.touchLayout(box);
         PlacementMemo pm = box.placementMemo;
         if (pm != null) pm.onReset(keepRun < 0);
@@ -450,11 +372,8 @@ final class PlacementMemo {
         List<LayoutBox> kids = box.children;
         int n = kids.size();
         if (n == 0) return;
-        boolean nextOffset = ancestorOffset || relOffsetEmbedded(box) || box.isSticky;
-        boolean hasFloat = pm != null && pm.hasFloatChild();
-        boolean nextBfcFloat = box.establishesBfc ? hasFloat : (inBfcFloat || hasFloat);
         if (box.engineState instanceof VirtualFlowState vf && vf.canResetSparse()) {
-            vf.resetPlacedChildren(keepRun, nextOffset, nextBfcFloat, staleFrags);
+            vf.resetPlacedChildren(keepRun, false, false, staleFrags);
             return;
         }
         if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && Shortcut.LAYOUT_PARALLEL.on() && !LayoutTaskPool.inWorker()) {
@@ -467,7 +386,7 @@ final class PlacementMemo {
                 int end = LayoutTaskPool.spanEnd(span);
                 List<LayoutBox> local = new ArrayList<>();
                 for (int i = start; i < end; i++) {
-                    resetPlacementsFast(kids.get(i), keepRun, nextOffset, nextBfcFloat, local);
+                    resetPlacementsFast(kids.get(i), keepRun, false, false, local);
                 }
                 if (!local.isEmpty()) perChunk[c] = local;
             });
@@ -477,7 +396,7 @@ final class PlacementMemo {
             return;
         }
         for (int i = 0; i < n; i++) {
-            resetPlacementsFast(kids.get(i), keepRun, nextOffset, nextBfcFloat, staleFrags);
+            resetPlacementsFast(kids.get(i), keepRun, false, false, staleFrags);
         }
     }
 

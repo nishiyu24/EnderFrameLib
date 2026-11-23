@@ -105,9 +105,9 @@ class LayoutReadLedgerRatchetTest {
         assertEquals(List.of(), geomHits,
                 "core/layout で LayoutReads を通さず parent.w/h や box.parent.* の幾何を直接読んでいる");
 
-        // parentOuterW/H は public layout(...) の入口・tryReuseOrShift・PlacementVerifier 以外に持たせない（21 → 入口のみ）
+        // parentOuterW/H は public layout(...) の入口・tryReuseOrShift 以外に持たせない（21 → 入口のみ）
         Set<String> allowedEntry = Set.of("LayoutReads.java", "ReadKind.java", "MeasureReads.java", "LayoutContext.java",
-                "LayoutBox.java", "PlacementMemo.java", "PlacementVerifier.java");
+                "LayoutBox.java", "PlacementMemo.java");
         List<String> outerOutsideEntry = findMatches(DIRECT_PARENT_OUTER_PARAM, allowedEntry);
         assertEquals(List.of(), outerOutsideEntry,
                 "ScrollExtentCalc 等が LayoutReads を通さず parentOuterW/H を直接受け取っている");

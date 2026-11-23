@@ -142,9 +142,6 @@ public final class EngineFlags {
     /** {@code enderframe.verify.memo}: 検証モード VERIFY_MEMO（記憶が当たった所を計算し直して比べる。:core:test が立てる）（使う所: {@code BlockLayoutEngine}） */
     public static final boolean VERIFY_MEMO = Boolean.getBoolean("enderframe.verify.memo");
 
-    /** {@code enderframe.verify.placement}: 検証モード VERIFY_PLACEMENT（配置を飛ばした・平行移動した部分木を、記憶なしで置き直して比べる。:core:test が立てる）（使う所: {@code LayoutBox}） */
-    public static final boolean VERIFY_PLACEMENT = Boolean.getBoolean("enderframe.verify.placement");
-
     /** {@code enderframe.verify.boxmemo}: 検証モード VERIFY_BOX_MEMO（箱の項目の記憶を作り直して比べる。再描画の費用が大きいので VERIFY_MEMO と分ける）（使う所: {@code DisplayListBuilder}） */
     public static final boolean VERIFY_BOX_MEMO = Boolean.getBoolean("enderframe.verify.boxmemo");
 

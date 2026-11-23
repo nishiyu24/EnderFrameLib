@@ -41,6 +41,7 @@ final class LayoutReads {
             st.placeOriginY = Arrays.copyOf(st.placeOriginY, next);
             st.placeParentW = Arrays.copyOf(st.placeParentW, next);
             st.placeParentH = Arrays.copyOf(st.placeParentH, next);
+            st.placeRefStart = Arrays.copyOf(st.placeRefStart, next);
         }
         st.placeBoxStack[idx] = box;
         st.placeReadStack[idx] = 0;
@@ -48,6 +49,7 @@ final class LayoutReads {
         st.placeOriginY[idx] = parentY;
         st.placeParentW[idx] = parentOuterW;
         st.placeParentH[idx] = parentOuterH;
+        st.placeRefStart[idx] = st.placeRefCount;
         st.placeDepth = idx + 1;
         return idx;
     }
@@ -59,16 +61,151 @@ final class LayoutReads {
     static int popPlacing(MeasureReads.ThreadState st, int slot) {
         LayoutBox box = st.placeBoxStack[slot];
         int bits = st.placeReadStack[slot];
+        int start = st.placeRefStart[slot];
+        int end = st.placeRefCount;
         st.placeBoxStack[slot] = null;
         st.placeReadStack[slot] = 0;
         st.placeDepth = slot;
-        if (slot > 0 && box != null && st.placeBoxStack[slot - 1] == box.parent) {
-            st.placeReadStack[slot - 1] |= ReadKind.propagatePlacementToParent(bits);
+        if (start == end) {
+            if (slot > 0 && bits != 0 && st.placeBoxStack[slot - 1] != null) {
+                st.placeReadStack[slot - 1] |= ReadKind.propagatePlacementToParent(bits);
+            }
+        } else if (slot > 0 && box != null && st.placeBoxStack[slot - 1] != null) {
+            LayoutBox parent = st.placeBoxStack[slot - 1];
+            int write = start;
+            int keptRefBits = 0;
+            for (int i = start; i < end; i++) {
+                LayoutBox target = st.placeRefTarget[i];
+                if (target != null && ReadKind.isInsideSubtree(parent, target)) {
+                    continue;
+                }
+                if (write != i) {
+                    st.placeRefKind[write] = st.placeRefKind[i];
+                    st.placeRefReader[write] = st.placeRefReader[i];
+                    st.placeRefTarget[write] = target;
+                    st.placeRefX[write] = st.placeRefX[i];
+                    st.placeRefY[write] = st.placeRefY[i];
+                    st.placeRefW[write] = st.placeRefW[i];
+                    st.placeRefH[write] = st.placeRefH[i];
+                    st.placeRefScrollX[write] = st.placeRefScrollX[i];
+                    st.placeRefScrollY[write] = st.placeRefScrollY[i];
+                }
+                keptRefBits |= PlacementDeps.readKindBit(st.placeRefKind[write]);
+                write++;
+            }
+            for (int i = write; i < end; i++) {
+                st.placeRefReader[i] = null;
+                st.placeRefTarget[i] = null;
+            }
+            st.placeRefCount = write;
+            int prop = (ReadKind.propagatePlacementToParent(bits) & ~PlacementDeps.ABSORBABLE_MASK) | keptRefBits;
+            st.placeReadStack[slot - 1] |= prop;
+        } else {
+            for (int i = start; i < end; i++) {
+                st.placeRefReader[i] = null;
+                st.placeRefTarget[i] = null;
+            }
+            st.placeRefCount = start;
         }
         if (st.placeRecorder != null && box != null) {
             st.placeRecorder.onPlaced(box, bits);
         }
         return bits;
+    }
+
+    private static void pushPlaceRef(MeasureReads.ThreadState st, byte kind, LayoutBox reader, LayoutBox target,
+                                     float x, float y, float w, float h, float sx, float sy) {
+        if (st.placeDepth <= 0 || st.placeBoxStack[st.placeDepth - 1] == null) return;
+        int start = st.placeRefStart[st.placeDepth - 1];
+        for (int i = start; i < st.placeRefCount; i++) {
+            if (st.placeRefKind[i] == kind && st.placeRefReader[i] == reader && st.placeRefTarget[i] == target) {
+                st.placeRefX[i] = x;
+                st.placeRefY[i] = y;
+                st.placeRefW[i] = w;
+                st.placeRefH[i] = h;
+                st.placeRefScrollX[i] = sx;
+                st.placeRefScrollY[i] = sy;
+                return;
+            }
+        }
+        int idx = st.placeRefCount;
+        if (idx == st.placeRefKind.length) {
+            int next = idx << 1;
+            st.placeRefKind = Arrays.copyOf(st.placeRefKind, next);
+            st.placeRefReader = Arrays.copyOf(st.placeRefReader, next);
+            st.placeRefTarget = Arrays.copyOf(st.placeRefTarget, next);
+            st.placeRefX = Arrays.copyOf(st.placeRefX, next);
+            st.placeRefY = Arrays.copyOf(st.placeRefY, next);
+            st.placeRefW = Arrays.copyOf(st.placeRefW, next);
+            st.placeRefH = Arrays.copyOf(st.placeRefH, next);
+            st.placeRefScrollX = Arrays.copyOf(st.placeRefScrollX, next);
+            st.placeRefScrollY = Arrays.copyOf(st.placeRefScrollY, next);
+        }
+        st.placeRefKind[idx] = kind;
+        st.placeRefReader[idx] = reader;
+        st.placeRefTarget[idx] = target;
+        st.placeRefX[idx] = x;
+        st.placeRefY[idx] = y;
+        st.placeRefW[idx] = w;
+        st.placeRefH[idx] = h;
+        st.placeRefScrollX[idx] = sx;
+        st.placeRefScrollY[idx] = sy;
+        st.placeRefCount = idx + 1;
+    }
+
+    /** 配置を再利用したとき、飛ばした子部分木の外向きの読み取りを親の配置フレームへ引き継ぐ（K2）。 */
+    static void propagateReused(int childMask, PlacementDeps childDeps) {
+        MeasureReads.ThreadState st = MeasureReads.state();
+        if (st.placeDepth <= 0 || st.placeBoxStack[st.placeDepth - 1] == null) return;
+        LayoutBox parent = st.placeBoxStack[st.placeDepth - 1];
+        int prop = ReadKind.propagatePlacementToParent(childMask) & ~PlacementDeps.ABSORBABLE_MASK;
+        if (childDeps != null && childDeps.refKinds != null) {
+            for (int i = 0; i < childDeps.refKinds.length; i++) {
+                LayoutBox target = childDeps.refTargets[i];
+                if (target != null && ReadKind.isInsideSubtree(parent, target)) continue;
+                byte kind = childDeps.refKinds[i];
+                int b = i * 6;
+                pushPlaceRef(st, kind, childDeps.refReaders[i], target,
+                        childDeps.refCoords[b], childDeps.refCoords[b + 1],
+                        childDeps.refCoords[b + 2], childDeps.refCoords[b + 3],
+                        childDeps.refCoords[b + 4], childDeps.refCoords[b + 5]);
+                prop |= PlacementDeps.readKindBit(kind);
+            }
+        }
+        st.placeReadStack[st.placeDepth - 1] |= prop;
+    }
+
+    /** {@code box} の配置フレーム終端で、自身に吸収される外部参照を取り除いた正味の外向きマスクを返す（K2）。 */
+    static int absorbSelfAndMask(LayoutBox box, MeasureReads.ThreadState st, int slot) {
+        int bits = st.placeReadStack[slot];
+        int start = st.placeRefStart[slot];
+        int end = st.placeRefCount;
+        if (start == end) return bits;
+        int write = start;
+        int keptRefBits = 0;
+        for (int i = start; i < end; i++) {
+            LayoutBox target = st.placeRefTarget[i];
+            if (target != null && ReadKind.isInsideSubtree(box, target)) continue;
+            if (write != i) {
+                st.placeRefKind[write] = st.placeRefKind[i];
+                st.placeRefReader[write] = st.placeRefReader[i];
+                st.placeRefTarget[write] = target;
+                st.placeRefX[write] = st.placeRefX[i];
+                st.placeRefY[write] = st.placeRefY[i];
+                st.placeRefW[write] = st.placeRefW[i];
+                st.placeRefH[write] = st.placeRefH[i];
+                st.placeRefScrollX[write] = st.placeRefScrollX[i];
+                st.placeRefScrollY[write] = st.placeRefScrollY[i];
+            }
+            keptRefBits |= PlacementDeps.readKindBit(st.placeRefKind[write]);
+            write++;
+        }
+        for (int i = write; i < end; i++) {
+            st.placeRefReader[i] = null;
+            st.placeRefTarget[i] = null;
+        }
+        st.placeRefCount = write;
+        return (bits & ~PlacementDeps.ABSORBABLE_MASK) | keptRefBits;
     }
 
     static int popPlacing(int slot) {
@@ -173,10 +310,38 @@ final class LayoutReads {
         return p.x + p.w - p.bR - p.pR;
     }
 
+    static float peekParentContentTop(LayoutBox box) {
+        LayoutBox p = box.parent;
+        return p.y + p.bT + p.pT;
+    }
+
+    static float peekParentContentLeft(LayoutBox box) {
+        LayoutBox p = box.parent;
+        return p.x + p.bL + p.pL;
+    }
+
+    static float peekParentContentRight(LayoutBox box) {
+        LayoutBox p = box.parent;
+        return p.x + p.w - p.bR - p.pR;
+    }
+
     static float peekParentContentBottom(LayoutBox box) {
         LayoutBox p = box.parent;
         return p.y + p.h - p.bB - p.pB;
     }
+
+    static float peekViewportW(LayoutContext ctx) {
+        return ctx.viewport().rootW();
+    }
+
+    static float peekViewportH(LayoutContext ctx) {
+        return ctx.viewport().rootH();
+    }
+
+    static float peekAnchorX(LayoutBox anchor) { return anchor.x; }
+    static float peekAnchorY(LayoutBox anchor) { return anchor.y; }
+    static float peekAnchorW(LayoutBox anchor) { return anchor.w; }
+    static float peekAnchorH(LayoutBox anchor) { return anchor.h; }
 
     // ------------------------------------------------------------------ スクロール
 
@@ -254,31 +419,61 @@ final class LayoutReads {
         return findContainingBlockRaw(box);
     }
 
-    static int stepsToContainingBlock(LayoutBox box, int cbOutside) {
-        LayoutBox cb = findContainingBlockRaw(box);
-        if (cb == null) return cbOutside;
-        int n = 0;
-        for (LayoutBox p = box; p != null && p != cb; p = p.parent) n++;
-        return n;
-    }
-
     static LayoutBox.ContainingBlock resolveContainingBlock(LayoutBox box, LayoutContext ctx) {
         recordPlace(ReadKind.PLACE_CONTAINING_BLOCK);
         LayoutBox cb = findContainingBlockRaw(box);
+        LayoutBox.ContainingBlock res;
+        float cbScrollX = 0f, cbScrollY = 0f;
         if (cb == null) {
-            return new LayoutBox.ContainingBlock(0, 0, placeViewportW(ctx), placeViewportH(ctx));
+            res = new LayoutBox.ContainingBlock(0, 0, placeViewportW(ctx), placeViewportH(ctx));
+        } else {
+            cbScrollX = containingBlockScrollX(cb, ctx);
+            cbScrollY = containingBlockScrollY(cb, ctx);
+            float cbX = cb.x + cb.bL - cbScrollX;
+            float cbY = cb.y + cb.bT - cbScrollY;
+            float cbW = Math.max(0, cb.w - cb.bL - cb.bR);
+            float cbH = Math.max(0, cb.h - cb.bT - cb.bB);
+            if (cb.display != null && cb.display.inner() == LayoutBox.Display.Inner.GRID) {
+                float[] area = GridLayoutEngine.absoluteArea(cb, box);
+                if (area != null) {
+                    res = new LayoutBox.ContainingBlock(cbX + area[0], cbY + area[1], area[2], area[3]);
+                } else {
+                    res = new LayoutBox.ContainingBlock(cbX, cbY, cbW, cbH);
+                }
+            } else {
+                res = new LayoutBox.ContainingBlock(cbX, cbY, cbW, cbH);
+            }
         }
-        float cbScrollX = containingBlockScrollX(cb, ctx);
-        float cbScrollY = containingBlockScrollY(cb, ctx);
-        float cbX = cb.x + cb.bL - cbScrollX;
-        float cbY = cb.y + cb.bT - cbScrollY;
-        float cbW = Math.max(0, cb.w - cb.bL - cb.bR);
-        float cbH = Math.max(0, cb.h - cb.bT - cb.bB);
+        pushPlaceRef(MeasureReads.state(), PlacementDeps.REF_CB, box, cb,
+                res.x(), res.y(), res.w(), res.h(), cbScrollX, cbScrollY);
+        return res;
+    }
+
+    static boolean peekContainingBlockMatches(LayoutBox box, LayoutBox expectedCb, LayoutContext ctx,
+                                              float ex, float ey, float ew, float eh,
+                                              float esx, float esy) {
+        LayoutBox cb = findContainingBlockRaw(box);
+        if (cb != expectedCb) return false;
+        if (cb == null) {
+            return ex == 0f && ey == 0f && ew == ctx.viewport().rootW() && eh == ctx.viewport().rootH();
+        }
+        float sx = peekScrollX(cb, ctx);
+        float sy = peekScrollY(cb, ctx);
+        if (sx != esx || sy != esy) return false;
+        float cx = cb.x + cb.bL - sx;
+        float cy = cb.y + cb.bT - sy;
+        float cw = Math.max(0, cb.w - cb.bL - cb.bR);
+        float ch = Math.max(0, cb.h - cb.bT - cb.bB);
         if (cb.display != null && cb.display.inner() == LayoutBox.Display.Inner.GRID) {
             float[] area = GridLayoutEngine.absoluteArea(cb, box);
-            if (area != null) return new LayoutBox.ContainingBlock(cbX + area[0], cbY + area[1], area[2], area[3]);
+            if (area != null) {
+                cx += area[0];
+                cy += area[1];
+                cw = area[2];
+                ch = area[3];
+            }
         }
-        return new LayoutBox.ContainingBlock(cbX, cbY, cbW, cbH);
+        return cx == ex && cy == ey && cw == ew && ch == eh;
     }
 
     private static boolean hasTransformOrFilter(LayoutBox b) {
@@ -297,11 +492,17 @@ final class LayoutReads {
         if (name == null) {
             name = overridePositionAnchor != null ? overridePositionAnchor : box.style.get(CssPropertyIndex.POSITION_ANCHOR);
         }
+        LayoutBox anchor;
         if (name != null && !name.isBlank() && !"auto".equalsIgnoreCase(name.trim())) {
-            return findAnchorNamed(root, box, name.trim());
+            anchor = findAnchorNamed(root, box, name.trim());
+        } else {
+            String id = box.node != null && box.node.attrs != null ? box.node.attrs.get("id") : null;
+            anchor = id == null ? null : findInvoker(root, id);
         }
-        String id = box.node != null && box.node.attrs != null ? box.node.attrs.get("id") : null;
-        return id == null ? null : findInvoker(root, id);
+        pushPlaceRef(MeasureReads.state(), PlacementDeps.REF_ANCHOR, box, anchor,
+                anchor != null ? anchor.x : 0f, anchor != null ? anchor.y : 0f,
+                anchor != null ? anchor.w : 0f, anchor != null ? anchor.h : 0f, 0f, 0f);
+        return anchor;
     }
 
     static float anchorX(LayoutBox anchor) {
@@ -360,10 +561,32 @@ final class LayoutReads {
 
     static LayoutBox stickyScrollContainer(LayoutBox box) {
         recordPlace(ReadKind.PLACE_STICKY);
+        LayoutBox port = null;
         for (LayoutBox cur = box.parent; cur != null; cur = cur.parent) {
-            if (cur.isScrollContainer()) return cur;
+            if (cur.isScrollContainer()) {
+                port = cur;
+                break;
+            }
         }
-        return null;
+        pushPlaceRef(MeasureReads.state(), PlacementDeps.REF_STICKY, box, port,
+                port != null ? port.x + port.bL : 0f,
+                port != null ? port.y + port.bT : 0f,
+                port != null ? Math.max(0, port.w - port.bL - port.bR) : 0f,
+                port != null ? Math.max(0, port.h - port.bT - port.bB) : 0f,
+                0f, 0f);
+        return port;
+    }
+
+    static boolean peekStickyMatches(LayoutBox box, LayoutBox expectedPort, LayoutContext ctx,
+                                     float ex, float ey, float ew, float eh,
+                                     float esx, float esy) {
+        LayoutBox port = peekStickyScrollContainer(box);
+        if (port != expectedPort) return false;
+        if (port == null) return true;
+        return ex == port.x + port.bL
+                && ey == port.y + port.bT
+                && ew == Math.max(0, port.w - port.bL - port.bR)
+                && eh == Math.max(0, port.h - port.bT - port.bB);
     }
 
     static LayoutBox peekStickyScrollContainer(LayoutBox box) {
