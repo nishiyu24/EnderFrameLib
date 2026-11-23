@@ -856,9 +856,10 @@ public final class PaintSceneDriver {
         boolean geometryStatic = idle || st.motionKindAt(now) <= 1;
         Resolved prev = prevRes[i];
         AnimatedValues animVals = null;
-        if (com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.on() && prev != null && geometryStatic && prevStatic[i] && prevParentRes[i] == parent
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.on() && prev != null && geometryStatic && prevStatic[i] && PoseMath.sameParentFor(prev, prevParentRes[i], parent)
                 && ((idle && prevIdle[i]) || prev.anim() == (animVals = st.getInterpolatedValues(now)))) {
             r = prev;
+            prevParentRes[i] = parent;
             AnimatedValues av2 = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on() ? (animVals != null ? animVals : st.getInterpolatedValues(now)) : null;
             if (av2 != null) { long b = posesBuilt; PoseVerifier.check(el.id(), prev, parent != null && el.type() != ElementType.NODE && PoseVerifier.identityGeometry(av2) ? parent : build(el, i, parent, av2)); posesBuilt = b; }
         } else {
@@ -874,20 +875,9 @@ public final class PaintSceneDriver {
         return r;
     }
 
-    private final double[] poseScratch = new double[6];
+    private final PoseMath poseMath = new PoseMath();
     /** {@link #run} が項目ごとに層にするグループを集める作業用の一覧。 */
     private final List<Group> layeredScratch = new ArrayList<>();
-
-    /** {@code m = m · o}（{@link Matrix2D#multiply} と同じ式）。 */
-    private static void mulInto(double[] m, double oa, double ob, double oc, double od, double oe, double of) {
-        double a = m[0], b = m[1], c = m[2], d = m[3], e = m[4], f = m[5];
-        m[0] = a * oa + c * ob;
-        m[1] = b * oa + d * ob;
-        m[2] = a * oc + c * od;
-        m[3] = b * oc + d * od;
-        m[4] = a * oe + c * of + e;
-        m[5] = b * oe + d * of + f;
-    }
 
     private Resolved build(DisplayItem el, int index, Resolved parent, AnimatedValues anim) {
         posesBuilt++;
@@ -899,6 +889,7 @@ public final class PaintSceneDriver {
         boolean relOrigin = el.type() == ElementType.NODE && el.hints().relativeOrigin();
         float oxOff = index >= 0 && index < itemOffX.length ? itemOffX[index] : 0f;
         float oyOff = index >= 0 && index < itemOffY.length ? itemOffY[index] : 0f;
+        Matrix2D prevPose = index >= 0 && index < prevRes.length && prevRes[index] != null ? prevRes[index].pose() : null;
         float atx = anim.tx() + oxOff, aty = anim.ty() + oyOff;
         if (scrollSnapDpr > 0f && el.type() == ElementType.NODE && isScrollContent(el)) {
             atx = Math.round(atx * scrollSnapDpr) / scrollSnapDpr;
@@ -910,9 +901,7 @@ public final class PaintSceneDriver {
             if (tx == 0f && ty == 0f) {
                 pose = base;
             } else {
-                pose = new Matrix2D(base.a(), base.b(), base.c(), base.d(),
-                        base.e() + base.a() * tx + base.c() * ty,
-                        base.f() + base.b() * tx + base.d() * ty);
+                pose = PoseMath.translated(prevPose, base, tx, ty);
             }
         } else {
             RenderMeta meta = el.meta();
@@ -921,19 +910,7 @@ public final class PaintSceneDriver {
             double ly = (relOrigin ? 0.0 : el.y()) + el.height() * oy;
             double px = relOrigin ? el.x() : 0.0;
             double py = relOrigin ? el.y() : 0.0;
-            // base · T(原点 + 移動) · R · skewX · S · T(-原点)。途中の行列を作らずに、Matrix2D#multiply と同じ式・同じ順で掛ける
-            // （結果はビット単位で同じ。動く項目ごとに毎フレーム 4〜6 個の行列を作っていた。B12）
-            double[] m = poseScratch;
-            m[0] = base.a(); m[1] = base.b(); m[2] = base.c(); m[3] = base.d(); m[4] = base.e(); m[5] = base.f();
-            mulInto(m, 1, 0, 0, 1, px + lx + atx, py + ly + aty);
-            if (anim.rot() != 0f) {
-                double rad = Math.toRadians(anim.rot()), cos = Math.cos(rad), sin = Math.sin(rad);
-                mulInto(m, cos, sin, -sin, cos, 0, 0);
-            }
-            if (anim.skew() != 0f) mulInto(m, 1, 0, Math.tan(Math.toRadians(anim.skew())), 1, 0, 0); // skewX（回転の後・拡縮の前）
-            if (anim.sx() != 1f || anim.sy() != 1f) mulInto(m, anim.sx(), 0, 0, anim.sy(), 0, 0);
-            mulInto(m, 1, 0, 0, 1, -lx, -ly);
-            pose = new Matrix2D(m[0], m[1], m[2], m[3], m[4], m[5]);
+            pose = poseMath.transformed(prevPose, base, anim, lx, ly, px + lx + atx, py + ly + aty);
         }
         boolean fx = el.type() == ElementType.NODE && ItemDiff.hasFx(el.hints().layer());
         boolean group = el.type() == ElementType.NODE && (anim.opacity() < 0.999f || fx);

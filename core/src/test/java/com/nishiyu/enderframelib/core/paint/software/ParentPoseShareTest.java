@@ -167,6 +167,48 @@ class ParentPoseShareTest {
         assertTrue(shared < rebuilt * 0.4, "親との共有で作る姿勢が減っていない: 共有 " + shared + " / 毎回作る " + rebuilt);
     }
 
+    /**
+     * K4e: 親の補間値の参照だけが毎フレーム変わる（色だけが動く節。姿勢・不透明度は同じ値）とき、その子孫の姿勢を作り直さない。
+     * 以前は親の {@code Resolved} が新しくなるたびに、子孫の節の姿勢が連鎖して作り直されていた（voidwave の {@code hover} で
+     * 1 フレーム約 {@code 674} 個・確保の約 35%）。値で見て同じ親なら前回の姿勢のまま。{@code VERIFY_MEMO} を立てて、使い回した姿勢が
+     * 作り直した姿勢と食い違わないこと（{@code PoseVerifier}）も確かめる。
+     */
+    @Test
+    void colorOnlyParentDoesNotRebuildDescendantPoses() {
+        StringBuilder inner = new StringBuilder();
+        for (int g = 0; g < 6; g++) {
+            inner.append("<div class='grp' id='g").append(g).append("'>");
+            for (int r = 0; r < 4; r++) inner.append("<div class='cell' id='c").append(g).append('_').append(r).append("'><span>cell</span></div>");
+            inner.append("</div>");
+        }
+        String html = "<html><head><style>"
+                + "@keyframes hue { from { background-color: #f44; transform: translateX(0) } to { background-color: #44f; transform: translateX(0) } }"
+                + "body{margin:0;font:12px sans-serif}"
+                + "#pulse{position:absolute;left:4px;top:4px;width:240px;height:190px;overflow:hidden;animation:hue 1s linear infinite}"
+                + ".grp{margin:2px;padding:2px;overflow:hidden;position:relative}"
+                + ".cell{height:10px;margin:1px;padding:1px;position:relative;overflow:hidden;background:#cde}"
+                + "</style></head><body><div id='pulse'>" + inner + "</div></body></html>";
+        boolean verify = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
+        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(true);
+        try (SoftwareRenderBackend backend = new SoftwareRenderBackend(W, H, 1f);
+             StandaloneView v = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
+            long t = 1000;
+            for (int i = 0; i < 6; i++) v.frame(t += 17, backend, true); // 温め
+            PaintSceneDriver d = backend.driver;
+            int nodes = 0;
+            for (DisplayItem it : d.items()) if (it.type() == ElementType.NODE) nodes++;
+            long before = d.posesBuilt();
+            int frames = 30;
+            for (int i = 0; i < frames; i++) v.frame(t += 17, backend, true);
+            double perFrame = (d.posesBuilt() - before) / (double) frames;
+            System.out.printf("POSES colorOnlyParent: %.1f per frame (nodes %d)%n", perFrame, nodes);
+            assertTrue(nodes >= 20, "子孫の節が足りない（空の検証）: " + nodes);
+            assertTrue(perFrame <= 3, "色だけが動く親の下で、子孫の姿勢を作り直している: " + perFrame + " / フレーム（節 " + nodes + "）");
+        } finally {
+            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(verify);
+        }
+    }
+
     private static boolean identity(AnimatedValues a) {
         return a.opacity() == 1f && a.tx() == 0f && a.ty() == 0f && a.sx() == 1f && a.sy() == 1f && a.rot() == 0f && a.skew() == 0f;
     }
