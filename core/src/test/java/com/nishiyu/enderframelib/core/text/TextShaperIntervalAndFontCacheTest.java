@@ -124,6 +124,8 @@ class TextShaperIntervalAndFontCacheTest {
 
         // 複数行に折り返される場合も、同じ改行区間内なら再構築せず同一リスト、境界を超えると厳密一致
         int midW = (int) (fullW * 0.45f);
+        // 文面は nanoTime で毎回変わるので、折り返しの境界が midW と midW+0.25 の間に入る回がある。境界をまたがない幅まで進める
+        while (!TextShaper.shapeUncached(unique, face, wrapStyle, midW).equals(TextShaper.shapeUncached(unique, face, wrapStyle, midW + 0.25f))) midW++;
         List<ShapedLine> wrapped = TextShaper.shape(unique, face, wrapStyle, midW);
         assertTrue(wrapped.size() >= 2);
         assertSame(wrapped, TextShaper.shape(unique, face, wrapStyle, midW + 0.25f));
