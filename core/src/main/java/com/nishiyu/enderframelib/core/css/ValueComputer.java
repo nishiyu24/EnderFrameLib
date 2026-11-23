@@ -153,12 +153,12 @@ final class ValueComputer {
                 String done = finishValue(CssValue.of(value), CssProperty.LINE_HEIGHT.equals(key), CssProperty.COLOR.equals(key),
                         OPAQUE_PROPERTIES.contains(key), ownFontSize, metrics, color);
                 style.put(key, done);
-                if (!relative && mayContainDimension(done) && ComputedStyle.scanRelativeUnit(done)) relative = true;
+                if (!relative && mayContainDimension(done) && RelativeUnitScan.scan(done)) relative = true;
             }
             // {@code --*} は値を解かないが、単位の判定には含める（算出スタイルが読む {@code var()} の先の値になり得る）
             if (!relative) {
                 for (String value : style.extras.values()) {
-                    if (value != null && mayContainDimension(value) && ComputedStyle.scanRelativeUnit(value)) {
+                    if (value != null && mayContainDimension(value) && RelativeUnitScan.scan(value)) {
                         relative = true;
                         break;
                     }

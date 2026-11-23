@@ -22,7 +22,7 @@ import java.util.List;
  * ./gradlew :core:profile -Pprofile.main=com.nishiyu.enderframelib.bench.FineProfileMain \
  *     -Pprofile.args="&lt;scenario&gt; &lt;doc&gt; &lt;frames&gt; &lt;null|cpu|gl|vk&gt;" [-Pprofile.jfr=out.jfr]
  * </pre>
- * シナリオ: idle / hover / scroll / text / style（1 要素の style 属性）/ inherited（body の継承プロパティ）/
+ * シナリオ: idle / hover / scroll / text / style（1 要素の style 属性）/ inherited（body の継承プロパティ）/ inheriteduniq（同。毎フレーム新しい値）/
  * child（子の挿入と削除）/ relayout（全体の再レイアウト要求）/ resize / open（文書を開く: 解析 + 初回フレーム）。
  * バックエンド: {@code null} は描画しない（パイプラインだけ）、{@code cpu} は CPU ラスタまで含める、
  * {@code gl} / {@code vk} はそれぞれの GPU バックエンド。
@@ -356,6 +356,8 @@ public final class FineProfileMain {
             case "text" -> t.textTarget.setData((i & 1) == 0 ? "Row item A with text " + (i & 7) : "Row item B with text " + (i & 7));
             case "style" -> ((HtmlElement) t.styleTarget).setAttribute("style", (i & 1) == 0 ? "color:#112233" : "color:#223344");
             case "inherited" -> ((HtmlElement) t.bodyTarget).setAttribute("style", (i & 1) == 0 ? "color:#112233" : "color:#223344");
+            // 継承する値が毎フレーム新しい値になる（color の遷移）。往復の inherited はスタイルの共有に当たるが、これは当たらない（K4d）
+            case "inheriteduniq" -> ((HtmlElement) t.bodyTarget).setAttribute("style", String.format("color:#%06x", (i + 1000) * 7919 & 0xFFFFFF));
             case "fontsize" -> ((HtmlElement) t.bodyTarget).setAttribute("style", (i & 1) == 0 ? "font-size:16px" : "font-size:15px");
             case "child" -> {
                 if ((i & 1) == 0) {

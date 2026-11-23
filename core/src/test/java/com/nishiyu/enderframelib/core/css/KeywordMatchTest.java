@@ -105,7 +105,7 @@ class KeywordMatchTest {
         String[] units = {"vw", "VH", "vi", "vb", "vmin", "VMAX", "svw", "lvh", "dvi", "svb", "lvmin", "dvmax", "cqw", "CQH", "cqi",
                 "cqb", "cqmin", "cqmax", "px", "em", "rem", "vx", "svx", "cq", "cqx", "cqminx", "v", "s", "sv", "dvminn", "pt", "deg",
                 "vmi", "svmi", "xvw", "cqwh", "ch", "cm", "lv", "dv"};
-        for (String u : units) assertEquals(oldRelativeUnit(u), ComputedStyle.isRelativeUnit(u, 0, u.length()), u);
+        for (String u : units) assertEquals(oldRelativeUnit(u), RelativeUnitScan.isRelativeUnit(u, 0, u.length()), u);
         Random rnd = new Random(7);
         String alphabet = "vscqdlwhibmnaxp";
         for (int k = 0; k < 20000; k++) {
@@ -113,7 +113,7 @@ class KeywordMatchTest {
             StringBuilder b = new StringBuilder();
             for (int j = 0; j < n; j++) b.append(alphabet.charAt(rnd.nextInt(alphabet.length())));
             String u = b.toString();
-            assertEquals(oldRelativeUnit(u), ComputedStyle.isRelativeUnit("12" + u + "!", 2, 2 + u.length()), u);
+            assertEquals(oldRelativeUnit(u), RelativeUnitScan.isRelativeUnit("12" + u + "!", 2, 2 + u.length()), u);
         }
     }
 

@@ -166,7 +166,7 @@ final class CssValue {
     boolean usesRelativeUnit() {
         byte r = relative;
         if (r == 0) {
-            r = (byte) (mayContainDimension() && ComputedStyle.scanRelativeUnit(text) ? 2 : 1);
+            r = (byte) (mayContainDimension() && RelativeUnitScan.scan(text) ? 2 : 1);
             relative = r;
         }
         return r == 2;

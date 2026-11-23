@@ -1633,6 +1633,22 @@ public final class ComputedStyle {
     }
 
     /**
+     * 継承する値だけが変わった再スタイルで、前回の算出スタイルの派生値（{@link #derivedFacts()}）を引き継ぐ。
+     * 派生値は非継承のプロパティ（バンド 0・1）だけから決まる契約なので、その 2 つのバンドの値が前回と同じ参照のときだけ共有する
+     * （ハッシュは足切りだけで、鍵は値の参照。宣言文字列の照合はしない）。違えば何もせず、読み手が最初から作る。
+     */
+    public void carryDerivedFrom(ComputedStyle previous) {
+        if (previous == null || previous == this || derivedFacts != null) return;
+        Object carried = previous.derivedFacts;
+        if (carried == null || h0 != previous.h0 || h1 != previous.h1) return;
+        CssValue[] mine = values, theirs = previous.values;
+        for (int i = 0, end = CssPropertyId.NON_INH_END; i < end; i++) {
+            if (mine[i] != theirs[i]) return;
+        }
+        derivedFacts = carried;
+    }
+
+    /**
      * 有効な containment（{@code contain} と {@code content-visibility} の和）。{@code strict} は size layout paint style、
      * {@code content} は layout paint style。{@code content-visibility: hidden} は size layout paint、{@code auto} は layout paint。
      */
@@ -1765,7 +1781,7 @@ public final class ComputedStyle {
         }
         if (!uses && extras != null) {
             for (String v : extras.values()) {
-                if (v != null && ValueComputer.mayContainDimension(v) && scanRelativeUnit(v)) {
+                if (v != null && ValueComputer.mayContainDimension(v) && RelativeUnitScan.scan(v)) {
                     uses = true;
                     break;
                 }
@@ -1773,46 +1789,6 @@ public final class ComputedStyle {
         }
         relativeUnits = (byte) (uses ? 1 : 0);
         return uses;
-    }
-
-    static boolean scanRelativeUnit(String v) {
-        int n = v.length();
-        for (int i = 0; i < n; i++) {
-            char c = v.charAt(i);
-            if (c < '0' || c > '9') continue;
-            // 数値（整数・小数・指数の手前まで）を読み飛ばし、直後の英字の並びを単位として見る
-            int j = i + 1;
-            while (j < n && ((v.charAt(j) >= '0' && v.charAt(j) <= '9') || v.charAt(j) == '.')) j++;
-            int k = j;
-            while (k < n && Character.isLetter(v.charAt(k))) k++;
-            if (k > j && isRelativeUnit(v, j, k)) return true;
-            i = Math.max(i, k - 1);
-        }
-        return false;
-    }
-
-    /** {@code vw} 系（{@code s/l/d} 接頭辞つきを含む）と {@code cq*} か。単位ごとに文字列を作らず、大小文字を無視して照合する。 */
-    static boolean isRelativeUnit(String v, int from, int to) {
-        int len = to - from;
-        if (len < 2 || len > 6) return false;
-        char c0 = Character.toLowerCase(v.charAt(from));
-        if (c0 == 'c') return len >= 3 && Character.toLowerCase(v.charAt(from + 1)) == 'q' && isAxisUnit(v, from + 2, to);
-        int start = from;
-        if ((c0 == 's' || c0 == 'l' || c0 == 'd') && len >= 3) {
-            start = from + 1;
-            c0 = Character.toLowerCase(v.charAt(start));
-        }
-        return c0 == 'v' && isAxisUnit(v, start + 1, to);
-    }
-
-    /** {@code w h i b min max}（{@code vw} の {@code w} など、単位の後半）か。 */
-    private static boolean isAxisUnit(String v, int from, int to) {
-        int n = to - from;
-        if (n == 1) {
-            char c = Character.toLowerCase(v.charAt(from));
-            return c == 'w' || c == 'h' || c == 'i' || c == 'b';
-        }
-        return n == 3 && (v.regionMatches(true, from, "min", 0, 3) || v.regionMatches(true, from, "max", 0, 3));
     }
 
     /** {@link #idOf} の添字で宣言の文字列を引く。{@code get(name)} と同じ結果。添字は登録済みのものに限る。 */

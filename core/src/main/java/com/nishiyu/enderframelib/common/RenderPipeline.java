@@ -770,11 +770,11 @@ public class RenderPipeline {
      * <ul>
      *   <li>要素自身が子孫の規則の入力になる（{@code .a:hover .b}）なら {@code subtreeDirty}（無効化セットが立てる）で全部</li>
      *   <li>継承する値が変わったなら全部。子孫の継承元が変わる</li>
-     *   <li>継承しない値だけが変わったなら、{@code inherit} を使う規則・style 属性が無い限り子孫は影響を受けない
-     *       （背景色の変化で子孫全員を再スタイルしない）</li>
+     *   <li>継承しない値だけが変わったなら、{@code inherit} を使う規則・style 属性が無い限り子孫は影響を受けない（背景色の変化で子孫全員を再スタイルしない）</li>
      * </ul>
      */
     static Propagation propagationOf(ComputedStyle previous, ComputedStyle computed) {
+        computed.carryDerivedFrom(previous); // 非継承の値が前回と同じなら、描画順の派生値を引き継ぐ（K4d）
         return switch (computed.classifyPropagationFrom(previous)) {
             case 0 -> Propagation.NONE;
             case 1 -> Propagation.NON_INHERITED;
