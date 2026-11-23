@@ -58,7 +58,6 @@ import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
 
 public class DisplayListBuilder {
-    /** StackingSubtreePatch（切り出した協力クラス）。 */
     // 単位なしの 0（例: translate(-50%, 0)）も受け付けるため単位は省略可能（省略時は px 扱い）
 
     static volatile java.util.function.BooleanSupplier parentRelativeSource =
@@ -123,7 +122,6 @@ public class DisplayListBuilder {
     private final FragmentPaint fragmentPaint;
     /** 直近の描画のルートボックス。 */
     LayoutBox currentRoot;
-
 
     /** 現在保持されている完全な表示リストを取得する（未描画時は null）。 */
     public List<DisplayItem> currentDisplayList() {
@@ -252,8 +250,6 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
             CssPropertyIndex.SCALE, CssPropertyIndex.ANIMATION, CssPropertyIndex.ANIMATION_NAME, CssPropertyIndex.FILTER,
             CssPropertyIndex.PERSPECTIVE};
 
-    /** 箱（文字の塊は持ち主の箱）の位置が、画面と余白の範囲に掛かるか。 */
-    /** 診断: 断片の記憶（部分木ごと組み立てを飛ばした）が当たった回数の累計。 */
     /** 経路の観測口（箱ごとの {@code FragmentPaint.PATH_*}）。C7 の予測テスト用。 */
     public void setPathRecorder(java.util.function.ObjIntConsumer<LayoutBox> recorder) { fragmentPaint.setPathRecorder(recorder); }
 
@@ -271,6 +267,11 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         return cull ? (k * 31 + rootW) * 31 + rootH : k;
     }
 
+    /** 絶対位置 {@code (ax, ay)} を呼び出し側が持つ版（窓のずれ・断片・文字・無名の箱は元の判定）。 */
+    boolean inWindowGeometry(LayoutBox box, float ax, float ay) {
+        if (!windowShift.isEmpty() || box.isAnonymous || "#text".equals(box.node.tag) || !box.inlineFragments.isEmpty()) return inWindowGeometry(box);
+        return ax + box.w() >= -CULL_MARGIN && ax <= rootW + CULL_MARGIN && ay + box.h() >= -CULL_MARGIN && ay <= rootH + CULL_MARGIN;
+    }
     boolean inWindowGeometry(LayoutBox box) {
         LayoutBox at = box;
         while (at.parent != null && ("#text".equals(at.node.tag) || at.isAnonymous)) at = at.parent;
@@ -398,7 +399,6 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
 
     private static final int MASK_ID_BASE = 1_000_000;
 
-
     // ==========================================
     // 箱ごとの記憶（React.memo と同じ考え方）
     // ==========================================
@@ -410,7 +410,6 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
     // SVG・srcset 付きの画像・動画など描画側が別の資源を読む箱）は、いつも描き直す。img（点陣画像）・progress・meter・
     // ホスト登録の置換要素は属性とスタイルだけで決まるので記憶する。
 
-
     boolean parentRelative = true;
 
     long buildEpoch;
@@ -418,7 +417,6 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
     public static long styleFactsComputed() {
         return PaintOrder.STAT_FACTS_COMPUTED.sum();
     }
-
 
     static boolean memoizable(LayoutBox box) {
         String tag = box.node.tag;
@@ -457,8 +455,6 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         String src = box.style.getOrDefault(CssPropertyIndex.SRC, attrs.getOrDefault("src", ""));
         return !com.nishiyu.enderframelib.core.raster.svg.SvgImage.looksLikeSvg(src);
     }
-
-
 
     /** 直近の描画で、中身を 1 つの節にまとめたスクロールコンテナの記録（スクロールだけの更新で、表示リストを作り直さずに済ませる）。 */
     public List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> scrollContents() {

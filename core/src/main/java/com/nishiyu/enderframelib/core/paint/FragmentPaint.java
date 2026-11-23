@@ -4,6 +4,7 @@ import com.nishiyu.enderframelib.core.dom.node.AttributeMap;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.kernel.Shortcut;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.LayoutOrigin;
 import com.nishiyu.enderframelib.core.layout.PaintStamps;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -98,6 +99,9 @@ final class FragmentPaint {
     private java.util.function.ObjIntConsumer<LayoutBox> pathRecorder;
     static final int PATH_HIT = 0, PATH_OWN = 1, PATH_REBUILD = 2;
 
+    /** 木を下りる間の各深さの箱の絶対位置と子へ渡す原点（{@link LayoutOrigin}）、いま {@link #buildFresh} している箱の絶対位置。 */
+    private float[] stAx = new float[32], stAy = new float[32], stCx = new float[32], stCy = new float[32];
+    private float curAx, curAy;
     private int frameKey, passNo, owners;
     private boolean cull;
     private Memo lastBuiltMemo;
@@ -158,6 +162,7 @@ final class FragmentPaint {
         boolean rootMoving = root.style != null && PaintOrder.factsOf(root.style).hasMovingProps();
         if ("root".equals(root.node.tag)) {
             stack.add(root);
+            stAx[0] = root.x(); stAy[0] = root.y(); stCx[0] = LayoutOrigin.shiftX(root); stCy[0] = LayoutOrigin.shiftY(root);
             try {
                 FrameScratch fs = frameAt(0);
                 PaintOrder.ChildContext cc = order.enterChildren(root, null, null, fs.ctx);
@@ -177,6 +182,7 @@ final class FragmentPaint {
                 stack.clear();
             }
         }
+        curAx = root.x(); curAy = root.y();
         Fragment f = buildFresh(root, null, null, rootMoving, null, false);
         return new Fragment(root, f.own, f.ownAfter, f.drawn, Fragment.Kind.ROOT, 0, null, null, null, f.kidCount, f.smallKids, f.bigKids, f.agg);
     }
@@ -222,7 +228,11 @@ final class FragmentPaint {
         boolean moving = ancestorMoving || (box.style != null && PaintOrder.factsOf(box.style).hasMovingProps());
         Memo m = hint != null && hint.box == box ? hint : memos.get(box);
         boolean sameKidList = false;
-        if (m != null && (parentCtxOk ? sameContextCheap(m, box, clip, parentId, moving) : sameContextHeader(m, box, clip, parentId, moving))) {
+        int d = stack.size();
+        float ox, oy;
+        if (d > 0 && stack.get(d - 1) == box.parent) { ox = stCx[d - 1]; oy = stCy[d - 1]; } else { ox = LayoutOrigin.originX(box); oy = LayoutOrigin.originY(box); }
+        float ax = LayoutOrigin.resolvesLocally(box) ? LayoutOrigin.relX(box) : ox + LayoutOrigin.relX(box), ay = LayoutOrigin.resolvesLocally(box) ? LayoutOrigin.relY(box) : oy + LayoutOrigin.relY(box);
+        if (m != null && (parentCtxOk ? sameContextCheap(m, box, clip, parentId, moving, ax, ay) : sameContextHeader(m, box, clip, parentId, moving, ax, ay))) {
             boolean vpOk = !m.subtreeVpSensitive || (m.vpW == b.rootW && m.vpH == b.rootH);
             if ((box.subtreePaintStamp() <= m.epoch || onlyPlacementChanged(m, box)) && vpOk && (parentCtxOk || sameKids(m, box.children))) {
                 if (pathRecorder != null) pathRecorder.accept(box, PATH_HIT);
@@ -235,11 +245,14 @@ final class FragmentPaint {
         MEMO_MISSES.increment();
         int owners0 = owners, scroll0 = order.scrollContentCount();
         stack.add(box);
+        if (stCx.length <= d) { stAx = Arrays.copyOf(stAx, d * 2); stAy = Arrays.copyOf(stAy, d * 2); stCx = Arrays.copyOf(stCx, d * 2); stCy = Arrays.copyOf(stCy, d * 2); }
+        stAx[d] = ax; stAy[d] = ay; stCx[d] = ox + LayoutOrigin.shiftX(box); stCy[d] = oy + LayoutOrigin.shiftY(box);
         try {
+            curAx = ax; curAy = ay;
             Fragment f = buildFresh(box, clip, parentId, moving, m, sameKidList);
             if (pathRecorder != null) pathRecorder.accept(box, lastOwnKept ? PATH_OWN : PATH_REBUILD);
             if (!tainted.contains(box)) {
-                lastBuiltMemo = store(box, m, f, clip, parentId, moving, owners - owners0, scroll0);
+                lastBuiltMemo = store(box, m, f, clip, parentId, moving, owners - owners0, scroll0, ax, ay);
             } else {
                 memos.remove(box);
                 lastBuiltMemo = null;
@@ -265,10 +278,7 @@ final class FragmentPaint {
         }
     }
 
-    /**
-     * K4: 箱自身の印も子の部分木の印も記憶より古く、子の並びも同じ（部分木の印が新しいのは、箱自身の平行移動の印〔{@code PaintStamps.settle}〕だけ）。
-     * 窓の外で空の部分木（{@link Memo#ink}）にだけ使う。位置が動いたかどうかは {@link #sameContextCheap} が窓の外への平行移動として判定する。
-     */
+    /** K4: 箱自身の印も子の部分木の印も記憶より古く子の並びも同じ（部分木の印が新しいのは自身の平行移動の印だけ）。窓の外で空の部分木（{@link Memo#ink}）用。 */
     private static boolean onlyPlacementChanged(Memo m, LayoutBox box) {
         if (m.ink == null || box.ownPaintStamp() > m.epoch || !sameKids(m, box.children)) return false;
         List<LayoutBox> ch = box.children;
@@ -276,21 +286,18 @@ final class FragmentPaint {
         return true;
     }
 
-    private boolean sameContextCheap(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving) {
+    private boolean sameContextCheap(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving, float ax, float ay) {
         if (m.parent != box.parent || m.clip != clip || m.moving != moving
                 || m.flexOrGridItem != PaintSupport.isFlexOrGridItem(box)
                 || !java.util.Objects.equals(m.parentId, parentId)) return false;
         if (m.attrVersion != box.node.attrVersion() || !sameFirstLine(m, box)) return false;
         if (Float.compare(m.w, box.w()) != 0 || Float.compare(m.h, box.h()) != 0) return false;
-        if ((Float.compare(m.x, box.x()) != 0 || Float.compare(m.y, box.y()) != 0) && !translatedOutsideWindow(m, box)) return false;
+        if ((Float.compare(m.x, ax) != 0 || Float.compare(m.y, ay) != 0) && !translatedOutsideWindow(m, box, ax, ay)) return false;
         return scrollSame(m);
     }
 
-    /**
-     * K4: 断片が空の部分木が、平行移動しただけで、移動後も全ての箱が窓の外にある（空のまま）。窓の外の部分木を O(1) で再利用する代理。
-     * 部分木の中が変わったかは呼び出し側の部分木の印が見る。窓が動いている間は記憶ごと捨てられる（{@code memoFrameKey}）。
-     */
-    private boolean translatedOutsideWindow(Memo m, LayoutBox box) {
+    /** K4: 断片が空の部分木が平行移動しただけで、移動後も全ての箱が窓の外（空のまま）。窓の外の部分木の O(1) の代理。 */
+    private boolean translatedOutsideWindow(Memo m, LayoutBox box, float ax, float ay) {
         float[] ink = m.ink;
         if (ink == null || ink == InkBounds.NONE || m.scrolls.length != 0 || !onlyPlacementChanged(m, box)) return false;
         if (ink == InkBounds.PENDING) {
@@ -300,7 +307,7 @@ final class FragmentPaint {
             if (made == null) return false;
             ink = made;
         }
-        return InkBounds.stillOutside(ink, box.x(), box.y(), b.rootW, b.rootH, DisplayListBuilder.CULL_MARGIN);
+        return InkBounds.stillOutside(ink, ax, ay, b.rootW, b.rootH, DisplayListBuilder.CULL_MARGIN);
     }
 
     private static boolean sameFirstLine(Memo m, LayoutBox box) {
@@ -310,8 +317,8 @@ final class FragmentPaint {
         return owner == null ? m.flStyle == null : m.flStyle == owner.style && m.flPseudo == owner.firstLineStyle;
     }
 
-    private boolean sameContextHeader(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving) {
-        if (!sameContextCheap(m, box, clip, parentId, moving) || box.ownPaintStamp() > m.epoch) return false;
+    private boolean sameContextHeader(Memo m, LayoutBox box, ClipRect clip, String parentId, boolean moving, float ax, float ay) {
+        if (!sameContextCheap(m, box, clip, parentId, moving, ax, ay) || box.ownPaintStamp() > m.epoch) return false;
         if (b.parentRelative) {
             LayoutBox p = order.effectiveParentNodeBox(box, parentId);
             if ((p != null ? Math.round(p.x()) : 0) != m.pox || (p != null ? Math.round(p.y()) : 0) != m.poy) return false;
@@ -336,11 +343,11 @@ final class FragmentPaint {
         return m.frag;
     }
 
-    private Memo store(LayoutBox box, Memo existing, Fragment f, ClipRect clip, String parentId, boolean moving, int ownersHere, int scroll0) {
+    private Memo store(LayoutBox box, Memo existing, Fragment f, ClipRect clip, String parentId, boolean moving, int ownersHere, int scroll0, float ax, float ay) {
         Memo m = existing != null ? existing : memos.get(box);
         if (m == null) memos.put(box, m = new Memo());
         m.frag = f; m.box = box; m.parent = box.parent;
-        m.x = box.x(); m.y = box.y(); m.w = box.w(); m.h = box.h();
+        m.x = ax; m.y = ay; m.w = box.w(); m.h = box.h();
         m.clip = clip; m.parentId = parentId; m.moving = moving;
         LayoutBox p = b.parentRelative ? order.effectiveParentNodeBox(box, parentId) : null;
         m.pox = p != null ? Math.round(p.x()) : 0; m.poy = p != null ? Math.round(p.y()) : 0;
@@ -524,7 +531,7 @@ final class FragmentPaint {
         boolean ownKept = sameKidList && !hasSelf;
         if (hasSelf) {
             owners++;
-            if (cull && layer == null && !moving && !b.inWindowGeometry(box)) {
+            if (cull && layer == null && !moving && !b.inWindowGeometry(box, curAx, curAy)) {
                 order.pushCulled(box);
                 culledSelf = true;
                 ownKept = sameKidList;
@@ -563,7 +570,7 @@ final class FragmentPaint {
                         && m.flexOrGridContainer == isFlexOrGridContainer(box)
                         && m.childClip == cc.clip && java.util.Objects.equals(m.childParentId, cc.parentId)
                         && (!b.parentRelative || (m.childPox == childPox && m.childPoy == childPoy))
-                        && Float.compare(m.x, box.x()) == 0 && Float.compare(m.y, box.y()) == 0;
+                        && Float.compare(m.x, curAx) == 0 && Float.compare(m.y, curAy) == 0;
             }
 
             Fragment.Extras ex = extras(box, kind, layer);
