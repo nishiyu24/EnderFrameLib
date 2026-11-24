@@ -58,6 +58,7 @@ public final class BoxTreeBuilder {
     private final Counters counters = new Counters();
     /** 組み直す箱の判定。null なら全部（{@link #build(LayoutBox, CounterStyles, java.util.function.Predicate)}）。 */
     private java.util.function.Predicate<LayoutBox> rebuild;
+    private java.util.function.Function<LayoutBox, int[]> splitOf; // 親ごとの子の差分〔ChildWindow〕。null なら使わない
     private final CounterStyles counterStyles;
     /** 匿名ボックスの id の通し番号（持ち主ごと）。再レイアウトしても同じ id になるよう決定的に振る。 */
     private final Map<LayoutBox, Integer> anonymousCounts = new IdentityHashMap<>();
@@ -80,17 +81,13 @@ public final class BoxTreeBuilder {
     }
 
     /** {@code root} 以下のボックスツリーを要素ツリーから作り直す。{@code counterStyles} は文書の {@code @counter-style}。 */
-    public static void build(LayoutBox root, CounterStyles counterStyles) {
-        build(root, counterStyles, null);
-    }
+    public static void build(LayoutBox root, CounterStyles counterStyles) { build(root, counterStyles, null, null); }
 
-    /**
-     * {@code rebuild} が false を返す箱の部分木は組み直さない〔前回の組み立てのまま。null なら全部〕。部分構築〔変更台帳に触れられた
-     * 箱だけを組む。{@code RenderTreeBuilder} が辿らなかった部分木は前回のまま正しい〕で使う。
-     */
-    public static void build(LayoutBox root, CounterStyles counterStyles, java.util.function.Predicate<LayoutBox> rebuild) {
+    /** {@code rebuild} が false の箱の部分木は組み直さない〔null なら全部。部分構築〕。{@code splitOf} は親ごとの子の差分〔ChildWindow〕。 */
+    public static void build(LayoutBox root, CounterStyles counterStyles, java.util.function.Predicate<LayoutBox> rebuild,
+                             java.util.function.Function<LayoutBox, int[]> splitOf) {
         BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
-        builder.rebuild = rebuild;
+        builder.rebuild = rebuild; builder.splitOf = splitOf;
         if (rebuild != null && !rebuild.test(root)) return;
         if (root.subtreeHasGenerated) builder.collectReusableGenerated(root);
         builder.counters.apply(root);
@@ -130,11 +127,12 @@ public final class BoxTreeBuilder {
                 : horizontalReturnRoot ? WritingModes.HORIZONTAL
                 : activeFlow;
 
+        int[] win = splitOf == null || verticalRoot || horizontalReturnRoot || childFlow != WritingModes.HORIZONTAL ? null : ChildWindow.of(box, splitOf.apply(box));
         List<LayoutBox> items = new ArrayList<>(box.elementChildren.size() + 1);
         LayoutBox marker = box.display.listItem() ? createMarker(box, counters) : null;
         if (marker != null) items.add(marker);
-        collectItems(box, items, childFlow);
-        LayoutBox legend = takeRenderedLegend(box, items);
+        collectItems(box, items, childFlow, win == null ? 0 : win[0], box.elementChildren.size() - (win == null ? 0 : win[1]));
+        LayoutBox legend = win == null ? takeRenderedLegend(box, items) : null;
         List<LayoutBox> kids = fixup(box, items);
         if (childFlow != WritingModes.HORIZONTAL) {
             byte bf = (byte) childFlow;
@@ -148,6 +146,7 @@ public final class BoxTreeBuilder {
         } else if (horizontalReturnRoot) {
             kids = wrapOrthogonalContent(box, kids, activeFlow, false);
         }
+        if (win != null) kids = ChildWindow.assemble(box, win, kids);
         if (legend != null) {
             List<LayoutBox> all = new ArrayList<>(kids.size() + 1);
             all.add(legend);
@@ -258,13 +257,13 @@ public final class BoxTreeBuilder {
      * 箱の子になる箱を文書順に集める。{@code display: contents} の子はその子を代わりに入れる。
      * カウンタの適用もこの順で行う（CSS のカウンタは要素ツリーの文書順で数える）。
      */
-    private void collectItems(LayoutBox element, List<LayoutBox> out, int childFlow) {
+    private void collectItems(LayoutBox element, List<LayoutBox> out, int childFlow, int from, int to) {
         int mark = counters.mark();
-        for (int i = 0, n = element.elementChildren.size(); i < n; i++) { LayoutBox child = element.elementChildren.get(i); // 反復子を作らない（箱ごとに呼ばれる）
+        for (int i = from, n = to; i < n; i++) { LayoutBox child = element.elementChildren.get(i); // 反復子を作らない（箱ごとに呼ばれる）
             counters.apply(child);
             if (child.node.isPseudoNode) evaluateGeneratedContent(child, counters);
             if (child.display.isContents()) {
-                collectItems(child, out, childFlow);
+                collectItems(child, out, childFlow, 0, child.elementChildren.size());
             } else {
                 if (rebuild == null || rebuild.test(child)) buildBox(child, childFlow);
                 out.add(child);

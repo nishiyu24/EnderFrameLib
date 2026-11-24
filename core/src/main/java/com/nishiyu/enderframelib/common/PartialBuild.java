@@ -35,6 +35,8 @@ final class PartialBuild {
     private final LayoutBox.ReusableTable table;
     /** 今回辿った（作り直した・使い回して辿った）節の箱。 */
     private final Map<HtmlNode, LayoutBox> visited = new IdentityHashMap<>();
+    /** 触れられた親ごとの子の差分 {前の件数, 後ろの件数}〔{@link #splitKids}。そのフレームの中だけ〕。 */
+    private final Map<LayoutBox, int[]> splits = new IdentityHashMap<>();
 
     private PartialBuild(ChangeLedger ledger, LayoutBox.ReusableTable table) {
         this.ledger = ledger;
@@ -62,7 +64,7 @@ final class PartialBuild {
             if (root != prev) return null; // 根の箱が作り直された: 全体を作り直す〔表は辿った箱を入れ直してあるので全体の経路でも整合する〕
             if (!pb.visited.isEmpty()) {
                 com.nishiyu.enderframelib.core.layout.BoxTreeBuilder.build(root, CounterStyles.of(doc.sheet.counterStyles),
-                        b -> b.node != null && (b.node.isPseudoNode || pb.visited.containsKey(b.node)));
+                        b -> b.node != null && (b.node.isPseudoNode || pb.visited.containsKey(b.node)), pb.splits::get);
                 st.lastBuiltStructureVersion = st.domStructureVersion;
                 // 辿った箱のうち、本当に変わった箱だけを渡す（変わっていない祖先の経路は印付けが自分で辿る。根を渡すと全体の印付けになる）
                 List<LayoutBox> changed = new ArrayList<>();
@@ -100,18 +102,6 @@ final class PartialBuild {
         return prev == null || ledger.touches(node) ? null : intact(prev.peek(node), ancestorMoving, computed);
     }
 
-    /**
-     * 親が汚れていないとき、その子を 1 つずつ {@link #keep} に聞かず、触れられた子の集合 {@code touchedKids} 〔{@link ChangeLedger#touchedChildren}〕
-     * と子自身の汚れ印だけで、前回の箱を返せるか決める（触れられた親の子の並びを組み直す費用を、子の数に比例する小さい定数にする）。
-     */
-    LayoutBox keepFast(HtmlNode child, LayoutBox.ReusableTable prev, java.util.Set<HtmlNode> touchedKids, boolean ancestorMoving, InteractionState st) {
-        if (prev == null || touchedKids.contains(child)) return null;
-        InteractionState.StateFlags f = st.get(child);
-        if (f == null || f.isStyleDirty() || f.subtreeDirty() || f.dirtyBelow()) return null;
-        LayoutBox box = prev.peek(child);
-        return intact(box, ancestorMoving, box == null ? null : box.style);
-    }
-
     private static boolean unnumbered(String type) {
         return "none".equalsIgnoreCase(type) || "disc".equalsIgnoreCase(type) || "circle".equalsIgnoreCase(type) || "square".equalsIgnoreCase(type);
     }
@@ -124,6 +114,33 @@ final class PartialBuild {
     }
 
     java.util.Set<HtmlNode> touchedChildren(HtmlNode parent) { return ledger.touchedChildren(parent); }
+
+    /**
+     * 親の子の差分〔前回の並びと今の DOM の並びを同一性で突き合わせ、前後の同じ並びを除いた間だけを組み直す〕。触れられていない前後の
+     * 子の箱は前回のままで、{@code box.elementChildren} から間だけを外して {@code {前の件数, 後ろの件数}} を返す。間に触れられた子があれば
+     * 間の範囲を広げる。番号つきのリスト項目は、並びの件数が変わると後ろの番号が変わるので、後ろを間に含める。
+     */
+    int[] splitKids(HtmlNode node, LayoutBox box, Set<HtmlNode> touchedKids) {
+        List<HtmlNode> kids = node.children;
+        List<LayoutBox> ec = box.elementChildren;
+        int n = kids.size(), m = ec.size(), lo = n, hi = -1;
+        for (HtmlNode t : touchedKids) {
+            for (int i = 0; i < n; i++) {
+                if (kids.get(i) == t) { if (i < lo) lo = i; if (i > hi) hi = i; break; }
+            }
+        }
+        int pre = 0, suf = 0;
+        while (pre < n && pre < m && pre < lo && ec.get(pre).node == kids.get(pre)) pre++;
+        while (suf < n - pre && suf < m - pre && n - 1 - suf > hi && ec.get(m - 1 - suf).node == kids.get(n - 1 - suf)) suf++;
+        if (suf > 0 && n != m) {
+            LayoutBox first = ec.get(m - suf);
+            if (first.display().listItem() && !unnumbered(first.style.getOrDefault(com.nishiyu.enderframelib.core.css.CssPropertyIndex.LIST_STYLE_TYPE, "disc"))) suf = 0;
+        }
+        ec.subList(pre, m - suf).clear();
+        int[] split = {pre, suf};
+        splits.put(box, split);
+        return split;
+    }
 
     /** 辿った箱として数える（箱の木の組み立て・測定の印付けの対象になる）。 */
     void visited(LayoutBox box) {

@@ -208,6 +208,7 @@ final class RenderTreeBuilder {
                 : (prevReusable != null ? prevReusable.take(node) : null);
         LayoutBox prevBefore = null;
         LayoutBox prevAfter = null;
+        boolean deferClear = false;
         boolean reusedBox = false;
         if (box != null) {
             if (box.hasPseudoElementChild) {
@@ -223,7 +224,11 @@ final class RenderTreeBuilder {
                 box.hasPseudoElementChild = false;
             }
             if (partial != null) partial.forgetRemoved(box, node);
-            box.elementChildren.clear();
+            // 触れられた親の子の差分を取るため、疑似要素が無く再スタイルも要らない親は、子の並びの片付けを子を並べる直前まで遅らせる
+            deferClear = partial != null && !subtreeDirty && flags != null && !inTableScope && !siblingInvalidation
+                    && prevBefore == null && prevAfter == null && !com.nishiyu.enderframelib.core.dom.node.ElementTraits.isDetails(node.tag)
+                    && childForce == RenderPipeline.FORCE_NONE && !childForceIfInherits;
+            if (!deferClear) box.elementChildren.clear();
             box.refreshStyle(computed);
             if (box.display().isNone() || LayoutBox.isInternalTableBox(box)) {
                 box = null;
@@ -254,6 +259,7 @@ final class RenderTreeBuilder {
         long viewportKey = ((long) scope.viewportW() << 32) | (scope.viewportH() & 0xffffffffL);
         ContainerBox selfContainer = RenderPipeline.containerForSelf(node, computed, parentSizeContainer, interactionState);
         boolean reusePseudos = reusedBox && !needsRestyle && box.pseudoStylesViewport == viewportKey;
+        if (deferClear && box.display().isNone()) { box.elementChildren.clear(); deferClear = false; }
         if (!reusePseudos) {
             resolveHighlightPseudos(box, computed, sheet, env, childScope, interactionState, selfContainer);
             box.pseudoStylesViewport = viewportKey;
@@ -299,6 +305,7 @@ final class RenderTreeBuilder {
         } else {
             ComputedStyle beforeStyle = resolvePseudoStyle(node, PseudoType.BEFORE, computed, sheet, env, childScope, interactionState, selfContainer);
             if (beforeStyle != null) {
+                if (deferClear) { box.elementChildren.clear(); deferClear = false; }
                 box.addElementChild(buildPseudoBox(node, PseudoType.BEFORE, beforeStyle, hasInteractive, sheet, env,
                         childScope, interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving, !stopChildReuse, prevBefore));
             }
@@ -310,9 +317,18 @@ final class RenderTreeBuilder {
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");
             boolean siblingForceDirty = false;
-            // 自分が汚れていない親は、触れられた子だけを辿り、他の子は前回の箱をそのまま並べる（部分構築）
-            java.util.Set<HtmlNode> touchedKids = partial != null && !needsRestyle && !subtreeDirty && flags != null && !flags.dirtyBelow() ? partial.touchedChildren(node) : null;
-            for (int ci = 0, cn = node.children.size(); ci < cn; ci++) {
+            // 触れられていない親は、触れられた子の範囲だけを組み直し、前後の子は前回の箱のまま並べる（部分構築。親の子の差分）
+            java.util.Set<HtmlNode> touchedKids = deferClear ? partial.touchedChildren(node) : null;
+            int from = 0, cn = node.children.size();
+            boolean split0 = false;
+            if (deferClear) {
+                int[] split = touchedKids != null ? partial.splitKids(node, box, touchedKids) : null;
+                if (split == null) box.elementChildren.clear();
+                else { from = split[0]; cn -= split[1]; split0 = true; }
+                deferClear = false;
+            }
+            int at = split0 ? from : box.elementChildren.size();
+            for (int ci = from; ci < cn; ci++) {
                 HtmlNode child = node.children.get(ci);
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
                 if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
@@ -322,15 +338,14 @@ final class RenderTreeBuilder {
                     InteractionState.StateFlags childFlags = interactionState.get(child);
                     if (childFlags != null && childFlags.inheritsExplicitly) forceChild = RenderPipeline.FORCE_SELF;
                 }
-                LayoutBox keptKid = touchedKids != null && forceChild == RenderPipeline.FORCE_NONE
-                        ? partial.keepFast(child, childPrevReusable, touchedKids, selfOrAncestorMoving, interactionState) : null;
-                box.addElementChild(keptKid != null ? keptKid : buildLayoutTree(child, childInherited, sheet, env, forceChild,
+                box.insertElementChild(at++, buildLayoutTree(child, childInherited, sheet, env, forceChild,
                         computed.fontSizePx(), childScope, interactionState, siblingInvalidation,
                         childPrevReusable, childNextReusable, childInTableScope, null,
                         selfContainer, selfOrAncestorMoving, partial));
                 siblingForceDirty |= stateChanged;
             }
         }
+        if (deferClear) box.elementChildren.clear(); // 子を並べない箱〔中身を省く・svg など〕
 
         if (omitChildren) {
             // 同上

@@ -1,338 +1,392 @@
-# EnderFrameLib `:core` — エンジン設計原則 & 実装ロードマップ
+# EnderFrameLib 根本再設計プラン（Engine v3: 破壊的アーキテクチャ刷新）
 
-> **最終更新**: 2026-11-24（**K5b L2〔子の増減と箱の木の飛ばし〕を実装〔時間の目標 `≤ +10%` は未達〕**: `CHILD_PATCH`・`LocalPatches`・`planChildPatch`・`pendingChildParents` と `Shortcut.CHILD_PATCH`〔パッチ系スイッチ `0`〕を削除し、子の増減は台帳の `CHILDREN` から `PartialBuild`〔触れられていない部分木は辿らず前回の箱を返す。`RenderTreeBuilder`・`BoxTreeBuilder` が同じ規則〕で通常経路へ。`large-list child` は patch `0.280 ms` → `0.308 ms`〔`+10.0%`〕・`varied-list-500 child` `0.331` → `0.403`〔`+21.6%`〕・確保 `-8%`〜 旧基準比 `+24%`〔`2×` 以内〕・測定回数は旧と同じ。**不具合 2 件を同時に修正**〔§6-201・§6-202〕。続きは §6-203。　**K5b L1〔文字・描画だけの属性の入口を台帳から読む〕を完了**: `pendingTextNodes`・`pendingAttrNodes`・`TEXT_PATCH_MAX_NODES`・`requestTextPatch`・`TextChanges.hasPending` を**削除**し、`flushInvalidation` が凍結した台帳から読み手 `ChangeReads`〔`texts`: 文字の節〔重複なし・あふれ/256 超は null＝全体を作り直す〕・`paintAttrs`: 描画だけの属性の節〕で導く。台帳は属性名〔`detail`〕・節を絞れない要素〔`ENV`・`SCROLL`・絞れない `STYLE`〕・あふれを持つ。入口の分類〔描画だけの属性か〕は書き手〔リスナー〕から読み手へ移った。`UiView` `2,090 → 2,043` 行。観測の乱数列は「最初から作った結果と一致」へ〔12 種 × 40 手〕、`TEXT_PATCH_HITS` の増減で「台帳が文字の測り直しの唯一の入口」を固定。時間 A/B〔対 L0・null・9 回中央値〕は `text` 系 `-3.7〜+2.9%`・`hover` `+0.7%`・`style` `+0.7%`、`costGate` 56 行・ルート `:test`・`:core:test` 緑。状態の削減: 入口の集合 2 つ〔`pendingTextNodes`・`pendingAttrNodes`〕。次は §3 の K5b L2〔子の増減と箱の木の飛ばし〕）。これより前の更新の経緯は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) の末尾「本編冒頭の更新履歴」。この行は日付と直近 1 件だけにする（運用ルール 3）。
-> **対象**: `:core`（`com.nishiyu.enderframelib.core.*` / `common.*` / `api.*`）
-> **この文書の役割**: ①設計原則（§1。配布の判定と品質ゲートは §1.5）②現在地の KPI（§2）③**実装の優先順位（§3。表はこの 1 つだけ）**④完了済みの記録（§4）⑤計測の手順（§5）⑥得られた知見（§6）。
-> **補足資料**: 過去の詳細（実装記録・計測の経緯・棄却した仮説の全文・モジュール構成マップ・2026-11-20 整理時の退避）は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md)（本編の補足。読み取り専用で、冒頭に「本編のどこ ↔ 補足のどこ」の対応表がある）。本編の `§6-N` で参照する節番号はそちらの `§N.N`。残作業の設計要点は §3.1（S5〜S8: マイクロサービス的単方向連結）・§3.2（X3-4/5・G5/G6・B 系）・§3.3（C 系: パッチからメモ化へ）。単体配布（旧 `DISTRIBUTION_ROADMAP.md`）は §1.5・§3 の D1・§4 の D0 に統合済み。
-
-## 運用ルール（積み上げない）
-
-1. **優先順位表は §3 の 1 つだけ。** 新しい課題は §3 に行を足し、順位を付け直す。別の表・別の節を作らない。
-2. **完了したら §3 から行を消し、§4 に 1 行足す。** 実装記録（手順・差分の説明）は書かない。何をしたかはコミットとテストが記録する。
-3. **計測値は §2 の KPI 表を上書きする。** 古い値は残さない（履歴は git とアーカイブ）。測り直したら日付を更新する。
-4. **調査で分かった知見は §6 に 1〜3 行。** 外れた仮説も同じ形式で 1 行。
-5. 1 つの項目の完了条件は「**テストが緑、§2 の該当行を更新、§3 の行を削除**」の 3 つ。作業の途中は `.\gradlew.bat :core:quickTest`（約 2 分。`@Tag("slow")` と `@Tag("timing")` を外して並列）か `--tests` の絞り込みで回し、「テストが緑」の判定は項目の最後に 1 回だけ全件の `:core:test`（約 3 分。slow を含み、timing は後から直列）で取る。`costGate` の途中確認は `-Pcostgate.only=…` か `-Pcostgate.parallel=4`（確保量が揺れるので合否は直列で取る。§6-116）。種を多数回すなど 1 メソッドで 20 秒を超えるテストには `@Tag("slow")` を付ける（全件の `test` では流れる）。
-6. **push・マージの前に Linux で全テストを通す。** 毎回の CI（`build`）は `build -x test` + `runGameTestServer` だけ（環境差で赤くならない検査）。全テストは手動・毎日の `full-tests` と開発機が担う（GPU なしの ubuntu-latest 相当）。Windows で `test` が緑でも、ルート `build`（JAR）・書体・OS 別の合格一覧で CI だけ赤くなる。`powershell -File scripts/ci-linux.ps1`（WSL。既定は `build test` と `runGameTestServer` で約 3 分）を回す。近道（`Shortcut`）・確保量・計測の基準値に触れた変更は `-Full`（`costGate` と `shortcutMatrix` も。約 8 分）。どちらも CI が push ごと（`costGate`）・夜間（`shortcutMatrix`）に回すので、既定では省く（§6-116）。pre-push フック（`scripts/install-hooks.ps1`）は `build -x test` を自動で回す。詳細は `CONTRIBUTING.md`「push 前の確認」。
-7. **不具合を直したら、同じコミットで `core/src/test/resources/regression-catalog.txt` に 1 行足す**（元 | 守るテスト | 説明）。§6 に書くなら先頭に〔不具合〕の印を付ける（載せ忘れは `RegressionCatalogTest` が赤にする）。差分ファズ（`mutation-fuzz.yml`）が見つけた種は `mutation-seeds.txt` へ足して直す。すぐ直せないときだけ由来を「既知:」で始める（直ると赤になる）。
-8. **増分エンジン（記憶・無効化・再利用）の変更は、フラグを足さず鍵とオラクルで直す**（2026-11-23 の方針転換。設計書 [`DESIGN_INCREMENTAL_KERNEL.md`](DESIGN_INCREMENTAL_KERNEL.md) §2・§7、根拠 §6-181）。「近道を足す → 費用を削る → 不具合が出る → フラグや検証を足す」のループを、運用ではなく構造で断つ。具体: ①**新しい `F_*` フラグ・純粋性の述語・`*Verifier` クラス・近道スイッチ・1 箱ごとの計器を足さない**〔状態の予算のラチェット。K0〕。足したくなったら、それは鍵〔読み取り集合〕・台帳・オラクルの不足なので、K 系の該当段へ寄せる〔C9 は K2 で置き換え済み〕。②増分の不具合は、**先にオラクル〔`FrameOracle`: 最初から作った独立の面との全体の比較。`-Dverify.oracle=true` で `MutationScenario` を使う全テストに効く〕の場面か、既知の欠陥の変異として再現**し、鍵・台帳の側で直す。単発の特例〔`ContainingBlockFlip` のようなもの〕を足すときは、置き換える K の段と場面を計画書へ書く。③診断・計器は `Kernel.stats`〔`core/kernel/Kernel.java`〕の入口だけ〔既定オフの `static final` の分岐。`enderframe.kernel.stats` を立てるのは `costGate`・`profile` の子 JVM だけ。1 箱ごとの加算は禁止〕。④コアは実時計を読まない〔時刻は注入された `Clock`。実時計を読むのは `core/kernel/Clock.java` だけ。テストは `Clock.Manual` を注入し、実時間を待たない〕。**①③④の増加は `IncrementalStateRatchetTest`〔`F_*` フラグ数・記憶のフィールド数・`*Verifier` クラス・実時計・`LongAdder` の計器・`Kernel.stats` の呼び出し箇所・テストの `sleep`〕と `ShortcutSwitchRatchetTest` が赤にする**〔2026-11-23 に K0 より前倒しで実装〕。新しいセッションの入口はリポジトリ直下の `CLAUDE.md`。
-9. **時間の主張は同時の交互 A/B だけで行う**: 絶対値はセッションが変わると `±40%` ずれ〔§6-180〕、1 回ずつの測定の `±10〜15%` は揺れで判断に使えない。旧版の worktree と現在を**交互に 3 回ずつ・中央値**で比べる〔`scripts/ab-gate.ps1`。使い方は冒頭のコメント〕。確保量・再計算の個数〔`costGate` の `memo*`〕は決定的なので、構造の退行はまずこちらで固定する。時間に効く変更の完了条件には A/B の結果を書く。
-10. **完了の判定は「効果」「正しさ」「仕組みの費用」「状態の予算」の 4 つ**〔設計書 §4〕: 増幅率 `≤ 10`（構造）・1 再計算あたりの費用（定数倍）・計器と再利用判定の費用 `≤ +1%`／`+3%`（A/B）・箱ごとの記憶の状態の数が増えていない。効果だけを見て、状態や費用を増やして完了にしない。
+> **更新日**: 2026-11-24
+> **対象**: `:core`（515 ファイル・約 11.1 万行。`com.nishiyu.enderframelib.core.*` / `common.*` / `api.*`）および組み込みサンプル MOD（101 ファイル・約 2.6 万行。`src/main/java/...`）の境界・描画・ホスト層を含む全体構造。
+> **旧計画の全面撤回宣言**: 従来の `C 系`・`K 系`・`K5b`・`L5 (W0〜W3)`・`K4h`・`B14` および `core/DESIGN_INCREMENTAL_KERNEL.md` に基づく「既存キャッシュ温存＋増分カーネル延命」方針を**本日をもって正式に撤回・凍結**する。過去の経緯・計測ログ・旧知見（§6-1〜205）は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) と git 履歴にのみ残す。本計画は**破壊的変更を全面的に許可**し、データ表現・中間表現（IR）・描画契約・ホスト統合の土台そのものを作り直す。
 
 ---
 
-## 1. 基本思想と絶対設計原則
+## 1. 根本診断と旧計画の撤回一覧
 
-EnderFrameLib `:core` は、オフヒープメモリ（標準 JDK 21 のダイレクト `ByteBuffer`＋`VarHandle`。FFM API〔`java.lang.foreign`〕は JDK 21 ではプレビューのため未使用、§6-33）・ビット並列アルゴリズム・GPU インスタンスシェーダー・タイル並列ソフトウェアラスタライザを組み合わせた**純 Java 汎用 Web/UI レンダリングエンジン**である。
+実コード全体の構造調査により、パフォーマンスと保守性が改善せず「1 つ直すと別の欠陥と費用が出る」ループに陥っていた理由は、アルゴリズムの細部ではなく**土台となる 5 つの構造的崩壊**にあると特定した。
 
-### 1.1 パフォーマンス予算（144Hz フレームバジェット: `6.94 ms`）
+### 1.1 実コードで確認された 5 つの根本欠陥
 
-ゲームループや高リフレッシュレートデスクトップアプリと同一プロセスで共存するため、UI エンジンは以下の CPU / メモリ予算を厳守する。
+1. **名ばかりの DoD と、超肥大・可変 OOP ツリー（`LayoutBox`）への不変メモ化の無理な接ぎ木**
+   - オフヒープ SoA（`core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java`）を参照しているのは `:core` 全 515 ファイル中 **6 ファイル**のみで、DOM 木（`HtmlNode` 1,399 行）とオフヒープ列の二重同期にとどまっている。
+   - `ComputedStyle`（`core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java`、2,095 行）は `PackedCssValue` を辺の一部キャッシュ（`packedEdges()`）等にしか使わず、本体は **`CssValue[207]` の文字列ラッパー配列**＋弱参照 `ConcurrentHashMap`（`CssValue.TABLE`）＋ `asMap()` 経由の `Map<String, String>` 受け渡しで動いている。
+   - 1 つの要素がヒープ上で以下の 10 個超の可変オブジェクトに分散している：
+     - `HtmlNode`（1,399 行・17 フィールド宣言：`AttributeMap`, `ChildList`, `Rare`, `classAtoms`）
+     - `InteractionState.StateFlags`（`core/src/main/java/com/nishiyu/enderframelib/core/dom/InteractionState.java`、約 25 欄 + `StateStyleMemo`）
+     - `ComputedStyle`（2,095 行・24 欄：`CssValue[207]`, `StyleMap`, `StyleSlice`×4, `ObjMemo`/`ConcurrentHashMap`, `CachedFace`/`CachedTextStyle`）
+     - `LayoutBox`（`core/src/main/java/com/nishiyu/enderframelib/core/layout/LayoutBox.java`、**1,785 行・81 インスタンスフィールド宣言**：`children` + `elementChildren` 二重木、幾何、`overrideWidth/Height`, `floatSpace`, `inlineFragments`, `spareFragments`, `TextCache`, `PaintStamps` 用 8 欄）
+     - `MeasureMemo`（`core/src/main/java/com/nishiyu/enderframelib/core/layout/MeasureMemo.java`、799 行・**41 欄・17 フラグ** + 出力丸コピー `outW..outBL` + `TentativeSlots`）
+     - `PlacementMemo`（`core/src/main/java/com/nishiyu/enderframelib/core/layout/PlacementMemo.java`、342 行・**11 欄**）
+     - `FragmentPaint.Memo`（`core/src/main/java/com/nishiyu/enderframelib/core/paint/FragmentPaint.java`、**52 欄**を `IdentityHashMap` 管理）
+   - 同一の巨大な可変 `LayoutBox` 上に「入力・一時通信欄（`overrideWidth`, `floatSpace`）・最終出力・4 種の記憶・ロックフリーダーティリスト」を同居させてその場破壊（in-place mutation）しているため、他段の記憶が壊れるバグが構造的に止まらない。その防衛として `PaintStamps.shape()`（約 40 欄ハッシュ）や `resetPlacements` が膨張し、保持ヒープは `varied-list-2000` **40.2 MB（Chrome 1.55x）**・`large-list-2000` **10.0 MB（Chrome 2.0x）** に悪化している。
 
-| 操作カテゴリ | 代表シナリオ | 目標時間 | 目標ヒープ確保 | 2026-11-15 実測値（`FineProfileMain` / JMH） |
-| :--- | :--- | :---: | :---: | :--- |
-| **静止フレーム** | 変化なし (`idle`) | `0.00 ms` | `0 B` | showcase: `null` **`0.0004 ms`** (`p50 0.0003`) / GL **`0.0004 ms`** (`p50 0.0003`、`0.1 KB`、`drawn=0` 完全スキップ) |
-| **スクロール** | 1 step スクロール (`scroll`) | `< 0.05 ms` | `0 B` | GL 実フレーム: showcase **`0.007 ms` (`p50 0.006`) / `0.7 KB`**、large-2000 **`0.064 ms` (`p50 0.046`) / `2.7 KB`**、varied-2000 **`0.072 ms` (`p50 0.050`) / `3.0 KB`**（`large-2000 p50` 達成・mean/`0 B` 未達） |
-| **インタラクション** | `:hover` / `:focus` 切替 | `< 0.15 ms` | `0 B` | `HoverToggleCostTest`: **`0.0031 ms` / `248 B`**、GL 実フレーム: showcase **`0.203 ms` (`p50 0.148` / `9.9 KB`)**、large-500 **`0.022 ms` (`p50 0.014` / `0.5 KB`)**、large-2000 **`0.067 ms` (`p50 0.056` / `0.4 KB`)**、CPU showcase **`0.917 ms` (`p50 0.893` / `152.7 KB`)** |
-| **局所データ更新** | テキスト・インライン style 変更 | `< 0.25 ms` | `< 1 KB` | GL 実フレーム: showcase `style` **`0.207 ms` (`p50 0.153` / `16.6 KB`)** / `text` **`0.215 ms` (`p50 0.162` / `16.9 KB`)**、large-500 `style` **`0.044 ms` (`p50 0.031` / `5.5 KB`)**、large-2000 `text` **`0.103 ms` (`p50 0.096` / `3.3 KB`)**（時間 `< 0.25 ms` 達成・確保未達） |
-| **フル再レイアウト** | ウィンドウ幅変更・全体再計算 | `< 1.00 ms` | `< 1 MB` | JMH (2026-11-14 `fullLayoutWarm` / `layoutWidthChange`): **`0.641 ms` / `0.635 ms` (`737 KB`)**、実フレーム (`resizeexact` showcase): `null` **`0.420 ms` (`p50 0.312` / `403.7 KB`)** / GL **`0.443 ms` (`p50 0.362` / `403.8 KB`)**（§2） |
+2. **7〜8 系統の独立キャッシュ／無効化言語とプロセスグローバル状態の汚染**
+   - 増分・キャッシュ・検証専用コードだけで **43 ファイル・6,527 行** が並立している：
+     - DOM（`ChangeLedger` + `StateFlags` + `InvalidationLevel`）→ Style（`StateStyleMemo` + `ShareCache` + `DIFF_MEMO` + `SLICE_POOLS` + `CssValue.TABLE`）→ Box（`ReusableTable` + `PartialBuild` + `ChildWindow`）→ Measure（`MeasureMemo` + `LayoutReads` 619 行・27 種 `ReadKind`）→ Place（`PlacementMemo` + `PlacementDeps` + `VirtualFlowState`）→ Paint（`PaintStamps` + `FragmentPaint.Memo` + `InkState` + `windowShift`）→ Scene（`PaintSceneDriver` `RetainRanges`/`RangeBounds`/`reconcileIndex`）。
+   - 各段が前段を信用できず子全員を記憶照会（約 1 µs/子）するため、8,000 行リスト 1 件挿入は超線形（**7.89 ms**）に悪化する。
+   - `:core` 全体に **38 個のグローバル `Shortcut` スイッチ**（`Shortcut.java`）・**50 個の `static volatile`**・**27 個の `ThreadLocal`**・**17 個のグローバル `Atomic`/`LongAdder`**（`LayoutBox.{SHAPE_EPOCH, STRUCT_EPOCH, CONTAINER_EPOCH, PAINT_EPOCH, renderBoundary}`, `MeasureMemo.MEASUREMENT_EPOCH` 等）が散在し、複数ビュー間でキャッシュを巻き添え無効化する。`UiView.rebuildWindowAtBoxFrame` では `scrollState` を一時的に過去値へ書き戻す時間巻き戻しハックまで発生している。
 
-### 1.2 4 つの絶対設計原則
+3. **6〜7 段の IR 変換と「フラット `DisplayItem` 配列」の構造ボトルネック**
+   - 1 フレーム描画までに `HtmlNode` → `LayoutBox.elementChildren` → `LayoutBox.children` → `Fragment`（8 層・永続 B 木チャンク）→ **フラット `DisplayItem[]`**（`core/src/main/java/com/nishiyu/enderframelib/core/paint/model/DisplayItem.java` + `PaintCell` + `ImmutableItemList`：`String id`, `Map<String, String> events`, `RenderHints.parentId`, `int` 丸め座標）→ `PaintSceneDriver`（926 行）へと 6〜7 段の変換が走る。
+   - `Fragment` が持っていた階層構造を `DisplayListBuilder`（922 行）の出口でフラット配列へ潰すため、下流の `PaintSceneDriver` が毎フレーム `Long2IntOpenHashMap` / `parentIdx[]` / `RetainRanges` / `RangeBounds` で **「潰された親子関係・レイヤー・スクロール範囲を逆算・再復元」** している。
+   - これが `showcase` 幅変更の **66%（0.273 / 0.414 ms）** と `varied-list-2000 fontsize` の 4〜23 スレッド頭打ち（**10.76 ms > 144Hz 予算 6.94 ms**）の主因である。
 
-1. **Data-Oriented Design (DoD) と正規化不変値の組み合わせ**:
-   - DOM トポロジー・セレクタ Bloom Filter・GPU インスタンスバッファはダイレクト `ByteBuffer` のオフヒープ列（[`OffHeapColumns`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/OffHeapColumns.java), [`DocumentArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java), [`PersistentVramBuffer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PersistentVramBuffer.java)）に配置する。
-   - CSS プロパティアクセスはすべてコンパイル時整数添字（[`CssPropertyIndex`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/CssPropertyIndex.java)）で行い、算出値は弱参照正規化された不変オブジェクト [`CssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/CssValue.java) と 64-bit パック値 [`PackedCssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java) (`long[]`) に保持する。
-2. **Retain & Memoize（保持とメモ化による増分。2026-11-20 改定・移行は §3 の C 系）**:
-   - 毎フレームのツリー全体走査を避けるのは従来どおり。ただし増分の結果は**全面の作り直しと同じ関数**で作り、省く計算は「入力の鍵 → 不変の出力」の記憶を引いて飛ばす（メモ化）。前回の出力をその場で書き換え、「この変更は他に影響しない」を手書きの判定で守る**パッチは新しく足さない**。パッチの正しさは退く条件の網羅（上限が無く、差分ファズが 1 本ずつ見つける。§6-123）に依り、メモ化の正しさは鍵の網羅（記憶が当たったら計算し直して比べる検証モードで、漏れた場所が機械的に分かる）に依る。
-   - 区別: **パラメータ化**（スクロール量・sticky のずれ・補間値・変形を、表示項目の外の節・表の値として持ち、項目を作り直さずに値だけ変える。`SCROLL_CONTENT_NODES`・`StickyShift`・`PaintOffsets`〔C6 で `PaintCell` の移動欄から分離〕）はパッチではなく、残す。値が節の外へ漏れず、全面でも同じ節を作るため。
-   - 現行の最短経路（`BindingPatchTable` → `StyleStateAutomaton` → `TEXT_PATCH` / `CHILD_PATCH` / `LOCAL_SUBTREE` → `HitTestIndex.patch` → `PaintSceneDriver.patchIndexByDiff` → `GpuScrollLayer`）のうち、パッチに当たるものは §3.3 の表のとおり C0〜C3 と K 系でメモ化へ置き換える。
-3. **GPU ファースト + タイル並列 CPU フォールバックのハイブリッド構成**:
-   - 矩形・角丸・枠線・影・グラデーション・グリフは単一 Uber-Shader（[`GpuRectShader`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuRectShader.java) + [`RectStream`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gpu/RectStream.java)）で 1 ドローコール描画し、複雑なパス・フィルタやヘッドレス環境では 64×64 タイル並列ラスタライザ（[`TileQueue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/TileQueue.java)）がピクセル等価性を保証する。
-   - **GPU は特定の描画 API に固定しない（G 系、§3.2）**。現在、OpenGL 3.2（`:core-gl`）と Vulkan 1.1（`:core-vulkan`）の 2 実装が薄い RHI `GpuDevice`＋`ServiceLoader` 上で稼働し、`SOFTWARE` との 3 者画素一致を達成済み。ホスト GPU 共有の中立化（A14）は完了し、残課題は Minecraft 本体の別レンダラ撤去（G5）。
-4. **機械的ラチェット（Mechanical Ratchets）による退行防止**:
-   - 達成した構造純化（`mc-*` 直書き禁止、公開 API への内部型漏洩禁止、`ComputedStyle` の文字列名アクセス禁止、プラットフォーム依存クラス数上限、テスト当たりヒープ確保量上限）はすべて自動テストで固定し、逆行をコンパイル／テスト段階で阻止する。
+4. **`:core` とサンプル MOD の二重レンダラ・L5 ピンポン実行・ホスト層の分裂**
+   - `:core`（+ `:core-gl` 1,727 行・`:core-vulkan` 3,330 行）に約 1 万行の独立レンダラがあるにもかかわらず、MOD 側は `EnderFrameBuiltInConfig.useCoreBackend = false` が既定で、**9,369 行の別レンダラ**（`src/main/java/com/nishiyu/enderframelib/client/renderer/` 配下の `LayerCompositor` 1,399 行・`DisplayItemDrawer` 1,007 行・`WebSdfShader` 982 行・`TextElementRenderer` 547 行・`OutlineTextRenderer` 392 行等）が実稼働している。`CoreGpuSurface` を有効化しても `<scene-3d>` や一部画像でフォールバックし、`SurfaceRenderer` が毎回 `AbsoluteItems.of()` で全要素変換を行う。
+   - `:core` の L5 内部も `GpuRenderBackend`（1,174 行）→ `CpuFallback.renderOnto` → `SoftwareRenderBackend`（1,259 行）→ `GpuSink` という**制御逆転のピンポン往復**のまま残っている。
+   - L6 ホスト層は `UiView`（`core/src/main/java/com/nishiyu/enderframelib/common/UiView.java`、2,005 行・41 欄）に Minecraft サーバー同期由来の状態（`serverManaged`, `headlessState`, `lastSyncRequestTime`, `shouldRequestSync()`, `explicitSize`, `applyOverrides()`）が混在し、その上で `StandaloneView`（1,060 行）と MOD 側 `SessionContext` / `EnderScreenDelegate`（1,298 行）/ `TextareaEditor` が編集・ポップアップ・入力処理を重複実装している。また MOD 側 `client.*` に 5 組の直接パッケージ循環がある。
 
-### 1.3 OSI 参照モデル型・7 層単方向アーキテクチャ（機能追加による構造崩壊の防止）
+5. **形式ラチェットと既存キャッシュ温存による構造的ロックイン**
+   - `LayerDependencyRatchetTest` は層間の上向き参照しか検査しないため、同一層内の巨大化（`core.css` 17,396 行、`core.layout` 16,490 行、`core.paint` 13,350 行、1,000 行超クラス `:core` 単独 19 個）を見逃す。
+   - `IncrementalStateRatchetTest` は既に破綻した状態数（`MeasureMemo` 41 欄・17 フラグ、`FragmentPaint.Memo` 52 欄、`Shortcut` 27/38 個等）を上限固定しただけである。
+   - `costGate` の内部カウンタ `memo*` 固定が「可変 `LayoutBox` + フラット `DisplayItem` + `CssValue[207]`」という土台の刷新を阻害し、K 系 → L 系 → W 系と増分層を積み増す袋小路を生んでいる。
 
-今後の大規模な機能追加によってパッケージ間の責務や依存方向が崩れることを防ぐため、エンジン全体を **OSI 参照モデルに倣った 7 層の単方向階層（L1〜L7）** として定義する。**「第 $N$ 層は第 $N-1$ 層以下の型しか参照してはならず、各層間は明確な不変データ単位（PDU: Protocol Data Unit）のみで通信する」**ことを原則とする。
+### 1.2 撤回する旧計画・旧指示一覧
+
+| 撤回対象 | 旧計画での役割 | 撤回理由 |
+| :--- | :--- | :--- |
+| **K5b（L3 / L4）** | `ChangeLedger` で `DIRTY_*`・`InvalidationLevel`・`domStructureVersion` を置換 | 可変 `LayoutBox` と多段キャッシュを残したまま入口だけを付け替えても下流の照会コスト（1 µs/子）が消えない |
+| **L5（W0〜W3: 窓の伝播 + Fenwick）** | `ChildWindow` を `MeasureMemo` / `PlacementMemo` / `FragmentPaint` へ伝播 | 破綻した 3 つのメモ言語を延命した上にさらに特殊な窓境界判定を各段へ埋め込む複雑化ループになる |
+| **K4h** | `FragmentPaint.Memo`・`memoFrameKey`・`InkState` の窓シフト延命 | フラット `DisplayItem` と `FragmentPaint.Memo`（52 欄）自体を廃止して階層的 `DisplayScene` へ置き換えるべきため |
+| **K6 / K0b** | 3 種の `*Verifier` 統合、`FrameScheduler` のみ分離 | `*Verifier`・可変記憶群を丸ごと削除するため統合自体が不要 |
+| **B14 / B5 / A15（旧前提）** | `FragmentPaint` 並列化・`LayoutBox` 疎欄の `LayoutArena` 化・`LayoutBox` 上の SPI | すべて可変 `LayoutBox` とフラット `DisplayItem` を温存する対症療法のため、新モデル（Phase M1〜M3）へ吸収・刷新 |
+| **`DESIGN_INCREMENTAL_KERNEL.md` & 旧運用ルール 8〜10** | 読み取り台帳 `LayoutReads`・`IncrementalStateRatchetTest`・`Shortcut` 基準の運用 | 壊れた前提の固定を解き、破壊的単純化を最優先するため廃止 |
+
+---
+
+## 2. 新アーキテクチャ原則（Engine v3: 単純さ・値分離・単方向データフロー）
+
+### 2.1 5 つの絶対原則
+
+1. **入力と出力の完全分離（Immutable `LayoutFragment`）**
+   - レイアウト計算は `(BoxNode, Style, ConstraintSpace) → Immutable LayoutFragment` の純粋な変換関数とする。
+   - 出力が完全不変であり、一時状態（`overrideWidth`, `floatSpace` 等）は計算中の引数・局所スタックにしか存在しないため、**「入力が同じなら前回の `LayoutFragment` をそのまま返す」** だけで全段の整合性が保証される。可変 `LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`resetPlacements` は存在理由ごと消滅させる。
+
+2. **グループ共有・型付き不変スタイル（脱 `CssValue[207]` 文字列配列）**
+   - CSS プロパティを継承性・利用箇所に応じた機能グループ別不変構造体（`InheritedStyle`, `BoxGeomStyle`, `VisualStyle`, `FlexGridStyle`, `TableStyle`, `RareStyle`）へ分離する。
+   - 初期値グループは静的シングルトンを共有し、親から受け継ぐ `InheritedStyle` が未変更なら子も同一参照を共有する。長さは 64-bit プリミティブ値 `CssLength`、色・キーワードは `int` ARGB / `enum` / bitfield で直接保持し、文字列ラッパー配列と `Map<String, String>` 受け渡しを根絶する。
+
+3. **階層的・数値 ID ベースの `DisplayScene`（フラット `DisplayItem` 完全廃止）**
+   - `LayoutFragment` から、階層構造（変換・クリップ・レイヤー・スクロールコンテナ・境界矩形）とコンパクトなプリミティブ描画コマンド列を保持する不変ツリー **`DisplayScene`** を直接構築する。
+   - ノード参照はすべて **`int nodeId`** とし、文字列 ID・`Map<String, String> events`・`AbsoluteItems` 再変換・`PaintSceneDriver` による階層再復元を完全に消滅させる。
+   - L5a（`SceneEmitter`）→ L5b（`GpuRenderBackend` RHI / `SoftwareRenderBackend`）は完全単方向データフローとし、GPU 未対応要素は L5a 側で事前にテクスチャ化して流す。
+
+4. **単一のメモ化言語・プロセスグローバル状態ゼロ**
+   - 38 個の `Shortcut` スイッチ、プロセス共有エポック（`SHAPE_EPOCH` 等）、`ThreadLocal` 隠れ状態、7 系統のキャッシュを全廃する。
+   - すべての実行状態・メモテーブルは 1 ビューインスタンス（`EngineView`）の内部に閉じ、キャッシュは **「不変入力の参照同一性（`==`）による 1 層メモ化」** のみを許可する。
+
+5. **単一レンダラ・ホスト層の純化**
+   - サンプル MOD 側の 9,369 行レガシーレンダラ（`DisplayItemDrawer` / `LayerCompositor` / `WebSdfShader` 等）を完全に撤去し、`:core` の RHI バックエンド（`MinecraftHostSurface`）に一本化する。
+   - `UiView` から Minecraft 固有の同期残骸を剥がして純 Java の薄い `EngineView`（≤ 400 行）に純化し、入力・フォーカス・テキスト編集・選択・`<select>` ポップアップを共通の `InputController` へ統合する。
+
+### 2.2 新 5 層単方向アーキテクチャ（Engine v3）
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ L7: Public API & Host Surface Layer (`api/*` + `common/EngineSurface`)     │
-│   PDU: `WebViewSurface`, `SurfaceState`, `PixelSink` (内部型露出 0)         │
+│ L5: Host & View Orchestration (`common/EngineView`, `InputController`,     │
+│     `api/*`, MOD `SessionContext` / `MinecraftHostSurface`)                │
+│     所有物: DOM の 1 インスタンス・ScrollState・AnimatorState・入力状態     │
 ├────────────────────────────────────────────────────────────────────────────┤
-│ L6: Session & Pipeline Orchestration Layer (`common/*`, `core/EngineContext`)│
-│   PDU: フレーム駆動・入力イベント合成 (`UiView`, `RenderPipeline`, `UiInput`)│
+│ L4: Unidirectional Scene & Raster (`core/paint/*`)                         │
+│     L4a `SceneEmitter`: Immutable `DisplayScene` (`SceneLayer` + `DrawOp`) │
+│     L4b `GpuRenderBackend` (RHI `GpuDevice`) / `SoftwareRenderBackend`     │
+│     ※ 文字列 ID ゼロ・ピンポン往復ゼロ・完全単方向・`int nodeId` 索引       │
 ├────────────────────────────────────────────────────────────────────────────┤
-│ L5: Paint, Composition & Backend Layer (`core/paint/*`)                    │
-│   PDU: `DisplayItem` スライス → 80B GPU インスタンス / 64×64 タイル `Op`   │
+│ L3: Pure Layout (`core/layout/*`)                                          │
+│     `(BoxNode, Style, ConstraintSpace) -> Immutable LayoutFragment`        │
+│     `FormattingEngine` SPI (Block / Flex / Grid / Table / Vertical)        │
+│     1 層 `LayoutCache` (参照同一性キー) + チャンク累積和フロー              │
 ├────────────────────────────────────────────────────────────────────────────┤
-│ L4: Box Tree & Layout Formatting Layer (`core/layout/*`)                   │
-│   PDU: `ConstraintSpace` → `LayoutBox` (解決済み座標 `x, y, w, h`, `ShapedLine`)│
+│ L2: DOM, Selector & Typed Style (`core/dom/*`, `core/css/*`)               │
+│     軽量 `DomNode` + `SelectorIndex` + グループ共有不変 `Style`            │
 ├────────────────────────────────────────────────────────────────────────────┤
-│ L3: Document, Style & Event Semantics Layer (`core/dom/*`, `core/css/*`,   │
-│     `core/event/*`, `core/kernel/compiler/*`)                              │
-│   PDU: `HtmlNode`, `ComputedStyle` (`CssValue[]`, `StyleFacts`), `CoreEvent`│
-├────────────────────────────────────────────────────────────────────────────┤
-│ L2: Text Shaping, Font & 2D Raster Primitives Layer (`core/text/*`,        │
-│     `core/raster/*`, `core/net/*`, `core/media/*`, `core/scene3d/*`)       │
-│   PDU: `FontFace`, `ShapedLine`, `GlyphBitmap`, `Pixmap`, `Path2D`         │
-├────────────────────────────────────────────────────────────────────────────┤
-│ L1: Physical Memory, Math & GPU Kernel Layer (`core/kernel/memory/*`,      │
-│     `core/kernel/style/*`, `core/kernel/gpu/*`, `core/diag/*`, `api/dom`)  │
-│   PDU: `ByteBuffer` (`DocumentArena`, `AtomTable`), `PackedCssValue`       │
+│ L1: Text, Media, 2D/3D Primitives & RHI (`core/text/*`, `core/raster/*`,   │
+│     `core/scene3d/*`, `core/kernel/gpu/rhi/*`, `core/kernel/memory/*`)     │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 階層純度の現状と機械的固定（[`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java)）
+---
 
-マクロ層（`api` $\leftarrow$ `core` $\leftarrow$ `common` $\leftarrow$ `client`/`server`）の単方向性は [`ApiBoundaryTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/src/test/java/com/nishiyu/enderframelib/api/ApiBoundaryTest.java) と [`ArchitectureTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/src/test/java/com/nishiyu/enderframelib/core/ArchitectureTest.java) で固定済み。`core.*` 内部（L1〜L6）の単方向性は **`LayerDependencyRatchetTest`** が `import` と完全修飾名（FQN）の両方を走査して固定し、2026-11-10 に既知の層間逆参照 11 系統をすべて解消した（`KNOWN_UPWARD` は空集合。解消表の全文は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) 付録 2 A2-1）。
+## 3. 破壊的再設計ロードマップ（唯一の優先順位表: Phase M0〜M6）
 
-- **2026-11-20 構造監査で判明した次段階の課題（層内循環と逆流書き込み）**: 層間（L1〜L6）の上向き参照 0 は達成されているが、同一層内を 1 つに括ったため見落とされていた課題が残っている。①**同一層内のパッケージ循環（SCC）3 系統**（L2: `raster`↔`raster.awt`↔`text.font`〔S5 で解体済み〕、L3: `dom`↔`css`↔`event`↔`kernel.compiler` 7 パッケージ〔S8〕、L5: `paint`↔`paint.model`↔`paint.gpu`↔`paint.software` 4 パッケージ〔S6〕）と未使用ワイルドカード `import`〔S5 で一掃済み〕 ②**L5 の GPU↔CPU ピンポン実行**（`GpuRenderBackend` → `CpuFallback.renderOnto` → `GpuAttempt` → `GpuSink`）③**下流→上流モデルへの状態書き戻し**（`DisplayListBuilder` → `LayoutBox.{dlStart,dlEnd,dlOrder,paintCulled}`・`InteractionState` → `HtmlNode.{interactionOwner,interactionFlags}`・L5 内の CSS 値パース残存は **S7 で解消済み**。残る `ComputedStyle.paintMemo` は不変 `ComputedStyle` 上の純粋メモであり逆流書換は 0）④**モジュール境界・静的テーブルの残債**（`:core` 内への `client.template` 残留、`core.dom` 内 `Scene3DDomSync` の 3D/raster 依存、`PackedLengths` の無制限増加）。これらは §3 の **`S4`〜`S8`**（および **`A13`**）で段階解消する。⑤**増分の経路が全面と別のコードであること**（前回の出力を書き換えるパッチ。子パッチ・平行移動・配置の記憶・局所パッチ・描画索引のパッチ）は、層の向きとは別の軸の壊れやすさで、§3 の **`C0`〜`C3`（完了）と `K0`〜`K6`** でメモ化へ置き換える（③は S7 で完了済み）。
+### 3.0 全体優先順位表
 
-### 1.4 「汎用」と「Chrome を越えた」の定義（合否は §2 の値だけで判定する）
-
-**汎用**は次の 3 つが同時に成り立つこと（G 系の完了条件）。
-
-1. **描画 API 中立**: `:core` 本体が OpenGL・GLFW・Vulkan のどれにもコンパイル依存しない。GPU 実装は別モジュールで、2 つ以上（OpenGL と Vulkan）が同じ文書で同じ絵を出す。
-2. **ホスト中立**: 自前の窓・窓なしのオフスクリーン・ホストが持つ既存の GPU デバイス（Minecraft の GL コンテキスト等）の 3 通りで同じ描画コードが動き、結果はコピーなしのテクスチャハンドルで渡せる。
-3. **GPU なしでも同じ絵**: ソフトウェア描画との画素一致（現行の不変条件）を、増えた GPU 実装すべてに課す。
-
-**Chrome を越えた**は次の 4 条件（B 系の完了条件）。JavaScript は対象外（スコープは HTML/CSS＋Java API の組み込み UI エンジン）で、仕様の網羅率で Chrome を上回ることは目標にしない。
-
-| 条件 | 合否線 | 現在（§2） |
-| :-- | :-- | :-- |
-| **a. 同範囲比較で全行 1.0x 以下** | §2 の Chrome 列がある全行で `:core` ÷ Chrome ≤ `1.0`（ばらつき ±15% を超えて負けている行が 0） | 負け: `child` varied `2.45x` / large `1.75x`（C8）・コールド起動 showcase `1.8x`・幅変更 styleLayout mean `1.6x`（p50 `1.07x` は互角）・保持ヒープ varied `1.55x` / large `2.0x`。勝ち: それ以外の全行（`0.045x`〜`0.88x`・入力 → 表示 0 フレーム） |
-| **b. 全シナリオが 144Hz 予算内** | §2 の全行が `6.94 ms` 以下（Chrome が落とすフレームを落とさない） | ❌ **成り立たない**（2026-11-23 再計測）: varied-2000 `fontsize` は実書体でワーカー数に依らず超過（1 本 `21.75`・4 本 `10.76`・8 本 `10.72 ms`。11-18 の B11 後は 4 本以上で予算内だった → C8）。実文書の `open` も `voidwave.html` `8.74 ms` で超過（`media_test.html` は `6.48 ms` で予算内に）→ B13 |
-| **c. Chrome が構造上できないこと** | ①同一プロセス・コピーなしで任意の GPU API のホストへ埋め込み ②入力を受けたフレームで表示（遅延 0 フレーム）③CPU / GPU 各実装の画素一致による決定的なヘッドレス描画 ④2D と 3D の同一パイプライン合成（X3） | ①は GL 共有コンテキストと Vulkan ホストデバイス（A14 完了。`HostGpu`。Minecraft 本体への組み込みは G5）②0 フレーム実証済み（`InputToDisplayLatencyTest`）③CPU / GL / Vulkan 3 者画素一致実証済み（G3・T2b）④X3-3 まで完了（宣言的 HTML・API・入力・3 者一致。空間パネルと CSS 3D は X3-4/5） |
-| **d. 正しさを測っている** | WPT 部分集合の合格数をラチェットで固定し、§2 に載せる（Chrome 比ではなく自分の推移） | 参照画像比較の部分集合 `260` 組（flexbox 120・grid 80・text 60）のうち `160` 組が合格（`62%`。A11 着手前は `81`）し、`WptReftestRatchetTest` が合格の組を固定。DOM 挙動テスト 34 件は従来どおり |
-
-### 1.5 単体配布の判定と品質ゲート（旧 `DISTRIBUTION_ROADMAP.md`、2026-11-17 統合）
-
-`:core` を Minecraft 依存のない純 Java の HTML/CSS 組み込み UI エンジンとして、Maven Central・GitHub Packages・スタンドアロンで配布する。
-
-| 配布レベル | 判定 | 内容 |
-| :-- | :--: | :-- |
-| **Developer Preview / Alpha**（`2.0.0-alpha`） | 🟢 即時配布可 | ゲーム内 UI・HUD・設定画面・デスクトップツールの組込レンダラーとして必要な機能（IME・動的リサイズ・Maven 設定・`core/README.md`・宣言的 UI DSL）は §4 の D0 で完了。ラチェットは全件通過 |
-| **GA**（`1.0.0`） | 🟡 §3 の D1 | 実際の公開作業（資格情報を使う Maven Central 公開・版番号の確定）が残る。コードと文書の前提は D0 で満たしている |
-
-**品質ゲート**（配布物を出す前に毎回。どれか 1 つでも赤なら出さない）:
-1. **API 純度**: `ApiBoundaryTest`・`LayerDependencyRatchetTest`・`PortabilityRatchetTest` が緑（逆方向依存 0・内部型漏洩 0）。
-2. **IME**: `compositionstart → compositionupdate → compositionend` が順にディスパッチされ、テキスト欄が更新される。未確定中は下線と候補窓用の座標（`imeCursorRect`）が得られる（`ImeCompositionTest`）。
-3. **リサイズ**: ウィンドウのリサイズでクラッシュ・GL エラーがなく、再レイアウトとヒットテストの座標が 1:1 で一致する。
-4. **成果物**: `.\gradlew.bat :core:jar :core:sourcesJar :core:javadocJar :core:generatePomFileForMavenJavaPublication` が警告なく成功する。LWJGL のネイティブは利用側が選ぶ（`compileOnly` / `runtimeOnly` 分離）。
+| 順位 | Phase | タイトル | 主な破壊・新設対象 | 完了時の定量的成果 |
+| :---: | :--- | :--- | :--- | :--- |
+| 1 | **M0** | **ロックイン解除と新ゲートの設置** | `Shortcut` 38 個・`*Verifier` 3 種・旧ラチェット 8 本を削除、出力等価性＋構造健全性ゲートへ置換 | 構成爆発 `2^38 → 1`、土台変更が可能に |
+| 2 | **M1** | **`ComputedStyle` の完全刷新** | `CssValue[207]` 全廃 → 6 グループ不変構造体 `Style` + `CssLength` 導入 | `ComputedStyle` 2,095 → ≤ 500 行、`varied-list` ヒープ 40.2 → ≤ 18 MB |
+| 3 | **M2** | **`LayoutBox` 解体と不変 `LayoutFragment`** | `LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads` 等 約 4,500 行以上を削除、`BoxNode` + `LayoutFragment` + `LayoutCache` へ置換 | `varied-list` ≤ 12 MB・`large-list` ≤ 4.5 MB、8,000 行挿入 7.89 → ≤ 1.0 ms |
+| 4 | **M3** | **フラット `DisplayItem` 廃止と `DisplayScene`** | `DisplayItem`・`FragmentPaint`・`PaintSceneDriver`・`HitTestIndex` 廃止、`DisplayScene` + L4 単方向化 | `varied-list fontsize` 10.76 → ≤ 5.0 ms（144Hz 達成）、3 者画素一致 100% |
+| 5 | **M4** | **MOD レガシーレンダラ撤去とホスト層純化** | MOD `client/renderer` 9,369 行撤去、`UiView` / `StandaloneView` を `EngineView` + `InputController` へ統合 | MOD 描画 ≤ 1,500 行、MOD 循環 5 → 0、L6 ≤ 1,200 行 |
+| 6 | **M5** | **DOM 整理・コールド起動短縮・並列/窓統合** | `DocumentArena` 二重同期解消、`SystemFonts` キャッシュ、非同期/並列・AWT 標準窓（旧 G7） | コールド起動 546 → ≤ 200 ms、1,000 行超クラス **0 個** |
+| 7 | **M6** | **品質ゲート最終固定と配布（v2.0.0 GA）** | Linux CI 完全通過、API 署名確定、Maven Central / GitHub Packages 公開 | 全クラス ≤ 600 行、グローバル mutable static = 0 |
 
 ---
 
-## 2. 現在地（KPI。2026-11-23 再計測（C9c 後に 2 回目。時間は同時の A/B を優先）。Chrome 列は 2026-11-17〜11-19 の実測を再利用。旧 2026-11-15 書体不揃い比較はアーカイブ付録 2 A2-2 へ退避）
+### 3.1 Phase M0: ロックイン解除と新ゲートの設置（破壊的手術の足場）
 
-Chrome は 157（`trace.js` の 3 回中央値）。`:core` の実フレームは `FineProfileMain`（§5、Windows / JDK 21 / 800×600）。「null」はレイアウト＋表示リストのみ、「GL」は GL 送出込み。
+M1〜M4 でデータ構造を壊して作り直す前に、「旧構造（可変 `LayoutBox`・`Shortcut` 38 個・多段キャッシュの内部カウンタ）を固定して変更を阻んでいる番人」をすべて撤去し、「外から見た正しさ・性能・コード健全性」だけを見張る新ゲートに張り替える。
 
-| シナリオ | `:core`（最新） | 前回 | Chrome | 判定 |
-| :-- | :--: | :--: | :--: | :--: |
-| **同じ書体（Arial）での Chrome 比較**（A2。`* { font-family: Arial !important; }`、GL・3 回中央値。全表は `BENCHMARK.md`） | varied-2000: `inherited` `3.24 ms`・`child` `6.47`・`fontsize` **`10.89`**・`scroll` `0.092`／large-500: `hover` `0.138`・`style` `0.162`／large-2000: `text` `0.416`・`hover` `0.222`・`scroll` `0.078`・`child` `2.31`・`fontsize` `3.83`／showcase: `scroll` `0.0089`・`hover` `0.234`・`text` `0.231`・`style` `0.229`・`open` `4.00`・CPU `hover` `1.36` | 同日午前: `3.18`・`6.31`・`10.74`・`0.097`／`0.157`・`0.168`／`0.331`・`0.202`・`0.083`・`2.35`・`3.63`／`0.0084`・`0.214`・`0.235`・`0.227`・`3.94`・`1.45` | 実書体: `4.09`・`2.58`・`39.35`・`0.615`／`0.486`・`0.453`／`1.29`・`0.738`・`0.502`・`1.34`・`11.96`／`0.186`・`1.24`・`1.07`・`0.856`・`5.30`・soft `1.64` | ❌ 負ける行が出た: `child` は varied `2.45x`・large `1.75x`（前回は互角）。✅ 他は勝ち（`0.045x`〜`0.88x`。varied `inherited` `0.78x`・CPU `hover` は soft `1.64` 比 `0.88x`）。❌ varied-2000 `fontsize` `10.74 ms`（`0.27x` だが 144Hz 予算超え）。原因は C1 の断片経路への一本化〔`602b0d5f`〕→ §3 C8。2 回目の再測定は 1 回ずつで `±10〜15%` の揺れの範囲。**K4c（K4・K4b 後。2026-11-23・GL・Arial・各 3 回中央値。機械が前回より遅く絶対値は `+10〜60%` 高い行がある〔`fontsize`・`open`・CPU `hover`。対 K3 の交互 A/B〔GL・Arial〕では `fontsize` large-2000 `-0.5%`・varied-2000 `-1.5%`・CPU `hover` `+1.0%`・`style` `-2.5%`・`inherited` `+3.0%` で退行なし〕）: varied-2000 `inherited` `3.53`・`child` **`2.45`**〔前回 `6.47`〕・`fontsize` `14.72`・`scroll` `0.090`／large-500 `hover` `0.139`・`style` `0.180`／large-2000 `text` **`0.286`**〔前回 `0.416`〕・`hover` `0.183`・`scroll` `0.076`・`child` **`1.30`**〔前回 `2.31`〕・`fontsize` `5.95`／showcase `scroll` `0.0092`・`hover` `0.238`・`text` `0.254`・`style` `0.255`・`open` `5.64`・CPU `hover` `2.22`。Chrome 比: `child` varied `0.95x`・large `0.97x`〔前回 `2.45x`・`1.75x` の負けが互角へ〕・`inherited` `0.86x`・large-2000 `text` `0.22x`・`hover` `0.25x`。❌ varied-2000 `fontsize` `14.72 ms` は 144Hz 予算超え〔Chrome 比 `0.37x`〕、`open` `1.06x`・CPU `hover` `1.35x` は機械が遅い回の値で A/B では退行なし**。**K4 後（2026-11-23・対 `HEAD`〔K3〕の交互 A/B・null・中央値）: `child` は large-2000 `2.39 → 1.15 ms`〔`-52%`〕・varied-2000 `5.89 → 2.31 ms`〔`-61%`〕で、Chrome 比の負け `child`〔GL・上の `6.47`/`2.31 ms` 対 Chrome `2.58`/`1.34`〕は縮む見込み。GL・Arial 条件での再測定は未実施**。ただし large-2000 の `text`/`hover` は交互 A/B で旧比 `+15%`/`+7%`（3 回とも）→ C10
-| **ワーカー数への依存**（A3・B11 後。`fontsize`・GL・3 回中央値。呼び出し側込み `N+1` 本） | varied-2000 Arial: 1 本 `21.75 ms`・2 本 `12.62`・3 本 `11.40`・4 本 `10.76`・8 本 `10.72`・既定 23 本 `10.74`／簡易書体・large-2000 は未再計測 | B11 後（11-18）: 1 本 `17.20`・2 本 `8.70`・3 本 `7.32`・4 本 `6.71`・8 本 `5.86`・既定 `5.72`／簡易書体: `16.65`・`7.96`・`6.70`・`5.91`・`5.15`・`5.61`／large-2000 簡易 既定 `2.64` | `39.35`（実書体） | ❌ varied-2000 は**どのワーカー数でも 144Hz 予算超え**（`10.7 ms` で 4 本以上は頭打ち）→ C8。2026-11-23 後半の再測定は機械が遅く〔旧 `ea4dc204` でも 4 本 `14.3`・8 本 `15.3 ms`。前半は同じコードで `10.7`〕、現在は旧比 `+4〜5%` で退行なし（交互 A/B 3 回）。絶対値は前半の値を残す
-| **実文書 5 本**（2026-11-23 再計測・GL・実書体・3 回中央値・1,000 フレーム） | `hover`: surface `0.782 ms`（`150 KB`）・voidwave `0.942`（`251 KB`）・animation `0.807`（`116 KB`）／`scroll`: surface `0.180`（`3.3 KB`）・voidwave `0.442`（`86 KB`）／`text`: voidwave `0.589`（`65 KB`）・animation `0.484`（`20 KB`）・surface `0.289`・media `0.349`・machine `0.197`／`open`: voidwave `9.15`・他 `1.70〜6.47` | 同日午前: `hover` surface `0.788`（`150 KB`）・voidwave `0.968`（`251 KB`）・animation `0.788`（`116 KB`）／`scroll` surface `0.167`・voidwave `0.426`／`text` voidwave `0.721`（`68 KB`）・animation `0.427`・surface `0.333`・media `0.408`・machine `0.190`／`open` voidwave `8.74`・media `6.48` | `hover` `3.46`・`2.76`・`2.56`／`scroll` `0.852`・`2.06`／`text` `0.927`・`2.42`・`1.38`・`0.972`・`0.577`／`open` `5.90`・`13.70`・`6.30`・（media 不可）・`3.50` | ✅ 全比較行で Chrome 比 `0.20x`〜`0.64x`（`text` voidwave `0.78x → 0.64x` が最大の行。surface `0.24 → 0.21x`・media `0.42 → 0.36x`）。✅ `hover` の確保は K4e で 3 本とも B12 の合否線 `100 KB` 以下〔前は voidwave `251`・surface `150`・animation `116 KB`。`scroll`/`text` は `100 KB` 以下〕。**K4b 後〔索引の運び〕: voidwave `hover` `250 → 110 KB`〔時間 `0.888 → 0.797 ms`〕・surface `-4.8%`・animation `-6.9%`。K4c の GL 再測定〔Arial・3 回中央値〕: `hover` の確保 voidwave `110 KB`・surface `117 KB`〔前回 `150`〕・animation **`61 KB`**〔前回 `116`。合否線 `100 KB` 達成〕、時間 voidwave `1.02`・surface `0.73`・animation `0.73 ms`。voidwave・surface が `100 KB` 未達だった〔→ K4e で解消〕。`scroll` voidwave `86 KB`・`text` `65 KB`**。**K4e 後〔姿勢の値での引き継ぎ。2026-11-23・GL・Arial・2,000 フレーム〕: `hover` の確保 voidwave **`75.6 KB`**〔前回 `110`〕・surface **`86.6`**〔`117`〕・animation **`39.2`**〔`61`〕で 3 本とも合否線 `100 KB` 達成。時間 A/B〔対 `HEAD`・GL・3,000 フレーム・3 回中央値〕: voidwave `0.789 → 0.716 ms`〔`-9.3%`〕・surface `0.624 → 0.491`〔`-21.4%`〕・animation `0.616 → 0.552`〔`-10.4%`〕。`scroll` voidwave `85.5 KB`・`text` `63.7 KB` は不変**。⚠️ `open` は voidwave `9.15 ms` のみ予算超え（media `6.47` は予算内）→ B13
-| **回帰ゲート**（A1・T2。`:core:costGate`・新 JVM・1 スレッド・**56 シナリオ**、2026-11-23 K3 後） | 確保/フレーム: showcase `hover` `8,847 B`・`text` `9,984 B`・`style` `13,252 B`・`resizeexact` `238,426 B`・`scroll` `624 B`・`idle` `80 B`・`open` `3,418,652 B`／large-list `hover` `2,394 B`・**`child` `34,338 B`**（配置 `6,600`/500f・断片 miss `6,000`/1,200f〔増幅率 **`2.5`**〕）・**varied-list-500 `child` `34,645 B`**（配置 `6,600`/500f・断片 miss `6,000`/1,200f〔増幅率 **`2.5`**〕）／実文書（描画なし）: voidwave `hover` `25,401 B`・`scroll` `1,015 B`・`text` `15,325 B`・`open` `9,613,411 B`・surface `text` `12,084 B`・animation `text` `9,591 B`・item_block `text` `9,816 B`・guidebook `text` `7,230 B`（`layoutsSkipped 12,000`・配置 `4,800`/500f）／実文書（`cpu`）: voidwave `hover` `15,786,403 B`・surface `hover` `279,657 B`・item_block `text` `119,323 B` | — | — | ✅ 56 シナリオ通過・更新（`COSTGATE OK`・197 秒）。**K3 で `large-list child`・`varied-list-500 child` の配置増幅率 `2.75 ≤ 10` を達成。K4 で断片の増幅率 `254`/`464 → 2.5` も達成し、`memoCeil` の行が 0 になり〔`child` の確保 `40,291 → 34,338 B`・`45,862 → 34,645 B`〕、基準値はこの 2 行だけを更新**。ただし costGate は描画なしで、GL 込みの実フレームの確保は実文書 `hover` で増えている（上の行）
-| **Vulkan vs GL 実フレーム**（G3・3 回中央値） | large-2000 `hover`/`scroll`/`child`: **`0.2457` / `0.0733` / `2.4474 ms`**／showcase `scroll`/`hover`: **`0.0093` / `0.2261 ms`**（2 回目の再測定。前回 `0.2348` / `0.0810` / `2.3873`・`0.0089` / `0.2234`。揺れの範囲） | 同条件 GL（簡易書体）: large `0.1954` / `0.0830` / `2.2591`／showcase `0.0091` / `0.2224`（前回 Vk: large `0.0692` / `0.0717` / `1.1055`・showcase `0.0082` / `0.1935`） | large `0.73` / `0.54` / `1.98`／showcase `0.18` / `1.10` | ✅ `GPUCOVERAGE 1.0000`。⚠️ GL 比 `0.98x`〜`1.20x`（large `hover` `1.20x`・他は同等。前回は `0.64x`〜`1.00x`）。Vulkan 検証エラーは未確認。絶対値の悪化は GL と同じ原因 → C8
-| **GPU 被覆率**（G0・`FineProfileMain gl` の `GPUCOVERAGE`） | showcase `hover`・large/varied-list-2000・再計測した実文書 4 本〔surface・voidwave・media・machine〕: **`1.0000`**／animation_test: **`0.9994`**（楕円変形枠 `BORDER` の拒否のみ）。同梱 9 本のうち残る 4 本は未再計測（前回 `98.1%` 以上） | — | Chrome は GPU ラスタ網羅 | ✅ 全実文書が `>= 98%`（B4 の着手条件 `< 95%` 不成立で終了） |
-| **showcase 幅変更**（`resizeexact`、GL） | スタイル＋レイアウト（`restyle`+`measure`+`place`）: mean `0.129 ms` / p50 ≈`0.088 ms`／レイアウトのみ: mean `0.125 ms`／フレーム全体: `null 0.414 ms` (`p50 0.369`, `230 KB`)・GL `0.427 ms` (`p50 0.389`, `230 KB`)。内訳は display-list が `0.273 ms`（66%）。**K3 後の A/B（`null`・3 回中央値）**: `0.4781 → 0.5114 ms`（**`+7.0%`**、撤退条件 `+10%` 以内） | 前回: mean `0.163` / p50 `0.106`・レイアウトのみ mean `0.156`・全体 `null 0.460`(`403 KB`) / GL `0.480`(`404 KB`) | styleLayout `0.082`（ペイント含まず） | ⚠️ styleLayout p50 `1.07x`（互角）・mean `1.6x`。✅ フレーム全体 `< 0.50 ms`・確保は前回比 `-43%`・K3 の位置解決追加後も A/B `+7.0%`（±10% 以内）
-| **コールド起動（プロセス → 初回フレーム）**（B1①・B6、`ColdStartMain`） | JDK 21 素: showcase `546 ms`（5 回中央値。範囲 `531〜578`。`open` 単体 `474 ms`）／large-2000・`EnginePrewarm`・JDK 27＋AOT は未再計測（前回: large-2000 `594`・Prewarm 後 `137 / 187`・AOT `220 / 249 ms`）（2026-11-23 後半の再測定も不変: showcase `531〜549 ms`・中央値 `545`） | — | `304 / 302 ms`（`cold.js`） | ❌ 素の起動は showcase `1.8x` の負け。✅ AOT キャッシュは前回の実測で Chrome 比 `0.72x / 0.84x`（今回未再計測）
-| **入力 → 表示の遅延**（B1③。showcase `:hover`） | **0 フレーム**: 入力を渡した同じ `frame()` が描画（`InputToDisplayLatencyTest`）（2026-11-23 再確認: `InputToDisplayLatencyTest` 緑） | — | 約 **1 フレーム**（中央値 `14.7 ms`） | ✅ Chrome が構造上できない 0 フレーム遅延を達成 |
-| **ヒープ保持**（2026-11-23、`MemFootprintMain`。large は `large-list-2000`） | varied `40.2` / large `10.0` / showcase `2.8 MB`（後半の再測定も不変: `40.2` / `10.0` / `2.8 MB`。C9 はヒープを増やしていない） | 2026-11-19 A7 後: `37.0` / `8.8` / `2.9 MB` | Private `+26 MB`（varied）/ `+5 MB`（large） | ⚠️ varied `~1.55x`・large `~2.0x`（前回 `1.4x` / `1.76x`。+9% / +14% は C1 以降の断片の記憶の分とみられる〔未切り分け〕。B5 の着手条件は継続・§6-36・48）
-| **WPT 参照画像比較**（B1⑤・A11、`WptReftestRatchetTest`） | 合格 **`160 / 260`**（flexbox `106 / 120`・grid `23 / 80`・text `31 / 60`）。不一致 100 の内訳: 未実装 `grid-lanes` `44`・text `29`・flexbox `14`・grid `13` | A11 前 `81 / 260` | Chrome は 100% が前提 | ℹ️ 2026-11-23 再実行も `160 / 260` で不変。ラチェットで固定（自分の推移を監視・条件 d）（C9c 後も `160 / 260`）
-| **JMH `PipelineBench`**（showcase、`layoutWidthChange` / `fullLayoutWarm` / `hoverToggle` / `restyleInherited`） | `0.672` / `0.671` / `0.003` / `0.036 ms`（`738 KB` / `738 KB` / `96 B` / `5.7 KB`） | 2026-11-19: `0.934` / `0.926` / `0.005` / `0.029` | — | ✅ 全項目 1 ms 未満 |。後半の再測定は機械が遅く絶対値は比べられない〔旧版も `0.95〜1.04 ms`〕ので交互 A/B: `fullLayoutWarm` **`-8%`**〔`1.04/1.01 → 0.955/0.930`〕・`layoutWidthChange`・`hoverToggle` 同等・`restyleInherited` **`+6%`**〔`0.053/0.049 → 0.057/0.052`。記憶のカウンタの費用〕
-| **記憶の効き具合（memo hit/miss）**（2026-11-23 新設。`FineProfileMain … null` の `MEMO` 行。1 フレームあたり。変更元＝そのシナリオで実際に変わる箱の数） | `hover` large-2000: style 変更 `2`→断片 miss `8.9`・配置 skip `0`／`text` large-2000: 配置 skip `1,999`/`2,006`・断片 hit `1,999`・miss `8.9`／`child` large-2000（K2 前）: 測定 計算 `5.9`/`2,010`・配置 **shift `1,751`**・断片 hit `249`・**miss `3,510`**（変更元 2）→ **K3 後 `costGate`（`large-list child` / `varied-list-500 child`）**: 配置 **`2.75`/f**（`skip 1,200`/f、shift 削除）→ **K4 後 断片 miss `5.0`/f（増幅率 `2.5`。K4 前 `507`/f・`928`/f）**／`inherited` large-2000: style 変更 `4,003`→断片 miss `4,007`（比 `1.0`）／`fontsize` varied-2000: 測定 計算 `7,360`・断片 miss `7,357`（比 `1.0`）／**実文書 `text`（K2 後）**: voidwave 配置 `9`/f〔`skip 13`/f〕・showcase 配置 `8`/f・surface 配置 `5`/f（変更元 1）／`scroll`・`idle`: 全段 `≤ 0.5` | — | — | ✅ K3 で `child` の**配置増幅率が `2.75`**（`≤ 10` 達成、`shiftSubtree` 削除）。✅ **K4 で `child` の断片の増幅率も `2.5`**（`≤ 10` 達成。窓の外で平行移動しただけの行を O(1) で再利用）。✅ `hover`・`text`・`scroll` の配置も `≤ 9`。✅ **`machine_ui scroll` の増幅率は K5 第 1 段で `28 → ≤ 1`**〔`repositionLayout` が配置の鍵で使い回す。配置 `1,199`/1,200 フレーム〕。これで残る増幅率の違反は無い。ℹ️ `inherited`・`fontsize` は増幅率 `1.0`（全箱が本当に変わる）で、問題は 1 miss あたりの時間〔display-list `0.43 → 0.75 µs`〕→ §4 K4b。⚠️ K4 の A/B（対 `HEAD`・3〜7 回中央値・null）: `inherited` varied-2000 `+2.3%`〔署名の分割と記憶の欄の追加の費用。合否線 `+3%` 内〕・`fontsize` large-list `+1.7%`〔同〕 |
-| **`text` 変更のパイプライン時間（配置＋表示リスト。A/B）**（2026-11-23。描画なし・簡易書体・3,000 フレーム・旧 `ea4dc204` と現在を交互に 3 回ずつ・中央値。`FineProfileMain text <doc> 3000 null`） | voidwave `0.151 ms`・item_block `0.114`・media `0.100`・guidebook `0.061`・surface `0.098`・animation `0.077`・showcase `0.088`（確保は voidwave `17.7 → 14.6 KB`・guidebook `7.1 → 6.8`・media `10.8 → 10.4`、他は不変） | 旧 `ea4dc204`: `0.276`・`0.193`・`0.154`・`0.092`・`0.131`・`0.101`・`0.107` | — | ✅ 全 7 文書で改善（旧比 `0.55x`〜`0.83x`。voidwave `0.55x`・item_block `0.59x`・media `0.65x`・guidebook `0.66x`・surface `0.75x`・animation `0.76x`・showcase `0.83x`）。要因は C9a〜c の配置の保持〔memo の `placed` が `496 → 14` ほか〕。**K4 後の A/B（対 K3・null・3 回中央値）: `showcase` `hover` `-0.3%`・`text` `-4.1%`、large-2000 `text` `+2.7%`・`scroll` `-1.6%`、voidwave `hover` `-3.2%`・`text` `+3.6%`〔別の回は `+0.6%`。±4% は揺れの範囲〕、surface `hover` `+2.3%`。`child` 以外は同等で、改善は構造〔窓の外の平行移動〕の `child` だけ**。⚠️ 一方 large-list-2000 の GL 込みは旧比 `text` `+15%`（`0.362 → 0.415`）・`hover` `+7%`（`0.227 → 0.242`）で 3 回とも新が遅い → §3 C10 |
-
-**比較の注意**: Chrome の幅変更値は「`iframe` 幅を 800/799 で往復 → `getComputedStyle` ＋ `offsetHeight` の強制」の時間で、ペイント・ラスタ・合成を含まない。`:core` のフレーム全体とは比べない（以前の「12x」はこの範囲違い）。
-
----
-
-## 3. 実装の優先順位（唯一の表）
-
-順位は「効果 ÷ 工数」、Chrome 比 KPI（§2）、および **公開（D1）前に固定すべき境界・リーク・孤立化（A10・A14・S5・A13 はすべて完了。残りは D1 の公開作業）** で決める。完了条件は運用ルール 5。
-
-- **ID 体系**: **A** = 評価対策（Assessment）、**B** = Chrome 超え（Beyond、原則着手条件つき）、**C** = 作りで正しい増分（Correct by construction。パッチ → メモ化、§3.3。C0〜C3・C6・C7 は完了）、**K** = 増分カーネル（Kernel。全段を読み取り集合の鍵へ。C4・C5・C8・C9・C10 を置き換える。[`DESIGN_INCREMENTAL_KERNEL.md`](DESIGN_INCREMENTAL_KERNEL.md)）、**D** = 配布（Distribution）、**G** = 描画 API 中立化（Generality）、**S** = 構造・マイクロサービス連結・保守/拡張性（Structure）、**T** = テスト・ラチェット（Test）、**X3** = 3D 統合。
-- **観点別の A 達成目標**（`core/src/main` 481 ファイル・約 10.8 万行・`core/src/test` 433 ファイル）: ロジック = `A11`・`T3`・`K0`〜`K6`（`C0`〜`C3` は完了）／ベンチマーク = `A1`／構造 = `A13`・`S5`〜`S8`・`G5`／拡張性 = `A15`（着手条件つき。`A10`・`A14` は完了）。C 系は内部の作りの変更で公開 API に触れないので D1 の前提ではないが、C0（検証モードとラチェット）は完了済み（§4）。C1 は S7 ①（`LayoutBox.dl*` への書き戻し）を吸収するので S7 より前。公開（`D1`）の前提（`A10`・`A14`・`S5`・`A13`）はすべて完了済み（旧履歴メモ・完了済み詳細設計は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) 付録 2 A2-3/A2-4 へ退避）。
-- **C 系の最終目標（2026-11-23 確定）**: ①増分の経路が 1 本（C1・C2 で達成済み。以後はパッチを新設しない）②**増幅率〔1 フレームの再計算数 ÷ 変更元の数〕が、全段・全シナリオで `10` 以下**（§2「記憶の効き具合」）。段は style（再計算した箱）・測定（計算）・配置（placed）・断片（miss）、シナリオは §5 の `hover`・`text`・`style`・`child`・`resize`・`scroll`（実文書を含む）。**変更元はシナリオ固有の定数**: `hover` `2`・`style` `1`・`text` `1`・`child` `2`・`scroll` `0`（`0` の行は再計算数そのものが `≤ 10`）。全箱が本当に変わるシナリオ〔`inherited`・`fontsize`・`resize`〕は増幅率の対象外で、代わりに「再計算数 ≦ 変わった箱の数（style の `changed`）の `1.1` 倍」と 1 miss あたりの時間〔§4 K4b〕で見る。③**配置の記憶は `FrameOracle` で毎手検証する**〔`PlacementVerifier` / `VERIFY_PLACEMENT` は K2 で削除し、K0 のオラクルへ統合〕。④値は `FineProfileMain` の `MEMO` 行から取り、`costGate` の基準値で固定する（超えている既知の行は上限を下げる方向にだけ動かす。時間と違いばらつかない。§6-172）。**K 系の完了条件はこの値で書く。C 系の完了＝§3 の C 項目がすべて消え、合否線を満たす行だけが残った状態**。 **この目標を満たす構造は K 系**〔§3 の K0〜K6。ループを断つ 6 原則 K1〜K6 は設計書 §2〕。
-
-| 順位 | ID | 項目 | 内容 | 見込み | 状態 | 検証（合否線） |
-| :--: | :-- | :-- | :-- | :-- | :-- | :-- |
-| 1 | **K5** | **局所パッチの撤去と近道スイッチの整理**（旧 C5・S8 の一部） | 文字・属性の変更を汚れの印＋通常経路へ〔第 1・2 段で済: 文字・属性・重なり・古い位置の近道を撤去。`repositionLayout` は配置の鍵で使い回し〕。**残り**: 子の増減の局所パッチ〔`CHILD_PATCH`・`planChildPatch` など `LocalPatches` の子の部分〕を、K5b〔きれいな部分木の再利用〕のあとに撤去 | 増分の入口が 1 つになり、スクロール中の局所更新で全箱再配置が消える | 一部完了（第 1・2 段。残り: `CHILD_PATCH` と `LocalPatches` の子の部分。前提 K5b） | パッチ系スイッチ `5 → 0`〔今 1〕・`Shortcut` 近道スイッチ `29 → ≤ 24`〔今 27〕・`StaleTextPatchTest`〔済〕・`repositionLayout` で無関係箱が skip〔済〕・時間 A/B ±10%〔文字・属性は済。`child` は K5b の後〕
-| 2 | **K5b** | **変更台帳と段の状態機械**（`CHILD_PATCH`・入口別の集合・汚れ印の撤去） | DOM の変更を追記するだけの**変更台帳 1 本**〔設計書 §3.6〕へ入口をまとめ、全再計算の `STYLE`・`BOX_TREE`・`MEASURE`・`PLACE`・`PAINT` が「触れられていない部分木は辿らず、前回の結果を返す」の 1 規則で動く〔`large-list child` を通常経路へ落とすと `0.43 ms`〔patch `0.30`〕。費用は変わっていない箱を訪れること自体〕。**段取り**: L0 台帳を観測として足す〔挙動不変・取りこぼし 0〕→ L1 文字・属性〔`pendingTextNodes`・`pendingAttrNodes` 削除〕→ L2 子の増減と `BOX_TREE` の飛ばし〔`CHILD_PATCH`・`LocalPatches` 撤去〕→ L3 汚れ 3 ビット・`InvalidationLevel` の入口の切り分け→ L4 `domStructureVersion`。各段は単独で出し、足した状態欄と同数以上を消す。**新しい集合・フラグ・成立条件は足さない** | 入口が 1 つになり、全再計算が O(変更) に近づく。パッチ・入口別の集合・汚れ印が無くなる | 一部完了（第 1 段・L0・L1。次: L2 子の増減と箱の木の飛ばし） | L0: 台帳の取りこぼし 0〔乱数列〕・追記の費用 `≤ +1%`。L2: `large-list child`〔通常経路〕が時間 `≤ +10%`・確保 `≤ 2 倍`・パッチ系スイッチ `0`。全段: 状態の予算が増えない・台帳の取りこぼしの変異を全て殺す・`FrameOracle` 緑 ｜ **L2 実装済み**〔時間 `+10.0%`・`+21.6%`。§6-203〕 |
-| 3 | **K4h** | **スクロール中の窓シフトと再描画での窓外部分木 O(1) 再利用（`CatalogApp` カクツキ解消）** | ①スクロールコンテナの子の絶対 Y（`#list` の `ay` / `poy`）が `-scrollY` で動いたとき、`FragmentPaint.buildFresh` の `kidsCtxOk`（`m.y == stack.ay`）と `sameContextHeader`（`Math.round(p.y()) == m.poy`）が窓外の全カード（`CatalogApp` で 3,000 枚・`36,008` 箱）を `InkState`（`translatedOutsideWindow`）到達前に弾く欠陥を解消し、窓外で空の部分木は親が平行移動しても `InkState.outside` で O(1) 再利用する ②`UiView.rebuildWindowAtBoxFrame`（`windowShift`）で `DisplayListBuilder.memoFrameKey` が `Integer.MIN_VALUE` を返して `FragmentPaint.memos` を全消去（576px スクロールごとに `36,044` 箱全ミス・`81〜275 ms` スパイク）する問題を改め、シフト後の窓に対して既存の断片記憶を維持する ③`StandaloneView` の空初期描画（`lastOwnerCount ~ 25`）後に `wire()` で箱数が急増した初回フレームでも `lastOwnerCount` を再評価し、初回から窓付き（`windowed=true`）で構築する（無窓 `138,081` 項目・`964 ms` と次フレームの鍵不一致全消去を防止、§6-194） | 3,000 カード（36,063 箱）のスクロール・窓シフト・ホバー重畳時の `80〜700 ms` カクツキを解消 | 未着手（K4f の後） | `CatalogApp` スクロール窓シフト時の `fMiss` が新規流入カード分のみ（`< 1,500`、現状 `36,044`）・スクロール＋ホバー時の窓外カード `fHit`・`FrameOracle` 緑 |
-| 4 | **K6** | **検証の統合** | 保持ごとの検証クラス 3 つを、鍵の汎用の照合〔ヒットしたら再計算して比べる〕とオラクルへ | 検証の言語も 1 つにする | 未着手（K2 以降） | 検証クラス `3 → ≤ 1`・検証モード `2 → ≤ 1`・変異の全殺しを維持 |
-| 5 | **K0b** | **K0 の残り**（オラクルの対象拡大・時間の所有の移設） | ①~~スクロール範囲の既知の差〔§6-182〕~~ **K3 で解消済み**〔`ScrollExtentCalc` が遅延消去待ちの古い `inlineFragments` を読まないよう修正し、`FrameOracle` の既定を `GEOMETRY_AND_SCROLL_EXTENTS` へ引き上げ・`layouts` 種 1〜200 通過〕②オラクルの対象を広げる〔`-Dverify.oracle=true` の全件緑は 2026-11-24 に達成。§6-195〕〔`transition`・`animation` が落ち着いた後・ホバー／スクロール量の複製。今は `layouts` 系だけ〕③`FrameScheduler`〔リサイズの間引き・タイマーの所有をコアの外へ。今は `Clock` を通すだけで、所有は `UiView`・`UiTimers`〕④**`large-list` GL `text` の旧 `ea4dc204` 比 `+4.0%`**〔合否線 `+3%` に未達。K0 以前からの `text` の退行の残りで §6-180③。K4 の A/B〔null・large-list `text`〕では `-7.4%`。GL は未再測定〕 | ②③は K 系の前提ではない。④は時間の合否線 | 未着手 | ①~~既定引き上げ・種 1〜200 確認済み〔夜間 1〜1500 は未確認〕~~②オラクルの対象文書 `1 → 3`③実時計を読むファイルが `Clock.java` のみのまま・`UiTimers` の実時計読みなし④A/B `≤ +3%` |
-| 6 | **A1** | 回帰ゲートを毎回の CI へ（環境に依らないテストと確保量） | `build.yml` の `:core:test`（`@Tag("timing")` 除外＋フォント環境指紋）・`:core:costGate`（56 シナリオ確保量ゲート）・`full-tests.yml` の夜間 JMH 計測は導入・通過済み。残り: 夜間全テスト（`full-tests.yml`）の 7 日連続緑確認 | 退行が push 時点で自動検出される | 一部完了（`build.yml` 全段緑。残り: 夜間 7 日連続緑） | `build.yml` 10 分以内緑・近道無効化で `costGate` 赤・夜間全テスト 7 日連続緑 |
-| 7 | **T3** | 不具合を直したら固定テストを残す仕組み（回帰カタログと種の蓄積） | `regression-catalog.txt`・`RegressionCatalogTest`・夜間差分ファズ `mutation-fuzz.yml`・`MutationSeedRegressionTest` を実装し、種 1〜1500（4,500 本）の既知ずれ 0 を達成。残り: 夜間ファズの 7 日稼働確認 | 直した不具合が別の整理で戻らない | 一部完了（既知 0・機構稼働。残り: 夜間ファズ 7 日連続稼働） | `RegressionCatalogTest` 緑・§6 全不具合にテスト対応・夜間ファズ 7 日運用確認 |
-| 8 | **S6** | L5 の GPU↔CPU ピンポン実行の解体（中立 `PrimitiveEmitter` 層の抽出）。**パッケージの循環は解消済み**〔`BlendMode`・`FilterOp`・`ClipShape` を `paint.model`、GPU への出力口 `GpuSink`・`GpuClip`・`GpuCoverage`・`GpuScrollLayer` を新パッケージ `paint.port`、`CropSrc` の文字列部分を `paint`・画像部分を `CropImages`〔software〕へ。§6-134〕。**`paint.gpu`→`paint.software` の参照も 0**〔共有の供給元を `paint.resource` へ。`PaintPipelineDirectionRatchetTest` が「共有パッケージは実装を知らない・GPU と CPU は互いを参照しない」を固定。2026-11-21〕。`GpuSink` も図形・層・再生の 3 つの口へ分割済み〔`GpuLayerSink`・`GpuReplaySink`、`GpuSinkSplitTest`〕。`paint.emit`（中立 L5a の第一段: 翻訳層 7 クラス）も抽出済み。残りは実行時の往復（下。項目の走査〔`PaintSceneDriver.run` と `Painter`〕を CPU 描画器が持ち、GPU がコールバックで受ける形） | `GpuRenderBackend` が `CpuFallback.renderOnto(items, nowMs, this)` で `SoftwareRenderBackend` を駆動し、Software 側が `GpuAttempt` → `GpuSink`（312 行）へ送り返し拒否分だけ CPU `TileQueue` で描くピンポン循環（`core.paint`↔`paint.model`↔`paint.gpu`↔`paint.software` の 4 パッケージ SCC、`BoxDecorationPainter`→`CropSrc` 含む）を解体する。①`PaintResources`/`ImageProvider`/`CropSrc` と `BlendMode`/`FilterOp`/`ClipShape` を中立位置へ移設 ②`DisplayItem` 走査・幾何正規化・クリップ解決を担う中立 L5a（`core.paint.emit`）を抽出し、`SoftwareRenderBackend` と `GpuRenderBackend`（L5b）がそれぞれ単方向に消費する構造へ分離（拒否図形の CPU フォールバックも Emitter 側で単方向制御） | L5 の完全単方向マイクロサービス化、肥大 `GpuSink` の縮小、B7（描画スレッド分離）の土台確立 | 一部完了（依存の向き・循環 0 は固定済み。残り: 往復の入口 `CpuFallback.renderOnto` の反転。**B7 の着手時に行う**〔§6-137〕） | パッケージ SCC 表から `core.paint.*` が完全消滅・3 者画素一致（`GpuBaselineTest`・`VkBaselineTest`・`RealDocumentFramesTest`）・`costGate` 56 シナリオ通過・時間 KPI 退行なし（±10% 以内） |
-| 9 | **S8** | L3 の残存神クラス整理・近道スイッチ縮退（**L3 のパッケージ循環は解消済み**〔`event` を `dom.node` へ統合、`ElementTraits`・`ConstraintValidator`・`LayoutQuery`・`HostSyntax` ほかを `dom.node` へ、`CssKeywords` を `css.model` へ、`StyleSet`・`StyleStateAutomaton` を `css` へ、ノードから上の層へは `DocumentState`・`NodeServices` の口。§6-134〕。①の `kernel.compiler` の整合も、`css` から参照されていた `StyleStateAutomaton` を `css` へ移して済み） | ①`core.kernel.compiler` の配置整合（L3 相当の名前空間整理または抽象化）②`core.dom`（`InteractionState`/`HtmlNode`）が `core.css` 具象型を直接抱える構造を狭い内部 SPI（`StyleAttachment`/`SelectorService` 等）で段階切断し、L3 7 パッケージ SCC を解消 ③パッチ系の `Shortcut` スイッチの撤去は C 系で行い、ここでは残る切り分け用スイッチ（`ShortcutSwitchRatchetTest` 方針）を段階撤去し、`Bindings` 等の空 `catch` 18 件を解消、`DisplayListBuilder`（926 行）・`UiView`（2,087 行）・`ComputedStyle`（2,119 行）と `pubMut` 268 のさらなる縮退を行う | `core.*` 全体の完全 DAG 化と保守コスト（認知負荷・近道組み合わせ爆発）の大幅低減 | 未着手（S7 完了済み、S6 完了後） | `LayerDependencyRatchetTest` のパッケージ SCC が 0・`SwallowedExceptionRatchetTest` / `FileSizeRatchetTest` / `ClassShapeRatchetTest` / `ShortcutSwitchRatchetTest` の各上限引き下げ・全テストと `costGate` 緑 |
-| 10 | **B10** | 短いフレームの GPU 時間を下げる（損傷範囲の描画） | GL/Vulkan の差分パッチ領域シザー描画（`hover 0.173 → 0.105 ms`）と CPU の `planDamage` は実装済み（`GlDamageParityTest` 緑）。残り: ①`hover` のフェンス待ち（34%）と再スタイル（15%）を含む `mean < 0.10 ms` / `p50 < 0.08 ms` の詰め ②層・CPU オーバーレイ・常時アニメーション文書の全面回避 | GL `hover` `mean < 0.10`・`p50 < 0.08 ms`・CPU ラスタ時間半減 | 一部達成（残り①②） | `FineProfileMain hover showcase gl/cpu`・`GpuBaselineTest -Dgpu.baseline.exact`・`GlDamageParityTest` 緑 |
-| 11 | **A11** | WPT 参照比較の合格率向上 | 部分集合 260 組で `81 → 160`（62%、flexbox `106/120`・grid `23/80`・text `31/60`）へ到達し目標 156 を突破。残り: 未実装 `display: grid-lanes`（CSS Grid 3、44 件）を除いた実対象での合否線見直し確定と grid/text の残欠陥修正 | 条件 d（§1.4）の根拠強化・WPT 信頼性向上 | 合否線 156 達成（残り: 分母見直し・text/grid 残件） | `WptReftestRatchetTest` 緑・合格維持以上・時間 KPI 不変 |
-| 12 | **X3-4** | モード B/C（空間パネル・投影 HUD） | `LayerAtlas` を `GpuRenderBackend`（G1）に本配線して DOM サブツリーを焼き込み 3D 板へ貼付、`Raycaster3D` の UV → 2D `HitTestIndex` 転送、Layout 非経由の `DisplayItem`/変換投影同期 | 2D×3D 双方向 | 未着手 | 傾いたパネル上の `<button>` クリック発火・100+ 追従 HUD で DOM 再レイアウト 0 回 |
-| 13 | **X3-5** | モード D（CSS 3D Transforms）＋ホスト最終統合 | `Transforms.java` に `perspective`/4×4 射影行列/`preserve-3d`/`backface-visibility` を追加（`RectStream.decompose` の撤廃可否を確認）、`CoreGpuSurface` の `SCENE -> false` フォールバック解消 | CSS 3D・ホスト統合 | 未着手 | カード反転・`preserve-3d` 参照テスト・`:core` 単独と Minecraft クライアント双方の回帰 |
-| 14 | **G5** | ホスト描画の一本化 | Minecraft 側の別レンダラ（`client/renderer` 約 9,400 行）を削るため、`CoreGpuSurface` が全画面フォールバックへ落とす `<canvas>`・3D・エンティティ/アイテム/流体画像・ビットマップ書体をホストテクスチャ SPI（`GpuDevice.wrapExternal`＋`drawTexture`）で描けるようにして既定をオンへ | 機能追加が 1 箇所で済む。条件 c-① | 未着手（X3-5 の後） | Minecraft 内全画面でフォールバック 0（`CoreGpuSurfaceEligibilityTest` 空）・スクリーンショット回帰・フレーム時間従来以下 |
-| 15 | **G7** | **窓（`WindowHost`）と描画（`RenderBackend`）の直交分離・Pure Java 標準窓ホスト（144Hz Dirty-Tile 転送＋OS 標準 IME）** | ①`WindowHost` SPI を拡張し、`EnderEngine.Builder` の全設定（`Target.SOFTWARE`/`GPU`、`GpuApi.GL`/`VULKAN`/`AUTO`、フォント、リソース等）を窓へ渡して「どの窓に出すか（AWT/Swing・GLFW・カスタム）」と「何で描くか（Software・OpenGL・Vulkan）」を直交選択可能にする（`:core-glfw` の `StandaloneViewer` が `LwjglGlRenderBackend` 直結になっている密結合を解き、`PortabilityRatchetTest.GL_PACKAGE_IMPORTERS` から `StandaloneViewer` を外す）②`:core-glfw` 無し（`:core` 単体・追加ネイティブ依存ゼロ）でも `openWindow()` が動く既定ホスト（`java.desktop` `JFrame` + `BufferStrategy`、`DataBufferInt` ゼロコピー直結＋64×64 タイルラスタライザの損傷矩形のみの Dirty-Rect Blit で 144Hz 予算 `< 6.94 ms` 維持、AWT `InputMethodRequests` と `imeCursorRect()` 連携による OS 標準 IME インライン変換・候補窓追従完備）を実装（配置は `:core` の `PortabilityRatchetTest` を崩さないよう L6 `common` の明示許可または `:core-awt` モジュールを選択）③任意で FreeType 不在環境の `java.awt.Font` フォールバック SPI またはネイティブ同梱バンドルを用意し、純 Java JAR 1 つでの単体起動を可能にする | `:core` 単体（GLFW/GL 不要）で 144Hz 窓＋完全な日本語 IME が動き、GLFW 窓×Vulkan/GL/Software も自由選択可能になる | 未着手（K 系・S6/S8 整備の後、D1 の前） | `:core` のみのクラスパスで `openWindow()` が起動し `hover`/`text` 更新が `< 2.0 ms`（144Hz 予算内）・IME `InputMethodEvent` → `composition*` 連携緑・`:core-glfw` で `SOFTWARE`/`GL`/`VULKAN` 全バックエンド切替動作・`PortabilityRatchetTest` の `GL_PACKAGE_IMPORTERS` から `StandaloneViewer` 消滅 |
-| 16 | **A15** | 整形コンテキストの差し込み口 | `LayoutEngine.getEngine` の閉じた switch と `LayoutBox` 直接読み書きを改め、`ConstraintSpace` を受けて子の測定と配置だけを行う狭い SPI を定義して 4 エンジン（block/flex/grid/table）を載せ替える。**着手条件: A7 完了済み、外部から独自レイアウトの要件が出たとき** | 本体を変えずにレイアウトを追加可能 | 未着手（着手条件つき） | テスト内で登録した独自 `display` 値が差分・並列・3 者画素一致を通過・時間 KPI ±15% 以内 |
-| 17 | **B13** | 文書を開く処理を 1 フレームに収めるか、分割する | ウォーム `open` の `voidwave.html` `8.74 ms`（> `6.94 ms`。`media_test.html` は `6.48 ms` で予算内に）を段別に分解し、非同期 `build` 口を追加。**着手条件: 実ホストで画面を開くときのフレーム落ちが問題になったとき** | 500 要素の文書を開いてもフレームを落とさない | 未着手（着手条件つき） | `voidwave.html` の `open` で呼び出しスレッドの 1 フレームが `6.94 ms` 以下・同期 `open` と全画素一致 |
-| 18 | **B14** | 全箱再構築時（`varied-list-2000 fontsize`）の表示リスト並列構築と `DocumentArena.grow` バルクコピー化 | ①§1.4 条件 b で `varied-list-2000 fontsize`（実書体 Arial）が 4 スレッド以上で `10.72〜10.76 ms`（> `6.94 ms`）と頭打ちになる主因である単一スレッドの `FragmentPaint` 全箱再構築（7,357 miss）を、大リスト子のチャンク分割＋`LayoutTaskPool` 並列断片構築へ拡張する ②`DocumentArena.grow()` での `OffHeapColumns` 要素単位ループコピーを `ByteBuffer.put` バルク転送化し、大規模 DOM 構築時の再確保コストを下げる。**着手条件: K4h・K5 完了後、2,000 行超の全体 `fontsize` 変更または大規模 DOM 初期構築を 144Hz 予算内に収める要件が出たとき** | §1.4 条件 b（`varied-list-2000 fontsize < 6.94 ms`）の達成と大規模 DOM 拡張の高速化 | 未着手（着手条件つき） | `FineProfileMain fontsize varied 2000 gl`（4 スレッド）が `6.94 ms` 以下・単一スレッドと `DisplayItem` 列が完全一致・`costGate` 緑 |
-| 19 | **B5** | 保持ヒープを Chrome 以下へ | `LayoutBox` 疎欄の `LayoutArena` 化等を要し、見積もり上は効果限定的（§6-48）。**着手条件: `1.1x` 超 → 成立済み（見送り寄り）** | large `8.8 → 5.0 MB` 以下 | 未着手（見送り寄り） | `MemFootprintMain` で Chrome 比 `1.0x` 以下・時間 KPI 悪化なし |
-| 20 | **B6** | コールド起動の短縮（ImGui 並みの即起動 `< 150 ms`：フォントオンデマンド解決・目録キャッシュ＋窓の先行生成＋JVM AOT/AppCDS） | ①`SystemFonts.scan` が初回に OS の書体フォルダ全件（Windows で約 500 ファイル・`150〜300 ms`）を走査するのを改め、既定・総称ファミリ（`Segoe UI` / `Noto Sans JP` / `Meiryo` / `Arial` 等）の既知ファイル直開きによるオンデマンド解決（`~2 ms`）＋未知ファミリ要求時の遅延走査＋書体目録（ファイル名・更新日時 → ファミリ名・太さ）のディスクキャッシュ（2 回目以降 `< 1 ms`）へ移行 ②窓（GLFW / AWT）の生成をメインスレッド先頭で行いつつ裏で `EnginePrewarm`・文書解析を並走させて体感の窓出現を `< 80 ms` へ短縮 ③JDK 27＋AOT キャッシュ（JEP 483、showcase `482 → 220 ms`・large `575 → 249 ms` 実証済み）および JDK 21 標準 AppCDS の実ホスト・単体配布への組込判断 | プロセス起動 → 初回フレーム `< 150〜200 ms`（窓出現 `< 80 ms`、Chrome `304 ms` 以下・ImGui 並みの体感即起動） | AOT 計測達成・①②未着手（G7 と連携） | `ColdStartMain showcase`（実書体込み）の `COLDPROC` が素の JDK 21 で `< 250 ms`・AOT/AppCDS 併用で `< 150 ms`・`SystemFontsTest` 全件緑 |
-| 21 | **B7** | 描画スレッドの分離 | 文書側（L1〜L4）と描画側（L5b）を不変フレーム PDU で切り、ホスト論理スレッドの停止中でもスクロール・GPU アニメを進め続ける。**着手条件: 実ホストで論理側 1 フレーム超が遅延計測に出たとき** | 重い文書でも条件 c-② を維持 | 未着手（着手条件つき・S6 前提。S7 完了済み） | 論理側に 50 ms 停止を注入してもスクロール/アニメ間隔不変・単一スレッド時と画素一致 |
-| 22 | **D1** | GA 公開（Maven Central / GitHub Packages） | §1.5 の品質ゲートを Linux（`scripts/ci-linux.ps1`）で通し、資格情報で公開・版数 `1.0.0` を確定する（外向き不可逆操作のため利用者判断後） | 単体利用者が依存 1 行で使える | 未着手（前提 A10・A14 は完了。資格情報と版数の判断待ち） | §1.5 品質ゲート 4 つ緑・公開成果物から `core/README.md` クイックスタートが動作 |
-| 23 | **G6** | 追加デバイス（WebGPU / Metal / D3D12）と AWT・ネイティブ依存の整理 | `wgpu-native` 等による追加バックエンドと `AwtImageDecoder` の純 Java 復号器置換。**着手条件: WebGPU/Android/非 AWT 環境の要件出現、または最低 Java ≥ 22 引き上げ時** | 対応環境の拡大 | 未着手（着手条件つき） | 追加デバイスで 3 者画素一致・`PortabilityRatchetTest.ALLOWED` から `AwtImageDecoder` 消滅 |
-
-### 3.1 残作業の設計要点（S5〜S8: マイクロサービス的単方向連結と保守・拡張性）
-
-2026-11-20 構造監査で判明した循環・逆流・静的共有状態は、次の順序で公開 API 破壊と性能退行を起こさずに解消する（完了済みの X3-0〜X3-3 / G0〜G4 の事前設計記録は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) 付録 2 A2-4）。
-
-1. **S4（完了）**: `PackedLengths` の弱参照スロット化と `AtomTable` の上限監視（§4）。
-2. **A13（面単位文脈の徹底。完了、§4）**: ホストが差し込む値は、面（`EngineSurface` / `UiView`）が持つ不変の `HostServices`・`ContextFlags` へ移し、`LayoutTaskPool` のワーカーへは呼び出したスレッドの文脈を自動で引き継ぐ。JVM 内の複数面の独立稼働が成り立つ。`Shortcut`（結果を変えない近道）はプロセス全体のまま（§6-132）。
-3. **S5 → S6 → S8（SCC 3 系統の段階解体）**:
-   - **S5（完了、§4。ゲート設置＋L2/モジュール分離）**: `LayerDependencyRatchetTest` にパッケージ単位 SCC 検出（既知凍結表付き）を足して増加を阻止したうえで、L2 循環（`ImageDecoder` SPI 化、`ColrV1Painter` の描画口分離）・`:core` 内 `client.template` のルート側移設・`Scene3DDomSync` の `core.dom` 外移設・未使用ワイルドカード 122 件除去を先行完了させる。
-   - **S6（L5 の単方向パイプライン化）**: `GpuRenderBackend ↔ SoftwareRenderBackend` のピンポン往復を解き、L5a（中立 `PrimitiveEmitter`: `DisplayItem` 走査・幾何/クリップ/アニメーション解決）→ L5b（`GpuBackend` / `SoftwareBackend`）の単方向データフローへ改める。GPU が拒否した図形は L5a が単方向で CPU ラスタ列へ振り分け、`GpuSink` への逆戻り呼び出しを廃止する。
-   - **S8（L3 循環解体と肥大クラス分割）**: `core.kernel.compiler` の L3 整合を付けた後、`core.dom`（`InteractionState` / `HtmlNode`）が抱える `core.css` 具象参照を狭い内部 SPI へ反転させ、L3 の 7 パッケージ SCC を解消する。
-4. **S7（完了、§4）**: `LayoutBox.{dlStart, dlEnd, dlOrder, paintCulled, movingMemoEpoch, movingMemoResult}`・`clearDlSlice()`・`withPaintBounds()` を撤去し `PaintOrder` 走査スタック＋`PaintBounds` へ置換、L5 CSS 値パースを `css.TextStroke` へ移設〔S7 ②・済〕、`HtmlNode.{interactionOwner, interactionFlags}` を廃して `DocumentArena.NodeSlots`＋`VirtualNodeSlots` へ分離、フレーム境界の `PaintOffsets.snapshot()`・`FrozenItemList`・`PaintFrame` PDU 契約を固定。
-
-### 3.2 残作業の設計要点（X3-4/X3-5・G5/G6/G7・B 系）
-
-- **RHI 7 原則の維持（G5・G6。A14 は完了）**: `core.kernel.gpu.rhi.GpuDevice` は ①パス/バッチ粒度 ②明示状態（GL グローバル状態非依存）③左上原点・事前乗算アルファ統一 ④能力分岐のシェーダーマクロ隔離 ⑤3 面フレームリング ⑥窓/オフスクリーン/ホスト採用（`HostGpu`）の 3 系統 ⑦単一描画スレッドを不変条件とする。Minecraft 本体側の `client/renderer` 約 9,400 行は G5 で `GpuDevice.wrapExternal`＋`drawTexture` へ一本化して撤去する。
-- **窓と描画バックエンドの直交分離・標準 Java 窓（G7）**: 「どの窓に出すか（`WindowHost`: AWT/Swing・GLFW・カスタム）」と「何で描くか（`RenderBackend`: 64×64 タイル Software・OpenGL・Vulkan）」を直交（M × N）にする。`:core-glfw` 無し（`:core` 単体）でも `openWindow()` が動くよう、JDK 標準 `java.desktop` の `JFrame` + `BufferStrategy` と `DataBufferInt` ゼロコピー直結＋損傷タイルのみの Dirty-Rect Blit を備えた標準窓ホストを提供し、CPU ラスタのまま 144Hz 予算（`< 6.94 ms`）と OS 標準 IME（`InputMethodRequests` ↔ `imeCursorRect()`）を両立させる。あわせて `:core-glfw` の `StandaloneViewer` から `LwjglGlRenderBackend` への直結を解き、GLFW 窓の上で `Target.SOFTWARE` / `GpuApi.GL` / `GpuApi.VULKAN` を自由に選べるようにする。
-- **X3-4 / X3-5 接続点**: モード B（空間パネル）は `LayerAtlas` を `GpuRenderBackend` へ本配線して `Raycaster3D` の UV を `HitTestIndex` へ転送、モード C（投影 HUD）は `M_VP` バッチ投影を `PaintSceneDriver` / `DisplayItem` セル更新へ直結し DOM 再レイアウト 0 で更新、モード D（CSS 3D）は `Transforms` の 4×4 射影行列化・`preserve-3d`・`backface-visibility` を追加する。
-- **B 系（Chrome 超え）の運用**: B 系はすべて**着手条件つき**とし、計測で条件を満たさない場合は §4 へ「検証済・見送り」として移動する（§6-24）。
-
-### 3.3 残作業の設計要点（C 系: パッチからメモ化へ）
-
-> **2026-11-23 の方針転換**: C4・C5・C8・C9・C10 は **K 系（増分カーネル。[`DESIGN_INCREMENTAL_KERNEL.md`](DESIGN_INCREMENTAL_KERNEL.md)）へ置き換えた**。以下の C 系の設計要点は経緯として残す〔C0〜C3・C6・C7 は完了〕。理由: 配置の記憶を純粋性のフラグで広げる方式は、足すたびに別の欠陥と費用が出た〔§6-174〜180〕。
-
-**用語**: **パッチ**＝前回の出力（箱の位置・表示リストの並び・描画の索引）をその場で書き換え、「この変更は他に影響しない」を手書きの退く条件で守る経路。**メモ化**＝全面と同じ関数を走らせ、部分結果を「入力の鍵 → 不変の出力」の記憶で引いて飛ばす経路。**パラメータ化**＝変わる値を項目の外の節の値として持つ（パッチではない。§1.2 原則 2）。
-
-**置き換えの表**（C0 で `patch-sites.txt` として機械可読にした）:
-
-| 層 | 現在の経路（スイッチ） | 種類 | 置き換え先 | 段 |
-| :-- | :-- | :-- | :-- | :--: |
-| L5 表示リスト | 子の増減のスライス差し込み（`CHILD_PATCH`・`ChildSlicePatch`・`ChildPatchInsertion`・`BoxMemo.sizesFollowable`/`paintedAfterItsFlow`） | パッチ | 部分木の断片の記憶の連結 | C1 |
-| L5 表示リスト | スタイル変更の箱スライス差し替え（`patchBoxes`・`cant(…)` 22 か所）・スタッキング部分木の組み直し（`STACKING_PATCH`） | パッチ（後者は全面と同じ手順で半分メモ化済み） | 同上（`StackingSubtreePatch` の「全面と同じ手順で部分木を組む」を全ての箱へ一般化） | C1 |
-| L5→L4 | `LayoutBox.{dlStart, dlEnd, dlOrder, paintCulled}` への書き戻し | パッチの副作用 | 断片が自分の範囲を持つので不要 | C1 |
-| L5 描画 | 索引の `patchIndexByDiff`/`Shift`/`Move`（`PATCH_DIFF_INDEX`・`PATCH_SHIFT_INDEX`） | パッチ | 項目の鍵 → 前回の索引の状態の照合（断片が同じ実体なら区間ごと） | C2 |
-| L5 描画 | 項目の再生（`GL_REPLAY`・`SOFT_GL_REPLAY`）・損傷範囲（`GPU_DAMAGE`・`SOFT_DAMAGE`） | メモ化（鍵が暗黙） | 明示の再生の鍵・損傷は断片の同一性の差から | C2 |
-| L5 描画 | 姿勢の使い回し（`REUSE_IDLE_POSES`）・`TEXT_SETUP_REUSE` | メモ化 | 鍵の明示と検証モード | C0 済 |
-| L4 測定 | `MeasureMemo`（`CUTOFF`・`FIT_REUSE`・`WIDTH_INDEPENDENT_REUSE`・`VIEWPORT_WIDTH_FREE_REUSE`・`BLOCK_PERCENT_FREE`・`TENTATIVE_REUSE`・`DEFINITE_LEAF_REUSE`・`SAME_PASS_REUSE`・`FLOAT_MEMO`） | メモ化（免除の判定が手書き） | 明示の鍵＋読み取り集合 | C0・C3 済 |
-| L4 配置 | 平行移動（`SHIFT`・`shiftSubtree`）・配置の記憶（`KEEP_PLACEMENTS`・`PlacementMemo`） | パッチ | 親相対の不変の結果＋位置の確定の段 | C4 |
-| L6 入口 | `LocalPatches`（`TEXT_PATCH`・`STALE_TEXT_PATCH`・`COMBINED_TEXT_PATCH`・`ATTR_PATCH`・その場の再レイアウト）・`CHANGE_STAMPS` | パッチ | 汚れの印＋通常の経路 | C5 |
-| L5/L6 | スクロールの節（`SCROLL_CONTENT_NODES`・`STICKY_IN_SCROLL_NODE`・`StickyShift`）・`PaintOffsets`〔C6 で `PaintCell` の移動欄から分離〕・`DEFER_SCROLL_LAYOUT` | パラメータ化 | 残す | — |
-| L3 | `STYLE_SHARE`・`ComputedStyle.diff` の差分メモ・`StyleStateAutomaton`・`BindingPatchTable`・`RESIZE_SKIP_REBUILD` | メモ化／前計算 | 対象外（C0 の棚卸しで鍵を確認するだけ） | — |
-
-**設計の約束**:
-
-1. **増分と全面は同じ関数**。全面＝記憶が全部外れた増分。増分の経路だけにあるコード（挿入位置の探索・後続の平行移動・祖先の高さ合わせ）は持たない。`IncrementalVsFullTest`・差分ファズが比べるのは「同じ関数の記憶あり／なし」になり、食い違いは鍵の漏れに限られる。
-2. **出力は不変、同一性が「変わっていない」の印**。記憶の出力（断片・測定の結果・配置）はその場で書き換えない（§6-20・66 のエイリアス・実体の同一性の型の不具合を避ける）。補間値・スクロール量のように毎フレーム変わる値はパラメータ化して出力の外へ出す（C6 で `PaintCell`/`DisplayItem` を完全不変にし、移動を外部 `PaintOffsets` へ出したのと同じ線引き）。
-3. **鍵は「読んだもの」**。鍵を書く人の推論（「この箱は幅に依らない」）ではなく、計算が実際に読んだ入力の記録（読み取り集合）から作る。推論で鍵を減らす最適化は、検証モードが常時見張る範囲でだけ許す。
-4. **打ち切り（cutoff）は出力の比較で行う**。子を計算し直して出力が前回と同じなら、それを読んだ親の記憶を残す（Salsa の backdating・LayoutNG の結果キャッシュと同じ考え方）。「外寸が同じなら吸収」のような、読んでいない値の不変を仮定した打ち切りは持たない（§6-117）。
-5. **確保量と時間は記憶の粒度で守る**。断片の連結は変わった部分木の祖先の兄弟の数ぶん（2,000 行のリストで子 1 つの増減なら参照 2,000 個の写し）になるので、平らな配列を毎フレーム作らず、連結した配列の作業域を使い回すか、消費者（`PaintSceneDriver`）が断片の木を直接たどる。各段の合否は §3 の行のとおり時間 ±10%・`costGate` の各行の許容内で、超えたら記憶の粒度（箱 → 断片の段数）を調整し、パッチへは戻さない。
-6. **段ごとに旧経路を消す**。新しい経路を足して旧いパッチを切り替えで残す期間は 1 項目の中だけにし、完了条件に旧経路の削除と対応する `Shortcut` の削除を含める（スイッチ数・static 欄・public static 欄のラチェットが下がる）。
-7. **他の項目との関係**: C1 は S7 ①を吸収し、S6（L5 の GPU↔CPU 分離）とは触るクラスが分かれる（C1・C2 は `DisplayListBuilder`・`PaintSceneDriver`、S6 は各描画実装）。C3 と K3 は A15（整形コンテキストの SPI。`ConstraintSpace` → 不変の結果）の前提を作る。C 系で出力が不変になると B7（描画スレッドの分離）が要るフレーム境界の不変スナップショットに近づく。
-
-**C1 の段取り（2026-11-21 の棚卸し。1 回の変更で安全に終えられる規模ではないので 4 段に分ける。各段で旧経路を消し、テストが緑のまま次へ進む）**:
-
-- **現状**: 全面の作り直しは `renderUnprofiled` → `PaintOrder.paintTasks`（平らなタスク列）→ `executeTasks` の 1 本で、箱ごとの記憶（`BoxMemo`）と部分木の保持（`Chunk`）が既にある。`LayoutBox.dl*` の書き込みは `DisplayListBuilder` 22・`ChildSlicePatch` 9・`StackingSubtreePatch` 6 か所だけ（`ChildPatchInsertion` は 0。`paint` の外にも無い）で、読む側もパッチ 3 クラスと `BoxMemo` に閉じている。
-- **C1a（済）**: 書き込み箇所の上限を `SliceWriteSiteRatchetTest` で固定（増やさない・減ったら下げる）。
-- **C1b**: `executeTasks` が出す箱ごとの範囲を、`LayoutBox` の欄ではなく `DisplayListBuilder` 所有の範囲表（描画順の添字で引く。箱 → 添字は 1 欄だけ残す）へ移す。読む側（パッチ 3 クラス・`BoxMemo`）を同時に付け替える。時間・確保は `costGate`・large-2000 `child`/`hover` で比べ、欄より遅くなるなら添字の欄を残す設計へ戻す。
-- **C1c**: スタッキング部分木の組み直し（`StackingSubtreePatch`）を一般化し、変わった箱を含む最小の部分木を全面と同じ手順で組んで断片として差し替える形を、スタイル変更（`patchBoxes`・`cant` 22 か所）へ広げる。`STACKING_PATCH`/`patchBoxes` を消す。
-- **C1d**: 子の増減（`CHILD_PATCH`・`ChildSlicePatch`・`ChildPatchInsertion`）を同じ断片の差し替えへ載せ、`BoxMemo` の退く判定と `dl*` 書き込みを消す。`SliceWriteSiteRatchetTest` の上限を 0 にする。
-- 各段の合否は §3 の C1 行（差分ファズ・`IncrementalVsFullTest`・`shortcutMatrix`・時間 ±10%・`costGate`）。
+- **削除・撤去対象**
+  1. `core/src/main/java/com/nishiyu/enderframelib/core/kernel/Shortcut.java`（38 スイッチ）および `EngineFlags.java` の近道フラグ群（呼び出し側はすべて単一の正準動作に畳む）。
+  2. 個別検証クラス 3 本：`MeasureVerifier.java`・`OwnItemsVerifier.java`・`PoseVerifier.java`。
+  3. 旧内部構造を固定しているラチェットテスト 8 本：
+     - `IncrementalStateRatchetTest`（`MeasureMemo` 41 欄・`FragmentPaint.Memo` 52 欄の上限固定）
+     - `ShortcutSwitchRatchetTest`
+     - `LayoutReadLedgerRatchetTest`
+     - `PatchSiteRatchetTest`
+     - `PaintCellRatchetTest`
+     - `SliceWriteSiteRatchetTest`
+     - `ItemDiffRatchetTest`
+     - `LayoutBoxReadOnlyFromPaintRatchetTest`
+  4. `costGate` の旧内部カウンタ `memo*`（`memoHits`/`memoCeil`）による合否判定と `shortcutMatrix` タスク。
+- **維持・新設する番人（出力等価性＋構造健全性のみ）**
+  - **維持**: `WptReftestRatchetTest`（合格 160/260 以上）・`GpuBaselineTest`・`VkBaselineTest`・`RealDocumentFramesTest`・`FrameOracle`（最初から作った独立ビューとの出力一致）・`ApiBoundaryTest`。
+  - **新設 `MemoryAndLatencyGate`**: 全再計算・差分シナリオのヒープ保持量（MB）と交互 A/B 実行時間（ms）のみを監視する。
+  - **新設 `ArchitectureHealthTest`**: 1 クラス行数上限・グローバル mutable static 数・パッケージ循環数（SCC）・`:core` 境界純度（Minecraft 非依存）を直接検査する。
+- **完了ゲート**:
+  - `Shortcut` スイッチ数 `38 → 0`。
+  - 全出力等価性テスト（WPT 160/260・3 者画素一致・`RealDocumentFramesTest`・`FrameOracle`）が緑。
 
 ---
 
-## 4. 完了済み
+### 3.2 Phase M1: `ComputedStyle` の完全刷新（型付きグループ不変構造体）
 
-> 2026-11-20 の本編整理により、各完了項目の詳細な実装ログは [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) 付録 2 A2-5 に保全し、本表には要点・効果・主な検証テストのみを記載する。
+`CssValue[207]` 文字列ラッパー配列・弱参照インターン `ConcurrentHashMap`・`Map<String, String>` 受け渡しを根絶し、ヒープ消費とスタイル解決コストを桁違いに減らす。
 
-| ID | 内容 | 効果・成果 | 主な検証テスト |
-| :-- | :-- | :-- | :-- |
-| K5b L2 | 子の増減と箱の木の飛ばし: `PartialBuild`〔`RELAYOUT` で台帳に触れられていない部分木は辿らず前回の箱を返す。辿った箱だけを `BoxTreeBuilder`・測定の印付け・配置へ〕を足し、`CHILD_PATCH`・`LocalPatches`〔`InPlaceRelayout` だけ残す〕・`Shortcut.CHILD_PATCH`・`BoxTreeBuilder` の差し込み補助・`RenderPipeline.buildDetachedBox`・`UiView.InvalidationLevel.CHILD_PATCH` を削除。`LayoutBox.replaceChildren`〔前後の同じ並びを残す〕・`ReusableTable.peek`・`ChangeLedger.touchedChildren`/`frozenNodeless`。不具合 §6-201〔`PaintStamps.mark`〕・§6-202〔兄弟結合子・`StateStyleMemo`〕を修正。`ChildPatchTest`・`WindowedDisplayListTest` の基準を「差分でない面」〔記憶の無い `DisplayListBuilder`・`FrameOracle`〕へ | **実装済み・時間の目標は未達**〔§6-203〕 |
-| K5b L1 | 文字・描画だけの属性の入口を台帳から読む: `ChangeReads`〔`texts`・`paintAttrs`〕を足し、`flushInvalidation` が凍結した台帳から導く。`pendingTextNodes`・`pendingAttrNodes`・`requestTextPatch`・`TextChanges.hasPending`・`TEXT_PATCH_MAX_NODES` を削除。`ChangeLedger` に属性名〔`detail`〕・あふれ〔個々を捨て読み手は全体を作り直す側へ〕・節を絞れない要素を足す。リスナーは水準だけ立てる | 入口の集合 2 つを削除。挙動は不変〔既存の `TextPatchTest`・`AttrPatchTest`・`FlexItemCutoffTest`・`PlacementKeepAbsoluteTest` が全て緑〕。A/B 対 L0・`text` 系 `-3.7〜+2.9%`・`hover`/`style` `+0.7%`。`costGate` 基準値の変更なし | `ChangeLedgerTest`〔台帳の単体・`ChangeReads`・乱数 12 種 × 40 手が最初から作った結果と一致・`TEXT_PATCH_HITS` で台帳が唯一の入口〕・`TextPatchTest`・`AttrPatchTest` |
-| K5b L0 | 変更台帳 `ChangeLedger` を観測として足す〔設計書 §3.6〕: `HtmlDocument` の 3 入口・`InteractionState` の汚れの付与・リサイズ/スクロール要求から追記し、`flushInvalidation` の始めに凍結。`DocumentState` に `changeLedger()`。`touches(節)` は凍結した台帳の節から祖先を辿った集合を世代ごとに 1 回だけ作る〔持ち越すフラグではない〕 | 挙動不変。観測テストの取りこぼし 0〔12 種 × 40 手〕・追記を外す変異を殺す。A/B `text` `+1.3%`・`hover` `+1.1〜+3.1%`〔A/A の揺れ `±1%`〕。追記 5〜12 件/f・凍結 O(1)・確保なし | `ChangeLedgerTest`〔台帳の単体・観測・ホバーとリサイズが台帳に届く〕・`StaticStateRatchetTest`・`IncrementalStateRatchetTest`・`costGate` |
-| K5b（第 1 段） | 全再計算の箱の木の作り直しの定数倍: `BoxTreeBuilder` の `stream`〔`fixupTable`・`wrapInlineRuns`・`flushInlineRun`〕を `CompactList.any` へ、子の集めの添字ループと子リストの先頭確保、`RenderTreeBuilder` の統計の取得を 1 回に | `CHILD_PATCH` を切った `large-list child` の確保 `317 → 90 KB`/f・時間 `0.50 → 0.43 ms`〔patch `0.30`〕。他の行の A/B は ±2% で退行なし。フラグ・状態欄の追加 0 | `ChildPatchTest`・`IncrementalVsFullTest`・`costGate`・`FileSizeRatchetTest`〔`BoxTreeBuilder` 上限据え置き〕 |
-| K5（第 2 段） | 文字の変更を再スタイルの経路へ: ①`TextChanges`〔文字の節の箱の集め方と条件。`isPatchableParent`〕②`restyleAndUpdate` が文字の節を集めて印を消し、汚れた節が残っていなければ再スタイルの走査を省く〔`InteractionState.mayHaveDirtyNodes` は O(1)〕。再スタイルの結果と合わせて `tryRelayoutInPlace(textBoxes)` で 1 回だけ測り直し、位置の指定・属性の変更は続けて既存の分岐へ③無効化の水準 `TEXT_PATCH`・`tryTextPatch`・`combinedTextPatch`・`TEXT_PATCH`/`ATTR_PATCH`/`COMBINED_TEXT_PATCH` のスイッチと `nocombinedtext` を撤去 | `LocalPatches` `349 → 269` 行・環境の切り替え `28 → 27`・パッチ系スイッチ `4 → 1`。時間 A/B〔対 `HEAD`・null・5 回中央値〕`text` 系 `-6.5〜+2%`・`hover` `-0.9%`。`costGate` 56 行は基準値そのまま緑。フラグ・状態欄の追加 0 | `TextPatchTest`〔文字＋位置・見た目・大きさの同フレーム重なり〕・`AttrPatchTest`・`FlexItemCutoffTest`〔基準側は `requestRender` で全体から作り直す〕・`PlacementKeepAbsoluteTest`〔重なりの退行を検出〕・`PatchSiteRatchetTest`・`ShortcutSwitchRatchetTest`〔上限 `27`〕 |
-| K5（第 1 段） | ①`RenderPipeline.repositionLayout`〔スクロールだけの位置の決め直し〕を `reuseMeasurements=true`・`resetPlacementsFast(root, run)` へ〔配置の鍵で使い回す。K2・K3 の鍵が効く〕 ②`STALE_TEXT_PATCH`〔Shortcut・EngineFlags・`enderframe.ui.nostaletextpatch`・`tryTextPatch` のスクロール復元と未代入の `elements` の分岐〕を撤去 | `machine_ui` `scroll`: 配置 `26,378 → 1,199`・断片 miss `33,572 → 28`〔増幅率 `28 → ≤ 1`〕・確保 `44.8 → 1.4 KB`・時間 A/B `-91%`。`LocalPatches` `386 → 349` 行・`Shortcut` `29 → 28`。フラグ・状態欄の追加 0 | `RepositionReuseTest`〔10 種 × 30 手。乱数のホイールとスクロール位置の設定のあと、画素が最初から作った結果と一致〕・`StaleTextPatchTest`・`costGate`〔`machine_ui scroll` の基準値を更新〕・`ShortcutSwitchRatchetTest`〔上限 `29 → 28`〕・`PatchSiteRatchetTest` |
-| K4f | 木を下りる状態の持ち回しの型への切り出し: `FragmentPaint` の下降状態〔箱の鎖 `stack`・子へ渡す原点 `stCx/stCy`・今の箱の絶対位置〕を `PaintDescent` へ切り出し〔読まれていなかった `stAx/stAy` は削除〕、各深さの節の木の根を親から受け渡して非スタイル属性版〔`treeAttrVer`〕を O(1) で読む〔`AttributeMap.treeTopBelow`。子の並びに載らない仮想の節・親が違う節は根まで辿る〕。子の並びの照合は `CompactList.sameAs`〔配列への `Arrays.mismatch`。0・1 個は配列なし〕 | `FragmentPaint` `789 → 776` 行・`HtmlNode` `1402 → 1398` 行。A/B〔対 `HEAD`・null・5 回中央値〕varied-list-2000 `inherited` `-0.5%`・`hover` `-0.2%`〔合否線 `-5%` 未達。§6-193〕。`costGate` 緑・全件 `test` 緑〔既知の `TextShaperInterval` を除く〕。フラグ・状態欄の追加 0 | `K4fDescentTest`〔実文書の全箱で受け渡しの根・原点が箱ごとの再計算と同じ・仮想の節が自分で根・照合が素朴な比較と一致・変異列で最初から作った結果と一致〕・`FragmentPaintC1pTest`・`K4InkBoundsProxyTest`・`PaintReadSetTest`・`FileSizeRatchetTest`・`ClassShapeRatchetTest` |
-| K4e | 姿勢の使い回しの条件を値へ: `PaintSceneDriver.resolveAt` の「前回と同じ親か」を、親の `Resolved` の参照の一致から、親から受け継ぐ値〔姿勢・不透明度・残りの不透明度・グループの鎖。グループは参照か両方空〕の一致へ〔`PoseMath.sameParentFor`。親の姿勢をそのまま共有した項目は親の補間値も持つので参照のみ〕。使い回した項目は `prevParentRes` を今の親へ更新する。姿勢の行列〔`Matrix2D`〕も前回と値が同じなら前回のものを返す〔`PoseMath.translated`・`transformed`〕。姿勢の算術を `PaintSceneDriver` から `PoseMath` へ切り出した | voidwave `hover` GL の確保 `110 → 75.6 KB`〔姿勢の作成 約 `674`/f の大半が連鎖〕・surface `117 → 86.6`・animation `61 → 39.2`。時間 A/B〔対 `HEAD`〕`-9.3%`/`-21.4%`/`-10.4%`。再生〔`replayed`〕が `4,000 → 489k`。`costGate` の CPU `hover` surface `-7.7%`・animation `-8.9%`〔基準値を更新〕。フラグ・状態欄の追加 0・`PaintSceneDriver` `949 → 926` 行 | `ParentPoseShareTest.colorOnlyParentDoesNotRebuildDescendantPoses`〔色と同じ値の変形が動く節の下 110 節で 1 フレームの姿勢の作成 `≤ 3`。修正前は `110`。`VERIFY_MEMO` の `PoseVerifier` つき〕・`sharingParentPosesDrawsTheSamePicture`・`RealDocumentFramesTest`〔3 者画素一致〕・`FileSizeRatchetTest`・`costGate` |
-| K4d | 継承だけが変わる再スタイルでの派生値の引き継ぎ: `ComputedStyle.carryDerivedFrom(previous)` を `RenderPipeline.propagationOf` から呼び、非継承のバンド〔0・1〕の値が前回と**同じ参照**のときだけ前回の `PaintOrder.StyleFacts`〔描画順の分類・`hasAnimation` を含む。`selfViewportSensitive` の費用の正体〕を共有する〔ハッシュは足切りだけ。宣言文字列の照合はしない〕。`usesViewportUnits` は再スタイルが作る時に 1 つの `byte` で持つので引き継ぎの対象外。ラチェットのため相対単位の走査を `RelativeUnitScan` へ切り出した | 新設シナリオ `inheriteduniq`〔毎フレーム新しい color〕varied-2000: 表示リスト `4.02 → 3.15 ms`〔`-21.6%`〕・派生値の再計算 `1.6M → 7k`。往復の `inherited` は元からスタイルの共有に当たり差なし〔総フレーム `±0%`〕。`ComputedStyle` `2119 → 2095` 行・メソッド `127 → 125`。フラグ・状態欄の追加 0 | `StyleFactsCarryTest`〔乱数 3,000 組で引き継いだ値＝最初から作った値・非継承の宣言 13 種のどれを変えても引き継がない・color の往復で再計算が 20 回以下〕・`KeywordMatchTest`・`ClassShapeRatchetTest`・`FileSizeRatchetTest`・`costGate` |
-| K4g | 再利用の 1 本化と状態機械の明示: ①`Memo.ink` の番兵の配列を状態機械 `InkState`〔`NOT_EMPTY`・`FREE`・`PENDING`・`UNBOUNDED`・`BOUNDED` の 5 状態。遷移は `onStore`・`resolved` の 2 つだけで、`outside` は FREE と BOUNDED だけが真〕へ。`InkBounds` は境界の計算だけ②再利用の判定を `subtreeKeySame`〔部分木の印が古い、または新しいのが窓の外で空の部分木の自身の平行移動だけ〕の 1 関数へ統合し、`translatedOutsideWindow` もそれを使う③索引の更新は `rebuildIndex` を基準、`reconcileIndex` は同じ結果を安く作る最適化として、毎手の一致をテストで固定〔統合は K6〕④状態の予算: `FragmentPaint.Memo` `52` 欄・`LayoutBox` の描画の印の状態欄 `8` をラチェットへ〔`FragmentPaint` `799 → 789` 行〕 | 判定の言語が 1 つ〔部分木の鍵＝印＋窓の外の平行移動〕・状態が名前で追える。フラグ・パッチ・近道スイッチの追加 0。対 `HEAD` 交互 A/B〔null・5〜7 回〕: large-2000 `hover` `-0.6%`・`child` `+0.3%`・varied-2000 `child` `+0.3%`・varied-500 `inherited` `-1.3%`・`costGate` 56 シナリオ通過 | `InkStateTest`〔全遷移・保守的な偽・冪等〕・`IncrementalStateRatchetTest` の `fragmentMemoFieldsOnlyShrink`・`paintStampStateFieldsOnlyShrink`・`IndexCarryAcrossShiftTest#reconciledIndexEqualsAFreshRebuildForEveryList`・`K4InkBoundsProxyTest`・`PathPredictionTest` |
-| K4c | GL 込みの再測定: `scripts/k4c-measure.ps1`〔GL・Arial・22 ケース × 3 回〕と対 K3 の交互 A/B〔GL・Arial〕で §2 の Chrome 比・合否線を確定 | `child` が Chrome 比で互角へ〔varied `2.45x → 0.95x`・large `1.75x → 0.97x`。K4〕・large-2000 `text` `0.416 → 0.286 ms`・animation `hover` の確保 `116 → 61 KB`〔合否線達成〕。未達: varied-2000 `fontsize` `14.7 ms`〔予算超え〕・voidwave/surface `hover` の確保 `110`/`117 KB`・large-2000 `child` `1.30 ms`〔GL・Arial。合否線 `1.1`〕・varied `inherited` `3.5 ms`〔合否線 `1.5` は null の `2,000 行` と指標が違い見直し〕。機械の揺れで絶対値は `+10〜60%` ずれる行があり、時間の判断は A/B だけ | `scripts/k4c-measure.ps1`・`ab-gate.ps1`〔`JAVA_TOOL_OPTIONS=-Dprofile.font=Arial`〕 |
-| K4b（一部） | ①`inherited` の位置解決を木を下りながら持ち回す〔`LayoutOrigin`。varied-2000 `inherited` `-20.9%`〕②描画側の索引の作り直しを鍵で運ぶ形へ: ①`PaintSceneDriver.rebuildIndex` が前回の索引の表を入れ替えて使い回し、構造と中身が同じ〔または静的で姿勢が同じ〕項目の姿勢・補間状態を鍵で前回の位置から今回の位置へ運ぶ〔描画上の平行移動を持つ項目・可変のリストは運ばない〕②`RetainRanges` を切り出す〔`PaintSceneDriver` `991 → 949` 行〕③フラグ・パッチ・近道スイッチの追加なし | 実文書 `hover`〔GL〕: voidwave 確保 `250 → 110 KB`・時間 `-10.2%`、surface `-4.8%`、animation `-6.9%`〔対 K4・3 回中央値〕。`costGate` cpu `hover`: surface `-12%`・animation `-23%`。`showcase`/`large-list` `hover`・`scroll` は同等 | `IndexCarryAcrossShiftTest`〔旧実装は 1 回 `25.6 KB` で赤・新実装は緑。索引の整合〕・`RealDocumentFramesTest`・`HoverPatchKeepsScrollNodeTest`・`IncrementalVsFullTest`〔姿勢の運びの検出〕・`FileSizeRatchetTest` |
-| K4 | 表示リストを窓＋変更で評価（旧 C8。窓の外の部分木の O(1) の代理〔インク境界〕）: ①窓付きの組み立て〔`cull`〕で窓の外へ省かれ断片が空になった部分木に、箱の左上からの相対の外接矩形 `InkBounds`〔`FragmentPaint.Memo.ink`。窓の判定が読む矩形〔箱・インラインの断片〕の和集合。位置指定・sticky の子孫や行に分かれた箱自身を含む部分木は作らない〕を持ち、**平行移動しただけ**で移動後も全部が窓の外なら、組み立てず記憶の断片を返す〔`translatedOutsideWindow`・`onlyPlacementChanged`。作るのは平行移動が起きたときで、組み立てごとの確保なし〕②署名を形 `shape` と親相対の位置 `pos` に分け、平行移動だけの箱は自身の印を進めず部分木の印と祖先・変わった子の記録だけ進める〔`PaintStamps.settle`・`LayoutBox.layoutPosSig`〕③**K3 の穴の修正**: 親 id の無い枠〔子の項目が絶対座標〕で親が平行移動したとき、変わった子が無いと pillar2 が子の断片を全て再利用していた〔`kidsCtxOk` に親の位置の一致を追加〕。窓付き＋位置指定の子孫の行で、窓へ入った行の項目が欠け古い位置の項目が残った | `child` の断片の増幅率 `254`/`464 → 2.5`〔miss `507`/f → `5.0`/f〕・`:core:costGate` の `memoCeil` 全解消・確保 `child` `-14.7%` / `-24.7%`・対 `HEAD` 交互 A/B 〔null・中央値〕: large-list-2000 `child` `-52%`（`2.39 → 1.15 ms`）・varied-list-2000 `child` `-61%`・varied-list-500 `child` `-27%`・`hover` `±0.5%`・`resizeexact` `+0.2%`・`inherited` varied-2000 `+2.3%`・`fontsize` large-list `+1.7%`〔7 回〕。定数倍の残りは K4b | `K4InkBoundsProxyTest`〔`insertedRowShiftsCulledRowsWithoutRebuildingThem`＝作り直し ≤ 20 箱・再利用 ≥ 200 箱、入れ子の行、窓へ入る・出る・跨ぐ 17 手 × 2、位置指定の子孫、乱数 6 種 × 40 手と窓なしの小さな文書で毎手「記憶あり＝最初から作った表示リスト」、`PaintStamps` の印の分割、`InkBounds` の境界・保守性の単体〕・`PathPredictionTest`〔`unsound 0`。窓なしの文書で空の断片の代理を使うと予測が不健全になったため、代理は窓付きに限定〕・`PaintReadSetTest`・`FragmentPaintC1pTest` |
-| K3 | 親相対の配置と位置の解決の分離（旧 C4 置換）: ①`LayoutBox.x/y`・`InlineFragment.x/y`・`firstLineBgRect`・`columnRules`・`inlineContentBottom`・`staticX/Y` を親相対（`PlacementMemo.originParent` 基準）へ統一し、全レイアウトエンジンの `arrangeChildren` を局所原点 `(pL+bL-scrollX, ...)` で駆動、`LayoutBox.x()/y()` で親鎖加算により絶対位置を解決 ②`PlacementDeps` の外部参照（`REF_CB`・`REF_ANCHOR`・`REF_STICKY`・`parentContent*`）を箱の基準絶対原点からの相対差分で照合、`ScrollExtentCalc`・`AnchorPositioning`・`BoxDecorationPainter`・`DisplayListBuilder`・`VirtualFlowState` を対応 ③削除: `shiftSubtree`・`Shortcut.SHIFT`（`enderframe.layout.noshift`）・`Shortcut.KEEP_PLACEMENTS`・`PlacementMemo.lastLayoutX/Y`・`LAYOUTS_SHIFTED`（`layoutsShifted()`） | `PlacementMemo` フィールド `13 → 11`・`LongAdder` `2 → 1`・`Shortcut` 非 GPU `30 → 29`（`patch-sites.txt` の `SHIFT`・`KEEP_PLACEMENTS` 消滅）。`:core:costGate` 56 シナリオ通過・更新: **`child` の配置増幅率 `2.75 ≤ 10`**（`memoPlaced 6,600 / 2,400`、`layoutsSkipped 298,800 → 600,000`、large `allocBytes 42,999 → 40,360 B` `-6.1%`、varied `48,477 → 45,959 B` `-5.2%`）、`showcase resizeexact` `memoPlaced 131,895 → 83,955`・`layoutsSkipped 4,804 → 7,206`、`guidebook text` `memoPlaced 4,854 → 4,800`。**A/B**〔対 `HEAD` 交互 3 回中央値〕: `showcase:resizeexact:null` `+2.2%`（`0.4887 → 0.4993 ms`、撤退条件 `+10%` 内で遅延評価不要）・`large-list:child:null` `-8.3%`（`0.4056 → 0.3720 ms`） | `K3ParentRelativeLayoutTest`・`FractionalShiftEquivalenceTest`・`ParentRelativeParityTest`・`HitTestFrameClockTest`・`MeasureMemoTest`・`IncrementalStateRatchetTest`・`ShortcutSwitchRatchetTest`・`PatchSiteRatchetTest`・`LayoutReadLedgerRatchetTest`・`FrameOracleTest`・`:core:costGate` |
-| K2 | 配置を読み取り集合の鍵へ（旧 C9 置換）: ①配置読み取りスタック上の外部参照（包含ブロック・アンカー・sticky）を `ReadKind.isInsideSubtree` で吸収し、`placeReadMask`＋不変スナップショット `PlacementDeps`（一致時は再利用で確保 0）を鍵として `PlacementMemo.tryReuseOrShift`・`resetPlacementsFast` を駆動、原子的インラインも含め再利用 ②削除: `F_PURE`・`F_KEPT_PURE`・`F_SCROLL_DEP`・`F_REL_INSET`・`levelNoCb`・`cbUp`・`scrollVersion`・`floatsAffectPlacement`・`selfContained`・`PlacementVerifier`・`VERIFY_PLACEMENT` | `PlacementMemo` フラグ `6 → 2`・インスタンス欄 `15 → 13`（付帯欄 `4 → 0`）・検証クラス `4 → 3`。スパイクで現行保持 100% 再現・誤保持 0 を確認後、本体で `:core:costGate` 56 シナリオ全行で増加 0（`showcase text` `16,800 → 9,600` [14→8/f]・`voidwave.html text` `16,800 → 10,800` [14→9/f] で `memoCeil=14` 解消、`surface_test.html text` `9,600 → 6,000` [8→5/f]・`hud_test.html text` `10,800 → 9,600` [9→8/f]・`showcase resizeexact` `136,697 → 131,895`・`surface_test.html open` `180,000 → 175,500`） | `K2PlacementKeyTest`・`PlacementKeepAbsoluteTest`・`PlacementKeepTableTest`・`PlacementKeepModuloScrollTest`・`IncrementalStateRatchetTest`・`LayoutReadLedgerRatchetTest`・`FrameOracle`・`MutationFuzz`・`:core:costGate` |
-| K1 | 読み取りの台帳: ①全 27 種〔測定入力 9＋親読取 9＋配置 9。32-bit ビット集合〕を `ReadKind` へ統一登録し、スコープ解決規則〔`isInsideSubtree`〕を集約②入口 `LayoutReads` が既存の `MeasureReads.ThreadState` 上で配置の読み取りを自動記録〔挙動・`PlacementMemo` の欄・`ThreadLocal` 数は不変〕③`core/layout` の入口外の直接読み〔スクロール・包含ブロック・アンカー・親の外寸/幾何〕を入口へ寄せ `LayoutReadLedgerRatchetTest` で固定 | 入口外の直接読みを 0 化〔スクロール `14 → 0`・包含ブロック `6 → 0`・アンカー `13 → 0`・親幾何/外寸の内部直読み `0`〕。`costGate` 56 シナリオで `memo*` 完全一致・確保量退行 0。**A/B**〔対 `HEAD` 交互 5 回・中央値〕: `large-list:hover:gl` `-1.8%`・`large-list:text:gl` `-0.2%`・`showcase:text:null` `+0.7%`・`voidwave.html:text:null` `-3.4%`・`showcase:resizeexact:null` `-0.8%`〔合否線 `≤ +2%` 達成〕 | `LayoutReadLedgerTest`・`LayoutReadLedgerRatchetTest`・`IncrementalStateRatchetTest`・`StaticStateRatchetTest`・`:core:costGate` |
-| K0 | 足場: ①`Clock`〔`core/kernel/Clock.java`。`UiView.clock`・`StandaloneView.clock(Clock)`。リサイズの間引きを手動の時計で決定的に〕を注入し、実時計を読むファイルを `17 → 1`②計器を `Kernel.stats`〔`MemoKpi` を廃止。`enderframe.kernel.stats`・既定オフ〕へ一本化③フレームのオラクル `FrameOracle`〔DOM を構造のまま複製した独立の面と箱の木を比べる。`-Dverify.oracle=true` で `MutationScenario` を使う全テストに〕④ラチェットを付帯欄〔記憶のフィールド数〕・`LongAdder` の計器・`Kernel.stats` の呼び出し箇所・テストの `sleep` へ拡張⑤`scripts/ab-gate.ps1` | 実時計を読むファイル `17 → 1`・テストの実時間 `sleep`〔リサイズ待ち 3 本〕を除去。オラクルは無効化の漏れの変異 5 形〔外の包含ブロック・スクロール版・子のスクロール・包含ブロック切り替え・純粋性の素通し〕を全て殺し、`layouts` 種 1〜1500 × 45 手で偽陽性 0。**表示に出ない既知の欠陥を 1 件発見**〔§6-182〕。**A/B**〔交互 3 回・中央値・計器オフ〕: 直前の HEAD 比 `large-list` `hover` `-5.6%`・`text` `-4.1%`〔null〕、`showcase` `text` `+3.2%`〔回ごとの揺れ `±10%` の内〕。旧 `ea4dc204` 比 GL `large-list` `hover` `+1.1%`・`text` `+4.0%`〔`text` は合否線 `+3%` に未達。K0b④〕 | `FrameOracleTest`・`ClockInjectionTest`・`IncrementalStateRatchetTest`・`MeasureReadSetTest`〔間引きを待たない〕 |
-| C9（a〜c） | 配置の記憶を純粋性の拡張で広げた: ①スクロールコンテナ〔`ScrollState.version()`・`F_SCROLL_DEP`〕②包含ブロックが部分木の内側の abs とインセット無しの relative〔`cbUp`・`ContainingBlockFlip`〕③表〔非統合・統合〕。`text` の配置し直し voidwave `496 → 14`・surface `121 → 8`・animation `73 → 8`・media `108 → 8`・item_block `146 → 8`・guidebook `43 → 4`。**以後は凍結し、K2 が鍵方式で置き換える** | `text` のパイプライン時間が全 7 文書で旧比 `0.55〜0.83x`〔交互 A/B〕・確保も減少。`transform` の包含ブロック切り替えの既存の欠陥〔HEAD でも再現〕を発見して修正 | `PlacementKeepModuloScrollTest`・`PlacementKeepAbsoluteTest`・`PlacementKeepTableTest`・`PlacementVerifierTest`・`RealDocumentFramesTest`・差分ファズ種 1〜1500・`costGate` |
-| V1 | 配置の記憶の照合モード `VERIFY_PLACEMENT`〔`PlacementVerifier`。保持した部分木を記憶なしで置き直して位置・大きさ・静的位置を比べる〕 | 保持の誤りを毎手検出。比べない欄〔断片・スクロール範囲〕は人工物の実験で決定。**無効化の漏れは検出できない**〔→ K0 のオラクル `FrameOracle`〕 | `PlacementVerifierTest`〔変異 A・F・G・素通しを検出〕・ファズ |
-| T4 | `MeasureReadSetTest` の不安定さの解消: 原因はリサイズの実時間の間引きを待たないテスト〔エンジンの不具合ではない〕。`ResizeSettle` | 並列実行でだけ落ちるテストが安定〔Linux CI 1 回で全件緑。要継続観察〕 | `MeasureReadSetTest`・`IncrementalVsFullTest`・`GoldenFrameTest` |
-| C3 | 測定記憶の鍵・cutoff・免除を「実際に読んだもの（読み取り集合）」へ統一＋C7 ③描画入力統合表: ①不変レコード `MeasureKey`（`ExternalEpochs` で `measurementEpoch`・`shapeEpoch`・書体解決器＋世代・固有サイズ解決器＋世代を保持）・`MeasureReads`（`READ_*`・`PARENT_READ_*`・スレッド状態・測定スタック一本化）・`TentativeSlots` 抽出 ②全レイアウトエンジンから子の読取出力（外寸・`contentBlockExtent`・`min-content`・上下 baseline・stretch・複数空間・非透過読取）を記録し、`parentReadStillMatches`・`extraParentReadsMatch`＋`invalidateParentOnly` の `!isOnStack(p)` 保護で cutoff と再レイアウト境界の吸収を統一、旧 `LayoutEngine.contentSizedAncestor`・`FlexLayoutEngine.cutoffSafeItem` を削除 ③`FIT_REUSE`・`WIDTH_INDEPENDENT_REUSE`・`VIEWPORT_WIDTH_FREE_REUSE`・`BLOCK_PERCENT_FREE`・empty float flow を `readMask` へ一本化 ④描画入力統合宣言表 `PaintBoxInputs.ALL` を導入し `PaintStamps`・`FragmentPaint.Memo` と `PaintReadSetTest` で全単射照合 | 検証モード `VERIFY_MEMO` で記憶漏れを機械検出できる設計が確立（`MeasureMemo` 790 行・`ClassShapeRatchetTest` `pubMut=268/setters=3/pubStatic=25/methodsOver100=7`・`FileSizeRatchetTest` 上限超過 0）。`:core:costGate` 56 シナリオ `COSTGATE OK`（`item_block_test.html text` `569,208→9,888 B` `-98.3%`/`layoutsSkipped 15,600→36,000`、`text cpu` `678,466→119,466 B` `-82.4%`、`showcase text` `10,815→10,000 B` `-7.5%`、`animation_test.html text` `10,576→9,675 B` `-8.5%`、退行 0）。`FineProfileMain` A/B（C3 前 `HEAD` `454f884d` 比）: `varied-list-2000 fontsize` GL 3 workers `11.35→11.43 ms` (`+0.7%`)、`showcase resizeexact` `null 0.418→0.427 ms` / `GL 0.394→0.394 ms`（`layout.measure` `-2.2%`）。差分ファズ種 1〜1500（4,500 回）＋`VERIFY_BOX_MEMO` 種 1〜100（300 回）ずれ 0・`:core:shortcutMatrix` レイアウト 17 構成×68 件不一致 0・`BoundedModelCheckTest`（22,620 列/88,428 手）ずれ 0・`PathPredictionTest` 不健全 0（missed `266` / hit `4,138`） | `MeasureReadSetTest`・`MeasureMemoTest`・`MeasureVerifierTest`・`WidthOnlyReuseTest`・`TentativeMeasureReuseTest`・`MeasureFuelGuardTest`・`FlexItemCutoffTest`・`FlexSameWidthRemeasureTest`・`LocalUpdateTest`・`LayoutKeyEquivalenceTest`・`ViewportWidthFreeReuseTest`・`IncrementalVsFullTest`・`PaintReadSetTest`・`PathPredictionTest`・`BoundedModelCheckTest`・`MutationSeedRegressionTest`・`FloatContainmentMemoTest`・`FontSizeRestyleMemoTest`・全 `*RatchetTest*`・`:core:mutationFuzz`・`:core:shortcutMatrix`・`:core:costGate`・全モジュール `:core:test`/`:test`/`:core-gl`/`:core-vulkan`/`:core-glfw:test` |
-
-> 古い完了行（S7 以前の C 系・S 系・A 系・B 系・T 系・R/P/Q 系・X/G 系ほか全 66 行）は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) の「付録 4」へ移した（2026-11-23）。新しい完了行は先頭へ足し、古くなったら付録 4 へ移す。
-
----
-
-## 5. 計測の手順
-
-| 目的 | コマンド |
-| :-- | :-- |
-| 実フレーム（段別・確保・パッチ命中・`LAYOUTSKIP`・`MATCHFAIL`・**`MEMO` 行＝段ごとの呼び出し・使い回し・再計算**） | `.\gradlew.bat :core:profile "-Pprofile.main=com.nishiyu.enderframelib.bench.FineProfileMain" "-Pprofile.args=<scenario> <doc> <frames> <null/cpu/gl/vk>"` |
-| 幅変更（ホストの resize 分岐と同じ経路） | `-Pprofile.args=resizeexact showcase 4000 null`（`resize` は `recomputeLayout` の直呼びで P3 の経路を通らない。`resizeframe` は壁時計の間引きで連続フレームではレイアウトされない） |
-| JMH（幅変更・フルレイアウト） | `.\gradlew.bat :core:jmh "-Pjmh.args=PipelineBench.layoutWidthChange -p doc=showcase -f 1 -wi 3 -i 5 -prof gc"` |
-| JFR | `"-Pprofile.jfr=build/prof/x.jfr"` を足し、`jfr print --events jdk.ExecutionSample` を exclusive / inclusive に集計 |
-| Chrome（幅変更・各シナリオ） | `cd core/src/bench-crossengine; node run.js chrome showcase` → `res-chrome-showcase.json` の `res.relayout.styleLayout`。`trace.js` は 1 フレームの CPU 時間（main / raster / draw） |
-| コールド JVM（新しい JVM で開く時間） | `.\gradlew.bat :core:profile "-Pprofile.main=com.nishiyu.enderframelib.bench.ColdStartMain" "-Pprofile.args=<doc>"` を JVM ごとに 5〜7 回。`open=`（解析＋初回レイアウト）と `first=`（初回の描画）を出力 |
-| テスト | `.\gradlew.bat test --rerun`（ルート＋`:core`。`PerformanceBenchmarkTest` はルート側。`:core:test` だけだと `UP-TO-DATE` で走らないので `--rerun`、途中の確認は `:core:quickTest`） |
-| 回帰ゲートの一部・近道を切って（A1・T2） | `./gradlew :core:costGate -Pcostgate.only=voidwave`（名前に含むシナリオだけ。基準値の書き換えとは併用不可）・`-Pcostgate.jvmArgs="-Dprofile.disable=DisplayListBuilder.STACKING_PATCH_ENABLED"`（テストだけの static な印を子 JVM で切る。PowerShell では `-P...` の引数全体を引用符で囲む〔囲まないと `.update` などが別の引数に分かれる〕） |
-| 記憶の増幅率（C 系の最終目標） | `./gradlew :core:costGate` が `COST` 行の `memo*` から変更元あたりの再計算数を計算して判定する（変更元: `hover` `2`・`child` `2`・`style`/`text` `1`・`scroll`/`idle` `0`）。超える既知の行は基準値の `memoCeil=N`。更新は `-Pcostgate.update`、上限を上げるときだけ `-Pcostgate.allowAmpRise` |
-| 実文書のゴールデン（T2） | `./gradlew :core:test --tests "*RealDocumentFramesTest*" -Dgolden.update=true`（表示リストとヒットテストは OS 共通の `golden/realdocs.txt`、画素は OS ごとの `realdocs-pixels-<os>.txt`。Linux は WSL の作業ディレクトリ〔`scripts/ci-linux.ps1`〕で同じコマンド） |
-
-シナリオ: `idle` `hover` `text` `style` `inherited` `fontsize` `child` `childfixed` `resize` `resize2` `resizeexact` `resizeframe` `open`。doc: `showcase` `large-list[-N]` `varied-list-N`。ウォームアップ 600 フレーム、計測 400〜4,000 フレーム。時間は ±10〜15% ばらつくので、**構造の退行はカウンタで固定する**（§4 R7）。
+- **新データモデル（`core/css/`）**
+  ```java
+  public final class Style { // 旧 ComputedStyle を置換（≤ 450 行）
+      public final InheritedStyle inherited;   // font, color, lineHeight, textAlign, direction, writingMode...
+      public final BoxGeomStyle box;           // display, position, width/height, margin/padding/border (64-bit CssLength)
+      public final VisualStyle visual;         // background, opacity, transform, clipPath, filter, boxShadow, radii
+      public final FlexGridStyle flexGrid;     // flex-*, grid-*, align-*, justify-*, gap（非使用要素は静的 DEFAULT 共有）
+      public final TableStyle table;           // border-collapse, table-layout 等（非表要素は静的 DEFAULT 共有）
+      public final RareStyle rare;             // anchor, contain, counter, animation, mask 等（非使用要素は静的 DEFAULT 共有）
+      public final CustomProperties custom;    // --* 宣言があるサブツリーのみ非 null
+  }
+  ```
+  - **長さと数値の即時解決型化**: 64-bit プリミティブ `long`（`CssLength`: 種別＋単位＋float 値、式 `calc()` のみ小さな不変式表添字）を `BoxGeomStyle` 等の `final` フィールドに直接保持し、`CssValue` ヒープオブジェクトを作らない。
+  - **O(1) 継承と共有**: カスケードで継承プロパティの上書きが無ければ、子は親の `InheritedStyle` インスタンスをそのまま参照共有する（`child.inherited == parent.inherited`）。
+  - **スタイルのプリミティブ化による `Layout` / `Paint` との契約単純化**: レイアウトと描画は `Style` から文字列を読まず（`get("position")` ゼロ）、型付きフィールド／列挙型のみを参照する。
+- **削除対象**
+  - `core/src/main/java/com/nishiyu/enderframelib/core/css/CssValue.java`（弱参照 `ConcurrentHashMap` 表）
+  - `ComputedStyle` 内の `StyleSlice` / `SLICE_POOLS` / `DIFF_MEMO` / `StyleMap` / `StyleTable` / `ObjMemo` / `CachedFace` / `CachedTextStyle`
+  - `core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java`（209 行。`Style` の型付きグループ自体が facts を兼ねるため不要）
+  - `core/src/main/java/com/nishiyu/enderframelib/core/css/PackedLengths.java`
+  - `core/src/main/java/com/nishiyu/enderframelib/core/css/TypedValueCache.java`（68 行）
+  - `core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StateStyleMemo.java`（167 行）
+  - `RenderTreeBuilder` 等の `Map<String, String> inheritedStyle` 引数受け渡しと `asMap()` 全箇所
+- **移行手順**:
+  1. `CssLength` 値表現と 6 グループ不変レコード/クラスを新設し、カスケード結果の生成先を `Style` へ切り替える。
+  2. `core/layout/` と `core/paint/` のスタイル読み口を `Style` の型付きアクセサへ機械的に付け替える。
+  3. `CssValue.java`・`StyleFacts.java`・旧 `ComputedStyle` のキャッシュ群を一括削除する。
+- **完了ゲート**:
+  - 旧 `ComputedStyle`（2,095 行）→ `Style`（≤ 500 行）。
+  - `varied-list-2000` 保持ヒープ：`40.2 MB → ≤ 18.0 MB`。
+  - レイアウト／描画側からの `Style` 文字列参照・`asMap()` 呼び出し `0 件`。
+  - WPT 160/260 以上維持、3 者画素一致・`RealDocumentFramesTest` 緑。
 
 ---
 
-## 6. 得られた知見（外れた仮説を含む）
+### 3.3 Phase M2: `LayoutBox` 解体と不変 `LayoutFragment` アーキテクチャ（最重要手術）
 
-> 知見 1〜167 は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) の「付録 3」へ移した（2026-11-23。番号は変えず、そちらでは `§6-N.` と書く。参照の `§6-N` はそのまま有効）。本節には直近の 168 以降を置く。新しい知見は末尾へ足し、古くなったら付録 3 へ移す。
+本エンジンの最大の病巣である `LayoutBox`（1,785 行・81 欄）およびそれに群がる多層メモ・印・読み取り台帳群（約 4,500 行超）を根こそぎ解体し、**純粋関数的レイアウト＋不変出力＋1 層メモ化**へ作り替える。
 
-168. **KPI 再計測で時間の退行を発見（2026-11-23）**: `costGate`（確保・描画なし）は全 56 シナリオ緑だったが、GL 込みの実フレームは C1 の一本化〔`602b0d5f`〕で一段悪化していた〔large-2000 `hover` `0.064 → 0.19 ms`・varied `inherited` `1.33 → 3.18`・large `child` `0.96 → 2.2`。`9aa8d9c7` を境にした二分探索で、後続の C7・C1p・C6・S7・C3 は hover・inherited をほぼ動かさず、large `child` だけ C1p で `1.8 → 2.2` と微悪化〕。C1 の「時間は許容して悪化し、回収は C1p」は確保しか回収していなかった。**確保の回帰ゲートは時間の退行を捕まえない**ので、`costGate` に時間の粗い天井（±2 倍）を足すかは C8 で判断する。§3 C8。
-169. **C8 の着手前調査（2026-11-23）**: ①**`hover`（large-2000）の退行はほぼ描画側**: ベンチの対象 `item-100/101` は画面外（窓の中）で、変わる項目は 2 つだけ〔表示リスト `#459`・`#461`、`sameList=false`〕。新経路は項目の差し替えでリストの同一性が変わるため `StandaloneView.frame` が毎フレーム `backend.render` を呼び、GL が 162 項目・589 図形を再生する〔`paint(cpu)` `0.062 ms`＋display-list `0.021`。旧は `drawn=0`〕。可視の `hover`（showcase）も同じ型: restyle `0.020`・display-list `0.041`・`paint(cpu)` **`0.152 ms`**（68%・456 項目 / 1,194 図形を再生。旧の全体は `0.097`）。→ 断片の組み立てではなく GL の損傷範囲の問題。②**`child`・`inherited` は組み立て側**: large-2000 `child` の display-list `0.075 → 1.13 ms`〔1 フレーム約 250 の子の断片を通り、1 つ `4.4 µs`〕、varied `inherited` `0.28 → 3.7 ms`〔651 項目で `5.7 µs`/項目。旧は `0.43 µs`〕。JFR の `FragmentPaint.build` 内の自己時間: `child` は `LongAdder.add` 16%・`HtmlNode.treeTop` 10%・`selfViewportSensitive` 8%・`IdentityHashMap` get/put 12%、`inherited` は `build` 本体 14%・`PaintOrder.factsOf` 13%〔継承の変更で全 `ComputedStyle` が新しくなり `derivedFacts` の保存が外れ、`z-index` などを `equalsIgnoreCase`/`toLowerCase` で毎回解く〕・`sameKids` 12%・`kid` 13%。③**外れた仮説**: 統計の `LongAdder`〔`MEMO_HITS`/`MEMO_MISSES`/`OWN_REUSED`〕を外しても display-list は有意に下がらなかった〔同じコードの 2 回で `1.78`/`2.01 ms`、外して `1.71 ms`。この機械は同一コードで ±50% ばらつく日があるので、A/B は交互・カウンタ併用で取る〕。④負けの起点は C1 の一本化〔`602b0d5f`〕の 1 点で、後続の C7・C1p・C6・S7・C3 は ほぼ動かしていない〔§6-168〕。→ §3 C8 の順序（①C8a → ②C8b → ③）の根拠。
-170. **C8a の着手前の追加調査（2026-11-23）で、C8a の前提が崩れた**: ①可視 `hover`（showcase）の変更は 9 項目〔`BUTTON`・`NODE`・`RECT`・`ROUNDED_BORDER`〕だけで、描画側の再生の鍵は 474 項目中 約 16 項目しか外れない〔`notSameItemAndPose` 約 16/フレーム・`resDiffer` 0・`notFast` 約 2〕。再生の鍵の同一性（`C6` の `prev == cur`）が原因という仮説は外れ。②`paint(cpu)` `0.122 ms`〔旧 `0.068`〕の内訳は、`-Pprofile.sample` で GPU フェンス待ち `GlDevice$FenceRing.await` が 47%〔`beginFrame`〕・ドライバの走査 `PaintSceneDriver.run` が 30%・表示リストの構築 10%・restyle 16%。増分 `+0.054 ms` のうちどれが新経路由来かは未特定〔旧に戻した A/B はサンプル数が足りず断定できない〕。③`GpuRenderBackend` の `glyphs` 統計は `replayedGlyphs`〔最後の項目の値〕を足しているだけで意味が無く、「旧 1,066・新 4.9M」の差は経路の差を表さない〔計測の外れ。統計の修正は別件〕。④large-2000 `hover` は画面外の 2 項目〔窓の中。画面外の判定は `RangeBounds` の窓と `outsideClip` の 2 系統〕だけが変わり、`frame()` が `before != after` で毎フレーム描く。ここだけは「見えない変更は描かない」で `0.062 ms` を省ける。→ §3 C8 の順序を ①C8b ②C8a に改めた。
-171. **C8b の着手前の追加調査（2026-11-23）— 作り直しは定数倍でなく個数の問題**: `FragmentPaint.MEMO_MISSES` を `FRAGMENT` 診断行へ足して 1 フレームあたりで数えた〔`FragmentPaint.build` の記憶の当たり／外れ〕。large-2000 `child` は **hit `249` に対し miss `約 3,509` /フレーム**、varied-2000 `inherited` は **miss `約 4,916`**〔箱 3,457＋無名箱・文字〕で、窓〔画面＋余白〕の外の箱まで毎フレーム作り直している〔表示リストの項目は窓の中の 462 / 651 だけ〕。`child` は挿入で後続の箱の `y` がずれるため `sameContextCheap`〔`m.y != box.y()`〕で外れ、`inherited` は全箱の値が変わるため外れる。`FragmentPaint.buildFresh` は窓外の箱でも自分の項目を省くだけで〔`cull && !inWindowGeometry` → `pushCulled`〕、子の走査と断片・記憶の作り直しは続ける。1 箱 `約 0.3 µs` × 約 3,500 箱 ≒ display-list `1.1 ms`。→ 旧経路〔`9aa8d9c7`〕は窓外の部分木を打ち切る・位置のずれを平行移動で済ませる〔`BoxMemo` の平行移動の再利用。C1m で削除〕ことでこれを避けていた。**統計の `LongAdder`・`treeTop`・`factsOf` などの個別の固定費は副次**〔個数を減らさない限り `child` は `1 ms` 前後のまま〕。進め方の候補: ①窓外の箱を部分木ごと打ち切る〔箱の見た目が箱の外へはみ出す上限＝部分木の外接が要る。`LayoutBox` には `scrollWidth`/`scrollHeight` しか無く、はみ出し〔影・`outline`・位置指定・変形〕の上限は無い〕②位置のずれだけの箱を記憶の当たりにする〔親相対の配置 = C4〕。①は独立に入れられるが、はみ出しの上限の作りが画素一致の要点。
-172. **memo hit/miss の一覧（2026-11-23）**: 各段のカウンタを `FineProfileMain` の `MEMO` 行に統一した〔style: 訪問・再計算・変化／測定: 呼び出し・計算／配置: 呼び出し・skip・shift・placed／断片: hit・miss〕。①**増幅率が 1 に近い所は問題が別**: `inherited`・`fontsize` は変わった箱 ≒ 再計算した箱〔large `4,003`→`4,007`〕で、遅さは 1 miss あたりの時間〔display-list `0.43 → 0.75 µs`〕と窓外の箱まで作る個数〔§6-171〕。②**増幅率が桁違いなのは 2 か所**: `child`〔変更元 2 に対し配置 shift `1,751`・断片 miss `3,510`。varied は `6,451`。C4・C8b の対象〕と、**実文書の `text`〔配置 skip `0`。C9〕**。large-list の `text` は skip `1,999` と当たるので、実文書だけ外れる理由がある。③`hover`・`scroll`・`idle`・large の `text`/`style` は健全〔≤ `9`〕。④測定の記憶は `child` で `2,010` 呼び出し中 計算 `5.9` と良く当たる。⑤カウンタはウォームアップ込みの累計をフレーム数で割る〔開く 1 回ぶんが混ざるので `idle` でも `0.1〜0.5` が出る〕。
+- **新データモデル（`core/layout/`）**
+  ```java
+  // 1. 入力ボックス木（可変状態を一切持たない軽量記述ノード、≤ 10 欄）
+  public final class BoxNode {
+      public final int nodeId;           // DOM ノード番号（匿名箱・疑似要素も専用番号帯）
+      public final Style style;          // Phase M1 の不変スタイル
+      public final Display display;
+      public final String text;          // TEXT ノードのみ非 null
+      public final BoxNode[] children;   // 匿名箱・疑似要素展開済みの単一子配列（二重リスト廃止）
+      public final PseudoStyles pseudos; // ::marker / ::placeholder / ::first-line（無ければ null）
+  }
 
-173. **`costGate` に記憶の増幅率を組み込んだ（2026-11-23）**: `FineProfileMain` の `COST` 行の末尾に `memoStyleRecomputed`・`memoMeasureComputed`・`memoPlaced`・`memoFragMisses`〔開いた後の 1,200 フレームの再計算数。開く分は計測前の値を引く〕を足し、完全一致で比べる〔直列 2 回とも `COSTGATE OK`＝決定的〕。`CostGateMain` はこれを変更元で割った最悪値が `10` を超えたら赤にし、既知の 17 行は `memoCeil=N` で上限を固定する。**初回の更新で 17 行が違反として出た**: `text` の配置が実文書の全てと showcase、`child` 2 行〔cpu 行なし〕、machine_ui の `scroll`〔配置 `22`/フレーム・断片 `28`〕。C9 は voidwave 単独でなく実文書全般の問題。Linux での決定性は未確認〔push 前に `scripts/ci-linux.ps1 -Full`。運用ルール 6〕。
-174. **C9 の原因調査（2026-11-23）— 配置が当たらないのは「純粋性」が祖先を巻き込むため**: `tryReuseOrShift` の外れ理由を調べると、入力は同じ〔`sameInputs`〕なのに `canKeepPlacement`〔`KEPT_PURE`・`VALID`・祖先の relative/sticky/float〕で外れる。`resetPlacements` が上から「変更の鎖」〔`measureMemo` が無効・layoutChanged・subtreeChanged の箱〕を作り直し、鎖の直下の兄弟を保持できるか見るが、**純粋でない兄弟は部分木ごと配置し直す**。鎖の直下で外れた箱を理由別・部分木の大きさ別〔箱/フレーム、部分木の箱の延べ数/フレーム〕に数えた: surface `!keptPure`〔子孫に relative〕の GRID `1`・部分木 `134`／voidwave `relative<div>` 自身 `10`・部分木 `663`／animation・media・showcase は**子孫のスクロールコンテナ**で GRID/FLEX `1`・部分木 `295 / 493 / 214`／item_block・guidebook は**表**〔`td`/`th` 各 8 万・2 万回 /900 フレーム〕。理想〔鎖だけ＝ `G changed chain` 5〜7 箱〕との差がこれ。**外れ理由の `floatsAffectPlacement`〔祖先が relative/sticky/float を持つ〕を外しても配置数は変わらない**〔実験: `-Dc9.exp` で 0 オフセットの relative を通しても voidwave 496・surface 121 のまま。次の `!keptPure` で止まる〕ので、単独の修正では足りず純粋性の定義が本体。なぜ relative が止めるか: `applyRelativeOffset` が**子孫の座標へオフセットを破壊的に加算**し〔`lastLayoutX` も消す。§6-118〕、保持した子孫へ再度加算すると二重にずれるため。0 オフセットなら加算が起きないので保持してよい。machine_ui `scroll` は別系統〔`!reuseMeasurements`＝スクロールのフレームは測定の再利用が無効のまま全箱を配置し直す〕。**この調査は一時の計器〔`PlacementMemo` の外れ理由の集計〕で行い、コードには残していない**。
-175. **C9a（スクロールコンテナ）の実装と、relative 単独が効かなかった実測（2026-11-23）**: 着手前に、鎖の直下で純粋でない箱が「インセット無しの relative を純粋とみなしたら純粋になるか」を数えた〔一時の計器〕。voidwave: 純粋になるのは `25,200 / 640,000` 余りの約 4% で、残りは子孫のスクロールコンテナ約 61%・abs 約 34%／surface: **0%**〔`via scrollContainer` が `120,600` 全部〕／animation・media・showcase: スクロールコンテナが 100%。→ 計画書の順序〔relative が先〕を改め、**スクロールコンテナを C9a** にした。実装: `ScrollState` に全面共通の版 `AtomicInteger`〔位置が実際に変わったときだけ加算。`StaticStateRatchetTest` は `Atomic*` を許す〕、`PlacementMemo` の純粋性を 3 値〔`PURE`/`SCROLL_DEP`/`IMPURE`〕にし、`KEPT_PURE` は「自分のスクロールを除いた子孫が `IMPURE` でない」、`F_SCROLL_DEP` は子孫にスクロールコンテナがあるとき〔`canKeepPlacement` が `scrollVersion` == 現在の版を要求〕。`holdsPlacement`〔`F_PURE`〕は従来のまま厳密。検証: `PlacementKeepModuloScrollTest`〔2 本。文字の変更・スクロール・入れ子のスクロールを増分で動かした箱の木が、同じ状態を最初から作った箱の木と一致〕、**版の比較を外した変異版でこのテストが赤になる**ことを確認、差分ファズ種 1〜1500〔4,500 回〕ずれ 0〔ファズ自体にはスクロール操作が無いので専用テストで補う〕、全件 `:core:test` は既存の `TextShaperIntervalAndFontCacheTest` 1 件のみ失敗〔変更を外した HEAD でも同じ。Windows のみ。別件〕、直列 `costGate` 56 通過〔基準値を更新: showcase `text` の `memoCeil` `54 → 14`・media `124 → 108`・item_block `168 → 159`〕。**教訓**: テストの比較に表示項目を使うと、増分〔スクロールは `PaintOffsets` に持つ〕と最初から作った結果〔座標に焼き込み〕で表現が違い、HEAD でも赤になる。箱の木の座標で比べる。
-176. **C9b の実装と、途中で見つけた既存の不具合（2026-11-23）**: 着手前の見積もり〔abs・インセット無しの relative・スクロールを純粋とみなしたら何割が純粋になるか〕で voidwave・surface・animation・media・showcase は**ほぼ 100%**、残るのは表だけと確認してから実装した。①**`RealDocumentFramesTest`〔実文書の増分 = 全面再構築〕とスクロールの専用テストが赤になった**〔子のスクロールコンテナ自身が親から見て純粋に見えていた。`levelNoCb` に子自身のスクロールを足して解消〕。安全網が効いた例。②**`PlacementKeepAbsoluteTest` が既存の不具合を発見**: `transform`・`filter`・containment の「包含ブロックを作るか」が切り替わっても、描画だけの変更として扱われ、子孫の絶対配置が古い基準のまま残る〔**変更を外した HEAD でも再現**。増分 ≠ 最初から作った結果〕。全箱に適用すると hover の `transform` でレイアウトが走り `costGate` が voidwave `hover` の増幅率 `17` で更新を拒否した〔ゲートが想定どおり退行を止めた〕ので、**絶対配置・固定配置の子孫を持つ箱の切り替えだけ**を再レイアウトにした〔`ContainingBlockFlip`〕。③**変異の確認**: 外の包含ブロックの検査・子のスクロール・包含ブロックの切り替え判定は外すとテストが赤になる。一方、インセット付き relative の純粋扱い・埋め込みオフセットの記憶・アンカー判定・ビューポート単位判定は外しても赤にならない〔エンジンに別の防御がある: `applyRelativeOffset` が子孫の記録を消す〔§6-118〕・アンカーは後処理で解決・リサイズは全面の配置し直し・`top:10%` は親の高さに依らない〕。保守的な二重の防御として残したが、必要性は示せていない。④確保: 記録のたびの小さな配列が item_block `text` で `+35%` を出したので、作業欄をメモの欄へ移して確保をなくした〔voidwave `text` `18,576 → 15,374 B` ほか改善のみ〕。⑤検証: 差分ファズ種 1〜1500〔4,500 回〕ずれ 0・直列 `costGate` 56 通過〔基準値を更新〕。⑥`MeasureReadSetTest` の不安定さは §6-178 で原因を特定〔テストが実時間の間引きを待たない。エンジンの不具合ではない〕。
-177. **配置の記憶の照合モード `VERIFY_PLACEMENT`（2026-11-23）**: 測定の記憶の `MeasureVerifier` の配置版として `PlacementVerifier` を作った。`tryReuseOrShift` が省略・平行移動で受理した部分木を、記憶なしで最初から置き直して〔`resetPlacements(box, -1)` ＋ 再利用を切った文脈での `layoutImpl`〕、位置・大きさ・静的位置を比べ、食い違えば `AssertionError`〔箱・欄・値・`debugInfo`〕。`LayoutBox.layoutImpl` の分岐に 1 行足しただけで、新しい経路は無い。`:core:test`・`mutationFuzz` で常時有効〔`-Pverify.placement=false` で切れる〕。**所要時間は増えていない**〔`quickTest` 約 2.5〜3.7 分で従来と同程度〕。①**検出力**: オラクル〔最初から作った結果との比較〕を持たない `PlacementVerifierTest` だけで、外の包含ブロックの検査・子のスクロール・スクロール量の版の比較・純粋性の素通し、の変異を全て検出できる。②**比べない欄を実験で決めた**: 最初は断片・スクロール範囲も比べて `IncrementalVsFullTest` 2 件・`RestylePruneTest` 1 件が赤になった。通常に置いた直後の全ブロック箱を同じ手順で検証する実験をすると、**位置・大きさ・静的位置は食い違い 0、スクロール範囲と行の断片は食い違いが出る**〔断片の開始・終了・遅延消去は祖先のエンジンが受け持つので、部分木だけの置き直しでは個数が変わる〕＝検証側の人工物。偽陽性を避けるため比べる欄から外した。③**限界**: 「レイアウトが走るべきなのに走らなかった」種類の不具合〔包含ブロックの切り替え `ContainingBlockFlip` の判定を外す変異〕は、保持の検証では見つからない〔検証は保持が起きたときだけ走る〕。スクロール範囲・行の断片は照合していない。④差分ファズ種 1〜1500〔4,500 回〕を検証モード有効で流してずれ 0〔保持の誤りは出ていない〕。この検証はファズにも実文書テストにも効くので、C9c 以降（表・余り）の変更の安全網になる。
-178. **`MeasureReadSetTest` の不安定さの原因は、リサイズの実時間の間引き（2026-11-23）**: 全件の並列実行でだけ時々落ち〔Linux で 2 回・Windows で 1 回・直近は 5 回中 3 回〕、`fv.resize(60, 120)` の後に古い幅 `400` が残る〔期待 `60`〕。①**原因**: `UiView.resizeDue` は連続したリサイズを「直前のレイアウトの所要時間の 2 倍が過ぎるまで」次のフレームへ持ち越す〔実時計。ホストの描画を重いレイアウトで詰まらせないための意図した動き〕。テストは `resize` の直後に比べるので、直前のレイアウトが重く測られた回〔GC・スレッドの割り込み・並列の他テストとの競合〕だけ間引きが効いて反映されず落ちる。**C3・C9 の変更とは無関係で、保持・無効化の不具合ではない**。②**確定の根拠**: 同じ手順を 1 つの JVM で回すと**待たない形で 3,000 回中 2,671 回〔約 90%〕失敗**〔速い繰り返しは間引き内に入る〕、**反映されるまで回す形では 7,800 回〔直列 3,000＋8 スレッド 4,800〕全部成功**。③**直し**: テスト用の `ResizeSettle`〔反映されるまで無効化処理／フレームを回す〕を作り、`MeasureReadSetTest`・`IncrementalVsFullTest` の補助関数・`GoldenFrameTest`〔固定 6 フレームだった〕に適用。前例は `a450765d`〔`RealDocumentFramesTest` の resize700〕・`MutationScenario`・`ScrollTranslateTest` の spin。④**教訓**: 並列実行でだけ落ちるテストは、まず実時計に依る箇所〔`System.nanoTime`・`currentTimeMillis` を読むエンジンの経路〕を疑う。単独実行では負荷をかけても再現しない〔直す前 `12 回中 0 回` 失敗。並列の GC や競合が要る〕ので、A/B は「同じ手順で待つ／待たない」だけを変えて速い繰り返しで比べるのが確実。⑤同じ書き方の残り: `resize` を呼ぶテストのうち待たないものは上の 3 件で全部〔他は spin で待つ〕。再発防止の機械的な検査〔テストの `resize` の直後に待つ呼び出しがあるか〕は未実装。
-179. **C9c（表）の実装（2026-11-23）**: 着手前の理由別集計〔鎖の直下で保持されなかった箱〕で、guidebook は**表自体が不純**〔`isTableBox`〕、item_block は**枠線を統合する表**〔表・セルが `collapsedBorders` を持つ。表を含む祖先 1 フレーム約 `738` 箱とセル `89`＋`11` が毎フレーム置き直し〕と特定した。実装: `selfContained` から `isTableBox` と `collapsedBorders` を不純の条件から外し、表は `strictBroken`〔`F_PURE` には入れない＝`holdsPlacement` は従来どおり厳密〕。行・セル・キャプションが記録の根のときだけ `IMPURE`〔表ごとにしか保持できない。`canKeepPlacement` の親の整形の検査とも二重〕。`collapsedBorders` は測定の段階で組む出力で、配置だけ飛ばす保持とは整合する〔測り直した表は測定側が作り直す〕。検証: `PlacementKeepTableTest`〔統合の切り替え・列幅の変化・兄弟の表が保持される場面・relative の中の表と絶対配置。毎手、最初から作った結果と比べ、**表を含む部分木の保持が検証された回数**〔`PlacementVerifier.verifiedTables`〕も確認〕。表を不純に戻す変異でこのテストが赤になる。表の内部を単独の根にする変異は生き残る〔親の整形の検査が同じ防御を担うので同等〕。全件の照合モード有効の `quickTest`〔既存の `TextShaper` 1 件のみ失敗〕・差分ファズ種 1〜1500〔4,500 回〕ずれ 0・直列 `costGate` 56 通過〔基準値を更新〕。**C9a〜c を通して、鎖の直下で保持できない原因は「部分木の純粋性」を壊す構造〔スクロール・abs・relative・表〕の順に潰した。残りの `showcase`/`voidwave` `14` は構造ではなく余りの 4 箱で、別の見方が要る**。
-180. **KPI の 2 回目の再測定（C9a〜c の後。2026-11-23）— メモの当たり以外の改善と、見つかった退行**: ①**改善**: `text` 変更のパイプライン時間〔描画なし〕が旧 `ea4dc204` との交互 A/B〔各 3 回・中央値〕で全 7 文書 `0.55〜0.83x`〔voidwave `0.276 → 0.151 ms`・item_block `0.193 → 0.114`・media `0.154 → 0.100`・guidebook `0.092 → 0.061`・surface `0.131 → 0.098`・animation `0.101 → 0.077`・showcase `0.107 → 0.088`〕。確保も voidwave `18,507 → 15,280 B`・guidebook `8,194 → 7,214 B` と減った〔costGate〕。GL 込みの 1 回測定でも `text` が voidwave `0.72 → 0.59 ms`・surface `-13%`・media `-14%`。JMH `fullLayoutWarm` も `-8%`。②**不変**: コールド起動〔`531〜549 ms`〕・保持ヒープ〔`40.2 / 10.0 / 2.8 MB`〕・WPT〔`160 / 260`〕・`scroll`・`child`・`inherited`・`fontsize`・`open`・幅変更〔memo の個数も不変〕。C9 は配置の保持だけを変えたので当然。③**退行**: large-list-2000 の GL 込み `text` `+15%`・`hover` `+7%`〔旧比。3 回とも新が遅い〕・JMH `restyleInherited` `+6%`。カウンタ〔`MemoKpi`〕を無効にした版との A/B で `hover` は `-8.4%`〔3 回とも〕、`text` は差なし〔`-1.7%`〕＝カウンタが `hover` の退行の大半。`text` の残りは未特定。→ §3 C10。④**教訓（測り方）**: 同じコードでも**セッションが変わると絶対値が `±40%` ずれる**〔午前 `fontsize` 4 本 `10.76 ms` が午後 `14.3 ms`。旧版も同様〕。JMH も同じ。したがって時間の比較は**同時の交互 A/B**〔旧版の worktree と現在を 3 回ずつ交互。中央値〕だけを使い、絶対値は同じセッションの中だけで比べる。1 回ずつの測定の `±10〜15%` は揺れで、改善・悪化の判断に使わない〔今回も large-2000 の `text` が 1 回測定で `+26%` と出たが、A/B では `+15%`〕。⑤**計器を足すときの注意**: `LongAdder` の加算でも 1 箱ごとに入れると 2,000 箱の文書で `0.02 ms` 単位になる〔`hover` で `8%`〕。診断用の計器は既定オフ〔`static final` の分岐〕にして、必要な計測だけ有効にする。
-181. **計画の練り直し: ループは構造が原因（2026-11-23）**: C9a〜c と周辺の作業が「近道を足す → 費用を削る → 不具合 → フラグ・検証を足す」に入りかけた〔§6-174〜180〕。実数で裏づけた: ①記憶・無効化の仕組みが約 7、**無効化の言語が 3**〔測定＝読み取り集合の鍵・配置＝構造の純粋性フラグ・描画／スタイル＝印と世代〕。配置だけが手書きの述語で、C9 で状態を 5 つ足した。②回帰カタログの **26 / 69（38%）** が「古い結果が残る・記憶・増分・無効化」系。③検証クラスが 4、実時計を読むコア／共通のファイルが 17。④既存の 旧 `DESIGN_FRAGMENT_TREE.md`〔削除済み。要旨は DESIGN_INCREMENTAL_KERNEL.md 付録 A〕 §0.5 に**同じ結論〔手書きの退く条件の漏れ・M4 増分専用のコードを持たない・M6 まず影〕が既に書かれていた**のに、配置の記憶で同じ過ちを繰り返した。→ 運用の注意ではなく**構造と機械的な固定**で断つ。**決定**: 全段を測定と同じ**読み取り集合の鍵**へ寄せる K 系〔K0 足場・K1 台帳・K2 配置の鍵〔先にスパイク。届かなければ C9 の現状で凍結〕・K3 親相対・K4 窓＋インク境界・K5 パッチ撤去・K6 検証の統合〕。全面書き換えはしない〔K0 だけでも価値がある〕。**C9 は凍結**し、フラグ・検証クラス・近道スイッチ・1 箱ごとの計器の新規追加を禁じる〔K0 のラチェット〕。根拠の要: 配置が外から読むものは数えられる〔スクロール 14・包含ブロック 6・親の外寸 21・アンカー 13・float 22 の箇所〕うえ、測定の台帳 `MeasureReads` が同種の読み取りを既に 18 種追跡している＝配置を同じ方式に載せる土台がある。
-182. **〔不具合〕K0 の実装で分かったこと（2026-11-23）**: ①**フレームのオラクルが、表示に出ない増分の欠陥を見つけた**: `display` の型を変えた箱〔`layouts` 種 1 手 19 の `gr`〕のスクロール範囲〔`scrollHeight`〕が、最初から作った面より `2px` 大きいまま残る〔位置・大きさは一致。同じくスクロール範囲だけの差が種 3・8・14・16・20・21・23・29 にも〕。比較の既定からスクロール範囲を外し、既知として固定した〔`FrameOracleTest`・回帰カタログ「既知:」。直るとテストが赤になる〕。②**外れた仮説**: DOM を HTML に書き出して別の面で読み直す方式は、半数の手で偽陽性だった〔パーサが `table > div` などの不正な入れ子を直すので、DOM の API で作った木と別の木になる〕。構造のまま複製〔`cloneNode(true)` と `installDocument`〕へ改め、`layouts` 種 1〜1500 で偽陽性 0 になった。③**オラクルの使える場面は、結果が時間と対話の履歴に依らない場面だけ**: `transition: width` は途中の幅をレイアウトに使う〔履歴のある面と食い違う。`cards`・`nested` は対象外〕・ホバーとスクロール量は新しい面が持たない・`display:none` の部分木は古い値と未配置で食い違う〔観測できないので種類だけ比べる〕。表示項目は比べない〔途中の色・半径が時間で動く〕。箱の幾何が合えば項目の位置・大きさは合う。④**変異の作り方**: 保持を戻して欠陥を再現するにはコードへスイッチを足すことになり〔運用ルール 8 で禁止〕、代わりに**通知なしの変更**〔`attrsForWrite()` への直書き〕で「レイアウトが走るべきなのに走らなかった」状態を作る。5 形の場面で、通知つきなら一致・通知なしなら差が出る。⑤**時計の注入で `ResizeSettle` の `sleep` が消えた**: 止めた時計は所要時間 `0` と測られ、間引きが起きない〔反映は 1 フレーム〕。別の時計へ差し替えるとき、直前のレイアウトの記録〔別の時計の時刻〕を捨てないと間引きが固まる。⑥**計器**: `MemoKpi` の `LongAdder` は常時オンだった。`Kernel.stats` は既定オフ〔`static final`〕で、HEAD との A/B で `hover` `-5.6%`。ファイルの行数・メソッド数のラチェットは、`import` 1 行でも上限を超える〔更新モードで上げた: UiView `+3`・StandaloneView `+8`・RenderPipeline `+1`〕。⑦**層のラチェット**: `Clock` を最上位の `core` パッケージへ置くと、下の層〔`core.layout` など〕からの上向き依存とパッケージ循環になる。`core.kernel` に置いた。⑧**K0 と無関係の既存の失敗**: `TextShaperIntervalAndFontCacheTest#shapeIntervalCache…` は未改変の HEAD でも落ちる〔テストが `System.nanoTime()` の桁数で文字列を作り、折り返しの境界が変わる〕。直していない。
-183. **K2（配置を読み取り集合の鍵へ）の実装で分かったこと（2026-11-23）**: ①**既存の C9 でも起きていた `applyRelativeOffset` と `shiftSubtree` の不整合**: `applyRelativeOffset` が `clearLastLayoutX()` で `lastLayoutX = NaN` にしていたため、親 `#shell` が `shiftSubtree` で動いたときに相対子孫 `#in2` の座標移動が抜けた〔`invalidateValid()` で `F_VALID` だけを落とす形へ変更〕。②**未配置へ戻った子孫を `shiftSubtree` が動かす罠**: `MutationFuzz` の `layouts` 種 294 手 11 で、`#w1` が `fx→fl` に変わって `span#w2` がインラインへ戻り未配置になった `div#z7` を、後の `#w1` の平行移動で `0.0 → 14.953125` へ動かした。原因は `onReset(false)` が `lastLayoutX = NaN` に戻さず `isLaidOut()` が true のままだったことと、`isAllowedParent` が `outer=INLINE, inner=FLOW` の親を許していたこと。旧 C9 は `tryReuseOrShift` 末尾の `resetChildrenPlacements` 条件が `!sameInputs`（`lastLayoutX == parentX`）に頼っていたため `onReset(false)` で `lastLayoutX` を消すと `large-list:text` が `skipped 499 → 0` に壊れたが、K2 は `canKeepAtReset` を先に見るため `onReset` で常に `lastLayoutX = NaN` にして両立できる。③**原子的インラインと `voidwave text` `≤ 10`**: `voidwave.html` で `a#~39`（`inline-flex`）が `isInlineLevel()` で弾かれていたのを `BlockLayoutEngine.isAtomicInline` まで許可したことで `voidwave text` が `11 → 9`、`showcase text` が `14 → 8` になり、K2 の合否線 `≤ 10` を両文書で達成した〔`:core:costGate` 56 シナリオ全行で増加 0、`memoCeil=14` が消滅〕。④**原子的インライン保持時の断片・丸め整合**: `isAtomicInline` を保持対象へ入れたところ `BlockLayoutEngine.clearFragmentsRecursively`/`finishFragmentsRecursively` が内部の子（テキスト座標・断片）を消す問題と `shiftSubtree` が直前の `addFragment` を二重移動する問題（`RealDocumentFramesTest` `voidwave/resize700`・`guidebook/resize700`）、さらに `isShiftableDelta` で `84.00001f - 333.0f` が `-249.0f` に丸まり `lastCoord + d != parentCoord` になる 1 ULP ずれ（`WidthOnlyReuseTest` 種 101 `w=150`）を検出・修正した。⑤**`PlacementVerifier` の削除とオラクル統一**: `PlacementVerifier` が `staticX/Y` を親を走らせず消すため abs 直接保持と相容れず、設計方針どおり削除して `FrameOracle`＋`K2PlacementKeyTest` へ一本化し、`LayoutReadLedgerTest` も `ABSORB_IF_INSIDE_SUBTREE` 後の `sc`/`wrapScroll` の `PLACE_STICKY` 吸収へ更新した。
-184. **K3（親相対の配置と位置の解決の分離）の実装で分かったこと（2026-11-23）**: ①**座標解決の親（`originParent`）は flex/grid の inline 項目と `display: contents/none` を区別する**: `display: flex/grid` 内の `<span>` や `::before` は `display.isInlineLevel()` のまま自身の `layout` を通って子の原点になるため、`PlacementMemo.isInlineFlowForOrigin` が親の `FLEX`/`GRID` を除外しないと内部の `#text` 断片が外へ飛び出し（`WptReftestRatchetTest` 2 件と `GoldenFrameTest` 画素）、また `display: contents/none` は未配置のまま親の原点を足してはならない（`WebFidelityTest` `display-contents#contents`）。②**`#text` の `NODE` 座標の正規化とゴールデン**: 以前は `#text.x/y = 0`（絶対）のまま `DisplayListBuilder` が親の節の原点 `ox/oy` を引いていたため `#text` の `NODE` が `(-parentX, -parentY)` に出ていた。親相対の解決後は親の原点上の `(0, 0)`（絶対座標では親の左上。`DisplayListGoldenTest` の `showcase.txt`・`decorations.txt`・`flex-grid.txt` も同期更新）へ移り、可視画素・`GpuBaselineTest`・`WebFidelityTest`・`RealDocumentFramesTest` ヒットテストは全て不変。③**遅延消去待ちの `inlineFragments` と §6-182 の完全解消**: `inline` 要素が `flex`/`grid` 等へ変わった直後、`finishResetPlacements` の前に走る `ScrollExtentCalc.updateScrollExtent` が `child.fragmentsStale == true` の旧 `inlineFragments` を読むため `scrollWidth`/`scrollHeight` が壊れていた（`ServerClientLayoutParityTest` `b#bold` と `FrameOracleTest` §6-182）。加えて原子インライン内に `flex` へ変わった子孫があると `BlockLayoutEngine.clearFragmentsRecursively` が `fragmentsStale` を消した後に `finishFragmentsRecursively` が `holdsPlacement()` でスキップしていた（`IncrementalLayoutFuzzTest` `s2_1`）。両者を修正したことで `layouts` 種 1 手 19・種 3 手 4 の `scrollHeight` 差も消滅し、`FrameOracle.Scope` の既定を `GEOMETRY_AND_SCROLL_EXTENTS` へ引き上げた（`layouts` 種 1〜200 で差 0）。④**位置解決の費用**: 親鎖走査で `showcase:resizeexact:null` の A/B（3 回中央値）は `+7.0%`（`0.4781 → 0.5114 ms`、撤退条件 `+10%` 内。`large-list:child:null` は `-9.8%` で `0.3971 → 0.3580 ms`）に収まり、`LayoutBox` への遅延評価フィールド追加なしで完了、`ClassShapeRatchetTest`（`LayoutBox` 171 メソッド・1,805 行以下）も維持した。
-185. **〔不具合〕K4（窓の外の部分木の O(1) の代理）の実装で分かったこと（2026-11-23）**: ①**平行移動の費用は、記憶の鍵ではなく署名にあった**: K3 で箱は親相対になったが、署名〔`PaintStamps.signature`〕が親相対の `x`・`y` を含むので、挿入で後続の兄弟が動くたびに兄弟ごと印が進み、窓の外で空の断片まで作り直していた〔`child` の断片 miss `507`/f〕。署名を形と位置に分け、位置だけの変化は自身の印を進めず部分木の印だけ進める〔親は下りて確認する〕。窓の外で空の部分木は、箱の印と子の部分木の印が古く子の並びが同じで、移動後も外接矩形が窓の外なら再利用して正しい。②**空の断片は位置に依らないとは限らない**: 窓なしの文書で「断片が空＝平行移動で変わらない」と仮定すると `PathPredictionTest` が不健全 25 件〔予測は自分の入力が変わったと見る〕を出した。代理は窓付きの組み立て〔`cull`〕で、境界を持てる〔窓の判定が読む矩形だけに依る〕空の部分木に限定する。③**〔不具合〕K3 の穴（`FragmentPaint` の `kidsCtxOk`）**: 親 id が無い枠〔`cc.parentId == null`。子の項目は絶対座標〕で親〔例: `ul`〕が平行移動しても、K3 以降は子の印が進まないので `tryPillar2` が「変わった子 0」で子の断片を全て再利用し、窓付き＋位置指定の子孫を持つ行で、窓へ入った行の項目が欠け古い位置の項目が残った。既存のテストでは見つからず、K4 の「記憶あり＝最初から作った」の比較〔乱数の手順〕で再現した〔`HEAD` でも同じ失敗を確認〕。`kidsCtxOk` に親の位置の一致を足して直した〔鍵の側の直し。新しいフラグ・特例は足していない〕。④**確保の落とし穴**: 窓の外の境界を組み立てごとに `float[4]` で作ると `inherited` の確保が `+14%`、`for (c : children)` の反復子で `child` の確保が `+15%` になった。境界は平行移動が起きたときに初めて作り〔`PENDING` の印〕、子の走査は添字で行う。⑤**`InkBounds` が作れない子孫**: 位置指定・sticky の子孫は平行移動で動かない〔親の外の包含ブロックを持ちうる〕。行に分かれたインラインの箱自身は原点の親が箱の外にある。どちらも `null` を返し、代理を使わず従来どおり作り直す〔正しさを保つ〕。
-186. **K4b の着手前調査: 実文書 `hover` の確保 `250 KB` は表示リストの外（2026-11-23）**: `FineProfileMain hover voidwave.html 4000 gl` の JFR〔`-Pprofile.jfr`〕で確保を呼び出し元別に集計すると、`FragmentPaint` は約 6%、残りは描画側の `PaintSceneDriver`〔`rebuildIndex` 約 39%・`boundsFor` 約 30%・`build` 約 13–19%〕。`reconcileIndex` が毎フレーム〔ウォームアップ込み 1,600 回すべて〕失敗しており、原因は 2 要素 `~79`〔節＋背景〕と `~82`〔節＋背景＋丸い枠〕のホバーで項目が出入りして、項目数は同じまま間の項目が 1〜数個ずれること〔同じ位置で節と非節が入れ替わる〕。**同じ位置の鍵だけが違う「入れ替え」を許す試作は効かなかった**〔節と非節の不一致が毎フレーム。差分は位置ずれを含む複数区間の編集〕ので撤回し、**索引の作り直し自体を、前回の索引を鍵で引いて姿勢・補間状態を運ぶ形**にした〔`reconcileIndex` を一般化せず、`rebuildIndex` を 1 本の基準にした〕。運ぶ条件は構造〔種類・親・層〕と中身が同じ、または姿勢だけが同じ静的な項目。**描画上の平行移動〔`PaintOffsets`〕を持つ項目の姿勢を運ぶと古い姿勢が残った**〔`~67_scrollv` の `f=141` と `110`。平行移動の同期が差を見る基準が 0 になるため〕。`RealDocumentFramesTest`・`HoverPatchKeepsScrollNodeTest` が検出し、持つ項目は運ばないで解決。可変のリスト・同じリストの書き換えは前回の中身が当てにならないので運ばない。確保の内訳は表の毎回の作成〔`Long2ObjectOpenHashMap`〕と範囲の表〔`boundsFor` の `double[]`〕。残りは動く項目の姿勢〔voidwave は常時アニメーション〕で、`inherited` の 1 miss の費用と合わせて K4b の残り。
-187. **K4b `inherited` の調査と位置解決の持ち回し（2026-11-23）**: ①`varied-list-2000 inherited` の表示リスト CPU〔JFR〕は `LayoutBox.x()/y()` の解決〔`PlacementMemo.resolveX/Y`＋`isInlineFlowForOrigin`。祖先の連鎖を箱ごとに足し直す〕が約 35%で最大だった〔K3 の位置解決の費用〕。箱ごとに x・y を 8 回ほど解決していた。②`FragmentPaint.build` が親の原点〔`LayoutOrigin.originX`〕を深さごとの表で受け、自分の絶対位置を 1 回だけ作って記憶の鍵・窓の判定・`kidsCtxOk` へ渡す〔解決は子へ渡す原点＝親の原点＋親の寄与の再帰で、規則は `resolveX` と同じ。足す順が逆なので浮動小数の最後の桁だけ違いうる。記憶の鍵と窓の判定にしか使わない。親の枠の原点の丸め `pox`・`poy` は元の `x()` のまま〕。JFR の自己時間で `resolveX` が `24% → 3%` に下がり、A/B で `inherited` varied-2000 `-20.9%`。③**JFR の割合は A/B より大きく出る**: 最初の試作〔親の原点の持ち回しのみ〕は JFR で `x()` が `35% → 6%` に見えたが A/B は `-2.6%`〔7 回〕。時間は交互 A/B でだけ判断する〔運用ルール 9〕。④ラチェット: 行数・メソッド数の上限を超えたので `LayoutOrigin` を別の型にし、`LayoutBox` に足さなかった。⑤残りの 1 miss の費用は一つの山が無い〔`StyleFacts` の再計算 約 10%・`selfViewportSensitive` 約 8%・子の並びの照合 約 7%〕。`StyleFacts` は再スタイルのたびに新しい `ComputedStyle` で作り直される。次は、箱の前回のスタイルと facts の入力の宣言が同じなら引き継ぐ〔宣言表で照合。鍵の方式〕。
-188. **K4b の撤退（2026-11-23）**: 計画書の撤退条件〔1 miss の費用が構造で下がらなければ A/B `±3%` の保守だけ〕を適用した。構造で下がった山は 2 つ〔位置解決 `-20.9%`・索引の運び〕。残りは 1 箱あたりの小さな費用の分散で、`varied-list-2000 inherited` の表示リスト CPU の自己時間は `StyleFacts` の計算〔再スタイルで新しい `ComputedStyle` になるたび。宣言が同じスタイルは共有されるので行ごとに違う文書でだけ効く〕・`selfViewportSensitive`・`sameKids`・`treeTop`〔`store` ごとに根まで辿る〕・`isValueControl` の `toLowerCase`。**`isValueControl` の `toLowerCase` を大文字が無ければ避ける直し〔JFR 自己時間 3.4%〕を入れて A/B `+1.0%`〔varied-2000・5 回〕・`+10.8%`〔varied-500・揺れ〕で効果が見えず、撤回した**〔JFR の自己時間は A/B の時間に出ない。§6-187③〕。`StyleFacts` を前回のスタイルから引き継ぐ案は、宣言のバンドの照合〔`ensureBandSlice` の比較〕が計算より重く、ハッシュだけの鍵は衝突の安全性を保証できないので見送った。`treeTop` の持ち回し〔`LayoutOrigin` と同じ形〕は約 `3%` で `FragmentPaint` の行数の上限〔800 行〕に当たるため、型を切り出す必要があり費用に見合わない。
-189. **K4・K4b が守れたことと残った 1 本化の綻び（2026-11-23）**: 守れた: `F_*` フラグ・`Shortcut`・`*Verifier`・1 箱ごとの計器・実時計の読みは足していない〔ラチェット緑〕。再利用は「鍵が同じなら再利用」の規則の中に入れた。**綻び**: ①表示リストの再利用に 2 つの条件が並ぶ〔`subtreePaintStamp() <= epoch` と、窓の外の平行移動だけを許す `onlyPlacementChanged`。後者は実質第 2 の近道〕②索引の更新が 2 経路〔`rebuildIndex` と、差分が小さいときの `reconcileIndex`〕③`Memo.ink` の状態が番兵の配列で暗黙〔遷移が `store` と `translatedOutsideWindow` に分散〕④`FragmentPaint.Memo`〔`ink` 1 欄増〕・`LayoutBox`〔`layoutPosSig`〕の欄数がラチェットの対象外。→ §3 K4g〔状態機械の明示・判定の 1 本化・欄数のラチェット。索引の統合は K6〕。**GPU への移植の判断**: 描画は GL/Vulkan で GPU 済み。残る CPU の計算は分岐とポインタ参照が主で、GPU の計算シェーダーに向かない〔`hover` 0.1 ms 前後では転送・起動の費用が勝つ〕。窓外の判定・姿勢の合成・ヒットテストは、項目が数万・数千を超える用途が出たら候補〔要 GL 4.3 以上か Vulkan の計算キュー〕。今は CPU のメモリ読み出しの削減〔K4f〕が先。
-190. **K4g の実装で分かったこと（2026-11-23）**: ①番兵の配列〔`UNCONSTRAINED`・`PENDING`・`NONE`〕の暗黙の状態を、型〔`InkState`〕にすると、遷移が「記憶を作る時」と「平行移動が起きた時」の 2 つに閉じ、`outside` が真になる状態が FREE と BOUNDED だけだと網羅テストで言える。②**再利用の 2 条件は、位置と部分木の 2 つの鍵に分けられる**: 位置〔`sameContextCheap` の `x`・`y`〕と部分木〔`subtreeKeySame`〕。窓の外の平行移動はどちらにも同じ状態 `InkState` が効く。判定は 1 つの言語になったが、位置の鍵と部分木の鍵が別の関数なのは残る〔K6 で記憶の鍵に統合〕。③ラチェットは正規表現の検出器なので、テストのソースの Java のエスケープ〔`\w`〕を書き込む作業で 2 回壊した〔書き込みは heredoc とファイルの経由でなく、直接の編集で行う〕。
-191. **K4d の実装で分かったこと（2026-11-23）**: ①**往復の `inherited`〔color を 2 値で交互〕では派生値は再計算されない**: 新しい `ComputedStyle` が 2 フレーム前のスタイルの共有に当たり、`derivedFacts` ごと戻ってくる〔`buildFacts`・`factsOf` は全 300 フレームで 6k 回〕。引き継ぎが効くのは値が毎回新しい場合〔`color` の遷移など。新設の `inheriteduniq`〕で、そこでは `factsOf` が `1.6M` 回あった。時間の A/B は `inheriteduniq` で取る。②**「`StyleFacts` と `selfViewportSensitive` の約 18%」は同じ物**: `selfViewportSensitive` の費用は `PaintOrder.factsOf(...).hasAnimation()` の再計算で、`usesViewportUnits` は再スタイルが `byte` で持つので統合の必要がなかった。③**残り**: `css.StyleFacts`〔`ComputedStyle.facts()`〕は `inheriteduniq` で 1 フレーム約 5.4k 回作り直される。継承する値〔フォント・`line-height`・`direction`・`white-space`〕と `elementFontSize` も読むので、引き継ぎの鍵は非継承バンドだけでは足りない〔バンド 2 の参照・`extras`・フォントサイズも要る〕。費用は未測定〔JFR の割合は A/B に出ない。§6-187③〕。④ラチェット〔`ComputedStyle` の行数・メソッド数〕に当たったので、相対単位の走査 3 メソッドを `RelativeUnitScan` へ切り出して先に縮め、その分で足した。
-192. **K4e の実装で分かったこと（2026-11-23）**: ①**GL で `SoftwareRenderBackend.buildClip`〔確保の約 16〜24%〕が出るのは、CPU への落ち先〔フォールバック〕の描画ではなく、GL の描画も `CpuLayerFallback.renderOnto` 経由で `SoftwareRenderBackend` が項目を走査するから**〔`GPUCOVERAGE declined=0`・`declinedByKind: (none)`。voidwave `hover` で GPU が断った図形は 0〕。クリップを作る費用は、再生〔`ReplayKeys.sameItemAndPose` は `Resolved` の参照で比べる〕に当たらない項目の数で決まる。②**voidwave の姿勢の作り直し `674`/f の約 45% は、前回と値が全く同じ**〔姿勢・不透明度・残り・グループが同じで、補間値〔`AnimatedValues`〕の参照だけが違う〕。原因は、補間値の参照だけが毎フレーム変わる節〔`hue` のような色だけ・同じ値の変形が動く節〕が毎回新しい `Resolved` を作り、子孫の「前回と同じ親か」が参照の比較だったため連鎖していたこと。値で比べると連鎖が切れ、確保 `-31%`・再生が `4,000 → 489k`/2,000f へ。③残りの約 `350`/f は本当に動く節〔`drift`・`pulse`・`bars` など〕の子孫で、値が違うので作り直しが要る。窓の外の項目の姿勢を作らない案は、窓の外かどうかの判定自体が姿勢を要する〔`outsideClip`〕ので、動く祖先の下では使えない〔合否線を満たしたので見送り。姿勢の連続配列化〔`float[]`〕も同じく見送り〕。④診断は `JFR` の確保サンプルを工程ごとに集計し、一時的な計数〔作った節・値が同じだった節〕で確かめた〔計数は戻した〕。
-193. **K4f の実装で分かったこと（2026-11-23）**: ①`treeTop`〔`store` ごとに根まで辿る〕と `sameKids`〔`List.get` の添字検査＋型変換〕を型と配列照合へ寄せても、varied-list-2000 `inherited` の 1 フレーム全体は `-0.5%`〔交互 5 回・3,000 フレーム。1 回ずつは `±2%` 揺れる〕。JFR の自己時間の 4%・7% は呼び出し側の分岐・メモリ待ちに吸収され、全体の時間には出なかった。**K4b と同じく「1 箱あたりの小さな費用の分散」は時間では見えない**ので、型の切り出し〔行数の上限の余裕・下降状態の 1 か所化〕の価値だけを残した。②`-Dverify.oracle=true` では `PathPredictionTest`・`FloatContainmentMemoTest` が HEAD でもスクロール範囲の差で赤い〔レイアウト側。§3 K0b ②の対象〕。③`HtmlNode` のメソッド数・行数の上限が詰まっていたので、`treeTopBelow` は `AttributeMap` の静的関数にした〔`listed` を同パッケージ可視へ〕。
-194. **`CatalogApp`（3,000 カード・36,063 箱）の実機スクロールカクツキ検証（2026-11-24）**: 実機 GL で ①純スクロール ②1 秒タイマー併用 ③マウスホバー併用の 3 条件を計測し、カクツキ（`80〜707 ms`/f）の 5 原因を特定した。①**窓シフト時の全記憶消去**: `SCROLL_TRANSLATE_LIMIT`（`576px`）を超えるたび `UiView.rebuildWindowAtBoxFrame` が `windowShift` を立て、`DisplayListBuilder.memoFrameKey` が `Integer.MIN_VALUE` を返して `FragmentPaint.memos` を全消去するため、約 15 フレームごとに `fMiss=36,044`・`81〜275 ms` のスパイクが発生する。②**スクロール中の再配置・再描画で窓外 `36,008` 箱の `InkState` 代理が 100% 不発**: `.scroller` のスクロール後に `repositionLayout` 等が走ると `<main>` と `#list` の絶対 Y が `-scrollY` だけ動くため、`#list` の `buildFresh` で `kidsCtxOk`（`m.y == stack.ay`）が偽になり、子の各 `.card` でも `sameContextHeader` の `Math.round(p.y()) != m.poy` で即座に棄却されて `translatedOutsideWindow`（`InkState`）へ到達しない（`fHit=12, fMiss=36,008`、毎フレーム `85〜184 ms`）。③**`repositionLayout` の全箱リセットと `tryTextPatch` のデッドコード**: `RenderPipeline.repositionLayout` が `reuseMeasurements=false, keepRun=-1` で全 `36,063` 箱をリセット・再配置（`lSkip=0`、`~19.5 ms`）し、さらに `LocalPatches.tryTextPatch` は `List<DisplayItem> elements = null` が `try` 内で一度も代入されず `if (stale && elements != null)` が不発で毎回 `ensureLayoutFresh`＋`paintBoxes`（`28.3 ms`）＋`publishBuilt`（`36.7 ms`）へ落ちる。④**`.card:hover` の `box-shadow .15s` 遷移**: 非コンポジタ属性の `box-shadow` 補間で `StyleAnimator` が 150ms 間毎フレーム `requestRestyle` を発火し、②③と連鎖してスクロール中のホバー通過で毎フレーム `90〜140 ms` 化する。⑤**初回無窓フレーム**: `new StandaloneView` 時の空 `#list` で `lastOwnerCount ~ 25` が記録されるため、`wire()` で 3,000 枚追加した直後のフレーム 0 が `windowed=false`（`138,081` 項目・`964 ms`）で組まれ、次フレームで `windowed=true` へ反転して `memoFrameKey` 不一致で `707 ms` 化する（→ §3 **K4h**・**K5**）。
-195. **〔不具合〕オラクルで落ちていた 2 件（`FloatContainmentMemoTest`・`PathPredictionTest`）の原因と直し（2026-11-24）**: ①**内在の幅〔min/max-content〕が `box.horizontalDecoration()`〔前回の測定が置いた `pL`・`bL` など〕を読んでいた**。測っていない箱は 0、使い回した箱は前の値で、shrink-to-fit の親〔float になった body〕の中の fieldset の幅が最初から作った面と違った〔62 と 56〕。全面の再レイアウトでも直らない〔箱の値が残る〕ので無効化の漏れではなく、入力の読み違い。`intrinsicInlineMargins` と同じく**スタイルだけから**求める `IntrinsicSizing.inlineDecoration`〔% は 0。表は重ねた枠線のため箱の値〕へ。②`ScrollExtentCalc` が、断片を持たず幅 0 の文字〔空白だけで畳まれた文字〕の箱の高さ 1 行ぶんをスクロール範囲へ足していた〔最初から作った面だけ。増分では最後のブロックを消すとその箱が残らない〕。③箱の木の作り方の差〔最初から作ると子が空白だけのブロックに箱が残る〕は観測できないので、`FrameOracle` の箱の比較から数えない〔`invisibleText`〕。固定: `IntrinsicAndScrollOracleTest`・`-Dverify.oracle=true` の全件緑。フラグ・状態欄の追加 0。
-196. **K5 第 1 段で分かったこと（2026-11-24）**: ①`repositionLayout` は `reuseMeasurements=false`・`keepRun=-1` で毎回全箱の配置を捨てていた〔K2 の鍵・K3 の親相対座標が効かない唯一の入口〕。`keepRun` を今回の run にし `reuseMeasurements=true` にするだけで、スクロールの量に依らない箱の配置が `PlacementMemo.tryReuse` の鍵〔`sameScroll`・`deps`〕で使い回され、`machine_ui scroll` が `-91%`。既存の全テストは無改造で緑で、新しい検証 `RepositionReuseTest` も旧実装で緑〔旧実装との同値を確かめた上での変更〕。②**スクロール中の表示リストの座標は、最初から作ったものと項目の座標では比べられない**〔スクロール内容の節の移動量が遅延して適用されるため、`renderCache` の NODE の座標が違う〕。比べるなら最終の画素。`FrameOracle` へスクロール量の複製を入れる〔K0b ②〕ときも、箱の座標でなく画素の比較にする。③**最初の版は `scrollOnly` を区別せず全再配置を使い回しにして、根の `:test` の 4 件〔`IncrementalPipelineTest`・`ServerClientLayoutParityTest`・`LinuxDesktopScreenInputTest`・`ReactiveStateStoreTest`。ドラッグ＝`left`・`top` のスタイル変更〕を壊した**。配置の鍵は箱自身の inset を読まないので、位置の指定が変わる再配置は同じ入口でも使い回せない。入口に `scrollOnly` を渡し〔`UiView.repositionFromLayout(scrollOnly)`・遅延したスクロールの決め直し〕、公開の 8 引数版は従来どおり全箱を捨てる。`core` だけの `:core:test` では見つからず、**Linux の `ci-linux.ps1`〔ルートの `:test` を含む〕で見つかった**ので、配置・位置に触れる変更は `:test`〔ルート〕も回す。④`STALE_TEXT_PATCH` は `elements != null` が一度も代入されず、実質 `ensureLayoutFresh` の後ろへ回るだけだった〔§6-194 ③の指摘どおり〕。撤去しても結果は旧実装と同じ〔`StaleTextPatchTest` は旧・新どちらでも緑〕。⑤`LocalPatches` の残りの 4 スイッチは、文字・属性・子の増減の入口を `restyleAndUpdate`〔汚れの印＋`tryRelayoutInPlace`〕へ寄せる設計〔文字の節の変更を「変わった箱」として `layoutChangedBoxes` に載せ、`CHILD_PATCH` は構造の変更として再構築〕で消す。性能の退行が出やすいので、`textPatchHits` の `costGate` 行〔`text` 系 14 行〕を A/B で守りながら 1 つずつ行う。
-197. **K5 第 2 段で分かったこと（2026-11-24）**: ①**文字の変更は、旧「文字パッチ」と「再スタイルの変わった箱の測り直し」が同じ処理**〔`refreshStyle` → `relayoutInPlace(変わった箱)` → 表示リストの作り直し〕で、違いは変わった箱の集め方だけだった。集め方を `TextChanges` に出し、測り直しを 1 つの入口にした。②**統合の最初の版は、文字と位置の指定〔`left`・`top`〕の同フレームの重なりで位置の再配置を飛ばした**〔`PlacementKeepAbsoluteTest` の fresh 側が重なりを作るので検出〕。文字の経路の後ろに、位置・属性の分岐を続ける。③**確保の退行は 2 つ**: 文字の集めに `IdentityHashMap` の集合を作っていた〔約 500 B。`changed` は集合から出すので重複しない〕、`InteractionState.hasDirtyNodes`・`styleDirtyOnlyIn` が汚れ印のある文書で全節を走査して `Integer` を作る〔約 3 KB。`surface_test` のように毎フレーム汚れた節がある文書で出る〕。判定は個数の帳簿だけの O(1)〔`mayHaveDirtyNodes`〕にし、残っていれば再スタイルを走らせる〔旧の重なりと同じ〕。④**`CHILD_PATCH` を通常経路へ寄せると `large-list child` が `0.29 → 0.50 ms`・確保 `33 → 317 KB`/f**〔`-Denderframe.ui.nochildpatch=true` との比較。記憶の回数は同じ: 配置 5.5・断片 miss 5〕。全再計算の箱の木の作り直しが、変わっていない 500 行の子リストも組み直すため。撤去には、きれいな部分木をそのまま返す再利用が要る → §3 K5b。⑤`-Dverify.oracle=true` の全件・ルート `:test`・`costGate` を通した。
-198. **K5b 第 1 段で分かったこと（2026-11-24）**: ①`CHILD_PATCH` を切った `large-list child` の確保の出どころ〔JFR〕は `BoxTreeBuilder.fixupTable`〔`items.stream().noneMatch`〕`40%`・`wrapInlineRuns` `24%`・`collectItems`〔子の反復子と `ArrayList` の伸長〕`13%`。500 行の親の子リストごとに `stream` のパイプラインと反復子を作っていた。除去で `317 → 151 KB`、先頭確保・添字ループで `→ 90 KB`。②**それでも時間は `0.43 ms`〔patch `0.30`〕**: CPU の差分は全木の走査の分〔`UiView.recomputeLayout` 内の `RenderTreeBuilder.buildLayoutTree` `21%`・`BoxTreeBuilder.buildBox` `17%`・`LayoutBox.measure` の照合・`markLayoutChanges`〕で、記憶の回数は patch と同じ〔配置 5.5・断片 miss 5・測定 計算 3〜6〕。つまり**費用は「変わらない箱を訪れる」こと自体**で、定数倍では詰まらない。③`ComputedStyle.keywordOf` の名前引き〔`CssPropertyId.of`〕を添字へ替える試作は効かず戻した〔CPU の `18/200` は呼び出し側の全箱走査の一部〕。④部分木を飛ばすには「触れられていない部分木」を知る必要があるが、**入口別の集合〔`pendingChildParents` と同種〕や `CHILD_PATCH` の成立条件の共有では、パッチの別名になる**〔最初の案。却下〕。現状は変更の入口が 6 つ〔文字・子・属性の集合・汚れの 3 ビット・水準・構造の版〕で、「下に変更がある」を段ごとに別の仕組みで持つ〔`DIRTY_BELOW` は祖先へ伝播するフラグ〕。→ 変更を追記するだけの台帳 1 本と、全段共通の「触れられていない部分木は辿らない」の 1 規則へ一本化する〔設計書 §3.6。L0〜L4〕。⑤性能の合否線 ±10% を満たさないまま `CHILD_PATCH` を消さない〔運用ルール 10〕。**⑥フラグ・集合・パッチ条件の「共有」で近道を作らない**〔ユーザーの指摘。目標は 1 本化と状態機械〕。
-199. **K5b L0 で分かったこと（2026-11-24）**: ①**`DocumentState`〔`dom.node`〕を通す**: `HtmlDocument` は `InteractionState`〔上の層〕を直接参照できず、口 `DocumentState` 経由。台帳の型 `ChangeLedger` も `dom.node` に置き、口に `changeLedger()` を足した〔層の向きのラチェットに従う〕。②**入口の分類は 1 か所で決める**: `nodeChanged(節, null)` は文字の節なら `TEXT`、**要素の内容の差し替えは箱の木には子の増減として効く**ので `CHILDREN`〔最初は `ATTR` にして、観測テストが `pendingChildParents` との食い違いを見つけた〕。属性名のある変更は `ATTR`。描画だけの属性かどうかは**読み手の導出**〔L1〕で、台帳には事実だけを載せる。③**既存の入口には残りかすがある**: `<style>` の変更で全体の再レイアウトへ入る経路は `pendingChildParents` をフレーム後に取り除かない〔台帳は凍結で空になる〕。観測は「フレーム後に残った分は今の変更ではない」として除く。L1 以降でその入口を消せば自然に無くなる。④**凍結は配列の入れ替え**: 毎フレーム `Arrays.copyOf` で凍結すると A/B `+2〜3%` だった〔確保〕。入れ替えにして `+1〜2%`。残りは A/A の揺れ〔`±1%`〕と区別がつかない水準で、見積り〔5 件 + 凍結 1 回 ≒ `0.2%`〕と合わせて許容とした。⑤`static final Kind[] KINDS` は `StaticStateRatchetTest` が分類を求めるので持たない。
-200. **K5b L1 で分かったこと（2026-11-24）**: ①**台帳を落としても表示は壊れない**: 文字の変更の台帳の追記を落とす変異〔`freeze` を 2 回〕でも、結果は最初から作った結果と同じだった。`markDirty` の汚れ印〔`StateFlags`〕が別経路で文字の箱を更新するため。つまり**入口はまだ 2 つ**〔台帳と汚れ印〕で、台帳が文字の「測り直しの経路」に乗せる唯一の入口になっただけ。汚れ印の撤去は L3。変異の殺しは表示の一致でなく `TEXT_PATCH_HITS` の増減〔経路に乗ったか〕で固定した。②**あふれ・節を絞れない要素の分離**: L0 は「節の無い追記」で全体を `whole` にし、以降の個々の追記を捨てていた。L1 の読み手は同じフレームの文字・属性の変更を読む必要があるので、節を絞れない要素〔`ENV`・`SCROLL`・`appendWhole`〕は 1 要素として個々と並べ、**捨てるのは 4,096 件を超えたあふれだけ**にした。`touches` は節を絞れない要素があれば全体に効く。③**`markAllDirty` はフラッシュの中でも呼ばれる**〔`layoutDocument` のメディア変更〕ので、台帳へ「全体」を足すと次フレームの凍結に載る。個々を捨てる「あふれ」と混ぜると次フレームの文字の測り直しが全体の再レイアウトへ退く〔無駄〕ので、`appendWhole` は節の無い `STYLE` 要素にした。④**属性の分類の移動**: 「描画だけの属性か」の判定はリスナー〔書き手〕から読み手〔`flushInvalidation` の `paintAttrs` 呼び出し〕へ移した。台帳に載るのは事実〔節・種別・属性名〕だけ。
-201. **〔不具合〕混在の内容で、インラインの途中へブロックを差し込むと項目が二重に出た（K5b L2 の調査。K4 以前から存在・2026-11-24）**: `<div>lead <b>bold</b> <div>r0</div>tail</div>` の `<b>` の前へブロックを `insertBefore` すると、表示リストに `b` の項目が 2 組出た〔`mixed`〔匿名ボックス〕の古い断片が当たった〕。**差分でない基準〔`incrementalLayout(false)` の面・記憶の無い `DisplayListBuilder`〕と比べて初めて見えた**〔旧 `ChildPatchTest` は基準も差分だったので同じ不具合が両方に出て一致していた〕。原因: 子を足した**作りたての匿名ボックス**は、親へ付く前に `addChild` が `touchSubtree()` → `PaintStamps.mark` を呼び、`push` が箱から親を辿った根〔親が無いので自分自身〕の待ちリストへ積む。文書の根の待ちリストしか `settle` が確定しないので、`layoutDirty` が立ったまま取り残され〔`mark` は立っているビットを見ると積まない〕、その匿名ボックスが次に再利用されて子が減っても構造の印〔部分木の印〕が付かず、`FragmentPaint` の記憶が古いまま当たった。直し: 親にぶら下がっていない箱〔`parent == null` かつ節に親がある＝文書の根でない〕には印を付けない〔作りたての箱に描画の記憶は無く、最初の配置で付く〕。再現: `AnonymousBoxPaintMemoTest`〔記憶の無いビルダーとの比較〕・`ChildPatchTest`。**教訓**: 差分の検証は、基準も差分だと同じ不具合を隠す。基準は差分を切った面か記憶の無い面にする。
-202. **〔不具合〕隣接・一般兄弟結合子（`+`・`~`）の規則が、先行する兄弟の増減で後続の兄弟を再スタイルしなかった（K5b L2 の調査。K5 以前から存在・2026-11-24）**: `.sib > .row + .row { margin-top: 9px }` で先頭の子を `removeChild` すると、新しく先頭になった子が前の余白 `9px` のまま残った〔算出スタイルそのものが古い。レイアウト・描画の記憶ではない〕。原因: `InvalidationSets` の「構造の変化の範囲」〔`structure`。子の挿入・削除で汚す範囲〕に入るのが `:empty`・`:nth-*` だけで、`+`・`~` が無かった。クラスの変化〔`byClass`〕は `compose` で後続の兄弟へ広がるが、**要素そのものが増減する変化は別の入口**。直し: セレクタに `+`・`~` が 1 つでもあれば、構造の変化の範囲へ `FOLLOWING_SIBLINGS_SUBTREE`〔後続の兄弟と子孫〕を足す。再現: `SiblingCombinatorInvalidationTest`〔差分でない基準 `FrameOracle` との比較〕。もう 1 つの原因: 要素ごとの算出スタイルの記憶〔`StateStyleMemo`〕の鍵が自分の属性・子の数・状態だけで、先行する兄弟・位置に依る規則〔`+`・`~`・`:nth-*`・`:empty`〕の結果が変わっても当たり続けた〔1 度子の増減を反映した後の 2 度目の削除で再現〕。直し: 兄弟・位置を読む規則があるシート〔`InvalidationSets.structureSensitive()`〕では記憶を使わない。**旧 `ChildPatchTest` が見逃した理由**: 基準も差分レイアウトだったので同じ古さが両方に出て一致した〔§6-201 と同じ教訓〕。
-203. **K5b L2 で分かったこと（2026-11-24）**: ①**通常経路の費用は「触れられた親の子を 1 つずつ確かめる」定数倍**: 子の増減を台帳から部分構築にすると、変わった親の子 `500` 件を `RenderTreeBuilder`〔`keepFast`〕・`BoxTreeBuilder`〔`collectItems`・`fixup`・`replaceChildren`〕が 1 回ずつ辿る。`large-list child` の内訳〔ms〕: 再スタイル側 `0.057`・箱の木 `0.049`・測り直し/配置 `0.21`〔旧 patch は全体 `0.30`〕。②**`<li>` の子を飛ばせない版が最初にあり、辿った箱が `~508` になって全く速くならなかった**: 番号を使わない `list-style-type`〔`none`・`disc`・`circle`・`square`〕の項目は兄弟に依らないので飛ばしてよい。③**`replaceChildren` の落とし穴 3 つ**〔どれも全体の経路で見つかった〕: 並びが同じでも子自身の `isAbsolute` 等は変わる〔`recomputeChildFlags` は常に〕・別の親から移ってきた箱は残した子でも親の指しが古い〔全部付け直す〕・構造の版・描画の記憶の更新は組み直した箱で毎回進める。④**匿名ボックスは辿った箱に入らない**: 親の子の付け替えで匿名ボックスの中身が変わるのに測定の印が付かなかった〔`K2PlacementKeyTest` の `nested/27` で発見〕。`collectChanged` が辿った箱の下の匿名ボックスも見る。⑤**測り直しの調査〔旧 patch と同じ 3 段で比較〕**: 旧は組み立て `0.023`・測り直し `0.140`・描画 `0.115`、新は `0.112`・`0.164`・`0.115`〔`large-list`〕。測り直しの差の正体は 2 つで、**表示なしの `head`/`style` を毎回「辿る」〔`intact` が `display:none` を拒んでいた〕→ 測られない箱が変更扱いで毎フレーム測り直される**ことと、**新しい未測定の箱を個別に変更扱いして部分木の全体印付けをする**ことだった。どちらも直し、測定回数は旧と同数〔`3600`〕。残りは子 500 件を辿る定数倍。⑥**次の手**: 触れられた親の子を O(件数) で辿る部分を、台帳の `touchedChildren` と前回の並びから「前後を飛ばして間だけ」〔`replaceChildren` の前後比較を `RenderTreeBuilder`・`BoxTreeBuilder` の前へ〕にする〔設計書 §3.6 L3 の汚れビットと合わせる〕。
+  // 2. 不変レイアウト出力（完成後は一切書き換えない）
+  public final class LayoutFragment {
+      public final BoxNode box;
+      public final float width, height;
+      public final Edges margin, padding, border; // 解決済みピクセル値
+      public final float baseline;
+      public final float scrollW, scrollH;
+      public final PlacedChild[] children;        // 親相対座標 (x, y) と子の LayoutFragment（または ChunkedFlow）
+      public final LineFragment[] lines;          // インライン整形結果（無ければ EMPTY）
+      public final OutOfFlowData outOfFlow;       // absolute/fixed/float 情報（無ければ null）
+  }
+
+  // 3. 整形コンテキスト SPI（完全にステートレス）
+  public interface FormattingEngine {
+      LayoutFragment layout(BoxNode node, ConstraintSpace space, LayoutSession session);
+  }
+  ```
+  - **逆流書き込みの完全根絶**: `overrideWidth` / `overrideHeight` / `floatSpace` / `collapsedBorders` / `columnShifts` 等を箱へ書き込む設計を全廃し、`ConstraintSpace`（確定寸法・float 除外領域・テーブル列幅・multicol 情報）としてトップダウン引数で明示的に渡す。
+  - **単一 1 層メモ化 `LayoutCache`**: 1 ビュー（`EngineView`）に閉じた `(BoxNode, ConstraintSpace) → LayoutFragment` キャッシュのみを持つ。`BoxNode` と `Style` が不変のため、DOM 変更で影響を受けた祖先チェーンの `BoxNode` のみを新しく構築すれば、**未変更部分木は `boxNode == cached.boxNode && space.equals(cached.space)` の O(1) 判定だけでそのまま再利用**できる。
+  - **長大フローの O(log N)〜O(√N) 位置解決（全面・増分同一ロジック）**: 子数が閾値（例：128 子）を超える通常ブロックフローでは、`LayoutFragment.children` を固定チャンク（例：32 子ごとの累積高さブロック、または `ChunkedFlow`）として構築する。先頭〜挿入位置前のチャンクは `BoxNode` の参照同一性で再利用し、後続チャンクは累積オフセット加算のみで位置を解決するため、**全面レイアウトと 1 行挿入・削除が完全に同一のコードパスで O(log N)〜O(√N)** になる。
+- **削除対象（計 約 4,500 行超を完全削除）**
+  - `LayoutBox.java`（1,785 行・81 欄）
+  - `MeasureMemo.java`（799 行・41 欄・17 フラグ）
+  - `PlacementMemo.java`（342 行・11 欄）
+  - `PlacementDeps.java`（252 行）
+  - `LayoutReads.java`（619 行）・`MeasureReads.java`（158 行）・`ReadKind.java`（113 行）
+  - `PaintStamps.java`（249 行）
+  - `PartialBuild.java`（167 行）・`ChildWindow.java`（47 行）
+  - `ChangeLedger.java`（152 行）・`ChangeReads.java`（62 行）
+  - `RenderPipeline.java` / `RenderTreeBuilder.java` 内の旧多段分岐（`relayoutRootOnly` / `relayoutInPlace` / `repositionLayout` / `LocalPatches` / `InPlaceRelayout`）
+  - プロセスグローバルエポック全廃（`SHAPE_EPOCH`, `STRUCT_EPOCH`, `CONTAINER_EPOCH`, `PAINT_EPOCH`, `renderBoundary`, `MEASUREMENT_EPOCH`）
+- **移行手順**:
+  1. `BoxNode`・`LayoutFragment`・`ConstraintSpace`（拡張版）・`LayoutCache`・`BoxTreeCompiler`（DOM → 増分 `BoxNode` 木構築）を新設する。
+  2. `BlockLayoutEngine`（1,372 行）・`FlexLayoutEngine`（898 行）・`GridLayoutEngine`（1,280 行）・`TableLayoutEngine`（835 行）・`VerticalWritingEngine` を順次 `FormattingEngine` SPI へ移植し、入力不変・出力不変で動作させる。
+  3. 移行期間中の `DisplayListBuilder` との接続用アダプタを経由して `WptReftestRatchetTest` / `FrameOracle` を確認したうえで、旧 `LayoutBox`・メモ群・台帳群を一括削除する。
+- **完了ゲート**:
+  - 削除コード：`≥ 4,500 行`、グローバルエポック：`0`。
+  - 保持ヒープ：`varied-list-2000 ≤ 12.0 MB`、`large-list-2000 ≤ 4.5 MB`（Chrome `5 MB` 以下）。
+  - 8,000 行リスト 1 件挿入：`7.89 ms → ≤ 1.0 ms`（500 行は `≤ 0.15 ms`）。
+  - `FrameOracle`（最初から作った結果との全比較）100% 一致、WPT 160/260 以上維持。
+
+---
+
+### 3.4 Phase M3: フラット `DisplayItem` 廃止と階層的 `DisplayScene` + L4 単方向化
+
+`Fragment` の階層を `DisplayItem[]` 平坦配列に潰してから `PaintSceneDriver` で復元するという無駄な往復を完全に廃止し、レイアウト結果から GPU / CPU 描画までを 1 本の軽量ツリーで単方向に繋ぐ。
+
+- **新データモデル（`core/paint/`）**
+  ```java
+  // 1. 不変階層描画シーン（旧 DisplayItem[] + Fragment + PaintSceneDriver を置換）
+  public final class DisplayScene {
+      public final SceneLayer root;
+      public final Int2ObjectMap<SceneLayer> byNodeId; // 動的オフセット・ヒットテスト・スクロール用 O(1) 索引
+  }
+
+  public final class SceneLayer {
+      public final int nodeId;                 // 文字列 ID ゼロ
+      public final float x, y, w, h;           // 親相対座標
+      public final float scrollClipW, scrollClipH;
+      public final Transform2D transform;      // 固定変形（アニメ中は外部表で上書き）
+      public final ClipShape clip;             // 角丸クリップ・clip-path（親鎖の継承は走査スタックで解決）
+      public final LayerEffects effects;       // opacity / filter / backdropFilter / mixBlendMode / mask
+      public final DrawOp[] ops;               // このノード自身の描画プリミティブ（背景・枠線・影・文字グリフ列・画像）
+      public final SceneLayer[] children;      // スタッキングコンテキスト順（negZ → flow → posZ）に整列済みの子層
+      public final boolean hasAnimatedOrScrollDescendant; // 静的サブツリーの FBO/テクスチャ再利用判定
+  }
+  ```
+  - **動的パラメータの完全外部化**: スクロール量（`ScrollState`）および補間アニメーション（`AnimatorState`、`int nodeId` キー）は `DisplayScene` を書き換えず、バックエンド走査時に `nodeId` で O(1) 参照して座標・変形・色を合成する。
+  - **L4a `SceneEmitter` → L4b バックエンドの完全単方向化**:
+    - `SceneEmitter` が `LayoutFragment → DisplayScene` を生成する（未変更 `LayoutFragment` サブツリーに対応する `SceneLayer` も参照同一性で再利用）。
+    - `GpuRenderBackend`（RHI `GpuDevice`）と `SoftwareRenderBackend`（64×64 `TileQueue`）はどちらも `RenderBackend.render(DisplayScene scene, DynamicSceneState state, long nowMs)` を直接受け取る。
+    - GPU 未対応の稀なベクターパス・特殊ブレンド等がある場合、**`SceneEmitter` 側が事前にソフトウェアラスタでビットマップ化（`DrawOp.Image`）してから `DisplayScene` に積む**ことで、`GpuRenderBackend ↔ SoftwareRenderBackend` のピンポン呼び出しを構造的に消滅させる。
+  - **ヒットテスト統合**: `HitTestIndex`（749 行）を廃止し、`DisplayScene`（または `LayoutFragment`）を逆順（手前から奥）に直接走査してスクロール・変形・クリップを評価する（`O(木深さ + 命中候補)`）。
+- **削除対象**
+  - `DisplayItem.java`（237 行）・`PaintCell.java`（77 行）・`RenderHints.java`（174 行）・`ImmutableItemList.java`・`AbsoluteItems.java`（118 行）
+  - `DisplayListBuilder.java`（922 行）・`FragmentPaint.java`（776 行）・`Fragment.java`（471 行）・`FragSeq.java`（428 行）
+  - `PaintSceneDriver.java`（926 行）・`RetainRanges.java`（87 行）・`RangeBounds.java`（40 行）・`InkBounds.java`（72 行）・`InkState.java`（66 行）・`ItemDiff.java`（93 行）
+  - `HitTestIndex.java`（749 行）
+  - `CpuFallback.renderOnto` 逆転コールバック・`GpuSink.java` ピンポン経路（`core/paint/emit` / `core/paint/port` は `SceneEmitter` + RHI 契約へ整理）
+- **完了ゲート**:
+  - `showcase` 幅変更の描画シーン構築時間：`0.273 ms → ≤ 0.08 ms`。
+  - `varied-list-2000 fontsize`（4 スレッド・実書体）：`10.76 ms → ≤ 5.0 ms`（**144Hz 予算 `6.94 ms` 達成**）。
+  - 3 者画素一致（CPU / OpenGL / Vulkan）100% 緑、`L4` 関連コード規模 30% 以上削減。
+
+---
+
+### 3.5 Phase M4: サンプル MOD レガシーレンダラ（9,369 行）完全撤去と L5 ホスト層純化
+
+二重保守されていた Minecraft 側レンダラを完全に削除して `:core` 単一パイプラインへ統合し、肥大・分裂していたホスト層（`UiView` / `StandaloneView` / MOD `client`）を解体・統合する。
+
+- **サンプル MOD レガシーレンダラ撤去（`src/main/java/com/nishiyu/enderframelib/client/renderer/`）**
+  - **完全削除するファイル**:
+    - `DisplayItemDrawer.java`（1,007 行）
+    - `LayerCompositor.java`（1,399 行）
+    - `WebSdfShader.java`（982 行）
+    - `TextElementRenderer.java`（547 行）
+    - `OutlineTextRenderer.java`（392 行）
+    - `BackgroundRenderer.java`（200 行）
+    - `ControlElementRenderer.java`（198 行）
+    - `MediaElementRenderer.java`（352 行）
+    - `RoundedRectRasterizer.java`（243 行）
+    - `EnderFrameBuiltInConfig.useCoreBackend` の切り替え・フォールバック分岐
+  - **MOD 固有要素の RHI SPI 統合**:
+    - アイテム・エンティティ・流体・ブロック・プレイヤー頭・`<mc-scene>`・Minecraft ビットマップ書体・オフスクリーン動画テクスチャを、`:core` の RHI 外部テクスチャ SPI（`GpuDevice.wrapExternalTexture` / `ImageProvider` / `FontResolver`）経由で供給するアダプタ（`MinecraftMediaBridge`, `MinecraftFontAdapter`）のみを MOD 側に残す。
+    - `CoreGpuSurface`（`MinecraftHostSurface` へ整理）を全画面（GUI / コンテナ / HUD / ブロック面 / ホログラム / アイテム / 地図）の**唯一の描画経路**とする。
+- **L5 ホスト層（`UiView` + `StandaloneView` + `SessionContext`）の純化と重複解消**
+  - `UiView.java`（2,005 行）と `StandaloneView.java`（1,060 行）を解体し、以下に分離する：
+    1. **`EngineView`**（`common/`、≤ 400 行）：1 画面の純 Java コア状態（`DomDocument`, `StyleSheet`, `LayoutCache`, `DisplayScene`, `ScrollState`, `InteractionState`, `AnimatorState`, `UiTimers`）とフレーム更新 `stepAndPaint(nowMs, backend)` のみを持つ。
+    2. **`InputController`**（`common/`、≤ 500 行）：ヒットテスト・ポインタ・フォーカス移動・IME / テキスト編集（旧 `TextEditing` と MOD `TextareaEditor` を統合）・範囲選択・`<select>` ポップアップ（旧 `SelectPopup`）・スムーズスクロール補間を 1 箇所で処理する。
+    3. **`StandaloneHost`**（`common/`、≤ 250 行）：ウィンドウ座標・クリップボード接続のみを受け持つ薄いラッパ。
+    4. **MOD 側 `SessionContext` / `EnderScreenDelegate`（1,298 行 → ≤ 450 行）**：`serverManaged`, `headlessState`, `lastSyncRequestTime`, `shouldRequestSync()`, `explicitSize`, `applyOverrides()` 等の Minecraft 通信・画面統合責務だけを MOD 側に閉じ、`EnderScreenDelegate` の入力・編集重複コードを削除して `InputController` に委譲する。
+  - **MOD パッケージ循環の解消**: `client ↔ client.gui ↔ client.renderer ↔ client.renderer.surface` の 5 組の直接循環依存を「`client.renderer`（低位描画アダプタ）← `client`（セッション管理）← `client.gui`（画面ホスト）」の単方向に整理する。
+- **完了ゲート**:
+  - `src/main/java/com/nishiyu/enderframelib/client/renderer/`：`9,369 行 → ≤ 1,500 行`。
+  - L5 共通ホスト（`EngineView` + `InputController` + `StandaloneHost`）：計 `≤ 1,200 行`（旧 `UiView` + `StandaloneView` + `UiInput` = 3,855 行）。
+  - MOD 側パッケージ循環：`5 組 → 0`。
+  - `./gradlew runGameTestServer` および実機スクリーンショット回帰（GUI・HUD・ブロック面・ホログラム・アイテム・`<mc-scene>`・メディア）全通過。
+
+---
+
+### 3.6 Phase M5: DOM 整理・コールド起動短縮・並列/窓直交統合
+
+- **DOM とアリーナの二重管理解消（`core/dom/`）**
+  - `DocumentArena`（446 行）が `HtmlNode`（1,399 行）をミラー保持している二重構造を整理し、`HtmlNode` / `HtmlElement`（980 行）をノード基本構造・属性・DOM API・イベント配送へ責務分割して各クラス `≤ 500 行` に収める。
+  - セレクタ高速化に必要なデータ（atom 化タグ/id/class・Bloom ビット）のみを軽量 `SelectorIndex` として独立させ、トポロジ二重同期を廃止する。
+- **コールド起動の劇的短縮（旧 B6）**
+  - `SystemFonts` の起動時全フォントフォルダ走査（Windows で約 500 ファイル・150〜300 ms）を撤廃し、既定ファミリの直開きオンデマンド解決（約 2 ms）＋未知ファミリ要求時のみの遅延スキャン＋ディスク目録キャッシュを導入する。
+- **不変データモデル上での並列化・描画スレッド分離（旧 B7）および窓×描画直交分離（旧 G7）**
+  - 不変 `LayoutFragment` + 不変 `DisplayScene` の恩恵により、データ競合ゼロでサブツリー単位の並列レイアウト（`LayoutTaskPool`）および論理スレッド／描画スレッドの非同期パイプライン分離を実装する。
+  - `WindowHost` SPI と標準 Java 2D/AWT 窓ホスト（`JFrame` + `BufferStrategy` + `DataBufferInt` 損傷矩形 Blit + `InputMethodRequests` による OS 標準 IME 連携）を整備し、`:core` 単体（GLFW/GL 不要）での 144Hz 起動と `:core-glfw` 上での `SOFTWARE` / `GL` / `VULKAN` 直交選択を完成させる。
+- **完了ゲート**:
+  - コールド起動（`ColdStartMain showcase`・JDK 21 素）：`546 ms → ≤ 200 ms`（Chrome `304 ms` 以下）。
+  - 全実文書の初回構築（`voidwave.html open` 等）：`9.15 ms → ≤ 5.5 ms`（全シナリオ 144Hz 予算内）。
+  - `:core` および MOD 全体で **1,000 行超クラス `0 個`**。
+
+---
+
+### 3.7 Phase M6: 品質ゲート最終固定と配布（v2.0.0 GA）
+
+- `ArchitectureHealthTest` の最終上限を固定する（1 クラス `≤ 600 行`、グローバル mutable static = `0`、パッケージ循環 SCC = `0`、`core/` の Minecraft 非依存 = 100%）。
+- Linux 環境での全件テスト・実機検査（`scripts/ci-linux.ps1 -Full`）を通過させ、公開 API 署名（`ApiSignatureTest`）を確定して `:core`（v2.0.0）を単体ライブラリとして Maven Central / GitHub Packages へ公開可能にする。
+
+---
+
+## 4. KPI ダッシュボード（現状 vs 根本治療後の目標）
+
+| 軸 | 指標 / シナリオ | 現状（2026-11-24 実測・確認値） | 根本治療後の目標（達成フェーズ） |
+| :--- | :--- | :---: | :---: |
+| **性能** | `varied-list-2000 fontsize`（4 スレッド・実書体） | `10.76 ms`（144Hz 予算超） | **`≤ 5.0 ms`**（M3 で 144Hz 達成） |
+| **性能** | `large-list-8000 child`（1 件挿入・削除） | `7.89 ms`（超線形） | **`≤ 1.0 ms`**（M2 で達成） |
+| **性能** | `showcase` 幅変更（`resizeexact`・GL） | `0.427 ms`（うち表示リスト 66%） | **`≤ 0.20 ms`**（M3 で達成） |
+| **性能** | `voidwave.html open`（実文書初回構築） | `9.15 ms`（144Hz 予算超） | **`≤ 5.5 ms`**（M5 で達成） |
+| **性能** | コールド起動（JDK 21 素・`showcase`） | `546 ms`（Chrome `304 ms`） | **`≤ 200 ms`**（M5 で達成） |
+| **メモリ** | 保持ヒープ `varied-list-2000` / `large-list-2000` | `40.2 MB` / `10.0 MB`（Chrome 1.55x / 2.0x） | **`≤ 12.0 MB` / `≤ 4.5 MB`**（M2 で Chrome 以下） |
+| **構造** | 増分・キャッシュ専用コード規模 | 43 ファイル・`6,527 行` | **`≤ 800 行`**（M2〜M3 で 1 層メモ化のみ） |
+| **構造** | `LayoutBox` / `ComputedStyle` / `UiView` 行数 | `1,785` / `2,095` / `2,005 行` | **解体・各 `≤ 450 行`**（M1〜M4） |
+| **構造** | 1,000 行超クラス数（`:core` / MOD 合計） | `25 個`（`:core` 19 + MOD 6） | **`0 個`**（M5〜M6） |
+| **構造** | グローバル `Shortcut` スイッチ / 共有エポック | `38 個` / 複数（`SHAPE_EPOCH` 等） | **`0 個` / `0 個`**（M0〜M2） |
+| **構造** | MOD 側重複レンダラ（`client/renderer`） | `9,369 行`（`useCoreBackend = false` 既定） | **`≤ 1,500 行`・コア単一経路化**（M4） |
+| **正しさ** | WPT 参照画像比較 / 3 者画素一致 / `FrameOracle` | `160 / 260`・画素一致 | **`≥ 160 / 260` 維持・全一致**（全フェーズ） |
+
+---
+
+## 5. 新・運用ルール（二度と構造崩壊とパッチ地獄に戻らないための 7 原則）
+
+1. **優先順位表は §3 の 1 つだけとする。** 新しい課題は §3 に統合し、完了したフェーズの成果と数値は §4 を上書き更新する。
+2. **壊れた IR や可変オブジェクトの上に対症療法的キャッシュを足さない。** 速度・メモリ問題が出たときはまずデータ構造（入力と出力の分離・参照共有・階層表現）を疑い、破壊的変更で根を絶つ。
+3. **キャッシュは「不変入力の参照同一性（`==`）による 1 層メモ化」のみ許可する。** 40 欄ハッシュ後追い検証（`PaintStamps` 型）・ビットマスク読み取り台帳（`LayoutReads` 型）・手書き純粋性フラグ（`F_*`）・出力その場書き換えパッチは新設を禁止する。
+4. **プロセスグローバルな可変状態を禁止する。** 新しい `Shortcut` スイッチ・`static volatile` フラグ・プロセス共通エポックカウンタ・ビジネスロジック上の `ThreadLocal` を作ってはならない。すべての状態は 1 ビュー（`EngineView`）に閉じる。
+5. **クラス規模規律を強制する。** 新規作成および刷新するクラスは **`≤ 600 行`** を原則とし、いかなる理由でも **1,000 行超クラスの再発生を許さない**（`ArchitectureHealthTest` で機械的に阻止）。
+6. **検証は「外から見た正しさ」と「実コスト」で行う。** 正しさは WPT・CPU/GL/Vulkan 3 者画素一致・`FrameOracle`（全再計算との一致）で固定し、性能とメモリはヒープ実測と同時交互 A/B 計測で判定する。内部の記憶ヒット率やフィールド数を固定する形式ラチェットは設けない。
+7. **完了の定義は「旧コード・旧経路の完全削除」「テスト緑」「§4 KPI 更新」の 3 点セットとする。** 旧経路をフラグやフォールバックで残したまま完了としない。
+
+---
+
+## 6. アーカイブおよび他文書との関係
+
+- 旧計画（C 系・K 系・K5b・W0〜W3・2026-11-24 までの設計記録と知見 `§6-1〜205`）の全文は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) に退避済みである（`RegressionCatalogTest` が参照する `§6-N` は同アーカイブの付録 3 にすべて保全されている）。
+- `core/DESIGN_INCREMENTAL_KERNEL.md` は本刷新（§1.2 撤回一覧）により**廃止扱い**とし、Phase M0〜M2 完了に合わせて削除またはアーカイブする。
+- `CLAUDE.md`・`ARCHITECTURE.md`・`BENCHMARK.md`・`REFACTORING_PLAN.md` は、Phase M0〜M4 の各段階の実装完了に合わせて本計画書（Engine v3）の内容へ順次同期する。

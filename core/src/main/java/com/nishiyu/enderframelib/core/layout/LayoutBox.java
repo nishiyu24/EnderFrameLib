@@ -339,6 +339,8 @@ public class LayoutBox {
         }
     }
 
+    public void insertElementChild(int at, LayoutBox child) { child.parent = this; if (child.node != null && child.node.isPseudoNode) hasPseudoElementChild = true; elementChildren.add(at, child); bumpShapeEpoch(); }
+
     public void linkParents() {
         for (LayoutBox child : children) {
             adopt(child);
