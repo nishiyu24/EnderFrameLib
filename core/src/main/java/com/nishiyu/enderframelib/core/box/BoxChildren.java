@@ -45,14 +45,31 @@ public abstract sealed class BoxChildren permits BoxChunk, BoxChildren.Chunked {
         return false;
     }
 
-    /** 子を全部、列にする（O(子の数)。インラインの整形・内在サイズ用）。 */
+    /** どれかのチャンクが {@code display: contents} の子を含むか（O(チャンク数)）。 */
+    public boolean hasContents() {
+        for (int c = 0, n = chunkCount(); c < n; c++) if (chunk(c).hasContents()) return true;
+        return false;
+    }
+
+    /**
+     * レイアウトが並べる子を全部、列にする（O(子の数)。インラインの整形・内在サイズ・flex の項目用）。{@code display: contents} の子は
+     * その中身（{@link BoxNode#flow}）へ展開する。
+     */
     public java.util.List<BoxNode> toList() {
         java.util.List<BoxNode> out = new java.util.ArrayList<>(size());
-        for (int c = 0, n = chunkCount(); c < n; c++) {
-            BoxChunk ch = chunk(c);
-            for (int i = 0; i < ch.size(); i++) out.add(ch.get(i));
-        }
+        addTo(this, out);
         return out;
+    }
+
+    private static void addTo(BoxChildren kids, java.util.List<BoxNode> out) {
+        for (int c = 0, n = kids.chunkCount(); c < n; c++) {
+            BoxChunk ch = kids.chunk(c);
+            for (int i = 0; i < ch.size(); i++) {
+                BoxNode b = ch.get(i);
+                if (b.kind == BoxKind.CONTENTS) addTo(b.flow, out);
+                else out.add(b);
+            }
+        }
     }
 
     /** {@code index} 番目の子（チャンクを順に数える。O(チャンク数)）。 */

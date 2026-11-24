@@ -111,6 +111,10 @@ public final class FragmentProjection {
         for (int i = 0, n = owner.flow.size(); i < n; i++) {
             BoxNode c = owner.flow.get(i);
             if (c.kind == BoxKind.NONE || c.kind.atomicInline()) continue; // 原子は行の断片から写す
+            if (c.kind == BoxKind.CONTENTS) { // 箱を作らない: 中身を同じ親の下へ
+                inlineChildren(c, parent, textBoxes, parents, chain);
+                continue;
+            }
             LayoutBox lb = new LayoutBox(nodeOf(c), new ComputedStyle(c.style));
             lb.lineHeightPx = InlineFlow.lineHeight(c.style, session.face(c.style));
             parent.addChild(lb);
@@ -135,6 +139,7 @@ public final class FragmentProjection {
         List<LayoutBox> chain = new ArrayList<>();
         for (int i = 1; i < path.size(); i++) {
             BoxNode n = path.get(i);
+            if (n.kind == BoxKind.CONTENTS) continue; // 箱を作らない
             LayoutBox lb = boxes.get(n);
             if (lb == null) {
                 lb = new LayoutBox(nodeOf(n), new ComputedStyle(n.style));
@@ -151,7 +156,7 @@ public final class FragmentProjection {
     private static boolean pathTo(BoxNode from, BoxNode target, List<BoxNode> path) {
         path.add(from);
         if (from == target) return true;
-        if (from.kind == BoxKind.INLINE || path.size() == 1) {
+        if (from.kind == BoxKind.INLINE || from.kind == BoxKind.CONTENTS || path.size() == 1) {
             for (int i = 0, n = from.flow.size(); i < n; i++) {
                 if (pathTo(from.flow.get(i), target, path)) return true;
             }

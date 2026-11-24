@@ -99,6 +99,9 @@ final class InlineLineBuilder implements TextRun.Sink {
         switch (n.kind) {
             case NONE -> { }
             case TEXT -> text(n);
+            case CONTENTS -> { // 箱を作らない: 中身を親の続きとして並べる
+                for (int i = 0, c = n.flow.size(); i < c; i++) add(n.flow.get(i), n.style.facts.whiteSpace);
+            }
             default -> {
                 if (OutOfFlow.is(n)) { // 流れの外: 今の行の今の位置を静的位置として渡す
                     oofPending.add(new OutOfFlow.Pending(n, x, cursor));

@@ -13,13 +13,20 @@ public final class BoxChunk extends BoxChildren {
 
     private final BoxNode[] items;
     /** 中身の事実（構築時に 1 回だけ求める不変の導出値）: インライン水準の子・ブロック水準の子があるか。 */
-    private final boolean inline, block, floats;
+    private final boolean inline, block, floats, contents;
 
     /** {@code items} の所有権を受け取る（呼び出し側は以後書き換えない）。 */
     BoxChunk(BoxNode[] items) {
         this.items = items;
-        boolean in = false, bl = false, fl = false;
+        boolean in = false, bl = false, fl = false, co = false;
         for (BoxNode b : items) {
+            if (b.kind == BoxKind.CONTENTS) { // 中身の事実を引き継ぐ（中身のチャンクは構築済み）
+                co = true;
+                in |= b.flow.hasInline();
+                bl |= b.flow.hasBlock();
+                fl |= b.flow.hasFloat();
+                continue;
+            }
             if (b.kind.blockLevel() && b.style.facts.floating) fl = true;
             if (b.kind.blockLevel()) bl = true;
             else if (b.kind == BoxKind.INLINE || b.kind.atomicInline() || (b.kind == BoxKind.TEXT && !b.collapsibleWhitespace())) in = true;
@@ -27,7 +34,11 @@ public final class BoxChunk extends BoxChildren {
         this.inline = in;
         this.block = bl;
         this.floats = fl;
+        this.contents = co;
     }
+
+    /** {@code display: contents} の子を含むか（レイアウトはチャンク単位で使い回さず、展開した列で並べる）。 */
+    public boolean hasContents() { return contents; }
 
     /** float の子（ブロック水準）を含むか。 */
     public boolean hasFloat() { return floats; }

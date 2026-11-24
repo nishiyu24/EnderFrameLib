@@ -136,6 +136,7 @@ class IncrementalOracleTest {
             "word-break:break-all", "width:min-content", "width:max-content", "width:fit-content", "display:inline-block;width:fit-content",
             "vertical-align:super", "vertical-align:-4px", "display:inline-block;height:30px;vertical-align:middle",
             "display:inline-block;height:40px;vertical-align:top", "display:inline-block;height:25px;vertical-align:bottom",
+            "display:contents", "display:contents;font-size:20px",
     };
 
     private static final String PSEUDO_CSS = " .pb::before{content:'[' attr(data-x) ']';color:#900}"

@@ -112,6 +112,7 @@ css/css-text/text-transform/text-transform-tailoring-004.html
 css/css-text/white-space/tab-stop-threshold-003.html
 css/css-text/white-space/text-wrap-balance-align-001.html
 css/css-text/white-space/trailing-ogham-003.html
+css/css-text/white-space/white-space-applies-to-text-001.html
 css/css-text/white-space/white-space-intrinsic-size-023.html
 css/css-text/white-space/white-space-pre-032.html
 css/css-text/white-space/white-space-wrap-after-nowrap-001.html

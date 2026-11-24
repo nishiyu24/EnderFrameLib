@@ -24,7 +24,12 @@ public enum BoxKind {
     /** インライン水準の原子で、中はブロックの流れ（{@code inline-block}）。行の中に 1 つの塊として置く。 */
     INLINE_BLOCK,
     /** インライン水準の原子で、中は flex（{@code inline-flex}）。 */
-    INLINE_FLEX;
+    INLINE_FLEX,
+    /**
+     * 箱を作らず、子（と疑似要素）を親の子として並べる（{@code display: contents}。M2b-1）。子のスタイルの継承元ではある。
+     * レイアウトは {@link BoxChildren#toList()} で中身へ展開して読む。
+     */
+    CONTENTS;
 
     /** 節と算出スタイルから種類を決める。 */
     public static BoxKind of(HtmlNode node, Style style) {
@@ -38,6 +43,7 @@ public enum BoxKind {
             case "inline-flex" -> INLINE_FLEX;
             case "inline-block" -> INLINE_BLOCK;
             case "inline" -> INLINE;
+            case "contents" -> CONTENTS;
             default -> BLOCK;
         };
         return k == NONE ? NONE : blockified(k, style);

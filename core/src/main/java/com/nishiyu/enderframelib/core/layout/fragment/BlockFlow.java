@@ -77,7 +77,7 @@ final class BlockFlow implements FormattingEngine {
             ConstraintSpace pct = Float.isNaN(childPct) ? base : s.space(cw, Float.NaN, Float.NaN, childPct, 0);
             ChunkedFlow priorFlow = prior != null ? prior.flow : null;
             float[] floatBottom = {0};
-            FlowChunk[] chunks = kids.hasInline() || kids.hasFloat()
+            FlowChunk[] chunks = kids.hasInline() || kids.hasFloat() || kids.hasContents()
                     ? new FlowChunk[]{mixed(st, kids, base, pct, priorFlow, floatBottom, s)}
                     : chunks(kids, base, pct, priorFlow, s);
             a = assemble(chunks, collapseTop, collapseBottom);

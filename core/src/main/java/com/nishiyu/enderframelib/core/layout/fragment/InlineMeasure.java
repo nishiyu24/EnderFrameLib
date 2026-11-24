@@ -32,6 +32,9 @@ final class InlineMeasure implements TextRun.Sink {
         switch (n.kind) {
             case NONE -> { }
             case TEXT -> text(n);
+            case CONTENTS -> { // 箱を作らない: 中身を親の続きとして並べる
+                for (int i = 0, c = n.flow.size(); i < c; i++) add(n.flow.get(i), n.style.facts.whiteSpace);
+            }
             default -> {
                 if (OutOfFlow.is(n)) return;
                 if (InlineFlow.isBreak(n)) {
