@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 import com.nishiyu.enderframelib.core.dom.node.ReplacedKind;
 import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
 import static org.junit.jupiter.api.Assertions.*;

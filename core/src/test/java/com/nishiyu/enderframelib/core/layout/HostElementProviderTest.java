@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 import com.nishiyu.enderframelib.core.dom.node.HostElementProvider;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -67,7 +68,7 @@ class HostElementProviderTest {
 
     @Test
     void coreHoldsNoMinecraftTagLiteralsInRegistries() throws IOException {
-        for (String f : List.of("layout/ReplacedElements.java", "dom/parser/HtmlParser.java", "paint/DisplayListBuilder.java",
+        for (String f : List.of("replaced/ReplacedElements.java", "dom/parser/HtmlParser.java", "paint/DisplayListBuilder.java",
                 "paint/ControlPainter.java", "layout/BoxMeasurer.java")) {
             String s = Files.readString(CORE.resolve(f));
             for (String t : List.of("\"mc-fluid\"", "\"mc-entity\"", "\"mc-scene\"", "\"mc-slot\"", "\"mc-slot-grid\"",

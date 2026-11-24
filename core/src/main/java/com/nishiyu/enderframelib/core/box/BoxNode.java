@@ -36,13 +36,16 @@ public final class BoxNode {
      * 疑似要素が無ければ {@link #children} と同じ参照（追加の確保なし）。
      */
     public final BoxChildren flow;
+    /** 置換要素・部品なら大きさを決める入力の写し（{@link ReplacedInput}）。それ以外は null。 */
+    public final ReplacedInput replaced;
 
     public BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children) {
-        this(node, style, kind, text, children, Pseudo.NONE, null, null);
+        this(node, style, kind, text, children, Pseudo.NONE, null, null, null);
     }
 
     /** {@code before} / {@code after} は疑似要素の箱（無ければ null）。 */
-    BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after) {
+    BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
+            ReplacedInput replaced) {
         this.node = node;
         this.style = style;
         this.kind = kind;
@@ -50,6 +53,7 @@ public final class BoxNode {
         this.children = children;
         this.pseudo = pseudo;
         this.flow = before == null && after == null ? children : BoxChildren.withPseudos(before, children, after);
+        this.replaced = replaced;
     }
 
     /** {@link #flow} に足した疑似要素の箱（無ければ null）。 */

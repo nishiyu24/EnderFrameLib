@@ -74,7 +74,7 @@ final class ControlPainter {
                 ? ImageSources.forImg(box.node.attrs, decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
         String src = Style.or(st.rare.src, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
         com.nishiyu.enderframelib.core.dom.node.CustomElementPainter hostPainter =
-                com.nishiyu.enderframelib.core.layout.ReplacedElements.painterOf(box.node.tag);
+                com.nishiyu.enderframelib.core.replaced.ReplacedElements.painterOf(box.node.tag);
         if (hostPainter != null) src = hostPainter.resolveSrc(box.node.attrs, src);
 
         String tag = box.node.tag;

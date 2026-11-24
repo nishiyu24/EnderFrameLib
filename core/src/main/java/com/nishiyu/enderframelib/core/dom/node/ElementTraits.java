@@ -195,6 +195,10 @@ public final class ElementTraits {
         return "fieldset".equalsIgnoreCase(tag);
     }
 
+    public static boolean isCanvas(String tag) {
+        return "canvas".equalsIgnoreCase(tag);
+    }
+
     public static boolean isLegend(String tag) {
         return "legend".equalsIgnoreCase(tag);
     }

@@ -9,7 +9,7 @@ import com.nishiyu.enderframelib.core.dom.node.HostSyntax;
 import com.nishiyu.enderframelib.core.dom.node.ReplacedKind;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.layout.ReplacedElements;
+import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 

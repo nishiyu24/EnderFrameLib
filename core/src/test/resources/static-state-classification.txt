@@ -15,7 +15,7 @@ css/model/CssKeywords.java#CSS_NAMES | IMMUTABLE_TABLE | 静的初期化で作�
 css/CssNumbers.java#HEX | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/CssSyntax.java#POOL | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
 css/LengthResolver.java#ZERO_RADII_XY | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-layout/ReplacedElements.java#SPI | IMMUTABLE_TABLE | SPI が宣言した置換要素。静的初期化で作った後は読むだけ（ホストの登録は文脈の HostServices）
+replaced/ReplacedElements.java#SPI | IMMUTABLE_TABLE | SPI が宣言した置換要素。静的初期化で作った後は読むだけ（ホストの登録は文脈の HostServices）
 css/PropertyRegistry.java#PROPERTIES | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/PropertyRegistry.java#SUBPROPERTIES | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/ShorthandPlan.java#IDS | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）

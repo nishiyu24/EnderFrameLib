@@ -19,6 +19,7 @@ public interface FormattingEngine {
 
     /** 箱の種類に応じたエンジン。 */
     static FormattingEngine of(BoxNode node) {
+        if (ReplacedFlow.is(node)) return ReplacedFlow.INSTANCE;
         if (node.kind.flexContainer()) return FlexFlow.INSTANCE;
         return node.kind.gridContainer() ? GridFlow.INSTANCE : BlockFlow.INSTANCE;
     }

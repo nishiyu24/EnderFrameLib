@@ -66,7 +66,7 @@ public record HostServices(
                 com.nishiyu.enderframelib.core.paint.CssAnimator.Source,
                 com.nishiyu.enderframelib.core.dom.parser.HtmlParser.Source,
                 com.nishiyu.enderframelib.core.css.GlyphUnits.Source,
-                com.nishiyu.enderframelib.core.layout.ReplacedElements.Source,
+                com.nishiyu.enderframelib.core.replaced.ReplacedElements.Source,
                 com.nishiyu.enderframelib.core.dom.node.HostSyntax.Source,
                 com.nishiyu.enderframelib.core.raster.ImageDecoder.Source {
 

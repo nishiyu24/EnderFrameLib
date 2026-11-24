@@ -166,7 +166,7 @@ public final class BoxTreeBuilder {
     private static boolean isOrthogonalRootCandidate(LayoutBox box) {
         if (box.isAnonymous || box.node == null || box.node.nodeType == NodeType.TEXT || box.node.isPseudoNode) return false;
         if (box.display.isNone() || box.display.isContents()) return false;
-        if (ReplacedElements.isHost(box.node.tag)) return false;
+        if (com.nishiyu.enderframelib.core.replaced.ReplacedElements.isHost(box.node.tag)) return false;
         Inner inner = box.display.inner();
         return box.display.isBlockContainer() || inner == Inner.FLEX || inner == Inner.GRID || inner == Inner.TABLE;
     }

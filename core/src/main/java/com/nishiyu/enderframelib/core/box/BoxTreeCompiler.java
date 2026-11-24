@@ -190,10 +190,15 @@ public final class BoxTreeCompiler {
             if (pseudos) after = redoPseudo ? pseudo(BoxNode.Pseudo.AFTER, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.AFTER);
             if (counters != null) counters.release(mark);
         }
+        // 置換要素の大きさの入力（属性・選択肢の文字）の写し。値が前回と同じなら前回の参照（属性だけの変化も箱の変化として下流へ届く）
+        ReplacedInput replaced = kind == BoxKind.NONE || kind == BoxKind.TEXT ? null
+                : ReplacedInput.of(n, styles.viewportW(), styles.viewportH());
+        if (replaced != null && prev != null && replaced.equals(prev.replaced)) replaced = prev.replaced;
         if (prev != null && style == prev.style && kind == prev.kind && text == prev.text && children == prev.children
+                && replaced == prev.replaced
                 && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)) return prev;
         stats.rebuiltBoxes++;
-        return new BoxNode(n, style, kind, text, children, BoxNode.Pseudo.NONE, before, after);
+        return new BoxNode(n, style, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced);
     }
 
     private BoxNode pseudo(BoxNode.Pseudo which, HtmlNode owner, Style style, BoxNode prevOwner) {

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.dom.node.VoidElements;
 import com.nishiyu.enderframelib.api.spi.ElementProvider;
-import com.nishiyu.enderframelib.core.layout.ReplacedElements;
+import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 import java.util.Map;
 import java.util.ServiceLoader;
 import org.junit.jupiter.api.Test;

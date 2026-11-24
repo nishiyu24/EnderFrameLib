@@ -1644,7 +1644,7 @@ public class LayoutBox {
             if (node.nodeType == NodeType.TEXT) return INLINE;
             Display parsed = parse(style.typed().box.display);
             if (parsed != null) return parsed;
-            return com.nishiyu.enderframelib.core.dom.node.ElementTraits.isDefaultInline(node.tag) || ReplacedElements.isHost(node.tag) ? INLINE : BLOCK;
+            return com.nishiyu.enderframelib.core.dom.node.ElementTraits.isDefaultInline(node.tag) || com.nishiyu.enderframelib.core.replaced.ReplacedElements.isHost(node.tag) ? INLINE : BLOCK;
         }
 
         /** 1 キーワードの旧構文と、{@code block flow-root} / {@code inline flex} などの複数キーワード構文を読む。 */

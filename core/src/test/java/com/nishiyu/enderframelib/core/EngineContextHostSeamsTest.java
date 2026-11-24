@@ -124,12 +124,12 @@ class EngineContextHostSeamsTest {
         EngineContext a = new EngineContext(), b = new EngineContext();
         a.updateHost(h -> h.withReplacedElement("x-iso", p));
         EngineContext.runWith(a, () -> {
-            assertTrue(com.nishiyu.enderframelib.core.layout.ReplacedElements.isHost("x-iso"));
-            assertSame(p, com.nishiyu.enderframelib.core.layout.ReplacedElements.painterOf("x-iso"));
+            assertTrue(com.nishiyu.enderframelib.core.replaced.ReplacedElements.isHost("x-iso"));
+            assertSame(p, com.nishiyu.enderframelib.core.replaced.ReplacedElements.painterOf("x-iso"));
         });
-        EngineContext.runWith(b, () -> assertFalse(com.nishiyu.enderframelib.core.layout.ReplacedElements.isHost("x-iso")));
-        assertFalse(com.nishiyu.enderframelib.core.layout.ReplacedElements.isHost("x-iso"));
-        assertTrue(com.nishiyu.enderframelib.core.layout.ReplacedElements.isHost("scene-3d"), "ビルトインはどの面でも見える");
+        EngineContext.runWith(b, () -> assertFalse(com.nishiyu.enderframelib.core.replaced.ReplacedElements.isHost("x-iso")));
+        assertFalse(com.nishiyu.enderframelib.core.replaced.ReplacedElements.isHost("x-iso"));
+        assertTrue(com.nishiyu.enderframelib.core.replaced.ReplacedElements.isHost("scene-3d"), "ビルトインはどの面でも見える");
         assertThrows(IllegalArgumentException.class, () -> a.updateHost(h -> h.withReplacedElement("", p)));
     }
 
@@ -191,7 +191,7 @@ class EngineContextHostSeamsTest {
     @Test
     void seamsStayStateless() throws Exception {
         Path main = Path.of("core/src/main/java/com/nishiyu/enderframelib/core");
-        for (String f : new String[] {"raster/svg/SvgSources.java", "text/font/FontFaceRules.java", "paint/CssAnimator.java", "dom/parser/HtmlParser.java", "css/GlyphUnits.java", "layout/ReplacedElements.java"}) {
+        for (String f : new String[] {"raster/svg/SvgSources.java", "text/font/FontFaceRules.java", "paint/CssAnimator.java", "dom/parser/HtmlParser.java", "css/GlyphUnits.java", "replaced/ReplacedElements.java"}) {
             String src = Files.readString(main.resolve(f));
             assertFalse(src.contains("public static void set"), f + " に static setter が戻った");
             assertEquals(1, src.split("static volatile java.util.function.Supplier<Source>", -1).length - 1, f + ": 文脈の引き口は 1 つだけ");

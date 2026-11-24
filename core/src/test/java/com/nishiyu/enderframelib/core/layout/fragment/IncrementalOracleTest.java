@@ -50,6 +50,10 @@ class IncrementalOracleTest {
     @Test
     void gridFeatures() { run("grid"); }
 
+    /** M2b-1: 置換要素と部品（大きさの属性・選択肢の文字・表示型・比）の変異。属性だけの変化も箱の作り直しとして届くこと。 */
+    @Test
+    void replacedElements() { run("replaced"); }
+
     private static void run(String kind) {
         String html = switch (kind) {
             case "large" -> SpikeView.largeList(300);
@@ -59,6 +63,9 @@ class IncrementalOracleTest {
             case "pseudo" -> SpikeView.inlineText(16).replace("</style>", PSEUDO_CSS + "</style>");
             case "grid" -> SpikeView.nestedFlex(4, 3, true).replace(".f{display:flex;flex-wrap:wrap;",
                     ".f{display:grid;grid-template-columns:repeat(auto-fill,minmax(60px,1fr));gap:3px;");
+            case "replaced" -> SpikeView.inlineText(16).replace("</body>", "<div id=rp><canvas id=rc width=50 height=20></canvas>"
+                    + "<img id=ri><input id=rin size=5><select id=rs><option id=ro>x</option></select>"
+                    + "<svg id=rv viewBox='0 0 10 5' width=30></svg></div></body>");
             case "flexx" -> SpikeView.nestedFlex(4, 3, true).replace(".f{display:flex;flex-wrap:wrap;", ".f{display:flex;flex-wrap:wrap;height:220px;");
             default -> SpikeView.nestedFlex(4, 2);
         };
@@ -66,7 +73,8 @@ class IncrementalOracleTest {
         v.frame();
         Random rnd = new Random(kind.hashCode());
         for (int step = 0; step < 80; step++) {
-            String op = kind.equals("grid") && rnd.nextInt(3) > 0 ? mutateGrid(v, rnd)
+            String op = kind.equals("replaced") && rnd.nextInt(3) > 0 ? mutateReplaced(v, rnd)
+                    : kind.equals("grid") && rnd.nextInt(3) > 0 ? mutateGrid(v, rnd)
                     : kind.equals("flexx") && rnd.nextInt(3) > 0 ? mutateFlex(v, rnd)
                     : kind.equals("pseudo") && rnd.nextInt(3) > 0 ? mutatePseudo(v, rnd)
                     : (kind.equals("text") || kind.equals("pseudo")) && rnd.nextBoolean() ? mutateText(v, rnd, step) : mutate(v, rnd, step);
@@ -193,6 +201,29 @@ class IncrementalOracleTest {
         String st = GRID_STYLES[rnd.nextInt(GRID_STYLES.length)];
         target.setAttribute("style", st);
         return st + " " + target.tag + " " + target.attrs.get("id");
+    }
+
+    /** 置換要素の変異を 1 つ加える（属性だけ・スタイル・選択肢の文字・親の表示型）。 */
+    static String mutateReplaced(SpikeView v, Random rnd) {
+        String[] ids = {"rc", "ri", "rin", "rs", "rv"};
+        HtmlElement e = (HtmlElement) v.byId(ids[rnd.nextInt(ids.length)]);
+        if (e == null) return "gone";
+        switch (rnd.nextInt(6)) {
+            case 0 -> e.setAttribute("width", Integer.toString(10 + rnd.nextInt(200)));
+            case 1 -> e.setAttribute("height", Integer.toString(10 + rnd.nextInt(90)));
+            case 2 -> e.setAttribute("size", Integer.toString(1 + rnd.nextInt(30)));
+            case 3 -> e.setAttribute("style", rnd.nextBoolean() ? "display:block;margin:0 auto;width:" + (20 + rnd.nextInt(100)) + "px"
+                    : "height:" + (10 + rnd.nextInt(60)) + "px;padding:" + rnd.nextInt(6) + "px");
+            case 4 -> {
+                HtmlElement o = (HtmlElement) v.byId("ro");
+                if (o != null) o.updateTextContent("option " + "w".repeat(rnd.nextInt(20)));
+            }
+            default -> {
+                HtmlElement p = (HtmlElement) v.byId("rp");
+                if (p != null) p.setAttribute("style", rnd.nextBoolean() ? "display:flex;flex-wrap:wrap" : "display:grid;grid-template-columns:1fr 1fr");
+            }
+        }
+        return "replaced " + e.tag;
     }
 
     private static final String PSEUDO_CSS = " .pb::before{content:'[' attr(data-x) ']';color:#900}"

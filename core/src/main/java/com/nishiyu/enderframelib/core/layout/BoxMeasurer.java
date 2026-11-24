@@ -295,8 +295,8 @@ public final class BoxMeasurer {
             box.sizingMode = SizingMode.DEFINITE;
         } else if (box.node.nodeType == NodeType.TEXT) {
             measureTextWidth(box, ctx, parentW, rootW, rootH);
-        } else if (ReplacedElements.isHostScene(tag)) {
-            CustomElementPainter scene = ReplacedElements.painterOf(tag);
+        } else if (com.nishiyu.enderframelib.core.replaced.ReplacedElements.isHostScene(tag)) {
+            CustomElementPainter scene = com.nishiyu.enderframelib.core.replaced.ReplacedElements.painterOf(tag);
             box.w = scene.sceneFillsWidth()
                     ? Math.max(scene.sceneMinWidth(), parentW - box.mL - box.mR)
                     : scene.sceneMinWidth() + box.horizontalDecoration();
@@ -592,8 +592,8 @@ public final class BoxMeasurer {
             return;
         }
 
-        if (ReplacedElements.isHostScene(tag)) {
-            box.h = ReplacedElements.painterOf(tag).sceneHeight() + box.verticalDecoration();
+        if (com.nishiyu.enderframelib.core.replaced.ReplacedElements.isHostScene(tag)) {
+            box.h = com.nishiyu.enderframelib.core.replaced.ReplacedElements.painterOf(tag).sceneHeight() + box.verticalDecoration();
             return;
         }
 
@@ -623,7 +623,7 @@ public final class BoxMeasurer {
     }
 
     static boolean isReplacedImage(String tag) {
-        return com.nishiyu.enderframelib.core.dom.node.ElementTraits.isBuiltinReplacedImage(tag) || ReplacedElements.isHostImageLike(tag);
+        return com.nishiyu.enderframelib.core.dom.node.ElementTraits.isBuiltinReplacedImage(tag) || com.nishiyu.enderframelib.core.replaced.ReplacedElements.isHostImageLike(tag);
     }
 
     /**
