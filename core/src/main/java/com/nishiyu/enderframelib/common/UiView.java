@@ -10,6 +10,7 @@ import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
+import com.nishiyu.enderframelib.core.dom.ChangeReads;
 import com.nishiyu.enderframelib.core.dom.node.DomUtils;
 import com.nishiyu.enderframelib.core.dom.node.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
@@ -80,13 +81,6 @@ public class UiView implements AutoCloseable {
         RELAYOUT
     }
 
-    /** TEXT_PATCH の対象にする Text 節の最大数（これを超えたら全体の再レイアウトの方が安い）。 */
-    private static final int TEXT_PATCH_MAX_NODES = 256;
-    /** 次の flush で局所パッチする Text 節（同一性で比べる）。{@code synchronized (pendingTextNodes)} で触る。 */
-    final Set<HtmlNode> pendingTextNodes = Collections.newSetFromMap(new IdentityHashMap<>());
-
-    /** 次の flush で「描画だけ」の属性パッチをする節（同一性で比べる）。{@code synchronized (pendingAttrNodes)} で触る。 */
-    final Set<HtmlNode> pendingAttrNodes = Collections.newSetFromMap(new IdentityHashMap<>());
     public static final java.util.concurrent.atomic.AtomicLong ATTR_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     /** 局所パッチが成功した回数 / 全体の再レイアウトへ退いた回数（調べる用）。 */
     public static final java.util.concurrent.atomic.AtomicLong TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
@@ -457,12 +451,9 @@ public class UiView implements AutoCloseable {
             if (attributeName != null && isPresentationalAttribute(attributeName)) {
                 requestRestyle();
             } else if (attributeName != null && isPaintOnlyAttribute(node, attributeName)) {
-                synchronized (pendingAttrNodes) {
-                    pendingAttrNodes.add(node);
-                }
-                requestRestyle();
+                requestRestyle(); // 描画だけの属性・文字の変更は、台帳から restyleAndUpdate が読む（K5b L1）
             } else if (attributeName == null && node.nodeType == NodeType.TEXT) {
-                requestTextPatch(node);
+                requestRestyle();
             } else if (attributeName == null && com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.on() && node.nodeType == NodeType.ELEMENT) {
                 localPatches.requestChildPatch(node);
             } else {
@@ -841,20 +832,6 @@ public class UiView implements AutoCloseable {
         invalidated();
     }
 
-    /** 既存の Text 節の文字が変わったことを知らせる（変わった箱の候補。条件に合わなければ flush で全体の再レイアウトにする）。 */
-    private void requestTextPatch(HtmlNode textNode) {
-        boolean overflow;
-        synchronized (pendingTextNodes) {
-            pendingTextNodes.add(textNode);
-            overflow = pendingTextNodes.size() > TEXT_PATCH_MAX_NODES;
-        }
-        if (overflow) {
-            requestRender();
-            return;
-        }
-        requestRestyle(); // 文字の箱は、再スタイルが見つけた変わった箱と同じ入口で測り直す（restyleAndUpdate）
-    }
-
     /** DOM 変更やビューポート変更に伴う再レイアウトを要求する。 */
     public void requestRender() {
         markInvalidation(InvalidationLevel.RELAYOUT);
@@ -1148,15 +1125,10 @@ public class UiView implements AutoCloseable {
     }
 
     /** 汚れた部分木を再スタイルし、結果に応じて必要な最小の段（全レイアウト / 位置だけ / 描き直しだけ）を走らせる。 */
-    private void restyleAndUpdate(boolean repositionRequested, boolean scrollOnly, List<HtmlNode> attrNodes) {
+    private void restyleAndUpdate(boolean repositionRequested, boolean scrollOnly, List<HtmlNode> attrNodes, List<HtmlNode> texts) {
         // 文字だけが変わった節の箱は、再スタイルが見つけた変わった箱と一緒に測り直す（条件に合わなければ全体を作り直す）
         List<LayoutBox> textBoxes = List.of();
-        if (TextChanges.hasPending(this)) {
-            List<HtmlNode> texts;
-            synchronized (pendingTextNodes) {
-                texts = new ArrayList<>(pendingTextNodes);
-                pendingTextNodes.clear();
-            }
+        if (!texts.isEmpty()) {
             ensureLayoutFresh();
             List<LayoutBox> found = TextChanges.boxes(this, texts);
             if (found == null) {
@@ -1262,21 +1234,19 @@ public class UiView implements AutoCloseable {
      * 静止フレームか。リサイズ・無効化・保留中の文字/属性・位置の決め直し・汚れた節・後回しの配置のどれも無く、
      * 箱の木もある（初回の構築ではない）。このとき以降の処理はすべて何もしないので、省いても結果は変わらない。
      */
-    private boolean isIdleFrame(boolean resize, InvalidationLevel level) {
-        if (resize || level != InvalidationLevel.NONE || layoutRoot == null || layoutStale
-                || repositionPending || nonScrollRepositionPending || interactionState.hasDirtyNodes()) return false;
-        synchronized (pendingTextNodes) {
-            if (!pendingTextNodes.isEmpty()) return false;
-        }
-        synchronized (pendingAttrNodes) {
-            return pendingAttrNodes.isEmpty();
-        }
+    private boolean isIdleFrame(boolean resize, InvalidationLevel level, List<HtmlNode> texts, List<HtmlNode> attrNodes) {
+        return !(resize || level != InvalidationLevel.NONE || layoutRoot == null || layoutStale
+                || repositionPending || nonScrollRepositionPending || interactionState.hasDirtyNodes()
+                || texts == null || !texts.isEmpty() || !attrNodes.isEmpty());
     }
 
     /** 描画キューから呼ばれる、このセッション 1 回分の無効化処理。 */
     public void flushInvalidation() {
         if (document == null || document.root == null) return;
-        interactionState.changeLedger().freeze(); // 変更台帳を凍結（K5b L0: 観測だけ。この世代の変更を各段が読むのは L1 以降）
+        var ledger = interactionState.changeLedger();
+        ledger.freeze(); // 変更台帳を凍結。この世代の文字・描画だけの属性の変更は、台帳から導く（K5b L1）
+        List<HtmlNode> texts = ChangeReads.texts(ledger); // null＝あふれ・多すぎ（個々に頼らず全体を作り直す）
+        List<HtmlNode> attrNodes = ChangeReads.paintAttrs(ledger, (n, name) -> !isPresentationalAttribute(name) && isPaintOnlyAttribute(n, name));
 
         // 時間で動くスタイル（opacity / transform / 色以外のトランジションと @keyframes）を進める。
         // 動いているうちは毎フレーム再スタイルを要求する（終わった要素は進めた時点で再スタイルの対象になる）
@@ -1284,17 +1254,15 @@ public class UiView implements AutoCloseable {
 
         boolean resize = resizeDue();
         InvalidationLevel level = consumeInvalidationLevel();
-        if (isIdleFrame(resize, level)) {
+        if (isIdleFrame(resize, level, texts, attrNodes)) {
             IDLE_FRAMES.incrementAndGet();
             return;
         }
         scene3dSync.sync(document.root); // DOM（属性・束縛）が変わったかもしれないフレームだけ、3D の記述を世界へ写す
         // 文字の変更は再スタイルの経路で測り直す（RESTYLE・NONE のとき）。他の経路と重なったら全体を作り直すので、溜めた分は捨てる
-        boolean hadPendingText = TextChanges.hasPending(this);
-        if (hadPendingText && level != InvalidationLevel.RESTYLE && level != InvalidationLevel.NONE) {
-            synchronized (pendingTextNodes) {
-                pendingTextNodes.clear();
-            }
+        boolean hadPendingText = texts == null || !texts.isEmpty();
+        if (hadPendingText && (texts == null || level != InvalidationLevel.RESTYLE && level != InvalidationLevel.NONE)) {
+            texts = List.of();
             level = InvalidationLevel.RELAYOUT;
         }
         if (level != InvalidationLevel.CHILD_PATCH) {
@@ -1306,11 +1274,6 @@ public class UiView implements AutoCloseable {
             }
             if (hadPendingChildren && level != InvalidationLevel.RELAYOUT) level = InvalidationLevel.RELAYOUT;
         }
-        List<HtmlNode> attrNodes;
-        synchronized (pendingAttrNodes) {
-            attrNodes = pendingAttrNodes.isEmpty() ? List.of() : new ArrayList<>(pendingAttrNodes);
-            pendingAttrNodes.clear();
-        }
         boolean repositionRequested = repositionPending;
         repositionPending = false;
         boolean scrollOnly = !nonScrollRepositionPending;
@@ -1318,9 +1281,6 @@ public class UiView implements AutoCloseable {
         if (layoutRoot == null) {
             level = InvalidationLevel.RELAYOUT;
             interactionState.markAllDirty();
-            synchronized (pendingTextNodes) {
-                pendingTextNodes.clear();
-            }
         }
         // 後回しにした位置の決め直しは、スクロールだけの更新以外の経路に入る前に済ませる
         // 汚れた節（:hover など）の再スタイルは、位置が古いままでも進められる（箱は表示リストを作ったときの位置のままで、表示リストと同じ座標）。
@@ -1330,9 +1290,6 @@ public class UiView implements AutoCloseable {
             ensureLayoutFresh();
         }
         if (resize) {
-            synchronized (pendingTextNodes) {
-                pendingTextNodes.clear();
-            }
             recomputeLayout(pendingResizeW, pendingResizeH);
             return;
         }
@@ -1347,17 +1304,17 @@ public class UiView implements AutoCloseable {
                     recomputeLayout(rootW, rootH);
                 }
             }
-            case RESTYLE -> restyleAndUpdate(repositionRequested, scrollOnly, attrNodes);
+            case RESTYLE -> restyleAndUpdate(repositionRequested, scrollOnly, attrNodes, texts);
             case REPOSITION -> {
                 if (interactionState.hasDirtyNodes()) {
-                    restyleAndUpdate(true, scrollOnly, attrNodes);
+                    restyleAndUpdate(true, scrollOnly, attrNodes, texts);
                 } else {
                     repositionFromLayout(scrollOnly);
                 }
             }
             case REPAINT -> repaintFromLayout();
             case NONE -> {
-                if (interactionState.hasDirtyNodes() || hadPendingText) restyleAndUpdate(repositionRequested, scrollOnly, attrNodes);
+                if (interactionState.hasDirtyNodes() || hadPendingText) restyleAndUpdate(repositionRequested, scrollOnly, attrNodes, texts);
             }
         }
     }

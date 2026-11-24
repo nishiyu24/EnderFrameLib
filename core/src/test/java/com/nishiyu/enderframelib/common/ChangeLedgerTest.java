@@ -2,13 +2,17 @@ package com.nishiyu.enderframelib.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.nishiyu.enderframelib.core.dom.ChangeReads;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger.Kind;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
+import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,9 +20,9 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
- * K5b L0（変更台帳。設計書 §3.6）: ①台帳の単体〔追記・凍結・世代・祖先を辿る {@code touches}・あふれ〕②<b>観測</b>: 既存の入口
- * 〔{@code pendingTextNodes}・{@code pendingChildParents}・{@code pendingAttrNodes}・再スタイルの汚れ印〕に載る変更は、
- * 乱数の操作列のどの時点でも全て台帳に載っている〔取りこぼし 0〕。台帳は観測だけで、挙動は変えない。
+ * K5b L0・L1（変更台帳。設計書 §3.6）: ①台帳の単体〔追記・凍結・世代・祖先を辿る {@code touches}・あふれ・節を絞れない変更〕
+ * ②読み手 {@link ChangeReads}〔文字の節・描画だけの属性の節を台帳から導く〕③<b>台帳が文字・描画だけの属性の唯一の入口</b>:
+ * 乱数の操作列のどの手でも、結果は最初から作った結果と一致する。台帳の追記が取りこぼされる変異は、結果が古いままになって殺される。
  */
 public class ChangeLedgerTest {
     /** root(div) > [a(section) > b(p)], c(span)。{@code out} に b・c・a を返す。 */
@@ -48,10 +52,13 @@ public class ChangeLedgerTest {
         assertFalse(l.pendingHas(b, Kind.ATTR));
         assertEquals(1L, l.freeze());
         assertEquals(0, l.pendingCount());
+        assertEquals(1, l.frozenSize());
+        assertTrue(l.frozenIs(0, Kind.TEXT) && l.frozenNode(0) == b);
         assertTrue(l.touches(b) && l.touches(a) && l.touches(root), "自分と祖先は触れられている");
         assertFalse(l.touches(c), "兄弟の部分木は触れられていない");
         assertEquals(2L, l.freeze(), "凍結した世代が残っているので次の凍結で世代が進み、中身は空になる");
         assertFalse(l.touches(b));
+        assertEquals(0, l.frozenSize());
         assertEquals(2L, l.freeze(), "空から空は進めない");
     }
 
@@ -61,14 +68,36 @@ public class ChangeLedgerTest {
         tree(n);
         ChangeLedger l = new ChangeLedger();
         l.append(null, Kind.ENV);
+        l.append(n[0], Kind.TEXT);
         l.freeze();
-        assertTrue(l.touches(n[1]), "節を持たない変更は全体に効く");
+        assertTrue(l.touches(n[1]), "節を絞れない変更は全体に効く");
+        assertFalse(l.frozenOverflow());
+        assertEquals(2, l.frozenSize(), "節を絞れない変更があっても、個々の変更は読める");
         l.freeze();
         for (int i = 0; i < ChangeLedger.MAX_ENTRIES + 5; i++) l.append(new HtmlElement("i"), Kind.STYLE);
-        assertEquals(Integer.MAX_VALUE, l.pendingCount(), "あふれたら個々を捨てて全体");
+        assertEquals(Integer.MAX_VALUE, l.pendingCount(), "あふれたら個々を捨てる");
         l.freeze();
         assertTrue(l.touches(n[1]));
-        assertEquals(Integer.MAX_VALUE, l.frozenCount());
+        assertTrue(l.frozenOverflow());
+        assertNull(ChangeReads.texts(l), "あふれた世代は個々に頼らず全体を作り直す（読み手は null）");
+    }
+
+    @Test
+    void readsDeriveTextAndPaintAttrNodesFromTheFacts() {
+        HtmlElement[] n = new HtmlElement[3];
+        tree(n);
+        ChangeLedger l = new ChangeLedger();
+        l.append(n[0], Kind.TEXT);
+        l.append(n[1], Kind.TEXT);
+        l.append(n[0], Kind.TEXT);
+        l.append(n[0], Kind.ATTR, "value");
+        l.append(n[1], Kind.ATTR, "class");
+        l.append(n[2], Kind.CHILDREN);
+        l.freeze();
+        assertEquals(List.of(n[0], n[1]), ChangeReads.texts(l), "文字の節は重複なしで（追記の順）");
+        assertEquals(List.of(n[0]), ChangeReads.paintAttrs(l, (node, name) -> !name.equals("class")), "描画だけの属性は呼び出し側の分類で絞る");
+        l.freeze();
+        assertEquals(List.of(), ChangeReads.texts(l));
     }
 
     private static final String HTML = "<style>.hot{color:red} .row:hover{background:#eef} .big{font-size:20px}</style>"
@@ -80,28 +109,28 @@ public class ChangeLedgerTest {
         for (HtmlNode c : n.children) walk(c, out);
     }
 
-    /** 台帳がこの節自身か、祖先の子の増減で覆っているか（新しく付いた部分木の節は、親の {@code CHILDREN} が覆う）。 */
-    private static boolean covered(ChangeLedger l, HtmlNode node) {
-        for (HtmlNode cur = node; cur != null; cur = cur.parent) {
-            if (l.pendingTouches(cur) && (cur == node || l.pendingHas(cur, Kind.CHILDREN))) return true;
-        }
-        return false;
+    private static String sig(DisplayItem i) {
+        return i.id() + "|" + i.baseId() + "|" + i.type() + "|" + i.x() + "," + i.y() + "," + i.width() + "," + i.height()
+                + "|" + i.text() + "|" + i.color() + "|" + i.bgColor();
+    }
+
+    /** 今の表示リストと、同じ DOM から最初から作った表示リスト。 */
+    private static List<List<String>> liveAndFresh(StandaloneView v) {
+        UiView ui = v.ui();
+        ui.flushInvalidation();
+        List<String> live = new ArrayList<>(), fresh = new ArrayList<>();
+        for (DisplayItem i : ui.renderCache()) live.add(sig(i));
+        for (DisplayItem i : new DisplayListBuilder(320, 240, ui.document().sheet.keyframes, ui.scrollState()).render(ui.layoutRoot(), false)) fresh.add(sig(i));
+        return List.of(live, fresh);
     }
 
     @Test
-    void everyExistingInletIsCoveredByTheLedgerAtEveryStep() {
+    void randomChangesMatchAFreshBuildAtEveryStepWithTheLedgerAsTheOnlyInlet() {
         for (long seed = 1; seed <= 12; seed++) {
             Random rnd = new Random(seed);
             try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK); var be = new MutationScenario.NoDraw()) {
-                ResizeSettle.freezeClock(v); // 止めた時計: リサイズの間引きが実時間に依らない（遅い実行でだけ落ちた）
-                UiView ui = v.ui();
-                ChangeLedger l = ui.interactionState().changeLedger();
-                long now = 1000;
-                v.frame(now, be, true);
-                // 既存の入口は、フレームで取り除かれず残ることがある〔<style> の変更で全体の再レイアウトに入る経路など〕。残りかすは今の変更ではない
-                java.util.Set<HtmlNode> leftover = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-                java.util.Set<HtmlNode> leftoverText = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-                java.util.Set<HtmlNode> leftoverAttr = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                ResizeSettle.freezeClock(v); // 止めた時計: リサイズの間引きが実時間に依らない
+                v.frame(1000, be, true);
                 for (int step = 0; step < 40; step++) {
                     List<HtmlNode> all = new ArrayList<>();
                     walk(v.root(), all);
@@ -110,8 +139,8 @@ public class ChangeLedgerTest {
                     switch (rnd.nextInt(8)) {
                         case 0 -> { if (t instanceof HtmlElement e) e.setAttribute("class", rnd.nextBoolean() ? "row hot" : "row"); what = "class"; }
                         case 1 -> { if (t instanceof HtmlElement e) e.setAttribute("style", "padding-left:" + rnd.nextInt(20) + "px"); what = "style"; }
-                        case 2 -> { if (t instanceof HtmlText x) x.setData("t" + rnd.nextInt(1000)); what = "text"; }
-                        case 3 -> {
+                        case 2, 3 -> { if (t instanceof HtmlText x) x.setData("t" + rnd.nextInt(1000) + (rnd.nextBoolean() ? " longer text to wrap" : "")); what = "text"; }
+                        case 4 -> {
                             if (t instanceof HtmlElement e) {
                                 HtmlElement add = (HtmlElement) v.root().ownerDocument.createElement("div");
                                 add.setAttribute("class", "row");
@@ -120,32 +149,38 @@ public class ChangeLedgerTest {
                             }
                             what = "append";
                         }
-                        case 4 -> { if (!t.children.isEmpty() && t != v.root()) t.removeChild(t.children.get(rnd.nextInt(t.children.size()))); what = "remove"; }
-                        case 5 -> { v.mouseMove(rnd.nextInt(320), rnd.nextInt(240), be.sessionId()); what = "hover"; }
+                        case 5 -> { if (!t.children.isEmpty() && t != v.root()) t.removeChild(t.children.get(rnd.nextInt(t.children.size()))); what = "remove"; }
                         case 6 -> { HtmlNode pg = v.root().getNodeById("pg"); if (pg instanceof HtmlElement e) e.setAttribute("value", String.valueOf(rnd.nextInt(10))); what = "attr"; }
-                        default -> { v.resize(300 + rnd.nextInt(40), 240); what = "resize"; }
+                        default -> { v.mouseMove(rnd.nextInt(320), rnd.nextInt(240), be.sessionId()); what = "hover"; }
                     }
-                    // 既存の入口に載ったものは、フレームを回す前に全て台帳に載っている
-                    String where = "seed " + seed + " step " + step + " " + what;
-                    for (HtmlNode n : ui.pendingTextNodes) assertTrue(l.pendingHas(n, Kind.TEXT) || leftoverText.contains(n), where + ": 文字の節");
-                    for (HtmlNode n : ui.localPatches.pendingChildParents) assertTrue(l.pendingHas(n, Kind.CHILDREN) || leftover.contains(n), where + ": 子の増減の親 " + n.tag + "#" + n.getId() + " pending=" + java.util.Arrays.toString(l.pendingKinds()) + " count=" + l.pendingCount());
-                    for (HtmlNode n : ui.pendingAttrNodes) assertTrue(l.pendingHas(n, Kind.ATTR) || leftoverAttr.contains(n), where + ": 属性の節");
-                    List<HtmlNode> nodes = new ArrayList<>();
-                    walk(v.root(), nodes);
-                    for (HtmlNode n : nodes) {
-                        var f = ui.interactionState().get(n);
-                        if (f != null && f.isStyleDirty()) assertTrue(covered(l, n), where + ": 汚れた節 " + n.tag + "#" + n.getId());
-                    }
-                    now += 16;
-                    v.frame(now, be, true);
-                    assertEquals(0, l.pendingCount(), where + ": フレームの始めに凍結される");
-                    leftover.clear();
-                    leftover.addAll(ui.localPatches.pendingChildParents);
-                    leftoverText.clear();
-                    leftoverText.addAll(ui.pendingTextNodes);
-                    leftoverAttr.clear();
-                    leftoverAttr.addAll(ui.pendingAttrNodes);
+                    List<List<String>> r = liveAndFresh(v);
+                    assertEquals(r.get(1), r.get(0), "seed " + seed + " step " + step + " " + what);
                 }
+            }
+        }
+    }
+
+    /**
+     * 文字の測り直し〔{@code tryRelayoutInPlace(textBoxes)}〕の入口は台帳だけ: 追記が取りこぼされると、測り直しの経路に乗らない
+     * 〔表示は再スタイルの汚れ印の別経路が拾うので壊れないが、それは L3 で台帳へ寄せる対象〕。
+     */
+    @Test
+    void theLedgerIsTheOnlyInletOfTheTextRelayout() {
+        for (boolean drop : new boolean[]{false, true}) {
+            try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK); var be = new MutationScenario.NoDraw()) {
+                ResizeSettle.freezeClock(v);
+                v.frame(1000, be, true);
+                long hits = UiView.TEXT_PATCH_HITS.get();
+                HtmlText text = (HtmlText) v.root().getNodeById("tail").children.get(0);
+                text.setData("changed text that is rather longer");
+                if (drop) {
+                    ChangeLedger l = v.ui().interactionState().changeLedger();
+                    l.freeze();
+                    l.freeze(); // 追記が失われた状態（世代が 1 つ進んで捨てられる）
+                }
+                List<List<String>> r = liveAndFresh(v);
+                assertEquals(r.get(1), r.get(0), "どちらでも結果は最初から作った結果と同じ");
+                assertEquals(drop ? 0 : 1, UiView.TEXT_PATCH_HITS.get() - hits, drop ? "台帳に載らなければ文字の測り直しの経路に乗らない" : "台帳に載れば文字の測り直しの経路に乗る");
             }
         }
     }
@@ -160,7 +195,7 @@ public class ChangeLedgerTest {
             assertTrue(l.pendingCount() > 0, "ホバーで台帳に載る（対話状態の入口）");
             v.frame(1016, be, true);
             v.resize(300, 240);
-            assertEquals(Integer.MAX_VALUE, l.pendingCount(), "リサイズは全体に効く（ENV）");
+            assertTrue(l.pendingHas(null, Kind.ENV), "リサイズは全体に効く（ENV）");
         }
     }
 }

@@ -15,13 +15,6 @@ import java.util.Map;
 final class TextChanges {
     private TextChanges() { }
 
-    /** 反映待ちの文字の変更があるか。 */
-    static boolean hasPending(UiView view) {
-        synchronized (view.pendingTextNodes) {
-            return !view.pendingTextNodes.isEmpty();
-        }
-    }
-
     /** 変わった文字の節の箱（{@code changed} は集合から取り出したので重複しない）。局所の測り直しで済まない（条件に合わない）なら null。 */
     static List<LayoutBox> boxes(UiView view, List<HtmlNode> changed) {
         Document doc = view.document;

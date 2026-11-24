@@ -1,7 +1,7 @@
 # FileSizeRatchetTest の表（ENGINE_REARCHITECTURE_PLAN T1 ①）: core/src/main/java/com/nishiyu/enderframelib からの相対パス | 行数の上限
 # 800 行超のファイルは全部載せる。増やさない。分けて減ったら下げる（-Dratchet.update=true で現在値へ書き直す）。
 core/css/ComputedStyle.java | 2095
-common/UiView.java | 2090
+common/UiView.java | 2045
 core/layout/LayoutBox.java | 1785
 core/layout/BlockLayoutEngine.java | 1457
 common/RenderPipeline.java | 1400

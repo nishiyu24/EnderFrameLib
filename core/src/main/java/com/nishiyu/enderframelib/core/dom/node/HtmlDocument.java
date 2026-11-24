@@ -322,7 +322,7 @@ public class HtmlDocument extends HtmlNode implements Document {
             }
         }
         interactionState.invalidateAttribute(node, name, oldValue, newValue);
-        interactionState.changeLedger().append(node, ChangeLedger.Kind.ATTR);
+        interactionState.changeLedger().append(node, ChangeLedger.Kind.ATTR, name);
         DomChangeListener listener = domChangeListener;
         if (listener != null) listener.onDomChanged(node, name);
     }
@@ -341,7 +341,7 @@ public class HtmlDocument extends HtmlNode implements Document {
         interactionState.markDirty(node);
         // 文字の節 → TEXT。属性名の無い要素の変更（内容の差し替え）は、箱の木には子の増減として効く → CHILDREN
         interactionState.changeLedger().append(node, node.nodeType == NodeType.TEXT ? ChangeLedger.Kind.TEXT
-                : attributeName == null ? ChangeLedger.Kind.CHILDREN : ChangeLedger.Kind.ATTR);
+                : attributeName == null ? ChangeLedger.Kind.CHILDREN : ChangeLedger.Kind.ATTR, attributeName);
         DomChangeListener listener = domChangeListener;
         if (listener != null) listener.onDomChanged(node, attributeName);
     }
