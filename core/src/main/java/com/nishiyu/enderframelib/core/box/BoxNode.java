@@ -19,7 +19,7 @@ public final class BoxNode {
     /** 算出スタイル（M1 の不変 {@link Style}）。文字の節は親の継承群を共有した {@link Style#forTextChild}。 */
     public final Style style;
     public final BoxKind kind;
-    /** 文字の節だけ非 null。親の {@code white-space} で正規化済み。 */
+    /** 文字の節だけ非 null。親の {@code white-space} で正規化し {@code text-transform} を掛けた中身（{@link TextContent}）。 */
     public final String text;
     /** 子の並び（32 子のチャンク列）。葉と {@link BoxKind#NONE} は {@link BoxChunk#EMPTY}。 */
     public final BoxChildren children;

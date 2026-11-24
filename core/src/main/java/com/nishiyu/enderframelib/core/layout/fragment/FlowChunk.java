@@ -25,10 +25,15 @@ public final class FlowChunk {
     public final LayoutFragment[][] slots;
     /** 流れの外の子孫の静的位置（x は内容ボックス基準、y はチャンクの上端基準。無ければ null）。 */
     final OutOfFlow.Pending[] pending;
+    /**
+     * 先頭から何個の子が、流れの箱が始まる前（高さ 0 の素通しの箱と float だけ）に置かれたか。これらの位置は余白の相殺前の
+     * 余白の領域の上端が基準で、親が先頭の余白を自分と相殺するかで最終の位置が変わる（{@link ChunkedFlow#y}）。
+     */
+    final int leadCount;
 
     FlowChunk(BoxChunk source, ConstraintSpace space, LayoutFragment[] frags, float[] x, float[] y, float height,
               float leadPos, float leadNeg, float trailPos, float trailNeg, boolean through, LayoutFragment[][] slots,
-              OutOfFlow.Pending[] pending) {
+              OutOfFlow.Pending[] pending, int leadCount) {
         this.source = source;
         this.space = space;
         this.frags = frags;
@@ -42,6 +47,7 @@ public final class FlowChunk {
         this.through = through;
         this.slots = slots;
         this.pending = pending;
+        this.leadCount = leadCount;
     }
 
     /** この制約で並べた、このチャンクの結果か。 */

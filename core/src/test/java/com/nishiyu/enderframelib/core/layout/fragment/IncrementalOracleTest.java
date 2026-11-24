@@ -31,18 +31,23 @@ class IncrementalOracleTest {
     @Test
     void nestedFlexDepth4() { run("flex4"); }
 
+    /** M2b-1: 文字の規則（white-space・タブ・両端揃え・direction・text-transform・letter-spacing・内在サイズの語・keep-all）の変異。 */
+    @Test
+    void inlineText() { run("text"); }
+
     private static void run(String kind) {
         String html = switch (kind) {
             case "large" -> SpikeView.largeList(300);
             case "varied" -> SpikeView.variedList(120);
             case "flex3" -> SpikeView.nestedFlex(3, 3);
+            case "text" -> SpikeView.inlineText(24);
             default -> SpikeView.nestedFlex(4, 2);
         };
         SpikeView v = new SpikeView(html, 640, 480);
         v.frame();
         Random rnd = new Random(kind.hashCode());
         for (int step = 0; step < 80; step++) {
-            String op = mutate(v, rnd, step);
+            String op = kind.equals("text") && rnd.nextBoolean() ? mutateText(v, rnd, step) : mutate(v, rnd, step);
             LayoutFragment inc = v.frame();
             List<String> a = SpikeView.dump(inc), b = SpikeView.dump(v.scratch());
             if (!a.equals(b)) {
@@ -116,6 +121,33 @@ class IncrementalOracleTest {
                 return "display " + target.tag;
             }
         }
+    }
+
+    private static final String[] TEXT_STYLES = {
+            "white-space:nowrap", "white-space:pre", "white-space:pre-wrap", "white-space:pre-line", "white-space:break-spaces",
+            "text-transform:uppercase", "text-transform:capitalize", "text-align:justify", "text-align:justify;text-align-last:justify",
+            "text-align:center", "text-align:end", "direction:rtl", "letter-spacing:3px", "tab-size:3", "word-break:keep-all",
+            "word-break:break-all", "width:min-content", "width:max-content", "width:fit-content", "display:inline-block;width:fit-content",
+    };
+
+    /** 文字の規則の変異を 1 つ加える。 */
+    static String mutateText(SpikeView v, Random rnd, int step) {
+        List<HtmlNode> elems = new ArrayList<>();
+        collect(v.doc.root, elems);
+        HtmlNode target = elems.get(rnd.nextInt(elems.size()));
+        if (rnd.nextInt(4) == 0) { // タブ・和文・その他の空白を含む文字へ差し替える
+            String[] texts = {"a\tb\t\tc  d", "東京へ行きましょう。次は", "x\u1680y z", "  lead and trail  ", "line1\nline2\n\nline4 " + step};
+            for (HtmlNode c : target.children) {
+                if (c instanceof HtmlText t) {
+                    t.setData(texts[rnd.nextInt(texts.length)]);
+                    return "text-content " + target.tag;
+                }
+            }
+            return "no text";
+        }
+        String st = TEXT_STYLES[rnd.nextInt(TEXT_STYLES.length)];
+        ((HtmlElement) target).setAttribute("style", st);
+        return st + " " + target.tag;
     }
 
     private static void collect(HtmlNode n, List<HtmlNode> out) {

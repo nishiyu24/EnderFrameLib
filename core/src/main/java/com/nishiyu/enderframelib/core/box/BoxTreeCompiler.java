@@ -6,7 +6,6 @@ import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -159,7 +158,7 @@ public final class BoxTreeCompiler {
         String text = null;
         BoxChildren children = BoxChunk.EMPTY;
         if (kind == BoxKind.TEXT) {
-            text = TextShaper.normalize(n.text, style.facts.whiteSpace);
+            text = TextContent.of(n.text, style);
             if (prev != null && prev.text != null && prev.text.equals(text)) text = prev.text;
         } else if (kind != BoxKind.NONE) {
             boolean usable = prev != null && prev.kind != BoxKind.NONE && prev.kind != BoxKind.TEXT;

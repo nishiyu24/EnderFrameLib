@@ -56,7 +56,7 @@ final class FlexFlow implements FormattingEngine {
         if (!Float.isNaN(space.fixedWidth)) {
             w = space.fixedWidth;
         } else {
-            float spec = g.specifiedWidth(st, cbw, s);
+            float spec = g.specifiedWidth(node, cbw, cbw - g.mL - g.mR, s);
             w = g.clampWidth(st, Float.isNaN(spec) ? Math.max(0, cbw - g.mL - g.mR) : spec, cbw, s);
             if (g.autoML && g.autoMR) ml = Math.max(0, (cbw - w) / 2f);
         }
@@ -96,7 +96,7 @@ final class FlexFlow implements FormattingEngine {
             }
         }
         contentH = LayoutUnit.snap(contentH);
-        FlowChunk fc = new FlowChunk(null, null, frags, xs, ys, contentH, 0, 0, 0, 0, false, slots, null);
+        FlowChunk fc = new FlowChunk(null, null, frags, xs, ys, contentH, 0, 0, 0, 0, false, slots, null, 0);
         float h = Float.isNaN(fixedH) ? contentH + g.vdec() : fixedH;
         if (Float.isNaN(space.fixedHeight) && !space.contentBlockSize()) h = g.clampHeight(st, h, space.percentHeightBase, s);
         h = LayoutUnit.snap(h);
@@ -111,7 +111,7 @@ final class FlexFlow implements FormattingEngine {
         }
         return new LayoutFragment(node, space, w, h, LayoutUnit.snap(ml), Math.max(0, g.mT), Math.min(0, g.mT),
                 Math.max(0, g.mB), Math.min(0, g.mB), insetL, insetT, false,
-                new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}), null, up, oof);
+                new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}, 0, false), null, up, oof);
     }
 
     /** 項目（{@code display: none} と畳まれる空白を除き、{@code order} で安定に並べる）と、それぞれの前回の候補。 */

@@ -43,7 +43,7 @@ final class BlockFlow implements FormattingEngine {
         if (!Float.isNaN(space.fixedWidth)) {
             w = space.fixedWidth;
         } else {
-            float spec = g.specifiedWidth(st, cbw, s);
+            float spec = g.specifiedWidth(node, cbw, cbw - g.mL - g.mR, s);
             w = g.clampWidth(st, Float.isNaN(spec) ? Math.max(0, cbw - g.mL - g.mR) : spec, cbw, s);
             if (g.autoML && g.autoMR) ml = Math.max(0, (cbw - w) / 2f);
             else if (g.autoML) ml = Math.max(0, cbw - w - g.mR);
@@ -83,7 +83,7 @@ final class BlockFlow implements FormattingEngine {
             a = assemble(chunks, collapseTop, collapseBottom);
             // 独立した整形コンテキストの根は中の float を含んで高さを決める
             if (root && chunks.length == 1) a.contentH = Math.max(a.contentH, LayoutUnit.snap(a.chunkY[0] + floatBottom[0]));
-            flow = chunks.length > 0 ? new ChunkedFlow(chunks, a.chunkY) : null;
+            flow = chunks.length > 0 ? new ChunkedFlow(chunks, a.chunkY, a.firstStarted, collapseTop) : null;
             for (int k = 0; k < chunks.length; k++) {
                 if (chunks[k].pending == null) continue;
                 for (OutOfFlow.Pending p : chunks[k].pending) pend.add(p.shift(insetL, insetT + a.chunkY[k]));
@@ -229,6 +229,8 @@ final class BlockFlow implements FormattingEngine {
         final float[] chunkY;
         float contentH, leadPos, leadNeg, trailPos, trailNeg;
         boolean started;
+        /** 最初に流れの箱が始まったチャンク（無ければチャンクの数）。 */
+        int firstStarted;
 
         Assembled(float contentH) {
             this.chunkY = null;
@@ -243,6 +245,7 @@ final class BlockFlow implements FormattingEngine {
 
     private static Assembled assemble(FlowChunk[] chunks, boolean collapseTop, boolean collapseBottom) {
         Assembled a = new Assembled(chunks.length);
+        a.firstStarted = chunks.length;
         float y = 0, pp = 0, pn = 0;
         for (int k = 0; k < chunks.length; k++) {
             FlowChunk fc = chunks[k];
@@ -254,6 +257,7 @@ final class BlockFlow implements FormattingEngine {
             }
             if (!a.started) {
                 a.started = true;
+                a.firstStarted = k;
                 float lp = Math.max(a.leadPos, fc.leadPos), ln = Math.min(a.leadNeg, fc.leadNeg);
                 if (collapseTop) { a.leadPos = lp; a.leadNeg = ln; y = 0; }
                 else { y = lp + ln; a.leadPos = a.leadNeg = 0; }
@@ -285,6 +289,7 @@ final class BlockFlow implements FormattingEngine {
         private float[] xs, ys;
         private int n;
         private boolean started;
+        private int leadCount;
         private float cursor, lp, ln, pp, pn;
         private final LayoutSession s;
         private List<OutOfFlow.Pending> pend;
@@ -310,6 +315,7 @@ final class BlockFlow implements FormattingEngine {
                 else { y = cursor + Math.max(pp, f.topPos) + Math.min(pn, f.topNeg); pp = Math.max(pp, sp); pn = Math.min(pn, sn); }
             } else if (!started) {
                 started = true;
+                leadCount = n;
                 lp = Math.max(lp, f.topPos);
                 ln = Math.min(ln, f.topNeg);
                 y = 0;
@@ -344,7 +350,10 @@ final class BlockFlow implements FormattingEngine {
         /** {@code clear}: 次の流れの箱を {@code y} より下へ（clearance。前の余白とは相殺しない）。 */
         void clearTo(float y) {
             if (y == Float.NEGATIVE_INFINITY || y <= flowY()) return;
-            if (!started) started = true;
+            if (!started) {
+                started = true;
+                leadCount = n;
+            }
             cursor = y;
             pp = pn = 0;
         }
@@ -376,8 +385,8 @@ final class BlockFlow implements FormattingEngine {
             float[] x = n == xs.length ? xs : java.util.Arrays.copyOf(xs, n);
             float[] y = n == ys.length ? ys : java.util.Arrays.copyOf(ys, n);
             OutOfFlow.Pending[] up = pend == null ? null : pend.toArray(OutOfFlow.NONE);
-            if (!started) return new FlowChunk(source, space, fs, x, y, 0, lp, ln, lp, ln, true, slots, up);
-            return new FlowChunk(source, space, fs, x, y, LayoutUnit.snap(cursor), lp, ln, pp, pn, false, slots, up);
+            if (!started) return new FlowChunk(source, space, fs, x, y, 0, lp, ln, lp, ln, true, slots, up, n);
+            return new FlowChunk(source, space, fs, x, y, LayoutUnit.snap(cursor), lp, ln, pp, pn, false, slots, up, leadCount);
         }
     }
 

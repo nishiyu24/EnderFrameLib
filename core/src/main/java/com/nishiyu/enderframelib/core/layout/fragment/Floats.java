@@ -96,7 +96,7 @@ final class Floats {
     static Placed place(BoxNode box, Space space, float flowY, float cw, float pctBase, LayoutFragment prior, LayoutSession s) {
         Style st = box.style;
         BoxGeometry g = new BoxGeometry(st, cw, s);
-        float w = g.specifiedWidth(st, cw, s);
+        float w = g.specifiedWidth(box, cw, cw - g.mL - g.mR, s);
         if (Float.isNaN(w)) { // 縮小して合わせる
             MinMaxSizes mm = s.cache().minMax(box, s);
             w = Math.min(Math.max(mm.min, cw - g.mL - g.mR), mm.max);

@@ -92,8 +92,8 @@ public final class FragmentProjection {
                 }
             });
         }
-        for (LayoutBox c : lb.children) {
-            if (c.display != null && c.display.isInlineLevel() && !c.node.isPseudoNode && c.inlineFragments != null) fitInline(c);
+        for (LayoutBox c : lb.children) { // 原子（inline-block など）は行の断片の位置に置いた箱なので触らない
+            if ((c.isInlineFlow() || c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT) && !c.node.isPseudoNode) fitInline(c);
         }
         if (f.oof != null) { // 流れの外の断片は包含ブロックの子として後ろに置く（描画の順も位置指定の子が後）
             for (PlacedFragment p : f.oof) lb.addChild(block(p.frag(), p.x(), p.y()));

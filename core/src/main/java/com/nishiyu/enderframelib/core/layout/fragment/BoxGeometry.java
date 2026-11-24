@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout.fragment;
 
+import com.nishiyu.enderframelib.core.box.BoxNode;
 import com.nishiyu.enderframelib.core.css.BoxGeomStyle;
 import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.Style;
@@ -65,6 +66,25 @@ public final class BoxGeometry {
         return borderBox(st) ? Math.max(w, hdec()) : w + hdec();
     }
 
+    /**
+     * 指定された幅（border-box）。{@code width} が内在サイズの語（{@code min-content} / {@code max-content} / {@code fit-content}）なら
+     * 箱の内容の内在サイズから決める（{@code fit-content} は {@code min(max(min-content, avail), max-content)}。{@code avail} は余白を
+     * 引いた使える幅）。auto なら NaN。
+     */
+    float specifiedWidth(BoxNode box, float cbw, float avail, LayoutSession s) {
+        Style st = box.style;
+        float w = specifiedWidth(st, cbw, s);
+        if (!Float.isNaN(w)) return w;
+        long v = st.box.width;
+        boolean minC = CssLength.isKeyword(v, CssLength.KW_MIN_CONTENT), maxC = CssLength.isKeyword(v, CssLength.KW_MAX_CONTENT);
+        boolean fit = CssLength.isKeyword(v, CssLength.KW_FIT_CONTENT);
+        if (!minC && !maxC && !fit) return Float.NaN;
+        MinMaxSizes mm = s.cache().minMax(box, s); // 内容の内在サイズ（border-box）
+        if (minC) return mm.min;
+        if (maxC) return mm.max;
+        return Math.min(Math.max(mm.min, Float.isFinite(avail) ? avail : mm.max), mm.max);
+    }
+
     /** 指定された高さ（border-box）。auto・基準の無い % なら NaN。 */
     float specifiedHeight(Style st, float pctBase, LayoutSession s) {
         long v = st.box.height;
@@ -107,6 +127,9 @@ public final class BoxGeometry {
      */
     MinMaxSizes contribution(Style st, MinMaxSizes content, LayoutSession s) {
         float spec = specifiedWidth(st, Float.NaN, s);
+        long v = st.box.width;
+        if (Float.isNaN(spec) && CssLength.isKeyword(v, CssLength.KW_MIN_CONTENT)) spec = content.min;
+        if (Float.isNaN(spec) && CssLength.isKeyword(v, CssLength.KW_MAX_CONTENT)) spec = content.max;
         if (!Float.isNaN(spec)) {
             float w = clampWidth(st, spec, Float.NaN, s);
             return new MinMaxSizes(w, w);

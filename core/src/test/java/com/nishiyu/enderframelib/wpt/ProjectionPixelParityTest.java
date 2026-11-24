@@ -22,6 +22,10 @@ class ProjectionPixelParityTest {
                     + "<p style='width:120px;color:#036'>alpha beta gamma delta epsilon zeta eta theta</p></body></html>",
             "<html><body style='margin:0'><div style='display:flex;width:500px;background:#eee'><div style='flex-grow:1;background:#fcc'>a</div>"
                     + "<div style='flex-grow:2;padding:4px;background:#cfc'>bb</div><div style='width:100px;background:#ccf'>ccc</div></div></body></html>",
+            // M2b-1: 混在の流れの行に置いた原子（inline-block）は、その行の位置に描く（中に文字を持つ原子を、射影が親の原点へ戻していた）
+            "<html><body style='margin:0'><p style='margin:0;height:30px;background:#eee'>para</p>"
+                    + "<div style='display:inline-block;width:40px;height:20px;background:#c00'>ab</div>"
+                    + "<div style='display:inline-block;width:30px;height:10px;background:#00c'>c</div></body></html>",
         };
         for (String html : docs) {
             Pixmap legacy = legacy(html), v3 = WptV3BaselineTest.render(html);

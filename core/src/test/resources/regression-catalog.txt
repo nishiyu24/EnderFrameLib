@@ -9,6 +9,9 @@
 M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の InlineFlow の内在サイズが文字の節の末尾の空白を数え落とし、float・縮小して合わせる箱の max-content が小さくなって 1 行の文が折り返した
 M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の BlockFlow が高さ 0 の素通しの箱を自分の上の余白を足さずに置き（中身が float だけの body が 8 px 上がった）、column flex が min-height を主軸の大きさに使わなかった
 M2b | ProjectionPixelParityTest#blocksTextAndFlexRenderLikeLegacy | v3 の BlockFlow がルート要素（html）を独立した整形コンテキストにせず、子の余白と相殺して html が 16 px 下がった
+M2b | ProjectionPixelParityTest#blocksTextAndFlexRenderLikeLegacy | 一時アダプタ（FragmentProjection）がインラインの箱の外接矩形を合わせる処理を inline-block にも掛け、中に文字を持つ原子を親の原点へ戻していた（前のブロックの上に重なって描かれ、行の先頭の原子だけ偶然正しかった）
+M2b | InlineTextTest#collapseThroughBlockSitsAtTheParentEdgeWhenMarginsCollapse | v3 の BlockFlow が流れの箱より前の高さ 0 の素通しの箱を自分の上の余白の下に置き、親と余白を相殺するときも親の上端に来なかった（中身が float だけの p の float が 16 px 下がった。位置を親の相殺の有無で ChunkedFlow が解く形に直した）
+M2b | InlineTextTest#keepAllHoldsAcrossElementsAndWbrBreaks | LineBreaker が word-break: keep-all でも小書きの仮名・長音（NS）を AL にせず「ょ|う」の間で折り返した（旧経路と共有の折り返し規則）
 M2a | LegacyParityTest#flexMatchesLegacy | v3 の内在サイズが自分の width を掛けて返し、flex の自動最小サイズが内容の min-content でなく指定の幅になった（width:80px の項目が縮まずにあふれた。内容と親への寄与を分けて直した）
 §6-3 | FractionalShiftEquivalenceTest#fractionalInsertAndRemoveShiftsAndMatchesFullLayout | 平行移動が配置されなかった箱（br・断片のない空の span）を動かした
 §6-5 | TentativeMeasureReuseTest#definiteLeafAndStretchedFlexGridItemsAreIdenticalAcrossResizes, TentativeMeasureReuseTest#randomChangesGiveTheSameDisplayListWithAndWithoutTentativeReuse | stretch 予定の項目を仮寸法で測り直して flex の確定の測定記録を壊した

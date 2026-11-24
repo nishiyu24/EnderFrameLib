@@ -135,6 +135,28 @@ final class SpikeView {
 
     // ---- 文書 ----
 
+    /** 文字の規則を混ぜた段落の並び（M2b-1 のインライン・文字の変異用）。 */
+    static String inlineText(int count) {
+        StringBuilder sb = new StringBuilder("<html><head><style>body{margin:8px;width:420px} p{margin:6px 0} .w{width:180px}</style></head><body>");
+        String[] words = {"alpha", "beta", "東京", "へ", "gamma\tdelta", "eps", "行きましょう。", "zeta"};
+        for (int i = 0; i < count; i++) {
+            sb.append("<p id=\"p").append(i).append("\"").append(i % 3 == 0 ? " class=\"w\"" : "").append(">");
+            for (int k = 0; k < 6 + i % 5; k++) {
+                String w = words[(i * 7 + k * 3) % words.length];
+                switch ((i + k) % 6) {
+                    case 0 -> sb.append("<span>").append(w).append("</span> ");
+                    case 1 -> sb.append("<b style=\"letter-spacing:1px\">").append(w).append("</b>");
+                    case 2 -> sb.append(w).append("<wbr>");
+                    case 3 -> sb.append("<span style=\"white-space:nowrap\">").append(w).append(" ").append(w).append("</span> ");
+                    case 4 -> sb.append("<span style=\"display:inline-block;padding:1px\">").append(w).append("</span>");
+                    default -> sb.append(w).append(i % 2 == 0 ? " " : "<br>");
+                }
+            }
+            sb.append("</p>");
+        }
+        return sb.append("</body></html>").toString();
+    }
+
     static String largeList(int count) {
         StringBuilder sb = new StringBuilder(count * 80 + 256);
         sb.append("<html><head><style>body { margin: 8px; } ul { list-style: none; padding: 0; } li { padding: 4px; border-bottom: 1px solid #ccc; }</style></head><body>");

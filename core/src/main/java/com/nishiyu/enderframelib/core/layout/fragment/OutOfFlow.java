@@ -78,7 +78,7 @@ final class OutOfFlow {
             BoxGeometry g = new BoxGeometry(st, cbW, s);
             float l = inset(st, st.box.left, cbW, s), r = inset(st, st.box.right, cbW, s);
             float t = inset(st, st.box.top, cbH, s), b = inset(st, st.box.bottom, cbH, s);
-            float w = g.specifiedWidth(st, cbW, s);
+            float w = g.specifiedWidth(box, cbW, cbW - (Float.isNaN(l) ? 0 : l) - (Float.isNaN(r) ? 0 : r) - g.mL - g.mR, s);
             if (Float.isNaN(w)) {
                 if (!Float.isNaN(l) && !Float.isNaN(r)) {
                     w = cbW - l - r - g.mL - g.mR;

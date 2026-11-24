@@ -172,7 +172,8 @@ public final class LineBreaker {
             char c = (char) cp;
             if (NO_BREAK_AFTER_WIDE.indexOf(c) >= 0) return Cls.OP;
             if (CLOSING_WIDE.indexOf(c) >= 0) return Cls.CL;
-            if (NO_BREAK_BEFORE_WIDE.indexOf(c) >= 0) return Cls.NS;
+            // keep-all では小書きの仮名・長音・踊り字も語の文字（AL）。NS のままだと「ょ|う」の間で割れる（約物の・：は NS のまま）
+            if (NO_BREAK_BEFORE_WIDE.indexOf(c) >= 0) return keepAll && Character.isLetter(c) ? Cls.AL : Cls.NS;
             if (c == 0xFF01 || c == 0xFF1F) return Cls.EX;
         }
         if (isIdeographic(cp)) return keepAll ? Cls.AL : Cls.ID;
