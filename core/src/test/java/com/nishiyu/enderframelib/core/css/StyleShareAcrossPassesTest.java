@@ -30,7 +30,7 @@ class StyleShareAcrossPassesTest {
 
     @AfterEach
     void restore() {
-        StyleResolver.ShareCache.enabled = true;
+        ShareCache.enabled = true;
     }
 
     private static List<String> sig(StandaloneView v) {
@@ -46,7 +46,7 @@ class StyleShareAcrossPassesTest {
     private static final String[] CLASSES = {"card", "card on", "card big", "card on big", "card"};
 
     private static List<List<String>> run(boolean share) {
-        StyleResolver.ShareCache.enabled = share;
+        ShareCache.enabled = share;
         StandaloneView v = new StandaloneView(HTML, 300, 300, FontResolver.FALLBACK);
         List<List<String>> out = new ArrayList<>();
         out.add(sig(v));
@@ -63,9 +63,9 @@ class StyleShareAcrossPassesTest {
     @Test
     void togglingClassesMatchesUnsharedAndReturnsHitTheKeptResults() {
         List<List<String>> plain = run(false);
-        long before = StyleResolver.ShareCache.totalHits();
+        long before = ShareCache.totalHits();
         List<List<String>> shared = run(true);
         assertEquals(plain, shared, "class の往復の各手で、使い回しありと無しの見た目が一致");
-        assertTrue(StyleResolver.ShareCache.totalHits() - before > 20, "往復の戻りは前に解いた結果を使い回すはず");
+        assertTrue(ShareCache.totalHits() - before > 20, "往復の戻りは前に解いた結果を使い回すはず");
     }
 }

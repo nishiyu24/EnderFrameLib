@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssLength;
@@ -144,7 +143,7 @@ public class GridLayoutEngine extends LayoutEngine {
             gs.colsFinal = true;
         } else {
             gs.colSizes = sizeTracks(colDefs, gs.colEffective, true, definiteWidth ? innerW : Float.NaN, box.columnGap,
-                    contentDistribution(box.style, CssPropertyIndex.JUSTIFY_CONTENT));
+                    box.style.typed().flexGrid.justifyContent.cssName());
             gs.colsFinal = !gs.colSub;
         }
 
@@ -224,7 +223,7 @@ public class GridLayoutEngine extends LayoutEngine {
         }
         gs.rowsOwnFinal = false;
         gs.rowSizes = sizeTracks(gs.trackDefs(false), gs.rowEffective, false, innerH, box.rowGap,
-                contentDistribution(box.style, CssPropertyIndex.ALIGN_CONTENT));
+                box.style.typed().flexGrid.alignContent.cssName());
     }
 
     // ==========================================
@@ -765,7 +764,7 @@ public class GridLayoutEngine extends LayoutEngine {
             if (item.colStart + item.colSpan >= gs.colSizes.length) areaW -= gs.colEdgeEnd;
             areaW = Math.max(0, areaW);
         }
-        CssKeywords.Alignment justify = selfAlignment(item.box, CssPropertyIndex.JUSTIFY_SELF, box.style, CssPropertyIndex.JUSTIFY_ITEMS);
+        CssKeywords.Alignment justify = selfAlignment(item.box, true, box.style);
         boolean stretch = justify == CssKeywords.Alignment.STRETCH && !hasAutoMargin(item.box, true);
         FormattingContext childCtx = FormattingContext.of(FormattingContext.Display.GRID,
                 justify == CssKeywords.Alignment.STRETCH, !stretch);
@@ -784,9 +783,9 @@ public class GridLayoutEngine extends LayoutEngine {
         boolean colEdges = gs.colSub && gs.colsFinal;
         boolean rowEdges = gs.rowSub && gs.rowsOwnFinal;
         float[] colOffsets = colEdges ? subgridOffsets(gs.colSizes, box.columnGap, gs.colEdgeStart)
-                : trackOffsets(gs.colSizes, box.columnGap, innerW, contentDistribution(box.style, CssPropertyIndex.JUSTIFY_CONTENT));
+                : trackOffsets(gs.colSizes, box.columnGap, innerW, box.style.typed().flexGrid.justifyContent.cssName());
         float[] rowOffsets = rowEdges ? subgridOffsets(gs.rowSizes, box.rowGap, gs.rowEdgeStart)
-                : trackOffsets(gs.rowSizes, box.rowGap, innerH, contentDistribution(box.style, CssPropertyIndex.ALIGN_CONTENT));
+                : trackOffsets(gs.rowSizes, box.rowGap, innerH, box.style.typed().flexGrid.alignContent.cssName());
         gs.colOffsets = colOffsets;
         gs.rowOffsets = rowOffsets;
         // 列の向き（direction: rtl なら右から）。サブグリッドの列は親の向きに従うので裏返さない
@@ -816,14 +815,14 @@ public class GridLayoutEngine extends LayoutEngine {
                 if (item.rowStart + item.rowSpan >= gs.rowSizes.length) areaH -= gs.rowEdgeEnd;
             }
 
-            CssKeywords.Alignment alignSelf = selfAlignment(b, CssPropertyIndex.ALIGN_SELF, box.style, CssPropertyIndex.ALIGN_ITEMS);
+            CssKeywords.Alignment alignSelf = selfAlignment(b, false, box.style);
             if (item.rowSub) {
                 // サブグリッドの行は、確定した親の行の寸法で測り直す（行方向は領域いっぱいに伸びる）
                 float target = Math.max(0, areaH - b.mT - b.mB);
                 b.measure(new ConstraintSpace(areaW, parentH, FormattingContext.of(FormattingContext.Display.GRID, true, false))
                         .withFixed(b.w, target), ctx);
                 item.percentBase = areaH;
-            } else if (alignSelf == CssKeywords.Alignment.STRETCH && !hasAutoMargin(b, false) && !hasSize(b.axisStyle(), CssPropertyIndex.HEIGHT)) {
+            } else if (alignSelf == CssKeywords.Alignment.STRETCH && !hasAutoMargin(b, false) && !hasSize(b.axisStyle().typed().box.height)) {
                 float target = areaH - b.mT - b.mB;
                 // 行が内容より低いとき（min-height: 0 やスクロールコンテナ）は縮めて領域に合わせる
                 if (Math.abs(b.h - target) > 0.01f) {
@@ -841,7 +840,7 @@ public class GridLayoutEngine extends LayoutEngine {
             }
             // 測り直しが来なかった項目の仮の産物を終わらせる（以降の alignWithin は auto マージンを書き換える）
             b.settleTentative();
-            CssKeywords.Alignment justifySelf = selfAlignment(b, CssPropertyIndex.JUSTIFY_SELF, box.style, CssPropertyIndex.JUSTIFY_ITEMS);
+            CssKeywords.Alignment justifySelf = selfAlignment(b, true, box.style);
             // rtl は列を右から並べる。論理（ltr）で組んでから内容ボックスの中で左右を裏返すので、物理の left / right は先に入れ替えておく
             if (rtl) justifySelf = justifySelf == CssKeywords.Alignment.LEFT ? CssKeywords.Alignment.RIGHT
                     : justifySelf == CssKeywords.Alignment.RIGHT ? CssKeywords.Alignment.LEFT : justifySelf;
@@ -853,10 +852,9 @@ public class GridLayoutEngine extends LayoutEngine {
 
     /** 領域の中での位置（マージンボックスの始点の、領域の始点からのずれ）。auto マージンが先に余りを吸う。 */
     private static float alignWithin(LayoutBox b, boolean inline, float area, CssKeywords.Alignment alignment) {
-        int startProp = inline ? CssPropertyIndex.MARGIN_LEFT : CssPropertyIndex.MARGIN_TOP;
-        int endProp = inline ? CssPropertyIndex.MARGIN_RIGHT : CssPropertyIndex.MARGIN_BOTTOM;
-        ComputedStyle bs = b.axisStyle();
-        boolean autoStart = isAuto(bs, startProp), autoEnd = isAuto(bs, endProp);
+        var facts = b.axisStyle().facts();
+        boolean autoStart = inline ? facts.autoMarginL : facts.autoMarginT;
+        boolean autoEnd = inline ? facts.autoMarginR : facts.autoMarginB;
         float size = inline ? b.w : b.h;
         float margins = (autoStart ? 0 : (inline ? b.mL : b.mT)) + (autoEnd ? 0 : (inline ? b.mR : b.mB));
         float free = area - size - margins;
@@ -964,11 +962,14 @@ public class GridLayoutEngine extends LayoutEngine {
      * アイテムの揃え。{@code *-self} が auto ならコンテナの {@code *-items}、{@code normal} / {@code legacy} は
      * 置換要素でなければ stretch。
      */
-    private static CssKeywords.Alignment selfAlignment(LayoutBox b, int selfProp, ComputedStyle container, int itemsProp) {
-        CssKeywords.Alignment v = b.style.keywordOf(selfProp, CssKeywords.Alignment.class);
-        if (v == CssKeywords.Alignment.AUTO) v = container.keywordOf(itemsProp, CssKeywords.Alignment.class);
+    private static CssKeywords.Alignment selfAlignment(LayoutBox b, boolean inline, ComputedStyle container) {
+        var bfg = b.style.typed().flexGrid;
+        var cfg = container.typed().flexGrid;
+        CssKeywords.Alignment v = inline ? bfg.justifySelf : bfg.alignSelf;
+        if (v == CssKeywords.Alignment.AUTO) v = inline ? cfg.justifyItems : cfg.alignItems;
         if (v == CssKeywords.Alignment.NORMAL || v == CssKeywords.Alignment.LEGACY || v == CssKeywords.Alignment.AUTO) {
-            boolean sized = hasSize(b.axisStyle(), selfProp == CssPropertyIndex.JUSTIFY_SELF ? CssPropertyIndex.WIDTH : CssPropertyIndex.HEIGHT);
+            var box = b.axisStyle().typed().box;
+            boolean sized = hasSize(inline ? box.width : box.height);
             return isReplaced(b) || sized ? CssKeywords.Alignment.START : CssKeywords.Alignment.STRETCH;
         }
         // first baseline / last baseline は baseline（safe / unsafe は読み取りで落とし済み）
@@ -976,14 +977,8 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     private static boolean hasAutoMargin(LayoutBox b, boolean inline) {
-        ComputedStyle bs = b.axisStyle();
-        return inline
-                ? isAuto(bs, CssPropertyIndex.MARGIN_LEFT) || isAuto(bs, CssPropertyIndex.MARGIN_RIGHT)
-                : isAuto(bs, CssPropertyIndex.MARGIN_TOP) || isAuto(bs, CssPropertyIndex.MARGIN_BOTTOM);
-    }
-
-    private static boolean isAuto(ComputedStyle style, int prop) {
-        return "auto".equalsIgnoreCase(style.getOrDefault(prop, "0").trim());
+        var facts = b.axisStyle().facts();
+        return inline ? (facts.autoMarginL || facts.autoMarginR) : (facts.autoMarginT || facts.autoMarginB);
     }
 
     /** 割合（{@code 100%}、{@code calc(100% - 8px)} など）を含む長さか。 */
@@ -991,13 +986,8 @@ public class GridLayoutEngine extends LayoutEngine {
         return CssLength.hasPercent(len, exprs);
     }
 
-    private static boolean hasSize(ComputedStyle style, int prop) {
-        String v = style.get(prop);
-        return v != null && !"auto".equalsIgnoreCase(v.trim());
-    }
-
-    private static String contentDistribution(ComputedStyle style, int prop) {
-        return style.keywordOf(prop, CssKeywords.Alignment.class).cssName();
+    private static boolean hasSize(long len) {
+        return CssLength.isDeclared(len) && !CssLength.isAuto(len);
     }
 
     // ==========================================

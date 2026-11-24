@@ -28,20 +28,10 @@ final class ShorthandPlan {
     private static final int CACHE_LIMIT = 2048;
 
     /** 展開の結果: 書く先（添字。未登録の名前は -1 で名前）と値。順序は元の {@code putIfAbsent} の順。 */
-    record Expansion(String[] names, int[] ids, String[] values, CssValue[] cssValues) {
-        Expansion(String[] names, int[] ids, String[] values) {
-            this(names, ids, values, toValues(values));
-        }
-
-        private static CssValue[] toValues(String[] values) {
-            CssValue[] out = new CssValue[values.length];
-            for (int i = 0; i < out.length; i++) out[i] = CssValue.of(values[i]);
-            return out;
-        }
-
+    record Expansion(String[] names, int[] ids, String[] values) {
         void applyTo(StyleTable t) {
             for (int k = 0; k < ids.length; k++) {
-                if (ids[k] >= 0) t.putIfAbsentValueById(ids[k], cssValues[k]);
+                if (ids[k] >= 0) t.putIfAbsentById(ids[k], values[k]);
                 else t.putIfAbsent(names[k], values[k]);
             }
         }
@@ -86,9 +76,8 @@ final class ShorthandPlan {
             if (value == null || value.isBlank()) continue;
             if (CssWideKeyword.of(value) != null) {
                 String keyword = value.trim();
-                CssValue keywordValue = CssValue.of(keyword);
                 for (int k = 0; k < LONGHANDS[i].length; k++) {
-                    if (LONGHAND_IDS[i][k] >= 0) t.putIfAbsentValueById(LONGHAND_IDS[i][k], keywordValue);
+                    if (LONGHAND_IDS[i][k] >= 0) t.putIfAbsentById(LONGHAND_IDS[i][k], keyword);
                     else t.putIfAbsent(LONGHANDS[i][k], keyword);
                 }
                 continue;

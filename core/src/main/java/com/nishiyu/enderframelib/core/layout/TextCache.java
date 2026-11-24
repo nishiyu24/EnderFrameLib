@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 

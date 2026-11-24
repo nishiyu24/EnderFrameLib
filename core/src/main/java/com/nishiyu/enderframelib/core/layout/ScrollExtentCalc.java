@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssLength;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.WritingModes;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 
@@ -91,19 +91,20 @@ final class ScrollExtentCalc {
         float bx = box.x();
         float by = box.y();
         ComputedStyle ax = box.axisStyle();
+        Style t = ax.typed();
         float dx = 0, dy = 0;
-        if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.TOP)) {
-            float limit = portY + ax.typed().px(ax.typed().box.top, ax.typed().box.exprs, portH, rootW, rootH);
+        if (!CssLength.isAutoOrUndeclared(t.box.top)) {
+            float limit = portY + t.boxPx(t.box.top, portH, rootW, rootH);
             if (by < limit) dy = Math.max(0, Math.min(limit - by, cbBottom - (by + box.h + box.mB)));
-        } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.BOTTOM)) {
-            float limit = portY + portH - ax.typed().px(ax.typed().box.bottom, ax.typed().box.exprs, portH, rootW, rootH);
+        } else if (!CssLength.isAutoOrUndeclared(t.box.bottom)) {
+            float limit = portY + portH - t.boxPx(t.box.bottom, portH, rootW, rootH);
             if (by + box.h > limit) dy = -Math.max(0, Math.min(by + box.h - limit, by - box.mT - cbTop));
         }
-        if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.LEFT)) {
-            float limit = portX + ax.typed().px(ax.typed().box.left, ax.typed().box.exprs, portW, rootW, rootH);
+        if (!CssLength.isAutoOrUndeclared(t.box.left)) {
+            float limit = portX + t.boxPx(t.box.left, portW, rootW, rootH);
             if (bx < limit) dx = Math.max(0, Math.min(limit - bx, cbRight - (bx + box.w + box.mR)));
-        } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.RIGHT)) {
-            float limit = portX + portW - ax.typed().px(ax.typed().box.right, ax.typed().box.exprs, portW, rootW, rootH);
+        } else if (!CssLength.isAutoOrUndeclared(t.box.right)) {
+            float limit = portX + portW - t.boxPx(t.box.right, portW, rootW, rootH);
             if (bx + box.w > limit) dx = -Math.max(0, Math.min(bx + box.w - limit, bx - box.mL - cbLeft));
         }
         box.stickyDy = dy;
@@ -116,14 +117,14 @@ final class ScrollExtentCalc {
         if (!box.isSticky || box.parent == null || port == null) return null;
         LayoutBox near = LayoutReads.peekStickyScrollContainer(box);
         if (near != port) return null;
-        ComputedStyle ax = box.axisStyle();
-        if (BoxMeasurer.isAutoInset(ax, CssPropertyIndex.TOP) || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.BOTTOM)
-                || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.LEFT) || !BoxMeasurer.isAutoInset(ax, CssPropertyIndex.RIGHT)) {
+        Style t = box.axisStyle().typed();
+        if (CssLength.isAutoOrUndeclared(t.box.top) || !CssLength.isAutoOrUndeclared(t.box.bottom)
+                || !CssLength.isAutoOrUndeclared(t.box.left) || !CssLength.isAutoOrUndeclared(t.box.right)) {
             return null;
         }
         float portY = port.y() + port.bT;
         float portH = Math.max(0, port.h - port.bT - port.bB);
-        float limit = portY + ax.typed().px(ax.typed().box.top, ax.typed().box.exprs, portH, rootW, rootH);
+        float limit = portY + t.boxPx(t.box.top, portH, rootW, rootH);
         float cbBottom = LayoutReads.peekParentContentBottom(box);
         if (Float.floatToIntBits(box.y) != Float.floatToIntBits(box.stickyPlacedY)) return null;
         float unstuckAbsY = PlacementMemo.originParentY(box) + box.stickyUnstuckY;

@@ -2,19 +2,9 @@
 # 鍵 | 分類 | 理由。分類: IMMUTABLE_TABLE / LOCKED / RACY_CACHE / DIAGNOSTIC / PENDING（要対処。0 でなければならない）
 css/ColorParser.java#NAMED_COLORS | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/ColorParser.java#SLOW_MEMO | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
-css/ComputedStyle.java#DIFF_MEMO | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
 css/ComputedStyle.java#LAST_FACE | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
-css/ComputedStyle.java#HASHES | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-css/ComputedStyle.java#INHERITED | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/ComputedStyle.java#INHERITS_AS_LONGHAND | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/ComputedStyle.java#INITIALS | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-css/ComputedStyle.java#INITIAL_KEYWORDS | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
-css/ComputedStyle.java#INITIAL_VALUES | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-css/ComputedStyle.java#KEYS | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-css/ComputedStyle.java#NAMES | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-css/ComputedStyle.java#ORTHO_KEYS | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
-css/ComputedStyle.java#PAINT_ONLY | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-css/ComputedStyle.java#STRUCTURE_AFFECTING | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/ComputedStyle.java#VALS | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/CounterStyles.java#BUILTINS | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/CounterStyles.java#LOWER_ALPHA | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
@@ -25,10 +15,6 @@ css/model/CssKeywords.java#CSS_NAMES | IMMUTABLE_TABLE | 静的初期化で作�
 css/CssNumbers.java#HEX | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 css/CssSyntax.java#POOL | RACY_CACHE | 1 スロットの記憶。中身は不変の値で、読み手は取り出した 1 個だけを使うので、競合しても取り違えない（最悪は作り直し）
 css/LengthResolver.java#ZERO_RADII_XY | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
-css/PackedLengths.java#EXPR_INDEX | LOCKED | register が synchronized。式は弱参照で持ち、持ち主が消えた添字は空きへ戻して再利用する（読み側は volatile の slots 配列を引く）
-css/PackedLengths.java#slotCount | LOCKED | register が synchronized。式は弱参照で持ち、持ち主が消えた添字は空きへ戻して再利用する（読み側は volatile の slots 配列を引く）
-css/PackedLengths.java#freeList | LOCKED | register が synchronized。式は弱参照で持ち、持ち主が消えた添字は空きへ戻して再利用する（読み側は volatile の slots 配列を引く）
-css/PackedLengths.java#freeCount | LOCKED | register が synchronized。式は弱参照で持ち、持ち主が消えた添字は空きへ戻して再利用する（読み側は volatile の slots 配列を引く）
 layout/ReplacedElements.java#SPI | IMMUTABLE_TABLE | SPI が宣言した置換要素。静的初期化で作った後は読むだけ（ホストの登録は文脈の HostServices）
 css/PropertyRegistry.java#PROPERTIES | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
 css/PropertyRegistry.java#SUBPROPERTIES | IMMUTABLE_TABLE | 静的初期化で埋めた後は読むだけ
@@ -65,3 +51,6 @@ text/font/GlyphBitmap.java#DARK_TEXT | IMMUTABLE_TABLE | 静的初期化で作�
 text/font/GlyphBitmap.java#LIGHT_TEXT | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 text/font/LoadedFace.java#library | LOCKED | synchronized (LOCK) の中でだけ読み書き
 paint/Fragment.java#NO_KIDS | IMMUTABLE_TABLE | 子を持たない箱の寄与（全層が空）。静的初期化で作った後は読むだけ（withOwn は複製してから書く）
+css/DerivedStyles.java#ORTHO_KEYS | IMMUTABLE_TABLE | 直交ラッパーの memo 識別用センチネル配列（構築後は参照比較のみ）
+css/StyleProperties.java#VALS | IMMUTABLE_TABLE | Style.DEFAULT の初期文字列配列表（静的初期化後に読むだけ）
+css/StyleProperties.java#GROUP_BITS | IMMUTABLE_TABLE | プロパティ ID ごとのスタイル群ビット表（静的初期化後に読むだけ）

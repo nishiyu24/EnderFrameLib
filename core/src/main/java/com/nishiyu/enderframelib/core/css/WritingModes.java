@@ -33,7 +33,7 @@ public final class WritingModes {
     }
 
     public static int flowOf(ComputedStyle style) {
-        return style == null ? HORIZONTAL : flowOf(style.get(CssPropertyIndex.WRITING_MODE));
+        return style == null ? HORIZONTAL : flowOf(style.typed().inherited.writingMode);
     }
 
     public static boolean isVertical(ComputedStyle style) {
@@ -54,7 +54,7 @@ public final class WritingModes {
     public enum Orientation { MIXED, UPRIGHT, SIDEWAYS }
 
     public static Orientation orientationOf(ComputedStyle style) {
-        String v = style == null ? null : style.get(CssPropertyIndex.TEXT_ORIENTATION);
+        String v = style == null ? null : style.typed().inherited.textOrientation;
         if (v == null) return Orientation.MIXED;
         return switch (v.trim().toLowerCase(java.util.Locale.ROOT)) {
             case "upright" -> Orientation.UPRIGHT;

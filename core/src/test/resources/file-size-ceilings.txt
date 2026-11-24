@@ -1,6 +1,5 @@
 # FileSizeRatchetTest の表（ENGINE_REARCHITECTURE_PLAN T1 ①）: core/src/main/java/com/nishiyu/enderframelib からの相対パス | 行数の上限
 # 800 行超のファイルは全部載せる。増やさない。分けて減ったら下げる（-Dratchet.update=true で現在値へ書き直す）。
-core/css/ComputedStyle.java | 2009
 common/UiView.java | 2005
 core/layout/LayoutBox.java | 1785
 core/layout/BlockLayoutEngine.java | 1457
@@ -8,12 +7,12 @@ common/RenderPipeline.java | 1367
 core/dom/node/HtmlNode.java | 1402
 core/layout/GridLayoutEngine.java | 1341
 core/paint/software/SoftwareRenderBackend.java | 1329
-core/css/StyleResolver.java | 1276
+core/css/StyleResolver.java | 1101
 core/css/ColorParser.java | 1272
 core/dom/parser/HtmlParser.java | 1214
 core/dom/Bindings.java | 1175
 core/paint/gpu/GpuRenderBackend.java | 1174
-core/layout/AnchorPositioning.java | 1152
+core/layout/AnchorPositioning.java | 1089
 core/raster/canvas/CanvasRenderingContext2D.java | 1144
 common/StandaloneView.java | 1101
 core/dom/InteractionState.java | 1055

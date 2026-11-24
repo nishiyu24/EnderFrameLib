@@ -130,7 +130,8 @@ class StyleTableHotPathTest {
         ComputedStyle parentWithVpCustom = new ComputedStyle(parentSrc, 16f, 16f);
 
         StyleTable childA = new StyleTable();
-        assertTrue(ComputedStyle.copyInheritable(parentWithVpCustom.asMap(), childA));
+        StyleProperties.inheritInto(parentWithVpCustom.typed(), childA);
+        assertFalse(childA.isEmpty());
         assertTrue(StyleResolver.rawDependsOnViewport(childA), "親の --vp を共有して引き継ぐので true");
         childA.put("--vp", "8px");
         assertFalse(StyleResolver.rawDependsOnViewport(childA), "--vp を上書きして消したあとは false");
@@ -151,7 +152,8 @@ class StyleTableHotPathTest {
         parentNoVp.put("color", "blue");
         ComputedStyle computedNoVp = new ComputedStyle(parentNoVp, 16f, 16f);
         StyleTable childB = new StyleTable();
-        assertTrue(ComputedStyle.copyInheritable(computedNoVp.asMap(), childB));
+        StyleProperties.inheritInto(computedNoVp.typed(), childB);
+        assertFalse(childB.isEmpty());
         assertFalse(StyleResolver.rawDependsOnViewport(childB));
         StyleTable copied = StyleTable.copyOf(computedNoVp.asMap());
         assertFalse(StyleResolver.rawDependsOnViewport(copied));

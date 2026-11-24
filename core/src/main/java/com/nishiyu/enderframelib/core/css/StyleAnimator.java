@@ -96,10 +96,11 @@ public final class StyleAnimator {
      * @param before      この再スタイルの前の算出スタイル（アニメーションの値を含む）。初めて算出するなら null
      * @param parentStyle 親の算出値（継承による変化をトランジションにしないために見る）
      */
-    public void observe(HtmlNode node, ComputedStyle before, ComputedStyle target, Map<String, String> parentStyle,
+    public void observe(HtmlNode node, ComputedStyle before, ComputedStyle target, Style parentStyle,
                         Map<String, Keyframes> keyframes, long now) {
-        boolean hasTransitionSpec = hasValue(target.get(CssPropertyIndex.TRANSITION)) || hasValue(target.get(CssPropertyIndex.TRANSITION_DURATION));
-        boolean hasAnimationSpec = hasValue(target.get(CssPropertyIndex.ANIMATION)) || hasValue(target.get(CssPropertyIndex.ANIMATION_NAME));
+        RareStyle r = target.typed().rare;
+        boolean hasTransitionSpec = hasValue(r.transition) || hasValue(r.transitionDuration);
+        boolean hasAnimationSpec = hasValue(r.animation) || hasValue(r.animationName);
         if (!hasEntries && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;
 
         synchronized (this) {
@@ -128,7 +129,7 @@ public final class StyleAnimator {
         }
     }
 
-    private void startTransitions(Entry entry, ComputedStyle from, ComputedStyle to, Map<String, String> parentStyle, long now) {
+    private void startTransitions(Entry entry, ComputedStyle from, ComputedStyle to, Style parentStyle, long now) {
         // 値が違うプロパティだけを見る（全プロパティの和集合を作らない）。宣言が無いプロパティは初期値と比べる
         List<AnimationTiming.Transition>[] specs = new List[1];
         ComputedStyle.diff(from, to, (property, paintOnly, inherited) -> {
@@ -144,7 +145,7 @@ public final class StyleAnimator {
                 return;
             }
             // 親から継承した値が動いているだけなら、子のトランジションにはしない（親のものが子へ流れる）
-            if (PropertyRegistry.isInherited(property) && after.equals(parentStyle.get(property))) {
+            if (PropertyRegistry.isInherited(property) && parentStyle != null && after.equals(parentStyle.cssProperty(property))) {
                 entry.transitions.remove(property);
                 return;
             }

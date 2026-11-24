@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.core.dom;
 
 import com.nishiyu.enderframelib.core.kernel.Clock;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.dom.node.*;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -101,8 +101,8 @@ public class InteractionState implements StyledDocumentState {
 
     /** 無効化セットを引くシートを結ぶ。描画のたびに呼んでよい（同じシートなら何もしない）。 */
     /** 1 回の再スタイル／箱の木の組み立ての間だけ使う、スタイル解決の使い回し表。走査の前後で空にする。 */
-    public final com.nishiyu.enderframelib.core.css.StyleResolver.ShareCache styleShare =
-            new com.nishiyu.enderframelib.core.css.StyleResolver.ShareCache();
+    public final com.nishiyu.enderframelib.core.css.ShareCache styleShare =
+            new com.nishiyu.enderframelib.core.css.ShareCache();
 
     public void bindStyleSheet(StyleSheet sheet) {
         this.sheet = sheet;
@@ -151,8 +151,6 @@ public class InteractionState implements StyledDocumentState {
         public int state;
         /** {@link #state} のうち CHECKED / DISABLED / INDETERMINATE / OPEN は 3 値（未指定・真・偽）。指定済みのビット。 */
         public int overridden;
-        /** 状態 → 算出スタイルの表（自身だけの再スタイルで使い回す）。 */
-        public com.nishiyu.enderframelib.core.kernel.compiler.StateStyleMemo stateMemo;
 
         /** 確定済みの算出スタイルキャッシュ。 */
         public ComputedStyle computedStyle;
@@ -905,23 +903,21 @@ public class InteractionState implements StyledDocumentState {
                 && Float.floatToIntBits(flags.containerBoxH) == Float.floatToIntBits(flags.containerHeight)) {
             return hit;
         }
-        ContainerType type = switch (style.keyword(CssPropertyIndex.CONTAINER_TYPE, "normal")) {
-            case "size" -> ContainerType.SIZE;
-            case "inline-size" -> ContainerType.INLINE_SIZE;
-            default -> ContainerType.NORMAL;
+        Style st = style.typed();
+        ContainerType type = switch (st.rare.containerType) {
+            case SIZE -> ContainerType.SIZE; case INLINE_SIZE -> ContainerType.INLINE_SIZE; default -> ContainerType.NORMAL;
         };
-        String nameList = style.keyword(CssPropertyIndex.CONTAINER_NAME, "none");
+        String nameList = st.rare.containerName;
         List<String> names;
-        if (nameList.equals("none") || nameList.isEmpty()) {
-            names = List.of(); // 正規表現の分割を避ける（大半の要素は名前を持たない）
-        } else {
+        if (nameList == null || nameList.isBlank() || "none".equalsIgnoreCase(nameList.trim())) names = List.of();
+        else {
             names = new ArrayList<>();
-            for (String name : nameList.split("\s+")) {
+            for (String name : nameList.trim().toLowerCase(java.util.Locale.ROOT).split("\\s+")) {
                 if (!name.isEmpty() && !name.equals("none")) names.add(name);
             }
         }
         ContainerBox box = new ContainerBox(flags.containerWidth, flags.containerHeight, type, names,
-                style.customProperties());
+                st.custom != null ? st.custom.asMap() : Map.of());
         flags.containerStyle = style;
         flags.containerBoxW = flags.containerWidth;
         flags.containerBoxH = flags.containerHeight;

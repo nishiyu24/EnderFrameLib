@@ -9,7 +9,6 @@ core/src/main/java/com/nishiyu/enderframelib/common/StandaloneView.java | 1101
 core/src/main/java/com/nishiyu/enderframelib/common/UiInput.java | 799
 core/src/main/java/com/nishiyu/enderframelib/common/UiView.java | 2005
 core/src/main/java/com/nishiyu/enderframelib/core/css/ColorParser.java | 1272
-core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java | 2095
 core/src/main/java/com/nishiyu/enderframelib/core/css/CssParser.java | 842
 core/src/main/java/com/nishiyu/enderframelib/core/css/CssSyntax.java | 964
 core/src/main/java/com/nishiyu/enderframelib/core/css/LengthResolver.java | 956

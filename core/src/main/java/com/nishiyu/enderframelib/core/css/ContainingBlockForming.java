@@ -13,8 +13,9 @@ public final class ContainingBlockForming {
     }
 
     private static boolean forms(ComputedStyle s) {
-        return isSet(s.get(CssPropertyIndex.TRANSFORM)) || isSet(s.get(CssPropertyIndex.FILTER))
-                || (s.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0;
+        Style st = s.typed();
+        return isSet(st.visual.transform) || isSet(st.visual.filter)
+                || (st.facts.containment & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0;
     }
 
     private static boolean isSet(String v) {

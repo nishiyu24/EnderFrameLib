@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.layout.FenwickVirtualList;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
@@ -850,43 +850,35 @@ final class LineBuilder {
         float raise = 0;
         BlockLayoutEngine.VAlign align = BlockLayoutEngine.VAlign.BASELINE;
         if (self != null) {
-            String v = self.style.keyword(CssPropertyIndex.VERTICAL_ALIGN, "baseline");
-            if (!"baseline".equals(v)) {
-                switch (v) {
-                    case "top" -> align = BlockLayoutEngine.VAlign.TOP;
-                    case "bottom" -> align = BlockLayoutEngine.VAlign.BOTTOM;
-                    default -> raise += resolveVerticalAlignRaise(self, v, height, above);
-                }
+            long va = self.style.typed().box.verticalAlign;
+            if (CssLength.isDeclared(va) && !CssLength.isKeyword(va, CssLength.KW_BASELINE)) {
+                if (CssLength.isKeyword(va, CssLength.KW_TOP)) align = BlockLayoutEngine.VAlign.TOP;
+                else if (CssLength.isKeyword(va, CssLength.KW_BOTTOM)) align = BlockLayoutEngine.VAlign.BOTTOM;
+                else raise += resolveVerticalAlignRaise(self, va, height, above);
             }
         }
         for (int i = inlineParents.size() - 1; i >= 0; i--) {
             LayoutBox el = inlineParents.get(i);
-            String v = el.style.keyword(CssPropertyIndex.VERTICAL_ALIGN, "baseline");
-            if ("baseline".equals(v)) continue;
-            switch (v) {
-                case "top" -> align = BlockLayoutEngine.VAlign.TOP;
-                case "bottom" -> align = BlockLayoutEngine.VAlign.BOTTOM;
-                default -> raise += resolveVerticalAlignRaise(el, v, height, above);
-            }
+            long va = el.style.typed().box.verticalAlign;
+            if (!CssLength.isDeclared(va) || CssLength.isKeyword(va, CssLength.KW_BASELINE)) continue;
+            if (CssLength.isKeyword(va, CssLength.KW_TOP)) align = BlockLayoutEngine.VAlign.TOP;
+            else if (CssLength.isKeyword(va, CssLength.KW_BOTTOM)) align = BlockLayoutEngine.VAlign.BOTTOM;
+            else raise += resolveVerticalAlignRaise(el, va, height, above);
         }
         return align == BlockLayoutEngine.VAlign.BASELINE && raise == 0 ? BlockLayoutEngine.ALIGNMENT_BASELINE_ZERO : new BlockLayoutEngine.Alignment(align, raise);
     }
 
-    float resolveVerticalAlignRaise(LayoutBox el, String v, float height, float above) {
+    float resolveVerticalAlignRaise(LayoutBox el, long va, float height, float above) {
         LayoutBox parentBox = el.parent != null ? el.parent : flow.box;
         FontFace face = ctx.faceFor(parentBox.style);
         FontStyle font = ctx.fontStyleFor(parentBox.style);
         float parentFont = parentBox.style.fontSizePx();
-        return switch (v) {
-            // 中央を親のベースライン + x ハイトの半分に置く
-            case "middle" -> height / 2 + face.xHeight(font) / 2 - above;
-            // Chromium と同じ近似（下付き: 1/5 em + 1、上付き: 1/3 em + 1）
-            case "sub" -> -(parentFont / 5 + 1);
-            case "super" -> parentFont / 3 + 1;
-            case "text-top" -> face.ascent(font) - above;
-            case "text-bottom" -> (height - above) - face.descent(font);
-            default -> el.style.typed().px(el.style.typed().box.verticalAlign, el.style.typed().box.exprs, el.lineHeightPx,
-                    ctx.viewport().rootW(), ctx.viewport().rootH());
-        };
+        if (CssLength.isKeyword(va, CssLength.KW_MIDDLE)) return height / 2 + face.xHeight(font) / 2 - above;
+        if (CssLength.isKeyword(va, CssLength.KW_SUB)) return -(parentFont / 5 + 1);
+        if (CssLength.isKeyword(va, CssLength.KW_SUPER)) return parentFont / 3 + 1;
+        if (CssLength.isKeyword(va, CssLength.KW_TEXT_TOP)) return face.ascent(font) - above;
+        if (CssLength.isKeyword(va, CssLength.KW_TEXT_BOTTOM)) return (height - above) - face.descent(font);
+        return el.style.typed().px(va, el.style.typed().box.exprs, el.lineHeightPx,
+                ctx.viewport().rootW(), ctx.viewport().rootH());
     }
 }

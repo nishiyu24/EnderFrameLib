@@ -8,12 +8,11 @@ core/layout/LayoutBox.java | 34 | 171 | 0 | 0
 common/UiView.java | 16 | 156 | 0 | 0
 api/ui/UI.java | 0 | 132 | 1 | 0
 core/raster/canvas/CanvasRenderingContext2D.java | 0 | 128 | 0 | 0
-core/css/ComputedStyle.java | 0 | 125 | 0 | 0
 core/dom/node/HtmlNode.java | 6 | 115 | 0 | 0
 core/paint/gpu/GpuRenderBackend.java | 0 | 105 | 0 | 1
 core/paint/CssAnimator.java | 44 | 0 | 0 | 0
 core/css/Selector.java | 32 | 0 | 0 | 0
-core/dom/InteractionState.java | 31 | 0 | 0 | 0
+core/dom/InteractionState.java | 30 | 0 | 0 | 0
 common/EnderFrameBuiltInConfig.java | 0 | 0 | 0 | 13
 core/css/StyleSheet.java | 13 | 0 | 0 | 0
 core/diag/PipelineStats.java | 12 | 0 | 0 | 0
@@ -25,13 +24,11 @@ core/paint/gpu/RectStream.java | 5 | 0 | 0 | 1
 common/TextEditing.java | 4 | 0 | 0 | 0
 common/Document.java | 3 | 0 | 0 | 0
 api/config/EnderConfigManager.java | 0 | 0 | 0 | 2
-core/kernel/compiler/StateStyleMemo.java | 2 | 0 | 0 | 0
 core/layout/BlockLayoutEngine.java | 0 | 0 | 0 | 2
 api/dom/MutationObserver.java | 0 | 0 | 0 | 1
 common/UiPubSub.java | 1 | 0 | 0 | 0
 common/UiTimers.java | 1 | 0 | 0 | 0
 core/css/CssParser.java | 0 | 0 | 0 | 1
-core/css/StyleResolver.java | 0 | 0 | 0 | 1
 core/dom/node/DomUtils.java | 0 | 0 | 1 | 1
 core/dom/node/HtmlDocument.java | 1 | 0 | 0 | 0
 core/layout/TableLayoutEngine.java | 1 | 0 | 0 | 0

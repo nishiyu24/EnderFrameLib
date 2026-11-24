@@ -5,47 +5,47 @@ package com.nishiyu.enderframelib.core.css;
  * 値は構築時に 1 回だけ解いた型付きのフィールドで、文字列を読み直さない。{@link #equals} は全フィールドの値等価。
  */
 public final class RareStyle {
-    private static final int ID_columnCount = ComputedStyle.idOf("column-count");
-    private static final int ID_columnWidth = ComputedStyle.idOf("column-width");
-    private static final int ID_columnFill = ComputedStyle.idOf("column-fill");
-    private static final int ID_columnSpan = ComputedStyle.idOf("column-span");
-    private static final int ID_columnRuleColor = ComputedStyle.idOf("column-rule-color");
-    private static final int ID_columnRuleStyle = ComputedStyle.idOf("column-rule-style");
-    private static final int ID_columnRuleWidth = ComputedStyle.idOf("column-rule-width");
-    private static final int ID_appearance = ComputedStyle.idOf("appearance");
-    private static final int ID_contain = ComputedStyle.idOf("contain");
-    private static final int ID_contentVisibility = ComputedStyle.idOf("content-visibility");
-    private static final int ID_containIntrinsicWidth = ComputedStyle.idOf("contain-intrinsic-width");
-    private static final int ID_containIntrinsicHeight = ComputedStyle.idOf("contain-intrinsic-height");
-    private static final int ID_containerType = ComputedStyle.idOf("container-type");
-    private static final int ID_containerName = ComputedStyle.idOf("container-name");
-    private static final int ID_anchorName = ComputedStyle.idOf("anchor-name");
-    private static final int ID_positionAnchor = ComputedStyle.idOf("position-anchor");
-    private static final int ID_positionArea = ComputedStyle.idOf("position-area");
-    private static final int ID_positionTryFallbacks = ComputedStyle.idOf("position-try-fallbacks");
-    private static final int ID_positionTryOrder = ComputedStyle.idOf("position-try-order");
-    private static final int ID_content = ComputedStyle.idOf("content");
-    private static final int ID_counterReset = ComputedStyle.idOf("counter-reset");
-    private static final int ID_counterIncrement = ComputedStyle.idOf("counter-increment");
-    private static final int ID_counterSet = ComputedStyle.idOf("counter-set");
-    private static final int ID_src = ComputedStyle.idOf("src");
-    private static final int ID_objectFit = ComputedStyle.idOf("object-fit");
-    private static final int ID_breakInside = ComputedStyle.idOf("break-inside");
-    private static final int ID_perspective = ComputedStyle.idOf("perspective");
-    private static final int ID_userSelect = ComputedStyle.idOf("user-select");
-    private static final int ID_transitionProperty = ComputedStyle.idOf("transition-property");
-    private static final int ID_transitionDuration = ComputedStyle.idOf("transition-duration");
-    private static final int ID_transitionDelay = ComputedStyle.idOf("transition-delay");
-    private static final int ID_transitionTimingFunction = ComputedStyle.idOf("transition-timing-function");
-    private static final int ID_transition = ComputedStyle.idOf("transition");
-    private static final int ID_animationName = ComputedStyle.idOf("animation-name");
-    private static final int ID_animationDuration = ComputedStyle.idOf("animation-duration");
-    private static final int ID_animationDelay = ComputedStyle.idOf("animation-delay");
-    private static final int ID_animationTimingFunction = ComputedStyle.idOf("animation-timing-function");
-    private static final int ID_animationIterationCount = ComputedStyle.idOf("animation-iteration-count");
-    private static final int ID_animationDirection = ComputedStyle.idOf("animation-direction");
-    private static final int ID_animationFillMode = ComputedStyle.idOf("animation-fill-mode");
-    private static final int ID_animation = ComputedStyle.idOf("animation");
+    static final int ID_columnCount = ComputedStyle.idOf("column-count");
+    static final int ID_columnWidth = ComputedStyle.idOf("column-width");
+    static final int ID_columnFill = ComputedStyle.idOf("column-fill");
+    static final int ID_columnSpan = ComputedStyle.idOf("column-span");
+    static final int ID_columnRuleColor = ComputedStyle.idOf("column-rule-color");
+    static final int ID_columnRuleStyle = ComputedStyle.idOf("column-rule-style");
+    static final int ID_columnRuleWidth = ComputedStyle.idOf("column-rule-width");
+    static final int ID_appearance = ComputedStyle.idOf("appearance");
+    static final int ID_contain = ComputedStyle.idOf("contain");
+    static final int ID_contentVisibility = ComputedStyle.idOf("content-visibility");
+    static final int ID_containIntrinsicWidth = ComputedStyle.idOf("contain-intrinsic-width");
+    static final int ID_containIntrinsicHeight = ComputedStyle.idOf("contain-intrinsic-height");
+    static final int ID_containerType = ComputedStyle.idOf("container-type");
+    static final int ID_containerName = ComputedStyle.idOf("container-name");
+    static final int ID_anchorName = ComputedStyle.idOf("anchor-name");
+    static final int ID_positionAnchor = ComputedStyle.idOf("position-anchor");
+    static final int ID_positionArea = ComputedStyle.idOf("position-area");
+    static final int ID_positionTryFallbacks = ComputedStyle.idOf("position-try-fallbacks");
+    static final int ID_positionTryOrder = ComputedStyle.idOf("position-try-order");
+    static final int ID_content = ComputedStyle.idOf("content");
+    static final int ID_counterReset = ComputedStyle.idOf("counter-reset");
+    static final int ID_counterIncrement = ComputedStyle.idOf("counter-increment");
+    static final int ID_counterSet = ComputedStyle.idOf("counter-set");
+    static final int ID_src = ComputedStyle.idOf("src");
+    static final int ID_objectFit = ComputedStyle.idOf("object-fit");
+    static final int ID_breakInside = ComputedStyle.idOf("break-inside");
+    static final int ID_perspective = ComputedStyle.idOf("perspective");
+    static final int ID_userSelect = ComputedStyle.idOf("user-select");
+    static final int ID_transitionProperty = ComputedStyle.idOf("transition-property");
+    static final int ID_transitionDuration = ComputedStyle.idOf("transition-duration");
+    static final int ID_transitionDelay = ComputedStyle.idOf("transition-delay");
+    static final int ID_transitionTimingFunction = ComputedStyle.idOf("transition-timing-function");
+    static final int ID_transition = ComputedStyle.idOf("transition");
+    static final int ID_animationName = ComputedStyle.idOf("animation-name");
+    static final int ID_animationDuration = ComputedStyle.idOf("animation-duration");
+    static final int ID_animationDelay = ComputedStyle.idOf("animation-delay");
+    static final int ID_animationTimingFunction = ComputedStyle.idOf("animation-timing-function");
+    static final int ID_animationIterationCount = ComputedStyle.idOf("animation-iteration-count");
+    static final int ID_animationDirection = ComputedStyle.idOf("animation-direction");
+    static final int ID_animationFillMode = ComputedStyle.idOf("animation-fill-mode");
+    static final int ID_animation = ComputedStyle.idOf("animation");
 
     /** 宣言が 1 つも無いときの共有インスタンス（初期値だけ）。ID_* の初期化より後に置く。 */
     public static final RareStyle DEFAULT = new RareStyle(null);
@@ -134,8 +134,10 @@ public final class RareStyle {
     public final String animationFillMode;
     /** {@code animation}。 */
     public final String animation;
+    /** {@code column-rule-color} が {@code currentcolor}/未宣言か。 */
+    public final boolean columnRuleColorCurrent;
 
-    private RareStyle(ComputedStyle cs) {
+    private RareStyle(StyleReader.Source cs) {
         CssExprs.Builder ex = new CssExprs.Builder();
         this.columnCount = StyleReader.number(cs, ID_columnCount);
         this.columnWidth = StyleReader.length(cs, ID_columnWidth, ex);
@@ -178,11 +180,12 @@ public final class RareStyle {
         this.animationDirection = StyleReader.text(cs, ID_animationDirection);
         this.animationFillMode = StyleReader.text(cs, ID_animationFillMode);
         this.animation = StyleReader.text(cs, ID_animation);
+        this.columnRuleColorCurrent = StyleReader.isCurrentColor(cs, ID_columnRuleColor, false);
         this.exprs = ex.build();
     }
 
-    /** 算出スタイルから、この群の値を取り出す。 */
-    public static RareStyle of(ComputedStyle cs) {
+    /** 宣言入力から、この群の値を取り出す。 */
+    public static RareStyle of(StyleReader.Source cs) {
         return new RareStyle(cs);
     }
 
@@ -231,7 +234,8 @@ public final class RareStyle {
                 && java.util.Objects.equals(animationIterationCount, o.animationIterationCount)
                 && java.util.Objects.equals(animationDirection, o.animationDirection)
                 && java.util.Objects.equals(animationFillMode, o.animationFillMode)
-                && java.util.Objects.equals(animation, o.animation);
+                && java.util.Objects.equals(animation, o.animation)
+                && columnRuleColorCurrent == o.columnRuleColorCurrent;
     }
 
     @Override

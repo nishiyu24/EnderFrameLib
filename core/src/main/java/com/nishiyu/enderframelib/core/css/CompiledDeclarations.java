@@ -13,14 +13,9 @@ import java.util.Map;
 final class CompiledDeclarations {
     static final CompiledDeclarations EMPTY = new CompiledDeclarations(0);
 
-    /** 値が {@code revert} のまま適用される（巻き戻し先が無い）ときに書く {@code unset}。 */
-    static final CssValue UNSET = CssValue.of("unset");
-
     final int n;
     final String[] names;
     final String[] values;
-    /** {@link #values} の正規の値オブジェクト。作業表へはこれを（文字列を引き直さずに）書く。 */
-    final CssValue[] cssValues;
     /** 登録済みプロパティの添字。登録に無い名前は {@code ComputedStyle.CssPropertyId.NONE}。 */
     final int[] ids;
     /** 値が CSS 全域キーワードならその種別、でなければ null。 */
@@ -39,7 +34,6 @@ final class CompiledDeclarations {
         this.n = n;
         names = new String[n];
         values = new String[n];
-        cssValues = new CssValue[n];
         ids = new int[n];
         wide = new CssWideKeyword[n];
         isAll = new boolean[n];
@@ -54,7 +48,6 @@ final class CompiledDeclarations {
         this.n = n;
         names = new String[n];
         values = new String[n];
-        cssValues = new CssValue[n];
         ids = new int[n];
         wide = new CssWideKeyword[n];
         isAll = new boolean[n];
@@ -68,7 +61,6 @@ final class CompiledDeclarations {
             String value = e.getValue();
             names[i] = key;
             values[i] = value;
-            cssValues[i] = CssValue.of(value);
             ids[i] = ComputedStyle.idOf(key);
             wide[i] = CssWideKeyword.of(value);
             isAll[i] = "all".equals(key);

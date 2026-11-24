@@ -77,10 +77,15 @@ class StyleFactsTest {
     }
 
     /** 元の経路（宣言を引いて、その場で解く）。 */
+    private static <E extends Enum<E> & CssKeywords.Keyword> E parseKw(ComputedStyle s, String property, Class<E> type) {
+        E p = CssKeywords.parse(type, s.get(property));
+        return p != null ? p : PropertyRegistry.initialKeyword(property, type);
+    }
+
     private static Overflow legacyOverflow(ComputedStyle s, String property, int index) {
         Overflow declared;
         if (s.containsKey(property)) {
-            declared = s.keywordOf(property, Overflow.class);
+            declared = parseKw(s, property, Overflow.class);
         } else {
             String shorthand = s.get(CssProperty.OVERFLOW);
             if (shorthand == null) {
@@ -116,12 +121,12 @@ class StyleFactsTest {
             assertEquals(LayoutMetrics.numericWeight(s.get(CssProperty.FONT_WEIGHT)), f.fontWeight, at);
 
             assertEquals((s.containment() & (ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_INLINE_SIZE)) != 0
-                    || s.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsInlineSize(),
+                    || parseKw(s, CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsInlineSize(),
                     f.containsInlineSize, at);
             assertEquals((s.containment() & ComputedStyle.CONTAIN_SIZE) != 0
-                    || s.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize(),
+                    || parseKw(s, CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize(),
                     f.containsBlockSize, at);
-            assertEquals(s.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE,
+            assertEquals(parseKw(s, CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE,
                     f.floating, at);
             assertEquals("none".equals(s.getOrDefault(CssProperty.DISPLAY, "block")), f.displayNone, at);
             assertEquals(legacyDefinite(s, CssProperty.WIDTH), f.definiteWidth, at);
@@ -149,26 +154,27 @@ class StyleFactsTest {
             assertEquals("auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_BOTTOM, "0").trim()), f.autoMarginB, at);
             assertEquals("auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_LEFT, "0").trim()), f.autoMarginL, at);
             assertEquals("rtl".equalsIgnoreCase(s.getOrDefault(CssProperty.DIRECTION, "ltr").trim()), f.rtl, at);
-            assertEquals(s.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE
+            assertEquals(parseKw(s, CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE
                     || (s.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0
                     || legacyOverflow(s, CssProperty.OVERFLOW_X, 0).scrolls() || legacyOverflow(s, CssProperty.OVERFLOW_Y, 1).scrolls(),
                     f.bfcByStyle, at);
             assertEquals(com.nishiyu.enderframelib.core.text.model.WhiteSpace.of(s.get(CssProperty.WHITE_SPACE)), f.whiteSpace, at);
             assertEquals(com.nishiyu.enderframelib.core.text.model.WordBreak.of(s.get(CssProperty.WORD_BREAK)), f.wordBreak, at);
-            assertEquals(s.keywordOf(CssProperty.OVERFLOW_WRAP, CssKeywords.OverflowWrap.class) != CssKeywords.OverflowWrap.NORMAL,
+            assertEquals(parseKw(s, CssProperty.OVERFLOW_WRAP, CssKeywords.OverflowWrap.class) != CssKeywords.OverflowWrap.NORMAL,
                     f.overflowWrapBreaks, at);
-            assertEquals(s.keywordOf(CssProperty.TEXT_OVERFLOW, CssKeywords.TextOverflow.class) == CssKeywords.TextOverflow.ELLIPSIS,
+            assertEquals(parseKw(s, CssProperty.TEXT_OVERFLOW, CssKeywords.TextOverflow.class) == CssKeywords.TextOverflow.ELLIPSIS,
                     f.ellipsis, at);
             String kerning = s.get(CssProperty.FONT_KERNING);
             int weight = LayoutMetrics.numericWeight(s.get(CssProperty.FONT_WEIGHT));
+            Style st = s.typed();
             assertEquals(new com.nishiyu.enderframelib.core.text.model.FontStyle(s.fontSizePx(), weight >= 600,
-                    s.keywordOf(CssProperty.FONT_STYLE, CssKeywords.FontStyle.class) != CssKeywords.FontStyle.NORMAL,
-                    s.length(CssProperty.LETTER_SPACING, 0, 0, 0), weight,
+                    parseKw(s, CssProperty.FONT_STYLE, CssKeywords.FontStyle.class) != CssKeywords.FontStyle.NORMAL,
+                    st.resolve(st.inherited.letterSpacing, st.inherited.exprs, 0, 0, 0), weight,
                     !(kerning != null && "none".equalsIgnoreCase(kerning.trim()))), f.fontStyle, at);
 
-            assertEquals(s.keywordOf(CssProperty.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX, f.borderBox, at);
-            assertEquals(legacyAlignmentWord(s.keywordOf(CssProperty.ALIGN_ITEMS, CssKeywords.Alignment.class)), f.alignItems.cssName(), at);
-            CssKeywords.Alignment self = s.keywordOf(CssProperty.ALIGN_SELF, CssKeywords.Alignment.class);
+            assertEquals(parseKw(s, CssProperty.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX, f.borderBox, at);
+            assertEquals(legacyAlignmentWord(parseKw(s, CssProperty.ALIGN_ITEMS, CssKeywords.Alignment.class)), f.alignItems.cssName(), at);
+            CssKeywords.Alignment self = parseKw(s, CssProperty.ALIGN_SELF, CssKeywords.Alignment.class);
             assertEquals(self == CssKeywords.Alignment.AUTO, f.alignSelfAuto, at);
             assertEquals(legacyAlignmentWord(self), f.alignSelf.cssName(), at);
 
@@ -177,10 +183,15 @@ class StyleFactsTest {
                     CssProperty.PADDING_LEFT, CssProperty.BORDER_TOP_WIDTH, CssProperty.BORDER_RIGHT_WIDTH,
                     CssProperty.BORDER_BOTTOM_WIDTH, CssProperty.BORDER_LEFT_WIDTH, CssProperty.ROW_GAP,
                     CssProperty.COLUMN_GAP};
+            long[] edgeVals = {st.box.marginTop, st.box.marginRight, st.box.marginBottom, st.box.marginLeft,
+                    st.box.paddingTop, st.box.paddingRight, st.box.paddingBottom, st.box.paddingLeft,
+                    st.box.borderTopWidth, st.box.borderRightWidth, st.box.borderBottomWidth, st.box.borderLeftWidth,
+                    st.flexGrid.rowGap, st.flexGrid.columnGap};
             float base = 50f + r.nextInt(400);
             for (int e = 0; e < edgeNames.length; e++) {
-                assertEquals(Float.floatToIntBits(s.length(edgeNames[e], base, 800f, 600f)),
-                        Float.floatToIntBits(s.edgeLength(e, base, 800f, 600f)), at + " " + edgeNames[e]);
+                float expected = LengthResolver.parseDim(s.getOrDefault(edgeNames[e], "0"), base, 800f, 600f, s.fontSizePx(), s.rootFontSizePx());
+                float actual = e < 12 ? st.boxPx(edgeVals[e], base, 800f, 600f) : st.gridPx(edgeVals[e], base, 800f, 600f);
+                assertEquals(Float.floatToIntBits(expected), Float.floatToIntBits(actual), at + " " + edgeNames[e]);
             }
         }
     }

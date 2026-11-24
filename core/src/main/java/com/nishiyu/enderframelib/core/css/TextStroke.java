@@ -13,7 +13,8 @@ public final class TextStroke {
 
     /** {@code thin / medium / thick} は 1 / 3 / 5。値が無い・解釈できない・0 以下・非有限は 0。 */
     public static float widthPx(ComputedStyle style) {
-        return widthPx(style.get(CssPropertyIndex.WEBKIT_TEXT_STROKE_WIDTH), style.fontSizePx(), style.rootFontSizePx());
+        Style st = style.typed();
+        return widthPx(st.inherited.webkitTextStrokeWidth, st.inherited.fontSize, st.inherited.rootFontSizePx);
     }
 
     /** 文字列から CSS px へ。{@code em} は要素、{@code rem} はルートのフォントサイズが基準。 */

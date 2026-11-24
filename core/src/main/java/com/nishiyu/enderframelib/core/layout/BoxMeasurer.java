@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.layout.model.*;
@@ -311,7 +310,7 @@ public final class BoxMeasurer {
         } else if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isControlSizedByContent(tag)) {
             box.w = box.getMinContentWidth(ctx);
             box.sizingMode = SizingMode.DEFINITE;
-        } else if (box.isAbsolute && hasBothInsets(style, CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT)) {
+        } else if (box.isAbsolute && hasHorizontalInsets(style)) {
             // left と right の両方があれば width: auto は間の幅（CSS 2.2 §10.3.7）。
             // 以前は shrink-to-fit にしていて、内容の無い箱は幅 0 になっていた
             float insets = style.typed().px(style.typed().box.left, style.typed().box.exprs, parentW, rootW, rootH)
@@ -472,7 +471,7 @@ public final class BoxMeasurer {
         } else if (hasHeight) {
             box.h = toBorderBox(style.typed().px(style.typed().box.height, style.typed().box.exprs, parentH, rootW, rootH),
                     specifiedDecoration(box, isBorderBox), isBorderBox);
-        } else if (box.isAbsolute && hasBothInsets(style, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)) {
+        } else if (box.isAbsolute && hasVerticalInsets(style)) {
             // top と bottom の両方があれば height: auto は間の高さ（CSS 2.2 §10.6.4）
             float insets = style.typed().px(style.typed().box.top, style.typed().box.exprs, parentH, rootW, rootH)
                     + style.typed().px(style.typed().box.bottom, style.typed().box.exprs, parentH, rootW, rootH);
@@ -711,14 +710,16 @@ public final class BoxMeasurer {
         return facts.bfcByStyle;
     }
 
-    /** 両側の inset が auto でないか（絶対配置の寸法を inset から決められるか）。 */
-    static boolean hasBothInsets(ComputedStyle style, int start, int end) {
-        return !isAutoInset(style, start) && !isAutoInset(style, end);
+    /** 横両側の inset が auto でないか。 */
+    static boolean hasHorizontalInsets(ComputedStyle style) {
+        var b = style.typed().box;
+        return !CssLength.isAutoOrUndeclared(b.left) && !CssLength.isAutoOrUndeclared(b.right);
     }
 
-    static boolean isAutoInset(ComputedStyle style, int side) {
-        String v = style.get(side);
-        return v == null || "auto".equalsIgnoreCase(v.trim());
+    /** 縦両側の inset が auto でないか。 */
+    static boolean hasVerticalInsets(ComputedStyle style) {
+        var b = style.typed().box;
+        return !CssLength.isAutoOrUndeclared(b.top) && !CssLength.isAutoOrUndeclared(b.bottom);
     }
 
     private static boolean isBorderBox(ComputedStyle style) {

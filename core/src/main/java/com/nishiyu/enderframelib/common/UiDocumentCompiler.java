@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.model.*;
 
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
@@ -87,16 +88,19 @@ public class UiDocumentCompiler {
         return RenderPipeline.restyleLayoutTree(rootBox, doc, rootW, rootH, env, interactionState);
     }
 
-    public LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
-                              StyleSheet sheet,
-                              Map<String, String> env, boolean forceDirty) {
+    public LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle, StyleSheet sheet, Map<String, String> env, boolean forceDirty) {
         return RenderPipeline.buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty);
     }
 
-    public LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
-                                     StyleSheet sheet,
-                                     Map<String, String> env, boolean forceDirty,
-                                     InteractionState interactionState) {
+    public LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle, StyleSheet sheet, Map<String, String> env, boolean forceDirty) {
+        return RenderPipeline.buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty);
+    }
+
+    public LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle, StyleSheet sheet, Map<String, String> env, boolean forceDirty, InteractionState interactionState) {
+        return RenderPipeline.buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty, interactionState);
+    }
+
+    public LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle, StyleSheet sheet, Map<String, String> env, boolean forceDirty, InteractionState interactionState) {
         return RenderPipeline.buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty, interactionState);
     }
 }

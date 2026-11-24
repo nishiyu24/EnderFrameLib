@@ -5,10 +5,9 @@ import com.nishiyu.enderframelib.core.media.ImageChoice;
 import com.nishiyu.enderframelib.core.media.ImageSources;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.dom.node.DomUtils;
 import com.nishiyu.enderframelib.core.css.ColorParser;
-import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
@@ -69,10 +68,11 @@ final class ControlPainter {
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
+        Style st = box.style.typed();
         // img は srcset / sizes から密度に合う候補を選ぶ（無ければ src）
         ImageChoice chosen = ElementTraits.isImage(box.node.tag)
                 ? ImageSources.forImg(box.node.attrs, decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
-        String src = box.style.getOrDefault(CssPropertyIndex.SRC, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
+        String src = Style.or(st.rare.src, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
         com.nishiyu.enderframelib.core.dom.node.CustomElementPainter hostPainter =
                 com.nishiyu.enderframelib.core.layout.ReplacedElements.painterOf(box.node.tag);
         if (hostPainter != null) src = hostPainter.resolveSrc(box.node.attrs, src);
@@ -87,7 +87,7 @@ final class ControlPainter {
             if (gif || box.node.attrs.containsKey("loop")) mediaEvents.put("media-loop", "1");
             if (gif || box.node.attrs.containsKey("muted")) mediaEvents.put("media-muted", "1");
         }
-        ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssPropertyIndex.OBJECT_FIT, "fill"));
+        ImageFitMode fitMode = ImageFitMode.fromString(Style.or(st.rare.objectFit, "fill"));
 
         if (border.isCircle() && border.hasBorder()) {
             int thickness = border.maxThickness();
@@ -111,7 +111,7 @@ final class ControlPainter {
             src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color, decor.devicePixelRatio(), svg.sheet());
         }
         ItemProps imageEvents = mediaEvents;
-        String position = box.style.get(CssPropertyIndex.OBJECT_POSITION);
+        String position = st.visual.objectPosition;
         if (position != null && !position.isBlank()) {
             imageEvents = mediaEvents.copy();
             imageEvents.put("object-position", position);
@@ -166,9 +166,10 @@ final class ControlPainter {
         ItemProps canvasEvents = partsEvents.copy();
         canvasEvents.put("canvas-width", box.node.attrs.getOrDefault("width", ""));
         canvasEvents.put("canvas-height", box.node.attrs.getOrDefault("height", ""));
-        String position = box.style.get(CssPropertyIndex.OBJECT_POSITION);
+        Style st = box.style.typed();
+        String position = st.visual.objectPosition;
         if (position != null && !position.isBlank()) canvasEvents.put("object-position", position);
-        ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssPropertyIndex.OBJECT_FIT, "fill"));
+        ImageFitMode fitMode = ImageFitMode.fromString(Style.or(st.rare.objectFit, "fill"));
         long canvasKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_CANVAS) : 0L;
         addElement(elements, id, id + "_canvas", ElementType.CANVAS, fitMode, innerX, innerY, innerW, innerH, id, color, bgColor, canvasEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, canvasKey);
     }
@@ -251,8 +252,8 @@ final class ControlPainter {
                     ItemProps phEvents = passiveBorderEvents.copy();
                     phEvents.pointerEventsNone();
                     // ::placeholder の color（UA の既定は #aaa）。規則が掛からなければ既定の色
-                    int placeholderColor = box.placeholderStyle != null
-                            ? box.placeholderStyle.color(CssPropertyIndex.COLOR, DEFAULT_PLACEHOLDER_COLOR)
+                    int placeholderColor = box.placeholderStyle != null && box.placeholderStyle.typed().inherited.hasColor
+                            ? box.placeholderStyle.typed().inherited.color
                             : DEFAULT_PLACEHOLDER_COLOR;
                     long phKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_PLACEHOLDER) : 0L;
                     addElement(elements, id, PaintSupport.partId(box, id, 18, "_ph"), ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, placeholderColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, phKey);
@@ -430,18 +431,18 @@ final class ControlPainter {
     /** {@code appearance: none} のレンジ。 */
     static boolean isPlainRange(LayoutBox box) {
         return "range".equalsIgnoreCase(box.node.attrs.getOrDefault("type", "").trim())
-                && !StyleResolver.isNativeRange(box.node, box.style.asMap());
+                && !StyleResolver.isNativeRange(box.node, box.style.typed());
     }
 
     /** {@code appearance: none} のチェックボックス・ラジオボタン。 */
     static boolean isPlainToggle(LayoutBox box) {
         String type = box.node.attrs.getOrDefault("type", "").trim().toLowerCase(Locale.ROOT);
-        return (type.equals("checkbox") || type.equals("radio")) && !StyleResolver.isNativeToggle(box.node, box.style.asMap());
+        return (type.equals("checkbox") || type.equals("radio")) && !StyleResolver.isNativeToggle(box.node, box.style.typed());
     }
 
     /** {@code accent-color}。auto（UA の既定）なら null。 */
     static Integer accentColor(LayoutBox box, int textColor) {
-        String v = box.style.get(CssPropertyIndex.ACCENT_COLOR);
+        String v = box.style.typed().inherited.accentColor;
         if (v == null) return null;
         v = v.trim();
         if (v.isEmpty() || "auto".equalsIgnoreCase(v)) return null;

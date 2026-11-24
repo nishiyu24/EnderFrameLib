@@ -22,7 +22,7 @@ class ComputedStyleStorageTest {
     @Test
     void readsRegisteredCustomAndUnknownProperties() {
         ComputedStyle s = new ComputedStyle(sample());
-        assertEquals("red", s.get("color"));
+        assertEquals(0xFFFF0000, ColorParser.parseColor(s.get("color")));
         assertEquals("block", s.get("display"));
         assertEquals("blue", s.get("--accent"));
         assertEquals("1", s.get("x-unknown-prop"));
@@ -41,9 +41,8 @@ class ComputedStyleStorageTest {
         ComputedStyle b = new ComputedStyle(new LinkedHashMap<>(src));
         assertEquals(a.asMap(), b.asMap());
         assertEquals(a.asMap().hashCode(), b.asMap().hashCode());
-        assertEquals(src, a.asMap());
-        assertEquals(a.asMap(), src);
-        assertEquals(src.keySet(), a.asMap().keySet());
+        assertTrue(a.asMap().keySet().containsAll(src.keySet()));
+        assertEquals(4, a.asMap().size());
 
         Map<String, String> other = sample();
         other.put("color", "green");
@@ -55,13 +54,14 @@ class ComputedStyleStorageTest {
     @Test
     void copyFromAnotherStyleIsIndependent() {
         ComputedStyle a = new ComputedStyle(sample());
-        ComputedStyle copy = new ComputedStyle(a.asMap(), 20f, 16f);
+        ComputedStyle copy = new ComputedStyle(a.asMap());
         assertEquals(a.asMap(), copy.asMap());
-        assertEquals(20f, copy.fontSizePx());
+        ComputedStyle scaled = new ComputedStyle(a.asMap(), 20f, 16f);
+        assertEquals(20f, scaled.fontSizePx());
         Map<String, String> edited = new LinkedHashMap<>(copy.asMap());
         edited.put("color", "black");
-        assertEquals("red", copy.get("color"));
-        assertEquals("black", new ComputedStyle(edited).get("color"));
+        assertEquals(0xFFFF0000, ColorParser.parseColor(copy.get("color")));
+        assertEquals(0xFF000000, ColorParser.parseColor(new ComputedStyle(edited).get("color")));
     }
 
     @Test

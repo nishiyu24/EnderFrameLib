@@ -57,7 +57,7 @@ final class PartialBuild {
             if (table == null || table.peek(doc.root) != prev) return null;
             st.bindStyleSheet(doc.sheet);
             PartialBuild pb = new PartialBuild(ledger, table);
-            LayoutBox root = RenderTreeBuilder.buildLayoutTree(doc.root, RenderPipeline.rootViewportStyle(rootW, rootH), doc.sheet, env,
+            LayoutBox root = RenderTreeBuilder.buildLayoutTree(doc.root, com.nishiyu.enderframelib.core.css.Style.DEFAULT, doc.sheet, env,
                     RenderPipeline.FORCE_NONE, ComputedStyle.DEFAULT_FONT_SIZE, RenderPipeline.StyleScope.initial(rootW, rootH), st,
                     StyleResolver.hasSiblingStateRules(doc.sheet), table, table, false, null,
                     RenderPipeline.containerFor(doc.root, st), false, pb);
@@ -109,7 +109,7 @@ final class PartialBuild {
     private static LayoutBox intact(LayoutBox box, boolean ancestorMoving, ComputedStyle computed) {
         if (box == null || LayoutBox.isInternalTableBox(box) || box.touchedByTableEngine()) return null;
         // 番号つきのリスト項目は、兄弟の増減で印の番号が変わる（番号を使わない none・disc・circle・square は兄弟に依らない）
-        if (box.display().listItem() && !unnumbered(box.style.getOrDefault(com.nishiyu.enderframelib.core.css.CssPropertyIndex.LIST_STYLE_TYPE, "disc"))) return null;
+        if (box.display().listItem() && !unnumbered(com.nishiyu.enderframelib.core.css.Style.or(box.style.typed().inherited.listStyleType, "disc"))) return null;
         return box.movingStamped && box.selfOrAncestorMoving == (ancestorMoving || PaintOrder.hasMovingProps(computed)) ? box : null;
     }
 
@@ -134,7 +134,7 @@ final class PartialBuild {
         while (suf < n - pre && suf < m - pre && n - 1 - suf > hi && ec.get(m - 1 - suf).node == kids.get(n - 1 - suf)) suf++;
         if (suf > 0 && n != m) {
             LayoutBox first = ec.get(m - suf);
-            if (first.display().listItem() && !unnumbered(first.style.getOrDefault(com.nishiyu.enderframelib.core.css.CssPropertyIndex.LIST_STYLE_TYPE, "disc"))) suf = 0;
+            if (first.display().listItem() && !unnumbered(com.nishiyu.enderframelib.core.css.Style.or(first.style.typed().inherited.listStyleType, "disc"))) suf = 0;
         }
         ec.subList(pre, m - suf).clear();
         int[] split = {pre, suf};

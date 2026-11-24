@@ -140,7 +140,8 @@ final class FidelityDumper {
         }
         for (String p : allProps) {
             if (!computed.containsKey(p)) {
-                String val = box.style.get(p);
+                String val = box.style.typed().cssomProperty(p);
+                if (val == null) val = box.style.get(p);
                 if (val != null) computed.put(p, val.trim());
             }
         }
@@ -251,7 +252,8 @@ final class FidelityDumper {
         for (LayoutBox a = box.parent; a != null; a = a.parent) {
             String tag = a.node.tag;
             if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) continue;
-            if ("visible".equals(a.style.getOrDefault(CssProperty.OVERFLOW, "visible"))) continue;
+            if (a.style.overflowX() == com.nishiyu.enderframelib.core.css.model.Overflow.VISIBLE
+                    && a.style.overflowY() == com.nishiyu.enderframelib.core.css.model.Overflow.VISIBLE) continue;
             // クリップは padding box（ボーダーの内側）。描画側の computeChildClipRect と同じ
             if (!contains(a.x() + a.bL(), a.y() + a.bT(), a.w() - a.bL() - a.bR(), a.h() - a.bT() - a.bB(), px, py)) return false;
         }

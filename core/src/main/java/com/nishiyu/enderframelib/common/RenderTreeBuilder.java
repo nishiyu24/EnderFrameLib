@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.PaintOrder;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.model.ContainerBox;
 import com.nishiyu.enderframelib.core.css.CounterStyles;
 import com.nishiyu.enderframelib.core.css.CssProperty;
@@ -17,7 +18,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.BoxTreeBuilder;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.kernel.compiler.StateStyleMemo;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +60,7 @@ final class RenderTreeBuilder {
         ContainerBox selfContainer = RenderPipeline.containerForSelf(node, computed, parentContainer, interactionState);
         boolean siblingInvalidation = StyleResolver.hasSiblingStateRules(sheet);
         boolean hasInteractive = box.hasInteractiveRules;
-        Map<String, String> childInherited = computed.asMap();
+        Style childInherited = computed.typed();
 
         box.elementChildren.clear();
         ComputedStyle beforeStyle = resolvePseudoStyle(node, PseudoType.BEFORE, computed, sheet, env, childScope, interactionState, selfContainer);
@@ -77,9 +77,9 @@ final class RenderTreeBuilder {
                 HtmlNode child = node.children.get(ci);
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
                 if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isHiddenByClosedDetails(node, isOpen, child)) continue;
-                box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, RenderPipeline.FORCE_SUBTREE,
+                box.addElementChild(buildLayoutTree(child, childInherited, computed, sheet, env, RenderPipeline.FORCE_SUBTREE,
                         computed.fontSizePx(), childScope, interactionState, siblingInvalidation,
-                        null, null, false, null, selfContainer, selfOrAncestorMoving));
+                        null, null, false, null, selfContainer, selfOrAncestorMoving, null));
             }
         }
 
@@ -99,7 +99,7 @@ final class RenderTreeBuilder {
      * 変わらない部分の実体を保つ）。同時に {@code nextReusable} があれば次フレーム用の再利用テーブルを構築中に登録し、
      * 木組前の全木走査（collectReusableBoxes）を不要にする。表の中は使い回さない（{@link LayoutBox#recordReusableForBuild} を参照）。
      */
-    static LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
+    static LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle,
                                              StyleSheet sheet,
                                              Map<String, String> env, int force,
                                              float parentFontSize, RenderPipeline.StyleScope scope, InteractionState interactionState,
@@ -109,11 +109,25 @@ final class RenderTreeBuilder {
                                              boolean inTableScope,
                                              LayoutBox directPrev,
                                              ContainerBox parentSizeContainer, boolean ancestorHasMoving) {
-        return buildLayoutTree(node, inheritedStyle, sheet, env, force, parentFontSize, scope, interactionState, siblingInvalidation, prevReusable, nextReusable, inTableScope, directPrev, parentSizeContainer, ancestorHasMoving, null);
+        return buildLayoutTree(node, inheritedStyle, null, sheet, env, force, parentFontSize, scope, interactionState, siblingInvalidation, prevReusable, nextReusable, inTableScope, directPrev, parentSizeContainer, ancestorHasMoving, null);
+    }
+
+    static LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle,
+                                             StyleSheet sheet,
+                                             Map<String, String> env, int force,
+                                             float parentFontSize, RenderPipeline.StyleScope scope, InteractionState interactionState,
+                                             boolean siblingInvalidation,
+                                             LayoutBox.ReusableTable prevReusable,
+                                             LayoutBox.ReusableTable nextReusable,
+                                             boolean inTableScope,
+                                             LayoutBox directPrev,
+                                             ContainerBox parentSizeContainer, boolean ancestorHasMoving,
+                                             PartialBuild partial) {
+        return buildLayoutTree(node, inheritedStyle, null, sheet, env, force, parentFontSize, scope, interactionState, siblingInvalidation, prevReusable, nextReusable, inTableScope, directPrev, parentSizeContainer, ancestorHasMoving, partial);
     }
 
     /** {@code partial} が null でなければ、台帳に触れられていない部分木は辿らず前回の箱を返す（{@link PartialBuild}）。 */
-    static LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
+    static LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle, ComputedStyle parentComputed,
                                              StyleSheet sheet,
                                              Map<String, String> env, int force,
                                              float parentFontSize, RenderPipeline.StyleScope scope, InteractionState interactionState,
@@ -149,7 +163,7 @@ final class RenderTreeBuilder {
             long k0 = tk ? RenderPipeline.threadAllocatedBytes() : 0;
             ContainerBox container = parentSizeContainer;
             ComputedStyle previous = flags != null ? flags.computedStyle : null;
-            ComputedStyle.TextChild textEntry = RenderPipeline.textNodeStyle(node, inheritedStyle, sheet, parentFontSize, scope);
+            ComputedStyle.TextChild textEntry = RenderPipeline.textNodeStyle(node, inheritedStyle, parentComputed, sheet, parentFontSize, scope);
             StyleSet styleSet = textEntry != null ? null : StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
             boolean viewportDependent;
             long k1;
@@ -160,7 +174,7 @@ final class RenderTreeBuilder {
                 computed = textEntry.style();
                 k1 = k2 = tk ? RenderPipeline.threadAllocatedBytes() : 0;
             } else if (interactionState != null) {
-                StateStyleMemo.Entry entry = RenderPipeline.styleEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize,
+                RenderPipeline.StyleEntry entry = RenderPipeline.styleEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize,
                         scope, interactionState, container, force, flags, false);
                 viewportDependent = entry.viewportDependent();
                 computed = entry.computed();
@@ -200,7 +214,7 @@ final class RenderTreeBuilder {
             flags.clearSubtreeDirty();
             flags.clearDirtyBelow();
         }
-        Map<String, String> childInherited = computed.asMap();
+        Style childInherited = computed.typed();
         RenderPipeline.StyleScope childScope = scope.enter(node, computed);
 
         LayoutBox box = directPrev != null && directPrev.node == node
@@ -338,7 +352,7 @@ final class RenderTreeBuilder {
                     InteractionState.StateFlags childFlags = interactionState.get(child);
                     if (childFlags != null && childFlags.inheritsExplicitly) forceChild = RenderPipeline.FORCE_SELF;
                 }
-                box.insertElementChild(at++, buildLayoutTree(child, childInherited, sheet, env, forceChild,
+                box.insertElementChild(at++, buildLayoutTree(child, childInherited, computed, sheet, env, forceChild,
                         computed.fontSizePx(), childScope, interactionState, siblingInvalidation,
                         childPrevReusable, childNextReusable, childInTableScope, null,
                         selfContainer, selfOrAncestorMoving, partial));
@@ -480,8 +494,8 @@ final class RenderTreeBuilder {
         }
         box.hasInteractiveRules = ownerInteractive;
         boolean pseudoMoving = stampMoving(box, style, ownerSelfOrAncestorMoving);
-        box.addElementChild(buildLayoutTree(textNode, style.asMap(), sheet, env, RenderPipeline.FORCE_SUBTREE, style.fontSizePx(), scope,
-                interactionState, siblingInvalidation, null, null, false, prevTextBox, ownerSizeContainer, pseudoMoving));
+        box.addElementChild(buildLayoutTree(textNode, style.typed(), style, sheet, env, RenderPipeline.FORCE_SUBTREE, style.fontSizePx(), scope,
+                interactionState, siblingInvalidation, null, null, false, prevTextBox, ownerSizeContainer, pseudoMoving, null));
         return box;
     }
 

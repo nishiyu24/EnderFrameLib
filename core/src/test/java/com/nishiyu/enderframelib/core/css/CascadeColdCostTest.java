@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CascadeColdCostTest {
     @AfterEach
     void restore() {
-        StyleResolver.ShareCache.enabled = true;
+        ShareCache.enabled = true;
     }
 
     private static long allocated() {
@@ -21,7 +21,7 @@ class CascadeColdCostTest {
 
     @Test
     void measureColdBuild() {
-        StyleResolver.ShareCache.enabled = false;
+        ShareCache.enabled = false;
         StringBuilder html = new StringBuilder("<style>:root{--g:6px} body{font-size:14px;color:#222} .r{height:18px;margin-bottom:var(--g);padding:2px 4px;border:1px solid #ccc}"
                 + " .r b{color:red;font-size:1.2em} .r:nth-child(odd){background:#eee}</style>");
         for (int i = 0; i < 300; i++) html.append("<div class=r><span>a").append(i).append("</span> <b>x</b> <i>y</i></div>");

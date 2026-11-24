@@ -5,52 +5,52 @@ package com.nishiyu.enderframelib.core.css;
  * 値は構築時に 1 回だけ解いた型付きのフィールドで、文字列を読み直さない。{@link #equals} は全フィールドの値等価。
  */
 public final class VisualStyle {
-    private static final int ID_borderTopColor = ComputedStyle.idOf("border-top-color");
-    private static final int ID_borderRightColor = ComputedStyle.idOf("border-right-color");
-    private static final int ID_borderBottomColor = ComputedStyle.idOf("border-bottom-color");
-    private static final int ID_borderLeftColor = ComputedStyle.idOf("border-left-color");
-    private static final int ID_borderTopLeftRadius = ComputedStyle.idOf("border-top-left-radius");
-    private static final int ID_borderTopRightRadius = ComputedStyle.idOf("border-top-right-radius");
-    private static final int ID_borderBottomRightRadius = ComputedStyle.idOf("border-bottom-right-radius");
-    private static final int ID_borderBottomLeftRadius = ComputedStyle.idOf("border-bottom-left-radius");
-    private static final int ID_outlineColor = ComputedStyle.idOf("outline-color");
-    private static final int ID_outlineStyle = ComputedStyle.idOf("outline-style");
-    private static final int ID_outlineWidth = ComputedStyle.idOf("outline-width");
-    private static final int ID_outlineOffset = ComputedStyle.idOf("outline-offset");
-    private static final int ID_objectPosition = ComputedStyle.idOf("object-position");
-    private static final int ID_backgroundColor = ComputedStyle.idOf("background-color");
-    private static final int ID_backgroundImage = ComputedStyle.idOf("background-image");
-    private static final int ID_backgroundPosition = ComputedStyle.idOf("background-position");
-    private static final int ID_backgroundSize = ComputedStyle.idOf("background-size");
-    private static final int ID_backgroundRepeat = ComputedStyle.idOf("background-repeat");
-    private static final int ID_backgroundClip = ComputedStyle.idOf("background-clip");
-    private static final int ID_backgroundOrigin = ComputedStyle.idOf("background-origin");
-    private static final int ID_backgroundAttachment = ComputedStyle.idOf("background-attachment");
-    private static final int ID_boxShadow = ComputedStyle.idOf("box-shadow");
-    private static final int ID_borderImageSource = ComputedStyle.idOf("border-image-source");
-    private static final int ID_borderImageSlice = ComputedStyle.idOf("border-image-slice");
-    private static final int ID_borderImageWidth = ComputedStyle.idOf("border-image-width");
-    private static final int ID_borderImageOutset = ComputedStyle.idOf("border-image-outset");
-    private static final int ID_borderImageRepeat = ComputedStyle.idOf("border-image-repeat");
-    private static final int ID_opacity = ComputedStyle.idOf("opacity");
-    private static final int ID_transform = ComputedStyle.idOf("transform");
-    private static final int ID_transformOrigin = ComputedStyle.idOf("transform-origin");
-    private static final int ID_rotate = ComputedStyle.idOf("rotate");
-    private static final int ID_translate = ComputedStyle.idOf("translate");
-    private static final int ID_scale = ComputedStyle.idOf("scale");
-    private static final int ID_filter = ComputedStyle.idOf("filter");
-    private static final int ID_mixBlendMode = ComputedStyle.idOf("mix-blend-mode");
-    private static final int ID_isolation = ComputedStyle.idOf("isolation");
-    private static final int ID_clipPath = ComputedStyle.idOf("clip-path");
-    private static final int ID_backdropFilter = ComputedStyle.idOf("backdrop-filter");
-    private static final int ID_maskImage = ComputedStyle.idOf("mask-image");
-    private static final int ID_maskPosition = ComputedStyle.idOf("mask-position");
-    private static final int ID_maskSize = ComputedStyle.idOf("mask-size");
-    private static final int ID_maskRepeat = ComputedStyle.idOf("mask-repeat");
-    private static final int ID_maskOrigin = ComputedStyle.idOf("mask-origin");
-    private static final int ID_maskClip = ComputedStyle.idOf("mask-clip");
-    private static final int ID_maskMode = ComputedStyle.idOf("mask-mode");
-    private static final int ID_maskComposite = ComputedStyle.idOf("mask-composite");
+    static final int ID_borderTopColor = ComputedStyle.idOf("border-top-color");
+    static final int ID_borderRightColor = ComputedStyle.idOf("border-right-color");
+    static final int ID_borderBottomColor = ComputedStyle.idOf("border-bottom-color");
+    static final int ID_borderLeftColor = ComputedStyle.idOf("border-left-color");
+    static final int ID_borderTopLeftRadius = ComputedStyle.idOf("border-top-left-radius");
+    static final int ID_borderTopRightRadius = ComputedStyle.idOf("border-top-right-radius");
+    static final int ID_borderBottomRightRadius = ComputedStyle.idOf("border-bottom-right-radius");
+    static final int ID_borderBottomLeftRadius = ComputedStyle.idOf("border-bottom-left-radius");
+    static final int ID_outlineColor = ComputedStyle.idOf("outline-color");
+    static final int ID_outlineStyle = ComputedStyle.idOf("outline-style");
+    static final int ID_outlineWidth = ComputedStyle.idOf("outline-width");
+    static final int ID_outlineOffset = ComputedStyle.idOf("outline-offset");
+    static final int ID_objectPosition = ComputedStyle.idOf("object-position");
+    static final int ID_backgroundColor = ComputedStyle.idOf("background-color");
+    static final int ID_backgroundImage = ComputedStyle.idOf("background-image");
+    static final int ID_backgroundPosition = ComputedStyle.idOf("background-position");
+    static final int ID_backgroundSize = ComputedStyle.idOf("background-size");
+    static final int ID_backgroundRepeat = ComputedStyle.idOf("background-repeat");
+    static final int ID_backgroundClip = ComputedStyle.idOf("background-clip");
+    static final int ID_backgroundOrigin = ComputedStyle.idOf("background-origin");
+    static final int ID_backgroundAttachment = ComputedStyle.idOf("background-attachment");
+    static final int ID_boxShadow = ComputedStyle.idOf("box-shadow");
+    static final int ID_borderImageSource = ComputedStyle.idOf("border-image-source");
+    static final int ID_borderImageSlice = ComputedStyle.idOf("border-image-slice");
+    static final int ID_borderImageWidth = ComputedStyle.idOf("border-image-width");
+    static final int ID_borderImageOutset = ComputedStyle.idOf("border-image-outset");
+    static final int ID_borderImageRepeat = ComputedStyle.idOf("border-image-repeat");
+    static final int ID_opacity = ComputedStyle.idOf("opacity");
+    static final int ID_transform = ComputedStyle.idOf("transform");
+    static final int ID_transformOrigin = ComputedStyle.idOf("transform-origin");
+    static final int ID_rotate = ComputedStyle.idOf("rotate");
+    static final int ID_translate = ComputedStyle.idOf("translate");
+    static final int ID_scale = ComputedStyle.idOf("scale");
+    static final int ID_filter = ComputedStyle.idOf("filter");
+    static final int ID_mixBlendMode = ComputedStyle.idOf("mix-blend-mode");
+    static final int ID_isolation = ComputedStyle.idOf("isolation");
+    static final int ID_clipPath = ComputedStyle.idOf("clip-path");
+    static final int ID_backdropFilter = ComputedStyle.idOf("backdrop-filter");
+    static final int ID_maskImage = ComputedStyle.idOf("mask-image");
+    static final int ID_maskPosition = ComputedStyle.idOf("mask-position");
+    static final int ID_maskSize = ComputedStyle.idOf("mask-size");
+    static final int ID_maskRepeat = ComputedStyle.idOf("mask-repeat");
+    static final int ID_maskOrigin = ComputedStyle.idOf("mask-origin");
+    static final int ID_maskClip = ComputedStyle.idOf("mask-clip");
+    static final int ID_maskMode = ComputedStyle.idOf("mask-mode");
+    static final int ID_maskComposite = ComputedStyle.idOf("mask-composite");
 
     /** 宣言が 1 つも無いときの共有インスタンス（初期値だけ）。ID_* の初期化より後に置く。 */
     public static final VisualStyle DEFAULT = new VisualStyle(null);
@@ -66,13 +66,13 @@ public final class VisualStyle {
     /** {@code border-left-color}。 */
     public final int borderLeftColor;
     /** {@code border-top-left-radius}。 */
-    public final long borderTopLeftRadius;
+    public final String borderTopLeftRadius;
     /** {@code border-top-right-radius}。 */
-    public final long borderTopRightRadius;
+    public final String borderTopRightRadius;
     /** {@code border-bottom-right-radius}。 */
-    public final long borderBottomRightRadius;
+    public final String borderBottomRightRadius;
     /** {@code border-bottom-left-radius}。 */
-    public final long borderBottomLeftRadius;
+    public final String borderBottomLeftRadius;
     /** {@code outline-color}。 */
     public final int outlineColor;
     /** {@code outline-style}。 */
@@ -149,17 +149,21 @@ public final class VisualStyle {
     public final String maskMode;
     /** {@code mask-composite}。 */
     public final String maskComposite;
+    /** {@code border-*-color}(bit 0..3) と {@code outline-color}(bit 4) が {@code currentcolor}/{@code invert}/未宣言か。 */
+    public final byte currentColorMask;
+    /** {@code background-color} が明示宣言されたか（canvas 背景判定用）。 */
+    public final boolean hasBackgroundColor;
 
-    private VisualStyle(ComputedStyle cs) {
+    private VisualStyle(StyleReader.Source cs) {
         CssExprs.Builder ex = new CssExprs.Builder();
         this.borderTopColor = StyleReader.color(cs, ID_borderTopColor);
         this.borderRightColor = StyleReader.color(cs, ID_borderRightColor);
         this.borderBottomColor = StyleReader.color(cs, ID_borderBottomColor);
         this.borderLeftColor = StyleReader.color(cs, ID_borderLeftColor);
-        this.borderTopLeftRadius = StyleReader.length(cs, ID_borderTopLeftRadius, ex);
-        this.borderTopRightRadius = StyleReader.length(cs, ID_borderTopRightRadius, ex);
-        this.borderBottomRightRadius = StyleReader.length(cs, ID_borderBottomRightRadius, ex);
-        this.borderBottomLeftRadius = StyleReader.length(cs, ID_borderBottomLeftRadius, ex);
+        this.borderTopLeftRadius = StyleReader.text(cs, ID_borderTopLeftRadius);
+        this.borderTopRightRadius = StyleReader.text(cs, ID_borderTopRightRadius);
+        this.borderBottomRightRadius = StyleReader.text(cs, ID_borderBottomRightRadius);
+        this.borderBottomLeftRadius = StyleReader.text(cs, ID_borderBottomLeftRadius);
         this.outlineColor = StyleReader.color(cs, ID_outlineColor);
         this.outlineStyle = StyleReader.keyword(cs, ID_outlineStyle, com.nishiyu.enderframelib.core.css.model.BorderStyle.class);
         this.outlineWidth = StyleReader.length(cs, ID_outlineWidth, ex);
@@ -198,11 +202,20 @@ public final class VisualStyle {
         this.maskClip = StyleReader.text(cs, ID_maskClip);
         this.maskMode = StyleReader.text(cs, ID_maskMode);
         this.maskComposite = StyleReader.text(cs, ID_maskComposite);
+        int cc = 0;
+        if (StyleReader.isCurrentColor(cs, ID_borderTopColor, false)) cc |= 1;
+        if (StyleReader.isCurrentColor(cs, ID_borderRightColor, false)) cc |= 2;
+        if (StyleReader.isCurrentColor(cs, ID_borderBottomColor, false)) cc |= 4;
+        if (StyleReader.isCurrentColor(cs, ID_borderLeftColor, false)) cc |= 8;
+        if (StyleReader.isCurrentColor(cs, ID_outlineColor, true)) cc |= 16;
+        if (StyleReader.isInvertKeyword(cs, ID_outlineColor)) cc |= 32;
+        this.currentColorMask = (byte) cc;
+        this.hasBackgroundColor = StyleReader.isDeclared(cs, ID_backgroundColor);
         this.exprs = ex.build();
     }
 
-    /** 算出スタイルから、この群の値を取り出す。 */
-    public static VisualStyle of(ComputedStyle cs) {
+    /** 宣言入力から、この群の値を取り出す。 */
+    public static VisualStyle of(StyleReader.Source cs) {
         return new VisualStyle(cs);
     }
 
@@ -215,10 +228,10 @@ public final class VisualStyle {
                 && borderRightColor == o.borderRightColor
                 && borderBottomColor == o.borderBottomColor
                 && borderLeftColor == o.borderLeftColor
-                && borderTopLeftRadius == o.borderTopLeftRadius
-                && borderTopRightRadius == o.borderTopRightRadius
-                && borderBottomRightRadius == o.borderBottomRightRadius
-                && borderBottomLeftRadius == o.borderBottomLeftRadius
+                && java.util.Objects.equals(borderTopLeftRadius, o.borderTopLeftRadius)
+                && java.util.Objects.equals(borderTopRightRadius, o.borderTopRightRadius)
+                && java.util.Objects.equals(borderBottomRightRadius, o.borderBottomRightRadius)
+                && java.util.Objects.equals(borderBottomLeftRadius, o.borderBottomLeftRadius)
                 && outlineColor == o.outlineColor
                 && outlineStyle == o.outlineStyle
                 && outlineWidth == o.outlineWidth
@@ -256,7 +269,9 @@ public final class VisualStyle {
                 && java.util.Objects.equals(maskOrigin, o.maskOrigin)
                 && java.util.Objects.equals(maskClip, o.maskClip)
                 && java.util.Objects.equals(maskMode, o.maskMode)
-                && java.util.Objects.equals(maskComposite, o.maskComposite);
+                && java.util.Objects.equals(maskComposite, o.maskComposite)
+                && currentColorMask == o.currentColorMask
+                && hasBackgroundColor == o.hasBackgroundColor;
     }
 
     @Override
@@ -266,10 +281,10 @@ public final class VisualStyle {
         h = h * 31 + borderRightColor;
         h = h * 31 + borderBottomColor;
         h = h * 31 + borderLeftColor;
-        h = h * 31 + Long.hashCode(borderTopLeftRadius);
-        h = h * 31 + Long.hashCode(borderTopRightRadius);
-        h = h * 31 + Long.hashCode(borderBottomRightRadius);
-        h = h * 31 + Long.hashCode(borderBottomLeftRadius);
+        h = h * 31 + java.util.Objects.hashCode(borderTopLeftRadius);
+        h = h * 31 + java.util.Objects.hashCode(borderTopRightRadius);
+        h = h * 31 + java.util.Objects.hashCode(borderBottomRightRadius);
+        h = h * 31 + java.util.Objects.hashCode(borderBottomLeftRadius);
         h = h * 31 + outlineColor;
         h = h * 31 + System.identityHashCode(outlineStyle);
         h = h * 31 + Long.hashCode(outlineWidth);

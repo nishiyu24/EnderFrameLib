@@ -98,12 +98,12 @@ public class ValueModelTest {
         ComputedStyle parent = computeRoot("color: red; width: 100px");
         ComputedStyle child = computeChild(parent, "display: initial; color: initial; width: unset");
         assertEquals("inline", child.get(CssProperty.DISPLAY));
-        assertEquals("black", child.get(CssProperty.COLOR));
+        assertEquals("#000000", child.get(CssProperty.COLOR));
         assertEquals("auto", child.get(CssProperty.WIDTH));
 
         // unset は継承するプロパティなら inherit
         ComputedStyle unsetColor = computeChild(parent, "color: unset");
-        assertEquals("red", unsetColor.get(CssProperty.COLOR));
+        assertEquals(0xFFFF0000, ColorParser.parseColor(unsetColor.get(CssProperty.COLOR)));
     }
 
     @Test
@@ -151,7 +151,7 @@ public class ValueModelTest {
         assertEquals("0 0 2px #ff0000", s.get(CssProperty.BOX_SHADOW));
 
         ComputedStyle child = computeChild(computeRoot("color: blue"), "color: currentcolor");
-        assertEquals("blue", child.get(CssProperty.COLOR), "color 自身の currentcolor は inherit");
+        assertEquals(0xFF0000FF, ColorParser.parseColor(child.get(CssProperty.COLOR)), "color 自身の currentcolor は inherit");
     }
 
     // ---- var()
@@ -159,7 +159,8 @@ public class ValueModelTest {
     @Test
     public void testVarFallbackMayContainParenthesesAndNestedVar() {
         ComputedStyle s = computeRoot("color: var(--missing, rgb(1, 2, 3)); width: var(--a, var(--b, 12px))");
-        assertEquals("rgb(1, 2, 3)", s.get(CssProperty.COLOR));
+        assertEquals("#010203", s.get(CssProperty.COLOR));
+        assertEquals("rgb(1, 2, 3)", StyleProperties.getCssom(s.typed(), CssProperty.COLOR));
         assertEquals("12px", s.get(CssProperty.WIDTH));
     }
 
@@ -177,7 +178,7 @@ public class ValueModelTest {
                 "--a: var(--b); --b: var(--a); width: var(--a); color: var(--undefined)");
         assertNull(child.get("--a"), "循環したカスタムプロパティは無効");
         assertEquals("auto", child.get(CssProperty.WIDTH), "無効な宣言は unset（width は初期値）");
-        assertEquals("green", child.get(CssProperty.COLOR), "無効な宣言は unset（color は継承）");
+        assertEquals(0xFF008000, ColorParser.parseColor(child.get(CssProperty.COLOR)), "無効な宣言は unset（color は継承）");
     }
 
     // ---- ショートハンド
@@ -207,10 +208,10 @@ public class ValueModelTest {
         ComputedStyle s = computeRoot("border: solid 2px red");
         assertEquals("2px", s.get(CssProperty.BORDER_TOP_WIDTH));
         assertEquals("solid", s.get("border-top-style"));
-        assertEquals("red", s.get(CssProperty.BORDER_LEFT_COLOR));
+        assertEquals("#ff0000", s.get(CssProperty.BORDER_LEFT_COLOR));
 
         // 2 値でも色が取れる（以前は 3 値以上のときだけ末尾を色にしていた）
-        assertEquals("blue", computeRoot("border-bottom: 1px blue").get(CssProperty.BORDER_BOTTOM_COLOR));
+        assertEquals("#0000ff", computeRoot("border-bottom: 1px blue").get(CssProperty.BORDER_BOTTOM_COLOR));
     }
 
     @Test
@@ -331,11 +332,11 @@ public class ValueModelTest {
         ComputedStyle parent = computeRoot("color: blue");
         // 以前は解けない色を不透明な白で描いていた。宣言が無効なら color は親から継承する
         ComputedStyle child = computeChild(parent, "color: blue; color: notacolor; background-color: nope");
-        assertEquals(0xFF0000FF, child.color(CssProperty.COLOR, 0));
+        assertEquals(0xFF0000FF, child.typed().inherited.hasColor ? child.typed().inherited.color : 0);
         assertNull(child.get(CssProperty.BACKGROUND_COLOR));
         // var() が色にならなければ算出時に無効（unset。color は継承、background-color は初期値）
         ComputedStyle viaVar = computeChild(parent, "--c: 12px; color: var(--c); background-color: var(--c)");
-        assertEquals(0xFF0000FF, viaVar.color(CssProperty.COLOR, 0));
+        assertEquals(0xFF0000FF, viaVar.typed().inherited.hasColor ? viaVar.typed().inherited.color : 0);
         assertEquals("transparent", viaVar.get(CssProperty.BACKGROUND_COLOR));
         // outline-color だけは invert を取る
         assertEquals("invert", computeChild(parent, "outline-color: invert").get("outline-color"));
@@ -344,7 +345,7 @@ public class ValueModelTest {
     @Test
     public void testTransparentColorIsKeptAsTransparent() {
         ComputedStyle s = computeChild(computeRoot("color: blue"), "color: transparent");
-        assertEquals(0x00000000, s.color(CssProperty.COLOR, 0xFFFFFFFF));
+        assertEquals(0x00000000, s.typed().inherited.hasColor ? s.typed().inherited.color : 0xFFFFFFFF);
     }
 
     // ---- W10: 単位と数式

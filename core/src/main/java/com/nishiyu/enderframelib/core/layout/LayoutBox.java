@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.layout.model.*;
@@ -28,6 +27,7 @@ import java.util.Set;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.Position;
 import com.nishiyu.enderframelib.core.css.model.PositionTryRule;
 import java.util.Map;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -386,8 +386,8 @@ public class LayoutBox {
     public Map<String, PositionTryRule> positionTryRules = Map.of();
 
     /** {@code width} / {@code height} が {@code anchor-size(...)} ならアンカーの寸法（px）、そうでなければ -1。 */
-    float anchorWidthPx() { return AnchorPositioning.anchorSizePx(this, CssPropertyIndex.WIDTH, null); }
-    float anchorHeightPx() { return AnchorPositioning.anchorSizePx(this, CssPropertyIndex.HEIGHT, null); }
+    float anchorWidthPx() { return AnchorPositioning.anchorSizePx(this, true, null); }
+    float anchorHeightPx() { return AnchorPositioning.anchorSizePx(this, false, null); }
 
     /** この要素に対話状態（:hover / :active / :focus 等）のセレクタが関与するか。 */
     public boolean hasInteractiveRules = false;
@@ -1719,8 +1719,8 @@ public class LayoutBox {
          */
         public Display blockified(ComputedStyle style) {
             if (outer != Outer.INLINE) return this;
-            CssKeywords.Position position = style.typed().box.position;
-            boolean outOfFlow = position == CssKeywords.Position.ABSOLUTE || position == CssKeywords.Position.FIXED
+            Position position = style.typed().box.position;
+            boolean outOfFlow = position == Position.ABSOLUTE || position == Position.FIXED
                     || style.facts().floating;
             return outOfFlow ? new Display(Outer.BLOCK, inner, listItem) : this;
         }

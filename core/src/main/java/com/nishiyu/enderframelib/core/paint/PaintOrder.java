@@ -4,7 +4,8 @@ import com.nishiyu.enderframelib.core.paint.model.BlendMode;
 import com.nishiyu.enderframelib.core.paint.model.ClipShape;
 import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
+import com.nishiyu.enderframelib.core.css.Style;
+import com.nishiyu.enderframelib.core.css.VisualStyle;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
@@ -13,7 +14,6 @@ import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.ArrayList;
@@ -325,7 +325,8 @@ public final class PaintOrder {
     }
 
     static boolean hasBackground(LayoutBox box) {
-        return box.style.containsKey(CssPropertyIndex.BACKGROUND_COLOR) || box.style.containsKey(CssPropertyIndex.BACKGROUND);
+        VisualStyle v = box.style.typed().visual;
+        return v.hasBackgroundColor || (v.backgroundImage != null && !"none".equals(v.backgroundImage));
     }
 
     // ==========================================
@@ -368,8 +369,9 @@ public final class PaintOrder {
     static final int TOP_LAYER_Z = Integer.MAX_VALUE;
 
     void drawBackdrop(List<DisplayItem> elements, LayoutBox box) {
-        int color = ColorParser.parseColor(box.backdropStyle.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
-        float opacity = box.backdropStyle.number(CssPropertyIndex.OPACITY, 1.0f);
+        Style bd = box.backdropStyle.typed();
+        int color = bd.visual.backgroundColor;
+        float opacity = Style.num(bd.visual.opacity, 1.0f);
         if ((color >>> 24) == 0 || opacity <= 0f) return;
         int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
         ItemProps props = new ItemProps();
@@ -487,35 +489,36 @@ public final class PaintOrder {
     public static boolean hasMovingProps(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
         if (style == null) return false;
         if (style.derivedFacts() instanceof StyleFacts cached) return cached.hasMovingProps();
-        return style.get(CssPropertyIndex.ANIMATION) != null
-                || style.get(CssPropertyIndex.ANIMATION_NAME) != null
-                || hasTransformOrFilterProps(style);
+        Style st = style.typed();
+        return st.rare.animation != null || st.rare.animationName != null || hasTransformOrFilterProps(st);
     }
 
-    private static boolean hasTransformOrFilterProps(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
-        return !isNone(style.get(CssPropertyIndex.TRANSFORM))
-                || !isNone(style.get(CssPropertyIndex.TRANSLATE))
-                || !isNone(style.get(CssPropertyIndex.ROTATE))
-                || !isNone(style.get(CssPropertyIndex.SCALE))
-                || !isNone(style.get(CssPropertyIndex.FILTER))
-                || !isNone(style.get(CssPropertyIndex.PERSPECTIVE));
+    private static boolean hasTransformOrFilterProps(Style st) {
+        VisualStyle v = st.visual;
+        return !isNone(v.transform) || !isNone(v.translate) || !isNone(v.rotate)
+                || !isNone(v.scale) || !isNone(v.filter) || !isNone(st.rare.perspective);
+    }
+
+    private static String mixBlendMode(VisualStyle v) {
+        return v.mixBlendMode == null ? "normal" : v.mixBlendMode.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     static StyleFacts factsOf(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
         if (style.derivedFacts() instanceof StyleFacts cached) return cached;
         STAT_FACTS_COMPUTED.increment();
-        String z = style.get(CssPropertyIndex.Z_INDEX);
-        boolean zAuto = z == null || z.isBlank() || "auto".equalsIgnoreCase(z.trim());
+        Style st = style.typed();
+        VisualStyle v = st.visual;
+        boolean zAuto = Float.isNaN(st.box.zIndex);
         boolean mask = styleHasMask(style);
-        boolean stacking = !isNone(style.get(CssPropertyIndex.TRANSFORM)) || !isNone(style.get(CssPropertyIndex.FILTER))
-                || !isNone(style.get(CssPropertyIndex.CLIP_PATH)) || !isNone(style.get(CssPropertyIndex.BACKDROP_FILTER)) || mask
-                || style.keywordOf(CssPropertyIndex.ISOLATION, CssKeywords.Isolation.class) == CssKeywords.Isolation.ISOLATE
-                || !"normal".equals(style.keyword(CssPropertyIndex.MIX_BLEND_MODE, "normal"));
+        boolean stacking = !isNone(v.transform) || !isNone(v.filter)
+                || !isNone(v.clipPath) || !isNone(v.backdropFilter) || mask
+                || v.isolation == CssKeywords.Isolation.ISOLATE
+                || !"normal".equals(mixBlendMode(v));
         String[] overflow = overflowPair(style);
-        boolean hasAnimation = style.get(CssPropertyIndex.ANIMATION) != null || style.get(CssPropertyIndex.ANIMATION_NAME) != null;
-        boolean hasMovingProps = hasAnimation || hasTransformOrFilterProps(style);
-        StyleFacts facts = new StyleFacts("none".equals(style.getOrDefault(CssPropertyIndex.DISPLAY, "block")), zAuto,
-                style.number(CssPropertyIndex.OPACITY, 1f), stacking, mask, overflow[0], overflow[1],
+        boolean hasAnimation = st.rare.animation != null || st.rare.animationName != null;
+        boolean hasMovingProps = hasAnimation || hasTransformOrFilterProps(st);
+        StyleFacts facts = new StyleFacts(st.facts.displayNone, zAuto,
+                Style.num(v.opacity, 1f), stacking, mask, overflow[0], overflow[1],
                 isScrollbarOverflow(overflow[0]) || isScrollbarOverflow(overflow[1]),
                 hasAnimation, hasMovingProps);
         style.derivedFacts(facts);
@@ -550,45 +553,39 @@ public final class PaintOrder {
      * どれも無ければ null（直に描く）。{@code span} は {@link DisplayListBuilder} が項目を出し終えてから埋める。
      */
     LayerSpec layerSpecFor(LayoutBox box) {
-        float opacity = box.style.number(CssPropertyIndex.OPACITY, 1f);
+        Style st = box.style.typed();
+        VisualStyle v = st.visual;
+        float opacity = Style.num(v.opacity, 1f);
         boolean opacityMoves = animatesOpacity.test(box);
-        List<FilterOp> filters = FilterOp.parse(box.style.get(CssPropertyIndex.FILTER), new FilterOp.Context(rootW, rootH,
-                box.style.fontSizePx(), box.style.rootFontSizePx(), box.style.color(CssPropertyIndex.COLOR, 0xFF000000)));
-        BlendMode blend = BlendMode.fromCss(box.style.keyword(CssPropertyIndex.MIX_BLEND_MODE, "normal"));
+        float fontPx = st.inherited.fontSize, rootFontPx = st.inherited.rootFontSizePx;
+        int fgColor = st.inherited.color;
+        List<FilterOp> filters = FilterOp.parse(v.filter, new FilterOp.Context(rootW, rootH, fontPx, rootFontPx, fgColor));
+        BlendMode blend = BlendMode.fromCss(mixBlendMode(v));
         boolean isolate = hasBlendDescendant(box);
 
-        float fontPx = box.style.fontSizePx(), rootFontPx = box.style.rootFontSizePx();
         boolean rel = parentRelative && boxHasOwnNode(box);
         float lx = rel ? box.x() - Math.round(box.x()) : box.x();
         float ly = rel ? box.y() - Math.round(box.y()) : box.y();
         float[] border = {lx, ly, box.w(), box.h()};
         float[] padding = {lx + box.bL(), ly + box.bT(), Math.max(0, box.w() - box.bL() - box.bR()), Math.max(0, box.h() - box.bT() - box.bB())};
         float[] content = {padding[0] + box.pL(), padding[1] + box.pT(), Math.max(0, padding[2] - box.pL() - box.pR()), Math.max(0, padding[3] - box.pT() - box.pB())};
-        ClipShape clip = ClipShape.parse(box.style.get(CssPropertyIndex.CLIP_PATH),
+        ClipShape clip = ClipShape.parse(v.clipPath,
                 ClipShape.Context.of(border, padding, content, rootW, rootH, fontPx, rootFontPx));
 
         boolean masked = hasMask(box);
         boolean luminance = masked && !BoxDecorations.maskModes(box.style).isEmpty()
                 && "luminance".equals(BoxDecorations.maskModes(box.style).getFirst());
 
-        List<FilterOp> backdrop = FilterOp.parse(box.style.get(CssPropertyIndex.BACKDROP_FILTER), new FilterOp.Context(rootW, rootH, fontPx, rootFontPx,
-                box.style.color(CssPropertyIndex.COLOR, 0xFF000000)));
+        List<FilterOp> backdrop = FilterOp.parse(v.backdropFilter, new FilterOp.Context(rootW, rootH, fontPx, rootFontPx, fgColor));
         ClipShape backdropShape = null;
         if (!backdrop.isEmpty()) {
             float[] r = LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w(), box.h(), rootW, rootH);
-            float[] d = new float[12];
-            d[0] = lx;
-            d[1] = ly;
-            d[2] = lx + box.w();
-            d[3] = ly + box.h();
+            float[] d = new float[]{lx, ly, lx + box.w(), ly + box.h(), 0, 0, 0, 0, 0, 0, 0, 0};
             System.arraycopy(r, 0, d, 4, 8);
             backdropShape = new ClipShape(ClipShape.Kind.INSET, d, false);
         }
-
         if (opacity >= 1f && !opacityMoves && filters.isEmpty() && blend == BlendMode.NORMAL && !isolate
-                && clip == null && !masked && backdrop.isEmpty()) {
-            return null;
-        }
+                && clip == null && !masked && backdrop.isEmpty()) return null;
         return new LayerSpec(0, opacity, filters, blend, isolate, clip, masked ? LayerSpec.WANTS_MASK : -1, luminance, backdrop, backdropShape);
     }
 
@@ -616,7 +613,7 @@ public final class PaintOrder {
         for (int i = 0, n = box.children.size(); i < n; i++) {
             LayoutBox child = box.children.get(i);
             if (child.display().isNone()) continue;
-            if (!"normal".equals(child.style.keyword(CssPropertyIndex.MIX_BLEND_MODE, "normal"))) {
+            if (!"normal".equals(mixBlendMode(child.style.typed().visual))) {
                 found = true;
                 break;
             }
@@ -838,7 +835,7 @@ public final class PaintOrder {
     private static final Corners SCROLLBAR_CORNERS = new Corners(2, 2, 2, 2);
 
     void drawScrollbarsIfNeeded(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect) {
-        if (box.style.keywordOf(CssPropertyIndex.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class) == CssKeywords.ScrollbarWidth.NONE) return;
+        if (box.style.typed().box.scrollbarWidth == CssKeywords.ScrollbarWidth.NONE) return;
 
         PaintSupport.CaptureList cap = (parentRelative && boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
         int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;

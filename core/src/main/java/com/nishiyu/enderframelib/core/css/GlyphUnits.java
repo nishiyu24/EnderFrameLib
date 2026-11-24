@@ -29,14 +29,14 @@ public final class GlyphUnits {
     }
 
     private final Map<String, String> declared;
-    private final Map<String, String> parent;
+    private final Style parent;
     private final float fontSizePx;
     private String fontFamily;
     private FontStyle style;
     private float ch = Float.NaN;
     private float ex = Float.NaN;
 
-    private GlyphUnits(Map<String, String> declared, Map<String, String> parent, float fontSizePx) {
+    private GlyphUnits(Map<String, String> declared, Style parent, float fontSizePx) {
         this.declared = declared;
         this.parent = parent;
         this.fontSizePx = fontSizePx;
@@ -46,8 +46,12 @@ public final class GlyphUnits {
      * この要素の {@code ch} / {@code ex} の源。{@code style} に無い書体の指定は {@code parent}（継承）から取る。
      * 書体を解決する手段が渡されていなければ null。
      */
-    static GlyphUnits of(Map<String, String> style, Map<String, String> parent, float fontSizePx) {
+    static GlyphUnits of(Map<String, String> style, Style parent, float fontSizePx) {
         return source.get().glyphFontResolver() == null ? null : new GlyphUnits(style, parent, fontSizePx);
+    }
+
+    static GlyphUnits of(Map<String, String> style, Map<String, String> parent, float fontSizePx) {
+        return of(style, Style.ofMap(parent), fontSizePx);
     }
 
     /** 書体の指定を読む。要素ごとに作るので、{@code ch} / {@code ex} が使われるまで読まない。 */
@@ -62,9 +66,9 @@ public final class GlyphUnits {
         return style;
     }
 
-    private static String inherited(Map<String, String> style, Map<String, String> parent, String property) {
+    private static String inherited(Map<String, String> style, Style parent, String property) {
         String v = style.get(property);
-        return v != null ? v : parent.get(property);
+        return v != null ? v : parent != null ? parent.cssProperty(property) : null;
     }
 
     private static int numericWeight(String value) {

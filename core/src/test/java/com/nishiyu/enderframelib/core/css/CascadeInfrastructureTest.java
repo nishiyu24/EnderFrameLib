@@ -138,10 +138,10 @@ public class CascadeInfrastructureTest {
                 """);
         ComputedStyle styled = find(root, "a").style;
         ComputedStyle plain = find(root, "b").style;
-        assertEquals(CssKeywords.Position.RELATIVE, styled.keywordOf("position", CssKeywords.Position.class));
-        assertEquals(CssKeywords.BoxSizing.BORDER_BOX, styled.keywordOf("box-sizing", CssKeywords.BoxSizing.class));
+        assertEquals(Position.RELATIVE, styled.typed().box.position);
+        assertEquals(CssKeywords.BoxSizing.BORDER_BOX, styled.typed().box.boxSizing);
         assertEquals(Overflow.HIDDEN, styled.overflowX());
-        assertEquals(CssKeywords.Position.STATIC, plain.keywordOf("position", CssKeywords.Position.class));
+        assertEquals(Position.STATIC, plain.typed().box.position);
         assertEquals(Overflow.VISIBLE, plain.overflowY());
     }
 

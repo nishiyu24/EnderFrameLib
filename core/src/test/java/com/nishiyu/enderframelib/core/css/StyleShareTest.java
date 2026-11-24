@@ -12,7 +12,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** スタイル解決の使い回し（{@link StyleResolver.ShareCache}）が、使わないときと項目ごとに同じ結果になること。 */
+/** スタイル解決の使い回し（{@link ShareCache}）が、使わないときと項目ごとに同じ結果になること。 */
 class StyleShareTest {
 
     private static final String HTML = """
@@ -42,11 +42,11 @@ class StyleShareTest {
 
     @AfterEach
     void restore() {
-        StyleResolver.ShareCache.enabled = true;
+        ShareCache.enabled = true;
     }
 
     private static List<String> items(boolean share, int w) {
-        StyleResolver.ShareCache.enabled = share;
+        ShareCache.enabled = share;
         StandaloneView v = new StandaloneView(HTML, w, 400, FontResolver.FALLBACK);
         v.ui().flushInvalidation();
         List<String> out = new ArrayList<>();
@@ -61,9 +61,9 @@ class StyleShareTest {
     void sharedResolutionMatchesUnsharedItemByItem() {
         for (int w : new int[]{200, 320, 800}) {
             List<String> plain = items(false, w);
-            long before = StyleResolver.ShareCache.totalHits();
+            long before = ShareCache.totalHits();
             List<String> shared = items(true, w);
-            assertTrue(StyleResolver.ShareCache.totalHits() > before, "同じ形の要素は使い回されるはず (w=" + w + ")");
+            assertTrue(ShareCache.totalHits() > before, "同じ形の要素は使い回されるはず (w=" + w + ")");
             assertTrue(plain.size() > 20);
             assertEquals(plain, shared, "w=" + w);
         }
@@ -73,7 +73,7 @@ class StyleShareTest {
     void restyleAfterHoverMatchesUnshared() {
         List<List<String>> results = new ArrayList<>();
         for (boolean share : new boolean[]{false, true}) {
-            StyleResolver.ShareCache.enabled = share;
+            ShareCache.enabled = share;
             StandaloneView v = new StandaloneView(HTML, 400, 400, FontResolver.FALLBACK);
             v.ui().flushInvalidation();
             v.mouseMove(10, 5, "t");

@@ -334,13 +334,18 @@ public class LengthResolver {
         return edges;
     }
 
-    private static final int[] CORNER_IDS = {
-            CssPropertyIndex.BORDER_TOP_LEFT_RADIUS, CssPropertyIndex.BORDER_TOP_RIGHT_RADIUS,
-            CssPropertyIndex.BORDER_BOTTOM_RIGHT_RADIUS, CssPropertyIndex.BORDER_BOTTOM_LEFT_RADIUS};
-
     private static final String[] CORNER_PROPERTIES = {
             CssProperty.BORDER_TOP_LEFT_RADIUS, CssProperty.BORDER_TOP_RIGHT_RADIUS,
             CssProperty.BORDER_BOTTOM_RIGHT_RADIUS, CssProperty.BORDER_BOTTOM_LEFT_RADIUS};
+
+    private static String cornerRadiusField(VisualStyle v, int i) {
+        return switch (i) {
+            case 0 -> v.borderTopLeftRadius;
+            case 1 -> v.borderTopRightRadius;
+            case 2 -> v.borderBottomRightRadius;
+            default -> v.borderBottomLeftRadius;
+        };
+    }
 
     /**
      * 四隅の半径（左上・右上・右下・左下の順）を角ごとのロングハンドから解く。
@@ -377,22 +382,17 @@ private static List<String> radiusTokens(String value) {
 
 public static float[] cornerRadii(ComputedStyle style, float w, float h, float rootW, float rootH) {
         float[] out = new float[4];
-        String shorthand = null;
+        Style st = style.typed();
+        VisualStyle v = st.visual;
         for (int i = 0; i < 4; i++) {
-            String value = style.get(CORNER_IDS[i]);
-            if (value == null) {
-                // 展開を通っていない算出スタイル（テストや埋め込み側が直に組んだもの）
-                if (shorthand == null) {
-                    shorthand = style.getOrDefault(CssPropertyIndex.BORDER_RADIUS, "0");
-                }
-                value = expandedRadius(shorthand).getOrDefault(CORNER_PROPERTIES[i], "0");
-            }
+            String value = cornerRadiusField(v, i);
+            if (value == null) continue;
             List<String> parts = ShorthandExpanders.splitTopLevelTokens(value);
             if (parts.isEmpty()) continue;
-            float rx = parseDim(parts.get(0), w, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
+            float rx = parseDim(parts.get(0), w, rootW, rootH, st.inherited.fontSize, st.inherited.rootFontSizePx);
             float ry = parts.size() > 1
-                    ? parseDim(parts.get(1), h, rootW, rootH, style.fontSizePx(), style.rootFontSizePx())
-                    : parseDim(parts.get(0), h, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
+                    ? parseDim(parts.get(1), h, rootW, rootH, st.inherited.fontSize, st.inherited.rootFontSizePx)
+                    : parseDim(parts.get(0), h, rootW, rootH, st.inherited.fontSize, st.inherited.rootFontSizePx);
             out[i] = Math.max(0, Math.min(rx, ry));
         }
         return out;
@@ -406,12 +406,9 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
     private static final float[] ZERO_RADII_XY = new float[8];
 
     public static boolean hasNonZeroCornerRadius(ComputedStyle style) {
-        if (style.get(CORNER_IDS[0]) != null || style.get(CORNER_IDS[1]) != null
-                || style.get(CORNER_IDS[2]) != null || style.get(CORNER_IDS[3]) != null) {
-            return true;
-        }
-        String br = style.get(CssPropertyIndex.BORDER_RADIUS);
-        return br != null && !br.isEmpty() && !"0".equals(br) && !"0px".equals(br);
+        VisualStyle v = style.typed().visual;
+        return v.borderTopLeftRadius != null || v.borderTopRightRadius != null
+                || v.borderBottomRightRadius != null || v.borderBottomLeftRadius != null;
     }
 
     private static final Object CORNER_CACHE_KEY = new Object();
@@ -454,15 +451,11 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
     }
 
     private static String[] cornerRadiusValues(ComputedStyle style) {
+        VisualStyle v = style.typed().visual;
         String[] values = new String[4];
-        String shorthand = null;
         for (int i = 0; i < 4; i++) {
-            String value = style.get(CORNER_IDS[i]);
-            if (value == null) {
-                if (shorthand == null) shorthand = style.getOrDefault(CssPropertyIndex.BORDER_RADIUS, "0");
-                value = expandedRadius(shorthand).getOrDefault(CORNER_PROPERTIES[i], "0");
-            }
-            values[i] = value;
+            String value = cornerRadiusField(v, i);
+            values[i] = value != null ? value : "0";
         }
         return values;
     }

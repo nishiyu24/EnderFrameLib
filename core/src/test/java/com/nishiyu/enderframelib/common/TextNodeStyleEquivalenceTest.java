@@ -19,8 +19,8 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * A16: テキストの節の算出スタイルを親から写す近道（{@link com.nishiyu.enderframelib.core.kernel.Shortcut#TEXT_STYLE_FROM_PARENT}）が、
- * 要素と同じ経路（カスケード＋算出）と同じ結果になるか。WPT の参照比較の入力と同梱の UI 文書のすべてのテキストの箱で比べる。
+ * M1c: テキストの節の算出スタイル（{@link ComputedStyle#derivedTextChild}）が、
+ * 要素と同じ経路（カスケード＋算出）と同じ結果になり、{@code inherited} 群が親と参照共有されること。
  */
 class TextNodeStyleEquivalenceTest {
     private static final int W = 800, H = 600;
@@ -41,7 +41,6 @@ class TextNodeStyleEquivalenceTest {
         try (Stream<Path> s = Files.list(UI)) {
             s.filter(p -> p.toString().endsWith(".html")).forEach(docs::add);
         }
-        // 縦書き・em・rem・var()・継承するカスタムプロパティ・ルートの文字
         docs.add(null);
 
         int compared = 0;
@@ -53,16 +52,27 @@ class TextNodeStyleEquivalenceTest {
                     + " <p style='--c:3em;letter-spacing:var(--c)'> c <b> d </b> </p></body></html>"
                     : Files.readString(p, StandardCharsets.UTF_8);
             if (p != null && !Files.isRegularFile(p)) continue;
-            List<ComputedStyle> fast = textStyles(html, true);
-            List<ComputedStyle> full = textStyles(html, false);
-            assertEquals(full.size(), fast.size(), "text box count: " + p);
-            for (int i = 0; i < fast.size(); i++) {
-                ComputedStyle a = fast.get(i), b = full.get(i);
+            UiDocumentCompiler c = new UiDocumentCompiler();
+            Document doc = c.parseDocument(html, "", W, H);
+            com.nishiyu.enderframelib.core.dom.InteractionState state = new com.nishiyu.enderframelib.core.dom.InteractionState();
+            LayoutBox root = c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+            List<LayoutBox> textBoxes = new ArrayList<>();
+            collect(root, textBoxes);
+            for (int i = 0; i < textBoxes.size(); i++) {
+                LayoutBox b = textBoxes.get(i);
+                ComputedStyle domParent = b.node != null && b.node.parent != null ? state.computedStyleOf(b.node.parent) : null;
+                ComputedStyle parentStyle = domParent != null ? domParent : (b.parent != null ? b.parent.style : null);
+                if (parentStyle == null) continue;
                 compared++;
-                if (!ComputedStyle.sameDeclarations(a, b) || a.fontSizePx() != b.fontSizePx()
-                        || a.rootFontSizePx() != b.rootFontSizePx()) {
-                    mismatches.add(p + " #" + i + "\n  fast=" + a.asMap() + " fs=" + a.fontSizePx()
-                            + "\n  full=" + b.asMap() + " fs=" + b.fontSizePx());
+                ComputedStyle full = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(
+                        com.nishiyu.enderframelib.core.css.StyleResolver.resolveDeclarations(
+                                b.node, parentStyle.typed(), doc.sheet, state),
+                        doc.sheet, Map.of(), parentStyle.typed(), parentStyle.fontSizePx(),
+                        parentStyle.typed().inherited.rootFontSizePx, root.style.lineHeightPx(), W, H,
+                        com.nishiyu.enderframelib.core.css.model.ContainerBox.NONE_SIZE);
+                assertSame(parentStyle.typed().inherited, b.style.typed().inherited, "継承群の参照共有: " + p + " #" + i);
+                if (!b.style.typed().equals(full.typed())) {
+                    mismatches.add(p + " #" + i + "\n  fast=" + b.style.asMap() + "\n  full=" + full.asMap());
                 }
             }
         }
@@ -71,23 +81,8 @@ class TextNodeStyleEquivalenceTest {
                 + String.join("\n", mismatches.subList(0, Math.min(3, mismatches.size()))));
     }
 
-    private static List<ComputedStyle> textStyles(String html, boolean fromParent) {
-        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_STYLE_FROM_PARENT.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_STYLE_FROM_PARENT.set(fromParent);
-        try {
-            UiDocumentCompiler c = new UiDocumentCompiler();
-            Document doc = c.parseDocument(html, "", W, H);
-            LayoutBox root = c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-            List<ComputedStyle> out = new ArrayList<>();
-            collect(root, out);
-            return out;
-        } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_STYLE_FROM_PARENT.set(saved);
-        }
-    }
-
-    private static void collect(LayoutBox box, List<ComputedStyle> out) {
-        if (box.node != null && box.node.nodeType == NodeType.TEXT && !box.isAnonymous) out.add(box.style);
+    private static void collect(LayoutBox box, List<LayoutBox> out) {
+        if (box.node != null && box.node.nodeType == NodeType.TEXT && !box.isAnonymous) out.add(box);
         for (LayoutBox c : box.children) collect(c, out);
     }
 }

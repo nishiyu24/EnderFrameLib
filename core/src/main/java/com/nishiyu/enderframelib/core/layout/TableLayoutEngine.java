@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.model.BorderStyle;
+import com.nishiyu.enderframelib.core.css.model.Visibility;
 import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssLength;
@@ -296,7 +296,7 @@ public class TableLayoutEngine extends LayoutEngine {
     }
 
     private static boolean isCollapsed(LayoutBox box) {
-        return box.style.typed().inherited.visibility == CssKeywords.Visibility.COLLAPSE;
+        return box.style.typed().inherited.visibility == Visibility.COLLAPSE;
     }
 
     /** セルを格子に並べる。{@code rowspan} で上の行から伸びてきたセルの位置は飛ばす。 */
@@ -400,29 +400,28 @@ public class TableLayoutEngine extends LayoutEngine {
         int rows = state.rows.size(), cols = state.columnCount;
         CellSlot[][] at = new CellSlot[rows][cols];
         for (CellSlot s : state.cells) {
-            for (int r = s.row; r < s.row + s.rowSpan; r++) {
+            for (int r = s.row; r < s.row + s.rowSpan; r++)
                 for (int c = s.col; c < s.col + s.colSpan && c < cols; c++) at[r][c] = s;
-            }
         }
-        float tableTop = border(table, CssPropertyIndex.BORDER_TOP_WIDTH, CssPropertyIndex.BORDER_TOP_STYLE, rootW, rootH);
-        float tableRight = border(table, CssPropertyIndex.BORDER_RIGHT_WIDTH, CssPropertyIndex.BORDER_RIGHT_STYLE, rootW, rootH);
-        float tableBottom = border(table, CssPropertyIndex.BORDER_BOTTOM_WIDTH, CssPropertyIndex.BORDER_BOTTOM_STYLE, rootW, rootH);
-        float tableLeft = border(table, CssPropertyIndex.BORDER_LEFT_WIDTH, CssPropertyIndex.BORDER_LEFT_STYLE, rootW, rootH);
+        float tableTop = border(table, 0, rootW, rootH);
+        float tableRight = border(table, 1, rootW, rootH);
+        float tableBottom = border(table, 2, rootW, rootH);
+        float tableLeft = border(table, 3, rootW, rootH);
         float outerTop = tableTop, outerRight = tableRight, outerBottom = tableBottom, outerLeft = tableLeft;
 
         for (CellSlot s : state.cells) {
-            float top = border(s.cell, CssPropertyIndex.BORDER_TOP_WIDTH, CssPropertyIndex.BORDER_TOP_STYLE, rootW, rootH);
-            float right = border(s.cell, CssPropertyIndex.BORDER_RIGHT_WIDTH, CssPropertyIndex.BORDER_RIGHT_STYLE, rootW, rootH);
-            float bottom = border(s.cell, CssPropertyIndex.BORDER_BOTTOM_WIDTH, CssPropertyIndex.BORDER_BOTTOM_STYLE, rootW, rootH);
-            float left = border(s.cell, CssPropertyIndex.BORDER_LEFT_WIDTH, CssPropertyIndex.BORDER_LEFT_STYLE, rootW, rootH);
+            float top = border(s.cell, 0, rootW, rootH);
+            float right = border(s.cell, 1, rootW, rootH);
+            float bottom = border(s.cell, 2, rootW, rootH);
+            float left = border(s.cell, 3, rootW, rootH);
             CellSlot above = s.row > 0 ? at[s.row - 1][s.col] : null;
             CellSlot below = s.row + s.rowSpan < rows ? at[s.row + s.rowSpan][s.col] : null;
             CellSlot before = s.col > 0 ? at[s.row][s.col - 1] : null;
             CellSlot after = s.col + s.colSpan < cols ? at[s.row][s.col + s.colSpan] : null;
-            top = joint(s.cell, CssPropertyIndex.BORDER_TOP_STYLE, top, above != null ? above.cell : table, CssPropertyIndex.BORDER_BOTTOM_STYLE, above != null ? border(above.cell, CssPropertyIndex.BORDER_BOTTOM_WIDTH, CssPropertyIndex.BORDER_BOTTOM_STYLE, rootW, rootH) : tableTop);
-            bottom = joint(s.cell, CssPropertyIndex.BORDER_BOTTOM_STYLE, bottom, below != null ? below.cell : table, CssPropertyIndex.BORDER_TOP_STYLE, below != null ? border(below.cell, CssPropertyIndex.BORDER_TOP_WIDTH, CssPropertyIndex.BORDER_TOP_STYLE, rootW, rootH) : tableBottom);
-            left = joint(s.cell, CssPropertyIndex.BORDER_LEFT_STYLE, left, before != null ? before.cell : table, CssPropertyIndex.BORDER_RIGHT_STYLE, before != null ? border(before.cell, CssPropertyIndex.BORDER_RIGHT_WIDTH, CssPropertyIndex.BORDER_RIGHT_STYLE, rootW, rootH) : tableLeft);
-            right = joint(s.cell, CssPropertyIndex.BORDER_RIGHT_STYLE, right, after != null ? after.cell : table, CssPropertyIndex.BORDER_LEFT_STYLE, after != null ? border(after.cell, CssPropertyIndex.BORDER_LEFT_WIDTH, CssPropertyIndex.BORDER_LEFT_STYLE, rootW, rootH) : tableRight);
+            top = joint(s.cell, 0, top, above != null ? above.cell : table, 2, above != null ? border(above.cell, 2, rootW, rootH) : tableTop);
+            bottom = joint(s.cell, 2, bottom, below != null ? below.cell : table, 0, below != null ? border(below.cell, 0, rootW, rootH) : tableBottom);
+            left = joint(s.cell, 3, left, before != null ? before.cell : table, 1, before != null ? border(before.cell, 1, rootW, rootH) : tableLeft);
+            right = joint(s.cell, 1, right, after != null ? after.cell : table, 3, after != null ? border(after.cell, 3, rootW, rootH) : tableRight);
             if (above == null) outerTop = Math.max(outerTop, top);
             if (below == null) outerBottom = Math.max(outerBottom, bottom);
             if (before == null) outerLeft = Math.max(outerLeft, left);
@@ -436,19 +435,24 @@ public class TableLayoutEngine extends LayoutEngine {
         table.bL = outerLeft / 2;
     }
 
+    private static BorderStyle borderStyleOf(LayoutBox box, int side) {
+        var b = box.axisStyle().typed().box;
+        return side == 0 ? b.borderTopStyle : side == 1 ? b.borderRightStyle : side == 2 ? b.borderBottomStyle : b.borderLeftStyle;
+    }
+
     /** 隣り合う 2 本の枠線の幅。どちらかが {@code hidden} なら 0、そうでなければ太い方（CSS 2.2 §17.6.2.1）。 */
     private static float joint(LayoutBox a, int sideA, float widthA, LayoutBox b, int sideB, float widthB) {
-        if (a.axisStyle().keywordOf(sideA, BorderStyle.class) == BorderStyle.HIDDEN
-                || b.axisStyle().keywordOf(sideB, BorderStyle.class) == BorderStyle.HIDDEN) return 0;
+        if (borderStyleOf(a, sideA) == BorderStyle.HIDDEN || borderStyleOf(b, sideB) == BorderStyle.HIDDEN) return 0;
         return Math.max(widthA, widthB);
     }
 
     /** 枠線の幅。{@code border-style} が none / hidden なら 0。 */
-    private static float border(LayoutBox box, int widthProp, int styleProp, float rootW, float rootH) {
-        ComputedStyle bs = box.axisStyle();
-        BorderStyle style = bs.keywordOf(styleProp, BorderStyle.class);
+    private static float border(LayoutBox box, int side, float rootW, float rootH) {
+        BorderStyle style = borderStyleOf(box, side);
         if (style == BorderStyle.NONE || style == BorderStyle.HIDDEN) return 0;
-        return bs.length(widthProp, 0, rootW, rootH);
+        var t = box.axisStyle().typed();
+        long width = side == 0 ? t.box.borderTopWidth : side == 1 ? t.box.borderRightWidth : side == 2 ? t.box.borderBottomWidth : t.box.borderLeftWidth;
+        return t.boxPx(width, 0, rootW, rootH);
     }
 
     // ==========================================
@@ -718,11 +722,11 @@ public class TableLayoutEngine extends LayoutEngine {
     // ==========================================
 
     private static String verticalAlign(LayoutBox cell) {
-        String v = cell.style.keyword(CssPropertyIndex.VERTICAL_ALIGN, "baseline");
-        return switch (v) {
-            case "top", "middle", "bottom" -> v;
-            default -> "baseline";
-        };
+        long va = cell.style.typed().box.verticalAlign;
+        if (CssLength.isKeyword(va, CssLength.KW_TOP)) return "top";
+        if (CssLength.isKeyword(va, CssLength.KW_MIDDLE)) return "middle";
+        if (CssLength.isKeyword(va, CssLength.KW_BOTTOM)) return "bottom";
+        return "baseline";
     }
 
     /** セルのベースライン（border box の上端から）。行が無ければ内容ボックスの下端（CSS 2.2 §17.5.3）。 */

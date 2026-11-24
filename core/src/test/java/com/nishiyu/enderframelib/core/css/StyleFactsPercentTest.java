@@ -19,25 +19,24 @@ class StyleFactsPercentTest {
             CssProperty.FLEX_BASIS, CssProperty.MARGIN_TOP, CssProperty.MARGIN_RIGHT, CssProperty.MARGIN_BOTTOM,
             CssProperty.MARGIN_LEFT, CssProperty.PADDING_TOP, CssProperty.PADDING_RIGHT, CssProperty.PADDING_BOTTOM,
             CssProperty.PADDING_LEFT, CssProperty.ROW_GAP, CssProperty.COLUMN_GAP};
-    private static final int[] IDX = {
-            ComputedStyle.DIM_WIDTH, ComputedStyle.DIM_HEIGHT, ComputedStyle.DIM_MIN_WIDTH, ComputedStyle.DIM_MAX_WIDTH,
-            ComputedStyle.DIM_MIN_HEIGHT, ComputedStyle.DIM_MAX_HEIGHT, ComputedStyle.DIM_LEFT, ComputedStyle.DIM_RIGHT,
-            ComputedStyle.DIM_TOP, ComputedStyle.DIM_BOTTOM, ComputedStyle.DIM_FLEX_BASIS,
-            ComputedStyle.EDGE_MARGIN_T, ComputedStyle.EDGE_MARGIN_R, ComputedStyle.EDGE_MARGIN_B, ComputedStyle.EDGE_MARGIN_L,
-            ComputedStyle.EDGE_PADDING_T, ComputedStyle.EDGE_PADDING_R, ComputedStyle.EDGE_PADDING_B, ComputedStyle.EDGE_PADDING_L,
-            ComputedStyle.EDGE_ROW_GAP, ComputedStyle.EDGE_COLUMN_GAP};
-
     @Test
     void percentDetectionMatchesStringScan() {
-        assertEquals(PROPS.length, IDX.length);
         Random rnd = new Random(20261110);
         for (int round = 0; round < 3000; round++) {
             Map<String, String> m = new LinkedHashMap<>();
             for (String p : PROPS) if (rnd.nextInt(3) != 0) m.put(p, VALUES[rnd.nextInt(VALUES.length)]);
             ComputedStyle s = new ComputedStyle(m, 16f, 16f);
+            Style st = s.typed();
+            long[] lens = {
+                    st.box.width, st.box.height, st.box.minWidth, st.box.maxWidth, st.box.minHeight, st.box.maxHeight,
+                    st.box.left, st.box.right, st.box.top, st.box.bottom, st.flexGrid.flexBasis,
+                    st.box.marginTop, st.box.marginRight, st.box.marginBottom, st.box.marginLeft,
+                    st.box.paddingTop, st.box.paddingRight, st.box.paddingBottom, st.box.paddingLeft,
+                    st.flexGrid.rowGap, st.flexGrid.columnGap};
             for (int i = 0; i < PROPS.length; i++) {
                 String v = m.get(PROPS[i]);
-                assertEquals(v != null && v.indexOf('%') >= 0, s.edgeHasPercent(IDX[i]), PROPS[i] + ": " + v);
+                CssExprs ex = (i == 10 || i >= 19) ? st.flexGrid.exprs : st.box.exprs;
+                assertEquals(v != null && v.indexOf('%') >= 0, CssLength.hasPercent(lens[i], ex), PROPS[i] + ": " + v);
             }
         }
     }

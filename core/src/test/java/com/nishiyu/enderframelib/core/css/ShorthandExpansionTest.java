@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.nishiyu.enderframelib.common.Document;
@@ -99,9 +100,9 @@ public class ShorthandExpansionTest {
     @Test
     public void testNoShorthandLeavesLonghandsAbsent() {
         ComputedStyle s = resolve("display", "flex");
-        assertNull(s.get(CssProperty.FLEX_GROW));
-        assertNull(s.get(CssProperty.OVERFLOW_X));
-        assertNull(s.get(CssProperty.TOP));
+        assertFalse(s.asMap().containsKey(CssProperty.FLEX_GROW));
+        assertNull(s.asMap().get(CssProperty.OVERFLOW_X));
+        assertNull(s.asMap().get(CssProperty.TOP));
     }
 
     // ---- W10
@@ -117,7 +118,7 @@ public class ShorthandExpansionTest {
 
         ComputedStyle zeros = resolve("flex", "0 0 0");
         assertEquals("0", zeros.get(CssProperty.FLEX_SHRINK));
-        assertEquals("0", zeros.get(CssProperty.FLEX_BASIS));
+        assertEquals("0px", zeros.get(CssProperty.FLEX_BASIS));
         ComputedStyle basisFirst = resolve("flex", "10px 2");
         assertEquals("2", basisFirst.get(CssProperty.FLEX_GROW));
         assertEquals("10px", basisFirst.get(CssProperty.FLEX_BASIS));
@@ -136,7 +137,7 @@ public class ShorthandExpansionTest {
 
         ComputedStyle outline = resolve("outline", "none");
         assertEquals("none", outline.get("outline-style"));
-        assertEquals("0", outline.get("outline-width"));
+        assertEquals("0px", outline.get("outline-width"));
         assertTrue(outline.containsKey("outline-color"));
     }
 

@@ -45,7 +45,7 @@ final class ChildWindow {
         LayoutBox.Display d = c.display;
         if (c.isAnonymous || c.isOutsideMarker || c.node == null || c.node.isPseudoNode || c.node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.ELEMENT || d.isInlineLevel() || d.isContents() || d.isTableInternal()) return false;
         if (!d.listItem()) return true;
-        String type = c.style.getOrDefault(com.nishiyu.enderframelib.core.css.CssPropertyIndex.LIST_STYLE_TYPE, "disc");
+        String type = com.nishiyu.enderframelib.core.css.Style.or(c.style.typed().inherited.listStyleType, "disc");
         return "none".equalsIgnoreCase(type) || "disc".equalsIgnoreCase(type) || "circle".equalsIgnoreCase(type) || "square".equalsIgnoreCase(type);
     }
 }

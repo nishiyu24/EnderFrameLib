@@ -10,7 +10,7 @@ import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/** Milestone 2: :hover の往復が状態表（StateStyleMemo）を通り、結果が従来経路と一致すること。 */
+/** M1c: :hover の往復・属性変化・祖先の状態規則・:has()・子の継承追従が共有キャッシュ経由で正しく動くこと。 */
 class StateStyleMemoPipelineTest {
 
     private static final String PAGE = """
@@ -39,7 +39,7 @@ class StateStyleMemoPipelineTest {
     }
 
     @Test
-    void hoverRoundTripsGoThroughTableAndStayCorrect() {
+    void hoverRoundTripsStayCorrectAndHitShareCache() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(PAGE, "", 320, 200);
         InteractionState state = new InteractionState();
@@ -47,6 +47,7 @@ class StateStyleMemoPipelineTest {
         HtmlNode b = doc.root.getElementById("b");
         assertEquals("#111111", bg(root, "b"));
 
+        long hitsBefore = com.nishiyu.enderframelib.core.css.ShareCache.totalHits();
         for (int i = 0; i < 6; i++) {
             state.setHoveredNode(b);
             parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
@@ -55,14 +56,12 @@ class StateStyleMemoPipelineTest {
             parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
             assertEquals("#111111", bg(root, "b"), "unhover " + i);
         }
-        var memo = state.getOrCreate(b).stateMemo;
-        assertNotNull(memo, "ボタンは状態表を持つ");
-        assertTrue(memo.hits >= 8, "往復の大半は表を引く: hits=" + memo.hits + " builds=" + memo.builds);
-        assertTrue(memo.builds <= 2, "入力が変わらない間は作り直さない: " + memo.builds);
+        assertTrue(com.nishiyu.enderframelib.core.css.ShareCache.totalHits() > hitsBefore,
+                "往復では共有キャッシュが当たる");
     }
 
     @Test
-    void attributeChangeInvalidatesTheTable() {
+    void attributeChangeInvalidatesHoverState() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(PAGE, "", 320, 200);
         InteractionState state = new InteractionState();
@@ -74,8 +73,6 @@ class StateStyleMemoPipelineTest {
             state.setHoveredNode(null);
             parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         }
-        var memo = state.getOrCreate(b).stateMemo;
-        int builds = memo.builds;
 
         b.setAttribute("class", "btn alt");
         state.markDirty(b);
@@ -87,7 +84,6 @@ class StateStyleMemoPipelineTest {
         state.setHoveredNode(null);
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertEquals("#444444", bg(root, "b"));
-        assertTrue(state.getOrCreate(b).stateMemo.builds > builds || state.getOrCreate(b).stateMemo != memo);
     }
 
     @Test
@@ -110,24 +106,21 @@ class StateStyleMemoPipelineTest {
     }
 
     @Test
-    void ancestorStateRulesDisableTheTable() {
+    void ancestorStateRulesStillApply() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("""
                 <style>.p:hover .c { color: #00ff00; } .c:hover { color: #0000ff; }</style>
                 <div class="p" id="p"><span class="c" id="c">x</span></div>
                 """, "", 320, 200);
-        assertFalse(doc.sheet.stateOnSubjectOnly(), "祖先の状態を読む規則があると表は使えない");
         InteractionState state = new InteractionState();
         LayoutBox root = parser.buildLayoutTree(doc.root, new HashMap<>(), doc.sheet, Map.of(), false, state);
         state.setHoveredNode(doc.root.getElementById("p"));
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertEquals("#00ff00", find(root, "c").style.get(CssProperty.COLOR));
-        var cm = state.getOrCreate(doc.root.getElementById("c")).stateMemo;
-        assertTrue(cm == null || !cm.hasTable(), "祖先の状態を読む節は表を持たない");
     }
 
     @Test
-    void hasSelectorsNeverServeStaleTables() {
+    void hasSelectorsNeverServeStaleStyles() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("""
                 <style>.box { background-color: #111111; } .box:hover { background-color: #222222; }
@@ -156,7 +149,7 @@ class StateStyleMemoPipelineTest {
     }
 
     @Test
-    void childOfHoveredParentFollowsInheritedChangesWithBoundedFrames() {
+    void childOfHoveredParentFollowsInheritedChanges() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("""
                 <style>.p { color: #111111; } .p:hover { color: #999999; }</style>
@@ -173,9 +166,5 @@ class StateStyleMemoPipelineTest {
             parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
             assertEquals("#111111", find(root, "c").style.get(CssProperty.COLOR), "unhover " + i);
         }
-        var memo = state.getOrCreate(doc.root.getElementById("c")).stateMemo;
-        assertNotNull(memo);
-        assertTrue(memo.builds <= 4, "子の枠は往復の両側だけ: builds=" + memo.builds + " hits=" + memo.hits);
-        assertTrue(memo.hits >= 10, "往復の大半は枠を引く: hits=" + memo.hits);
     }
 }

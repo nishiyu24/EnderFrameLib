@@ -32,17 +32,18 @@ class ComputedStyleFootprintTest {
 
     /** 1 つのスタイルへ、描画・レイアウトが典型的に行う型付きアクセスをする。 */
     private static float touch(ComputedStyle s) {
+        Style st = s.typed();
         float acc = 0;
-        acc += s.length("width", 500, 800, 600);
-        acc += s.length("height", 500, 800, 600);
-        acc += s.length("margin-top", 500, 800, 600);
-        acc += s.length("padding-left", 500, 800, 600);
-        acc += s.color("color", 0);
-        acc += s.color("background-color", 0);
-        acc += s.number("opacity", 1f);
-        acc += s.number("z-index", 0f);
-        acc += s.keywordOf("position", CssKeywords.Position.class).ordinal();
-        acc += s.keywordOf("float", CssKeywords.FloatSide.class).ordinal();
+        acc += st.boxPx(st.box.width, 500, 800, 600);
+        acc += st.boxPx(st.box.height, 500, 800, 600);
+        acc += st.boxPx(st.box.marginTop, 500, 800, 600);
+        acc += st.boxPx(st.box.paddingLeft, 500, 800, 600);
+        acc += st.inherited.color;
+        acc += st.visual.backgroundColor;
+        acc += st.visual.opacity;
+        acc += st.box.zIndex;
+        acc += st.box.position.ordinal();
+        acc += st.box.floatValue.ordinal();
         acc += s.overflowX().ordinal();
         acc += s.paintMemo("k", k -> "v").length();
         return acc;
@@ -57,15 +58,14 @@ class ComputedStyleFootprintTest {
     void perStyleAllocationStaysSmall() {
         Map<String, String> decl = declarations();
         ComputedStyle warm = new ComputedStyle(decl, 16f, 16f);
-        for (int i = 0; i < 2000; i++) touch(new ComputedStyle(warm.asMap(), 16f, 16f));
+        for (int i = 0; i < 2000; i++) touch(new ComputedStyle(decl, 16f, 16f));
         int n = 2000;
         float sink = 0;
         long before = allocatedBytes();
-        for (int i = 0; i < n; i++) sink += touch(new ComputedStyle(warm.asMap(), 16f, 16f));
+        for (int i = 0; i < n; i++) sink += touch(new ComputedStyle(decl, 16f, 16f));
         long perStyle = (allocatedBytes() - before) / n;
         System.out.println("[computed-style footprint] bytes per style (copy + 12 typed accesses) = " + perStyle + " (" + sink + ")");
-        // M1b-b1 の橋渡し: 最初の事実の参照で型付き Style（6 群＋導出値）を 1 度作るため増える（実測 8,176 B）。b2 でカスケードが Style を共有して返すまでの暫定値で、b2 で 4500 に戻す
-        assertTrue(perStyle < 9000, "スタイル 1 つあたりの割り当てが大きすぎる: " + perStyle + " bytes");
+        assertTrue(perStyle < 4500, "スタイル 1 つあたりの割り当てが大きすぎる: " + perStyle + " bytes (warm fs=" + warm.fontSizePx() + ")");
     }
 
     @Test

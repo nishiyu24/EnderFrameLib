@@ -1,10 +1,11 @@
 package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
-import com.nishiyu.enderframelib.core.css.model.PositionTryRule;
+import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
@@ -46,9 +47,9 @@ final class AnchorPositioning {
         boolean rtl = isRtl(parent.style);
         ComputedStyle ps = parent.style, cs = child.style;
         if (inner == LayoutBox.Display.Inner.GRID) {
-            child.staticAlignX = selfFactor(selfValue(cs, CssPropertyIndex.JUSTIFY_SELF, ps, CssPropertyIndex.JUSTIFY_ITEMS), rtl, true, false);
-            child.staticAlignY = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, false);
-            if (ps.typed().box.position != com.nishiyu.enderframelib.core.css.model.CssKeywords.Position.STATIC) {
+            child.staticAlignX = selfFactor(selfValue(cs, true, ps), rtl, true, false);
+            child.staticAlignY = selfFactor(selfValue(cs, false, ps), false, false, false);
+            if (ps.typed().box.position != Position.STATIC) {
                 // 容器が包含ブロック（grid-area があればそのグリッド領域）なら、その中で揃える。大きさは配置のときに決まる
                 child.staticAreaW = child.staticAreaH = STATIC_AREA_IS_CB;
                 return;
@@ -56,8 +57,8 @@ final class AnchorPositioning {
             // 容器が包含ブロックでなければ、内容ボックスの中で揃える（ブラウザの実装と WPT の参照に合わせる）
             child.staticAreaW = LayoutReads.parentInnerW(parent);
             child.staticAreaH = LayoutReads.parentInnerH(parent);
-            child.staticAlignX = selfFactor(selfValue(cs, CssPropertyIndex.JUSTIFY_SELF, ps, CssPropertyIndex.JUSTIFY_ITEMS), rtl, true, false);
-            child.staticAlignY = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, false);
+            child.staticAlignX = selfFactor(selfValue(cs, true, ps), rtl, true, false);
+            child.staticAlignY = selfFactor(selfValue(cs, false, ps), false, false, false);
             return;
         }
         String dir = ps.typed().flexGrid.flexDirection.cssName();
@@ -66,7 +67,7 @@ final class AnchorPositioning {
         boolean wrapReverse = ps.typed().flexGrid.flexWrap.cssName().equals("wrap-reverse");
         child.staticAreaW = LayoutReads.parentInnerW(parent);
         child.staticAreaH = LayoutReads.parentInnerH(parent);
-        String justify = norm(ps.get(CssPropertyIndex.JUSTIFY_CONTENT));
+        String justify = ps.typed().flexGrid.justifyContent.cssName();
         // 項目が 1 つなら space-between は flex-start、space-around / space-evenly は center と同じ
         justify = switch (justify) {
             case "space-between" -> "flex-start";
@@ -83,7 +84,7 @@ final class AnchorPositioning {
             default -> 0;
         };
         if (row && rtl) main = 1 - main;
-        float cross = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, wrapReverse);
+        float cross = selfFactor(selfValue(cs, false, ps), false, false, wrapReverse);
         child.staticAlignX = row ? main : cross;
         child.staticAlignY = row ? cross : main;
     }
@@ -109,9 +110,12 @@ final class AnchorPositioning {
         return t;
     }
 
-    private static String selfValue(ComputedStyle child, int selfProp, ComputedStyle parent, int itemsProp) {
-        String v = norm(child.get(selfProp));
-        if (v.isEmpty() || v.equals("auto")) v = norm(parent.get(itemsProp));
+    private static String selfValue(ComputedStyle child, boolean inline, ComputedStyle parent) {
+        var cfg = child.typed().flexGrid;
+        var pfg = parent.typed().flexGrid;
+        CssKeywords.Alignment kw = inline ? cfg.justifySelf : cfg.alignSelf;
+        if (kw == CssKeywords.Alignment.AUTO) kw = inline ? pfg.justifyItems : pfg.alignItems;
+        String v = kw.cssName();
         if (v.startsWith("legacy")) v = v.substring(6).trim();
         return v;
     }
@@ -152,38 +156,41 @@ final class AnchorPositioning {
         box.y -= opY;
     }
 
+    private static final int SIDE_TOP = 0, SIDE_RIGHT = 1, SIDE_BOTTOM = 2, SIDE_LEFT = 3;
+
     private static void placeWithoutFallbacks(LayoutBox box, LayoutBox.ContainingBlock cb,
                                               float rootW, float rootH, float opX, float opY, LayoutContext ctx) {
         ComputedStyle style = box.style;
+        Style tStyle = style.typed();
         StyleFacts facts = style.facts();
         float refX = cb.x(), refY = cb.y(), refW = cb.w(), refH = cb.h();
         float origW = box.w, origH = box.h;
 
         // width / height が anchor-size() ならアンカーの寸法に合わせる（アンカーが後順のときここで確定する）
-        float aw = anchorSizePx(box, CssPropertyIndex.WIDTH, null);
-        float ah = anchorSizePx(box, CssPropertyIndex.HEIGHT, null);
+        float aw = anchorSizePx(box, true, null);
+        float ah = anchorSizePx(box, false, null);
         boolean isBorderBox = style.isBorderBox();
         if (aw >= 0) box.w = aw + (isBorderBox ? 0 : box.horizontalDecoration());
         if (ah >= 0) box.h = ah + (isBorderBox ? 0 : box.verticalDecoration());
 
-        boolean leftAuto = BoxMeasurer.isAutoInset(style, CssPropertyIndex.LEFT);
-        boolean rightAuto = BoxMeasurer.isAutoInset(style, CssPropertyIndex.RIGHT);
-        boolean topAuto = BoxMeasurer.isAutoInset(style, CssPropertyIndex.TOP);
-        boolean bottomAuto = BoxMeasurer.isAutoInset(style, CssPropertyIndex.BOTTOM);
+        boolean leftAuto = CssLength.isAutoOrUndeclared(tStyle.box.left);
+        boolean rightAuto = CssLength.isAutoOrUndeclared(tStyle.box.right);
+        boolean topAuto = CssLength.isAutoOrUndeclared(tStyle.box.top);
+        boolean bottomAuto = CssLength.isAutoOrUndeclared(tStyle.box.bottom);
 
         // width/height: auto で両端の inset が指定されていれば、包含ブロックの寸法から間の幅・高さを解く（CSS 2.2 §10.3.7・§10.6.4）。
         // 測定のときの基準は親の寸法で、包含ブロックが祖父母以上だと（親の高さが auto なら）高さが 0 になっていた
         if (facts.widthAuto && !leftAuto && !rightAuto) {
-            float l = insetPx(box, CssPropertyIndex.LEFT, refX, refW, rootW, rootH);
-            float r = insetPx(box, CssPropertyIndex.RIGHT, refX, refW, rootW, rootH);
+            float l = insetPx(box, SIDE_LEFT, refX, refW, rootW, rootH);
+            float r = insetPx(box, SIDE_RIGHT, refX, refW, rootW, rootH);
             float w = Math.max(box.horizontalDecoration(), refW - l - r - box.mL - box.mR);
-            box.w = clampWidth(box, style, w, refW, rootW, rootH, isBorderBox);
+            box.w = applyMinMaxDecl(box, w, true, null, null, refW, rootW, rootH, isBorderBox);
         }
         if (facts.heightAuto && !topAuto && !bottomAuto) {
-            float t = insetPx(box, CssPropertyIndex.TOP, refY, refH, rootW, rootH);
-            float b = insetPx(box, CssPropertyIndex.BOTTOM, refY, refH, rootW, rootH);
+            float t = insetPx(box, SIDE_TOP, refY, refH, rootW, rootH);
+            float b = insetPx(box, SIDE_BOTTOM, refY, refH, rootW, rootH);
             float h = Math.max(box.verticalDecoration(), refH - t - b - box.mT - box.mB);
-            box.h = clampHeight(box, style, h, refH, rootW, rootH, isBorderBox);
+            box.h = applyMinMaxDecl(box, h, false, null, null, refH, rootW, rootH, isBorderBox);
         }
 
         if (!box.children.isEmpty() && (box.w != origW || box.h != origH)) {
@@ -191,34 +198,34 @@ final class AnchorPositioning {
         }
 
         if (!leftAuto) {
-            float left = insetPx(box, CssPropertyIndex.LEFT, refX, refW, rootW, rootH);
+            float left = insetPx(box, SIDE_LEFT, refX, refW, rootW, rootH);
             float ml = box.mL;
             if ((facts.autoMarginL || facts.autoMarginR) && !rightAuto && !facts.widthAuto) {
-                float right = insetPx(box, CssPropertyIndex.RIGHT, refX, refW, rootW, rootH);
+                float right = insetPx(box, SIDE_RIGHT, refX, refW, rootW, rootH);
                 float free = refW - left - right - box.w - (facts.autoMarginL ? 0 : box.mL) - (facts.autoMarginR ? 0 : box.mR);
                 if (facts.autoMarginL && facts.autoMarginR) ml = Math.max(0, free / 2);
                 else if (facts.autoMarginL) ml = Math.max(0, free);
             }
             box.x = refX + left + ml;
         } else if (!rightAuto) {
-            box.x = refX + refW - box.w - insetPx(box, CssPropertyIndex.RIGHT, refX, refW, rootW, rootH) - box.mR;
+            box.x = refX + refW - box.w - insetPx(box, SIDE_RIGHT, refX, refW, rootW, rootH) - box.mR;
         } else {
             box.x = box.staticAreaW == STATIC_AREA_IS_CB ? refX + box.staticAlignX * (refW - (box.w + box.mL + box.mR)) + box.mL
                     : (Float.isNaN(box.staticX) ? refX : opX + box.staticX + box.staticOffsetX(box.w + box.mL + box.mR)) + box.mL;
         }
 
         if (!topAuto) {
-            float top = insetPx(box, CssPropertyIndex.TOP, refY, refH, rootW, rootH);
+            float top = insetPx(box, SIDE_TOP, refY, refH, rootW, rootH);
             float mt = box.mT;
             if ((facts.autoMarginT || facts.autoMarginB) && !bottomAuto && !facts.heightAuto) {
-                float bottom = insetPx(box, CssPropertyIndex.BOTTOM, refY, refH, rootW, rootH);
+                float bottom = insetPx(box, SIDE_BOTTOM, refY, refH, rootW, rootH);
                 float free = refH - top - bottom - box.h - (facts.autoMarginT ? 0 : box.mT) - (facts.autoMarginB ? 0 : box.mB);
                 if (facts.autoMarginT && facts.autoMarginB) mt = Math.max(0, free / 2);
                 else if (facts.autoMarginT) mt = Math.max(0, free);
             }
             box.y = refY + top + mt;
         } else if (!bottomAuto) {
-            box.y = refY + refH - box.h - insetPx(box, CssPropertyIndex.BOTTOM, refY, refH, rootW, rootH) - box.mB;
+            box.y = refY + refH - box.h - insetPx(box, SIDE_BOTTOM, refY, refH, rootW, rootH) - box.mB;
         } else {
             box.y = box.staticAreaH == STATIC_AREA_IS_CB ? refY + box.staticAlignY * (refH - (box.h + box.mT + box.mB)) + box.mT
                     : (Float.isNaN(box.staticY) ? refY : opY + box.staticY + box.staticOffsetY(box.h + box.mT + box.mB)) + box.mT;
@@ -238,17 +245,18 @@ final class AnchorPositioning {
                                            float rootW, float rootH, float opX, float opY,
                                            String fallbacksStr, LayoutContext ctx) {
         ComputedStyle style = box.style;
+        Style t = style.typed();
         StyleFacts facts = style.facts();
         float origW = box.w, origH = box.h;
         float origMT = box.mT, origMR = box.mR, origMB = box.mB, origML = box.mL;
 
         CandidateSpec base = new CandidateSpec(
-                rawInset(style, CssPropertyIndex.LEFT),
-                rawInset(style, CssPropertyIndex.RIGHT),
-                rawInset(style, CssPropertyIndex.TOP),
-                rawInset(style, CssPropertyIndex.BOTTOM),
-                style.typed().rare.positionAnchor,
-                parsePositionArea(style.typed().rare.positionArea),
+                rawDeclOrAuto(t, t.box.left),
+                rawDeclOrAuto(t, t.box.right),
+                rawDeclOrAuto(t, t.box.top),
+                rawDeclOrAuto(t, t.box.bottom),
+                t.rare.positionAnchor,
+                parsePositionArea(t.rare.positionArea),
                 origMT, origMR, origMB, origML,
                 facts.autoMarginT, facts.autoMarginR, facts.autoMarginB, facts.autoMarginL,
                 null, null, null, null, null, null,
@@ -337,7 +345,7 @@ final class AnchorPositioning {
                 w = BoxMeasurer.toBorderBox(len, hDeco, isBorderBox);
             }
         } else {
-            float aw = anchorSizePx(box, CssPropertyIndex.WIDTH, spec.positionAnchor);
+            float aw = anchorSizePx(box, true, spec.positionAnchor);
             if (aw >= 0) w = BoxMeasurer.toBorderBox(aw, hDeco, isBorderBox);
         }
 
@@ -355,7 +363,7 @@ final class AnchorPositioning {
                 h = BoxMeasurer.toBorderBox(len, vDeco, isBorderBox);
             }
         } else {
-            float ah = anchorSizePx(box, CssPropertyIndex.HEIGHT, spec.positionAnchor);
+            float ah = anchorSizePx(box, false, spec.positionAnchor);
             if (ah >= 0) h = BoxMeasurer.toBorderBox(ah, vDeco, isBorderBox);
         }
 
@@ -364,10 +372,10 @@ final class AnchorPositioning {
 
         float x, imcbW;
         if (!leftAuto) {
-            float leftPx = resolveInsetPx(box, CssPropertyIndex.LEFT, spec.left, spec.insetsOverridden,
+            float leftPx = resolveInsetPx(box, SIDE_LEFT, spec.left, spec.insetsOverridden,
                     refX, refW, rootW, rootH, spec.positionAnchor);
             if (!rightAuto) {
-                float rightPx = resolveInsetPx(box, CssPropertyIndex.RIGHT, spec.right, spec.insetsOverridden,
+                float rightPx = resolveInsetPx(box, SIDE_RIGHT, spec.right, spec.insetsOverridden,
                         refX, refW, rootW, rootH, spec.positionAnchor);
                 if (widthIsAuto && (spec.widthOverridden || spec.insetsOverridden || isAnchorFn(spec.left) || isAnchorFn(spec.right))) {
                     w = Math.max(hDeco, refW - leftPx - rightPx - ml - mr);
@@ -386,7 +394,7 @@ final class AnchorPositioning {
                 x = refX + leftPx + ml;
             }
         } else if (!rightAuto) {
-            float rightPx = resolveInsetPx(box, CssPropertyIndex.RIGHT, spec.right, spec.insetsOverridden,
+            float rightPx = resolveInsetPx(box, SIDE_RIGHT, spec.right, spec.insetsOverridden,
                     refX, refW, rootW, rootH, spec.positionAnchor);
             imcbW = Math.max(0, refW - rightPx);
             x = refX + refW - w - rightPx - mr;
@@ -398,10 +406,10 @@ final class AnchorPositioning {
 
         float y, imcbH;
         if (!topAuto) {
-            float topPx = resolveInsetPx(box, CssPropertyIndex.TOP, spec.top, spec.insetsOverridden,
+            float topPx = resolveInsetPx(box, SIDE_TOP, spec.top, spec.insetsOverridden,
                     refY, refH, rootW, rootH, spec.positionAnchor);
             if (!bottomAuto) {
-                float bottomPx = resolveInsetPx(box, CssPropertyIndex.BOTTOM, spec.bottom, spec.insetsOverridden,
+                float bottomPx = resolveInsetPx(box, SIDE_BOTTOM, spec.bottom, spec.insetsOverridden,
                         refY, refH, rootW, rootH, spec.positionAnchor);
                 if (heightIsAuto && (spec.heightOverridden || spec.insetsOverridden || isAnchorFn(spec.top) || isAnchorFn(spec.bottom))) {
                     h = Math.max(vDeco, refH - topPx - bottomPx - mt - mb);
@@ -420,7 +428,7 @@ final class AnchorPositioning {
                 y = refY + topPx + mt;
             }
         } else if (!bottomAuto) {
-            float bottomPx = resolveInsetPx(box, CssPropertyIndex.BOTTOM, spec.bottom, spec.insetsOverridden,
+            float bottomPx = resolveInsetPx(box, SIDE_BOTTOM, spec.bottom, spec.insetsOverridden,
                     refY, refH, rootW, rootH, spec.positionAnchor);
             imcbH = Math.max(0, refH - bottomPx);
             y = refY + refH - h - bottomPx - mb;
@@ -603,20 +611,21 @@ final class AnchorPositioning {
         boolean tmpAT = spec.autoMarginT; spec.autoMarginT = spec.autoMarginL; spec.autoMarginL = tmpAT;
         boolean tmpAB = spec.autoMarginB; spec.autoMarginB = spec.autoMarginR; spec.autoMarginR = tmpAB;
 
-        String curW = spec.widthDecl != null ? spec.widthDecl : rawSizing(baseStyle, CssPropertyIndex.WIDTH);
-        String curH = spec.heightDecl != null ? spec.heightDecl : rawSizing(baseStyle, CssPropertyIndex.HEIGHT);
+        Style t = baseStyle.typed();
+        String curW = spec.widthDecl != null ? spec.widthDecl : rawDeclOrAuto(t, t.box.width);
+        String curH = spec.heightDecl != null ? spec.heightDecl : rawDeclOrAuto(t, t.box.height);
         spec.widthDecl = flipAnchorSizeString(curH);
         spec.heightDecl = flipAnchorSizeString(curW);
         spec.widthOverridden = true;
         spec.heightOverridden = true;
 
-        String curMinW = spec.minWidthDecl != null ? spec.minWidthDecl : baseStyle.get(CssPropertyIndex.MIN_WIDTH);
-        String curMinH = spec.minHeightDecl != null ? spec.minHeightDecl : baseStyle.get(CssPropertyIndex.MIN_HEIGHT);
+        String curMinW = spec.minWidthDecl != null ? spec.minWidthDecl : CssLength.toCssString(t.box.minWidth, t.box.exprs);
+        String curMinH = spec.minHeightDecl != null ? spec.minHeightDecl : CssLength.toCssString(t.box.minHeight, t.box.exprs);
         spec.minWidthDecl = curMinH;
         spec.minHeightDecl = curMinW;
 
-        String curMaxW = spec.maxWidthDecl != null ? spec.maxWidthDecl : baseStyle.get(CssPropertyIndex.MAX_WIDTH);
-        String curMaxH = spec.maxHeightDecl != null ? spec.maxHeightDecl : baseStyle.get(CssPropertyIndex.MAX_HEIGHT);
+        String curMaxW = spec.maxWidthDecl != null ? spec.maxWidthDecl : CssLength.toCssString(t.box.maxWidth, t.box.exprs);
+        String curMaxH = spec.maxHeightDecl != null ? spec.maxHeightDecl : CssLength.toCssString(t.box.maxHeight, t.box.exprs);
         spec.maxWidthDecl = curMaxH;
         spec.maxHeightDecl = curMaxW;
 
@@ -702,96 +711,65 @@ final class AnchorPositioning {
 
     private static String flipAreaToken(String tok, int flipKind) {
         if (tok == null) return null;
-        return switch (flipKind) {
-            case FLIP_BLOCK -> switch (tok) {
-                case "top" -> "bottom";
-                case "bottom" -> "top";
-                case "span-top" -> "span-bottom";
-                case "span-bottom" -> "span-top";
-                case "y-start" -> "y-end";
-                case "y-end" -> "y-start";
-                case "span-y-start" -> "span-y-end";
-                case "span-y-end" -> "span-y-start";
-                case "y-self-start" -> "y-self-end";
-                case "y-self-end" -> "y-self-start";
-                case "start" -> "end";
-                case "end" -> "start";
-                case "span-start" -> "span-end";
-                case "span-end" -> "span-start";
-                case "self-start" -> "self-end";
-                case "self-end" -> "self-start";
-                case "span-self-start" -> "span-self-end";
-                case "span-self-end" -> "span-self-start";
-                default -> tok;
-            };
-            case FLIP_INLINE -> switch (tok) {
-                case "left" -> "right";
-                case "right" -> "left";
-                case "span-left" -> "span-right";
-                case "span-right" -> "span-left";
-                case "x-start" -> "x-end";
-                case "x-end" -> "x-start";
-                case "span-x-start" -> "span-x-end";
-                case "span-x-end" -> "span-x-start";
-                case "x-self-start" -> "x-self-end";
-                case "x-self-end" -> "x-self-start";
-                case "start" -> "end";
-                case "end" -> "start";
-                case "span-start" -> "span-end";
-                case "span-end" -> "span-start";
-                case "self-start" -> "self-end";
-                case "self-end" -> "self-start";
-                case "span-self-start" -> "span-self-end";
-                case "span-self-end" -> "span-self-start";
-                default -> tok;
-            };
-            default -> switch (tok) { // FLIP_START
-                case "left" -> "top";
-                case "top" -> "left";
-                case "right" -> "bottom";
-                case "bottom" -> "right";
-                case "span-left" -> "span-top";
-                case "span-top" -> "span-left";
-                case "span-right" -> "span-bottom";
-                case "span-bottom" -> "span-right";
-                case "x-start" -> "y-start";
-                case "y-start" -> "x-start";
-                case "x-end" -> "y-end";
-                case "y-end" -> "x-end";
-                case "span-x-start" -> "span-y-start";
-                case "span-y-start" -> "span-x-start";
-                case "span-x-end" -> "span-y-end";
-                case "span-y-end" -> "span-x-end";
-                case "x-self-start" -> "y-self-start";
-                case "y-self-start" -> "x-self-start";
-                case "x-self-end" -> "y-self-end";
-                case "y-self-end" -> "x-self-end";
-                default -> tok;
-            };
-        };
+        if (flipKind == FLIP_START) {
+            return swapToken(tok, "left", "top", "right", "bottom",
+                    "span-left", "span-top", "span-right", "span-bottom",
+                    "x-start", "y-start", "x-end", "y-end",
+                    "span-x-start", "span-y-start", "span-x-end", "span-y-end",
+                    "x-self-start", "y-self-start", "x-self-end", "y-self-end");
+        }
+        String r = flipKind == FLIP_BLOCK
+                ? swapToken(tok, "top", "bottom", "span-top", "span-bottom", "y-start", "y-end", "span-y-start", "span-y-end", "y-self-start", "y-self-end")
+                : swapToken(tok, "left", "right", "span-left", "span-right", "x-start", "x-end", "span-x-start", "span-x-end", "x-self-start", "x-self-end");
+        return !r.equals(tok) ? r
+                : swapToken(tok, "start", "end", "span-start", "span-end", "self-start", "self-end", "span-self-start", "span-self-end");
+    }
+
+    private static String swapToken(String tok, String... pairs) {
+        for (int i = 0; i < pairs.length; i += 2) {
+            if (tok.equals(pairs[i])) return pairs[i + 1];
+            if (tok.equals(pairs[i + 1])) return pairs[i];
+        }
+        return tok;
     }
 
     // ---- anchor() / anchor-size() / position-area プリミティブ
+
+    private static long insetLen(Style t, int side) {
+        return switch (side) {
+            case SIDE_TOP -> t.box.top;
+            case SIDE_RIGHT -> t.box.right;
+            case SIDE_BOTTOM -> t.box.bottom;
+            default -> t.box.left;
+        };
+    }
 
     /**
      * 絶対配置の inset（{@code left} / {@code right} / {@code top} / {@code bottom}）を px にする。
      * 値が {@code anchor(...)} ならアンカーの辺の座標から求める。
      */
-    static float insetPx(LayoutBox box, int prop, float cbOrigin, float cbLen, float rootW, float rootH) {
-        String raw = box.style.get(prop);
-        if (!isAnchorFn(raw)) return box.style.length(prop, cbLen, rootW, rootH);
-        return resolveAnchorInset(box, raw, prop, cbOrigin, cbLen, null);
+    static float insetPx(LayoutBox box, int side, float cbOrigin, float cbLen, float rootW, float rootH) {
+        Style t = box.style.typed();
+        long len = insetLen(t, side);
+        if (CssLength.isCalc(len)) {
+            String raw = t.box.exprs.raw(len);
+            if (isAnchorFn(raw)) return resolveAnchorInset(box, raw, side, cbOrigin, cbLen, null);
+        }
+        return t.boxPx(len, cbLen, rootW, rootH);
     }
 
-    private static float resolveInsetPx(LayoutBox box, int prop, String raw, boolean overridden,
+    private static float resolveInsetPx(LayoutBox box, int side, String raw, boolean overridden,
                                         float cbOrigin, float cbLen, float rootW, float rootH,
                                         String overridePositionAnchor) {
-        if (isAnchorFn(raw)) return resolveAnchorInset(box, raw, prop, cbOrigin, cbLen, overridePositionAnchor);
-        if (!overridden) return box.style.length(prop, cbLen, rootW, rootH);
+        if (isAnchorFn(raw)) return resolveAnchorInset(box, raw, side, cbOrigin, cbLen, overridePositionAnchor);
+        if (!overridden) {
+            Style t = box.style.typed();
+            return t.boxPx(insetLen(t, side), cbLen, rootW, rootH);
+        }
         return LengthResolver.parseDim(raw, cbLen, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
     }
 
-    private static float resolveAnchorInset(LayoutBox box, String raw, int prop,
+    private static float resolveAnchorInset(LayoutBox box, String raw, int sideCode,
                                             float cbOrigin, float cbLen, String overridePositionAnchor) {
         int close = raw.lastIndexOf(')');
         if (close < 0) return 0;
@@ -804,7 +782,7 @@ final class AnchorPositioning {
         if (side == null) return 0;
         LayoutBox anchor = LayoutReads.findAnchor(box, name, overridePositionAnchor);
         if (anchor == null) return 0;
-        boolean horizontal = prop == CssPropertyIndex.LEFT || prop == CssPropertyIndex.RIGHT;
+        boolean horizontal = sideCode == SIDE_LEFT || sideCode == SIDE_RIGHT;
         float from = horizontal ? LayoutReads.anchorX(anchor) : LayoutReads.anchorY(anchor);
         float size = horizontal ? LayoutReads.anchorW(anchor) : LayoutReads.anchorH(anchor);
         float coord;
@@ -821,13 +799,15 @@ final class AnchorPositioning {
                 }
             }
         }
-        boolean fromStart = prop == CssPropertyIndex.LEFT || prop == CssPropertyIndex.TOP;
+        boolean fromStart = sideCode == SIDE_LEFT || sideCode == SIDE_TOP;
         return fromStart ? coord - cbOrigin : cbOrigin + cbLen - coord;
     }
 
-    static float anchorSizePx(LayoutBox box, int prop, String overridePositionAnchor) {
-        String raw = box.style.get(prop);
-        return anchorSizePx(box, raw, prop == CssPropertyIndex.WIDTH, overridePositionAnchor);
+    static float anchorSizePx(LayoutBox box, boolean horizontal, String overridePositionAnchor) {
+        Style t = box.style.typed();
+        long len = horizontal ? t.box.width : t.box.height;
+        if (!CssLength.isCalc(len)) return -1;
+        return anchorSizePx(box, t.box.exprs.raw(len), horizontal, overridePositionAnchor);
     }
 
     static float anchorSizePx(LayoutBox box, String raw, boolean horizontal, String overridePositionAnchor) {
@@ -945,36 +925,34 @@ final class AnchorPositioning {
 
     // ---- 寸法補助
 
-    private static float clampWidth(LayoutBox box, ComputedStyle style, float w, float cbW, float rootW, float rootH, boolean isBorderBox) {
-        return applyMinMaxDecl(box, w, true, null, null, cbW, rootW, rootH, isBorderBox);
-    }
-
-    private static float clampHeight(LayoutBox box, ComputedStyle style, float h, float cbH, float rootW, float rootH, boolean isBorderBox) {
-        return applyMinMaxDecl(box, h, false, null, null, cbH, rootW, rootH, isBorderBox);
+    private static float resolveLimit(Style t, String override, long len, boolean isMax,
+                                      float cbLen, float rootW, float rootH, float fs, float rfs) {
+        if (override != null) {
+            String trimmed = override.trim();
+            String ignoreKw = isMax ? "none" : "auto";
+            if (trimmed.isEmpty() || ignoreKw.equalsIgnoreCase(trimmed) || LayoutMetrics.isIntrinsicSizeKeyword(trimmed)) return Float.NaN;
+            return LengthResolver.parseDim(trimmed, cbLen, rootW, rootH, fs, rfs);
+        }
+        boolean ignored = !CssLength.isDeclared(len)
+                || (isMax ? CssLength.isKeyword(len, CssLength.KW_NONE) : CssLength.isAuto(len))
+                || CssLength.isIntrinsicSize(len, t.box.exprs);
+        return ignored ? Float.NaN : t.boxPx(len, cbLen, rootW, rootH);
     }
 
     private static float applyMinMaxDecl(LayoutBox box, float val, boolean horizontal,
                                          String minOverride, String maxOverride,
                                          float cbLen, float rootW, float rootH, boolean isBorderBox) {
         ComputedStyle style = box.style;
+        Style t = style.typed();
         float deco = horizontal ? box.horizontalDecoration() : box.verticalDecoration();
         float fs = style.fontSizePx(), rfs = style.rootFontSizePx();
-        String maxStr = maxOverride != null ? maxOverride : style.get(horizontal ? CssPropertyIndex.MAX_WIDTH : CssPropertyIndex.MAX_HEIGHT);
-        if (maxStr != null && !maxStr.isBlank() && !"none".equalsIgnoreCase(maxStr.trim())) {
-            String trimmed = maxStr.trim();
-            if (!LayoutMetrics.isIntrinsicSizeKeyword(trimmed)) {
-                float maxV = BoxMeasurer.toBorderBox(LengthResolver.parseDim(trimmed, cbLen, rootW, rootH, fs, rfs), deco, isBorderBox);
-                if (maxV > 0) val = Math.min(val, maxV);
-            }
+        float rawMax = resolveLimit(t, maxOverride, horizontal ? t.box.maxWidth : t.box.maxHeight, true, cbLen, rootW, rootH, fs, rfs);
+        if (!Float.isNaN(rawMax)) {
+            float maxV = BoxMeasurer.toBorderBox(rawMax, deco, isBorderBox);
+            if (maxV > 0) val = Math.min(val, maxV);
         }
-        String minStr = minOverride != null ? minOverride : style.get(horizontal ? CssPropertyIndex.MIN_WIDTH : CssPropertyIndex.MIN_HEIGHT);
-        if (minStr != null && !minStr.isBlank() && !"auto".equalsIgnoreCase(minStr.trim())) {
-            String trimmed = minStr.trim();
-            if (!LayoutMetrics.isIntrinsicSizeKeyword(trimmed)) {
-                float minV = BoxMeasurer.toBorderBox(LengthResolver.parseDim(trimmed, cbLen, rootW, rootH, fs, rfs), deco, isBorderBox);
-                val = Math.max(val, minV);
-            }
-        }
+        float rawMin = resolveLimit(t, minOverride, horizontal ? t.box.minWidth : t.box.minHeight, false, cbLen, rootW, rootH, fs, rfs);
+        if (!Float.isNaN(rawMin)) val = Math.max(val, BoxMeasurer.toBorderBox(rawMin, deco, isBorderBox));
         return val;
     }
 
@@ -1000,14 +978,8 @@ final class AnchorPositioning {
         ComputedStyle prevStyle = box.style;
         float prevW = box.w, prevH = box.h;
         float prevMT = box.mT, prevMR = box.mR, prevMB = box.mB, prevML = box.mL;
-        java.util.LinkedHashMap<String, String> map = new java.util.LinkedHashMap<>(prevStyle.asMap());
-        if (spec.widthDecl != null) map.put("width", spec.widthDecl);
-        if (spec.heightDecl != null) map.put("height", spec.heightDecl);
-        if (spec.minWidthDecl != null) map.put("min-width", spec.minWidthDecl);
-        if (spec.maxWidthDecl != null) map.put("max-width", spec.maxWidthDecl);
-        if (spec.minHeightDecl != null) map.put("min-height", spec.minHeightDecl);
-        if (spec.maxHeightDecl != null) map.put("max-height", spec.maxHeightDecl);
-        ComputedStyle tmp = new ComputedStyle(map, prevStyle.fontSizePx(), prevStyle.rootFontSizePx());
+        ComputedStyle tmp = prevStyle.withSizingOverrides(spec.widthDecl, spec.heightDecl,
+                spec.minWidthDecl, spec.maxWidthDecl, spec.minHeightDecl, spec.maxHeightDecl);
         ConstraintSpace space = ConstraintSpace.reuseOrCreate(null, cbW, cbH, FormattingContext.BLOCK);
         box.style = tmp;
         try {
@@ -1040,13 +1012,8 @@ final class AnchorPositioning {
         return out;
     }
 
-    private static String rawInset(ComputedStyle style, int prop) {
-        String v = style.get(prop);
-        return v == null || v.isBlank() ? "auto" : v.trim();
-    }
-
-    private static String rawSizing(ComputedStyle style, int prop) {
-        String v = style.get(prop);
+    private static String rawDeclOrAuto(Style t, long len) {
+        String v = CssLength.toCssString(len, t.box.exprs);
         return v == null || v.isBlank() ? "auto" : v.trim();
     }
 

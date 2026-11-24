@@ -1,8 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
-import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.Style;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,7 +25,7 @@ public final class BorderImage {
 
     /** {@code border-image-source} が {@code url()} ならその URL。無い・{@code none}・画像でなければ null。 */
     public static String sourceUrl(ComputedStyle style) {
-        String v = style.get(CssPropertyIndex.BORDER_IMAGE_SOURCE);
+        String v = style.typed().visual.borderImageSource;
         if (v == null) return null;
         return new BoxDecorations.BackgroundLayer(v, "", "", "", "", "", 1.0).url();
     }
@@ -42,25 +41,26 @@ public final class BorderImage {
         List<Cell> out = new ArrayList<>(9);
         if (imgW <= 0 || imgH <= 0 || !(boxW > 0) || !(boxH > 0)) return out;
 
+        Style st = style.typed();
         // slice: 上・右・下・左（画像の画素。% は縦横それぞれの画像の大きさに対して）
         boolean fill = false;
         List<String> sliceTokens = new ArrayList<>();
-        for (String t : split(style.getOrDefault(CssPropertyIndex.BORDER_IMAGE_SLICE, "100%"))) {
+        for (String t : split(Style.or(st.visual.borderImageSlice, "100%"))) {
             if ("fill".equalsIgnoreCase(t)) fill = true;
             else sliceTokens.add(t);
         }
         float[] s = expand4(sliceTokens, new float[]{imgH, imgW, imgH, imgW}, 1f, 0f, new float[]{imgH, imgW, imgH, imgW});
         for (int i = 0; i < 4; i++) s[i] = Math.max(0, Math.min(s[i], (i % 2 == 0) ? imgH : imgW));
-        int st = Math.round(s[0]), sr = Math.round(s[1]), sb = Math.round(s[2]), sl = Math.round(s[3]);
+        int stTop = Math.round(s[0]), sr = Math.round(s[1]), sb = Math.round(s[2]), sl = Math.round(s[3]);
         // 向かい合う辺の合計が画像を超えるときは、両方とも画像いっぱいに収める（仕様どおり、中央が空になる）
         if (sl + sr > imgW) { sl = Math.min(sl, imgW); sr = imgW - sl; }
-        if (st + sb > imgH) { st = Math.min(st, imgH); sb = imgH - st; }
+        if (stTop + sb > imgH) { stTop = Math.min(stTop, imgH); sb = imgH - stTop; }
 
         // width: 上・右・下・左（CSS px）。数値は枠線の太さの倍数、auto は切り出しの大きさ
-        float[] sliceCss = {st, sr, sb, sl};
-        float fontPx = style.fontSizePx();
+        float[] sliceCss = {stTop, sr, sb, sl};
+        float fontPx = st.inherited.fontSize;
         float[] bw = new float[4];
-        List<String> widthTokens = split(style.getOrDefault(CssPropertyIndex.BORDER_IMAGE_WIDTH, "1"));
+        List<String> widthTokens = split(Style.or(st.visual.borderImageWidth, "1"));
         for (int i = 0; i < 4; i++) {
             String tok = widthTokens.isEmpty() ? "1" : widthTokens.get(sideIndex(widthTokens.size(), i));
             bw[i] = widthOf(tok, border[i], sliceCss[i], (i % 2 == 0) ? boxH : boxW, fontPx);
@@ -73,16 +73,16 @@ public final class BorderImage {
         float wt = bw[0], wr = bw[1], wb = bw[2], wl = bw[3];
 
         float x1 = boxX + wl, x2 = boxX + boxW - wr, y1 = boxY + wt, y2 = boxY + boxH - wb;
-        int cx = imgW - sl - sr, cy = imgH - st - sb;
-        add(out, 0, 0, sl, st, boxX, boxY, wl, wt);                         // 左上
-        add(out, sl, 0, cx, st, x1, boxY, x2 - x1, wt);                     // 上
-        add(out, imgW - sr, 0, sr, st, x2, boxY, wr, wt);                   // 右上
-        add(out, 0, st, sl, cy, boxX, y1, wl, y2 - y1);                     // 左
-        if (fill) add(out, sl, st, cx, cy, x1, y1, x2 - x1, y2 - y1);       // 中央（fill のときだけ）
-        add(out, imgW - sr, st, sr, cy, x2, y1, wr, y2 - y1);               // 右
-        add(out, 0, imgH - sb, sl, sb, boxX, y2, wl, wb);                   // 左下
-        add(out, sl, imgH - sb, cx, sb, x1, y2, x2 - x1, wb);               // 下
-        add(out, imgW - sr, imgH - sb, sr, sb, x2, y2, wr, wb);             // 右下
+        int cx = imgW - sl - sr, cy = imgH - stTop - sb;
+        add(out, 0, 0, sl, stTop, boxX, boxY, wl, wt);                     // 左上
+        add(out, sl, 0, cx, stTop, x1, boxY, x2 - x1, wt);                 // 上
+        add(out, imgW - sr, 0, sr, stTop, x2, boxY, wr, wt);               // 右上
+        add(out, 0, stTop, sl, cy, boxX, y1, wl, y2 - y1);                 // 左
+        if (fill) add(out, sl, stTop, cx, cy, x1, y1, x2 - x1, y2 - y1);   // 中央（fill のときだけ）
+        add(out, imgW - sr, stTop, sr, cy, x2, y1, wr, y2 - y1);           // 右
+        add(out, 0, imgH - sb, sl, sb, boxX, y2, wl, wb);                  // 左下
+        add(out, sl, imgH - sb, cx, sb, x1, y2, x2 - x1, wb);              // 下
+        add(out, imgW - sr, imgH - sb, sr, sb, x2, y2, wr, wb);            // 右下
         return out;
     }
 

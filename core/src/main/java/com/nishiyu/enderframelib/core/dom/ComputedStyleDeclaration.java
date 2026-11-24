@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.dom;
 import com.nishiyu.enderframelib.api.dom.CSSStyleDeclaration;
 import com.nishiyu.enderframelib.api.dom.DOMException;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.dom.node.LayoutQuery;
 import org.jetbrains.annotations.Nullable;
 
@@ -18,17 +19,26 @@ import java.util.Map;
  */
 final class ComputedStyleDeclaration implements CSSStyleDeclaration {
 
-    private final Map<String, String> computed;
+    @Nullable
+    private final Style style;
+    @Nullable
+    private Map<String, String> lazyMap;
     @Nullable
     private final LayoutQuery.BoxMetrics box;
 
     ComputedStyleDeclaration(@Nullable ComputedStyle style, @Nullable LayoutQuery.BoxMetrics box) {
-        this.computed = style != null ? style.asMap() : Map.of();
+        this.style = style != null ? style.typed() : null;
         this.box = box;
     }
 
+    private Map<String, String> map() {
+        Map<String, String> m = lazyMap;
+        if (m == null) lazyMap = m = style != null ? style.toCssMap() : Map.of();
+        return m;
+    }
+
     private List<String> names() {
-        return new ArrayList<>(computed.keySet());
+        return new ArrayList<>(map().keySet());
     }
 
     @Override
@@ -48,7 +58,7 @@ final class ComputedStyleDeclaration implements CSSStyleDeclaration {
 
     @Override
     public int getLength() {
-        return computed.size();
+        return map().size();
     }
 
     @Nullable
@@ -66,7 +76,7 @@ final class ComputedStyleDeclaration implements CSSStyleDeclaration {
             String used = usedValue(name);
             if (used != null) return used;
         }
-        String value = computed.get(name);
+        String value = style != null ? style.cssomProperty(name) : null;
         return value != null ? value : "";
     }
 

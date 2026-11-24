@@ -41,11 +41,11 @@ class IdBasedComputeTest {
         }
         if ("currentcolor".equalsIgnoreCase(trimmed(style.get(CssProperty.COLOR)))) refInheritedOrInitial(style, CssProperty.COLOR, ctx);
         String color = style.get(CssProperty.COLOR);
-        if (color == null) color = ctx.parent().get(CssProperty.COLOR);
+        if (color == null) color = ctx.parent().cssProperty(CssProperty.COLOR);
         if (color == null) color = PropertyRegistry.initialValue(CssProperty.COLOR);
 
         String declared = trimmed(style.get(CssProperty.LINE_HEIGHT));
-        if (declared == null) declared = trimmed(ctx.parent().get(CssProperty.LINE_HEIGHT));
+        if (declared == null) declared = trimmed(ctx.parent().cssProperty(CssProperty.LINE_HEIGHT));
         float lineHeight = ValueComputer.lineHeightPx(declared, own, ctx.rootFontSize(), ctx.viewportW(), ctx.viewportH());
         Metrics metrics = new Metrics(0, ctx.viewportW(), ctx.viewportH(), own, ctx.rootFontSize(), lineHeight,
                 ctx.rootLineHeightPx(), ctx.containerW(), ctx.containerH(), GlyphUnits.of(style, ctx.parent(), own));
@@ -120,7 +120,7 @@ class IdBasedComputeTest {
     }
 
     private static void refInheritedOrInitial(Map<String, String> style, String key, ValueComputer.Context ctx) {
-        String parentValue = ctx.parent().get(key);
+        String parentValue = ctx.parent().cssProperty(key);
         if (parentValue != null) style.put(key, parentValue);
         else refInitial(style, key);
     }

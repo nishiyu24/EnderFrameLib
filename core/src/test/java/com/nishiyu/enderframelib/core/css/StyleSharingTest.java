@@ -85,4 +85,27 @@ class StyleSharingTest {
         assertEquals(10f, s.resolve(s.box.marginLeft, s.box.exprs, 100f, 800f, 600f), 0f);
         assertEquals(24f, s.resolve(s.box.paddingTop, s.box.exprs, 100f, 800f, 600f), 0f);
     }
+
+    @Test
+    void typedMasksSafeFlagsAndDiffBehavePredictably() {
+        ComputedStyle parent = cs(16f, "color", "red", "border-top-color", "blue", "background-color", "#123456",
+                "justify-content", "safe center", "column-rule-color", "green");
+        Style ps = parent.typed();
+        assertFalse(ps.visual.currentColorMask == 31);
+        assertEquals(0x1E, ps.visual.currentColorMask & 0x1F); // border-top declared; right/bottom/left/outline = currentcolor
+        assertTrue(ps.visual.hasBackgroundColor);
+        assertTrue(ps.flexGrid.justifyContentSafe);
+        assertFalse(ps.rare.columnRuleColorCurrent);
+
+        Style text = Style.forTextChild(ps);
+        assertSame(ps.inherited, text.inherited);
+        assertSame(ps.facts.fontStyle, text.facts.fontStyle);
+        assertSame(BoxGeomStyle.DEFAULT, text.box);
+
+        ComputedStyle a = cs(16f, "position", "relative", "left", "10px", "opacity", "0.5", "z-index", "1");
+        ComputedStyle b = cs(16f, "position", "relative", "left", "20px", "opacity", "0.9", "z-index", "2");
+        assertEquals(1, a.classifyPositionOnlyDiff(b)); // paint-only changes ignored in positionOnlyAxes
+        ComputedStyle c = cs(16f, "position", "relative", "left", "20px", "margin-top", "4px");
+        assertEquals(-1, a.classifyPositionOnlyDiff(c));
+    }
 }

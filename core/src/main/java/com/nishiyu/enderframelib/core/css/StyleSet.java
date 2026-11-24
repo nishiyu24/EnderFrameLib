@@ -14,14 +14,13 @@ import java.util.Map;
 public class StyleSet {
 
     private final HtmlNode node;
-    private final Map<String, String> inheritedStyle;
+    private final Style inheritedStyle;
     private final StyleSheet sheet;
     private final boolean hasInteractiveRules;
 
-    public StyleSet(HtmlNode node, Map<String, String> inheritedStyle, StyleSheet sheet, boolean hasInteractiveRules) {
+    public StyleSet(HtmlNode node, Style inheritedStyle, StyleSheet sheet, boolean hasInteractiveRules) {
         this.node = node;
-        // 継承元は読み取り専用（親の算出スタイルの表）なので写さない。写すと要素ごとに表を 1 つ丸ごと作ることになる
-        this.inheritedStyle = inheritedStyle != null ? inheritedStyle : Map.of();
+        this.inheritedStyle = inheritedStyle != null ? inheritedStyle : Style.DEFAULT;
         this.sheet = sheet;
         this.hasInteractiveRules = hasInteractiveRules;
     }

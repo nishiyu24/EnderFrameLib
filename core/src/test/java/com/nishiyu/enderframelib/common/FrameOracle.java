@@ -89,7 +89,7 @@ public final class FrameOracle {
 
     private static void walk(LayoutBox b, boolean scrollExtents, List<String> out) {
         // display:none の部分木は描かれず、位置・大きさは観測できない（今の面は隠す前の古い値を持ち、最初から作った面は置かない）。種類だけ比べて降りない
-        if (b.style != null && "none".equals(b.style.get(com.nishiyu.enderframelib.core.css.CssPropertyIndex.DISPLAY))) {
+        if (b.style != null && "none".equals(b.style.typed().box.display)) {
             out.add((b.node == null ? "(anon)" : b.node.tag) + " display:none");
             return;
         }

@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.core.layout.model;
 
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -57,9 +56,6 @@ public final class LayoutMetrics {
     public static int numericWeight(String weight) {
         return com.nishiyu.enderframelib.core.css.ValueKeywords.numericFontWeight(weight);
     }
-
-    private static final int ID_FONT_WEIGHT = CssPropertyIndex.FONT_WEIGHT;
-    private static final int ID_LINE_HEIGHT = CssPropertyIndex.LINE_HEIGHT;
 
     public static int numericWeight(ComputedStyle style) {
         return style.facts().fontWeight;

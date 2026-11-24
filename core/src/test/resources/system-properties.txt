@@ -1,8 +1,6 @@
 # SystemPropertyRatchetTest の表（ENGINE_REARCHITECTURE_PLAN T1 ④）: キー | 種類 | 読むファイル（, 区切り） | 説明
 # 環境変数は env:NAME。種類は SHORTCUT / GPU / DIAGNOSTIC / TUNING / COMPAT / PLATFORM。
 # 新しいキーを足すときは S1（EngineFlags への一元化）の後なら EngineFlags だけで読む。
-enderframe.css.noshare | SHORTCUT | core/kernel/EngineFlags.java | ComputedStyle.SHARE_ENABLED（算出スタイルの共有）
-enderframe.css.textfullcascade | COMPAT | core/kernel/EngineFlags.java | RenderPipeline.TEXT_STYLE_FROM_PARENT を切り、文字の節にもカスケードを全部かける
 enderframe.gl.fullresblur | GPU | core/kernel/EngineFlags.java | GpuRenderBackend.downsampledBlur（縮小してぼかす）を切る
 enderframe.gl.fullscreenlayers | GPU | core/kernel/EngineFlags.java | GpuRenderBackend.boundedLayers（層を外接矩形に限る）を切る
 enderframe.gl.noreplay | GPU | core/kernel/EngineFlags.java | RectStream.replayEnabled（項目単位の保持記録の再生）

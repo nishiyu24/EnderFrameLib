@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
-import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.css.CustomProperties;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
@@ -396,17 +396,22 @@ final class ItemProps {
 
     private static final Object STYLE_HANDLERS = new Object();
 
+    private static final String[] NO_HANDLERS = new String[0];
+
     /** スタイルの {@code on*} の名前（小文字）と値を {@code [名前, 値, 名前, 値, …]} で。 */
     private static String[] styleHandlersOf(LayoutBox box) {
-        java.util.List<String> out = new java.util.ArrayList<>();
-        for (Map.Entry<String, String> entry : box.style.asMap().entrySet()) {
+        CustomProperties custom = box.style.typed().custom;
+        if (custom == null) return NO_HANDLERS;
+        java.util.List<String> out = null;
+        for (Map.Entry<String, String> entry : custom.asMap().entrySet()) {
             String key = entry.getKey().toLowerCase(Locale.ROOT);
             if (key.startsWith("on")) {
+                if (out == null) out = new java.util.ArrayList<>();
                 out.add(key);
                 out.add(entry.getValue());
             }
         }
-        return out.toArray(new String[0]);
+        return out == null ? NO_HANDLERS : out.toArray(new String[0]);
     }
 
     static ItemProps forParts(LayoutBox box, String id, TransitionSpec transSpec) {
@@ -425,9 +430,8 @@ final class ItemProps {
         long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.paintHandle()) : 0L;
         partsEvents.parentId(id, nodeKey);
         applyTransitionEvents(partsEvents, transSpec);
-        if (box.style.containsKey(CssPropertyIndex.FONT_FAMILY)) {
-            partsEvents.fontFamily(box.style.get(CssPropertyIndex.FONT_FAMILY));
-        }
+        String fontFamily = box.style.typed().inherited.fontFamily;
+        if (fontFamily != null) partsEvents.fontFamily(fontFamily);
         putFontEvents(box, partsEvents);
         Map<String, String> nodeAttrs = box.node.attrs;
         if (!nodeAttrs.isEmpty()) {

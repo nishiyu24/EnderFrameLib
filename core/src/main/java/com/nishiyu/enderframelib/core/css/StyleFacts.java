@@ -96,17 +96,19 @@ public final class StyleFacts {
         RareStyle r = s.rare;
 
         int bits = 0;
-        for (String token : (r.contain == null ? "" : r.contain.trim().toLowerCase(Locale.ROOT)).split("\\s+")) {
-            switch (token) {
-                case "strict" -> bits |= ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT
-                        | ComputedStyle.CONTAIN_STYLE;
-                case "content" -> bits |= ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT | ComputedStyle.CONTAIN_STYLE;
-                case "size" -> bits |= ComputedStyle.CONTAIN_SIZE;
-                case "inline-size" -> bits |= ComputedStyle.CONTAIN_INLINE_SIZE;
-                case "layout" -> bits |= ComputedStyle.CONTAIN_LAYOUT;
-                case "paint" -> bits |= ComputedStyle.CONTAIN_PAINT;
-                case "style" -> bits |= ComputedStyle.CONTAIN_STYLE;
-                default -> { }
+        if (r.contain != null && !r.contain.isBlank()) {
+            for (String token : r.contain.trim().toLowerCase(Locale.ROOT).split("\\s+")) {
+                switch (token) {
+                    case "strict" -> bits |= ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT
+                            | ComputedStyle.CONTAIN_STYLE;
+                    case "content" -> bits |= ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT | ComputedStyle.CONTAIN_STYLE;
+                    case "size" -> bits |= ComputedStyle.CONTAIN_SIZE;
+                    case "inline-size" -> bits |= ComputedStyle.CONTAIN_INLINE_SIZE;
+                    case "layout" -> bits |= ComputedStyle.CONTAIN_LAYOUT;
+                    case "paint" -> bits |= ComputedStyle.CONTAIN_PAINT;
+                    case "style" -> bits |= ComputedStyle.CONTAIN_STYLE;
+                    default -> { }
+                }
             }
         }
         CssKeywords.ContentVisibility cv = r.contentVisibility;
@@ -197,9 +199,7 @@ public final class StyleFacts {
         wordBreak = WordBreak.of(in.wordBreak);
         overflowWrapBreaks = in.overflowWrap != CssKeywords.OverflowWrap.NORMAL;
         ellipsis = b.textOverflow == CssKeywords.TextOverflow.ELLIPSIS;
-        fontStyle = new FontStyle(in.fontSize, fontWeight >= 600, in.fontStyle != CssKeywords.FontStyle.NORMAL,
-                CssLength.resolve(in.letterSpacing, in.exprs, 0, in.fontSize, in.rootFontSizePx, 0, 0), fontWeight,
-                !KeywordMatch.is(in.fontKerning, "none"));
+        fontStyle = in.fontStyleSpec;
     }
 
     /** % を含む長さ（単位が %、または式の原文に % を含む）か。 */

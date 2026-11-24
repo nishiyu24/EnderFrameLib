@@ -95,8 +95,6 @@ public final class CssKeywords {
         return null;
     }
 
-    public enum Position implements Keyword { STATIC, RELATIVE, ABSOLUTE, FIXED, STICKY }
-
     /** {@code float}。 */
     public enum FloatSide implements Keyword { NONE, LEFT, RIGHT, INLINE_START, INLINE_END }
 
@@ -104,8 +102,6 @@ public final class CssKeywords {
 
     public enum BoxSizing implements Keyword { CONTENT_BOX, BORDER_BOX }
 
-
-    public enum Visibility implements Keyword { VISIBLE, HIDDEN, COLLAPSE }
 
     public enum TextTransform implements Keyword { NONE, CAPITALIZE, UPPERCASE, LOWERCASE }
 

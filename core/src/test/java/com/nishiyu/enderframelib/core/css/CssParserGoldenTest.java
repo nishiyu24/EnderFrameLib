@@ -86,15 +86,17 @@ public class CssParserGoldenTest {
         raw.put("padding", "5px");
 
         ComputedStyle s = StyleResolver.finalizeComputedStyle(raw, null, null);
+        Style st = s.typed();
 
-        assertEquals(1, s.length("margin-top", 100, 1920, 1080));
-        assertEquals(2, s.length("margin-right", 100, 1920, 1080));
-        assertEquals(3, s.length("margin-bottom", 100, 1920, 1080));
-        assertEquals(4, s.length("margin-left", 100, 1920, 1080));
+        assertEquals(1, st.boxPx(st.box.marginTop, 100, 1920, 1080));
+        assertEquals(2, st.boxPx(st.box.marginRight, 100, 1920, 1080));
+        assertEquals(3, st.boxPx(st.box.marginBottom, 100, 1920, 1080));
+        assertEquals(4, st.boxPx(st.box.marginLeft, 100, 1920, 1080));
 
-        for (String dir : new String[]{"top", "right", "bottom", "left"}) {
-            assertEquals(5, s.length("padding-" + dir, 100, 1920, 1080));
-        }
+        assertEquals(5, st.boxPx(st.box.paddingTop, 100, 1920, 1080));
+        assertEquals(5, st.boxPx(st.box.paddingRight, 100, 1920, 1080));
+        assertEquals(5, st.boxPx(st.box.paddingBottom, 100, 1920, 1080));
+        assertEquals(5, st.boxPx(st.box.paddingLeft, 100, 1920, 1080));
     }
 
     @Test
@@ -104,9 +106,10 @@ public class CssParserGoldenTest {
         raw.put("margin-left", "99px");
 
         ComputedStyle s = StyleResolver.finalizeComputedStyle(raw, null, null);
+        Style st = s.typed();
 
-        assertEquals(99, s.length("margin-left", 100, 1920, 1080));
-        assertEquals(10, s.length("margin-top", 100, 1920, 1080));
+        assertEquals(99, st.boxPx(st.box.marginLeft, 100, 1920, 1080));
+        assertEquals(10, st.boxPx(st.box.marginTop, 100, 1920, 1080));
     }
 
     @Test
@@ -119,7 +122,7 @@ public class CssParserGoldenTest {
 
         assertEquals("auto", s.get("margin-left"));
         assertEquals("auto", s.get("margin-right"));
-        assertEquals("0", s.get("margin-top"));
+        assertEquals("0px", s.get("margin-top"));
     }
 
     @Test

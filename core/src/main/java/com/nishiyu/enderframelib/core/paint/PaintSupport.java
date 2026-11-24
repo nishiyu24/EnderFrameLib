@@ -1,9 +1,10 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
+import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
+import com.nishiyu.enderframelib.core.css.InheritedStyle;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
-import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.Visibility;
 
 /** {@link DisplayListBuilder} の部品群が共通で使う、状態を持たない道具（要素の追加・クリップ・属性の読み取りなど）。 */
 final class PaintSupport {
@@ -38,7 +40,7 @@ final class PaintSupport {
      * LIMITATION(制約): 表の行・列の {@code collapse} も hidden と同じで、場所を詰めない。README の "Not supported" に対応。
      */
     static boolean isInvisible(LayoutBox box) {
-        return box.style.keywordOf(CssPropertyIndex.VISIBILITY, CssKeywords.Visibility.class) != CssKeywords.Visibility.VISIBLE;
+        return box.style.typed().inherited.visibility != Visibility.VISIBLE;
     }
 
     /**
@@ -47,7 +49,8 @@ final class PaintSupport {
      */
     static boolean hidesEmptyCell(LayoutBox box) {
         if (box.display() == null || box.display().inner() != LayoutBox.Display.Inner.TABLE_CELL || box.collapsedBorders() != null) return false;
-        if (!"hide".equalsIgnoreCase(String.valueOf(box.style.get(CssPropertyIndex.EMPTY_CELLS)).trim())) return false;
+        String ec = box.style.typed().inherited.emptyCells;
+        if (ec == null || !"hide".equalsIgnoreCase(ec.trim())) return false;
         return hasNoContent(box);
     }
 
@@ -176,20 +179,17 @@ final class PaintSupport {
         if (!cached.isEmpty()) events.putBaseAttrs(cached);
     }
 
-    private static Map<String, String> computeFontAttrs(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
+    private static Map<String, String> computeFontAttrs(ComputedStyle style) {
         // 既定値（400 / normal / auto）は載せない。描画側は無ければ既定値として読む
+        InheritedStyle inh = style.typed().inherited;
         String w = null, fs = null, fk = null, ls = null;
         int count = 0;
-        String weight = style.get(CssPropertyIndex.FONT_WEIGHT);
-        if (weight != null && !weight.equals("normal") && !weight.equals("400")) { w = weight; count++; }
-        String fontStyle = style.get(CssPropertyIndex.FONT_STYLE);
-        if (fontStyle != null && !fontStyle.equals("normal")) { fs = fontStyle; count++; }
-        String kerning = style.get(CssPropertyIndex.FONT_KERNING);
-        if (kerning != null && !kerning.equals("auto")) { fk = kerning; count++; }
+        if (inh.fontWeight != 400) { w = inh.fontWeight == 700 ? "bold" : Integer.toString(inh.fontWeight); count++; }
+        if (inh.fontStyle != CssKeywords.FontStyle.NORMAL) { fs = inh.fontStyle.cssName(); count++; }
+        if (inh.fontKerning != null && !inh.fontKerning.equals("auto")) { fk = inh.fontKerning; count++; }
         // 長さの解決は要素ごとには重いので、指定があるときだけ（初期値は normal = 0）
-        String spacing = style.get(CssPropertyIndex.LETTER_SPACING);
-        if (spacing != null && !spacing.equals("normal") && !spacing.equals("0")) {
-            float letterSpacing = style.length(CssPropertyIndex.LETTER_SPACING, 0, 0, 0);
+        if (CssLength.isDeclared(inh.letterSpacing)) {
+            float letterSpacing = CssLength.resolve(inh.letterSpacing, inh.exprs, 0, inh.fontSize, inh.rootFontSizePx, 0, 0);
             if (letterSpacing != 0) { ls = String.valueOf(letterSpacing); count++; }
         }
         if (count == 0) return Map.of();

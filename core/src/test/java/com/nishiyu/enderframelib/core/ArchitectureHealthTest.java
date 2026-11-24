@@ -47,8 +47,8 @@ class ArchitectureHealthTest {
     static final int MAX_EPOCH_STATIC = 5;
     static final int MAX_CORE_SCC = 1;
     static final int MAX_MOD_SCC = 3;
-    static final int MAX_SHORTCUTS = 35;
-    static final int MAX_ENGINE_FLAGS = 45;
+    static final int MAX_SHORTCUTS = 33;
+    static final int MAX_ENGINE_FLAGS = 43;
 
     private static final String BASE = "com.nishiyu.enderframelib.";
     private static final String CEILINGS_TABLE = "architecture-health-ceilings.txt";
@@ -60,8 +60,8 @@ class ArchitectureHealthTest {
             "core-glfw/src/main/java");
 
     private static final Set<String> FROZEN_SHORTCUTS = Set.of(
-            "SHEET_CACHE", "FRESH_LAYOUT_PASS_REUSE", "RESIZE_SKIP_REBUILD", "TEXT_STYLE_FROM_PARENT",
-            "DEFER_SCROLL_LAYOUT", "STYLE_SHARE", "FLOAT_MEMO",
+            "SHEET_CACHE", "FRESH_LAYOUT_PASS_REUSE", "RESIZE_SKIP_REBUILD",
+            "DEFER_SCROLL_LAYOUT", "FLOAT_MEMO",
             "FLEX_SKIP_SAME_WIDTH", "BLOCK_PERCENT_FREE", "DEFINITE_LEAF_REUSE", "TENTATIVE_REUSE",
             "CUTOFF", "SAME_PASS_REUSE", "WIDTH_INDEPENDENT_REUSE", "VIEWPORT_WIDTH_FREE_REUSE",
             "FIT_REUSE", "LAYOUT_PARALLEL", "WINDOWED", "SCROLL_CONTENT_NODES",
@@ -71,13 +71,13 @@ class ArchitectureHealthTest {
             "SOFT_GL_REPLAY", "SOFT_FAST_SOLID", "TEXT_SETUP_REUSE", "SOFT_TILED");
 
     private static final Set<String> FROZEN_ENGINE_FLAGS = Set.of(
-            "STYLE_SHARE", "BLOCK_PERCENT_FREE", "KERNEL_STATS", "CUTOFF", "DEFINITE_LEAF_REUSE",
+            "BLOCK_PERCENT_FREE", "KERNEL_STATS", "CUTOFF", "DEFINITE_LEAF_REUSE",
             "FIT_REUSE", "FLEX_SKIP_SAME_WIDTH", "FLOAT_MEMO", "FRESH_LAYOUT_PASS_REUSE",
             "LAZY_THROUGH_INELIGIBLE", "LAYOUT_PARALLEL", "RESIZE_SKIP_REBUILD", "SAME_PASS_REUSE",
             "TENTATIVE_REUSE", "VIEWPORT_WIDTH_FREE_REUSE", "WIDTH_INDEPENDENT_REUSE",
             "CULL_RECORDED_RANGES", "PARENT_RELATIVE", "SOFT_GL_REPLAY", "SCROLL_CONTENT_NODES",
             "TEXT_SETUP_REUSE", "WINDOWED", "SHEET_CACHE", "SOFT_CULL_OFFSCREEN", "SOFT_DAMAGE",
-            "SOFT_FAST_SOLID", "SOFT_TILED", "TEXT_STYLE_FROM_PARENT", "KEEP_NEWLINE_WHITESPACE",
+            "SOFT_FAST_SOLID", "SOFT_TILED", "KEEP_NEWLINE_WHITESPACE",
             "CULL_MARGIN", "WINDOW_MIN_OWNERS", "RASTER_PARALLEL", "SPLIT_PER_PARTICIPANT",
             "TEXT_CACHE", "THREADS", "LAYOUT_PROBE",
             "PROFILE", "PROFILE_ALLOC", "SOFT_DAMAGE_DEBUG", "GL_DOWNSAMPLED_BLUR",

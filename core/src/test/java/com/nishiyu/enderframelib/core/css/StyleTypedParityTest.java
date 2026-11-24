@@ -32,8 +32,13 @@ class StyleTypedParityTest {
             FlexGridStyle.class, TableStyle.class, RareStyle.class};
 
     private static List<Object> groupsOf(ComputedStyle cs) {
-        return List.of(InheritedStyle.of(cs), BoxGeomStyle.of(cs), VisualStyle.of(cs), FlexGridStyle.of(cs),
-                TableStyle.of(cs), RareStyle.of(cs));
+        StyleReader.Source src = new StyleReader.Source() {
+            @Override public String get(int id) { return cs.get(id); }
+            @Override public float fontSizePx() { return cs.fontSizePx(); }
+            @Override public float rootFontSizePx() { return cs.rootFontSizePx(); }
+        };
+        return List.of(InheritedStyle.of(src), BoxGeomStyle.of(src), VisualStyle.of(src), FlexGridStyle.of(src),
+                TableStyle.of(src), RareStyle.of(src));
     }
 
     /** 1 つの算出スタイルについて、全群・全フィールドを旧読み口と突き合わせる。 */
@@ -67,20 +72,22 @@ class StyleTypedParityTest {
                     }
                     default -> {
                         if (f.getType() == long.class) {
-                            float expected = cs.length(id, PCT, VW, VH); // 宣言が無ければ 0（旧と同じ）
+                            float expected = declared == null ? 0f
+                                    : LengthResolver.compile(declared).resolve(PCT, VW, VH, cs.fontSizePx(), cs.rootFontSizePx());
                             assertEquals(expected, CssLength.resolve((long) actual, exprs, PCT, cs.fontSizePx(), cs.rootFontSizePx(), VW, VH),
                                     0f, where);
                         } else if (f.getType() == float.class) {
-                            float expected = declared != null ? cs.number(id, Float.NaN) : parseOrNaN(raw);
-                            assertEquals(Float.floatToIntBits(expected), Float.floatToIntBits((float) actual), where);
+                            assertEquals(Float.floatToIntBits(parseOrNaN(raw)), Float.floatToIntBits((float) actual), where);
                         } else if (f.getType() == int.class) {
-                            int expected = declared != null ? cs.color(id, 0) : (raw == null ? 0 : ColorParser.parseColor(raw));
+                            int expected = raw == null ? 0 : ColorParser.parseColor(raw);
                             assertEquals(expected, (int) actual, where);
                         } else if (f.getType() == String.class) {
                             assertEquals(declared, actual, where); // 文字列のまま持つ値は宣言が無ければ null
                         } else {
                             @SuppressWarnings({"unchecked", "rawtypes"})
-                            Object expected = cs.keywordOf(id, (Class) f.getType());
+                            Class enumCls = (Class) f.getType();
+                            Object parsed = com.nishiyu.enderframelib.core.css.model.CssKeywords.parse(enumCls, declared);
+                            Object expected = parsed != null ? parsed : PropertyRegistry.initialKeyword(prop, enumCls);
                             assertSame(expected, actual, where);
                         }
                     }
@@ -174,7 +181,7 @@ class StyleTypedParityTest {
     @Test
     void keywordEnumsRoundTripThroughTheRegistryInitials() {
         Style d = Style.DEFAULT;
-        assertSame(CssKeywords.Position.STATIC, d.box.position);
+        assertSame(com.nishiyu.enderframelib.core.css.model.Position.STATIC, d.box.position);
         assertSame(CssKeywords.BoxSizing.CONTENT_BOX, d.box.boxSizing);
         assertFalse(CssLength.isDeclared(d.box.width)); // 宣言の無い長さは UNDECLARED（0 px。読み手が「宣言があるか」を問える）
         assertFalse(CssLength.isDeclared(d.box.maxWidth));

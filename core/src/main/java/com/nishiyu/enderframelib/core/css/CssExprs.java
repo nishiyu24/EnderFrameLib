@@ -22,7 +22,7 @@ public final class CssExprs {
     }
 
     /** {@code calc} 値（{@link CssLength#isCalc}）の式の原文。 */
-    String raw(long calc) {
+    public String raw(long calc) {
         return exprs[com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.payload(calc)].raw();
     }
 

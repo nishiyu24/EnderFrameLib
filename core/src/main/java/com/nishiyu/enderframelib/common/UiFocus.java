@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
@@ -90,7 +89,7 @@ public final class UiFocus {
         if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("inert")) return;
         LayoutBox box = findBox(layout, node);
         // display:none の部分木は箱があっても描かれない。ここから先へは降りない
-        if (box != null && box.style != null && "none".equals(box.style.getOrDefault(CssPropertyIndex.DISPLAY, "block"))) return;
+        if (box != null && box.style != null && box.style.typed().facts.displayNone) return;
         Integer tab = explicitTabIndex(node);
         boolean focusable = !node.attrs.containsKey("disabled") && !ui.interactionState().isInert(node)
                 && (tab != null || isNaturallyFocusable(node));

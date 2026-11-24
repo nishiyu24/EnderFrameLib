@@ -2,9 +2,11 @@ package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.css.model.*;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.RareStyle;
+import com.nishiyu.enderframelib.core.css.Style;
+import com.nishiyu.enderframelib.core.css.VisualStyle;
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
 import com.nishiyu.enderframelib.core.css.model.KeyframeBlock;
 import com.nishiyu.enderframelib.core.css.CssProperty;
@@ -99,15 +101,14 @@ final class BoxAnimation {
 
     /** 箱の算出値の {@code translate} / {@code rotate} / {@code scale} / {@code transform} を宣言順に合成して {@code {tx, ty, sx, sy, rot}} にする。 */
     float[] transformOf(LayoutBox box) {
-        String tr = box.style.get(CssPropertyIndex.TRANSLATE);
-        String rot = box.style.get(CssPropertyIndex.ROTATE);
-        String sc = box.style.get(CssPropertyIndex.SCALE);
-        String tf = box.style.get(CssPropertyIndex.TRANSFORM);
+        Style st = box.style.typed();
+        VisualStyle v = st.visual;
+        String tr = v.translate, rot = v.rotate, sc = v.scale, tf = v.transform;
         if ((tr == null || tr.isEmpty()) && (rot == null || rot.isEmpty())
                 && (sc == null || sc.isEmpty()) && (tf == null || tf.isEmpty())) {
             return IDENTITY_TRS;
         }
-        Transforms.Context ctx = new Transforms.Context(box.w(), box.h(), rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
+        Transforms.Context ctx = new Transforms.Context(box.w(), box.h(), rootW, rootH, st.inherited.fontSize, st.inherited.rootFontSizePx);
         return Transforms.toTrs(Transforms.compose(tr, rot, sc, tf, ctx));
     }
 
@@ -116,7 +117,8 @@ final class BoxAnimation {
      * {@link AnimationSpec} に解決する。
      */
     AnimationSpec parseAnimationDef(ComputedStyle style, float baseW, float baseH, int baseColor, int baseBgColor) {
-        if (!style.containsKey(CssPropertyIndex.ANIMATION) && !style.containsKey(CssPropertyIndex.ANIMATION_NAME)) {
+        RareStyle r = style.typed().rare;
+        if (r.animation == null && r.animationName == null) {
             return AnimationSpec.NONE;
         }
         // 結果はスタイルと（@keyframes・基準の大きさと色）だけで決まるので、スタイルの置き場に覚える。
@@ -214,11 +216,12 @@ final class BoxAnimation {
             hasEnd |= f.pct() >= 100f;
         }
         if (!hasStart || !hasEnd) {
-            Transforms.Context ctx = new Transforms.Context(baseW, baseH, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
-            float[] base = java.util.Arrays.copyOf(Transforms.toTrs(Transforms.compose(style.get(CssPropertyIndex.TRANSLATE), style.get(CssPropertyIndex.ROTATE),
-                    style.get(CssPropertyIndex.SCALE), style.get(CssPropertyIndex.TRANSFORM), ctx)), 6);
+            Style st = style.typed();
+            VisualStyle v = st.visual;
+            Transforms.Context ctx = new Transforms.Context(baseW, baseH, rootW, rootH, st.inherited.fontSize, st.inherited.rootFontSizePx);
+            float[] base = java.util.Arrays.copyOf(Transforms.toTrs(Transforms.compose(v.translate, v.rotate, v.scale, v.transform, ctx)), 6);
             if (base[2] == 0f && base[3] == 0f) { base[2] = 1f; base[3] = 1f; }
-            float baseOpacity = style.number(CssPropertyIndex.OPACITY, 1f);
+            float baseOpacity = Style.num(v.opacity, 1f);
             if (!hasStart) {
                 frames.add(new AnimationSpec.Keyframe(0f, base[0], base[1], base[2], base[3], base[4], base[5], baseOpacity,
                         baseColor, baseBgColor, animatedChannels));
@@ -242,11 +245,8 @@ final class BoxAnimation {
             new java.util.concurrent.ConcurrentHashMap<>();
 
     static TransitionSpec parseTransitionSpec(ComputedStyle style) {
-        String tr = style.get(CssPropertyIndex.TRANSITION);
-        String tp = style.get(CssPropertyIndex.TRANSITION_PROPERTY);
-        String tdur = style.get(CssPropertyIndex.TRANSITION_DURATION);
-        String td = style.get(CssPropertyIndex.TRANSITION_DELAY);
-        String ttf = style.get(CssPropertyIndex.TRANSITION_TIMING_FUNCTION);
+        RareStyle r = style.typed().rare;
+        String tr = r.transition, tp = r.transitionProperty, tdur = r.transitionDuration, td = r.transitionDelay, ttf = r.transitionTimingFunction;
         if (tr == null && tp == null && tdur == null && td == null && ttf == null) return NONE_TRANSITION;
         return resolveTransitionSpec(tr, tp, tdur, td, ttf);
     }
@@ -354,12 +354,12 @@ final class BoxAnimation {
     AnimationSpec textColorAnimation(LayoutBox text, AnimationSpec own) {
         AnimationSpec colorAnim = own.withChannels(AnimationSpec.CH_COLOR);
         if (!colorAnim.isEmpty()) return colorAnim;
-        String inherited = text.style.get(CssPropertyIndex.COLOR);
+        int inherited = text.style.typed().inherited.color;
         for (LayoutBox a = text.parent; a != null && a.style != null; a = a.parent) {
-            if (!Objects.equals(inherited, a.style.get(CssPropertyIndex.COLOR))) break;
-            if (a.style.get(CssPropertyIndex.ANIMATION) != null || a.style.get(CssPropertyIndex.ANIMATION_NAME) != null) {
-                int color = a.style.color(CssPropertyIndex.COLOR, 0xFF000000);
-                AnimationSpec anim = parseAnimationDef(a.style, a.w(), a.h(), color, 0).withChannels(AnimationSpec.CH_COLOR);
+            Style as = a.style.typed();
+            if (as.inherited.color != inherited) break;
+            if (as.rare.animation != null || as.rare.animationName != null) {
+                AnimationSpec anim = parseAnimationDef(a.style, a.w(), a.h(), as.inherited.color, 0).withChannels(AnimationSpec.CH_COLOR);
                 if (!anim.isEmpty()) return anim;
             }
             // 祖先の要素が自分の色を宣言していれば、その上の祖先の色は継承されない
@@ -371,7 +371,7 @@ final class BoxAnimation {
     /** 親と違う色を持っている（= 自分で color を宣言した）か。 */
     static boolean declaresOwnColor(LayoutBox box) {
         return box.parent != null && box.parent.style != null
-                && !Objects.equals(box.style.get(CssPropertyIndex.COLOR), box.parent.style.get(CssPropertyIndex.COLOR));
+                && box.style.typed().inherited.color != box.parent.style.typed().inherited.color;
     }
 
     record TransitionSpec(int durationMs, int delayMs, String easing, String property) {}

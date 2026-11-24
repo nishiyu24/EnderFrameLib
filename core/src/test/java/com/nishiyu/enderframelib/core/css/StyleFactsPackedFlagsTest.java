@@ -88,7 +88,7 @@ class StyleFactsPackedFlagsTest {
         m.put(CssProperty.MARGIN_LEFT, "auto");
         m.put(CssProperty.WIDTH, "auto");
         ComputedStyle s = new ComputedStyle(m, 16f, 16f);
-        assertEquals(0f, s.edgeLength(ComputedStyle.EDGE_MARGIN_L, 500, 800, 600));
-        assertEquals(0f, s.edgeLength(ComputedStyle.DIM_WIDTH, 500, 800, 600));
+        assertEquals(0f, s.typed().boxPx(s.typed().box.marginLeft, 500, 800, 600));
+        assertEquals(0f, s.typed().boxPx(s.typed().box.width, 500, 800, 600));
     }
 }

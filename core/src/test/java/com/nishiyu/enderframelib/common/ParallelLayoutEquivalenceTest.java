@@ -345,7 +345,7 @@ class ParallelLayoutEquivalenceTest {
                         flags.clearStyleDirtyFlag();
                         flags.noteViewportDependence(false, (i & 1) == 0);
                         animator.sample(node, 1000L + i);
-                        animator.observe(node, styleA, (i & 1) == 0 ? styleB : styleA, Map.of(), sheet.keyframes, 1000L + i);
+                        animator.observe(node, styleA, (i & 1) == 0 ? styleB : styleA, com.nishiyu.enderframelib.core.css.Style.DEFAULT, sheet.keyframes, 1000L + i);
                     }
                     return null;
                 });

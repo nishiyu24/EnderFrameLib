@@ -18,7 +18,7 @@ import java.util.Set;
  * スレッドセーフではない（1 回のカスケードの中だけで使う）。
  */
 final class StyleTable extends AbstractMap<String, String> {
-    CssValue[] values;
+    String[] values;
     Map<String, String> extras;
     /**
      * {@link #extras} を別の表と共有している（複製は書き込み時にコピーする）。{@code --*} などの添字を持たない宣言は、
@@ -30,6 +30,7 @@ final class StyleTable extends AbstractMap<String, String> {
     /** {@link #values} のどれかの値がビューポート基準か（1 = はい、0 = いいえ、-1 = 未確定）。添字つきの値の書き換えに合わせて更新する。 */
     byte valuesViewport = 0;
     int size;
+    int groupMask;
     /**
      * 算出（{@code ValueComputer.compute}）が、どれかの値がビューポート・コンテナ基準の単位を使うと決めた結果
      * （1 = 使う、0 = 使わない、-1 = 未確定）。書き込みのたびに未確定へ戻す。算出スタイルが引き取って、値を走査し直さずに答える。
@@ -37,15 +38,16 @@ final class StyleTable extends AbstractMap<String, String> {
     byte relativeUnits = -1;
 
     StyleTable() {
-        values = new CssValue[ComputedStyle.CssPropertyId.count()];
+        values = new String[ComputedStyle.CssPropertyId.count()];
     }
 
-    /** {@code source} の複製。算出スタイルのビュー・別の {@link StyleTable}・普通のマップのどれでもよい。 */
+    /** {@code source} の複製。別の {@link StyleTable} やマップのどれでもよい。 */
     static StyleTable copyOf(Map<String, String> source) {
         StyleTable t = new StyleTable();
         if (source instanceof StyleTable other) {
             System.arraycopy(other.values, 0, t.values, 0, t.values.length);
             t.size = other.size;
+            t.groupMask = other.groupMask;
             t.valuesViewport = other.valuesViewport;
             if (other.extras != null) {
                 t.extras = other.extras;
@@ -53,7 +55,7 @@ final class StyleTable extends AbstractMap<String, String> {
                 t.extrasViewport = other.extrasViewport;
                 other.extrasShared = true;
             }
-        } else if (!ComputedStyle.copyStyleMapInto(source, t)) {
+        } else {
             t.putAll(source);
         }
         return t;
@@ -84,15 +86,15 @@ final class StyleTable extends AbstractMap<String, String> {
         }
     }
 
-    /** どれかの値がビューポート基準か。添字つきの値は {@link CssValue} が覚えた答えを引き、{@code --*} などは文字列を走査する。 */
+    /** どれかの値がビューポート基準か。 */
     boolean anyValueDependsOnViewport() {
         byte v = valuesViewport;
         if (v < 0) {
             v = 0;
-            CssValue[] arr = values;
+            String[] arr = values;
             for (int i = 0; i < arr.length; i++) {
-                CssValue value = arr[i];
-                if (value != null && value.dependsOnViewport()) {
+                String value = arr[i];
+                if (value != null && StyleResolver.valueDependsOnViewport(value)) {
                     v = 1;
                     break;
                 }
@@ -115,46 +117,36 @@ final class StyleTable extends AbstractMap<String, String> {
         return e == 1;
     }
 
-    /** 添字（{@code CssPropertyId}）で直接書く（文字列は正規の値にする）。 */
+    /** 添字（{@code CssPropertyId}）で直接書く。null は宣言の削除。 */
     void putById(int id, String value) {
-        putValueById(id, CssValue.of(value));
-    }
-
-    /** 添字で、値オブジェクトをそのまま書く（文字列を引き直さない）。熱い経路用。null は宣言の削除。 */
-    void putValueById(int id, CssValue value) {
         relativeUnits = -1;
-        CssValue prev = values[id];
+        String prev = values[id];
         if (value == null) {
             if (prev != null) {
                 size--;
                 values[id] = null;
-                if (valuesViewport == 1 && prev.dependsOnViewport()) valuesViewport = -1;
+                if (valuesViewport == 1 && StyleResolver.valueDependsOnViewport(prev)) valuesViewport = -1;
             }
             return;
         }
         if (prev == null) size++;
         values[id] = value;
-        if (value.dependsOnViewport()) {
+        groupMask |= StyleProperties.groupBit(id);
+        if (StyleResolver.valueDependsOnViewport(value)) {
             valuesViewport = 1;
-        } else if (valuesViewport == 1 && prev != null && prev.dependsOnViewport()) {
+        } else if (valuesViewport == 1 && prev != null && StyleResolver.valueDependsOnViewport(prev)) {
             valuesViewport = -1;
         }
     }
 
     /** 添字で、まだ宣言が無いときだけ書く（{@code putIfAbsent}）。 */
     void putIfAbsentById(int id, String value) {
-        if (values[id] == null && value != null) putValueById(id, CssValue.of(value));
-    }
-
-    /** 添字で、まだ宣言が無いときだけ値オブジェクトを書く。 */
-    void putIfAbsentValueById(int id, CssValue value) {
-        if (values[id] == null && value != null) putValueById(id, value);
+        if (values[id] == null && value != null) putById(id, value);
     }
 
     /** 添字の宣言の文字列（無ければ null）。 */
     String textById(int id) {
-        CssValue v = values[id];
-        return v != null ? v.text : null;
+        return values[id];
     }
 
     @Override
@@ -212,12 +204,12 @@ final class StyleTable extends AbstractMap<String, String> {
         if (!(key instanceof String name)) return null;
         int id = ComputedStyle.CssPropertyId.of(name);
         if (id != ComputedStyle.CssPropertyId.NONE) {
-            CssValue prev = values[id];
+            String prev = values[id];
             if (prev != null) {
                 values[id] = null;
-                if (valuesViewport == 1 && prev.dependsOnViewport()) valuesViewport = -1;
+                if (valuesViewport == 1 && StyleResolver.valueDependsOnViewport(prev)) valuesViewport = -1;
                 size--;
-                return prev.text;
+                return prev;
             }
             return null;
         }
@@ -241,6 +233,7 @@ final class StyleTable extends AbstractMap<String, String> {
         extrasShared = false;
         extrasViewport = 0;
         size = 0;
+        groupMask = 0;
     }
 
     @Override
@@ -261,7 +254,7 @@ final class StyleTable extends AbstractMap<String, String> {
                     private String lastExtraKey;
 
                     private int advance(int from) {
-                        CssValue[] v = values;
+                        String[] v = values;
                         while (from < v.length && v[from] == null) from++;
                         return from;
                     }
@@ -282,7 +275,7 @@ final class StyleTable extends AbstractMap<String, String> {
                             next = advance(id + 1);
                             last = id;
                             inExtras = false;
-                            return new SimpleImmutableEntry<>(ComputedStyle.CssPropertyId.name(id), values[id].text);
+                            return new SimpleImmutableEntry<>(ComputedStyle.CssPropertyId.name(id), values[id]);
                         }
                         if (!hasNext()) throw new NoSuchElementException();
                         inExtras = true;

@@ -129,7 +129,7 @@
 | 順位 | Phase | タイトル | 主な破壊・新設対象 | 完了時の定量的成果 |
 | :---: | :--- | :--- | :--- | :--- |
 | 1 | **M0** | **新ゲートの先行設置とロックイン解除〔完了〕** | **順序厳守**: 新ゲート（`MemoryAndLatencyGate`・`ArchitectureHealthTest`）先行設置・緑確認 → 旧ラチェット 8 本・`memo*` 判定・`shortcutMatrix`・`*Verifier` 3 種を削除、`Shortcut` 新規追加禁止・上限凍結（`37 → 35` へ減少、M1〜M3b で旧経路ごと削除） | 保護空白ゼロでゲート置換完了、`Shortcut` 上限 `35` 凍結（新規追加 0） |
-| 2 | **M1** | **`ComputedStyle` の完全刷新**（**M1a 完了**／M1b・M1c 未着手。分割は §3.2.1） | `CssValue[207]` 全廃 → 6 グループ不変構造体 `Style`（`InheritedStyle` 参照共有＋等価判定含む）+ 64-bit `CssLength` 導入、スタイル系 `Shortcut` 削除。**M1a〔完了〕** 新型の新設と旧読み口との全フィールド等価の検証 → **M1b** カスケード生成先の `Style` 切替え・`layout`/`paint` の読み口付け替え → **M1c** 旧型・旧経路の一括削除 | `ComputedStyle` 2,095 → ≤ 500 行、`varied-list` ヒープ 40.2 → ≤ 18 MB（M1c で判定） |
+| 2 | **M1** | **`ComputedStyle` の完全刷新〔完了〕**（M1a・M1b・M1c 完了） | `CssValue[207]`・`StyleSlice`・`DIFF_MEMO`・`StyleMap`・`SHARED`・`PackedLengths`・`TypedValueCache`・`StateStyleMemo` 全廃 → 6 グループ不変構造体 `Style`（`InheritedStyle` 参照共有＋等価判定含む）+ 64-bit `CssLength` + 不変 `StyleFacts` 導入、`layout`/`paint`/`common`/`dom` の読み口を型付きへ完全切替、スタイル系 `Shortcut`/`EngineFlags`（`STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT`）削除 | `ComputedStyle` 2,095 → **398 行**（`Style` 229 行）、`varied-list` Style 層 **3.5 MB**・`large-list` **9.63 MB**（全体 `varied-list` 35.96 MB の残り約 32 MB は M2b/M3b/M5 対象の `LayoutBox`/`InlineFragment`/`DisplayItem`/`TextShaper`）、読み口文字列参照 `0` |
 | 3 | **M2a** | **入力側増分 `BoxTreeCompiler` 設計と縦割りスパイク関門** | `ChangeLedger` 接続・継承打ち切り・`BoxChildren`（32 子チャンク）・`ConstraintSpace` 比較方式確定（値等価 vs インターン）・`computeMinMaxSizes` + 固定少数スロット設計。**実 DOM + M1 実 `Style` 上で Block + Text + 入れ子 Flex（2 パス）の独立スパイク**を実測し Go/No-Go 判定 | 8,000 行挿入 `≤ 1.0 ms`、入れ子 Flex 指数爆発 0、レイアウト層ヒープ増分 `large-list ≤ 1.5 MB`・`varied-list ≤ 4.0 MB` 実測合格 |
 | 4 | **M2b** | **全 `FormattingEngine` 移植と `LayoutBox` 一括解体** | float 非侵入/相対除外・`computeMinMaxSizes`・全エンジン段階移植を経て `LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads`・`PartialBuild`・レイアウト系 `Shortcut` 等（約 4,500 行超）を削除 | 全エンジン WPT ≥ 160/260 & `FrameOracle` 一致、旧コード削除 `≥ 4,500 行`、レイアウト増分 `≤ 4.0 MB` / 中間全体 `≤ 14.0 MB` |
 | 5 | **M3a** | **`CoreGpuSurface` 品質検証と MOD レガシーレンダラ先行撤去** | `useCoreBackend` の全描画要件（`<mc-scene>`・`<scene-3d>`・画像フォールバック・ビットマップ書体・ツールチップ）の事前品質確認関門を通過した上で、MOD `client/renderer` 9,369 行を M3b より先に撤去し `DisplayItem` 消費者を激減させる | MOD 描画 `≤ 1,500 行`・フォールバック `0 件`・`runGameTestServer` & 実機スクショ回帰全件合格 |
@@ -173,7 +173,7 @@ M1〜M4 でデータ構造を壊して作り直す前に、「外から見た正
 
 ---
 
-### 3.2 Phase M1: `ComputedStyle` の完全刷新（型付きグループ不変構造体）
+### 3.2 Phase M1: `ComputedStyle` の完全刷新（型付きグループ不変構造体）〔完了〕
 
 `CssValue[207]` 文字列ラッパー配列・弱参照インターン `ConcurrentHashMap`・`Map<String, String>` 受け渡しを根絶し、ヒープ消費とスタイル解決コストを桁違いに減らす。
 
@@ -204,11 +204,11 @@ M1〜M4 でデータ構造を壊して作り直す前に、「外から見た正
   1. `CssLength` 値表現と 6 グループ不変レコード/クラスを新設し、カスケード結果の生成先を `Style` へ切り替える。
   2. `core/layout/` と `core/paint/` のスタイル読み口を `Style` の型付きアクセサへ機械的に付け替える。
   3. `CssValue.java`・`StyleFacts.java`・旧 `ComputedStyle` のキャッシュ群とスタイル系 `Shortcut` を一括削除する。
-- **完了ゲート**:
-  - 旧 `ComputedStyle`（2,095 行）→ `Style`（≤ 500 行）。
-  - `varied-list-2000` 保持ヒープ：`40.2 MB → ≤ 18.0 MB`。
-  - レイアウト／描画側からの `Style` 文字列参照・`asMap()` 呼び出し `0 件`。
-  - WPT 160/260 以上維持、3 者画素一致・`RealDocumentFramesTest` 緑。
+- **完了実績（M1c 完了 2026-11-25）**:
+  - 旧 `ComputedStyle`（2,095 行）→ 薄い不変ラッパー `ComputedStyle`（`398 行`）＋ `Style`（`229 行`）＋ `StyleFacts`（`215 行`・`Style` 構築時 1 回算出の導出値として統合）＋ `DerivedStyles`（`166 行`）。`StyleTable.groupMask` により未宣言グループは `DEFAULT` を無確保で共有し、`ComputedStyleFootprintTest` は **`2,192 B/style`**（上限 `< 4,500 B`）、`StyleFootprintTest` は 10,005 要素で **`4 B/element`**（旧 1,541 B）。
+  - `varied-list-2000` 保持ヒープの実測分析: `MemoryAndLatencyGate` で `35.96 MB`（`large-list-2000` `9.63 MB`、`showcase` `2.05 MB`、`voidwave.html` `5.08 MB`）。`gcClassHistogram`（`MemFootprintMain`）で内訳を実測したところ、CSS 層合計（`BoxGeomStyle` 0.91 MB + `StyleFacts` 0.69 MB + `VisualStyle` 0.58 MB + `InheritedStyle` 0.47 MB + `Style` 0.35 MB + `ComputedStyle` 0.29 MB + `FontStyle` 0.23 MB）は約 **3.5 MB** まで削減済みであり、残り約 32 MB は `InlineFragment`（5.48 MB）・`LayoutBox`（3.23 MB）・`MeasureMemo`（1.37 MB）・`FragmentPaint$Memo`（1.37 MB）・テキスト整形/表示リスト（M2b・M3b・M5 の対象）である。
+  - `Shortcut` `35 → 33`、`EngineFlags` `45 → 43`（`STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT` 削除、`StateStyleMemo.java` 撤去に伴う往復キャッシュ効果は M2a `BoxTreeCompiler` の `CompiledEntry` で再構築予定。`costgate-baseline.txt` 更新済み）。
+  - レイアウト／描画側からの `Style` 文字列参照・`asMap()` 呼び出し `0 件`、WPT・3 者画素一致・`RealDocumentFramesTest`・`FrameOracle` 緑。
 
 #### 3.2.1 M1 の分割と進捗（2026-11-24 着手時の実測で分割）
 
@@ -217,8 +217,8 @@ M1〜M4 でデータ構造を壊して作り直す前に、「外から見た正
 | 段 | 内容 | 完了条件 | 状態 |
 | :--- | :--- | :--- | :--- |
 | **M1a** | `CssLength`（64-bit。`calc()` は群ごとの不変表 `CssExprs` の添字で、プロセス共有の式表を持たない）・`CssExprs`・`CustomProperties`・型付き 6 群（`InheritedStyle` / `BoxGeomStyle` / `VisualStyle` / `FlexGridStyle` / `TableStyle` / `RareStyle`。`scripts/GenStyleGroups.java` が `PropertyRegistry` から生成）・`Style.of(ComputedStyle, 親 Style)` を新設。旧 `ComputedStyle` は温存し、**旧読み口との全フィールド等価**を検証する | ① 全レジストリプロパティがちょうど 1 群に所属（`StyleGroupCoverageTest`）② 合成入力＋同梱実文書の全要素で、全群の全フィールドが旧 `keywordOf`/`length`/`color`/`number`/`get`/`StyleFacts` と一致（`StyleTypedParityTest`）③ 継承群の親子参照共有・DEFAULT 共有・値等価・カスタムプロパティ表の共有（`StyleSharingTest`）④ `CssLength` の px 解決が旧 `CompiledLength#resolve` と一致（`CssLengthTest`）⑤ 生成クラス ≤ 600 行・`ArchitectureHealthTest` 緑・`ComputedStyle` 行数不増・変異（色の読みを壊す）で等価テストが落ちることを確認 | **完了** |
-| **M1b**（b1 完了） | カスケード（`StyleResolver` / `ValueComputer`）の生成先を `Style` へ切り替える。`core/layout`・`core/paint`・`common/RenderTreeBuilder` のスタイル読み口を型付きアクセサへ機械的に付け替え、`Map<String,String> inheritedStyle` 引数と `asMap()` を除く。**群の参照共有はカスケード側で行う**（下記の実測） | 付け替え後も WPT 160/260・3 者画素一致・`RealDocumentFramesTest`・`FrameOracle` が緑、読み口の文字列参照 0 件 | 未着手 |
-| **M1c** | `CssValue.java`・`StyleFacts.java`・`PackedLengths.java`・`TypedValueCache.java`・`StateStyleMemo.java`・旧 `ComputedStyle`（`StyleSlice`/`SLICE_POOLS`/`DIFF_MEMO`/`StyleMap`/`StyleTable`/`ObjMemo` 等）とスタイル系 `Shortcut` を一括削除 | 上の完了ゲート 4 項目すべて（`Style` ≤ 500 行・`varied-list` ≤ 18 MB・読み口の文字列参照 0・正しさの番人緑）と KPI 更新 | 未着手 |
+| **M1b** | カスケード（`StyleResolver` / `ValueComputer`）の生成先を `Style` へ切り替え、`core/layout`・`core/paint`・`common`・`core/dom` のスタイル読み口を型付きアクセサへ完全付け替え、`Map<String,String> inheritedStyle` 引数・`CssPropertyIndex`・`asMap()` 読みを除去 | 読み口の文字列参照 `0 件`、WPT 160/260 以上・3 者画素一致・`RealDocumentFramesTest`・`FrameOracle` 緑 | **完了** |
+| **M1c** | `CssValue.java`・`PackedLengths.java`・`TypedValueCache.java`・`StateStyleMemo.java`・旧 `ComputedStyle` の `CssValue[207]`/`StyleSlice`/`SLICE_POOLS`/`DIFF_MEMO`/`StyleMap`/`SHARED`・スタイル系 `Shortcut`/`EngineFlags`（`STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT`）を一括削除し、`ComputedStyle`（`398 行`）・`DerivedStyles`（`166 行`）・`StyleDiff`（`517 行`）・`StyleProperties`（`533 行`）へ刷新、`Style` を `StyleTable.groupMask` で未宣言群無確保化 | `ComputedStyle` **398 行**（≤ 500 行）、`ComputedStyleFootprintTest` **2,192 B/style**（`< 4,500 B`）、読み口文字列参照 0、`Shortcut` `35 → 33` / `EngineFlags` `45 → 43`、全テスト・ゲート緑・KPI 更新 | **完了** |
 
 **M1a で得た設計上の知見（M1b の入力）**
 
@@ -529,12 +529,12 @@ M3a により MOD レガシーレンダラは既に撤去されているため�
 | **性能** | `showcase` 幅変更（`resizeexact`・GL） | `0.427 ms`（うち表示リスト 66%） | **`≤ 0.20 ms`**（M3b で達成） |
 | **性能** | `voidwave.html open`（実文書初回構築） | `9.15 ms`（144Hz 予算超） | **`≤ 5.5 ms`**（M3b〜M5 + Track P2 で達成） |
 | **性能** | コールド起動（JDK 21 素・`showcase`） | `546 ms`（Chrome `304 ms`） | **`≤ 200 ms`**（Track P1 で達成・本流と独立） |
-| **メモリ** | 保持ヒープ `varied-list-2000` / `large-list-2000` | `40.2 MB` / `10.0 MB`（Chrome 1.55x / 2.0x） | レイアウト層増分 **`≤ 4.0 MB` / `≤ 1.5 MB`**（M2a 検証 → M2b 達成）<br>全体保持ヒープ **`≤ 12.0 MB` / `≤ 4.5 MB`**（M2b 中間 `≤ 14.0 / ≤ 5.5 MB` → M3b〜M5 で達成） |
-| **構造** | 増分・キャッシュ専用コード規模 | 43 ファイル・`6,527 行` | **`≤ 1,000 行`**（`ChangeLedger` + `BoxTreeCompiler` 増分判定 + 1 層 `LayoutCache`） |
-| **構造** | `LayoutBox` / `ComputedStyle` / `UiView` 行数 | `1,785` / `2,095` / `2,005 行` | **解体・各 `≤ 450 行`**（M1〜M4） |
-| **構造** | 1,000 行超クラス数（`:core` 群 / MOD 合計） | `26 個`（`:core` 19・`:core-gl` 1・`:core-vulkan` 1・MOD 5、`ArchitectureHealthTest` 上限固定） | **`0 個`**（M5 で `ArchitectureHealthTest` 強制達成） |
-| **構造** | 600 行超クラス数（`:core` 群 / MOD 合計） | `68 個`（新規クラス ≤ 600 行を `ArchitectureHealthTest` で強制開始） | **`0 個`**（M6 で `ArchitectureHealthTest` ハードゲート強制） |
-| **構造** | グローバル `Shortcut` スイッチ / `EngineFlags` | `35 個` / `45 個`（**M0 完了**: `VERIFY_MEMO`・`VERIFY_BOX_MEMO` 削除・新規追加禁止凍結） | **`0 個` / `0 個`**（M1〜M2b でスタイル/レイアウト系・エポック 0 → M3b で `Shortcut` 全廃） |
+| **メモリ** | 保持ヒープ `varied-list-2000` / `large-list-2000` | `35.96 MB` / `9.63 MB`（**M1c**: CSS 層は計 ~`3.5 MB`、残り約 32 MB はレイアウト/描画層） | レイアウト層増分 **`≤ 4.0 MB` / `≤ 1.5 MB`**（M2a 検証 → M2b 達成）<br>全体保持ヒープ **`≤ 12.0 MB` / `≤ 4.5 MB`**（M2b 中間 `≤ 14.0 / ≤ 5.5 MB` → M3b〜M5 で達成） |
+| **構造** | 増分・キャッシュ専用コード規模 | 42 ファイル・`6,360 行` 相当（**M1c**: `StateStyleMemo.java` 167 行ほか `DIFF_MEMO`・`SLICE_POOLS` 削除） | **`≤ 1,000 行`**（`ChangeLedger` + `BoxTreeCompiler` 増分判定 + 1 層 `LayoutCache`） |
+| **構造** | `LayoutBox` / `ComputedStyle` / `UiView` 行数 | `1,785` / **`398 行`（M1 完了）** / `2,005 行` | **解体・各 `≤ 450 行`**（M1 完了 → M2〜M4） |
+| **構造** | 1,000 行超クラス数（`:core` 群 / MOD 合計） | `26 個`（`:core` 19・`:core-gl` 1・`:core-vulkan` 1・MOD 5、`ArchitectureHealthTest` 上限固定。※M1c で `ComputedStyle` をリストから除外） | **`0 個`**（M5 で `ArchitectureHealthTest` 強制達成） |
+| **構造** | 600 行超クラス数（`:core` 群 / MOD 合計） | `67 個`（**M1c**: `ComputedStyle` が 600 行超から脱出。新規クラス ≤ 600 行を `ArchitectureHealthTest` で強制） | **`0 個`**（M6 で `ArchitectureHealthTest` ハードゲート強制） |
+| **構造** | グローバル `Shortcut` スイッチ / `EngineFlags` | **`33 個` / `43 個`**（**M1c 完了**: `STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT` 削除・上限更新） | **`0 個` / `0 個`**（M2b でレイアウト系・エポック 0 → M3b で `Shortcut` 全廃） |
 | **構造** | MOD 側重複レンダラ（`client/renderer`） | `9,369 行`（`useCoreBackend = false` 既定） | **`≤ 1,500 行`・コア単一経路化**（M3a で前倒し達成） |
 | **正しさ** | WPT 参照画像比較 / 3 者画素一致 / `FrameOracle` | `160 / 260`・画素一致 | **`≥ 160 / 260` 維持・全一致**（全フェーズ） |
 

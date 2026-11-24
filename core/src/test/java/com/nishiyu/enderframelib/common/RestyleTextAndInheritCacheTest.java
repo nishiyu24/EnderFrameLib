@@ -47,7 +47,7 @@ public class RestyleTextAndInheritCacheTest {
         // 親の非継承プロパティ変更が child の background-color に届く
         parent.setAttribute("style", "background-color:blue");
         view.ui().flushInvalidation();
-        assertEquals("blue", state.get(child).computedStyle.get("background-color"));
+        assertEquals(0xFF0000FF, com.nishiyu.enderframelib.core.css.ColorParser.parseColor(state.get(child).computedStyle.get("background-color")));
 
         // inherit を外したら false へ戻る
         child.setAttribute("style", "background-color:green");
@@ -56,7 +56,7 @@ public class RestyleTextAndInheritCacheTest {
         assertEquals(child.attrVersion(), childFlags.inheritsAttrVersion);
         parent.setAttribute("style", "background-color:yellow");
         view.ui().flushInvalidation();
-        assertEquals("green", state.get(child).computedStyle.get("background-color"));
+        assertEquals(0xFF008000, com.nishiyu.enderframelib.core.css.ColorParser.parseColor(state.get(child).computedStyle.get("background-color")));
     }
 
     @Test

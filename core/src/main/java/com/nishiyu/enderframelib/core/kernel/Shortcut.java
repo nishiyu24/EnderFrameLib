@@ -22,16 +22,8 @@ public enum Shortcut {
     /** 切り分け用: {@code -Denderframe.layout.noresizeskip=true} で、幅変更でも毎回スタイルと箱の木を組み直す。 （以前の {@code RenderPipeline.RESIZE_SKIP_REBUILD}） */
     RESIZE_SKIP_REBUILD(EngineFlags.RESIZE_SKIP_REBUILD),
 
-    /** 切り分け用: false ならテキストの節も要素と同じ経路（カスケード＋算出）で解く（結果は同じになるはず）。 （以前の {@code RenderPipeline.TEXT_STYLE_FROM_PARENT}） */
-    TEXT_STYLE_FROM_PARENT(EngineFlags.TEXT_STYLE_FROM_PARENT),
-
-    /** 切り分け用: false なら文字の局所パッチでも変更印を使わない。 （以前の {@code UiView.changeStampsEnabled}） */
-
     /** スクロールだけの更新で箱の位置の決め直しを後回しにするか（切り分け用。見た目は変わらない）。 （以前の {@code UiView.deferScrollLayout}） */
     DEFER_SCROLL_LAYOUT(true),
-
-    /** 切り分け用: false なら算出スタイルを共有しない（要素ごとに別のインスタンス）。 （以前の {@code ComputedStyle.SHARE_ENABLED}） */
-    STYLE_SHARE(EngineFlags.STYLE_SHARE),
 
     /** {@link #containsFloats} の結果を箱ごとにメモするか（既定は有効）。切り分け用: {@code -Denderframe.layout.nofloatmemo=true}。 無効にすると従来どおり毎回子孫を走査する（結果は同じ）。 （以前の {@code BlockLayoutEngine.floatMemoEnabled}） */
     FLOAT_MEMO(EngineFlags.FLOAT_MEMO),

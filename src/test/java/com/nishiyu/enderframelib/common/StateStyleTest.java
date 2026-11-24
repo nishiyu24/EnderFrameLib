@@ -177,20 +177,20 @@ public class StateStyleTest {
         LayoutBox btn = findById(root, "btn");
         LayoutBox det = findById(root, "det");
 
-        assertEquals(0.4f, cb.style.number(CssProperty.OPACITY, 1f), 1e-4f);
+        assertEquals(0.4f, cb.style.typed().visual.opacity, 1e-4f);
 
         state.setChecked(doc.root.getElementById("cb"), true);
         state.setDisabled(doc.root.getElementById("btn"), true);
         state.setOpen(doc.root.getElementById("det"), true);
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
 
-        assertEquals(1.0f, cb.style.number(CssProperty.OPACITY, 1f), 1e-4f);
-        assertEquals(0.25f, btn.style.number(CssProperty.OPACITY, 1f), 1e-4f);
+        assertEquals(1.0f, cb.style.typed().visual.opacity, 1e-4f);
+        assertEquals(0.25f, btn.style.typed().visual.opacity, 1e-4f);
         assertEquals("#333333", det.style.get(CssProperty.BACKGROUND_COLOR));
 
         state.setIndeterminate(doc.root.getElementById("cb"), true);
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
-        assertEquals(0.7f, cb.style.number(CssProperty.OPACITY, 1f), 1e-4f);
+        assertEquals(0.7f, cb.style.typed().visual.opacity, 1e-4f);
     }
 
     // =========================================================================

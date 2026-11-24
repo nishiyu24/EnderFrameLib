@@ -5,33 +5,33 @@ package com.nishiyu.enderframelib.core.css;
  * 値は構築時に 1 回だけ解いた型付きのフィールドで、文字列を読み直さない。{@link #equals} は全フィールドの値等価。
  */
 public final class FlexGridStyle {
-    private static final int ID_flexDirection = ComputedStyle.idOf("flex-direction");
-    private static final int ID_flexWrap = ComputedStyle.idOf("flex-wrap");
-    private static final int ID_flexGrow = ComputedStyle.idOf("flex-grow");
-    private static final int ID_flexShrink = ComputedStyle.idOf("flex-shrink");
-    private static final int ID_flexBasis = ComputedStyle.idOf("flex-basis");
-    private static final int ID_order = ComputedStyle.idOf("order");
-    private static final int ID_justifyContent = ComputedStyle.idOf("justify-content");
-    private static final int ID_alignContent = ComputedStyle.idOf("align-content");
-    private static final int ID_justifyItems = ComputedStyle.idOf("justify-items");
-    private static final int ID_alignItems = ComputedStyle.idOf("align-items");
-    private static final int ID_justifySelf = ComputedStyle.idOf("justify-self");
-    private static final int ID_alignSelf = ComputedStyle.idOf("align-self");
-    private static final int ID_rowGap = ComputedStyle.idOf("row-gap");
-    private static final int ID_columnGap = ComputedStyle.idOf("column-gap");
-    private static final int ID_gridTemplateColumns = ComputedStyle.idOf("grid-template-columns");
-    private static final int ID_gridTemplateRows = ComputedStyle.idOf("grid-template-rows");
-    private static final int ID_gridTemplateAreas = ComputedStyle.idOf("grid-template-areas");
-    private static final int ID_gridAutoColumns = ComputedStyle.idOf("grid-auto-columns");
-    private static final int ID_gridAutoRows = ComputedStyle.idOf("grid-auto-rows");
-    private static final int ID_gridAutoFlow = ComputedStyle.idOf("grid-auto-flow");
-    private static final int ID_gridColumnStart = ComputedStyle.idOf("grid-column-start");
-    private static final int ID_gridColumnEnd = ComputedStyle.idOf("grid-column-end");
-    private static final int ID_gridRowStart = ComputedStyle.idOf("grid-row-start");
-    private static final int ID_gridRowEnd = ComputedStyle.idOf("grid-row-end");
-    private static final int ID_gridColumn = ComputedStyle.idOf("grid-column");
-    private static final int ID_gridRow = ComputedStyle.idOf("grid-row");
-    private static final int ID_gridArea = ComputedStyle.idOf("grid-area");
+    static final int ID_flexDirection = ComputedStyle.idOf("flex-direction");
+    static final int ID_flexWrap = ComputedStyle.idOf("flex-wrap");
+    static final int ID_flexGrow = ComputedStyle.idOf("flex-grow");
+    static final int ID_flexShrink = ComputedStyle.idOf("flex-shrink");
+    static final int ID_flexBasis = ComputedStyle.idOf("flex-basis");
+    static final int ID_order = ComputedStyle.idOf("order");
+    static final int ID_justifyContent = ComputedStyle.idOf("justify-content");
+    static final int ID_alignContent = ComputedStyle.idOf("align-content");
+    static final int ID_justifyItems = ComputedStyle.idOf("justify-items");
+    static final int ID_alignItems = ComputedStyle.idOf("align-items");
+    static final int ID_justifySelf = ComputedStyle.idOf("justify-self");
+    static final int ID_alignSelf = ComputedStyle.idOf("align-self");
+    static final int ID_rowGap = ComputedStyle.idOf("row-gap");
+    static final int ID_columnGap = ComputedStyle.idOf("column-gap");
+    static final int ID_gridTemplateColumns = ComputedStyle.idOf("grid-template-columns");
+    static final int ID_gridTemplateRows = ComputedStyle.idOf("grid-template-rows");
+    static final int ID_gridTemplateAreas = ComputedStyle.idOf("grid-template-areas");
+    static final int ID_gridAutoColumns = ComputedStyle.idOf("grid-auto-columns");
+    static final int ID_gridAutoRows = ComputedStyle.idOf("grid-auto-rows");
+    static final int ID_gridAutoFlow = ComputedStyle.idOf("grid-auto-flow");
+    static final int ID_gridColumnStart = ComputedStyle.idOf("grid-column-start");
+    static final int ID_gridColumnEnd = ComputedStyle.idOf("grid-column-end");
+    static final int ID_gridRowStart = ComputedStyle.idOf("grid-row-start");
+    static final int ID_gridRowEnd = ComputedStyle.idOf("grid-row-end");
+    static final int ID_gridColumn = ComputedStyle.idOf("grid-column");
+    static final int ID_gridRow = ComputedStyle.idOf("grid-row");
+    static final int ID_gridArea = ComputedStyle.idOf("grid-area");
 
     /** 宣言が 1 つも無いときの共有インスタンス（初期値だけ）。ID_* の初期化より後に置く。 */
     public static final FlexGridStyle DEFAULT = new FlexGridStyle(null);
@@ -50,8 +50,12 @@ public final class FlexGridStyle {
     public final long flexBasis;
     /** {@code order}。 */
     public final float order;
+    /** {@code justify-content} に {@code safe} 修飾があるか。 */
+    public final boolean justifyContentSafe;
     /** {@code justify-content}。 */
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment justifyContent;
+    /** {@code align-content} に {@code safe} 修飾があるか。 */
+    public final boolean alignContentSafe;
     /** {@code align-content}。 */
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment alignContent;
     /** {@code justify-items}。 */
@@ -93,7 +97,7 @@ public final class FlexGridStyle {
     /** {@code grid-area}。 */
     public final String gridArea;
 
-    private FlexGridStyle(ComputedStyle cs) {
+    private FlexGridStyle(StyleReader.Source cs) {
         CssExprs.Builder ex = new CssExprs.Builder();
         this.flexDirection = StyleReader.keyword(cs, ID_flexDirection, com.nishiyu.enderframelib.core.css.model.CssKeywords.FlexDirection.class);
         this.flexWrap = StyleReader.keyword(cs, ID_flexWrap, com.nishiyu.enderframelib.core.css.model.CssKeywords.FlexWrap.class);
@@ -101,7 +105,9 @@ public final class FlexGridStyle {
         this.flexShrink = StyleReader.number(cs, ID_flexShrink);
         this.flexBasis = StyleReader.length(cs, ID_flexBasis, ex);
         this.order = StyleReader.number(cs, ID_order);
+        this.justifyContentSafe = StyleReader.isSafeKeyword(cs, ID_justifyContent);
         this.justifyContent = StyleReader.keyword(cs, ID_justifyContent, com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment.class);
+        this.alignContentSafe = StyleReader.isSafeKeyword(cs, ID_alignContent);
         this.alignContent = StyleReader.keyword(cs, ID_alignContent, com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment.class);
         this.justifyItems = StyleReader.keyword(cs, ID_justifyItems, com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment.class);
         this.alignItems = StyleReader.keyword(cs, ID_alignItems, com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment.class);
@@ -125,8 +131,8 @@ public final class FlexGridStyle {
         this.exprs = ex.build();
     }
 
-    /** 算出スタイルから、この群の値を取り出す。 */
-    public static FlexGridStyle of(ComputedStyle cs) {
+    /** 宣言入力から、この群の値を取り出す。 */
+    public static FlexGridStyle of(StyleReader.Source cs) {
         return new FlexGridStyle(cs);
     }
 
@@ -142,7 +148,9 @@ public final class FlexGridStyle {
                 && flexBasis == o.flexBasis
                 && Float.floatToIntBits(order) == Float.floatToIntBits(o.order)
                 && justifyContent == o.justifyContent
+                && justifyContentSafe == o.justifyContentSafe
                 && alignContent == o.alignContent
+                && alignContentSafe == o.alignContentSafe
                 && justifyItems == o.justifyItems
                 && alignItems == o.alignItems
                 && justifySelf == o.justifySelf

@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.layout.FenwickVirtualList;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
@@ -299,7 +298,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             boolean isBorderBox = ax.isBorderBox();
             return Math.max(0, isBorderBox ? resolvedH - box.verticalDecoration() : resolvedH);
         }
-        if (box.isAbsolute && BoxMeasurer.hasBothInsets(ax, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)) {
+        if (box.isAbsolute && BoxMeasurer.hasVerticalInsets(ax)) {
             float insets = ax.typed().px(ax.typed().box.top, ax.typed().box.exprs, parentH, rootW, rootH)
                     + ax.typed().px(ax.typed().box.bottom, ax.typed().box.exprs, parentH, rootW, rootH);
             return Math.max(0, parentH - insets - box.mT - box.mB - box.verticalDecoration());
@@ -616,10 +615,6 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** float かどうか。float はブロックフローの子のときだけ効く（flex / grid アイテムでは無視される）。 */
-    private static final int ID_DIRECTION = CssPropertyIndex.DIRECTION;
-    static final int ID_TEXT_INDENT = CssPropertyIndex.TEXT_INDENT;
-    private static final int ID_HEIGHT = CssPropertyIndex.HEIGHT;
-
     public static boolean isFloating(LayoutBox box) {
         if (box.isAbsolute || box.parent == null || box.node.nodeType == NodeType.TEXT) return false;
         if (box.style.typed().box.floatValue == CssKeywords.FloatSide.NONE) return false;
@@ -1047,7 +1042,7 @@ public class BlockLayoutEngine extends LayoutEngine {
      * チェックボックスだけの行が Chrome より 2.5px 高かった。
      */
     static float atomicBaseline(LayoutBox box) {
-        if (StyleResolver.isNativeToggle(box.node, box.style.asMap()) || isRangeInput(box)) return box.h;
+        if (StyleResolver.isNativeToggle(box.node, box.style.typed()) || isRangeInput(box)) return box.h;
         Float b = null;
         if (box.display.inner() == Inner.FLOW_ROOT && !box.isScrollContainer()) {
             b = lastBaseline(box);

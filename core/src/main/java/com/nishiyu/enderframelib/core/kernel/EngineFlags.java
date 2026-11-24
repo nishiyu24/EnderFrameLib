@@ -13,9 +13,6 @@ public final class EngineFlags {
 
     // ---- 近道（既定オン。キーを立てると切る）。:core:shortcutMatrix が 1 つずつ・2 つずつ切って、結果が変わらないことを確かめる ----
 
-    /** {@code enderframe.css.noshare}: ComputedStyle.SHARE_ENABLED（算出スタイルの共有）（使う所: {@code ComputedStyle}） */
-    public static final boolean STYLE_SHARE = !Boolean.getBoolean("enderframe.css.noshare");
-
     /** {@code enderframe.layout.noblockpercentkey}: LayoutBox.blockPercentFreeEnabled（使う所: {@code LayoutBox}） */
     public static final boolean BLOCK_PERCENT_FREE = !Boolean.getBoolean("enderframe.layout.noblockpercentkey");
 
@@ -95,9 +92,6 @@ public final class EngineFlags {
     public static final boolean SOFT_TILED = !Boolean.getBoolean("enderframe.soft.notiled");
 
     // ---- 従来の挙動へ戻す切り替え（結果が変わる） ----
-
-    /** {@code enderframe.css.textfullcascade}: RenderPipeline.TEXT_STYLE_FROM_PARENT を切り、文字の節にもカスケードを全部かける（使う所: {@code RenderPipeline}） */
-    public static final boolean TEXT_STYLE_FROM_PARENT = !Boolean.getBoolean("enderframe.css.textfullcascade");
 
     /** {@code enderframe.parser.dropnewlinews}: HtmlParser の要素の間の改行入りの空白を捨てる（A11 第 4 段より前の挙動）（使う所: {@code HtmlParser}） */
     public static final boolean KEEP_NEWLINE_WHITESPACE = !Boolean.getBoolean("enderframe.parser.dropnewlinews");

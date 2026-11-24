@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
@@ -144,16 +143,6 @@ public record LayoutContext(
     public void materializeAutoBox(LayoutBox box) {
         if (autoVisibility != null) autoVisibility.materialize(box);
     }
-
-    // テキストの測定ごとに引くプロパティは、名前ではなく添字で引く
-    private static final int ID_FONT_FAMILY = CssPropertyIndex.FONT_FAMILY;
-    private static final int ID_FONT_STYLE = CssPropertyIndex.FONT_STYLE;
-    private static final int ID_LETTER_SPACING = CssPropertyIndex.LETTER_SPACING;
-    private static final int ID_FONT_KERNING = CssPropertyIndex.FONT_KERNING;
-    private static final int ID_OVERFLOW_WRAP = CssPropertyIndex.OVERFLOW_WRAP;
-    private static final int ID_WHITE_SPACE = CssPropertyIndex.WHITE_SPACE;
-    private static final int ID_WORD_BREAK = CssPropertyIndex.WORD_BREAK;
-    private static final int ID_TEXT_OVERFLOW = CssPropertyIndex.TEXT_OVERFLOW;
 
     /** 算出スタイルの {@code font-family} に対応する書体。 */
     public FontFace faceFor(ComputedStyle style) {

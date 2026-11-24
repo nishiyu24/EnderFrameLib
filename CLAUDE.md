@@ -17,13 +17,10 @@
 - **時間の主張は交互 A/B だけ**: 絶対値はセッションで ±40% ずれる。旧版の worktree と現在を交互に 3 回ずつ・中央値で比べる（`powershell -File scripts/ab-gate.ps1`）、または `:core:memoryAndLatencyGate` の交互 A/B・ヒープ実測を使う。内部カウンタ（`memo*`）の固定で性能を主張しない。
 - **時刻は注入**: コアは `System.nanoTime`/`currentTimeMillis` を読まない（`core/kernel/Clock.java` だけ）。テストは `Clock.Manual`（`StandaloneView.clock(...)`・`ResizeSettle.freezeClock`）を使い、実時間を `sleep` で待たない。
 
-### 移行状態（Phase M0 完了）
+### 移行状態（Phase M0・M1 完了、次期 M2a）
 
-M0 は完了済み。旧ラチェット 8 本・`*Verifier` 3 種・`VERIFY_MEMO` / `VERIFY_BOX_MEMO`・`:core:shortcutMatrix`・`costGate` の `memo*` 判定は撤去され、代わりに **`ArchitectureHealthTest`**（1 クラス行数上限・mutable static 上限・SCC・`:core` 純度・既存 `Shortcut` / `EngineFlags` 上限凍結〔新規追加禁止・単調減少のみ〕）と **`:core:memoryAndLatencyGate`**（保持ヒープ MB と交互 A/B 遅延 ms）が稼働している。
-
-### Phase M1 の進行（M1a 完了／M1b・M1c 未着手。分割と設計要件は計画書 §3.2.1）
-
-M1a で型付きスタイル（`core/css/` の `Style`・`CssLength`・6 群）を**旧 `ComputedStyle` と併存で新設**し、旧読み口との全フィールド等価を検証済み。群のクラス（`InheritedStyle` ほか 5 つ）は `scripts/GenStyleGroups.java` の**生成物なので手で直さない**（`PropertyRegistry` を変えたら再実行。`StyleGroupCoverageTest` が足し忘れを検出）。M1b の最重要要件は「カスケードが一致規則集合の `==` をキーに `Style` を 1 層メモ化して返す」こと（群を要素ごとに作ると旧表現よりヒープが大きい）。旧型の削除は M1c。
+- **M0 完了**: 旧ラチェット 8 本・`*Verifier` 3 種・`VERIFY_MEMO` / `VERIFY_BOX_MEMO`・`:core:shortcutMatrix`・`costGate` の `memo*` 判定を撤去し、**`ArchitectureHealthTest`** と **`:core:memoryAndLatencyGate`** が稼働。
+- **M1 完了（M1a + M1b + M1c）**: `core/css/` を型付き 6 群不変構造体 `Style`（`CssLength` 64-bit・`CssExprs`・`CustomProperties`・`StyleFacts`）＋薄いラッパー `ComputedStyle`（`2,095 → 398 行`）へ移行し、`CssValue.java`・`PackedLengths.java`・`TypedValueCache.java`・`StateStyleMemo.java`・`StyleSlice`/`DIFF_MEMO`/`StyleMap`/`SHARED`・スタイル系 `Shortcut`/`EngineFlags`（`STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT`、上限 `35 → 33` / `45 → 43`）を削除。群クラス（`InheritedStyle` ほか 5 つ・`StyleProperties`・`StyleDiff`）は `scripts/GenStyleGroups.java` の**生成物なので手で直さない**（`PropertyRegistry` を変えたら再実行。`StyleGroupCoverageTest` が足し忘れを検出）。次は **M2a（§3.3）**。
 
 ## 検証の手順
 

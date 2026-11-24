@@ -44,18 +44,27 @@ final class ValueComputer {
      * @param containerH     同じく高さ
      * @param rootLineHeight ルート要素の行の高さ（px、{@code rlh} の基準）。分からなければ NaN（{@code normal} の高さ）
      */
-    record Context(Map<String, String> parent, float parentFontSize, float rootFontSize,
+    record Context(Style parent, float parentFontSize, float rootFontSize,
                    int viewportW, int viewportH, float containerW, float containerH, float rootLineHeight) {
+
+        Context(Map<String, String> parent, float parentFontSize, float rootFontSize,
+                int viewportW, int viewportH, float containerW, float containerH, float rootLineHeight) {
+            this(Style.ofMap(parent), parentFontSize, rootFontSize, viewportW, viewportH, containerW, containerH, rootLineHeight);
+        }
 
         /** コンテナとルートの行の高さを知らない文脈。 */
         Context(Map<String, String> parent, float parentFontSize, float rootFontSize, int viewportW, int viewportH) {
+            this(Style.ofMap(parent), parentFontSize, rootFontSize, viewportW, viewportH, Float.NaN, Float.NaN, Float.NaN);
+        }
+
+        Context(Style parent, float parentFontSize, float rootFontSize, int viewportW, int viewportH) {
             this(parent, parentFontSize, rootFontSize, viewportW, viewportH, Float.NaN, Float.NaN, Float.NaN);
         }
 
         /** ルートの行の高さを知らない文脈。 */
         Context(Map<String, String> parent, float parentFontSize, float rootFontSize, int viewportW, int viewportH,
                 float containerW, float containerH) {
-            this(parent, parentFontSize, rootFontSize, viewportW, viewportH, containerW, containerH, Float.NaN);
+            this(Style.ofMap(parent), parentFontSize, rootFontSize, viewportW, viewportH, containerW, containerH, Float.NaN);
         }
 
         /** {@code rlh} の基準。ルートの行の高さが分からなければ、ルートの {@code normal}。 */
@@ -106,7 +115,7 @@ final class ValueComputer {
 
     private static void computeTable(StyleTable style, Context ctx) {
         resolveCssWideKeywords(style, ctx);
-        CssValue[] v = style.values;
+        String[] v = style.values;
 
         String fontSize = style.textById(CssPropertyIndex.FONT_SIZE);
         float ownFontSize = ctx.parentFontSize();
@@ -119,7 +128,7 @@ final class ValueComputer {
             putInheritedOrInitial(style, CssPropertyIndex.COLOR, ctx);
         }
         String color = style.textById(CssPropertyIndex.COLOR);
-        if (color == null) color = ComputedStyle.parentValue(ctx.parent(), CssPropertyIndex.COLOR);
+        if (color == null && ctx.parent() != null) color = ctx.parent().cssProperty(CssProperty.COLOR);
         if (color == null) color = ComputedStyle.initialOf(CssPropertyIndex.COLOR);
 
         Metrics metrics = unitMetrics(style, ctx, ownFontSize);
@@ -130,15 +139,14 @@ final class ValueComputer {
         int[] candidates = new int[16];
         int candidateCount = 0;
         for (int id = 0; id < v.length; id++) {
-            CssValue cv = v[id];
-            if (cv == null || id == CssPropertyIndex.FONT_SIZE) continue;
-            String done = finishValue(cv, id == CssPropertyIndex.LINE_HEIGHT, id == CssPropertyIndex.COLOR, OPAQUE_BY_ID[id],
+            String raw = v[id];
+            if (raw == null || id == CssPropertyIndex.FONT_SIZE) continue;
+            String done = finishValue(raw, id == CssPropertyIndex.LINE_HEIGHT, id == CssPropertyIndex.COLOR, OPAQUE_BY_ID[id],
                     ownFontSize, metrics, color);
-            if (done != cv.text) {
-                cv = CssValue.of(done); // 書き換わった値だけ正規の値にする（同じ文字列なら元の値のまま）
-                v[id] = cv;
+            if (!done.equals(raw)) {
+                v[id] = done;
             }
-            if (cv.mayContainDimension()) {
+            if (mayContainDimension(done)) {
                 if (candidateCount < candidates.length) candidates[candidateCount] = id;
                 candidateCount++;
             }
@@ -150,7 +158,7 @@ final class ValueComputer {
                 if (key.startsWith("--")) continue;
                 String value = style.extras.get(key);
                 if (value == null) continue;
-                String done = finishValue(CssValue.of(value), CssProperty.LINE_HEIGHT.equals(key), CssProperty.COLOR.equals(key),
+                String done = finishValue(value, CssProperty.LINE_HEIGHT.equals(key), CssProperty.COLOR.equals(key),
                         OPAQUE_PROPERTIES.contains(key), ownFontSize, metrics, color);
                 style.put(key, done);
                 if (!relative && mayContainDimension(done) && RelativeUnitScan.scan(done)) relative = true;
@@ -172,12 +180,12 @@ final class ValueComputer {
             if (candidateCount > candidates.length) {
                 // 候補が多いときは最終の値を全部確かめる
                 for (int id = 0; id < v.length && !relative; id++) {
-                    if (v[id] != null && v[id].usesRelativeUnit()) relative = true;
+                    if (v[id] != null && mayContainDimension(v[id]) && RelativeUnitScan.scan(v[id])) relative = true;
                 }
             } else {
                 for (int k = 0; k < candidateCount && !relative; k++) {
-                    CssValue finalValue = v[candidates[k]];
-                    if (finalValue != null && finalValue.usesRelativeUnit()) relative = true;
+                    String finalValue = v[candidates[k]];
+                    if (finalValue != null && mayContainDimension(finalValue) && RelativeUnitScan.scan(finalValue)) relative = true;
                 }
             }
         }
@@ -185,12 +193,10 @@ final class ValueComputer {
     }
 
     /** 1 つの宣言の算出値: {@code line-height} の %・単位の px 化・{@code currentcolor} の置き換え。 */
-    private static String finishValue(CssValue cv, boolean lineHeight, boolean isColor, boolean opaque,
+    private static String finishValue(String value, boolean lineHeight, boolean isColor, boolean opaque,
                                       float fontPx, Metrics metrics, String currentColor) {
-        String value = cv.text;
-        // 値ごとに覚えた「寸法トークンを持ち得るか」「currentcolor を含むか」で、字句解析・走査を丸ごと省く
-        boolean dimension = cv.mayContainDimension();
-        boolean currentColorMentioned = cv.mentionsCurrentColor();
+        boolean dimension = mayContainDimension(value);
+        boolean currentColorMentioned = !isColor && containsIgnoreCase(value, "currentcolor");
         if (lineHeight && value.trim().endsWith("%")) {
             Float pct = parseNumber(value.trim().substring(0, value.trim().length() - 1));
             if (pct != null) {
@@ -200,7 +206,7 @@ final class ValueComputer {
             }
         }
         if (!opaque && dimension) value = absolutizeUnits(value, metrics);
-        if (!isColor && currentColorMentioned) value = replaceCurrentColor(value, currentColor);
+        if (currentColorMentioned) value = replaceCurrentColor(value, currentColor);
         return value;
     }
 
@@ -210,11 +216,10 @@ final class ValueComputer {
      * （CSS Sizing 3 §5.1）。算出値を初期値に直しておけば、レイアウトの側は特別扱いしなくてよい。
      */
     private static void computeBlockSizeKeywords(StyleTable style) {
-        CssValue[] v = style.values;
+        String[] v = style.values;
         for (int id : BLOCK_SIZE_IDS) {
-            CssValue cv = v[id];
-            if (cv == null) continue;
-            String value = cv.text;
+            String value = v[id];
+            if (value == null) continue;
             if (KeywordMatch.is(value, "min-content") || KeywordMatch.is(value, "max-content")
                     || KeywordMatch.is(value, "fit-content") || KeywordMatch.trimmedStartsWithIgnoreCase(value, "fit-content(")) {
                 v[id] = id == CssPropertyIndex.MAX_HEIGHT ? V_NONE : V_AUTO;
@@ -222,8 +227,8 @@ final class ValueComputer {
         }
     }
 
-    private static final CssValue V_NONE = CssValue.of("none"), V_AUTO = CssValue.of("auto"), V_ZERO = CssValue.of("0"),
-            V_1PX = CssValue.of("1px"), V_3PX = CssValue.of("3px"), V_5PX = CssValue.of("5px");
+    private static final String V_NONE = "none", V_AUTO = "auto", V_ZERO = "0",
+            V_1PX = "1px", V_3PX = "3px", V_5PX = "5px";
 
     private static final int[] BLOCK_SIZE_IDS = {CssPropertyIndex.HEIGHT, CssPropertyIndex.MIN_HEIGHT, CssPropertyIndex.MAX_HEIGHT};
 
@@ -233,7 +238,7 @@ final class ValueComputer {
      */
     private static Metrics unitMetrics(StyleTable style, Context ctx, float ownFontSize) {
         String declared = trimmed(style.textById(CssPropertyIndex.LINE_HEIGHT));
-        if (declared == null) declared = trimmed(ComputedStyle.parentValue(ctx.parent(), CssPropertyIndex.LINE_HEIGHT));
+        if (declared == null && ctx.parent() != null) declared = trimmed(ctx.parent().cssProperty(CssProperty.LINE_HEIGHT));
         float lineHeight = lineHeightPx(declared, ownFontSize, ctx.rootFontSize(), ctx.viewportW(), ctx.viewportH());
         return new Metrics(0, ctx.viewportW(), ctx.viewportH(), ownFontSize, ctx.rootFontSize(), lineHeight,
                 ctx.rootLineHeightPx(), ctx.containerW(), ctx.containerH(),
@@ -290,21 +295,19 @@ final class ValueComputer {
      * （ブラウザでは 3px）。
      */
     private static void computeLineWidths(StyleTable style) {
-        CssValue[] v = style.values;
+        String[] v = style.values;
         for (int[] pair : LINE_PAIRS) {
             int widthId = pair[1];
-            CssValue styleValue = v[pair[0]];
-            String lineStyle = styleValue != null ? styleValue.text : null;
+            String lineStyle = v[pair[0]];
             if (lineStyle == null || KeywordMatch.is(lineStyle, "none") || KeywordMatch.is(lineStyle, "hidden")) {
                 if (v[widthId] != null) v[widthId] = V_ZERO;
                 continue;
             }
-            CssValue widthValue = v[widthId];
-            if (widthValue == null) {
-                style.putValueById(widthId, V_3PX);
+            String width = v[widthId];
+            if (width == null) {
+                style.putById(widthId, V_3PX);
                 continue;
             }
-            String width = widthValue.text;
             if (width.isBlank()) continue;
             if (KeywordMatch.is(width, "thin")) v[widthId] = V_1PX;
             else if (KeywordMatch.is(width, "medium")) v[widthId] = V_3PX;
@@ -313,11 +316,11 @@ final class ValueComputer {
     }
 
     private static void resolveCssWideKeywords(StyleTable style, Context ctx) {
-        CssValue[] v = style.values;
+        String[] v = style.values;
         for (int id = 0; id < v.length; id++) {
-            CssValue cv = v[id];
-            if (cv == null) continue;
-            CssWideKeyword kw = cv.wide(); // 値ごとに 1 回だけ判定して覚える
+            String raw = v[id];
+            if (raw == null) continue;
+            CssWideKeyword kw = CssWideKeyword.of(raw);
             if (kw == null) continue;
             switch (kw) {
                 case INHERIT -> putInheritedOrInitial(style, id, ctx);
@@ -346,17 +349,17 @@ final class ValueComputer {
     }
 
     private static void putInheritedOrInitial(StyleTable style, int id, Context ctx) {
-        CssValue parentValue = ComputedStyle.parentCssValue(ctx.parent(), id);
-        if (parentValue != null) style.putValueById(id, parentValue);
+        String pv = ctx.parent() != null ? ctx.parent().cssProperty(ComputedStyle.CssPropertyId.name(id)) : null;
+        if (pv != null) style.putById(id, pv);
         else putInitial(style, id);
     }
 
     private static void putInitial(StyleTable style, int id) {
-        style.putValueById(id, ComputedStyle.initialValueOf(id));
+        style.putById(id, ComputedStyle.initialOf(id));
     }
 
     private static void putInheritedOrInitial(Map<String, String> style, String key, Context ctx) {
-        String parentValue = ctx.parent().get(key);
+        String parentValue = ctx.parent() != null ? ctx.parent().cssProperty(key) : null;
         if (parentValue != null) style.put(key, parentValue);
         else putInitial(style, key);
     }

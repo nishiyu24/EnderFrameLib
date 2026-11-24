@@ -1,11 +1,8 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
-
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.css.PropertyRegistry;
 import com.nishiyu.enderframelib.core.css.WritingModes;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -23,9 +20,6 @@ import java.util.function.Predicate;
 
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.CounterStyles;
-import com.nishiyu.enderframelib.core.css.model.Overflow;
-import com.nishiyu.enderframelib.core.css.model.TextAlign;
-import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * 要素ツリー（DOM と 1:1 の {@link LayoutBox}）からボックスツリーを組み立てる（軸 6）。
@@ -477,10 +471,7 @@ public final class BoxTreeBuilder {
             if (child.node.isPseudoNode) {
                 ComputedStyle next = markerStyleOf(owner);
                 if (child.style != next) child.updateStyle(next);
-                for (LayoutBox text : child.children) {
-                    text.verticalAxisFlow = genFlow;
-                    if (text.style != child.style) text.updateStyle(child.style);
-                }
+                updateMarkerChildStyles(child, next, genFlow, true);
             } else {
                 String anonDisplay = com.nishiyu.enderframelib.core.css.Style.or(child.style.typed().box.display, "block");
                 ComputedStyle next = owner.style.derivedAnonymous(anonDisplay);
@@ -488,6 +479,23 @@ public final class BoxTreeBuilder {
                 restyleGeneratedBoxes(child);
             }
         }
+    }
+
+    private static void updateMarkerChildStyles(LayoutBox marker, ComputedStyle style, byte flow, boolean setFlow) {
+        ComputedStyle textStyle = style.derivedTextChild().style();
+        for (LayoutBox c : marker.children) {
+            if (setFlow) c.verticalAxisFlow = flow;
+            ComputedStyle t = c.node.nodeType == NodeType.TEXT ? textStyle : style;
+            if (c.style != t) c.updateStyle(t);
+        }
+    }
+
+    private static LayoutBox reuseMarker(LayoutBox reused, LayoutBox listItem, ComputedStyle style, boolean outside) {
+        reused.node.parent = listItem.node;
+        reused.updateStyle(style);
+        reused.isOutsideMarker = outside;
+        updateMarkerChildStyles(reused, style, (byte) 0, false);
+        return reused;
     }
 
     /**
@@ -529,11 +537,7 @@ public final class BoxTreeBuilder {
         LayoutBox reused = takeReusableGenerated(listItem.node.key() + "_marker");
         if (reused != null && reused.node.isPseudoNode && reused.children.size() == 1
                 && text.equals(reused.children.getFirst().node.text)) {
-            reused.node.parent = listItem.node;
-            reused.updateStyle(style);
-            reused.isOutsideMarker = outside;
-            reused.children.getFirst().updateStyle(style);
-            return reused;
+            return reuseMarker(reused, listItem, style, outside);
         }
 
         HtmlNode node = new HtmlNode("span");
@@ -547,7 +551,7 @@ public final class BoxTreeBuilder {
         // DOM に無い箱なので匿名ボックスとして持つ（描画は中のテキストだけ）
         LayoutBox marker = LayoutBox.anonymous(node, style);
         marker.isOutsideMarker = outside;
-        marker.addChild(new LayoutBox(textNode, style));
+        marker.addChild(new LayoutBox(textNode, style.derivedTextChild().style()));
         return marker;
     }
 
@@ -574,11 +578,7 @@ public final class BoxTreeBuilder {
         if (reused != null && reused.node.isPseudoNode && reused.children.size() == 2
                 && reused.children.getFirst().node.nodeType == NodeType.ELEMENT
                 && url.equals(reused.children.getFirst().node.attrs.get("src"))) {
-            reused.node.parent = listItem.node;
-            reused.updateStyle(style);
-            reused.isOutsideMarker = outside;
-            for (LayoutBox child : reused.children) child.updateStyle(style);
-            return reused;
+            return reuseMarker(reused, listItem, style, outside);
         }
 
         HtmlNode node = new HtmlNode("span");
@@ -598,7 +598,7 @@ public final class BoxTreeBuilder {
         LayoutBox marker = LayoutBox.anonymous(node, style);
         marker.isOutsideMarker = outside;
         marker.addChild(new LayoutBox(image, style));
-        marker.addChild(new LayoutBox(gap, style));
+        marker.addChild(new LayoutBox(gap, style.derivedTextChild().style()));
         return marker;
     }
 

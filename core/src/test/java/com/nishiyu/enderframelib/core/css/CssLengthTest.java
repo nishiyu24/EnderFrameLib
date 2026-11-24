@@ -58,4 +58,19 @@ class CssLengthTest {
         assertNotEquals(a.build(), d.build());
         assertNotEquals(a.build(), CssExprs.EMPTY);
     }
+
+    @Test
+    void calcProgramStaysRemovedAndKernelStyleStaysPure() throws Exception {
+        java.nio.file.Path main = java.nio.file.Path.of("core/src/main/java/com/nishiyu/enderframelib/core");
+        assertFalse(java.nio.file.Files.exists(main.resolve("kernel/style/CalcProgram.java")), "数式の評価器は LengthResolver だけ");
+        assertFalse(java.nio.file.Files.readString(main.resolve("css/StyleFacts.java")).contains("CompiledLength[]"));
+        assertFalse(java.nio.file.Files.readString(main.resolve("css/ComputedStyle.java")).contains("CompiledLength[]"));
+        try (var files = java.nio.file.Files.walk(main)) {
+            for (java.nio.file.Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+                assertFalse(java.nio.file.Files.readString(p).contains("CalcProgram"), p + " が CalcProgram を参照している");
+            }
+        }
+        assertFalse(java.nio.file.Files.readString(main.resolve("kernel/style/PackedCssValue.java")).contains("core.css"),
+                "kernel.style は css を知らない（パッケージ循環を作らない）");
+    }
 }

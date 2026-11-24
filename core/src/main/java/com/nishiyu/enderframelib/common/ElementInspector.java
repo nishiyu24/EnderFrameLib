@@ -49,11 +49,13 @@ public final class ElementInspector {
         LayoutBox box = find(ui.layoutRoot(), node);
         if (box == null || (box.display() != null && box.display().isNone())) return null;
         Map<String, String> shown = new LinkedHashMap<>();
-        ComputedStyle style = box.style;
-        if (style != null) {
+        ComputedStyle computed = box.style;
+        if (computed != null) {
+            com.nishiyu.enderframelib.core.css.Style st = computed.typed();
             for (String p : SHOWN) {
-                String v = style.asMap().get(p);
-                if (v != null && !v.isBlank() && !v.equals("auto") && !v.equals("normal") && !v.equals("none")) shown.put(p, v);
+                String v = st.cssProperty(p);
+                if (v != null && !v.isBlank() && !v.equals("auto") && !v.equals("normal") && !v.equals("none")
+                        && !v.equals(com.nishiyu.enderframelib.core.css.Style.DEFAULT.cssProperty(p))) shown.put(p, v);
             }
         }
         String text = node.children.size() == 1 && node.children.getFirst().nodeType == NodeType.TEXT

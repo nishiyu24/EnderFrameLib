@@ -5,45 +5,45 @@ package com.nishiyu.enderframelib.core.css;
  * 値は構築時に 1 回だけ解いた型付きのフィールドで、文字列を読み直さない。{@link #equals} は全フィールドの値等価。
  */
 public final class InheritedStyle {
-    private static final int ID_visibility = ComputedStyle.idOf("visibility");
-    private static final int ID_borderCollapse = ComputedStyle.idOf("border-collapse");
-    private static final int ID_borderSpacing = ComputedStyle.idOf("border-spacing");
-    private static final int ID_captionSide = ComputedStyle.idOf("caption-side");
-    private static final int ID_emptyCells = ComputedStyle.idOf("empty-cells");
-    private static final int ID_listStyleType = ComputedStyle.idOf("list-style-type");
-    private static final int ID_listStylePosition = ComputedStyle.idOf("list-style-position");
-    private static final int ID_listStyleImage = ComputedStyle.idOf("list-style-image");
-    private static final int ID_fontFamily = ComputedStyle.idOf("font-family");
-    private static final int ID_fontSize = ComputedStyle.idOf("font-size");
-    private static final int ID_fontWeight = ComputedStyle.idOf("font-weight");
-    private static final int ID_fontStyle = ComputedStyle.idOf("font-style");
-    private static final int ID_fontVariant = ComputedStyle.idOf("font-variant");
-    private static final int ID_fontKerning = ComputedStyle.idOf("font-kerning");
-    private static final int ID_lineHeightValue = ComputedStyle.idOf("line-height");
-    private static final int ID_letterSpacing = ComputedStyle.idOf("letter-spacing");
-    private static final int ID_wordSpacing = ComputedStyle.idOf("word-spacing");
-    private static final int ID_textIndent = ComputedStyle.idOf("text-indent");
-    private static final int ID_textAlign = ComputedStyle.idOf("text-align");
-    private static final int ID_textAlignLast = ComputedStyle.idOf("text-align-last");
-    private static final int ID_textJustify = ComputedStyle.idOf("text-justify");
-    private static final int ID_tabSize = ComputedStyle.idOf("tab-size");
-    private static final int ID_textWrap = ComputedStyle.idOf("text-wrap");
-    private static final int ID_textWrapStyle = ComputedStyle.idOf("text-wrap-style");
-    private static final int ID_textTransform = ComputedStyle.idOf("text-transform");
-    private static final int ID_whiteSpace = ComputedStyle.idOf("white-space");
-    private static final int ID_wordBreak = ComputedStyle.idOf("word-break");
-    private static final int ID_overflowWrap = ComputedStyle.idOf("overflow-wrap");
-    private static final int ID_direction = ComputedStyle.idOf("direction");
-    private static final int ID_color = ComputedStyle.idOf("color");
-    private static final int ID_accentColor = ComputedStyle.idOf("accent-color");
-    private static final int ID_textDecoration = ComputedStyle.idOf("text-decoration");
-    private static final int ID_textShadow = ComputedStyle.idOf("text-shadow");
-    private static final int ID_webkitTextStrokeWidth = ComputedStyle.idOf("-webkit-text-stroke-width");
-    private static final int ID_webkitTextStrokeColor = ComputedStyle.idOf("-webkit-text-stroke-color");
-    private static final int ID_writingMode = ComputedStyle.idOf("writing-mode");
-    private static final int ID_textOrientation = ComputedStyle.idOf("text-orientation");
-    private static final int ID_cursor = ComputedStyle.idOf("cursor");
-    private static final int ID_pointerEvents = ComputedStyle.idOf("pointer-events");
+    static final int ID_visibility = ComputedStyle.idOf("visibility");
+    static final int ID_borderCollapse = ComputedStyle.idOf("border-collapse");
+    static final int ID_borderSpacing = ComputedStyle.idOf("border-spacing");
+    static final int ID_captionSide = ComputedStyle.idOf("caption-side");
+    static final int ID_emptyCells = ComputedStyle.idOf("empty-cells");
+    static final int ID_listStyleType = ComputedStyle.idOf("list-style-type");
+    static final int ID_listStylePosition = ComputedStyle.idOf("list-style-position");
+    static final int ID_listStyleImage = ComputedStyle.idOf("list-style-image");
+    static final int ID_fontFamily = ComputedStyle.idOf("font-family");
+    static final int ID_fontSize = ComputedStyle.idOf("font-size");
+    static final int ID_fontWeight = ComputedStyle.idOf("font-weight");
+    static final int ID_fontStyle = ComputedStyle.idOf("font-style");
+    static final int ID_fontVariant = ComputedStyle.idOf("font-variant");
+    static final int ID_fontKerning = ComputedStyle.idOf("font-kerning");
+    static final int ID_lineHeightValue = ComputedStyle.idOf("line-height");
+    static final int ID_letterSpacing = ComputedStyle.idOf("letter-spacing");
+    static final int ID_wordSpacing = ComputedStyle.idOf("word-spacing");
+    static final int ID_textIndent = ComputedStyle.idOf("text-indent");
+    static final int ID_textAlign = ComputedStyle.idOf("text-align");
+    static final int ID_textAlignLast = ComputedStyle.idOf("text-align-last");
+    static final int ID_textJustify = ComputedStyle.idOf("text-justify");
+    static final int ID_tabSize = ComputedStyle.idOf("tab-size");
+    static final int ID_textWrap = ComputedStyle.idOf("text-wrap");
+    static final int ID_textWrapStyle = ComputedStyle.idOf("text-wrap-style");
+    static final int ID_textTransform = ComputedStyle.idOf("text-transform");
+    static final int ID_whiteSpace = ComputedStyle.idOf("white-space");
+    static final int ID_wordBreak = ComputedStyle.idOf("word-break");
+    static final int ID_overflowWrap = ComputedStyle.idOf("overflow-wrap");
+    static final int ID_direction = ComputedStyle.idOf("direction");
+    static final int ID_color = ComputedStyle.idOf("color");
+    static final int ID_accentColor = ComputedStyle.idOf("accent-color");
+    static final int ID_textDecoration = ComputedStyle.idOf("text-decoration");
+    static final int ID_textShadow = ComputedStyle.idOf("text-shadow");
+    static final int ID_webkitTextStrokeWidth = ComputedStyle.idOf("-webkit-text-stroke-width");
+    static final int ID_webkitTextStrokeColor = ComputedStyle.idOf("-webkit-text-stroke-color");
+    static final int ID_writingMode = ComputedStyle.idOf("writing-mode");
+    static final int ID_textOrientation = ComputedStyle.idOf("text-orientation");
+    static final int ID_cursor = ComputedStyle.idOf("cursor");
+    static final int ID_pointerEvents = ComputedStyle.idOf("pointer-events");
 
     /** 宣言が 1 つも無いときの共有インスタンス（初期値だけ）。ID_* の初期化より後に置く。 */
     public static final InheritedStyle DEFAULT = new InheritedStyle(null);
@@ -51,7 +51,7 @@ public final class InheritedStyle {
     /** {@code calc()} 等の式の表。式を持たない値は共有の空表。 */
     public final CssExprs exprs;
     /** {@code visibility}。 */
-    public final com.nishiyu.enderframelib.core.css.model.CssKeywords.Visibility visibility;
+    public final com.nishiyu.enderframelib.core.css.model.Visibility visibility;
     /** {@code border-collapse}。 */
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.BorderCollapse borderCollapse;
     /** {@code border-spacing}。 */
@@ -132,10 +132,14 @@ public final class InheritedStyle {
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.PointerEvents pointerEvents;
     /** 文書のルートのフォントサイズ（px）。{@code rem} の基準で、ルートから子孫へ受け継がれる。 */
     public final float rootFontSizePx;
+    /** {@code color} が明示宣言（または継承）されているか（{@code ::placeholder}/{@code ::first-line} 用）。 */
+    public final boolean hasColor;
+    /** 書体と字間の不変指定（継承群と同一寿命）。 */
+    public final com.nishiyu.enderframelib.core.text.model.FontStyle fontStyleSpec;
 
-    private InheritedStyle(ComputedStyle cs) {
+    private InheritedStyle(StyleReader.Source cs) {
         CssExprs.Builder ex = new CssExprs.Builder();
-        this.visibility = StyleReader.keyword(cs, ID_visibility, com.nishiyu.enderframelib.core.css.model.CssKeywords.Visibility.class);
+        this.visibility = StyleReader.keyword(cs, ID_visibility, com.nishiyu.enderframelib.core.css.model.Visibility.class);
         this.borderCollapse = StyleReader.keyword(cs, ID_borderCollapse, com.nishiyu.enderframelib.core.css.model.CssKeywords.BorderCollapse.class);
         this.borderSpacing = StyleReader.text(cs, ID_borderSpacing);
         this.captionSide = StyleReader.keyword(cs, ID_captionSide, com.nishiyu.enderframelib.core.css.model.CssKeywords.CaptionSide.class);
@@ -177,11 +181,16 @@ public final class InheritedStyle {
         this.cursor = StyleReader.text(cs, ID_cursor);
         this.pointerEvents = StyleReader.keyword(cs, ID_pointerEvents, com.nishiyu.enderframelib.core.css.model.CssKeywords.PointerEvents.class);
         this.rootFontSizePx = cs != null ? cs.rootFontSizePx() : ComputedStyle.DEFAULT_FONT_SIZE;
+        this.hasColor = StyleReader.isDeclared(cs, ID_color);
         this.exprs = ex.build();
+        this.fontStyleSpec = new com.nishiyu.enderframelib.core.text.model.FontStyle(this.fontSize, this.fontWeight >= 600,
+                this.fontStyle != com.nishiyu.enderframelib.core.css.model.CssKeywords.FontStyle.NORMAL,
+                CssLength.resolve(this.letterSpacing, this.exprs, 0, this.fontSize, this.rootFontSizePx, 0, 0), this.fontWeight,
+                !com.nishiyu.enderframelib.core.kernel.style.KeywordMatch.is(this.fontKerning, "none"));
     }
 
-    /** 算出スタイルから、この群の値を取り出す。 */
-    public static InheritedStyle of(ComputedStyle cs) {
+    /** 宣言入力から、この群の値を取り出す。 */
+    public static InheritedStyle of(StyleReader.Source cs) {
         return new InheritedStyle(cs);
     }
 
@@ -230,7 +239,8 @@ public final class InheritedStyle {
                 && java.util.Objects.equals(textOrientation, o.textOrientation)
                 && java.util.Objects.equals(cursor, o.cursor)
                 && pointerEvents == o.pointerEvents
-                && Float.floatToIntBits(rootFontSizePx) == Float.floatToIntBits(o.rootFontSizePx);
+                && Float.floatToIntBits(rootFontSizePx) == Float.floatToIntBits(o.rootFontSizePx)
+                && hasColor == o.hasColor;
     }
 
     @Override

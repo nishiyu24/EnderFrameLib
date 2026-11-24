@@ -4,11 +4,11 @@ import com.nishiyu.enderframelib.core.paint.model.BlendMode;
 import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.ColorParser;
+import com.nishiyu.enderframelib.core.css.InheritedStyle;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
-import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.WritingModes;
@@ -203,7 +203,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         int canvasBg = DEFAULT_CANVAS_COLOR;
         LayoutBox source = canvasBackgroundSource(box);
         if (source != null) {
-            canvasBg = ColorParser.parseColor(source.style.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
+            canvasBg = source.style.typed().visual.backgroundColor;
             canvasBackgroundSource = source;
         }
         if (canvasBg != 0x00000000) {
@@ -245,10 +245,6 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
 
     /** 画面の外へ表示項目を作っておく幅（px）。スクロールを節の移動で済ませる範囲（UiView）はこれより小さく取る。広いほど、作り直しが起きる間隔が長い。 */
     public static final float CULL_MARGIN = com.nishiyu.enderframelib.core.kernel.EngineFlags.CULL_MARGIN;
-    static final int[] MOVING_PROPS = {
-            CssPropertyIndex.TRANSFORM, CssPropertyIndex.TRANSLATE, CssPropertyIndex.ROTATE,
-            CssPropertyIndex.SCALE, CssPropertyIndex.ANIMATION, CssPropertyIndex.ANIMATION_NAME, CssPropertyIndex.FILTER,
-            CssPropertyIndex.PERSPECTIVE};
 
     /** 経路の観測口（箱ごとの {@code FragmentPaint.PATH_*}）。C7 の予測テスト用。 */
     public void setPathRecorder(java.util.function.ObjIntConsumer<LayoutBox> recorder) { fragmentPaint.setPathRecorder(recorder); }
@@ -345,7 +341,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
                 rawRadii[2] = Math.min(radii.bottomRight(), radii.bottomRightV());
                 rawRadii[3] = Math.min(radii.bottomLeft(), radii.bottomLeftV());
             }
-            int color = box.style.color(CssPropertyIndex.COLOR, 0xFF000000);
+            int color = box.style.typed().inherited.color;
             BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
             float fontHVal = Math.max(1.0f, box.style.fontSizePx());
             decor.drawMaskLayers(elements, box, box.node.key(), null, radii, border, fontHVal, 0.5f, 0.5f);
@@ -452,7 +448,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
     private static boolean imgMemoizable(LayoutBox box) {
         Map<String, String> attrs = box.node.attrs;
         if (attrs.containsKey("srcset") || attrs.containsKey("sizes")) return false;
-        String src = box.style.getOrDefault(CssPropertyIndex.SRC, attrs.getOrDefault("src", ""));
+        String src = Style.or(box.style.typed().rare.src, attrs.getOrDefault("src", ""));
         return !com.nishiyu.enderframelib.core.raster.svg.SvgImage.looksLikeSvg(src);
     }
 
@@ -520,18 +516,18 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         int fallbackRadius = radii.topLeft();
         float rOff = Math.min(fallbackRadius, Math.min(box.w(), box.h()) / 2);
 
+        Style st = box.style.typed();
         // 何が壊れていたか: 以前は 0x00000000 をオフホワイトに書き換えていたので、color: transparent の文字が
         // 白で描かれていた。color は継承するので、宣言の無い箱にも親か初期値（black）が届いている
-        int color = box.style.color(CssPropertyIndex.COLOR, 0xFF000000);
+        int color = st.inherited.color;
 
         // 背景色と画像のレイヤーは別物（色はいちばん下）。background ショートハンドは算出の段で
         // ロングハンドに展開済み。キャンバスに背景を譲った要素は色を描かない
-        int bgColor = box == canvasBackgroundSource ? 0x00000000
-                : ColorParser.parseColor(box.style.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
+        int bgColor = box == canvasBackgroundSource ? 0x00000000 : st.visual.backgroundColor;
 
         String id = box.node.key();
 
-        float opacity = box.style.number(CssPropertyIndex.OPACITY, 1.0f);
+        float opacity = Style.num(st.visual.opacity, 1.0f);
         float[] tr = anim.transformOf(box);
         float tx = tr[0] + parseFloatAttr(box.node.attrs, "data-pan-x", 0f);
         float ty = tr[1] + parseFloatAttr(box.node.attrs, "data-pan-y", 0f);
@@ -551,19 +547,18 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         if (parentId != null) anchorEvents.parentId(parentId);
         if (tr.length > 5 && tr[5] != 0f) anchorEvents.skew(tr[5]);
         applyTransitionEvents(anchorEvents, transSpec);
-        if (box.style.containsKey(CssPropertyIndex.TRANSFORM_ORIGIN)) {
-            List<String> parts = CssSyntax.words(box.style.get(CssPropertyIndex.TRANSFORM_ORIGIN).toLowerCase(Locale.ROOT));
-            if (parts.size() > 0) ox = parseOriginProp(parts.get(0), box.w(), box.style.fontSizePx(), box.style.rootFontSizePx());
-            if (parts.size() > 1) oy = parseOriginProp(parts.get(1), box.h(), box.style.fontSizePx(), box.style.rootFontSizePx());
+        if (st.visual.transformOrigin != null) {
+            List<String> parts = CssSyntax.words(st.visual.transformOrigin.toLowerCase(Locale.ROOT));
+            if (parts.size() > 0) ox = parseOriginProp(parts.get(0), box.w(), st.inherited.fontSize, st.inherited.rootFontSizePx);
+            if (parts.size() > 1) oy = parseOriginProp(parts.get(1), box.h(), st.inherited.fontSize, st.inherited.rootFontSizePx);
         }
 
         // 算出済みの font-size をそのまま運ぶ。描画側は書体の em からの倍率に直す。
         // 以前は 16 倍した「倍率」を渡し、描画側が 12 で割るという二重の換算だった。
-        float fontHVal = Math.max(1.0f, box.style.fontSizePx());
+        float fontHVal = Math.max(1.0f, st.inherited.fontSize);
         int itemCount = (int) parseFloatAttr(box.node.attrs, "data-count", 1f);
 
-        boolean pointerEventsNone = box.style.keywordOf(CssPropertyIndex.POINTER_EVENTS, CssKeywords.PointerEvents.class)
-                == CssKeywords.PointerEvents.NONE;
+        boolean pointerEventsNone = st.inherited.pointerEvents == CssKeywords.PointerEvents.NONE;
         if (pointerEventsNone) anchorEvents.pointerEventsNone();
 
         boolean useRel = parentRelative && PaintOrder.boxHasOwnNode(box);
@@ -641,8 +636,8 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
             RenderMeta baseMeta = reuseMeta(prevBaseMeta, normalizedClip, radii, fontHVal, box.lineHeightPx(), ox, oy,
                     itemCount, interactive, partsEvents.hints());
 
-            List<BoxDecorations.Shadow> shadows = BoxDecorations.parseBoxShadows(box.style.get(CssPropertyIndex.BOX_SHADOW), color,
-                    rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
+            List<BoxDecorations.Shadow> shadows = BoxDecorations.parseBoxShadows(st.visual.boxShadow, color,
+                    rootW, rootH, st.inherited.fontSize, st.inherited.rootFontSizePx);
             decor.drawOuterShadows(elements, box, id, shadows, radii, normalizedClip, fontHVal, ox, oy);
 
             BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
@@ -755,7 +750,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
             upright.add(curUpright);
         }
         com.nishiyu.enderframelib.core.text.model.FontFace face =
-                PaintServices.fontResolver().resolve(effStyle.get(CssPropertyIndex.FONT_FAMILY));
+                PaintServices.fontResolver().resolve(effStyle.typed().inherited.fontFamily);
         com.nishiyu.enderframelib.core.text.model.FontStyle font = effStyle.facts().fontStyle;
         float[] adv = new float[runs.size()];
         float total = 0;
@@ -820,13 +815,15 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
             props.reuseAttrs(prevItem.events());
             props.reuseCandidate(prevItem.hints());
         }
-        if (style.containsKey(CssPropertyIndex.FONT_WEIGHT)) props.put("font-weight", style.get(CssPropertyIndex.FONT_WEIGHT));
-        if (style.containsKey(CssPropertyIndex.FONT_FAMILY)) props.fontFamily(style.get(CssPropertyIndex.FONT_FAMILY));
-        if (style.containsKey(CssPropertyIndex.TEXT_DECORATION)) props.put("text-decoration", style.get(CssPropertyIndex.TEXT_DECORATION));
+        InheritedStyle inh = style.typed().inherited;
+        props.put("font-weight", inh.fontWeight == 700 ? "bold"
+                : inh.fontWeight == 400 ? "normal" : Integer.toString(inh.fontWeight));
+        if (inh.fontFamily != null) props.fontFamily(inh.fontFamily);
+        if (inh.textDecoration != null) props.put("text-decoration", inh.textDecoration);
         putFontEvents(style, props);
         float strokeWidth = com.nishiyu.enderframelib.core.css.TextStroke.widthPx(style);
         if (strokeWidth > 0f) {
-            String colorValue = style.get(CssPropertyIndex.WEBKIT_TEXT_STROKE_COLOR);
+            String colorValue = inh.webkitTextStrokeColor;
             int strokeColor = colorValue == null || colorValue.isBlank() || "currentcolor".equalsIgnoreCase(colorValue.trim())
                     ? resolvedColor : ColorParser.parseColor(colorValue);
             props.put("text-stroke", strokeWidth + " " + Integer.toHexString(strokeColor));
@@ -835,10 +832,11 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
     }
 
     private List<BoxDecorations.Shadow> textShadowsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, int resolvedColor, ItemProps props) {
-        String shadowValue = style.get(CssPropertyIndex.TEXT_SHADOW);
+        InheritedStyle inh = style.typed().inherited;
+        String shadowValue = inh.textShadow;
         if (shadowValue == null || shadowValue.isBlank() || "none".equalsIgnoreCase(shadowValue.trim())) return List.of();
         List<BoxDecorations.Shadow> list = suppressTextShadow ? List.of()
-                : BoxDecorations.parseBoxShadows(shadowValue, resolvedColor, rootW, rootH, style.fontSizePx(), style.rootFontSizePx())
+                : BoxDecorations.parseBoxShadows(shadowValue, resolvedColor, rootW, rootH, inh.fontSize, inh.rootFontSizePx)
                         .stream().filter(sh -> !sh.inset()).toList();
         if (list.isEmpty() && !suppressTextShadow) props.put("text-shadow", "true");
         return list;
@@ -879,8 +877,9 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
                 DisplayItem prevItem = prevTextItem(prevItems, prevIdx);
                 int before = elements.size();
                 if (fl != null) {
-                    int flColor = fl.color(CssPropertyIndex.COLOR, color);
-                    float flFontH = Math.max(1.0f, fl.fontSizePx());
+                    InheritedStyle flInh = fl.typed().inherited;
+                    int flColor = flInh.hasColor ? flInh.color : color;
+                    float flFontH = Math.max(1.0f, flInh.fontSize);
                     ItemProps flEvents = textPropsForStyle(fl, partsEvents, flColor, prevItem);
                     List<BoxDecorations.Shadow> flShadows = textShadowsForStyle(fl, flColor, flEvents);
                     RenderMeta fragMeta = reuseTextMeta(prevItem, normalizedClip, flFontH, frag.baseline, frag.h, ox, oy, flEvents.hints());
@@ -898,8 +897,9 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         } else if (box.shapedLines() != null && !box.shapedLines().isEmpty()) {
             baseTextEvents = textPropsForStyle(box.style, partsEvents, color, prevTextItem(prevItems, prevIdx));
             baseTextShadows = textShadowsForStyle(box.style, color, baseTextEvents);
-            TextAlign align = box.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class);
-            boolean rtl = "rtl".equalsIgnoreCase(box.style.getOrDefault(CssPropertyIndex.DIRECTION, "ltr").trim());
+            Style stLine = box.style.typed();
+            TextAlign align = stLine.inherited.textAlign;
+            boolean rtl = stLine.facts.rtl;
             float contentX = box.x() + box.pL() + box.bL();
             float availableW = Math.max(0, box.w() - box.pL() - box.pR() - box.bL() - box.bR());
             float lineY = box.y() + box.pT() + box.bT();

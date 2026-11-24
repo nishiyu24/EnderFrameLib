@@ -1,10 +1,9 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.css.BoxGeomStyle;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
-import com.nishiyu.enderframelib.core.css.ColorParser;
-import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
@@ -90,11 +89,17 @@ public final class BoxDecorationPainter {
     }
 
     static final String[] BORDER_DIRECTIONS = {"top", "right", "bottom", "left"};
-    private static final int[] BORDER_COLOR_IDS = {CssPropertyIndex.BORDER_TOP_COLOR, CssPropertyIndex.BORDER_RIGHT_COLOR,
-            CssPropertyIndex.BORDER_BOTTOM_COLOR, CssPropertyIndex.BORDER_LEFT_COLOR};
-    private static final int[] BORDER_STYLE_IDS = {CssPropertyIndex.BORDER_TOP_STYLE, CssPropertyIndex.BORDER_RIGHT_STYLE,
-            CssPropertyIndex.BORDER_BOTTOM_STYLE, CssPropertyIndex.BORDER_LEFT_STYLE};
     private static final String[] SOLID_STYLES = {"solid", "solid", "solid", "solid"};
+
+    private static String borderStyleCssName(BoxGeomStyle b, int side) {
+        BorderStyle s = switch (side) {
+            case 0 -> b.borderTopStyle;
+            case 1 -> b.borderRightStyle;
+            case 2 -> b.borderBottomStyle;
+            default -> b.borderLeftStyle;
+        };
+        return s == BorderStyle.NONE ? "solid" : s.cssName();
+    }
 
     /** 直前の内側の角（円）。値が同じなら同じ {@link Corners} を返し、毎フレームの作り直しを避ける（B9）。 */
     private Corners lastInner = Corners.ZERO;
@@ -118,23 +123,21 @@ public final class BoxDecorationPainter {
         float bwTop = box.bT(), bwRight = box.bR(), bwBottom = box.bB(), bwLeft = box.bL();
         boolean hasBorder = bwTop > 0f || bwRight > 0f || bwBottom > 0f || bwLeft > 0f;
         boolean anyRadius = radii[0] > 0 || radii[1] > 0 || radii[2] > 0 || radii[3] > 0;
-        ComputedStyle ax = box.axisStyle();
+        Style ax = box.axisStyle().typed();
         if (!hasBorder) {
             boolean isCircle = anyRadius
                     && radii[0] >= (box.w() / 2) - 1 && radii[1] >= (box.w() / 2) - 1
                     && radii[2] >= (box.w() / 2) - 1 && radii[3] >= (box.w() / 2) - 1
                     && box.w() > 0 && box.h() > 0 && Math.abs(box.w() - box.h()) <= 2;
-            String colorProp = ax.get(BORDER_COLOR_IDS[0]);
-            int bc0 = colorProp == null ? textColor : ColorParser.parseColor(colorProp);
+            int bc0 = ax.borderColor(0, textColor);
             return scratchBorder.set(false, isCircle, false, 0f, 0f, 0f, 0f, bc0, bc0, bc0, bc0,
                     SOLID_STYLES, corners, BorderPath.SOLID);
         }
         int[] colors = scratchBorderColors;
         String[] styles = scratchBorderStyles;
         for (int i = 0; i < 4; i++) {
-            String colorProp = ax.get(BORDER_COLOR_IDS[i]);
-            colors[i] = colorProp == null ? textColor : ColorParser.parseColor(colorProp);
-            styles[i] = ax.keyword(BORDER_STYLE_IDS[i], "solid");
+            colors[i] = ax.borderColor(i, textColor);
+            styles[i] = borderStyleCssName(ax.box, i);
         }
         int bcTop = colors[0], bcRight = colors[1], bcBottom = colors[2], bcLeft = colors[3];
 
@@ -248,22 +251,20 @@ public final class BoxDecorationPainter {
      */
     void drawOutline(List<DisplayItem> elements, LayoutBox box, String id, int color,
                              ItemProps events, RenderMeta meta, int transDur) {
-        String lineStyle = box.style.keywordOf(CssPropertyIndex.OUTLINE_STYLE, BorderStyle.class).cssName();
+        Style st = box.style.typed();
+        String lineStyle = st.visual.outlineStyle.cssName();
         if ("none".equals(lineStyle) || "hidden".equals(lineStyle)) return;
-        float w = box.style.length(CssPropertyIndex.OUTLINE_WIDTH, box.w(), rootW, rootH);
+        float w = st.visPx(st.visual.outlineWidth, box.w(), rootW, rootH);
         if (w <= 0) return;
-        float offset = box.style.length(CssPropertyIndex.OUTLINE_OFFSET, box.w(), rootW, rootH);
-        String colorProp = box.style.get(CssPropertyIndex.OUTLINE_COLOR);
-        int c = colorProp == null || "invert".equalsIgnoreCase(colorProp.trim()) ? color : ColorParser.parseColor(colorProp);
+        float offset = st.visPx(st.visual.outlineOffset, box.w(), rootW, rootH);
+        int c = st.outlineColor(color);
         if ("auto".equals(lineStyle)) lineStyle = "solid";
 
-        float x = box.x() - offset - w, y = box.y() - offset - w;
         float ow = box.w() + 2 * (offset + w), oh = box.h() + 2 * (offset + w);
         if (ow <= 0 || oh <= 0) return;
-        String[] styles = {lineStyle, lineStyle, lineStyle, lineStyle};
-        int[] colors = {c, c, c, c};
-        float[] widths = {w, w, w, w};
-        drawLines(elements, id, "_o_", x, y, ow, oh, widths, styles, colors, 0, events, meta, transDur);
+        drawLines(elements, id, "_o_", box.x() - offset - w, box.y() - offset - w, ow, oh,
+                new float[]{w, w, w, w}, new String[]{lineStyle, lineStyle, lineStyle, lineStyle},
+                new int[]{c, c, c, c}, 0, events, meta, transDur);
     }
 
     /**
@@ -274,17 +275,16 @@ public final class BoxDecorationPainter {
                          ItemProps events, RenderMeta meta, int transDur) {
         float[][] rules = box.columnRules();
         if (rules == null) return;
-        String lineStyle = box.style.keywordOf(CssPropertyIndex.COLUMN_RULE_STYLE, BorderStyle.class).cssName();
+        Style st = box.style.typed();
+        String lineStyle = st.rare.columnRuleStyle.cssName();
         if ("none".equals(lineStyle) || "hidden".equals(lineStyle)) return;
-        String colorProp = box.style.get(CssPropertyIndex.COLUMN_RULE_COLOR);
-        int c = colorProp == null ? color : ColorParser.parseColor(colorProp);
+        int c = st.columnRuleColor(color);
         String[] styles = {lineStyle, lineStyle, lineStyle, lineStyle};
         int[] colors = {c, c, c, c};
         float bx = box.x(), by = box.y();
         for (int i = 0; i < rules.length; i++) {
             float[] r = rules[i];
-            if (r[2] <= 0 || r[3] <= 0) continue;
-            drawLines(elements, id, "_cr" + i + "_", r[0] + bx, r[1] + by, r[2], r[3], new float[]{0, 0, 0, r[2]}, styles, colors, 0, events, meta, transDur);
+            if (r[2] > 0 && r[3] > 0) drawLines(elements, id, "_cr" + i + "_", r[0] + bx, r[1] + by, r[2], r[3], new float[]{0, 0, 0, r[2]}, styles, colors, 0, events, meta, transDur);
         }
     }
 
@@ -296,8 +296,7 @@ public final class BoxDecorationPainter {
         com.nishiyu.enderframelib.core.css.ComputedStyle fl = box.firstLineStyle != null ? box.firstLineStyle
                 : (box.isVerticalWrapper() && box.parent != null ? box.parent.firstLineStyle : null);
         if (fl == null) return;
-        String bgSpec = fl.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent");
-        int bg = "currentcolor".equalsIgnoreCase(bgSpec.trim()) ? fallbackColor : ColorParser.parseColor(bgSpec);
+        int bg = fl.typed().visual.backgroundColor;
         if ((bg >>> 24) == 0) return;
         int part = fragIds.getAndIncrement();
         long key = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), FRAG_PART_BASE + part) : 0L;
@@ -619,7 +618,7 @@ public final class BoxDecorationPainter {
 
     /** {@code currentColor} になる色（要素の {@code color}）。 */
     private static int currentColor(LayoutBox box) {
-        return ColorParser.parseColor(box.style.getOrDefault(CssPropertyIndex.COLOR, "black"));
+        return box.style.typed().inherited.color;
     }
 
     private void drawImageLayers(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.BackgroundLayer> layers,

@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.layout.FenwickVirtualList;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
@@ -320,7 +319,8 @@ final class FlowBuilder {
         // text-indent は要素の最初の行だけ。匿名ブロックは持ち主の最初の子のときだけ字下げする
         float indent = 0;
         if (firstRun && (!box.isAnonymous || BlockLayoutEngine.isFirstFlowChild(box))) {
-            indent = box.style.length(BlockLayoutEngine.ID_TEXT_INDENT, innerW, ctx.viewport().rootW(), ctx.viewport().rootH());
+            var t = box.style.typed();
+            indent = t.px(t.inherited.textIndent, t.inherited.exprs, innerW, ctx.viewport().rootW(), ctx.viewport().rootH());
         }
         firstRun = false;
 

@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.Style;
@@ -303,7 +303,7 @@ final class MulticolLayout {
         if (b.bT != 0 || b.bB != 0 || b.pT != 0 || b.pB != 0) return false;
         ComputedStyle s = b.axisStyle();
         if (s.overflowX().clips() || s.overflowY().clips()) return false;
-        if (visible(s.get(CssPropertyIndex.BACKGROUND_COLOR)) || visible(s.typed().visual.backgroundImage) || visible(s.typed().visual.boxShadow)
+        if ((s.typed().visual.backgroundColor >>> 24) != 0 || visible(s.typed().visual.backgroundImage) || visible(s.typed().visual.boxShadow)
                 || visible(s.typed().visual.transform) || visible(s.typed().visual.filter)) return false;
         String inside = Style.or(s.typed().rare.breakInside, "auto").trim().toLowerCase(Locale.ROOT);
         return !inside.startsWith("avoid");

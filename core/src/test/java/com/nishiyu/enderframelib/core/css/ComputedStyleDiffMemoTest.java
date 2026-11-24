@@ -73,16 +73,13 @@ class ComputedStyleDiffMemoTest {
     }
 
     @Test
-    void samePairIsScannedOnce() {
+    void samePairReturnsConsistentDiffAndEmptySelfDiff() {
         ComputedStyle a = new ComputedStyle(Map.of("color", "red", "display", "block"));
         ComputedStyle b = new ComputedStyle(Map.of("color", "blue", "display", "block"));
-        long miss0 = ComputedStyle.diffMemoMisses(), hit0 = ComputedStyle.diffMemoHits();
         List<String> first = viaDiff(a, b);
         for (int i = 0; i < 50; i++) assertEquals(first, viaDiff(a, b));
         assertEquals(1, first.size());
         assertTrue(first.get(0).startsWith("color:"));
-        assertEquals(1, ComputedStyle.diffMemoMisses() - miss0, "同じ組の全枠走査は 1 回だけ");
-        assertEquals(50, ComputedStyle.diffMemoHits() - hit0);
         assertTrue(viaDiff(a, a).isEmpty());
     }
 
@@ -150,15 +147,12 @@ class ComputedStyleDiffMemoTest {
             assertEquals(refAxes[0], a.classifyPositionOnlyDiff(b), "position axes #" + i);
         }
 
-        // Band 3 (color) のみの変化は >256 組でも diffMemoMisses を増やさず O(1) で判定できる
-        long missCheck = ComputedStyle.diffMemoMisses();
         for (int i = 0; i < 400; i++) {
             ComputedStyle a = new ComputedStyle(Map.of("display", "block", "width", (i + 10) + "px", "color", "#111"));
             ComputedStyle b = new ComputedStyle(Map.of("display", "block", "width", (i + 10) + "px", "color", "#222"));
             assertFalse(a.hasLayoutAffectingDiffFrom(b));
             assertEquals(2, b.classifyPropagationFrom(a));
         }
-        assertEquals(missCheck, ComputedStyle.diffMemoMisses(), "専用判定は diff()/DIFF_MEMO を使わない");
     }
 
     @Test
@@ -178,7 +172,7 @@ class ComputedStyleDiffMemoTest {
         assertEquals("block", anon.get("display"));
         assertNull(anon.get("width"));
         assertNull(anon.get("margin-left"));
-        assertEquals("crimson", anon.get("color"));
+        assertEquals(0xFFDC143C, ColorParser.parseColor(anon.get("color")));
         assertEquals("uppercase", anon.get("text-transform"));
         assertEquals("#09f", anon.get("--accent"));
         assertEquals(20f, anon.fontSizePx());
@@ -189,7 +183,7 @@ class ComputedStyleDiffMemoTest {
         assertEquals("inline-block", defaultMarker.get("display"));
         assertEquals("pre", defaultMarker.get("white-space"));
         assertEquals("none", defaultMarker.get("text-transform"));
-        assertEquals("crimson", defaultMarker.get("color"));
+        assertEquals(0xFFDC143C, ColorParser.parseColor(defaultMarker.get("color")));
         assertNull(defaultMarker.get("width"));
 
         ComputedStyle declared = new ComputedStyle(
@@ -200,7 +194,7 @@ class ComputedStyleDiffMemoTest {
         assertEquals("inline-block", marker.get("display"));
         assertEquals("pre", marker.get("white-space"));
         assertEquals("none", marker.get("text-transform"));
-        assertEquals("teal", marker.get("color"));
+        assertEquals(0xFF008080, ColorParser.parseColor(marker.get("color")));
         assertEquals(18f, marker.fontSizePx());
     }
 }

@@ -1,163 +1,67 @@
 package com.nishiyu.enderframelib.core.css;
 
-import com.nishiyu.enderframelib.core.css.model.CssKeywords;
-import com.nishiyu.enderframelib.core.css.model.*;
-
-
-
-import com.nishiyu.enderframelib.core.css.model.*;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import com.nishiyu.enderframelib.core.css.model.Overflow;
-import com.nishiyu.enderframelib.core.css.model.TextAlign;
-import com.nishiyu.enderframelib.core.css.model.BorderStyle;
+import java.util.function.Function;
 
 /**
- * 算出スタイルを保持する不変の値型。
- *
- * 以前は {@code Map<String, String>} が生のまま配られていたため、レイアウトエンジンが
- * キャッシュを書き換えられたうえ、参照のたびに値を文字列から再パースしていた。
- *
- * ここでは
- * <ul>
- *   <li>宣言マップを不変にして、書き換えを型で禁じる</li>
- *   <li>長さ・色・数値を <b>最初の参照時に 1 回だけ</b> パースし、結果を保持する
- *       （長さはビューポート依存なので「単位と数値への分解」までを 1 回で済ませ、
- *        以降は算術だけで解決する）</li>
- *   <li>型付きアクセサ（{@link #length}/{@link #color}/{@link #number}/{@link #keyword}）を提供する</li>
- * </ul>
- * を行う。
+ * 算出スタイル（M1c: 本体 {@link Style} の薄い不変ラッパー）。描画・フォント等の要素ごとのメモを持つ。
  */
 public final class ComputedStyle {
 
     /** 既定のルートフォントサイズ（px）。 */
     public static final float DEFAULT_FONT_SIZE = 16.0f;
+    /** {@code line-height} の種類（{@link StyleFacts#lineHeightKind}）。 */
+    public static final byte LH_NORMAL = 0, LH_PX = 1, LH_PERCENT = 2, LH_EM = 3, LH_NUMBER = 4;
+    /** {@code contain} の値のビット（{@link #containment()}）。 */
+    public static final int CONTAIN_SIZE = 1, CONTAIN_INLINE_SIZE = 2, CONTAIN_LAYOUT = 4, CONTAIN_PAINT = 8, CONTAIN_STYLE = 16;
 
-    /** 登録済みプロパティの値。{@link CssPropertyId} の添字で引く。宣言が無ければ null。 */
-    private final CssValue[] values;
-    /** 添字を持たない宣言（{@code --*} のカスタムプロパティなど）。無ければ null で、通常の要素では確保しない。 */
-    private final Map<String, String> extras;
-    /**
-     * {@link #extras} の包みの下の、実際の表。継承で表を共有している算出スタイル同士は同じ実体を指すので、
-     * 比較は中身の突き合わせの前に実体の同一性で済む。
-     */
-    private final Map<String, String> extrasBase;
-    private final int size;
-    /** {@link #usesViewportUnits()} の結果（1 / 0）。-1 は未確定（値を走査して決め、以後は覚える）。値は不変なので競っても同じ。 */
-    private volatile byte relativeUnits = -1;
-    /** {@link #values} がビューポート基準の宣言を含むか（1 / 0 / -1 未確定）。 */
-    private volatile byte valuesViewport = -1;
-    /** {@link #extras} がビューポート基準の宣言を含むか（1 / 0 / -1 未確定）。 */
-    private volatile byte extrasViewport = -1;
-    /** {@link #extras} がすべて {@code --*} カスタムプロパティか（1 / 0 / -1 未確定）。 */
-    private volatile byte allExtrasCustom = -1;
-    /** 4 つの連続バンド（非継承レイアウト / 非継承ペイント / 継承レイアウト / 継承ペイント）のハッシュと怠惰共有スライス。 */
-    private final long h0, h1, h2, h3;
-    private volatile StyleSlice g0, g1, g2, g3;
-    private final StyleMap properties;
-    private final float elementFontSize;
-    private final float rootFontSize;
-    /** 宣言内容の 64-bit ハッシュ。{@link #sameDeclarations} や {@link StyleMap#equals} の高速足切り用。 */
-    final long declHash;
-
-    /**
-     * 描画側が、この算出スタイルだけから決まる結果（アニメーション定義の解決など）を覚える置き場。
-     * スタイルは作り直されるたびに別のインスタンスになるので、スタイルが変われば自然に捨てられる。
-     * 鍵は {@code equals} / {@code hashCode} を持つ値（record など）。中身は {@link ObjMemo}（小さいうち）か
-     * {@link ConcurrentHashMap}（多くの鍵が溜まる、多数の箱が共有するスタイルだけ）。
-     */
+    private final Style style;
+    private volatile Object derivedFacts;
     private volatile Object paint;
+    private volatile CachedTextStyle cachedTextStyle;
+    private volatile CachedFace cachedFace;
+    private volatile Map<String, String> customProperties;
 
     private record CachedTextStyle(com.nishiyu.enderframelib.core.text.model.FontFace face,
                                    com.nishiyu.enderframelib.core.text.model.TextStyle style) {}
-    private volatile CachedTextStyle cachedTextStyle;
-
-    /** {@link com.nishiyu.enderframelib.core.layout.LayoutContext#textStyleFor} 用の単一エントリーメモ。 */
-    public com.nishiyu.enderframelib.core.text.model.TextStyle peekTextStyle(
-            com.nishiyu.enderframelib.core.text.model.FontFace face) {
-        CachedTextStyle c = cachedTextStyle;
-        return c != null && c.face == face ? c.style : null;
-    }
-
-    public void cacheTextStyle(com.nishiyu.enderframelib.core.text.model.FontFace face,
-                               com.nishiyu.enderframelib.core.text.model.TextStyle style) {
-        this.cachedTextStyle = new CachedTextStyle(face, style);
-    }
 
     private record CachedFace(com.nishiyu.enderframelib.core.text.model.FontResolver resolver, long generation,
                               com.nishiyu.enderframelib.core.text.model.FontFace face) {}
-    private volatile CachedFace cachedFace;
 
-    /**
-     * {@link com.nishiyu.enderframelib.core.layout.LayoutContext#faceFor} 用の単一エントリーメモ。解決器と、その
-     * {@link com.nishiyu.enderframelib.core.text.model.FontResolver#resolveGeneration 世代} が同じときだけ返す。
-     */
-    public com.nishiyu.enderframelib.core.text.model.FontFace peekFace(
-            com.nishiyu.enderframelib.core.text.model.FontResolver resolver, long generation) {
-        CachedFace c = cachedFace;
-        return c != null && c.resolver == resolver && c.generation == generation ? c.face : null;
-    }
-
-    /**
-     * 直前に作った書体の記録（1 スロットの記憶）。同じ組なら共有して確保しない（{@code font-size} の変更で作り直された全行の
-     * スタイルが、同じ書体の記録を 1 個ずつ確保していた。costGate の fontsize 行）。中身は不変なので競合しても取り違えない。
-     */
     private static CachedFace LAST_FACE;
-
-    public void cacheFace(com.nishiyu.enderframelib.core.text.model.FontResolver resolver, long generation,
-                          com.nishiyu.enderframelib.core.text.model.FontFace face) {
-        CachedFace last = LAST_FACE;
-        if (last == null || last.resolver != resolver || last.generation != generation || last.face != face) {
-            last = new CachedFace(resolver, generation, face);
-            LAST_FACE = last;
-        }
-        this.cachedFace = last;
-    }
-
-    private static final java.lang.invoke.VarHandle PAINT;
+    private static final VarHandle PAINT;
+    private static final int OBJ_MEMO_LIMIT = 8;
 
     static {
         try {
-            PAINT = java.lang.invoke.MethodHandles.lookup().findVarHandle(ComputedStyle.class, "paint", Object.class);
+            PAINT = MethodHandles.lookup().findVarHandle(ComputedStyle.class, "paint", Object.class);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
 
-    /** 添字ごとの、宣言が無いときのキーワード（初期値）。全スタイルで共有する。競って 2 回計算しても同じ値。 */
-    private static final Object[] INITIAL_KEYWORDS = new Object[CssPropertyId.count()];
-
-    private static final int OBJ_MEMO_LIMIT = 8;
-
-    /** 不変の「鍵 → 値」の小さな表（鍵は {@code equals} で比べる）。 */
     private static final class ObjMemo {
-        final Object[] keys;
-        final Object[] vals;
-
-        ObjMemo(Object[] keys, Object[] vals) {
-            this.keys = keys;
-            this.vals = vals;
-        }
-
+        final Object[] keys, vals;
+        ObjMemo(Object[] keys, Object[] vals) { this.keys = keys; this.vals = vals; }
         Object get(Object key) {
-            Object[] k = keys;
-            for (int i = 0; i < k.length; i++) if (k[i] == key || k[i].equals(key)) return vals[i];
+            for (int i = 0; i < keys.length; i++) if (keys[i] == key || keys[i].equals(key)) return vals[i];
             return null;
         }
-
         ObjMemo with(Object key, Object val) {
             int n = keys.length;
-            Object[] k = new Object[n + 1];
-            Object[] v = new Object[n + 1];
+            Object[] k = new Object[n + 1], v = new Object[n + 1];
             System.arraycopy(keys, 0, k, 0, n);
             System.arraycopy(vals, 0, v, 0, n);
-            k[n] = key;
-            v[n] = val;
+            k[n] = key; v[n] = val;
             return new ObjMemo(k, v);
         }
-
         ConcurrentHashMap<Object, Object> toMap() {
             ConcurrentHashMap<Object, Object> m = new ConcurrentHashMap<>(keys.length * 4);
             for (int i = 0; i < keys.length; i++) m.put(keys[i], vals[i]);
@@ -165,1525 +69,107 @@ public final class ComputedStyle {
         }
     }
 
-    /**
-     * {@code key} の結果を、この算出スタイルに覚える（無ければ {@code compute} で作る。{@code null} は覚えない）。
-     * 競ったときは同じ結果が 2 回計算されうる（結果は同じなので、先に登録されたものを使う）。{@code compute} の中で
-     * 同じスタイルの {@code paintMemo} を呼んでもよい。
-     */
-    @SuppressWarnings("unchecked")
-    public <T> T paintMemo(Object key, java.util.function.Function<Object, T> compute) {
-        return paintMemoInternal(key, compute, null);
-    }
-
-    /**
-     * {@link #paintMemo(Object, java.util.function.Function)} のラムダ捕獲を避ける版（{@code compute} へ {@code this} を渡す）。
-     */
-    @SuppressWarnings("unchecked")
-    public <T> T paintMemoSelf(Object key, java.util.function.Function<ComputedStyle, T> compute) {
-        return paintMemoInternal(key, null, compute);
-    }
-
-    @SuppressWarnings("unchecked")
-    private <T> T paintMemoInternal(Object key, java.util.function.Function<Object, T> byKey,
-                                    java.util.function.Function<ComputedStyle, T> bySelf) {
-        Object cur = paint;
-        if (cur instanceof ConcurrentHashMap<?, ?> big) {
-            Object hit = ((ConcurrentHashMap<Object, Object>) big).get(key);
-            if (hit != null) return (T) hit;
-        } else if (cur != null) {
-            Object hit = ((ObjMemo) cur).get(key);
-            if (hit != null) return (T) hit;
-        }
-        T value = bySelf != null ? bySelf.apply(this) : byKey.apply(key);
-        if (value == null) return null;
-        for (; ; ) {
-            cur = paint;
-            if (cur instanceof ConcurrentHashMap<?, ?> big) {
-                Object prev = ((ConcurrentHashMap<Object, Object>) big).putIfAbsent(key, value);
-                return prev != null ? (T) prev : value;
-            }
-            ObjMemo m = (ObjMemo) cur;
-            if (m != null) {
-                Object hit = m.get(key);
-                if (hit != null) return (T) hit; // 競った相手が先に登録した
-            }
-            Object next;
-            if (m != null && m.keys.length >= OBJ_MEMO_LIMIT) {
-                ConcurrentHashMap<Object, Object> map = m.toMap();
-                map.putIfAbsent(key, value);
-                next = map;
-            } else {
-                next = m == null ? new ObjMemo(new Object[]{key}, new Object[]{value}) : m.with(key, value);
-            }
-            if (PAINT.compareAndSet(this, cur, next)) return value;
-        }
-    }
-
+    public ComputedStyle(Style style) { this.style = Objects.requireNonNull(style); }
+    public ComputedStyle(Map<String, String> properties) { this(properties, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE); }
     public ComputedStyle(Map<String, String> source, float elementFontSize, float rootFontSize) {
-        this(source, elementFontSize, rootFontSize, false);
+        this.style = styleFromMap(source, elementFontSize, rootFontSize, null);
     }
 
-    private ComputedStyle(Map<String, String> source, float elementFontSize, float rootFontSize, boolean adopt) {
-        if (source instanceof StyleTable table) {
-            // カスケード・算出の作業表から: 名前を引き直さない。引き取るなら配列もコピーしない
-            this.values = adopt ? table.values : table.values.clone();
-            if (table.extras == null) {
-                this.extrasBase = null;
-                this.extras = null;
-            } else {
-                // 引き取らないときも写さず共有する（作業表は次に書くとき自分の分を写す）
-                if (!adopt) table.markExtrasShared();
-                this.extrasBase = table.extras;
-                this.extras = Collections.unmodifiableMap(table.extras);
-            }
-            this.size = table.size;
-            this.relativeUnits = table.relativeUnits;
-            this.valuesViewport = table.valuesViewport;
-            this.extrasViewport = table.extras == null ? 0 : table.extrasViewport;
-        } else if (source instanceof StyleMap other) {
-            // 算出スタイルの複製: values 配列は構築後不変なのでコピーせず共有する
-            this.values = other.owner.values;
-            this.extras = other.owner.extras;
-            this.extrasBase = other.owner.extrasBase;
-            this.size = other.owner.size;
-            this.relativeUnits = other.owner.relativeUnits;
-            this.valuesViewport = other.owner.valuesViewport;
-            this.extrasViewport = other.owner.extrasViewport;
-            this.allExtrasCustom = other.owner.allExtrasCustom;
-        } else {
-            CssValue[] v = new CssValue[CssPropertyId.count()];
-            Map<String, String> x = null;
-            int n = 0;
-            for (Map.Entry<String, String> e : source.entrySet()) {
-                int id = CssPropertyId.of(e.getKey());
-                if (id != CssPropertyId.NONE) {
-                    if (v[id] == null) n++;
-                    v[id] = CssValue.of(e.getValue());
-                } else {
-                    if (x == null) x = new LinkedHashMap<>();
-                    if (x.put(e.getKey(), e.getValue()) == null) n++;
-                }
-            }
-            this.values = v;
-            this.extras = x == null ? null : Collections.unmodifiableMap(x);
-            this.extrasBase = x;
-            this.size = n;
-        }
-        if (source instanceof StyleMap other) {
-            this.h0 = other.owner.h0;
-            this.h1 = other.owner.h1;
-            this.h2 = other.owner.h2;
-            this.h3 = other.owner.h3;
-            this.g0 = other.owner.g0;
-            this.g1 = other.owner.g1;
-            this.g2 = other.owner.g2;
-            this.g3 = other.owner.g3;
-            this.declHash = other.owner.declHash;
-        } else {
-            this.h0 = hashRange(this.values, 0, CssPropertyId.LAYOUT_NON_INH_END);
-            this.h1 = hashRange(this.values, CssPropertyId.LAYOUT_NON_INH_END, CssPropertyId.NON_INH_END);
-            this.h2 = hashRange(this.values, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END);
-            this.h3 = hashRange(this.values, CssPropertyId.INH_LAYOUT_END, CssPropertyId.TOTAL_COUNT);
-            this.declHash = combineDeclHash(this.h0, this.h1, this.h2, this.h3, this.extras);
-        }
-        this.properties = new StyleMap(this);
-        this.elementFontSize = elementFontSize;
-        this.rootFontSize = rootFontSize;
-    }
-
-    private ComputedStyle(CssValue[] values, Map<String, String> extrasBase, Map<String, String> extras, int size,
-                          byte valuesViewport, byte extrasViewport, float elementFontSize, float rootFontSize) {
-        this.values = values;
-        this.extrasBase = extrasBase;
-        this.extras = extras;
-        this.size = size;
-        this.valuesViewport = valuesViewport;
-        this.extrasViewport = extrasViewport;
-        this.h0 = hashRange(values, 0, CssPropertyId.LAYOUT_NON_INH_END);
-        this.h1 = hashRange(values, CssPropertyId.LAYOUT_NON_INH_END, CssPropertyId.NON_INH_END);
-        this.h2 = hashRange(values, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END);
-        this.h3 = hashRange(values, CssPropertyId.INH_LAYOUT_END, CssPropertyId.TOTAL_COUNT);
-        this.declHash = combineDeclHash(this.h0, this.h1, this.h2, this.h3, extras);
-        this.properties = new StyleMap(this);
-        this.elementFontSize = elementFontSize;
-        this.rootFontSize = rootFontSize;
-    }
-
-    private static long hashRange(CssValue[] values, int from, int to) {
-        long h = 0xcbf29ce484222325L;
-        for (int i = from; i < to; i++) {
-            CssValue v = values[i];
-            if (v != null) {
-                h ^= i;
-                h *= 0x100000001b3L;
-                h ^= v.text.hashCode();
-                h *= 0x100000001b3L;
-            }
-        }
-        return h;
-    }
-
-    private static long combineDeclHash(long h0, long h1, long h2, long h3, Map<String, String> extras) {
-        long h = h0 ^ (h1 * 0x9e3779b97f4a7c15L) ^ (h2 * 0xbf58476d1ce4e5b9L) ^ (h3 * 0x94d049bb133111ebL);
-        if (extras != null && !extras.isEmpty()) {
-            h ^= extras.hashCode();
-            h *= 0x100000001b3L;
-        }
-        return h;
-    }
-
-    /**
-     * 登録済みの CSS プロパティ名に振る固定の添字。宣言を名前をキーにしたマップではなく、この添字で引く配列に持つための表で、
-     * 起動後は読み取り専用。登録に無い名前（{@code --*} のカスタムプロパティなど）は {@link #NONE}。
-     */
-    static final class CssPropertyId {
-        static final int NONE = -1;
-        /** 名前 → 添字の、開番地法のハッシュ表（{@code HashMap<String, Integer>} の箱詰めと間接参照を避ける）。起動後は読み取り専用。 */
-        private static final String[] KEYS;
-        /** {@link #KEYS} と並行する名前のハッシュ。衝突の列をたどるとき、別の名前の文字列オブジェクトを触らずに比べる。 */
-        private static final int[] HASHES;
-        private static final int[] VALS;
-        private static final int MASK;
-        private static final String[] NAMES;
-        /** 添字ごとの、描画だけに効く（再レイアウトが要らない）プロパティか。 */
-        private static final boolean[] PAINT_ONLY;
-        /** 添字ごとの、子孫が値を受け継ぐ（未登録は安全側に true）プロパティか。 */
-        private static final boolean[] INHERITED;
-        /** 添字ごとの、カスケードの初期値として親から受け取る（継承するロングハンド）プロパティか。 */
-        private static final boolean[] INHERITS_AS_LONGHAND;
-        /** 添字ごとの初期値（無ければ null）。算出が名前でレジストリを引き直さないための表。 */
-        private static final String[] INITIALS;
-        private static final CssValue[] INITIAL_VALUES;
-
-        /**
-         * バンド境界（配列を 4 つの連続区間へ分ける）:
-         * [0, LAYOUT_NON_INH_END): 非継承レイアウト / [LAYOUT_NON_INH_END, NON_INH_END): 非継承ペイント /
-         * [NON_INH_END, INH_LAYOUT_END): 継承レイアウト / [INH_LAYOUT_END, TOTAL_COUNT): 継承ペイント
-         */
-        static final int LAYOUT_NON_INH_END;
-        static final int NON_INH_END;
-        static final int INH_LAYOUT_END;
-        static final int TOTAL_COUNT;
-        /** 構造影響・位置インセット判定用の事前計算表（再スタイル中の文字列 switch 回避）。 */
-        static final boolean[] STRUCTURE_AFFECTING;
-        static final int ID_LEFT, ID_RIGHT, ID_TOP, ID_BOTTOM;
-
-        static {
-            var all = PropertyRegistry.all();
-            int n = all.size();
-            String[] rawNames = new String[n];
-            int[] rawBands = new int[n];
-            int[] bandCounts = new int[4];
-            int r = 0;
-            for (PropertyRegistry.Property p : all) {
-                String name = p.name();
-                int b = (PropertyRegistry.isInherited(name) ? 2 : 0) | (PropertyRegistry.isPaintOnly(name) ? 1 : 0);
-                rawNames[r] = name;
-                rawBands[r] = b;
-                bandCounts[b]++;
-                r++;
-            }
-            LAYOUT_NON_INH_END = bandCounts[0];
-            NON_INH_END = LAYOUT_NON_INH_END + bandCounts[1];
-            INH_LAYOUT_END = NON_INH_END + bandCounts[2];
-            TOTAL_COUNT = INH_LAYOUT_END + bandCounts[3];
-            int[] nextId = {0, LAYOUT_NON_INH_END, NON_INH_END, INH_LAYOUT_END};
-
-            String[] names = new String[n];
-            int cap = Integer.highestOneBit(Math.max(8, n * 4 - 1)) << 1;
-            String[] keys = new String[cap];
-            int[] hashes = new int[cap];
-            int[] vals = new int[cap];
-            for (int q = 0; q < n; q++) {
-                String name = rawNames[q];
-                int id = nextId[rawBands[q]]++;
-                int h = name.hashCode();
-                int at = (h ^ (h >>> 16)) & (cap - 1);
-                while (keys[at] != null) at = (at + 1) & (cap - 1);
-                keys[at] = name;
-                hashes[at] = h;
-                vals[at] = id;
-                names[id] = name;
-            }
-            KEYS = keys;
-            HASHES = hashes;
-            VALS = vals;
-            MASK = cap - 1;
-            NAMES = names;
-            PAINT_ONLY = new boolean[names.length];
-            INHERITED = new boolean[names.length];
-            INHERITS_AS_LONGHAND = new boolean[names.length];
-            INITIALS = new String[names.length];
-            INITIAL_VALUES = new CssValue[names.length];
-            STRUCTURE_AFFECTING = new boolean[names.length];
-            for (int k = 0; k < names.length; k++) {
-                String name = names[k];
-                PAINT_ONLY[k] = PropertyRegistry.isPaintOnly(name);
-                INHERITED[k] = PropertyRegistry.isInherited(name);
-                PropertyRegistry.Property p = PropertyRegistry.get(name);
-                INHERITS_AS_LONGHAND[k] = p != null && p.inherited() && !p.isShorthand();
-                INITIALS[k] = p != null ? p.initial() : null;
-                INITIAL_VALUES[k] = CssValue.of(INITIALS[k]);
-                STRUCTURE_AFFECTING[k] = switch (name) {
-                    case CssProperty.DISPLAY, CssProperty.POSITION, CssProperty.FLOAT,
-                         CssProperty.WHITE_SPACE, CssProperty.CONTENT, CssProperty.CONTENT_VISIBILITY, CssProperty.WRITING_MODE,
-                         CssProperty.LIST_STYLE_TYPE, CssProperty.LIST_STYLE_POSITION, CssProperty.LIST_STYLE_IMAGE,
-                         CssProperty.COUNTER_RESET, CssProperty.COUNTER_INCREMENT, CssProperty.COUNTER_SET -> true;
-                    default -> false;
-                };
-            }
-            ID_LEFT = of(CssProperty.LEFT);
-            ID_RIGHT = of(CssProperty.RIGHT);
-            ID_TOP = of(CssProperty.TOP);
-            ID_BOTTOM = of(CssProperty.BOTTOM);
-        }
-
-        static int count() {
-            return NAMES.length;
-        }
-
-        static int of(String name) {
-            if (name == null) return NONE;
-            int h = name.hashCode(); // 文字列の定数は intern 済みで、ハッシュはキャッシュ済み
-            int at = (h ^ (h >>> 16)) & MASK;
-            String[] keys = KEYS;
-            int[] hashes = HASHES;
-            for (; ; ) {
-                String k = keys[at];
-                if (k == null) return NONE;
-                if (k == name || (hashes[at] == h && k.equals(name))) return VALS[at];
-                at = (at + 1) & MASK;
-            }
-        }
-
-        static String name(int id) {
-            return NAMES[id];
-        }
-    }
-
-    /** 親の算出値（{@code ctx.parent()}）を添字で引く。算出スタイル・作業表なら配列を直接引き、素のマップなら名前で引く。 */
-    static String parentValue(Map<String, String> parent, int id) {
-        CssValue v = parentCssValue(parent, id);
-        return v != null ? v.text : null;
-    }
-
-    /** {@link #parentValue} の値オブジェクト版（継承で値を引き取るとき、文字列を引き直さない）。 */
-    static CssValue parentCssValue(Map<String, String> parent, int id) {
-        if (parent instanceof StyleMap view) return view.owner.values[id];
-        if (parent instanceof StyleTable table) return table.values[id];
-        return CssValue.of(parent.get(CssPropertyId.name(id)));
-    }
-
-    /** {@code source} が算出スタイルのビューなら、宣言を値オブジェクトのまま {@code into} へ写す（文字列を引き直さない）。 */
-    static boolean copyStyleMapInto(Map<String, String> source, StyleTable into) {
-        if (!(source instanceof StyleMap view)) return false;
-        CssValue[] v = view.owner.values;
-        System.arraycopy(v, 0, into.values, 0, v.length);
-        into.size = view.owner.size;
-        into.relativeUnits = view.owner.relativeUnits;
-        into.valuesViewport = view.owner.valuesViewport;
-        if (view.owner.extras != null) {
-            into.extras = new LinkedHashMap<>(view.owner.extras);
-            into.extrasViewport = view.owner.extrasViewport;
-        }
-        return true;
-    }
-
-    /** 添字のプロパティの初期値（無ければ null）。 */
-    static String initialOf(int id) {
-        return CssPropertyId.INITIALS[id];
-    }
-
-    /** 添字のプロパティの初期値の値オブジェクト（無ければ null）。 */
-    static CssValue initialValueOf(int id) {
-        return CssPropertyId.INITIAL_VALUES[id];
-    }
-
-    /** 添字のプロパティが継承するか（{@link PropertyRegistry#isInherited} と同じ）。 */
-    static boolean isInheritedId(int id) {
-        return CssPropertyId.INHERITED[id];
-    }
-
-    /** 直近の (旧, 新) の組ごとの差分の添字（Q2）。スタイルは不変なので、同じ組の再計算を省ける。 */
-    private record DiffMemo(ComputedStyle a, ComputedStyle b, int[] ids) {}
-
-    private static final int[] NO_IDS = new int[0];
-    private static final int DIFF_MEMO_SLOTS = 256;
-    private static final DiffMemo[] DIFF_MEMO = new DiffMemo[DIFF_MEMO_SLOTS];
-    private static final java.util.concurrent.atomic.LongAdder DIFF_MEMO_HITS = new java.util.concurrent.atomic.LongAdder();
-    private static final java.util.concurrent.atomic.LongAdder DIFF_MEMO_MISSES = new java.util.concurrent.atomic.LongAdder();
-
-    /** 診断・テスト用: 差分メモの命中回数。 */
-    public static long diffMemoHits() { return DIFF_MEMO_HITS.sum(); }
-
-    /** 診断・テスト用: 差分メモの不命中回数（全枠の走査をした回数）。 */
-    public static long diffMemoMisses() { return DIFF_MEMO_MISSES.sum(); }
-
-    /** Q2b: 4 つのバンドごとに不変配列の参照を共有するためのスライスと限定プール（Blink の ComputedStyleBase 相当）。 */
-    private static final class StyleSlice {
-        final long hash;
-        final CssValue[] values;
-
-        StyleSlice(long hash, CssValue[] values) {
-            this.hash = hash;
-            this.values = values;
-        }
-    }
-
-    private static final int SLICE_POOL_SIZE = 4096;
-    private static final int SLICE_POOL_MASK = SLICE_POOL_SIZE - 1;
-    private static final java.util.concurrent.atomic.AtomicReferenceArray<StyleSlice>[] SLICE_POOLS = createSlicePools();
-
-    @SuppressWarnings("unchecked")
-    private static java.util.concurrent.atomic.AtomicReferenceArray<StyleSlice>[] createSlicePools() {
-        java.util.concurrent.atomic.AtomicReferenceArray<StyleSlice>[] pools =
-                new java.util.concurrent.atomic.AtomicReferenceArray[4];
-        for (int i = 0; i < 4; i++) pools[i] = new java.util.concurrent.atomic.AtomicReferenceArray<>(SLICE_POOL_SIZE);
-        return pools;
-    }
-
-    private static int bandStart(int band) {
-        return switch (band) {
-            case 0 -> 0;
-            case 1 -> CssPropertyId.LAYOUT_NON_INH_END;
-            case 2 -> CssPropertyId.NON_INH_END;
-            default -> CssPropertyId.INH_LAYOUT_END;
-        };
-    }
-
-    private static int bandEnd(int band) {
-        return switch (band) {
-            case 0 -> CssPropertyId.LAYOUT_NON_INH_END;
-            case 1 -> CssPropertyId.NON_INH_END;
-            case 2 -> CssPropertyId.INH_LAYOUT_END;
-            default -> CssPropertyId.TOTAL_COUNT;
-        };
-    }
-
-    private long bandHash(int band) {
-        return switch (band) {
-            case 0 -> h0;
-            case 1 -> h1;
-            case 2 -> h2;
-            default -> h3;
-        };
-    }
-
-    private StyleSlice cachedSlice(int band) {
-        return switch (band) {
-            case 0 -> g0;
-            case 1 -> g1;
-            case 2 -> g2;
-            default -> g3;
-        };
-    }
-
-    private void cacheSlice(int band, StyleSlice slice) {
-        switch (band) {
-            case 0 -> g0 = slice;
-            case 1 -> g1 = slice;
-            case 2 -> g2 = slice;
-            default -> g3 = slice;
-        }
-    }
-
-    private static boolean sameCssValue(CssValue a, CssValue b) {
-        return a == b || (a != null && b != null && a.text.equals(b.text));
-    }
-
-    private StyleSlice ensureBandSlice(int band) {
-        StyleSlice existing = cachedSlice(band);
-        if (existing != null) return existing;
-        int from = bandStart(band);
-        int to = bandEnd(band);
-        long h = bandHash(band);
-        java.util.concurrent.atomic.AtomicReferenceArray<StyleSlice> pool = SLICE_POOLS[band];
-        int slot0 = ((int) (h ^ (h >>> 32))) & SLICE_POOL_MASK;
-        int slot1 = (slot0 + 1) & SLICE_POOL_MASK;
-        StyleSlice c0 = pool.get(slot0);
-        if (c0 != null && c0.hash == h && sliceMatches(c0.values, values, from, to)) {
-            cacheSlice(band, c0);
-            return c0;
-        }
-        StyleSlice c1 = pool.get(slot1);
-        if (c1 != null && c1.hash == h && sliceMatches(c1.values, values, from, to)) {
-            cacheSlice(band, c1);
-            return c1;
-        }
-        CssValue[] slice = new CssValue[to - from];
-        System.arraycopy(values, from, slice, 0, to - from);
-        StyleSlice created = new StyleSlice(h, slice);
-        int target = c0 == null ? slot0 : (c1 == null ? slot1 : ((h & 1) == 0 ? slot0 : slot1));
-        pool.set(target, created);
-        cacheSlice(band, created);
-        return created;
-    }
-
-    private static boolean sliceMatches(CssValue[] slice, CssValue[] full, int from, int to) {
-        for (int i = 0, j = from; j < to; i++, j++) {
-            if (!sameCssValue(slice[i], full[j])) return false;
-        }
-        return true;
-    }
-
-    private static boolean sameBand(ComputedStyle a, ComputedStyle b, int band) {
-        if (a == b) return true;
-        if (a.bandHash(band) != b.bandHash(band)) return false;
-        StyleSlice sa = a.ensureBandSlice(band);
-        StyleSlice sb = b.ensureBandSlice(band);
-        if (sa == sb) return true;
-        CssValue[] x = sa.values, y = sb.values;
-        for (int i = 0; i < x.length; i++) {
-            if (!sameCssValue(x[i], y[i])) return false;
-        }
-        return true;
-    }
-
-    private static boolean sameExtras(ComputedStyle a, ComputedStyle b) {
-        if (a.extras == null && b.extras == null) return true;
-        if (a.extras == b.extras || (a.extrasBase != null && a.extrasBase == b.extrasBase)) return true;
-        if (a.extras == null) return b.extras.isEmpty();
-        if (b.extras == null) return a.extras.isEmpty();
-        return a.extras.equals(b.extras);
-    }
-
-    /** 2 つの算出スタイル間にレイアウトへ影響する差分があるか（グループ参照一致により O(1) 短絡）。 */
-    public boolean hasLayoutAffectingDiffFrom(ComputedStyle other) {
-        if (other == null) return true;
-        if (this == other) return false;
-        if (Float.compare(elementFontSize, other.elementFontSize) != 0
-                || Float.compare(rootFontSize, other.rootFontSize) != 0) {
-            return true;
-        }
-        if (declHash == other.declHash && sameBand(this, other, 0) && sameBand(this, other, 1)
-                && sameBand(this, other, 2) && sameBand(this, other, 3) && sameExtras(this, other)) {
-            return false;
-        }
-        if (!sameBand(this, other, 0) || !sameBand(this, other, 2)) return true;
-        return !sameExtras(this, other);
-    }
-
-    /**
-     * 再スタイルの子孫伝播種別を返す（0 = NONE, 1 = NON_INHERITED, 2 = INHERITED）。
-     * {@link #diff}・ラムダ・配列確保なしで、継承バンド（2/3）・extras のハッシュ／スライス参照を比較する。
-     */
-    public int classifyPropagationFrom(ComputedStyle previous) {
-        if (previous == null) return 2;
-        if (this == previous) return 0;
-        if (Float.compare(previous.elementFontSize, elementFontSize) != 0
-                || Float.compare(previous.rootFontSize, rootFontSize) != 0) {
-            return 2;
-        }
-        if (!sameBand(previous, this, 2) || !sameBand(previous, this, 3) || !sameExtras(previous, this)) {
-            return 2;
-        }
-        if (!sameBand(previous, this, 0) || !sameBand(previous, this, 1)) {
-            return 1;
-        }
-        return 0;
-    }
-
-    /** ボックスツリー構造を変えるプロパティ（{@code display}/{@code white-space} 等）に差分があるか（非確保）。 */
-    public boolean hasStructureAffectingDiff(ComputedStyle other) {
-        if (other == null) return true;
-        if (this == other) return false;
-        boolean[] structure = CssPropertyId.STRUCTURE_AFFECTING;
-        if (!sameBand(this, other, 0) && hasFilteredDiffInRange(values, other.values, 0, CssPropertyId.LAYOUT_NON_INH_END, structure)) {
-            return true;
-        }
-        return !sameBand(this, other, 2)
-                && hasFilteredDiffInRange(values, other.values, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END, structure);
-    }
-
-    private static boolean hasFilteredDiffInRange(CssValue[] x, CssValue[] y, int from, int to, boolean[] filter) {
-        for (int i = from; i < to; i++) {
-            if (filter[i] && !sameCssValue(x[i], y[i])) return true;
-        }
-        return false;
-    }
-
-    /**
-     * 位置オフセット（{@code left}/{@code right}/{@code top}/{@code bottom}）のみが変わったかを分類する。
-     * @return ビット論理和（bit 0 = 横 inset 変更、bit 1 = 縦 inset 変更）、それ以外のレイアウト変更なら {@code -1}
-     */
-    public int classifyPositionOnlyDiff(ComputedStyle other) {
-        if (other == null || !sameBand(this, other, 2) || !sameExtras(this, other)) return -1;
-        if (sameBand(this, other, 0)) return 0;
-        int axes = 0;
-        CssValue[] x = this.values, y = other.values;
-        int left = CssPropertyId.ID_LEFT, right = CssPropertyId.ID_RIGHT,
-                top = CssPropertyId.ID_TOP, bottom = CssPropertyId.ID_BOTTOM;
-        for (int i = 0; i < CssPropertyId.LAYOUT_NON_INH_END; i++) {
-            if (sameCssValue(x[i], y[i])) continue;
-            if (i == left || i == right) axes |= 1;
-            else if (i == top || i == bottom) axes |= 2;
-            else return -1;
-        }
-        return axes;
-    }
-
-    /**
-     * 宣言（添字つき）の値が違う添字を昇順に返す。同じ (a, b) の組（同一性）は、1 要素の再スタイルで何度も（分類ごとに）、
-     * 同形のリストでは要素ごとに繰り返し問われるので、直接写像の小さな表に覚える。
-     */
-    static int[] changedIds(ComputedStyle a, ComputedStyle b) {
-        if (a == b) return NO_IDS;
-        int slot = (int) ((a.declHash * 31 + b.declHash) & (DIFF_MEMO_SLOTS - 1));
-        DiffMemo m = DIFF_MEMO[slot];
-        if (m != null && m.a == a && m.b == b) {
-            DIFF_MEMO_HITS.increment();
-            return m.ids;
-        }
-        DIFF_MEMO_MISSES.increment();
-        int[] ids = scanChangedIds(a, b);
-        DIFF_MEMO[slot] = new DiffMemo(a, b, ids);
-        return ids;
-    }
-
-    private static int[] scanChangedIds(ComputedStyle a, ComputedStyle b) {
-        boolean d0 = !sameBand(a, b, 0);
-        boolean d1 = !sameBand(a, b, 1);
-        boolean d2 = !sameBand(a, b, 2);
-        boolean d3 = !sameBand(a, b, 3);
-        if (!(d0 | d1 | d2 | d3)) return NO_IDS;
-        CssValue[] x = a.values, y = b.values;
-        int n = 0;
-        if (d0) n += countDiffRange(x, y, 0, CssPropertyId.LAYOUT_NON_INH_END);
-        if (d1) n += countDiffRange(x, y, CssPropertyId.LAYOUT_NON_INH_END, CssPropertyId.NON_INH_END);
-        if (d2) n += countDiffRange(x, y, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END);
-        if (d3) n += countDiffRange(x, y, CssPropertyId.INH_LAYOUT_END, CssPropertyId.TOTAL_COUNT);
-        if (n == 0) return NO_IDS;
-        int[] out = new int[n];
-        int k = 0;
-        if (d0) k = fillDiffRange(x, y, 0, CssPropertyId.LAYOUT_NON_INH_END, out, k);
-        if (d1) k = fillDiffRange(x, y, CssPropertyId.LAYOUT_NON_INH_END, CssPropertyId.NON_INH_END, out, k);
-        if (d2) k = fillDiffRange(x, y, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END, out, k);
-        if (d3) fillDiffRange(x, y, CssPropertyId.INH_LAYOUT_END, CssPropertyId.TOTAL_COUNT, out, k);
-        return out;
-    }
-
-    private static int countDiffRange(CssValue[] x, CssValue[] y, int from, int to) {
-        int n = 0;
-        for (int i = from; i < to; i++) {
-            if (!sameCssValue(x[i], y[i])) n++;
-        }
-        return n;
-    }
-
-    private static int fillDiffRange(CssValue[] x, CssValue[] y, int from, int to, int[] out, int k) {
-        for (int i = from; i < to; i++) {
-            if (!sameCssValue(x[i], y[i])) out[k++] = i;
-        }
-        return k;
-    }
-
-    /** 2 つの算出スタイルの宣言の差分を 1 つずつ渡す先。 */
-    public interface DiffVisitor {
-        /** @param paintOnly 描画だけに効くプロパティか @param inherited 子孫が値を受け継ぐプロパティか（未登録・{@code --*} は true） */
-        void changed(String name, boolean paintOnly, boolean inherited);
-    }
-
-    /**
-     * 宣言が違うプロパティを {@code visitor} に渡す。マップとして走査して引き直すのではなく、添字ごとの配列を直接比べる。
-     * 違いが無ければ何も呼ばずに false（呼び出し側が先に {@link #sameDeclarations} で足切りしてもよい）。
-     */
-    public static void diff(ComputedStyle a, ComputedStyle b, DiffVisitor visitor) {
-        int[] ids = changedIds(a, b);
-        for (int id : ids) {
-            visitor.changed(CssPropertyId.name(id), CssPropertyId.PAINT_ONLY[id], CssPropertyId.INHERITED[id]);
-        }
-        if (a.extras == null && b.extras == null) return;
-        Map<String, String> ex = a.extras != null ? a.extras : Map.of();
-        Map<String, String> ey = b.extras != null ? b.extras : Map.of();
-        if (ex == ey || (a.extrasBase != null && a.extrasBase == b.extrasBase)) return;
-        // forEach は読み取り専用の包みが項目ごとに作る Map.Entry を介さない
-        ex.forEach((k, v) -> {
-            if (!java.util.Objects.equals(v, ey.get(k))) visitor.changed(k, false, true);
-        });
-        ey.forEach((k, v) -> {
-            if (!ex.containsKey(k)) visitor.changed(k, false, true);
-        });
-    }
-
-    /**
-     * カスケードの初期値として、親の算出スタイルから継承するロングハンドと {@code --*} を {@code target} へ写す。
-     * {@code parent} が算出スタイルのビューなら、{@code Map.Entry} を作らず、固定の添字表（継承するか）で配列を直接走査する。
-     * 走査順は {@code parent.entrySet()} と同じ（登録順 → 添字を持たない宣言）なので、{@code target} の並びも変わらない。
-     *
-     * @return 算出スタイルのビューとして処理した。false なら何も書いておらず、呼び出し側が従来の走査をする
-     */
-    static boolean copyInheritable(Map<String, String> parent, Map<String, String> target) {
-        if (!(parent instanceof StyleMap view)) return false;
-        CssValue[] v = view.owner.values;
-        boolean[] inherits = CssPropertyId.INHERITS_AS_LONGHAND;
-        StyleTable table = target instanceof StyleTable t ? t : null;
-        for (int i = CssPropertyId.NON_INH_END; i < v.length; i++) {
-            if (v[i] == null || !inherits[i]) continue;
-            if (table != null) table.putValueById(i, v[i]);
-            else target.put(CssPropertyId.NAMES[i], v[i].text);
-        }
-        Map<String, String> ex = view.owner.extras;
-        if (ex != null) {
-            if (table != null && table.extras == null && view.owner.areAllExtrasCustom()) {
-                // 継承するのは --* だけ。全部が --* なら、親の表を丸ごと共有する（1 件ずつ入れ直さない。書くときに写す）
-                table.shareExtrasFrom(ex, view.owner.extrasViewportFlag());
-            } else {
-                for (Map.Entry<String, String> e : ex.entrySet()) {
-                    if (e.getKey().startsWith("--")) target.put(e.getKey(), e.getValue());
-                }
-            }
-        }
-        return true;
-    }
-
-    private static final Object KEY_ANON_BLOCK = new Object();
-    private static final Object KEY_ANON_INLINE = new Object();
-    private static final Object KEY_ANON_INLINE_BLOCK = new Object();
-    private static final Object KEY_MARKER_FROM_OWNER = new Object();
-    private static final Object KEY_MARKER_FROM_DECLARED = new Object();
-
-    private record DerivedAnonKey(String display) {}
-
-    /**
-     * 匿名ブロック・インライン等の生成箱用スタイルを {@code LinkedHashMap} を介さず継承バンドから構築・メモ化する。
-     */
-    public ComputedStyle derivedAnonymous(String display) {
-        Object key = switch (display) {
-            case "block" -> KEY_ANON_BLOCK;
-            case "inline" -> KEY_ANON_INLINE;
-            case "inline-block" -> KEY_ANON_INLINE_BLOCK;
-            default -> new DerivedAnonKey(display);
-        };
-        return paintMemo(key, k -> buildInheritedWithOverrides(display, false));
-    }
-
-    private static final Object KEY_TEXT_CHILD = new Object();
-
-    /**
-     * A16: この算出スタイルを親に持つテキストの節の算出スタイル。テキストの節には規則が当たらないので、
-     * 結果は継承するロングハンドと {@code --*} を写しただけのもの（親の値は算出値なので、算出し直しても変わらない）。
-     * 親のインスタンスにメモするので、同じ親（共有で同じインスタンスの別の親も）の文字の子は 1 つを使い回す。
-     * {@code @property} の登録があるシートでは使わない（登録した初期値が入る。呼び出し側が判断する）。
-     */
-    public TextChild derivedTextChild() {
-        return paintMemoSelf(KEY_TEXT_CHILD, ComputedStyle::buildTextChild);
-    }
-
-    /** {@link #asMap()} の表なら、その持ち主の算出スタイル。ほかの表なら null。 */
-    public static ComputedStyle ownerOf(Map<String, String> map) {
-        return map instanceof StyleMap view ? view.owner : null;
-    }
-
-    /**
-     * {@link #derivedTextChild} の結果。{@code viewportDependent} は写した値にビューポート・コンテナ基準の単位・
-     * {@code var()}・{@code env()} を含むか（{@link StyleResolver#rawDependsOnViewport} と同じ判定）。
-     */
-    public record TextChild(ComputedStyle style, boolean viewportDependent) {}
-
-    private static TextChild buildTextChild(ComputedStyle parent) {
-        CssValue[] v = parent.values;
-        CssValue[] out = new CssValue[CssPropertyId.TOTAL_COUNT];
-        boolean[] inherits = CssPropertyId.INHERITS_AS_LONGHAND;
-        int cnt = 0;
-        boolean viewport = false;
-        for (int i = CssPropertyId.NON_INH_END; i < v.length; i++) {
-            if (v[i] == null || !inherits[i]) continue;
-            out[i] = v[i];
-            cnt++;
-            if (!viewport && v[i].dependsOnViewport()) viewport = true;
-        }
-        Map<String, String> exBase = null;
-        Map<String, String> exUnmod = null;
-        byte exVp = 0;
-        if (parent.extras != null) {
-            if (parent.areAllExtrasCustom()) {
-                exBase = parent.extrasBase;
-                exUnmod = parent.extras;
-                exVp = parent.extrasViewportFlag();
-                cnt += parent.extras.size();
-            } else {
-                Map<String, String> custom = new LinkedHashMap<>();
-                for (Map.Entry<String, String> e : parent.extras.entrySet()) {
-                    if (e.getKey().startsWith("--")) {
-                        custom.put(e.getKey(), e.getValue());
-                        if (exVp == 0 && e.getValue() != null && StyleResolver.valueDependsOnViewport(e.getValue())) exVp = 1;
-                    }
-                }
-                if (!custom.isEmpty()) {
-                    exBase = custom;
-                    exUnmod = Collections.unmodifiableMap(custom);
-                    cnt += custom.size();
-                }
-            }
-        }
-        ComputedStyle fresh = new ComputedStyle(out, exBase, exUnmod, cnt, (byte) (viewport ? 1 : 0), exVp,
-                parent.elementFontSize, parent.rootFontSize);
-        ComputedStyle t = com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
-        if (t.typed == null) t.typed = Style.of(t, parent.typed());
-        return new TextChild(t, viewport || exVp == 1);
-    }
-
-    /**
-     * {@code ::marker} 用スタイルを構築・メモ化する（{@code declaredMarker == null} なら所有者の継承値＋UA 上書き、
-     * 非 null なら {@code declaredMarker} から {@code content} を除いて UA 上書きを掛ける）。
-     */
-    public ComputedStyle derivedMarker(ComputedStyle declaredMarker) {
-        if (declaredMarker == null) {
-            return paintMemo(KEY_MARKER_FROM_OWNER, k -> buildInheritedWithOverrides("inline-block", true));
-        }
-        return declaredMarker.paintMemo(KEY_MARKER_FROM_DECLARED, k -> buildDeclaredMarker(declaredMarker));
-    }
-
-    /**
-     * 縦書きの根の内容を包む箱（{@code BoxTreeBuilder}）のスタイル。論理（横書き）の軸で組んだ内容を、原点（左上）まわりに
-     * 90°（{@code ccw} なら -90°）回して物理の縦書きにする。継承プロパティは所有者から受け継ぐ。
-     */
-    public ComputedStyle derivedVerticalWrapper(boolean ccw) {
-        return paintMemo(ccw ? KEY_VERTICAL_CCW : KEY_VERTICAL_CW, k -> buildInheritedWithOverrides("block", false, ccw ? 2 : 1, false));
-    }
-
-    /** {@code vertical-lr} 用: 転置（行が左から右へ積まれる）。 */
-    public ComputedStyle derivedVerticalTransposed() {
-        return paintMemo(KEY_VERTICAL_T, k -> buildInheritedWithOverrides("block", false, 3, false));
-    }
-
-    /**
-     * 直交フロー（縦書きの根・縦書き内の {@code horizontal-tb}）の生成箱スタイル。
-     * {@code transformKind} は 1=90°, 2=-90°, 3=転置。{@code displayValue} が {@code flex} / {@code grid} / {@code table}
-     * ならコンテナ用の非継承プロパティも写し、{@code copyBoxSizes} が true（水平へ戻す根）なら寸法プロパティも写す。
-     */
-    public ComputedStyle derivedOrthogonalWrapper(int transformKind, String displayValue, boolean copyBoxSizes) {
-        if (!copyBoxSizes && "block".equals(displayValue)) {
-            if (transformKind == 1) return derivedVerticalWrapper(false);
-            if (transformKind == 2) return derivedVerticalWrapper(true);
-            if (transformKind == 3) return derivedVerticalTransposed();
-        }
-        int dk = switch (displayValue) {
-            case "inline-block" -> 1;
-            case "flex" -> 2;
-            case "grid" -> 3;
-            case "table" -> 4;
-            default -> 0;
-        };
-        Object key = ORTHO_KEYS[transformKind][dk][copyBoxSizes ? 1 : 0];
-        return paintMemo(key, k -> buildInheritedWithOverrides(displayValue, false, transformKind, copyBoxSizes));
-    }
-
-    private static final Object KEY_VERTICAL_T = new Object();
-    private static final Object KEY_VERTICAL_CW = new Object();
-    private static final Object KEY_VERTICAL_CCW = new Object();
-    private static final Object[][][] ORTHO_KEYS = new Object[4][5][2];
-    static {
-        for (int t = 0; t < 4; t++) {
-            for (int d = 0; d < 5; d++) {
-                ORTHO_KEYS[t][d][0] = new Object();
-                ORTHO_KEYS[t][d][1] = new Object();
-            }
-        }
-    }
-
-    private ComputedStyle buildInheritedWithOverrides(String displayValue, boolean markerOverrides) {
-        return buildInheritedWithOverrides(displayValue, markerOverrides, 0, false);
-    }
-
-    private ComputedStyle buildInheritedWithOverrides(String displayValue, boolean markerOverrides, int vertical, boolean copyBoxSizes) {
-        CssValue[] out = new CssValue[CssPropertyId.TOTAL_COUNT];
-        int start = CssPropertyId.NON_INH_END;
-        int len = out.length - start;
-        System.arraycopy(values, start, out, start, len);
-        int cnt = 0;
-        for (int i = start; i < out.length; i++) {
-            if (out[i] != null) cnt++;
-        }
-        cnt += setOverrideSlot(out, CssPropertyIndex.DISPLAY, CssValue.of(displayValue));
-        if (vertical != 0) {
-            cnt += setOverrideSlot(out, CssPropertyIndex.TRANSFORM, CssValue.of(vertical == 3 ? "matrix(0,1,1,0,0,0)" : vertical == 2 ? "rotate(-90deg)" : "rotate(90deg)"));
-            cnt += setOverrideSlot(out, CssPropertyIndex.TRANSFORM_ORIGIN, CssValue.of("0px 0px"));
-            if ("flex".equals(displayValue)) {
-                cnt += copySlots(out, OrthogonalPropGroups.FLEX);
-            } else if ("grid".equals(displayValue)) {
-                cnt += copySlots(out, OrthogonalPropGroups.GRID);
-            } else if ("table".equals(displayValue)) {
-                cnt += copySlots(out, OrthogonalPropGroups.TABLE);
-            }
-            if (copyBoxSizes) {
-                cnt += copySlots(out, OrthogonalPropGroups.BOX_SIZES);
-            }
-        }
-        if (markerOverrides) {
-            cnt += setOverrideSlot(out, CssPropertyIndex.WHITE_SPACE, CssValue.of("pre"));
-            cnt += setOverrideSlot(out, CssPropertyIndex.TEXT_TRANSFORM, CssValue.of("none"));
-        }
-        Map<String, String> exBase = null;
-        Map<String, String> exUnmod = null;
-        byte exVp = 0;
-        if (extras != null) {
-            if (areAllExtrasCustom()) {
-                exBase = extrasBase;
-                exUnmod = extras;
-                exVp = extrasViewportFlag();
-                cnt += extras.size();
-            } else {
-                Map<String, String> custom = new LinkedHashMap<>();
-                for (Map.Entry<String, String> e : extras.entrySet()) {
-                    if (e.getKey().startsWith("--")) {
-                        custom.put(e.getKey(), e.getValue());
-                        if (exVp == 0 && e.getValue() != null && StyleResolver.valueDependsOnViewport(e.getValue())) exVp = 1;
-                    }
-                }
-                if (!custom.isEmpty()) {
-                    exBase = custom;
-                    exUnmod = Collections.unmodifiableMap(custom);
-                    cnt += custom.size();
-                }
-            }
-        }
-        ComputedStyle fresh = new ComputedStyle(out, exBase, exUnmod, cnt, (byte) -1, exVp, elementFontSize, rootFontSize);
-        if (!markerOverrides) fresh.g2 = this.g2;
-        fresh.g3 = this.g3;
-        return com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
-    }
-
-    private static ComputedStyle buildDeclaredMarker(ComputedStyle declared) {
-        CssValue[] out = declared.values.clone();
-        int cnt = declared.size;
-        if (out[CssPropertyIndex.CONTENT] != null) {
-            out[CssPropertyIndex.CONTENT] = null;
-            cnt--;
-        }
-        cnt += setOverrideSlot(out, CssPropertyIndex.DISPLAY, CssValue.of("inline-block"));
-        cnt += setOverrideSlot(out, CssPropertyIndex.WHITE_SPACE, CssValue.of("pre"));
-        cnt += setOverrideSlot(out, CssPropertyIndex.TEXT_TRANSFORM, CssValue.of("none"));
-        ComputedStyle fresh = new ComputedStyle(out, declared.extrasBase, declared.extras, cnt,
-                (byte) -1, declared.extrasViewport, declared.elementFontSize, declared.rootFontSize);
-        return com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
-    }
-
-    private static int setOverrideSlot(CssValue[] out, int id, CssValue v) {
-        CssValue prev = out[id];
-        out[id] = v;
-        if (prev == null && v != null) return 1;
-        if (prev != null && v == null) return -1;
-        return 0;
-    }
-
-    private int copySlots(CssValue[] out, int[] ids) {
-        int delta = 0;
-        for (int id : ids) {
-            CssValue v = values[id];
-            if (v != null) delta += setOverrideSlot(out, id, v);
-        }
-        return delta;
-    }
-
-    /**
-     * 直交ラッパー生成時のみ読み込む添字表（{@code ComputedStyle} と {@code CssPropertyIndex} の静的初期化循環を防ぐ）。
-     */
-    private static final class OrthogonalPropGroups {
-        static final int[] FLEX = {
-                CssPropertyIndex.FLEX_DIRECTION, CssPropertyIndex.FLEX_WRAP,
-                CssPropertyIndex.JUSTIFY_CONTENT, CssPropertyIndex.ALIGN_ITEMS, CssPropertyIndex.ALIGN_CONTENT,
-                CssPropertyIndex.ROW_GAP, CssPropertyIndex.COLUMN_GAP
-        };
-        static final int[] GRID = {
-                CssPropertyIndex.GRID_TEMPLATE_COLUMNS, CssPropertyIndex.GRID_TEMPLATE_ROWS, CssPropertyIndex.GRID_TEMPLATE_AREAS,
-                CssPropertyIndex.GRID_AUTO_FLOW, CssPropertyIndex.GRID_AUTO_COLUMNS, CssPropertyIndex.GRID_AUTO_ROWS,
-                CssPropertyIndex.JUSTIFY_ITEMS, CssPropertyIndex.JUSTIFY_CONTENT,
-                CssPropertyIndex.ALIGN_ITEMS, CssPropertyIndex.ALIGN_CONTENT,
-                CssPropertyIndex.ROW_GAP, CssPropertyIndex.COLUMN_GAP
-        };
-        static final int[] TABLE = {
-                CssPropertyIndex.BORDER_COLLAPSE, CssPropertyIndex.BORDER_SPACING,
-                CssPropertyIndex.TABLE_LAYOUT, CssPropertyIndex.CAPTION_SIDE, CssPropertyIndex.EMPTY_CELLS
-        };
-        static final int[] BOX_SIZES = {
-                CssPropertyIndex.WIDTH, CssPropertyIndex.MIN_WIDTH, CssPropertyIndex.MAX_WIDTH,
-                CssPropertyIndex.HEIGHT, CssPropertyIndex.MIN_HEIGHT, CssPropertyIndex.MAX_HEIGHT,
-                CssPropertyIndex.BOX_SIZING, CssPropertyIndex.ASPECT_RATIO
-        };
-    }
-
-    /**
-     * 縦書きラッパー（{@code _vw}）内の要素で物理プロパティをローカル座標軸へ写像するときのみ読み込む添字表
-     * （{@code ComputedStyle} と {@code CssPropertyIndex} の静的初期化循環を防ぐ）。
-     */
-    private static final class VerticalAxisPropGroups {
-        static final int[][] EDGE_PERM = {
-                null,
-                {1, 2, 3, 0}, // VERTICAL_RL (+90°): local T,R,B,L <- physical R,B,L,T
-                {3, 2, 1, 0}, // VERTICAL_LR (transpose): local T,R,B,L <- physical L,B,R,T
-                {1, 2, 3, 0}, // SIDEWAYS_RL (+90°)
-                {3, 0, 1, 2}  // SIDEWAYS_LR (-90°): local T,R,B,L <- physical L,T,R,B
-        };
-        static final int[][] CORNER_PERM = {
-                null,
-                {1, 2, 3, 0}, // VERTICAL_RL: local TL,TR,BR,BL <- physical TR,BR,BL,TL
-                {0, 3, 2, 1}, // VERTICAL_LR: local TL,TR,BR,BL <- physical TL,BL,BR,TR
-                {1, 2, 3, 0}, // SIDEWAYS_RL
-                {3, 0, 1, 2}  // SIDEWAYS_LR: local TL,TR,BR,BL <- physical BL,TL,TR,BR
-        };
-        static final int[][] SIZE_SWAPS = {
-                {CssPropertyIndex.WIDTH, CssPropertyIndex.HEIGHT},
-                {CssPropertyIndex.MIN_WIDTH, CssPropertyIndex.MIN_HEIGHT},
-                {CssPropertyIndex.MAX_WIDTH, CssPropertyIndex.MAX_HEIGHT},
-                {CssPropertyIndex.CONTAIN_INTRINSIC_WIDTH, CssPropertyIndex.CONTAIN_INTRINSIC_HEIGHT}
-        };
-        static final int[][] EDGES = {
-                {CssPropertyIndex.MARGIN_TOP, CssPropertyIndex.MARGIN_RIGHT, CssPropertyIndex.MARGIN_BOTTOM, CssPropertyIndex.MARGIN_LEFT},
-                {CssPropertyIndex.PADDING_TOP, CssPropertyIndex.PADDING_RIGHT, CssPropertyIndex.PADDING_BOTTOM, CssPropertyIndex.PADDING_LEFT},
-                {CssPropertyIndex.BORDER_TOP_WIDTH, CssPropertyIndex.BORDER_RIGHT_WIDTH, CssPropertyIndex.BORDER_BOTTOM_WIDTH, CssPropertyIndex.BORDER_LEFT_WIDTH},
-                {CssPropertyIndex.BORDER_TOP_COLOR, CssPropertyIndex.BORDER_RIGHT_COLOR, CssPropertyIndex.BORDER_BOTTOM_COLOR, CssPropertyIndex.BORDER_LEFT_COLOR},
-                {CssPropertyIndex.BORDER_TOP_STYLE, CssPropertyIndex.BORDER_RIGHT_STYLE, CssPropertyIndex.BORDER_BOTTOM_STYLE, CssPropertyIndex.BORDER_LEFT_STYLE},
-                {CssPropertyIndex.TOP, CssPropertyIndex.RIGHT, CssPropertyIndex.BOTTOM, CssPropertyIndex.LEFT}
-        };
-        static final int[] CORNERS = {
-                CssPropertyIndex.BORDER_TOP_LEFT_RADIUS, CssPropertyIndex.BORDER_TOP_RIGHT_RADIUS,
-                CssPropertyIndex.BORDER_BOTTOM_RIGHT_RADIUS, CssPropertyIndex.BORDER_BOTTOM_LEFT_RADIUS
-        };
-    }
-
-    private static final Object[] VERTICAL_AXIS_KEYS = {null, new Object(), new Object(), null, new Object()};
-
-    /**
-     * 縦書きラッパー（{@code _vw}）内の要素について、物理プロパティ（{@code width}/{@code height}・{@code margin}/{@code padding}/
-     * {@code border} 4 辺・角丸・{@code overflow-x/y}・{@code top/right/bottom/left}）をローカル軸へ写像した算出スタイルを返す。
-     */
-    public ComputedStyle derivedVerticalAxisStyle(int flow) {
-        int norm = flow == WritingModes.SIDEWAYS_RL ? WritingModes.VERTICAL_RL : flow;
-        if (norm < 1 || norm >= VERTICAL_AXIS_KEYS.length || VERTICAL_AXIS_KEYS[norm] == null) return this;
-        return paintMemo(VERTICAL_AXIS_KEYS[norm], k -> buildVerticalAxisStyle(norm));
-    }
-
-    private ComputedStyle buildVerticalAxisStyle(int norm) {
-        boolean any = values[CssPropertyIndex.OVERFLOW_X] != null || values[CssPropertyIndex.OVERFLOW_Y] != null
-                || values[CssPropertyIndex.OVERFLOW] != null || values[CssPropertyIndex.BORDER_RADIUS] != null
-                || values[CssPropertyIndex.ASPECT_RATIO] != null;
-        if (!any) {
-            for (int[] p : VerticalAxisPropGroups.SIZE_SWAPS) {
-                if (values[p[0]] != null || values[p[1]] != null) { any = true; break; }
-            }
-        }
-        if (!any) {
-            for (int[] g : VerticalAxisPropGroups.EDGES) {
-                for (int id : g) if (values[id] != null) { any = true; break; }
-                if (any) break;
-            }
-        }
-        if (!any) {
-            for (int id : VerticalAxisPropGroups.CORNERS) {
-                if (values[id] != null) { any = true; break; }
-            }
-        }
-        if (!any) return this;
-
-        CssValue[] out = values.clone();
-        int cnt = size;
-        for (int[] p : VerticalAxisPropGroups.SIZE_SWAPS) {
-            CssValue a = out[p[0]];
-            out[p[0]] = out[p[1]];
-            out[p[1]] = a;
-        }
-        int[] ep = VerticalAxisPropGroups.EDGE_PERM[norm];
-        for (int[] g : VerticalAxisPropGroups.EDGES) {
-            CssValue t = values[g[ep[0]]], r = values[g[ep[1]]], b = values[g[ep[2]]], l = values[g[ep[3]]];
-            out[g[0]] = t;
-            out[g[1]] = r;
-            out[g[2]] = b;
-            out[g[3]] = l;
-        }
-        if (values[CssPropertyIndex.OVERFLOW_X] != null || values[CssPropertyIndex.OVERFLOW_Y] != null
-                || values[CssPropertyIndex.OVERFLOW] != null) {
-            CssValue ox = values[CssPropertyIndex.OVERFLOW_X] != null ? values[CssPropertyIndex.OVERFLOW_X] : CssValue.of(overflowX().cssName());
-            CssValue oy = values[CssPropertyIndex.OVERFLOW_Y] != null ? values[CssPropertyIndex.OVERFLOW_Y] : CssValue.of(overflowY().cssName());
-            cnt += setOverrideSlot(out, CssPropertyIndex.OVERFLOW_X, oy);
-            cnt += setOverrideSlot(out, CssPropertyIndex.OVERFLOW_Y, ox);
-            cnt += setOverrideSlot(out, CssPropertyIndex.OVERFLOW, null);
-        }
-        boolean hasCornerLonghand = false;
-        for (int id : VerticalAxisPropGroups.CORNERS) {
-            if (values[id] != null) { hasCornerLonghand = true; break; }
-        }
-        if (hasCornerLonghand) {
-            int[] cp = VerticalAxisPropGroups.CORNER_PERM[norm];
-            int[] corners = VerticalAxisPropGroups.CORNERS;
-            for (int i = 0; i < 4; i++) {
-                cnt += setOverrideSlot(out, corners[i], swapRadiusPair(values[corners[cp[i]]]));
-            }
-            cnt += setOverrideSlot(out, CssPropertyIndex.BORDER_RADIUS, null);
-        } else if (values[CssPropertyIndex.BORDER_RADIUS] != null) {
-            String sh = values[CssPropertyIndex.BORDER_RADIUS].text;
-            Map<String, String> exp = LengthResolver.expandedRadius(sh);
-            String[] names = {"border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"};
-            int[] cp = VerticalAxisPropGroups.CORNER_PERM[norm];
-            for (int i = 0; i < 4; i++) {
-                String val = exp.getOrDefault(names[cp[i]], "0");
-                cnt += setOverrideSlot(out, VerticalAxisPropGroups.CORNERS[i], swapRadiusPair(CssValue.of(val)));
-            }
-            cnt += setOverrideSlot(out, CssPropertyIndex.BORDER_RADIUS, null);
-        }
-        if (values[CssPropertyIndex.ASPECT_RATIO] != null) {
-            cnt += setOverrideSlot(out, CssPropertyIndex.ASPECT_RATIO, invertAspectRatio(values[CssPropertyIndex.ASPECT_RATIO]));
-        }
-        ComputedStyle fresh = new ComputedStyle(out, extrasBase, extras, cnt, (byte) -1, extrasViewport, elementFontSize, rootFontSize);
-        fresh.g2 = this.g2;
-        fresh.g3 = this.g3;
-        return fresh;
-    }
-
-    private static final class FirstLinePropGroups {
-        static final int[] INHERITABLE_IDS = {
-                CssPropertyIndex.COLOR,
-                CssPropertyIndex.FONT_FAMILY, CssPropertyIndex.FONT_SIZE,
-                CssPropertyIndex.FONT_STYLE, CssPropertyIndex.FONT_WEIGHT, CssPropertyIndex.FONT_KERNING,
-                CssPropertyIndex.LETTER_SPACING, CssPropertyIndex.LINE_HEIGHT,
-                CssPropertyIndex.TEXT_TRANSFORM, CssPropertyIndex.TEXT_DECORATION, CssPropertyIndex.TEXT_SHADOW,
-                CssPropertyIndex.VERTICAL_ALIGN,
-                CssPropertyIndex.WEBKIT_TEXT_STROKE_WIDTH, CssPropertyIndex.WEBKIT_TEXT_STROKE_COLOR
-        };
-    }
-
-    private static final class FirstLineChildKey {
-        final ComputedStyle owner;
-        final ComputedStyle firstLine;
-        final int hash;
-
-        FirstLineChildKey(ComputedStyle owner, ComputedStyle firstLine) {
-            this.owner = owner;
-            this.firstLine = firstLine;
-            this.hash = System.identityHashCode(owner) * 31 + System.identityHashCode(firstLine);
-        }
-
-        @Override public int hashCode() { return hash; }
-
-        @Override public boolean equals(Object o) {
-            return o instanceof FirstLineChildKey k && k.owner == owner && k.firstLine == firstLine;
-        }
-    }
-
-    /**
-     * {@code ::first-line} の効果を受けた 1 行目のテキスト／インライン子孫のスタイル。
-     * 所有者（ブロックコンテナ）から見てこの要素が明示的に上書きしていない継承プロパティに限り、
-     * {@code firstLineStyle} の値を受け継ぐ。
-     */
-    public ComputedStyle derivedFirstLineChild(ComputedStyle ownerStyle, ComputedStyle firstLineStyle) {
-        if (firstLineStyle == null || ownerStyle == null) return this;
-        if (this == ownerStyle) return firstLineStyle;
-        return paintMemo(new FirstLineChildKey(ownerStyle, firstLineStyle), k -> buildFirstLineChild(ownerStyle, firstLineStyle));
-    }
-
-    private ComputedStyle buildFirstLineChild(ComputedStyle ownerStyle, ComputedStyle firstLineStyle) {
-        CssValue[] out = null;
-        int cnt = size;
-        boolean fontChanged = false;
-        for (int id : FirstLinePropGroups.INHERITABLE_IDS) {
-            CssValue flVal = firstLineStyle.values[id];
-            CssValue ownVal = values[id];
-            CssValue parVal = ownerStyle.values[id];
-            if (!java.util.Objects.equals(flVal, ownVal) && java.util.Objects.equals(ownVal, parVal)) {
-                if (out == null) out = values.clone();
-                cnt += setOverrideSlot(out, id, flVal);
-                if (id == CssPropertyIndex.FONT_SIZE) fontChanged = true;
-            }
-        }
-        if (out == null) return this;
-        float childFont = fontChanged ? firstLineStyle.elementFontSize : elementFontSize;
-        ComputedStyle fresh = new ComputedStyle(out, extrasBase, extras, cnt, (byte) -1, extrasViewport, childFont, rootFontSize);
-        fresh.g2 = this.g2;
-        fresh.g3 = this.g3;
-        return fresh;
-    }
-
-    private static CssValue swapRadiusPair(CssValue v) {
-        if (v == null) return null;
-        String s = v.text.trim();
-        int sp = findTopLevelSpace(s);
-        if (sp < 0) return v;
-        String a = s.substring(0, sp).trim();
-        String b = s.substring(sp + 1).trim();
-        if (a.isEmpty() || b.isEmpty() || findTopLevelSpace(b) >= 0) return v;
-        return CssValue.of(b + " " + a);
-    }
-
-    private static int findTopLevelSpace(String s) {
-        int depth = 0;
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '(') depth++;
-            else if (c == ')' && depth > 0) depth--;
-            else if (depth == 0 && Character.isWhitespace(c)) return i;
-        }
-        return -1;
-    }
-
-    private static CssValue invertAspectRatio(CssValue v) {
-        String s = v.text.trim();
-        int slash = s.indexOf('/');
-        if (slash > 0) {
-            return CssValue.of(s.substring(slash + 1).trim() + " / " + s.substring(0, slash).trim());
-        }
-        try {
-            double num = Double.parseDouble(s);
-            if (num > 0) return CssValue.of("1 / " + s);
-        } catch (NumberFormatException ignored) {}
-        return v;
-    }
-
-    private byte extrasViewportFlag() {
-        Map<String, String> ex = extras;
-        if (ex == null) return 0;
-        byte e = extrasViewport;
-        if (e < 0) {
-            e = 0;
-            for (String value : ex.values()) {
-                if (value != null && StyleResolver.valueDependsOnViewport(value)) {
-                    e = 1;
-                    break;
-                }
-            }
-            extrasViewport = e;
-        }
-        return e;
-    }
-
-    private boolean areAllExtrasCustom() {
-        byte c = allExtrasCustom;
-        if (c < 0) {
-            c = extras != null && allCustomProperties(extras) ? (byte) 1 : (byte) 0;
-            allExtrasCustom = c;
-        }
-        return c == 1;
-    }
-
-    private static boolean allCustomProperties(Map<String, String> extras) {
-        for (String key : extras.keySet()) {
-            if (!key.startsWith("--")) return false;
-        }
-        return true;
-    }
-
-    /** 宣言が全く同じか（フォントサイズは見ない）。 */
-    public static boolean sameDeclarations(ComputedStyle a, ComputedStyle b) {
-        return a == b || (a != null && b != null && a.declHash == b.declHash && a.properties.equals(b.properties));
-    }
-
-    /**
-     * 宣言の読み取り専用ビュー。コピーを作らず、{@link #equals} は配列同士の比較で済ませる。
-     * 走査順は登録順（{@link CssPropertyId}）のあとに添字を持たない宣言。
-     */
-    private static final class StyleMap extends java.util.AbstractMap<String, String> {
-        final ComputedStyle owner;
-
-        StyleMap(ComputedStyle owner) {
-            this.owner = owner;
-        }
-
-        @Override
-        public int size() {
-            return owner.size;
-        }
-
-        @Override
-        public boolean isEmpty() {
-            return owner.size == 0;
-        }
-
-        @Override
-        public String get(Object key) {
-            if (!(key instanceof String name)) return null;
-            int id = CssPropertyId.of(name);
-            if (id != CssPropertyId.NONE) {
-                CssValue v = owner.values[id];
-                return v != null ? v.text : null;
-            }
-            return owner.extras != null ? owner.extras.get(name) : null;
-        }
-
-        @Override
-        public boolean containsKey(Object key) {
-            return get(key) != null;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == this) return true;
-            if (o instanceof StyleMap other) {
-                return owner.declHash == other.owner.declHash
-                        && owner.size == other.owner.size
-                        && (owner.extrasBase == other.owner.extrasBase
-                        || java.util.Objects.equals(owner.extras, other.owner.extras))
-                        && java.util.Arrays.equals(owner.values, other.owner.values);
-            }
-            return super.equals(o);
-        }
-
-        @Override
-        public int hashCode() {
-            return super.hashCode();
-        }
-
-        @Override
-        public java.util.Set<Entry<String, String>> entrySet() {
-            return new java.util.AbstractSet<>() {
-                @Override
-                public int size() {
-                    return owner.size;
-                }
-
-                @Override
-                public java.util.Iterator<Entry<String, String>> iterator() {
-                    return new java.util.Iterator<>() {
-                        private int next = advance(0);
-                        private java.util.Iterator<Entry<String, String>> extra;
-
-                        private int advance(int from) {
-                            CssValue[] v = owner.values;
-                            while (from < v.length && v[from] == null) from++;
-                            return from;
-                        }
-
-                        @Override
-                        public boolean hasNext() {
-                            if (next < owner.values.length) return true;
-                            if (extra == null) {
-                                extra = owner.extras != null ? owner.extras.entrySet().iterator()
-                                        : java.util.Collections.emptyIterator();
-                            }
-                            return extra.hasNext();
-                        }
-
-                        @Override
-                        public Entry<String, String> next() {
-                            if (next < owner.values.length) {
-                                int id = next;
-                                next = advance(id + 1);
-                                return new java.util.AbstractMap.SimpleImmutableEntry<>(CssPropertyId.name(id), owner.values[id].text);
-                            }
-                            if (!hasNext()) throw new java.util.NoSuchElementException();
-                            return extra.next();
-                        }
-                    };
-                }
-            };
-        }
-    }
-
-    /** 作業表 {@code owned} の配列をそのまま引き取る（呼び出し側はこの後 {@code owned} を触らない）。{@link #of} と同じ算出。 */
-    static ComputedStyle ofOwned(StyleTable owned, float parentFontSize, float rootFontSize, ComputedStyle parent) {
-        float own = parentFontSize;
-        String fontSize = owned.textById(CssPropertyIndex.FONT_SIZE);
-        if (fontSize != null) {
-            own = ValueComputer.resolveFontSize(fontSize,
-                    new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, 0, 0));
-        }
-        ComputedStyle fresh = new ComputedStyle(owned, own, rootFontSize, true);
-        ComputedStyle r = com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
-        if (r.typed == null) r.typed = Style.of(r, parent != null ? parent.typed() : null);
-        return r;
-    }
-
-    // ==================== 同じ内容の算出スタイルの共有（hash-consing） ====================
-    //
-    // 宣言の値は文字列ごとに 1 つの正規のオブジェクト（CssValue）なので、内容が同じかは参照の比較で決まる。同じ宣言・フォントサイズの要素は
-    // 1 つのインスタンスを共有し、表は弱参照（使われなくなれば回収）。M1c で撤去。
-
-
-    private static final class Interned extends java.lang.ref.WeakReference<ComputedStyle> {
-        final int hash;
-
-        Interned(ComputedStyle s, int hash, java.lang.ref.ReferenceQueue<ComputedStyle> q) {
-            super(s, q);
-            this.hash = hash;
-        }
-
-        @Override
-        public int hashCode() {
-            return hash;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == this) return true;
-            if (!(o instanceof Interned other) || other.hash != hash) return false;
-            ComputedStyle a = get(), b = other.get();
-            return a != null && b != null && sameContent(a, b);
-        }
-    }
-
-    private static final ConcurrentHashMap<Interned, Interned> SHARED = new ConcurrentHashMap<>(256);
-    private static final java.lang.ref.ReferenceQueue<ComputedStyle> SHARED_QUEUE = new java.lang.ref.ReferenceQueue<>();
-    private static final java.util.concurrent.atomic.LongAdder SHARE_HITS = new java.util.concurrent.atomic.LongAdder();
-    private static final java.util.concurrent.atomic.LongAdder SHARE_MISSES = new java.util.concurrent.atomic.LongAdder();
-
-    /** 共有で既存のインスタンスに置き換えた回数と、新しく登録した回数（診断・テスト用）。 */
-    public static long shareHits() {
-        return SHARE_HITS.sum();
-    }
-
-    public static long shareMisses() {
-        return SHARE_MISSES.sum();
-    }
-
-    private static int contentHash(ComputedStyle s) {
-        int h = (int) (s.declHash ^ (s.declHash >>> 32));
-        h = 31 * h + Float.floatToIntBits(s.elementFontSize);
-        h = 31 * h + Float.floatToIntBits(s.rootFontSize);
-        return h;
-    }
-
-    /** 宣言・フォントサイズが全く同じか（値は正規の 1 個のオブジェクトなので参照で比べる）。 */
-    private static boolean sameContent(ComputedStyle a, ComputedStyle b) {
-        if (a == b) return true;
-        if (a.declHash != b.declHash || a.size != b.size || Float.compare(a.elementFontSize, b.elementFontSize) != 0
-                || Float.compare(a.rootFontSize, b.rootFontSize) != 0) return false;
-        CssValue[] x = a.values, y = b.values;
-        if (x.length != y.length) return false;
-        for (int i = 0; i < x.length; i++) if (x[i] != y[i]) return false;
-        if (a.extras == null || b.extras == null) return a.extras == b.extras;
-        return a.extras == b.extras || a.extras.equals(b.extras);
-    }
-
-    private static ComputedStyle share(ComputedStyle fresh) {
-        Object r;
-        while ((r = SHARED_QUEUE.poll()) != null) SHARED.remove((Interned) r, (Interned) r);
-        int h = contentHash(fresh);
-        Interned probe = new Interned(fresh, h, null);
-        Interned found = SHARED.get(probe);
-        if (found != null) {
-            ComputedStyle s = found.get();
-            if (s != null) {
-                SHARE_HITS.increment();
-                return s;
-            }
-        }
-        Interned mine = new Interned(fresh, h, SHARED_QUEUE);
-        Interned prev = SHARED.putIfAbsent(mine, mine);
-        if (prev != null) {
-            ComputedStyle s = prev.get();
-            if (s != null) {
-                SHARE_HITS.increment();
-                return s; // 競った相手が先に登録した
-            }
-        }
-        SHARE_MISSES.increment();
-        return fresh;
-    }
-
-    public ComputedStyle(Map<String, String> properties) {
-        this(properties, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE);
-    }
-
-    /**
-     * 算出値の {@code font-size}（{@link ValueComputer} が px に解いたもの）からこの要素の
-     * フォントサイズを読んで算出スタイルを作る。宣言が無ければ親のフォントサイズを継承する。
-     *
-     * 何が壊れていたか: 以前はここで {@code font-size} を解いていたが、ビューポートを 0 で渡し
-     * 結果を int に切り捨て、0 以下を無効としていたため、{@code 2vw} が無効扱いで既定の 16px に、
-     * {@code 6.4px} が 6px に、{@code 0} が 16px になっていた。
-     */
     public static ComputedStyle of(Map<String, String> properties, float parentFontSize, float rootFontSize) {
         float own = parentFontSize;
-        String fontSize = properties.get(CssProperty.FONT_SIZE);
+        String fontSize = properties != null ? properties.get(CssProperty.FONT_SIZE) : null;
         if (fontSize != null) {
-            own = ValueComputer.resolveFontSize(fontSize,
-                    new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, 0, 0));
+            own = ValueComputer.resolveFontSize(fontSize, new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, 0, 0));
         }
         return new ComputedStyle(properties, own, rootFontSize);
     }
 
-    /** この要素のフォントサイズ（px）。 */
-    public float fontSizePx() {
-        return elementFontSize;
-    }
-
-    public float rootFontSizePx() {
-        return rootFontSize;
-    }
-
-    /** この要素の行の高さ（px）。{@code rlh} の基準になるルート要素の値を取るのに使う。 */
-    public float lineHeightPx() {
-        return ValueComputer.lineHeightPx(properties.get(CssProperty.LINE_HEIGHT), elementFontSize, rootFontSize, 0, 0);
-    }
-
-    public String get(String propertyName) {
-        return properties.get(propertyName);
-    }
-
-    public String getOrDefault(String propertyName, String defaultValue) {
-        String val = properties.get(propertyName);
-        return val != null ? val : defaultValue;
-    }
-
-    public boolean containsKey(String propertyName) {
-        return properties.containsKey(propertyName);
-    }
-
-    /** {@code contain} の値のビット（{@link #containment()}）。 */
-    public static final int CONTAIN_SIZE = 1, CONTAIN_INLINE_SIZE = 2, CONTAIN_LAYOUT = 4, CONTAIN_PAINT = 8, CONTAIN_STYLE = 16;
-
-    /** この算出スタイルだけから決まる、利用側（描画順）の派生値の置き場。算出スタイルは不変なので一度作れば使い回せる。 */
-    private volatile Object derivedFacts;
-
-    public Object derivedFacts() {
-        return derivedFacts;
-    }
-
-    public void derivedFacts(Object facts) {
-        this.derivedFacts = facts;
-    }
-
-    /**
-     * 継承する値だけが変わった再スタイルで、前回の算出スタイルの派生値（{@link #derivedFacts()}）を引き継ぐ。
-     * 派生値は非継承のプロパティ（バンド 0・1）だけから決まる契約なので、その 2 つのバンドの値が前回と同じ参照のときだけ共有する
-     * （ハッシュは足切りだけで、鍵は値の参照。宣言文字列の照合はしない）。違えば何もせず、読み手が最初から作る。
-     */
-    public void carryDerivedFrom(ComputedStyle previous) {
-        if (previous == null || previous == this || derivedFacts != null) return;
-        Object carried = previous.derivedFacts;
-        if (carried == null || h0 != previous.h0 || h1 != previous.h1) return;
-        CssValue[] mine = values, theirs = previous.values;
-        for (int i = 0, end = CssPropertyId.NON_INH_END; i < end; i++) {
-            if (mine[i] != theirs[i]) return;
+    static ComputedStyle ofOwned(StyleTable owned, float parentFontSize, float rootFontSize, Style parent) {
+        float own = parentFontSize;
+        String fontSize = owned.textById(CssPropertyIndex.FONT_SIZE);
+        if (fontSize != null) {
+            own = ValueComputer.resolveFontSize(fontSize, new ValueComputer.Context(Style.DEFAULT, parentFontSize, rootFontSize, 0, 0));
         }
-        derivedFacts = carried;
+        final float elFont = own;
+        StyleReader.Source src = new StyleReader.Source() {
+            @Override public String get(int id) { return owned.textById(id); }
+            @Override public float fontSizePx() { return elFont; }
+            @Override public float rootFontSizePx() { return rootFontSize; }
+        };
+        return new ComputedStyle(Style.fromSource(src, owned.extras, owned.anyValueDependsOnViewport(), parent, owned.groupMask));
     }
 
-    /**
-     * 有効な containment（{@code contain} と {@code content-visibility} の和）。{@code strict} は size layout paint style、
-     * {@code content} は layout paint style。{@code content-visibility: hidden} は size layout paint、{@code auto} は layout paint。
-     */
-    public int containment() {
-        return facts().containment;
-    }
-    /** {@code content-visibility: hidden}: 中身を箱の木に入れない。 */
-    public boolean skipsContents() {
-        return keywordOf(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class)
-                == CssKeywords.ContentVisibility.HIDDEN;
+    private static Style styleFromMap(Map<String, String> source, float elFont, float rootFont, Style parent) {
+        if ((source == null || source.isEmpty()) && Float.compare(elFont, DEFAULT_FONT_SIZE) == 0
+                && Float.compare(rootFont, DEFAULT_FONT_SIZE) == 0 && parent == null) {
+            return Style.DEFAULT;
+        }
+        Map<String, String> srcMap = source != null ? source : Map.of();
+        Map<String, String> extras = null;
+        boolean vp = false;
+        int mask = 0;
+        for (Map.Entry<String, String> e : srcMap.entrySet()) {
+            String k = e.getKey(), v = e.getValue();
+            int id = CssPropertyId.of(k);
+            if (id == CssPropertyId.NONE) {
+                if (extras == null) extras = new LinkedHashMap<>();
+                extras.put(k, v);
+            } else if (v != null) {
+                mask |= StyleProperties.groupBit(id);
+            }
+            if (!vp && v != null && StyleResolver.valueDependsOnViewport(v)) vp = true;
+        }
+        StyleReader.Source src = new StyleReader.Source() {
+            @Override public String get(int id) { return srcMap.get(CssPropertyId.name(id)); }
+            @Override public float fontSizePx() { return elFont; }
+            @Override public float rootFontSizePx() { return rootFont; }
+        };
+        return Style.fromSource(src, extras, vp, parent, mask);
     }
 
-    /** {@code content-visibility: auto}: 画面外の間は中身を省き、表示域に近づいたら組み直す。 */
-    public boolean isContentVisibilityAuto() {
-        return keywordOf(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class)
-                == CssKeywords.ContentVisibility.AUTO;
+    public Style typed() { return style; }
+    public StyleFacts facts() { return style.facts; }
+    public float fontSizePx() { return style.inherited.fontSize; }
+    public float rootFontSizePx() { return style.inherited.rootFontSizePx; }
+
+    public float lineHeightPx() {
+        InheritedStyle in = style.inherited;
+        return switch (in.lineHeightKind) {
+            case LH_PX -> in.lineHeightValue;
+            case LH_PERCENT, LH_EM, LH_NUMBER -> in.lineHeightValue * in.fontSize;
+            default -> in.fontSize * LengthResolver.NORMAL_LINE_HEIGHT_EM;
+        };
     }
 
-    /**
-     * size containment 中の {@code contain-intrinsic-width}（px）。{@code none} や無効値なら {@code Float.NaN}。
-     * {@code auto <length>} で記憶済み寸法 {@code rememberedPx} があればそれを返す。
-     */
+    public String get(String propertyName) { return style.cssProperty(propertyName); }
+    public String getOrDefault(String propertyName, String defaultValue) {
+        String v = get(propertyName);
+        return v != null ? v : defaultValue;
+    }
+    public boolean containsKey(String propertyName) { return get(propertyName) != null; }
+    String get(int id) { return style.cssProperty(CssPropertyId.name(id)); }
+    public static int idOf(String propertyName) { return CssPropertyId.of(propertyName); }
+    static String initialOf(int id) { return CssPropertyId.INITIALS[id]; }
+    static boolean isInheritedId(int id) { return CssPropertyId.INHERITED[id]; }
+
+    public Overflow overflowX() { return style.facts.overflowX; }
+    public Overflow overflowY() { return style.facts.overflowY; }
+    public int containment() { return style.facts.containment; }
+    public boolean skipsContents() { return style.facts.contentVisibilityHidden; }
+    public boolean isContentVisibilityAuto() { return style.facts.contentVisibilityAuto; }
+    public boolean usesViewportUnits() { return style.facts.usesViewportUnits; }
+    /** {@code box-sizing: border-box} か。 */
+    public boolean isBorderBox() { return style.facts.borderBox; }
+
     public float containIntrinsicWidthPx(float rootW, float rootH, float rememberedPx) {
-        return resolveContainIntrinsic(CssPropertyIndex.CONTAIN_INTRINSIC_WIDTH, rootW, rootH, rememberedPx);
+        return resolveContainIntrinsic(style.rare.containIntrinsicWidth, rootW, rootH, rememberedPx);
     }
 
-    /**
-     * size containment 中の {@code contain-intrinsic-height}（px）。{@code none} や無効値なら {@code Float.NaN}。
-     * {@code auto <length>} で記憶済み寸法 {@code rememberedPx} があればそれを返す。
-     */
     public float containIntrinsicHeightPx(float rootW, float rootH, float rememberedPx) {
-        return resolveContainIntrinsic(CssPropertyIndex.CONTAIN_INTRINSIC_HEIGHT, rootW, rootH, rememberedPx);
+        return resolveContainIntrinsic(style.rare.containIntrinsicHeight, rootW, rootH, rememberedPx);
     }
 
-    private float resolveContainIntrinsic(int propId, float rootW, float rootH, float rememberedPx) {
-        String raw = get(propId);
+    private float resolveContainIntrinsic(String raw, float rootW, float rootH, float rememberedPx) {
         if (raw == null || raw.isBlank()) return Float.NaN;
         String s = raw.trim();
         if (s.length() > 4 && s.regionMatches(true, 0, "auto", 0, 4) && Character.isWhitespace(s.charAt(4))) {
@@ -1695,315 +181,270 @@ public final class ComputedStyle {
         return px >= 0f ? px : Float.NaN;
     }
 
-    private volatile Map<String, String> customProperties;
-
-    /** カスタムプロパティ（{@code --x}）だけの読み取り専用ビュー。{@code style()} コンテナクエリが読む。 */
     public Map<String, String> customProperties() {
-        Map<String, String> cached = customProperties;
-        if (cached == null) {
-            Map<String, String> custom = new LinkedHashMap<>();
-            if (extras != null) {
-                for (Map.Entry<String, String> e : extras.entrySet()) {
-                    if (e.getKey().startsWith("--")) custom.put(e.getKey(), e.getValue());
-                }
+        Map<String, String> c = customProperties;
+        if (c == null) {
+            CustomProperties cp = style.custom;
+            if (cp == null) c = Map.of();
+            else if (cp.hasOnlyCustom()) c = cp.asMap();
+            else {
+                CustomProperties filtered = cp.onlyCustom();
+                c = filtered != null ? filtered.asMap() : Map.of();
             }
-            cached = Collections.unmodifiableMap(custom);
-            customProperties = cached;
+            customProperties = c;
         }
-        return cached;
+        return c;
     }
 
-    /** 宣言マップの読み取り専用ビュー。走査が必要な場所だけで使う。 */
-    public Map<String, String> asMap() {
-        return properties;
+    public Map<String, String> asMap() { return Collections.unmodifiableMap(style.toCssMap()); }
+
+    public Object derivedFacts() { return derivedFacts; }
+    public void derivedFacts(Object facts) { this.derivedFacts = facts; }
+
+    public void carryDerivedFrom(ComputedStyle previous) {
+        if (previous == null || previous == this || derivedFacts != null) return;
+        Object carried = previous.derivedFacts;
+        if (carried != null && style.sameNonInherited(previous.style)) derivedFacts = carried;
     }
 
-    /**
-     * 長さをピクセルに解決する。{@code maxPixels} はパーセント指定の基準。
-     * 結果は丸めない（軸 3: 丸めは描画の 1 箇所だけ）。以前は int に切り捨てていた。
-     */
-    public float length(String propertyName, float maxPixels, float rootW, float rootH) {
-        int id = CssPropertyId.of(propertyName);
-        if (id != CssPropertyId.NONE) return length(id, maxPixels, rootW, rootH);
-        String val = rawAt(id, propertyName);
-        if (val == null) return 0;
-        return TypedValueCache.length(val).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+    public com.nishiyu.enderframelib.core.text.model.TextStyle peekTextStyle(
+            com.nishiyu.enderframelib.core.text.model.FontFace face) {
+        CachedTextStyle c = cachedTextStyle;
+        return c != null && c.face == face ? c.style : null;
     }
 
-    /**
-     * プロパティ名の固定の添字（登録に無い名前は -1）。熱い経路は、クラスの初期化で一度だけこれを引いて
-     * {@code static final int} に持ち、名前の代わりに添字を取る {@link #get(int)} / {@link #keywordOf(int, Class)} /
-     * {@link #length(int, float, float, float)} などで引く（文字列のハッシュと表引きを毎回しない）。
-     */
-    public static int idOf(String propertyName) {
-        return CssPropertyId.of(propertyName);
+    public void cacheTextStyle(com.nishiyu.enderframelib.core.text.model.FontFace face,
+                               com.nishiyu.enderframelib.core.text.model.TextStyle ts) {
+        this.cachedTextStyle = new CachedTextStyle(face, ts);
     }
 
-    /**
-     * どれかの値が、ビューポート（{@code vw vh vi vb vmin vmax} とその {@code s/l/d} 版）またはコンテナ（{@code cqw cqh cqi cqb cqmin cqmax}）
-     * 基準の単位を使っているか。レイアウトが箱の外の寸法を読む可能性があるかの、保守的な判定（数値の直後の単位だけを見る）。
-     */
-    public boolean usesViewportUnits() {
-        byte known = relativeUnits;
-        if (known >= 0) return known == 1;
-        boolean uses = false;
-        for (CssValue v : values) {
-            if (v != null && v.usesRelativeUnit()) {
-                uses = true;
-                break;
+    public com.nishiyu.enderframelib.core.text.model.FontFace peekFace(
+            com.nishiyu.enderframelib.core.text.model.FontResolver resolver, long generation) {
+        CachedFace c = cachedFace;
+        return c != null && c.resolver == resolver && c.generation == generation ? c.face : null;
+    }
+
+    public void cacheFace(com.nishiyu.enderframelib.core.text.model.FontResolver resolver, long generation,
+                          com.nishiyu.enderframelib.core.text.model.FontFace face) {
+        CachedFace last = LAST_FACE;
+        if (last == null || last.resolver != resolver || last.generation != generation || last.face != face) {
+            LAST_FACE = last = new CachedFace(resolver, generation, face);
+        }
+        this.cachedFace = last;
+    }
+
+    public <T> T paintMemo(Object key, Function<Object, T> compute) { return paintMemoInternal(key, compute, null); }
+    public <T> T paintMemoSelf(Object key, Function<ComputedStyle, T> compute) { return paintMemoInternal(key, null, compute); }
+
+    @SuppressWarnings("unchecked")
+    private <T> T paintMemoInternal(Object key, Function<Object, T> byKey, Function<ComputedStyle, T> bySelf) {
+        Object cur = paint;
+        if (cur instanceof ConcurrentHashMap<?, ?> big) {
+            Object hit = ((ConcurrentHashMap<Object, Object>) big).get(key);
+            if (hit != null) return (T) hit;
+        } else if (cur != null) {
+            Object hit = ((ObjMemo) cur).get(key);
+            if (hit != null) return (T) hit;
+        }
+        T value = bySelf != null ? bySelf.apply(this) : byKey.apply(key);
+        if (value == null) return null;
+        for (;;) {
+            cur = paint;
+            if (cur instanceof ConcurrentHashMap<?, ?> big) {
+                Object prev = ((ConcurrentHashMap<Object, Object>) big).putIfAbsent(key, value);
+                return prev != null ? (T) prev : value;
+            }
+            ObjMemo m = (ObjMemo) cur;
+            if (m != null) {
+                Object hit = m.get(key);
+                if (hit != null) return (T) hit;
+            }
+            Object next = (m != null && m.keys.length >= OBJ_MEMO_LIMIT) ? withToMap(m, key, value)
+                    : (m == null ? new ObjMemo(new Object[]{key}, new Object[]{value}) : m.with(key, value));
+            if (PAINT.compareAndSet(this, cur, next)) return value;
+        }
+    }
+
+    private static ConcurrentHashMap<Object, Object> withToMap(ObjMemo m, Object key, Object value) {
+        ConcurrentHashMap<Object, Object> map = m.toMap();
+        map.putIfAbsent(key, value);
+        return map;
+    }
+
+    // ---- 差分・比較・再スタイル伝播 ----
+
+    public static boolean sameDeclarations(ComputedStyle a, ComputedStyle b) {
+        return a == b || (a != null && b != null && a.style.equals(b.style));
+    }
+
+    public boolean hasLayoutAffectingDiffFrom(ComputedStyle other) {
+        return other == null || StyleDiff.hasLayoutDiff(style, other.style);
+    }
+
+    /** 0 = NONE, 1 = NON_INHERITED, 2 = INHERITED。 */
+    public int classifyPropagationFrom(ComputedStyle previous) {
+        if (previous == null) return 2;
+        if (this == previous) return 0;
+        Style o = previous.style;
+        if (!style.inherited.equals(o.inherited) || !Objects.equals(style.custom, o.custom)) return 2;
+        if (!style.box.equals(o.box) || !style.visual.equals(o.visual) || !style.flexGrid.equals(o.flexGrid)
+                || !style.table.equals(o.table) || !style.rare.equals(o.rare)) return 1;
+        return 0;
+    }
+
+    public boolean hasStructureAffectingDiff(ComputedStyle other) {
+        if (other == null) return true;
+        if (this == other) return false;
+        Style o = other.style;
+        BoxGeomStyle ba = style.box, bb = o.box;
+        InheritedStyle ia = style.inherited, ib = o.inherited;
+        RareStyle ra = style.rare, rb = o.rare;
+        return !Objects.equals(ba.display, bb.display) || ba.position != bb.position || ba.floatValue != bb.floatValue
+                || !Objects.equals(ia.whiteSpace, ib.whiteSpace) || !Objects.equals(ra.content, rb.content)
+                || ra.contentVisibility != rb.contentVisibility || !Objects.equals(ia.writingMode, ib.writingMode)
+                || !Objects.equals(ia.listStyleType, ib.listStyleType) || ia.listStylePosition != ib.listStylePosition
+                || !Objects.equals(ia.listStyleImage, ib.listStyleImage) || !Objects.equals(ra.counterReset, rb.counterReset)
+                || !Objects.equals(ra.counterIncrement, rb.counterIncrement) || !Objects.equals(ra.counterSet, rb.counterSet);
+    }
+
+    public int classifyPositionOnlyDiff(ComputedStyle other) {
+        return other == null ? -1 : StyleDiff.positionOnlyAxes(style, other.style);
+    }
+
+    @FunctionalInterface
+    public interface DiffVisitor extends Style.DiffVisitor {
+        @Override void changed(String name, boolean paintOnly, boolean inherited);
+    }
+
+    public static void diff(ComputedStyle a, ComputedStyle b, DiffVisitor visitor) {
+        if (a == b) return;
+        StyleDiff.diff(a.style, b.style, visitor);
+    }
+
+    // ---- 派生スタイル（匿名箱・テキスト・::marker・縦書き軸・::first-line・position-try） ----
+
+    private static final Object KEY_ANON_BLOCK = new Object(), KEY_ANON_INLINE = new Object(),
+            KEY_ANON_INLINE_BLOCK = new Object(), KEY_TEXT_CHILD = new Object();
+    private record DerivedAnonKey(String display) {}
+    private static final class AnonHolder {
+        static final BoxGeomStyle BLOCK = boxWithDisplay("block"), INLINE = boxWithDisplay("inline"),
+                INLINE_BLOCK = boxWithDisplay("inline-block");
+        static BoxGeomStyle boxWithDisplay(String d) {
+            return BoxGeomStyle.of(new StyleReader.Source() {
+                @Override public String get(int id) { return id == CssPropertyIndex.DISPLAY ? d : null; }
+                @Override public float fontSizePx() { return DEFAULT_FONT_SIZE; }
+                @Override public float rootFontSizePx() { return DEFAULT_FONT_SIZE; }
+            });
+        }
+    }
+
+    public ComputedStyle derivedAnonymous(String display) {
+        Object key = switch (display) {
+            case "block" -> KEY_ANON_BLOCK;
+            case "inline" -> KEY_ANON_INLINE;
+            case "inline-block" -> KEY_ANON_INLINE_BLOCK;
+            default -> new DerivedAnonKey(display);
+        };
+        return paintMemo(key, k -> {
+            BoxGeomStyle box = switch (display) {
+                case "block" -> AnonHolder.BLOCK;
+                case "inline" -> AnonHolder.INLINE;
+                case "inline-block" -> AnonHolder.INLINE_BLOCK;
+                default -> AnonHolder.boxWithDisplay(display);
+            };
+            return new ComputedStyle(Style.forAnonymous(style, box));
+        });
+    }
+
+    public record TextChild(ComputedStyle style, boolean viewportDependent) {}
+
+    public TextChild derivedTextChild() {
+        return paintMemoSelf(KEY_TEXT_CHILD, p -> {
+            Style ts = Style.forTextChild(p.style);
+            return new TextChild(new ComputedStyle(ts), ts.facts.usesViewportUnits);
+        });
+    }
+
+    public ComputedStyle derivedMarker(ComputedStyle declaredMarker) {
+        return declaredMarker == null
+                ? paintMemoSelf(DerivedStyles.KEY_MARKER_OWNER, DerivedStyles::markerFromOwner)
+                : declaredMarker.paintMemoSelf(DerivedStyles.KEY_MARKER_DECLARED, DerivedStyles::markerFromDeclared);
+    }
+
+    public ComputedStyle derivedOrthogonalWrapper(int transformKind, String displayValue, boolean copyBoxSizes) {
+        int dk = switch (displayValue) {
+            case "inline-block" -> 1;
+            case "flex" -> 2;
+            case "grid" -> 3;
+            case "table" -> 4;
+            default -> 0;
+        };
+        return paintMemo(DerivedStyles.ORTHO_KEYS[transformKind][dk][copyBoxSizes ? 1 : 0],
+                k -> DerivedStyles.orthogonalWrapper(this, transformKind, displayValue, copyBoxSizes));
+    }
+
+    private record FirstLineChildKey(ComputedStyle owner, ComputedStyle firstLine) {}
+
+    public ComputedStyle derivedFirstLineChild(ComputedStyle ownerStyle, ComputedStyle firstLineStyle) {
+        if (firstLineStyle == null || ownerStyle == null) return this;
+        if (this == ownerStyle) return firstLineStyle;
+        return paintMemo(new FirstLineChildKey(ownerStyle, firstLineStyle),
+                k -> DerivedStyles.firstLineChild(this, ownerStyle, firstLineStyle));
+    }
+
+    public ComputedStyle derivedVerticalAxisStyle(int flow) {
+        int norm = flow == WritingModes.SIDEWAYS_RL ? WritingModes.VERTICAL_RL : flow;
+        if (norm < 1 || norm >= DerivedStyles.VERTICAL_AXIS_KEYS.length || DerivedStyles.VERTICAL_AXIS_KEYS[norm] == null) return this;
+        return paintMemo(DerivedStyles.VERTICAL_AXIS_KEYS[norm], k -> DerivedStyles.verticalAxisStyle(this, norm));
+    }
+
+    public ComputedStyle withSizingOverrides(String w, String h, String minW, String maxW, String minH, String maxH) {
+        return DerivedStyles.withSizingOverrides(this, w, h, minW, maxW, minH, maxH);
+    }
+
+    /** 登録済み CSS プロパティ名 → 固定添字（{@link StyleTable}・{@link CompiledDeclarations} 用）。 */
+    static final class CssPropertyId {
+        static final int NONE = -1;
+        private static final String[] NAMES, KEYS, INITIALS;
+        private static final int[] HASHES, VALS;
+        private static final int MASK;
+        static final boolean[] PAINT_ONLY, INHERITED, INHERITS_AS_LONGHAND;
+        static {
+            var all = PropertyRegistry.all();
+            int n = all.size();
+            String[] names = new String[n];
+            int cap = Integer.highestOneBit(Math.max(8, n * 4 - 1)) << 1;
+            String[] keys = new String[cap];
+            int[] hashes = new int[cap], vals = new int[cap];
+            int id = 0;
+            for (PropertyRegistry.Property p : all) {
+                String name = p.name();
+                int h = name.hashCode(), at = (h ^ (h >>> 16)) & (cap - 1);
+                while (keys[at] != null) at = (at + 1) & (cap - 1);
+                keys[at] = name; hashes[at] = h; vals[at] = id; names[id++] = name;
+            }
+            NAMES = names; KEYS = keys; HASHES = hashes; VALS = vals; MASK = cap - 1;
+            PAINT_ONLY = new boolean[n]; INHERITED = new boolean[n];
+            INHERITS_AS_LONGHAND = new boolean[n]; INITIALS = new String[n];
+            for (int k = 0; k < n; k++) {
+                PropertyRegistry.Property p = PropertyRegistry.get(names[k]);
+                PAINT_ONLY[k] = PropertyRegistry.isPaintOnly(names[k]);
+                INHERITED[k] = PropertyRegistry.isInherited(names[k]);
+                INHERITS_AS_LONGHAND[k] = p != null && p.inherited() && !p.isShorthand();
+                INITIALS[k] = p != null ? p.initial() : null;
             }
         }
-        if (!uses && extras != null) {
-            for (String v : extras.values()) {
-                if (v != null && ValueComputer.mayContainDimension(v) && RelativeUnitScan.scan(v)) {
-                    uses = true;
-                    break;
-                }
+        static int count() { return NAMES.length; }
+        static int of(String name) {
+            if (name == null) return NONE;
+            int h = name.hashCode(), at = (h ^ (h >>> 16)) & MASK;
+            while (true) {
+                String k = KEYS[at];
+                if (k == null) return NONE;
+                if (HASHES[at] == h && k.equals(name)) return VALS[at];
+                at = (at + 1) & MASK;
             }
         }
-        relativeUnits = (byte) (uses ? 1 : 0);
-        return uses;
-    }
-
-    /** {@link #idOf} の添字で宣言の文字列を引く。{@code get(name)} と同じ結果。添字は登録済みのものに限る。 */
-    public String get(int id) {
-        CssValue v = values[id];
-        return v != null ? v.text : null;
-    }
-
-    /** 添字版の {@link #length(String, float, float, float)}。 */
-    public float length(int id, float maxPixels, float rootW, float rootH) {
-        CssValue v = values[id];
-        if (v == null) return 0;
-        return v.length().resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
-    }
-
-    /** 添字版の {@link #getOrDefault(String, String)}。 */
-    public String getOrDefault(int id, String defaultValue) {
-        CssValue v = values[id];
-        return v != null ? v.text : defaultValue;
-    }
-
-    /** 添字版の {@link #containsKey(String)}。 */
-    public boolean containsKey(int id) {
-        return values[id] != null;
-    }
-
-    /** 添字版の {@link #lengthOrDefault(String, float, float, float, float)}。 */
-    public float lengthOrDefault(int id, float defaultPixels, float maxPixels, float rootW, float rootH) {
-        if (values[id] == null) return defaultPixels;
-        return length(id, maxPixels, rootW, rootH);
-    }
-
-    /** 添字版の {@link #color(String, int)}。 */
-    public int color(int id, int defaultColor) {
-        CssValue v = values[id];
-        return v != null ? v.color() : defaultColor;
-    }
-
-    /** 添字版の {@link #number(String, float)}。 */
-    public float number(int id, float defaultValue) {
-        CssValue v = values[id];
-        return v != null ? v.number(defaultValue) : defaultValue;
-    }
-
-    /** 添字版の {@link #keyword(String, String)}。 */
-    public String keyword(int id, String defaultValue) {
-        CssValue v = values[id];
-        return v != null ? v.lowered() : defaultValue;
-    }
-
-    /** 添字版の {@link #is(String, String)}。 */
-    public boolean is(int id, String expected) {
-        return expected.equals(keyword(id, null));
-    }
-
-    /** 添字版の {@link #keywordFresh(String, Class)}。 */
-    <E extends Enum<E> & CssKeywords.Keyword> E keywordFresh(int id, Class<E> type) {
-        CssValue v = values[id];
-        E parsed = v != null ? v.keyword(type) : null;
-        return parsed != null ? parsed : PropertyRegistry.initialKeyword(CssPropertyId.name(id), type);
-    }
-
-    /** 添字版の {@link #keywordOf(String, Class)}。 */
-    public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(int id, Class<E> type) {
-        CssValue v = values[id];
-        E parsed = v != null ? v.keyword(type) : null;
-        return parsed != null ? parsed : initialKeyword(id, type);
-    }
-
-    /** 宣言が無い（または知らない値の）ときの初期値。添字ごとに 1 回だけ解いて全スタイルで共有する。 */
-    private static <E extends Enum<E> & CssKeywords.Keyword> E initialKeyword(int id, Class<E> type) {
-        Object hit = INITIAL_KEYWORDS[id];
-        if (hit != null && type.isInstance(hit)) return type.cast(hit);
-        E initial = PropertyRegistry.initialKeyword(CssPropertyId.name(id), type);
-        INITIAL_KEYWORDS[id] = initial;
-        return initial;
-    }
-
-    /** 添字（{@link CssPropertyId#NONE} なら名前）で宣言を引く。{@link StyleMap#get} と同じ結果。 */
-    private String rawAt(int id, String name) {
-        if (id != CssPropertyId.NONE) return get(id);
-        return extras != null ? extras.get(name) : null;
-    }
-
-    /** 宣言が無い場合に {@code defaultPixels} を返す {@link #length}。 */
-    public float lengthOrDefault(String propertyName, float defaultPixels, float maxPixels, float rootW, float rootH) {
-        if (!properties.containsKey(propertyName)) return defaultPixels;
-        return length(propertyName, maxPixels, rootW, rootH);
-    }
-
-    /** 色を ARGB に解決する。宣言が無ければ {@code defaultColor}。 */
-    public int color(String propertyName, int defaultColor) {
-        int id = CssPropertyId.of(propertyName);
-        if (id != CssPropertyId.NONE) return color(id, defaultColor);
-        String val = rawAt(id, propertyName);
-        if (val == null) return defaultColor;
-        return TypedValueCache.color(val);
-    }
-
-    /** 単位なしの数値（{@code opacity} / {@code flex-grow} / {@code z-index} など）。 */
-    public float number(String propertyName, float defaultValue) {
-        int id = CssPropertyId.of(propertyName);
-        if (id != CssPropertyId.NONE) return number(id, defaultValue);
-        String val = rawAt(id, propertyName);
-        if (val == null) return defaultValue;
-        return TypedValueCache.number(val, defaultValue);
-    }
-
-    /**
-     * キーワードだけを値に取るプロパティの算出値を、{@link PropertyRegistry} が宣言した enum で返す。
-     * 書かれていない値・知らない値はそのプロパティの初期値。
-     */
-    public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(String propertyName, Class<E> type) {
-        int id = CssPropertyId.of(propertyName);
-        if (id != CssPropertyId.NONE) return keywordOf(id, type);
-        E parsed = CssKeywords.parse(type, rawAt(id, propertyName));
-        return parsed != null ? parsed : PropertyRegistry.initialKeyword(propertyName, type);
-    }
-
-    /** {@link #keywordOf(String, Class)} と同じ値（事実の算出用の別名。以前は記憶表を避けるために分けていた）。 */
-    <E extends Enum<E> & CssKeywords.Keyword> E keywordFresh(String propertyName, Class<E> type) {
-        int id = CssPropertyId.of(propertyName);
-        if (id != CssPropertyId.NONE) return keywordFresh(id, type);
-        E parsed = CssKeywords.parse(type, rawAt(id, propertyName));
-        return parsed != null ? parsed : PropertyRegistry.initialKeyword(propertyName, type);
-    }
-
-    /** {@code box-sizing: border-box} か。 */
-    public boolean isBorderBox() {
-        return facts().borderBox;
-    }
-
-    // ==========================================
-    // 型付きの事実（算出スタイルごとに一度だけ決まる値）
-    // ==========================================
-    //
-    // レイアウトが箱ごと・測定ごとに繰り返し読む値を、文字列を読み直さず（分割・小文字化・パースをせず）に引けるようにする。
-    // 算出スタイルは不変なので、最初の参照で作った値を使い回してよい。
-
-    /** 行の高さの指定の種類。 */
-    public static final byte LH_NORMAL = 0, LH_PX = 1, LH_PERCENT = 2, LH_EM = 3, LH_NUMBER = 4;
-
-    private volatile Style typed;
-
-    /** 型付きスタイル（M1 の移行中の橋。カスケードが親と継承群を共有して作る。直接 new した場合だけ最初の参照で作る）。M1c で撤去。 */
-    public Style typed() {
-        Style s = typed;
-        if (s == null) {
-            s = Style.of(this, null);
-            typed = s;
-        }
-        return s;
-    }
-
-    /** 型付きの導出値（文字列を読み直さない）。 */
-    public StyleFacts facts() {
-        return typed().facts;
-    }
-
-    /** 横方向の {@code overflow}。{@code overflow-x} が無ければショートハンド {@code overflow} の最初の値。 */
-    public Overflow overflowX() {
-        return facts().overflowX;
-    }
-
-    /** 縦方向の {@code overflow}。{@code overflow-y} が無ければショートハンドの 2 つ目（1 つなら同じ値）。 */
-    public Overflow overflowY() {
-        return facts().overflowY;
-    }
-
-    /** {@link #edgeLength} の添字: margin（上右下左）・padding（上右下左）・border-width（上右下左）・row-gap・column-gap。 */
-    public static final int EDGE_MARGIN_T = 0, EDGE_MARGIN_R = 1, EDGE_MARGIN_B = 2, EDGE_MARGIN_L = 3,
-            EDGE_PADDING_T = 4, EDGE_PADDING_R = 5, EDGE_PADDING_B = 6, EDGE_PADDING_L = 7,
-            EDGE_BORDER_T = 8, EDGE_BORDER_R = 9, EDGE_BORDER_B = 10, EDGE_BORDER_L = 11,
-            EDGE_ROW_GAP = 12, EDGE_COLUMN_GAP = 13;
-
-    /**
-     * 縁と同じ {@code long[]} に詰める、寸法・オフセット系の宣言の添字（{@link #edgeLength} / {@link #edgeHasPercent} に渡す）。
-     * 宣言が無ければ NONE。{@code auto} / {@code none} / 内在サイズのキーワードは 0 px に詰まる（% を含まない）。
-     */
-    public static final int DIM_WIDTH = 14, DIM_HEIGHT = 15, DIM_MIN_WIDTH = 16, DIM_MAX_WIDTH = 17,
-            DIM_MIN_HEIGHT = 18, DIM_MAX_HEIGHT = 19, DIM_LEFT = 20, DIM_RIGHT = 21, DIM_TOP = 22, DIM_BOTTOM = 23,
-            DIM_FLEX_BASIS = 24;
-
-    private static final int[] EDGE_IDS = {
-            idOf(CssProperty.MARGIN_TOP), idOf(CssProperty.MARGIN_RIGHT), idOf(CssProperty.MARGIN_BOTTOM), idOf(CssProperty.MARGIN_LEFT),
-            idOf(CssProperty.PADDING_TOP), idOf(CssProperty.PADDING_RIGHT), idOf(CssProperty.PADDING_BOTTOM), idOf(CssProperty.PADDING_LEFT),
-            idOf(CssProperty.BORDER_TOP_WIDTH), idOf(CssProperty.BORDER_RIGHT_WIDTH), idOf(CssProperty.BORDER_BOTTOM_WIDTH),
-            idOf(CssProperty.BORDER_LEFT_WIDTH), idOf(CssProperty.ROW_GAP), idOf(CssProperty.COLUMN_GAP),
-            idOf(CssProperty.WIDTH), idOf(CssProperty.HEIGHT), idOf(CssProperty.MIN_WIDTH), idOf(CssProperty.MAX_WIDTH),
-            idOf(CssProperty.MIN_HEIGHT), idOf(CssProperty.MAX_HEIGHT), idOf(CssProperty.LEFT), idOf(CssProperty.RIGHT),
-            idOf(CssProperty.TOP), idOf(CssProperty.BOTTOM), idOf(CssProperty.FLEX_BASIS)};
-
-    private long[] compileEdges() {
-        long[] out = new long[EDGE_IDS.length];
-        for (int i = 0; i < out.length; i++) {
-            CssValue val = values[EDGE_IDS[i]];
-            out[i] = val == null ? com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE
-                    : "auto".equalsIgnoreCase(val.text.trim()) ? PackedLengths.AUTO
-                    : PackedLengths.pack(val.length());
-        }
-        return out;
-    }
-
-    /**
-     * 箱の縁の長さ（{@code EDGE_*}）を px にする。{@link #length(int, float, float, float)} と同じ結果を、
-     * 記憶表を引かずに返す。宣言が無ければ 0。
-     */
-    public float edgeLength(int edge, float maxPixels, float rootW, float rootH) {
-        return PackedLengths.resolve(packedEdges()[edge], maxPixels, rootW, rootH, elementFontSize, rootFontSize);
-    }
-
-    /** 縁・寸法の宣言（{@code EDGE_*} / {@code DIM_*}）が % を含むか。文字列を探さず、詰めた値の単位（式は式表の原文）で答える。 */
-    boolean edgeHasPercent(int edge) {
-        return PackedLengths.hasPercent(packedEdges()[edge]);
-    }
-
-    long packedEdge(int edge) {
-        return packedEdges()[edge];
-    }
-
-    /** 縁・寸法を詰めた列。{@link #facts()} を組む途中でも引けるよう、事実の外（このスタイル）に持つ。競って 2 回作っても同じ値。 */
-    private volatile long[] packedEdges;
-
-    private long[] packedEdges() {
-        long[] edges = packedEdges;
-        if (edges == null) {
-            edges = compileEdges();
-            packedEdges = edges;
-        }
-        return edges;
-    }
-
-    /** キーワード値（小文字・前後空白なしに正規化）。 */
-    public String keyword(String propertyName, String defaultValue) {
-        String val = properties.get(propertyName);
-        if (val == null) return defaultValue;
-        return val.trim().toLowerCase();
-    }
-
-    /** キーワード値が {@code expected} と一致するか。 */
-    public boolean is(String propertyName, String expected) {
-        return expected.equals(keyword(propertyName, null));
+        static String name(int id) { return NAMES[id]; }
     }
 }

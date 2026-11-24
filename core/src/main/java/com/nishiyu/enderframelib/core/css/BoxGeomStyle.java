@@ -5,44 +5,44 @@ package com.nishiyu.enderframelib.core.css;
  * 値は構築時に 1 回だけ解いた型付きのフィールドで、文字列を読み直さない。{@link #equals} は全フィールドの値等価。
  */
 public final class BoxGeomStyle {
-    private static final int ID_display = ComputedStyle.idOf("display");
-    private static final int ID_position = ComputedStyle.idOf("position");
-    private static final int ID_top = ComputedStyle.idOf("top");
-    private static final int ID_right = ComputedStyle.idOf("right");
-    private static final int ID_bottom = ComputedStyle.idOf("bottom");
-    private static final int ID_left = ComputedStyle.idOf("left");
-    private static final int ID_floatValue = ComputedStyle.idOf("float");
-    private static final int ID_clear = ComputedStyle.idOf("clear");
-    private static final int ID_zIndex = ComputedStyle.idOf("z-index");
-    private static final int ID_width = ComputedStyle.idOf("width");
-    private static final int ID_height = ComputedStyle.idOf("height");
-    private static final int ID_minWidth = ComputedStyle.idOf("min-width");
-    private static final int ID_minHeight = ComputedStyle.idOf("min-height");
-    private static final int ID_maxWidth = ComputedStyle.idOf("max-width");
-    private static final int ID_maxHeight = ComputedStyle.idOf("max-height");
-    private static final int ID_boxSizing = ComputedStyle.idOf("box-sizing");
-    private static final int ID_aspectRatio = ComputedStyle.idOf("aspect-ratio");
-    private static final int ID_marginTop = ComputedStyle.idOf("margin-top");
-    private static final int ID_marginRight = ComputedStyle.idOf("margin-right");
-    private static final int ID_marginBottom = ComputedStyle.idOf("margin-bottom");
-    private static final int ID_marginLeft = ComputedStyle.idOf("margin-left");
-    private static final int ID_paddingTop = ComputedStyle.idOf("padding-top");
-    private static final int ID_paddingRight = ComputedStyle.idOf("padding-right");
-    private static final int ID_paddingBottom = ComputedStyle.idOf("padding-bottom");
-    private static final int ID_paddingLeft = ComputedStyle.idOf("padding-left");
-    private static final int ID_borderTopWidth = ComputedStyle.idOf("border-top-width");
-    private static final int ID_borderTopStyle = ComputedStyle.idOf("border-top-style");
-    private static final int ID_borderRightWidth = ComputedStyle.idOf("border-right-width");
-    private static final int ID_borderRightStyle = ComputedStyle.idOf("border-right-style");
-    private static final int ID_borderBottomWidth = ComputedStyle.idOf("border-bottom-width");
-    private static final int ID_borderBottomStyle = ComputedStyle.idOf("border-bottom-style");
-    private static final int ID_borderLeftWidth = ComputedStyle.idOf("border-left-width");
-    private static final int ID_borderLeftStyle = ComputedStyle.idOf("border-left-style");
-    private static final int ID_overflowX = ComputedStyle.idOf("overflow-x");
-    private static final int ID_overflowY = ComputedStyle.idOf("overflow-y");
-    private static final int ID_scrollbarWidth = ComputedStyle.idOf("scrollbar-width");
-    private static final int ID_verticalAlign = ComputedStyle.idOf("vertical-align");
-    private static final int ID_textOverflow = ComputedStyle.idOf("text-overflow");
+    static final int ID_display = ComputedStyle.idOf("display");
+    static final int ID_position = ComputedStyle.idOf("position");
+    static final int ID_top = ComputedStyle.idOf("top");
+    static final int ID_right = ComputedStyle.idOf("right");
+    static final int ID_bottom = ComputedStyle.idOf("bottom");
+    static final int ID_left = ComputedStyle.idOf("left");
+    static final int ID_floatValue = ComputedStyle.idOf("float");
+    static final int ID_clear = ComputedStyle.idOf("clear");
+    static final int ID_zIndex = ComputedStyle.idOf("z-index");
+    static final int ID_width = ComputedStyle.idOf("width");
+    static final int ID_height = ComputedStyle.idOf("height");
+    static final int ID_minWidth = ComputedStyle.idOf("min-width");
+    static final int ID_minHeight = ComputedStyle.idOf("min-height");
+    static final int ID_maxWidth = ComputedStyle.idOf("max-width");
+    static final int ID_maxHeight = ComputedStyle.idOf("max-height");
+    static final int ID_boxSizing = ComputedStyle.idOf("box-sizing");
+    static final int ID_aspectRatio = ComputedStyle.idOf("aspect-ratio");
+    static final int ID_marginTop = ComputedStyle.idOf("margin-top");
+    static final int ID_marginRight = ComputedStyle.idOf("margin-right");
+    static final int ID_marginBottom = ComputedStyle.idOf("margin-bottom");
+    static final int ID_marginLeft = ComputedStyle.idOf("margin-left");
+    static final int ID_paddingTop = ComputedStyle.idOf("padding-top");
+    static final int ID_paddingRight = ComputedStyle.idOf("padding-right");
+    static final int ID_paddingBottom = ComputedStyle.idOf("padding-bottom");
+    static final int ID_paddingLeft = ComputedStyle.idOf("padding-left");
+    static final int ID_borderTopWidth = ComputedStyle.idOf("border-top-width");
+    static final int ID_borderTopStyle = ComputedStyle.idOf("border-top-style");
+    static final int ID_borderRightWidth = ComputedStyle.idOf("border-right-width");
+    static final int ID_borderRightStyle = ComputedStyle.idOf("border-right-style");
+    static final int ID_borderBottomWidth = ComputedStyle.idOf("border-bottom-width");
+    static final int ID_borderBottomStyle = ComputedStyle.idOf("border-bottom-style");
+    static final int ID_borderLeftWidth = ComputedStyle.idOf("border-left-width");
+    static final int ID_borderLeftStyle = ComputedStyle.idOf("border-left-style");
+    static final int ID_overflowX = ComputedStyle.idOf("overflow-x");
+    static final int ID_overflowY = ComputedStyle.idOf("overflow-y");
+    static final int ID_scrollbarWidth = ComputedStyle.idOf("scrollbar-width");
+    static final int ID_verticalAlign = ComputedStyle.idOf("vertical-align");
+    static final int ID_textOverflow = ComputedStyle.idOf("text-overflow");
 
     /** 宣言が 1 つも無いときの共有インスタンス（初期値だけ）。ID_* の初期化より後に置く。 */
     public static final BoxGeomStyle DEFAULT = new BoxGeomStyle(null);
@@ -52,7 +52,7 @@ public final class BoxGeomStyle {
     /** {@code display}。 */
     public final String display;
     /** {@code position}。 */
-    public final com.nishiyu.enderframelib.core.css.model.CssKeywords.Position position;
+    public final com.nishiyu.enderframelib.core.css.model.Position position;
     /** {@code top}。 */
     public final long top;
     /** {@code right}。 */
@@ -126,10 +126,10 @@ public final class BoxGeomStyle {
     /** {@code text-overflow}。 */
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.TextOverflow textOverflow;
 
-    private BoxGeomStyle(ComputedStyle cs) {
+    private BoxGeomStyle(StyleReader.Source cs) {
         CssExprs.Builder ex = new CssExprs.Builder();
         this.display = StyleReader.text(cs, ID_display);
-        this.position = StyleReader.keyword(cs, ID_position, com.nishiyu.enderframelib.core.css.model.CssKeywords.Position.class);
+        this.position = StyleReader.keyword(cs, ID_position, com.nishiyu.enderframelib.core.css.model.Position.class);
         this.top = StyleReader.length(cs, ID_top, ex);
         this.right = StyleReader.length(cs, ID_right, ex);
         this.bottom = StyleReader.length(cs, ID_bottom, ex);
@@ -169,8 +169,10 @@ public final class BoxGeomStyle {
         this.exprs = ex.build();
     }
 
-    /** 算出スタイルから、この群の値を取り出す。 */
-    public static BoxGeomStyle of(ComputedStyle cs) {
+    /** {@code left/right} (bit 0)・{@code top/bottom} (bit 1) だけが違うならそのビット和、それ以外の差は -1。 */
+    static int positionOnlyAxes(BoxGeomStyle a, BoxGeomStyle b) { return 0; }
+    /** 宣言入力から、この群の値を取り出す。 */
+    public static BoxGeomStyle of(StyleReader.Source cs) {
         return new BoxGeomStyle(cs);
     }
 

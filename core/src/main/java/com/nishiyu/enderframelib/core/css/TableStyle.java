@@ -5,7 +5,7 @@ package com.nishiyu.enderframelib.core.css;
  * 値は構築時に 1 回だけ解いた型付きのフィールドで、文字列を読み直さない。{@link #equals} は全フィールドの値等価。
  */
 public final class TableStyle {
-    private static final int ID_tableLayout = ComputedStyle.idOf("table-layout");
+    static final int ID_tableLayout = ComputedStyle.idOf("table-layout");
 
     /** 宣言が 1 つも無いときの共有インスタンス（初期値だけ）。ID_* の初期化より後に置く。 */
     public static final TableStyle DEFAULT = new TableStyle(null);
@@ -13,12 +13,12 @@ public final class TableStyle {
     /** {@code table-layout}。 */
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.TableLayout tableLayout;
 
-    private TableStyle(ComputedStyle cs) {
+    private TableStyle(StyleReader.Source cs) {
         this.tableLayout = StyleReader.keyword(cs, ID_tableLayout, com.nishiyu.enderframelib.core.css.model.CssKeywords.TableLayout.class);
     }
 
-    /** 算出スタイルから、この群の値を取り出す。 */
-    public static TableStyle of(ComputedStyle cs) {
+    /** 宣言入力から、この群の値を取り出す。 */
+    public static TableStyle of(StyleReader.Source cs) {
         return new TableStyle(cs);
     }
 

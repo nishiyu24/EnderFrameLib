@@ -139,7 +139,7 @@ public final class MemFootprintMain {
             printGrowth(doc, histoBefore, histogramMap());
             double privAfter = privateMb();
             System.out.printf("MEM %-18s html=%6.0f KB  heapRetained=%7.1f MB  processPrivateDelta=%7.1f MB%n", doc, html.length() / 1024.0, (after - before) / 1048576.0, privAfter - privBefore);
-            System.out.println("MEM share hits=" + com.nishiyu.enderframelib.core.css.ComputedStyle.shareHits() + " misses=" + com.nishiyu.enderframelib.core.css.ComputedStyle.shareMisses());
+            System.out.println("MEM share hits=" + com.nishiyu.enderframelib.core.css.ShareCache.totalHits());
             if (System.getProperty("mem.clear") != null) {
                 clearCache("com.nishiyu.enderframelib.core.css.CssSyntax", "VALUE_CACHE");
                 System.out.printf("MEM %-18s after clearing CssSyntax.VALUE_CACHE: heapRetained=%7.1f MB%n", doc, (used() - before) / 1048576.0);

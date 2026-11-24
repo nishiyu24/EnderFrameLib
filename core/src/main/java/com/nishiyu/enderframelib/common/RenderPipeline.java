@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.kernel.Clock;
-import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer;
 import com.nishiyu.enderframelib.core.paint.PaintOrder;
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -9,6 +8,8 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.model.ContainerBox;
 import com.nishiyu.enderframelib.core.css.model.ContainerType;
 import com.nishiyu.enderframelib.core.css.CounterStyles;
@@ -40,7 +41,6 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.jetbrains.annotations.ApiStatus;
 
-import com.nishiyu.enderframelib.core.kernel.compiler.StateStyleMemo;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -135,7 +135,6 @@ public class RenderPipeline {
                                            LayoutBox previousRoot) {
         clearChangedBoxes();
         boolean incremental = ctx().flags().incrementalLayout() && previousRoot != null;
-        Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
 
         InteractionState effectiveState = interactionState != null ? interactionState : new InteractionState();
         effectiveState.bindStyleSheet(doc.sheet);
@@ -146,7 +145,7 @@ public class RenderPipeline {
         boolean hasContainers = doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries();
 
         if (incremental && !mediaChanged && !hasContainers && canSkipRebuild(doc, previousRoot, rootW, rootH, effectiveState)) {
-            LayoutBox fast = relayoutRootOnly(doc, previousRoot, rootW, rootH, rootStyleRaw, env, scrollState, fonts, effectiveState);
+            LayoutBox fast = relayoutRootOnly(doc, previousRoot, rootW, rootH, env, scrollState, fonts, effectiveState);
             if (fast != null) return fast;
         }
 
@@ -162,7 +161,7 @@ public class RenderPipeline {
             long aA = track ? threadAllocatedBytes() : 0;
             // 共有した結果は残す（restyleLayoutTree と同じ理由。シート・環境・版が変われば ShareCache が捨てる）
             try {
-                rootBox = RenderTreeBuilder.buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, FORCE_NONE,
+                rootBox = RenderTreeBuilder.buildLayoutTree(doc.root, Style.DEFAULT, doc.sheet, env, FORCE_NONE,
                         ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                         effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet),
                         prevReusable, nextReusable, false, null,
@@ -268,7 +267,7 @@ public class RenderPipeline {
      * ルートの変化が構造に及ぶ（表示の種類など）ときは null を返し、呼び出し側が全体を組み直す。
      */
     private static LayoutBox relayoutRootOnly(Document doc, LayoutBox rootBox, int rootW, int rootH,
-                                              Map<String, String> rootStyleRaw, Map<String, String> env,
+                                              Map<String, String> env,
                                               ScrollState scrollState, FontResolver fonts, InteractionState state) {
         long tA = Clock.SYSTEM.nanos();
         state.pruneRestyle = true;
@@ -281,7 +280,7 @@ public class RenderPipeline {
         long prof = StageProfiler.begin(PipelineStage.RESTYLE_LOCAL);
         try {
             if (doc.sheet != null) doc.sheet.warmCaches();
-            result = restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE, ComputedStyle.DEFAULT_FONT_SIZE,
+            result = restyleBoxRecursive(rootBox, Style.DEFAULT, null, doc.sheet, env, FORCE_NONE, ComputedStyle.DEFAULT_FONT_SIZE,
                     StyleScope.initial(rootW, rootH), state, StyleResolver.hasSiblingStateRules(doc.sheet),
                     containerFor(rootBox.node, state), false, layoutChangedList, styleChangedList, false);
         } finally {
@@ -311,7 +310,7 @@ public class RenderPipeline {
      */
     public static LayoutBox layoutSubtree(HtmlNode root, StyleSheet sheet, int rootW, int rootH,
                                           Map<String, String> env, ScrollState scrollState, FontResolver fonts) {
-        LayoutBox rootBox = buildLayoutTree(root, Map.of("display", "inline-block"), sheet, env, false);
+        LayoutBox rootBox = buildLayoutTree(root, Style.DEFAULT, sheet, env, false);
         BoxTreeBuilder.build(rootBox, CounterStyles.of(sheet.counterStyles));
         rootBox.positionTryRules = sheet.positionTryRules;
         runLayoutPasses(rootBox, rootW, rootH, sheet.mediaEnvironment().resolution(), scrollState, fonts, false, true, false);
@@ -528,14 +527,17 @@ public class RenderPipeline {
      */
     static boolean isPositionOnlyChange(ComputedStyle oldStyle, ComputedStyle newStyle) {
         if (oldStyle == null || newStyle == null) return false;
-        if (Float.compare(oldStyle.fontSizePx(), newStyle.fontSizePx()) != 0
-                || Float.compare(oldStyle.rootFontSizePx(), newStyle.rootFontSizePx()) != 0) {
+        Style os = oldStyle.typed(), ns = newStyle.typed();
+        if (Float.compare(os.inherited.fontSize, ns.inherited.fontSize) != 0
+                || Float.compare(os.inherited.rootFontSizePx, ns.inherited.rootFontSizePx) != 0) {
             return false;
         }
-        String position = newStyle.get(CssPropertyIndex.POSITION);
-        if (!Objects.equals(position, oldStyle.get(CssPropertyIndex.POSITION))) return false;
-        boolean offsetOnly = "relative".equals(position) || "sticky".equals(position);
-        boolean outOfFlow = "absolute".equals(position) || "fixed".equals(position);
+        var pos = ns.box.position;
+        if (pos != os.box.position) return false;
+        boolean offsetOnly = pos == com.nishiyu.enderframelib.core.css.model.Position.RELATIVE
+                || pos == com.nishiyu.enderframelib.core.css.model.Position.STICKY;
+        boolean outOfFlow = pos == com.nishiyu.enderframelib.core.css.model.Position.ABSOLUTE
+                || pos == com.nishiyu.enderframelib.core.css.model.Position.FIXED;
         if (!offsetOnly && !outOfFlow) return false;
 
         int axes = oldStyle.classifyPositionOnlyDiff(newStyle);
@@ -543,34 +545,14 @@ public class RenderPipeline {
         boolean horizontal = (axes & 1) != 0;
         boolean vertical = (axes & 2) != 0;
         if (offsetOnly) return true;
-        if (horizontal && (bothInsets(oldStyle, CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT)
-                || bothInsets(newStyle, CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT))) {
-            return false;
-        }
-        return !vertical || !(bothInsets(oldStyle, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)
-                || bothInsets(newStyle, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM));
+        if (horizontal && (bothInsets(os, true) || bothInsets(ns, true))) return false;
+        return !vertical || !(bothInsets(os, false) || bothInsets(ns, false));
     }
 
-    private static boolean bothInsets(ComputedStyle style, int start, int end) {
-        return !isAutoInset(style.get(start)) && !isAutoInset(style.get(end));
-    }
-
-    private static boolean isAutoInset(String value) {
-        return value == null || value.isBlank() || "auto".equalsIgnoreCase(value.trim());
-    }
-
-    private static volatile Object[] rootStyleCache; // {w, h, 読み取り専用の写し}
-
-    /** 再スタイルの走査用: 同じビューポートの間は同じ読み取り専用の写しを使い回す（毎回の HashMap を避ける）。 */
-    private static Map<String, String> cachedRootViewportStyle(int rootW, int rootH) {
-        Object[] c = rootStyleCache;
-        if (c != null && (int) c[0] == rootW && (int) c[1] == rootH) {
-            @SuppressWarnings("unchecked") Map<String, String> m = (Map<String, String>) c[2];
-            return m;
-        }
-        Map<String, String> m = java.util.Collections.unmodifiableMap(rootViewportStyle(rootW, rootH));
-        rootStyleCache = new Object[] {rootW, rootH, m};
-        return m;
+    private static boolean bothInsets(Style st, boolean horizontal) {
+        long a = horizontal ? st.box.left : st.box.top;
+        long b = horizontal ? st.box.right : st.box.bottom;
+        return !CssLength.isAutoOrUndeclared(a) && !CssLength.isAutoOrUndeclared(b);
     }
 
     public static Map<String, String> rootViewportStyle(int rootW, int rootH) {
@@ -736,64 +718,40 @@ public class RenderPipeline {
         return StyleResolver.valueDependsOnViewport(v);
     }
 
-    /**
-     * 要素の生宣言と算出スタイル。自身だけの再スタイルで、規則が対象の状態だけを読むなら、状態 → 算出スタイルの表
-     * （{@link StateStyleMemo}）を引く（:hover の往復でセレクタ照合もカスケードもしない）。
-     * 表を使えない／入力が変わったときは、従来どおり（スタイル共有 → カスケード）で作る。
-     */
-    static StateStyleMemo.Entry styleEntry(HtmlNode node, StyleSet styleSet, Map<String, String> inheritedStyle,
-                                                   StyleSheet sheet, Map<String, String> env, float parentFontSize,
-                                                   StyleScope scope, InteractionState interactionState,
-                                                   ContainerBox container, int force,
-                                                   InteractionState.StateFlags flags,
-                                                   boolean workerShare) {
-        boolean tableOk = flags != null && container == ContainerBox.NONE_SIZE
-                // FORCE_SELF は「親の算出スタイルが変わった」だけ（兄弟・祖先の変化は FORCE_SUBTREE）。親の値は表の鍵に入っている
-                && (force == FORCE_NONE || force == FORCE_SELF) && sheet != null
-                && !sheet.usesHasSelectors() // :has() は子孫・後続の兄弟の変化で祖先が汚れる（自身の状態だけでは決まらない）
-                && !sheet.usesPositionalSelectors(); // 兄弟の並び・位置を読む規則は、要素自身の鍵〔属性・子の数・状態〕に現れない変化で結果が変わる
-        if (!tableOk) {
-            if (flags != null && flags.stateMemo != null) flags.stateMemo.invalidate();
-            return computeEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope, interactionState,
-                    container, interactionState, workerShare);
-        }
-        if (flags.stateMemo == null) flags.stateMemo = new StateStyleMemo();
-        StateStyleMemo.Entry cached = flags.stateMemo.peek(node, sheet, inheritedStyle, env, parentFontSize,
-                scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
-                interactionState.stateBitsOf(node));
-        if (cached != null) return cached;
-        return flags.stateMemo.resolve(node, sheet, inheritedStyle, env, parentFontSize, scope.rootFontSize(),
-                scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
-                interactionState.stateBitsOf(node), true,
-                bits -> computeEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope,
-                        interactionState, container,
-                        (StateLookup) n -> n == node ? ElementState.of(bits) : interactionState.stateOf(n), workerShare));
-    }
+    record StyleEntry(ComputedStyle computed, boolean viewportDependent) {}
 
+    /**
+     * 要素の算出スタイルとビューポート依存性。スタイル共有キャッシュ（{@link ShareCache}）経由で解く。
+     */
+    static StyleEntry styleEntry(HtmlNode node, StyleSet styleSet, Style inheritedStyle,
+                                 StyleSheet sheet, Map<String, String> env, float parentFontSize,
+                                 StyleScope scope, InteractionState interactionState,
+                                 ContainerBox container, int force,
+                                 InteractionState.StateFlags flags,
+                                 boolean workerShare) {
+        return computeEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope,
+                interactionState, container, interactionState, workerShare);
+    }
 
     /**
      * A16: テキストの節の算出スタイル。テキストの節には規則が当たらず親から継承するだけなので、親の算出スタイルから
-     * 継承する値を写すだけで決まる（{@link ComputedStyle#derivedTextChild}。親のインスタンスにメモする）。
-     * カスケード・算出のやり直し、{@link StyleSet}・状態の表（{@link StateStyleMemo}）を作らない。
-     * 以前は親ごとに 1 回、親の表を丸ごと写して算出し直していた（showcase で空白の節 1 つの親あたり約 9 KB）。
-     * 使えないとき（{@code @property} の登録がある・親が算出スタイルでない・フォントの基準が親と違う）は null（従来の経路）。
+     * 継承群と {@code --*} をそのまま共有する（{@link ComputedStyle#derivedTextChild}）。
      */
-    static ComputedStyle.TextChild textNodeStyle(HtmlNode node, Map<String, String> inheritedStyle,
+    static ComputedStyle.TextChild textNodeStyle(HtmlNode node, Style inheritedStyle, ComputedStyle parentComputed,
                                                          StyleSheet sheet, float parentFontSize, StyleScope scope) {
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.TEXT_STYLE_FROM_PARENT.on() || node.nodeType != NodeType.TEXT || sheet == null
-                || !sheet.registeredProperties.isEmpty()) return null;
-        ComputedStyle parent = ComputedStyle.ownerOf(inheritedStyle);
-        if (parent == null || Float.compare(parent.fontSizePx(), parentFontSize) != 0
-                || Float.compare(parent.rootFontSizePx(), scope.rootFontSize()) != 0) return null;
-        return parent.derivedTextChild();
+        if (node.nodeType != NodeType.TEXT || sheet == null || !sheet.registeredProperties.isEmpty()) return null;
+        if (parentComputed == null || parentComputed.typed() != inheritedStyle
+                || Float.compare(parentComputed.fontSizePx(), parentFontSize) != 0
+                || Float.compare(parentComputed.rootFontSizePx(), scope.rootFontSize()) != 0) return null;
+        return parentComputed.derivedTextChild();
     }
 
-    private static StateStyleMemo.Entry computeEntry(HtmlNode node, StyleSet styleSet,
-                                                     Map<String, String> inheritedStyle, StyleSheet sheet,
-                                                     Map<String, String> env, float parentFontSize, StyleScope scope,
-                                                     InteractionState interactionState, ContainerBox container,
-                                                     StateLookup lookup,
-                                                     boolean workerShare) {
+    private static StyleEntry computeEntry(HtmlNode node, StyleSet styleSet,
+                                           Style inheritedStyle, StyleSheet sheet,
+                                           Map<String, String> env, float parentFontSize, StyleScope scope,
+                                           InteractionState interactionState, ContainerBox container,
+                                           StateLookup lookup,
+                                           boolean workerShare) {
         ContainerBox targetContainer = container != null ? container : containerFor(node, interactionState);
         StyleResolver.Shared shared = workerShare
                 ? StyleResolver.resolveWithWorkerShare(node, inheritedStyle, sheet, lookup, env,
@@ -802,7 +760,7 @@ public class RenderPipeline {
                 : interactionState.styleShare.resolve(node, inheritedStyle, sheet, lookup, env,
                         parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(),
                         scope.viewportH(), targetContainer);
-        if (shared != null) return new StateStyleMemo.Entry(shared.computed(), shared.viewportDependent());
+        if (shared != null) return new StyleEntry(shared.computed(), shared.viewportDependent());
         if (styleSet == null) styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
         Map<String, String> raw = styleSet.resolve(lookup);
         if (node.attrs.containsKey("hidden")) {
@@ -810,7 +768,7 @@ public class RenderPipeline {
         }
         boolean viewportDependent = node.parent == null || StyleResolver.rawDependsOnViewport(raw);
         ComputedStyle computed = computeStyleOwned(raw, inheritedStyle, sheet, env, parentFontSize, scope, targetContainer);
-        return new StateStyleMemo.Entry(computed, viewportDependent);
+        return new StyleEntry(computed, viewportDependent);
     }
 
     /**
@@ -855,15 +813,7 @@ public class RenderPipeline {
         }
     }
 
-    private static ComputedStyle computeStyle(Map<String, String> rawStyle, Map<String, String> parentStyle,
-                                              StyleSheet sheet,
-                                              Map<String, String> env, float parentFontSize, StyleScope scope,
-                                              ContainerBox container) {
-        return StyleResolver.finalizeComputedStyle(rawStyle, sheet, env, parentStyle,
-                parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(), container);
-    }
-
-    static ComputedStyle computeStyleOwned(Map<String, String> rawStyle, Map<String, String> parentStyle,
+    static ComputedStyle computeStyleOwned(Map<String, String> rawStyle, Style parentStyle,
                                                    StyleSheet sheet,
                                                    Map<String, String> env, float parentFontSize, StyleScope scope,
                                                    ContainerBox container) {
@@ -872,7 +822,7 @@ public class RenderPipeline {
     }
 
     static ComputedStyle recomputeWithAnimation(HtmlNode node, StyleSet styleSet,
-                                                      Map<String, String> inheritedStyle, StyleSheet sheet,
+                                                      Style inheritedStyle, StyleSheet sheet,
                                                       Map<String, String> env, float parentFontSize, StyleScope scope,
                                                       InteractionState interactionState, ContainerBox container,
                                                       Map<String, String> animation) {
@@ -890,7 +840,7 @@ public class RenderPipeline {
      * {@code opacity} / {@code transform} / 色は描画項目の補間が担うので対象外。
      */
     static Map<String, String> animationValues(HtmlNode node, ComputedStyle before, ComputedStyle target,
-                                                       Map<String, String> inheritedStyle, StyleSheet sheet,
+                                                       Style inheritedStyle, StyleSheet sheet,
                                                        InteractionState interactionState) {
         if (interactionState == null || node.isPseudoNode || sheet == null) return Map.of();
         long now = interactionState.animationTimeMs();
@@ -906,9 +856,7 @@ public class RenderPipeline {
     }
 
     private static boolean isSizeContainerStyle(ComputedStyle style) {
-        if (style == null) return false;
-        String kw = style.keyword(CssPropertyIndex.CONTAINER_TYPE, "normal");
-        return "size".equals(kw) || "inline-size".equals(kw);
+        return style != null && style.typed().rare.containerType != com.nishiyu.enderframelib.core.css.model.CssKeywords.ContainerType.NORMAL;
     }
 
     /** 要素自身がサイズコンテナならその {@link ContainerBox}、そうでなければ親から引き継いだ {@code parentContainer} をそのまま返す。 */
@@ -924,7 +872,6 @@ public class RenderPipeline {
         if (rootBox == null || doc == null || interactionState == null) {
             return new RestyleResult(true, true);
         }
-        Map<String, String> rootStyleRaw = cachedRootViewportStyle(rootW, rootH);
         interactionState.bindStyleSheet(doc.sheet);
         if (doc.sheet != null && doc.sheet.usesHasSelectors()) interactionState.propagateDirtyToAncestors();
         else interactionState.discardUnscopedLog();
@@ -942,7 +889,7 @@ public class RenderPipeline {
         try {
             if (doc.sheet != null) doc.sheet.warmCaches();
             ContainerBox rootContainer = containerFor(rootBox.node, interactionState);
-            int resMask = restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE,
+            int resMask = restyleBoxRecursive(rootBox, Style.DEFAULT, null, doc.sheet, env, FORCE_NONE,
                     ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                     interactionState, StyleResolver.hasSiblingStateRules(doc.sheet), rootContainer, false,
                     layoutChangedList, styleChangedList, false);
@@ -955,7 +902,7 @@ public class RenderPipeline {
         }
     }
 
-    private static int restyleBoxRecursive(LayoutBox box, Map<String, String> inheritedStyle,
+    private static int restyleBoxRecursive(LayoutBox box, Style inheritedStyle, ComputedStyle parentComputed,
                                                      StyleSheet sheet,
                                                      Map<String, String> env, int force,
                                                      float parentFontSize, StyleScope scope,
@@ -965,14 +912,14 @@ public class RenderPipeline {
                                                      boolean workerShare) {
         long probe = com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.enter(box, com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.RESTYLE);
         try {
-            return restyleBoxRecursive0(box, inheritedStyle, sheet, env, force, parentFontSize, scope, interactionState,
+            return restyleBoxRecursive0(box, inheritedStyle, parentComputed, sheet, env, force, parentFontSize, scope, interactionState,
                     siblingInvalidation, parentSizeContainer, ancestorHasMoving, layoutChangedList, styleChangedList, workerShare);
         } finally {
             com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.exit(com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.RESTYLE, probe);
         }
     }
 
-    private static int restyleBoxRecursive0(LayoutBox box, Map<String, String> inheritedStyle,
+    private static int restyleBoxRecursive0(LayoutBox box, Style inheritedStyle, ComputedStyle parentComputed,
                                                      StyleSheet sheet,
                                                      Map<String, String> env, int force,
                                                      float parentFontSize, StyleScope scope,
@@ -1002,13 +949,13 @@ public class RenderPipeline {
             ComputedStyle prevStyle = box.style;
             ContainerBox container = parentSizeContainer;
             // StyleSet は表を引けなかったとき（computeEntry）だけ作る
-            ComputedStyle.TextChild textEntry = textNodeStyle(node, inheritedStyle, sheet, parentFontSize, scope);
+            ComputedStyle.TextChild textEntry = textNodeStyle(node, inheritedStyle, parentComputed, sheet, parentFontSize, scope);
             boolean viewportDependent;
             if (textEntry != null) {
                 viewportDependent = textEntry.viewportDependent();
                 computed = textEntry.style();
             } else {
-                StateStyleMemo.Entry entry = styleEntry(node, null, inheritedStyle, sheet, env, parentFontSize, scope,
+                StyleEntry entry = styleEntry(node, null, inheritedStyle, sheet, env, parentFontSize, scope,
                         interactionState, container, force, flags, workerShare);
                 viewportDependent = entry.viewportDependent();
                 computed = entry.computed();
@@ -1157,7 +1104,8 @@ public class RenderPipeline {
                 List<LayoutBox>[] chunkLayout = new List[chunks];
                 @SuppressWarnings("unchecked")
                 List<LayoutBox>[] chunkStyle = new List[chunks];
-                final Map<String, String> parentAsMap = computed.asMap();
+                final Style parentTyped = computed.typed();
+                final ComputedStyle parentComp = computed;
                 LayoutTaskPool.forChunks(workCount, chunks, null, span -> {
                     int c = LayoutTaskPool.spanChunk(span);
                     int start = LayoutTaskPool.spanStart(span);
@@ -1169,7 +1117,7 @@ public class RenderPipeline {
                     try {
                         for (int wi = start; wi < end; wi++) {
                             LayoutBox child = kids.get(workIdx[wi]);
-                            localAcc |= restyleBoxRecursive(child, parentAsMap, sheet, env,
+                            localAcc |= restyleBoxRecursive(child, parentTyped, parentComp, sheet, env,
                                     workForce[wi], nextParentFontSize, childScope, interactionState,
                                     false, selfContainer, selfOrAncestorMoving,
                                     localLayout, localStyle, true);
@@ -1188,10 +1136,11 @@ public class RenderPipeline {
                 }
                 return acc;
             }
+            Style parentTyped = computed.typed();
             for (int wi = 0; wi < workCount; wi++) {
                 LayoutBox child = kids.get(workIdx[wi]);
                 interactionState.restyleDescended = true;
-                acc |= restyleBoxRecursive(child, computed.asMap(), sheet, env,
+                acc |= restyleBoxRecursive(child, parentTyped, computed, sheet, env,
                         workForce[wi], nextParentFontSize, childScope, interactionState,
                         false, selfContainer, selfOrAncestorMoving, layoutChangedList, styleChangedList, workerShare);
             }
@@ -1203,6 +1152,7 @@ public class RenderPipeline {
         }
 
         boolean siblingForceDirty = false;
+        Style parentTyped = computed.typed();
         for (int ci = 0; ci < kn; ci++) {
             LayoutBox child = kids.get(ci);
             if (child.node.isPseudoNode) continue;
@@ -1218,7 +1168,7 @@ public class RenderPipeline {
                 continue; // 自分も子孫も汚れていない部分木は、算出し直すものが無い（stateChanged は汚れていなければ false）
             }
             interactionState.restyleDescended = true;
-            acc |= restyleBoxRecursive(child, computed.asMap(), sheet, env,
+            acc |= restyleBoxRecursive(child, parentTyped, computed, sheet, env,
                     forceChild, nextParentFontSize, childScope, interactionState,
                     siblingInvalidation, selfContainer, selfOrAncestorMoving, layoutChangedList, styleChangedList, workerShare);
             siblingForceDirty |= stateChanged;
@@ -1326,23 +1276,20 @@ public class RenderPipeline {
                 | (structural ? RESTYLE_STRUCTURAL : 0);
         for (int ti = 0; ti < existing.elementChildren.size(); ti++) {
             LayoutBox text = existing.elementChildren.get(ti);
-            acc |= restyleBoxRecursive(text, next.asMap(), sheet, env, FORCE_SUBTREE, next.fontSizePx(),
+            acc |= restyleBoxRecursive(text, next.typed(), next, sheet, env, FORCE_SUBTREE, next.fontSizePx(),
                     scope, interactionState, siblingInvalidation, ownerSizeContainer, pseudoMoving,
                     layoutChangedList, styleChangedList, workerShare);
         }
         return acc;
     }
 
-    public static LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
-                                            StyleSheet sheet,
+    public static LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle, StyleSheet sheet,
                                             Map<String, String> env, boolean forceDirty) {
         return buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty, new InteractionState());
     }
 
-    public static LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
-                                            StyleSheet sheet,
-                                            Map<String, String> env, boolean forceDirty,
-                                            InteractionState interactionState) {
+    public static LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle, StyleSheet sheet,
+                                            Map<String, String> env, boolean forceDirty, InteractionState interactionState) {
         InteractionState effectiveState = interactionState != null ? interactionState : new InteractionState();
         return buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty,
                 ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(0, 0), effectiveState,
@@ -1350,8 +1297,18 @@ public class RenderPipeline {
     }
 
     public static LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
-                                            StyleSheet sheet,
-                                            Map<String, String> env, boolean forceDirty,
+                                            StyleSheet sheet, Map<String, String> env, boolean forceDirty) {
+        return buildLayoutTree(node, Style.ofMap(inheritedStyle), sheet, env, forceDirty);
+    }
+
+    public static LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
+                                            StyleSheet sheet, Map<String, String> env, boolean forceDirty,
+                                            InteractionState interactionState) {
+        return buildLayoutTree(node, Style.ofMap(inheritedStyle), sheet, env, forceDirty, interactionState);
+    }
+
+    public static LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle,
+                                            StyleSheet sheet, Map<String, String> env, boolean forceDirty,
                                             float parentFontSize, StyleScope scope, InteractionState interactionState,
                                             boolean siblingInvalidation) {
         if (interactionState != null) interactionState.styleShare.clear();

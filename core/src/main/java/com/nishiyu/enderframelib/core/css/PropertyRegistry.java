@@ -95,13 +95,13 @@ public final class PropertyRegistry {
     static {
         // ---- 表示と位置
         layout("display", "inline", false, ValueType.KEYWORD, false);
-        keyword("position", CssKeywords.Position.class, CssKeywords.Position.STATIC, false, Invalidation.LAYOUT);
+        keyword("position", Position.class, Position.STATIC, false, Invalidation.LAYOUT);
         for (String side : SIDES) layout(side, "auto", false, ValueType.LENGTH_PERCENTAGE, true);
         shorthand("inset", Invalidation.LAYOUT, ShorthandExpanders::inset, "top", "right", "bottom", "left");
         keyword("float", CssKeywords.FloatSide.class, CssKeywords.FloatSide.NONE, false, Invalidation.LAYOUT);
         keyword("clear", CssKeywords.Clear.class, CssKeywords.Clear.NONE, false, Invalidation.LAYOUT);
         paint("z-index", "auto", false, ValueType.INTEGER, true);
-        keyword("visibility", CssKeywords.Visibility.class, CssKeywords.Visibility.VISIBLE, true, Invalidation.PAINT);
+        keyword("visibility", Visibility.class, Visibility.VISIBLE, true, Invalidation.PAINT);
 
         // ---- 箱の寸法
         for (String p : List.of("width", "height")) layout(p, "auto", false, ValueType.LENGTH_PERCENTAGE, true);
