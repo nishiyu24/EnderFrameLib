@@ -10,6 +10,7 @@ import com.nishiyu.enderframelib.core.layout.fragment.InlineFlow;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
 import com.nishiyu.enderframelib.core.layout.fragment.LineFragment;
+import com.nishiyu.enderframelib.core.layout.fragment.PlacedFragment;
 import com.nishiyu.enderframelib.core.text.TextShaper;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
@@ -93,6 +94,9 @@ public final class FragmentProjection {
         }
         for (LayoutBox c : lb.children) {
             if (c.display != null && c.display.isInlineLevel() && !c.node.isPseudoNode && c.inlineFragments != null) fitInline(c);
+        }
+        if (f.oof != null) { // 流れの外の断片は包含ブロックの子として後ろに置く（描画の順も位置指定の子が後）
+            for (PlacedFragment p : f.oof) lb.addChild(block(p.frag(), p.x(), p.y()));
         }
         return lb;
     }
@@ -189,12 +193,11 @@ public final class FragmentProjection {
                 float runH = InlineFlow.lineHeight(st, face), runBase = runBaseline(st);
                 float fy = LayoutUnit.snap(oy + l.y() + (lineBase - runBase));
                 List<LayoutBox> chain = parents.getOrDefault(p.text(), List.of());
-                // 旧経路と同じく語ごと（後ろの空白を含む）の断片にする。最後の語だけは片の幅の残りで終わらせる
+                // 旧経路と同じく折り返し候補ごと（後ろの空白を含む）の断片にする。最後の語だけは片の幅の残りで終わらせる
                 String text = p.string();
                 float x = ox + l.x() + p.x(), end = x + p.width();
                 for (int i = 0, n = text.length(); i < n; ) {
-                    int sp = text.indexOf(' ', i);
-                    int stop = sp < 0 ? n : sp + 1;
+                    int stop = InlineFlow.nextBreak(text, i, n, st.facts.wordBreak); // 折り返し候補（UAX #14）ごと
                     String word = text.substring(i, stop);
                     float w = stop == n ? end - x : face.advance(word, fs);
                     tb.addFragment(x, fy, w, runH, word, runBase, face.descent(fs), chain, true, true);

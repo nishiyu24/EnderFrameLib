@@ -66,6 +66,28 @@ class WptV3BaselineTest {
         }
     }
 
+    /**
+     * 調べる用: {@code -Dwpt.v3.diag=<id>[,<id>...]} の組を、新経路のテスト・新経路の参照・旧経路のテストの 3 枚の PNG にして
+     * {@code build/wpt-v3-diag/} へ書く。
+     */
+    @Test
+    void diagnose() throws IOException {
+        String ids = System.getProperty("wpt.v3.diag");
+        org.junit.jupiter.api.Assumptions.assumeTrue(ids != null && !ids.isBlank());
+        Path out = Path.of("build/wpt-v3-diag");
+        Files.createDirectories(out);
+        Map<String, String> pairs = WptReftestRatchetTest.manifest();
+        for (String id : ids.split(",")) {
+            String t = WptReftestRatchetTest.read(id), r = WptReftestRatchetTest.read(pairs.get(id));
+            String base = id.replaceAll("[^A-Za-z0-9.-]", "_");
+            WptReftestRatchetTest.writePng(render(t), out.resolve(base + ".v3-test.png"));
+            WptReftestRatchetTest.writePng(render(r), out.resolve(base + ".v3-ref.png"));
+            SoftwareRenderBackend b = new SoftwareRenderBackend(WptReftestRatchetTest.W, WptReftestRatchetTest.H, 1f);
+            b.render(com.nishiyu.enderframelib.common.SoftwareRendering.displayList(t, WptReftestRatchetTest.W, WptReftestRatchetTest.H, WptReftestRatchetTest.FONTS), WptReftestRatchetTest.T0);
+            WptReftestRatchetTest.writePng(b.pixmap(), out.resolve(base + ".legacy-test.png"));
+        }
+    }
+
     @Test
     void newPathPassingListDoesNotRegress() throws IOException {
         Map<String, String> pairs = WptReftestRatchetTest.manifest();

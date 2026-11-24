@@ -62,7 +62,7 @@ class IncrementalOracleTest {
         List<HtmlNode> elems = new ArrayList<>();
         collect(v.doc.root, elems);
         HtmlNode target = elems.get(rnd.nextInt(elems.size()));
-        switch (rnd.nextInt(7)) {
+        switch (rnd.nextInt(9)) {
             case 0 -> { // 挿入
                 HtmlElement e = new HtmlElement(target.parent != null && "ul".equals(target.parent.tag) ? "li" : "div");
                 e.updateTextContent("inserted " + step + " word word word");
@@ -95,6 +95,15 @@ class IncrementalOracleTest {
             case 5 -> { // 幅・flex
                 ((HtmlElement) target).setAttribute("style", rnd.nextBoolean() ? "width:" + (40 + rnd.nextInt(300)) + "px" : "flex-grow:" + rnd.nextInt(3));
                 return "width/grow " + target.tag;
+            }
+            case 7 -> { // 流れの外
+                ((HtmlElement) target).setAttribute("style", "position:absolute;left:" + rnd.nextInt(200) + "px;top:" + rnd.nextInt(90) + "px"
+                        + (rnd.nextBoolean() ? ";width:" + (20 + rnd.nextInt(120)) + "px" : ""));
+                return "absolute " + target.tag;
+            }
+            case 8 -> { // 包含ブロック・相対のずれ
+                ((HtmlElement) target).setAttribute("style", "position:relative;left:" + (rnd.nextInt(20) - 10) + "px;top:" + rnd.nextInt(8) + "px");
+                return "relative " + target.tag;
             }
             default -> { // 表示の切り替え
                 ((HtmlElement) target).setAttribute("style", rnd.nextBoolean() ? "display:none" : "display:flex;flex-wrap:wrap");

@@ -31,10 +31,15 @@ public final class LayoutFragment {
     public final ChunkedFlow flow;
     /** インライン整形の行（無ければ null）。 */
     public final LineFragment[] lines;
+    /** 包含ブロックへ渡す流れの外の子孫の静的位置（border-box 基準。無ければ null）。 */
+    final OutOfFlow.Pending[] pending;
+    /** この箱が包含ブロックとして置いた流れの外の断片（無ければ null）。 */
+    public final PlacedFragment[] oof;
 
     LayoutFragment(BoxNode box, ConstraintSpace space, float width, float height, float marginLeft,
                    float topPos, float topNeg, float bottomPos, float bottomNeg, float insetLeft, float insetTop,
-                   boolean collapseThrough, ChunkedFlow flow, LineFragment[] lines) {
+                   boolean collapseThrough, ChunkedFlow flow, LineFragment[] lines, OutOfFlow.Pending[] pending,
+                   PlacedFragment[] oof) {
         this.box = box;
         this.space = space;
         this.width = width;
@@ -49,6 +54,8 @@ public final class LayoutFragment {
         this.collapseThrough = collapseThrough;
         this.flow = flow;
         this.lines = lines;
+        this.pending = pending;
+        this.oof = oof;
     }
 
     /** この制約で作った、この箱の断片か（キャッシュの照合。{@code ==} の高速路つきの値等価）。 */

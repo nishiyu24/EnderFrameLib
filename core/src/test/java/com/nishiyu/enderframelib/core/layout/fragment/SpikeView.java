@@ -99,6 +99,7 @@ final class SpikeView {
             }
         }
         if (f.flow != null) f.flow.forEach((c, x1, y1) -> dump(c, cx + x1, cy + y1, depth + 1, out));
+        if (f.oof != null) for (PlacedFragment p : f.oof) dump(p.frag(), x + p.x(), y + p.y(), depth + 1, out);
     }
 
     private static String fmt(float v) {
@@ -125,6 +126,7 @@ final class SpikeView {
         }
         float cx = x + f.insetLeft, cy = y + f.insetTop;
         if (f.flow != null) f.flow.forEach((c, x1, y1) -> find(c, cx + x1, cy + y1, id, hit));
+        if (f.oof != null) for (PlacedFragment p : f.oof) find(p.frag(), x + p.x(), y + p.y(), id, hit);
     }
 
     // ---- 文書 ----

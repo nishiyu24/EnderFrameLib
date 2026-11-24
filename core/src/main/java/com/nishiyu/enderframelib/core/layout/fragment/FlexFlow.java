@@ -62,13 +62,18 @@ final class FlexFlow implements FormattingEngine {
         }
         w = LayoutUnit.snap(w);
         float cw = Math.max(0, w - g.hdec());
-        float fixedH = !Float.isNaN(space.fixedHeight) ? space.fixedHeight : g.specifiedHeight(st, space.percentHeightBase, s);
+        float fixedH = !Float.isNaN(space.fixedHeight) ? space.fixedHeight
+                : space.contentBlockSize() ? Float.NaN : g.specifiedHeight(st, space.percentHeightBase, s);
         float ch = Float.isNaN(fixedH) ? Float.NaN : Math.max(0, fixedH - g.vdec());
 
         FlexGridStyle fg = st.flexGrid;
         boolean row = fg.flexDirection == null || fg.flexDirection.isRow();
-        List<Item> items = items(node, cw, prior, s);
+        List<BoxNode> outOfFlow = new ArrayList<>();
+        List<Item> items = items(node, cw, prior, outOfFlow, s);
         float contentH = row ? row(st, items, cw, ch, s) : column(st, items, cw, ch, s);
+        float insetL = g.bL + g.pL, insetT = g.bT + g.pT;
+        List<OutOfFlow.Pending> pend = new ArrayList<>();
+        for (BoxNode b : outOfFlow) pend.add(new OutOfFlow.Pending(b, insetL, insetT)); // 静的位置は内容ボックスの左上
 
         int n = items.size();
         LayoutFragment[] frags = new LayoutFragment[n];
@@ -77,8 +82,10 @@ final class FlexFlow implements FormattingEngine {
         for (int i = 0; i < n; i++) {
             Item it = items.get(i);
             frags[i] = it.frag;
-            xs[i] = LayoutUnit.snap(it.x);
-            ys[i] = LayoutUnit.snap(it.y);
+            float[] rel = OutOfFlow.relativeOffset(it.box.style, cw, ch, s);
+            xs[i] = LayoutUnit.snap(it.x + (rel != null ? rel[0] : 0));
+            ys[i] = LayoutUnit.snap(it.y + (rel != null ? rel[1] : 0));
+            if (it.frag.pending != null) for (OutOfFlow.Pending p : it.frag.pending) pend.add(p.shift(insetL + xs[i], insetT + ys[i]));
             LayoutFragment[] used = it.slots.used(it.frag);
             if (used != null) {
                 if (slots == null) slots = new LayoutFragment[n][];
@@ -86,22 +93,35 @@ final class FlexFlow implements FormattingEngine {
             }
         }
         contentH = LayoutUnit.snap(contentH);
-        FlowChunk fc = new FlowChunk(null, null, frags, xs, ys, contentH, 0, 0, 0, 0, false, slots);
+        FlowChunk fc = new FlowChunk(null, null, frags, xs, ys, contentH, 0, 0, 0, 0, false, slots, null);
         float h = Float.isNaN(fixedH) ? contentH + g.vdec() : fixedH;
-        if (Float.isNaN(space.fixedHeight)) h = g.clampHeight(st, h, space.percentHeightBase, s);
+        if (Float.isNaN(space.fixedHeight) && !space.contentBlockSize()) h = g.clampHeight(st, h, space.percentHeightBase, s);
         h = LayoutUnit.snap(h);
+        OutOfFlow.Pending[] up = null;
+        PlacedFragment[] oof = null;
+        if (!pend.isEmpty()) {
+            if (OutOfFlow.containsOutOfFlow(st)) {
+                oof = OutOfFlow.layout(pend, g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB), prior, s);
+            } else {
+                up = pend.toArray(OutOfFlow.NONE);
+            }
+        }
         return new LayoutFragment(node, space, w, h, LayoutUnit.snap(ml), Math.max(0, g.mT), Math.min(0, g.mT),
-                Math.max(0, g.mB), Math.min(0, g.mB), g.bL + g.pL, g.bT + g.pT, false,
-                new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}), null);
+                Math.max(0, g.mB), Math.min(0, g.mB), insetL, insetT, false,
+                new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}), null, up, oof);
     }
 
     /** 項目（{@code display: none} と畳まれる空白を除き、{@code order} で安定に並べる）と、それぞれの前回の候補。 */
-    private static List<Item> items(BoxNode node, float cw, LayoutFragment prior, LayoutSession s) {
+    private static List<Item> items(BoxNode node, float cw, LayoutFragment prior, List<BoxNode> outOfFlow, LayoutSession s) {
         FlowChunk pc = prior != null && prior.flow != null && prior.flow.chunks.length == 1 ? prior.flow.chunks[0] : null;
         List<BoxNode> kids = new ArrayList<>();
         boolean ordered = false;
         for (BoxNode k : node.children.toList()) {
             if (k.kind == BoxKind.NONE || k.collapsibleWhitespace()) continue;
+            if (OutOfFlow.is(k)) { // 流れの外: 項目にしない
+                outOfFlow.add(k);
+                continue;
+            }
             kids.add(k);
             ordered |= Style.num(k.style.flexGrid.order, 0) != 0;
         }
@@ -149,8 +169,12 @@ final class FlexFlow implements FormattingEngine {
     }
 
     private static ConstraintSpace itemSpace(Item it, float cw, float fixedW, float fixedH, float ch, LayoutSession s) {
+        return itemSpace(it, cw, fixedW, fixedH, ch, 0, s);
+    }
+
+    private static ConstraintSpace itemSpace(Item it, float cw, float fixedW, float fixedH, float ch, int extra, LayoutSession s) {
         float pct = BoxGeometry.usesPercentHeight(it.box.style) ? ch : Float.NaN;
-        return s.space(cw, fixedW, fixedH, pct, ConstraintSpace.FORMATTING_ROOT);
+        return s.space(cw, fixedW, fixedH, pct, ConstraintSpace.FORMATTING_ROOT | extra);
     }
 
     // ---- row ----
@@ -172,7 +196,7 @@ final class FlexFlow implements FormattingEngine {
             if (basisDefinite(cst, fb, cw)) {
                 float b = LayoutUnit.snap(cst.gridPx(fb, cw, s.viewportW(), s.viewportH()));
                 it.base = cst.box.boxSizing == com.nishiyu.enderframelib.core.css.model.CssKeywords.BoxSizing.BORDER_BOX ? b : b + ig.hdec();
-            } else if (!Float.isNaN(specW)) {
+            } else if (CssLength.isAutoOrUndeclared(fb) && !Float.isNaN(specW)) { // 幅を見るのは flex-basis: auto だけ
                 it.base = specW;
             } else {
                 mm = cache.minMax(it.box, s); // 内容基準の基準の大きさ: max-content（仮のレイアウトをしない）
@@ -266,8 +290,8 @@ final class FlexFlow implements FormattingEngine {
                 case END, FLEX_END, SELF_END -> free;
                 default -> 0f;
             };
-            // pass 1: 幅を確定し、高さは内容から（内容基準の基準の大きさ・自動の最小サイズ）
-            it.frag = cache.layout(it.box, itemSpace(it, cw, crossW[i], Float.NaN, ch, s), it.slots, s);
+            // pass 1: 幅を確定し、高さは自分の height を掛けない内容から（内容基準の基準の大きさ・自動の最小サイズ）
+            it.frag = cache.layout(it.box, itemSpace(it, cw, crossW[i], Float.NaN, ch, ConstraintSpace.CONTENT_BLOCK_SIZE, s), it.slots, s);
             float content = it.frag.height;
             long fb = cst.flexGrid.flexBasis;
             float specH = ig.specifiedHeight(cst, ch, s);
@@ -275,7 +299,8 @@ final class FlexFlow implements FormattingEngine {
                 float b = LayoutUnit.snap(cst.gridPx(fb, Float.isFinite(ch) ? ch : 0, s.viewportW(), s.viewportH()));
                 it.base = cst.box.boxSizing == com.nishiyu.enderframelib.core.css.model.CssKeywords.BoxSizing.BORDER_BOX ? b : b + ig.vdec();
             } else {
-                it.base = !Float.isNaN(specH) ? specH : content;
+                // 高さを見るのは flex-basis: auto だけ（content・基準の無い % は内容から。CSS Flexbox §9.2 3.E）
+                it.base = CssLength.isAutoOrUndeclared(fb) && !Float.isNaN(specH) ? specH : content;
             }
             if (BoxGeometry.definite(cst, cst.box.minHeight, ch)) it.minMain = ig.clampHeight(cst, 0, ch, s);
             else it.minMain = overflowVisible(cst) ? (Float.isNaN(specH) ? content : Math.min(content, specH)) : ig.vdec();
@@ -392,7 +417,7 @@ final class FlexFlow implements FormattingEngine {
         float min = 0, max = 0;
         int n = 0;
         for (BoxNode k : node.children.toList()) {
-            if (k.kind == BoxKind.NONE || k.collapsibleWhitespace()) continue;
+            if (k.kind == BoxKind.NONE || k.collapsibleWhitespace() || OutOfFlow.is(k)) continue;
             Style cst = k.style;
             BoxGeometry ig = new BoxGeometry(cst, Float.NaN, s);
             MinMaxSizes m = ig.contribution(cst, s.cache().minMax(k, s), s);

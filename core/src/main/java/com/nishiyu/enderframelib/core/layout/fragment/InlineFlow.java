@@ -7,10 +7,12 @@ import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
+import com.nishiyu.enderframelib.core.text.LineBreaker;
 import com.nishiyu.enderframelib.core.text.TextShaper;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import com.nishiyu.enderframelib.core.text.model.WhiteSpace;
+import com.nishiyu.enderframelib.core.text.model.WordBreak;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,8 +30,8 @@ public final class InlineFlow {
 
     private InlineFlow() { }
 
-    /** 整形の結果。{@code height} は行の高さの和。 */
-    record Result(LineFragment[] lines, float height) { }
+    /** 整形の結果。{@code height} は行の高さの和。{@code pending} は中の流れの外の箱の静的位置（内容ボックス基準）。 */
+    record Result(LineFragment[] lines, float height, List<OutOfFlow.Pending> pending) { }
 
     /** {@code kids} を幅 {@code availW} で行に組む。{@code container} は行の支柱（strut）と揃えの持ち主。 */
     static Result layout(List<BoxNode> kids, Style container, float availW, LayoutSession s) {
@@ -56,6 +58,14 @@ public final class InlineFlow {
         };
     }
 
+    /** {@code from} より後ろで最初の折り返し候補の位置（無ければ {@code to}）。 */
+    public static int nextBreak(String t, int from, int to, WordBreak wb) {
+        for (int i = t.offsetByCodePoints(from, 1); i < to; i = t.offsetByCodePoints(i, 1)) {
+            if (LineBreaker.canBreakBefore(t, i, wb)) return i;
+        }
+        return to;
+    }
+
     private static boolean isBreak(BoxNode n) {
         return n.kind != BoxKind.TEXT && "br".equalsIgnoreCase(n.node.tag);
     }
@@ -72,6 +82,7 @@ public final class InlineFlow {
         private final TextAlign align;
         private final LayoutSession s;
         private final List<LineFragment> lines = new ArrayList<>();
+        private final List<OutOfFlow.Pending> oofPending = new ArrayList<>();
         // 今の行
         private final List<BoxNode> pBox = new ArrayList<>();
         private int[] pStart = new int[8], pEnd = new int[8];
@@ -92,6 +103,10 @@ public final class InlineFlow {
                 case NONE -> { }
                 case TEXT -> run(n);
                 default -> {
+                    if (OutOfFlow.is(n)) { // 流れの外: 今の行の今の位置を静的位置として渡す
+                        oofPending.add(new OutOfFlow.Pending(n, x, cursor));
+                        return;
+                    }
                     if (isBreak(n)) {
                         newLine();
                         return;
@@ -131,13 +146,15 @@ public final class InlineFlow {
                 float whole = face.advance(from == 0 && to == n ? t : t.substring(from, to), fs);
                 if (!wraps || x + (hasContent ? pending : 0) + whole <= availW + EPS) {
                     place(box, from, to, whole, lh); // 1 行に収まる: 1 断片で置く（語ごとに測らない）
-                } else {
+                } else { // 折り返し候補（UAX #14。空白の無い和文も割れる）ごとに置く。候補の後ろの空白は次の語との間の空き
+                    WordBreak wb = st.facts.wordBreak;
                     for (int w = from; w < to; ) {
-                        int sp = t.indexOf(' ', w);
-                        int end = sp < 0 || sp > to ? to : sp;
-                        if (end > w) place(box, w, end, face.advance(t.substring(w, end), fs), lh);
-                        if (end < to) pending = Math.max(pending, spaceW);
-                        w = end + 1;
+                        int b = nextBreak(t, w, to, wb);
+                        int core = b;
+                        while (core > w && t.charAt(core - 1) == ' ') core--;
+                        if (core > w) place(box, w, core, face.advance(t.substring(w, core), fs), lh);
+                        if (core < b) pending = Math.max(pending, spaceW);
+                        w = b;
                     }
                 }
             }
@@ -197,7 +214,7 @@ public final class InlineFlow {
 
         Result finish() {
             if (hasContent || !pBox.isEmpty()) newLine();
-            return new Result(lines.toArray(new LineFragment[0]), cursor);
+            return new Result(lines.toArray(new LineFragment[0]), cursor, oofPending);
         }
     }
 
@@ -216,6 +233,7 @@ public final class InlineFlow {
                 case NONE -> { }
                 case TEXT -> run(n);
                 default -> {
+                    if (OutOfFlow.is(n)) return;
                     if (isBreak(n)) {
                         breakHere();
                         return;
@@ -253,24 +271,29 @@ public final class InlineFlow {
                 return;
             }
             float spaceW = face.advance(" ", fs);
+            WordBreak wb = st.facts.wordBreak;
             int n = t.length();
             for (int w = 0; w < n; ) {
-                int sp = t.indexOf(' ', w);
-                int end = sp < 0 ? n : sp;
-                if (end > w) {
-                    float ww = face.advance(t.substring(w, end), fs);
+                int b = nextBreak(t, w, n, wb);
+                int core = b;
+                while (core > w && t.charAt(core - 1) == ' ') core--;
+                int start = w;
+                while (start < core && t.charAt(start) == ' ') start++;
+                if (start > w) pending = spaceW;
+                if (core > start) {
+                    float ww = face.advance(t.substring(start, core), fs);
                     if (any) total += pending;
                     total += ww;
                     chunk += ww;
                     any = true;
                     pending = 0;
                 }
-                if (end < n) {
+                if (b < n) { // 候補で割れる
                     min = Math.max(min, chunk);
                     chunk = 0;
-                    pending = spaceW;
+                    if (core < b) pending = spaceW;
                 }
-                w = end + 1;
+                w = b;
             }
         }
 

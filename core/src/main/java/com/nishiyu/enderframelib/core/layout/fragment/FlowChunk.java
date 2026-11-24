@@ -23,9 +23,12 @@ public final class FlowChunk {
     /** 中身が全て高さ 0 で余白が素通しになるチャンクか（{@code lead} に全部を入れてある）。 */
     public final boolean through;
     public final LayoutFragment[][] slots;
+    /** 流れの外の子孫の静的位置（x は内容ボックス基準、y はチャンクの上端基準。無ければ null）。 */
+    final OutOfFlow.Pending[] pending;
 
     FlowChunk(BoxChunk source, ConstraintSpace space, LayoutFragment[] frags, float[] x, float[] y, float height,
-              float leadPos, float leadNeg, float trailPos, float trailNeg, boolean through, LayoutFragment[][] slots) {
+              float leadPos, float leadNeg, float trailPos, float trailNeg, boolean through, LayoutFragment[][] slots,
+              OutOfFlow.Pending[] pending) {
         this.source = source;
         this.space = space;
         this.frags = frags;
@@ -38,6 +41,7 @@ public final class FlowChunk {
         this.trailNeg = trailNeg;
         this.through = through;
         this.slots = slots;
+        this.pending = pending;
     }
 
     /** この制約で並べた、このチャンクの結果か。 */

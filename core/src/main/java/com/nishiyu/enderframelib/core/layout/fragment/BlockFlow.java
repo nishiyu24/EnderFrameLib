@@ -54,7 +54,8 @@ final class BlockFlow implements FormattingEngine {
         // 文書の根とルート要素（html）は独立した整形コンテキスト: 子と余白を相殺しない
         boolean root = space.formattingRoot() || node.node.parent == null || node.node.parent.parent == null
                 || BoxGeometry.establishesBfc(st);
-        float fixedH = !Float.isNaN(space.fixedHeight) ? space.fixedHeight : g.specifiedHeight(st, space.percentHeightBase, s);
+        float fixedH = !Float.isNaN(space.fixedHeight) ? space.fixedHeight
+                : space.contentBlockSize() ? Float.NaN : g.specifiedHeight(st, space.percentHeightBase, s);
         boolean heightAuto = Float.isNaN(fixedH);
         boolean collapseTop = !root && g.pT == 0 && g.bT == 0;
         boolean collapseBottom = !root && g.pB == 0 && g.bB == 0 && heightAuto;
@@ -64,10 +65,13 @@ final class BlockFlow implements FormattingEngine {
         LineFragment[] lines = null;
         ChunkedFlow flow = null;
         Assembled a;
+        List<OutOfFlow.Pending> pend = new ArrayList<>();
+        float insetL = g.bL + g.pL, insetT = g.bT + g.pT;
         if (text || (kids.hasInline() && !kids.hasBlock())) {
             InlineFlow.Result r = InlineFlow.layout(text ? List.of(node) : kids.toList(), st, cw, s);
             lines = r.lines().length > 0 ? r.lines() : null;
             a = new Assembled(r.height());
+            for (OutOfFlow.Pending p : r.pending()) pend.add(p.shift(insetL, insetT));
         } else {
             ConstraintSpace base = s.space(cw, Float.NaN, Float.NaN, Float.NaN, 0);
             ConstraintSpace pct = Float.isNaN(childPct) ? base : s.space(cw, Float.NaN, Float.NaN, childPct, 0);
@@ -77,16 +81,32 @@ final class BlockFlow implements FormattingEngine {
                     : chunks(kids, base, pct, priorFlow, s);
             a = assemble(chunks, collapseTop, collapseBottom);
             flow = chunks.length > 0 ? new ChunkedFlow(chunks, a.chunkY) : null;
+            for (int k = 0; k < chunks.length; k++) {
+                if (chunks[k].pending == null) continue;
+                for (OutOfFlow.Pending p : chunks[k].pending) pend.add(p.shift(insetL, insetT + a.chunkY[k]));
+            }
         }
         float h = heightAuto ? a.contentH + g.vdec() : fixedH;
-        if (Float.isNaN(space.fixedHeight)) h = g.clampHeight(st, h, space.percentHeightBase, s);
+        if (Float.isNaN(space.fixedHeight) && !space.contentBlockSize()) h = g.clampHeight(st, h, space.percentHeightBase, s);
         h = LayoutUnit.snap(h);
 
         float tp = Math.max(0, g.mT), tn = Math.min(0, g.mT), bp = Math.max(0, g.mB), bn = Math.min(0, g.mB);
         if (collapseTop) { tp = Math.max(tp, a.leadPos); tn = Math.min(tn, a.leadNeg); }
         if (collapseBottom && a.started) { bp = Math.max(bp, a.trailPos); bn = Math.min(bn, a.trailNeg); }
         boolean through = collapseTop && collapseBottom && !a.started && lines == null && h == 0;
-        return new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, g.bL + g.pL, g.bT + g.pT, through, flow, lines);
+        OutOfFlow.Pending[] up = null;
+        PlacedFragment[] oof = null;
+        if (!pend.isEmpty()) {
+            boolean docRoot = node.node.parent == null;
+            if (docRoot || OutOfFlow.containsOutOfFlow(st)) { // 包含ブロック: パディングの箱で流れの外の子孫を置く（文書の根は初期包含ブロック）
+                float cbW = docRoot ? w : Math.max(0, w - g.bL - g.bR);
+                float cbH = docRoot && Float.isFinite(space.percentHeightBase) ? space.percentHeightBase : Math.max(0, h - g.bT - g.bB);
+                oof = OutOfFlow.layout(pend, docRoot ? 0 : g.bL, docRoot ? 0 : g.bT, cbW, cbH, prior, s);
+            } else {
+                up = pend.toArray(OutOfFlow.NONE);
+            }
+        }
+        return new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, insetL, insetT, through, flow, lines, up, oof);
     }
 
     /** ブロック水準の子だけの流れ: チャンクごとに前回の {@link FlowChunk} を引き、外れたチャンクだけ並べ直す。 */
@@ -114,9 +134,10 @@ final class BlockFlow implements FormattingEngine {
                 for (int j = k + 1; j < kc; j++) if (match[j] >= 0) { hi = match[j]; break; }
                 cur = new Cursor(priorFlow, lo + 1, hi - 1);
             }
-            ChunkBuilder b = new ChunkBuilder(c.size());
+            ChunkBuilder b = new ChunkBuilder(c.size(), s);
             for (int i = 0, n = c.size(); i < n; i++) {
                 BoxNode child = c.get(i);
+                if (OutOfFlow.is(child)) { b.addOutOfFlow(child); continue; }
                 if (!child.kind.blockLevel()) continue; // 畳まれる空白・display: none
                 ConstraintSpace sp = BoxGeometry.usesPercentHeight(child.style) ? pct : base;
                 b.add(cache.layout(child, sp, cur.find(child), s));
@@ -151,10 +172,15 @@ final class BlockFlow implements FormattingEngine {
                                    LayoutSession s) {
         s.cache().chunkComputed();
         Cursor cur = new Cursor(priorFlow, 0, priorFlow != null ? priorFlow.chunks.length - 1 : -1);
-        ChunkBuilder b = new ChunkBuilder(8);
+        ChunkBuilder b = new ChunkBuilder(8, s);
         List<BoxNode> run = new ArrayList<>();
         for (BoxNode child : kids.toList()) {
             if (child.kind == BoxKind.NONE) continue;
+            if (OutOfFlow.is(child)) {
+                flushRun(st, run, base, b, s);
+                b.addOutOfFlow(child);
+                continue;
+            }
             if (!child.kind.blockLevel()) {
                 run.add(child);
                 continue;
@@ -173,8 +199,10 @@ final class BlockFlow implements FormattingEngine {
         for (BoxNode n : run) blank &= n.collapsibleWhitespace();
         if (!blank) {
             InlineFlow.Result r = InlineFlow.layout(run, st, base.availableWidth, s);
-            if (r.lines().length > 0) {
-                b.add(new LayoutFragment(null, base, base.availableWidth, r.height(), 0, 0, 0, 0, 0, 0, 0, false, null, r.lines()));
+            if (r.lines().length > 0 || !r.pending().isEmpty()) {
+                b.add(new LayoutFragment(null, base, base.availableWidth, r.height(), 0, 0, 0, 0, 0, 0, 0, r.lines().length == 0,
+                        null, r.lines().length > 0 ? r.lines() : null,
+                        r.pending().isEmpty() ? null : r.pending().toArray(OutOfFlow.NONE), null));
             }
         }
         run.clear();
@@ -242,8 +270,11 @@ final class BlockFlow implements FormattingEngine {
         private int n;
         private boolean started;
         private float cursor, lp, ln, pp, pn;
+        private final LayoutSession s;
+        private List<OutOfFlow.Pending> pend;
 
-        ChunkBuilder(int cap) {
+        ChunkBuilder(int cap, LayoutSession s) {
+            this.s = s;
             frags = new LayoutFragment[Math.max(1, cap)];
             xs = new float[frags.length];
             ys = new float[frags.length];
@@ -274,17 +305,33 @@ final class BlockFlow implements FormattingEngine {
                 pp = f.bottomPos;
                 pn = f.bottomNeg;
             }
+            float x = f.marginLeft;
+            if (f.box != null) { // position: relative は流れを変えず置く位置だけずらす
+                float[] rel = OutOfFlow.relativeOffset(f.box.style, f.space.availableWidth, f.space.percentHeightBase, s);
+                if (rel != null) { x += rel[0]; y += rel[1]; }
+            }
             frags[n] = f;
-            xs[n] = f.marginLeft;
+            xs[n] = x;
             ys[n++] = LayoutUnit.snap(y);
+            if (f.pending != null) {
+                if (pend == null) pend = new ArrayList<>();
+                for (OutOfFlow.Pending p : f.pending) pend.add(p.shift(x, y));
+            }
+        }
+
+        /** 流れの外の子: 今の流れの位置（内容ボックスの左・次の子が来るはずの上端）を静的位置として渡す。 */
+        void addOutOfFlow(BoxNode child) {
+            if (pend == null) pend = new ArrayList<>();
+            pend.add(new OutOfFlow.Pending(child, 0, started ? cursor + pp + pn : 0));
         }
 
         FlowChunk build(BoxChunk source, ConstraintSpace space, LayoutFragment[][] slots) {
             LayoutFragment[] fs = n == frags.length ? frags : java.util.Arrays.copyOf(frags, n);
             float[] x = n == xs.length ? xs : java.util.Arrays.copyOf(xs, n);
             float[] y = n == ys.length ? ys : java.util.Arrays.copyOf(ys, n);
-            if (!started) return new FlowChunk(source, space, fs, x, y, 0, lp, ln, lp, ln, true, slots);
-            return new FlowChunk(source, space, fs, x, y, LayoutUnit.snap(cursor), lp, ln, pp, pn, false, slots);
+            OutOfFlow.Pending[] up = pend == null ? null : pend.toArray(OutOfFlow.NONE);
+            if (!started) return new FlowChunk(source, space, fs, x, y, 0, lp, ln, lp, ln, true, slots, up);
+            return new FlowChunk(source, space, fs, x, y, LayoutUnit.snap(cursor), lp, ln, pp, pn, false, slots, up);
         }
     }
 
@@ -335,7 +382,7 @@ final class BlockFlow implements FormattingEngine {
         } else {
             List<BoxNode> run = new ArrayList<>();
             for (BoxNode child : kids.toList()) {
-                if (child.kind == BoxKind.NONE) continue;
+                if (child.kind == BoxKind.NONE || OutOfFlow.is(child)) continue;
                 if (!child.kind.blockLevel()) { run.add(child); continue; }
                 if (!run.isEmpty()) {
                     MinMaxSizes m = InlineFlow.minMax(run, s);

@@ -293,7 +293,7 @@ class WptReftestRatchetTest {
         return box(x0, y0, x1, y1);
     }
 
-    private static void writePng(Pixmap p, Path file) throws IOException {
+    static void writePng(Pixmap p, Path file) throws IOException {
         java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(W, H, java.awt.image.BufferedImage.TYPE_INT_ARGB);
         int[] px = new int[W * H];
         for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) px[y * W + x] = overWhite(p.get(x, y));

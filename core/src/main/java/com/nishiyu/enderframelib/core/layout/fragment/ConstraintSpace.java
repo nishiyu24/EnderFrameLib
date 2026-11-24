@@ -10,6 +10,8 @@ package com.nishiyu.enderframelib.core.layout.fragment;
 public final class ConstraintSpace {
     /** 独立した整形コンテキストを作る（flex の項目・ルート）。子との余白の相殺をしない。 */
     public static final int FORMATTING_ROOT = 1;
+    /** 自分の {@code height} を掛けずに内容の高さで測る（column flex の内容基準の基準の大きさ・自動最小サイズ）。 */
+    public static final int CONTENT_BLOCK_SIZE = 2;
 
     /** 包含ブロックの幅（余白・パディング・幅の % の基準。auto の幅はここから余白を引いた値）。 */
     public final float availableWidth;
@@ -30,6 +32,8 @@ public final class ConstraintSpace {
     }
 
     public boolean formattingRoot() { return (flags & FORMATTING_ROOT) != 0; }
+
+    public boolean contentBlockSize() { return (flags & CONTENT_BLOCK_SIZE) != 0; }
 
     @Override
     public boolean equals(Object o) {
