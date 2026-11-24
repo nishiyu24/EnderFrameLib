@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.ScrollExtent;
@@ -65,15 +66,15 @@ public class GridLayoutEngine extends LayoutEngine {
         }
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
 
-        Areas areas = Areas.parse(box.style.get(CssPropertyIndex.GRID_TEMPLATE_AREAS));
+        Areas areas = Areas.parse(box.style.typed().flexGrid.gridTemplateAreas);
         float innerHForPercent = definiteHeight(box, parentH, ctx);
-        gs.columns = TrackList.parse(box.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS), definiteWidth ? innerW : Float.NaN,
+        gs.columns = TrackList.parse(box.style.typed().flexGrid.gridTemplateColumns, definiteWidth ? innerW : Float.NaN,
                 box.columnGap, box.style, rootW, rootH);
-        gs.rows = TrackList.parse(box.style.get(CssPropertyIndex.GRID_TEMPLATE_ROWS), innerHForPercent, box.rowGap,
+        gs.rows = TrackList.parse(box.style.typed().flexGrid.gridTemplateRows, innerHForPercent, box.rowGap,
                 box.style, rootW, rootH);
-        gs.autoColumns = TrackList.parse(box.style.getOrDefault(CssPropertyIndex.GRID_AUTO_COLUMNS, "auto"),
+        gs.autoColumns = TrackList.parse(com.nishiyu.enderframelib.core.css.Style.or(box.style.typed().flexGrid.gridAutoColumns, "auto"),
                 definiteWidth ? innerW : Float.NaN, 0, box.style, rootW, rootH).tracks;
-        gs.autoRows = TrackList.parse(box.style.getOrDefault(CssPropertyIndex.GRID_AUTO_ROWS, "auto"),
+        gs.autoRows = TrackList.parse(com.nishiyu.enderframelib.core.css.Style.or(box.style.typed().flexGrid.gridAutoRows, "auto"),
                 innerHForPercent, 0, box.style, rootW, rootH).tracks;
         areas.addLineNames(gs.columns, gs.rows);
 
@@ -81,8 +82,8 @@ public class GridLayoutEngine extends LayoutEngine {
         GridState pgs = null;
         GridItem pItem = null;
         if (box.parent != null && box.parent.engineState instanceof GridState p
-                && (isSubgridValue(box.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS))
-                || isSubgridValue(box.style.get(CssPropertyIndex.GRID_TEMPLATE_ROWS)))) {
+                && (isSubgridValue(box.style.typed().flexGrid.gridTemplateColumns)
+                || isSubgridValue(box.style.typed().flexGrid.gridTemplateRows))) {
             for (GridItem it : p.items) {
                 if (it.box == box) {
                     pItem = it;
@@ -95,21 +96,21 @@ public class GridLayoutEngine extends LayoutEngine {
         gs.parentItem = pItem;
         // グリッドの項目でない（または親がグリッドでない）サブグリッドは none と同じ
         if (pItem == null || !pItem.colSub) {
-            if (isSubgridValue(box.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS))) gs.columns = new TrackList();
+            if (isSubgridValue(box.style.typed().flexGrid.gridTemplateColumns)) gs.columns = new TrackList();
         }
         if (pItem == null || !pItem.rowSub) {
-            if (isSubgridValue(box.style.get(CssPropertyIndex.GRID_TEMPLATE_ROWS))) gs.rows = new TrackList();
+            if (isSubgridValue(box.style.typed().flexGrid.gridTemplateRows)) gs.rows = new TrackList();
         }
         gs.colSub = pItem != null && pItem.colSub;
         gs.rowSub = pItem != null && pItem.rowSub;
         box.measureMemo.setSubgridDependent(gs.colSub || gs.rowSub);
         if (gs.colSub) {
-            gs.columns = subgridTracks(box.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS), pgs.columns, pItem.colStart, pItem.colSpan);
-            if (isNormalGap(box.style.get(CssPropertyIndex.COLUMN_GAP))) box.columnGap = box.parent.columnGap;
+            gs.columns = subgridTracks(box.style.typed().flexGrid.gridTemplateColumns, pgs.columns, pItem.colStart, pItem.colSpan);
+            if (isNormalGap(box.style.typed().flexGrid.columnGap)) box.columnGap = box.parent.columnGap;
         }
         if (gs.rowSub) {
-            gs.rows = subgridTracks(box.style.get(CssPropertyIndex.GRID_TEMPLATE_ROWS), pgs.rows, pItem.rowStart, pItem.rowSpan);
-            if (isNormalGap(box.style.get(CssPropertyIndex.ROW_GAP))) box.rowGap = box.parent.rowGap;
+            gs.rows = subgridTracks(box.style.typed().flexGrid.gridTemplateRows, pgs.rows, pItem.rowStart, pItem.rowSpan);
+            if (isNormalGap(box.style.typed().flexGrid.rowGap)) box.rowGap = box.parent.rowGap;
         }
 
         placeItems(box, gs, areas);
@@ -149,7 +150,7 @@ public class GridLayoutEngine extends LayoutEngine {
 
         for (GridItem item : gs.items) {
             // グリッドの高さが指定で決まっていればそれを、決まっていなければ auto として（NaN）% の高さを測る
-            float base = isPercentage(item.box.axisStyle().get(CssPropertyIndex.HEIGHT)) ? innerHForPercent : parentH;
+            float base = isPercentage(item.box.axisStyle().typed().box.height, item.box.axisStyle().typed().box.exprs) ? innerHForPercent : parentH;
             measureInArea(box, gs, item, base, ctx);
         }
         return Math.max(0, sum(gs.colSizes) + box.columnGap * Math.max(0, gs.colSizes.length - 1)
@@ -173,7 +174,7 @@ public class GridLayoutEngine extends LayoutEngine {
             // グリッドの高さが確定したので、% の高さの子をその高さを基準に測り直してから行を決める
             // （Chrome と同じ。高さが不定のときは measureContent で auto として測った寄与のまま）
             for (GridItem item : gs.items) {
-                if (isPercentage(item.box.axisStyle().get(CssPropertyIndex.HEIGHT)) && !(Math.abs(item.percentBase - innerH) < 0.01f)) {
+                if (isPercentage(item.box.axisStyle().typed().box.height, item.box.axisStyle().typed().box.exprs) && !(Math.abs(item.percentBase - innerH) < 0.01f)) {
                     measureInArea(box, gs, item, innerH, ctx);
                 }
             }
@@ -195,10 +196,10 @@ public class GridLayoutEngine extends LayoutEngine {
     private static float definiteHeight(LayoutBox box, float parentH, LayoutContext ctx) {
         if (!Float.isNaN(box.overrideHeight)) return Math.max(0, box.overrideHeight - box.verticalDecoration());
         ComputedStyle style = box.axisStyle();
-        String h = style.get(CssPropertyIndex.HEIGHT);
-        if (h == null || "auto".equalsIgnoreCase(h.trim()) || LayoutMetrics.isIntrinsicSizeKeyword(h)) return Float.NaN;
-        if (h.contains("%") && parentH <= 0) return Float.NaN;
-        float v = style.length(CssPropertyIndex.HEIGHT, parentH, ctx.viewport().rootW(), ctx.viewport().rootH());
+        long h = style.typed().box.height;
+        if (!CssLength.isDeclared(h) || CssLength.isIntrinsicSize(h, style.typed().box.exprs)) return Float.NaN;
+        if (CssLength.hasPercent(h, style.typed().box.exprs) && parentH <= 0) return Float.NaN;
+        float v = style.typed().px(style.typed().box.height, style.typed().box.exprs, parentH, ctx.viewport().rootW(), ctx.viewport().rootH());
         boolean isBorderBox = style.isBorderBox();
         return Math.max(0, isBorderBox ? v - box.verticalDecoration() : v);
     }
@@ -238,8 +239,8 @@ public class GridLayoutEngine extends LayoutEngine {
         return v.length() == 7 || Character.isWhitespace(v.charAt(7));
     }
 
-    private static boolean isNormalGap(String value) {
-        return value == null || value.isBlank() || "normal".equalsIgnoreCase(value.trim());
+    private static boolean isNormalGap(long gap) {
+        return !CssLength.isDeclared(gap) || CssLength.isKeyword(gap, CssLength.KW_NORMAL) || CssLength.isKeyword(gap, CssLength.KW_EMPTY);
     }
 
     /** サブグリッドの軸のトラック。親の {@code span} 本を auto のプレースホルダで表し、線の名前は親から引き継ぎ自身の名前を足す。 */
@@ -351,10 +352,8 @@ public class GridLayoutEngine extends LayoutEngine {
     private static float rowMinContribution(LayoutBox b, LayoutContext ctx) {
         float decoration = b.verticalDecoration();
         ComputedStyle bs = b.axisStyle();
-        String min = bs.get(CssPropertyIndex.MIN_HEIGHT);
-        if (min != null && !"auto".equalsIgnoreCase(min.trim()) && !min.contains("%")
-                && !LayoutMetrics.isIntrinsicSizeKeyword(min)) {
-            float v = bs.length(CssPropertyIndex.MIN_HEIGHT, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+        if (CssLength.isDefinite(bs.typed().box.minHeight, bs.typed().box.exprs)) {
+            float v = bs.typed().px(bs.typed().box.minHeight, bs.typed().box.exprs, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
             float specified = bs.isBorderBox() ? Math.max(v, decoration) : v + decoration;
             return Math.min(b.h, specified);
         }
@@ -367,7 +366,7 @@ public class GridLayoutEngine extends LayoutEngine {
     // ==========================================
 
     private void placeItems(LayoutBox box, GridState gs, Areas areas) {
-        String flow = box.style.keyword(CssPropertyIndex.GRID_AUTO_FLOW, "row");
+        String flow = com.nishiyu.enderframelib.core.css.Style.or(box.style.typed().flexGrid.gridAutoFlow, "row").trim().toLowerCase();
         boolean columnFlow = flow.contains("column");
         boolean dense = flow.contains("dense");
 
@@ -395,8 +394,8 @@ public class GridLayoutEngine extends LayoutEngine {
             item.rowStart = row[0];
             item.rowSpan = row[1];
             boolean grid = child.display != null && child.display.inner() == LayoutBox.Display.Inner.GRID;
-            item.colSub = grid && isSubgridValue(child.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS));
-            item.rowSub = grid && isSubgridValue(child.style.get(CssPropertyIndex.GRID_TEMPLATE_ROWS));
+            item.colSub = grid && isSubgridValue(child.style.typed().flexGrid.gridTemplateColumns);
+            item.rowSub = grid && isSubgridValue(child.style.typed().flexGrid.gridTemplateRows);
             gs.items.add(item);
         }
 
@@ -743,9 +742,7 @@ public class GridLayoutEngine extends LayoutEngine {
 
     private static float minContentContribution(LayoutBox b, LayoutContext ctx) {
         float margins = b.mL + b.mR;
-        String width = b.axisStyle().get(CssPropertyIndex.WIDTH);
-        if (width != null && !"auto".equalsIgnoreCase(width.trim()) && !width.contains("%")
-                && !LayoutMetrics.isIntrinsicSizeKeyword(width)) {
+        if (CssLength.isDefinite(b.axisStyle().typed().box.width, b.axisStyle().typed().box.exprs)) {
             return b.w + margins;
         }
         boolean hasContent = b.node.nodeType == NodeType.TEXT || b.hasFlowChildren() || isReplaced(b);
@@ -835,7 +832,7 @@ public class GridLayoutEngine extends LayoutEngine {
                     b.measure(new ConstraintSpace(areaW, parentH, FormattingContext.of(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false))
                             .withFixed(b.w, Math.max(0, target)), ctx);
                 }
-            } else if (isPercentage(b.axisStyle().get(CssPropertyIndex.HEIGHT)) && !(Math.abs(item.percentBase - areaH) < 0.01f)) {
+            } else if (isPercentage(b.axisStyle().typed().box.height, b.axisStyle().typed().box.exprs) && !(Math.abs(item.percentBase - areaH) < 0.01f)) {
                 // % の高さはグリッドの領域の高さが基準（CSS Grid §6.1 / CSS Sizing 3 §5.2）。
                 // 以前はグリッドコンテナの基準で解いていたので、height: 100% の子が領域を越えて伸びていた。
                 // 同じ基準で測り済み（行が 1 つで領域 = グリッドの高さ）なら測り直さない
@@ -923,7 +920,7 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     private static boolean isRtl(ComputedStyle style) {
-        String d = style.get(CssPropertyIndex.DIRECTION);
+        String d = style.typed().inherited.direction;
         return d != null && "rtl".equalsIgnoreCase(d.trim());
     }
 
@@ -990,8 +987,8 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     /** 割合（{@code 100%}、{@code calc(100% - 8px)} など）を含む長さか。 */
-    private static boolean isPercentage(String value) {
-        return value != null && value.contains("%");
+    private static boolean isPercentage(long len, com.nishiyu.enderframelib.core.css.CssExprs exprs) {
+        return CssLength.hasPercent(len, exprs);
     }
 
     private static boolean hasSize(ComputedStyle style, int prop) {
@@ -1169,7 +1166,7 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     private static final Comparator<LayoutBox> ORDER_COMPARATOR =
-            Comparator.comparingInt(c -> (int) c.style.number(CssPropertyIndex.ORDER, 0f));
+            Comparator.comparingInt(c -> (int) com.nishiyu.enderframelib.core.css.Style.num(c.style.typed().flexGrid.order, 0f));
 
     /** アイテムの 4 本の線。ロングハンドがあればそれを、無ければ grid-row / grid-column / grid-area を読む。 */
     private record Placement(GridLine rowStart, GridLine colStart, GridLine rowEnd, GridLine colEnd) {
@@ -1180,13 +1177,13 @@ public class GridLayoutEngine extends LayoutEngine {
         }
 
         private static Placement compute(ComputedStyle s) {
-            String[] area = split(s.get(CssPropertyIndex.GRID_AREA), 4);
-            String[] row = split(s.get(CssPropertyIndex.GRID_ROW), 2);
-            String[] col = split(s.get(CssPropertyIndex.GRID_COLUMN), 2);
-            String rs = first(s.get(CssPropertyIndex.GRID_ROW_START), row[0], area[0]);
-            String cs = first(s.get(CssPropertyIndex.GRID_COLUMN_START), col[0], area[1]);
-            String re = first(s.get(CssPropertyIndex.GRID_ROW_END), row[1], area[2]);
-            String ce = first(s.get(CssPropertyIndex.GRID_COLUMN_END), col[1], area[3]);
+            String[] area = split(s.typed().flexGrid.gridArea, 4);
+            String[] row = split(s.typed().flexGrid.gridRow, 2);
+            String[] col = split(s.typed().flexGrid.gridColumn, 2);
+            String rs = first(s.typed().flexGrid.gridRowStart, row[0], area[0]);
+            String cs = first(s.typed().flexGrid.gridColumnStart, col[0], area[1]);
+            String re = first(s.typed().flexGrid.gridRowEnd, row[1], area[2]);
+            String ce = first(s.typed().flexGrid.gridColumnEnd, col[1], area[3]);
             GridLine rsl = GridLine.parse(rs), csl = GridLine.parse(cs);
             // 終点が省略されたとき、始点が名前ならその名前、それ以外は auto（CSS Grid §8.4）
             GridLine rel = re != null ? GridLine.parse(re) : (rsl.isIdent() ? rsl : GridLine.AUTO);

@@ -14,8 +14,10 @@ final class StyleReader {
         return t != null ? t : ComputedStyle.initialOf(id);
     }
 
+    /** 長さ。宣言が無ければ {@link CssLength#UNDECLARED}（0 px に解け、旧 {@code ComputedStyle#length} と同じ。「宣言があるか」を読み手が問える）。 */
     static long length(ComputedStyle cs, int id, CssExprs.Builder exprs) {
-        return CssLength.parse(raw(cs, id), exprs);
+        String t = cs != null ? cs.get(id) : null;
+        return t == null ? CssLength.UNDECLARED : CssLength.parse(t, exprs);
     }
 
     /** 単位なしの数値。解けない値（{@code auto} など）は NaN。 */
@@ -34,8 +36,9 @@ final class StyleReader {
         return t == null ? 0 : ColorParser.parseColor(t);
     }
 
+    /** 文字列のまま持つ値。宣言が無ければ null（旧 {@code ComputedStyle#get} と同じ。呼び出し側が既定値を決める）。 */
     static String text(ComputedStyle cs, int id) {
-        return raw(cs, id);
+        return cs != null ? cs.get(id) : null;
     }
 
     static <E extends Enum<E> & CssKeywords.Keyword> E keyword(ComputedStyle cs, int id, Class<E> type) {

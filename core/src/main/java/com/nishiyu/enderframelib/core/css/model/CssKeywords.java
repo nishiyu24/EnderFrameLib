@@ -127,7 +127,8 @@ public final class CssKeywords {
         }
     }
 
-    public enum FlexWrap implements Keyword { NOWRAP, WRAP, WRAP_REVERSE }
+    /** {@code BALANCE} は flexbox-2 の値で未対応。折り返しの扱いは {@code NOWRAP} と同じだが、旧文字列版は別の語として区別していた（固有サイズの判定）ため値として持つ。 */
+    public enum FlexWrap implements Keyword { NOWRAP, WRAP, WRAP_REVERSE, BALANCE }
 
     /**
      * 揃え（{@code justify-content} / {@code align-content} / {@code align-items} / {@code align-self} と

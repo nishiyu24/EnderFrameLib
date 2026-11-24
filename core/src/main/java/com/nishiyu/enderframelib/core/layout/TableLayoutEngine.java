@@ -4,6 +4,7 @@ import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
@@ -149,8 +150,8 @@ public class TableLayoutEngine extends LayoutEngine {
         for (int r = 0; r < rows; r++) {
             LayoutBox row = state.rows.get(r);
             ComputedStyle rowStyle = row.axisStyle();
-            if (!state.collapsedRows[r] && rowStyle.containsKey(CssPropertyIndex.HEIGHT)) {
-                heights[r] = rowStyle.length(CssPropertyIndex.HEIGHT, space.percentageBlockSize(), rootW, rootH);
+            if (!state.collapsedRows[r] && CssLength.isDeclared(rowStyle.typed().box.height)) {
+                heights[r] = rowStyle.typed().px(rowStyle.typed().box.height, rowStyle.typed().box.exprs, space.percentageBlockSize(), rootW, rootH);
             }
         }
         for (CellSlot slot : state.cells) {
@@ -257,7 +258,7 @@ public class TableLayoutEngine extends LayoutEngine {
                 case TABLE_COLUMN -> state.columns.add(child);
                 case TABLE_ROW -> body.add(child);
                 case TABLE_ROW_GROUP -> {
-                    String d = child.style.keyword(CssPropertyIndex.DISPLAY, "table-row-group");
+                    String d = com.nishiyu.enderframelib.core.css.Style.or(child.style.typed().box.display, "table-row-group").trim().toLowerCase();
                     // 最初の thead / tfoot だけが先頭・末尾に動く。2 つ目以降は tbody と同じ位置
                     List<LayoutBox> target = d.equals("table-header-group") && header.isEmpty() ? header
                             : d.equals("table-footer-group") && footer.isEmpty() ? footer : body;
@@ -295,7 +296,7 @@ public class TableLayoutEngine extends LayoutEngine {
     }
 
     private static boolean isCollapsed(LayoutBox box) {
-        return "collapse".equalsIgnoreCase(box.style.getOrDefault(CssPropertyIndex.VISIBILITY, "visible").trim());
+        return box.style.typed().inherited.visibility == CssKeywords.Visibility.COLLAPSE;
     }
 
     /** セルを格子に並べる。{@code rowspan} で上の行から伸びてきたセルの位置は飛ばす。 */
@@ -382,7 +383,7 @@ public class TableLayoutEngine extends LayoutEngine {
 
     /** {@code border-spacing} の横と縦（1 つなら両方）。 */
     private static float[] borderSpacing(ComputedStyle style, float rootW, float rootH) {
-        String v = style.get(CssPropertyIndex.BORDER_SPACING);
+        String v = style.typed().inherited.borderSpacing;
         if (v == null || v.isBlank()) return new float[]{0, 0};
         String[] parts = v.trim().split("\\s+");
         float h = LengthResolver.parseDim(parts[0], 0, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
@@ -536,16 +537,10 @@ public class TableLayoutEngine extends LayoutEngine {
 
     /** {@code width: N%}（N は 0 以上）。% 以外・負・auto は -1。 */
     private static float percentWidth(ComputedStyle style) {
-        String w = style.get(CssPropertyIndex.WIDTH);
-        if (w == null) return -1f;
-        w = w.trim();
-        if (!w.endsWith("%") || w.indexOf('(') >= 0) return -1f;
-        try {
-            float p = Float.parseFloat(w.substring(0, w.length() - 1).trim());
-            return p >= 0 && Float.isFinite(p) ? p : -1f;
-        } catch (NumberFormatException e) {
-            return -1f;
-        }
+        long w = style.typed().box.width;
+        if (!CssLength.isPercent(w)) return -1f;
+        float p = CssLength.percentValue(w);
+        return p >= 0 && Float.isFinite(p) ? p : -1f;
     }
 
     /** 割合の列が自分の max-content を収め、割合を持たない列が残りの割合の分に収まる、表の最小の幅。 */
@@ -706,11 +701,10 @@ public class TableLayoutEngine extends LayoutEngine {
 
     /** px で確定する {@code width}（auto・%・内容のキーワードは null）。 */
     private static Float fixedWidth(ComputedStyle style, float rootW, float rootH) {
-        String w = style.get(CssPropertyIndex.WIDTH);
-        if (w == null || "auto".equalsIgnoreCase(w.trim()) || w.contains("%") || LayoutMetrics.isIntrinsicSizeKeyword(w)) {
+        if (!CssLength.isDefinite(style.typed().box.width, style.typed().box.exprs)) {
             return null;
         }
-        return style.length(CssPropertyIndex.WIDTH, 0, rootW, rootH);
+        return style.typed().px(style.typed().box.width, style.typed().box.exprs, 0, rootW, rootH);
     }
 
     private static float spanWidth(TableState state, int col, int span) {
@@ -745,7 +739,7 @@ public class TableLayoutEngine extends LayoutEngine {
 
         float topY = 0, bottomY = captionTop + gridH;
         for (LayoutBox caption : state.captions) {
-            if ("bottom".equals(caption.style.keyword(CssPropertyIndex.CAPTION_SIDE, "top"))) {
+            if (caption.style.typed().inherited.captionSide == CssKeywords.CaptionSide.BOTTOM) {
                 tablePlacements.add(new Placement(caption, 0, bottomY));
                 bottomY += caption.h + caption.mT + caption.mB;
             } else {

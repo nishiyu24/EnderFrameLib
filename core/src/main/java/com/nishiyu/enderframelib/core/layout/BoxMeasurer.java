@@ -9,6 +9,7 @@ import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
@@ -290,7 +291,7 @@ public final class BoxMeasurer {
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;
         } else if (hasWidth && !isPercentWidthAndShrinking) {
-            box.w = toBorderBox(style.length(CssPropertyIndex.WIDTH, parentW, rootW, rootH),
+            box.w = toBorderBox(style.typed().px(style.typed().box.width, style.typed().box.exprs, parentW, rootW, rootH),
                     box.horizontalDecoration(), isBorderBox);
             box.sizingMode = SizingMode.DEFINITE;
         } else if (box.node.nodeType == NodeType.TEXT) {
@@ -313,8 +314,8 @@ public final class BoxMeasurer {
         } else if (box.isAbsolute && hasBothInsets(style, CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT)) {
             // left と right の両方があれば width: auto は間の幅（CSS 2.2 §10.3.7）。
             // 以前は shrink-to-fit にしていて、内容の無い箱は幅 0 になっていた
-            float insets = style.length(CssPropertyIndex.LEFT, parentW, rootW, rootH)
-                    + style.length(CssPropertyIndex.RIGHT, parentW, rootW, rootH);
+            float insets = style.typed().px(style.typed().box.left, style.typed().box.exprs, parentW, rootW, rootH)
+                    + style.typed().px(style.typed().box.right, style.typed().box.exprs, parentW, rootW, rootH);
             box.w = Math.max(box.horizontalDecoration(), parentW - insets - box.mL - box.mR);
             box.sizingMode = SizingMode.DEFINITE;
         } else if (box.isAbsolute || box.isRenderedLegend || fmtCtx.isFlexRow() || BlockLayoutEngine.isFloating(box)
@@ -338,8 +339,8 @@ public final class BoxMeasurer {
         ComputedStyle style = box.axisStyle();
 
         float limitW = parentW;
-        if (style.containsKey(CssPropertyIndex.MAX_WIDTH)) {
-            float mw = style.length(CssPropertyIndex.MAX_WIDTH, parentW, rootW, rootH);
+        if (CssLength.isDeclared(style.typed().box.maxWidth)) {
+            float mw = style.typed().px(style.typed().box.maxWidth, style.typed().box.exprs, parentW, rootW, rootH);
             if (mw > 0) limitW = Math.min(limitW, mw);
         }
         if (limitW <= 0) limitW = LayoutMetrics.UNBOUNDED_WIDTH;
@@ -393,18 +394,19 @@ public final class BoxMeasurer {
                                              boolean isPercentWidthAndShrinking) {
         if (box.isHorizontalReturnRoot) return Float.NaN;
         ComputedStyle style = box.axisStyle();
-        String maxWStr = style.get(CssPropertyIndex.MAX_WIDTH);
-        if (maxWStr == null || "none".equalsIgnoreCase(maxWStr.trim()) || LayoutMetrics.isIntrinsicSizeKeyword(maxWStr)) return Float.NaN;
-        if (maxWStr.contains("%") && (isPercentWidthAndShrinking || parentW <= 0)) return Float.NaN;
-        float maxW = toBorderBox(style.length(CssPropertyIndex.MAX_WIDTH, parentW, rootW, rootH), box.horizontalDecoration(), isBorderBox);
+        long mwLen = style.typed().box.maxWidth;
+        if (!CssLength.isDeclared(mwLen) || CssLength.isKeyword(mwLen, CssLength.KW_NONE)
+                || CssLength.isIntrinsicSize(mwLen, style.typed().box.exprs)) return Float.NaN;
+        if (CssLength.hasPercent(mwLen, style.typed().box.exprs) && (isPercentWidthAndShrinking || parentW <= 0)) return Float.NaN;
+        float maxW = toBorderBox(style.typed().px(style.typed().box.maxWidth, style.typed().box.exprs, parentW, rootW, rootH), box.horizontalDecoration(), isBorderBox);
         return Math.max(0, maxW - box.horizontalDecoration());
     }
 
     private static void applyShrinkMinWidth(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH, boolean isBorderBox) {
         ComputedStyle style = box.axisStyle();
-        String minWStr = style.get(CssPropertyIndex.MIN_WIDTH);
-        if (minWStr == null || LayoutMetrics.isIntrinsicSizeKeyword(minWStr)) return;
-        float minW = toBorderBox(style.length(CssPropertyIndex.MIN_WIDTH, parentW, rootW, rootH), box.horizontalDecoration(), isBorderBox);
+        long mnLen = style.typed().box.minWidth;
+        if (!CssLength.isDeclared(mnLen) || CssLength.isIntrinsicSize(mnLen, style.typed().box.exprs)) return;
+        float minW = toBorderBox(style.typed().px(style.typed().box.minWidth, style.typed().box.exprs, parentW, rootW, rootH), box.horizontalDecoration(), isBorderBox);
         if (minW > box.w) box.w = minW;
     }
 
@@ -413,30 +415,30 @@ public final class BoxMeasurer {
         ComputedStyle style = box.axisStyle();
         if (box.sizingMode != SizingMode.DEFINITE) return;
 
-        String maxWStr = style.get(CssPropertyIndex.MAX_WIDTH);
-        if (maxWStr != null) {
-            if (LayoutMetrics.isIntrinsicSizeKeyword(maxWStr)) {
+        long mxLen = style.typed().box.maxWidth;
+        if (CssLength.isDeclared(mxLen)) {
+            if (CssLength.isIntrinsicSize(mxLen, style.typed().box.exprs)) {
                 // max-content / fit-content / auto は上限を課さない。min-content だけが上限になる。
-                if ("min-content".equals(maxWStr.trim().toLowerCase())) {
+                if (CssLength.isKeyword(mxLen, CssLength.KW_MIN_CONTENT)) {
                     box.w = Math.min(box.w, box.getMinContentWidth(ctx));
                 }
-            } else if (!(maxWStr.contains("%") && isPercentWidthAndShrinking)) {
-                float maxW = toBorderBox(style.length(CssPropertyIndex.MAX_WIDTH, parentW, rootW, rootH),
+            } else if (!(CssLength.hasPercent(mxLen, style.typed().box.exprs) && isPercentWidthAndShrinking)) {
+                float maxW = toBorderBox(style.typed().px(style.typed().box.maxWidth, style.typed().box.exprs, parentW, rootW, rootH),
                         box.horizontalDecoration(), isBorderBox);
                 box.w = Math.min(box.w, maxW);
             }
         }
 
-        String minWStr = style.get(CssPropertyIndex.MIN_WIDTH);
-        if (minWStr != null) {
-            if (LayoutMetrics.isIntrinsicSizeKeyword(minWStr)) {
+        long mnLen = style.typed().box.minWidth;
+        if (CssLength.isDeclared(mnLen)) {
+            if (CssLength.isIntrinsicSize(mnLen, style.typed().box.exprs)) {
                 // min-content / fit-content / auto はいずれも「内容がこれ以上縮まない幅」が下限。
                 // getMinContentWidth は装飾込みで返すため、ここで足し直さない。
-                if (!"max-content".equals(minWStr.trim().toLowerCase())) {
+                if (!CssLength.isKeyword(mnLen, CssLength.KW_MAX_CONTENT)) {
                     box.w = Math.max(box.w, box.getMinContentWidth(ctx));
                 }
             } else {
-                float minW = toBorderBox(style.length(CssPropertyIndex.MIN_WIDTH, parentW, rootW, rootH),
+                float minW = toBorderBox(style.typed().px(style.typed().box.minWidth, style.typed().box.exprs, parentW, rootW, rootH),
                         box.horizontalDecoration(), isBorderBox);
                 box.w = Math.max(box.w, minW);
             }
@@ -468,15 +470,15 @@ public final class BoxMeasurer {
             box.h = anchorH + (isBorderBox ? 0 : box.verticalDecoration());
             hasHeight = true;
         } else if (hasHeight) {
-            box.h = toBorderBox(style.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH),
+            box.h = toBorderBox(style.typed().px(style.typed().box.height, style.typed().box.exprs, parentH, rootW, rootH),
                     specifiedDecoration(box, isBorderBox), isBorderBox);
         } else if (box.isAbsolute && hasBothInsets(style, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)) {
             // top と bottom の両方があれば height: auto は間の高さ（CSS 2.2 §10.6.4）
-            float insets = style.length(CssPropertyIndex.TOP, parentH, rootW, rootH)
-                    + style.length(CssPropertyIndex.BOTTOM, parentH, rootW, rootH);
+            float insets = style.typed().px(style.typed().box.top, style.typed().box.exprs, parentH, rootW, rootH)
+                    + style.typed().px(style.typed().box.bottom, style.typed().box.exprs, parentH, rootW, rootH);
             box.h = Math.max(box.verticalDecoration(), parentH - insets - box.mT - box.mB);
             hasHeight = true;
-        } else if (style.containsKey(CssPropertyIndex.ASPECT_RATIO) && box.w > 0) {
+        } else if (style.typed().box.aspectRatio != null && box.w > 0) {
             applyAspectRatio(box);
         } else if (!box.contentAutoSkipped && !facts.contentVisibilityHidden) {
             resolveIntrinsicHeight(box, ctx, facts.heightAuto);
@@ -485,11 +487,10 @@ public final class BoxMeasurer {
         // gap の % は容器自身の内容ボックスが基準（CSS Box Alignment 3 §8.1）。親の寸法で解いた値を、幅と高さが決まったここで解き直す。
         // 高さが不定なら行の gap の % は 0
         Style t = style.typed();
-        String rg = style.get(CssPropertyIndex.ROW_GAP), cg = style.get(CssPropertyIndex.COLUMN_GAP);
-        if (cg != null && cg.indexOf('%') >= 0) {
+        if (CssLength.hasPercent(t.flexGrid.columnGap, t.flexGrid.exprs)) {
             box.columnGap = LayoutUnit.snap(t.gridPx(t.flexGrid.columnGap, Math.max(0, box.w - box.horizontalDecoration()), rootW, rootH));
         }
-        if (rg != null && rg.indexOf('%') >= 0) {
+        if (CssLength.hasPercent(t.flexGrid.rowGap, t.flexGrid.exprs)) {
             box.rowGap = LayoutUnit.snap(t.gridPx(t.flexGrid.rowGap, hasHeight ? Math.max(0, box.h - box.verticalDecoration()) : 0, rootW, rootH));
         }
 
@@ -511,19 +512,19 @@ public final class BoxMeasurer {
         if (!box.contentAutoSkipped) engine.finishLayout(box, space, ctx);
         if (overridden || box.isHorizontalReturnRoot) return;
 
-        if (style.containsKey(CssPropertyIndex.MAX_HEIGHT)) {
-            String maxHStr = style.get(CssPropertyIndex.MAX_HEIGHT).trim();
-            if (!"none".equals(maxHStr) && !maxHStr.isEmpty()) {
-                float maxH = style.length(CssPropertyIndex.MAX_HEIGHT, parentH, rootW, rootH);
+        long mhLen = style.typed().box.maxHeight;
+        if (CssLength.isDeclared(mhLen)) {
+            if (!CssLength.isKeyword(mhLen, CssLength.KW_NONE) && !CssLength.isKeyword(mhLen, CssLength.KW_EMPTY)) {
+                float maxH = style.typed().px(style.typed().box.maxHeight, style.typed().box.exprs, parentH, rootW, rootH);
                 if (maxH > 0) {
                     maxH = toBorderBox(maxH, specifiedDecoration(box, isBorderBox), isBorderBox);
                     box.h = Math.min(box.h, maxH);
                 }
             }
         }
-        if (style.containsKey(CssPropertyIndex.MIN_HEIGHT)) {
+        if (CssLength.isDeclared(style.typed().box.minHeight)) {
             // B-5 修正済み: ここは縦方向なので verticalDecoration（以前は横を足していた）
-            float minH = toBorderBox(style.length(CssPropertyIndex.MIN_HEIGHT, parentH, rootW, rootH),
+            float minH = toBorderBox(style.typed().px(style.typed().box.minHeight, style.typed().box.exprs, parentH, rootW, rootH),
                     specifiedDecoration(box, isBorderBox), isBorderBox);
             box.h = Math.max(box.h, minH);
         }
@@ -551,7 +552,7 @@ public final class BoxMeasurer {
 
     /** {@code aspect-ratio} の幅 / 高さ（{@code auto} だけ・解けなければ NaN）。{@code auto 1/1} の auto は無視する。 */
     static float aspectRatioOf(ComputedStyle s) {
-        String v = s.get(CssPropertyIndex.ASPECT_RATIO);
+        String v = s.typed().box.aspectRatio;
         if (v == null) return Float.NaN;
         String t = v.trim().toLowerCase(java.util.Locale.ROOT).replace("auto", "").trim();
         if (t.isEmpty()) return Float.NaN;
@@ -600,7 +601,7 @@ public final class BoxMeasurer {
         if (isReplacedImage(tag)) {
             int[] intrinsic = intrinsicSize(box, ctx);
             if (intrinsic != null && intrinsic[0] > 0 && intrinsic[1] > 0) {
-                boolean heightIsAuto = !box.axisStyle().containsKey(CssPropertyIndex.HEIGHT) || heightAuto;
+                boolean heightIsAuto = !CssLength.isDeclared(box.axisStyle().typed().box.height) || heightAuto;
                 if (box.w > 0 && heightIsAuto) {
                     float innerW = Math.max(0, box.w - box.horizontalDecoration());
                     box.h = (innerW * ((float) intrinsic[1] / intrinsic[0])) + box.verticalDecoration();

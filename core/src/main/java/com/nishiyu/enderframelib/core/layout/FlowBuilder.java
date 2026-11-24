@@ -10,6 +10,7 @@ import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
@@ -136,7 +137,7 @@ final class FlowBuilder {
         run.clear();
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox child = children.get(i);
-            if ("none".equals(child.style.get(CssPropertyIndex.DISPLAY)) || child.isOutsideMarker || child.isRenderedLegend) continue;
+            if ("none".equals(child.style.typed().box.display) || child.isOutsideMarker || child.isRenderedLegend) continue;
             if (child.isAbsolute) {
                 child.measureMemo.noteParentReadOpaque();
                 // 行の中の絶対配置は、行を組むときにその位置を静的位置として記録する
@@ -224,7 +225,7 @@ final class FlowBuilder {
         if (child.establishesBfc && !floats.isEmpty()) {
             child.measureMemo.noteParentReadOpaque();
             // BFC の border box は float と重ならない。横の残り幅に入らなければ float の下へ下げる
-            boolean autoWidth = "auto".equals(child.axisStyle().getOrDefault(CssPropertyIndex.WIDTH, "auto").trim());
+            boolean autoWidth = CssLength.isAutoOrUndeclared(child.axisStyle().typed().box.width);
             for (int guard = 0; guard < 256; guard++) {
                 float left = floats.leftEdge(oy + y, child.h, ox) - ox;
                 float right = floats.rightEdge(oy + y, child.h, ox + innerW) - ox;
@@ -257,7 +258,7 @@ final class FlowBuilder {
      */
     float startOffsetForDirection(LayoutBox child) {
         if (!rtl || child.isAbsolute) return 0;
-        if ("auto".equals(child.axisStyle().getOrDefault(CssPropertyIndex.MARGIN_RIGHT, "").trim())) return 0;
+        if (CssLength.isAuto(child.axisStyle().typed().box.marginRight)) return 0;
         return Math.max(0, innerW - (child.w + child.mL + child.mR));
     }
 

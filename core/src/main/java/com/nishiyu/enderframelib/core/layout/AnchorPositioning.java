@@ -48,7 +48,7 @@ final class AnchorPositioning {
         if (inner == LayoutBox.Display.Inner.GRID) {
             child.staticAlignX = selfFactor(selfValue(cs, CssPropertyIndex.JUSTIFY_SELF, ps, CssPropertyIndex.JUSTIFY_ITEMS), rtl, true, false);
             child.staticAlignY = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, false);
-            if (!"static".equals(norm(ps.get(CssPropertyIndex.POSITION))) && !norm(ps.get(CssPropertyIndex.POSITION)).isEmpty()) {
+            if (ps.typed().box.position != com.nishiyu.enderframelib.core.css.model.CssKeywords.Position.STATIC) {
                 // 容器が包含ブロック（grid-area があればそのグリッド領域）なら、その中で揃える。大きさは配置のときに決まる
                 child.staticAreaW = child.staticAreaH = STATIC_AREA_IS_CB;
                 return;
@@ -60,10 +60,10 @@ final class AnchorPositioning {
             child.staticAlignY = selfFactor(selfValue(cs, CssPropertyIndex.ALIGN_SELF, ps, CssPropertyIndex.ALIGN_ITEMS), false, false, false);
             return;
         }
-        String dir = norm(ps.get(CssPropertyIndex.FLEX_DIRECTION));
+        String dir = ps.typed().flexGrid.flexDirection.cssName();
         boolean row = !dir.startsWith("column");
         boolean reverse = dir.endsWith("reverse");
-        boolean wrapReverse = norm(ps.get(CssPropertyIndex.FLEX_WRAP)).equals("wrap-reverse");
+        boolean wrapReverse = ps.typed().flexGrid.flexWrap.cssName().equals("wrap-reverse");
         child.staticAreaW = LayoutReads.parentInnerW(parent);
         child.staticAreaH = LayoutReads.parentInnerH(parent);
         String justify = norm(ps.get(CssPropertyIndex.JUSTIFY_CONTENT));
@@ -92,12 +92,12 @@ final class AnchorPositioning {
     static final float STATIC_AREA_IS_CB = -1f;
 
     private static boolean isHorizontal(ComputedStyle s) {
-        String wm = s.get(CssPropertyIndex.WRITING_MODE);
+        String wm = s.typed().inherited.writingMode;
         return wm == null || wm.isBlank() || norm(wm).equals("horizontal-tb");
     }
 
     private static boolean isRtl(ComputedStyle s) {
-        return norm(s.get(CssPropertyIndex.DIRECTION)).equals("rtl");
+        return norm(s.typed().inherited.direction).equals("rtl");
     }
 
     /** 小文字にして前後の空白と {@code safe} / {@code unsafe} を除いた値（null は空）。 */
@@ -142,7 +142,7 @@ final class AnchorPositioning {
                               float rootW, float rootH, LayoutContext ctx) {
         float opX = PlacementMemo.originParentX(box);
         float opY = PlacementMemo.originParentY(box);
-        String fallbacks = box.style.get(CssPropertyIndex.POSITION_TRY_FALLBACKS);
+        String fallbacks = box.style.typed().rare.positionTryFallbacks;
         if (fallbacks == null || fallbacks.isBlank() || "none".equalsIgnoreCase(fallbacks.trim())) {
             placeWithoutFallbacks(box, cb, rootW, rootH, opX, opY, ctx);
         } else {
@@ -224,7 +224,7 @@ final class AnchorPositioning {
                     : (Float.isNaN(box.staticY) ? refY : opY + box.staticY + box.staticOffsetY(box.h + box.mT + box.mB)) + box.mT;
         }
 
-        String[] area = parsePositionArea(style.get(CssPropertyIndex.POSITION_AREA));
+        String[] area = parsePositionArea(style.typed().rare.positionArea);
         if (area != null) {
             LayoutBox a = LayoutReads.findAnchor(box, null, null);
             if (a != null) {
@@ -247,8 +247,8 @@ final class AnchorPositioning {
                 rawInset(style, CssPropertyIndex.RIGHT),
                 rawInset(style, CssPropertyIndex.TOP),
                 rawInset(style, CssPropertyIndex.BOTTOM),
-                style.get(CssPropertyIndex.POSITION_ANCHOR),
-                parsePositionArea(style.get(CssPropertyIndex.POSITION_AREA)),
+                style.typed().rare.positionAnchor,
+                parsePositionArea(style.typed().rare.positionArea),
                 origMT, origMR, origMB, origML,
                 facts.autoMarginT, facts.autoMarginR, facts.autoMarginB, facts.autoMarginL,
                 null, null, null, null, null, null,
@@ -259,7 +259,7 @@ final class AnchorPositioning {
         List<CandidateSpec> candidates = parseFallbacks(fallbacksStr, base, tryRules, box, cb, rootW, rootH);
 
         PlacementResult baseRes = evaluate(box, base, cb, rootW, rootH, opX, opY, origW, origH, ctx);
-        String order = style.get(CssPropertyIndex.POSITION_TRY_ORDER);
+        String order = style.typed().rare.positionTryOrder;
         String orderLower = order == null ? "normal" : order.trim().toLowerCase(Locale.ROOT);
 
         PlacementResult winner;

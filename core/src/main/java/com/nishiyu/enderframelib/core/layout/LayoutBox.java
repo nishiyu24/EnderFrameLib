@@ -365,7 +365,7 @@ public class LayoutBox {
     }
 
     private boolean hasTransformOrFilter() {
-        return isSet(style.get(CssPropertyIndex.TRANSFORM)) || isSet(style.get(CssPropertyIndex.FILTER));
+        return isSet(style.typed().visual.transform) || isSet(style.typed().visual.filter);
     }
 
     private static boolean isSet(String value) {
@@ -752,10 +752,10 @@ public class LayoutBox {
             this.displayText = "";
         } else if (prevStyle == null
                 || !java.util.Objects.equals(prevSource, node.text)
-                || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.WHITE_SPACE), newStyle.get(CssPropertyIndex.WHITE_SPACE))
-                || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.TEXT_TRANSFORM), newStyle.get(CssPropertyIndex.TEXT_TRANSFORM))) {
+                || !java.util.Objects.equals(prevStyle.typed().inherited.whiteSpace, newStyle.typed().inherited.whiteSpace)
+                || prevStyle.typed().inherited.textTransform != newStyle.typed().inherited.textTransform) {
             // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
-            WhiteSpace ws = WhiteSpace.of(newStyle.get(CssPropertyIndex.WHITE_SPACE));
+            WhiteSpace ws = WhiteSpace.of(newStyle.typed().inherited.whiteSpace);
             String text = TextShaper.normalize(ws.collapses() ? IntrinsicSizing.trimNewlineEdges(node.text) : node.text, ws);
             String transformed = LayoutMetrics.applyTextTransform(text, newStyle);
             // capitalize は語の頭だけを大文字にする。語が要素の境目をまたぐ（p<span></span>ass）なら、続きの頭は大文字にしない
@@ -766,12 +766,12 @@ public class LayoutBox {
             this.displayText = IntrinsicSizing.stripIgnorable(transformed);
         }
 
-        String pos = newStyle.getOrDefault(CssPropertyIndex.POSITION, "static");
+        String pos = newStyle.typed().box.position.cssName();
         this.isFixed = "fixed".equals(pos);
         this.isAbsolute = "absolute".equals(pos) || this.isFixed;
         this.isRelative = "relative".equals(pos);
         this.isSticky = "sticky".equals(pos);
-        this.zIndex = (int) newStyle.number(CssPropertyIndex.Z_INDEX, 0f);
+        this.zIndex = (int) com.nishiyu.enderframelib.core.css.Style.num(newStyle.typed().box.zIndex, 0f);
         if (newStyle.facts().contentVisibilityAuto) {
             markContentAutoSubtree();
         } else if (this.contentAutoSkipped) {
@@ -783,7 +783,7 @@ public class LayoutBox {
         // isFloating は常に false）。BFC の変わり目は BoxMeasurer が自分で進める。付け漏れは verifyFloatMemo が検出する
         if (node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
                 && (prevStyle == null || absoluteBefore != this.isAbsolute || !display.equals(displayBefore)
-                        || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.FLOAT), newStyle.get(CssPropertyIndex.FLOAT)))) {
+                        || prevStyle.typed().box.floatValue != newStyle.typed().box.floatValue)) {
             bumpShapeEpoch();
         }
         if (displayBefore != null && !display.equals(displayBefore)) for (LayoutBox c : children) c.invalidatePlacementOnDisplayChange(); // 子は別の整形コンテキストで置かれていた（flex の項目だった文字など。§6-109）
@@ -1642,7 +1642,7 @@ public class LayoutBox {
         /** 箱の display。テキストは常にインライン、宣言が無い・解釈できない値はタグから推測する。 */
         public static Display of(HtmlNode node, ComputedStyle style) {
             if (node.nodeType == NodeType.TEXT) return INLINE;
-            Display parsed = parse(style.get(CssPropertyIndex.DISPLAY));
+            Display parsed = parse(style.typed().box.display);
             if (parsed != null) return parsed;
             return com.nishiyu.enderframelib.core.dom.node.ElementTraits.isDefaultInline(node.tag) || ReplacedElements.isHost(node.tag) ? INLINE : BLOCK;
         }

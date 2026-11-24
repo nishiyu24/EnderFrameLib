@@ -85,6 +85,21 @@ public final class Style {
         return CssLength.resolve(len, exprs, percentBase, inherited.fontSize, inherited.rootFontSizePx, vw, vh);
     }
 
+    /** 宣言が無い（null）ときだけ既定値を返す（文字列のまま持つ値の読み手が使う）。 */
+    public static String or(String declared, String fallback) {
+        return declared != null ? declared : fallback;
+    }
+
+    /** 単位なしの数値。解釈できない値（NaN）は {@code fallback}。 */
+    public static float num(float value, float fallback) {
+        return Float.isNaN(value) ? fallback : value;
+    }
+
+    /** 任意の群の長さを px へ解く（{@code exprs} は、その長さを持つ群の式表）。 */
+    public float px(long len, CssExprs exprs, float percentBase, float rootW, float rootH) {
+        return CssLength.resolve(len, exprs, percentBase, inherited.fontSize, inherited.rootFontSizePx, rootW, rootH);
+    }
+
     /** {@link BoxGeomStyle} の長さ（余白・パディング・枠線の幅・寸法）を px へ解く。{@code percentBase} は % の基準。 */
     public float boxPx(long len, float percentBase, float rootW, float rootH) {
         return CssLength.resolve(len, box.exprs, percentBase, inherited.fontSize, inherited.rootFontSizePx, rootW, rootH);

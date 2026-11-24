@@ -43,7 +43,7 @@ public final class LayoutMetrics {
     }
 
     public static boolean isBold(ComputedStyle style) {
-        return isBoldWeight(style.getOrDefault(CssPropertyIndex.FONT_WEIGHT, ""));
+        return style.typed().inherited.fontWeight >= 600;
     }
 
     public static boolean isBoldWeight(String weight) {

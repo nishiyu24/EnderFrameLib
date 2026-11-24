@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.css.WritingModes;
@@ -50,7 +51,7 @@ final class VerticalWritingEngine extends LayoutEngine {
         float deco = box.verticalDecoration();
         float h;
         if (!facts.heightAuto && !(Float.isNaN(parentH) && facts.heightPercent)) {
-            float specified = style.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH);
+            float specified = style.typed().px(style.typed().box.height, style.typed().box.exprs, parentH, rootW, rootH);
             h = facts.borderBox ? specified - deco : specified;
         } else if (!Float.isNaN(parentH) && parentH > 0) {
             h = parentH - box.mT - box.mB - deco;
@@ -58,10 +59,10 @@ final class VerticalWritingEngine extends LayoutEngine {
             MeasureReads.recordInput(MeasureReads.READ_VIEWPORT_H);
             h = rootH - box.mT - box.mB - deco;
         }
-        if (style.containsKey(CssPropertyIndex.MAX_HEIGHT)) {
-            String maxS = style.get(CssPropertyIndex.MAX_HEIGHT).trim();
-            if (!"none".equals(maxS) && !maxS.isEmpty()) {
-                float max = style.length(CssPropertyIndex.MAX_HEIGHT, parentH, rootW, rootH);
+        long maxS = style.typed().box.maxHeight;
+        if (CssLength.isDeclared(maxS)) {
+            if (!CssLength.isKeyword(maxS, CssLength.KW_NONE) && !CssLength.isKeyword(maxS, CssLength.KW_EMPTY)) {
+                float max = style.typed().px(style.typed().box.maxHeight, style.typed().box.exprs, parentH, rootW, rootH);
                 if (max > 0) h = Math.min(h, facts.borderBox ? max - deco : max);
             }
         }

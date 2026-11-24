@@ -7,6 +7,7 @@ import com.nishiyu.enderframelib.core.text.ParagraphSegments;
 import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
@@ -294,26 +295,26 @@ public class BlockLayoutEngine extends LayoutEngine {
             return Math.max(0, isBorderBox ? anchorH - box.verticalDecoration() : anchorH);
         }
         if (hasSpecifiedHeight(ax)) {
-            float resolvedH = ax.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH);
+            float resolvedH = ax.typed().px(ax.typed().box.height, ax.typed().box.exprs, parentH, rootW, rootH);
             boolean isBorderBox = ax.isBorderBox();
             return Math.max(0, isBorderBox ? resolvedH - box.verticalDecoration() : resolvedH);
         }
         if (box.isAbsolute && BoxMeasurer.hasBothInsets(ax, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)) {
-            float insets = ax.length(CssPropertyIndex.TOP, parentH, rootW, rootH)
-                    + ax.length(CssPropertyIndex.BOTTOM, parentH, rootW, rootH);
+            float insets = ax.typed().px(ax.typed().box.top, ax.typed().box.exprs, parentH, rootW, rootH)
+                    + ax.typed().px(ax.typed().box.bottom, ax.typed().box.exprs, parentH, rootW, rootH);
             return Math.max(0, parentH - insets - box.mT - box.mB - box.verticalDecoration());
         }
         return Float.NaN;
     }
 
     private static boolean isRtl(ComputedStyle style) {
-        String direction = style.get(ID_DIRECTION);
+        String direction = style.typed().inherited.direction;
         return direction != null && "rtl".equalsIgnoreCase(direction.trim());
     }
 
     private static boolean hasSpecifiedHeight(ComputedStyle style) {
-        String height = style.get(ID_HEIGHT);
-        return height != null && !"auto".equals(height.trim());
+        long height = style.typed().box.height;
+        return CssLength.isDeclared(height) && !CssLength.isAuto(height);
     }
 
     /** これ以上のブロック子を持ち、{@code content-visibility: auto} 要素を含むコンテナを {@link FenwickVirtualList} で仮想化する。 */
@@ -363,7 +364,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         for (LayoutBox child : box.children) {
             if (child.isAbsolute || child.isOutsideMarker || child.isRenderedLegend || child.display.isNone()
                     || isInlineBox(child) || isFloating(child) || child.node.nodeType == NodeType.TEXT) continue;
-            if (!"auto".equals(child.axisStyle().getOrDefault(CssPropertyIndex.WIDTH, "auto").trim())) continue;
+            if (!CssLength.isAutoOrUndeclared(child.axisStyle().typed().box.width)) continue;
             if (Math.abs(child.w + child.mL + child.mR - innerW) <= 0.01f) continue;
             child.measure(new ConstraintSpace(innerW, base, FormattingContext.BLOCK), ctx);
         }
@@ -601,7 +602,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     static boolean collapsesThroughBottom(LayoutBox box) {
         ComputedStyle ax = box.axisStyle();
         return !box.establishesBfc && box.pB == 0 && box.bB == 0 && !hasSpecifiedHeight(ax)
-                && ax.length(CssPropertyIndex.MIN_HEIGHT, 0, 0, 0) <= 0;
+                && ax.typed().px(ax.typed().box.minHeight, ax.typed().box.exprs, 0, 0, 0) <= 0;
     }
 
     /**
@@ -672,9 +673,9 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     /** text-wrap: balance / text-wrap-style: balance。 */
     static boolean isBalanced(ComputedStyle style) {
-        String s = style.get(CssPropertyIndex.TEXT_WRAP_STYLE);
+        String s = style.typed().inherited.textWrapStyle;
         if (s != null && s.trim().equalsIgnoreCase("balance")) return true;
-        String w = style.get(CssPropertyIndex.TEXT_WRAP);
+        String w = style.typed().inherited.textWrap;
         return w != null && w.toLowerCase(java.util.Locale.ROOT).contains("balance");
     }
 
@@ -814,7 +815,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         for (int i = 0; i < n; i++) {
             LayoutBox c = kids.get(i);
             c.virtualChildIndex = i;
-            if ("none".equals(c.style.get(CssPropertyIndex.DISPLAY))) {
+            if ("none".equals(c.style.typed().box.display)) {
                 vf.gapBefore[i] = 0;
                 vf.slotHeights[i] = 0;
                 vf.xPos[i] = 0;
@@ -839,7 +840,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             else pendingNeg = Math.min(pendingNeg, c.mB);
             hasContent = true;
 
-            if (rtl && !"auto".equals(c.axisStyle().getOrDefault(CssPropertyIndex.MARGIN_RIGHT, "").trim())) {
+            if (rtl && !CssLength.isAuto(c.axisStyle().typed().box.marginRight)) {
                 vf.xPos[i] = Math.max(0, innerW - (c.w + c.mL + c.mR));
             } else {
                 vf.xPos[i] = 0;

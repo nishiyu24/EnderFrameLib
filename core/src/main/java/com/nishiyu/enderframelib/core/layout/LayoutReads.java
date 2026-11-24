@@ -479,7 +479,7 @@ final class LayoutReads {
     }
 
     private static boolean hasTransformOrFilter(LayoutBox b) {
-        return isSet(b.style.get(CssPropertyIndex.TRANSFORM)) || isSet(b.style.get(CssPropertyIndex.FILTER));
+        return isSet(b.style.typed().visual.transform) || isSet(b.style.typed().visual.filter);
     }
 
     private static boolean isSet(String value) {
@@ -492,7 +492,7 @@ final class LayoutReads {
         recordPlace(ReadKind.PLACE_ANCHOR);
         LayoutBox root = rootBox(box);
         if (name == null) {
-            name = overridePositionAnchor != null ? overridePositionAnchor : box.style.get(CssPropertyIndex.POSITION_ANCHOR);
+            name = overridePositionAnchor != null ? overridePositionAnchor : box.style.typed().rare.positionAnchor;
         }
         LayoutBox anchor;
         if (name != null && !name.isBlank() && !"auto".equalsIgnoreCase(name.trim())) {
@@ -540,7 +540,7 @@ final class LayoutReads {
 
     private static LayoutBox findAnchorNamed(LayoutBox cur, LayoutBox self, String name) {
         if (cur != self && cur.style != null) {
-            String n = cur.style.get(CssPropertyIndex.ANCHOR_NAME);
+            String n = cur.style.typed().rare.anchorName;
             if (n != null && Arrays.asList(n.trim().split("[\\s,]+")).contains(name)) return cur;
         }
         for (int i = 0, n = cur.elementChildren.size(); i < n; i++) {

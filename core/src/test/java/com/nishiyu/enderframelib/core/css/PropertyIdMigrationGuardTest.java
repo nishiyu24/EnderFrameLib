@@ -90,7 +90,8 @@ class PropertyIdMigrationGuardTest {
                 }
             }.scan(cu, null);
         }
-        assertTrue(idCalls[0] > 200, "解析が空振りしていない（添字での読み取りが 200 箇所以上ある）: " + idCalls[0]);
+        // M1b で読み取りが Style の型付きフィールドへ移るにつれて減る（M1c で旧型とともにこの番人を撤去する）。解析が空振りしていないことの下限だけ守る
+        assertTrue(idCalls[0] > 20, "解析が空振りしていない（添字での読み取りが 20 箇所以上ある）: " + idCalls[0]);
         assertTrue(violations.isEmpty(), "\n" + String.join("\n", violations));
     }
 }

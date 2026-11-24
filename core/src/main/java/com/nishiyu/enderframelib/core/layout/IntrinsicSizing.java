@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
@@ -61,8 +62,8 @@ final class IntrinsicSizing {
     private static void propagateCachedMinContentReads(LayoutBox box, LayoutContext ctx) {
         if (box.effectiveContainsInlineSize()) return;
         ComputedStyle ax = box.axisStyle();
-        String minWidthDecl = ax.get(CssPropertyIndex.MIN_WIDTH);
-        if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)
+        long minWidthDecl = ax.typed().box.minWidth;
+        if (CssLength.isDeclared(minWidthDecl) && !CssLength.isIntrinsicSize(minWidthDecl, ax.typed().box.exprs)
                 && box.display.inner() != LayoutBox.Display.Inner.TABLE) {
             return;
         }
@@ -87,10 +88,10 @@ final class IntrinsicSizing {
         float rootH = ctx.viewport().rootH();
 
         ComputedStyle ax = box.axisStyle();
-        String minWidthDecl = ax.get(CssPropertyIndex.MIN_WIDTH);
-        if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)
+        long minWidthDecl = ax.typed().box.minWidth;
+        if (CssLength.isDeclared(minWidthDecl) && !CssLength.isIntrinsicSize(minWidthDecl, ax.typed().box.exprs)
                 && box.display.inner() != LayoutBox.Display.Inner.TABLE) {
-            float min = ax.length(CssPropertyIndex.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
+            float min = ax.typed().px(ax.typed().box.minWidth, ax.typed().box.exprs, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
             return ax.isBorderBox() ? Math.max(min, inlineDecoration(box, ctx)) : min + inlineDecoration(box, ctx);
         }
 
@@ -144,18 +145,17 @@ final class IntrinsicSizing {
 
     private static float minContentContribution(LayoutBox box, LayoutContext ctx) {
         ComputedStyle ax = box.axisStyle();
-        String width = ax.get(CssPropertyIndex.WIDTH);
-        if (width == null || width.contains("%") || LayoutMetrics.isIntrinsicSizeKeyword(width)) {
+        long width = ax.typed().box.width;
+        if (!CssLength.isDeclared(width) || CssLength.hasPercent(width, ax.typed().box.exprs) || CssLength.isIntrinsicSize(width, ax.typed().box.exprs)) {
             return MeasureReads.currentMeasuringBox() != null
                     ? readChildMinContentWidth(box, ctx)
                     : getMinContentWidth(box, ctx);
         }
         if (MeasureReads.currentMeasuringBox() != null) box.measureMemo.noteParentReadOuter();
-        float v = ax.length(CssPropertyIndex.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+        float v = ax.typed().px(ax.typed().box.width, ax.typed().box.exprs, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
         float borderBox = ax.isBorderBox() ? Math.max(v, inlineDecoration(box, ctx)) : v + inlineDecoration(box, ctx);
-        String minWidth = ax.get(CssPropertyIndex.MIN_WIDTH);
-        if (minWidth != null && !minWidth.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(minWidth)) {
-            float min = ax.length(CssPropertyIndex.MIN_WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+        if (CssLength.isDefinite(ax.typed().box.minWidth, ax.typed().box.exprs)) {
+            float min = ax.typed().px(ax.typed().box.minWidth, ax.typed().box.exprs, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
             borderBox = Math.max(borderBox, ax.isBorderBox() ? min : min + inlineDecoration(box, ctx));
         }
         return borderBox;
@@ -177,14 +177,14 @@ final class IntrinsicSizing {
     static float ownInlineMargins(LayoutBox box, LayoutContext ctx) {
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
         ComputedStyle ax = box.axisStyle();
-        float l = "auto".equals(ax.get(CssPropertyIndex.MARGIN_LEFT)) ? 0 : ax.length(CssPropertyIndex.MARGIN_LEFT, 0, rootW, rootH);
-        float r = "auto".equals(ax.get(CssPropertyIndex.MARGIN_RIGHT)) ? 0 : ax.length(CssPropertyIndex.MARGIN_RIGHT, 0, rootW, rootH);
+        float l = CssLength.isAuto(ax.typed().box.marginLeft) ? 0 : ax.typed().px(ax.typed().box.marginLeft, ax.typed().box.exprs, 0, rootW, rootH);
+        float r = CssLength.isAuto(ax.typed().box.marginRight) ? 0 : ax.typed().px(ax.typed().box.marginRight, ax.typed().box.exprs, 0, rootW, rootH);
         return l + r;
     }
 
     private static boolean isSingleLineRowFlex(LayoutBox box) {
-        String direction = box.style.getOrDefault(CssPropertyIndex.FLEX_DIRECTION, "row").trim();
-        String wrap = box.style.getOrDefault(CssPropertyIndex.FLEX_WRAP, "nowrap").trim();
+        String direction = box.style.typed().flexGrid.flexDirection.cssName();
+        String wrap = box.style.typed().flexGrid.flexWrap.cssName();
         return direction.startsWith("row") && "nowrap".equals(wrap);
     }
 

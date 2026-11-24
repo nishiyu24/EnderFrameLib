@@ -159,10 +159,10 @@ public record LayoutContext(
     public FontFace faceFor(ComputedStyle style) {
         // 解決器が世代を持つなら、算出スタイルに覚えさせる（全行の測り直しで、文字列の鍵で表を引く費用が効いていた。B11）
         long gen = fonts.resolveGeneration();
-        if (gen < 0) return fonts.resolve(style.get(ID_FONT_FAMILY));
+        if (gen < 0) return fonts.resolve(style.typed().inherited.fontFamily);
         FontFace face = style.peekFace(fonts, gen);
         if (face != null) return face;
-        face = fonts.resolve(style.get(ID_FONT_FAMILY));
+        face = fonts.resolve(style.typed().inherited.fontFamily);
         style.cacheFace(fonts, gen, face);
         return face;
     }

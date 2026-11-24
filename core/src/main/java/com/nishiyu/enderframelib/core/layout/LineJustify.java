@@ -11,11 +11,11 @@ import com.nishiyu.enderframelib.core.css.model.TextAlign;
  */
 record LineJustify(TextAlign normal, boolean justifyNormal, TextAlign last, boolean justifyLast, String mode) {
     static LineJustify of(ComputedStyle style, TextAlign specified, TextAlign physical, boolean rtl) {
-        String mode = style.get(CssPropertyIndex.TEXT_JUSTIFY);
+        String mode = style.typed().inherited.textJustify;
         mode = mode == null ? "auto" : mode.trim().toLowerCase(java.util.Locale.ROOT);
         if (mode.equals("distribute")) mode = "inter-character";
         boolean justify = specified == TextAlign.JUSTIFY && !mode.equals("none");
-        String lastRaw = style.get(CssPropertyIndex.TEXT_ALIGN_LAST);
+        String lastRaw = style.typed().inherited.textAlignLast;
         String l = lastRaw == null ? "auto" : lastRaw.trim().toLowerCase(java.util.Locale.ROOT);
         TextAlign last;
         boolean justifyLast;

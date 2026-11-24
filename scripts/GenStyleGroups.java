@@ -72,6 +72,7 @@ public final class GenStyleGroups {
             case "font-size" -> Kind.FONT_SIZE;
             case "font-weight" -> Kind.FONT_WEIGHT;
             case "line-height" -> Kind.LINE_HEIGHT;
+            case "border-spacing" -> Kind.TEXT; // 縦横 2 値を取れる（長さ 1 個では持てない）
             default -> p.keywords() != null ? Kind.ENUM : switch (p.type()) {
                 case LENGTH, LENGTH_PERCENTAGE -> Kind.LENGTH;
                 case NUMBER, INTEGER -> Kind.NUMBER;

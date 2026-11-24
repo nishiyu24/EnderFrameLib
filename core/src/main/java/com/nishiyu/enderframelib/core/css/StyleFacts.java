@@ -96,7 +96,7 @@ public final class StyleFacts {
         RareStyle r = s.rare;
 
         int bits = 0;
-        for (String token : r.contain.trim().toLowerCase(Locale.ROOT).split("\\s+")) {
+        for (String token : (r.contain == null ? "" : r.contain.trim().toLowerCase(Locale.ROOT)).split("\\s+")) {
             switch (token) {
                 case "strict" -> bits |= ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT
                         | ComputedStyle.CONTAIN_STYLE;
@@ -138,8 +138,8 @@ public final class StyleFacts {
         long w = b.width, h = b.height;
         definiteWidth = definite(w, b.exprs);
         definiteHeight = definite(h, b.exprs);
-        widthAuto = CssLength.isAuto(w);
-        heightAuto = CssLength.isAuto(h);
+        widthAuto = CssLength.isAutoOrUndeclared(w);
+        heightAuto = CssLength.isAutoOrUndeclared(h);
         widthPercent = hasPercent(w, b.exprs);
         heightPercent = hasPercent(h, b.exprs);
         byte iw = IW_NONE;
@@ -169,7 +169,7 @@ public final class StyleFacts {
         alignSelfAuto = fg.alignSelf == CssKeywords.Alignment.AUTO;
         alignSelf = flexAlignment(fg.alignSelf);
 
-        boolean horizontalWriting = KeywordMatch.trimmedStartsWith(in.writingMode, "horizontal");
+        boolean horizontalWriting = in.writingMode == null || KeywordMatch.trimmedStartsWith(in.writingMode, "horizontal");
         BoxGeomStyle bx = b;
         boolean edgePercent = hasPercent(bx.minWidth, bx.exprs) || hasPercent(bx.maxWidth, bx.exprs)
                 || hasPercent(bx.marginLeft, bx.exprs) || hasPercent(bx.marginRight, bx.exprs)
@@ -204,7 +204,7 @@ public final class StyleFacts {
 
     /** % を含む長さ（単位が %、または式の原文に % を含む）か。 */
     private static boolean hasPercent(long v, CssExprs exprs) {
-        return CssLength.isPercent(v) || CssLength.isJunkPercent(v) || (CssLength.isCalc(v) && exprs.raw(v).indexOf((char) 37) >= 0);
+        return CssLength.hasPercent(v, exprs);
     }
 
     /** 高さ方向の割合・式を持たない（% の長さでも式でもない）。 */
@@ -218,6 +218,7 @@ public final class StyleFacts {
 
     /** {@code width} / {@code height} が確定した長さか（auto・% を含む・内在サイズのキーワードは確定でない）。 */
     private static boolean definite(long v, CssExprs exprs) {
+        if (!CssLength.isDeclared(v)) return false;
         if (CssLength.isKeyword(v)) {
             return !CssLength.isAuto(v) && !CssLength.isKeyword(v, CssLength.KW_EMPTY) && !CssLength.isJunkPercent(v)
                     && !CssLength.isKeyword(v, CssLength.KW_MIN_CONTENT)

@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -44,17 +45,13 @@ final class MeasureAnalysis {
     }
 
     static boolean hasActiveMaxWidth(ComputedStyle s) {
-        if (!s.containsKey(CssPropertyIndex.MAX_WIDTH)) return false;
-        String v = s.get(CssPropertyIndex.MAX_WIDTH);
-        return v != null && !"none".equalsIgnoreCase(v.trim());
+        long v = s.typed().box.maxWidth;
+        return CssLength.isDeclared(v) && !CssLength.isKeyword(v, CssLength.KW_NONE);
     }
 
     static boolean hasNonZeroMinWidth(ComputedStyle s) {
-        if (!s.containsKey(CssPropertyIndex.MIN_WIDTH)) return false;
-        String v = s.get(CssPropertyIndex.MIN_WIDTH);
-        if (v == null) return false;
-        String t = v.trim();
-        return !t.equalsIgnoreCase("auto") && !t.equals("0") && !t.equals("0px");
+        long v = s.typed().box.minWidth;
+        return CssLength.isDeclared(v) && !CssLength.isAuto(v) && !(CssLength.isPixels(v) && CssLength.pixels(v) == 0f);
     }
 
     static boolean isFillWidthExcludedTag(String tag) {
@@ -160,7 +157,7 @@ final class MeasureAnalysis {
                 || Float.isNaN(box.naturalFitInnerWidth)) {
             return none;
         }
-        if (hasActiveMaxWidth(ax) || hasNonZeroMinWidth(ax) || ax.containsKey(CssPropertyIndex.ASPECT_RATIO)) {
+        if (hasActiveMaxWidth(ax) || hasNonZeroMinWidth(ax) || ax.typed().box.aspectRatio != null) {
             return none;
         }
         float innerNeed = Math.max(box.naturalFitInnerWidth, childFitNeedMax);

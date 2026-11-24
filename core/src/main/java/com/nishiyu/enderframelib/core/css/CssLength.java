@@ -20,7 +20,7 @@ public final class CssLength {
     public static final int KW_OTHER = 0, KW_AUTO = 1, KW_NONE = 2, KW_NORMAL = 3, KW_MIN_CONTENT = 4, KW_MAX_CONTENT = 5,
             KW_FIT_CONTENT = 6, KW_MEDIUM = 7, KW_THIN = 8, KW_THICK = 9,
             /** 解釈できない値のうち、空文字（確定した長さではない）と、{@code %} を含む文字列（% を含む扱い）。旧文字列版の判定を保つ。 */
-            KW_EMPTY = 10, KW_JUNK_PERCENT = 11;
+            KW_EMPTY = 10, KW_JUNK_PERCENT = 11, KW_CONTENT = 12;
 
     /** 文字列から値を作る。式は {@code exprs} に積んで添字を持つ。 */
     static long parse(String raw, CssExprs.Builder exprs) {
@@ -51,8 +51,33 @@ public final class CssLength {
             case "medium" -> KW_MEDIUM;
             case "thin" -> KW_THIN;
             case "thick" -> KW_THICK;
+            case "content" -> KW_CONTENT;
             default -> raw.isBlank() ? KW_EMPTY : raw.indexOf((char) 37) >= 0 ? KW_JUNK_PERCENT : KW_OTHER;
         };
+    }
+
+    /** 宣言が無い（{@code PackedCssValue.NONE}）。0 px に解ける。 */
+    public static final long UNDECLARED = PackedCssValue.NONE;
+
+    public static boolean isDeclared(long v) { return v != UNDECLARED; }
+
+    /** 宣言が無い、または {@code auto}。 */
+    public static boolean isAutoOrUndeclared(long v) { return v == UNDECLARED || isAuto(v); }
+
+    /** % を含む長さ（単位が %、% を含む解釈不能な値、% を含む式）か。 */
+    public static boolean hasPercent(long v, CssExprs exprs) {
+        return isPercent(v) || isJunkPercent(v) || (isCalc(v) && exprs.raw(v).indexOf((char) 37) >= 0);
+    }
+
+    /** 確定した長さ（宣言があり、auto・% を含む値・内容から決まるサイズのキーワードのどれでもない）。 */
+    public static boolean isDefinite(long v, CssExprs exprs) {
+        return isDeclared(v) && !isAuto(v) && !hasPercent(v, exprs) && !isIntrinsicSize(v, exprs);
+    }
+
+    /** 内容から決まるサイズのキーワード（{@code auto min-content max-content fit-content fit-content(..)}）か。旧 {@code isIntrinsicSizeKeyword} と同じ。 */
+    public static boolean isIntrinsicSize(long v, CssExprs exprs) {
+        return isAuto(v) || isKeyword(v, KW_MIN_CONTENT) || isKeyword(v, KW_MAX_CONTENT) || isKeyword(v, KW_FIT_CONTENT)
+                || (isCalc(v) && exprs.raw(v).trim().toLowerCase(java.util.Locale.ROOT).startsWith("fit-content("));
     }
 
     public static boolean isKeyword(long v) { return PackedCssValue.kind(v) == PackedCssValue.K_KEYWORD; }
@@ -80,6 +105,9 @@ public final class CssLength {
 
     /** px の長さの値（{@link #isPixels} が真のとき）。 */
     public static float pixels(long v) { return PackedCssValue.floatPayload(v); }
+
+    /** % の長さの数値（{@link #isPercent} が真のとき。{@code 50%} なら 50）。 */
+    public static float percentValue(long v) { return PackedCssValue.floatPayload(v); }
 
     public static long px(float value) { return PackedCssValue.length(value, PackedCssValue.U_PX); }
 

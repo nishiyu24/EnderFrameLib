@@ -94,7 +94,7 @@ public abstract class LayoutEngine {
     private static final int ID_DISPLAY = CssPropertyIndex.DISPLAY;
 
     protected boolean isDisplayNone(ComputedStyle style) {
-        return "none".equals(style.get(ID_DISPLAY));
+        return "none".equals(style.typed().box.display);
     }
 
     protected boolean isBold(ComputedStyle style) {

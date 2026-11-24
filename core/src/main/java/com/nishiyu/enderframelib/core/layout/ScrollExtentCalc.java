@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.WritingModes;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
@@ -15,8 +16,8 @@ final class ScrollExtentCalc {
 
     static void placeRenderedLegend(LayoutBox box, LayoutBox legend, LayoutContext ctx) {
         float contentW = Math.max(0, box.w - box.horizontalDecoration());
-        boolean autoLeft = "auto".equals(legend.style.get(CssPropertyIndex.MARGIN_LEFT));
-        boolean autoRight = "auto".equals(legend.style.get(CssPropertyIndex.MARGIN_RIGHT));
+        boolean autoLeft = CssLength.isAuto(legend.style.typed().box.marginLeft);
+        boolean autoRight = CssLength.isAuto(legend.style.typed().box.marginRight);
         float free = contentW - legend.w - (autoLeft ? 0 : legend.mL) - (autoRight ? 0 : legend.mR);
         if (autoLeft && autoRight) {
             legend.mL = Math.max(0, free / 2);
@@ -40,8 +41,8 @@ final class ScrollExtentCalc {
     private static void applyRelativeWithOuter(LayoutBox box, float outerW, float outerH,
                                                LayoutContext ctx, boolean reuse) {
         ComputedStyle ax = box.axisStyle();
-        boolean hasL = ax.containsKey(CssPropertyIndex.LEFT), hasR = !hasL && ax.containsKey(CssPropertyIndex.RIGHT);
-        boolean hasT = ax.containsKey(CssPropertyIndex.TOP), hasB = !hasT && ax.containsKey(CssPropertyIndex.BOTTOM);
+        boolean hasL = CssLength.isDeclared(ax.typed().box.left), hasR = !hasL && CssLength.isDeclared(ax.typed().box.right);
+        boolean hasT = CssLength.isDeclared(ax.typed().box.top), hasB = !hasT && CssLength.isDeclared(ax.typed().box.bottom);
         if (!hasL && !hasR && !hasT && !hasB) return;
 
         float rootW = 0f, rootH = 0f;
@@ -52,13 +53,13 @@ final class ScrollExtentCalc {
         float offX = 0, offY = 0;
         if (hasL || hasR) {
             float cbW = reuse ? outerW : LayoutReads.parentOuterW();
-            offX = hasL ? ax.length(CssPropertyIndex.LEFT, cbW, rootW, rootH)
-                    : -ax.length(CssPropertyIndex.RIGHT, cbW, rootW, rootH);
+            offX = hasL ? ax.typed().px(ax.typed().box.left, ax.typed().box.exprs, cbW, rootW, rootH)
+                    : -ax.typed().px(ax.typed().box.right, ax.typed().box.exprs, cbW, rootW, rootH);
         }
         if (hasT || hasB) {
             float cbH = reuse ? outerH : LayoutReads.parentOuterH();
-            offY = hasT ? ax.length(CssPropertyIndex.TOP, cbH, rootW, rootH)
-                    : -ax.length(CssPropertyIndex.BOTTOM, cbH, rootW, rootH);
+            offY = hasT ? ax.typed().px(ax.typed().box.top, ax.typed().box.exprs, cbH, rootW, rootH)
+                    : -ax.typed().px(ax.typed().box.bottom, ax.typed().box.exprs, cbH, rootW, rootH);
         }
 
         if (offX != 0 || offY != 0) box.applyRelativeOffset(offX, offY);
@@ -92,17 +93,17 @@ final class ScrollExtentCalc {
         ComputedStyle ax = box.axisStyle();
         float dx = 0, dy = 0;
         if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.TOP)) {
-            float limit = portY + ax.length(CssPropertyIndex.TOP, portH, rootW, rootH);
+            float limit = portY + ax.typed().px(ax.typed().box.top, ax.typed().box.exprs, portH, rootW, rootH);
             if (by < limit) dy = Math.max(0, Math.min(limit - by, cbBottom - (by + box.h + box.mB)));
         } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.BOTTOM)) {
-            float limit = portY + portH - ax.length(CssPropertyIndex.BOTTOM, portH, rootW, rootH);
+            float limit = portY + portH - ax.typed().px(ax.typed().box.bottom, ax.typed().box.exprs, portH, rootW, rootH);
             if (by + box.h > limit) dy = -Math.max(0, Math.min(by + box.h - limit, by - box.mT - cbTop));
         }
         if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.LEFT)) {
-            float limit = portX + ax.length(CssPropertyIndex.LEFT, portW, rootW, rootH);
+            float limit = portX + ax.typed().px(ax.typed().box.left, ax.typed().box.exprs, portW, rootW, rootH);
             if (bx < limit) dx = Math.max(0, Math.min(limit - bx, cbRight - (bx + box.w + box.mR)));
         } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.RIGHT)) {
-            float limit = portX + portW - ax.length(CssPropertyIndex.RIGHT, portW, rootW, rootH);
+            float limit = portX + portW - ax.typed().px(ax.typed().box.right, ax.typed().box.exprs, portW, rootW, rootH);
             if (bx + box.w > limit) dx = -Math.max(0, Math.min(bx + box.w - limit, bx - box.mL - cbLeft));
         }
         box.stickyDy = dy;
@@ -122,7 +123,7 @@ final class ScrollExtentCalc {
         }
         float portY = port.y() + port.bT;
         float portH = Math.max(0, port.h - port.bT - port.bB);
-        float limit = portY + ax.length(CssPropertyIndex.TOP, portH, rootW, rootH);
+        float limit = portY + ax.typed().px(ax.typed().box.top, ax.typed().box.exprs, portH, rootW, rootH);
         float cbBottom = LayoutReads.peekParentContentBottom(box);
         if (Float.floatToIntBits(box.y) != Float.floatToIntBits(box.stickyPlacedY)) return null;
         float unstuckAbsY = PlacementMemo.originParentY(box) + box.stickyUnstuckY;
@@ -265,11 +266,11 @@ final class ScrollExtentCalc {
 
     private static boolean hasDefiniteHeight(LayoutBox box) {
         ComputedStyle ax = box.axisStyle();
-        String height = ax.get(CssPropertyIndex.HEIGHT);
-        if (height != null && !height.isBlank() && !"auto".equalsIgnoreCase(height.trim())) return true;
-        String minHeight = ax.get(CssPropertyIndex.MIN_HEIGHT);
-        return minHeight != null && !minHeight.isBlank() && !"0".equals(minHeight.trim()) && !"0px".equals(minHeight.trim())
-                && !"auto".equalsIgnoreCase(minHeight.trim());
+        long height = ax.typed().box.height;
+        if (CssLength.isDeclared(height) && !CssLength.isKeyword(height, CssLength.KW_EMPTY) && !CssLength.isAuto(height)) return true;
+        long minHeight = ax.typed().box.minHeight;
+        return CssLength.isDeclared(minHeight) && !CssLength.isKeyword(minHeight, CssLength.KW_EMPTY)
+                && !(CssLength.isPixels(minHeight) && CssLength.pixels(minHeight) == 0f) && !CssLength.isAuto(minHeight);
     }
 
     static boolean clipsOverflow(LayoutBox box) {

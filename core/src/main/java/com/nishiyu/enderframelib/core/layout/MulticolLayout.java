@@ -2,6 +2,8 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine.FlowState;
@@ -79,34 +81,28 @@ final class MulticolLayout {
         if (box.style == null || box.display == null || box.node.nodeType != NodeType.ELEMENT) return false;
         Inner inner = box.display.inner();
         if (inner != Inner.FLOW && inner != Inner.FLOW_ROOT) return false;
-        return countOf(box.style) > 0 || !isAuto(box.style.get(CssPropertyIndex.COLUMN_WIDTH));
+        return countOf(box.style) > 0 || !isAuto(box.style.typed().rare.columnWidth);
     }
 
-    private static boolean isAuto(String v) {
-        return v == null || v.isBlank() || "auto".equalsIgnoreCase(v.trim());
+    private static boolean isAuto(long v) {
+        return !CssLength.isDeclared(v) || CssLength.isAuto(v) || CssLength.isKeyword(v, CssLength.KW_EMPTY);
     }
-
-    private static final int ID_COLUMN_COUNT = CssPropertyIndex.COLUMN_COUNT;
 
     private static int countOf(ComputedStyle style) {
-        String v = style.get(ID_COLUMN_COUNT);
-        if (isAuto(v)) return 0;
-        try {
-            return Math.max(0, Math.min(1000, Integer.parseInt(v.trim())));
-        } catch (NumberFormatException e) {
-            return 0;
-        }
+        float v = style.typed().rare.columnCount;
+        if (Float.isNaN(v) || v != Math.rint(v)) return 0; // auto・解釈できない値・整数でない値は 0
+        return Math.max(0, Math.min(1000, (int) v));
     }
 
     static Geometry geometry(LayoutBox box, float innerW, float rootW, float rootH) {
         ComputedStyle style = box.style;
         int count = countOf(style);
-        float width = isAuto(style.get(CssPropertyIndex.COLUMN_WIDTH)) ? 0
-                : Math.max(0, style.length(CssPropertyIndex.COLUMN_WIDTH, 0, rootW, rootH));
-        String gapRaw = style.get(CssPropertyIndex.COLUMN_GAP);
+        float width = isAuto(style.typed().rare.columnWidth) ? 0
+                : Math.max(0, style.typed().px(style.typed().rare.columnWidth, style.typed().rare.exprs, 0, rootW, rootH));
+        long gapRaw = style.typed().flexGrid.columnGap;
         boolean bounded = innerW < LayoutMetrics.UNBOUNDED_WIDTH && !Float.isNaN(innerW);
-        float gap = isAuto(gapRaw) || "normal".equalsIgnoreCase(gapRaw.trim()) ? style.fontSizePx()
-                : style.length(CssPropertyIndex.COLUMN_GAP, bounded ? innerW : 0, rootW, rootH);
+        float gap = isAuto(gapRaw) || CssLength.isKeyword(gapRaw, CssLength.KW_NORMAL) ? style.fontSizePx()
+                : style.typed().px(style.typed().flexGrid.columnGap, style.typed().flexGrid.exprs, bounded ? innerW : 0, rootW, rootH);
         gap = Math.max(0, gap);
         if (!bounded) {
             return new Geometry(Math.max(1, count), width > 0 ? width : innerW, gap);
@@ -124,11 +120,11 @@ final class MulticolLayout {
     /** {@code column-span: all} の、フロー内のブロックレベルの子か。 */
     static boolean isSpanner(LayoutBox child) {
         // 指定の無い（初期値 none の）箱が大半なので、文字列の取り出し・trim の前に宣言の有無で外す
-        if (child.style == null || !child.style.containsKey(CssPropertyIndex.COLUMN_SPAN)) return false;
+        if (child.style == null || child.style.typed().rare.columnSpan == null) return false;
         if (child.isAbsolute || child.display.isNone() || child.isOutsideMarker || child.isRenderedLegend
                 || BlockLayoutEngine.isInlineBox(child) || BlockLayoutEngine.isFloating(child)
                 || child.node.nodeType != NodeType.ELEMENT || child.style == null) return false;
-        return "all".equalsIgnoreCase(child.style.getOrDefault(CssPropertyIndex.COLUMN_SPAN, "none").trim());
+        return "all".equalsIgnoreCase(Style.or(child.style.typed().rare.columnSpan, "none").trim());
     }
 
     // ==========================================
@@ -159,7 +155,7 @@ final class MulticolLayout {
         runs.add(current);
 
         float definiteH = spanners.isEmpty() ? definiteContentHeight(box, space, rootW, rootH) : Float.NaN;
-        boolean fillAuto = "auto".equalsIgnoreCase(box.style.getOrDefault(CssPropertyIndex.COLUMN_FILL, "balance").trim());
+        boolean fillAuto = "auto".equalsIgnoreCase(Style.or(box.style.typed().rare.columnFill, "balance").trim());
 
         float y = 0;
         for (int i = 0; i < runs.size(); i++) {
@@ -199,10 +195,10 @@ final class MulticolLayout {
     /** {@code height} が長さで決まっていれば内容ボックスの高さ。そうでなければ NaN。 */
     private static float definiteContentHeight(LayoutBox box, ConstraintSpace space, float rootW, float rootH) {
         ComputedStyle ax = box.axisStyle();
-        String h = ax.get(CssPropertyIndex.HEIGHT);
-        if (isAuto(h) || LayoutMetrics.isIntrinsicSizeKeyword(h)) return Float.NaN;
-        if (h.contains("%") && space.percentageBlockSize() <= 0) return Float.NaN;
-        float v = ax.length(CssPropertyIndex.HEIGHT, space.percentageBlockSize(), rootW, rootH);
+        long h = ax.typed().box.height;
+        if (isAuto(h) || CssLength.isIntrinsicSize(h, ax.typed().box.exprs)) return Float.NaN;
+        if (CssLength.hasPercent(h, ax.typed().box.exprs) && space.percentageBlockSize() <= 0) return Float.NaN;
+        float v = ax.typed().px(ax.typed().box.height, ax.typed().box.exprs, space.percentageBlockSize(), rootW, rootH);
         return Math.max(0, ax.isBorderBox() ? v - box.verticalDecoration() : v);
     }
 
@@ -307,9 +303,9 @@ final class MulticolLayout {
         if (b.bT != 0 || b.bB != 0 || b.pT != 0 || b.pB != 0) return false;
         ComputedStyle s = b.axisStyle();
         if (s.overflowX().clips() || s.overflowY().clips()) return false;
-        if (visible(s.get(CssPropertyIndex.BACKGROUND_COLOR)) || visible(s.get(CssPropertyIndex.BACKGROUND_IMAGE)) || visible(s.get(CssPropertyIndex.BOX_SHADOW))
-                || visible(s.get(CssPropertyIndex.TRANSFORM)) || visible(s.get(CssPropertyIndex.FILTER))) return false;
-        String inside = s.getOrDefault(CssPropertyIndex.BREAK_INSIDE, "auto").trim().toLowerCase(Locale.ROOT);
+        if (visible(s.get(CssPropertyIndex.BACKGROUND_COLOR)) || visible(s.typed().visual.backgroundImage) || visible(s.typed().visual.boxShadow)
+                || visible(s.typed().visual.transform) || visible(s.typed().visual.filter)) return false;
+        String inside = Style.or(s.typed().rare.breakInside, "auto").trim().toLowerCase(Locale.ROOT);
         return !inside.startsWith("avoid");
     }
 
@@ -339,11 +335,11 @@ final class MulticolLayout {
         List<float[]> rules = new ArrayList<>();
 
         float ruleW = 0;
-        String ruleStyle = box.style.getOrDefault(CssPropertyIndex.COLUMN_RULE_STYLE, "none").trim().toLowerCase(Locale.ROOT);
+        String ruleStyle = box.style.typed().rare.columnRuleStyle.cssName();
         if (!ruleStyle.equals("none") && !ruleStyle.equals("hidden")) {
             rootW = LayoutReads.placeViewportW(ctx);
             rootH = LayoutReads.placeViewportH(ctx);
-            ruleW = Math.max(0, box.style.length(CssPropertyIndex.COLUMN_RULE_WIDTH, 0, rootW, rootH));
+            ruleW = Math.max(0, box.style.typed().px(box.style.typed().rare.columnRuleWidth, box.style.typed().rare.exprs, 0, rootW, rootH));
         }
 
         for (Segment seg : state.segments) {

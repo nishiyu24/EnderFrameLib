@@ -55,7 +55,7 @@ public final class InheritedStyle {
     /** {@code border-collapse}。 */
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.BorderCollapse borderCollapse;
     /** {@code border-spacing}。 */
-    public final long borderSpacing;
+    public final String borderSpacing;
     /** {@code caption-side}。 */
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.CaptionSide captionSide;
     /** {@code empty-cells}。 */
@@ -137,7 +137,7 @@ public final class InheritedStyle {
         CssExprs.Builder ex = new CssExprs.Builder();
         this.visibility = StyleReader.keyword(cs, ID_visibility, com.nishiyu.enderframelib.core.css.model.CssKeywords.Visibility.class);
         this.borderCollapse = StyleReader.keyword(cs, ID_borderCollapse, com.nishiyu.enderframelib.core.css.model.CssKeywords.BorderCollapse.class);
-        this.borderSpacing = StyleReader.length(cs, ID_borderSpacing, ex);
+        this.borderSpacing = StyleReader.text(cs, ID_borderSpacing);
         this.captionSide = StyleReader.keyword(cs, ID_captionSide, com.nishiyu.enderframelib.core.css.model.CssKeywords.CaptionSide.class);
         this.emptyCells = StyleReader.text(cs, ID_emptyCells);
         this.listStyleType = StyleReader.text(cs, ID_listStyleType);
@@ -192,7 +192,7 @@ public final class InheritedStyle {
         return exprs.equals(o.exprs)
                 && visibility == o.visibility
                 && borderCollapse == o.borderCollapse
-                && borderSpacing == o.borderSpacing
+                && java.util.Objects.equals(borderSpacing, o.borderSpacing)
                 && captionSide == o.captionSide
                 && java.util.Objects.equals(emptyCells, o.emptyCells)
                 && java.util.Objects.equals(listStyleType, o.listStyleType)
@@ -238,7 +238,7 @@ public final class InheritedStyle {
         int h = 39;
         h = h * 31 + System.identityHashCode(visibility);
         h = h * 31 + System.identityHashCode(borderCollapse);
-        h = h * 31 + Long.hashCode(borderSpacing);
+        h = h * 31 + java.util.Objects.hashCode(borderSpacing);
         h = h * 31 + System.identityHashCode(captionSide);
         h = h * 31 + java.util.Objects.hashCode(emptyCells);
         h = h * 31 + java.util.Objects.hashCode(listStyleType);

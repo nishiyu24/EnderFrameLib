@@ -67,9 +67,7 @@ class StyleTypedParityTest {
                     }
                     default -> {
                         if (f.getType() == long.class) {
-                            float expected = declared != null
-                                    ? cs.length(id, PCT, VW, VH)
-                                    : LengthResolver.compile(raw).resolve(PCT, VW, VH, cs.fontSizePx(), cs.rootFontSizePx());
+                            float expected = cs.length(id, PCT, VW, VH); // 宣言が無ければ 0（旧と同じ）
                             assertEquals(expected, CssLength.resolve((long) actual, exprs, PCT, cs.fontSizePx(), cs.rootFontSizePx(), VW, VH),
                                     0f, where);
                         } else if (f.getType() == float.class) {
@@ -79,7 +77,7 @@ class StyleTypedParityTest {
                             int expected = declared != null ? cs.color(id, 0) : (raw == null ? 0 : ColorParser.parseColor(raw));
                             assertEquals(expected, (int) actual, where);
                         } else if (f.getType() == String.class) {
-                            assertEquals(raw, actual, where);
+                            assertEquals(declared, actual, where); // 文字列のまま持つ値は宣言が無ければ null
                         } else {
                             @SuppressWarnings({"unchecked", "rawtypes"})
                             Object expected = cs.keywordOf(id, (Class) f.getType());
@@ -178,8 +176,8 @@ class StyleTypedParityTest {
         Style d = Style.DEFAULT;
         assertSame(CssKeywords.Position.STATIC, d.box.position);
         assertSame(CssKeywords.BoxSizing.CONTENT_BOX, d.box.boxSizing);
-        assertTrue(CssLength.isAuto(d.box.width));
-        assertTrue(CssLength.isKeyword(d.box.maxWidth, CssLength.KW_NONE));
+        assertFalse(CssLength.isDeclared(d.box.width)); // 宣言の無い長さは UNDECLARED（0 px。読み手が「宣言があるか」を問える）
+        assertFalse(CssLength.isDeclared(d.box.maxWidth));
         assertEquals(0xFF000000, d.inherited.color);
         assertEquals(16f, d.inherited.fontSize);
     }

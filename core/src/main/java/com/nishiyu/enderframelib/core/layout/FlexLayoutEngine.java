@@ -7,6 +7,7 @@ import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
@@ -259,7 +260,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         }
         // direction: rtl ではインライン軸の始点が右（row なら主軸、column なら交差軸）。ltr で組んでから内容ボックスの中で左右を裏返す
         // 縦書きの中では局所の（論理の横書きの）座標で組んでいるので、同じ裏返しでインライン軸の向きが合う
-        if ("rtl".equalsIgnoreCase(String.valueOf(box.style.get(CssPropertyIndex.DIRECTION)).trim())) {
+        if ("rtl".equalsIgnoreCase(String.valueOf(box.style.typed().inherited.direction).trim())) {
             for (int i = 0; i < lineCount; i++) {
                 List<FlexItem> its = lines.get(i).items;
                 for (int j = 0, m = its.size(); j < m; j++) {
@@ -293,7 +294,7 @@ public class FlexLayoutEngine extends LayoutEngine {
     /** 通常フローのアイテムを {@code order} の昇順に（同値は文書順）。 */
 
     private static final Comparator<FlexItem> ORDER_COMPARATOR =
-            Comparator.comparingInt(item -> (int) item.box.style.number(CssPropertyIndex.ORDER, 0f));
+            Comparator.comparingInt(item -> (int) com.nishiyu.enderframelib.core.css.Style.num(item.box.style.typed().flexGrid.order, 0f));
 
     private static List<FlexItem> orderedItems(LayoutBox box) {
         List<FlexItem> items = new ArrayList<>(box.children.size());
@@ -315,7 +316,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             if (isCollapsed(child)) continue;
             FlexItem fi =(pool != null && !pool.isEmpty()) ? pool.remove(pool.size() - 1).reset(child) : new FlexItem(child);
             items.add(fi);
-            int order = (int) child.style.number(CssPropertyIndex.ORDER, 0f);
+            int order = (int) com.nishiyu.enderframelib.core.css.Style.num(child.style.typed().flexGrid.order, 0f);
             if (order < previous) inOrder = false;
             previous = order;
         }
@@ -453,9 +454,9 @@ public class FlexLayoutEngine extends LayoutEngine {
         if (f.percentGeometry || f.intrinsicWidthKind != StyleFacts.IW_NONE) return false;
         // 縮小幅の箱は min-width / max-width で使える幅と確定幅が変わる（BoxMeasurer.shrinkMaxInnerWidth）ので、測り直しを省かない
         ComputedStyle ax = child.axisStyle();
-        String maxW = ax.get(CssPropertyIndex.MAX_WIDTH), minW = ax.get(CssPropertyIndex.MIN_WIDTH);
-        if (maxW != null && !"none".equalsIgnoreCase(maxW.trim())) return false;
-        if (minW != null && !"auto".equalsIgnoreCase(minW.trim()) && !minW.trim().equals("0") && !minW.trim().equals("0px")) return false;
+        long maxW = ax.typed().box.maxWidth, minW = ax.typed().box.minWidth;
+        if (CssLength.isDeclared(maxW) && !CssLength.isKeyword(maxW, CssLength.KW_NONE)) return false;
+        if (CssLength.isDeclared(minW) && !CssLength.isAuto(minW) && !(CssLength.isPixels(minW) && CssLength.pixels(minW) == 0f)) return false;
         // 子孫の割合は、この箱の幅が基準になる。仮の測定のときの利用可能幅と確定した幅とで解け方が変わり得るので、部分木ぜんぶを見る
         List<LayoutBox> kids = child.children;
         for (int i = 0, n = kids.size(); i < n; i++) {
@@ -639,19 +640,18 @@ public class FlexLayoutEngine extends LayoutEngine {
      * 指定、それも無ければ内容の寸法（測定済みの幅・高さ）。主軸が不定のときの % は内容の寸法に落とす。
      */
     private static float flexBaseSize(LayoutBox child, boolean row, float innerMain, LayoutContext ctx) {
-        String basis = child.style.get(CssPropertyIndex.FLEX_BASIS);
+        long basis = child.style.typed().flexGrid.flexBasis;
         float decoration = row ? child.horizontalDecoration() : child.verticalDecoration();
-        if (basis != null) {
-            String b = basis.trim().toLowerCase();
-            boolean percentOfIndefinite = b.contains("%") && Float.isNaN(innerMain);
-            if (!b.equals("auto") && !b.equals("content") && !percentOfIndefinite) {
-                float value = child.style.length(CssPropertyIndex.FLEX_BASIS, Float.isNaN(innerMain) ? 0 : innerMain,
+        if (CssLength.isDeclared(basis)) {
+            boolean percentOfIndefinite = CssLength.hasPercent(basis, child.style.typed().flexGrid.exprs) && Float.isNaN(innerMain);
+            if (!CssLength.isAuto(basis) && !CssLength.isKeyword(basis, CssLength.KW_CONTENT) && !percentOfIndefinite) {
+                float value = child.style.typed().px(child.style.typed().flexGrid.flexBasis, child.style.typed().flexGrid.exprs, Float.isNaN(innerMain) ? 0 : innerMain,
                         ctx.viewport().rootW(), ctx.viewport().rootH());
                 boolean isBorderBox = child.style.isBorderBox();
                 return Math.max(decoration, isBorderBox ? value : value + decoration);
             }
             // content（不定の基準に対する % を含む）は指定の寸法を使わず内容の寸法（CSS Flexbox §9.2 3E）。列方向は内容の高さ
-            if (!row && (b.equals("content") || percentOfIndefinite) && child.node.nodeType != NodeType.TEXT && child.hasFlowChildren()) {
+            if (!row && (CssLength.isKeyword(basis, CssLength.KW_CONTENT) || percentOfIndefinite) && child.node.nodeType != NodeType.TEXT && child.hasFlowChildren()) {
                 child.measureMemo.noteParentReadContentExtent();
                 return child.contentBlockExtent;
             }
@@ -771,20 +771,18 @@ public class FlexLayoutEngine extends LayoutEngine {
         ComputedStyle cs = child.axisStyle();
         float ratio = BoxMeasurer.aspectRatioOf(cs);
         if (!(ratio > 0) || hasSize(cs, CssPropertyIndex.WIDTH)) return Float.NaN;
-        String basis = child.style.get(CssPropertyIndex.FLEX_BASIS);
-        if (basis != null && !"auto".equalsIgnoreCase(basis.trim())) return Float.NaN;
-        String h = cs.get(CssPropertyIndex.HEIGHT);
+        long basis = child.style.typed().flexGrid.flexBasis;
+        if (CssLength.isDeclared(basis) && !CssLength.isAuto(basis)) return Float.NaN;
         float borderH;
-        if (h != null && !"auto".equalsIgnoreCase(h.trim()) && !h.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(h)) {
+        if (cs.facts().definiteHeight) {
             borderH = child.h;
         } else {
             CssKeywords.Alignment a = alignSelfOf(child, alignItemsOf(container.style));
-            String ch = container.axisStyle().get(CssPropertyIndex.HEIGHT);
-            boolean definite = ch != null && !"auto".equalsIgnoreCase(ch.trim()) && !ch.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(ch);
+            boolean definite = container.axisStyle().facts().definiteHeight;
             if (a != CssKeywords.Alignment.STRETCH || !definite || hasAutoCrossMargin(child, true)) return Float.NaN;
             // 容器の高さは幅を決める測定（shrink-to-fit）の時点ではまだ入っていないので、指定から求める
             ComputedStyle cst = container.axisStyle();
-            float specH = cst.length(CssPropertyIndex.HEIGHT, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+            float specH = cst.typed().px(cst.typed().box.height, cst.typed().box.exprs, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
             float innerH = cst.isBorderBox() ? specH - container.verticalDecoration() : specH;
             borderH = Math.max(0, innerH - child.mT - child.mB);
         }
@@ -793,8 +791,7 @@ public class FlexLayoutEngine extends LayoutEngine {
 
     /** {@code visibility: collapse} の flex 項目（場所を取らない）。 */
     static boolean isCollapsed(LayoutBox child) {
-        String v = child.style.get(CssPropertyIndex.VISIBILITY);
-        return v != null && "collapse".equalsIgnoreCase(v.trim());
+        return child.style.typed().inherited.visibility == CssKeywords.Visibility.COLLAPSE;
     }
 
     private static boolean hasSize(ComputedStyle style, int prop) {
@@ -803,11 +800,11 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     private static float grow(LayoutBox b) {
-        return Math.max(0, b.style.number(CssPropertyIndex.FLEX_GROW, 0f));
+        return Math.max(0, com.nishiyu.enderframelib.core.css.Style.num(b.style.typed().flexGrid.flexGrow, 0f));
     }
 
     private static float shrink(LayoutBox b) {
-        return Math.max(0, b.style.number(CssPropertyIndex.FLEX_SHRINK, 1f));
+        return Math.max(0, com.nishiyu.enderframelib.core.css.Style.num(b.style.typed().flexGrid.flexShrink, 1f));
     }
 
     private static boolean scrollsAlong(LayoutBox box, boolean row) {
@@ -911,7 +908,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             CssKeywords.FlexDirection dir = style.typed().flexGrid.flexDirection;
             CssKeywords.FlexWrap wrap = style.typed().flexGrid.flexWrap;
             return new Axes(displayOf(dir), dir.isRow(), dir.isReverse(),
-                    wrap != CssKeywords.FlexWrap.NOWRAP, wrap == CssKeywords.FlexWrap.WRAP_REVERSE);
+                    wrap != CssKeywords.FlexWrap.NOWRAP && wrap != CssKeywords.FlexWrap.BALANCE, wrap == CssKeywords.FlexWrap.WRAP_REVERSE);
         }
     }
 

@@ -418,12 +418,12 @@ public final class BoxTreeBuilder {
      */
     private static boolean isOutOfFlow(LayoutBox box) {
         return box.display.isNone() || box.isAbsolute || box.isOutsideMarker
-                || !"none".equals(box.style.getOrDefault(CssPropertyIndex.FLOAT, "none"));
+                || box.style.typed().box.floatValue != CssKeywords.FloatSide.NONE;
     }
 
     private static boolean isCollapsibleWhitespace(LayoutBox box) {
         if (box.node.nodeType != NodeType.TEXT) return false;
-        if (!WhiteSpace.of(box.style.get(CssPropertyIndex.WHITE_SPACE)).collapses()) return false;
+        if (!WhiteSpace.of(box.style.typed().inherited.whiteSpace).collapses()) return false;
         return box.node.text == null || box.node.text.isBlank();
     }
 
@@ -482,7 +482,7 @@ public final class BoxTreeBuilder {
                     if (text.style != child.style) text.updateStyle(child.style);
                 }
             } else {
-                String anonDisplay = child.style.getOrDefault(CssPropertyIndex.DISPLAY, "block");
+                String anonDisplay = com.nishiyu.enderframelib.core.css.Style.or(child.style.typed().box.display, "block");
                 ComputedStyle next = owner.style.derivedAnonymous(anonDisplay);
                 if (child.style != next) child.updateStyle(next);
                 restyleGeneratedBoxes(child);
@@ -513,10 +513,10 @@ public final class BoxTreeBuilder {
      */
     private LayoutBox createMarker(LayoutBox listItem, Counters counters) {
         String text = markerContent(listItem, counters);
-        String imageUrl = text == null ? listStyleImageUrl(listItem.style.get(CssPropertyIndex.LIST_STYLE_IMAGE)) : null;
+        String imageUrl = text == null ? listStyleImageUrl(listItem.style.typed().inherited.listStyleImage) : null;
         if (imageUrl != null) return createImageMarker(listItem, imageUrl);
         if (text == null) {
-            text = counterStyles.marker(listItem.style.getOrDefault(CssPropertyIndex.LIST_STYLE_TYPE, "disc"),
+            text = counterStyles.marker(com.nishiyu.enderframelib.core.css.Style.or(listItem.style.typed().inherited.listStyleType, "disc"),
                     counters.value(LIST_ITEM));
         }
         if (text == null || text.isEmpty()) return null;
@@ -605,7 +605,7 @@ public final class BoxTreeBuilder {
     /** {@code ::marker} の {@code content}。無い・{@code normal} は null（リストの種類で決める）、{@code none} は空文字列。 */
     private String markerContent(LayoutBox listItem, Counters counters) {
         if (listItem.markerStyle == null) return null;
-        String content = listItem.markerStyle.get(CssPropertyIndex.CONTENT);
+        String content = listItem.markerStyle.typed().rare.content;
         if (content == null || content.isBlank() || content.trim().equalsIgnoreCase("normal")) return null;
         if (content.trim().equalsIgnoreCase("none")) return "";
         return evaluateContent(content, listItem.node, counters);
@@ -624,7 +624,7 @@ public final class BoxTreeBuilder {
      * {@code "(" attr(title) ")"} のような連結が文字列のまま出ていた。カウンタも読めなかった。
      */
     private void evaluateGeneratedContent(LayoutBox pseudo, Counters counters) {
-        String content = pseudo.style.get(CssPropertyIndex.CONTENT);
+        String content = pseudo.style.typed().rare.content;
         if (content == null || pseudo.elementChildren.isEmpty()) return;
         LayoutBox textBox = pseudo.elementChildren.getFirst();
         if (textBox.node.nodeType != NodeType.TEXT) return;
@@ -800,9 +800,9 @@ public final class BoxTreeBuilder {
             ComputedStyle style = box.style;
             HtmlNode node = box.node;
             // 3 つとも指定が無く、リスト項目でもなければ、何も起きない（大半の箱。毎回マップを作らない）
-            if (noCounterDeclaration(style.get(CssPropertyIndex.COUNTER_RESET))
-                    && noCounterDeclaration(style.get(CssPropertyIndex.COUNTER_INCREMENT))
-                    && noCounterDeclaration(style.get(CssPropertyIndex.COUNTER_SET))) {
+            if (noCounterDeclaration(style.typed().rare.counterReset)
+                    && noCounterDeclaration(style.typed().rare.counterIncrement)
+                    && noCounterDeclaration(style.typed().rare.counterSet)) {
                 if (!box.display.listItem()) return;
                 // リスト項目だけ: 宣言が無いときの動きそのまま（list-item を 1 つ増やし、li の value 属性なら設定する）。マップを作らない
                 int i = innermost(LIST_ITEM);
@@ -814,7 +814,7 @@ public final class BoxTreeBuilder {
                 return;
             }
 
-            Map<String, Integer> resets = parseCounterList(style.get(CssPropertyIndex.COUNTER_RESET), 0);
+            Map<String, Integer> resets = parseCounterList(style.typed().rare.counterReset, 0);
             // <ol start> は list-item の初期値を変える表示上のヒント（HTML の Rendering 節）
             if (resets.containsKey(LIST_ITEM) && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isOrderedList(node.tag) && node.attrs.containsKey("start")) {
                 Integer start = parseInt(node.attrs.get("start"));
@@ -831,14 +831,14 @@ public final class BoxTreeBuilder {
                 if (reversed && reset.getKey().equals(LIST_ITEM)) reversedInstances.add(names.size() - 1);
             }
 
-            Map<String, Integer> increments = parseCounterList(style.get(CssPropertyIndex.COUNTER_INCREMENT), 1);
+            Map<String, Integer> increments = parseCounterList(style.typed().rare.counterIncrement, 1);
             if (box.display.listItem() && !increments.containsKey(LIST_ITEM)) {
                 int i = innermost(LIST_ITEM);
                 increments.put(LIST_ITEM, i >= 0 && reversedInstances.contains(i) ? -1 : 1);
             }
             increments.forEach(this::increment);
 
-            Map<String, Integer> sets = parseCounterList(style.get(CssPropertyIndex.COUNTER_SET), 0);
+            Map<String, Integer> sets = parseCounterList(style.typed().rare.counterSet, 0);
             if (box.display.listItem() && !sets.containsKey(LIST_ITEM) && node.attrs.containsKey("value")) {
                 Integer value = parseInt(node.attrs.get("value"));
                 if (value != null) sets.put(LIST_ITEM, value);

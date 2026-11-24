@@ -239,8 +239,8 @@ final class LineBuilder {
         if (flow.innerW > 0) return true;
         // width: 0 を明示した箱は幅 0 で折り返す（全ての折り返し位置で切れる）。測定の途中の仮の幅 0 は制約にしない
         if (flow.innerW == 0 && flow.box.sizingMode == SizingMode.DEFINITE) {
-            String w = flow.box.axisStyle().get(CssPropertyIndex.WIDTH);
-            return w != null && !"auto".equalsIgnoreCase(w.trim()) && !LayoutMetrics.isIntrinsicSizeKeyword(w);
+            long w = flow.box.axisStyle().typed().box.width;
+            return com.nishiyu.enderframelib.core.css.CssLength.isDeclared(w) && !com.nishiyu.enderframelib.core.css.CssLength.isIntrinsicSize(w, flow.box.axisStyle().typed().box.exprs);
         }
         return false;
     }
@@ -627,14 +627,14 @@ final class LineBuilder {
      */
     float[] tabLayout(String segment, float startX, LayoutBox runBox, FontFace face, FontStyle font) {
         float space = face.advance(" ", font);
-        String ts = runBox.style.get(CssPropertyIndex.TAB_SIZE);
+        String ts = runBox.style.typed().inherited.tabSize;
         float tabW = 8 * space;
         if (ts != null && !ts.isBlank()) {
             String t = ts.trim();
             try {
                 tabW = Float.parseFloat(t) * space;
             } catch (NumberFormatException e) {
-                tabW = runBox.style.length(CssPropertyIndex.TAB_SIZE, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+                tabW = com.nishiyu.enderframelib.core.css.LengthResolver.compile(ts).resolve(0, ctx.viewport().rootW(), ctx.viewport().rootH(), runBox.style.fontSizePx(), runBox.style.rootFontSizePx());
             }
         }
         int n = segment.length();
@@ -707,7 +707,7 @@ final class LineBuilder {
         BlockLayoutEngine.LineItem last = current.getLast();
         String t = last.text();
         if (t == null || t.isEmpty() || t.charAt(t.length() - 1) != ' ' || last.box() == null) return false;
-        return WhiteSpace.of(last.box().style.get(CssPropertyIndex.WHITE_SPACE)).wraps();
+        return WhiteSpace.of(last.box().style.typed().inherited.whiteSpace).wraps();
     }
 
     static boolean hasWideChars(String s) {
@@ -760,7 +760,7 @@ final class LineBuilder {
         // 折り返せるかは不可分なインラインを含む側（親）の white-space で決まる。
         // 以前は見ておらず、nowrap の行でもインラインブロックが折り返していた
         ComputedStyle around = run.inlineParents().isEmpty() ? flow.box.style : run.inlineParents().getLast().style;
-        if (WhiteSpace.of(around.get(CssPropertyIndex.WHITE_SPACE)).wraps() && needsWrap(lineX + boxOuterW + closing)) {
+        if (WhiteSpace.of(around.typed().inherited.whiteSpace).wraps() && needsWrap(lineX + boxOuterW + closing)) {
             newLine(0, 0, true);
             ensureLine();
         }
@@ -885,7 +885,7 @@ final class LineBuilder {
             case "super" -> parentFont / 3 + 1;
             case "text-top" -> face.ascent(font) - above;
             case "text-bottom" -> (height - above) - face.descent(font);
-            default -> el.style.length(CssPropertyIndex.VERTICAL_ALIGN, el.lineHeightPx,
+            default -> el.style.typed().px(el.style.typed().box.verticalAlign, el.style.typed().box.exprs, el.lineHeightPx,
                     ctx.viewport().rootW(), ctx.viewport().rootH());
         };
     }
