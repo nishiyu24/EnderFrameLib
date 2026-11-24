@@ -9,15 +9,16 @@ import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 
 /**
  * 箱の縁（余白・枠線・パディング）と寸法の解決（Engine v3 M2a）。{@link Style} の型付きフィールドだけを読む。
- * 計算の途中の値で、断片には残さない（呼び出しごとの局所の値）。
+ * 計算の途中の値で、断片には残さない（呼び出しごとの局所の値）。M2b の一時アダプタ（{@code FragmentProjection}）も
+ * 描画用の縁を求めるのに使う。
  */
-final class BoxGeometry {
-    final float mT, mR, mB, mL;
+public final class BoxGeometry {
+    public final float mT, mR, mB, mL;
     final boolean autoML, autoMR;
-    final float pT, pR, pB, pL, bT, bR, bB, bL;
+    public final float pT, pR, pB, pL, bT, bR, bB, bL;
 
     /** {@code cbw} は包含ブロックの幅（余白・パディングの % の基準）。 */
-    BoxGeometry(Style st, float cbw, LayoutSession s) {
+    public BoxGeometry(Style st, float cbw, LayoutSession s) {
         BoxGeomStyle b = st.box;
         mT = len(st, b.marginTop, cbw, s);
         mR = len(st, b.marginRight, cbw, s);

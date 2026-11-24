@@ -51,7 +51,9 @@ final class BlockFlow implements FormattingEngine {
         w = LayoutUnit.snap(w);
         ml = LayoutUnit.snap(ml);
         float cw = Math.max(0, w - g.hdec());
-        boolean root = space.formattingRoot() || node.node.parent == null || BoxGeometry.establishesBfc(st);
+        // 文書の根とルート要素（html）は独立した整形コンテキスト: 子と余白を相殺しない
+        boolean root = space.formattingRoot() || node.node.parent == null || node.node.parent.parent == null
+                || BoxGeometry.establishesBfc(st);
         float fixedH = !Float.isNaN(space.fixedHeight) ? space.fixedHeight : g.specifiedHeight(st, space.percentHeightBase, s);
         boolean heightAuto = Float.isNaN(fixedH);
         boolean collapseTop = !root && g.pT == 0 && g.bT == 0;

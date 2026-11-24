@@ -23,7 +23,7 @@ import java.util.List;
  * {@code <br>}・インライン要素の左右の縁（余白＋枠線＋パディング）・{@code line-height}・{@code text-align}（左・中央・右）。
  * 縦の揃え（{@code vertical-align}）・双方向・{@code inline-block} の原子化・ブロックを含むインラインは M2b。</p>
  */
-final class InlineFlow {
+public final class InlineFlow {
     private static final float EPS = TextShaper.WRAP_TOLERANCE;
 
     private InlineFlow() { }
@@ -46,7 +46,7 @@ final class InlineFlow {
     }
 
     /** 1 行の高さ（{@code line-height}。{@code normal} は書体の推奨値）。 */
-    static float lineHeight(Style st, FontFace face) {
+    public static float lineHeight(Style st, FontFace face) {
         StyleFacts f = st.facts;
         FontStyle fs = f.fontStyle;
         return switch (f.lineHeightKind) {

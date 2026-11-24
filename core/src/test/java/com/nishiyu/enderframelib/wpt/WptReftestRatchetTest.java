@@ -32,18 +32,18 @@ import org.junit.jupiter.api.Test;
  * 描画は固定フォント（{@link FontResolver#FALLBACK}）・800×600・等倍・透明な地。許容差は {@code <meta name=fuzzy>} に従う（無ければ完全一致）。
  */
 class WptReftestRatchetTest {
-    private static final Path DIR = Path.of("src/test/resources/wpt/reftests");
+    static final Path DIR = Path.of("src/test/resources/wpt/reftests");
     private static final Path MANIFEST = DIR.resolve("manifest.tsv");
-    private static final Path PASSING = DIR.resolve("reftest-passing.txt");
+    static final Path PASSING = DIR.resolve("reftest-passing.txt");
     /** レイアウトが終わらない（エンジンの不具合）組。走らせない。直したら一覧から外す。 */
-    private static final Path HANGS = DIR.resolve("reftest-hangs.txt");
-    private static final int W = 800, H = 600;
+    static final Path HANGS = DIR.resolve("reftest-hangs.txt");
+    static final int W = 800, H = 600;
     /**
      * レイアウトの書体。描画はシステム書体の字形で描くので、測定もシステム書体でないと、文字列の区切り方が違うテストと参照
      * （{@code un<span></span>bro} と {@code unbro}）で字の位置が食い違う（{@link FontResolver#FALLBACK} は概算の幅しか返さない）。
      */
-    private static final FontResolver FONTS = com.nishiyu.enderframelib.core.text.font.SystemFonts.system();
-    private static final long T0 = 10_000L;
+    static final FontResolver FONTS = com.nishiyu.enderframelib.core.text.font.SystemFonts.system();
+    static final long T0 = 10_000L;
     private static final Pattern FUZZY = Pattern.compile("<meta[^>]+name=[\"']?fuzzy[\"']?[^>]*content=[\"']([^\"']*)[\"']", Pattern.CASE_INSENSITIVE);
     private static final Pattern MAXDIFF = Pattern.compile("maxDifference=(\\d+)(?:-(\\d+))?");
     private static final Pattern TOTALPX = Pattern.compile("totalPixels=(\\d+)(?:-(\\d+))?");
@@ -52,7 +52,7 @@ class WptReftestRatchetTest {
     enum Verdict { PASS, MISMATCH, BLANK, ERROR, HANG }
 
     /** 文書を読む。{@code .xht} / {@code .xhtml} はブラウザと同じく XHTML として扱う（{@link com.nishiyu.enderframelib.core.dom.parser.HtmlParser#xhtmlToHtml}）。 */
-    private static String read(String rel) throws IOException {
+    static String read(String rel) throws IOException {
         String s = Files.readString(DIR.resolve(rel), StandardCharsets.UTF_8);
         return rel.endsWith(".xht") || rel.endsWith(".xhtml") ? com.nishiyu.enderframelib.core.dom.parser.HtmlParser.xhtmlToHtml(s) : s;
     }
@@ -131,7 +131,7 @@ class WptReftestRatchetTest {
         }
     }
 
-    private static Map<String, String> manifest() throws IOException {
+    static Map<String, String> manifest() throws IOException {
         Map<String, String> m = new LinkedHashMap<>();
         for (String line : Files.readAllLines(MANIFEST, StandardCharsets.UTF_8)) {
             if (line.isBlank() || line.startsWith("#")) continue;
@@ -142,14 +142,14 @@ class WptReftestRatchetTest {
         return m;
     }
 
-    private static TreeSet<String> readList(Path file) throws IOException {
+    static TreeSet<String> readList(Path file) throws IOException {
         TreeSet<String> out = new TreeSet<>();
         if (!Files.exists(file)) return out;
         for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) if (!line.isBlank() && !line.startsWith("#")) out.add(line.trim());
         return out;
     }
 
-    private static String spec(String id) {
+    static String spec(String id) {
         return id.split("/")[1];
     }
 

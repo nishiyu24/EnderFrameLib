@@ -428,6 +428,20 @@ M2a の縦割りスパイク合格（**2026-11-25 Go。§3.3 C**）を前提と�
   - 8,000 行リスト 1 件挿入：`7.89 ms → ≤ 1.0 ms`（500 行は `≤ 0.15 ms`）。
   - `FrameOracle`（最初から作った結果との全比較）100% 一致、WPT 160/260 以上維持。
 
+#### 3.4.1 M2b の分割と進捗（2026-11-25 着手時の棚卸しで分割）
+
+着手時の実測規模: `LayoutBox` を参照する本体は **77 ファイル・約 3.2 万行**（`core/layout` 39・`core/paint` 17・`common` 13・`core/kernel` 4・`core/css` 2・その他 2）、テスト **100 ファイル**、MOD 3 ファイル。描画（`core/paint`）が `LayoutBox` から読むのは主に幾何（`x()/y()/w()/h()`・枠線・パディング・`scrollWidth/Height`）・`node`・`style`・`inlineFragments`・`children`/`parent`・`display()`・位置指定と sticky の判定・`firstLineStyle`/`placeholderStyle`・描画の印（`ownPaintStamp`）。M1 と同じく、一度に旧経路の削除まで進めると全ゲートが長く赤になるので、**同一フェーズ（M2b）内の段**に分け、段ごとに「テスト緑」を保つ。旧型の削除は最後の段に集約する（運用ルール 7 の「同一フェーズ内で削除」はそこで満たす）。
+
+| 段 | 内容 | 完了条件 | 状態 |
+| :--- | :--- | :--- | :--- |
+| **M2b-0** | **一時アダプタと新経路の検証の足場**: 断片木 → 描画用の `LayoutBox` 木への射影（`core/layout/FragmentProjection`。幾何・縁・行の文字片〔語ごと〕を写すだけで、旧エンジンの測定は呼ばない）と、WPT を新経路で回す `WptV3BaselineTest`（合格一覧 `reftest-passing-v3.txt` をラチェットで固定。`-Dwpt.v3.update=true` で締める）。ビュー単位の経路の選択は、ハーネスが新経路を直接組めば足りたので M2b-6 へ回した | 旧経路の WPT ≥ 160/260 不変・新経路の合格数を記録・射影の往復（M2a の文書で旧経路と画素一致） | **完了 2026-11-25**: 新経路 **65/260**（flexbox 29・grid 23・text 13。旧経路 160）、旧経路だけ合格 118・新経路だけ合格 11。`ProjectionPixelParityTest`（ブロック・折り返し・flex の 3 文書で旧経路と**画素一致**）。射影で見つけた新経路の不具合 1 件（ルート要素〔`html`〕を独立した整形コンテキストにしておらず、子の余白と相殺していた）を直した。最初の計数 72 は文字片が描かれず、テストと参照が同じく文字を欠いて一致した水増しだった（`BLANK` 29 → 0） |
+| **M2b-1** | Block の拡張（float と `ExclusionSpace`〔非侵入は `EMPTY` 共有〕・clearance・positioned〔absolute/fixed/sticky の静的位置〕・multicol）＋ Inline の完全版（`inline-block` の原子・`vertical-align`・双方向・ブロックを含むインライン・`::before/::after`・`::marker`・カウンタ・引用符）＋ スクロールコンテナの `scrollW/H` | 新経路で Block/Inline 系の WPT サブセットが旧経路と同数以上・`IncrementalOracleTest` に float/positioned の変異を足して 100% 一致 | 未着手 |
+| **M2b-2** | Flex の完全版（`*-reverse`・column の折り返し・`align-content`・主軸の auto 余白・ベースライン揃え） | Flex 系 WPT 同数以上・`NestedFlexTest` 緑 | 未着手 |
+| **M2b-3** | Grid（`GridLayoutEngine` 1,341 行の移植。トラックの解決を `ConstraintSpace` の入力に明示） | Grid 系 WPT 同数以上 | 未着手 |
+| **M2b-4** | Table（列幅・行の高さ・`border-collapse` を親から `ConstraintSpace` で渡す。箱へ直接書かない） | Table 系 WPT 同数以上 | 未着手 |
+| **M2b-5** | 縦書き（`VerticalWritingEngine`）・`anchor()` 位置指定・コンテナクエリ | 全 WPT で新経路 ≥ 160/260 | 未着手 |
+| **M2b-6** | 新経路を既定にし（ビュー単位の経路の選択を経て）、旧経路（`LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads`・`PartialBuild`・レイアウト系 `Shortcut`・グローバルエポック・一時アダプタ）を一括削除。描画は M3b まで射影の代わりに断片木を直接読む薄い層へ | 上の完了ゲート（削除 ≥ 4,500 行・エポック 0・一時アダプタ 0・KPI 更新） | 未着手 |
+
 ---
 
 ### 3.5a Phase M3a: `CoreGpuSurface` 品質検証と MOD レガシーレンダラ（9,369 行）先行撤去

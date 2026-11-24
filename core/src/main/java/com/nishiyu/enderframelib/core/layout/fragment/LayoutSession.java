@@ -33,7 +33,7 @@ public final class LayoutSession {
     }
 
     /** {@code font-family} の書体（ファミリ名ごとに 1 度だけ引く）。 */
-    FontFace face(Style st) {
+    public FontFace face(Style st) {
         String family = st.inherited.fontFamily;
         String key = family != null ? family : "";
         FontFace f = faces.get(key);
