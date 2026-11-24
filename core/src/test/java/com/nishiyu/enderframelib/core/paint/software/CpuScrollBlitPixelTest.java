@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * CPU バックエンドにおけるスクロール Blit 再利用（{@link CpuRaster#scrollBlit}）および
- * 子要素増減（{@code CHILD_PATCH}）時の差分描画ピクセル等価性・スキップ効率検証。
+ * 子要素増減時の差分描画ピクセル等価性・スキップ効率検証。
  */
 class CpuScrollBlitPixelTest {
     private static final int W = 400, H = 320;

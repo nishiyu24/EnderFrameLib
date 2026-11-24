@@ -30,9 +30,6 @@ public enum Shortcut {
     /** スクロールだけの更新で箱の位置の決め直しを後回しにするか（切り分け用。見た目は変わらない）。 （以前の {@code UiView.deferScrollLayout}） */
     DEFER_SCROLL_LAYOUT(true),
 
-    /** false なら子の増減は常に全体の再レイアウトにする（切り分け用。結果は同じでなければならない）。 （以前の {@code UiView.childPatchEnabled}） */
-    CHILD_PATCH(EngineFlags.CHILD_PATCH),
-
     /** 切り分け用: false なら算出スタイルを共有しない（要素ごとに別のインスタンス）。 （以前の {@code ComputedStyle.SHARE_ENABLED}） */
     STYLE_SHARE(EngineFlags.STYLE_SHARE),
 

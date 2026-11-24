@@ -109,6 +109,7 @@ final class MeasureMemo {
     }
 
     boolean isValid() { return flag(F_VALID); }
+    boolean neverMeasured() { return measuredStyle == null; }
     boolean isLayoutChanged() { return flag(F_LAYOUT_CHANGED); }
     boolean isSubtreeChanged() { return flag(F_SUBTREE_CHANGED); }
     boolean hasTable() { return flag(F_HAS_TABLE); }

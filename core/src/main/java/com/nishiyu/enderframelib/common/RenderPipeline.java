@@ -452,40 +452,6 @@ public class RenderPipeline {
     }
 
     /**
-     * 局所パッチ（子の増減）: {@code node} の箱の部分木を、親の箱の下に単独で組む。親・祖先・兄弟には触れない。
-     * 箱は要素ツリーの箱（{@link LayoutBox#elementChildren} に入れる単位）で、{@link BoxTreeBuilder} の組み立ては呼び出し側が行う。
-     * スタイルは親の算出スタイルを継承元に、全体の組み立て（{@link #layoutDocument}）と同じ規則で解く。
-     */
-    public static LayoutBox buildDetachedBox(HtmlNode node, LayoutBox parentBox, StyleSheet sheet, Map<String, String> env,
-                                             int rootW, int rootH, InteractionState interactionState) {
-        ArrayList<LayoutBox> chain = new ArrayList<>();
-        for (LayoutBox b = parentBox; b != null; b = b.parent) chain.add(b);
-        StyleScope scope = StyleScope.initial(rootW, rootH);
-        for (int i = chain.size() - 1; i >= 0; i--) {
-            LayoutBox b = chain.get(i);
-            if (!b.isAnonymous && b.node != null) scope = scope.enter(b.node, b.style);
-        }
-        ContainerBox parentContainer = interactionState != null && parentBox != null && parentBox.node != null
-                ? interactionState.nearestSizeContainer(parentBox.node)
-                : ContainerBox.NONE_SIZE;
-        boolean parentMoving = false;
-        if (parentBox != null) {
-            if (parentBox.movingStamped) {
-                parentMoving = parentBox.selfOrAncestorMoving;
-            } else {
-                for (int i = chain.size() - 1; i >= 0; i--) {
-                    if (PaintOrder.hasMovingProps(chain.get(i).style)) {
-                        parentMoving = true;
-                        break;
-                    }
-                }
-            }
-        }
-        return RenderTreeBuilder.buildLayoutTree(node, parentBox.style.asMap(), sheet, env, FORCE_SUBTREE, parentBox.style.fontSizePx(), scope,
-                interactionState, StyleResolver.hasSiblingStateRules(sheet), null, null, false, null, parentContainer, parentMoving);
-    }
-
-    /**
      * 測った寸法はそのままに、位置だけを決め直す（measure を飛ばして layout だけ走らせる）。
      *
      * <p>スクロール量や配置済みの箱の {@code top} / {@code left} は寸法に響かず、{@link LayoutBox#layout} の中でしか読まれない。
@@ -785,7 +751,8 @@ public class RenderPipeline {
         boolean tableOk = flags != null && container == ContainerBox.NONE_SIZE
                 // FORCE_SELF は「親の算出スタイルが変わった」だけ（兄弟・祖先の変化は FORCE_SUBTREE）。親の値は表の鍵に入っている
                 && (force == FORCE_NONE || force == FORCE_SELF) && sheet != null
-                && !sheet.usesHasSelectors(); // :has() は子孫・後続の兄弟の変化で祖先が汚れる（自身の状態だけでは決まらない）
+                && !sheet.usesHasSelectors() // :has() は子孫・後続の兄弟の変化で祖先が汚れる（自身の状態だけでは決まらない）
+                && !sheet.usesPositionalSelectors(); // 兄弟の並び・位置を読む規則は、要素自身の鍵〔属性・子の数・状態〕に現れない変化で結果が変わる
         if (!tableOk) {
             if (flags != null && flags.stateMemo != null) flags.stateMemo.invalidate();
             return computeEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope, interactionState,
@@ -933,7 +900,7 @@ public class RenderPipeline {
         return animator.sample(node, now);
     }
 
-    private static ContainerBox containerFor(HtmlNode node, InteractionState interactionState) {
+    static ContainerBox containerFor(HtmlNode node, InteractionState interactionState) {
         return interactionState != null && node != null && node.parent != null
                 ? interactionState.nearestSizeContainer(node.parent)
                 : ContainerBox.NONE_SIZE;

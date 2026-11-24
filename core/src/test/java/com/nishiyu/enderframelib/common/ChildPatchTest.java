@@ -5,7 +5,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -13,18 +12,15 @@ import java.util.List;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * 子の増減の局所パッチ（{@link UiView.InvalidationLevel#CHILD_PATCH}）が、毎回全体を組み直す場合と同じ表示リストになること。
- * パッチが退くべき形（兄弟の規則・番号つきマーカー・文字の子）も同じ文書に混ぜ、退いたときも結果が同じであることを確かめる。
+ * 子の増減のあとの結果が、独立の基準と一致すること（K5b L2: 局所パッチは撤去済みで、子の増減は変更台帳 {@code CHILDREN} から触れられた親だけを
+ * 組み直す）。基準は 2 つ: ①記憶の無い {@code DisplayListBuilder} が今の箱の木から作る表示リスト〔描画の記憶の古さを見つける〕②{@link FrameOracle}
+ * 〔DOM を複製して最初から作った箱の木との比較〕。差分でない基準を全体のフラグの切り替えで作らない〔並列に走る他のテストを乱す〕。
+ * 兄弟の規則・番号つきマーカー・文字の子も同じ文書に混ぜる。
  */
 class ChildPatchTest {
-
-    @AfterEach
-    void restore() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
-    }
 
     private static final String CSS = """
             <style>
@@ -148,10 +144,15 @@ class ChildPatchTest {
             },
     };
 
-    private static List<DisplayItem> flush(StandaloneView v, boolean patch) {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(patch);
+    private static List<DisplayItem> flush(StandaloneView v) {
         v.ui().flushInvalidation();
         return v.ui().renderCache();
+    }
+
+    /** 記憶の無いビルダーが、今の箱の木から作る表示リスト。 */
+    private static List<DisplayItem> freshList(StandaloneView v) {
+        UiView ui = v.ui();
+        return new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(420, 520, ui.document().sheet.keyframes, ui.scrollState()).render(ui.layoutRoot(), false);
     }
 
     private static void sameItems(List<DisplayItem> expected, List<DisplayItem> actual, String step) {
@@ -181,42 +182,36 @@ class ChildPatchTest {
         }
     }
 
-    private void run(String sep, boolean structural, int seeds, boolean expectHits) {
-        long hitsBefore = UiView.CHILD_PATCH_HITS.get();
-        java.util.Map<String, Integer> reasons = new java.util.TreeMap<>();
+    private void run(String sep, boolean structural, int seeds) {
         for (long seed = 1; seed <= seeds; seed++) {
-            StandaloneView off = new StandaloneView(html(sep, structural), 420, 520, FontResolver.FALLBACK);
-            StandaloneView on = new StandaloneView(html(sep, structural), 420, 520, FontResolver.FALLBACK);
-            sameItems(flush(off, false), flush(on, true), "seed " + seed + " 初回");
-            Random rOff = new Random(seed), rOn = new Random(seed);
-            for (int step = 0; step < 50; step++) {
-                int m = new Random(seed * 1000 + step).nextInt(MUTATIONS.length);
-                com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true); // 変更の通知は有効なまま、パッチする側だけを flush で切り替える
-                MUTATIONS[m].apply(off, rOff, step);
-                MUTATIONS[m].apply(on, rOn, step);
-                List<DisplayItem> exp = flush(off, false);
-                List<DisplayItem> act = flush(on, true);
-                sameItems(exp, act, "seed " + seed + " 手順 " + step + " (変更 " + m + ")");
-                reasons.merge(UiView.lastChildPatchRejection, 1, Integer::sum);
+            try (StandaloneView v = new StandaloneView(html(sep, structural), 420, 520, FontResolver.FALLBACK)) {
+                sameItems(freshList(v), flush(v), "seed " + seed + " 初回");
+                Random r = new Random(seed);
+                for (int step = 0; step < 50; step++) {
+                    int m = new Random(seed * 1000 + step).nextInt(MUTATIONS.length);
+                    MUTATIONS[m].apply(v, r, step);
+                    List<DisplayItem> act = flush(v);
+                    String where = "seed " + seed + " 手順 " + step + " (変更 " + m + ")";
+                    sameItems(freshList(v), act, where);
+                    assertNull(FrameOracle.firstDifference(v), where + ": 箱の木");
+                }
             }
         }
-        if (expectHits) assertTrue(UiView.CHILD_PATCH_HITS.get() > hitsBefore, "局所パッチが実際に使われている: " + reasons);
-        else assertEquals(hitsBefore, UiView.CHILD_PATCH_HITS.get(), "兄弟の規則があれば局所パッチは退く: " + reasons);
     }
 
     @Test
     void randomInsertAndRemoveMatchesFullRelayout() {
-        run("", false, 10, true);
+        run("", false, 10);
     }
 
     @Test
     void randomInsertAndRemoveWithWhitespaceBetweenChildrenMatchesFullRelayout() {
-        run("\n  ", false, 10, true);
+        run("\n  ", false, 10);
     }
 
     @Test
     void siblingRulesMakeThePatchStepBackAndStillMatch() {
-        run("", true, 4, false);
+        run("", true, 4);
     }
 
 }

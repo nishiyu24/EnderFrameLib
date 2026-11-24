@@ -56,6 +56,8 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 public final class BoxTreeBuilder {
 
     private final Counters counters = new Counters();
+    /** 組み直す箱の判定。null なら全部（{@link #build(LayoutBox, CounterStyles, java.util.function.Predicate)}）。 */
+    private java.util.function.Predicate<LayoutBox> rebuild;
     private final CounterStyles counterStyles;
     /** 匿名ボックスの id の通し番号（持ち主ごと）。再レイアウトしても同じ id になるよう決定的に振る。 */
     private final Map<LayoutBox, Integer> anonymousCounts = new IdentityHashMap<>();
@@ -79,114 +81,20 @@ public final class BoxTreeBuilder {
 
     /** {@code root} 以下のボックスツリーを要素ツリーから作り直す。{@code counterStyles} は文書の {@code @counter-style}。 */
     public static void build(LayoutBox root, CounterStyles counterStyles) {
+        build(root, counterStyles, null);
+    }
+
+    /**
+     * {@code rebuild} が false を返す箱の部分木は組み直さない〔前回の組み立てのまま。null なら全部〕。部分構築〔変更台帳に触れられた
+     * 箱だけを組む。{@code RenderTreeBuilder} が辿らなかった部分木は前回のまま正しい〕で使う。
+     */
+    public static void build(LayoutBox root, CounterStyles counterStyles, java.util.function.Predicate<LayoutBox> rebuild) {
         BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
+        builder.rebuild = rebuild;
+        if (rebuild != null && !rebuild.test(root)) return;
         if (root.subtreeHasGenerated) builder.collectReusableGenerated(root);
         builder.counters.apply(root);
         builder.buildBox(root, WritingModes.HORIZONTAL);
-    }
-
-    // ==========================================
-    // 子の増減の局所パッチ（箱の木全体を組み直さずに、1 つの親の子の並びだけを直す）
-    // ==========================================
-
-    /** 局所パッチの対象にしてよい {@code list-style-type}（番号を使わない = 兄弟の数に依らない）。 */
-    private static boolean unnumberedListStyle(LayoutBox box) {
-        String type = box.style.getOrDefault(CssPropertyIndex.LIST_STYLE_TYPE, "disc").trim().toLowerCase(Locale.ROOT);
-        return type.equals("none") || type.equals("disc") || type.equals("circle") || type.equals("square");
-    }
-
-    /**
-     * 親の子の並びを局所パッチで直してよいか（親の側の条件）。組み立て済みの {@link LayoutBox#children} が要素ツリーの
-     * ブロックレベルの子の並びそのもの（匿名ボックス・疑似要素・マーカーが挟まらない）で、{@link #fixup} が何も変えない形だけを通す。
-     */
-    public static boolean canPatchChildren(LayoutBox parent) {
-        LayoutBox.Display d = parent.display;
-        if (d == null || d.isNone() || d.isContents() || d.isInlineLevel() || d.listItem()) return false;
-        if (d.inner() != Inner.FLOW && d.inner() != Inner.FLOW_ROOT) return false;
-        if (parent.isAnonymous || parent.node == null || parent.node.isPseudoNode || LayoutBox.isTableBox(parent)) return false;
-        if (parent.isVerticalRoot || parent.isHorizontalReturnRoot || parent.isVerticalWrapper
-                || WritingModes.isVertical(parent.style)) return false;
-        if (MulticolLayout.isMulticol(parent) || parent.style.skipsContents()
-                || parent.contentAutoSkipped || parent.childrenDeferred || parent.isVirtualizedFlow()) return false;
-        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.blocksInlineRunFolding(parent.node.tag)) {
-            return false;
-        }
-        if (!WhiteSpace.of(parent.style.get(CssPropertyIndex.WHITE_SPACE)).collapses()) return false;
-        boolean anyBlock = false;
-        for (LayoutBox c : parent.children) {
-            if (c.isAnonymous || c.node == null || c.node.isPseudoNode || c.isOutsideMarker || c.isRenderedLegend) return false;
-            if (c.display.isContents() || c.display.isInlineLevel()) return false;
-            if (c.display.isTableInternal()) return false;
-            anyBlock = true;
-        }
-        return anyBlock;
-    }
-
-    /**
-     * 新しい子の箱（要素ツリーに加え済み）が、局所パッチで差し込める形か（子の側の条件）。
-     * ブロックレベルで、番号を使うマーカーを持たず、表の内部・{@code display: contents} ・{@code display: none}・fieldset の legend でない。
-     */
-    /**
-     * 通常の流れの外に出る・描画順を変える子か（float・絶対/固定/相対/sticky の位置指定）。このような子の増減は、兄弟の行の折り返し
-     * （float を避ける）や描画の層（位置指定の箱は流れの後ろに描く）に響くので、子だけを差し替える局所パッチでは扱えない。
-     */
-    public static boolean affectsSiblingsOrPaintOrder(LayoutBox box) {
-        if (box.isAbsolute || box.isFixed || box.isRelative || box.isSticky) return true;
-        return box.style != null && box.node != null && box.node.nodeType != NodeType.TEXT
-                && box.style.keywordOf(CssPropertyIndex.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE;
-    }
-
-    public static boolean canInsertBuiltChild(LayoutBox parent, LayoutBox added) {
-        LayoutBox.Display d = added.display;
-        if (d == null || d.isNone() || d.isContents() || d.isInlineLevel() || d.isTableInternal()) return false;
-        Inner inner = d.inner();
-        if (inner != Inner.FLOW && inner != Inner.FLOW_ROOT && inner != Inner.FLEX && inner != Inner.GRID) return false;
-        if (added.isAnonymous || added.node.isPseudoNode || added.isOutsideMarker) return false;
-        if ("legend".equals(added.node.tag)) return false;
-        if (d.listItem() && !unnumberedListStyle(added)) return false;
-        if (affectsSiblingsOrPaintOrder(added)) return false;
-        return true;
-    }
-
-    /**
-     * 組み立て済みの子の並びに、新しい子の箱を差し込む。{@code added} の部分木（マーカー・子の匿名ボックス）はここで組む。
-     *
-     * @param after {@code parent.children} の中で直前になる箱。先頭に入れるなら null
-     */
-    public static void insertBuiltChild(LayoutBox parent, LayoutBox after, LayoutBox added, CounterStyles counterStyles) {
-        BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
-        builder.counters.apply(added);
-        builder.buildBox(added, WritingModes.flowOf(parent.style));
-        int index = after == null ? 0 : indexOfBox(parent.children, after) + 1;
-        parent.children.add(index, added);
-        added.parent = parent;
-        parent.touchSubtree(); // 子の増減は、祖先の描画の記憶へ伝える
-        parent.updateChildFlagsOnAdd(added);
-        if (added.isAnonymous || added.subtreeHasGenerated) {
-            for (LayoutBox a = parent.parent; a != null && !a.subtreeHasGenerated; a = a.parent) {
-                a.subtreeHasGenerated = true;
-            }
-        }
-        LayoutBox.invalidateFloats(parent);
-    }
-
-    /** 組み立て済みの子の並びから、箱を外す。並びに無ければ何もしない。 */
-    public static void removeBuiltChild(LayoutBox parent, LayoutBox removed) {
-        int index = indexOfBox(parent.children, removed);
-        if (index >= 0) {
-            parent.children.remove(index);
-            parent.touchSubtree();
-            if (removed.isOutsideMarker || removed.isAbsolute) {
-                parent.recomputeChildFlags();
-            }
-        }
-        LayoutBox.invalidateFloats(parent);
-    }
-
-    /** 同一性で探した位置。無ければ -1。 */
-    public static int indexOfBox(List<LayoutBox> boxes, LayoutBox box) {
-        for (int i = 0; i < boxes.size(); i++) if (boxes.get(i) == box) return i;
-        return -1;
     }
 
     /** 前回の箱の木（{@link LayoutBox#children}）にある匿名ボックスとマーカーを集める。新しく作った木なら何も無い。 */
@@ -227,9 +135,6 @@ public final class BoxTreeBuilder {
         if (marker != null) items.add(marker);
         collectItems(box, items, childFlow);
         LayoutBox legend = takeRenderedLegend(box, items);
-        box.clearChildren();
-        LayoutBox.bumpShapeEpoch();
-        if (legend != null) box.addChild(legend);
         List<LayoutBox> kids = fixup(box, items);
         if (childFlow != WritingModes.HORIZONTAL) {
             byte bf = (byte) childFlow;
@@ -243,7 +148,13 @@ public final class BoxTreeBuilder {
         } else if (horizontalReturnRoot) {
             kids = wrapOrthogonalContent(box, kids, activeFlow, false);
         }
-        for (LayoutBox child : kids) box.addChild(child);
+        if (legend != null) {
+            List<LayoutBox> all = new ArrayList<>(kids.size() + 1);
+            all.add(legend);
+            all.addAll(kids);
+            kids = all;
+        }
+        box.replaceChildren(kids);
     }
 
     private static void markGeneratedAxisFlow(LayoutBox box, byte flow) {
@@ -355,7 +266,7 @@ public final class BoxTreeBuilder {
             if (child.display.isContents()) {
                 collectItems(child, out, childFlow);
             } else {
-                buildBox(child, childFlow);
+                if (rebuild == null || rebuild.test(child)) buildBox(child, childFlow);
                 out.add(child);
             }
         }

@@ -89,12 +89,9 @@ public class StyleSheet {
             boolean ok = true;
             for (StyleRule r : rules) {
                 if (r.stateMask == 0) continue;
-                if (r.parsedSelector().usesHas()) { ok = false; break; }
-                Selector sel = r.parsedSelector();
-                var compounds = sel.compounds();
-                for (int i = 0; i < compounds.size() - 1 && ok; i++) {
-                    if (compounds.get(i).dependentStateMask() != 0) ok = false;
-                }
+                var compounds = r.parsedSelector().compounds();
+                ok = !r.parsedSelector().usesHas();
+                for (int i = 0; i < compounds.size() - 1 && ok; i++) ok = compounds.get(i).dependentStateMask() == 0;
                 if (!ok) break;
             }
             stateOnSubjectOnly = ok;
@@ -157,18 +154,20 @@ public class StyleSheet {
     public boolean usesHasSelectors() {
         int v = rules.version();
         if (usesHasVersion != v) {
-            boolean found = false;
+            boolean found = false, pos = false;
             for (StyleRule rule : rules) {
-                if (rule.parsedSelector().usesHas()) {
-                    found = true;
-                    break;
-                }
+                found |= rule.parsedSelector().usesHas();
+                pos |= rule.parsedSelector().readsSiblingPosition();
             }
             usesHas = found;
+            positional = pos;
             usesHasVersion = v;
         }
         return usesHas;
     }
+
+    private boolean positional; // 兄弟の並び・位置〔+ ~ :nth-* :empty〕を読む規則があるか。あれば要素自身の鍵だけでは算出スタイルを使い回せない
+    public boolean usesPositionalSelectors() { usesHasSelectors(); return positional; }
 
     private boolean siblingState;
     private int siblingStateVersion = -1;

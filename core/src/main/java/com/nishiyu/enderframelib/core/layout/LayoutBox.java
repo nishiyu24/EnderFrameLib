@@ -291,13 +291,28 @@ public class LayoutBox {
         this.needsAdoption = false;
     }
 
-    public void updateChildFlagsOnAdd(LayoutBox child) {
-        if (child.isOutsideMarker) this.hasOutsideMarker = true;
-        if (child.isAbsolute) this.hasAbsoluteChild = true;
-        if (child.isAnonymous || child.subtreeHasGenerated) this.subtreeHasGenerated = true;
-        if (child.subtreeHasContentAuto) markContentAutoSubtree();
+    /** 子の並びを {@code next} へ差し替える。前後の同じ並びは触らず間だけ入れ替える〔毎回 {@link #clearChildren} して足し直さない〕。同じ並びなら何もしない。 */
+    public void replaceChildren(List<LayoutBox> next) {
+        List<LayoutBox> cur = children;
+        int n = next.size(), m = cur.size(), pre = 0, suf = 0;
+        while (pre < n && pre < m && cur.get(pre) == next.get(pre)) pre++;
+        STRUCT_EPOCH.incrementAndGet(); // 並びが同じでも、組み直した箱の構造の版と描画の記憶は従来どおり進める〔子のスタイルが変わり得る〕
+        touchSubtree();
+        if (pre != n || n != m) {
+            while (suf < n - pre && suf < m - pre && cur.get(m - 1 - suf) == next.get(n - 1 - suf)) suf++;
+            if (m - suf > pre) cur.subList(pre, m - suf).clear();
+            for (int i = pre; i < n - suf; i++) cur.add(i, next.get(i));
+        }
+        bumpShapeEpoch();
+        needsAdoption = false;
+        for (int i = 0; i < n; i++) next.get(i).parent = this; // 残した子も、別の親から移ってきた箱は親の指しが古い
+        recomputeChildFlags(); // 並びが同じでも、子自身の位置指定・マーカーの有無は変わり得る
+        boolean generated = false;
+        for (int i = 0; i < n && !generated; i++) generated = cur.get(i).isAnonymous || cur.get(i).subtreeHasGenerated;
+        subtreeHasGenerated = generated;
     }
 
+    public boolean hasGeneratedBelow() { return subtreeHasGenerated; } // 子孫に匿名ボックス・生成した箱があるか
     public void recomputeChildFlags() {
         boolean outside = false;
         boolean abs = false;
@@ -1007,6 +1022,17 @@ public class LayoutBox {
             take(node);
         }
 
+        /** 外さずに引く（部分構築が、辿らない部分木の箱を表に残したまま確かめる）。 */
+        public LayoutBox peek(HtmlNode node) {
+            if (node == null) return null;
+            if (arena != null && node.hasNodeId() && node.arena() == arena) {
+                int id = node.nodeId();
+                LayoutBox b = id < byId.length ? byId[id] : null;
+                return b != null && b.node == node ? b : null;
+            }
+            return unindexed != null ? unindexed.get(node) : null;
+        }
+
         public void releaseAfterBuild(ReusableTable previous) {
             if (previous == null || previous == this || previous.arena != this.arena) return;
             if (previous.byId != null) {
@@ -1036,19 +1062,6 @@ public class LayoutBox {
         ReusableTable collected = ReusableTable.createForBuild(docRoot, null);
         collectReusableBoxes(rootBox, collected);
         return collected;
-    }
-
-    public void registerReusableSubtree(LayoutBox sub) {
-        ReusableTable t = this.reusableTable;
-        if (t != null && sub != null) collectReusableBoxes(sub, t);
-    }
-
-    public void unregisterReusableSubtree(LayoutBox sub) {
-        ReusableTable t = this.reusableTable;
-        if (t == null || sub == null) return;
-        t.remove(sub.node);
-        List<LayoutBox> kids = sub.elementChildren;
-        for (int i = 0, n = kids.size(); i < n; i++) unregisterReusableSubtree(kids.get(i));
     }
 
     public boolean isInTableScope() {
@@ -1085,26 +1098,6 @@ public class LayoutBox {
         return isTableBox(box) && box.display.inner() != Display.Inner.TABLE;
     }
 
-    /**
-     * 前回の箱の木から、DOM の節ごとの箱を集める（差分レイアウトで使い回す候補）。
-     * 表の箱と表だった箱は集める（使い回すときに {@link #resetEngineOutputs} で表のエンジンの書き込みを捨てる）が、その中へは降りない:
-     * 表のエンジンが中の箱（行・セル・キャプション）へ枠線の分担・縦の揃え・行の高さを直接書き込むので、作り直す方が確か。
-     */
-    public static java.util.Map<HtmlNode, LayoutBox> reusableBoxes(LayoutBox root) {
-        java.util.Map<HtmlNode, LayoutBox> out = new java.util.IdentityHashMap<>();
-        if (root != null) collectReusableBoxes(root, out);
-        return out;
-    }
-
-    private static void collectReusableBoxes(LayoutBox box, java.util.Map<HtmlNode, LayoutBox> out) {
-        if (box.isAnonymous) return;
-        boolean table = isTableBox(box);
-        if (table && box.display.inner() != Display.Inner.TABLE) return;
-        out.putIfAbsent(box.node, box);
-        if (table || box.measureMemo.everLaidOutAsTable()) return;
-        for (LayoutBox child : box.elementChildren) collectReusableBoxes(child, out);
-    }
-
     /** 前回か今、表のエンジンの書き込みを受けた（受けうる）箱か。匿名の箱や差分レイアウトで使い回すかどうかの判断に使う。 */
     public boolean touchedByTableEngine() {
         return isTableBox(this) || measureMemo.everLaidOutAsTable() || collapsedBorders != null;
@@ -1136,6 +1129,12 @@ public class LayoutBox {
         if (isTableBox(this) || !measureMemo.everLaidOutAsTable()) return;
         engineState = null;
         contentOffsetY = 0;
+    }
+
+    public boolean neverMeasured() { return measureMemo.neverMeasured(); } // 一度も測っていない箱〔親の測定の中で測られる〕
+    /** 前回の測定からの変化: 0＝無い、1＝子の並びだけ、2＝自分の入力〔署名〕が変わった・測っていない（部分構築が印付けの対象を選ぶ）。 */
+    public int changeSinceMeasure() {
+        return measureMemo.selfSignatureChanged(this) || !measureMemo.isValid() ? 2 : measureMemo.childListChanged(this) ? 1 : 0;
     }
 
     /** 表か、表の中の箱（行・列・セル・行グループ・キャプション）か。 */
@@ -1533,7 +1532,6 @@ public class LayoutBox {
     public boolean isVerticalWrapper() { return isVerticalWrapper; }
     public boolean isOutsideMarker() { return isOutsideMarker; }
     public boolean establishesBfc() { return establishesBfc; }
-    public long paintStamp() { return paintStamp; }
     public boolean fragmentsStale() { return fragmentsStale; }
     public ConstraintSpace contentSpaceCache() { return contentSpaceCache; }
     public ConstraintSpace childSpaceCache() { return childSpaceCache; }

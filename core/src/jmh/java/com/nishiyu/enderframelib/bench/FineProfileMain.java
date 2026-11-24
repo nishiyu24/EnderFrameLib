@@ -235,7 +235,6 @@ public final class FineProfileMain {
                     + " elements=" + countElements(view[0].root())
                     + " items=" + view[0].ui().renderCache().size()
                     + " textPatchHits=" + UiView.TEXT_PATCH_HITS.get() + " textPatchFallbacks=" + UiView.TEXT_PATCH_FALLBACKS.get()
-                    + " childPatchHits=" + UiView.CHILD_PATCH_HITS.get() + " childPatchFallbacks=" + UiView.CHILD_PATCH_FALLBACKS.get()
                     + " restyleStructural=" + UiView.RESTYLE_STRUCTURAL.get()
                     + " relayoutFull=" + UiView.RESTYLE_RELAYOUT_FULL.get()
                     + " relayoutInplace=" + UiView.RESTYLE_RELAYOUT_INPLACE.get()
@@ -244,7 +243,7 @@ public final class FineProfileMain {
                     + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
                     + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped()
                     + memoCostKeys(memoSnapshot(), memo0));
-            System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
+            System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get());
             if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             {
                 long n = frames + warmup;
@@ -299,7 +298,7 @@ public final class FineProfileMain {
                     + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
                     + " (ウォームアップ込み累計)");
             StringBuilder cant = new StringBuilder("CANTPATCH");
-            cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get()).append(" multiPlan=").append(UiView.SLICE_MULTI_PLAN.get());
+            cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get());
 
             System.out.println(cant);
         }

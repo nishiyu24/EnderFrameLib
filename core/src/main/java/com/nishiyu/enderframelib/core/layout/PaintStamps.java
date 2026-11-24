@@ -46,6 +46,9 @@ public final class PaintStamps {
 
     /** 並列のレイアウトから呼ばれる。同じ箱は、確定までに 1 回だけ待ちリストへ入る。 */
     static void mark(LayoutBox box, int bit) {
+        // まだ親にぶら下がっていない箱〔匿名ボックスは、子を足してから親へ付く〕は、自分だけの待ちリストへ積まれて印が立ったまま
+        // 取り残され、あとで再利用されたときの印が付かなくなる（文書の根の待ちリストしか確定しない）。作りたての箱に描画の記憶は無いので、付けない
+        if (box.parent == null && box.node != null && box.node.parent != null) return;
         for (;;) {
             int cur = box.layoutDirty;
             if ((cur & bit) != 0) return;

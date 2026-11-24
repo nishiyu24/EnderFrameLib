@@ -16,7 +16,6 @@ class ShortcutTest {
     @Test
     void initialValuesComeFromEngineFlags() {
         assertEquals(EngineFlags.CUTOFF, Shortcut.CUTOFF.initial());
-        assertEquals(EngineFlags.CHILD_PATCH, Shortcut.CHILD_PATCH.initial());
     }
 
     @Test

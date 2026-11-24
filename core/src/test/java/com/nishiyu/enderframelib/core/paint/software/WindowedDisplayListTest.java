@@ -19,8 +19,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * 窓付きの表示リスト（大きい文書で、画面と余白の外の箱の項目を作らない）の検証。
- * ① 局所パッチ（子の増減・文字・スタイル）の結果が、毎回全体を窓付きで組み直した結果と一致する。
- * ② 窓付きと窓なしで、スクロール・変更のあとの全画素が一致する（見た目は変わらない）。
+ * 窓付きと窓なしで、スクロール・変更のあとの全画素が一致する（見た目は変わらない）。
  */
 class WindowedDisplayListTest {
     private static final int W = 400, H = 300, ROWS = 1200;
@@ -28,7 +27,6 @@ class WindowedDisplayListTest {
     @AfterEach
     void restore() {
         com.nishiyu.enderframelib.core.kernel.Shortcut.WINDOWED.set(true);
-        com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
     }
 
     private static String html() {
@@ -75,43 +73,6 @@ class WindowedDisplayListTest {
             case 3 -> { if (at instanceof HtmlElement el) el.updateTextContent("edit " + step + " " + "w ".repeat(rnd.nextInt(6))); }
             default -> { if (at instanceof HtmlElement el) el.toggleClass("hot"); }
         }
-    }
-
-    @Test
-    void windowedPatchMatchesWindowedFullRebuild() {
-        long windowedBefore = DisplayListBuilder.STAT_WINDOWED_BUILDS.sum();
-        for (long seed = 1; seed <= 4; seed++) {
-            StandaloneView full = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
-            StandaloneView patched = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
-            try {
-                com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(false);
-                full.ui().flushInvalidation();
-                com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
-                patched.ui().flushInvalidation();
-                Random rf = new Random(seed), rp = new Random(seed);
-                for (int step = 0; step < 60; step++) {
-                    com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
-                    mutate(full, rf, step);
-                    mutate(patched, rp, step);
-                    com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(false);
-                    full.ui().flushInvalidation();
-                    List<DisplayItem> exp = new ArrayList<>(full.ui().renderCache());
-                    com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.set(true);
-                    patched.ui().flushInvalidation();
-                    List<DisplayItem> act = patched.ui().renderCache();
-                    if (!exp.equals(act)) {
-                        for (int i = 0; i < Math.min(exp.size(), act.size()); i++) if (!exp.get(i).equals(act.get(i))) { for (int j = Math.max(0, i - 4); j < Math.min(exp.size(), i + 6); j++) System.out.println("AT " + j + " exp " + brief(exp.get(j)) + " | act " + brief(act.get(j))); break; }
-                        System.out.println("SIZE exp=" + exp.size() + " act=" + act.size() + " " + lastOp + " firstExp=" + brief(exp.get(0)) + " lastExp=" + brief(exp.get(exp.size() - 1)) + " lastAct=" + brief(act.get(act.size() - 1)));
-                    }
-                    assertEquals(exp.size(), act.size(), "seed " + seed + " 手順 " + step + ": 項目の数 " + lastOp);
-                    for (int i = 0; i < exp.size(); i++) assertEquals(exp.get(i), act.get(i), "seed " + seed + " 手順 " + step + ": 項目 " + i + " " + lastOp);
-                }
-            } finally {
-                full.close();
-                patched.close();
-            }
-        }
-        assertTrue(DisplayListBuilder.STAT_WINDOWED_BUILDS.sum() > windowedBefore, "窓付きの描画が使われていない");
     }
 
     private static String brief(DisplayItem it) {

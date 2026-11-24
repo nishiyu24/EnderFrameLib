@@ -109,6 +109,21 @@ final class RenderTreeBuilder {
                                              boolean inTableScope,
                                              LayoutBox directPrev,
                                              ContainerBox parentSizeContainer, boolean ancestorHasMoving) {
+        return buildLayoutTree(node, inheritedStyle, sheet, env, force, parentFontSize, scope, interactionState, siblingInvalidation, prevReusable, nextReusable, inTableScope, directPrev, parentSizeContainer, ancestorHasMoving, null);
+    }
+
+    /** {@code partial} が null でなければ、台帳に触れられていない部分木は辿らず前回の箱を返す（{@link PartialBuild}）。 */
+    static LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
+                                             StyleSheet sheet,
+                                             Map<String, String> env, int force,
+                                             float parentFontSize, RenderPipeline.StyleScope scope, InteractionState interactionState,
+                                             boolean siblingInvalidation,
+                                             LayoutBox.ReusableTable prevReusable,
+                                             LayoutBox.ReusableTable nextReusable,
+                                             boolean inTableScope,
+                                             LayoutBox directPrev,
+                                             ContainerBox parentSizeContainer, boolean ancestorHasMoving,
+                                     PartialBuild partial) {
         InteractionState.StateFlags flags = interactionState != null ? interactionState.getOrCreate(node) : null;
         RenderPipeline.StyleCache cache = force != RenderPipeline.FORCE_NONE ? RenderPipeline.StyleCache.INVALID : RenderPipeline.styleCacheState(flags, parentFontSize, scope);
         boolean needsRestyle = cache != RenderPipeline.StyleCache.VALID;
@@ -121,6 +136,13 @@ final class RenderTreeBuilder {
         int childForce = RenderPipeline.FORCE_NONE;
         boolean childForceIfInherits = false;
         boolean subtreeDirty = (flags != null && flags.subtreeDirty()) || force == RenderPipeline.FORCE_SUBTREE;
+        if (partial != null && !needsRestyle && !subtreeDirty && !inTableScope && !flags.dirtyBelow()) {
+            LayoutBox kept = partial.keep(node, prevReusable, ancestorHasMoving, flags.computedStyle);
+            if (kept != null) {
+                stats.reused++;
+                return kept;
+            }
+        }
 
         if (needsRestyle) {
             boolean tk = RenderPipeline.ctx().flags().trackAllocations();
@@ -200,6 +222,7 @@ final class RenderTreeBuilder {
                 }
                 box.hasPseudoElementChild = false;
             }
+            if (partial != null) partial.forgetRemoved(box, node);
             box.elementChildren.clear();
             box.refreshStyle(computed);
             if (box.display().isNone() || LayoutBox.isInternalTableBox(box)) {
@@ -218,6 +241,7 @@ final class RenderTreeBuilder {
         // 表のエンジンは中の箱へ直接書き込むので、表の中は作り直す。display: none の部分木は測られないので、
         // 使い回すと前回の寸法が残る（新しく作った箱は 0）。コンテナクエリの寸法などが読むので作り直す
         boolean entersTable = LayoutBox.recordReusableForBuild(inTableScope ? null : nextReusable, box);
+        if (partial != null) partial.visited(box);
         boolean childInTableScope = inTableScope || entersTable;
         boolean stopChildReuse = childInTableScope || box.display().isNone();
         LayoutBox.ReusableTable childPrevReusable = stopChildReuse ? null : prevReusable;
@@ -286,6 +310,8 @@ final class RenderTreeBuilder {
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");
             boolean siblingForceDirty = false;
+            // 自分が汚れていない親は、触れられた子だけを辿り、他の子は前回の箱をそのまま並べる（部分構築）
+            java.util.Set<HtmlNode> touchedKids = partial != null && !needsRestyle && !subtreeDirty && flags != null && !flags.dirtyBelow() ? partial.touchedChildren(node) : null;
             for (int ci = 0, cn = node.children.size(); ci < cn; ci++) {
                 HtmlNode child = node.children.get(ci);
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
@@ -296,10 +322,12 @@ final class RenderTreeBuilder {
                     InteractionState.StateFlags childFlags = interactionState.get(child);
                     if (childFlags != null && childFlags.inheritsExplicitly) forceChild = RenderPipeline.FORCE_SELF;
                 }
-                box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, forceChild,
+                LayoutBox keptKid = touchedKids != null && forceChild == RenderPipeline.FORCE_NONE
+                        ? partial.keepFast(child, childPrevReusable, touchedKids, selfOrAncestorMoving, interactionState) : null;
+                box.addElementChild(keptKid != null ? keptKid : buildLayoutTree(child, childInherited, sheet, env, forceChild,
                         computed.fontSizePx(), childScope, interactionState, siblingInvalidation,
                         childPrevReusable, childNextReusable, childInTableScope, null,
-                        selfContainer, selfOrAncestorMoving));
+                        selfContainer, selfOrAncestorMoving, partial));
                 siblingForceDirty |= stateChanged;
             }
         }

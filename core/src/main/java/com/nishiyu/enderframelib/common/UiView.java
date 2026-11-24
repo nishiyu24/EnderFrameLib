@@ -55,7 +55,7 @@ import com.nishiyu.enderframelib.core.text.model.FontResolver;
  */
 public class UiView implements AutoCloseable {
     /** LocalPatches（切り出した協力クラス）。 */
-    final LocalPatches localPatches = new LocalPatches(this);
+    final InPlaceRelayout inPlace = new InPlaceRelayout(this);
 
     /**
      * 画面更新の無効化段階（F3-2）。
@@ -72,11 +72,6 @@ public class UiView implements AutoCloseable {
         NONE,
         REPAINT,
         REPOSITION,
-        /**
-         * 要素の子が増減した（{@code appendChild} / {@code removeChild} など）。箱の木を作り直さず、その親の子の並びだけを直す。
-         * 条件に合わなければ {@link #RELAYOUT} と同じ処理になる。
-         */
-        CHILD_PATCH,
         RESTYLE,
         RELAYOUT
     }
@@ -454,8 +449,6 @@ public class UiView implements AutoCloseable {
                 requestRestyle(); // 描画だけの属性・文字の変更は、台帳から restyleAndUpdate が読む（K5b L1）
             } else if (attributeName == null && node.nodeType == NodeType.TEXT) {
                 requestRestyle();
-            } else if (attributeName == null && com.nishiyu.enderframelib.core.kernel.Shortcut.CHILD_PATCH.on() && node.nodeType == NodeType.ELEMENT) {
-                localPatches.requestChildPatch(node);
             } else {
                 requestRender();
             }
@@ -1154,7 +1147,7 @@ public class UiView implements AutoCloseable {
                 recomputeLayout(rootW, rootH);
                 return;
             }
-            if (!localPatches.tryRelayoutInPlace(textBoxes)) {
+            if (!inPlace.tryRelayoutInPlace(textBoxes)) {
                 (textOnly ? TEXT_PATCH_FALLBACKS : RESTYLE_RELAYOUT_FULL).incrementAndGet();
                 recomputeLayout(rootW, rootH);
                 return;
@@ -1175,10 +1168,10 @@ public class UiView implements AutoCloseable {
             // 空白だけのテキストの箱は描くものが無い（ブロックの間なら箱の木にも入らない）。継承の変更で混ざっても部分の描き直しを妨げない
             if (!changedBoxes.isEmpty()) {
                 boolean anyBlank = false;
-                for (int i = 0, n = changedBoxes.size(); i < n && !anyBlank; i++) anyBlank = LocalPatches.isBlankText(changedBoxes.get(i).node);
+                for (int i = 0, n = changedBoxes.size(); i < n && !anyBlank; i++) anyBlank = TextChanges.isBlankText(changedBoxes.get(i).node);
                 if (anyBlank) {
                     List<LayoutBox> kept = new ArrayList<>(changedBoxes.size());
-                    for (LayoutBox b : changedBoxes) if (!LocalPatches.isBlankText(b.node)) kept.add(b);
+                    for (LayoutBox b : changedBoxes) if (!TextChanges.isBlankText(b.node)) kept.add(b);
                     changedBoxes = kept;
                 }
             }
@@ -1200,7 +1193,7 @@ public class UiView implements AutoCloseable {
         Set<HtmlNode> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
         wanted.addAll(attrNodes);
         Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
-        LocalPatches.collectTextBoxes(layoutRoot, wanted, found, false);
+        TextChanges.collectTextBoxes(layoutRoot, wanted, found, false);
         boolean stamps = !found.containsValue(null);
         for (LayoutBox box : found.values()) if (box != null) box.touchPaint();
         repaintFromLayout();
@@ -1243,14 +1236,13 @@ public class UiView implements AutoCloseable {
     /** 描画キューから呼ばれる、このセッション 1 回分の無効化処理。 */
     public void flushInvalidation() {
         if (document == null || document.root == null) return;
-        var ledger = interactionState.changeLedger();
-        ledger.freeze(); // 変更台帳を凍結。この世代の文字・描画だけの属性の変更は、台帳から導く（K5b L1）
-        List<HtmlNode> texts = ChangeReads.texts(ledger); // null＝あふれ・多すぎ（個々に頼らず全体を作り直す）
-        List<HtmlNode> attrNodes = ChangeReads.paintAttrs(ledger, (n, name) -> !isPresentationalAttribute(name) && isPaintOnlyAttribute(n, name));
-
         // 時間で動くスタイル（opacity / transform / 色以外のトランジションと @keyframes）を進める。
         // 動いているうちは毎フレーム再スタイルを要求する（終わった要素は進めた時点で再スタイルの対象になる）
         if (interactionState.advanceAnimations(nowMs())) requestRestyle();
+        var ledger = interactionState.changeLedger();
+        ledger.freeze(); // 変更台帳を凍結（時間で動くスタイルの印も、この世代に入るよう進めたあとで）。文字・描画だけの属性の変更は台帳から導く（K5b L1）
+        List<HtmlNode> texts = ChangeReads.texts(ledger); // null＝あふれ・多すぎ（個々に頼らず全体を作り直す）
+        List<HtmlNode> attrNodes = ChangeReads.paintAttrs(ledger, (n, name) -> !isPresentationalAttribute(name) && isPaintOnlyAttribute(n, name));
 
         boolean resize = resizeDue();
         InvalidationLevel level = consumeInvalidationLevel();
@@ -1264,15 +1256,6 @@ public class UiView implements AutoCloseable {
         if (hadPendingText && (texts == null || level != InvalidationLevel.RESTYLE && level != InvalidationLevel.NONE)) {
             texts = List.of();
             level = InvalidationLevel.RELAYOUT;
-        }
-        if (level != InvalidationLevel.CHILD_PATCH) {
-            // 子の増減と再スタイルが同じフレームに重なったら、再スタイルの経路は箱を増減しないので全体にする
-            boolean hadPendingChildren;
-            synchronized (localPatches.pendingChildParents) {
-                hadPendingChildren = !localPatches.pendingChildParents.isEmpty();
-                localPatches.pendingChildParents.clear();
-            }
-            if (hadPendingChildren && level != InvalidationLevel.RELAYOUT) level = InvalidationLevel.RELAYOUT;
         }
         boolean repositionRequested = repositionPending;
         repositionPending = false;
@@ -1295,15 +1278,7 @@ public class UiView implements AutoCloseable {
         }
 
         switch (level) {
-            case RELAYOUT -> recomputeLayout(rootW, rootH);
-            case CHILD_PATCH -> {
-                if (localPatches.tryChildPatch(attrNodes, repositionRequested)) {
-                    CHILD_PATCH_HITS.incrementAndGet();
-                } else {
-                    CHILD_PATCH_FALLBACKS.incrementAndGet();
-                    recomputeLayout(rootW, rootH);
-                }
-            }
+            case RELAYOUT -> recomputeLayout(rootW, rootH, true);
             case RESTYLE -> restyleAndUpdate(repositionRequested, scrollOnly, attrNodes, texts);
             case REPOSITION -> {
                 if (interactionState.hasDirtyNodes()) {
@@ -1329,33 +1304,15 @@ public class UiView implements AutoCloseable {
 
 
 
-    // ==========================================
-    // 子の増減の局所パッチ
-    // ==========================================
-
-    public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
-    public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_FALLBACKS = new java.util.concurrent.atomic.AtomicLong();
-    /** 再スタイル経路（{@code restyleAndUpdate}）の行き先の内訳（計測用）。{@code RESTYLE_REPAINT_FULL} は表示リストを全体再構築した回数（スライスパッチ未使用）。 */
-    /** スライスパッチを試みる箇所で、表示リストのビルダーが無かった／子の計画が複数だった回数（計測用）。 */
+    /** 再スタイル経路（{@code restyleAndUpdate}）の行き先の内訳（計測用）。 */
+    /** 表示リストのビルダーが無かった回数（計測用）。 */
     public static final java.util.concurrent.atomic.AtomicLong SLICE_NO_BUILDER = new java.util.concurrent.atomic.AtomicLong();
-    public static final java.util.concurrent.atomic.AtomicLong SLICE_MULTI_PLAN = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong RESTYLE_STRUCTURAL = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong RESTYLE_RELAYOUT_FULL = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong RESTYLE_RELAYOUT_INPLACE = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong RESTYLE_REPOSITION = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong RESTYLE_REPAINT_PATCH = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong RESTYLE_REPAINT_FULL = new java.util.concurrent.atomic.AtomicLong();
-
-    /**
-     * 子の増減だけを、箱の木を作り直さずに反映する。成功したら true。条件に合わないとき（false）は何も変えないので、
-     * 呼び出し側が全体の再レイアウトに退く。
-     *
-     * <p>条件: 文字・属性・その他の汚れが無い・コンテナクエリとカウンタが無い・親の箱がブロックの並びで（匿名ボックス・疑似要素・
-     * マーカーが挟まらない）、増える子がブロックレベルの要素で、再スタイルが要る節が親と増えた子の部分木だけ
-     * （兄弟の規則に当たる節が無い）。</p>
-     */
-    /** 診断用: 直近の局所パッチを断った理由（成功したら "ok"）。 */
-    public static volatile String lastChildPatchRejection = "";
 
     /** 再スタイルで寸法の入力だけが変わったとき、箱の木を作り直さずに測り直した回数（調べる・テスト用）。 */
     public static final java.util.concurrent.atomic.AtomicLong INPLACE_RELAYOUT_HITS = new java.util.concurrent.atomic.AtomicLong();
@@ -1632,7 +1589,10 @@ public class UiView implements AutoCloseable {
     }
 
     /** ビューポートを変更してレイアウト・描画要素を作り直す。 */
-    public void recomputeLayout(int newRootW, int newRootH) {
+    public void recomputeLayout(int newRootW, int newRootH) { recomputeLayout(newRootW, newRootH, false); }
+
+    /** {@code partialOk}: 変更台帳に触れられていない部分木は辿らない部分構築を試す（流れ込み・形の制限は {@link PartialBuild}）。 */
+    private void recomputeLayout(int newRootW, int newRootH, boolean partialOk) {
         int oldRootW = rootW;
         int oldRootH = rootH;
         setRootW(newRootW);
@@ -1662,7 +1622,9 @@ public class UiView implements AutoCloseable {
             }
 
             // 前回の箱の木から差分レイアウトする（変わっていない部分木は measure を飛ばす）
-            LayoutBox rootBox = parser.layoutDocument(
+            LayoutBox rootBox = partialOk && oldRootW == newRootW && oldRootH == newRootH
+                    ? PartialBuild.tryRun(doc, newRootW, newRootH, env, scrollState, fontResolver(), interactionState, layoutRoot) : null;
+            if (rootBox == null) rootBox = parser.layoutDocument(
                     doc, newRootW, newRootH, env, scrollState, fontResolver(), interactionState,
                     layoutRoot);
             setLayoutRoot(rootBox);

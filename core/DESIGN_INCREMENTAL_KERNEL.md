@@ -131,7 +131,7 @@ canReuse(key)   = for each bit in readMask: current(bit) == snapshot(bit)
 | :-- | :-- | :-- | :-- |
 | **L0 台帳を観測として足す**（**完了**。計画書 §4・§6-199） | 既存の通知経路から台帳へ追記し、オラクルのテストの間だけ「台帳が触れた節の集合 ⊇ 既存の入口の集合」を比べる。挙動は変えない | — | 取りこぼし 0（乱数列）・追記の費用 `≤ +1%` |
 | **L1 文字・属性**（**完了**。計画書 §4・§6-200） | `TEXT`・`PAINT_ATTR` を台帳から読み、`pendingTextNodes`・`pendingAttrNodes` を削除。K5 第 2 段の経路をそのまま台帳の読み手にする | `pendingTextNodes`・`pendingAttrNodes` | `text` 系 A/B `±10%`・`costGate` 緑 |
-| **L2 子の増減と BOX_TREE の飛ばし** | `CHILDREN` を台帳から読み、`BOX_TREE`・`STYLE` の木の走査が触れられていない部分木を辿らない。`CHILD_PATCH`・`LocalPatches` を撤去 | `pendingChildParents`・`CHILD_PATCH`・`LocalPatches`・`planChildPatch` ほか | `large-list child`〔通常経路〕が時間 `≤ +10%`・確保 `≤ 2 倍`・パッチ系スイッチ `0` |
+| **L2 子の増減と BOX_TREE の飛ばし**（**実装済み。時間 `+10.0%`・`+21.6%`**。計画書 §6-203） | `CHILDREN` を台帳から読み、`BOX_TREE`・`STYLE` の木の走査が触れられていない部分木を辿らない。`CHILD_PATCH`・`LocalPatches` を撤去 | `pendingChildParents`・`CHILD_PATCH`・`LocalPatches`・`planChildPatch` ほか | `large-list child`〔通常経路〕が時間 `≤ +10%`・確保 `≤ 2 倍`・パッチ系スイッチ `0` |
 | **L3 汚れ印と水準** | `STYLE_INPUT` を台帳から読み、`StateFlags` の汚れ 3 ビット・`InvalidationLevel` の入口の切り分け・`repositionPending` 系を削除 | `DIRTY_*`・`InvalidationLevel` の分岐 | 状態の予算が下がる・全テストとオラクル緑 |
 | **L4 構造の版** | `domStructureVersion`・`lastBuiltStructureVersion` を台帳の `ENV` 判定へ | 同左 | `resizeexact` A/B `±10%` |
 

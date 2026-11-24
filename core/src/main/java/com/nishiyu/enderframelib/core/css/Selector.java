@@ -70,6 +70,20 @@ public record Selector(
         return false;
     }
 
+    /** 兄弟の並び・位置〔{@code +}・{@code ~}・{@code :nth-*}・{@code :empty}〕を（{@code :is()} / {@code :not()} / {@code :has()} の中も含めて）読むか。 */
+    public boolean readsSiblingPosition() {
+        for (char c : combinators) if (c == '+' || c == '~') return true;
+        for (SelectorToken token : compounds) {
+            if (token.isEmpty || !token.nths.isEmpty()) return true;
+            for (Selector nested : token.notSelectors) if (nested.readsSiblingPosition()) return true;
+            for (List<Selector> group : token.anyOfSelectors) for (Selector nested : group) if (nested.readsSiblingPosition()) return true;
+            for (List<RelativeSelector> group : token.hasSelectors) for (RelativeSelector rel : group) {
+                if (rel.combinator() == '+' || rel.combinator() == '~' || rel.selector().readsSiblingPosition()) return true;
+            }
+        }
+        return false;
+    }
+
     /** 右端の複合セレクタ（セレクタが選ぶ要素＝主語）。 */
     public SelectorToken subject() {
         return compounds.getLast();

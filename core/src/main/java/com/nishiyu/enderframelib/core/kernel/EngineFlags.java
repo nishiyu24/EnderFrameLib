@@ -94,9 +94,6 @@ public final class EngineFlags {
     /** {@code enderframe.soft.notiled}: TileQueue.tiled（タイル並列ラスタ）（使う所: {@code TileQueue}） */
     public static final boolean SOFT_TILED = !Boolean.getBoolean("enderframe.soft.notiled");
 
-    /** {@code enderframe.ui.nochildpatch}: UiView.childPatchEnabled（使う所: {@code UiView}） */
-    public static final boolean CHILD_PATCH = !Boolean.getBoolean("enderframe.ui.nochildpatch");
-
     // ---- 従来の挙動へ戻す切り替え（結果が変わる） ----
 
     /** {@code enderframe.css.textfullcascade}: RenderPipeline.TEXT_STYLE_FROM_PARENT を切り、文字の節にもカスケードを全部かける（使う所: {@code RenderPipeline}） */

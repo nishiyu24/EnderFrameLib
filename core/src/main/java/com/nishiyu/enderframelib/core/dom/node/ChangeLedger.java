@@ -91,6 +91,24 @@ public final class ChangeLedger {
     /** 凍結した世代の {@code i} 番目の詳細〔{@link Kind#ATTR} の属性名。無ければ null〕。 */
     public synchronized String frozenDetail(int i) { return fDetails[i]; }
 
+    /**
+     * 凍結した世代で、{@code parent} の直接の子のうち、自分か子孫に変更がある子（同一性）。小さい集合を毎回作る
+     * 〔変更数 × 深さ〕。全体に効く世代〔あふれ・節を絞れない要素〕は null。
+     */
+    public synchronized Set<HtmlNode> touchedChildren(HtmlNode parent) {
+        if (fOverflow || fNodeless) return null;
+        Set<HtmlNode> out = Collections.newSetFromMap(new IdentityHashMap<>(8));
+        for (int i = 0; i < fCount; i++) {
+            for (HtmlNode cur = fNodes[i]; cur != null; cur = cur.parent) {
+                if (cur.parent == parent) { out.add(cur); break; }
+            }
+        }
+        return out;
+    }
+
+    /** 凍結した世代に、節を絞れない要素〔{@link Kind#ENV}・{@link Kind#SCROLL}・絞れない {@link Kind#STYLE}〕があるか。 */
+    public synchronized boolean frozenNodeless() { return fNodeless; }
+
     /** 凍結した世代に、この種別の要素が 1 つでもあるか。 */
     public synchronized boolean frozenHas(Kind kind) {
         for (int i = 0; i < fCount; i++) if (fKinds[i] == kind.ordinal()) return true;

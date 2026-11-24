@@ -45,4 +45,23 @@ final class TextChanges {
             default -> true;
         };
     }
+
+    static boolean isBlankText(HtmlNode n) {
+        return n.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT && n.text != null && n.text.isBlank();
+    }
+
+    /** {@code wanted} の節が持つ文字の箱（匿名でない）を集める。表の中に入ったら何も集めない（退く）。 */
+    static void collectTextBoxes(LayoutBox box, java.util.Set<HtmlNode> wanted, Map<HtmlNode, LayoutBox> out, boolean inTable) {
+        boolean table = inTable || LayoutBox.isTableBox(box);
+        for (LayoutBox child : box.children) {
+            if (child.node != null && !child.isAnonymous && wanted.contains(child.node)) {
+                if (table) {
+                    out.put(child.node, null); // 大きさを合わせて失敗させる印（null は下で弾く）
+                    continue;
+                }
+                out.put(child.node, child);
+            }
+            collectTextBoxes(child, wanted, out, table);
+        }
+    }
 }

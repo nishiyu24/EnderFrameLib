@@ -213,7 +213,7 @@ public class P6IncrementalTraversalTest {
     }
 
     @Test
-    void boxTreeBuilderPrunesGeneratedCollectionAndPreservesAnonymousAndChildPatch() {
+    void boxTreeBuilderPrunesGeneratedCollectionAndPreservesAnonymousAndChildInsertion() {
         String html = """
                 <style>
                   body { margin: 0; font-size: 13px; }
@@ -232,7 +232,7 @@ public class P6IncrementalTraversalTest {
             EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
             assertEquals(exp0, sigs(inc));
 
-            // 匿名ブロックを含まない flat 親へ混合ブロックを含む子を tryChildPatch で差し込んだ後、全体再構築しても一致する
+            // 匿名ブロックを含まない flat 親へ混合ブロックを含む子を 子の増減で差し込んだ後、全体再構築しても一致する
             runBoth(inc, fresh, v -> {
                 HtmlElement item = (HtmlElement) v.root().ownerDocument.createElement("div");
                 item.setAttribute("id", "c2");

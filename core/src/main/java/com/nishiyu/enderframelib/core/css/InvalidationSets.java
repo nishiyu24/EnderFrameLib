@@ -155,6 +155,10 @@ public final class InvalidationSets {
         List<SelectorToken> compounds = selector.compounds();
         List<Character> combinators = selector.combinators();
         Set<Relation> current = relation;
+        // 隣接・一般兄弟結合子は、先行する兄弟の挿入・削除でも一致が変わる（後続の兄弟とその子孫が影響を受ける）
+        for (char c : combinators) {
+            if (c == '+' || c == '~') { structure.add(Relation.FOLLOWING_SIBLINGS_SUBTREE); break; }
+        }
         for (int i = compounds.size() - 1; i >= 0; i--) {
             addCompound(compounds.get(i), current, i == compounds.size() - 1, viaHas);
             if (i > 0) current = compose(combinators.get(i - 1), current);
