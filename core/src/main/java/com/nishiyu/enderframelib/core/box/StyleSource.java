@@ -57,12 +57,12 @@ public final class StyleSource {
     }
 
     /**
-     * 疑似要素の算出スタイル（M1 のカスケード {@link StyleResolver#resolvePseudoStyle} をそのまま呼ぶ。継承元は持ち主の要素）。
+     * {@code ::before}（{@code after} なら {@code ::after}）の算出スタイル（M1 のカスケードをそのまま呼ぶ。継承元は持ち主の要素）。
      * 箱を作らない（{@code content} が none / normal・{@code display: none}・規則が無い）なら null。
      */
-    public Style pseudo(HtmlNode owner, Style ownerStyle, StyleResolver.PseudoType type) {
-        ComputedStyle cs = StyleResolver.resolvePseudoStyle(owner, type, sheet, lookup, new ComputedStyle(ownerStyle), env,
-                rootFontSize, rootLineHeight, viewportW, viewportH);
+    public Style pseudo(HtmlNode owner, Style ownerStyle, boolean after) {
+        ComputedStyle cs = com.nishiyu.enderframelib.core.css.GeneratedContentStyles.resolve(owner, after, sheet, lookup,
+                new ComputedStyle(ownerStyle), env, rootFontSize, rootLineHeight, viewportW, viewportH);
         return cs == null ? null : Style.of(cs, ownerStyle);
     }
 

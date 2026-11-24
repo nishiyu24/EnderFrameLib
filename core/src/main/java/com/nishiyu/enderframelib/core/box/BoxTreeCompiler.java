@@ -54,7 +54,7 @@ public final class BoxTreeCompiler {
     private Counters counters;
     private final Counters counterState = new Counters();
     private com.nishiyu.enderframelib.core.css.CounterStyles counterStyles = com.nishiyu.enderframelib.core.css.CounterStyles.builtins();
-    /** {@link PseudoBoxes#usesCounters} を規則の版ごとに 1 回だけ求めた値（このビューの実例に閉じる）。 */
+    /** {@link com.nishiyu.enderframelib.core.css.GeneratedContentStyles#usesCounters} を規則の版ごとに 1 回だけ求めた値（このビューの実例に閉じる）。 */
     private StyleSheet countedSheet;
     private int countedVersion = -1;
     private boolean sheetUsesCounters;
@@ -208,7 +208,7 @@ public final class BoxTreeCompiler {
         if (sheet != countedSheet || sheet.rules.version() != countedVersion) {
             countedSheet = sheet;
             countedVersion = sheet.rules.version();
-            sheetUsesCounters = PseudoBoxes.usesCounters(sheet);
+            sheetUsesCounters = com.nishiyu.enderframelib.core.css.GeneratedContentStyles.usesCounters(sheet);
         }
         return sheetUsesCounters;
     }

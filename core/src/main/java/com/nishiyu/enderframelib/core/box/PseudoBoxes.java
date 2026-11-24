@@ -2,9 +2,6 @@ package com.nishiyu.enderframelib.core.box;
 
 import com.nishiyu.enderframelib.core.css.CounterStyles;
 import com.nishiyu.enderframelib.core.css.Style;
-import com.nishiyu.enderframelib.core.css.StyleResolver.PseudoType;
-import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
-import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 
@@ -30,37 +27,12 @@ final class PseudoBoxes {
     }
 
     /**
-     * 文書が CSS のカウンタを使うか（{@code counter-*} の宣言が list-item 以外の名前を持つ・値に {@code counter()} / {@code counters()}）。
-     * UA の暗黙の {@code list-item}（{@code menu, ol, ul { counter-reset: list-item }}）だけなら使わない扱い。
-     */
-    static boolean usesCounters(StyleSheet sheet) {
-        for (StyleRule rule : sheet.rules) {
-            for (var e : rule.properties.entrySet()) {
-                String key = e.getKey(), value = e.getValue();
-                if (value == null) continue;
-                if ((key.startsWith("counter-") && namesOtherThanListItem(value)) || value.contains("counter(") || value.contains("counters(")) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean namesOtherThanListItem(String value) {
-        for (String t : value.trim().split("\\s+")) {
-            if (t.isEmpty() || t.equalsIgnoreCase("none") || t.equalsIgnoreCase("list-item") || t.matches("[+-]?\\d+")) continue;
-            return true;
-        }
-        return false;
-    }
-
-    /**
      * 疑似要素 1 つの箱（作らないなら null）。{@code prev} は前回の同じ種類の箱、{@code counters} はカウンタを使う文書でだけ非 null
      * （疑似要素自身のカウンタの宣言を当ててから {@code content} を評価する）。
      */
     static BoxNode build(BoxNode.Pseudo which, HtmlNode owner, Style ownerStyle, BoxNode prev, StyleSource styles, Counters counters,
                          CounterStyles counterStyles) {
-        Style st = styles.pseudo(owner, ownerStyle, which == BoxNode.Pseudo.BEFORE ? PseudoType.BEFORE : PseudoType.AFTER);
+        Style st = styles.pseudo(owner, ownerStyle, which == BoxNode.Pseudo.AFTER);
         if (st == null) return null;
         if (counters != null) counters.apply(owner, st, false);
         String raw = evaluate(st.rare.content, owner, counters, counterStyles);
