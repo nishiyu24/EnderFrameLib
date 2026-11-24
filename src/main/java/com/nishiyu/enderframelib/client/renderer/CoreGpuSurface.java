@@ -41,12 +41,23 @@ public final class CoreGpuSurface {
     /** {@code EnderFrameBuiltInConfig.useCoreBackend} の反映先。 */
     static volatile boolean enabled = false;
 
-    private static final int MAX_SURFACES = 8;
+    /**
+     * 使っていない面（{@link #IDLE_MS} 以上描いていない）のバックエンドは、この数まで残す（また見たときに作り直さない）。
+     * 描いている最中の面はこの数に関係なく残す。同時に見える面がこれより多いとき、毎フレーム閉じて作り直すと
+     * 共有コンテキストとテクスチャの生成・全面の描き直しが続き、従来の経路より重くなる。
+     */
+    static final int KEEP_IDLE = 8;
+    /** 描いている面でも、これを超えたら古い順に閉じる（GPU メモリの上限）。 */
+    static final int HARD_MAX = 32;
+    /** この時間描いていない面を「使っていない」とみなす。 */
+    static final long IDLE_MS = 2000;
     private static final int MAX_TEXTURE_SIDE = 4096;
 
     private record Key(String sessionId, int w, int h, int dprMilli) {}
 
     private static final Map<Key, LwjglGlRenderBackend> BACKENDS = new LinkedHashMap<>(16, 0.75f, true);
+    /** 面ごとの最後に描いた時刻（{@code Util.getMillis}）。{@link #BACKENDS} と同じ鍵を持つ。 */
+    private static final Map<Key, Long> LAST_USED = new java.util.HashMap<>();
     private static final java.util.Set<String> BROKEN = new java.util.HashSet<>();
     /** GPU のタイマークエリを張り済みのバックエンド（閉じたものは {@link #clear}・{@link #dropSession} で外す）。 */
     private static final java.util.Set<LwjglGlRenderBackend> GPU_TIMED =
@@ -82,7 +93,7 @@ public final class CoreGpuSurface {
         if (!enabled || !RenderSystem.isOnRenderThread()) return false;
         String session = pass.sessionId() == null ? "" : pass.sessionId();
         if (BROKEN.contains(session)) return false;
-        if (!pass.renderItems() || !pass.renderText() || !pass.renderRounded() || pass.isLodMode()) return false;
+        if (!passEligible(pass)) return false;
         List<DisplayItem> items = pass.elements();
         if (items == null || items.isEmpty() || !drawable(items)) return false;
         // 面の大きさはブロック数。項目の座標は RESOLUTION 倍の px（従来の経路が maxAllowedX = screenWidth * RESOLUTION と同じ）
@@ -132,6 +143,17 @@ public final class CoreGpuSurface {
     }
 
     /**
+     * 描き方の指定として、コアに任せてよいパスか。遠距離の単色塗り（LOD）だけは従来の経路が Quad 1 枚で描く。
+     *
+     * <p>距離による部品の間引き（{@link SurfaceStyle.Detail#atDistance}）は見ない。間引きは従来の経路が毎フレーム描く量を
+     * 減らすためのもので、コアは内容が変わらない限り前回のテクスチャを貼るだけなので、全部を描いても遠くで重くならない。
+     * 間引きを理由に従来の経路へ回すと、16 ブロックより遠い面ほど重くなる（実測で 1 枚 0.05 ms → 0.87 ms）。
+     */
+    static boolean passEligible(PaintRequest pass) {
+        return !pass.isLodMode();
+    }
+
+    /**
      * コアが描ける内容か。対象外が 1 つでもあれば従来の経路に任せる。
      *
      * <p>{@code :hover} などの見た目は、節の状態が変わったときにスタイル解決の側が項目へ反映する（描画は項目を描くだけ）ので、
@@ -170,22 +192,54 @@ public final class CoreGpuSurface {
     }
 
     private static LwjglGlRenderBackend backendFor(Key key, int w, int h, float dpr) {
+        long now = net.minecraft.Util.getMillis();
         LwjglGlRenderBackend b = BACKENDS.get(key);
-        if (b != null) return b;
+        if (b != null) {
+            LAST_USED.put(key, now);
+            return b;
+        }
         // 同じセッションの別の大きさは古いので捨てる
         dropSession(key.sessionId());
         long window = Minecraft.getInstance().getWindow().getWindow();
         b = LwjglGlRenderBackend.sharedWith(window, w, h, dpr);
         BACKENDS.put(key, b);
-        Iterator<Map.Entry<Key, LwjglGlRenderBackend>> it = BACKENDS.entrySet().iterator();
-        while (BACKENDS.size() > MAX_SURFACES && it.hasNext()) {
-            Map.Entry<Key, LwjglGlRenderBackend> eldest = it.next();
-            if (eldest.getValue() == b) break;
-            it.remove();
-            GPU_TIMED.remove(eldest.getValue());
-            eldest.getValue().close();
+        LAST_USED.put(key, now);
+        for (Key old : evictions(BACKENDS.keySet(), k -> LAST_USED.getOrDefault(k, 0L), now, key)) {
+            LwjglGlRenderBackend gone = BACKENDS.remove(old);
+            LAST_USED.remove(old);
+            if (gone == null) continue;
+            GPU_TIMED.remove(gone);
+            PAINTED.remove(gone);
+            try {
+                gone.close();
+            } catch (Throwable ignored) {
+                // 後始末の失敗は握りつぶす
+            }
         }
         return b;
+    }
+
+    /**
+     * 新しい面を作った後に閉じる面（{@code lruOrder} は古く使った順）。使っていない面を古い順に {@link #KEEP_IDLE} 個まで減らし、
+     * それでも {@link #HARD_MAX} を超えるときだけ、描いている面も古い順に閉じる。{@code keep}（今作った面）は閉じない。
+     */
+    static <K> java.util.List<K> evictions(java.util.Collection<K> lruOrder, java.util.function.ToLongFunction<K> lastUsed,
+                                           long now, K keep) {
+        java.util.List<K> out = new java.util.ArrayList<>();
+        int size = lruOrder.size();
+        for (K k : lruOrder) {
+            if (size <= KEEP_IDLE) break;
+            if (k.equals(keep) || now - lastUsed.applyAsLong(k) < IDLE_MS) continue;
+            out.add(k);
+            size--;
+        }
+        for (K k : lruOrder) {
+            if (size <= HARD_MAX) break;
+            if (k.equals(keep) || out.contains(k)) continue;
+            out.add(k);
+            size--;
+        }
+        return out;
     }
 
     private static void dropSession(String session) {
@@ -194,6 +248,7 @@ public final class CoreGpuSurface {
             Map.Entry<Key, LwjglGlRenderBackend> e = it.next();
             if (e.getKey().sessionId().equals(session)) {
                 it.remove();
+                LAST_USED.remove(e.getKey());
                 GPU_TIMED.remove(e.getValue());
                 PAINTED.remove(e.getValue());
                 try {
@@ -215,6 +270,7 @@ public final class CoreGpuSurface {
             }
         }
         BACKENDS.clear();
+        LAST_USED.clear();
         GPU_TIMED.clear();
         PAINTED.clear();
         BROKEN.clear();

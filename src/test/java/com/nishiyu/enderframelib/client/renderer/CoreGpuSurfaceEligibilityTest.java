@@ -114,4 +114,23 @@ class CoreGpuSurfaceEligibilityTest {
         assertTrue(hovered.stream().anyMatch(i -> "b".equals(i.baseId()) && (i.bgColor() & 0xFFFFFF) == 0x00FF00),
                 "ホバー中は緑の背景の項目が出る（コアはその項目をそのまま描く）");
     }
+
+    /** 世界内の面のパス（{@code SurfaceRenderer.paint} が作るのと同じ指定）。 */
+    private static PaintRequest worldPass(double distSqr) {
+        SurfaceStyle style = SurfaceStyle.world(0xF000F0, 0, distSqr).withLod(0xFF000000, distSqr);
+        SurfaceStyle.Detail d = style.detail();
+        return new PaintRequest(List.of(), null, 4, 3, new com.mojang.blaze3d.vertex.PoseStack(), null,
+                style.light(), style.overlay(), d.items(), d.text(), d.rounded(), 0.01f, 0.005f, "",
+                style.lodColor(), style.lodActive(), null, false, false, "s", null, style.flatLayers(), style.screenSpaceText());
+    }
+
+    @Test
+    void farWorldSurfacesStayOnTheCorePath() {
+        // 距離の間引き（16 ブロック超で文字・角丸、32 ブロック超でアイテムを省く）でコアを外すと、遠い面ほど従来の経路で重くなる
+        assertTrue(CoreGpuSurface.passEligible(worldPass(10 * 10)), "近い面");
+        assertFalse(worldPass(24 * 24).renderText(), "前提: 16 ブロック超は文字を間引く指定になる");
+        assertTrue(CoreGpuSurface.passEligible(worldPass(24 * 24)), "16 ブロック超の面もコアで描く");
+        assertTrue(CoreGpuSurface.passEligible(worldPass(48 * 48)), "32 ブロック超の面もコアで描く");
+        assertFalse(CoreGpuSurface.passEligible(worldPass(80 * 80)), "64 ブロック超の単色塗りは従来の経路（Quad 1 枚）");
+    }
 }

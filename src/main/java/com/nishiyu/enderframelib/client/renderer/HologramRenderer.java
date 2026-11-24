@@ -12,7 +12,9 @@ import net.minecraft.client.Camera;
 import org.jetbrains.annotations.ApiStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -53,11 +55,25 @@ public final class HologramRenderer {
         Camera camera = mc.gameRenderer.getMainCamera();
         MultiBufferSource.BufferSource buffer = mc.renderBuffers().bufferSource();
 
+        Frustum frustum = event.getFrustum();
         boolean drew = false;
         for (Hologram spec : HOLOGRAMS.values()) {
+            // 視錐台の外（背後・画面外）は描かない。ブロック画面は描画側（getRenderBoundingBox）で同じ判定を受けている
+            if (frustum != null && !frustum.isVisible(bounds(spec))) continue;
             drew |= render(spec, event.getPoseStack(), buffer, camera, mc);
         }
         if (drew) buffer.endBatch();
+    }
+
+    /**
+     * ホログラムの面を必ず含む箱（ワールド座標）。面は中心を通る鉛直軸の回りに回る（ビルボードはカメラへ、
+     * そうでなければ {@code yawDegrees} へ）ので、水平方向は幅の半分を半径とする円を囲む。中身は
+     * {@code SurfaceGeometry.fit} で幅 × 高さの中に収まる。
+     */
+    static AABB bounds(Hologram spec) {
+        double hw = spec.widthBlocks() / 2.0, hh = spec.heightBlocks() / 2.0;
+        Vec3 c = spec.center();
+        return new AABB(c.x - hw, c.y - hh, c.z - hw, c.x + hw, c.y + hh, c.z + hw).inflate(0.05);
     }
 
     /**
