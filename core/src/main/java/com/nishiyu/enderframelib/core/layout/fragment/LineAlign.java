@@ -105,7 +105,7 @@ record LineAlign(TextAlign normal, boolean justifyNormal, TextAlign last, boolea
         int k = 0;
         for (int i = 0; i < n; i++) {
             LineFragment.Piece p = segs.get(i);
-            out[i] = new LineFragment.Piece(p.text(), p.start(), p.end(), LayoutUnit.snap(p.x() + acc), p.width());
+            out[i] = new LineFragment.Piece(p.text(), p.start(), p.end(), LayoutUnit.snap(p.x() + acc), p.width(), p.dy());
             if (opp[i]) {
                 acc += each;
                 oppEnd[k++] = p.x() + p.width();
@@ -131,7 +131,7 @@ record LineAlign(TextAlign normal, boolean justifyNormal, TextAlign last, boolea
         for (int i = p.start(); i < p.end(); ) {
             int b = InlineFlow.nextBreak(t, i, p.end(), st.facts.wordBreak);
             float w = b == p.end() ? end - x : face.advance(t.substring(i, b), fs);
-            out.add(new LineFragment.Piece(box, i, b, x, w));
+            out.add(new LineFragment.Piece(box, i, b, x, w, p.dy()));
             gap.add(first && spaceBefore);
             first = false;
             x += w;

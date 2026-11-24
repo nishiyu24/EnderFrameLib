@@ -198,7 +198,7 @@ public final class FragmentProjection {
                 FontFace face = session.face(st);
                 FontStyle fs = st.facts.fontStyle;
                 float runH = InlineFlow.lineHeight(st, face), runBase = runBaseline(st);
-                float fy = LayoutUnit.snap(oy + l.y() + (lineBase - runBase));
+                float fy = LayoutUnit.snap(oy + l.y() + (lineBase - runBase) + p.dy());
                 List<LayoutBox> chain = parents.getOrDefault(p.text(), List.of());
                 // 旧経路と同じく折り返し候補ごと（後ろの空白を含む）の断片にする。最後の語だけは片の幅の残りで終わらせる
                 String text = p.string();

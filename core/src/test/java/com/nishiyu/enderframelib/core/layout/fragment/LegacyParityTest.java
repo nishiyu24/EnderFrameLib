@@ -59,6 +59,20 @@ class LegacyParityTest {
                 + "</body></html>", List.of());
     }
 
+    /** M2b-1: vertical-align（原子の位置と、持ち上げた文字・原子で広がる行の高さ）。 */
+    @Test
+    void verticalAlignMatchesLegacy() {
+        String ib = "display:inline-block;width:20px;";
+        assertParity("<html><body style='margin:0'>"
+                + "<div id=va1>x<span id=m style='" + ib + "height:40px;vertical-align:middle'></span>y<span id=t style='" + ib + "height:10px;vertical-align:top'></span>"
+                + "<span id=b style='" + ib + "height:12px;vertical-align:bottom'></span><span id=tt style='" + ib + "height:8px;vertical-align:text-top'></span>"
+                + "<span id=tb style='" + ib + "height:8px;vertical-align:text-bottom'></span></div>"
+                + "<div id=va2>a<sub>sub</sub>b<sup>sup</sup>c<span style='vertical-align:7px'>len</span><span style='vertical-align:-30%'>pct</span></div>"
+                + "<div id=va3>z<span id=tall style='" + ib + "height:60px;vertical-align:bottom'></span><span id=tp style='" + ib + "height:50px;vertical-align:top'></span></div>"
+                + "<div id=va4>n<span style='vertical-align:super'>o<span id=nest style='" + ib + "height:6px;vertical-align:sub'></span></span></div>"
+                + "</body></html>", List.of());
+    }
+
     /** 意図した差 ①: 負の余白は CSS の規則どおり相殺に加わる（旧経路より 3 px 上）。 */
     @Test
     void negativeMarginCollapsesThroughParentPerSpec() {

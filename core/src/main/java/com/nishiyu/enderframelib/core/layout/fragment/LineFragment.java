@@ -16,12 +16,19 @@ public record LineFragment(float x, float y, float width, float height, float ba
 
     static final PlacedFragment[] NO_ATOMS = new PlacedFragment[0];
 
-    /** 文字の節 {@code text} の {@code [start, end)}（正規化済みの文字列の位置）を、行の左端から {@code x} に幅 {@code width} で置く。 */
-    public record Piece(BoxNode text, int start, int end, float x, float width) {
+    /**
+     * 文字の節 {@code text} の {@code [start, end)}（正規化済みの文字列の位置）を、行の左端から {@code x} に幅 {@code width} で置く。
+     * {@code dy} は文字の並びのベースラインの、行のベースラインからのずれ（下が正。{@code vertical-align}。既定は 0）。
+     */
+    public record Piece(BoxNode text, int start, int end, float x, float width, float dy) {
+        public Piece(BoxNode text, int start, int end, float x, float width) {
+            this(text, start, end, x, width, 0f);
+        }
+
         @Override
         public boolean equals(Object o) {
             return o instanceof Piece p && p.text == text && p.start == start && p.end == end
-                    && Float.compare(p.x, x) == 0 && Float.compare(p.width, width) == 0;
+                    && Float.compare(p.x, x) == 0 && Float.compare(p.width, width) == 0 && Float.compare(p.dy, dy) == 0;
         }
 
         @Override

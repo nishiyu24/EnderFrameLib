@@ -35,12 +35,23 @@ final class InlineLineBuilder implements TextRun.Sink {
     private final List<OutOfFlow.Pending> oofPending = new ArrayList<>();
     // 今の行の原子
     private final List<LayoutFragment> aFrag = new ArrayList<>();
-    private final List<float[]> aPos = new ArrayList<>(); // {x, ascent, marginTop}
+    private final List<float[]> aPos = new ArrayList<>(); // {x, ascent, marginTop, 揃え, 外側の高さ}
     // 今の行の文字片
     private final List<BoxNode> pBox = new ArrayList<>();
     private int[] pStart = new int[8], pEnd = new int[8];
     private float[] pX = new float[8], pW = new float[8];
     private boolean[] pGap = new boolean[8];
+    // 文字片の縦の揃え（vertical-align）: 持ち上げ量・揃え・並びの上端からベースライン・並びの高さ
+    private float[] pRaise = new float[8], pAbove = new float[8], pHt = new float[8];
+    private byte[] pVa = new byte[8];
+    // インラインの祖先と、それぞれの親のスタイル（vertical-align の持ち上げを足し合わせる）
+    private final Style container;
+    private final List<BoxNode> inl = new ArrayList<>();
+    private final List<Style> inlParent = new ArrayList<>();
+    private int vaDepth;
+    /** 今の項目の揃え（{@link VerticalAlign}）・持ち上げ量と、行の上端・下端へ揃える項目の高さの最大。 */
+    private byte itemAlign;
+    private float itemRaise, tbMax;
     // 今の行の位置と、折り返しの判定に要る直前の内容
     private float x, asc, desc, pending, cursor, lineL, lineW;
     private boolean hasContent, pendingWraps, afterWrapSpace;
@@ -54,6 +65,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         this.availW = availW;
         this.s = s;
         this.prior = prior;
+        this.container = container;
         float strut = InlineFlow.lineHeight(container, s.face(container));
         this.strutAsc = InlineFlow.runBaseline(container, s);
         this.strutDesc = strut - strutAsc;
@@ -107,7 +119,14 @@ final class InlineLineBuilder implements TextRun.Sink {
                 float[] e = InlineFlow.edges(n, availW, s);
                 x += e[0];
                 WhiteSpace inner = n.style.facts.whiteSpace;
+                boolean va = !VerticalAlign.isBaseline(n.style);
+                inlParent.add(currentParent());
+                inl.add(n);
+                if (va) vaDepth++;
                 for (int i = 0, c = n.flow.size(); i < c; i++) add(n.flow.get(i), inner);
+                inl.removeLast();
+                inlParent.removeLast();
+                if (va) vaDepth--;
                 x += e[1];
             }
         }
@@ -117,8 +136,41 @@ final class InlineLineBuilder implements TextRun.Sink {
         String t = box.text;
         if (t.isEmpty()) return;
         run = TextRun.Metrics.of(box, s);
+        alignItem(null, null, run.ascent() + run.descent(), run.ascent());
         TextRun.scan(run, this);
         run = null;
+    }
+
+    private Style currentParent() {
+        return inl.isEmpty() ? container : inl.get(inl.size() - 1).style;
+    }
+
+    /** 今の項目（{@code self} が原子なら自分も含む）の揃えと持ち上げ量を、内側から外側のインラインの祖先へ足し合わせて決める。 */
+    private void alignItem(Style self, Style selfParent, float h, float above) {
+        itemAlign = VerticalAlign.BASELINE;
+        itemRaise = 0;
+        if (self != null && !VerticalAlign.isBaseline(self)) applyAlign(self, selfParent, h, above);
+        if (vaDepth == 0) return;
+        for (int i = inl.size() - 1; i >= 0; i--) {
+            Style el = inl.get(i).style;
+            if (!VerticalAlign.isBaseline(el)) applyAlign(el, inlParent.get(i), h, above);
+        }
+    }
+
+    private void applyAlign(Style el, Style parent, float h, float above) {
+        byte k = VerticalAlign.kind(el);
+        if (k != VerticalAlign.BASELINE) itemAlign = k;
+        else itemRaise += VerticalAlign.raise(el, parent, h, above, s);
+    }
+
+    /** 今の項目（ベースラインより上 {@code a}・下 {@code d}）で行の高さを広げる（top / bottom の項目は高さだけ覚える）。 */
+    private void growItem(float a, float d) {
+        if (itemAlign == VerticalAlign.BASELINE) {
+            grow(a + itemRaise, d - itemRaise);
+        } else {
+            tbMax = Math.max(tbMax, a + d);
+            hasContent = true;
+        }
     }
 
     // ---- TextRun.Sink ----
@@ -151,7 +203,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         clearPending();
         addPiece(run.box(), start, end, w, gap > 0);
         x += w;
-        grow(run.ascent(), run.descent());
+        growItem(run.ascent(), run.descent());
         lastChar = run.box().text.charAt(end - 1);
         afterWrapSpace = run.ws().wraps() && lastChar == ' ';
     }
@@ -162,7 +214,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         clearPending();
         float tabW = InlineFlow.tabWidth(run.style(), run.face(), run.fs(), s);
         x = InlineFlow.tabStop(x, tabW, run.spaceW());
-        grow(run.ascent(), run.descent());
+        growItem(run.ascent(), run.descent());
         lastChar = '\t';
         afterWrapSpace = run.ws().wraps();
     }
@@ -206,6 +258,10 @@ final class InlineLineBuilder implements TextRun.Sink {
             pX = Arrays.copyOf(pX, c);
             pW = Arrays.copyOf(pW, c);
             pGap = Arrays.copyOf(pGap, c);
+            pRaise = Arrays.copyOf(pRaise, c);
+            pAbove = Arrays.copyOf(pAbove, c);
+            pHt = Arrays.copyOf(pHt, c);
+            pVa = Arrays.copyOf(pVa, c);
         }
         pBox.add(box);
         pStart[k + 1] = start;
@@ -213,6 +269,10 @@ final class InlineLineBuilder implements TextRun.Sink {
         pX[k + 1] = x;
         pW[k + 1] = w;
         pGap[k + 1] = gap;
+        pRaise[k + 1] = itemRaise;
+        pVa[k + 1] = itemAlign;
+        pAbove[k + 1] = run.ascent();
+        pHt[k + 1] = run.ascent() + run.descent();
     }
 
     private static boolean spacesOnly(String t, int from, int to) {
@@ -251,9 +311,12 @@ final class InlineLineBuilder implements TextRun.Sink {
         float b = n.kind == BoxKind.INLINE_BLOCK && !overflowVisible ? Float.NaN : InlineFlow.baselineOf(f, n.kind == BoxKind.INLINE_FLEX);
         float outerH = g.mT + f.height + g.mB;
         float a = Float.isNaN(b) ? outerH : g.mT + b;
+        alignItem(cs, currentParent(), outerH, a);
+        if (itemAlign == VerticalAlign.BASELINE) a += itemRaise;
         aFrag.add(f);
-        aPos.add(new float[]{x + g.mL, a, g.mT});
-        grow(a, outerH - a);
+        aPos.add(new float[]{x + g.mL, a, g.mT, itemAlign, outerH});
+        if (itemAlign == VerticalAlign.BASELINE) grow(a, outerH - a);
+        else growItem(a, outerH - a);
         x += outerW;
         lastChar = InlineFlow.ATOM_CHAR;
         afterWrapSpace = false;
@@ -273,8 +336,14 @@ final class InlineLineBuilder implements TextRun.Sink {
     /** 行を閉じる。{@code soft} は折り返した行（揃えは {@code text-align}）、そうでなければ最終行の扱い（{@code text-align-last}）。 */
     private void newLine(boolean soft) {
         int k = pBox.size();
+        float lineH = LayoutUnit.snap(Math.max(asc + desc, tbMax));
         LineFragment.Piece[] pieces = new LineFragment.Piece[k];
-        for (int i = 0; i < k; i++) pieces[i] = new LineFragment.Piece(pBox.get(i), pStart[i], pEnd[i], pX[i], pW[i]);
+        for (int i = 0; i < k; i++) {
+            // 文字の並びのベースラインの、行のベースラインからのずれ（top / bottom は行の上端・下端へ）
+            float dy = pVa[i] == VerticalAlign.TOP ? pAbove[i] - asc
+                    : pVa[i] == VerticalAlign.BOTTOM ? lineH - (pHt[i] - pAbove[i]) - asc : -pRaise[i];
+            pieces[i] = new LineFragment.Piece(pBox.get(i), pStart[i], pEnd[i], pX[i], pW[i], LayoutUnit.snap(dy));
+        }
         float width = x, off = lineL;
         float[] atomX = new float[aFrag.size()];
         for (int i = 0; i < atomX.length; i++) atomX[i] = aPos.get(i)[0];
@@ -291,18 +360,19 @@ final class InlineLineBuilder implements TextRun.Sink {
             atoms = new PlacedFragment[aFrag.size()];
             for (int i = 0; i < atoms.length; i++) {
                 float[] p = aPos.get(i);
-                atoms[i] = new PlacedFragment(aFrag.get(i), atomX[i], LayoutUnit.snap(asc - p[1] + p[2]));
+                float ay = p[3] == VerticalAlign.TOP ? p[2] : p[3] == VerticalAlign.BOTTOM ? lineH - p[4] + p[2] : asc - p[1] + p[2];
+                atoms[i] = new PlacedFragment(aFrag.get(i), atomX[i], LayoutUnit.snap(ay));
             }
             aFrag.clear();
             aPos.clear();
         }
-        float lineH = LayoutUnit.snap(asc + desc);
         lines.add(new LineFragment(LayoutUnit.snap(off), cursor, width, lineH, LayoutUnit.snap(asc), pieces, atoms));
         cursor += lineH;
         pBox.clear();
         x = 0;
         asc = strutAsc;
         desc = strutDesc;
+        tbMax = 0;
         startLine();
         clearPending();
         hasContent = false;

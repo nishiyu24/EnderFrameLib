@@ -3,6 +3,7 @@ css/css-flexbox/abspos/abspos-autopos-htb-ltr.html
 css/css-flexbox/abspos/flexbox-abspos-child-001b.html
 css/css-flexbox/abspos/position-absolute-009.html
 css/css-flexbox/align-content-002.htm
+css/css-flexbox/align-content-wrap-004.html
 css/css-flexbox/align-self-002.html
 css/css-flexbox/align-self-011.html
 css/css-flexbox/balance/balance-004.html

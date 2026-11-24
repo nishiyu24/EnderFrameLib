@@ -134,6 +134,8 @@ class IncrementalOracleTest {
             "text-transform:uppercase", "text-transform:capitalize", "text-align:justify", "text-align:justify;text-align-last:justify",
             "text-align:center", "text-align:end", "direction:rtl", "letter-spacing:3px", "tab-size:3", "word-break:keep-all",
             "word-break:break-all", "width:min-content", "width:max-content", "width:fit-content", "display:inline-block;width:fit-content",
+            "vertical-align:super", "vertical-align:-4px", "display:inline-block;height:30px;vertical-align:middle",
+            "display:inline-block;height:40px;vertical-align:top", "display:inline-block;height:25px;vertical-align:bottom",
     };
 
     private static final String PSEUDO_CSS = " .pb::before{content:'[' attr(data-x) ']';color:#900}"
