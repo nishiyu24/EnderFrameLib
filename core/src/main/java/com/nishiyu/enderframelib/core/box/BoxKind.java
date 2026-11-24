@@ -7,8 +7,7 @@ import com.nishiyu.enderframelib.core.dom.node.NodeType;
 /**
  * 箱の種類（Engine v3 M2a）。整形エンジンの振り分けに要る粒度だけを持つ。
  *
- * <p>M2a の縦割りスパイクの範囲（Block・Text・Flex）に合わせ、表・グリッド・{@code inline-block} の原子化などは
- * まだ区別しない（{@link #BLOCK} / {@link #INLINE} に寄せる。M2b で種類を足す）。</p>
+ * <p>表はまだ区別しない（{@link #BLOCK} に寄せる。M2b-4 で種類を足す）。</p>
  */
 public enum BoxKind {
     /** 箱を作らない（{@code display: none}・コメント）。子は辿らない。 */
@@ -25,6 +24,10 @@ public enum BoxKind {
     INLINE_BLOCK,
     /** インライン水準の原子で、中は flex（{@code inline-flex}）。 */
     INLINE_FLEX,
+    /** グリッドコンテナ（{@code grid}。M2b-3）。 */
+    GRID,
+    /** インライン水準の原子で、中はグリッド（{@code inline-grid}）。 */
+    INLINE_GRID,
     /**
      * 箱を作らず、子（と疑似要素）を親の子として並べる（{@code display: contents}。M2b-1）。子のスタイルの継承元ではある。
      * レイアウトは {@link BoxChildren#toList()} で中身へ展開して読む。
@@ -42,6 +45,8 @@ public enum BoxKind {
             case "flex" -> FLEX;
             case "inline-flex" -> INLINE_FLEX;
             case "inline-block" -> INLINE_BLOCK;
+            case "grid" -> GRID;
+            case "inline-grid" -> INLINE_GRID;
             case "inline" -> INLINE;
             case "contents" -> CONTENTS;
             default -> BLOCK;
@@ -58,22 +63,28 @@ public enum BoxKind {
         return switch (k) {
             case INLINE, INLINE_BLOCK -> BLOCK;
             case INLINE_FLEX -> FLEX;
+            case INLINE_GRID -> GRID;
             default -> k;
         };
     }
 
-    /** ブロックの流れに並ぶ箱か（{@link #BLOCK} / {@link #FLEX}）。 */
+    /** ブロックの流れに並ぶ箱か（{@link #BLOCK} / {@link #FLEX} / {@link #GRID}）。 */
     public boolean blockLevel() {
-        return this == BLOCK || this == FLEX;
+        return this == BLOCK || this == FLEX || this == GRID;
     }
 
-    /** 行の中に 1 つの塊として置くインライン水準の原子か（{@link #INLINE_BLOCK} / {@link #INLINE_FLEX}）。 */
+    /** 行の中に 1 つの塊として置くインライン水準の原子か（{@link #INLINE_BLOCK} / {@link #INLINE_FLEX} / {@link #INLINE_GRID}）。 */
     public boolean atomicInline() {
-        return this == INLINE_BLOCK || this == INLINE_FLEX;
+        return this == INLINE_BLOCK || this == INLINE_FLEX || this == INLINE_GRID;
     }
 
     /** 中身が flex か（{@link #FLEX} / {@link #INLINE_FLEX}）。 */
     public boolean flexContainer() {
         return this == FLEX || this == INLINE_FLEX;
+    }
+
+    /** 中身がグリッドか（{@link #GRID} / {@link #INLINE_GRID}）。 */
+    public boolean gridContainer() {
+        return this == GRID || this == INLINE_GRID;
     }
 }

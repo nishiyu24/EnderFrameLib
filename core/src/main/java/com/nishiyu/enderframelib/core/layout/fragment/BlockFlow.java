@@ -59,7 +59,8 @@ final class BlockFlow implements FormattingEngine {
         boolean heightAuto = Float.isNaN(fixedH);
         boolean collapseTop = !root && g.pT == 0 && g.bT == 0;
         boolean collapseBottom = !root && g.pB == 0 && g.bB == 0 && heightAuto;
-        float childPct = heightAuto ? Float.NaN : Math.max(0, fixedH - g.vdec());
+        // 文書の根の子（html）の % の高さの基準は初期包含ブロック（ビューポート）の高さ（CSS 2 §10.5）
+        float childPct = node.node.parent == null ? space.percentHeightBase : heightAuto ? Float.NaN : Math.max(0, fixedH - g.vdec());
 
         BoxChildren kids = node.flow;
         LineFragment[] lines = null;

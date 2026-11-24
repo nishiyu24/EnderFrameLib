@@ -88,6 +88,22 @@ class LegacyParityTest {
                 + "</body></html>", List.of());
     }
 
+    /** M2b-3: グリッド（固定長・fr・auto のトラック・配置・領域の名前・揃え・auto-fill）。 */
+    @Test
+    void gridMatchesLegacy() {
+        assertParity("<html><body style='margin:0'>"
+                + "<div id=g1 style='display:grid;width:400px;grid-template-columns:80px 1fr 2fr;gap:6px 10px'><div id=a1>a</div>"
+                + "<div id=a2>bb</div><div id=a3 style='height:30px'>c</div><div id=a4 style='grid-column:span 2'>d</div></div>"
+                + "<div id=g2 style='display:grid;grid-template-columns:auto auto 1fr;width:500px;justify-items:center'><div id=b1>auto one</div>"
+                + "<div id=b2 style='width:60px'>w</div><div id=b3 style='align-self:end'>x</div></div>"
+                + "<div id=g3 style='display:grid;grid-template-areas:\"h h\" \"s m\";grid-template-columns:120px 1fr;width:360px'>"
+                + "<div id=h style='grid-area:h;height:20px'></div><div id=s style='grid-area:s'>side</div><div id=m style='grid-area:m;height:50px'></div></div>"
+                + "<div id=g4 style='display:grid;width:250px;grid-template-columns:repeat(auto-fill,60px);gap:5px'><div id=c1>1</div>"
+                + "<div id=c2>2</div><div id=c3>3</div><div id=c4>4</div><div id=c5>5</div></div>"
+                + "<div id=g5 style='display:grid;height:120px;grid-template-rows:auto 1fr;width:200px'><div id=d1>top</div><div id=d2>fill</div></div>"
+                + "</body></html>", List.of());
+    }
+
     /** M2b-1: vertical-align（原子の位置と、持ち上げた文字・原子で広がる行の高さ）。 */
     @Test
     void verticalAlignMatchesLegacy() {

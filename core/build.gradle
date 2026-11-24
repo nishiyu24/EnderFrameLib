@@ -128,7 +128,7 @@ def configureCoreTest = { Test t, List<String> includeTagList, List<String> excl
     if (findProperty('fragment.strict') != null) t.systemProperty 'enderframe.paint.fragments.strict', String.valueOf(findProperty('fragment.strict'))
     t.workingDir = rootProject.projectDir
     t.testLogging { showStandardStreams = true }
-    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees', 'enderframe.paint.noparentrelative', 'gpu.baseline.exact', 'gpu.baseline.update', 'wpt.reftest.update', 'wpt.v3.update', 'wpt.v3.diag', 'wpt.reftest.diag', 'wpt.reftest.strict', 'wpt.reftest.dump', 'enderframe.parser.dropnewlinews', 'ratchet.update', 'oracle.seeds', 'verify.oracle'].each { key ->
+    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees', 'enderframe.paint.noparentrelative', 'gpu.baseline.exact', 'gpu.baseline.update', 'wpt.reftest.update', 'wpt.v3.update', 'wpt.v3.diag', 'geom.sweep.update', 'geom.sweep.diag', 'wpt.reftest.diag', 'wpt.reftest.strict', 'wpt.reftest.dump', 'enderframe.parser.dropnewlinews', 'ratchet.update', 'oracle.seeds', 'verify.oracle'].each { key ->
         def value = System.getProperty(key)
         if (value != null) t.systemProperty key, value
         t.inputs.property key, value ?: ''

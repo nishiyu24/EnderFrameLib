@@ -137,11 +137,16 @@ public final class BoxGeometry {
         return new MinMaxSizes(clampWidth(st, content.min, Float.NaN, s), clampWidth(st, content.max, Float.NaN, s));
     }
 
-    /** 高さに % を使うか（子の制約に % の高さの基準を載せるかの判定。キーの粗粒化）。 */
+    /**
+     * 高さに % を使うか（子の制約に % の高さの基準を載せるかの判定。キーの粗粒化）。{@code position: relative} の % の
+     * {@code top} / {@code bottom} も包含ブロックの高さが基準なので含める（WPT css-grid/relative-grandchild）。
+     */
     static boolean usesPercentHeight(Style st) {
         BoxGeomStyle b = st.box;
-        return CssLength.hasPercent(b.height, b.exprs) || CssLength.hasPercent(b.minHeight, b.exprs)
-                || CssLength.hasPercent(b.maxHeight, b.exprs);
+        if (CssLength.hasPercent(b.height, b.exprs) || CssLength.hasPercent(b.minHeight, b.exprs)
+                || CssLength.hasPercent(b.maxHeight, b.exprs)) return true;
+        return b.position == com.nishiyu.enderframelib.core.css.model.Position.RELATIVE
+                && (CssLength.hasPercent(b.top, b.exprs) || CssLength.hasPercent(b.bottom, b.exprs));
     }
 
     /** 独立した整形コンテキストを作るスタイルか（{@code overflow} が visible 以外・{@code flow-root}・grid・表）。 */

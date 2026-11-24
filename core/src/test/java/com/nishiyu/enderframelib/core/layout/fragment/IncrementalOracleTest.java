@@ -46,6 +46,10 @@ class IncrementalOracleTest {
     @Test
     void flexFeatures() { run("flexx"); }
 
+    /** M2b-3: グリッド（トラックの定義・配置・揃え・auto-fit・abspos の領域）の変異。 */
+    @Test
+    void gridFeatures() { run("grid"); }
+
     private static void run(String kind) {
         String html = switch (kind) {
             case "large" -> SpikeView.largeList(300);
@@ -53,6 +57,8 @@ class IncrementalOracleTest {
             case "flex3" -> SpikeView.nestedFlex(3, 3);
             case "text" -> SpikeView.inlineText(24);
             case "pseudo" -> SpikeView.inlineText(16).replace("</style>", PSEUDO_CSS + "</style>");
+            case "grid" -> SpikeView.nestedFlex(4, 3, true).replace(".f{display:flex;flex-wrap:wrap;",
+                    ".f{display:grid;grid-template-columns:repeat(auto-fill,minmax(60px,1fr));gap:3px;");
             case "flexx" -> SpikeView.nestedFlex(4, 3, true).replace(".f{display:flex;flex-wrap:wrap;", ".f{display:flex;flex-wrap:wrap;height:220px;");
             default -> SpikeView.nestedFlex(4, 2);
         };
@@ -60,7 +66,8 @@ class IncrementalOracleTest {
         v.frame();
         Random rnd = new Random(kind.hashCode());
         for (int step = 0; step < 80; step++) {
-            String op = kind.equals("flexx") && rnd.nextInt(3) > 0 ? mutateFlex(v, rnd)
+            String op = kind.equals("grid") && rnd.nextInt(3) > 0 ? mutateGrid(v, rnd)
+                    : kind.equals("flexx") && rnd.nextInt(3) > 0 ? mutateFlex(v, rnd)
                     : kind.equals("pseudo") && rnd.nextInt(3) > 0 ? mutatePseudo(v, rnd)
                     : (kind.equals("text") || kind.equals("pseudo")) && rnd.nextBoolean() ? mutateText(v, rnd, step) : mutate(v, rnd, step);
             LayoutFragment inc = v.frame();
@@ -165,6 +172,25 @@ class IncrementalOracleTest {
         collect(v.doc.root, elems);
         HtmlElement target = (HtmlElement) elems.get(rnd.nextInt(elems.size()));
         String st = FLEX_STYLES[rnd.nextInt(FLEX_STYLES.length)];
+        target.setAttribute("style", st);
+        return st + " " + target.tag + " " + target.attrs.get("id");
+    }
+
+    private static final String[] GRID_STYLES = {
+            "display:grid;grid-template-columns:100px 1fr 2fr;gap:4px", "display:grid;grid-template-columns:auto auto;justify-content:center",
+            "display:grid;grid-template-rows:20px 40px;grid-auto-flow:column", "display:grid;grid-template-columns:repeat(auto-fit,50px)",
+            "display:grid;grid-template-areas:'a b' 'c c';align-content:space-between;height:200px", "grid-area:c", "grid-column:span 2",
+            "grid-row:2 / 4", "grid-column:-1", "justify-self:end", "align-self:center", "margin:auto", "position:absolute;grid-column:2",
+            "display:grid;position:relative;grid-template-columns:40px 80px", "order:-1", "display:inline-grid;grid-template-columns:30px auto",
+            "display:grid;grid-auto-flow:row dense;grid-template-columns:repeat(3,minmax(0,1fr))", "min-height:0;overflow:hidden",
+    };
+
+    /** グリッドの変異を 1 つ加える。 */
+    static String mutateGrid(SpikeView v, Random rnd) {
+        List<HtmlNode> elems = new ArrayList<>();
+        collect(v.doc.root, elems);
+        HtmlElement target = (HtmlElement) elems.get(rnd.nextInt(elems.size()));
+        String st = GRID_STYLES[rnd.nextInt(GRID_STYLES.length)];
         target.setAttribute("style", st);
         return st + " " + target.tag + " " + target.attrs.get("id");
     }

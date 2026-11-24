@@ -311,7 +311,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         boolean overflowVisible = (cs.box.overflowX == null || cs.box.overflowX == Overflow.VISIBLE)
                 && (cs.box.overflowY == null || cs.box.overflowY == Overflow.VISIBLE);
         // inline-block は最後の行・inline-flex は最初の行のベースライン。overflow が visible でない inline-block は下の余白の端
-        float b = n.kind == BoxKind.INLINE_BLOCK && !overflowVisible ? Float.NaN : InlineFlow.baselineOf(f, n.kind == BoxKind.INLINE_FLEX);
+        float b = n.kind == BoxKind.INLINE_BLOCK && !overflowVisible ? Float.NaN : InlineFlow.baselineOf(f, n.kind == BoxKind.INLINE_FLEX || n.kind == BoxKind.INLINE_GRID);
         float outerH = g.mT + f.height + g.mB;
         float a = Float.isNaN(b) ? outerH : g.mT + b;
         alignItem(cs, currentParent(), outerH, a);
