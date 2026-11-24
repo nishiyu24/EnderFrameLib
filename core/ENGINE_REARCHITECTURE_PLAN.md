@@ -226,6 +226,17 @@ M1〜M4 でデータ構造を壊して作り直す前に、「外から見た正
 - **群を要素ごとに作ったままでは旧表現より大きい**（同文書の算出スタイル保持ヒープ: 旧 `ComputedStyle` 1,602 KiB／新 `Style` 2,233 KiB、要素あたり 164 B／228 B。旧は弱参照インターンで丸ごと 1 個に畳んでいた）。M1 の目標ヒープ（`varied-list` 40.2 → ≤ 18 MB）は、型付き化そのものではなく**同じ規則の一致結果が同じ `Style`（群）を参照する**ことで得る。→ **M1b の設計要件**: カスケードが一致規則集合の同一性（`==`）をキーに `Style` を 1 層メモ化して返す。プロセス共有のインターン表（弱参照 `ConcurrentHashMap`）は復活させず、状態は 1 ビューに閉じる。値等価のハッシュコンシングで済ませる案は §5-3 に反するため採らない。
 - `calc()` 等の式は群ごとの `CssExprs`（式を持たない大半は共有の `EMPTY`）に持つため、旧 `PackedLengths` のプロセス共有・弱参照の式表は M1c で不要になる。
 - 旧読み口は「宣言が無ければ呼び出し側の既定値」だが、`Style` は**宣言が無ければレジストリの初期値**を持つ。M1b の付け替えで呼び出し側の既定値が初期値と異なる箇所は、個別に洗って `Style` 側へ寄せる。
+**M1b の棚卸しと作業順（2026-11-24 実測）**
+
+スタイル読み口（文字列キー読み・`CssProperty`/`CssPropertyIndex` 参照・`asMap()`・`facts()`/`layoutFacts()`・`edgeLength`/`packedEdge`）の数は、`core/layout` 522・`core/paint` 227・`common` 124・`core/dom` 114（`core/css` 内 563 は M1c で本体ごと消える）。多い順は `BoxMeasurer` 63・`AnchorPositioning` 59・`Bindings` 59・`FlexLayoutEngine` 48・`GridLayoutEngine` 46・`Scene3DDomSync` 37・`ControlPainter` 33・`BoxAnimation` 31。`facts()`/`layoutFacts()` は 17 ファイル 63 箇所で、`StyleFacts.fillExtras` は旧文字列の細かい意味（`margin-left: auto` の大小文字区別、`%`・`calc` の部分文字列判定など）に依存するため、**意味を保ったまま型付きの導出値へ移す**必要がある。
+
+作業順（各段で `WptReftestRatchetTest`・`GpuBaselineTest`・`RealDocumentFramesTest`・`FrameOracle` を緑に保つ）:
+
+1. **b1 導出事実を `Style` へ**: `StyleFacts` の全フィールド（`fillExtras` を含む）を `Style` 側の導出値（群の構築時に 1 回）へ移し、旧実装との**全フィールド等価**を `StyleTypedParityTest` と同じ要領で実文書・合成入力で検証してから、`facts()`/`layoutFacts()` の 17 ファイルを付け替える。
+2. **b2 カスケードの生成先と 1 層メモ化**: `StyleResolver.finalizeComputedStyleInternal` が `Style` を作り、一致規則集合の `==` をキーに 1 層メモ化（`StateStyleMemo` を置換）。`Map<String,String> inheritedStyle` 引数の廃止（親は `Style`）。ここで `varied-list` のヒープを `:core:memoryAndLatencyGate` で A/B 実測する。
+3. **b3 `core/layout` の付け替え**（多い順）→ **b4 `core/paint`** → **b5 `common`・`core/dom`**。付け替えごとに旧読み口の呼び出しを 0 にし、`asMap()` を使う場所は型付き走査へ。
+4. 全読み口の旧参照が 0 になった時点で M1c（旧型の一括削除）。
+
 - 群の追加・プロパティ追加は `PropertyRegistry` へ登録して `java -cp core/build/classes/java/main scripts/GenStyleGroups.java core/src/main/java/com/nishiyu/enderframelib/core/css` を再実行する（生成物は手で直さない。足し忘れは `StyleGroupCoverageTest` が検出する）。
 
 ---
