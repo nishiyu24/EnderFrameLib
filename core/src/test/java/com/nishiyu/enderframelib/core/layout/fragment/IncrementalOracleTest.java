@@ -106,7 +106,8 @@ class IncrementalOracleTest {
                 return "relative " + target.tag;
             }
             default -> { // 表示の切り替え
-                ((HtmlElement) target).setAttribute("style", rnd.nextBoolean() ? "display:none" : "display:flex;flex-wrap:wrap");
+                int d = rnd.nextInt(3);
+                ((HtmlElement) target).setAttribute("style", d == 0 ? "display:none" : d == 1 ? "display:flex;flex-wrap:wrap" : "display:inline-block;padding:2px");
                 return "display " + target.tag;
             }
         }

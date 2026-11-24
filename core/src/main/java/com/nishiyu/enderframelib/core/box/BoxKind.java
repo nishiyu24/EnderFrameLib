@@ -17,10 +17,14 @@ public enum BoxKind {
     TEXT,
     /** ブロック水準の箱（{@code block}・{@code list-item}・{@code flow-root} ほか未対応の表示型）。 */
     BLOCK,
-    /** インライン水準の箱（{@code inline}・{@code inline-block}）。中身は行の中に平らに並べる。 */
+    /** インライン水準の箱（{@code inline}）。中身は行の中に平らに並べる。 */
     INLINE,
-    /** フレックスコンテナ（{@code flex}・{@code inline-flex}）。 */
-    FLEX;
+    /** フレックスコンテナ（{@code flex}）。 */
+    FLEX,
+    /** インライン水準の原子で、中はブロックの流れ（{@code inline-block}）。行の中に 1 つの塊として置く。 */
+    INLINE_BLOCK,
+    /** インライン水準の原子で、中は flex（{@code inline-flex}）。 */
+    INLINE_FLEX;
 
     /** 節と算出スタイルから種類を決める。 */
     public static BoxKind of(HtmlNode node, Style style) {
@@ -31,8 +35,10 @@ public enum BoxKind {
         if (d == null) return INLINE; // display の初期値は inline
         return switch (d.trim().toLowerCase(java.util.Locale.ROOT)) {
             case "none" -> NONE;
-            case "flex", "inline-flex" -> FLEX;
-            case "inline", "inline-block" -> INLINE;
+            case "flex" -> FLEX;
+            case "inline-flex" -> INLINE_FLEX;
+            case "inline-block" -> INLINE_BLOCK;
+            case "inline" -> INLINE;
             default -> BLOCK;
         };
     }
@@ -40,5 +46,15 @@ public enum BoxKind {
     /** ブロックの流れに並ぶ箱か（{@link #BLOCK} / {@link #FLEX}）。 */
     public boolean blockLevel() {
         return this == BLOCK || this == FLEX;
+    }
+
+    /** 行の中に 1 つの塊として置くインライン水準の原子か（{@link #INLINE_BLOCK} / {@link #INLINE_FLEX}）。 */
+    public boolean atomicInline() {
+        return this == INLINE_BLOCK || this == INLINE_FLEX;
+    }
+
+    /** 中身が flex か（{@link #FLEX} / {@link #INLINE_FLEX}）。 */
+    public boolean flexContainer() {
+        return this == FLEX || this == INLINE_FLEX;
     }
 }

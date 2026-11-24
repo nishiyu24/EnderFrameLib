@@ -68,7 +68,7 @@ public final class FragmentProjection {
         if (b.kind == BoxKind.TEXT) { // flex の項目になった文字の節: 文字片を自分に持つ
             Map<BoxNode, LayoutBox> boxes = new IdentityHashMap<>();
             boxes.put(b, lb);
-            lines(f.lines, f.insetLeft, f.insetTop, boxes, new IdentityHashMap<>());
+            lines(lb, f.lines, f.insetLeft, f.insetTop, boxes, new IdentityHashMap<>());
             return lb;
         }
         float cx = f.insetLeft, cy = f.insetTop;
@@ -76,7 +76,7 @@ public final class FragmentProjection {
         Map<BoxNode, List<LayoutBox>> parents = new IdentityHashMap<>();
         if (f.lines != null) {
             inlineChildren(b, lb, textBoxes, parents, new ArrayList<>());
-            lines(f.lines, cx, cy, textBoxes, parents);
+            lines(lb, f.lines, cx, cy, textBoxes, parents);
         }
         if (f.flow != null) {
             f.flow.forEach((child, x1, y1) -> {
@@ -88,7 +88,7 @@ public final class FragmentProjection {
                     for (LineFragment l : child.lines) {
                         for (LineFragment.Piece p : l.pieces()) collectAncestors(b, p.text(), lb, anon, anonParents);
                     }
-                    lines(child.lines, cx + x1, cy + y1, anon, anonParents);
+                    lines(lb, child.lines, cx + x1, cy + y1, anon, anonParents);
                 }
             });
         }
@@ -106,7 +106,7 @@ public final class FragmentProjection {
                                 Map<BoxNode, List<LayoutBox>> parents, List<LayoutBox> chain) {
         for (int i = 0, n = owner.children.size(); i < n; i++) {
             BoxNode c = owner.children.get(i);
-            if (c.kind == BoxKind.NONE) continue;
+            if (c.kind == BoxKind.NONE || c.kind.atomicInline()) continue; // 原子は行の断片から写す
             LayoutBox lb = new LayoutBox(c.node, new ComputedStyle(c.style));
             lb.lineHeightPx = InlineFlow.lineHeight(c.style, session.face(c.style));
             parent.addChild(lb);
@@ -179,11 +179,14 @@ public final class FragmentProjection {
     }
 
     /** 行の文字片を、文字の節の箱の {@link LayoutBox.InlineFragment} にする（{@code ox}, {@code oy} はブロックの border-box 基準の行の原点）。 */
-    private void lines(LineFragment[] lines, float ox, float oy, Map<BoxNode, LayoutBox> boxes, Map<BoxNode, List<LayoutBox>> parents) {
+    private void lines(LayoutBox block, LineFragment[] lines, float ox, float oy, Map<BoxNode, LayoutBox> boxes,
+                       Map<BoxNode, List<LayoutBox>> parents) {
         if (lines == null) return;
         for (LineFragment l : lines) {
-            float lineBase = 0;
-            for (LineFragment.Piece p : l.pieces()) lineBase = Math.max(lineBase, runBaseline(p.text().style));
+            float lineBase = l.baseline();
+            for (PlacedFragment a : l.atoms()) { // インライン水準の原子: ブロックの border-box 基準に置いた箱
+                block.addChild(block(a.frag(), ox + l.x() + a.x(), oy + l.y() + a.y()));
+            }
             for (LineFragment.Piece p : l.pieces()) {
                 LayoutBox tb = boxes.get(p.text());
                 if (tb == null) continue;
@@ -208,11 +211,7 @@ public final class FragmentProjection {
         }
     }
 
-    /** 文字の並びの上端からベースラインまで（半分の行間 + ascent）。 */
     private float runBaseline(Style st) {
-        FontFace face = session.face(st);
-        FontStyle fs = st.facts.fontStyle;
-        float asc = face.ascent(fs), desc = face.descent(fs);
-        return TextShaper.leadingAbove(InlineFlow.lineHeight(st, face), asc, desc) + asc;
+        return InlineFlow.runBaseline(st, session);
     }
 }

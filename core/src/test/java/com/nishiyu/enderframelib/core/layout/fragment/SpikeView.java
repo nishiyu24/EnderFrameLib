@@ -95,7 +95,8 @@ final class SpikeView {
             for (LineFragment l : f.lines) {
                 StringBuilder sb = new StringBuilder();
                 for (LineFragment.Piece p : l.pieces()) sb.append('[').append(p.string()).append('@').append(fmt(p.x())).append(']');
-                out.add(String.format(Locale.ROOT, "%s| %.3f,%.3f %.3fx%.3f %s", "  ".repeat(depth + 1), cx + l.x(), cy + l.y(), l.width(), l.height(), sb));
+                out.add(String.format(Locale.ROOT, "%s| %.3f,%.3f %.3fx%.3f b%.3f %s", "  ".repeat(depth + 1), cx + l.x(), cy + l.y(), l.width(), l.height(), l.baseline(), sb));
+                for (PlacedFragment a : l.atoms()) dump(a.frag(), cx + l.x() + a.x(), cy + l.y() + a.y(), depth + 2, out);
             }
         }
         if (f.flow != null) f.flow.forEach((c, x1, y1) -> dump(c, cx + x1, cy + y1, depth + 1, out));
@@ -125,6 +126,9 @@ final class SpikeView {
             return;
         }
         float cx = x + f.insetLeft, cy = y + f.insetTop;
+        if (f.lines != null) {
+            for (LineFragment l : f.lines) for (PlacedFragment a : l.atoms()) find(a.frag(), cx + l.x() + a.x(), cy + l.y() + a.y(), id, hit);
+        }
         if (f.flow != null) f.flow.forEach((c, x1, y1) -> find(c, cx + x1, cy + y1, id, hit));
         if (f.oof != null) for (PlacedFragment p : f.oof) find(p.frag(), x + p.x(), y + p.y(), id, hit);
     }

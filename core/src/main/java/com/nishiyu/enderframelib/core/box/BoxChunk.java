@@ -21,7 +21,7 @@ public final class BoxChunk extends BoxChildren {
         boolean in = false, bl = false;
         for (BoxNode b : items) {
             if (b.kind.blockLevel()) bl = true;
-            else if (b.kind == BoxKind.INLINE || (b.kind == BoxKind.TEXT && !b.collapsibleWhitespace())) in = true;
+            else if (b.kind == BoxKind.INLINE || b.kind.atomicInline() || (b.kind == BoxKind.TEXT && !b.collapsibleWhitespace())) in = true;
         }
         this.inline = in;
         this.block = bl;

@@ -68,7 +68,7 @@ final class BlockFlow implements FormattingEngine {
         List<OutOfFlow.Pending> pend = new ArrayList<>();
         float insetL = g.bL + g.pL, insetT = g.bT + g.pT;
         if (text || (kids.hasInline() && !kids.hasBlock())) {
-            InlineFlow.Result r = InlineFlow.layout(text ? List.of(node) : kids.toList(), st, cw, s);
+            InlineFlow.Result r = InlineFlow.layout(text ? List.of(node) : kids.toList(), st, cw, prior, s);
             lines = r.lines().length > 0 ? r.lines() : null;
             a = new Assembled(r.height());
             for (OutOfFlow.Pending p : r.pending()) pend.add(p.shift(insetL, insetT));
@@ -198,7 +198,7 @@ final class BlockFlow implements FormattingEngine {
         boolean blank = true;
         for (BoxNode n : run) blank &= n.collapsibleWhitespace();
         if (!blank) {
-            InlineFlow.Result r = InlineFlow.layout(run, st, base.availableWidth, s);
+            InlineFlow.Result r = InlineFlow.layout(run, st, base.availableWidth, null, s);
             if (r.lines().length > 0 || !r.pending().isEmpty()) {
                 b.add(new LayoutFragment(null, base, base.availableWidth, r.height(), 0, 0, 0, 0, 0, 0, 0, r.lines().length == 0,
                         null, r.lines().length > 0 ? r.lines() : null,

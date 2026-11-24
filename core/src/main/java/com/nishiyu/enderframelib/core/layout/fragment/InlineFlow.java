@@ -33,9 +33,12 @@ public final class InlineFlow {
     /** 整形の結果。{@code height} は行の高さの和。{@code pending} は中の流れの外の箱の静的位置（内容ボックス基準）。 */
     record Result(LineFragment[] lines, float height, List<OutOfFlow.Pending> pending) { }
 
-    /** {@code kids} を幅 {@code availW} で行に組む。{@code container} は行の支柱（strut）と揃えの持ち主。 */
-    static Result layout(List<BoxNode> kids, Style container, float availW, LayoutSession s) {
-        LineBuilder b = new LineBuilder(container, availW, s);
+    /**
+     * {@code kids} を幅 {@code availW} で行に組む。{@code container} は行の支柱（strut）と揃えの持ち主。{@code prior} は持ち主の
+     * 前回の断片（行に置いた原子の候補を引く。無ければ null）。
+     */
+    static Result layout(List<BoxNode> kids, Style container, float availW, LayoutFragment prior, LayoutSession s) {
+        LineBuilder b = new LineBuilder(container, availW, prior, s);
         for (BoxNode k : kids) b.add(k);
         return b.finish();
     }
@@ -58,6 +61,45 @@ public final class InlineFlow {
         };
     }
 
+    /** {@code text-indent}（宣言が無ければ 0。% は {@code availW} が基準）。 */
+    static float textIndent(Style st, float availW, LayoutSession s) {
+        long v = st.inherited.textIndent;
+        if (!com.nishiyu.enderframelib.core.css.CssLength.isDeclared(v) || com.nishiyu.enderframelib.core.css.CssLength.isKeyword(v)) return 0;
+        return LayoutUnit.snap(st.px(v, st.inherited.exprs, Float.isFinite(availW) ? availW : 0, s.viewportW(), s.viewportH()));
+    }
+
+    /** 文字の並びの上端からベースラインまで（半分の行間 + ascent）。 */
+    public static float runBaseline(Style st, LayoutSession s) {
+        FontFace face = s.face(st);
+        FontStyle fs = st.facts.fontStyle;
+        float asc = face.ascent(fs), desc = face.descent(fs);
+        return TextShaper.leadingAbove(lineHeight(st, face), asc, desc) + asc;
+    }
+
+    /**
+     * 断片の border-box の上端からベースラインまで（無ければ NaN）。{@code first} なら最初の行（flex のベースライン）、
+     * そうでなければ最後の行（{@code inline-block} のベースライン）。{@code overflow} が visible でない {@code inline-block} は NaN
+     * （呼び出し側が下の余白の端を使う）。
+     */
+    static float baselineOf(LayoutFragment f, boolean first) {
+        if (f.lines != null && f.lines.length > 0) {
+            LineFragment l = f.lines[first ? 0 : f.lines.length - 1];
+            return f.insetTop + l.y() + l.baseline();
+        }
+        if (f.flow == null) return Float.NaN;
+        FlowChunk[] cs = f.flow.chunks;
+        for (int k = first ? 0 : cs.length - 1; first ? k < cs.length : k >= 0; k += first ? 1 : -1) {
+            FlowChunk c = cs[k];
+            for (int i = first ? 0 : c.frags.length - 1; first ? i < c.frags.length : i >= 0; i += first ? 1 : -1) {
+                LayoutFragment ch = c.frags[i];
+                if (ch.collapseThrough) continue;
+                float b = baselineOf(ch, first);
+                if (!Float.isNaN(b)) return f.insetTop + f.flow.chunkY[k] + c.y[i] + b;
+            }
+        }
+        return Float.NaN;
+    }
+
     /** {@code from} より後ろで最初の折り返し候補の位置（無ければ {@code to}）。 */
     public static int nextBreak(String t, int from, int to, WordBreak wb) {
         for (int i = t.offsetByCodePoints(from, 1); i < to; i = t.offsetByCodePoints(i, 1)) {
@@ -76,26 +118,36 @@ public final class InlineFlow {
         return new float[]{g.mL + g.bL + g.pL, g.mR + g.bR + g.pR};
     }
 
-    /** 行を組む（1 回の整形の間だけの可変の作業域）。 */
+    /** 行を組む（1 回の整形の間だけの可変の作業域）。行の高さはベースラインより上の最大 ＋ 下の最大。 */
     private static final class LineBuilder {
-        private final float availW, strut;
+        private final float availW, strutAsc, strutDesc;
         private final TextAlign align;
         private final LayoutSession s;
+        private final LayoutFragment prior;
+        private java.util.Map<com.nishiyu.enderframelib.core.dom.node.HtmlNode, LayoutFragment> priorAtoms;
+        // 今の行の原子
+        private final List<LayoutFragment> aFrag = new ArrayList<>();
+        private final List<float[]> aPos = new ArrayList<>(); // {x, ascent, marginTop}
         private final List<LineFragment> lines = new ArrayList<>();
         private final List<OutOfFlow.Pending> oofPending = new ArrayList<>();
         // 今の行
         private final List<BoxNode> pBox = new ArrayList<>();
         private int[] pStart = new int[8], pEnd = new int[8];
         private float[] pX = new float[8], pW = new float[8];
-        private float x, lineH, pending, cursor;
+        private float x, asc, desc, pending, cursor;
         private boolean hasContent, wraps = true;
 
-        LineBuilder(Style container, float availW, LayoutSession s) {
+        LineBuilder(Style container, float availW, LayoutFragment prior, LayoutSession s) {
             this.availW = availW;
             this.s = s;
-            this.strut = lineHeight(container, s.face(container));
+            this.prior = prior;
+            float strut = lineHeight(container, s.face(container));
+            this.strutAsc = runBaseline(container, s);
+            this.strutDesc = strut - strutAsc;
             this.align = container.inherited.textAlign;
-            this.lineH = strut;
+            this.asc = strutAsc;
+            this.desc = strutDesc;
+            this.x = textIndent(container, availW, s); // 最初の行だけの字下げ（% は内容ボックスの幅が基準）
         }
 
         void add(BoxNode n) {
@@ -109,6 +161,10 @@ public final class InlineFlow {
                     }
                     if (isBreak(n)) {
                         newLine();
+                        return;
+                    }
+                    if (n.kind.atomicInline()) {
+                        atom(n);
                         return;
                     }
                     float[] e = edges(n, availW, s);
@@ -126,15 +182,16 @@ public final class InlineFlow {
             FontFace face = s.face(st);
             FontStyle fs = st.facts.fontStyle;
             float lh = lineHeight(st, face);
+            float ra = runBaseline(st, s), rd = lh - ra;
             WhiteSpace ws = st.facts.whiteSpace;
             wraps = ws.wraps();
             if (!ws.collapses()) {
                 int from = 0;
                 for (int nl; (nl = t.indexOf('\n', from)) >= 0; from = nl + 1) {
-                    if (nl > from) place(box, from, nl, face.advance(t.substring(from, nl), fs), lh);
+                    if (nl > from) place(box, from, nl, face.advance(t.substring(from, nl), fs), ra, rd);
                     newLine();
                 }
-                if (from < t.length()) place(box, from, t.length(), face.advance(from == 0 ? t : t.substring(from), fs), lh);
+                if (from < t.length()) place(box, from, t.length(), face.advance(from == 0 ? t : t.substring(from), fs), ra, rd);
                 return;
             }
             float spaceW = face.advance(" ", fs);
@@ -145,14 +202,14 @@ public final class InlineFlow {
             if (to > from) {
                 float whole = face.advance(from == 0 && to == n ? t : t.substring(from, to), fs);
                 if (!wraps || x + (hasContent ? pending : 0) + whole <= availW + EPS) {
-                    place(box, from, to, whole, lh); // 1 行に収まる: 1 断片で置く（語ごとに測らない）
+                    place(box, from, to, whole, ra, rd); // 1 行に収まる: 1 断片で置く（語ごとに測らない）
                 } else { // 折り返し候補（UAX #14。空白の無い和文も割れる）ごとに置く。候補の後ろの空白は次の語との間の空き
                     WordBreak wb = st.facts.wordBreak;
                     for (int w = from; w < to; ) {
                         int b = nextBreak(t, w, to, wb);
                         int core = b;
                         while (core > w && t.charAt(core - 1) == ' ') core--;
-                        if (core > w) place(box, w, core, face.advance(t.substring(w, core), fs), lh);
+                        if (core > w) place(box, w, core, face.advance(t.substring(w, core), fs), ra, rd);
                         if (core < b) pending = Math.max(pending, spaceW);
                         w = b;
                     }
@@ -162,7 +219,7 @@ public final class InlineFlow {
         }
 
         /** 語（またはまとめて測った語の列）を置く。収まらなければ先に改行する。 */
-        private void place(BoxNode box, int start, int end, float w, float lh) {
+        private void place(BoxNode box, int start, int end, float w, float ra, float rd) {
             float gap = hasContent ? pending : 0;
             if (wraps && hasContent && x + gap + w > availW + EPS) {
                 newLine();
@@ -183,8 +240,56 @@ public final class InlineFlow {
                 pW[k + 1] = w;
             }
             x += w;
-            lineH = Math.max(lineH, lh);
+            asc = Math.max(asc, ra);
+            desc = Math.max(desc, rd);
             hasContent = true;
+        }
+
+        /**
+         * インライン水準の原子（{@code inline-block} など）を 1 つの塊として置く。幅は指定の幅か、縮小して合わせた幅
+         * （{@code min(max(min-content, 使える幅), max-content)}）。ベースライン（無ければ下の余白の端）を行のベースラインへ揃える。
+         */
+        private void atom(BoxNode n) {
+            Style cs = n.style;
+            BoxGeometry g = new BoxGeometry(cs, availW, s);
+            float w = g.specifiedWidth(cs, availW, s);
+            if (Float.isNaN(w)) {
+                MinMaxSizes mm = s.cache().minMax(n, s);
+                w = Math.min(Math.max(mm.min, availW - g.mL - g.mR), mm.max);
+            }
+            w = LayoutUnit.snap(g.clampWidth(cs, Math.max(0, w), availW, s));
+            ConstraintSpace space = s.space(availW, w, Float.NaN, Float.NaN, ConstraintSpace.FORMATTING_ROOT);
+            LayoutFragment f = s.cache().layout(n, space, priorAtom(n), s);
+            float outerW = g.mL + f.width + g.mR;
+            float gap = hasContent ? pending : 0;
+            if (wraps && hasContent && x + gap + outerW > availW + EPS) {
+                newLine();
+                gap = 0;
+            }
+            x += gap;
+            pending = 0;
+            boolean overflowVisible = (cs.box.overflowX == null || cs.box.overflowX == com.nishiyu.enderframelib.core.css.model.Overflow.VISIBLE)
+                    && (cs.box.overflowY == null || cs.box.overflowY == com.nishiyu.enderframelib.core.css.model.Overflow.VISIBLE);
+            float b = n.kind == BoxKind.INLINE_BLOCK && !overflowVisible ? Float.NaN : baselineOf(f, n.kind == BoxKind.INLINE_FLEX);
+            float outerH = g.mT + f.height + g.mB;
+            float a = Float.isNaN(b) ? outerH : g.mT + b; // ベースラインが無ければ下の余白の端
+            aFrag.add(f);
+            aPos.add(new float[]{x + g.mL, a, g.mT});
+            asc = Math.max(asc, a);
+            desc = Math.max(desc, outerH - a);
+            x += outerW;
+            hasContent = true;
+        }
+
+        private LayoutFragment priorAtom(BoxNode n) {
+            if (prior == null || prior.lines == null) return null;
+            if (priorAtoms == null) {
+                priorAtoms = new java.util.IdentityHashMap<>();
+                for (LineFragment l : prior.lines) {
+                    for (PlacedFragment p : l.atoms()) if (p.frag().box != null) priorAtoms.put(p.frag().box.node, p.frag());
+                }
+            }
+            return priorAtoms.get(n.node);
         }
 
         private void grow() {
@@ -203,17 +308,29 @@ public final class InlineFlow {
             float off = 0;
             if (align == TextAlign.CENTER) off = Math.max(0, (availW - width) / 2f);
             else if (align == TextAlign.RIGHT || align == TextAlign.END) off = Math.max(0, availW - width);
-            lines.add(new LineFragment(LayoutUnit.snap(off), cursor, width, lineH, pieces));
+            PlacedFragment[] atoms = LineFragment.NO_ATOMS;
+            if (!aFrag.isEmpty()) {
+                atoms = new PlacedFragment[aFrag.size()];
+                for (int i = 0; i < atoms.length; i++) {
+                    float[] p = aPos.get(i);
+                    atoms[i] = new PlacedFragment(aFrag.get(i), p[0], LayoutUnit.snap(asc - p[1] + p[2]));
+                }
+                aFrag.clear();
+                aPos.clear();
+            }
+            float lineH = LayoutUnit.snap(asc + desc);
+            lines.add(new LineFragment(LayoutUnit.snap(off), cursor, width, lineH, LayoutUnit.snap(asc), pieces, atoms));
             cursor += lineH;
             pBox.clear();
             x = 0;
-            lineH = strut;
+            asc = strutAsc;
+            desc = strutDesc;
             pending = 0;
             hasContent = false;
         }
 
         Result finish() {
-            if (hasContent || !pBox.isEmpty()) newLine();
+            if (hasContent || !pBox.isEmpty() || !aFrag.isEmpty()) newLine();
             return new Result(lines.toArray(new LineFragment[0]), cursor, oofPending);
         }
     }
@@ -236,6 +353,17 @@ public final class InlineFlow {
                     if (OutOfFlow.is(n)) return;
                     if (isBreak(n)) {
                         breakHere();
+                        return;
+                    }
+                    if (n.kind.atomicInline()) { // 割れない塊: 親への寄与（余白込み）
+                        BoxGeometry g = new BoxGeometry(n.style, Float.NaN, s);
+                        MinMaxSizes c = g.contribution(n.style, s.cache().minMax(n, s), s);
+                        float m = BlockFlow.fixedMargin(n.style, n.style.box.marginLeft, s) + BlockFlow.fixedMargin(n.style, n.style.box.marginRight, s);
+                        if (any) total += pending;
+                        total += c.max + m;
+                        chunk += c.min + m;
+                        any = true;
+                        pending = 0;
                         return;
                     }
                     float[] e = edges(n, Float.NaN, s);
