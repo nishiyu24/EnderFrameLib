@@ -2,39 +2,25 @@ package com.nishiyu.enderframelib.core.text.font;
 
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.lwjgl.PointerBuffer;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.freetype.FT_Face;
-import org.lwjgl.util.freetype.FT_MM_Var;
-import org.lwjgl.util.freetype.FT_SfntName;
-import org.lwjgl.util.freetype.FT_Var_Axis;
-import org.lwjgl.util.freetype.FT_Var_Named_Style;
-import org.lwjgl.util.freetype.FreeType;
-import org.lwjgl.util.freetype.TT_OS2;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Stream;
 
 /**
  * システムに入っている書体を CSS の {@code font-family} で引く（ブラウザがローカルの書体を使うのと同じ）。
  *
  * <ul>
- *   <li>一覧: OS の書体フォルダを読み、ファミリ名から書体の面を引けるようにする（最初に使われたときに 1 度だけ。
- *       Windows の 500 ファイル程度で数十〜百数十ミリ秒）。</li>
+ *   <li>一覧: OS の書体フォルダの面をファミリ名から引けるようにする（最初に使われたときに 1 度だけ）。
+ *       全ファイルを開く走査（{@link FontScanner}。Windows の 500 ファイル程度で 250〜400 ms）は、ディスクの目録
+ *       （{@link FontCatalog}）がフォルダの今の状態と合っていれば飛ばす。</li>
  *   <li>照合: ファミリの中から太さ・斜体に最も近い面を選ぶ（CSS Fonts 4 §5.2）。</li>
  *   <li>総称ファミリ: {@code sans-serif} などを Chrome（Windows）の既定の書体に割り当てる（言語ごと）。</li>
  *   <li>解決: {@code font-family} の並びのうちインストールされている書体と代替書体から {@link OutlineFontFace} を作る。
@@ -141,12 +127,20 @@ public final class SystemFonts implements FontResolver {
             synchronized (SystemFonts.class) {
                 s = system;
                 if (s == null) {
-                    s = new SystemFonts(scan(defaultFontDirectories()), Locale.getDefault());
+                    s = load(FontScanner.defaultDirectories(), FontCatalog.defaultLocation(), Locale.getDefault());
                     system = s;
                 }
             }
         }
         return s;
+    }
+
+    /**
+     * {@code roots} の書体から目録を作る。{@code catalog} の目録がフォルダの今の状態と合っていれば走査せずにそれを読み、
+     * 合っていなければ走査して目録を書き直す（{@link FontCatalog}）。{@code catalog} が null なら毎回走査する。
+     */
+    public static SystemFonts load(List<Path> roots, Path catalog, Locale locale) {
+        return new SystemFonts(FontCatalog.load(roots, catalog).faces(), locale);
     }
 
     private static volatile Thread warmUp;
@@ -271,166 +265,6 @@ public final class SystemFonts implements FontResolver {
         }
         map.replaceAll((k, v) -> List.copyOf(v));
         return Collections.unmodifiableMap(map);
-    }
-
-    /** OS ごとの書体フォルダ（利用者ごとの書体フォルダを含む）。 */
-    public static List<Path> defaultFontDirectories() {
-        List<Path> dirs = new ArrayList<>();
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        String home = System.getProperty("user.home", "");
-        if (os.contains("win")) {
-            String windir = System.getenv().getOrDefault("WINDIR", "C:\\Windows");
-            dirs.add(Path.of(windir, "Fonts"));
-            String local = System.getenv("LOCALAPPDATA");
-            if (local != null) dirs.add(Path.of(local, "Microsoft", "Windows", "Fonts"));
-        } else if (os.contains("mac")) {
-            dirs.add(Path.of("/System/Library/Fonts"));
-            dirs.add(Path.of("/Library/Fonts"));
-            dirs.add(Path.of(home, "Library", "Fonts"));
-        } else {
-            dirs.add(Path.of("/usr/share/fonts"));
-            dirs.add(Path.of("/usr/local/share/fonts"));
-            dirs.add(Path.of(home, ".fonts"));
-            dirs.add(Path.of(home, ".local", "share", "fonts"));
-        }
-        return dirs;
-    }
-
-    /** フォルダ（下位フォルダを含む）の書体ファイルをすべて読む。読めないファイルは飛ばす。 */
-    public static List<Face> scan(List<Path> directories) {
-        List<Face> faces = new ArrayList<>();
-        for (Path dir : directories) {
-            if (!Files.isDirectory(dir)) continue;
-            try (Stream<Path> files = Files.walk(dir, 4)) {
-                files.filter(SystemFonts::isFontFile).sorted().forEach(p -> readFile(p, faces));
-            } catch (IOException | RuntimeException ignored) {
-                // 読めないフォルダは無いものとして扱う
-            }
-        }
-        return faces;
-    }
-
-    private static boolean isFontFile(Path p) {
-        String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
-        return n.endsWith(".ttf") || n.endsWith(".otf") || n.endsWith(".ttc") || n.endsWith(".otc");
-    }
-
-    private static final int NAME_FAMILY = 1;
-    private static final int NAME_TYPOGRAPHIC_FAMILY = 16;
-    private static final long TAG_WGHT = tag("wght");
-    private static final long TAG_ITAL = tag("ital");
-
-    private static void readFile(Path path, List<Face> out) {
-        FT_Face first = LoadedFace.openFace(path, 0);
-        if (first == null) return;
-        long count;
-        synchronized (LoadedFace.LOCK) {
-            count = first.num_faces();
-        }
-        LoadedFace.closeFace(first);
-        for (int i = 0; i < count; i++) {
-            FT_Face face = LoadedFace.openFace(path, i);
-            if (face == null) continue;
-            try {
-                synchronized (LoadedFace.LOCK) {
-                    readFace(path, i, face, out);
-                }
-            } finally {
-                LoadedFace.closeFace(face);
-            }
-        }
-    }
-
-    private static void readFace(Path path, int index, FT_Face face, List<Face> out) {
-        if (!LoadedFace.isUsableFace(face)) return;
-        Set<String> names = familyNames(face);
-        if (names.isEmpty()) return;
-
-        TT_OS2 os2 = TT_OS2.createSafe(FreeType.FT_Get_Sfnt_Table(face, FreeType.FT_SFNT_OS2));
-        int weight = os2 != null ? Short.toUnsignedInt(os2.usWeightClass()) : 400;
-        if (weight < 1 || weight > 1000) weight = 400;
-        int widthClass = os2 != null ? Short.toUnsignedInt(os2.usWidthClass()) : 5;
-        boolean italic = (face.style_flags() & FreeType.FT_STYLE_FLAG_ITALIC) != 0
-                || (os2 != null && (os2.fsSelection() & (1 | 1 << 9)) != 0);
-        String display = face.family_nameString() + " " + face.style_nameString();
-
-        if ((face.face_flags() & FreeType.FT_FACE_FLAG_MULTIPLE_MASTERS) != 0
-                && addNamedInstances(path, index, face, names, widthClass, italic, out)) {
-            return;
-        }
-        out.add(new Face(path, index, names, display, weight, italic, widthClass));
-    }
-
-    /**
-     * 可変フォントは名前付きインスタンス（Thin〜Black）を別々の面として載せる。
-     * Chrome（Windows）も可変フォントをこの単位で照合する（600 を指定しても SemiBold が無ければ Bold になる）。
-     */
-    private static boolean addNamedInstances(Path path, int index, FT_Face face, Set<String> names,
-                                             int widthClass, boolean italic, List<Face> out) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            PointerBuffer pmm = stack.mallocPointer(1);
-            if (FreeType.FT_Get_MM_Var(face, pmm) != 0) return false;
-            FT_MM_Var mm = FT_MM_Var.create(pmm.get(0));
-            try {
-                int axes = mm.num_axis();
-                int styles = mm.num_namedstyles();
-                if (styles <= 0) return false;
-                int wghtAxis = -1, italAxis = -1;
-                FT_Var_Axis.Buffer axis = mm.axis();
-                for (int a = 0; a < axes; a++) {
-                    if (axis.get(a).tag() == TAG_WGHT) wghtAxis = a;
-                    if (axis.get(a).tag() == TAG_ITAL) italAxis = a;
-                }
-                FT_Var_Named_Style.Buffer named = mm.namedstyle();
-                for (int s = 0; s < styles; s++) {
-                    var coords = named.get(s).coords(axes);
-                    int weight = wghtAxis >= 0 ? Math.round(coords.get(wghtAxis) / 65536f) : 400;
-                    boolean instItalic = italic || (italAxis >= 0 && coords.get(italAxis) >= 65536);
-                    out.add(new Face(path, ((long) (s + 1) << 16) | index, names,
-                            face.family_nameString() + " #" + (s + 1), weight, instItalic, widthClass));
-                }
-                return true;
-            } finally {
-                FreeType.FT_Done_MM_Var(LoadedFace.library(), mm);
-            }
-        }
-    }
-
-    private static Set<String> familyNames(FT_Face face) {
-        Set<String> names = new LinkedHashSet<>();
-        String ftFamily = face.family_nameString();
-        if (ftFamily != null && !ftFamily.isBlank()) names.add(ftFamily.trim().toLowerCase(Locale.ROOT));
-        int count = FreeType.FT_Get_Sfnt_Name_Count(face);
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            FT_SfntName name = FT_SfntName.malloc(stack);
-            for (int i = 0; i < count; i++) {
-                if (FreeType.FT_Get_Sfnt_Name(face, i, name) != 0) continue;
-                int id = Short.toUnsignedInt(name.name_id());
-                if (id != NAME_FAMILY && id != NAME_TYPOGRAPHIC_FAMILY) continue;
-                String decoded = decode(name);
-                if (decoded != null && !decoded.isBlank()) names.add(decoded.trim().toLowerCase(Locale.ROOT));
-            }
-        }
-        return names;
-    }
-
-    private static String decode(FT_SfntName name) {
-        int platform = Short.toUnsignedInt(name.platform_id());
-        int encoding = Short.toUnsignedInt(name.encoding_id());
-        ByteBuffer raw = name.string();
-        byte[] bytes = new byte[name.string_len()];
-        raw.get(0, bytes);
-        if (platform == 0 || (platform == 3 && (encoding == 1 || encoding == 10))) {
-            return new String(bytes, StandardCharsets.UTF_16BE);
-        }
-        if (platform == 1 && encoding == 0) {
-            return new String(bytes, StandardCharsets.ISO_8859_1);
-        }
-        return null;
-    }
-
-    private static long tag(String s) {
-        return ((long) s.charAt(0) << 24) | ((long) s.charAt(1) << 16) | ((long) s.charAt(2) << 8) | s.charAt(3);
     }
 
     // ---- 照合（CSS Fonts 4 §5.2 の手順 4）

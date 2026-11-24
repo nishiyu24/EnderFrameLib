@@ -234,6 +234,8 @@ java -XX:AOTCache=app.aot        -cp <same jars>             YourMain     # norm
 
 Measured on Windows / JDK 27 (`ColdStartMain`, median of 7 fresh JVMs, 800x600): the showcase page went from 482 ms to `220 ms`, and a 2,000-row list from 575 ms to `249 ms`. The cache must be built from the same jars (directories are rejected) and the same JDK.
 
+System fonts: the first start scans the OS font folders (opening every font file with FreeType; about 250-400 ms for ~500 files on Windows) and writes a catalog to the per-user cache folder (`%LOCALAPPDATA%\EnderFrame`, `~/Library/Caches/EnderFrame`, or `$XDG_CACHE_HOME/enderframe`). Later starts read the catalog instead (about 25 ms) as long as the font folders' modification times are unchanged; installing or removing a font invalidates it. To control the location, build the resolver yourself with `SystemFonts.load(roots, catalogPath, locale)` (`null` disables the catalog).
+
 ---
 
 ## 📖 Further Reading

@@ -110,7 +110,7 @@ core/
 ├── layout/   ボックスツリー（BoxTreeBuilder）と整形コンテキスト（Block / Flex / Grid / Table）、LayoutBox、model/
 ├── paint/    描画モデル（DisplayItem・BoxDecorations・Gradients・AnimationSpec）
 └── text/     テキストの測定（TextShaper）、書体（model/FontFace・BitmapFontFace）、
-              システム書体（font/: SystemFonts・OutlineFontFace・LoadedFace・KerningTable）
+              システム書体（font/: SystemFonts・FontScanner・FontCatalog・OutlineFontFace・LoadedFace・KerningTable）
 ```
 
 ### ライブ DOM と単一所有権
@@ -143,6 +143,10 @@ core/
 - `font-family` は既定でシステムの書体（`SystemFonts`、CSS Fonts 4 §5.2 の照合）に解決し、`@font-face` の TTF / OTF も
   `WebFonts` を通して同じ `OutlineFontFace` の経路で測り描きする。`minecraft:*` などの名前と、TTF / OTF 以外の `@font-face`
   だけが Minecraft のビットマップ書体（`BitmapFontFace`）で描かれる。
+- OS の書体の一覧は、全ファイルを FreeType で開く走査（`FontScanner`。Windows の約 500 ファイルで 250〜400 ms）の結果を
+  利用者のキャッシュのフォルダの目録（`FontCatalog`。Windows は `%LOCALAPPDATA%\EnderFrame`、macOS は `~/Library/Caches/EnderFrame`、
+  それ以外は `$XDG_CACHE_HOME/enderframe`）に書き、次の起動ではフォルダの更新時刻が記録と同じなら目録だけを読む（約 25 ms）。
+  目録は走査の結果をそのまま写すので、解決の結果は目録の有無で変わらない（`FontCatalogTest`）。
 
 ---
 

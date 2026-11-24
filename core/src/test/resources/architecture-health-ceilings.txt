@@ -55,7 +55,6 @@ core/src/main/java/com/nishiyu/enderframelib/core/raster/svg/SvgRenderer.java | 
 core/src/main/java/com/nishiyu/enderframelib/core/scene3d/GltfBinaryLoader.java | 761
 core/src/main/java/com/nishiyu/enderframelib/core/text/TextShaper.java | 1065
 core/src/main/java/com/nishiyu/enderframelib/core/text/font/LoadedFace.java | 948
-core/src/main/java/com/nishiyu/enderframelib/core/text/font/SystemFonts.java | 609
 core-gl/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlDevice.java | 1110
 core-vulkan/src/main/java/com/nishiyu/enderframelib/core/paint/vulkan/VkDevice.java | 1428
 core-vulkan/src/main/java/com/nishiyu/enderframelib/core/paint/vulkan/VkPipelines.java | 603

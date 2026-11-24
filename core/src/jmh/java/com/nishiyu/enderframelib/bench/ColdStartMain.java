@@ -47,10 +47,23 @@ public class ColdStartMain {
             if (pw.equals("join")) f.join();
             System.out.printf("PREWARM %s %.1f ms%n", pw, (System.nanoTime() - pwStart) / 1e6);
         }
+        // -Dcold.fonts=system: OS の書体で開く（既定の StandaloneView と同じ。書体の目録があれば走査しない）。
+        // =scan: 目録を消してから開く（初回起動・書体を足した直後と同じ全走査）。無指定は書体を使わない（FontResolver.FALLBACK）
+        String fonts = System.getProperty("cold.fonts", "fallback");
+        if (fonts.equals("scan")) {
+            java.nio.file.Path catalog = com.nishiyu.enderframelib.core.text.font.FontCatalog.defaultLocation();
+            try {
+                if (catalog != null) java.nio.file.Files.deleteIfExists(catalog);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        }
         long t0 = System.nanoTime();
         String html = Workloads.html(doc);
         long t1 = System.nanoTime();
-        StandaloneView v = new StandaloneView(html, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, FontResolver.FALLBACK);
+        FontResolver resolver = fonts.equals("fallback") ? FontResolver.FALLBACK
+                : com.nishiyu.enderframelib.core.text.font.SystemFonts.system();
+        StandaloneView v = new StandaloneView(html, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, resolver);
         long t2 = System.nanoTime();
         NullBackend b = new NullBackend();
         double[] f = new double[10];
@@ -59,7 +72,7 @@ public class ColdStartMain {
             v.frame(1000 + i * 16, b, true);
             f[i] = (System.nanoTime() - s) / 1e6;
         }
-        System.out.printf("COLD doc=%s html=%.1f open=%.1f first=%.1f f2=%.1f f3=%.1f f10=%.1f total(open+first)=%.1f ms%n",
+        System.out.printf("COLD fonts=" + fonts + " doc=%s html=%.1f open=%.1f first=%.1f f2=%.1f f3=%.1f f10=%.1f total(open+first)=%.1f ms%n",
                 doc, (t1 - t0) / 1e6, (t2 - t1) / 1e6, f[0], f[1], f[2], f[9], (t2 - t1) / 1e6 + f[0]);
         // B1①: プロセス起動（OS がプロセスを作った時刻）→ 初回フレーム完了。Chrome の「プロセス起動 → 初回描画」（cold.js）と同じ範囲
         long started = ProcessHandle.current().info().startInstant().map(java.time.Instant::toEpochMilli).orElse(-1L);

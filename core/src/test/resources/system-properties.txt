@@ -44,8 +44,9 @@ enderframe.soft.notiled | SHORTCUT | core/kernel/EngineFlags.java | TileQueue.ti
 enderframe.split | TUNING | core/kernel/EngineFlags.java | LayoutTaskPool.SPLIT_PER_PARTICIPANT（並列区間の分割数。既定 4）
 enderframe.text.cache | TUNING | core/kernel/EngineFlags.java | TextShaper の整形キャッシュの容量（既定 4096）
 enderframe.threads | TUNING | core/kernel/EngineFlags.java | ワーカー数（A3。EnderEngine.workerThreads と同じ）
-env:LOCALAPPDATA | PLATFORM | core/text/font/SystemFonts.java | 利用者の書体のフォルダ（Windows）
-env:WINDIR | PLATFORM | core/text/font/SystemFonts.java | システムの書体のフォルダ（Windows）
+env:LOCALAPPDATA | PLATFORM | core/text/font/FontCatalog.java, core/text/font/FontScanner.java | 利用者の書体のフォルダと書体の目録の置き場所（Windows）
+env:WINDIR | PLATFORM | core/text/font/FontScanner.java | システムの書体のフォルダ（Windows）
+env:XDG_CACHE_HOME | PLATFORM | core/text/font/FontCatalog.java | 書体の目録の置き場所（Linux）
 os.arch | PLATFORM | core/media/NativeVideoApi.java, core/net/YtDlpProvisioner.java | 同梱の実行ファイルの選択
-os.name | PLATFORM | core/media/NativeVideoApi.java, core/net/YtDlpProvisioner.java, core/text/font/SystemFonts.java | OS ごとの分岐
-user.home | PLATFORM | core/text/font/SystemFonts.java | 利用者の書体のフォルダ（macOS・Linux）
+os.name | PLATFORM | core/media/NativeVideoApi.java, core/net/YtDlpProvisioner.java, core/text/font/FontCatalog.java, core/text/font/FontScanner.java | OS ごとの分岐
+user.home | PLATFORM | core/text/font/FontCatalog.java, core/text/font/FontScanner.java | 利用者の書体のフォルダと書体の目録の置き場所（macOS・Linux）

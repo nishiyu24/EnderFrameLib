@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.text.font.SystemFonts;
+import com.nishiyu.enderframelib.core.text.font.FontScanner;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,7 +15,7 @@ import java.util.zip.CRC32;
 /**
  * OS の書体に依る画素のゴールデン（{@code GoldenFrameTest}・{@code RealDocumentFramesTest}）の、書体の環境の指紋。
  *
- * <p>SOFTWARE の描画は OS の書体（{@link SystemFonts#defaultFontDirectories()}）を使うので、同じ OS でも入っている書体が違うと
+ * <p>SOFTWARE の描画は OS の書体（{@link FontScanner#defaultDirectories()}）を使うので、同じ OS でも入っている書体が違うと
  * 画素が変わる（GitHub の ubuntu-latest〔Ubuntu 26・絵文字書体あり〕と WSL の Ubuntu 24 で、全フレームの画素が違った）。
  * 画素のファイルに記録したときの指紋を書き、今の環境の指紋と違えば画素の比較だけを飛ばす（表示リストとヒットテストは
  * OS に依らないので常に比べる）。指紋は書体のフォルダの中の書体ファイルの相対パスと大きさの一覧の CRC32。</p>
@@ -33,7 +33,7 @@ public final class FontEnvironment {
         String c = cached;
         if (c != null) return c;
         List<String> entries = new ArrayList<>();
-        for (Path dir : SystemFonts.defaultFontDirectories()) {
+        for (Path dir : FontScanner.defaultDirectories()) {
             if (!Files.isDirectory(dir)) continue;
             try (Stream<Path> files = Files.walk(dir)) {
                 files.filter(Files::isRegularFile).forEach(p -> {
