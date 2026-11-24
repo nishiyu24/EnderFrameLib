@@ -374,6 +374,7 @@ public abstract interface api.dom.Document extends api.dom.Node
     public abstract int api.dom.Document.getInnerWidth()
     public abstract java.lang.String api.dom.Document.getTitle()
     public abstract void api.dom.Document.addLayoutObserver(api.dom.Document$LayoutObserver)
+    public abstract void api.dom.Document.adoptStyleRules(java.lang.String,java.util.List<api.dom.StyleRule>)
     public abstract void api.dom.Document.removeLayoutObserver(api.dom.Document$LayoutObserver)
     public abstract void api.dom.Document.setTitle(java.lang.String)
 public abstract static interface api.dom.Document$LayoutObserver
@@ -670,6 +671,21 @@ public abstract interface api.dom.Selection
     public abstract void api.dom.Selection.selectAllChildren(api.dom.Node)
     public abstract void api.dom.Selection.setBaseAndExtent(api.dom.Node,int,api.dom.Node,int)
     public default void api.dom.Selection.setPosition(api.dom.Node,int)
+public final record api.dom.StyleRule
+    public api.dom.StyleRule(java.lang.String,java.util.List<api.dom.StyleRule$Declaration>)
+    public final boolean api.dom.StyleRule.equals(java.lang.Object)
+    public final int api.dom.StyleRule.hashCode()
+    public final java.lang.String api.dom.StyleRule.toString()
+    public java.lang.String api.dom.StyleRule.selector()
+    public java.lang.String api.dom.StyleRule.toCss()
+    public java.util.List<api.dom.StyleRule$Declaration> api.dom.StyleRule.declarations()
+public static final record api.dom.StyleRule$Declaration
+    public api.dom.StyleRule$Declaration(java.lang.String,java.lang.String)
+    public final boolean api.dom.StyleRule$Declaration.equals(java.lang.Object)
+    public final int api.dom.StyleRule$Declaration.hashCode()
+    public final java.lang.String api.dom.StyleRule$Declaration.toString()
+    public java.lang.String api.dom.StyleRule$Declaration.property()
+    public java.lang.String api.dom.StyleRule$Declaration.value()
 public abstract interface api.dom.ValidityState
     public abstract boolean api.dom.ValidityState.isBadInput()
     public abstract boolean api.dom.ValidityState.isCustomError()
@@ -1023,3 +1039,875 @@ public abstract interface api.ui.VNode
 public class api.ui.VText implements api.ui.VNode
     public api.dom.DOMNodes$Text api.ui.VText.mount(api.dom.Document)
     public api.ui.VText(java.lang.Object)
+public abstract class api.ui.style.BorderProperties extends api.ui.style.BoxProperties
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.border(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.border(api.ui.style.Value<api.ui.style.Length>,api.ui.style.Keyword$BorderStyle,api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottom(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottom(api.ui.style.Value<api.ui.style.Length>,api.ui.style.Keyword$BorderStyle,api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottomColor(api.ui.State<? extends api.ui.style.Value<api.ui.style.Color>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottomColor(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottomLeftRadius(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottomLeftRadius(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottomRightRadius(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottomRightRadius(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottomStyle(api.ui.style.Keyword$BorderStyle)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottomWidth(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderBottomWidth(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderCollapse(api.ui.style.Keyword$BorderCollapse)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderColor(api.ui.style.Value<api.ui.style.Color>...)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderImage(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderImageOutset(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderImageRepeat(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderImageSlice(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderImageSource(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderImageWidth(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderLeft(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderLeft(api.ui.style.Value<api.ui.style.Length>,api.ui.style.Keyword$BorderStyle,api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderLeftColor(api.ui.State<? extends api.ui.style.Value<api.ui.style.Color>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderLeftColor(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderLeftStyle(api.ui.style.Keyword$BorderStyle)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderLeftWidth(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderLeftWidth(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderRadius(api.ui.style.Value<api.ui.style.Length>...)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderRight(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderRight(api.ui.style.Value<api.ui.style.Length>,api.ui.style.Keyword$BorderStyle,api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderRightColor(api.ui.State<? extends api.ui.style.Value<api.ui.style.Color>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderRightColor(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderRightStyle(api.ui.style.Keyword$BorderStyle)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderRightWidth(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderRightWidth(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderSpacing(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderSpacing(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderStyle(api.ui.style.Keyword$BorderStyle...)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTop(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTop(api.ui.style.Value<api.ui.style.Length>,api.ui.style.Keyword$BorderStyle,api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTopColor(api.ui.State<? extends api.ui.style.Value<api.ui.style.Color>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTopColor(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTopLeftRadius(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTopLeftRadius(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTopRightRadius(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTopRightRadius(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTopStyle(api.ui.style.Keyword$BorderStyle)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTopWidth(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderTopWidth(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.borderWidth(api.ui.style.Value<api.ui.style.Length>...)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.outline(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.outline(api.ui.style.Value<api.ui.style.Length>,api.ui.style.Keyword$BorderStyle,api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.outlineColor(api.ui.State<? extends api.ui.style.Value<api.ui.style.Color>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.outlineColor(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.outlineOffset(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.outlineOffset(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.outlineStyle(api.ui.style.Keyword$BorderStyle)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.outlineWidth(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BorderProperties.outlineWidth(api.ui.style.Value<api.ui.style.Length>)
+public abstract class api.ui.style.BoxProperties
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.aspectRatio(double,double)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.bottom(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.bottom(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.boxSizing(api.ui.style.Keyword$BoxSizing)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.captionSide(api.ui.style.Keyword$CaptionSide)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.clear(api.ui.style.Keyword$Clear)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.containIntrinsicHeight(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.containIntrinsicWidth(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.cssFloat(api.ui.style.Keyword$FloatSide)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.display(api.ui.style.Keyword$Display)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.emptyCells(api.ui.style.Keyword$EmptyCells)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.height(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.height(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.inset(api.ui.style.Value<api.ui.style.Length>...)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.left(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.left(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.margin(api.ui.style.Value<api.ui.style.Length>...)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.marginBottom(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.marginBottom(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.marginLeft(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.marginLeft(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.marginRight(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.marginRight(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.marginTop(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.marginTop(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.maxHeight(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.maxHeight(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.maxHeight(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.maxWidth(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.maxWidth(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.maxWidth(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.minHeight(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.minHeight(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.minWidth(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.minWidth(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.overflow(api.ui.style.Keyword$Overflow)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.overflow(api.ui.style.Keyword$Overflow,api.ui.style.Keyword$Overflow)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.overflowX(api.ui.style.Keyword$Overflow)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.overflowY(api.ui.style.Keyword$Overflow)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.padding(api.ui.style.Value<api.ui.style.Length>...)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.paddingBottom(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.paddingBottom(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.paddingLeft(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.paddingLeft(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.paddingRight(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.paddingRight(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.paddingTop(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.paddingTop(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.position(api.ui.style.Keyword$Position)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.right(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.right(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.scrollbarWidth(api.ui.style.Keyword$ScrollbarWidth)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.tableLayout(api.ui.style.Keyword$TableLayout)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.top(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.top(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.width(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.width(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.BoxProperties.zIndex(int)
+public final class api.ui.style.Color implements api.ui.style.Value<api.ui.style.Color>
+    public boolean api.ui.style.Color.equals(java.lang.Object)
+    public api.ui.style.Color api.ui.style.Color.alpha(double)
+    public int api.ui.style.Color.hashCode()
+    public java.lang.String api.ui.style.Color.css()
+    public java.lang.String api.ui.style.Color.hexString()
+    public java.lang.String api.ui.style.Color.toString()
+    public static api.ui.style.Color api.ui.style.Color.hex(int)
+    public static api.ui.style.Color api.ui.style.Color.rgba(int,int,int,double)
+    public static final api.ui.style.Color api.ui.style.Color.BLACK
+    public static final api.ui.style.Color api.ui.style.Color.TRANSPARENT
+    public static final api.ui.style.Color api.ui.style.Color.WHITE
+public final class api.ui.style.Css extends api.ui.style.OtherProperties
+    public static api.ui.Prop api.ui.style.Css.inline(api.ui.style.Declaration...)
+    public static api.ui.style.Color api.ui.style.Css.hex(int)
+    public static api.ui.style.Length api.ui.style.Css.em(double)
+    public static api.ui.style.Length api.ui.style.Css.pct(double)
+    public static api.ui.style.Length api.ui.style.Css.px(double)
+    public static api.ui.style.Length api.ui.style.Css.rem(double)
+    public static api.ui.style.Length api.ui.style.Css.vh(double)
+    public static api.ui.style.Length api.ui.style.Css.vw(double)
+    public static api.ui.style.Raw api.ui.style.Css.raw(java.lang.String)
+    public static api.ui.style.Time api.ui.style.Css.ms(double)
+    public static api.ui.style.Time api.ui.style.Css.sec(double)
+    public static api.ui.style.Variant api.ui.style.Css.focusVisible(api.ui.style.Declaration...)
+    public static api.ui.style.Variant api.ui.style.Css.hover(api.ui.style.Declaration...)
+    public static api.ui.style.Variant api.ui.style.Css.pressed(api.ui.style.Declaration...)
+    public static api.ui.style.Variant api.ui.style.Css.when(api.ui.style.Modifier,api.ui.style.Declaration...)
+    public static final api.ui.style.Keyword$None api.ui.style.Css.NONE
+    public static final api.ui.style.Length api.ui.style.Css.AUTO
+    public static final api.ui.style.Length api.ui.style.Css.ZERO
+public abstract interface api.ui.style.CssValue
+    public abstract java.lang.String api.ui.style.CssValue.css()
+public final class api.ui.style.Declaration
+    public boolean api.ui.style.Declaration.isDynamic()
+    public java.lang.String api.ui.style.Declaration.property()
+    public java.lang.String api.ui.style.Declaration.toString()
+public abstract class api.ui.style.FlexGridProperties extends api.ui.style.VisualProperties
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.alignContent(api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.alignItems(api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.alignSelf(api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnCount(int)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnFill(api.ui.style.Keyword$ColumnFill)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnGap(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnGap(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnRule(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnRule(api.ui.style.Value<api.ui.style.Length>,api.ui.style.Keyword$BorderStyle,api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnRuleColor(api.ui.State<? extends api.ui.style.Value<api.ui.style.Color>>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnRuleColor(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnRuleStyle(api.ui.style.Keyword$BorderStyle)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnRuleWidth(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnRuleWidth(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnSpan(api.ui.style.Keyword$ColumnSpan)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnWidth(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columnWidth(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.columns(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flex(api.ui.style.Keyword$None)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flex(double)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flex(double,double,api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flexBasis(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flexBasis(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flexDirection(api.ui.style.Keyword$FlexDirection)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flexFlow(api.ui.style.Keyword$FlexDirection,api.ui.style.Keyword$FlexWrap)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flexGrow(double)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flexShrink(double)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.flexWrap(api.ui.style.Keyword$FlexWrap)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gap(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gap(api.ui.style.Value<api.ui.style.Length>,api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.grid(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridArea(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridAutoColumns(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridAutoFlow(api.ui.style.Keyword$GridAutoFlow)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridAutoRows(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridColumn(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridColumnEnd(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridColumnGap(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridColumnStart(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridGap(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridGap(api.ui.style.Value<api.ui.style.Length>,api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridRow(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridRowEnd(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridRowGap(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridRowStart(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridTemplate(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridTemplateAreas(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridTemplateColumns(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.gridTemplateRows(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.justifyContent(api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.justifyItems(api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.justifySelf(api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.order(int)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.placeContent(api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.placeContent(api.ui.style.Keyword$Alignment,api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.placeItems(api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.placeItems(api.ui.style.Keyword$Alignment,api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.placeSelf(api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.placeSelf(api.ui.style.Keyword$Alignment,api.ui.style.Keyword$Alignment)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.rowGap(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.FlexGridProperties.rowGap(api.ui.style.Value<api.ui.style.Length>)
+public final class api.ui.style.Keyword
+public static final enum api.ui.style.Keyword$Alignment implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Alignment.css()
+    public static api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Alignment[] api.ui.style.Keyword$Alignment.values()
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.AUTO
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.BASELINE
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.CENTER
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.END
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.FIRST_BASELINE
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.FLEX_END
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.FLEX_START
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.LAST_BASELINE
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.LEFT
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.LEGACY
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.NORMAL
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.RIGHT
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.SELF_END
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.SELF_START
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.SPACE_AROUND
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.SPACE_BETWEEN
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.SPACE_EVENLY
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.START
+    public static final api.ui.style.Keyword$Alignment api.ui.style.Keyword$Alignment.STRETCH
+public static final enum api.ui.style.Keyword$Appearance implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Appearance.css()
+    public static api.ui.style.Keyword$Appearance api.ui.style.Keyword$Appearance.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Appearance[] api.ui.style.Keyword$Appearance.values()
+    public static final api.ui.style.Keyword$Appearance api.ui.style.Keyword$Appearance.AUTO
+    public static final api.ui.style.Keyword$Appearance api.ui.style.Keyword$Appearance.NONE
+public static final enum api.ui.style.Keyword$BorderCollapse implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$BorderCollapse.css()
+    public static api.ui.style.Keyword$BorderCollapse api.ui.style.Keyword$BorderCollapse.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$BorderCollapse[] api.ui.style.Keyword$BorderCollapse.values()
+    public static final api.ui.style.Keyword$BorderCollapse api.ui.style.Keyword$BorderCollapse.COLLAPSE
+    public static final api.ui.style.Keyword$BorderCollapse api.ui.style.Keyword$BorderCollapse.SEPARATE
+public static final enum api.ui.style.Keyword$BorderStyle implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$BorderStyle.css()
+    public static api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$BorderStyle[] api.ui.style.Keyword$BorderStyle.values()
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.AUTO
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.DASHED
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.DOTTED
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.DOUBLE
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.GROOVE
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.HIDDEN
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.INSET
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.NONE
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.OUTSET
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.RIDGE
+    public static final api.ui.style.Keyword$BorderStyle api.ui.style.Keyword$BorderStyle.SOLID
+public static final enum api.ui.style.Keyword$BoxSizing implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$BoxSizing.css()
+    public static api.ui.style.Keyword$BoxSizing api.ui.style.Keyword$BoxSizing.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$BoxSizing[] api.ui.style.Keyword$BoxSizing.values()
+    public static final api.ui.style.Keyword$BoxSizing api.ui.style.Keyword$BoxSizing.BORDER_BOX
+    public static final api.ui.style.Keyword$BoxSizing api.ui.style.Keyword$BoxSizing.CONTENT_BOX
+public static final enum api.ui.style.Keyword$BreakInside implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$BreakInside.css()
+    public static api.ui.style.Keyword$BreakInside api.ui.style.Keyword$BreakInside.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$BreakInside[] api.ui.style.Keyword$BreakInside.values()
+    public static final api.ui.style.Keyword$BreakInside api.ui.style.Keyword$BreakInside.AUTO
+    public static final api.ui.style.Keyword$BreakInside api.ui.style.Keyword$BreakInside.AVOID
+    public static final api.ui.style.Keyword$BreakInside api.ui.style.Keyword$BreakInside.AVOID_COLUMN
+    public static final api.ui.style.Keyword$BreakInside api.ui.style.Keyword$BreakInside.AVOID_PAGE
+public static final enum api.ui.style.Keyword$CaptionSide implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$CaptionSide.css()
+    public static api.ui.style.Keyword$CaptionSide api.ui.style.Keyword$CaptionSide.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$CaptionSide[] api.ui.style.Keyword$CaptionSide.values()
+    public static final api.ui.style.Keyword$CaptionSide api.ui.style.Keyword$CaptionSide.BOTTOM
+    public static final api.ui.style.Keyword$CaptionSide api.ui.style.Keyword$CaptionSide.TOP
+public static final enum api.ui.style.Keyword$Clear implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Clear.css()
+    public static api.ui.style.Keyword$Clear api.ui.style.Keyword$Clear.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Clear[] api.ui.style.Keyword$Clear.values()
+    public static final api.ui.style.Keyword$Clear api.ui.style.Keyword$Clear.BOTH
+    public static final api.ui.style.Keyword$Clear api.ui.style.Keyword$Clear.INLINE_END
+    public static final api.ui.style.Keyword$Clear api.ui.style.Keyword$Clear.INLINE_START
+    public static final api.ui.style.Keyword$Clear api.ui.style.Keyword$Clear.LEFT
+    public static final api.ui.style.Keyword$Clear api.ui.style.Keyword$Clear.NONE
+    public static final api.ui.style.Keyword$Clear api.ui.style.Keyword$Clear.RIGHT
+public static final enum api.ui.style.Keyword$ColumnFill implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$ColumnFill.css()
+    public static api.ui.style.Keyword$ColumnFill api.ui.style.Keyword$ColumnFill.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$ColumnFill[] api.ui.style.Keyword$ColumnFill.values()
+    public static final api.ui.style.Keyword$ColumnFill api.ui.style.Keyword$ColumnFill.AUTO
+    public static final api.ui.style.Keyword$ColumnFill api.ui.style.Keyword$ColumnFill.BALANCE
+public static final enum api.ui.style.Keyword$ColumnSpan implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$ColumnSpan.css()
+    public static api.ui.style.Keyword$ColumnSpan api.ui.style.Keyword$ColumnSpan.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$ColumnSpan[] api.ui.style.Keyword$ColumnSpan.values()
+    public static final api.ui.style.Keyword$ColumnSpan api.ui.style.Keyword$ColumnSpan.ALL
+    public static final api.ui.style.Keyword$ColumnSpan api.ui.style.Keyword$ColumnSpan.NONE
+public static final enum api.ui.style.Keyword$ContainerType implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$ContainerType.css()
+    public static api.ui.style.Keyword$ContainerType api.ui.style.Keyword$ContainerType.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$ContainerType[] api.ui.style.Keyword$ContainerType.values()
+    public static final api.ui.style.Keyword$ContainerType api.ui.style.Keyword$ContainerType.INLINE_SIZE
+    public static final api.ui.style.Keyword$ContainerType api.ui.style.Keyword$ContainerType.NORMAL
+    public static final api.ui.style.Keyword$ContainerType api.ui.style.Keyword$ContainerType.SIZE
+public static final enum api.ui.style.Keyword$ContentVisibility implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$ContentVisibility.css()
+    public static api.ui.style.Keyword$ContentVisibility api.ui.style.Keyword$ContentVisibility.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$ContentVisibility[] api.ui.style.Keyword$ContentVisibility.values()
+    public static final api.ui.style.Keyword$ContentVisibility api.ui.style.Keyword$ContentVisibility.AUTO
+    public static final api.ui.style.Keyword$ContentVisibility api.ui.style.Keyword$ContentVisibility.HIDDEN
+    public static final api.ui.style.Keyword$ContentVisibility api.ui.style.Keyword$ContentVisibility.VISIBLE
+public static final enum api.ui.style.Keyword$Cursor implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Cursor.css()
+    public static api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Cursor[] api.ui.style.Keyword$Cursor.values()
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.ALIAS
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.ALL_SCROLL
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.AUTO
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.CELL
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.COL_RESIZE
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.CONTEXT_MENU
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.COPY
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.CROSSHAIR
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.DEFAULT
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.EW_RESIZE
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.GRAB
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.GRABBING
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.HELP
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.MOVE
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.NESW_RESIZE
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.NONE
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.NOT_ALLOWED
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.NO_DROP
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.NS_RESIZE
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.NWSE_RESIZE
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.POINTER
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.PROGRESS
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.ROW_RESIZE
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.TEXT
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.VERTICAL_TEXT
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.WAIT
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.ZOOM_IN
+    public static final api.ui.style.Keyword$Cursor api.ui.style.Keyword$Cursor.ZOOM_OUT
+public static final enum api.ui.style.Keyword$Direction implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Direction.css()
+    public static api.ui.style.Keyword$Direction api.ui.style.Keyword$Direction.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Direction[] api.ui.style.Keyword$Direction.values()
+    public static final api.ui.style.Keyword$Direction api.ui.style.Keyword$Direction.LTR
+    public static final api.ui.style.Keyword$Direction api.ui.style.Keyword$Direction.RTL
+public static final enum api.ui.style.Keyword$Display implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Display.css()
+    public static api.ui.style.Keyword$Display api.ui.style.Keyword$Display.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Display[] api.ui.style.Keyword$Display.values()
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.BLOCK
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.CONTENTS
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.FLEX
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.FLOW_ROOT
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.GRID
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.INLINE
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.INLINE_BLOCK
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.INLINE_FLEX
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.INLINE_GRID
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.INLINE_TABLE
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.LIST_ITEM
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.NONE
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.TABLE
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.TABLE_CAPTION
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.TABLE_CELL
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.TABLE_COLUMN
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.TABLE_COLUMN_GROUP
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.TABLE_FOOTER_GROUP
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.TABLE_HEADER_GROUP
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.TABLE_ROW
+    public static final api.ui.style.Keyword$Display api.ui.style.Keyword$Display.TABLE_ROW_GROUP
+public static final enum api.ui.style.Keyword$EmptyCells implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$EmptyCells.css()
+    public static api.ui.style.Keyword$EmptyCells api.ui.style.Keyword$EmptyCells.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$EmptyCells[] api.ui.style.Keyword$EmptyCells.values()
+    public static final api.ui.style.Keyword$EmptyCells api.ui.style.Keyword$EmptyCells.HIDE
+    public static final api.ui.style.Keyword$EmptyCells api.ui.style.Keyword$EmptyCells.SHOW
+public static final enum api.ui.style.Keyword$FlexDirection implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$FlexDirection.css()
+    public static api.ui.style.Keyword$FlexDirection api.ui.style.Keyword$FlexDirection.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$FlexDirection[] api.ui.style.Keyword$FlexDirection.values()
+    public static final api.ui.style.Keyword$FlexDirection api.ui.style.Keyword$FlexDirection.COLUMN
+    public static final api.ui.style.Keyword$FlexDirection api.ui.style.Keyword$FlexDirection.COLUMN_REVERSE
+    public static final api.ui.style.Keyword$FlexDirection api.ui.style.Keyword$FlexDirection.ROW
+    public static final api.ui.style.Keyword$FlexDirection api.ui.style.Keyword$FlexDirection.ROW_REVERSE
+public static final enum api.ui.style.Keyword$FlexWrap implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$FlexWrap.css()
+    public static api.ui.style.Keyword$FlexWrap api.ui.style.Keyword$FlexWrap.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$FlexWrap[] api.ui.style.Keyword$FlexWrap.values()
+    public static final api.ui.style.Keyword$FlexWrap api.ui.style.Keyword$FlexWrap.BALANCE
+    public static final api.ui.style.Keyword$FlexWrap api.ui.style.Keyword$FlexWrap.NOWRAP
+    public static final api.ui.style.Keyword$FlexWrap api.ui.style.Keyword$FlexWrap.WRAP
+    public static final api.ui.style.Keyword$FlexWrap api.ui.style.Keyword$FlexWrap.WRAP_REVERSE
+public static final enum api.ui.style.Keyword$FloatSide implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$FloatSide.css()
+    public static api.ui.style.Keyword$FloatSide api.ui.style.Keyword$FloatSide.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$FloatSide[] api.ui.style.Keyword$FloatSide.values()
+    public static final api.ui.style.Keyword$FloatSide api.ui.style.Keyword$FloatSide.INLINE_END
+    public static final api.ui.style.Keyword$FloatSide api.ui.style.Keyword$FloatSide.INLINE_START
+    public static final api.ui.style.Keyword$FloatSide api.ui.style.Keyword$FloatSide.LEFT
+    public static final api.ui.style.Keyword$FloatSide api.ui.style.Keyword$FloatSide.NONE
+    public static final api.ui.style.Keyword$FloatSide api.ui.style.Keyword$FloatSide.RIGHT
+public static final enum api.ui.style.Keyword$FontFamily implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$FontFamily.css()
+    public static api.ui.style.Keyword$FontFamily api.ui.style.Keyword$FontFamily.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$FontFamily[] api.ui.style.Keyword$FontFamily.values()
+    public static final api.ui.style.Keyword$FontFamily api.ui.style.Keyword$FontFamily.CURSIVE
+    public static final api.ui.style.Keyword$FontFamily api.ui.style.Keyword$FontFamily.FANTASY
+    public static final api.ui.style.Keyword$FontFamily api.ui.style.Keyword$FontFamily.MONOSPACE
+    public static final api.ui.style.Keyword$FontFamily api.ui.style.Keyword$FontFamily.SANS_SERIF
+    public static final api.ui.style.Keyword$FontFamily api.ui.style.Keyword$FontFamily.SERIF
+    public static final api.ui.style.Keyword$FontFamily api.ui.style.Keyword$FontFamily.SYSTEM_UI
+public static final enum api.ui.style.Keyword$FontKerning implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$FontKerning.css()
+    public static api.ui.style.Keyword$FontKerning api.ui.style.Keyword$FontKerning.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$FontKerning[] api.ui.style.Keyword$FontKerning.values()
+    public static final api.ui.style.Keyword$FontKerning api.ui.style.Keyword$FontKerning.AUTO
+    public static final api.ui.style.Keyword$FontKerning api.ui.style.Keyword$FontKerning.NONE
+    public static final api.ui.style.Keyword$FontKerning api.ui.style.Keyword$FontKerning.NORMAL
+public static final enum api.ui.style.Keyword$FontStyle implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$FontStyle.css()
+    public static api.ui.style.Keyword$FontStyle api.ui.style.Keyword$FontStyle.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$FontStyle[] api.ui.style.Keyword$FontStyle.values()
+    public static final api.ui.style.Keyword$FontStyle api.ui.style.Keyword$FontStyle.ITALIC
+    public static final api.ui.style.Keyword$FontStyle api.ui.style.Keyword$FontStyle.NORMAL
+    public static final api.ui.style.Keyword$FontStyle api.ui.style.Keyword$FontStyle.OBLIQUE
+public static final enum api.ui.style.Keyword$FontVariant implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$FontVariant.css()
+    public static api.ui.style.Keyword$FontVariant api.ui.style.Keyword$FontVariant.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$FontVariant[] api.ui.style.Keyword$FontVariant.values()
+    public static final api.ui.style.Keyword$FontVariant api.ui.style.Keyword$FontVariant.NORMAL
+    public static final api.ui.style.Keyword$FontVariant api.ui.style.Keyword$FontVariant.SMALL_CAPS
+public static final enum api.ui.style.Keyword$FontWeight implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$FontWeight.css()
+    public static api.ui.style.Keyword$FontWeight api.ui.style.Keyword$FontWeight.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$FontWeight[] api.ui.style.Keyword$FontWeight.values()
+    public static final api.ui.style.Keyword$FontWeight api.ui.style.Keyword$FontWeight.BOLD
+    public static final api.ui.style.Keyword$FontWeight api.ui.style.Keyword$FontWeight.BOLDER
+    public static final api.ui.style.Keyword$FontWeight api.ui.style.Keyword$FontWeight.LIGHTER
+    public static final api.ui.style.Keyword$FontWeight api.ui.style.Keyword$FontWeight.NORMAL
+public static final enum api.ui.style.Keyword$GridAutoFlow implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$GridAutoFlow.css()
+    public static api.ui.style.Keyword$GridAutoFlow api.ui.style.Keyword$GridAutoFlow.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$GridAutoFlow[] api.ui.style.Keyword$GridAutoFlow.values()
+    public static final api.ui.style.Keyword$GridAutoFlow api.ui.style.Keyword$GridAutoFlow.COLUMN
+    public static final api.ui.style.Keyword$GridAutoFlow api.ui.style.Keyword$GridAutoFlow.COLUMN_DENSE
+    public static final api.ui.style.Keyword$GridAutoFlow api.ui.style.Keyword$GridAutoFlow.DENSE
+    public static final api.ui.style.Keyword$GridAutoFlow api.ui.style.Keyword$GridAutoFlow.ROW
+    public static final api.ui.style.Keyword$GridAutoFlow api.ui.style.Keyword$GridAutoFlow.ROW_DENSE
+public static final enum api.ui.style.Keyword$Isolation implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Isolation.css()
+    public static api.ui.style.Keyword$Isolation api.ui.style.Keyword$Isolation.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Isolation[] api.ui.style.Keyword$Isolation.values()
+    public static final api.ui.style.Keyword$Isolation api.ui.style.Keyword$Isolation.AUTO
+    public static final api.ui.style.Keyword$Isolation api.ui.style.Keyword$Isolation.ISOLATE
+public static final enum api.ui.style.Keyword$ListStylePosition implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$ListStylePosition.css()
+    public static api.ui.style.Keyword$ListStylePosition api.ui.style.Keyword$ListStylePosition.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$ListStylePosition[] api.ui.style.Keyword$ListStylePosition.values()
+    public static final api.ui.style.Keyword$ListStylePosition api.ui.style.Keyword$ListStylePosition.INSIDE
+    public static final api.ui.style.Keyword$ListStylePosition api.ui.style.Keyword$ListStylePosition.OUTSIDE
+public static final enum api.ui.style.Keyword$ListStyleType implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$ListStyleType.css()
+    public static api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$ListStyleType[] api.ui.style.Keyword$ListStyleType.values()
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.CIRCLE
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.DECIMAL
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.DECIMAL_LEADING_ZERO
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.DISC
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.LOWER_ALPHA
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.LOWER_GREEK
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.LOWER_LATIN
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.LOWER_ROMAN
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.NONE
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.SQUARE
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.UPPER_ALPHA
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.UPPER_LATIN
+    public static final api.ui.style.Keyword$ListStyleType api.ui.style.Keyword$ListStyleType.UPPER_ROMAN
+public static final enum api.ui.style.Keyword$MixBlendMode implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$MixBlendMode.css()
+    public static api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$MixBlendMode[] api.ui.style.Keyword$MixBlendMode.values()
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.COLOR
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.COLOR_BURN
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.COLOR_DODGE
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.DARKEN
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.DIFFERENCE
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.EXCLUSION
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.HARD_LIGHT
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.HUE
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.LIGHTEN
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.LUMINOSITY
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.MULTIPLY
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.NORMAL
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.OVERLAY
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.PLUS_LIGHTER
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.SATURATION
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.SCREEN
+    public static final api.ui.style.Keyword$MixBlendMode api.ui.style.Keyword$MixBlendMode.SOFT_LIGHT
+public static final enum api.ui.style.Keyword$None implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$None.css()
+    public static api.ui.style.Keyword$None api.ui.style.Keyword$None.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$None[] api.ui.style.Keyword$None.values()
+    public static final api.ui.style.Keyword$None api.ui.style.Keyword$None.NONE
+public static final enum api.ui.style.Keyword$ObjectFit implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$ObjectFit.css()
+    public static api.ui.style.Keyword$ObjectFit api.ui.style.Keyword$ObjectFit.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$ObjectFit[] api.ui.style.Keyword$ObjectFit.values()
+    public static final api.ui.style.Keyword$ObjectFit api.ui.style.Keyword$ObjectFit.CONTAIN
+    public static final api.ui.style.Keyword$ObjectFit api.ui.style.Keyword$ObjectFit.COVER
+    public static final api.ui.style.Keyword$ObjectFit api.ui.style.Keyword$ObjectFit.FILL
+    public static final api.ui.style.Keyword$ObjectFit api.ui.style.Keyword$ObjectFit.NONE
+    public static final api.ui.style.Keyword$ObjectFit api.ui.style.Keyword$ObjectFit.SCALE_DOWN
+public static final enum api.ui.style.Keyword$Overflow implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Overflow.css()
+    public static api.ui.style.Keyword$Overflow api.ui.style.Keyword$Overflow.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Overflow[] api.ui.style.Keyword$Overflow.values()
+    public static final api.ui.style.Keyword$Overflow api.ui.style.Keyword$Overflow.AUTO
+    public static final api.ui.style.Keyword$Overflow api.ui.style.Keyword$Overflow.CLIP
+    public static final api.ui.style.Keyword$Overflow api.ui.style.Keyword$Overflow.HIDDEN
+    public static final api.ui.style.Keyword$Overflow api.ui.style.Keyword$Overflow.SCROLL
+    public static final api.ui.style.Keyword$Overflow api.ui.style.Keyword$Overflow.VISIBLE
+public static final enum api.ui.style.Keyword$OverflowWrap implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$OverflowWrap.css()
+    public static api.ui.style.Keyword$OverflowWrap api.ui.style.Keyword$OverflowWrap.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$OverflowWrap[] api.ui.style.Keyword$OverflowWrap.values()
+    public static final api.ui.style.Keyword$OverflowWrap api.ui.style.Keyword$OverflowWrap.ANYWHERE
+    public static final api.ui.style.Keyword$OverflowWrap api.ui.style.Keyword$OverflowWrap.BREAK_WORD
+    public static final api.ui.style.Keyword$OverflowWrap api.ui.style.Keyword$OverflowWrap.NORMAL
+public static final enum api.ui.style.Keyword$PointerEvents implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$PointerEvents.css()
+    public static api.ui.style.Keyword$PointerEvents api.ui.style.Keyword$PointerEvents.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$PointerEvents[] api.ui.style.Keyword$PointerEvents.values()
+    public static final api.ui.style.Keyword$PointerEvents api.ui.style.Keyword$PointerEvents.AUTO
+    public static final api.ui.style.Keyword$PointerEvents api.ui.style.Keyword$PointerEvents.NONE
+public static final enum api.ui.style.Keyword$Position implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Position.css()
+    public static api.ui.style.Keyword$Position api.ui.style.Keyword$Position.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Position[] api.ui.style.Keyword$Position.values()
+    public static final api.ui.style.Keyword$Position api.ui.style.Keyword$Position.ABSOLUTE
+    public static final api.ui.style.Keyword$Position api.ui.style.Keyword$Position.FIXED
+    public static final api.ui.style.Keyword$Position api.ui.style.Keyword$Position.RELATIVE
+    public static final api.ui.style.Keyword$Position api.ui.style.Keyword$Position.STATIC
+    public static final api.ui.style.Keyword$Position api.ui.style.Keyword$Position.STICKY
+public static final enum api.ui.style.Keyword$PositionTryOrder implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$PositionTryOrder.css()
+    public static api.ui.style.Keyword$PositionTryOrder api.ui.style.Keyword$PositionTryOrder.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$PositionTryOrder[] api.ui.style.Keyword$PositionTryOrder.values()
+    public static final api.ui.style.Keyword$PositionTryOrder api.ui.style.Keyword$PositionTryOrder.MOST_BLOCK_SIZE
+    public static final api.ui.style.Keyword$PositionTryOrder api.ui.style.Keyword$PositionTryOrder.MOST_HEIGHT
+    public static final api.ui.style.Keyword$PositionTryOrder api.ui.style.Keyword$PositionTryOrder.MOST_INLINE_SIZE
+    public static final api.ui.style.Keyword$PositionTryOrder api.ui.style.Keyword$PositionTryOrder.MOST_WIDTH
+    public static final api.ui.style.Keyword$PositionTryOrder api.ui.style.Keyword$PositionTryOrder.NORMAL
+public static final enum api.ui.style.Keyword$ScrollbarWidth implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$ScrollbarWidth.css()
+    public static api.ui.style.Keyword$ScrollbarWidth api.ui.style.Keyword$ScrollbarWidth.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$ScrollbarWidth[] api.ui.style.Keyword$ScrollbarWidth.values()
+    public static final api.ui.style.Keyword$ScrollbarWidth api.ui.style.Keyword$ScrollbarWidth.AUTO
+    public static final api.ui.style.Keyword$ScrollbarWidth api.ui.style.Keyword$ScrollbarWidth.NONE
+    public static final api.ui.style.Keyword$ScrollbarWidth api.ui.style.Keyword$ScrollbarWidth.THIN
+public static final enum api.ui.style.Keyword$TableLayout implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$TableLayout.css()
+    public static api.ui.style.Keyword$TableLayout api.ui.style.Keyword$TableLayout.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$TableLayout[] api.ui.style.Keyword$TableLayout.values()
+    public static final api.ui.style.Keyword$TableLayout api.ui.style.Keyword$TableLayout.AUTO
+    public static final api.ui.style.Keyword$TableLayout api.ui.style.Keyword$TableLayout.FIXED
+public static final enum api.ui.style.Keyword$TextAlign implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$TextAlign.css()
+    public static api.ui.style.Keyword$TextAlign api.ui.style.Keyword$TextAlign.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$TextAlign[] api.ui.style.Keyword$TextAlign.values()
+    public static final api.ui.style.Keyword$TextAlign api.ui.style.Keyword$TextAlign.CENTER
+    public static final api.ui.style.Keyword$TextAlign api.ui.style.Keyword$TextAlign.END
+    public static final api.ui.style.Keyword$TextAlign api.ui.style.Keyword$TextAlign.JUSTIFY
+    public static final api.ui.style.Keyword$TextAlign api.ui.style.Keyword$TextAlign.LEFT
+    public static final api.ui.style.Keyword$TextAlign api.ui.style.Keyword$TextAlign.MATCH_PARENT
+    public static final api.ui.style.Keyword$TextAlign api.ui.style.Keyword$TextAlign.RIGHT
+    public static final api.ui.style.Keyword$TextAlign api.ui.style.Keyword$TextAlign.START
+public static final enum api.ui.style.Keyword$TextAlignLast implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$TextAlignLast.css()
+    public static api.ui.style.Keyword$TextAlignLast api.ui.style.Keyword$TextAlignLast.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$TextAlignLast[] api.ui.style.Keyword$TextAlignLast.values()
+    public static final api.ui.style.Keyword$TextAlignLast api.ui.style.Keyword$TextAlignLast.AUTO
+    public static final api.ui.style.Keyword$TextAlignLast api.ui.style.Keyword$TextAlignLast.CENTER
+    public static final api.ui.style.Keyword$TextAlignLast api.ui.style.Keyword$TextAlignLast.END
+    public static final api.ui.style.Keyword$TextAlignLast api.ui.style.Keyword$TextAlignLast.JUSTIFY
+    public static final api.ui.style.Keyword$TextAlignLast api.ui.style.Keyword$TextAlignLast.LEFT
+    public static final api.ui.style.Keyword$TextAlignLast api.ui.style.Keyword$TextAlignLast.RIGHT
+    public static final api.ui.style.Keyword$TextAlignLast api.ui.style.Keyword$TextAlignLast.START
+public static final enum api.ui.style.Keyword$TextJustify implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$TextJustify.css()
+    public static api.ui.style.Keyword$TextJustify api.ui.style.Keyword$TextJustify.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$TextJustify[] api.ui.style.Keyword$TextJustify.values()
+    public static final api.ui.style.Keyword$TextJustify api.ui.style.Keyword$TextJustify.AUTO
+    public static final api.ui.style.Keyword$TextJustify api.ui.style.Keyword$TextJustify.INTER_CHARACTER
+    public static final api.ui.style.Keyword$TextJustify api.ui.style.Keyword$TextJustify.INTER_WORD
+    public static final api.ui.style.Keyword$TextJustify api.ui.style.Keyword$TextJustify.NONE
+public static final enum api.ui.style.Keyword$TextOrientation implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$TextOrientation.css()
+    public static api.ui.style.Keyword$TextOrientation api.ui.style.Keyword$TextOrientation.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$TextOrientation[] api.ui.style.Keyword$TextOrientation.values()
+    public static final api.ui.style.Keyword$TextOrientation api.ui.style.Keyword$TextOrientation.MIXED
+    public static final api.ui.style.Keyword$TextOrientation api.ui.style.Keyword$TextOrientation.SIDEWAYS
+    public static final api.ui.style.Keyword$TextOrientation api.ui.style.Keyword$TextOrientation.UPRIGHT
+public static final enum api.ui.style.Keyword$TextOverflow implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$TextOverflow.css()
+    public static api.ui.style.Keyword$TextOverflow api.ui.style.Keyword$TextOverflow.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$TextOverflow[] api.ui.style.Keyword$TextOverflow.values()
+    public static final api.ui.style.Keyword$TextOverflow api.ui.style.Keyword$TextOverflow.CLIP
+    public static final api.ui.style.Keyword$TextOverflow api.ui.style.Keyword$TextOverflow.ELLIPSIS
+public static final enum api.ui.style.Keyword$TextTransform implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$TextTransform.css()
+    public static api.ui.style.Keyword$TextTransform api.ui.style.Keyword$TextTransform.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$TextTransform[] api.ui.style.Keyword$TextTransform.values()
+    public static final api.ui.style.Keyword$TextTransform api.ui.style.Keyword$TextTransform.CAPITALIZE
+    public static final api.ui.style.Keyword$TextTransform api.ui.style.Keyword$TextTransform.LOWERCASE
+    public static final api.ui.style.Keyword$TextTransform api.ui.style.Keyword$TextTransform.NONE
+    public static final api.ui.style.Keyword$TextTransform api.ui.style.Keyword$TextTransform.UPPERCASE
+public static final enum api.ui.style.Keyword$TextWrap implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$TextWrap.css()
+    public static api.ui.style.Keyword$TextWrap api.ui.style.Keyword$TextWrap.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$TextWrap[] api.ui.style.Keyword$TextWrap.values()
+    public static final api.ui.style.Keyword$TextWrap api.ui.style.Keyword$TextWrap.BALANCE
+    public static final api.ui.style.Keyword$TextWrap api.ui.style.Keyword$TextWrap.NOWRAP
+    public static final api.ui.style.Keyword$TextWrap api.ui.style.Keyword$TextWrap.PRETTY
+    public static final api.ui.style.Keyword$TextWrap api.ui.style.Keyword$TextWrap.STABLE
+    public static final api.ui.style.Keyword$TextWrap api.ui.style.Keyword$TextWrap.WRAP
+public static final enum api.ui.style.Keyword$TextWrapStyle implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$TextWrapStyle.css()
+    public static api.ui.style.Keyword$TextWrapStyle api.ui.style.Keyword$TextWrapStyle.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$TextWrapStyle[] api.ui.style.Keyword$TextWrapStyle.values()
+    public static final api.ui.style.Keyword$TextWrapStyle api.ui.style.Keyword$TextWrapStyle.AUTO
+    public static final api.ui.style.Keyword$TextWrapStyle api.ui.style.Keyword$TextWrapStyle.BALANCE
+    public static final api.ui.style.Keyword$TextWrapStyle api.ui.style.Keyword$TextWrapStyle.PRETTY
+    public static final api.ui.style.Keyword$TextWrapStyle api.ui.style.Keyword$TextWrapStyle.STABLE
+public static final enum api.ui.style.Keyword$UserSelect implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$UserSelect.css()
+    public static api.ui.style.Keyword$UserSelect api.ui.style.Keyword$UserSelect.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$UserSelect[] api.ui.style.Keyword$UserSelect.values()
+    public static final api.ui.style.Keyword$UserSelect api.ui.style.Keyword$UserSelect.ALL
+    public static final api.ui.style.Keyword$UserSelect api.ui.style.Keyword$UserSelect.AUTO
+    public static final api.ui.style.Keyword$UserSelect api.ui.style.Keyword$UserSelect.CONTAIN
+    public static final api.ui.style.Keyword$UserSelect api.ui.style.Keyword$UserSelect.NONE
+    public static final api.ui.style.Keyword$UserSelect api.ui.style.Keyword$UserSelect.TEXT
+public static final enum api.ui.style.Keyword$Visibility implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$Visibility.css()
+    public static api.ui.style.Keyword$Visibility api.ui.style.Keyword$Visibility.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$Visibility[] api.ui.style.Keyword$Visibility.values()
+    public static final api.ui.style.Keyword$Visibility api.ui.style.Keyword$Visibility.COLLAPSE
+    public static final api.ui.style.Keyword$Visibility api.ui.style.Keyword$Visibility.HIDDEN
+    public static final api.ui.style.Keyword$Visibility api.ui.style.Keyword$Visibility.VISIBLE
+public static final enum api.ui.style.Keyword$WhiteSpace implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$WhiteSpace.css()
+    public static api.ui.style.Keyword$WhiteSpace api.ui.style.Keyword$WhiteSpace.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$WhiteSpace[] api.ui.style.Keyword$WhiteSpace.values()
+    public static final api.ui.style.Keyword$WhiteSpace api.ui.style.Keyword$WhiteSpace.BREAK_SPACES
+    public static final api.ui.style.Keyword$WhiteSpace api.ui.style.Keyword$WhiteSpace.NORMAL
+    public static final api.ui.style.Keyword$WhiteSpace api.ui.style.Keyword$WhiteSpace.NOWRAP
+    public static final api.ui.style.Keyword$WhiteSpace api.ui.style.Keyword$WhiteSpace.PRE
+    public static final api.ui.style.Keyword$WhiteSpace api.ui.style.Keyword$WhiteSpace.PRE_LINE
+    public static final api.ui.style.Keyword$WhiteSpace api.ui.style.Keyword$WhiteSpace.PRE_WRAP
+public static final enum api.ui.style.Keyword$WordBreak implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$WordBreak.css()
+    public static api.ui.style.Keyword$WordBreak api.ui.style.Keyword$WordBreak.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$WordBreak[] api.ui.style.Keyword$WordBreak.values()
+    public static final api.ui.style.Keyword$WordBreak api.ui.style.Keyword$WordBreak.BREAK_ALL
+    public static final api.ui.style.Keyword$WordBreak api.ui.style.Keyword$WordBreak.BREAK_WORD
+    public static final api.ui.style.Keyword$WordBreak api.ui.style.Keyword$WordBreak.KEEP_ALL
+    public static final api.ui.style.Keyword$WordBreak api.ui.style.Keyword$WordBreak.NORMAL
+public static final enum api.ui.style.Keyword$WritingMode implements api.ui.style.CssValue
+    public java.lang.String api.ui.style.Keyword$WritingMode.css()
+    public static api.ui.style.Keyword$WritingMode api.ui.style.Keyword$WritingMode.valueOf(java.lang.String)
+    public static api.ui.style.Keyword$WritingMode[] api.ui.style.Keyword$WritingMode.values()
+    public static final api.ui.style.Keyword$WritingMode api.ui.style.Keyword$WritingMode.HORIZONTAL_TB
+    public static final api.ui.style.Keyword$WritingMode api.ui.style.Keyword$WritingMode.VERTICAL_LR
+    public static final api.ui.style.Keyword$WritingMode api.ui.style.Keyword$WritingMode.VERTICAL_RL
+public final class api.ui.style.Length implements api.ui.style.Value<api.ui.style.Length>
+    public boolean api.ui.style.Length.equals(java.lang.Object)
+    public int api.ui.style.Length.hashCode()
+    public java.lang.String api.ui.style.Length.css()
+    public java.lang.String api.ui.style.Length.toString()
+    public static api.ui.style.Length api.ui.style.Length.em(double)
+    public static api.ui.style.Length api.ui.style.Length.pct(double)
+    public static api.ui.style.Length api.ui.style.Length.px(double)
+    public static api.ui.style.Length api.ui.style.Length.rem(double)
+    public static api.ui.style.Length api.ui.style.Length.vh(double)
+    public static api.ui.style.Length api.ui.style.Length.vw(double)
+    public static final api.ui.style.Length api.ui.style.Length.AUTO
+    public static final api.ui.style.Length api.ui.style.Length.ZERO
+public final record api.ui.style.Modifier
+    public api.ui.style.Modifier(java.lang.String)
+    public final boolean api.ui.style.Modifier.equals(java.lang.Object)
+    public final int api.ui.style.Modifier.hashCode()
+    public final java.lang.String api.ui.style.Modifier.toString()
+    public java.lang.String api.ui.style.Modifier.name()
+    public static api.ui.style.Modifier api.ui.style.Modifier.of(java.lang.String)
+public abstract class api.ui.style.OtherProperties extends api.ui.style.TextProperties
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.anchorName(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.animation(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.animationDelay(api.ui.style.Value<api.ui.style.Time>)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.animationDirection(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.animationDuration(api.ui.style.Value<api.ui.style.Time>)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.animationFillMode(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.animationIterationCount(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.animationName(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.animationTimingFunction(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.appearance(api.ui.style.Keyword$Appearance)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.breakInside(api.ui.style.Keyword$BreakInside)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.contain(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.containIntrinsicBlockSize(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.containIntrinsicInlineSize(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.containIntrinsicSize(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.container(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.containerName(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.containerType(api.ui.style.Keyword$ContainerType)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.content(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.contentVisibility(api.ui.style.Keyword$ContentVisibility)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.counterIncrement(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.counterReset(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.counterSet(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.cursor(api.ui.style.Keyword$Cursor)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.pointerEvents(api.ui.style.Keyword$PointerEvents)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.positionAnchor(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.positionArea(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.positionTry(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.positionTryFallbacks(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.positionTryOrder(api.ui.style.Keyword$PositionTryOrder)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.src(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.transition(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.transitionDelay(api.ui.style.Value<api.ui.style.Time>)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.transitionDuration(api.ui.style.Value<api.ui.style.Time>)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.transitionProperty(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.transitionTimingFunction(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.userSelect(api.ui.style.Keyword$UserSelect)
+public final record api.ui.style.Raw implements api.ui.style.CssValue
+    public api.ui.style.Raw(java.lang.String)
+    public final boolean api.ui.style.Raw.equals(java.lang.Object)
+    public final int api.ui.style.Raw.hashCode()
+    public final java.lang.String api.ui.style.Raw.toString()
+    public java.lang.String api.ui.style.Raw.css()
+public final class api.ui.style.StyleClass implements api.ui.Prop
+    public api.ui.Prop api.ui.style.StyleClass.is(api.ui.style.Modifier,boolean)
+    public api.ui.Prop api.ui.style.StyleClass.is(api.ui.style.Modifier,api.ui.State<java.lang.Boolean>)
+    public java.lang.String api.ui.style.StyleClass.className()
+    public java.lang.String api.ui.style.StyleClass.toString()
+    public java.util.List<api.dom.StyleRule> api.ui.style.StyleClass.rules()
+    public static api.ui.style.StyleClass api.ui.style.StyleClass.of(java.lang.String,java.lang.Object...)
+    public void api.ui.style.StyleClass.adopt(api.dom.Document)
+    public void api.ui.style.StyleClass.apply(api.dom.Element)
+public abstract class api.ui.style.TextProperties extends api.ui.style.FlexGridProperties
+    public static api.ui.style.Declaration api.ui.style.TextProperties.color(api.ui.State<? extends api.ui.style.Value<api.ui.style.Color>>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.color(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.direction(api.ui.style.Keyword$Direction)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.font(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.fontFamily(api.ui.style.Keyword$FontFamily)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.fontFamily(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.fontKerning(api.ui.style.Keyword$FontKerning)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.fontSize(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.fontSize(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.fontStyle(api.ui.style.Keyword$FontStyle)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.fontVariant(api.ui.style.Keyword$FontVariant)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.fontWeight(api.ui.style.Keyword$FontWeight)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.fontWeight(int)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.letterSpacing(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.letterSpacing(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.lineHeight(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.lineHeight(double)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.listStyle(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.listStyleImage(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.listStylePosition(api.ui.style.Keyword$ListStylePosition)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.listStyleType(api.ui.style.Keyword$ListStyleType)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.overflowWrap(api.ui.style.Keyword$OverflowWrap)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.tabSize(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.tabSize(int)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textAlign(api.ui.style.Keyword$TextAlign)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textAlignLast(api.ui.style.Keyword$TextAlignLast)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textDecoration(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textIndent(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textIndent(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textJustify(api.ui.style.Keyword$TextJustify)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textOrientation(api.ui.style.Keyword$TextOrientation)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textOverflow(api.ui.style.Keyword$TextOverflow)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textShadow(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textTransform(api.ui.style.Keyword$TextTransform)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textWrap(api.ui.style.Keyword$TextWrap)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.textWrapStyle(api.ui.style.Keyword$TextWrapStyle)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.verticalAlign(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.verticalAlign(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.whiteSpace(api.ui.style.Keyword$WhiteSpace)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.wordBreak(api.ui.style.Keyword$WordBreak)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.wordSpacing(api.ui.State<? extends api.ui.style.Value<api.ui.style.Length>>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.wordSpacing(api.ui.style.Value<api.ui.style.Length>)
+    public static api.ui.style.Declaration api.ui.style.TextProperties.writingMode(api.ui.style.Keyword$WritingMode)
+public final class api.ui.style.Theme implements api.ui.Prop
+    public java.lang.String api.ui.style.Theme.className()
+    public java.lang.String api.ui.style.Theme.toString()
+    public static api.ui.Prop api.ui.style.Theme.select(api.ui.State<api.ui.style.Theme>)
+    public static api.ui.style.Theme api.ui.style.Theme.of(java.lang.String,api.ui.style.Declaration...)
+    public void api.ui.style.Theme.adopt(api.dom.Document)
+    public void api.ui.style.Theme.apply(api.dom.Element)
+public final class api.ui.style.Time implements api.ui.style.Value<api.ui.style.Time>
+    public boolean api.ui.style.Time.equals(java.lang.Object)
+    public int api.ui.style.Time.hashCode()
+    public java.lang.String api.ui.style.Time.css()
+    public java.lang.String api.ui.style.Time.toString()
+    public static api.ui.style.Time api.ui.style.Time.ms(double)
+    public static api.ui.style.Time api.ui.style.Time.sec(double)
+public final class api.ui.style.Token<T extends api.ui.style.CssValue> implements api.ui.style.Value<T>
+    public api.ui.Prop api.ui.style.Token.bind(api.ui.State<? extends T>)
+    public api.ui.style.Declaration api.ui.style.Token.is(T)
+    public java.lang.String api.ui.style.Token.css()
+    public java.lang.String api.ui.style.Token.property()
+    public java.lang.String api.ui.style.Token.toString()
+    public static <T extends api.ui.style.CssValue> api.ui.style.Token<T> api.ui.style.Token.of(java.lang.String)
+public abstract interface api.ui.style.Value<T extends api.ui.style.CssValue> extends api.ui.style.CssValue
+public final class api.ui.style.Variant
+public abstract class api.ui.style.VisualProperties extends api.ui.style.BorderProperties
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.accentColor(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backdropFilter(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.background(api.ui.State<? extends api.ui.style.Value<api.ui.style.Color>>)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.background(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.background(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backgroundAttachment(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backgroundClip(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backgroundColor(api.ui.State<? extends api.ui.style.Value<api.ui.style.Color>>)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backgroundColor(api.ui.style.Value<api.ui.style.Color>)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backgroundImage(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backgroundOrigin(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backgroundPosition(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backgroundRepeat(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.backgroundSize(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.boxShadow(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.clipPath(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.filter(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.isolation(api.ui.style.Keyword$Isolation)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.mask(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.maskClip(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.maskComposite(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.maskImage(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.maskMode(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.maskOrigin(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.maskPosition(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.maskRepeat(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.maskSize(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.mixBlendMode(api.ui.style.Keyword$MixBlendMode)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.objectFit(api.ui.style.Keyword$ObjectFit)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.objectPosition(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.opacity(double)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.perspective(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.rotate(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.scale(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.transform(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.transformOrigin(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.translate(api.ui.style.Raw)
+    public static api.ui.style.Declaration api.ui.style.VisualProperties.visibility(api.ui.style.Keyword$Visibility)

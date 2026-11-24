@@ -127,4 +127,14 @@ public interface Document extends Node {
 
     @ApiStatus.Internal
     void removeLayoutObserver(LayoutObserver observer);
+
+    /**
+     * Java で組んだスタイル規則（{@link com.nishiyu.enderframelib.api.ui.style.StyleClass} など）を、この文書の作者スタイルの末尾へ採用する
+     * （{@code document.adoptedStyleSheets} に相当）。同じ {@code owner} は 1 度だけ採用し、2 度目以降は同じ規則なら何もしない。
+     * 採用した規則は次のフレームで全体を再スタイルして反映する。
+     *
+     * @throws IllegalStateException 同じ {@code owner} が別の規則で採用済み（スタイル名の衝突）
+     */
+    @ApiStatus.Internal
+    void adoptStyleRules(String owner, java.util.List<StyleRule> rules);
 }

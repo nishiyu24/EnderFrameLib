@@ -70,10 +70,6 @@ public class HtmlDocument extends HtmlNode implements Document {
         this.defaultOwnership = Objects.requireNonNull(ownership, "ownership must not be null");
     }
 
-    /**
-     * 作者スタイルシート（描画側がインライン {@code svg} の要素へ規則を当てるために読む）。文書を読み込む側が設定し、
-     * シートを作り直したときに更新する。
-     */
     /** 文書のスタイルシート（{@code css.StyleSheet}。インライン svg の描画が読む。ノードの型はスタイルシートの型を知らない）。 */
     public volatile Object authorSheet;
 
@@ -167,6 +163,10 @@ public class HtmlDocument extends HtmlNode implements Document {
     public void setTargetChangeListener(@Nullable java.util.function.BiConsumer<HtmlNode, HtmlNode> listener) {
         this.targetChangeListener = listener;
     }
+
+    private final AdoptedStyleRules adoptedRules = new AdoptedStyleRules();
+    public AdoptedStyleRules adoptedRules() { return adoptedRules; }
+    @Override public void adoptStyleRules(String owner, List<com.nishiyu.enderframelib.api.dom.StyleRule> rules) { if (adoptedRules.adopt(owner, rules) && domChangeListener != null) domChangeListener.onDomChanged(this, null); }
 
     /** ハイフンを含む要素名を、定義済みのカスタム要素として登録する。 */
     public void defineCustomElement(String name) {

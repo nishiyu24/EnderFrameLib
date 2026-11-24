@@ -1236,6 +1236,11 @@ public class UiView implements AutoCloseable {
     /** 描画キューから呼ばれる、このセッション 1 回分の無効化処理。 */
     public void flushInvalidation() {
         if (document == null || document.root == null) return;
+        if (document.adoptedRulesChanged()) { // Java から規則が採用された（HtmlDocument#adoptStyleRules）: シートを作り直して全体を解き直す
+            document.rebuildSheet(rootW, rootH, devicePixelRatio);
+            interactionState.markAllDirty();
+            markInvalidation(InvalidationLevel.RELAYOUT);
+        }
         // 時間で動くスタイル（opacity / transform / 色以外のトランジションと @keyframes）を進める。
         // 動いているうちは毎フレーム再スタイルを要求する（終わった要素は進めた時点で再スタイルの対象になる）
         if (interactionState.advanceAnimations(nowMs())) requestRestyle();
@@ -1461,16 +1466,13 @@ public class UiView implements AutoCloseable {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = document;
         if (doc == null || !existingServerDoc) {
-            StyleSheet sheet = parser.buildStyleSheet(authorCss, width, height);
-            applyResolution(sheet);
-            doc = new Document(rootNode, sheet, authorCss);
+            doc = new Document(rootNode, null, authorCss);
+            doc.rebuildSheet(width, height, devicePixelRatio);
             setDocument(doc);
         } else {
             if (!Objects.equals(doc.authorCss, authorCss) || doc.sheet == null) {
-                doc.sheet = parser.buildStyleSheet(authorCss, width, height);
-                doc.syncSheet();
-                applyResolution(doc.sheet);
                 doc.authorCss = authorCss;
+                doc.rebuildSheet(width, height, devicePixelRatio);
             } else if (oldRootW != width || oldRootH != height) {
                 // ビューポートだけが変わったときは CSS を読み直さず、@media の条件だけ評価し直す
                 doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withSize(width, height));
@@ -1611,9 +1613,7 @@ public class UiView implements AutoCloseable {
 
             // @media はシートを読み直さず、新しいビューポートで条件だけ評価し直す
             if (doc.sheet == null) {
-                doc.sheet = parser.buildStyleSheet(doc.authorCss, newRootW, newRootH);
-                doc.syncSheet();
-                applyResolution(doc.sheet);
+                doc.rebuildSheet(newRootW, newRootH, devicePixelRatio);
                 interactionState.markAllDirty();
             } else if (oldRootW != newRootW || oldRootH != newRootH) {
                 boolean mediaChanged = doc.sheet.updateMediaEnvironment(
