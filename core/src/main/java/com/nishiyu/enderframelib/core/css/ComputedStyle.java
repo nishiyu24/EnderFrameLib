@@ -861,9 +861,8 @@ public final class ComputedStyle {
 
     /**
      * A16: この算出スタイルを親に持つテキストの節の算出スタイル。テキストの節には規則が当たらないので、
-     * 結果は継承するロングハンドと {@code --*} を写しただけのもの（{@link StyleResolver} の継承＋算出と同じ。
-     * 親の値はすでに算出値なので、算出し直しても変わらない）。親のインスタンスにメモするので、同じ親の文字の子と、
-     * 共有（hash-consing）で同じインスタンスを持つ別の親の文字の子は、1 つを使い回す。
+     * 結果は継承するロングハンドと {@code --*} を写しただけのもの（親の値は算出値なので、算出し直しても変わらない）。
+     * 親のインスタンスにメモするので、同じ親（共有で同じインスタンスの別の親も）の文字の子は 1 つを使い回す。
      * {@code @property} の登録があるシートでは使わない（登録した初期値が入る。呼び出し側が判断する）。
      */
     public TextChild derivedTextChild() {
@@ -919,7 +918,9 @@ public final class ComputedStyle {
         }
         ComputedStyle fresh = new ComputedStyle(out, exBase, exUnmod, cnt, (byte) (viewport ? 1 : 0), exVp,
                 parent.elementFontSize, parent.rootFontSize);
-        return new TextChild(com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh, viewport || exVp == 1);
+        ComputedStyle t = com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
+        if (t.typed == null) t.typed = Style.of(t, parent.typed());
+        return new TextChild(t, viewport || exVp == 1);
     }
 
     /**
@@ -1467,7 +1468,7 @@ public final class ComputedStyle {
     }
 
     /** 作業表 {@code owned} の配列をそのまま引き取る（呼び出し側はこの後 {@code owned} を触らない）。{@link #of} と同じ算出。 */
-    static ComputedStyle ofOwned(StyleTable owned, float parentFontSize, float rootFontSize) {
+    static ComputedStyle ofOwned(StyleTable owned, float parentFontSize, float rootFontSize, ComputedStyle parent) {
         float own = parentFontSize;
         String fontSize = owned.textById(CssPropertyIndex.FONT_SIZE);
         if (fontSize != null) {
@@ -1475,15 +1476,15 @@ public final class ComputedStyle {
                     new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, 0, 0));
         }
         ComputedStyle fresh = new ComputedStyle(owned, own, rootFontSize, true);
-        return com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
+        ComputedStyle r = com.nishiyu.enderframelib.core.kernel.Shortcut.STYLE_SHARE.on() ? share(fresh) : fresh;
+        if (r.typed == null) r.typed = Style.of(r, parent != null ? parent.typed() : null);
+        return r;
     }
 
     // ==================== 同じ内容の算出スタイルの共有（hash-consing） ====================
     //
-    // 算出スタイルは不変で、宣言の値は文字列ごとに 1 つの正規のオブジェクト（CssValue）なので、内容が同じかは参照の比較で決まる。
-    // 同じ宣言・同じフォントサイズの要素（リストの行など）は、1 つのインスタンスを共有する。
-    // 保持量が要素数でなく「異なるスタイルの数」に比例し、変わっていないかの判定（diff・sameDeclarations）が同一性で済む。
-    // 表は弱参照で持つので、どの要素からも使われなくなったスタイルは回収される。
+    // 宣言の値は文字列ごとに 1 つの正規のオブジェクト（CssValue）なので、内容が同じかは参照の比較で決まる。同じ宣言・フォントサイズの要素は
+    // 1 つのインスタンスを共有し、表は弱参照（使われなくなれば回収）。M1c で撤去。
 
 
     private static final class Interned extends java.lang.ref.WeakReference<ComputedStyle> {
@@ -1904,13 +1905,9 @@ public final class ComputedStyle {
     /** 行の高さの指定の種類。 */
     public static final byte LH_NORMAL = 0, LH_PX = 1, LH_PERCENT = 2, LH_EM = 3, LH_NUMBER = 4;
 
-
     private volatile Style typed;
 
-    /**
-     * 型付きスタイル（M1 の移行中の橋。親との継承群の共有は持たない）。最初の参照で作る（競って 2 回作っても同じ値）。
-     * 導出値 {@link StyleFacts} はこの {@link Style} が構築時に持つ。M1b-b2 でカスケードが直接 {@link Style} を作るまでの橋で、M1c で本体ごと撤去する。
-     */
+    /** 型付きスタイル（M1 の移行中の橋。カスケードが親と継承群を共有して作る。直接 new した場合だけ最初の参照で作る）。M1c で撤去。 */
     public Style typed() {
         Style s = typed;
         if (s == null) {

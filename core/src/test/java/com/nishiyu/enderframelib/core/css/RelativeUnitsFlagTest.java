@@ -35,7 +35,7 @@ class RelativeUnitsFlagTest {
             StyleTable forScan = StyleTable.copyOf(table); // 複製は未確定に戻る
             assertEquals(-1, forScan.relativeUnits);
             boolean expected = new ComputedStyle(forScan, 16f, 16f).usesViewportUnits();
-            boolean actual = ComputedStyle.ofOwned(table, 16f, 16f).usesViewportUnits();
+            boolean actual = ComputedStyle.ofOwned(table, 16f, 16f, null).usesViewportUnits();
             assertEquals(expected, actual, "round " + round + " src=" + src);
             if (expected) trues++;
             else falses++;

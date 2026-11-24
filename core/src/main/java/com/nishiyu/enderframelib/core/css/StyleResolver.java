@@ -1068,7 +1068,7 @@ public class StyleResolver {
         ValueComputer.compute(style, new ValueComputer.Context(
                 parentStyle != null ? parentStyle : Map.of(), parentFontSize, rootFontSize, viewportW, viewportH,
                 container.width(), container.height(), rootLineHeight));
-        return ComputedStyle.ofOwned(style, parentFontSize, rootFontSize);
+        return ComputedStyle.ofOwned(style, parentFontSize, rootFontSize, ComputedStyle.ownerOf(parentStyle));
     }
 
     /** 登録したカスタムプロパティの絶対化に使う、この要素のフォントサイズ（var() を含むなら親のまま）。 */
