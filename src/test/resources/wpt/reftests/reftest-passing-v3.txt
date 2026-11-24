@@ -18,11 +18,15 @@ css/css-flexbox/flex-minimum-height-flex-items-024.html
 css/css-flexbox/flex-order-last-baseline.html
 css/css-flexbox/flex-shrink-004.html
 css/css-flexbox/flex-wrap-004.html
+css/css-flexbox/flexbox-break-request-horiz-002a.html
 css/css-flexbox/flexbox-column-row-gap-003.html
+css/css-flexbox/flexbox-justify-content-horiz-001b.xhtml
 css/css-flexbox/flexbox-justify-content-vert-001b.xhtml
 css/css-flexbox/flexbox-mbp-horiz-001.xhtml
 css/css-flexbox/flexbox-mbp-horiz-003v.xhtml
+css/css-flexbox/flexbox-overflow-horiz-001.html
 css/css-flexbox/flexbox-overflow-padding-002.html
+css/css-flexbox/flexbox-paint-ordering-001.xhtml
 css/css-flexbox/flexbox-safe-overflow-position-002.html
 css/css-flexbox/flexbox_columns-flexitems.html
 css/css-flexbox/flexbox_flex-0-0-N.html
@@ -39,6 +43,7 @@ css/css-flexbox/flexbox_flex-N-1-0-unitless.html
 css/css-flexbox/flexbox_flex-N-1-auto-shrink.html
 css/css-flexbox/flexbox_flex-N-N-N.html
 css/css-flexbox/flexbox_flex-basis-shrink.html
+css/css-flexbox/flexbox_generated.html
 css/css-flexbox/flexbox_justifycontent-stretch.html
 css/css-flexbox/flexbox_stf-fixpos.html
 css/css-flexbox/gap-004-rtl.html

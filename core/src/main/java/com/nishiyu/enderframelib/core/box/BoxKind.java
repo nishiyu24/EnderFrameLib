@@ -32,14 +32,27 @@ public enum BoxKind {
         if (node.nodeType == NodeType.ROOT || node.nodeType == NodeType.DOCUMENT_FRAGMENT) return BLOCK;
         if (node.nodeType != NodeType.ELEMENT) return NONE;
         String d = style.box.display;
-        if (d == null) return INLINE; // display の初期値は inline
-        return switch (d.trim().toLowerCase(java.util.Locale.ROOT)) {
+        BoxKind k = d == null ? INLINE : switch (d.trim().toLowerCase(java.util.Locale.ROOT)) { // display の初期値は inline
             case "none" -> NONE;
             case "flex" -> FLEX;
             case "inline-flex" -> INLINE_FLEX;
             case "inline-block" -> INLINE_BLOCK;
             case "inline" -> INLINE;
             default -> BLOCK;
+        };
+        return k == NONE ? NONE : blockified(k, style);
+    }
+
+    /** float・位置指定（absolute / fixed）の箱はブロック水準になる（CSS Display §2.7 blockification）。 */
+    private static BoxKind blockified(BoxKind k, Style style) {
+        var p = style.box.position;
+        boolean out = style.facts.floating
+                || p == com.nishiyu.enderframelib.core.css.model.Position.ABSOLUTE || p == com.nishiyu.enderframelib.core.css.model.Position.FIXED;
+        if (!out) return k;
+        return switch (k) {
+            case INLINE, INLINE_BLOCK -> BLOCK;
+            case INLINE_FLEX -> FLEX;
+            default -> k;
         };
     }
 

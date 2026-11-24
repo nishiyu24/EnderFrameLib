@@ -62,7 +62,7 @@ class IncrementalOracleTest {
         List<HtmlNode> elems = new ArrayList<>();
         collect(v.doc.root, elems);
         HtmlNode target = elems.get(rnd.nextInt(elems.size()));
-        switch (rnd.nextInt(9)) {
+        switch (rnd.nextInt(10)) {
             case 0 -> { // 挿入
                 HtmlElement e = new HtmlElement(target.parent != null && "ul".equals(target.parent.tag) ? "li" : "div");
                 e.updateTextContent("inserted " + step + " word word word");
@@ -100,6 +100,11 @@ class IncrementalOracleTest {
                 ((HtmlElement) target).setAttribute("style", "position:absolute;left:" + rnd.nextInt(200) + "px;top:" + rnd.nextInt(90) + "px"
                         + (rnd.nextBoolean() ? ";width:" + (20 + rnd.nextInt(120)) + "px" : ""));
                 return "absolute " + target.tag;
+            }
+            case 9 -> { // float・clear
+                ((HtmlElement) target).setAttribute("style", rnd.nextBoolean() ? "float:" + (rnd.nextBoolean() ? "left" : "right") + ";width:" + (30 + rnd.nextInt(150)) + "px"
+                        : "clear:both");
+                return "float " + target.tag;
             }
             case 8 -> { // 包含ブロック・相対のずれ
                 ((HtmlElement) target).setAttribute("style", "position:relative;left:" + (rnd.nextInt(20) - 10) + "px;top:" + rnd.nextInt(8) + "px");

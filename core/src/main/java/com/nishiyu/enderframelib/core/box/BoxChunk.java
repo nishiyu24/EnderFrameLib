@@ -13,19 +13,24 @@ public final class BoxChunk extends BoxChildren {
 
     private final BoxNode[] items;
     /** 中身の事実（構築時に 1 回だけ求める不変の導出値）: インライン水準の子・ブロック水準の子があるか。 */
-    private final boolean inline, block;
+    private final boolean inline, block, floats;
 
     /** {@code items} の所有権を受け取る（呼び出し側は以後書き換えない）。 */
     BoxChunk(BoxNode[] items) {
         this.items = items;
-        boolean in = false, bl = false;
+        boolean in = false, bl = false, fl = false;
         for (BoxNode b : items) {
+            if (b.kind.blockLevel() && b.style.facts.floating) fl = true;
             if (b.kind.blockLevel()) bl = true;
             else if (b.kind == BoxKind.INLINE || b.kind.atomicInline() || (b.kind == BoxKind.TEXT && !b.collapsibleWhitespace())) in = true;
         }
         this.inline = in;
         this.block = bl;
+        this.floats = fl;
     }
+
+    /** float の子（ブロック水準）を含むか。 */
+    public boolean hasFloat() { return floats; }
 
     /** 畳まれない文字の節かインライン要素を含むか。 */
     public boolean hasInline() { return inline; }

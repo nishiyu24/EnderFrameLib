@@ -76,10 +76,13 @@ final class BlockFlow implements FormattingEngine {
             ConstraintSpace base = s.space(cw, Float.NaN, Float.NaN, Float.NaN, 0);
             ConstraintSpace pct = Float.isNaN(childPct) ? base : s.space(cw, Float.NaN, Float.NaN, childPct, 0);
             ChunkedFlow priorFlow = prior != null ? prior.flow : null;
-            FlowChunk[] chunks = kids.hasInline()
-                    ? new FlowChunk[]{mixed(st, kids, base, pct, priorFlow, s)}
+            float[] floatBottom = {0};
+            FlowChunk[] chunks = kids.hasInline() || kids.hasFloat()
+                    ? new FlowChunk[]{mixed(st, kids, base, pct, priorFlow, floatBottom, s)}
                     : chunks(kids, base, pct, priorFlow, s);
             a = assemble(chunks, collapseTop, collapseBottom);
+            // 独立した整形コンテキストの根は中の float を含んで高さを決める
+            if (root && chunks.length == 1) a.contentH = Math.max(a.contentH, LayoutUnit.snap(a.chunkY[0] + floatBottom[0]));
             flow = chunks.length > 0 ? new ChunkedFlow(chunks, a.chunkY) : null;
             for (int k = 0; k < chunks.length; k++) {
                 if (chunks[k].pending == null) continue;
@@ -167,17 +170,21 @@ final class BlockFlow implements FormattingEngine {
         return match;
     }
 
-    /** インラインとブロックが混在する子: インラインの連なりを匿名の塊にして並べる。 */
+    /**
+     * インラインとブロックが混在する・float を含む子: インラインの連なりを匿名の塊にして並べ、float を左右に置く
+     * （{@link Floats}。同じ容器のインラインの行は float を避ける）。{@code floatBottom[0]} に一番下の float の下端を返す。
+     */
     private static FlowChunk mixed(Style st, BoxChildren kids, ConstraintSpace base, ConstraintSpace pct, ChunkedFlow priorFlow,
-                                   LayoutSession s) {
+                                   float[] floatBottom, LayoutSession s) {
         s.cache().chunkComputed();
         Cursor cur = new Cursor(priorFlow, 0, priorFlow != null ? priorFlow.chunks.length - 1 : -1);
         ChunkBuilder b = new ChunkBuilder(8, s);
         List<BoxNode> run = new ArrayList<>();
+        Floats.Space exc = Floats.Space.EMPTY;
         for (BoxNode child : kids.toList()) {
             if (child.kind == BoxKind.NONE) continue;
             if (OutOfFlow.is(child)) {
-                flushRun(st, run, base, b, s);
+                flushRun(st, run, base, b, exc, s);
                 b.addOutOfFlow(child);
                 continue;
             }
@@ -185,20 +192,29 @@ final class BlockFlow implements FormattingEngine {
                 run.add(child);
                 continue;
             }
-            flushRun(st, run, base, b, s);
+            flushRun(st, run, base, b, exc, s);
+            if (Floats.is(child)) {
+                Floats.Placed p = Floats.place(child, exc, b.flowY(), base.availableWidth, pct.percentHeightBase, cur.find(child), s);
+                exc = p.space();
+                b.addFloat(p.frag(), p.x(), p.y());
+                continue;
+            }
+            var clear = child.style.box.clear;
+            if (clear != null && clear != com.nishiyu.enderframelib.core.css.model.CssKeywords.Clear.NONE) b.clearTo(exc.clearance(clear));
             ConstraintSpace sp = BoxGeometry.usesPercentHeight(child.style) ? pct : base;
             b.add(s.cache().layout(child, sp, cur.find(child), s));
         }
-        flushRun(st, run, base, b, s);
+        flushRun(st, run, base, b, exc, s);
+        floatBottom[0] = exc.bottom();
         return b.build(null, pct, null);
     }
 
-    private static void flushRun(Style st, List<BoxNode> run, ConstraintSpace base, ChunkBuilder b, LayoutSession s) {
+    private static void flushRun(Style st, List<BoxNode> run, ConstraintSpace base, ChunkBuilder b, Floats.Space exc, LayoutSession s) {
         if (run.isEmpty()) return;
         boolean blank = true;
         for (BoxNode n : run) blank &= n.collapsibleWhitespace();
         if (!blank) {
-            InlineFlow.Result r = InlineFlow.layout(run, st, base.availableWidth, null, s);
+            InlineFlow.Result r = InlineFlow.layout(run, st, base.availableWidth, null, exc, b.flowY(), s);
             if (r.lines().length > 0 || !r.pending().isEmpty()) {
                 b.add(new LayoutFragment(null, base, base.availableWidth, r.height(), 0, 0, 0, 0, 0, 0, 0, r.lines().length == 0,
                         null, r.lines().length > 0 ? r.lines() : null,
@@ -289,8 +305,9 @@ final class BlockFlow implements FormattingEngine {
             float y;
             if (f.collapseThrough) {
                 float sp = Math.max(f.topPos, f.bottomPos), sn = Math.min(f.topNeg, f.bottomNeg);
-                if (!started) { lp = Math.max(lp, sp); ln = Math.min(ln, sn); y = 0; }
-                else { pp = Math.max(pp, sp); pn = Math.min(pn, sn); y = cursor + pp + pn; }
+                // 素通しの箱の上端は、前の余白と自分の上の余白を相殺した位置（CSS 2 §8.3.1）
+                if (!started) { y = Math.max(lp, f.topPos) + Math.min(ln, f.topNeg); lp = Math.max(lp, sp); ln = Math.min(ln, sn); }
+                else { y = cursor + Math.max(pp, f.topPos) + Math.min(pn, f.topNeg); pp = Math.max(pp, sp); pn = Math.min(pn, sn); }
             } else if (!started) {
                 started = true;
                 lp = Math.max(lp, f.topPos);
@@ -313,6 +330,35 @@ final class BlockFlow implements FormattingEngine {
             frags[n] = f;
             xs[n] = x;
             ys[n++] = LayoutUnit.snap(y);
+            if (f.pending != null) {
+                if (pend == null) pend = new ArrayList<>();
+                for (OutOfFlow.Pending p : f.pending) pend.add(p.shift(x, y));
+            }
+        }
+
+        /** 次の流れの箱の上端が来るはずの位置（チャンクの上端基準。相殺前の余白は正の最大 ＋ 負の最小で足す）。 */
+        float flowY() {
+            return started ? cursor + pp + pn : 0;
+        }
+
+        /** {@code clear}: 次の流れの箱を {@code y} より下へ（clearance。前の余白とは相殺しない）。 */
+        void clearTo(float y) {
+            if (y == Float.NEGATIVE_INFINITY || y <= flowY()) return;
+            if (!started) started = true;
+            cursor = y;
+            pp = pn = 0;
+        }
+
+        /** float を流れに影響させずに置く（{@code x}, {@code y} はチャンク基準の border-box の左上）。 */
+        void addFloat(LayoutFragment f, float x, float y) {
+            if (n == frags.length) {
+                frags = java.util.Arrays.copyOf(frags, n * 2);
+                xs = java.util.Arrays.copyOf(xs, n * 2);
+                ys = java.util.Arrays.copyOf(ys, n * 2);
+            }
+            frags[n] = f;
+            xs[n] = x;
+            ys[n++] = y;
             if (f.pending != null) {
                 if (pend == null) pend = new ArrayList<>();
                 for (OutOfFlow.Pending p : f.pending) pend.add(p.shift(x, y));

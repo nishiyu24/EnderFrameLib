@@ -39,6 +39,12 @@ public abstract sealed class BoxChildren permits BoxChunk, BoxChildren.Chunked {
         return false;
     }
 
+    /** どれかのチャンクが float の子を含むか（O(チャンク数)）。 */
+    public boolean hasFloat() {
+        for (int c = 0, n = chunkCount(); c < n; c++) if (chunk(c).hasFloat()) return true;
+        return false;
+    }
+
     /** 子を全部、列にする（O(子の数)。インラインの整形・内在サイズ用）。 */
     public java.util.List<BoxNode> toList() {
         java.util.List<BoxNode> out = new java.util.ArrayList<>(size());

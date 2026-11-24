@@ -121,10 +121,15 @@ public final class BoxGeometry {
                 || CssLength.hasPercent(b.maxHeight, b.exprs);
     }
 
-    /** 独立した整形コンテキストを作るスタイルか（{@code overflow} が visible 以外・{@code flow-root}）。 */
+    /** 独立した整形コンテキストを作るスタイルか（{@code overflow} が visible 以外・{@code flow-root}・grid・表）。 */
     static boolean establishesBfc(Style st) {
         Overflow ox = st.box.overflowX, oy = st.box.overflowY;
         if ((ox != null && ox != Overflow.VISIBLE) || (oy != null && oy != Overflow.VISIBLE)) return true;
-        return st.box.display != null && st.box.display.trim().equalsIgnoreCase("flow-root");
+        if (st.box.display == null) return false;
+        // flow-root と、ブロックの流れ以外の表示型（grid・表など。M2b-3/4 までブロックとして並べる）は独立した整形コンテキスト
+        return switch (st.box.display.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "flow-root", "grid", "inline-grid", "table", "inline-table", "table-cell", "table-caption" -> true;
+            default -> false;
+        };
     }
 }

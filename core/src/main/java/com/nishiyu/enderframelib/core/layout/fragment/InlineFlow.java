@@ -38,7 +38,13 @@ public final class InlineFlow {
      * 前回の断片（行に置いた原子の候補を引く。無ければ null）。
      */
     static Result layout(List<BoxNode> kids, Style container, float availW, LayoutFragment prior, LayoutSession s) {
-        LineBuilder b = new LineBuilder(container, availW, prior, s);
+        return layout(kids, container, availW, prior, Floats.Space.EMPTY, 0, s);
+    }
+
+    /** float を避けて組む（{@code exc} は容器の内容ボックス基準、{@code originY} はこの行の並びの上端の容器での位置）。 */
+    static Result layout(List<BoxNode> kids, Style container, float availW, LayoutFragment prior, Floats.Space exc, float originY,
+                         LayoutSession s) {
+        LineBuilder b = new LineBuilder(container, availW, prior, exc, originY, s);
         for (BoxNode k : kids) b.add(k);
         return b.finish();
     }
@@ -136,8 +142,14 @@ public final class InlineFlow {
         private float[] pX = new float[8], pW = new float[8];
         private float x, asc, desc, pending, cursor;
         private boolean hasContent, wraps = true;
+        private final Floats.Space exc;
+        private final float originY, strutH;
+        /** 今の行の左端と使える幅（float を避けた後）。 */
+        private float lineL, lineW;
 
-        LineBuilder(Style container, float availW, LayoutFragment prior, LayoutSession s) {
+        LineBuilder(Style container, float availW, LayoutFragment prior, Floats.Space exc, float originY, LayoutSession s) {
+            this.exc = exc;
+            this.originY = originY;
             this.availW = availW;
             this.s = s;
             this.prior = prior;
@@ -147,7 +159,21 @@ public final class InlineFlow {
             this.align = container.inherited.textAlign;
             this.asc = strutAsc;
             this.desc = strutDesc;
+            this.strutH = strut;
             this.x = textIndent(container, availW, s); // 最初の行だけの字下げ（% は内容ボックスの幅が基準）
+            startLine();
+        }
+
+        /** 行の始めに、float を避けた左端と使える幅を決める（行の高さは支柱で見積もる）。 */
+        private void startLine() {
+            if (exc.isEmpty()) {
+                lineL = 0;
+                lineW = availW;
+                return;
+            }
+            float[] av = exc.available(originY + cursor, originY + cursor + Math.max(strutH, 0.01f), availW);
+            lineL = av[0];
+            lineW = Math.max(0, av[1] - av[0]);
         }
 
         void add(BoxNode n) {
@@ -201,7 +227,7 @@ public final class InlineFlow {
             if (trailing) to--;
             if (to > from) {
                 float whole = face.advance(from == 0 && to == n ? t : t.substring(from, to), fs);
-                if (!wraps || x + (hasContent ? pending : 0) + whole <= availW + EPS) {
+                if (!wraps || x + (hasContent ? pending : 0) + whole <= lineW + EPS) {
                     place(box, from, to, whole, ra, rd); // 1 行に収まる: 1 断片で置く（語ごとに測らない）
                 } else { // 折り返し候補（UAX #14。空白の無い和文も割れる）ごとに置く。候補の後ろの空白は次の語との間の空き
                     WordBreak wb = st.facts.wordBreak;
@@ -221,7 +247,7 @@ public final class InlineFlow {
         /** 語（またはまとめて測った語の列）を置く。収まらなければ先に改行する。 */
         private void place(BoxNode box, int start, int end, float w, float ra, float rd) {
             float gap = hasContent ? pending : 0;
-            if (wraps && hasContent && x + gap + w > availW + EPS) {
+            if (wraps && hasContent && x + gap + w > lineW + EPS) {
                 newLine();
                 gap = 0;
             }
@@ -262,7 +288,7 @@ public final class InlineFlow {
             LayoutFragment f = s.cache().layout(n, space, priorAtom(n), s);
             float outerW = g.mL + f.width + g.mR;
             float gap = hasContent ? pending : 0;
-            if (wraps && hasContent && x + gap + outerW > availW + EPS) {
+            if (wraps && hasContent && x + gap + outerW > lineW + EPS) {
                 newLine();
                 gap = 0;
             }
@@ -305,9 +331,9 @@ public final class InlineFlow {
             LineFragment.Piece[] pieces = new LineFragment.Piece[k];
             for (int i = 0; i < k; i++) pieces[i] = new LineFragment.Piece(pBox.get(i), pStart[i], pEnd[i], pX[i], pW[i]);
             float width = x;
-            float off = 0;
-            if (align == TextAlign.CENTER) off = Math.max(0, (availW - width) / 2f);
-            else if (align == TextAlign.RIGHT || align == TextAlign.END) off = Math.max(0, availW - width);
+            float off = lineL;
+            if (align == TextAlign.CENTER) off += Math.max(0, (lineW - width) / 2f);
+            else if (align == TextAlign.RIGHT || align == TextAlign.END) off += Math.max(0, lineW - width);
             PlacedFragment[] atoms = LineFragment.NO_ATOMS;
             if (!aFrag.isEmpty()) {
                 atoms = new PlacedFragment[aFrag.size()];
@@ -325,6 +351,7 @@ public final class InlineFlow {
             x = 0;
             asc = strutAsc;
             desc = strutDesc;
+            startLine();
             pending = 0;
             hasContent = false;
         }
@@ -420,6 +447,10 @@ public final class InlineFlow {
                     min = Math.max(min, chunk);
                     chunk = 0;
                     if (core < b) pending = spaceW;
+                } else if (core < b) { // 末尾の空白: 次の節（インライン要素の文字など）との間の空き
+                    min = Math.max(min, chunk);
+                    chunk = 0;
+                    pending = spaceW;
                 }
                 w = b;
             }

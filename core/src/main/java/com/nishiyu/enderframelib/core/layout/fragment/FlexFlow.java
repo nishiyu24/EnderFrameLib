@@ -70,7 +70,10 @@ final class FlexFlow implements FormattingEngine {
         boolean row = fg.flexDirection == null || fg.flexDirection.isRow();
         List<BoxNode> outOfFlow = new ArrayList<>();
         List<Item> items = items(node, cw, prior, outOfFlow, s);
-        float contentH = row ? row(st, items, cw, ch, s) : column(st, items, cw, ch, s);
+        // 高さが auto の column は、内容の高さを min/max-height で挟んだ値が主軸の大きさ（伸縮と justify-content はこれで解く）
+        float minCH = Float.isNaN(ch) ? g.clampHeight(st, 0, space.percentHeightBase, s) - g.vdec() : ch;
+        float maxCH = Float.isNaN(ch) ? g.clampHeight(st, Float.MAX_VALUE / 4, space.percentHeightBase, s) - g.vdec() : ch;
+        float contentH = row ? row(st, items, cw, ch, s) : column(st, items, cw, ch, minCH, maxCH, s);
         float insetL = g.bL + g.pL, insetT = g.bT + g.pT;
         List<OutOfFlow.Pending> pend = new ArrayList<>();
         for (BoxNode b : outOfFlow) pend.add(new OutOfFlow.Pending(b, insetL, insetT)); // 静的位置は内容ボックスの左上
@@ -261,7 +264,7 @@ final class FlexFlow implements FormattingEngine {
 
     // ---- column ----
 
-    private static float column(Style st, List<Item> items, float cw, float ch, LayoutSession s) {
+    private static float column(Style st, List<Item> items, float cw, float ch, float minCH, float maxCH, LayoutSession s) {
         FlexGridStyle fg = st.flexGrid;
         float mainGap = gap(st, fg.rowGap, ch, s);
         LayoutCache cache = s.cache();
@@ -307,10 +310,13 @@ final class FlexFlow implements FormattingEngine {
             it.maxMain = BoxGeometry.definite(cst, cst.box.maxHeight, ch) ? ig.clampHeight(cst, Float.MAX_VALUE, ch, s) : Float.MAX_VALUE;
             it.hyp = clamp(it.base, it.minMain, it.maxMain);
         }
-        if (Float.isNaN(ch)) {
+        float hypTotal = mainGap * Math.max(0, items.size() - 1);
+        for (Item it : items) hypTotal += it.hyp + it.outerMain;
+        float mainAvail = Float.isNaN(ch) ? Math.max(minCH, Math.min(maxCH, hypTotal)) : ch;
+        if (Float.isNaN(ch) && mainAvail == hypTotal) {
             for (Item it : items) it.target = it.hyp;
         } else {
-            resolveFlexible(items, ch, mainGap);
+            resolveFlexible(items, mainAvail, mainGap);
         }
         for (int i = 0; i < items.size(); i++) { // pass 2: 確定した高さで測り直す
             Item it = items.get(i);
@@ -321,8 +327,10 @@ final class FlexFlow implements FormattingEngine {
         float total = 0;
         for (Item it : items) total += it.frag.height + it.outerMain;
         total += mainGap * Math.max(0, items.size() - 1);
-        float mainSize = Float.isNaN(ch) ? total : ch;
-        float[] lead = distribute(fg.justifyContent, mainSize - total, items.size(), mainGap);
+        float mainSize = Float.isNaN(ch) ? Math.max(minCH, Math.min(maxCH, total)) : ch;
+        // 主軸が行の向きと直交する column では left / right は start（CSS Box Alignment §5.1）
+        Alignment jc = fg.justifyContent == Alignment.LEFT || fg.justifyContent == Alignment.RIGHT ? Alignment.START : fg.justifyContent;
+        float[] lead = distribute(jc, mainSize - total, items.size(), mainGap);
         float cursor = lead[0], between = lead[1];
         for (Item it : items) {
             it.y = cursor + it.g.mT;
