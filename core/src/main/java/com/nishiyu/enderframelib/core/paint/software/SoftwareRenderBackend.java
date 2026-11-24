@@ -82,6 +82,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     final float dpr;
     private final Matrix2D dprFrame;
     private final String sessionId;
+    private boolean ownsSession; // 名前を自分で発行した（借りた名前の補間状態は持ち主が捨てる）
     final PaintResources resources;
     int clearColor = 0;
     final GlyphCache glyphCache = new GlyphCache();
@@ -147,22 +148,19 @@ public final class SoftwareRenderBackend implements RenderBackend {
     final long[] fullWhy = new long[11];
 
     /** CSS px の大きさ {@code cssW × cssH}・等倍の描画先を作る。 */
-    public SoftwareRenderBackend(int cssW, int cssH) {
-        this(cssW, cssH, 1f);
-    }
+    public SoftwareRenderBackend(int cssW, int cssH) { this(cssW, cssH, 1f); }
 
-    /** CSS px の大きさ {@code cssW × cssH}、1 CSS px が {@code devicePixelRatio} 画素の描画先を作る。 */
+    /** CSS px の大きさ {@code cssW × cssH}、1 CSS px が {@code devicePixelRatio} 画素の描画先を作る。名前は自分で発行し、閉じるときに捨てる。 */
     public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio) {
         this(cssW, cssH, devicePixelRatio, "software-" + SESSIONS.incrementAndGet());
+        this.ownsSession = true;
     }
 
     /**
      * セッション名を指定して作る。GPU 版が、保険の CPU 描画器にも自分と同じセッションを使わせる（アニメーションの
      * 状態は {@link CssAnimator} がセッションごとに持つので、描く側と問う側で名前が揃っている必要がある）。
      */
-    public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio, String sessionId) {
-        this(cssW, cssH, devicePixelRatio, sessionId, new PaintResources());
-    }
+    public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio, String sessionId) { this(cssW, cssH, devicePixelRatio, sessionId, new PaintResources()); }
 
     /** 文字・画像の供給元を共有して作る（GPU 版が自分の持ち物を保険の CPU 描画器にも使わせる）。 */
     public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio, String sessionId, PaintResources resources) {
@@ -186,6 +184,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     @Override public Pixmap pixmap() { return raster.root(); }
     @Override public float devicePixelRatio() { return dpr; }
     @Override public String sessionId() { return sessionId; }
+    /** 自分のセッションの補間状態（表示項目を握る）を捨てる。捨てないと描画器を作るたびに溜まる（CI の単一 JVM が OOM）。 */
+    @Override public void close() { if (ownsSession) CssAnimator.clearSession(sessionId); }
 
     /**
      * 描画先を {@link #clearColor} で塗り直し、{@code items} を時刻 {@code nowMs}（ミリ秒）の見た目で描く。

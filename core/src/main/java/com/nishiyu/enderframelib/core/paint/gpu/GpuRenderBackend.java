@@ -1145,7 +1145,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     @Override
     public void close() {
         if (closed) return;
-        closed = true;
+        closed = true; com.nishiyu.enderframelib.core.paint.CssAnimator.clearSession(sessionId); // 名前は自分が発行し CPU 描画器へ貸している
         host.enter();
         try {
             releaseRetained();

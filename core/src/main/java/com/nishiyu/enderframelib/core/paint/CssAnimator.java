@@ -58,7 +58,7 @@ public class CssAnimator {
 
     /** 既定の置き場の指定セッションを捨てる。 */
     public static void clearSession(String sessionId) {
-        DEFAULT_STATES.remove(sessionId);
+        DEFAULT_STATES.remove(sessionId); LAST_CLEANUP.remove(sessionId);
     }
 
     /**

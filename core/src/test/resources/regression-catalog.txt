@@ -37,6 +37,7 @@ A6b | IncrementalVsFullTest#absoluteCoordinatesPatchMatchesFullRelayoutAndNeverG
 §6-182, K3 | FrameOracleTest#scrollExtentMatchesAfterDisplayTypeChange | display の型を変えた箱の子テキストに残る遅延消去待ちの inlineFragments を ScrollExtentCalc が読み、scrollHeight 等が大きく残った（layouts 種 1・種 3）
 
 # --- 描画（表示リスト・差分パッチ・クリップ） ---
+M2b | BackendSessionReleaseTest#closingAnOwnedSessionDropsItsAnimationState, BackendSessionReleaseTest#closingABorrowedSessionKeepsTheOwnersState | 描画器（Software・GPU）が閉じても CssAnimator の既定の置き場に自分のセッションの補間状態（表示項目を握る）を残し、描画器を作るたびに溜まって、全テストを 1 本の JVM で流す CI（4 コア）がヒープ 3g を使い切って落ちた
 K4, §6-185 | K4InkBoundsProxyTest#absolutelyPositionedDescendantsThatEscapeTheRowAreNotProxied, K4InkBoundsProxyTest#randomEditsOfALargeListMatchFreshBuildEveryStep | 親（親 id の無い枠）が平行移動しても、変わった子が無いと子の断片を全部再利用して古い位置の項目を出した（K3 で shiftSubtree が子の印を進めなくなった穴。窓付き＋位置指定の子孫の行で顕在）
 §6-27, R5 | ItemReplayPixelTest#replayDoesNotChangeAnyPixelAcrossTheSequence | 項目の再生が補間中の色・上書きされたクリップ slot・CPU 層との順序を見落とした
 §6-59, B3 | ParentRelativeParityTest#pseudoElementTextKeysDoNotCollide | 疑似要素の文字の節の nodeId で鍵を作り、2 つ目以降の文字が消えた
