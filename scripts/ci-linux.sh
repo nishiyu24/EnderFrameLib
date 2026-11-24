@@ -12,7 +12,7 @@
 #   Windows:      powershell -File scripts/ci-linux.ps1 [-Full]   （WSL の Ubuntu 上でこのスクリプトを呼ぶ）
 #
 # 既定で回すのは「Windows で緑でも Linux だけ赤になるもの」（書体・パス・ルート JAR・OS 別の合格一覧）を見る build test だけ。
-# costGate・memoryAndLatencyGate は CI（build.yml）が push のたびに必ず回す。
+# costGate と memoryAndLatencyGate のヒープは CI（build.yml）が push のたびに必ず回す。交互 A/B 遅延の比は共有ランナーで揺れるので -Full だけで見る。
 # 近道（Shortcut）・確保量・ヒープ・計測の基準値に触れた変更のときだけ -Full で先に見る（§6-116）。
 #
 # CI との揃え方:
@@ -83,9 +83,9 @@ if [ "${EFL_CI_FULL:-0}" = 1 ]; then
   gate=${PIPESTATUS[0]}
   [ "$status" = 0 ] && status=$gate
 
-  # build.yml の "Memory and latency gate"。保持ヒープ（MB）と交互 A/B 遅延（ms）の回帰ゲート
-  echo "[ci-linux] ./gradlew :core:memoryAndLatencyGate -Pmemgate.tolerance=0.20 --stacktrace"
-  env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew :core:memoryAndLatencyGate -Pmemgate.tolerance=0.20 --stacktrace --console=plain 2>&1 | tee -a "$WORK/../last.log"
+  # 保持ヒープ（MB。build.yml の "Memory gate" と同じ）と交互 A/B 遅延（ms。CI では揺れるので開発機だけ）の回帰ゲート
+  echo "[ci-linux] ./gradlew :core:memoryAndLatencyGate --stacktrace"
+  env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew :core:memoryAndLatencyGate --stacktrace --console=plain 2>&1 | tee -a "$WORK/../last.log"
   memgate=${PIPESTATUS[0]}
   [ "$status" = 0 ] && status=$memgate
 else

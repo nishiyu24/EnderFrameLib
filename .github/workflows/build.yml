@@ -58,9 +58,11 @@ jobs:
       - name: Cost gate (allocation and fast-path counters)
         run: ./gradlew :core:costGate -Pcostgate.tolerance=0.12 --stacktrace
 
-      # M0 で新設したメモリ保持量（MB）と交互 A/B 遅延（ms）の回帰ゲート（全再計算と代表差分シナリオ）
-      - name: Memory and latency gate
-        run: ./gradlew :core:memoryAndLatencyGate -Pmemgate.tolerance=0.20 --stacktrace
+      # M0 で新設したメモリ保持量（MB）の回帰ゲート。交互 A/B 遅延（ms）の比は共有ランナーでは同じコミットでも
+      # 合否が入れ替わる（4 コアで 0.56〜0.81 倍・0.91〜1.16 倍と揺れた）ので、ここではヒープだけを見る。
+      # A/B は開発機の scripts/ci-linux.ps1 -Full・scripts/ab-gate.ps1 で見る
+      - name: Memory gate (retained heap)
+        run: ./gradlew :core:memoryAndLatencyGate -Pgate.only=heap --stacktrace
 
       # サーバー側のセッション寿命（ログアウト・サーバー停止で static マップが空に戻るか）は
       # Minecraft を起動しないと確認できないため、ここで専用サーバーを 1 回走らせる。
