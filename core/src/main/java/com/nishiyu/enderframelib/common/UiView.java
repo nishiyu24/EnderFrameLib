@@ -805,7 +805,7 @@ public class UiView implements AutoCloseable {
      * （範囲を越える・ほかに変化がある・中身を節にまとめていないコンテナが動くときは、作り直す）。
      */
     public void requestScrollReposition() {
-        interactionState.changeLedger().append(null, com.nishiyu.enderframelib.core.dom.node.ChangeLedger.Kind.SCROLL);
+        interactionState.changeLedger().append(null, com.nishiyu.enderframelib.core.dom.node.ChangeKind.SCROLL);
         repositionPending = true;
         markInvalidation(InvalidationLevel.REPOSITION);
         invalidated();
@@ -821,7 +821,7 @@ public class UiView implements AutoCloseable {
         if (width == rootW && height == rootH && pendingResizeW < 0) return;
         pendingResizeW = width;
         pendingResizeH = height;
-        interactionState.changeLedger().append(null, com.nishiyu.enderframelib.core.dom.node.ChangeLedger.Kind.ENV);
+        interactionState.changeLedger().append(null, com.nishiyu.enderframelib.core.dom.node.ChangeKind.ENV);
         invalidated();
     }
 

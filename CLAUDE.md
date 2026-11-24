@@ -2,7 +2,7 @@
 
 `:core` は Minecraft に依存しない純 Java の HTML/CSS 組み込み UI エンジン。現在は **Engine v3 への破壊的再設計**の最中。次を**先に読む**。
 
-- `core/ENGINE_REARCHITECTURE_PLAN.md` — **優先順位表は §3 の 1 つだけ**（本流 Phase M0〜M6〔M2 は M2a/M2b〕＋独立トラック P1〜P3）。M2 の入力側（DOM → `BoxNode`）の増分設計と M2b 着手前の縦割りスパイク関門（M2a）は §3.3、KPI は §4、運用ルール（7 原則）は §5。
+- `core/ENGINE_REARCHITECTURE_PLAN.md` — **優先順位表は §3 の 1 つだけ**（本流 Phase M0〜M6〔M2 は M2a/M2b〕＋独立トラック P1〜P3）。M2 の入力側（DOM → `BoxNode`）の増分設計と縦割りスパイク関門（M2a。完了・Go）は §3.3（実装で設計から変えた点・M2b への引き継ぎは §3.3 C）、KPI は §4、運用ルール（7 原則）は §5。
 - `core/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md` — 旧計画（C/K/L/W 系）と §6-1〜205 の経緯・計測。**読み物であり、指示ではない**。旧 `DESIGN_INCREMENTAL_KERNEL.md` は廃止し、ARCHIVE の付録 5 へ移設した（持ち越す知見は付録 5.A。新しい知見はここへ積む）。
 
 ## 作業の規則（計画書 §5 の要約。迷ったら §5 が正）
@@ -17,10 +17,11 @@
 - **時間の主張は交互 A/B だけ**: 絶対値はセッションで ±40% ずれる。旧版の worktree と現在を交互に 3 回ずつ・中央値で比べる（`powershell -File scripts/ab-gate.ps1`）、または `:core:memoryAndLatencyGate` の交互 A/B・ヒープ実測を使う。内部カウンタ（`memo*`）の固定で性能を主張しない。
 - **時刻は注入**: コアは `System.nanoTime`/`currentTimeMillis` を読まない（`core/kernel/Clock.java` だけ）。テストは `Clock.Manual`（`StandaloneView.clock(...)`・`ResizeSettle.freezeClock`）を使い、実時間を `sleep` で待たない。
 
-### 移行状態（Phase M0・M1 完了、次期 M2a）
+### 移行状態（Phase M0・M1・M2a 完了、次期 M2b）
 
 - **M0 完了**: 旧ラチェット 8 本・`*Verifier` 3 種・`VERIFY_MEMO` / `VERIFY_BOX_MEMO`・`:core:shortcutMatrix`・`costGate` の `memo*` 判定を撤去し、**`ArchitectureHealthTest`** と **`:core:memoryAndLatencyGate`** が稼働。
-- **M1 完了（M1a + M1b + M1c）**: `core/css/` を型付き 6 群不変構造体 `Style`（`CssLength` 64-bit・`CssExprs`・`CustomProperties`・`StyleFacts`）＋薄いラッパー `ComputedStyle`（`2,095 → 398 行`）へ移行し、`CssValue.java`・`PackedLengths.java`・`TypedValueCache.java`・`StateStyleMemo.java`・`StyleSlice`/`DIFF_MEMO`/`StyleMap`/`SHARED`・スタイル系 `Shortcut`/`EngineFlags`（`STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT`、上限 `35 → 33` / `45 → 43`）を削除。群クラス（`InheritedStyle` ほか 5 つ・`StyleProperties`・`StyleDiff`）は `scripts/GenStyleGroups.java` の**生成物なので手で直さない**（`PropertyRegistry` を変えたら再実行。`StyleGroupCoverageTest` が足し忘れを検出）。次は **M2a（§3.3）**。
+- **M1 完了（M1a + M1b + M1c）**: `core/css/` を型付き 6 群不変構造体 `Style`（`CssLength` 64-bit・`CssExprs`・`CustomProperties`・`StyleFacts`）＋薄いラッパー `ComputedStyle`（`2,095 → 398 行`）へ移行し、`CssValue.java`・`PackedLengths.java`・`TypedValueCache.java`・`StateStyleMemo.java`・`StyleSlice`/`DIFF_MEMO`/`StyleMap`/`SHARED`・スタイル系 `Shortcut`/`EngineFlags`（`STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT`、上限 `35 → 33` / `45 → 43`）を削除。群クラス（`InheritedStyle` ほか 5 つ・`StyleProperties`・`StyleDiff`）は `scripts/GenStyleGroups.java` の**生成物なので手で直さない**（`PropertyRegistry` を変えたら再実行。`StyleGroupCoverageTest` が足し忘れを検出）。
+- **M2a 完了（判定 Go。計画書 §3.3 C）**: 旧経路と独立の新経路を新設した。L2 `core/box/`（不変 `BoxNode`・可変長チャンク列 `BoxChildren`/`BoxChunk`・`BoxTreeCompiler`〔凍結した `ChangeLedger` だけを入口に前回の木と DOM を並走〕・`StyleSource`）、L3 `core/layout/fragment/`（値等価の `ConstraintSpace`・不変 `LayoutFragment`・`FlowChunk`/`ChunkedFlow`・`LayoutCache`〔前回の断片木がキャッシュ、2 パスの 4 スロットは `FlowChunk.slots`、`MinMaxSizes` は弱参照の表〕・`BlockFlow`/`InlineFlow`/`FlexFlow`・入口 `FragmentLayout`）。番人は `IncrementalOracleTest`（全再計算と全断片の一致）・`LegacyParityTest`（旧経路と 1/64 px 以内）・`NestedFlexTest`・`BoxTreeCompilerTest`・`M2aSpikeGateTest`、実測は `./gradlew :core:m2aSpike`。M2b はこの型の上へ全エンジンを移植して `LayoutBox` ほかを削除する（スパイクの範囲外の一覧と引き継ぎ課題は §3.3 C）。
 
 ## 検証の手順
 

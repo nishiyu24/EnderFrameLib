@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.dom;
 
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
-import com.nishiyu.enderframelib.core.dom.node.ChangeLedger.Kind;
+import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,7 +28,7 @@ public final class ChangeReads {
      */
     public static List<HtmlNode> texts(ChangeLedger ledger) {
         if (ledger.frozenOverflow()) return null;
-        return collect(ledger, Kind.TEXT, (n, d) -> true, MAX_TEXT_NODES);
+        return collect(ledger, ChangeKind.TEXT, (n, d) -> true, MAX_TEXT_NODES);
     }
 
     /**
@@ -37,10 +37,10 @@ public final class ChangeReads {
      */
     public static List<HtmlNode> paintAttrs(ChangeLedger ledger, BiPredicate<HtmlNode, String> paintOnly) {
         if (ledger.frozenOverflow()) return NONE;
-        return collect(ledger, Kind.ATTR, paintOnly, Integer.MAX_VALUE);
+        return collect(ledger, ChangeKind.ATTR, paintOnly, Integer.MAX_VALUE);
     }
 
-    private static List<HtmlNode> collect(ChangeLedger ledger, Kind kind, BiPredicate<HtmlNode, String> accept, int max) {
+    private static List<HtmlNode> collect(ChangeLedger ledger, ChangeKind kind, BiPredicate<HtmlNode, String> accept, int max) {
         int size = ledger.frozenSize();
         if (size == 0) return NONE;
         List<HtmlNode> out = null;

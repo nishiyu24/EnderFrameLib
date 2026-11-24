@@ -1,0 +1,63 @@
+package com.nishiyu.enderframelib.core.box;
+
+import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.css.SelectorMatcher;
+import com.nishiyu.enderframelib.core.css.Style;
+import com.nishiyu.enderframelib.core.css.StyleResolver;
+import com.nishiyu.enderframelib.core.css.StyleSheet;
+import com.nishiyu.enderframelib.core.css.model.ContainerBox;
+import com.nishiyu.enderframelib.core.css.model.StateLookup;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+
+import java.util.Map;
+
+/**
+ * 要素 1 つの算出スタイルを解く（Engine v3 M2a）。{@link BoxTreeCompiler} は「この節を解き直すべきか」だけを決め、
+ * 解き方はここに閉じる。M1 のカスケード（{@link StyleResolver}）をそのまま呼ぶ。
+ *
+ * <p>ルート要素（{@code html}）の文字の大きさと行の高さ（{@code rem} / {@code rlh} の基準）は、ルート要素を解いたときに
+ * この実例が覚える（1 ビューに閉じた状態。プロセス共有はしない）。</p>
+ */
+public final class StyleSource {
+    private final StyleSheet sheet;
+    private final StateLookup lookup;
+    private final Map<String, String> env;
+    private final int viewportW, viewportH;
+    private float rootFontSize = ComputedStyle.DEFAULT_FONT_SIZE;
+    private float rootLineHeight = Float.NaN;
+
+    public StyleSource(StyleSheet sheet, StateLookup lookup, Map<String, String> env, int viewportW, int viewportH) {
+        this.sheet = sheet;
+        this.lookup = lookup != null ? lookup : SelectorMatcher.STATIC_ATTRIBUTES;
+        this.env = env != null ? env : Map.of();
+        this.viewportW = viewportW;
+        this.viewportH = viewportH;
+    }
+
+    public StyleSheet sheet() { return sheet; }
+    public int viewportW() { return viewportW; }
+    public int viewportH() { return viewportH; }
+
+    /** 要素の算出スタイル。{@code parent} は親の {@link Style}（根の直下は {@link Style#DEFAULT}）。 */
+    public Style element(HtmlNode node, Style parent) {
+        Style p = parent != null ? parent : Style.DEFAULT;
+        boolean isRoot = node.parent != null && node.parent.parent == null && "html".equalsIgnoreCase(node.tag);
+        float rootFont = isRoot ? ComputedStyle.DEFAULT_FONT_SIZE : rootFontSize;
+        float rootLh = isRoot ? Float.NaN : rootLineHeight;
+        Map<String, String> raw = StyleResolver.resolveStyleSet(node, p, sheet).resolve(lookup);
+        if (node.attrs.containsKey("hidden")) raw.put(CssProperty.DISPLAY, "none");
+        ComputedStyle cs = StyleResolver.finalizeComputedStyleOwned(raw, sheet, env, p, p.inherited.fontSize,
+                rootFont, rootLh, viewportW, viewportH, ContainerBox.NONE_SIZE);
+        if (isRoot) {
+            rootFontSize = cs.fontSizePx();
+            rootLineHeight = cs.lineHeightPx();
+        }
+        return Style.of(cs, p);
+    }
+
+    /** 文字の節のスタイル（親の継承群をそのまま共有する）。 */
+    public Style text(Style parent) {
+        return Style.forTextChild(parent);
+    }
+}

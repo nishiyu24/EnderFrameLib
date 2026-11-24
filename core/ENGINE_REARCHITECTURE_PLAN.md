@@ -1,6 +1,6 @@
 # EnderFrameLib 根本再設計プラン（Engine v3: 破壊的アーキテクチャ刷新）
 
-> **更新日**: 2026-11-24
+> **更新日**: 2026-11-25（M2a 完了・Go）
 > **対象**: `:core`（515 ファイル・約 11.1 万行。`com.nishiyu.enderframelib.core.*` / `common.*` / `api.*`）および組み込みサンプル MOD（101 ファイル・約 2.6 万行。`src/main/java/...`）の境界・描画・ホスト層を含む全体構造。
 > **旧計画の全面撤回宣言**: 従来の `C 系`・`K 系`・`K5b`・`L5 (W0〜W3)`・`K4h`・`B14` および `core/DESIGN_INCREMENTAL_KERNEL.md` に基づく「既存キャッシュ温存＋増分カーネル延命」方針を**本日をもって正式に撤回・凍結**する。過去の経緯・計測ログ・旧知見（§6-1〜205）は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) と git 履歴にのみ残す。本計画は**破壊的変更を全面的に許可**し、データ表現・中間表現（IR）・描画契約・ホスト統合の土台そのものを作り直す。
 
@@ -82,7 +82,7 @@
    - 入力側の変更検知（dirty 足切り）の入口は **`ChangeLedger`（1 ビュー閉鎖・追記専用台帳）1 本のみ**とし、DOM ノードへの `DIRTY_*` フラグ欄追加は禁止する。
    - すべての実行状態・メモテーブルは 1 ビューインスタンス（`EngineView`）の内部に閉じ、下流キャッシュは **「1 層メモ化言語」** のみを許可する。ただし呼び出しごとに生成され得る値オブジェクトの扱いを明確に分ける：
      - **構造・データ木入力（`BoxNode` / `BoxChunk`・`Style`・`LayoutFragment`）**: **参照同一性（`==`）のみ**で照合する。
-     - **値オブジェクト入力（`ConstraintSpace`：確定寸法・利用可能幅・`ExclusionSpace`・`MarginStrut` 等、および `MinMaxContext`）**: 呼び出しのたびに新しく生成され得る値オブジェクトであるため、素の `==` 比較のみではキャッシュが当たらない。そのため **「`==` 高速パス付きの値等価（`equals` / `hashCode`）」** または **「1 ビュー内インターン（同値なら同一参照を返し `==` で照合）」** のいずれかを許可し、M2a スパイクの実測で採用方式を確定する（詳細は §3.3・§3.4）。
+     - **値オブジェクト入力（`ConstraintSpace`：確定寸法・利用可能幅・`ExclusionSpace`・`MarginStrut` 等、および `MinMaxContext`）**: 呼び出しのたびに新しく生成され得る値オブジェクトであるため、素の `==` 比較のみではキャッシュが当たらない。そのため **「`==` 高速パス付きの値等価（`equals` / `hashCode`）」** または **「1 ビュー内インターン（同値なら同一参照を返し `==` で照合）」** のいずれかを許可し、M2a スパイクの実測で採用方式を確定する（詳細は §3.3・§3.4）。**→ M2a で前者（`==` 高速パス付きの値等価）に確定（§3.3 C 判定基準 3）。**
      - **intrinsic size と多段測定**: `MinMaxSizes`（`min-content` / `max-content`）の 1 層メモ化、および Flex/Grid の仮測定・確定測定（2 パス）を相互駆逐させないための固定少数スロット（2〜4 スロット）は、この 1 層メモ化言語の正規要素として位置づける。
 
 5. **単一レンダラ・ホスト層の純化**
@@ -130,7 +130,7 @@
 | :---: | :--- | :--- | :--- | :--- |
 | 1 | **M0** | **新ゲートの先行設置とロックイン解除〔完了〕** | **順序厳守**: 新ゲート（`MemoryAndLatencyGate`・`ArchitectureHealthTest`）先行設置・緑確認 → 旧ラチェット 8 本・`memo*` 判定・`shortcutMatrix`・`*Verifier` 3 種を削除、`Shortcut` 新規追加禁止・上限凍結（`37 → 35` へ減少、M1〜M3b で旧経路ごと削除） | 保護空白ゼロでゲート置換完了、`Shortcut` 上限 `35` 凍結（新規追加 0） |
 | 2 | **M1** | **`ComputedStyle` の完全刷新〔完了〕**（M1a・M1b・M1c 完了） | `CssValue[207]`・`StyleSlice`・`DIFF_MEMO`・`StyleMap`・`SHARED`・`PackedLengths`・`TypedValueCache`・`StateStyleMemo` 全廃 → 6 グループ不変構造体 `Style`（`InheritedStyle` 参照共有＋等価判定含む）+ 64-bit `CssLength` + 不変 `StyleFacts` 導入、`layout`/`paint`/`common`/`dom` の読み口を型付きへ完全切替、スタイル系 `Shortcut`/`EngineFlags`（`STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT`）削除 | `ComputedStyle` 2,095 → **398 行**（`Style` 229 行）、`varied-list` Style 層 **3.5 MB**・`large-list` **9.63 MB**（全体 `varied-list` 35.96 MB の残り約 32 MB は M2b/M3b/M5 対象の `LayoutBox`/`InlineFragment`/`DisplayItem`/`TextShaper`）、読み口文字列参照 `0` |
-| 3 | **M2a** | **入力側増分 `BoxTreeCompiler` 設計と縦割りスパイク関門** | `ChangeLedger` 接続・継承打ち切り・`BoxChildren`（32 子チャンク）・`ConstraintSpace` 比較方式確定（値等価 vs インターン）・`computeMinMaxSizes` + 固定少数スロット設計。**実 DOM + M1 実 `Style` 上で Block + Text + 入れ子 Flex（2 パス）の独立スパイク**を実測し Go/No-Go 判定 | 8,000 行挿入 `≤ 1.0 ms`、入れ子 Flex 指数爆発 0、レイアウト層ヒープ増分 `large-list ≤ 1.5 MB`・`varied-list ≤ 4.0 MB` 実測合格 |
+| 3 | **M2a** | **入力側増分 `BoxTreeCompiler` 設計と縦割りスパイク関門〔完了・Go〕** | `ChangeLedger` 接続・継承打ち切り・`BoxChildren`（32 子チャンク）・`ConstraintSpace` 比較方式確定（**値等価＝案 A を採用**）・`computeMinMaxSizes` + 固定少数スロット設計。**実 DOM + M1 実 `Style` 上で Block + Text + 入れ子 Flex（2 パス）の独立スパイク**を実測し Go/No-Go 判定（新設 `core/box/`・`core/layout/fragment/`） | **全 5 基準合格**: 8,000 行挿入 `0.11〜0.16 ms`（同 JVM 交互 A/B で旧経路 `4.3〜5.9 ms`）、入れ子 Flex 指数爆発 0（深さ 8 で箱あたり ≤ 2 回・追い出し 0）、レイアウト層ヒープ増分 `large-list 0.54 MB`・`varied-list 1.87 MB`、全再計算と 100% 一致 |
 | 4 | **M2b** | **全 `FormattingEngine` 移植と `LayoutBox` 一括解体** | float 非侵入/相対除外・`computeMinMaxSizes`・全エンジン段階移植を経て `LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads`・`PartialBuild`・レイアウト系 `Shortcut` 等（約 4,500 行超）を削除 | 全エンジン WPT ≥ 160/260 & `FrameOracle` 一致、旧コード削除 `≥ 4,500 行`、レイアウト増分 `≤ 4.0 MB` / 中間全体 `≤ 14.0 MB` |
 | 5 | **M3a** | **`CoreGpuSurface` 品質検証と MOD レガシーレンダラ先行撤去** | `useCoreBackend` の全描画要件（`<mc-scene>`・`<scene-3d>`・画像フォールバック・ビットマップ書体・ツールチップ）の事前品質確認関門を通過した上で、MOD `client/renderer` 9,369 行を M3b より先に撤去し `DisplayItem` 消費者を激減させる | MOD 描画 `≤ 1,500 行`・フォールバック `0 件`・`runGameTestServer` & 実機スクショ回帰全件合格 |
 | 6 | **M3b** | **フラット `DisplayItem` 廃止と階層的 `DisplayScene`** | `DisplayItem`・`FragmentPaint`・`PaintSceneDriver`・`HitTestIndex`・残存 `Shortcut.java` を完全廃止し、`SceneChildren`（32 子チャンクカリング）+ `StickyConstraint` 付き `DisplayScene` + L4 単方向化を完了 | `varied-list fontsize` 10.76 → ≤ 5.0 ms（144Hz 達成）、3 者画素一致 100%、`Shortcut` 38 → **0** |
@@ -241,7 +241,9 @@ M1〜M4 でデータ構造を壊して作り直す前に、「外から見た正
 
 ---
 
-### 3.3 Phase M2a: 入力側増分 `BoxTreeCompiler` 設計と縦割りスパイク関門
+### 3.3 Phase M2a: 入力側増分 `BoxTreeCompiler` 設計と縦割りスパイク関門〔完了・Go 2026-11-25〕
+
+> **判定: Go**（判定基準 1〜5 を全て満たした。実績・設計上の判断・M2b への引き継ぎは本節末尾の「M2a 完了実績」）。以下 A・B は着手時の設計と関門の仕様で、実装で変えた点は末尾に明記した。
 
 M2 で「未変更部分木を `boxNode == cached.boxNode` で O(1) 再利用する」ためには、DOM 変更のたびに未変更部分木の `BoxNode` を同一参照で返す**入力側増分機構（`BoxTreeCompiler`）**、長大配列のコピーを避ける**永続チャンク表現（`BoxChildren`）**、さらに **`ConstraintSpace` の比較契約**と **intrinsic size・入れ子 Flex の 2 パス測定を破綻なく収容する 1 層メモ化設計**が不可欠である。全面移植（M2b）へ踏み切る前に、これらを設計し、実 DOM + M1 実 `Style` 上での縦割りスパイク（Block + Text + 入れ子 Flex）で実測検証する。
 
@@ -297,13 +299,76 @@ M2 で「未変更部分木を `boxNode == cached.boxNode` で O(1) 再利用す
   5. **再生成の局所性と出力等価性**: 8,000 子への 1 件挿入で作り直す `BoxChunk` `≤ 2 個`、再構築 `BoxNode` 数 = 祖先深さ + 1、未変更 `FlowChunk` ヒット率 `≥ 99%`。ゼロから全構築した結果（`FrameOracle` 相当）と座標・寸法・折り返しが 100% 一致すること。
 - **No-Go 時の規則**: 上記の 1 つでも基準未達の場合は **M2b（全面移植）へ着手しない**。チャンク粒度・`ChangeLedger.touches` 構築・`ConstraintSpace` キー粗粒化／スロット上限拡大・`MinMaxSizes` キャッシュ・margin strut 処理等のボトルネックを実測で特定し、全面着手の前に設計を修正する。
 
+#### C. M2a 完了実績（2026-11-25・判定 Go）
+
+**実装（旧 `LayoutBox` 経路には一切触れない独立の新経路。全クラス ≤ 600 行、計 約 2,360 行）**
+
+| 層 | パッケージ | クラス |
+| :--- | :--- | :--- |
+| L2 入力 | `core/box/` | `BoxNode`（5 欄・不変）・`BoxKind`・`BoxChildren`／`BoxChunk`（可変長 1〜64 のチャンク列。≤ 32 子は `BoxChunk` そのもの）・`BoxTreeCompiler`（284 行）・`StyleSource`（M1 のカスケードをそのまま呼ぶ） |
+| L3 整形 | `core/layout/fragment/` | `ConstraintSpace`（値等価）・`LayoutFragment`（不変）・`LineFragment`・`FlowChunk`／`ChunkedFlow`・`MinMaxSizes`／`MinMaxContext`・`LayoutCache`（1 層メモ＋固定 4 スロット）・`LayoutSession`・`FormattingEngine` SPI・`BlockFlow`・`InlineFlow`・`FlexFlow`・`BoxGeometry`・`FragmentLayout`（入口） |
+| 検証 | テスト | `BoxTreeCompilerTest`（8）・`IncrementalOracleTest`（4 文書 × 80 変異）・`NestedFlexTest`（2）・`LegacyParityTest`（5）・`M2aSpikeGateTest`（ヒープ＝`slow`・時間＝`timing`）・`StyleSharingTest#shareEqualGroupsReusesPreviousInstances`、実測 `./gradlew :core:m2aSpike`（`M2aSpikeMain`） |
+
+**判定基準ごとの実測**
+
+1. **1 件挿入・削除**（`:core:m2aSpike`。同じ JVM で旧経路と v3 を交互に 3 回ずつ、回ごとの中央値の中央値。旧経路は `StandaloneView` の 1 フレーム〔表示リストの構築まで〕、v3 は DOM 変更＋台帳の凍結＋コンパイル＋整形〔描画は M3b で載る〕）:
+
+   | 文書 | 先頭 | 中央 | 末尾 | 基準 |
+   | :--- | :---: | :---: | :---: | :---: |
+   | `large-list-8000` 旧経路 | 5.91 ms | 4.71 ms | 4.29 ms | — |
+   | `large-list-8000` v3 | **0.161 ms**（compile 0.067 + layout 0.023） | **0.122 ms** | **0.106 ms** | ≤ 1.0 ms ✔ |
+   | （再実行） 旧経路 / v3 | 5.98 / 0.159 ms | 4.67 / 0.120 ms | 4.30 / 0.110 ms | — |
+   | `large-list-500` 旧経路 / v3 | 0.295 / **0.020 ms** | 0.162 / **0.020 ms** | 0.146 / **0.017 ms** | ≤ 0.15 ms ✔ |
+
+   v3 の残り（約 0.07 ms）は DOM 側の `insertBefore`（`ChildList.indexOf` の O(n)）で、M5 の DOM 整理の対象。
+2. **入れ子 Flex の 2 パス**（`NestedFlexTest`。row と column を交互に深さ 3〜8、葉の高さを経路ごとに不ぞろいにして各段で stretch・`flex-grow` の pass 2 を連鎖させた文書）: 初回・幅の変更ともに整形は箱あたり **≤ 2 回**（深さ 8 で 578 回 / 514 箱 ≈ 1.12）・スロットの追い出し **0**・幅の変更で `computeMinMaxSizes` の再計算 **0**・葉の変更で内在サイズの再計算は祖先の数まで（変わった箱あたり ≤ 1 回）・変更のない次フレームは根で当たり整形 0 回。**変異検証**: スロット数を 1 にすると pass 1 と pass 2 が追い出し合い、テストが落ちることを確認した。スロット数 4（初期仮説）で不足は検出されず、拡大は不要。
+3. **`ConstraintSpace` の比較方式**（ABBA 順で 4 回。案 B は `LayoutSession` に同値の制約を同じ参照へそろえる表を足して計測した）:
+
+   | 文書 | 案 A 挿入 / 幅の往復 | 案 B 挿入 / 幅の往復 | ヒット率・確保量 |
+   | :--- | :---: | :---: | :--- |
+   | `varied-list-2000` | **0.063 ms** / 3.62 ms | 0.070 ms / 3.61 ms | 同一（0.8995・32.8 KB / 6.8 MB） |
+   | 入れ子 Flex 深さ 7 | **0.0229 ms** / 0.157 ms | 0.0241 ms / 0.160 ms | 同一 |
+
+   → **案 A（`==` の高速路つき値等価）を採用**。案 B はヒット率も確保量も同じ（照合の意味が同じで、表を引く前に制約を作る）で、表の探索の分だけ遅い。案 B の経路は運用ルール 7 に従い M2a 内で削除した。
+4. **保持ヒープ**（`M2aSpikeMain.heapOf`。DOM のみ → M1 の `Style` だけを全要素ぶん作って保持 → それを捨てて `BoxNode` 木 → 断片木、の順に GC 後の差分を取る）: 下表（最終の実行。実行ごとの揺れは ±0.1〜0.2 MB で、初回の実行は 0.64 / 2.11 MB）。**レイアウト層増分 `large-list-2000` 0.54 MB（≤ 1.5 ✔）・`varied-list-2000` 1.87 MB（≤ 4.0 ✔）**。同じ文書の旧経路の全体保持は 9.63 / 35.96 MB（`memoryAndLatencyGate`）。
+
+   | 文書 | DOM | `Style` | スタイル解決の副産物 | `BoxNode` 木 | 断片木 | レイアウト層増分 | 全体 |
+   | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+   | `large-list-2000` | 1.05 | 1.48 | 0.01 | 0.21 | 0.33 | **0.54** | 3.09 |
+   | `varied-list-2000` | 2.79 | 2.97 | 3.47 | 0.45 | 1.42 | **1.87** | 11.10 |
+
+   「スタイル解決の副産物」は M1 のカスケードが節に残す覚え（`style` 属性の宣言の解析結果など。`varied-list` は全 `li` が `style` 属性を持つので 3.47 MB）で、M5（DOM 整理）で削る DOM 側の占有として可視化した。
+5. **局所性と出力等価性**: 8,000 子への 1 件挿入で作り直す `BoxNode` は **7 個**（根・`html`・`body`・`div`・`ul` の 5 段 ＋ 新しい `li` と文字）、削除は **5 個**、作り直す `BoxChunk` は **1 個**（≤ 2 ✔）・前回と同じ参照のチャンク **249 / 250**・一覧の `FlowChunk` は変わった 1 個を除く **249 / 250 が `(BoxChunk ==, 制約)` で当たる（未変更チャンクのヒット率 100%）**。`IncrementalOracleTest`（`large-list`・`varied-list`・入れ子 Flex 深さ 3/4 に種固定のランダム変異〔挿入・削除・文字・非継承／継承のスタイル・幅・`display`〕を 80 回ずつ）で、ゼロから作った結果と全断片の座標・寸法・行の折り返しが **100% 一致**。**変異検証**: ① チャンクの照合で「触れられた子」を見ない ② 断片の照合で制約を見ない、のどちらも検出して落ちることを確認した。
+
+**旧経路との一致（新経路が「本物」の結果を出すことの確認。`LegacyParityTest`）**: 同じ実 DOM・実 `Style` を旧経路（`LayoutBox`）と v3 に通し、`id` を持つ全ての箱の位置・寸法が **1/64 px 以内で一致**（`large-list`・余白の相殺／`box-sizing`／auto 余白／%・min/max の各ブロック・`white-space: pre / nowrap`・`line-height`・`text-align` を含む折り返し・flex の row／wrap／column／`align-items`／縮小と自動最小サイズ／`gap`＋`space-between`）。意図した差は 2 つ: ① **負の余白が親の下端を素通しして次の兄弟と相殺される場面**は、v3 が CSS の規則どおり「正の最大 ＋ 負の最小」（例: −3・10・30 → 27 px）で、旧経路は負の余白を落として 30 px（旧経路の逸脱。M2b で WPT と照合する） ② インライン要素は行の断片へ平らに入るので箱の断片を持たない。
+
+**実装で設計（A・B）から変えた点と、その理由**
+
+- **`BoxNode` は `int nodeId` ではなく DOM の節への参照を持つ**: `DocumentArena` の番号は節の削除で解放・再利用されるため、番号で「前回と同じ節か」を照合すると、同じ位置に入った新しい節へ古い箱を取り違える（`BoxTreeCompilerTest#replacedNodeAtSamePositionGetsFreshBox`）。M3b の `DisplayScene` が要る番号は `node.nodeId()` で引ける。
+- **`IdentityHashMap<HtmlNode, CompiledEntry>` を持たない**: 前回の `BoxNode` 木と DOM を並走させて照合する（前回の箱が親の箱の子として見つかる）ので、対応表の分のヒープはゼロ。O(1) 完全スキップの条件（`parentInherited ==` 等）は「親の継承群・カスタムプロパティの参照が前回と同じ」として親ごとに 1 回だけ判定する。
+- **チャンクは可変長（1〜64。挿入で伸び、64 を超えたら 32 ずつに割る）**: 境界を 32 ごとに固定すると、挿入位置より後ろの全チャンクの境界がずれて作り直しになる。チャンクの中身の事実（インライン水準・ブロック水準の子を含むか）は構築時に 1 回だけ求めて持つ（8,000 子の親で子を毎回走査しない）。
+- **レイアウトのキャッシュは「前回の断片木そのもの」**（`IdentityHashMap<BoxNode, スロット>` を持たない）: 断片は自分の `BoxNode` を参照するので、`BoxNode` を鍵にした表では値が鍵を生かし続け、弱参照の表でも回収されない（掃除の仕組みが要る）。親の前回の断片が子の断片を持つので、親が子を測るときはそこから候補を引いて `box == 子 && space.equals(制約)` で照合する。木から外れた結果は木と一緒に回収される。
+- **2 パスの固定少数スロットは親の出力側（`FlowChunk.slots`）に持つ**: 1 回の整形の間に項目を測った断片（最大 4・LRU）だけを残す。断片自身にスロットを持たせると「前回の断片 → その前回…」の鎖になって保持が際限なく伸びる。
+- **`MinMaxSizes` は `BoxNode` を弱参照の鍵にした表**（値が鍵を参照しないので回収される。`BoxNode` は `equals` を持たないので同一性で引ける）。`computeMinMaxSizes` は**内容に基づく内在サイズ**（自分の `width`・min/max を掛けない）を返し、指定の幅を掛けた「親への寄与」は呼び出し側（`BoxGeometry.contribution`）が作る（flex の自動最小サイズは内容の `min-content` が要るため。混ぜると `width:80px` の項目の自動最小が 80 px になる不具合を `LegacyParityTest` で見つけて直した）。
+- **キーの粗粒化を最初から入れた**: 子の制約の `% の高さの基準` は、子自身が % の高さを持つときだけ載せる。載せないと、親が pass 1（高さ未確定）と pass 2（stretch で確定）で測られるたびに全ての子の制約が別になり、入れ子で倍々に増える。
+- **非局所依存の規則（`BoxTreeCompiler` に閉じる）**: 兄弟の位置を読むセレクタ（`+ ~ :nth-* :empty`）を使う文書は、子の増減があった親の子を全員解き直す／`:has()`・コンテナクエリ・台帳あふれ・節を絞れない変更（`ENV`・全体の `STYLE`）は全体を作り直す（`SCROLL` は箱の木に効かないので無視）／`inherit` キーワードを使う文書は、親の算出スタイルが変わったら子の**要素**を解き直す（文字の節のスタイルは親の継承群だけで決まるので解き直さない）。旧経路の無効化（`InteractionState.markDirty`）が文字の節にも `STYLE` を追記するが、文字の節への `STYLE` は解き直しの理由にしない。
+- **`Style.shareEqualGroups(prev)` を `core/css/Style` に追加**: 解き直した結果の群が前回と同値なら前回のインスタンスへ寄せる（全体が同値なら前回そのもの）。`color` を上書きする要素の祖先で `color` が変わっても、その要素の継承群は前回と同じ参照のままになり、子孫は 1 個も作り直さない（`BoxTreeCompilerTest#inheritedOverrideCutsPropagation`）。
+
+**スパイクの範囲外（M2b で `FormattingEngine` へ移すときに足す）**: float・clearance・positioned・multicol・grid・table・縦書き・`inline-block` の原子化・`vertical-align`・双方向・ブロックを含むインライン・`::before/::after`／`::marker`（番号つきリスト・カウンタ・引用符）・匿名の表の箱・`content-visibility`・flex の `*-reverse`／column の折り返し／`align-content`／主軸の auto 余白／ベースライン揃え・スクロールコンテナの `scrollW/H`。混在（インラインとブロック）の子を持つ親はチャンク単位では使い回さない（子ごとには照合する）。
+
+**M2b への引き継ぎ（実測で見えた課題）**
+
+- **幅の変更は全ての行を測り直す**: `varied-list-2000` の幅の往復は 1 フレーム 3.6 ms・確保 6.8 MB（語ごとの `substring` と `advance`、`Piece` の確保）。ブロックの子は 1 スロットなので、幅を往復すると毎回外れる。`InlineFlow` の語の幅の覚え（`(文字の BoxNode ==) → 語の幅の列`。幅に依らない）を 1 層メモとして足すのが第一候補（KPI の `showcase` 幅変更 ≤ 0.20 ms に効く）。
+- **8,000 子の親の DOM 側**: `ChildList.indexOf` の O(n) が v3 の 1 件挿入の約半分を占める（M5）。
+- **`StyleSource` のルート要素の基準**（`rem` / `rlh`）は 1 ビューの実例に閉じて持つが、`html` 要素だけが解き直されないフレームでも正しいのは「`html` の継承群が変われば全子孫が解き直される」ことに依る。M2b で `CompileCtx` 相当に明示するか検討する。
+
 ---
 
 ### 3.4 Phase M2b: `LayoutBox` 解体と全 `FormattingEngine` 移植・不変 `LayoutFragment` 本実装
 
-M2a の縦割りスパイク合格を前提として、`LayoutBox`（1,785 行・81 欄）およびそれに群がる多層メモ・印・読み取り台帳群（約 4,500 行超）を解体し、全フォーマッティングエンジンを `FormattingEngine` SPI へ段階移植して旧経路を完全削除する。
+M2a の縦割りスパイク合格（**2026-11-25 Go。§3.3 C**）を前提として、`LayoutBox`（1,785 行・81 欄）およびそれに群がる多層メモ・印・読み取り台帳群（約 4,500 行超）を解体し、全フォーマッティングエンジンを `FormattingEngine` SPI へ段階移植して旧経路を完全削除する。
 
-- **新データモデル（`core/layout/`）**
+- **新データモデル（`core/layout/`）**（M2a で `core/box/`・`core/layout/fragment/` に実装済みの型を土台にする。下のコードは着手時の構想で、実装との差 ―― `BoxNode` は `nodeId` でなく DOM の節の参照を持つ・キャッシュは前回の断片木と `FlowChunk.slots`・`MinMaxSizes` は弱参照の表 ―― は §3.3 C のとおり）
   ```java
   // 1. 入力ボックス木（可変状態を一切持たない軽量記述ノード、≤ 10 欄）
   public final class BoxNode {
@@ -337,7 +402,7 @@ M2a の縦割りスパイク合格を前提として、`LayoutBox`（1,785 行�
   - **float 除外領域によるキャッシュヒット率低下リスクへの対策**:
     1. **非侵入の高速パス（`ExclusionSpace.EMPTY` 共有）**: float が存在しない BFC（大半のノード）、全 float の下端を通過した後の子、および新しい BFC を確立する子（`overflow != visible`・`flow-root`・Flex・Grid・Table 等）には、常に静的シングルトン `ExclusionSpace.EMPTY`（親の BFC 内 Y オフセットを載せない）を渡す。これにより親の Y 変化や上方の無関係な float で通常兄弟のキャッシュが巻き添えミスするのを防ぐ。
     2. **float 侵入帯域の子のみ相対座標化（または限定キャッシュ）**: 実際に float が子の Y 帯域へ交差する子に限り、その子の上端を基準とした相対座標の `RelativeExclusions` を `ConstraintSpace` に載せる（連続侵入が複雑な要素は侵入子のみ非キャッシュに倒してもよく、非侵入兄弟 95%以上のキャッシュヒット率を優先して守る）。
-  - **単一 1 層メモ化 `LayoutCache`**: 1 ビュー（`EngineView`）に閉じた `(BoxNode / BoxChunk, ConstraintSpace) → LayoutFragment / FlowChunk` および `(BoxNode, MinMaxContext) → MinMaxSizes` キャッシュのみを持つ。構造入力（`BoxNode` / `BoxChunk`）は **`==` 参照同一性**、`ConstraintSpace` は M2a スパイクで確定した方式（`==` 高速パス付き値等価 `equals` またはビュー内インターン）で照合し、各 `BoxNode` は Flex/Grid の 2 パス測定用に固定少数スロット（2〜4 スロット）を保持する。
+  - **単一 1 層メモ化 `LayoutCache`**: 1 ビュー（`EngineView`）に閉じた `(BoxNode / BoxChunk, ConstraintSpace) → LayoutFragment / FlowChunk` および `(BoxNode, MinMaxContext) → MinMaxSizes` キャッシュのみを持つ。構造入力（`BoxNode` / `BoxChunk`）は **`==` 参照同一性**、`ConstraintSpace` は M2a スパイクで確定した **`==` 高速パス付き値等価 `equals`**（§3.3 C）で照合し、Flex/Grid の 2 パス測定用の固定少数スロット（4 スロット。M2a 実測で不足なし）は親の出力（`FlowChunk.slots`）に持つ。
 - **段階的移植と途中検証（ビッグバン回避）**
   - 全エンジンが揃うまで一度に旧経路を消すのではなく、M2a で確立した基盤の上に以下の順でエンジン単位に `FormattingEngine` SPI へ移植し、移行期間中のみ使う薄い一時アダプタ（`LayoutFragment` → 既存 `DisplayListBuilder`、M2b 完了時に必ず削除）経由で、各エンジンごとに WPT サブセット・`FrameOracle` を緑にしながら進める：
     1. Block 拡張（float・positioned・multicol）＋ Inline 整形（`LineFragment`）
@@ -525,11 +590,11 @@ M3a により MOD レガシーレンダラは既に撤去されているため�
 | 軸 | 指標 / シナリオ | 現状（2026-11-24 実測・確認値） | 根本治療後の目標（達成フェーズ） |
 | :--- | :--- | :---: | :---: |
 | **性能** | `varied-list-2000 fontsize`（4 スレッド・実書体） | `10.76 ms`（144Hz 予算超） | **`≤ 5.0 ms`**（M3b で 144Hz 達成） |
-| **性能** | `large-list-8000 child`（1 件挿入・削除） | `7.89 ms`（超線形） | **`≤ 1.0 ms`**（M2a スパイク検証 → M2b 本実装達成） |
+| **性能** | `large-list-8000 child`（1 件挿入・削除） | `7.89 ms`（超線形）。**M2a スパイク（新経路・描画なし）: `0.11〜0.16 ms`**（同 JVM 交互 A/B で旧経路 `4.3〜5.9 ms`） | **`≤ 1.0 ms`**（M2a スパイク検証済み → M2b 本実装達成） |
 | **性能** | `showcase` 幅変更（`resizeexact`・GL） | `0.427 ms`（うち表示リスト 66%） | **`≤ 0.20 ms`**（M3b で達成） |
 | **性能** | `voidwave.html open`（実文書初回構築） | `9.15 ms`（144Hz 予算超） | **`≤ 5.5 ms`**（M3b〜M5 + Track P2 で達成） |
 | **性能** | コールド起動（JDK 21 素・`showcase`） | `546 ms`（Chrome `304 ms`） | **`≤ 200 ms`**（Track P1 で達成・本流と独立） |
-| **メモリ** | 保持ヒープ `varied-list-2000` / `large-list-2000` | `35.96 MB` / `9.63 MB`（**M1c**: CSS 層は計 ~`3.5 MB`、残り約 32 MB はレイアウト/描画層） | レイアウト層増分 **`≤ 4.0 MB` / `≤ 1.5 MB`**（M2a 検証 → M2b 達成）<br>全体保持ヒープ **`≤ 12.0 MB` / `≤ 4.5 MB`**（M2b 中間 `≤ 14.0 / ≤ 5.5 MB` → M3b〜M5 で達成） |
+| **メモリ** | 保持ヒープ `varied-list-2000` / `large-list-2000` | `35.96 MB` / `9.63 MB`（**M1c**: CSS 層は計 ~`3.5 MB`、残り約 32 MB はレイアウト/描画層）。**M2a スパイクの新経路のレイアウト層増分: `1.87 MB` / `0.54 MB`**（DOM＋`Style`＋スタイル解決の副産物＋新レイアウト層の全体 `11.10` / `3.09 MB`） | レイアウト層増分 **`≤ 4.0 MB` / `≤ 1.5 MB`**（M2a 検証 → M2b 達成）<br>全体保持ヒープ **`≤ 12.0 MB` / `≤ 4.5 MB`**（M2b 中間 `≤ 14.0 / ≤ 5.5 MB` → M3b〜M5 で達成） |
 | **構造** | 増分・キャッシュ専用コード規模 | 42 ファイル・`6,360 行` 相当（**M1c**: `StateStyleMemo.java` 167 行ほか `DIFF_MEMO`・`SLICE_POOLS` 削除） | **`≤ 1,000 行`**（`ChangeLedger` + `BoxTreeCompiler` 増分判定 + 1 層 `LayoutCache`） |
 | **構造** | `LayoutBox` / `ComputedStyle` / `UiView` 行数 | `1,785` / **`398 行`（M1 完了）** / `2,005 行` | **解体・各 `≤ 450 行`**（M1 完了 → M2〜M4） |
 | **構造** | 1,000 行超クラス数（`:core` 群 / MOD 合計） | `26 個`（`:core` 19・`:core-gl` 1・`:core-vulkan` 1・MOD 5、`ArchitectureHealthTest` 上限固定。※M1c で `ComputedStyle` をリストから除外） | **`0 個`**（M5 で `ArchitectureHealthTest` 強制達成） |

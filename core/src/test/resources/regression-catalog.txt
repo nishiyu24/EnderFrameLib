@@ -6,6 +6,7 @@
 # 運用（計画の運用ルール 7）: 不具合を直したら、同じコミットでここに 1 行足す。GPU が要るテストだけで守っている行は、CPU で回るテストも併記する。
 
 # --- レイアウト（増分・平行移動・測定の再利用） ---
+M2a | LegacyParityTest#flexMatchesLegacy | v3 の内在サイズが自分の width を掛けて返し、flex の自動最小サイズが内容の min-content でなく指定の幅になった（width:80px の項目が縮まずにあふれた。内容と親への寄与を分けて直した）
 §6-3 | FractionalShiftEquivalenceTest#fractionalInsertAndRemoveShiftsAndMatchesFullLayout | 平行移動が配置されなかった箱（br・断片のない空の span）を動かした
 §6-5 | TentativeMeasureReuseTest#definiteLeafAndStretchedFlexGridItemsAreIdenticalAcrossResizes, TentativeMeasureReuseTest#randomChangesGiveTheSameDisplayListWithAndWithoutTentativeReuse | stretch 予定の項目を仮寸法で測り直して flex の確定の測定記録を壊した
 §6-11 | WidthOnlyReuseTest#fitReuseDoesNotChangeTheIncrementalResultAcrossFittingAndWrappingWidths, WidthOnlyReuseTest#fillWidthBlocksAndFlexItemsMatchFreshAcrossWrappingBoundary | fill 幅の fitNeed がインライン要素の間の空白を数えず、折り返した測定を誤って使い回した

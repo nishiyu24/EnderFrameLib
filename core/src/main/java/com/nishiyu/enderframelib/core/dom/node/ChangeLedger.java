@@ -11,14 +11,11 @@ import java.util.Set;
  * 種別ごとの変更の節は {@link #frozenAt}、「この節の部分木の下に変更があるか」は {@link #touches}〔凍結した台帳の節から祖先を
  * 辿った集合を、世代ごとに 1 回だけ作る〕。持ち越すフラグ〔{@code DIRTY_BELOW} のような祖先への伝播〕は持たない。
  *
- * <p>要素は（節, 種別, 詳細）。{@code detail} は {@link Kind#ATTR} の属性名。節が null の要素〔{@link Kind#ENV}・{@link Kind#SCROLL}・
- * 絞れない {@link Kind#STYLE}〕は全体に効く。追記は同期した O(1)。個々を持ちきれない〔{@link #MAX_ENTRIES}〕ときは
+ * <p>要素は（節, 種別, 詳細）。{@code detail} は {@link ChangeKind#ATTR} の属性名。節が null の要素〔{@link ChangeKind#ENV}・{@link ChangeKind#SCROLL}・
+ * 絞れない {@link ChangeKind#STYLE}〕は全体に効く。追記は同期した O(1)。個々を持ちきれない〔{@link #MAX_ENTRIES}〕ときは
  * 個々を捨てて「あふれ」にする〔読み手は個々の変更に頼らず、全体を作り直す側へ退く〕。</p>
  */
 public final class ChangeLedger {
-    /** 変更の種別。 */
-    public enum Kind { TEXT, CHILDREN, ATTR, STYLE, ENV, SCROLL }
-
     /** これを超えたら個々の記録をやめて「あふれ」にする。 */
     public static final int MAX_ENTRIES = 4096;
 
@@ -36,9 +33,9 @@ public final class ChangeLedger {
     private Set<HtmlNode> touched;
 
     /** 追記する。{@code node} が null の変更は全体に効く。{@code detail} は属性名など〔無ければ null〕。 */
-    public void append(HtmlNode node, Kind kind) { append(node, kind, null); }
+    public void append(HtmlNode node, ChangeKind kind) { append(node, kind, null); }
 
-    public synchronized void append(HtmlNode node, Kind kind, String detail) {
+    public synchronized void append(HtmlNode node, ChangeKind kind, String detail) {
         if (overflow) return;
         if (count > 0 && nodes[count - 1] == node && kinds[count - 1] == kind.ordinal() && java.util.Objects.equals(details[count - 1], detail)) return;
         if (count == MAX_ENTRIES) { overflow = true; Arrays.fill(nodes, 0, count, null); Arrays.fill(details, 0, count, null); count = 0; return; }
@@ -53,7 +50,7 @@ public final class ChangeLedger {
     }
 
     /** 節を絞れない変更〔全ての節の再スタイルなど〕。 */
-    public void appendWhole() { append(null, Kind.STYLE, null); }
+    public void appendWhole() { append(null, ChangeKind.STYLE, null); }
 
     /** 凍結して世代を進める。何も無い静止フレームは O(1) で何もしない。配列は入れ替えるだけで確保しない。 */
     public synchronized long freeze() {
@@ -86,9 +83,9 @@ public final class ChangeLedger {
     public synchronized HtmlNode frozenNode(int i) { return fNodes[i]; }
 
     /** 凍結した世代の {@code i} 番目が、この種別か。 */
-    public synchronized boolean frozenIs(int i, Kind kind) { return fKinds[i] == kind.ordinal(); }
+    public synchronized boolean frozenIs(int i, ChangeKind kind) { return fKinds[i] == kind.ordinal(); }
 
-    /** 凍結した世代の {@code i} 番目の詳細〔{@link Kind#ATTR} の属性名。無ければ null〕。 */
+    /** 凍結した世代の {@code i} 番目の詳細〔{@link ChangeKind#ATTR} の属性名。無ければ null〕。 */
     public synchronized String frozenDetail(int i) { return fDetails[i]; }
 
     /**
@@ -106,11 +103,11 @@ public final class ChangeLedger {
         return out;
     }
 
-    /** 凍結した世代に、節を絞れない要素〔{@link Kind#ENV}・{@link Kind#SCROLL}・絞れない {@link Kind#STYLE}〕があるか。 */
+    /** 凍結した世代に、節を絞れない要素〔{@link ChangeKind#ENV}・{@link ChangeKind#SCROLL}・絞れない {@link ChangeKind#STYLE}〕があるか。 */
     public synchronized boolean frozenNodeless() { return fNodeless; }
 
     /** 凍結した世代に、この種別の要素が 1 つでもあるか。 */
-    public synchronized boolean frozenHas(Kind kind) {
+    public synchronized boolean frozenHas(ChangeKind kind) {
         for (int i = 0; i < fCount; i++) if (fKinds[i] == kind.ordinal()) return true;
         return false;
     }
@@ -137,7 +134,7 @@ public final class ChangeLedger {
     public synchronized int pendingCount() { return overflow ? Integer.MAX_VALUE : count; }
 
     /** 凍結前の追記に、この節のこの種別があるか（観測・テスト用。あふれたときは常に true）。 */
-    public synchronized boolean pendingHas(HtmlNode node, Kind kind) {
+    public synchronized boolean pendingHas(HtmlNode node, ChangeKind kind) {
         if (overflow) return true;
         for (int i = 0; i < count; i++) if (nodes[i] == node && kinds[i] == kind.ordinal()) return true;
         return false;
@@ -151,8 +148,8 @@ public final class ChangeLedger {
     }
 
     /** 凍結前の追記の種別の並び（観測・テスト用）。 */
-    public synchronized Kind[] pendingKinds() {
-        Kind[] all = Kind.values(), out = new Kind[count];
+    public synchronized ChangeKind[] pendingKinds() {
+        ChangeKind[] all = ChangeKind.values(), out = new ChangeKind[count];
         for (int i = 0; i < count; i++) out[i] = all[kinds[i]];
         return out;
     }

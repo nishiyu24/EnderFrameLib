@@ -36,6 +36,27 @@ class StyleSharingTest {
         assertNotEquals(Style.of(cs(16f), null).inherited, Style.of(cs(20f), null).inherited);
     }
 
+    /** M2a: 解き直した結果の群が前回と同値なら前回のインスタンスへ寄せる（BoxTreeCompiler の継承の打ち切り）。 */
+    @Test
+    void shareEqualGroupsReusesPreviousInstances() {
+        Style prev = Style.of(cs(16f, "color", "red", "font-size", "20px", "padding-top", "3px"), null);
+        Style same = Style.of(cs(16f, "color", "red", "font-size", "20px", "padding-top", "3px"), null);
+        assertNotSame(prev, same);
+        assertSame(prev, same.shareEqualGroups(prev), "全体が同値なら前回そのもの");
+
+        Style boxOnly = Style.of(cs(16f, "color", "red", "font-size", "20px", "padding-top", "9px"), null);
+        Style shared = boxOnly.shareEqualGroups(prev);
+        assertSame(prev.inherited, shared.inherited, "継承群は同値 → 前回の参照（子孫の作り直しが == で打ち切られる）");
+        assertNotSame(prev.box, shared.box);
+        assertEquals(boxOnly, shared);
+
+        Style inherit = Style.of(cs(16f, "color", "blue", "font-size", "20px", "padding-top", "3px"), null);
+        Style s2 = inherit.shareEqualGroups(prev);
+        assertNotSame(prev.inherited, s2.inherited);
+        assertSame(prev.box, s2.box);
+        assertSame(boxOnly, boxOnly.shareEqualGroups(null));
+    }
+
     @Test
     void unchangedNonInheritedGroupsShareTheStaticDefault() {
         Style s = Style.of(cs(16f, "color", "red"), null);

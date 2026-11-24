@@ -131,6 +131,25 @@ public final class Style {
                 TableStyle.DEFAULT, RareStyle.DEFAULT, custom, inheritedUsesViewport(p.inherited, custom));
     }
 
+    /**
+     * 値が同じ群を {@code prev} のインスタンスへ寄せた {@link Style}（Engine v3 M2a の {@code BoxTreeCompiler} が使う）。
+     * 全体が同値なら {@code prev} そのもの。解き直した要素の継承群が前回と同値なら、子は前回と同じ継承群の参照を受け取り、
+     * 子孫の作り直しが参照比較（{@code ==}）で打ち切られる。
+     */
+    public Style shareEqualGroups(Style prev) {
+        if (prev == null || prev == this) return this;
+        if (equals(prev)) return prev;
+        InheritedStyle inh = inherited.equals(prev.inherited) ? prev.inherited : inherited;
+        BoxGeomStyle b = box.equals(prev.box) ? prev.box : box;
+        VisualStyle v = visual.equals(prev.visual) ? prev.visual : visual;
+        FlexGridStyle fg = flexGrid.equals(prev.flexGrid) ? prev.flexGrid : flexGrid;
+        TableStyle t = table.equals(prev.table) ? prev.table : table;
+        RareStyle r = rare.equals(prev.rare) ? prev.rare : rare;
+        CustomProperties c = java.util.Objects.equals(custom, prev.custom) ? prev.custom : custom;
+        if (inh == inherited && b == box && v == visual && fg == flexGrid && t == table && r == rare && c == custom) return this;
+        return new Style(inh, b, v, fg, t, r, c, facts.usesViewportUnits);
+    }
+
     /** 非継承プロパティ 5 群と非継承カスタムプロパティが同じか（{@code PaintOrder.StyleFacts} 引き継ぎ用）。 */
     boolean sameNonInherited(Style o) {
         if (this == o) return true;

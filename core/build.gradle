@@ -465,6 +465,19 @@ tasks.register('memoryAndLatencyGate', JavaExec) {
     if (project.hasProperty('gate.base')) systemProperty 'gate.base', project.property('gate.base').toString()
 }
 
+// M2a: 縦割りスパイク（BoxTreeCompiler + FragmentLayout）の実測。旧経路との交互 A/B と保持ヒープの分解。
+//   ./gradlew :core:m2aSpike                       全部
+//   ./gradlew :core:m2aSpike "-Pm2a.only=heap"     latency / heap のどちらか
+tasks.register('m2aSpike', JavaExec) {
+    group = 'verification'
+    description = 'M2a 縦割りスパイクの Go/No-Go 実測（M2aSpikeMain）'
+    classpath = sourceSets.test.output + sourceSets.test.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.core.layout.fragment.M2aSpikeMain'
+    workingDir = rootProject.projectDir
+    jvmArgs '-Xmx2g'
+    if (project.hasProperty('m2a.only')) systemProperty 'm2a.only', project.property('m2a.only').toString()
+}
+
 // A1: 時間に依らない量（1 フレームの確保量・近道の経路の回数）の回帰ゲート。シナリオごとに新しい JVM を立てるので check には
 // 繋がず、CI（build.yml）と手元から明示的に回す。
 //   ./gradlew :core:costGate                       判定

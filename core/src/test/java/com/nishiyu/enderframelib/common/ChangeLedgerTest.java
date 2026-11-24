@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.nishiyu.enderframelib.core.dom.ChangeReads;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
-import com.nishiyu.enderframelib.core.dom.node.ChangeLedger.Kind;
+import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
@@ -45,15 +45,15 @@ public class ChangeLedgerTest {
         ChangeLedger l = new ChangeLedger();
         assertEquals(0L, l.freeze());
         assertEquals(0L, l.epoch(), "何も無い静止フレームは世代を進めない");
-        l.append(b, Kind.TEXT);
-        l.append(b, Kind.TEXT); // 同じ節の同じ変更が続くだけ
+        l.append(b, ChangeKind.TEXT);
+        l.append(b, ChangeKind.TEXT); // 同じ節の同じ変更が続くだけ
         assertEquals(1, l.pendingCount());
-        assertTrue(l.pendingHas(b, Kind.TEXT));
-        assertFalse(l.pendingHas(b, Kind.ATTR));
+        assertTrue(l.pendingHas(b, ChangeKind.TEXT));
+        assertFalse(l.pendingHas(b, ChangeKind.ATTR));
         assertEquals(1L, l.freeze());
         assertEquals(0, l.pendingCount());
         assertEquals(1, l.frozenSize());
-        assertTrue(l.frozenIs(0, Kind.TEXT) && l.frozenNode(0) == b);
+        assertTrue(l.frozenIs(0, ChangeKind.TEXT) && l.frozenNode(0) == b);
         assertTrue(l.touches(b) && l.touches(a) && l.touches(root), "自分と祖先は触れられている");
         assertFalse(l.touches(c), "兄弟の部分木は触れられていない");
         assertEquals(2L, l.freeze(), "凍結した世代が残っているので次の凍結で世代が進み、中身は空になる");
@@ -67,14 +67,14 @@ public class ChangeLedgerTest {
         HtmlElement[] n = new HtmlElement[3];
         tree(n);
         ChangeLedger l = new ChangeLedger();
-        l.append(null, Kind.ENV);
-        l.append(n[0], Kind.TEXT);
+        l.append(null, ChangeKind.ENV);
+        l.append(n[0], ChangeKind.TEXT);
         l.freeze();
         assertTrue(l.touches(n[1]), "節を絞れない変更は全体に効く");
         assertFalse(l.frozenOverflow());
         assertEquals(2, l.frozenSize(), "節を絞れない変更があっても、個々の変更は読める");
         l.freeze();
-        for (int i = 0; i < ChangeLedger.MAX_ENTRIES + 5; i++) l.append(new HtmlElement("i"), Kind.STYLE);
+        for (int i = 0; i < ChangeLedger.MAX_ENTRIES + 5; i++) l.append(new HtmlElement("i"), ChangeKind.STYLE);
         assertEquals(Integer.MAX_VALUE, l.pendingCount(), "あふれたら個々を捨てる");
         l.freeze();
         assertTrue(l.touches(n[1]));
@@ -87,12 +87,12 @@ public class ChangeLedgerTest {
         HtmlElement[] n = new HtmlElement[3];
         tree(n);
         ChangeLedger l = new ChangeLedger();
-        l.append(n[0], Kind.TEXT);
-        l.append(n[1], Kind.TEXT);
-        l.append(n[0], Kind.TEXT);
-        l.append(n[0], Kind.ATTR, "value");
-        l.append(n[1], Kind.ATTR, "class");
-        l.append(n[2], Kind.CHILDREN);
+        l.append(n[0], ChangeKind.TEXT);
+        l.append(n[1], ChangeKind.TEXT);
+        l.append(n[0], ChangeKind.TEXT);
+        l.append(n[0], ChangeKind.ATTR, "value");
+        l.append(n[1], ChangeKind.ATTR, "class");
+        l.append(n[2], ChangeKind.CHILDREN);
         l.freeze();
         assertEquals(List.of(n[0], n[1]), ChangeReads.texts(l), "文字の節は重複なしで（追記の順）");
         assertEquals(List.of(n[0]), ChangeReads.paintAttrs(l, (node, name) -> !name.equals("class")), "描画だけの属性は呼び出し側の分類で絞る");
@@ -195,7 +195,7 @@ public class ChangeLedgerTest {
             assertTrue(l.pendingCount() > 0, "ホバーで台帳に載る（対話状態の入口）");
             v.frame(1016, be, true);
             v.resize(300, 240);
-            assertTrue(l.pendingHas(null, Kind.ENV), "リサイズは全体に効く（ENV）");
+            assertTrue(l.pendingHas(null, ChangeKind.ENV), "リサイズは全体に効く（ENV）");
         }
     }
 }
