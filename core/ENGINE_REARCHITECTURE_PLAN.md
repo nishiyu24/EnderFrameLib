@@ -129,7 +129,7 @@
 | 順位 | Phase | タイトル | 主な破壊・新設対象 | 完了時の定量的成果 |
 | :---: | :--- | :--- | :--- | :--- |
 | 1 | **M0** | **新ゲートの先行設置とロックイン解除〔完了〕** | **順序厳守**: 新ゲート（`MemoryAndLatencyGate`・`ArchitectureHealthTest`）先行設置・緑確認 → 旧ラチェット 8 本・`memo*` 判定・`shortcutMatrix`・`*Verifier` 3 種を削除、`Shortcut` 新規追加禁止・上限凍結（`37 → 35` へ減少、M1〜M3b で旧経路ごと削除） | 保護空白ゼロでゲート置換完了、`Shortcut` 上限 `35` 凍結（新規追加 0） |
-| 2 | **M1** | **`ComputedStyle` の完全刷新** | `CssValue[207]` 全廃 → 6 グループ不変構造体 `Style`（`InheritedStyle` 参照共有＋等価判定含む）+ 64-bit `CssLength` 導入、スタイル系 `Shortcut` 削除 | `ComputedStyle` 2,095 → ≤ 500 行、`varied-list` ヒープ 40.2 → ≤ 18 MB |
+| 2 | **M1** | **`ComputedStyle` の完全刷新**（**M1a 完了**／M1b・M1c 未着手。分割は §3.2.1） | `CssValue[207]` 全廃 → 6 グループ不変構造体 `Style`（`InheritedStyle` 参照共有＋等価判定含む）+ 64-bit `CssLength` 導入、スタイル系 `Shortcut` 削除。**M1a〔完了〕** 新型の新設と旧読み口との全フィールド等価の検証 → **M1b** カスケード生成先の `Style` 切替え・`layout`/`paint` の読み口付け替え → **M1c** 旧型・旧経路の一括削除 | `ComputedStyle` 2,095 → ≤ 500 行、`varied-list` ヒープ 40.2 → ≤ 18 MB（M1c で判定） |
 | 3 | **M2a** | **入力側増分 `BoxTreeCompiler` 設計と縦割りスパイク関門** | `ChangeLedger` 接続・継承打ち切り・`BoxChildren`（32 子チャンク）・`ConstraintSpace` 比較方式確定（値等価 vs インターン）・`computeMinMaxSizes` + 固定少数スロット設計。**実 DOM + M1 実 `Style` 上で Block + Text + 入れ子 Flex（2 パス）の独立スパイク**を実測し Go/No-Go 判定 | 8,000 行挿入 `≤ 1.0 ms`、入れ子 Flex 指数爆発 0、レイアウト層ヒープ増分 `large-list ≤ 1.5 MB`・`varied-list ≤ 4.0 MB` 実測合格 |
 | 4 | **M2b** | **全 `FormattingEngine` 移植と `LayoutBox` 一括解体** | float 非侵入/相対除外・`computeMinMaxSizes`・全エンジン段階移植を経て `LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads`・`PartialBuild`・レイアウト系 `Shortcut` 等（約 4,500 行超）を削除 | 全エンジン WPT ≥ 160/260 & `FrameOracle` 一致、旧コード削除 `≥ 4,500 行`、レイアウト増分 `≤ 4.0 MB` / 中間全体 `≤ 14.0 MB` |
 | 5 | **M3a** | **`CoreGpuSurface` 品質検証と MOD レガシーレンダラ先行撤去** | `useCoreBackend` の全描画要件（`<mc-scene>`・`<scene-3d>`・画像フォールバック・ビットマップ書体・ツールチップ）の事前品質確認関門を通過した上で、MOD `client/renderer` 9,369 行を M3b より先に撤去し `DisplayItem` 消費者を激減させる | MOD 描画 `≤ 1,500 行`・フォールバック `0 件`・`runGameTestServer` & 実機スクショ回帰全件合格 |
@@ -209,6 +209,24 @@ M1〜M4 でデータ構造を壊して作り直す前に、「外から見た正
   - `varied-list-2000` 保持ヒープ：`40.2 MB → ≤ 18.0 MB`。
   - レイアウト／描画側からの `Style` 文字列参照・`asMap()` 呼び出し `0 件`。
   - WPT 160/260 以上維持、3 者画素一致・`RealDocumentFramesTest` 緑。
+
+#### 3.2.1 M1 の分割と進捗（2026-11-24 着手時の実測で分割）
+
+着手時の実測規模は、`ComputedStyle` 2,095 行・参照 66 ファイル／約 800 箇所（テスト 51 ファイル／約 385 箇所）・文字列キー読み約 430 箇所・プロパティ ID 参照約 380 箇所。一度に旧経路の完全削除まで進めると全ゲートが赤のまま長く残るため、**同一フェーズ（M1）内の 3 段**に分け、段ごとに「テスト緑」を保つ。旧型の削除は M1c に集約し、M1 の完了判定（旧コード完全削除・KPI 更新）は M1c で行う。M1a〜M1b の間だけ旧 `ComputedStyle` と新 `Style` が併存する（運用ルール 7 の「同一フェーズ内で削除」は M1c で満たす）。
+
+| 段 | 内容 | 完了条件 | 状態 |
+| :--- | :--- | :--- | :--- |
+| **M1a** | `CssLength`（64-bit。`calc()` は群ごとの不変表 `CssExprs` の添字で、プロセス共有の式表を持たない）・`CssExprs`・`CustomProperties`・型付き 6 群（`InheritedStyle` / `BoxGeomStyle` / `VisualStyle` / `FlexGridStyle` / `TableStyle` / `RareStyle`。`scripts/GenStyleGroups.java` が `PropertyRegistry` から生成）・`Style.of(ComputedStyle, 親 Style)` を新設。旧 `ComputedStyle` は温存し、**旧読み口との全フィールド等価**を検証する | ① 全レジストリプロパティがちょうど 1 群に所属（`StyleGroupCoverageTest`）② 合成入力＋同梱実文書の全要素で、全群の全フィールドが旧 `keywordOf`/`length`/`color`/`number`/`get`/`StyleFacts` と一致（`StyleTypedParityTest`）③ 継承群の親子参照共有・DEFAULT 共有・値等価・カスタムプロパティ表の共有（`StyleSharingTest`）④ `CssLength` の px 解決が旧 `CompiledLength#resolve` と一致（`CssLengthTest`）⑤ 生成クラス ≤ 600 行・`ArchitectureHealthTest` 緑・`ComputedStyle` 行数不増・変異（色の読みを壊す）で等価テストが落ちることを確認 | **完了** |
+| **M1b** | カスケード（`StyleResolver` / `ValueComputer`）の生成先を `Style` へ切り替える。`core/layout`・`core/paint`・`common/RenderTreeBuilder` のスタイル読み口を型付きアクセサへ機械的に付け替え、`Map<String,String> inheritedStyle` 引数と `asMap()` を除く。**群の参照共有はカスケード側で行う**（下記の実測） | 付け替え後も WPT 160/260・3 者画素一致・`RealDocumentFramesTest`・`FrameOracle` が緑、読み口の文字列参照 0 件 | 未着手 |
+| **M1c** | `CssValue.java`・`StyleFacts.java`・`PackedLengths.java`・`TypedValueCache.java`・`StateStyleMemo.java`・旧 `ComputedStyle`（`StyleSlice`/`SLICE_POOLS`/`DIFF_MEMO`/`StyleMap`/`StyleTable`/`ObjMemo` 等）とスタイル系 `Shortcut` を一括削除 | 上の完了ゲート 4 項目すべて（`Style` ≤ 500 行・`varied-list` ≤ 18 MB・読み口の文字列参照 0・正しさの番人緑）と KPI 更新 | 未着手 |
+
+**M1a で得た設計上の知見（M1b の入力）**
+
+- 群の値は**実際にはごく少数**: `varied-list` 型の文書（2,000 項目・要素 10,005）で、`BoxGeomStyle` は 2,005 インスタンス中**値の種類は 31**、`VisualStyle` 668 中 2、`FlexGridStyle` 401 中 2、`RareStyle` 402 中 3。一方 `InheritedStyle` は項目ごとに色・サイズが違い 4,002 種で、親子の参照共有（`child.inherited == parent.inherited`）により要素数 10,005 に対して 4,002 インスタンス（約 40 %）に畳まれる。
+- **群を要素ごとに作ったままでは旧表現より大きい**（同文書の算出スタイル保持ヒープ: 旧 `ComputedStyle` 1,602 KiB／新 `Style` 2,233 KiB、要素あたり 164 B／228 B。旧は弱参照インターンで丸ごと 1 個に畳んでいた）。M1 の目標ヒープ（`varied-list` 40.2 → ≤ 18 MB）は、型付き化そのものではなく**同じ規則の一致結果が同じ `Style`（群）を参照する**ことで得る。→ **M1b の設計要件**: カスケードが一致規則集合の同一性（`==`）をキーに `Style` を 1 層メモ化して返す。プロセス共有のインターン表（弱参照 `ConcurrentHashMap`）は復活させず、状態は 1 ビューに閉じる。値等価のハッシュコンシングで済ませる案は §5-3 に反するため採らない。
+- `calc()` 等の式は群ごとの `CssExprs`（式を持たない大半は共有の `EMPTY`）に持つため、旧 `PackedLengths` のプロセス共有・弱参照の式表は M1c で不要になる。
+- 旧読み口は「宣言が無ければ呼び出し側の既定値」だが、`Style` は**宣言が無ければレジストリの初期値**を持つ。M1b の付け替えで呼び出し側の既定値が初期値と異なる箇所は、個別に洗って `Style` 側へ寄せる。
+- 群の追加・プロパティ追加は `PropertyRegistry` へ登録して `java -cp core/build/classes/java/main scripts/GenStyleGroups.java core/src/main/java/com/nishiyu/enderframelib/core/css` を再実行する（生成物は手で直さない。足し忘れは `StyleGroupCoverageTest` が検出する）。
 
 ---
 
