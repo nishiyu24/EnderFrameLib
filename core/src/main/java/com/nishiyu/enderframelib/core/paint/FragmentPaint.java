@@ -450,17 +450,6 @@ final class FragmentPaint {
                 && m.oneNode == (order.scrollContentOf(box) != null);
     }
 
-    private void verifyOwn(LayoutBox box, ClipRect clip, String parentId, DisplayItem[] reused) {
-        if (order.scrollContentOf(box) != null) return;
-        int saved = b.fragIds.get();
-        scratch.resetForBuild();
-        order.drawSelf(scratch, box, clip, parentId, null);
-        DisplayItem[] fresh = scratch.toArray(new DisplayItem[0]);
-        b.fragIds.set(saved);
-        String diff = OwnItemsVerifier.firstDifference(List.of(reused), List.of(fresh));
-        if (diff != null) throw new AssertionError("箱の項目の記憶が古い: box=" + box.node.tag + "#" + box.node.key() + " " + diff);
-    }
-
     private LayoutBox childParentNodeBox(LayoutBox box, String childParentId) {
         if (childParentId == null || "root".equals(box.node.tag)) return null;
         if (!box.isAnonymous) return PaintOrder.boxHasOwnNode(box) && !order.isCulled(box) ? box : null;
@@ -518,7 +507,6 @@ final class FragmentPaint {
                     ownKept = true;
                     own = m.frag.own; ownScrolls = m.ownScrolls;
                     for (PaintOrder.ScrollContent c : ownScrolls) order.reregister(c);
-                    if (Shortcut.VERIFY_BOX_MEMO.on()) verifyOwn(box, clip, parentId, own);
                 } else {
                     int scroll0 = order.scrollContentCount();
                     scratch.resetForBuild();

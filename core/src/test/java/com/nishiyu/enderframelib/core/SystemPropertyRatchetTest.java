@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.core;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.nishiyu.enderframelib.common.ShortcutMatrixMain;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -16,6 +15,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>main が読むキーを全部 {@code system-properties.txt}（キー | 種類 | 読むファイル | 説明）に載せる。表に無いキー・表にあるのに
  * 読まれないキー・読むファイルの食い違い・キーを文字列リテラルで書かない読み（{@code System.getProperty(name)} など）で失敗する。
- * 種類 {@code SHORTCUT} は近道の組み合わせ検証（{@code :core:shortcutMatrix}）が回すスイッチと一致しなければならない。
+ * 種類 {@code SHORTCUT} は近道スイッチ（{@code enderframe.<面>.no<名前> / .off}、M0 で凍結・M1〜M3b で順次削除）と一致しなければならない。
  * {@code enderframe.*} を読むファイルの数は {@link #MAX_ENGINE_READER_FILES}（= 1。{@code EngineFlags}）を超えられない。</p>
  */
 class SystemPropertyRatchetTest {
@@ -32,7 +32,7 @@ class SystemPropertyRatchetTest {
     static final int MAX_ENGINE_READER_FILES = 1;
 
     static final List<String> KINDS = List.of(
-            "SHORTCUT",    // 近道の切り分け（true で近道を切る）。shortcutMatrix が回す
+            "SHORTCUT",    // 近道の切り分け（true で近道を切る）。M0 で新規追加禁止・凍結
             "GPU",         // GPU の面の切り替え・調整（GPU が無い CI では効かない）
             "DIAGNOSTIC",  // 計測・検証（既定オフ。テストや計測でだけ立てる）
             "TUNING",      // 数値の調整（スレッド数・キャッシュの大きさ・閾値）
@@ -96,10 +96,25 @@ class SystemPropertyRatchetTest {
             if (e.getValue().note.isBlank()) bad.add("説明が空: " + e.getKey());
             boolean isShortcut = e.getValue().kind.equals("SHORTCUT");
             if (isShortcut != shortcutSwitches.contains(e.getKey()))
-                bad.add("種類 SHORTCUT と shortcutMatrix のスイッチが食い違う: " + e.getKey()
-                        + "（近道を切るスイッチは enderframe.<面>.no<名前> / .off の形にして shortcutMatrix に回させる）");
+                bad.add("種類 SHORTCUT と本体の近道スイッチが食い違う: " + e.getKey()
+                        + "（近道を切るスイッチは enderframe.<面>.no<名前> / .off の形にする）");
         }
         return bad;
+    }
+
+    private static Set<String> findShortcutSwitches(Path mainSources) throws IOException {
+        Pattern sw = Pattern.compile("Boolean\\.getBoolean\\(\\s*\"(enderframe\\.[a-z.]+?\\.(?:no[a-z]+|off))\"\\s*\\)");
+        Set<String> out = new TreeSet<>();
+        try (Stream<Path> s = Files.walk(mainSources)) {
+            for (Path p : s.filter(f -> f.toString().endsWith(".java")).toList()) {
+                Matcher m = sw.matcher(Files.readString(p, StandardCharsets.UTF_8));
+                while (m.find()) {
+                    String name = m.group(1);
+                    if (!name.startsWith("enderframe.gl.") && !name.startsWith("enderframe.gpu.")) out.add(name);
+                }
+            }
+        }
+        return out;
     }
 
     static Set<String> engineReaderFiles(Scan scan) {
@@ -121,7 +136,7 @@ class SystemPropertyRatchetTest {
             }
             RatchetSupport.write(RatchetSupport.table(TABLE), HEADER, rows);
         }
-        Set<String> switches = new TreeSet<>(ShortcutMatrixMain.findSwitches(root.getParent().getParent().getParent()));
+        Set<String> switches = findShortcutSwitches(root.getParent().getParent().getParent());
         List<String> bad = check(scan, readTable(), switches);
         assertTrue(bad.isEmpty(), "システムプロパティの読み口のラチェット（core/src/test/resources/" + TABLE + "）:\n  " + String.join("\n  ", bad));
     }

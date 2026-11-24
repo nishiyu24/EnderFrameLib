@@ -43,13 +43,9 @@ public class FloatContainmentMemoTest {
     private static final String[] STYLES = {"", "float:left", "float:right;width:40px", "clear:both", "position:absolute", "display:flow-root",
             "display:none", "overflow:hidden", "display:inline-block", "float:none", "display:flex"};
 
-    /** テスト JVM は検証モード常時有効（走査し直すため速度は測れない）。ベンチの間だけ切る。 */
-    private static final boolean VERIFY_DEFAULT = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
-
     @AfterEach
     public void restore() {
         com.nishiyu.enderframelib.core.kernel.Shortcut.FLOAT_MEMO.set(true);
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(VERIFY_DEFAULT);
     }
 
     @Test
@@ -91,7 +87,6 @@ public class FloatContainmentMemoTest {
     /** 前後比較（CPU 時間、1 フレームごとに交互。表示するだけで、合否には使わない）。 */
     @Test
     public void benchmarkTextPatchInLargeDocument() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(false);
         ThreadMXBean mx = ManagementFactory.getThreadMXBean();
         StringBuilder html = new StringBuilder("<style>body{margin:0;font-size:12px}.row{height:16px}#hud{width:200px;height:20px}</style><div id=hud><span id=hp>0</span></div>");
         for (int i = 0; i < 480; i++) html.append("<div class=row><span>item ").append(i).append("</span> <b>x</b></div>");
@@ -115,7 +110,6 @@ public class FloatContainmentMemoTest {
      */
     @Test
     public void benchmarkTextPatchIn1500DomRows() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(false);
         ThreadMXBean mx = ManagementFactory.getThreadMXBean();
         StandaloneView v = new StandaloneView("<style>body{margin:0;font-size:12px}.row{height:16px}#hud{width:200px;height:20px}</style><div id=hud><span id=hp>0</span></div><div id=inv></div>",
                 800, 600, FontResolver.FALLBACK);

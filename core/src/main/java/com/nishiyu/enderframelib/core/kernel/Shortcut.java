@@ -36,12 +36,6 @@ public enum Shortcut {
     /** {@link #containsFloats} の結果を箱ごとにメモするか（既定は有効）。切り分け用: {@code -Denderframe.layout.nofloatmemo=true}。 無効にすると従来どおり毎回子孫を走査する（結果は同じ）。 （以前の {@code BlockLayoutEngine.floatMemoEnabled}） */
     FLOAT_MEMO(EngineFlags.FLOAT_MEMO),
 
-    /** 検証モード: メモを使える場面でも走査し直し、メモと食い違えば {@link AssertionError}（無効化の付け漏れの検出）。 {@code -Denderframe.verify.memo=true}（{@code core/build.gradle} の {@code test} で常時有効）。 （以前の {@code BlockLayoutEngine.verifyFloatMemo}） */
-    VERIFY_MEMO(EngineFlags.VERIFY_MEMO),
-
-    /** 検証モード: 項目を使い回す箱を、記憶を使わずに作り直して比べる（{@code OwnItemsVerifier}。{@code -Denderframe.verify.boxmemo=true}、{@code core/build.gradle} の {@code test} で有効）。再描画の費用が大きいので {@link #VERIFY_MEMO} と分けてある（計画の §6-124）。 */
-    VERIFY_BOX_MEMO(EngineFlags.VERIFY_BOX_MEMO),
-
     /** 切り分け用: false なら、幅が同じでも shrink-to-fit の項目を必ず測り直す（従来の動き）。 （以前の {@code FlexLayoutEngine.skipSameWidthRemeasure}） */
     FLEX_SKIP_SAME_WIDTH(EngineFlags.FLEX_SKIP_SAME_WIDTH),
 

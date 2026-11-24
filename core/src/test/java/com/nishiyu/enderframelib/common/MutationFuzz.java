@@ -16,10 +16,6 @@ import java.util.Map;
  * 測定の記憶を全部捨てて（{@code LayoutBox.invalidateAllMeasurements}）全面を組み直した結果と一致するかを比べる。ずれた種は {@code mutation-seeds.txt} に足し、以後は
  * {@link MutationSeedRegressionTest} が毎回の CI で固定の種として回す（見つかった不具合がそのまま回帰テストになる）。
  *
- * <p>検証モード（{@code VERIFY_MEMO}・{@code VERIFY_BOX_MEMO}。{@code mutationFuzz} では既定で有効）も併走させる。記憶が当たった所を計算し直して
- * 比べる検証が赤になった手は、増分と全面の食い違いとは別に「鍵の漏れ[記憶の種類]」として報告する（どの記憶の鍵が漏れたかが分かる。
- * 古い値を持つ箱が測り直しの入口に来ない型〔§6-128〕は、従来どおり増分と全面の食い違いで見つかる）。
- *
  * <p>夜間（{@code full-tests.yml}）は {@code ./gradlew :core:mutationFuzz} で新しい種を回す。種の始まりは日付から決めるので、毎晩違う種になる。
  * <ul>
  *   <li>{@code -Pfuzz.seeds=N}: 文書ごとに回す種の数（既定 24）</li>
@@ -34,15 +30,87 @@ public final class MutationFuzz {
     /** 変更列を流す文書。 */
     public record Doc(String name, String html, String[] classes, String[] styles, int steps) { }
 
+    public static final String CARDS = """
+            <style>
+              body { margin: 0; font-size: 14px }
+              .card { padding: 6px; margin: 3px; border: 1px solid #888; background: #eef; transition: background-color .3s, width .3s }
+              .card:hover { background: #fde }
+              .list:hover .item { color: #c00 }
+              .item:nth-child(odd) { background: #ddd }
+              .a { width: 120px } .b { width: 50vw; color: #080 } .hot { background: #fdd; border-radius: 12px }
+              .t { width: 100px; transition: width .5s } .t.wide { width: 200px }
+              @keyframes morph { from { border-radius: 2px } to { border-radius: 30px } }
+              .m { animation: morph 1s infinite alternate }
+              .big { font-size: 20px }
+              @media (max-width: 300px) { .card { padding: 2px } }
+            </style>
+            <div class="list" id="l1">
+              <div class="card item" id="i1">one <span class="v">v1</span></div>
+              <div class="card item a" id="i2">two <b>bold</b></div>
+              <div class="card item" id="i3"><div class="t">t</div></div>
+              <div class="card item m" id="i4">four</div>
+            </div>
+            <div class="list" id="l2">
+              <div class="card item" id="j1"><span id="s1">x</span> <span class="v">y</span></div>
+              <div class="card item" id="j2"><div class="card"><span>deep</span></div></div>
+            </div>
+            """;
+    public static final String[] CARD_CLASSES = {"card item", "card item a", "card item b", "card item hot", "card item m", "card item big", "t", "t wide", "v", ""};
+    public static final String[] CARD_STYLES = {"", "width:80px", "color:red", "padding:10px", "border-radius:20px", "font-size:18px", "display:none", "opacity:.5"};
+
+    public static final String LAYOUTS = """
+            <style>
+              body { margin: 0; font-size: 13px }
+              .fx { display: flex; gap: 6px; flex-wrap: wrap } .fx > * { flex: 1 1 60px; min-width: 40px; padding: 3px; background: #def }
+              .gr { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px } .gr > * { background: #fed; padding: 2px }
+              .fl { float: left; width: 70px; margin: 2px; background: #cfc } .cl { clear: both }
+              table { border-collapse: collapse } td { border: 1px solid #999; padding: 2px 4px }
+              .w { width: 40%; max-width: 220px } .p { padding: 8px; border: 2px solid #555 } .rel { position: relative; top: 2px; left: 3px }
+              .abs { position: absolute; right: 4px; top: 4px; width: 50px; height: 20px; background: #f99 }
+            </style>
+            <div class="fx" id="f1"><div id="f1a">alpha beta</div><div id="f1b">gamma</div><div id="f1c">delta epsilon zeta</div></div>
+            <div class="gr" id="g1"><div id="g1a">1</div><div id="g1b">22 long</div><div id="g1c">333</div><div id="g1d">4</div><div id="g1e">5</div></div>
+            <div id="fl1"><div class="fl">f</div><div class="fl">g</div><p id="para">text beside floats that wraps around the floated boxes for a while</p><div class="cl"></div></div>
+            <table id="tb"><tr><td id="t1">a</td><td>bb</td></tr><tr><td>c</td><td id="t2">dddd</td></tr></table>
+            <div class="w p rel" id="w1">percent width <span id="w2">inline</span></div><div class="abs" id="ab"></div>
+            """;
+    public static final String[] LAYOUT_CLASSES = {"fx", "gr", "fl", "w", "p", "w p", "rel", "p rel", "", "fx p"};
+    public static final String[] LAYOUT_STYLES = {"", "width:90px", "display:flex", "display:grid", "float:right", "padding:9px", "margin-left:11px", "height:50px", "font-size:17px", "display:none", "gap:2px"};
+
+    public static final String NESTED = """
+            <style>
+              body { margin: 0; font-size: 13px }
+              .row { display: flex; gap: 4px; padding: 3px; border: 1px solid #99a }
+              .col { display: flex; flex-direction: column; gap: 3px } .wrapf { display: flex; flex-wrap: wrap }
+              .g2 { display: grid; grid-template-columns: auto 1fr; gap: 3px } .g3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)) }
+              .c1 { flex: 1 1 0; min-width: 0 } .c2 { flex: 2 1 40px } .c3 { flex: 0 0 70px } .pc { width: 30%; } .fit { width: fit-content }
+              .box { padding: 2px 4px; background: #def; border: 1px solid #88a } .lbl { white-space: nowrap }
+            </style>
+            <div class="row" id="n1"><div class="box c1" id="a1">alpha beta gamma</div><div class="box c2" id="a2">delta <b>epsilon</b></div><div class="box c3" id="a3">z</div></div>
+            <div class="col" id="n2"><div class="row" id="b1"><div class="box c1" id="b1a">one two</div><div class="box pc" id="b1b">three</div></div>
+              <div class="g2" id="b2"><div class="lbl box" id="b2a">label</div><div class="box" id="b2b">value text that is long enough to wrap in the narrow window</div></div></div>
+            <div class="g3" id="n3"><div class="box" id="c1">1</div><div class="box" id="c2">22</div><div class="box" id="c3">333 4</div><div class="box" id="c4">x</div><div class="box" id="c5">yy</div></div>
+            <div class="wrapf" id="n4"><div class="box fit" id="d1">fit one</div><div class="box fit" id="d2">fit two longer</div><div class="box c1" id="d3">grow</div></div>
+            """;
+    public static final String[] NESTED_CLASSES = {"box c1", "box c2", "box c3", "box pc", "box fit", "row", "col", "g2", "wrapf", "box lbl", ""};
+    public static final String[] NESTED_STYLES = {"", "width:90px", "min-width:100px", "flex:1 1 auto", "flex-basis:50%", "padding:7px", "gap:9px",
+            "grid-template-columns:1fr 2fr", "font-size:17px", "display:none", "max-width:80px", "margin-left:6px", "flex-direction:column"};
+
+    public static String scrollList() {
+        StringBuilder sb = new StringBuilder("<style>body{margin:0;font-size:13px}#sc{width:300px;height:200px;overflow-y:auto}"
+                + ".row{height:24px;margin:2px;padding:2px 6px;background:#eef}.row:hover{background:#fdd}.hl{background:#cfc}.tall{height:60px}</style><div id=\"sc\">");
+        for (int i = 0; i < 70; i++) sb.append("<div class=\"row\" id=\"r").append(i).append("\">row ").append(i).append(" text</div>");
+        return sb.append("</div>").toString();
+    }
+    public static final String[] LIST_CLASSES = {"row", "row hl", "row tall", "row hl tall", ""};
+    public static final String[] LIST_STYLES = {"", "color:red", "height:40px", "padding:8px", "opacity:.6", "display:none"};
+
     public static final Map<String, Doc> DOCS = new LinkedHashMap<>();
     static {
-        DOCS.put("layouts", new Doc("layouts", ShortcutMatrixMain.LAYOUTS, ShortcutMatrixMain.LAYOUT_CLASSES, ShortcutMatrixMain.LAYOUT_STYLES, 45));
-        DOCS.put("cards", new Doc("cards", ShortcutMatrixMain.CARDS, ShortcutMatrixMain.CARD_CLASSES, ShortcutMatrixMain.CARD_STYLES, 45));
-        DOCS.put("nested", new Doc("nested", ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 60));
+        DOCS.put("layouts", new Doc("layouts", LAYOUTS, LAYOUT_CLASSES, LAYOUT_STYLES, 45));
+        DOCS.put("cards", new Doc("cards", CARDS, CARD_CLASSES, CARD_STYLES, 45));
+        DOCS.put("nested", new Doc("nested", NESTED, NESTED_CLASSES, NESTED_STYLES, 60));
     }
-
-    /** テスト用: 各手の全面との比較のあとに呼ばれる（記憶を壊して、検証が鍵の漏れとして報告することを確かめる）。 */
-    static java.util.function.BiConsumer<Integer, StandaloneView> TAMPER;
 
     static final Path SEEDS_FILE = Path.of("core/src/test/resources/mutation-seeds.txt");
 
@@ -81,35 +149,13 @@ public final class MutationFuzz {
                 }
                 found[0] = doc.name() + "/" + seed + " 手 " + step + detail;
             }
-            if (TAMPER != null) TAMPER.accept(step, view);
         };
         try {
             MutationScenario.run(doc.html(), doc.classes(), doc.styles(), seed, steps, false);
-        } catch (AssertionError e) {
-            String kind = leakKind(e.getMessage());
-            if (kind == null) throw e; // 検証以外の失敗（項目の id の重複など）は従来どおり
-            if (found[0] == null) found[0] = keyLeak(doc, seed, MutationScenario.LOG.size() - 1, kind, e.getMessage());
         } finally {
             MutationScenario.STEP_HOOK = saved;
         }
         return found[0];
-    }
-
-    /** 検証モードの {@link AssertionError} の文面から、漏れた記憶の種類（検証でなければ null）。 */
-    static String leakKind(String message) {
-        if (message == null) return null;
-        if (message.startsWith("測定の記憶")) return "測定の記憶";
-        if (message.startsWith("箱の項目の記憶")) return "箱の項目の記憶";
-        if (message.startsWith("項目の再生")) return "項目の再生";
-        if (message.startsWith("姿勢の使い回し")) return "姿勢の使い回し";
-        if (message.startsWith("float メモ")) return "float メモ";
-        return null;
-    }
-
-    /** 検証が赤にした手の報告（増分と全面の食い違いと区別できる印 {@code 鍵の漏れ[…]} を付ける）。 */
-    static String keyLeak(Doc doc, long seed, int step, String kind, String message) {
-        String m = message.length() > 220 ? message.substring(0, 220) + "…" : message;
-        return doc.name() + "/" + seed + " 手 " + step + " 鍵の漏れ[" + kind + "]: " + m;
     }
 
     /** 表の 1 行（文書 | 種 | 手数 | 由来）。由来の中の区切り文字は置き換え、長い説明は切る。 */
@@ -143,7 +189,7 @@ public final class MutationFuzz {
                 runs++;
                 String bad = firstMismatch(doc, seed, doc.steps());
                 if (bad == null) continue;
-                System.out.println((bad.contains("鍵の漏れ[") ? "KEYLEAK " : "MISMATCH ") + bad);
+                System.out.println("MISMATCH " + bad);
                 if (gha) System.out.println("::error title=mutationFuzz::" + bad + " → mutation-seeds.txt に「" + seedLine(doc, seed, "夜間ファズ " + LocalDate.now()) + "」を足して直す");
                 found.add(seedLine(doc, seed, "夜間ファズ " + LocalDate.now() + "（" + bad + "）"));
             }

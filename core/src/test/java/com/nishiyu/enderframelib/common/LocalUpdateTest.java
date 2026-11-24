@@ -208,67 +208,54 @@ public class LocalUpdateTest {
 
     @Test
     public void probeTextChange() {
-        // テストでは検証モードが常時ON（全箱を走査し直す）。実測では切る
-        boolean floats = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(false);
-        try {
-            probe();
-        } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(floats);
-        }
+        probe();
     }
 
     /** 5000 行で局所更新を繰り返し、別スレッドから主スレッドのスタックを採って、どこで時間を使うかを集計する。 */
     @Test
     public void sampleHotSpots() throws Exception {
-        boolean floats = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(false);
-        try {
-            int rows = 5000;
-            StandaloneView v = open(rows);
+        int rows = 5000;
+        StandaloneView v = open(rows);
+        v.ui().flushInvalidation();
+        for (int i = 0; i < 300; i++) {
+            v.root().getNodeById("i" + (1 + (i * 7) % rows)).updateTextContent("w " + i);
             v.ui().flushInvalidation();
-            for (int i = 0; i < 300; i++) {
-                v.root().getNodeById("i" + (1 + (i * 7) % rows)).updateTextContent("w " + i);
-                v.ui().flushInvalidation();
-            }
-            Thread main = Thread.currentThread();
-            java.util.Map<String, Integer> self = new java.util.HashMap<>(), incl = new java.util.HashMap<>();
-            int[] total = {0};
-            boolean[] run = {true};
-            Thread sampler = new Thread(() -> {
-                while (run[0]) {
-                    StackTraceElement[] st = main.getStackTrace();
-                    if (st.length > 0 && st[0].getClassName().startsWith("com.nishiyu")) {
-                        total[0]++;
-                    }
-                    if (st.length > 0) {
-                        self.merge(st[0].getClassName().replaceAll(".*\\.", "") + "." + st[0].getMethodName() + ":" + st[0].getLineNumber(), 1, Integer::sum);
-                        java.util.Set<String> seen = new java.util.HashSet<>();
-                        for (StackTraceElement e : st) {
-                            if (!e.getClassName().startsWith("com.nishiyu")) continue;
-                            String k = e.getClassName().replaceAll(".*\\.", "") + "." + e.getMethodName();
-                            if (seen.add(k)) incl.merge(k, 1, Integer::sum);
-                        }
-                    }
-                    try { Thread.sleep(0, 200_000); } catch (InterruptedException e) { return; }
-                }
-            });
-            sampler.setDaemon(true);
-            sampler.start();
-            for (int i = 0; i < 3000; i++) {
-                HtmlNode r0 = v.root().getNodeById("i" + (1 + (i * 7) % rows)); if (r0 == null) throw new IllegalStateException("missing i" + (1 + (i * 7) % rows) + " at i=" + i); r0.updateTextContent("x " + i);
-                v.ui().flushInvalidation();
-            }
-            run[0] = false;
-            sampler.join();
-            System.out.println("[hot] samples in engine=" + total[0]);
-            incl.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).limit(28)
-                    .forEach(e -> System.out.println("[hot] incl " + e.getValue() + " " + e.getKey()));
-            self.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).limit(14)
-                    .forEach(e -> System.out.println("[hot] self " + e.getValue() + " " + e.getKey()));
-        } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(floats);
         }
+        Thread main = Thread.currentThread();
+        java.util.Map<String, Integer> self = new java.util.HashMap<>(), incl = new java.util.HashMap<>();
+        int[] total = {0};
+        boolean[] run = {true};
+        Thread sampler = new Thread(() -> {
+            while (run[0]) {
+                StackTraceElement[] st = main.getStackTrace();
+                if (st.length > 0 && st[0].getClassName().startsWith("com.nishiyu")) {
+                    total[0]++;
+                }
+                if (st.length > 0) {
+                    self.merge(st[0].getClassName().replaceAll(".*\\.", "") + "." + st[0].getMethodName() + ":" + st[0].getLineNumber(), 1, Integer::sum);
+                    java.util.Set<String> seen = new java.util.HashSet<>();
+                    for (StackTraceElement e : st) {
+                        if (!e.getClassName().startsWith("com.nishiyu")) continue;
+                        String k = e.getClassName().replaceAll(".*\\.", "") + "." + e.getMethodName();
+                        if (seen.add(k)) incl.merge(k, 1, Integer::sum);
+                    }
+                }
+                try { Thread.sleep(0, 200_000); } catch (InterruptedException e) { return; }
+            }
+        });
+        sampler.setDaemon(true);
+        sampler.start();
+        for (int i = 0; i < 3000; i++) {
+            HtmlNode r0 = v.root().getNodeById("i" + (1 + (i * 7) % rows)); if (r0 == null) throw new IllegalStateException("missing i" + (1 + (i * 7) % rows) + " at i=" + i); r0.updateTextContent("x " + i);
+            v.ui().flushInvalidation();
+        }
+        run[0] = false;
+        sampler.join();
+        System.out.println("[hot] samples in engine=" + total[0]);
+        incl.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).limit(28)
+                .forEach(e -> System.out.println("[hot] incl " + e.getValue() + " " + e.getKey()));
+        self.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).limit(14)
+                .forEach(e -> System.out.println("[hot] self " + e.getValue() + " " + e.getKey()));
     }
 
     private void probe() {

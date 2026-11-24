@@ -188,8 +188,6 @@ class ParentPoseShareTest {
                 + ".grp{margin:2px;padding:2px;overflow:hidden;position:relative}"
                 + ".cell{height:10px;margin:1px;padding:1px;position:relative;overflow:hidden;background:#cde}"
                 + "</style></head><body><div id='pulse'>" + inner + "</div></body></html>";
-        boolean verify = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(true);
         try (SoftwareRenderBackend backend = new SoftwareRenderBackend(W, H, 1f);
              StandaloneView v = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             long t = 1000;
@@ -204,8 +202,6 @@ class ParentPoseShareTest {
             System.out.printf("POSES colorOnlyParent: %.1f per frame (nodes %d)%n", perFrame, nodes);
             assertTrue(nodes >= 20, "子孫の節が足りない（空の検証）: " + nodes);
             assertTrue(perFrame <= 3, "色だけが動く親の下で、子孫の姿勢を作り直している: " + perFrame + " / フレーム（節 " + nodes + "）");
-        } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(verify);
         }
     }
 

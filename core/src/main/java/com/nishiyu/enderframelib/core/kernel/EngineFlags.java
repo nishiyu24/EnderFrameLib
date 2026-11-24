@@ -127,12 +127,6 @@ public final class EngineFlags {
     /** {@code enderframe.layout.probe}: LayoutParallelProbe（並列化の採取）（使う所: {@code LayoutParallelProbe}） */
     public static final boolean LAYOUT_PROBE = Boolean.getBoolean("enderframe.layout.probe");
 
-    /** {@code enderframe.verify.memo}: 検証モード VERIFY_MEMO（記憶が当たった所を計算し直して比べる。:core:test が立てる）（使う所: {@code BlockLayoutEngine}） */
-    public static final boolean VERIFY_MEMO = Boolean.getBoolean("enderframe.verify.memo");
-
-    /** {@code enderframe.verify.boxmemo}: 検証モード VERIFY_BOX_MEMO（箱の項目の記憶を作り直して比べる。再描画の費用が大きいので VERIFY_MEMO と分ける）（使う所: {@code DisplayListBuilder}） */
-    public static final boolean VERIFY_BOX_MEMO = Boolean.getBoolean("enderframe.verify.boxmemo");
-
     /** {@code enderframe.profile}: StageProfiler の段別計測（使う所: {@code StageProfiler}） */
     public static final boolean PROFILE = Boolean.getBoolean("enderframe.profile");
 

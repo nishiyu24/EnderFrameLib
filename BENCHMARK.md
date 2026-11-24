@@ -352,14 +352,12 @@ Chrome の `open`（`srcdoc` の設定 → load → レイアウトの強制）�
 
 `media_test.html` の `open` は、解決できない画像・動画の読み込み待ちが入った値で、比較に使えない。
 
-### 回帰の判定（時間を使わない）
+### 回帰の判定（内部カウンタを使わずヒープ・確保量・交互 A/B で見る）
 
-時間は機械と負荷で揺れるので、`:core` の回帰は「1 フレームの確保量」と「近道の経路の回数」で判定する（`./gradlew :core:costGate`。
-毎回の CI で回る）。新しい JVM・ワーカー 1 本・内蔵の簡易書体・描画なしで 17 シナリオを測り、基準値
-（`core/src/bench-crossengine/costgate-baseline.txt`）と比べる。確保量は ±5%、経路の回数は完全一致。
+時間は機械と負荷で揺れるため、`:core` の回帰は以下の 2 つの独立ゲートで判定する（どちらも毎回の CI で回る）。
 
-- 同じ状態で 2 回続けて回して、2 回とも全項目が許容内（緑）だった。
-- 近道を 1 つ無効にすると赤になる: `-Pcostgate.jvmArgs=-Denderframe.ui.nochildpatch=true` で `child` の確保量が +141%・+178%、
-  `-Denderframe.layout.notentative=true` で showcase の `text` が +1,753%、`-Denderframe.css.noshare=true` で `style` が +46%。
-- **見ていないもの**: 描画バックエンドの中（GPU の差分再生・ソフトウェアの損傷範囲）。描画なしで測るため、
-  `-Denderframe.paint.nodiffpatch=true` では赤にならない。そこは画素の一致テスト（`GlDamageParityTest` ほか）が番をする。
+1. **`./gradlew :core:costGate`**: 新しい JVM・ワーカー 1 本・内蔵の簡易書体・描画なし（`cpu` の行のみソフトウェア描画）で代表シナリオを測り、基準値（`core/src/bench-crossengine/costgate-baseline.txt`）と 1 フレームの確保量（±5%）と描画経路の回数（完全一致）を比べる（旧 `memo*` / `memoCeil` 判定は Phase M0 で撤去）。
+   - 近道を 1 つ無効にすると赤になる: `-Pcostgate.jvmArgs=-Denderframe.ui.nochildpatch=true` で `child` の確保量が +141%・+178%、`-Denderframe.layout.notentative=true` で showcase の `text` が +1,753%、`-Denderframe.css.noshare=true` で `style` が +46%。
+   - **見ていないもの**: 描画バックエンドの中（GPU の差分再生・ソフトウェアの損傷範囲）。そこは画素の一致テスト（`GlDamageParityTest` ほか）が番をする。
+2. **`./gradlew :core:memoryAndLatencyGate`**: Phase M0 で新設。全再計算・差分シナリオの保持ヒープ量（MB）と同時交互 A/B 実行時間（ms および増分/全面比）のみを監視し、基準値（`core/src/test/resources/memory-latency-baseline.txt`、更新は `-Pgate.update`）の上限を超えていないかを判定する。
+   - **単体検査**: `./gradlew :core:test --tests '*ArchitectureHealthTest'` がクラス行数上限（新規 ≤ 600 行、1,000 行超クラスの増加禁止）・mutable static 上限・SCC・`:core` 純度・既存 `Shortcut`（35 個凍結）/`EngineFlags`（45 個凍結）の新規追加禁止を監視する。

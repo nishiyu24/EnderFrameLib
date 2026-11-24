@@ -57,11 +57,12 @@ class ItemReplayPixelTest {
     }
 
     /** 操作列を流し、毎フレームの画素を集める。{@code replay} が false なら再生を止める。 */
-    private static List<int[]> run(boolean replay, long[] stats) {
+    private static List<int[]> run(boolean replay, boolean verifyReplay, long[] stats) {
         com.nishiyu.enderframelib.core.kernel.Shortcut.GL_REPLAY.set(replay);
         List<int[]> out = new ArrayList<>();
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(W, H);
              StandaloneView v = new StandaloneView(DOC, W, H, FontResolver.FALLBACK)) {
+            setVerifySpanReplay(g.gpuBackend(), verifyReplay);
             long t = 1000;
             double[][] moves = {{-1, -1}, {40, 30}, {40, 31}, {200, 80}, {60, 70}, {60, 70}, {300, 200}, {20, 330}, {-1, -1}, {100, 50}};
             for (double[] m : moves) {
@@ -78,39 +79,40 @@ class ItemReplayPixelTest {
         return out;
     }
 
-    /** {@code VERIFY_MEMO}（再生できる項目を再生せずに描き直す検証）を {@code on} にして {@code body} を流す。 */
-    private static void withVerify(boolean on, Runnable body) {
-        boolean was = com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(on);
-        try { body.run(); } finally { com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.set(was); }
+    private static void setVerifySpanReplay(com.nishiyu.enderframelib.core.paint.gpu.GpuRenderBackend b, boolean on) {
+        try {
+            var f = com.nishiyu.enderframelib.core.paint.gpu.GpuRenderBackend.class.getDeclaredField("verifySpanReplay");
+            f.setAccessible(true);
+            f.setBoolean(b, on);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** 検証モードでは再生しない（描き直して比べる）ので、再生そのものを見るこのテストでは切る。 */
     @Test
     void replayDoesNotChangeAnyPixelAcrossTheSequence() {
         requireGl();
-        withVerify(false, this::replayDoesNotChangeAnyPixelBody);
+        replayDoesNotChangeAnyPixelBody();
     }
 
     /** 検証モード: 再生できる項目を描き直し、前フレームの出力と同じ（実 GL・ホバーの遷移・スクロール・CPU に回る図形の混在）。 */
     @Test
     void verifiedReplayMatchesAFreshDrawAcrossTheSequence() {
         requireGl();
-        withVerify(true, () -> {
-            long[] st = new long[4];
-            long verified0 = com.nishiyu.enderframelib.core.paint.gpu.RectStream.STAT_VERIFIED_SPANS.sum();
-            List<int[]> off = run(false, null);
-            List<int[]> on = run(true, st);
-            assertEquals(off.size(), on.size());
-            for (int i = 0; i < off.size(); i++) assertArrayEquals(off.get(i), on.get(i), "フレーム " + i);
-            assertTrue(st[3] - verified0 > 0, "再生できる項目が検証された: " + (st[3] - verified0));
-        });
+        long[] st = new long[4];
+        long verified0 = com.nishiyu.enderframelib.core.paint.gpu.RectStream.STAT_VERIFIED_SPANS.sum();
+        List<int[]> off = run(false, false, null);
+        List<int[]> on = run(true, true, st);
+        assertEquals(off.size(), on.size());
+        for (int i = 0; i < off.size(); i++) assertArrayEquals(off.get(i), on.get(i), "フレーム " + i);
+        assertTrue(st[3] - verified0 > 0, "再生できる項目が検証された: " + (st[3] - verified0));
     }
 
     private void replayDoesNotChangeAnyPixelBody() {
         long[] st = new long[4];
-        List<int[]> off = run(false, null);
-        List<int[]> on = run(true, st);
+        List<int[]> off = run(false, false, null);
+        List<int[]> on = run(true, false, st);
         assertEquals(off.size(), on.size());
         for (int i = 0; i < off.size(); i++) {
             assertArrayEquals(off.get(i), on.get(i), "フレーム " + i + " の画素が再生なしと違う");

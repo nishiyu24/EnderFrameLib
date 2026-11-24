@@ -17,8 +17,14 @@
 # 開発中の高速確認（slow・timing タグを除外して約 2 分）
 ./gradlew :core:quickTest
 
-# 確保量と近道経路の回帰ゲート
+# 確保量と経路の回帰ゲート
 ./gradlew :core:costGate
+
+# 保持ヒープ（MB）と交互 A/B 遅延（ms）の回帰ゲート（M0 新設）
+./gradlew :core:memoryAndLatencyGate
+
+# アーキテクチャ健全性・Shortcut 凍結チェック
+./gradlew :core:test --tests '*ArchitectureHealthTest'
 
 # 単独 JVM での性能・メモリベンチマーク回帰判定
 ./gradlew benchmark

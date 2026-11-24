@@ -3,10 +3,10 @@
 #
 #   powershell -File scripts/ci-linux.ps1            # default WSL distro (Ubuntu)
 #   powershell -File scripts/ci-linux.ps1 -Distro Ubuntu
-#   powershell -File scripts/ci-linux.ps1 -Full      # also costGate + shortcutMatrix (~8 min instead of ~3)
+#   powershell -File scripts/ci-linux.ps1 -Full      # also costGate + memoryAndLatencyGate (~6 min instead of ~3)
 #
 # Default runs build test + runGameTestServer only (what differs between Windows and Linux).
-# Use -Full when the change touches shortcuts (Shortcut), allocation, or measurement baselines.
+# Use -Full when the change touches shortcuts (Shortcut), allocation, heap, or latency baselines.
 #
 # NOTE: keep this file ASCII-only (Windows PowerShell 5.1 reads BOM-less UTF-8 as ANSI).
 param([string]$Distro = "Ubuntu", [switch]$Full)

@@ -8,12 +8,12 @@
 #
 # 使い方:
 #   WSL / Linux:  scripts/ci-linux.sh                       既定: build test + runGameTestServer（約 3 分）
-#                 EFL_CI_FULL=1 scripts/ci-linux.sh         さらに costGate と shortcutMatrix（約 8 分）
+#                 EFL_CI_FULL=1 scripts/ci-linux.sh         さらに costGate と memoryAndLatencyGate（約 6 分）
 #   Windows:      powershell -File scripts/ci-linux.ps1 [-Full]   （WSL の Ubuntu 上でこのスクリプトを呼ぶ）
 #
 # 既定で回すのは「Windows で緑でも Linux だけ赤になるもの」（書体・パス・ルート JAR・OS 別の合格一覧）を見る build test だけ。
-# costGate は CI（build.yml）が push のたびに必ず回し、shortcutMatrix は OS に依らず夜間（full-tests.yml）で回るので、
-# 近道（Shortcut）・確保量・計測の基準値に触れた変更のときだけ -Full で先に見る（2026-11-19。§6-116）。
+# costGate・memoryAndLatencyGate は CI（build.yml）が push のたびに必ず回す。
+# 近道（Shortcut）・確保量・ヒープ・計測の基準値に触れた変更のときだけ -Full で先に見る（§6-116）。
 #
 # CI との揃え方:
 #   - 追跡されているファイルと、無視されていない未追跡ファイルだけを作業ディレクトリへ写す（CI の checkout と同じ内容。
@@ -83,13 +83,13 @@ if [ "${EFL_CI_FULL:-0}" = 1 ]; then
   gate=${PIPESTATUS[0]}
   [ "$status" = 0 ] && status=$gate
 
-  # full-tests.yml の夜間ジョブ "shortcut-matrix"（A6）。近道スイッチの単独オフ＋ペアワイズで、表示リストと画素が既定と一致するか
-  echo "[ci-linux] ./gradlew :core:shortcutMatrix --stacktrace"
-  env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew :core:shortcutMatrix --stacktrace --console=plain 2>&1 | tee -a "$WORK/../last.log"
-  matrix=${PIPESTATUS[0]}
-  [ "$status" = 0 ] && status=$matrix
+  # build.yml の "Memory and latency gate"。保持ヒープ（MB）と交互 A/B 遅延（ms）の回帰ゲート
+  echo "[ci-linux] ./gradlew :core:memoryAndLatencyGate -Pmemgate.tolerance=0.20 --stacktrace"
+  env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew :core:memoryAndLatencyGate -Pmemgate.tolerance=0.20 --stacktrace --console=plain 2>&1 | tee -a "$WORK/../last.log"
+  memgate=${PIPESTATUS[0]}
+  [ "$status" = 0 ] && status=$memgate
 else
-  echo "[ci-linux] costGate・shortcutMatrix は省略（CI が push ごと・夜間に回す。先に見るときは -Full / EFL_CI_FULL=1）"
+  echo "[ci-linux] costGate・memoryAndLatencyGate は省略（-Full / EFL_CI_FULL=1 で実行）"
 fi
 
 # CI の 2 つ目のステップ（build.yml の "Game test server"）。専用サーバーを 1 回走らせてセッション寿命を確認する。build が通ったときだけ

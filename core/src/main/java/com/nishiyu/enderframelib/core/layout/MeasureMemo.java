@@ -354,7 +354,6 @@ final class MeasureMemo {
         if (ctx.reuseMeasurements() && canReuseMeasurement(box, space, ctx, restoreOk)) {
             if (restoreOk) restoreNaturalOutputs(box);
             if (!(flag(F_SUBTREE_CHANGED) && ctx.firstPass())) {
-                if (Shortcut.VERIFY_MEMO.on()) verifyReused(box, space, ctx, "reuse");
                 return;
             }
             MeasureReads.ThreadState st = MeasureReads.state();
@@ -368,7 +367,6 @@ final class MeasureMemo {
         }
         if (ctx.reuseMeasurements() && (reuseDefiniteTentative(box, space, ctx, restoreOk)
                 || fillFitReuse(box, space, ctx, restoreOk))) {
-            if (Shortcut.VERIFY_MEMO.on()) verifyReused(box, space, ctx, "tentative/fillfit");
             return;
         }
         if (measureFuelExhausted(ctx)) {
@@ -395,25 +393,6 @@ final class MeasureMemo {
         recordMeasurement(box, space, ctx, recordedReads);
         PaintStamps.touchLayout(box);
     }
-
-    /** 検証モード（{@code VERIFY_MEMO}）: 記憶で飛ばした箱を測り直して比べる（{@link MeasureVerifier}）。計数は進めない。 */
-    private void verifyReused(LayoutBox box, ConstraintSpace space, LayoutContext ctx, String how) {
-        if (MeasureVerifier.active() || box.floatSpace != null || box.collapsedBorders != null) return;
-        MeasureReads.ThreadState st = MeasureReads.state();
-        long savedRun = st.fuelRun, savedCount = st.fuelCount, savedFirst = st.fuelFirstBoxes;
-        long computedBefore = MEASUREMENTS_COMPUTED.sum();
-        try {
-            MeasureVerifier.verify(box, space, ctx, how);
-        } finally {
-            MEASUREMENTS_COMPUTED.add(-(MEASUREMENTS_COMPUTED.sum() - computedBefore));
-            st.fuelRun = savedRun;
-            st.fuelCount = savedCount;
-            st.fuelFirstBoxes = savedFirst;
-        }
-    }
-
-    Object snapshotSlots() { return tentativeSlots == null ? null : tentativeSlots.copy(); }
-    void restoreSlots(Object snapshot) { tentativeSlots = snapshot == null ? null : ((TentativeSlots) snapshot).copy(); }
 
     // ------------------------------------------------------------------ 鍵照合・仮測定・確定葉スロット
 
@@ -653,11 +632,9 @@ final class MeasureMemo {
         boolean selfChanged = selfSignatureChanged(box);
         boolean outerSizeStable = measuredStyle != null && box.w == outW && box.h == outH
                 && box.mT == outMT && box.mR == outMR && box.mB == outMB && box.mL == outML;
-        boolean cutoffMatched = !MeasureVerifier.active()
-                && MeasureReads.state().descentDepth > 0
+        boolean cutoffMatched = MeasureReads.state().descentDepth > 0
                 && parentReadStillMatches(box, ctx, selfChanged);
-        boolean boundaryAbsorbed = !MeasureVerifier.active()
-                && outerSizeStable && MeasureChanges.isRelayoutBoundary(box)
+        boolean boundaryAbsorbed = outerSizeStable && MeasureChanges.isRelayoutBoundary(box)
                 && extraParentReadsMatch(box, ctx);
 
         ExternalEpochs epochs = MeasureReads.currentEpochs(ctx, MEASUREMENT_EPOCH.get(), LayoutBox.shapeEpoch());
@@ -734,7 +711,6 @@ final class MeasureMemo {
             refreshTransitiveParentReads(box, ctx);
         }
         if (absorbed) propagateFitNeedOnCutoff(box);
-        if (MeasureVerifier.active()) return;
         if (MeasureReads.state().descentDepth > 0) invalidateParentOnly(box, !absorbed);
         else invalidateAncestors(box, !boundaryAbsorbed);
     }

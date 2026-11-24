@@ -241,8 +241,7 @@ public final class FineProfileMain {
                     + " reposition=" + UiView.RESTYLE_REPOSITION.get()
                     + " repaintPatch=" + UiView.RESTYLE_REPAINT_PATCH.get()
                     + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
-                    + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped()
-                    + memoCostKeys(memoSnapshot(), memo0));
+                    + " layoutsSkipped=" + com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped());
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get());
             if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             {
@@ -320,12 +319,6 @@ public final class FineProfileMain {
                 com.nishiyu.enderframelib.core.kernel.Kernel.stats.measureCalls(), com.nishiyu.enderframelib.core.layout.LayoutBox.measurementsComputed(),
                 pc, placed,
                 com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits(), com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoMisses()};
-    }
-
-    /** {@code COST} 行の末尾に足す、回帰ゲートが完全一致で比べる記憶の個数（再計算した数。開く分を除く）。 */
-    private static String memoCostKeys(long[] now, long[] base) {
-        return " memoStyleRecomputed=" + (now[1] - base[1]) + " memoMeasureComputed=" + (now[4] - base[4])
-                + " memoPlaced=" + (now[6] - base[6]) + " memoFragMisses=" + (now[8] - base[8]);
     }
 
     private static StandaloneView newView(String html) {

@@ -426,7 +426,7 @@ class IncrementalVsFullTest {
             MutationScenario.STEP_HOOK = (step, view) -> {
                 for (var it : view.items()) if (it.width() < 0 || it.height() < 0) bad.add("nested/" + sd + " 手 " + step + " " + it.id());
             };
-            MutationScenario.run(ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 5 * seed + 1, 60, false);
+            MutationScenario.run(MutationFuzz.NESTED, MutationFuzz.NESTED_CLASSES, MutationFuzz.NESTED_STYLES, 5 * seed + 1, 60, false);
         }
         assertEquals(List.of(), bad.size() > 8 ? bad.subList(0, 8) : bad);
     }
@@ -494,7 +494,7 @@ class IncrementalVsFullTest {
         boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on();
         com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(scrollNodes);
         try {
-            MutationScenario.run(ShortcutMatrixMain.scrollList(), ShortcutMatrixMain.LIST_CLASSES, ShortcutMatrixMain.LIST_STYLES, seed, 45, true, true);
+            MutationScenario.run(MutationFuzz.scrollList(), MutationFuzz.LIST_CLASSES, MutationFuzz.LIST_STYLES, seed, 45, true, true);
             return new ArrayList<>(MutationScenario.PIXELS);
         } finally {
             com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(saved);
@@ -522,7 +522,7 @@ class IncrementalVsFullTest {
     /** ホイールで動き始めたスクロールは、減速の途中も止まった後も整数の px にいる（A6b ⑤。小数だと上の 2 つの経路の画素が違う）。 */
     @Test
     void smoothScrollStaysOnWholePixels() {
-        try (StandaloneView v = new StandaloneView(ShortcutMatrixMain.scrollList(), 320, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+        try (StandaloneView v = new StandaloneView(MutationFuzz.scrollList(), 320, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
              var be = new MutationScenario.NoDraw()) {
             long now = 1000;
             v.frame(now, be, true);
@@ -544,7 +544,7 @@ class IncrementalVsFullTest {
 
     private static List<Integer> pixelsWithDamage(boolean damage, long seed) {
         return com.nishiyu.enderframelib.core.kernel.Shortcut.with(java.util.Map.of(com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE, damage), () -> {
-            MutationScenario.run(ShortcutMatrixMain.CARDS, ShortcutMatrixMain.CARD_CLASSES, ShortcutMatrixMain.CARD_STYLES, seed, 45, true);
+            MutationScenario.run(MutationFuzz.CARDS, MutationFuzz.CARD_CLASSES, MutationFuzz.CARD_STYLES, seed, 45, true);
             return new ArrayList<>(MutationScenario.PIXELS);
         });
     }
@@ -577,7 +577,7 @@ class IncrementalVsFullTest {
                 MutationScenario.STEP_HOOK = (step, view) -> {
                     for (var it : view.items()) if (it.width() < 0 || it.height() < 0) bad.add("nested/" + sd + " 手 " + step + " " + it.id());
                 };
-                MutationScenario.run(ShortcutMatrixMain.NESTED, ShortcutMatrixMain.NESTED_CLASSES, ShortcutMatrixMain.NESTED_STYLES, 5 * seed + 1, 60, false);
+                MutationScenario.run(MutationFuzz.NESTED, MutationFuzz.NESTED_CLASSES, MutationFuzz.NESTED_STYLES, 5 * seed + 1, 60, false);
             }
             assertEquals(List.of(), bad.size() > 8 ? bad.subList(0, 8) : bad);
         } finally {

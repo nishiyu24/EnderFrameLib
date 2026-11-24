@@ -31,6 +31,7 @@ final class InPlaceRelayout {
         long startedAt = view.clock.nanos();
         view.applyOverrides();
         List<LayoutBox> changedBoxes = new ArrayList<>(RenderPipeline.layoutChangedBoxes());
+        RenderPipeline.clearChangedBoxes();
         for (LayoutBox t : textBoxes) if (!changedBoxes.contains(t)) changedBoxes.add(t);
         RenderPipeline.relayoutInPlace(view.layoutRoot, view.rootW, view.rootH, view.layoutRoot.devicePixelRatio(), view.scrollState, view.fontResolver(),
                 changedBoxes);

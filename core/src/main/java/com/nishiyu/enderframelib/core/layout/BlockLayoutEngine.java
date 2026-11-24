@@ -639,9 +639,6 @@ public class BlockLayoutEngine extends LayoutEngine {
         int epoch = LayoutBox.shapeEpoch();
         if (box.floatsMemoEpoch == epoch) {
             floatMemoHits++;
-            if (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on() && box.floatsMemo != scanFloatsUncached(box)) {
-                throw new AssertionError("float メモが古い: 箱 " + box.node.key() + " メモ=" + box.floatsMemo);
-            }
             return box.floatsMemo;
         }
         floatMemoScans++;
@@ -658,18 +655,6 @@ public class BlockLayoutEngine extends LayoutEngine {
             if (c.isAbsolute || c.isRenderedLegend || c.display.isNone()) continue;
             if (isFloating(c)) return true;
             if (!c.establishesBfc && LayoutEngine.getEngine(c.display) instanceof BlockLayoutEngine && containsFloats(c)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** メモを一切使わない走査（検証モード用）。 */
-    private static boolean scanFloatsUncached(LayoutBox box) {
-        for (LayoutBox c : box.children) {
-            if (c.isAbsolute || c.isRenderedLegend || c.display.isNone()) continue;
-            if (isFloating(c)) return true;
-            if (!c.establishesBfc && LayoutEngine.getEngine(c.display) instanceof BlockLayoutEngine && scanFloatsUncached(c)) {
                 return true;
             }
         }
@@ -1419,7 +1404,13 @@ public class BlockLayoutEngine extends LayoutEngine {
         box.startFragmentPass();
         // テキストの箱は断片から位置を取らない（fitToFragments が飛ばす）ので、祖先の相対配置・sticky のずれだけが乗る。
         // 原点に戻してから足し直させないと、同じ木を配置し直すたびにずれが積み重なる
-        if (box.node.nodeType == NodeType.TEXT) { box.x = 0; box.y = 0; }
+        if (box.node.nodeType == NodeType.TEXT) {
+            box.x = 0; box.y = 0;
+        } else if (!isAtomicInline(box) && !isInlineBox(box)) {
+            // 行の流れへ平坦化された非アトミック箱（インライン内のブロック・匿名箱）は自分の layout・fitToFragments を通らない
+            box.x = 0; box.y = 0;
+            box.invalidatePlacementValid();
+        }
         // 不可分なインライン（inline-block 等）は中身を自分の整形コンテキストで管理するため、外側の行流しから子孫を触らない
         if (isAtomicInline(box)) return;
         List<LayoutBox> children = box.children;

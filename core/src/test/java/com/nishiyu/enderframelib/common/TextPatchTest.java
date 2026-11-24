@@ -322,4 +322,30 @@ public class TextPatchTest {
 
         assertTrue(UiView.TEXT_PATCH_FALLBACKS.get() - fallbacksBefore >= 1, "条件に合わない更新は全体の再レイアウトへ退く");
     }
+
+    /** 先行ビューで構造変更 fallback が起きても、後続のテキスト更新に古い変更箱リストが混ざって局所 relayout を壊さない。 */
+    @Test
+    public void priorStructuralRestyleFallbackDoesNotPolluteSubsequentLocalTextPatch() {
+        StandaloneView v1 = new StandaloneView(
+                "<div id=g style=\"width:80px;height:20px\">a</div><div id=s style=\"width:40px;height:20px\">b</div>",
+                200, 120, FontResolver.FALLBACK);
+        v1.ui().flushInvalidation();
+        ((com.nishiyu.enderframelib.core.dom.node.HtmlElement) v1.root().getNodeById("g")).setAttribute("style", "width:120px;height:20px");
+        ((com.nishiyu.enderframelib.core.dom.node.HtmlElement) v1.root().getNodeById("s")).setAttribute("style", "display:flex");
+        v1.ui().flushInvalidation();
+        v1.close();
+
+        StringBuilder sb = new StringBuilder("<style>body{margin:0;font-size:12px}#hud{width:120px;height:20px;overflow:hidden}</style>"
+                + "<div id=hud><span id=hp>HP 100</span></div>");
+        for (int i = 0; i < 60; i++) sb.append("<div>row ").append(i).append("</div>");
+        try (StandaloneView v2 = new StandaloneView(sb.toString(), 320, 240, FontResolver.FALLBACK)) {
+            v2.ui().flushInvalidation();
+            long before = com.nishiyu.enderframelib.core.layout.LayoutBox.measurementsComputed();
+            v2.root().getNodeById("hp").updateTextContent("HP 77");
+            v2.ui().flushInvalidation();
+            long measured = com.nishiyu.enderframelib.core.layout.LayoutBox.measurementsComputed() - before;
+            assertTrue(RenderPipeline.lastRelayoutWasLocal(), "先行ビューの fallback が後続ビューの局所パスを壊さない");
+            assertTrue(measured < 10, "measured=" + measured);
+        }
+    }
 }

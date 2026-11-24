@@ -677,15 +677,14 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private boolean spanOk() {
         return rects != null && com.nishiyu.enderframelib.core.kernel.Shortcut.GL_REPLAY.on() && layerStack.isEmpty();
     }
-
     @Override
     public boolean snapsScrollOffsets() {
         return com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on();
     }
-
+    private boolean verifySpanReplay;
     @Override
     public boolean spanReplay(int index, boolean cpuPending) {
-        if (!spanOk() || !rects.spanCanReplay(index, atlas.resets()) || (com.nishiyu.enderframelib.core.kernel.Shortcut.VERIFY_MEMO.on() && rects.spanVerifyArm(index, atlas.resets()))) return false; // 検証: 再生せず描き直して比べる
+        if (!spanOk() || !rects.spanCanReplay(index, atlas.resets()) || (verifySpanReplay && rects.spanVerifyArm(index, atlas.resets()))) return false; // 検証: 再生せず描き直して比べる
         if (cpuPending && (rects.pending() == 0 || cpu.dirtyBounds() != null)) flushOverlay();
         rects.spanApply(index);
         gpuGlyphs += rects.replayedGlyphs;

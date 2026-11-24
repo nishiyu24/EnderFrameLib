@@ -133,6 +133,7 @@ public class RenderPipeline {
     public static LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
                                            ScrollState scrollState, FontResolver fonts, InteractionState interactionState,
                                            LayoutBox previousRoot) {
+        clearChangedBoxes();
         boolean incremental = ctx().flags().incrementalLayout() && previousRoot != null;
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
 
@@ -197,7 +198,6 @@ public class RenderPipeline {
         stats().lastBuildStats = "boxes=" + stats().boxes + " restyled=" + stats().restyled + " reused=" + stats().reused + " " + stats().phases;
         return rootBox;
     }
-
 
     private static final java.util.concurrent.atomic.AtomicLong RESIZE_SKIPS = new java.util.concurrent.atomic.AtomicLong();
 
@@ -287,6 +287,7 @@ public class RenderPipeline {
         } finally {
             StageProfiler.end(PipelineStage.RESTYLE_LOCAL, prof);
             state.pruneRestyle = false;
+            layoutChangedList.clear(); styleChangedList.clear();
         }
         if ((result & RESTYLE_STRUCTURAL) != 0) return null;
         long tB = Clock.SYSTEM.nanos();
@@ -626,14 +627,12 @@ public class RenderPipeline {
     static final ThreadLocal<List<LayoutBox>> STALE_FRAG_BOXES = ThreadLocal.withInitial(ArrayList::new);
 
     /** このスレッドの印付け用の一時リスト（複数のビューが別スレッドで再レイアウトしても混ざらない）。 */
-    static List<LayoutBox> layoutChangedBoxes() {
-        return LAYOUT_CHANGED_BOXES.get();
-    }
+    static List<LayoutBox> layoutChangedBoxes() { return LAYOUT_CHANGED_BOXES.get(); }
 
     /** 直近の再スタイルで描画スタイルのみが変化したボックス群。DisplayList スライスパッチ用。 */
-    public static List<LayoutBox> styleChangedBoxes() {
-        return STYLE_CHANGED_BOXES.get();
-    }
+    public static List<LayoutBox> styleChangedBoxes() { return STYLE_CHANGED_BOXES.get(); }
+
+    static void clearChangedBoxes() { LAYOUT_CHANGED_BOXES.get().clear(); STYLE_CHANGED_BOXES.get().clear(); }
 
     private static boolean isGeometryOnlyChange(ComputedStyle oldStyle, ComputedStyle newStyle) {
         return oldStyle != null && newStyle != null && !oldStyle.hasStructureAffectingDiff(newStyle);
@@ -948,7 +947,8 @@ public class RenderPipeline {
                     interactionState, StyleResolver.hasSiblingStateRules(doc.sheet), rootContainer, false,
                     layoutChangedList, styleChangedList, false);
             if ((resMask & RESTYLE_LAYOUT_REQUIRED) != 0) rootBox.hasUnmarkedChanges = true;
-            if ((resMask & RESTYLE_STRUCTURAL) != 0) rootBox.hasStructuralPending = true;
+            else layoutChangedList.clear();
+            if ((resMask & RESTYLE_STRUCTURAL) != 0) { rootBox.hasStructuralPending = true; layoutChangedList.clear(); styleChangedList.clear(); }
             return toRestyleResult(resMask);
         } finally {
             StageProfiler.end(PipelineStage.RESTYLE_LOCAL, prof);

@@ -1,5 +1,0 @@
-# PatchSiteRatchetTest の表（ENGINE_REARCHITECTURE_PLAN C0 ①）: 鍵 | 値 | 置き換え先の段 | 守るテスト
-#   switch:<Shortcut の名前> = パッチ系の近道スイッチ（値は "switch"）。Shortcut に同じ種類（名前に PATCH・SHIFT・KEEP_PLACEMENTS・CHANGE_STAMPS を含む）を足すと赤。
-#                              消したら、この行も消す（行だけ残っても赤）。
-#   #   lines:<ファイル>          = パッチ専用クラスの行数の上限（増やさない。C1/C5 で削除したら行も消す）
-# 新しいパッチを足さない（§1.2 原則 2）。増やす必要が出たら、先にメモ化で書けないかを §3.3 で検討する。

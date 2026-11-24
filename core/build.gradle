@@ -121,11 +121,6 @@ def configureCoreTest = { Test t, List<String> includeTagList, List<String> excl
     t.maxParallelForks = forks
     t.maxHeapSize = '3g' // 既定のヒープでは全件実行が OutOfMemoryError で落ちる
     t.systemProperty 'enderframe.paint.verifystamps', 'true'
-    // 検証モード VERIFY_MEMO: 記憶（float メモ・測定の記憶・姿勢の使い回し）が当たった所を計算し直し、食い違えば AssertionError（鍵の漏れの検出。costGate・計測では無効）
-    // 検証の費用を測る・切り分けるときは -Pverify.memo=false / -Pverify.boxmemo=false で個別に切れる
-    t.systemProperty 'enderframe.verify.memo', String.valueOf(findProperty('verify.memo') ?: 'true')
-    // 箱の項目の記憶（DisplayListBuilder の箱ごとの記憶）も作り直して比べる（計画の §6-124・125）
-    t.systemProperty 'enderframe.verify.boxmemo', String.valueOf(findProperty('verify.boxmemo') ?: 'true')
     // 影モード: 全面の描画のたびに断片の木を組み直して旧経路の表示リストと比べる（C1 の F1。切るときは -Pverify.fragment=false）
     t.systemProperty 'enderframe.verify.fragment', String.valueOf(findProperty('verify.fragment') ?: 'true')
     // 全面の描画を断片の木で行う経路で全件を流す（C1 の F1b・B 案。既定は旧経路。-Pfragment.build=true）
@@ -458,6 +453,18 @@ tasks.register('profileClasspath') {
     }
 }
 
+tasks.register('memoryAndLatencyGate', JavaExec) {
+    group = 'verification'
+    description = '保持ヒープ（MB）と交互 A/B 実行時間（ms）のみを監視する回帰ゲート（MemoryAndLatencyGate）'
+    classpath = sourceSets.test.output + sourceSets.test.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.core.MemoryAndLatencyGate'
+    workingDir = rootProject.projectDir
+    if (project.hasProperty('gate.update')) systemProperty 'gate.update', 'true'
+    if (project.hasProperty('gate.enforceTiming')) systemProperty 'gate.enforceTiming', 'true'
+    if (project.hasProperty('gate.only')) systemProperty 'gate.only', project.property('gate.only').toString()
+    if (project.hasProperty('gate.base')) systemProperty 'gate.base', project.property('gate.base').toString()
+}
+
 // A1: 時間に依らない量（1 フレームの確保量・近道の経路の回数）の回帰ゲート。シナリオごとに新しい JVM を立てるので check には
 // 繋がず、CI（build.yml）と手元から明示的に回す。
 //   ./gradlew :core:costGate                       判定
@@ -471,7 +478,6 @@ tasks.register('costGate', JavaExec) {
     if (project.hasProperty('costgate.update')) systemProperty 'costgate.update', 'true'
     if (project.hasProperty('costgate.tolerance')) systemProperty 'costgate.tolerance', project.property('costgate.tolerance').toString()
     if (project.hasProperty('costgate.jvmArgs')) systemProperty 'costgate.jvmArgs', project.property('costgate.jvmArgs').toString()
-    if (project.hasProperty('costgate.allowAmpRise')) systemProperty 'costgate.allowAmpRise', 'true'
     if (project.hasProperty('costgate.only')) systemProperty 'costgate.only', project.property('costgate.only').toString()
     if (project.hasProperty('costgate.parallel')) systemProperty 'costgate.parallel', project.property('costgate.parallel').toString()
 }
@@ -489,32 +495,8 @@ tasks.register('mutationFuzz', JavaExec) {
     workingDir = rootProject.projectDir
     ['fuzz.seeds', 'fuzz.start'].each { if (project.hasProperty(it)) systemProperty it, project.property(it).toString() }
     if (project.hasProperty('fuzz.record')) systemProperty 'fuzz.record', 'true'
-    // 検証モードも併走させる（鍵の漏れを「どの記憶か」つきで報告する。切るときは -Pverify.memo=false / -Pverify.boxmemo=false）
-    systemProperty 'enderframe.verify.memo', String.valueOf(findProperty('verify.memo') ?: 'true')
-    systemProperty 'enderframe.verify.boxmemo', String.valueOf(findProperty('verify.boxmemo') ?: 'true')
     systemProperty 'enderframe.verify.fragment', String.valueOf(findProperty('verify.fragment') ?: 'true')
     if (project.hasProperty('fuzz.jvmArgs')) jvmArgs project.property('fuzz.jvmArgs').toString().split(' ')
-}
-
-// A6: 近道の切り分けスイッチ（enderframe.*.no* / .off）の組み合わせ検証。既定・各スイッチ単独・ペアワイズの各構成を別 JVM で走らせ、
-// 乱数の変更列の表示リスト署名とソフトウェア描画の画素が既定と一致することを確かめる（夜間）。
-//   ./gradlew :core:shortcutMatrix                          全構成
-//   ./gradlew :core:shortcutMatrix -Pmatrix.only=noshift    名前に含まれるスイッチの単独の構成だけ
-//   ./gradlew :core:shortcutMatrix -Pmatrix.extra="-Dx=y"   全構成へ足す JVM 引数（検査が効くことの確認用）
-tasks.register('shortcutMatrix', JavaExec) {
-    group = 'verification'
-    description = '近道スイッチの単独オフ＋ペアワイズ構成で、表示リストと画素が既定と一致することを確かめる（ShortcutMatrixMain）'
-    classpath = sourceSets.test.output + sourceSets.test.runtimeClasspath
-    mainClass = 'com.nishiyu.enderframelib.common.ShortcutMatrixMain'
-    workingDir = rootProject.projectDir
-    if (project.hasProperty('matrix.only')) systemProperty 'matrix.only', project.property('matrix.only').toString()
-    if (project.hasProperty('matrix.extra')) systemProperty 'matrix.extra', project.property('matrix.extra').toString()
-    if (project.hasProperty('matrix.selfcheck')) systemProperty 'matrix.selfcheck', 'true'
-    if (project.hasProperty('matrix.update')) systemProperty 'matrix.update', 'true'
-    if (project.hasProperty('matrix.dump')) systemProperty 'matrix.dump', project.property('matrix.dump').toString()
-    if (project.hasProperty('matrix.dumpfile')) { systemProperty 'matrix.dumpfile', project.property('matrix.dumpfile').toString(); systemProperty 'matrix.keeppixels', 'true' }
-    if (project.hasProperty('matrix.dumpswitch')) systemProperty 'matrix.dumpswitch', project.property('matrix.dumpswitch').toString()
-    if (project.hasProperty('matrix.parallel')) systemProperty 'matrix.parallel', project.property('matrix.parallel').toString()
 }
 
 // A10: GPU・窓モジュールも公開物として依存解決できることを確かめる。

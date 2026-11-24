@@ -38,7 +38,7 @@ K4, §6-185 | K4InkBoundsProxyTest#absolutelyPositionedDescendantsThatEscapeTheR
 §6-59, B3 | ParentRelativeParityTest#pseudoElementTextKeysDoNotCollide | 疑似要素の文字の節の nodeId で鍵を作り、2 つ目以降の文字が消えた
 §6-60, B3 | ChildPatchTest#randomInsertAndRemoveMatchesFullRelayout, ChildPatchTest#siblingRulesMakeThePatchStepBackAndStillMatch | 差分再生で使い回す箱の記憶が不変リストで UnsupportedOperationException・ノードのクリップが古いまま子へ伝わった
 §6-61, B3 | GpuRouteTest#routeFollowsCpuLayerNesting, GpuRouteTest#backendHoldsNoGpuSinkField | 項目単位の差分再生が GpuSink を経路（GpuRoute）を通さずに呼んだ
-§6-66, B9 | StaticFrameGateTest#anyChangeForcesRepaint, ItemDiffRatchetTest#itemComparisonLivesOnlyInItemDiff | 項目をセルへ書く形に替えたら、実体の同一性で変化を知る消費者（再生・静止フレームの飛ばし）が黙って壊れた
+§6-66, B9 | StaticFrameGateTest#anyChangeForcesRepaint | 項目をセルへ書く形に替えたら、実体の同一性で変化を知る消費者（再生・静止フレームの飛ばし）が黙って壊れた
 §6-83, A6b | IncrementalVsFullTest#repaintedBoxWithoutMemoKeepsScrollContainerClip | 記憶の無い箱を描き直すとき、スクロールする箱の clip が落ちた
 §6-84, A6b | IncrementalVsFullTest#scrollListPixelsMatchWithAndWithoutScrollContentNode, IncrementalVsFullTest#smoothScrollStaysOnWholePixels | 小数のスクロール量で 2 つの経路の画素が違った・インラインの中の span の箱が (0, 0) のまま窓の中と判定された
 be95cfe, A6b | IncrementalVsFullTest#canvasBackgroundFollowsBodyHoverStyleInTheSameFrame, IncrementalVsFullTest#damageRepaintMatchesFullRepaintEveryStep | キャンバスへ渡る body の背景が 1 フレーム古い色のまま・遷移中の項目を止まっていると記録して差分描画に途中の色が残った
@@ -81,7 +81,6 @@ dcbad05 | WebControlInteractionTest#testClickingNonFocusableElementDoesNotFocusA
 
 # --- 差分ファズ（夜間 mutationFuzz が見つけた種は mutation-seeds.txt へ。ここは仕組みの行） ---
 T3 | MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout, MutationSeedRegressionTest#knownSeedsStillMismatchUntilFixed, gradle:mutationFuzz | 夜間のファズで見つかった種を固定の種として毎回の CI で回す（直せていない種は「既知:」で残し、直ると赤）
-A6 | gradle:shortcutMatrix | 近道スイッチを 1 つ切ると出力が変わる 20 件（夜間。既知の表 shortcut-matrix-known.txt は空）
 A10, §6-136 | gradle:verifyPublishedModules | 公開先 URL が Windows のパスで解決できず :core を公開できなかった。公開物だけで別プロジェクトが動くことを検査する
 §6-195, K0b | IntrinsicAndScrollOracleTest#bodyFloatOnly, IntrinsicAndScrollOracleTest#collapsedWhitespaceTextAddsNoScrollExtent | 内在の幅が前回の測定の枠・余白を読み測っていない箱で 0 になった（shrink-to-fit の親の中の fieldset の幅が面で違う）・空白だけで畳まれた文字の箱の 1 行ぶんがスクロール範囲に入った（オラクルで検出）
 §6-194, §6-196, K5 | RepositionReuseTest#scrollOnlyUpdatesMatchAFreshBuildAtTheSameOffsets, StaleTextPatchTest#textChangeWhileScrollLayoutIsDeferredMatchesFreshBuild | スクロールだけの位置の決め直しが毎回全箱の配置を捨てていた（machine_ui scroll の増幅率 28）・古い位置の枠で文字を直す近道が不発のデッドコードだった
