@@ -89,7 +89,8 @@ final class SpikeView {
 
     private static void dump(LayoutFragment f, float x, float y, int depth, List<String> out) {
         String name = f.box == null ? "(anon)" : f.box.node.tag + idOf(f.box.node);
-        out.add(String.format(Locale.ROOT, "%s%s %.3f,%.3f %.3fx%.3f", "  ".repeat(depth), name, x, y, f.width, f.height));
+        out.add(String.format(Locale.ROOT, "%s%s %.3f,%.3f %.3fx%.3f%s", "  ".repeat(depth), name, x, y, f.width, f.height,
+                Float.isNaN(f.baseline) ? "" : String.format(Locale.ROOT, " B%.3f", f.baseline)));
         float cx = x + f.insetLeft, cy = y + f.insetTop;
         if (f.lines != null) {
             for (LineFragment l : f.lines) {

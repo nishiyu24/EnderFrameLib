@@ -195,6 +195,10 @@ public final class ElementTraits {
         return "fieldset".equalsIgnoreCase(tag);
     }
 
+    public static boolean isLegend(String tag) {
+        return "legend".equalsIgnoreCase(tag);
+    }
+
     public static boolean isOrderedList(String tag) {
         return "ol".equalsIgnoreCase(tag);
     }

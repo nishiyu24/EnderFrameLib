@@ -90,6 +90,7 @@ public final class InlineFlow {
      * そうでなければ最後の行（{@code inline-block} のベースライン）。
      */
     static float baselineOf(LayoutFragment f, boolean first) {
+        if (!Float.isNaN(f.baseline)) return f.baseline;
         if (f.lines != null && f.lines.length > 0) {
             LineFragment l = f.lines[first ? 0 : f.lines.length - 1];
             return f.insetTop + l.y() + l.baseline();
@@ -100,12 +101,19 @@ public final class InlineFlow {
             FlowChunk c = cs[k];
             for (int i = first ? 0 : c.frags.length - 1; first ? i < c.frags.length : i >= 0; i += first ? 1 : -1) {
                 LayoutFragment ch = c.frags[i];
-                if (ch.collapseThrough) continue;
+                if (ch.collapseThrough || renderedLegend(f, ch)) continue;
                 float b = baselineOf(ch, first);
                 if (!Float.isNaN(b)) return f.insetTop + f.flow.y(k, i) + b;
             }
         }
         return Float.NaN;
+    }
+
+    /** fieldset の legend は枠線の上に描く見出しで、fieldset のベースラインにならない（HTML §15.3.13）。 */
+    private static boolean renderedLegend(LayoutFragment parent, LayoutFragment child) {
+        return parent.box != null && child.box != null
+                && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isFieldset(parent.box.node.tag)
+                && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isLegend(child.box.node.tag);
     }
 
     /** {@code from} より後ろで最初の折り返し候補の位置（無ければ {@code to}）。 */

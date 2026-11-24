@@ -113,7 +113,7 @@ class WptV3BaselineTest {
         onlyV3.removeAll(legacy);
         System.out.println("WPT-V3 " + passing.size() + "/" + pairs.size() + " (旧経路 " + legacy.size() + ") " + tally
                 + " bySpec(v3/旧/全体)=" + bySpec.entrySet().stream().map(x -> x.getKey() + " " + x.getValue()[0] + "/" + x.getValue()[1] + "/" + x.getValue()[2]).toList());
-        System.out.println("WPT-V3 旧経路だけ合格=" + onlyLegacy.size() + " 新経路だけ合格=" + onlyV3);
+        System.out.println("WPT-V3 旧経路だけ合格=" + onlyLegacy.size() + " " + onlyLegacy + " 新経路だけ合格=" + onlyV3);
 
         if (Boolean.getBoolean("wpt.v3.update")) {
             List<String> out = new ArrayList<>();

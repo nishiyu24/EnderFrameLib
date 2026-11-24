@@ -39,6 +39,13 @@ class IncrementalOracleTest {
     @Test
     void pseudoElements() { run("pseudo"); }
 
+    /**
+     * M2b-2: flex の拡張（折り返しと {@code align-content}・column の折り返し・{@code *-reverse}・{@code wrap-reverse}・ベースライン揃え・
+     * 主軸と交差軸の auto 余白・{@code order}・{@code visibility: collapse}・abspos の静的位置の揃え）の変異。
+     */
+    @Test
+    void flexFeatures() { run("flexx"); }
+
     private static void run(String kind) {
         String html = switch (kind) {
             case "large" -> SpikeView.largeList(300);
@@ -46,13 +53,15 @@ class IncrementalOracleTest {
             case "flex3" -> SpikeView.nestedFlex(3, 3);
             case "text" -> SpikeView.inlineText(24);
             case "pseudo" -> SpikeView.inlineText(16).replace("</style>", PSEUDO_CSS + "</style>");
+            case "flexx" -> SpikeView.nestedFlex(4, 3, true).replace(".f{display:flex;flex-wrap:wrap;", ".f{display:flex;flex-wrap:wrap;height:220px;");
             default -> SpikeView.nestedFlex(4, 2);
         };
         SpikeView v = new SpikeView(html, 640, 480);
         v.frame();
         Random rnd = new Random(kind.hashCode());
         for (int step = 0; step < 80; step++) {
-            String op = kind.equals("pseudo") && rnd.nextInt(3) > 0 ? mutatePseudo(v, rnd)
+            String op = kind.equals("flexx") && rnd.nextInt(3) > 0 ? mutateFlex(v, rnd)
+                    : kind.equals("pseudo") && rnd.nextInt(3) > 0 ? mutatePseudo(v, rnd)
                     : (kind.equals("text") || kind.equals("pseudo")) && rnd.nextBoolean() ? mutateText(v, rnd, step) : mutate(v, rnd, step);
             LayoutFragment inc = v.frame();
             List<String> a = SpikeView.dump(inc), b = SpikeView.dump(v.scratch());
@@ -138,6 +147,27 @@ class IncrementalOracleTest {
             "display:inline-block;height:40px;vertical-align:top", "display:inline-block;height:25px;vertical-align:bottom",
             "display:contents", "display:contents;font-size:20px",
     };
+
+    private static final String[] FLEX_STYLES = {
+            "display:flex;flex-wrap:wrap;align-content:space-between;height:150px", "display:flex;flex-wrap:wrap-reverse;align-content:center",
+            "display:flex;flex-flow:column wrap;height:80px", "display:flex;flex-flow:column-reverse wrap-reverse;max-height:90px",
+            "display:flex;flex-direction:row-reverse;justify-content:flex-start", "display:flex;align-items:baseline;flex-wrap:wrap",
+            "display:flex;align-items:baseline", "align-self:baseline;padding-top:7px", "align-self:flex-end", "align-self:center",
+            "margin:auto", "margin-left:auto", "margin-top:auto;margin-bottom:auto", "order:-1", "order:2", "visibility:collapse",
+            "position:absolute", "position:absolute;align-self:center", "display:flex;justify-content:center;align-items:flex-end",
+            "display:flex;justify-content:safe center;width:30px", "display:flex;align-content:stretch;flex-wrap:wrap;height:200px",
+            "flex:1 0 60px", "flex:0 0 120px", "display:flex;direction:rtl;flex-wrap:wrap", "display:inline-flex;align-items:baseline",
+    };
+
+    /** flex の拡張の変異を 1 つ加える。 */
+    static String mutateFlex(SpikeView v, Random rnd) {
+        List<HtmlNode> elems = new ArrayList<>();
+        collect(v.doc.root, elems);
+        HtmlElement target = (HtmlElement) elems.get(rnd.nextInt(elems.size()));
+        String st = FLEX_STYLES[rnd.nextInt(FLEX_STYLES.length)];
+        target.setAttribute("style", st);
+        return st + " " + target.tag + " " + target.attrs.get("id");
+    }
 
     private static final String PSEUDO_CSS = " .pb::before{content:'[' attr(data-x) ']';color:#900}"
             + " .pa::after{content:' after'} .blk::before{content:'block';display:block;height:12px}"

@@ -59,6 +59,35 @@ class LegacyParityTest {
                 + "</body></html>", List.of());
     }
 
+    /**
+     * M2b-2: flex の拡張（折り返しと {@code align-content}・column の折り返し・{@code *-reverse}・{@code wrap-reverse}・主軸と交差軸の
+     * auto 余白・ベースライン揃え・{@code order}・abspos の子の静的位置の揃え）。
+     */
+    @Test
+    void flexExtendedMatchesLegacy() {
+        String it = "width:60px;height:20px;";
+        assertParity("<html><body style='margin:0'>"
+                + "<div id=ac style='display:flex;flex-wrap:wrap;width:150px;height:120px;align-content:space-between'>"
+                + "<div id=ac1 style='" + it + "'></div><div id=ac2 style='" + it + "'></div><div id=ac3 style='" + it + "'></div></div>"
+                + "<div id=acs style='display:flex;flex-wrap:wrap;width:150px;height:100px'><div id=s1 style='width:60px'>a</div>"
+                + "<div id=s2 style='width:60px'>b</div><div id=s3 style='width:60px'>c</div></div>"
+                + "<div id=cw style='display:flex;flex-flow:column wrap;height:50px;width:200px'><div id=cw1 style='" + it + "'></div>"
+                + "<div id=cw2 style='" + it + "'></div><div id=cw3 style='" + it + "'></div></div>"
+                + "<div id=rr style='display:flex;flex-direction:row-reverse;width:300px'><div id=rr1 style='width:50px'>1</div><div id=rr2 style='width:70px'>2</div></div>"
+                + "<div id=cr style='display:flex;flex-direction:column-reverse;height:90px'><div id=cr1 style='height:20px'></div><div id=cr2 style='height:30px'></div></div>"
+                + "<div id=wr style='display:flex;flex-wrap:wrap-reverse;width:150px'><div id=wr1 style='" + it + "'></div><div id=wr2 style='" + it + "'></div>"
+                + "<div id=wr3 style='" + it + "'></div></div>"
+                + "<div id=am style='display:flex;width:300px;height:80px'><div id=am1 style='" + it + "margin:auto'></div>"
+                + "<div id=am2 style='" + it + "margin-left:auto;margin-top:auto'></div></div>"
+                + "<div id=bl style='display:flex;align-items:baseline;width:400px'><div id=bl1 style='font-size:30px'>Big</div>"
+                + "<div id=bl2 style='padding-top:15px'>small</div><div id=bl3 style='font-size:12px;margin-top:5px'>tiny</div></div>"
+                + "<div id=or style='display:flex;width:300px'><div id=or1 style='order:2;width:40px'>a</div><div id=or2 style='width:40px'>b</div>"
+                + "<div id=or3 style='order:-1;width:40px'>c</div></div>"
+                + "<div id=ab style='display:flex;position:relative;width:200px;height:100px;justify-content:center;align-items:flex-end'>"
+                + "<div id=ab1 style='position:absolute;width:30px;height:20px'></div></div>"
+                + "</body></html>", List.of());
+    }
+
     /** M2b-1: vertical-align（原子の位置と、持ち上げた文字・原子で広がる行の高さ）。 */
     @Test
     void verticalAlignMatchesLegacy() {

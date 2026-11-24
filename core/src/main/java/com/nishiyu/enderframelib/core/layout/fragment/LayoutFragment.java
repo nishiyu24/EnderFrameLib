@@ -35,11 +35,24 @@ public final class LayoutFragment {
     final OutOfFlow.Pending[] pending;
     /** この箱が包含ブロックとして置いた流れの外の断片（無ければ null）。 */
     public final PlacedFragment[] oof;
+    /**
+     * 整形コンテキストが決めたベースライン（border-box の上端から。flex 容器の最初の行の揃え。CSS Flexbox §8.5）。
+     * NaN なら中の行から求める（{@link InlineFlow#baselineOf}）。
+     */
+    public final float baseline;
 
     LayoutFragment(BoxNode box, ConstraintSpace space, float width, float height, float marginLeft,
                    float topPos, float topNeg, float bottomPos, float bottomNeg, float insetLeft, float insetTop,
                    boolean collapseThrough, ChunkedFlow flow, LineFragment[] lines, OutOfFlow.Pending[] pending,
                    PlacedFragment[] oof) {
+        this(box, space, width, height, marginLeft, topPos, topNeg, bottomPos, bottomNeg, insetLeft, insetTop, collapseThrough,
+                flow, lines, pending, oof, Float.NaN);
+    }
+
+    LayoutFragment(BoxNode box, ConstraintSpace space, float width, float height, float marginLeft,
+                   float topPos, float topNeg, float bottomPos, float bottomNeg, float insetLeft, float insetTop,
+                   boolean collapseThrough, ChunkedFlow flow, LineFragment[] lines, OutOfFlow.Pending[] pending,
+                   PlacedFragment[] oof, float baseline) {
         this.box = box;
         this.space = space;
         this.width = width;
@@ -56,6 +69,7 @@ public final class LayoutFragment {
         this.lines = lines;
         this.pending = pending;
         this.oof = oof;
+        this.baseline = baseline;
     }
 
     /** この制約で作った、この箱の断片か（キャッシュの照合。{@code ==} の高速路つきの値等価）。 */

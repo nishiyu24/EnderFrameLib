@@ -20,15 +20,32 @@ import java.util.List;
  * </ul>
  *
  * <p>M2b-1 の範囲外: {@code fixed} の包含ブロックはビューポートでなく文書の根（スクロール 0 のときに一致）・{@code sticky}・
- * {@code anchor()}・静的位置の揃え（flex・grid の項目の abspos の {@code align-self}）。</p>
+ * {@code anchor()}。</p>
  */
 final class OutOfFlow {
     private OutOfFlow() { }
 
-    /** 流れの外の箱の静的位置（余白の箱の左上。座標系は持ち主が決める）。 */
-    record Pending(BoxNode box, float x, float y) {
+    /**
+     * 流れの外の箱の静的位置（余白の箱の左上。座標系は持ち主が決める）。flex・grid の容器の子では静的位置が点でなく領域
+     * （{@code areaW} × {@code areaH}。NaN なら点）で、箱の大きさが決まった後でその中を {@code alignX} / {@code alignY}
+     * （0 = 始点・0.5 = 中央・1 = 終点）で揃える（CSS Flexbox §4.1・CSS Grid §9.4）。
+     */
+    record Pending(BoxNode box, float x, float y, float areaW, float areaH, float alignX, float alignY) {
+        Pending(BoxNode box, float x, float y) {
+            this(box, x, y, Float.NaN, Float.NaN, 0, 0);
+        }
+
         Pending shift(float dx, float dy) {
-            return dx == 0 && dy == 0 ? this : new Pending(box, x + dx, y + dy);
+            return dx == 0 && dy == 0 ? this : new Pending(box, x + dx, y + dy, areaW, areaH, alignX, alignY);
+        }
+
+        /** 領域の中で、余白の箱の幅 {@code outerW}・高さ {@code outerH} の箱を揃えるずれ {dx, dy}。 */
+        float dx(float outerW) {
+            return Float.isNaN(areaW) ? 0 : alignX * (areaW - outerW);
+        }
+
+        float dy(float outerH) {
+            return Float.isNaN(areaH) ? 0 : alignY * (areaH - outerH);
         }
     }
 
@@ -94,8 +111,10 @@ final class OutOfFlow {
             if (!Float.isNaN(fixedH)) fixedH = LayoutUnit.snap(g.clampHeight(st, fixedH, cbH, s));
             ConstraintSpace space = s.space(cbW, w, fixedH, cbH, ConstraintSpace.FORMATTING_ROOT);
             LayoutFragment f = s.cache().layout(box, space, priorOf(prior, box), s);
-            float x = !Float.isNaN(l) ? cbX + l + g.mL : !Float.isNaN(r) ? cbX + cbW - r - f.width - g.mR : p.x() + g.mL;
-            float y = !Float.isNaN(t) ? cbY + t + g.mT : !Float.isNaN(b) ? cbY + cbH - b - f.height - g.mB : p.y() + g.mT;
+            float x = !Float.isNaN(l) ? cbX + l + g.mL : !Float.isNaN(r) ? cbX + cbW - r - f.width - g.mR
+                    : p.x() + g.mL + p.dx(f.width + g.mL + g.mR);
+            float y = !Float.isNaN(t) ? cbY + t + g.mT : !Float.isNaN(b) ? cbY + cbH - b - f.height - g.mB
+                    : p.y() + g.mT + p.dy(f.height + g.mT + g.mB);
             out[i] = new PlacedFragment(f, LayoutUnit.snap(x), LayoutUnit.snap(y));
         }
         return out;
