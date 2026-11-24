@@ -57,7 +57,7 @@ final class InlineMeasure implements TextRun.Sink {
                 line += e[0];
                 chunk += e[0];
                 WhiteSpace inner = n.style.facts.whiteSpace;
-                for (int i = 0, c = n.children.size(); i < c; i++) add(n.children.get(i), inner);
+                for (int i = 0, c = n.flow.size(); i < c; i++) add(n.flow.get(i), inner);
                 line += e[1];
                 chunk += e[1];
             }

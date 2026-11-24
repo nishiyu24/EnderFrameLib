@@ -26,6 +26,9 @@ class ProjectionPixelParityTest {
             "<html><body style='margin:0'><p style='margin:0;height:30px;background:#eee'>para</p>"
                     + "<div style='display:inline-block;width:40px;height:20px;background:#c00'>ab</div>"
                     + "<div style='display:inline-block;width:30px;height:10px;background:#00c'>c</div></body></html>",
+            // M2b-1: flex の項目になった文字の節と、blockify したインライン要素（span）は項目の位置に描く（射影が容器の原点へ戻していた）
+            "<html><body style='margin:0'><div style='display:flex;justify-content:space-between;align-items:flex-end;height:40px;width:300px;background:#eee'>"
+                    + "x<span style='background:#fc0'>span</span>z</div></body></html>",
         };
         for (String html : docs) {
             Pixmap legacy = legacy(html), v3 = WptV3BaselineTest.render(html);

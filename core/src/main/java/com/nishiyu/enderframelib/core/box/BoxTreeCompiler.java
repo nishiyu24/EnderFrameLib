@@ -50,6 +50,14 @@ public final class BoxTreeCompiler {
     private final Set<HtmlNode> touched = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<HtmlNode> parentOfTouched = Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean positional, usesInherit;
+    /** カウンタを使う文書のコンパイル中だけ非 null（文書順に積み上げる。カウンタを使う文書は常に全体を作り直す）。 */
+    private Counters counters;
+    private final Counters counterState = new Counters();
+    private com.nishiyu.enderframelib.core.css.CounterStyles counterStyles = com.nishiyu.enderframelib.core.css.CounterStyles.builtins();
+    /** {@link PseudoBoxes#usesCounters} を規則の版ごとに 1 回だけ求めた値（このビューの実例に閉じる）。 */
+    private StyleSheet countedSheet;
+    private int countedVersion = -1;
+    private boolean sheetUsesCounters;
 
     private final Stats stats = new Stats();
 
@@ -98,6 +106,10 @@ public final class BoxTreeCompiler {
         stats.reset();
         boolean full = readLedger(ledger) || root == null || root.node != domRoot;
         stats.full = full;
+        StyleSheet sheet = styles.sheet();
+        counters = full && usesCounters(sheet) ? counterState : null;
+        if (counters != null) counters.clear();
+        if (sheet != null) counterStyles = com.nishiyu.enderframelib.core.css.CounterStyles.of(sheet.counterStyles);
         try {
             root = compileNode(domRoot, Style.DEFAULT, full ? null : root, full);
             return root;
@@ -116,7 +128,8 @@ public final class BoxTreeCompiler {
         if (ledger == null) return true;
         if (ledger.frozenOverflow()) return true;
         int n = ledger.frozenSize();
-        if (n > 0 && sheet != null && (sheet.usesHasSelectors() || sheet.declaresContainers() || sheet.usesContainerQueries())) return true;
+        if (n > 0 && sheet != null && (sheet.usesHasSelectors() || sheet.declaresContainers() || sheet.usesContainerQueries()
+                || usesCounters(sheet))) return true; // カウンタは文書順に積み上がる非局所の状態
         for (int i = 0; i < n; i++) {
             HtmlNode node = ledger.frozenNode(i);
             if (node == null) {
@@ -157,6 +170,7 @@ public final class BoxTreeCompiler {
         BoxKind kind = BoxKind.of(n, style);
         String text = null;
         BoxChildren children = BoxChunk.EMPTY;
+        BoxNode before = null, after = null;
         if (kind == BoxKind.TEXT) {
             text = TextContent.of(n.text, style);
             if (prev != null && prev.text != null && prev.text.equals(text)) text = prev.text;
@@ -165,11 +179,43 @@ public final class BoxTreeCompiler {
             boolean kidsRestyle = !usable || style.inherited != prev.style.inherited || style.custom != prev.style.custom;
             // inherit キーワードは要素にしか効かない（文字の節のスタイルは親の継承群だけで決まる）
             boolean elemRestyle = usable && usesInherit && style != prev.style;
+            boolean element = n.nodeType == NodeType.ELEMENT;
+            if (counters != null && element) counters.apply(n, style, listItem(style));
+            int mark = counters != null ? counters.mark() : 0;
+            // 疑似要素: 持ち主を解き直したとき（とカウンタを使う文書）だけ作り直し、それ以外は前回の箱のまま
+            boolean pseudos = element && PseudoBoxes.capable(n);
+            boolean redoPseudo = resolve || counters != null || !usable;
+            if (pseudos) before = redoPseudo ? pseudo(BoxNode.Pseudo.BEFORE, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.BEFORE);
             children = compileChildren(n, style, usable ? prev.children : null, kidsRestyle, elemRestyle, selfKinds);
+            if (pseudos) after = redoPseudo ? pseudo(BoxNode.Pseudo.AFTER, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.AFTER);
+            if (counters != null) counters.release(mark);
         }
-        if (prev != null && style == prev.style && kind == prev.kind && text == prev.text && children == prev.children) return prev;
+        if (prev != null && style == prev.style && kind == prev.kind && text == prev.text && children == prev.children
+                && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)) return prev;
         stats.rebuiltBoxes++;
-        return new BoxNode(n, style, kind, text, children);
+        return new BoxNode(n, style, kind, text, children, BoxNode.Pseudo.NONE, before, after);
+    }
+
+    private BoxNode pseudo(BoxNode.Pseudo which, HtmlNode owner, Style style, BoxNode prevOwner) {
+        BoxNode prev = prevOwner != null ? prevOwner.pseudoChild(which) : null;
+        BoxNode b = PseudoBoxes.build(which, owner, style, prev, styles, counters, counterStyles);
+        if (b != null && b != prev) stats.rebuiltBoxes++;
+        return b;
+    }
+
+    private boolean usesCounters(StyleSheet sheet) {
+        if (sheet == null) return false;
+        if (sheet != countedSheet || sheet.rules.version() != countedVersion) {
+            countedSheet = sheet;
+            countedVersion = sheet.rules.version();
+            sheetUsesCounters = PseudoBoxes.usesCounters(sheet);
+        }
+        return sheetUsesCounters;
+    }
+
+    private static boolean listItem(Style st) {
+        String d = st.box.display;
+        return d != null && d.contains("list-item");
     }
 
     /** 子の並び。前回の並びのチャンクのうち、DOM の並びが同じで触れられていないものは参照のまま使う。 */

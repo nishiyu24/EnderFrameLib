@@ -35,19 +35,25 @@ class IncrementalOracleTest {
     @Test
     void inlineText() { run("text"); }
 
+    /** M2b-1: 疑似要素（::before / ::after の付け外し・attr() の値・表示型の切り替え）の変異。 */
+    @Test
+    void pseudoElements() { run("pseudo"); }
+
     private static void run(String kind) {
         String html = switch (kind) {
             case "large" -> SpikeView.largeList(300);
             case "varied" -> SpikeView.variedList(120);
             case "flex3" -> SpikeView.nestedFlex(3, 3);
             case "text" -> SpikeView.inlineText(24);
+            case "pseudo" -> SpikeView.inlineText(16).replace("</style>", PSEUDO_CSS + "</style>");
             default -> SpikeView.nestedFlex(4, 2);
         };
         SpikeView v = new SpikeView(html, 640, 480);
         v.frame();
         Random rnd = new Random(kind.hashCode());
         for (int step = 0; step < 80; step++) {
-            String op = kind.equals("text") && rnd.nextBoolean() ? mutateText(v, rnd, step) : mutate(v, rnd, step);
+            String op = kind.equals("pseudo") && rnd.nextInt(3) > 0 ? mutatePseudo(v, rnd)
+                    : (kind.equals("text") || kind.equals("pseudo")) && rnd.nextBoolean() ? mutateText(v, rnd, step) : mutate(v, rnd, step);
             LayoutFragment inc = v.frame();
             List<String> a = SpikeView.dump(inc), b = SpikeView.dump(v.scratch());
             if (!a.equals(b)) {
@@ -129,6 +135,26 @@ class IncrementalOracleTest {
             "text-align:center", "text-align:end", "direction:rtl", "letter-spacing:3px", "tab-size:3", "word-break:keep-all",
             "word-break:break-all", "width:min-content", "width:max-content", "width:fit-content", "display:inline-block;width:fit-content",
     };
+
+    private static final String PSEUDO_CSS = " .pb::before{content:'[' attr(data-x) ']';color:#900}"
+            + " .pa::after{content:' after'} .blk::before{content:'block';display:block;height:12px}"
+            + " .inb::after{content:'ib';display:inline-block;padding:2px}";
+    private static final String[] PSEUDO_CLASSES = {"", "pb", "pa", "pb pa", "blk", "inb", "blk pa"};
+
+    /** 疑似要素の付け外しと attr() の値の変異を 1 つ加える。 */
+    static String mutatePseudo(SpikeView v, Random rnd) {
+        List<HtmlNode> elems = new ArrayList<>();
+        collect(v.doc.root, elems);
+        HtmlElement target = (HtmlElement) elems.get(rnd.nextInt(elems.size()));
+        if (rnd.nextBoolean()) {
+            String c = PSEUDO_CLASSES[rnd.nextInt(PSEUDO_CLASSES.length)];
+            target.setAttribute("class", c);
+            return "class=" + c + " " + target.tag;
+        }
+        String x = Integer.toString(rnd.nextInt(1000));
+        target.setAttribute("data-x", x);
+        return "data-x=" + x + " " + target.tag;
+    }
 
     /** 文字の規則の変異を 1 つ加える。 */
     static String mutateText(SpikeView v, Random rnd, int step) {

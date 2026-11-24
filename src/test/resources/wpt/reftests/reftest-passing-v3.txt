@@ -31,6 +31,7 @@ css/css-flexbox/flexbox-overflow-horiz-001.html
 css/css-flexbox/flexbox-overflow-padding-002.html
 css/css-flexbox/flexbox-paint-ordering-001.xhtml
 css/css-flexbox/flexbox-safe-overflow-position-002.html
+css/css-flexbox/flexbox-with-pseudo-elements-001.html
 css/css-flexbox/flexbox_align-content-flexstart.html
 css/css-flexbox/flexbox_align-items-center-2.html
 css/css-flexbox/flexbox_align-items-flexstart.html
@@ -53,6 +54,7 @@ css/css-flexbox/flexbox_flex-N-N-N.html
 css/css-flexbox/flexbox_flex-basis-shrink.html
 css/css-flexbox/flexbox_flex-natural-variable-auto-basis.html
 css/css-flexbox/flexbox_generated.html
+css/css-flexbox/flexbox_item-vertical-align.html
 css/css-flexbox/flexbox_justifycontent-spacearound.html
 css/css-flexbox/flexbox_justifycontent-stretch.html
 css/css-flexbox/flexbox_order-box.html

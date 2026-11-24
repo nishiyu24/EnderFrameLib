@@ -36,6 +36,9 @@ import java.util.Map;
  */
 public final class FragmentProjection {
     private final LayoutSession session;
+    private final Map<BoxNode, com.nishiyu.enderframelib.core.dom.node.HtmlNode> synthetic = new IdentityHashMap<>();
+    /** 断片から位置を決めて置いた箱（インラインの外接矩形合わせの対象外）。 */
+    private final java.util.Set<LayoutBox> placed = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 
     private FragmentProjection(LayoutSession session) {
         this.session = session;
@@ -53,7 +56,8 @@ public final class FragmentProjection {
     /** ブロック水準の断片 1 つ（{@code x}, {@code y} は親の border-box 基準）。 */
     private LayoutBox block(LayoutFragment f, float x, float y) {
         BoxNode b = f.box;
-        LayoutBox lb = new LayoutBox(b.node, new ComputedStyle(b.style));
+        LayoutBox lb = new LayoutBox(nodeOf(b), new ComputedStyle(b.style));
+        placed.add(lb);
         lb.x = x;
         lb.y = y;
         lb.w = f.width;
@@ -65,10 +69,10 @@ public final class FragmentProjection {
         lb.scrollWidth = f.width;
         lb.scrollHeight = f.height;
         lb.lineHeightPx = InlineFlow.lineHeight(b.style, session.face(b.style));
-        if (b.kind == BoxKind.TEXT) { // flex の項目になった文字の節: 文字片を自分に持つ
+        if (b.kind == BoxKind.TEXT) { // flex の項目になった文字の節: 文字片を自分に持つ（文字の箱は原点に足されないので親の基準で置く）
             Map<BoxNode, LayoutBox> boxes = new IdentityHashMap<>();
             boxes.put(b, lb);
-            lines(lb, f.lines, f.insetLeft, f.insetTop, boxes, new IdentityHashMap<>());
+            lines(lb, f.lines, x + f.insetLeft, y + f.insetTop, boxes, new IdentityHashMap<>());
             return lb;
         }
         float cx = f.insetLeft, cy = f.insetTop;
@@ -92,8 +96,8 @@ public final class FragmentProjection {
                 }
             });
         }
-        for (LayoutBox c : lb.children) { // 原子（inline-block など）は行の断片の位置に置いた箱なので触らない
-            if ((c.isInlineFlow() || c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT) && !c.node.isPseudoNode) fitInline(c);
+        for (LayoutBox c : lb.children) { // 断片から置いた箱（原子・flex の項目に blockify したインライン要素）は位置を持つので触らない
+            if (!placed.contains(c) && (c.isInlineFlow() || c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT)) fitInline(c);
         }
         if (f.oof != null) { // 流れの外の断片は包含ブロックの子として後ろに置く（描画の順も位置指定の子が後）
             for (PlacedFragment p : f.oof) lb.addChild(block(p.frag(), p.x(), p.y()));
@@ -104,10 +108,10 @@ public final class FragmentProjection {
     /** インライン水準の子孫（文字の節・インライン要素）の箱を、DOM の入れ子のまま {@code parent} の下へ足す。 */
     private void inlineChildren(BoxNode owner, LayoutBox parent, Map<BoxNode, LayoutBox> textBoxes,
                                 Map<BoxNode, List<LayoutBox>> parents, List<LayoutBox> chain) {
-        for (int i = 0, n = owner.children.size(); i < n; i++) {
-            BoxNode c = owner.children.get(i);
+        for (int i = 0, n = owner.flow.size(); i < n; i++) {
+            BoxNode c = owner.flow.get(i);
             if (c.kind == BoxKind.NONE || c.kind.atomicInline()) continue; // 原子は行の断片から写す
-            LayoutBox lb = new LayoutBox(c.node, new ComputedStyle(c.style));
+            LayoutBox lb = new LayoutBox(nodeOf(c), new ComputedStyle(c.style));
             lb.lineHeightPx = InlineFlow.lineHeight(c.style, session.face(c.style));
             parent.addChild(lb);
             if (c.kind == BoxKind.TEXT) {
@@ -133,7 +137,7 @@ public final class FragmentProjection {
             BoxNode n = path.get(i);
             LayoutBox lb = boxes.get(n);
             if (lb == null) {
-                lb = new LayoutBox(n.node, new ComputedStyle(n.style));
+                lb = new LayoutBox(nodeOf(n), new ComputedStyle(n.style));
                 lb.lineHeightPx = InlineFlow.lineHeight(n.style, session.face(n.style));
                 parent.addChild(lb);
                 boxes.put(n, lb);
@@ -148,8 +152,8 @@ public final class FragmentProjection {
         path.add(from);
         if (from == target) return true;
         if (from.kind == BoxKind.INLINE || path.size() == 1) {
-            for (int i = 0, n = from.children.size(); i < n; i++) {
-                if (pathTo(from.children.get(i), target, path)) return true;
+            for (int i = 0, n = from.flow.size(); i < n; i++) {
+                if (pathTo(from.flow.get(i), target, path)) return true;
             }
         }
         path.remove(path.size() - 1);
@@ -209,6 +213,24 @@ public final class FragmentProjection {
                 }
             }
         }
+    }
+
+    /**
+     * 箱の描画用の節。疑似要素の箱（{@link BoxNode#pseudo}）は DOM に節を持たないので、旧描画が生成内容として扱う使い捨ての節
+     * （{@code isPseudoNode}。持ち主の子のように親だけを繋ぎ、DOM には入れない）を 1 フレームの射影の間だけ作る。
+     */
+    private com.nishiyu.enderframelib.core.dom.node.HtmlNode nodeOf(BoxNode b) {
+        if (b.pseudo == BoxNode.Pseudo.NONE) return b.node;
+        return synthetic.computeIfAbsent(b, k -> {
+            com.nishiyu.enderframelib.core.dom.node.HtmlNode n = k.kind == BoxKind.TEXT
+                    ? new com.nishiyu.enderframelib.core.dom.node.HtmlText(k.text)
+                    : new com.nishiyu.enderframelib.core.dom.node.HtmlNode("span");
+            n.isPseudoNode = true;
+            n.parent = k.node;
+            // 旧描画は節の鍵で描画の順と記憶を引くので、持ち主の鍵から一意の鍵を付ける（旧経路の生成箱と同じ形）
+            n.setId(k.node.key() + "_" + k.pseudo.name().toLowerCase(java.util.Locale.ROOT) + (k.kind == BoxKind.TEXT ? "_txt" : ""));
+            return n;
+        });
     }
 
     private float runBaseline(Style st) {

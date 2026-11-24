@@ -61,7 +61,7 @@ final class BlockFlow implements FormattingEngine {
         boolean collapseBottom = !root && g.pB == 0 && g.bB == 0 && heightAuto;
         float childPct = heightAuto ? Float.NaN : Math.max(0, fixedH - g.vdec());
 
-        BoxChildren kids = node.children;
+        BoxChildren kids = node.flow;
         LineFragment[] lines = null;
         ChunkedFlow flow = null;
         Assembled a;
@@ -429,7 +429,7 @@ final class BlockFlow implements FormattingEngine {
         Style st = node.style;
         BoxGeometry g = new BoxGeometry(st, Float.NaN, s);
         float min = 0, max = 0;
-        BoxChildren kids = node.children;
+        BoxChildren kids = node.flow;
         if (node.kind == BoxKind.TEXT || !kids.hasBlock()) {
             MinMaxSizes m = InlineFlow.minMax(node.kind == BoxKind.TEXT ? List.of(node) : kids.toList(), s);
             min = m.min;

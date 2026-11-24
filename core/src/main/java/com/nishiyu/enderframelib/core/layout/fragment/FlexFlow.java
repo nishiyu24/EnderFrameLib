@@ -119,7 +119,7 @@ final class FlexFlow implements FormattingEngine {
         FlowChunk pc = prior != null && prior.flow != null && prior.flow.chunks.length == 1 ? prior.flow.chunks[0] : null;
         List<BoxNode> kids = new ArrayList<>();
         boolean ordered = false;
-        for (BoxNode k : node.children.toList()) {
+        for (BoxNode k : node.flow.toList()) {
             if (k.kind == BoxKind.NONE || k.collapsibleWhitespace()) continue;
             if (OutOfFlow.is(k)) { // 流れの外: 項目にしない
                 outOfFlow.add(k);
@@ -424,7 +424,7 @@ final class FlexFlow implements FormattingEngine {
         float gapW = row ? gap(st, fg.columnGap, Float.NaN, s) : 0;
         float min = 0, max = 0;
         int n = 0;
-        for (BoxNode k : node.children.toList()) {
+        for (BoxNode k : node.flow.toList()) {
             if (k.kind == BoxKind.NONE || k.collapsibleWhitespace() || OutOfFlow.is(k)) continue;
             Style cst = k.style;
             BoxGeometry ig = new BoxGeometry(cst, Float.NaN, s);

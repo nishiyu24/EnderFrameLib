@@ -56,6 +56,16 @@ public final class StyleSource {
         return Style.of(cs, p);
     }
 
+    /**
+     * 疑似要素の算出スタイル（M1 のカスケード {@link StyleResolver#resolvePseudoStyle} をそのまま呼ぶ。継承元は持ち主の要素）。
+     * 箱を作らない（{@code content} が none / normal・{@code display: none}・規則が無い）なら null。
+     */
+    public Style pseudo(HtmlNode owner, Style ownerStyle, StyleResolver.PseudoType type) {
+        ComputedStyle cs = StyleResolver.resolvePseudoStyle(owner, type, sheet, lookup, new ComputedStyle(ownerStyle), env,
+                rootFontSize, rootLineHeight, viewportW, viewportH);
+        return cs == null ? null : Style.of(cs, ownerStyle);
+    }
+
     /** 文字の節のスタイル（親の継承群をそのまま共有する）。 */
     public Style text(Style parent) {
         return Style.forTextChild(parent);
