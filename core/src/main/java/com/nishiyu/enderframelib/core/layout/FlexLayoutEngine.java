@@ -212,7 +212,7 @@ public class FlexLayoutEngine extends LayoutEngine {
 
         float crossGap = axes.row ? box.rowGap : box.columnGap;
         float mainGap = axes.row ? box.columnGap : box.rowGap;
-        String alignContent = box.style.keywordOf(CssPropertyIndex.ALIGN_CONTENT, CssKeywords.Alignment.class).cssName();
+        String alignContent = box.style.typed().flexGrid.alignContent.cssName();
 
         // 1 行のコンテナでは行の交差軸の寸法はコンテナの寸法（CSS Flexbox §9.4 の 15）
         if (!axes.wrap && lineCount == 1) {
@@ -572,7 +572,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             spacing = new MainAxisSpacing(0, mainGap);
         } else {
             String justify = safeFallback(box.style.get(CssPropertyIndex.JUSTIFY_CONTENT),
-                    box.style.keywordOf(CssPropertyIndex.JUSTIFY_CONTENT, CssKeywords.Alignment.class).cssName(), free < -0.01f);
+                    box.style.typed().flexGrid.justifyContent.cssName(), free < -0.01f);
             spacing = distributeMainAxis(justifyDistribution(justify, axes), 0, innerMain, used - mainGap * Math.max(0, n - 1),
                     mainGap, n);
         }
@@ -908,8 +908,8 @@ public class FlexLayoutEngine extends LayoutEngine {
     /** 主軸と交差軸の向き。 */
     private record Axes(FormattingContext.Display direction, boolean row, boolean reverse, boolean wrap, boolean wrapReverse) {
         static Axes of(ComputedStyle style) {
-            CssKeywords.FlexDirection dir = style.keywordOf(CssPropertyIndex.FLEX_DIRECTION, CssKeywords.FlexDirection.class);
-            CssKeywords.FlexWrap wrap = style.keywordOf(CssPropertyIndex.FLEX_WRAP, CssKeywords.FlexWrap.class);
+            CssKeywords.FlexDirection dir = style.typed().flexGrid.flexDirection;
+            CssKeywords.FlexWrap wrap = style.typed().flexGrid.flexWrap;
             return new Axes(displayOf(dir), dir.isRow(), dir.isReverse(),
                     wrap != CssKeywords.FlexWrap.NOWRAP, wrap == CssKeywords.FlexWrap.WRAP_REVERSE);
         }

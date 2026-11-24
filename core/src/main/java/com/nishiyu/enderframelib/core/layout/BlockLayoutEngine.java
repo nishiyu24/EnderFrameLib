@@ -416,11 +416,11 @@ public class BlockLayoutEngine extends LayoutEngine {
      */
     float arrangeFlow(LayoutBox box, FlowState state, float innerX, float innerY, float innerW,
                       java.util.Map<Object, float[]> shifts, LayoutContext ctx) {
-        TextAlign specifiedAlign = box.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class);
+        TextAlign specifiedAlign = box.style.typed().inherited.textAlign;
         boolean alignRtl = isRtl(box.style);
         // match-parent は親の値を、start / end を親の direction で解いたもの（CSS Text 3 §7.1）
         for (LayoutBox p = box.parent; specifiedAlign == TextAlign.MATCH_PARENT && p != null; p = p.parent) {
-            specifiedAlign = p.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class);
+            specifiedAlign = p.style.typed().inherited.textAlign;
             alignRtl = isRtl(p.style);
         }
         TextAlign textAlign = specifiedAlign.physical(alignRtl);
@@ -615,14 +615,13 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** float かどうか。float はブロックフローの子のときだけ効く（flex / grid アイテムでは無視される）。 */
-    private static final int ID_FLOAT = CssPropertyIndex.FLOAT;
     private static final int ID_DIRECTION = CssPropertyIndex.DIRECTION;
     static final int ID_TEXT_INDENT = CssPropertyIndex.TEXT_INDENT;
     private static final int ID_HEIGHT = CssPropertyIndex.HEIGHT;
 
     public static boolean isFloating(LayoutBox box) {
         if (box.isAbsolute || box.parent == null || box.node.nodeType == NodeType.TEXT) return false;
-        if (box.style.keywordOf(ID_FLOAT, CssKeywords.FloatSide.class) == CssKeywords.FloatSide.NONE) return false;
+        if (box.style.typed().box.floatValue == CssKeywords.FloatSide.NONE) return false;
         return LayoutEngine.getEngine(box.parent) instanceof BlockLayoutEngine;
     }
 

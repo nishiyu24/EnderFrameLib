@@ -267,13 +267,13 @@ final class FlowBuilder {
      */
     boolean clearsFloats(LayoutBox child) {
         if (floats.isEmpty()) return false;
-        CssKeywords.Clear clear = child.style.keywordOf(CssPropertyIndex.CLEAR, CssKeywords.Clear.class);
+        CssKeywords.Clear clear = child.style.typed().box.clear;
         return clear != CssKeywords.Clear.NONE && floats.clearance(clear) - oy > cursor + pendingWith(child.mT);
     }
 
     /** {@code clear} を持つ箱を、その側の float の下端まで下げた位置。 */
     float clearedY(LayoutBox child, float y) {
-        CssKeywords.Clear clear = child.style.keywordOf(CssPropertyIndex.CLEAR, CssKeywords.Clear.class);
+        CssKeywords.Clear clear = child.style.typed().box.clear;
         if (clear == CssKeywords.Clear.NONE || floats.isEmpty()) return y;
         return Math.max(y, floats.clearance(clear) - oy);
     }
@@ -281,13 +281,13 @@ final class FlowBuilder {
     /** float を置き、領域に登録する。{@code minY} は置ける最も上の位置（内容ボックス相対）。 */
     void placeFloat(LayoutBox f, float minY) {
         if (floats == BlockLayoutEngine.EMPTY_FLOAT_SPACE) floats = new FloatSpace();
-        CssKeywords.FloatSide side = f.style.keywordOf(CssPropertyIndex.FLOAT, CssKeywords.FloatSide.class);
+        CssKeywords.FloatSide side = f.style.typed().box.floatValue;
         boolean left = side != CssKeywords.FloatSide.RIGHT && side != CssKeywords.FloatSide.INLINE_END;
         float w = f.w + f.mL + f.mR;
         float h = f.h + f.mT + f.mB;
         // float の上端は先に置いた float より上にはならない（CSS 2.2 §9.5.1 の規則 5）
         float y = Math.max(oy + minY, floats.lastTop());
-        CssKeywords.Clear clear = f.style.keywordOf(CssPropertyIndex.CLEAR, CssKeywords.Clear.class);
+        CssKeywords.Clear clear = f.style.typed().box.clear;
         if (clear != CssKeywords.Clear.NONE) y = Math.max(y, floats.clearance(clear));
         float x;
         for (int guard = 0; ; guard++) {

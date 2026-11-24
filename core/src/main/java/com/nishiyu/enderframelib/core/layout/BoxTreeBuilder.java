@@ -522,7 +522,7 @@ public final class BoxTreeBuilder {
         if (text == null || text.isEmpty()) return null;
 
         ComputedStyle style = markerStyleOf(listItem);
-        boolean outside = listItem.style.keywordOf(CssPropertyIndex.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
+        boolean outside = listItem.style.typed().inherited.listStylePosition
                 != CssKeywords.ListStylePosition.INSIDE;
 
         // 前回と同じ文字のマーカーは箱ごと使い回す（番号が変わったら作り直す）
@@ -567,7 +567,7 @@ public final class BoxTreeBuilder {
     /** 画像のマーカー: 画像の置換要素と、続く空白 1 文字。画像が同じなら前回の箱を使い回す。 */
     private LayoutBox createImageMarker(LayoutBox listItem, String url) {
         ComputedStyle style = markerStyleOf(listItem);
-        boolean outside = listItem.style.keywordOf(CssPropertyIndex.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
+        boolean outside = listItem.style.typed().inherited.listStylePosition
                 != CssKeywords.ListStylePosition.INSIDE;
 
         LayoutBox reused = takeReusableGenerated(listItem.node.key() + "_marker");

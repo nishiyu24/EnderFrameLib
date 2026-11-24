@@ -229,8 +229,6 @@ public final class BoxMeasurer {
         resolveHeights(box, space, ctx, isBorderBox(box.axisStyle()), engine);
     }
 
-    // 箱ごとに何度も引くプロパティは、名前ではなく添字で引く（文字列のハッシュと表引きを省く）
-    private static final int ID_BORDER_COLLAPSE = CssPropertyIndex.BORDER_COLLAPSE;
 
     private static void resolveBoxEdges(LayoutBox box, float parentW, float parentH, float rootW, float rootH) {
         ComputedStyle style = box.axisStyle();
@@ -261,7 +259,7 @@ public final class BoxMeasurer {
         }
         // 枠線を重ねる表は padding を持たない（CSS 2.2 §17.6.2）
         if (box.display.inner() == Inner.TABLE
-                && style.keywordOf(ID_BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) == CssKeywords.BorderCollapse.COLLAPSE) {
+                && style.typed().inherited.borderCollapse == CssKeywords.BorderCollapse.COLLAPSE) {
             box.pT = box.pR = box.pB = box.pL = 0;
         }
 

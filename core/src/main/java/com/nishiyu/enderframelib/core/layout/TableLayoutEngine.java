@@ -81,7 +81,7 @@ public class TableLayoutEngine extends LayoutEngine {
         float spacingW = n > 0 ? state.hSpacing * (n + 1) : 0;
         boolean definite = box.sizingMode == SizingMode.DEFINITE;
         boolean fixed = definite
-                && box.style.keywordOf(CssPropertyIndex.TABLE_LAYOUT, CssKeywords.TableLayout.class) == CssKeywords.TableLayout.FIXED;
+                && box.style.typed().table.tableLayout == CssKeywords.TableLayout.FIXED;
 
         float[] widths;
         if (fixed) {
@@ -189,7 +189,7 @@ public class TableLayoutEngine extends LayoutEngine {
         float captionTop = 0, captionBottom = 0;
         for (LayoutBox caption : state.captions) {
             float outer = caption.h + caption.mT + caption.mB;
-            if (caption.style.keywordOf(CssPropertyIndex.CAPTION_SIDE, CssKeywords.CaptionSide.class) == CssKeywords.CaptionSide.BOTTOM) captionBottom += outer;
+            if (caption.style.typed().inherited.captionSide == CssKeywords.CaptionSide.BOTTOM) captionBottom += outer;
             else captionTop += outer;
         }
         int visibleRows = 0;
@@ -224,7 +224,7 @@ public class TableLayoutEngine extends LayoutEngine {
         collectStructure(box, state);
         buildGrid(state);
         markCollapsed(state);
-        state.collapse = box.style.keywordOf(CssPropertyIndex.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class)
+        state.collapse = box.style.typed().inherited.borderCollapse
                 == CssKeywords.BorderCollapse.COLLAPSE;
         if (state.collapse) collapseBorders(box, state, rootW, rootH);
         return state;
@@ -239,7 +239,7 @@ public class TableLayoutEngine extends LayoutEngine {
      */
     static void prepareCollapsedBorders(LayoutBox box, LayoutContext ctx) {
         if (box.display == null || box.display.inner() != Inner.TABLE) return;
-        if (box.style.keywordOf(CssPropertyIndex.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) != CssKeywords.BorderCollapse.COLLAPSE) {
+        if (box.style.typed().inherited.borderCollapse != CssKeywords.BorderCollapse.COLLAPSE) {
             box.collapsedBorders = null; // collapse から separate へ変わった表に、前回の分担を縁として読ませない
             return;
         }

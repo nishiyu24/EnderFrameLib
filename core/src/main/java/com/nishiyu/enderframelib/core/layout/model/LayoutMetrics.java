@@ -70,7 +70,7 @@ public final class LayoutMetrics {
      */
     public static String applyTextTransform(String text, ComputedStyle style) {
         if (text == null || text.isEmpty()) return text;
-        return switch (style.keywordOf(CssPropertyIndex.TEXT_TRANSFORM, CssKeywords.TextTransform.class)) {
+        return switch (style.typed().inherited.textTransform) {
             case UPPERCASE -> text.toUpperCase(java.util.Locale.ROOT);
             case LOWERCASE -> text.toLowerCase(java.util.Locale.ROOT);
             case CAPITALIZE -> capitalizeWords(text);

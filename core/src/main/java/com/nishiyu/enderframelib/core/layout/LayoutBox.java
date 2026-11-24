@@ -1483,7 +1483,7 @@ public class LayoutBox {
     public boolean isCollapsedTable() {
         return display != null && display.inner() == Display.Inner.TABLE && style != null
                 && !ScrollExtentCalc.clipsOverflow(this)
-                && style.keywordOf(CssPropertyIndex.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) == CssKeywords.BorderCollapse.COLLAPSE;
+                && style.typed().inherited.borderCollapse == CssKeywords.BorderCollapse.COLLAPSE;
     }
 
     // ==========================================
@@ -1719,7 +1719,7 @@ public class LayoutBox {
          */
         public Display blockified(ComputedStyle style) {
             if (outer != Outer.INLINE) return this;
-            CssKeywords.Position position = style.keywordOf(CssPropertyIndex.POSITION, CssKeywords.Position.class);
+            CssKeywords.Position position = style.typed().box.position;
             boolean outOfFlow = position == CssKeywords.Position.ABSOLUTE || position == CssKeywords.Position.FIXED
                     || style.facts().floating;
             return outOfFlow ? new Display(Outer.BLOCK, inner, listItem) : this;
