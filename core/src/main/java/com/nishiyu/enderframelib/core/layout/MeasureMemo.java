@@ -667,7 +667,7 @@ final class MeasureMemo {
             if (!hasTable && c.measureMemo.flag(F_HAS_TABLE)) hasTable = true;
             if (!minContentVar && (c.participatesInFlow() || c.isRenderedLegend)) {
                 minContentVar = c.measureMemo.flag(F_MIN_CONTENT_VAR)
-                        || c.axisStyle().layoutFacts().percentGeometry
+                        || c.axisStyle().facts().percentGeometry
                         || (c.children.isEmpty() && MeasureAnalysis.isFallbackReplacedForMinContent(c));
             }
         }
@@ -694,7 +694,7 @@ final class MeasureMemo {
                 boolean fillFit = tentativePhase && fillFitReusable;
                 float tentFitNeed = tentativePhase
                         ? ((fitFixedW || fillFit) ? measuredFitNeed : Float.POSITIVE_INFINITY)
-                        : (!Float.isNaN(box.overrideWidth) && !box.axisStyle().layoutFacts().edgesAvailableFree
+                        : (!Float.isNaN(box.overrideWidth) && !box.axisStyle().facts().edgesAvailableFree
                                 ? Float.POSITIVE_INFINITY : measuredFitNeed);
                 int slotMask = mask & ~(MeasureReads.READ_FIT_BOUNDED | MeasureReads.READ_FILL_FIT);
                 if (tentFitNeed != Float.POSITIVE_INFINITY) {

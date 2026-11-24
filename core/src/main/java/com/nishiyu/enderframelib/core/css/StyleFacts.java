@@ -1,14 +1,21 @@
 package com.nishiyu.enderframelib.core.css;
 
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
-import com.nishiyu.enderframelib.core.kernel.style.KeywordMatch;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.kernel.style.KeywordMatch;
+import com.nishiyu.enderframelib.core.text.model.FontStyle;
+import com.nishiyu.enderframelib.core.text.model.WhiteSpace;
+import com.nishiyu.enderframelib.core.text.model.WordBreak;
+import java.util.Locale;
 
-/** 算出スタイルから決まる、レイアウトが繰り返し読む値。 */
+/**
+ * 型付きスタイル（{@link Style}）から決まる、レイアウトが繰り返し読む導出値。{@link Style} の構築時に 1 回だけ作り、以後は不変
+ * （文字列を読み直さない。旧版は算出スタイルの文字列から怠惰に導出していた）。
+ */
 public final class StyleFacts {
     public final Overflow overflowX, overflowY;
     public final int fontWeight;
-    /** {@code line-height} の種類（{@code LH_*}）と数値。解釈できない値は normal。 */
+    /** {@code line-height} の種類（{@code ComputedStyle.LH_*}）と数値。解釈できない値は normal。 */
     public final byte lineHeightKind;
     public final float lineHeightValue;
     /** size containment（{@code contain} / {@code container-type}）が横・縦の中身の寄与を断つか。 */
@@ -19,52 +26,26 @@ public final class StyleFacts {
     public final boolean definiteWidth, definiteHeight;
     /** {@code content-visibility: auto} / {@code hidden}。 */
     public final boolean contentVisibilityAuto, contentVisibilityHidden;
+    /** 有効な containment のビット（{@code ComputedStyle.CONTAIN_*}。{@code contain} と {@code content-visibility} の和）。 */
+    public final int containment;
 
-    StyleFacts(Overflow overflowX, Overflow overflowY, int fontWeight, byte lineHeightKind, float lineHeightValue,
-          boolean containsInlineSize, boolean containsBlockSize, boolean floating, boolean displayNone,
-          boolean definiteWidth, boolean definiteHeight,
-          boolean contentVisibilityAuto, boolean contentVisibilityHidden) {
-        this.overflowX = overflowX;
-        this.overflowY = overflowY;
-        this.fontWeight = fontWeight;
-        this.lineHeightKind = lineHeightKind;
-        this.lineHeightValue = lineHeightValue;
-        this.containsInlineSize = containsInlineSize;
-        this.containsBlockSize = containsBlockSize;
-        this.floating = floating;
-        this.displayNone = displayNone;
-        this.definiteWidth = definiteWidth;
-        this.definiteHeight = definiteHeight;
-        this.contentVisibilityAuto = contentVisibilityAuto;
-        this.contentVisibilityHidden = contentVisibilityHidden;
-        this.scrollContainer = overflowX.scrolls() || overflowY.scrolls();
-    }
-
-    // ---- 測定・整形が箱ごとに読む宣言の、前もって解いた値（文字列を読み直さない）----
-
-    /** {@code width} / {@code height} の宣言（前後の空白を除く。無ければ {@code auto}）の性質。宣言の文字列自体は持たない。 */
-    public boolean widthAuto, heightAuto, widthPercent, heightPercent;
+    /** {@code width} / {@code height} が {@code auto}（宣言なしを含む）か、{@code %} を含むか。 */
+    public final boolean widthAuto, heightAuto, widthPercent, heightPercent;
     /**
      * 横方向の寸法に効く割合（{@code %}）がある（width / min-width / max-width / 余白 / padding / inset のどれか）。割合は親の幅を基準に
      * 解くので、親が渡す幅が変わると箱の寸法が変わる。
      */
-    public boolean percentGeometry;
+    public final boolean percentGeometry;
     /**
      * 高さ方向の割合・式（{@code %} / {@code calc()} など）を、height / min-height / max-height / top / bottom / flex-basis /
      * row-gap / grid-template-rows / grid-auto-rows のどれにも持たない。持たなければ、親が渡す「高さの % の基準」は
      * この箱自身の寸法の決まり方に効かない（子孫が持たなければ、子孫の寸法にも効かない）。
      */
-    public boolean blockPercentFree;
-    /** {@code height} の宣言があるか（{@code auto} の明示も含む）。 */
-    public boolean hasHeightDeclaration;
+    public final boolean blockPercentFree;
     /** {@code width} の内在サイズのキーワードの種類（{@code IW_*}）。キーワードでなければ {@link #IW_NONE}。 */
-    public byte intrinsicWidthKind;
+    public final byte intrinsicWidthKind;
     /** {@code width: fit-content(<長さ>)} の引数（前後の空白を除く小文字）。その形でなければ null。 */
-    public String fitContentArg;
-
-    private static boolean noBlockPercent(String v) {
-        return v == null || (v.indexOf('%') < 0 && v.indexOf('(') < 0);
-    }
+    public final String fitContentArg;
 
     public static final byte IW_NONE = 0, IW_MIN_CONTENT = 1, IW_MAX_CONTENT = 2, IW_FIT_CONTENT = 3, IW_FIT_CONTENT_FN = 4;
 
@@ -72,130 +53,181 @@ public final class StyleFacts {
     public boolean hasIntrinsicWidth() {
         return intrinsicWidthKind != IW_NONE;
     }
+
     /** {@code margin-left} / {@code margin-right} が {@code auto}。 */
-    public boolean marginLeftAuto, marginRightAuto;
-    /** 四辺の余白が {@code auto}（前後の空白と大小文字を無視。flex が読む）。 */
-    public boolean autoMarginT, autoMarginR, autoMarginB, autoMarginL;
+    public final boolean marginLeftAuto, marginRightAuto;
+    /** 四辺の余白が {@code auto}（flex が読む）。 */
+    public final boolean autoMarginT, autoMarginR, autoMarginB, autoMarginL;
     /** {@code direction: rtl}。 */
-    public boolean rtl;
+    public final boolean rtl;
     /** {@code box-sizing: border-box}。 */
-    public boolean borderBox;
+    public final boolean borderBox;
     /**
      * flex の揃え（{@code align-items} / {@code align-self}）。normal・auto・legacy は {@link CssKeywords.Alignment#STRETCH}、
      * first/last baseline は {@link CssKeywords.Alignment#BASELINE} に寄せてある。{@code align-self: auto} のときは {@link #alignSelfAuto}。
      */
-    public CssKeywords.Alignment alignItems, alignSelf;
-    public boolean alignSelfAuto;
+    public final CssKeywords.Alignment alignItems, alignSelf;
+    public final boolean alignSelfAuto;
     /** 独立した整形コンテキストを、スタイルだけで作るか（float・layout/paint containment・スクロールコンテナ）。 */
-    public boolean bfcByStyle;
+    public final boolean bfcByStyle;
     /** 値のどれかがビューポート／コンテナ基準の単位を使う。 */
-    public boolean usesViewportUnits;
+    public final boolean usesViewportUnits;
     /**
      * 箱自身の横方向の寸法が、親の幅・ビューポートの幅に依らない: {@code width} が % でない確定した長さ、{@code min/max-width}・
      * 余白・パディング・オフセットに % がなく、横の余白も {@code auto} でない。
      */
-    public boolean horizontalFixed;
+    public final boolean horizontalFixed;
     /** {@code width: auto} で横の寸法に % / auto の余白 / ビューポート単位が無い（内容で決まり得る箱）。 */
-    public boolean fitCandidate;
+    public final boolean fitCandidate;
     /** 余白・パディング・オフセットに % / auto / ビューポート単位が無い（親が幅を決めて渡すなら、使える幅を読まない）。 */
-    public boolean edgesAvailableFree;
+    public final boolean edgesAvailableFree;
 
     /** 整形に使う、スタイルだけで決まる値。 */
-    public com.nishiyu.enderframelib.core.text.model.WhiteSpace whiteSpace;
-    public com.nishiyu.enderframelib.core.text.model.WordBreak wordBreak;
-    public boolean overflowWrapBreaks, ellipsis;
+    public final WhiteSpace whiteSpace;
+    public final WordBreak wordBreak;
+    public final boolean overflowWrapBreaks, ellipsis;
     /** 文字の測定に使う書体の指定（同じスタイルなら同じ不変の値）。 */
-    public com.nishiyu.enderframelib.core.text.model.FontStyle fontStyle;
+    public final FontStyle fontStyle;
 
-    /** 上の値を算出スタイルから決める。{@link ComputedStyle#facts()} が公開する前に 1 回だけ呼ぶ。 */
-    volatile boolean extrasReady;
+    StyleFacts(Style s, boolean usesViewportUnits) {
+        InheritedStyle in = s.inherited;
+        BoxGeomStyle b = s.box;
+        FlexGridStyle fg = s.flexGrid;
+        RareStyle r = s.rare;
 
-    void fillExtras(ComputedStyle s) {
-        long w = s.packedEdge(ComputedStyle.DIM_WIDTH), h = s.packedEdge(ComputedStyle.DIM_HEIGHT);
-        // 詰めた値で決まる（文字列を読まない）のは、auto・宣言なし・0 px 以外の単位つき長さ。0 px に潰れた値（0・解釈不能）と式（fit-content(..) を含む）だけ原文を読む
-        widthAuto = w == com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE || PackedLengths.isAuto(w);
-        heightAuto = h == com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE || PackedLengths.isAuto(h);
-        widthPercent = PackedLengths.hasPercent(w);
-        heightPercent = PackedLengths.hasPercent(h);
-        hasHeightDeclaration = h != com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE;
-        intrinsicWidthKind = IW_NONE;
-        fitContentArg = null;
-        if (PackedLengths.isZeroPx(w) || PackedLengths.isExpression(w)) {
-            String widthStr = s.getOrDefault(CssPropertyIndex.WIDTH, "auto").trim();
-            widthPercent = widthStr.contains("%");
-            if (ValueKeywords.isIntrinsicSizeKeyword(widthStr)) {
-                String kw = widthStr.toLowerCase();
-                if (kw.equals("min-content")) intrinsicWidthKind = IW_MIN_CONTENT;
-                else if (kw.equals("max-content")) intrinsicWidthKind = IW_MAX_CONTENT;
-                else if (kw.startsWith("fit-content(")) {
-                    intrinsicWidthKind = IW_FIT_CONTENT_FN;
-                    // 閉じ括弧が無い形は引数を持たない（以前の resolveIntrinsicWidth と同じく何もしない）
-                    if (kw.endsWith(")")) fitContentArg = kw.substring("fit-content(".length(), kw.length() - 1).trim();
-                } else intrinsicWidthKind = IW_FIT_CONTENT;
+        int bits = 0;
+        for (String token : r.contain.trim().toLowerCase(Locale.ROOT).split("\\s+")) {
+            switch (token) {
+                case "strict" -> bits |= ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT
+                        | ComputedStyle.CONTAIN_STYLE;
+                case "content" -> bits |= ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT | ComputedStyle.CONTAIN_STYLE;
+                case "size" -> bits |= ComputedStyle.CONTAIN_SIZE;
+                case "inline-size" -> bits |= ComputedStyle.CONTAIN_INLINE_SIZE;
+                case "layout" -> bits |= ComputedStyle.CONTAIN_LAYOUT;
+                case "paint" -> bits |= ComputedStyle.CONTAIN_PAINT;
+                case "style" -> bits |= ComputedStyle.CONTAIN_STYLE;
+                default -> { }
             }
         }
-        if (PackedLengths.isZeroPx(h) || PackedLengths.isExpression(h)) heightPercent = s.getOrDefault(CssPropertyIndex.HEIGHT, "auto").trim().contains("%");
-        autoMarginT = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_T));
-        autoMarginR = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_R));
-        autoMarginB = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_B));
-        autoMarginL = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_L));
-        // 左右の auto だけは旧来どおり大小文字・空白を区別する（auto と判った時だけ原文を見る）
-        marginLeftAuto = autoMarginL && "auto".equals(s.get(CssPropertyIndex.MARGIN_LEFT));
-        marginRightAuto = autoMarginR && "auto".equals(s.get(CssPropertyIndex.MARGIN_RIGHT));
-        borderBox = s.keywordFresh(CssPropertyIndex.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX;
-        alignItems = flexAlignment(s.keywordFresh(CssPropertyIndex.ALIGN_ITEMS, CssKeywords.Alignment.class));
-        CssKeywords.Alignment self = s.keywordFresh(CssPropertyIndex.ALIGN_SELF, CssKeywords.Alignment.class);
-        alignSelfAuto = self == CssKeywords.Alignment.AUTO;
-        alignSelf = flexAlignment(self);
-        usesViewportUnits = s.usesViewportUnits();
-        String wm = s.get(CssPropertyIndex.WRITING_MODE);
-        horizontalFixed = definiteWidth && !widthAuto && !widthPercent && intrinsicWidthKind == IW_NONE &&!usesViewportUnits
-                && !marginLeftAuto && !marginRightAuto && !autoMarginT && !autoMarginR && !autoMarginB && !autoMarginL
-                && (wm == null || KeywordMatch.trimmedStartsWith(wm, "horizontal"))
-                && !s.edgeHasPercent(ComputedStyle.DIM_MIN_WIDTH) && !s.edgeHasPercent(ComputedStyle.DIM_MAX_WIDTH)
-                && !s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_L) && !s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_R)
-                && !s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_T) && !s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_B)
-                && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_L) && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_R)
-                && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_T) && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_B)
-                && !s.edgeHasPercent(ComputedStyle.DIM_LEFT) && !s.edgeHasPercent(ComputedStyle.DIM_RIGHT)
-                && !s.edgeHasPercent(ComputedStyle.DIM_TOP) && !s.edgeHasPercent(ComputedStyle.DIM_BOTTOM);
-        percentGeometry = widthPercent
-                || s.edgeHasPercent(ComputedStyle.DIM_MIN_WIDTH) || s.edgeHasPercent(ComputedStyle.DIM_MAX_WIDTH)
-                || s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_L) || s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_R)
-                || s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_T) || s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_B)
-                || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_L) || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_R)
-                || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_T) || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_B)
-                || s.edgeHasPercent(ComputedStyle.DIM_LEFT) || s.edgeHasPercent(ComputedStyle.DIM_RIGHT)
-                || s.edgeHasPercent(ComputedStyle.DIM_TOP) || s.edgeHasPercent(ComputedStyle.DIM_BOTTOM);
-        // width: auto で、横方向の寸法のどれにも % / auto の余白 / ビューポート単位が無い。使える幅が余っている間は、
-        // 箱の寸法が使える幅に依らない（内容で決まる）箱の候補（LayoutBox の fit 再利用が、内容が収まっているかを調べて使う）
-        String flexBasis = s.get(CssPropertyIndex.FLEX_BASIS);
-        edgesAvailableFree = !usesViewportUnits && !percentGeometry
-                && (flexBasis == null || (flexBasis.indexOf('%') < 0 && !flexBasis.contains("calc")))
-                && noBlockPercent(s.get(CssPropertyIndex.COLUMN_GAP))
-                && !autoMarginT && !autoMarginR && !autoMarginB && !autoMarginL
-                && (wm == null || KeywordMatch.trimmedStartsWith(wm, "horizontal"));
+        CssKeywords.ContentVisibility cv = r.contentVisibility;
+        switch (cv) {
+            case HIDDEN -> bits |= ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT
+                    | ComputedStyle.CONTAIN_STYLE;
+            case AUTO -> bits |= ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT | ComputedStyle.CONTAIN_STYLE;
+            default -> { }
+        }
+        containment = bits;
+        contentVisibilityAuto = cv == CssKeywords.ContentVisibility.AUTO;
+        contentVisibilityHidden = cv == CssKeywords.ContentVisibility.HIDDEN;
+
+        // paint containment は中身を padding box で切る（overflow: clip と同じ。スクロールコンテナにはならない）
+        boolean paintContained = (bits & ComputedStyle.CONTAIN_PAINT) != 0;
+        overflowX = b.overflowX == Overflow.VISIBLE && paintContained ? Overflow.CLIP : b.overflowX;
+        overflowY = b.overflowY == Overflow.VISIBLE && paintContained ? Overflow.CLIP : b.overflowY;
+        scrollContainer = overflowX.scrolls() || overflowY.scrolls();
+        fontWeight = in.fontWeight;
+        lineHeightKind = in.lineHeightKind;
+        lineHeightValue = in.lineHeightValue;
+        containsInlineSize = (bits & (ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_INLINE_SIZE)) != 0
+                || r.containerType.containsInlineSize();
+        containsBlockSize = (bits & ComputedStyle.CONTAIN_SIZE) != 0 || r.containerType.containsBlockSize();
+        floating = b.floatValue != CssKeywords.FloatSide.NONE;
+        displayNone = "none".equals(b.display);
+        this.usesViewportUnits = usesViewportUnits;
+
+        long w = b.width, h = b.height;
+        definiteWidth = definite(w, b.exprs);
+        definiteHeight = definite(h, b.exprs);
+        widthAuto = CssLength.isAuto(w);
+        heightAuto = CssLength.isAuto(h);
+        widthPercent = hasPercent(w, b.exprs);
+        heightPercent = hasPercent(h, b.exprs);
+        byte iw = IW_NONE;
+        String fitArg = null;
+        if (CssLength.isKeyword(w, CssLength.KW_MIN_CONTENT)) iw = IW_MIN_CONTENT;
+        else if (CssLength.isKeyword(w, CssLength.KW_MAX_CONTENT)) iw = IW_MAX_CONTENT;
+        else if (CssLength.isKeyword(w, CssLength.KW_FIT_CONTENT)) iw = IW_FIT_CONTENT;
+        else if (CssLength.isCalc(w)) {
+            String kw = b.exprs.raw(w).toLowerCase(Locale.ROOT);
+            if (kw.startsWith("fit-content(")) {
+                iw = IW_FIT_CONTENT_FN;
+                // 閉じ括弧が無い形は引数を持たない
+                if (kw.endsWith(")")) fitArg = kw.substring("fit-content(".length(), kw.length() - 1).trim();
+            }
+        }
+        intrinsicWidthKind = iw;
+        fitContentArg = fitArg;
+
+        autoMarginT = CssLength.isAuto(b.marginTop);
+        autoMarginR = CssLength.isAuto(b.marginRight);
+        autoMarginB = CssLength.isAuto(b.marginBottom);
+        autoMarginL = CssLength.isAuto(b.marginLeft);
+        marginLeftAuto = autoMarginL;
+        marginRightAuto = autoMarginR;
+        borderBox = b.boxSizing == CssKeywords.BoxSizing.BORDER_BOX;
+        alignItems = flexAlignment(fg.alignItems);
+        alignSelfAuto = fg.alignSelf == CssKeywords.Alignment.AUTO;
+        alignSelf = flexAlignment(fg.alignSelf);
+
+        boolean horizontalWriting = KeywordMatch.trimmedStartsWith(in.writingMode, "horizontal");
+        BoxGeomStyle bx = b;
+        boolean edgePercent = hasPercent(bx.minWidth, bx.exprs) || hasPercent(bx.maxWidth, bx.exprs)
+                || hasPercent(bx.marginLeft, bx.exprs) || hasPercent(bx.marginRight, bx.exprs)
+                || hasPercent(bx.marginTop, bx.exprs) || hasPercent(bx.marginBottom, bx.exprs)
+                || hasPercent(bx.paddingLeft, bx.exprs) || hasPercent(bx.paddingRight, bx.exprs)
+                || hasPercent(bx.paddingTop, bx.exprs) || hasPercent(bx.paddingBottom, bx.exprs)
+                || hasPercent(bx.left, bx.exprs) || hasPercent(bx.right, bx.exprs)
+                || hasPercent(bx.top, bx.exprs) || hasPercent(bx.bottom, bx.exprs);
+        percentGeometry = widthPercent || edgePercent;
+        boolean anyAutoMargin = autoMarginT || autoMarginR || autoMarginB || autoMarginL;
+        horizontalFixed = definiteWidth && !widthAuto && !widthPercent && intrinsicWidthKind == IW_NONE && !usesViewportUnits
+                && !anyAutoMargin && horizontalWriting && !edgePercent;
+        long basis = fg.flexBasis;
+        boolean basisPercentOrCalc = CssLength.isPercent(basis)
+                || (CssLength.isCalc(basis) && (fg.exprs.raw(basis).indexOf('%') >= 0 || fg.exprs.raw(basis).contains("calc")));
+        edgesAvailableFree = !usesViewportUnits && !percentGeometry && !basisPercentOrCalc
+                && noBlockPercent(fg.columnGap, fg.exprs) && !anyAutoMargin && horizontalWriting;
         fitCandidate = edgesAvailableFree && widthAuto && intrinsicWidthKind == IW_NONE;
-        blockPercentFree = noBlockPercent(s.get(CssPropertyIndex.HEIGHT)) && noBlockPercent(s.get(CssPropertyIndex.MIN_HEIGHT))
-                && noBlockPercent(s.get(CssPropertyIndex.MAX_HEIGHT)) && noBlockPercent(s.get(CssPropertyIndex.TOP))
-                && noBlockPercent(s.get(CssPropertyIndex.BOTTOM)) && noBlockPercent(s.get(CssPropertyIndex.FLEX_BASIS))
-                && noBlockPercent(s.get(CssPropertyIndex.ROW_GAP)) && noBlockPercent(s.get(CssPropertyIndex.GRID_TEMPLATE_ROWS))
-                && noBlockPercent(s.get(CssPropertyIndex.GRID_AUTO_ROWS));
-        rtl = KeywordMatch.is(s.get(CssPropertyIndex.DIRECTION), "rtl");
-        bfcByStyle = floating || (s.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0
-                || overflowX.scrolls() || overflowY.scrolls();
-        whiteSpace = com.nishiyu.enderframelib.core.text.model.WhiteSpace.of(s.get(CssPropertyIndex.WHITE_SPACE));
-        wordBreak = com.nishiyu.enderframelib.core.text.model.WordBreak.of(s.get(CssPropertyIndex.WORD_BREAK));
-        overflowWrapBreaks = s.keywordFresh(CssPropertyIndex.OVERFLOW_WRAP, CssKeywords.OverflowWrap.class) != CssKeywords.OverflowWrap.NORMAL;
-        ellipsis = s.keywordFresh(CssPropertyIndex.TEXT_OVERFLOW, CssKeywords.TextOverflow.class) == CssKeywords.TextOverflow.ELLIPSIS;
-        String kerning = s.get(CssPropertyIndex.FONT_KERNING);
-        fontStyle = new com.nishiyu.enderframelib.core.text.model.FontStyle(
-                s.fontSizePx(),
-                fontWeight >= 600,
-                s.keywordFresh(CssPropertyIndex.FONT_STYLE, CssKeywords.FontStyle.class) != CssKeywords.FontStyle.NORMAL,
-                s.length(CssPropertyIndex.LETTER_SPACING, 0, 0, 0),
-                fontWeight,
-                !KeywordMatch.is(kerning, "none"));
+        blockPercentFree = noBlockPercent(h, b.exprs) && noBlockPercent(b.minHeight, b.exprs) && noBlockPercent(b.maxHeight, b.exprs)
+                && noBlockPercent(b.top, b.exprs) && noBlockPercent(b.bottom, b.exprs) && noBlockPercent(basis, fg.exprs)
+                && noBlockPercent(fg.rowGap, fg.exprs) && noBlockText(fg.gridTemplateRows) && noBlockText(fg.gridAutoRows);
+        rtl = KeywordMatch.is(in.direction, "rtl");
+        bfcByStyle = floating || (bits & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0 || scrollContainer;
+        whiteSpace = WhiteSpace.of(in.whiteSpace);
+        wordBreak = WordBreak.of(in.wordBreak);
+        overflowWrapBreaks = in.overflowWrap != CssKeywords.OverflowWrap.NORMAL;
+        ellipsis = b.textOverflow == CssKeywords.TextOverflow.ELLIPSIS;
+        fontStyle = new FontStyle(in.fontSize, fontWeight >= 600, in.fontStyle != CssKeywords.FontStyle.NORMAL,
+                CssLength.resolve(in.letterSpacing, in.exprs, 0, in.fontSize, in.rootFontSizePx, 0, 0), fontWeight,
+                !KeywordMatch.is(in.fontKerning, "none"));
+    }
+
+    /** % を含む長さ（単位が %、または式の原文に % を含む）か。 */
+    private static boolean hasPercent(long v, CssExprs exprs) {
+        return CssLength.isPercent(v) || CssLength.isJunkPercent(v) || (CssLength.isCalc(v) && exprs.raw(v).indexOf((char) 37) >= 0);
+    }
+
+    /** 高さ方向の割合・式を持たない（% の長さでも式でもない）。 */
+    private static boolean noBlockPercent(long v, CssExprs exprs) {
+        return !CssLength.isPercent(v) && !CssLength.isCalc(v) && !CssLength.isJunkPercent(v);
+    }
+
+    private static boolean noBlockText(String v) {
+        return v == null || (v.indexOf('%') < 0 && v.indexOf('(') < 0);
+    }
+
+    /** {@code width} / {@code height} が確定した長さか（auto・% を含む・内在サイズのキーワードは確定でない）。 */
+    private static boolean definite(long v, CssExprs exprs) {
+        if (CssLength.isKeyword(v)) {
+            return !CssLength.isAuto(v) && !CssLength.isKeyword(v, CssLength.KW_EMPTY) && !CssLength.isJunkPercent(v)
+                    && !CssLength.isKeyword(v, CssLength.KW_MIN_CONTENT)
+                    && !CssLength.isKeyword(v, CssLength.KW_MAX_CONTENT) && !CssLength.isKeyword(v, CssLength.KW_FIT_CONTENT);
+        }
+        if (CssLength.isCalc(v)) {
+            String raw = exprs.raw(v).trim().toLowerCase(Locale.ROOT);
+            return !raw.isEmpty() && !raw.contains("%") && !raw.startsWith("fit-content(");
+        }
+        return !CssLength.isPercent(v);
     }
 
     /** 揃えの値を flex の配置に寄せる（{@code normal} は stretch、{@code first/last baseline} は baseline）。 */

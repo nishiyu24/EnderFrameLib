@@ -14,7 +14,6 @@ core/paint/gpu/GpuRenderBackend.java | 0 | 105 | 0 | 1
 core/paint/CssAnimator.java | 44 | 0 | 0 | 0
 core/css/Selector.java | 32 | 0 | 0 | 0
 core/dom/InteractionState.java | 31 | 0 | 0 | 0
-core/css/StyleFacts.java | 30 | 0 | 0 | 0
 common/EnderFrameBuiltInConfig.java | 0 | 0 | 0 | 13
 core/css/StyleSheet.java | 13 | 0 | 0 | 0
 core/diag/PipelineStats.java | 12 | 0 | 0 | 0

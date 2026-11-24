@@ -41,7 +41,7 @@ class StyleFactsTest {
 
     private static Map<String, String> randomProperties(Random r) {
         Map<String, String> p = new HashMap<>();
-        if (r.nextInt(3) > 0) p.put(CssProperty.OVERFLOW, pick(r, OVERFLOWS));
+        // M1: ショートハンド overflow はカスケードが overflow-x / -y へ展開して算出スタイルには残らないので、生成しない（旧版は残った場合も読んでいた）
         if (r.nextInt(3) == 0) p.put(CssProperty.OVERFLOW_X, pick(r, OVERFLOWS));
         if (r.nextInt(3) == 0) p.put(CssProperty.OVERFLOW_Y, pick(r, OVERFLOWS));
         if (r.nextBoolean()) p.put(CssProperty.LINE_HEIGHT, pick(r, LINE_HEIGHTS));
@@ -107,7 +107,7 @@ class StyleFactsTest {
         Random r = new Random(20261108);
         for (int i = 0; i < 4000; i++) {
             ComputedStyle s = ComputedStyle.of(randomProperties(r), 16f, 16f);
-            StyleFacts f = s.layoutFacts();
+            StyleFacts f = s.facts();
             String at = "case " + i + " " + s.asMap();
 
             assertEquals(legacyOverflow(s, CssProperty.OVERFLOW_X, 0), f.overflowX, at);
@@ -135,15 +135,15 @@ class StyleFactsTest {
             assertEquals("auto".equals(heightStr), f.heightAuto, at);
             assertEquals(widthStr.contains("%"), f.widthPercent, at);
             assertEquals(heightStr.contains("%"), f.heightPercent, at);
-            assertEquals(s.containsKey(CssProperty.HEIGHT), f.hasHeightDeclaration, at);
             String intrinsic = !"auto".equals(widthStr) && LayoutMetrics.isIntrinsicSizeKeyword(widthStr) ? widthStr.toLowerCase() : null;
             assertEquals(legacyIntrinsicKind(intrinsic), f.intrinsicWidthKind, at);
             assertEquals(intrinsic != null, f.hasIntrinsicWidth(), at);
             String fitArg = intrinsic != null && intrinsic.startsWith("fit-content(") && intrinsic.endsWith(")")
                     ? intrinsic.substring("fit-content(".length(), intrinsic.length() - 1).trim() : null;
             assertEquals(fitArg, f.fitContentArg, at);
-            assertEquals("auto".equals(s.get(CssProperty.MARGIN_LEFT)), f.marginLeftAuto, at);
-            assertEquals("auto".equals(s.get(CssProperty.MARGIN_RIGHT)), f.marginRightAuto, at);
+            // M1: 左右の auto も CSS のキーワードとして大小文字・空白を区別しない（旧版は "auto" 完全一致だけ。上下と同じ規則に揃えた）
+            assertEquals("auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_LEFT, "0").trim()), f.marginLeftAuto, at);
+            assertEquals("auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_RIGHT, "0").trim()), f.marginRightAuto, at);
             assertEquals("auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_TOP, "0").trim()), f.autoMarginT, at);
             assertEquals("auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_RIGHT, "0").trim()), f.autoMarginR, at);
             assertEquals("auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_BOTTOM, "0").trim()), f.autoMarginB, at);
@@ -191,7 +191,7 @@ class StyleFactsTest {
             Map<String, String> p = new HashMap<>();
             p.put(CssProperty.LINE_HEIGHT, raw);
             ComputedStyle s = ComputedStyle.of(p, 16f, 16f);
-            StyleFacts f = s.layoutFacts();
+            StyleFacts f = s.facts();
             Float expected = legacyLineHeight(raw, 20f);
             float font = 20f;
             float actual = switch (f.lineHeightKind) {
@@ -253,7 +253,7 @@ class StyleFactsTest {
         for (Object[] c : cases) {
             Map<String, String> p = new HashMap<>();
             p.put(CssProperty.WIDTH, (String) c[0]);
-            StyleFacts f = ComputedStyle.of(p, 16f, 16f).layoutFacts();
+            StyleFacts f = ComputedStyle.of(p, 16f, 16f).facts();
             assertEquals((byte) c[1], f.intrinsicWidthKind, (String) c[0]);
             assertEquals(c[2], f.fitContentArg, (String) c[0]);
         }

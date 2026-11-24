@@ -23,9 +23,11 @@ public final class Style {
     public final TableStyle table;
     public final RareStyle rare;
     public final CustomProperties custom;
+    /** 導出値（構築時に 1 回だけ作る不変の値）。 */
+    public final StyleFacts facts;
 
     private Style(InheritedStyle inherited, BoxGeomStyle box, VisualStyle visual, FlexGridStyle flexGrid, TableStyle table,
-                  RareStyle rare, CustomProperties custom) {
+                  RareStyle rare, CustomProperties custom, boolean usesViewportUnits) {
         this.inherited = inherited;
         this.box = box;
         this.visual = visual;
@@ -33,11 +35,12 @@ public final class Style {
         this.table = table;
         this.rare = rare;
         this.custom = custom;
+        this.facts = new StyleFacts(this, usesViewportUnits);
     }
 
     /** 宣言が 1 つも無い、初期値だけのスタイル。 */
     public static final Style DEFAULT = new Style(InheritedStyle.DEFAULT, BoxGeomStyle.DEFAULT, VisualStyle.DEFAULT,
-            FlexGridStyle.DEFAULT, TableStyle.DEFAULT, RareStyle.DEFAULT, null);
+            FlexGridStyle.DEFAULT, TableStyle.DEFAULT, RareStyle.DEFAULT, null, false);
 
     /**
      * 算出スタイルから型付きスタイルを作る。{@code parent} が非 null で継承群が同じ値なら親の群を共有する。
@@ -69,7 +72,7 @@ public final class Style {
             custom = new CustomProperties(extras);
             if (parent != null && custom.equals(parent.custom)) custom = parent.custom;
         }
-        return new Style(inh, box, visual, fg, table, rare, custom);
+        return new Style(inh, box, visual, fg, table, rare, custom, cs.usesViewportUnits());
     }
 
     /** この要素のフォントサイズ（px）。 */

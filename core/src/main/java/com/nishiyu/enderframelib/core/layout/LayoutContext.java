@@ -169,7 +169,7 @@ public record LayoutContext(
 
     /** 算出スタイルから測定に必要な指定だけを取り出す。 */
     public FontStyle fontStyleFor(ComputedStyle style) {
-        return style.layoutFacts().fontStyle;
+        return style.facts().fontStyle;
     }
 
     /** 宣言が {@code none}（前後の空白・大小文字は無視）か。宣言が無ければ偽（既定は auto）。 */
@@ -182,7 +182,7 @@ public record LayoutContext(
         FontFace face = faceFor(style);
         TextStyle cached = style.peekTextStyle(face);
         if (cached != null) return cached;
-        StyleFacts facts = style.layoutFacts();
+        StyleFacts facts = style.facts();
         FontStyle font = facts.fontStyle;
         TextStyle built = new TextStyle(font, facts.whiteSpace, facts.wordBreak, facts.overflowWrapBreaks, facts.ellipsis,
                 LayoutMetrics.lineHeightPx(style, face, font));

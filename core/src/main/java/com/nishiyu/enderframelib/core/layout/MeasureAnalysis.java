@@ -119,7 +119,7 @@ final class MeasureAnalysis {
             return none;
         }
         ComputedStyle ax = box.axisStyle();
-        StyleFacts f = ax.layoutFacts();
+        StyleFacts f = ax.facts();
         boolean textNode = box.node.nodeType == NodeType.TEXT;
         if (!Float.isNaN(box.overrideWidth)) {
             return (!textNode && !f.floating && f.edgesAvailableFree && (flowFloatFree || box.establishesBfc)) ? 0f : none;

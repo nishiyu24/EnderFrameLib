@@ -67,7 +67,7 @@ final class FlowBuilder {
         this.ctx = ctx;
         this.children = children;
         this.innerW = Float.isNaN(innerWOverride) ? Math.max(0, box.w - box.horizontalDecoration()) : innerWOverride;
-        this.rtl = box.style.layoutFacts().rtl;
+        this.rtl = box.style.facts().rtl;
         if (!box.establishesBfc && box.floatSpace != null) {
             floats = box.floatSpace;
             ox = box.floatSpaceX;

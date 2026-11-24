@@ -126,7 +126,7 @@ class MeasureReadSetTest {
                 "<div id='r' style='width:300px'>"
                         + "<img id='im' src='https://example.com/a.png' style='display:inline-block'>"
                         + "<div id='txBox' style='display:inline-block;font-size:9px'>abcd</div>"
-                        + "<div id='flBox' style='width:200px;overflow:hidden'><div style='float:left;width:30px;height:10px'></div>hi</div>"
+                        + "<div id='flBox' style='width:200px;overflow-x:hidden;overflow-y:hidden'><div style='float:left;width:30px;height:10px'></div>hi</div>"
                         + "<div id='cleanBox' style='width:120px;height:40px'>fixed</div>"
                         + "</div>");
         LayoutBox im = findById(root, "im");

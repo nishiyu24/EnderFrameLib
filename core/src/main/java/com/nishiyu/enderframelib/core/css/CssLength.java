@@ -18,7 +18,9 @@ public final class CssLength {
     private CssLength() {}
 
     public static final int KW_OTHER = 0, KW_AUTO = 1, KW_NONE = 2, KW_NORMAL = 3, KW_MIN_CONTENT = 4, KW_MAX_CONTENT = 5,
-            KW_FIT_CONTENT = 6, KW_MEDIUM = 7, KW_THIN = 8, KW_THICK = 9;
+            KW_FIT_CONTENT = 6, KW_MEDIUM = 7, KW_THIN = 8, KW_THICK = 9,
+            /** 解釈できない値のうち、空文字（確定した長さではない）と、{@code %} を含む文字列（% を含む扱い）。旧文字列版の判定を保つ。 */
+            KW_EMPTY = 10, KW_JUNK_PERCENT = 11;
 
     /** 文字列から値を作る。式は {@code exprs} に積んで添字を持つ。 */
     static long parse(String raw, CssExprs.Builder exprs) {
@@ -49,7 +51,7 @@ public final class CssLength {
             case "medium" -> KW_MEDIUM;
             case "thin" -> KW_THIN;
             case "thick" -> KW_THICK;
-            default -> KW_OTHER;
+            default -> raw.isBlank() ? KW_EMPTY : raw.indexOf((char) 37) >= 0 ? KW_JUNK_PERCENT : KW_OTHER;
         };
     }
 
@@ -62,6 +64,9 @@ public final class CssLength {
     public static boolean isPercent(long v) {
         return PackedCssValue.kind(v) == PackedCssValue.K_LENGTH && PackedCssValue.unit(v) == PackedCssValue.U_PERCENT;
     }
+
+    /** 解釈できない値で、% を含む文字列か（旧文字列版は % を含むとみなした）。 */
+    public static boolean isJunkPercent(long v) { return isKeyword(v, KW_JUNK_PERCENT); }
 
     public static boolean isCalc(long v) { return PackedCssValue.kind(v) == PackedCssValue.K_CALC; }
 

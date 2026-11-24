@@ -49,10 +49,10 @@ class StyleFactsPercentTest {
             Map<String, String> fixed = new LinkedHashMap<>();
             fixed.put(CssProperty.WIDTH, "100px");
             fixed.put(p, "4px");
-            assertTrue(new ComputedStyle(fixed, 16f, 16f).layoutFacts().horizontalFixed, p + " px");
+            assertTrue(new ComputedStyle(fixed, 16f, 16f).facts().horizontalFixed, p + " px");
             Map<String, String> pct = new LinkedHashMap<>(fixed);
             pct.put(p, "calc(50% - 2px)");
-            assertFalse(new ComputedStyle(pct, 16f, 16f).layoutFacts().horizontalFixed, p + " calc%");
+            assertFalse(new ComputedStyle(pct, 16f, 16f).facts().horizontalFixed, p + " calc%");
         }
     }
 

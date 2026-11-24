@@ -217,7 +217,7 @@ M1〜M4 でデータ構造を壊して作り直す前に、「外から見た正
 | 段 | 内容 | 完了条件 | 状態 |
 | :--- | :--- | :--- | :--- |
 | **M1a** | `CssLength`（64-bit。`calc()` は群ごとの不変表 `CssExprs` の添字で、プロセス共有の式表を持たない）・`CssExprs`・`CustomProperties`・型付き 6 群（`InheritedStyle` / `BoxGeomStyle` / `VisualStyle` / `FlexGridStyle` / `TableStyle` / `RareStyle`。`scripts/GenStyleGroups.java` が `PropertyRegistry` から生成）・`Style.of(ComputedStyle, 親 Style)` を新設。旧 `ComputedStyle` は温存し、**旧読み口との全フィールド等価**を検証する | ① 全レジストリプロパティがちょうど 1 群に所属（`StyleGroupCoverageTest`）② 合成入力＋同梱実文書の全要素で、全群の全フィールドが旧 `keywordOf`/`length`/`color`/`number`/`get`/`StyleFacts` と一致（`StyleTypedParityTest`）③ 継承群の親子参照共有・DEFAULT 共有・値等価・カスタムプロパティ表の共有（`StyleSharingTest`）④ `CssLength` の px 解決が旧 `CompiledLength#resolve` と一致（`CssLengthTest`）⑤ 生成クラス ≤ 600 行・`ArchitectureHealthTest` 緑・`ComputedStyle` 行数不増・変異（色の読みを壊す）で等価テストが落ちることを確認 | **完了** |
-| **M1b** | カスケード（`StyleResolver` / `ValueComputer`）の生成先を `Style` へ切り替える。`core/layout`・`core/paint`・`common/RenderTreeBuilder` のスタイル読み口を型付きアクセサへ機械的に付け替え、`Map<String,String> inheritedStyle` 引数と `asMap()` を除く。**群の参照共有はカスケード側で行う**（下記の実測） | 付け替え後も WPT 160/260・3 者画素一致・`RealDocumentFramesTest`・`FrameOracle` が緑、読み口の文字列参照 0 件 | 未着手 |
+| **M1b**（b1 完了） | カスケード（`StyleResolver` / `ValueComputer`）の生成先を `Style` へ切り替える。`core/layout`・`core/paint`・`common/RenderTreeBuilder` のスタイル読み口を型付きアクセサへ機械的に付け替え、`Map<String,String> inheritedStyle` 引数と `asMap()` を除く。**群の参照共有はカスケード側で行う**（下記の実測） | 付け替え後も WPT 160/260・3 者画素一致・`RealDocumentFramesTest`・`FrameOracle` が緑、読み口の文字列参照 0 件 | 未着手 |
 | **M1c** | `CssValue.java`・`StyleFacts.java`・`PackedLengths.java`・`TypedValueCache.java`・`StateStyleMemo.java`・旧 `ComputedStyle`（`StyleSlice`/`SLICE_POOLS`/`DIFF_MEMO`/`StyleMap`/`StyleTable`/`ObjMemo` 等）とスタイル系 `Shortcut` を一括削除 | 上の完了ゲート 4 項目すべて（`Style` ≤ 500 行・`varied-list` ≤ 18 MB・読み口の文字列参照 0・正しさの番人緑）と KPI 更新 | 未着手 |
 
 **M1a で得た設計上の知見（M1b の入力）**
@@ -232,7 +232,7 @@ M1〜M4 でデータ構造を壊して作り直す前に、「外から見た正
 
 作業順（各段で `WptReftestRatchetTest`・`GpuBaselineTest`・`RealDocumentFramesTest`・`FrameOracle` を緑に保つ）:
 
-1. **b1 導出事実を `Style` へ**: `StyleFacts` の全フィールド（`fillExtras` を含む）を `Style` 側の導出値（群の構築時に 1 回）へ移し、旧実装との**全フィールド等価**を `StyleTypedParityTest` と同じ要領で実文書・合成入力で検証してから、`facts()`/`layoutFacts()` の 17 ファイルを付け替える。
+1. **b1 導出事実を `Style` へ〔完了 2026-11-24〕**: `StyleFacts` を `Style` の構築時に 1 回だけ作る不変の導出値へ置換（`fillExtras` と `ComputedStyle` 内の導出コード約 83 行を削除。`hasHeightDeclaration` は `!heightAuto` と常に併用され冗長なので削除）。旧実装で記録した基準 `golden/style-facts.txt`（合成 23 件の全フィールド＋実文書 8 本の全要素の CRC）と一致を確認してから旧実装を削除した（`StyleFactsGoldenTest`）。意図した挙動変更は 2 点だけ: ① `margin-left/right: auto` を上下と同じく大小文字・空白を区別しない（旧は完全一致のみ）② 算出スタイルに残らないショートハンド `overflow` を `ComputedStyle` が直接読む旧経路を廃止（カスケードは常に展開する。これに依存していた `MeasureReadSetTest` の入力を longhand へ修正）。`facts()`/`layoutFacts()` は `facts()` へ統合（63 箇所）。**橋渡しのコスト（b2 で解消）**: `ComputedStyle.typed()` が最初の参照で `Style` を 1 度作るため、`memoryAndLatencyGate` の `varied-list-2000:open` ヒープは基準 35.7 → 39.6 MB（上限 46.7 内）、`ComputedStyleFootprintTest` の 1 スタイルあたり割り当ては 4,500 → 8,176 B（上限を暫定 9,000 へ。b2 で 4,500 へ戻す）。
 2. **b2 カスケードの生成先と 1 層メモ化**: `StyleResolver.finalizeComputedStyleInternal` が `Style` を作り、一致規則集合の `==` をキーに 1 層メモ化（`StateStyleMemo` を置換）。`Map<String,String> inheritedStyle` 引数の廃止（親は `Style`）。ここで `varied-list` のヒープを `:core:memoryAndLatencyGate` で A/B 実測する。
 3. **b3 `core/layout` の付け替え**（多い順）→ **b4 `core/paint`** → **b5 `common`・`core/dom`**。付け替えごとに旧読み口の呼び出しを 0 にし、`asMap()` を使う場所は型付き走査へ。
 4. 全読み口の旧参照が 0 になった時点で M1c（旧型の一括削除）。

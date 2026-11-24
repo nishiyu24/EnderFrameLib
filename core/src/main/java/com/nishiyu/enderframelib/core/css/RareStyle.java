@@ -5,7 +5,6 @@ package com.nishiyu.enderframelib.core.css;
  * 値は構築時に 1 回だけ解いた型付きのフィールドで、文字列を読み直さない。{@link #equals} は全フィールドの値等価。
  */
 public final class RareStyle {
-    private static final int ID_columnGap = ComputedStyle.idOf("column-gap");
     private static final int ID_columnCount = ComputedStyle.idOf("column-count");
     private static final int ID_columnWidth = ComputedStyle.idOf("column-width");
     private static final int ID_columnFill = ComputedStyle.idOf("column-fill");
@@ -53,8 +52,6 @@ public final class RareStyle {
 
     /** {@code calc()} 等の式の表。式を持たない値は共有の空表。 */
     public final CssExprs exprs;
-    /** {@code column-gap}。 */
-    public final long columnGap;
     /** {@code column-count}。 */
     public final float columnCount;
     /** {@code column-width}。 */
@@ -140,7 +137,6 @@ public final class RareStyle {
 
     private RareStyle(ComputedStyle cs) {
         CssExprs.Builder ex = new CssExprs.Builder();
-        this.columnGap = StyleReader.length(cs, ID_columnGap, ex);
         this.columnCount = StyleReader.number(cs, ID_columnCount);
         this.columnWidth = StyleReader.length(cs, ID_columnWidth, ex);
         this.columnFill = StyleReader.text(cs, ID_columnFill);
@@ -195,7 +191,6 @@ public final class RareStyle {
         if (this == other) return true;
         if (!(other instanceof RareStyle o)) return false;
         return exprs.equals(o.exprs)
-                && columnGap == o.columnGap
                 && Float.floatToIntBits(columnCount) == Float.floatToIntBits(o.columnCount)
                 && columnWidth == o.columnWidth
                 && java.util.Objects.equals(columnFill, o.columnFill)
@@ -241,8 +236,7 @@ public final class RareStyle {
 
     @Override
     public int hashCode() {
-        int h = 42;
-        h = h * 31 + Long.hashCode(columnGap);
+        int h = 41;
         h = h * 31 + Float.floatToIntBits(columnCount);
         h = h * 31 + Long.hashCode(columnWidth);
         h = h * 31 + java.util.Objects.hashCode(columnFill);

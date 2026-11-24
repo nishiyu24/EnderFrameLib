@@ -37,13 +37,12 @@ class StyleFactsPackedFlagsTest {
                     m.put(mp[i], mv[i]);
                 }
             }
-            StyleFacts f = new ComputedStyle(m, 16f, 16f).layoutFacts();
+            StyleFacts f = new ComputedStyle(m, 16f, 16f).facts();
             String ctx = m.toString();
 
             String ws = (w == null ? "auto" : w).trim(), hs = (h == null ? "auto" : h).trim();
             assertEquals("auto".equals(ws), f.widthAuto, ctx);
             assertEquals("auto".equals(hs), f.heightAuto, ctx);
-            assertEquals(h != null, f.hasHeightDeclaration, ctx);
             assertEquals(ws.contains("%") && !ws.equals("garbage%"), f.widthPercent && !ws.equals("garbage%"), ctx);
             assertEquals(hs.contains("%") && !hs.equals("garbage%"), f.heightPercent && !hs.equals("garbage%"), ctx);
             byte kind = StyleFacts.IW_NONE;
@@ -57,8 +56,8 @@ class StyleFactsPackedFlagsTest {
             assertEquals(oldAuto(mv[1]), f.autoMarginR, ctx);
             assertEquals(oldAuto(mv[2]), f.autoMarginB, ctx);
             assertEquals(oldAuto(mv[3]), f.autoMarginL, ctx);
-            assertEquals("auto".equals(mv[1]), f.marginRightAuto, ctx);
-            assertEquals("auto".equals(mv[3]), f.marginLeftAuto, ctx);
+            assertEquals(oldAuto(mv[1]), f.marginRightAuto, ctx); // M1: CSS のキーワードは大小文字を区別しない（旧は "auto" 完全一致だけ）
+            assertEquals(oldAuto(mv[3]), f.marginLeftAuto, ctx);
         }
     }
 

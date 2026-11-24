@@ -18,6 +18,7 @@ public final class FlexGridStyle {
     private static final int ID_justifySelf = ComputedStyle.idOf("justify-self");
     private static final int ID_alignSelf = ComputedStyle.idOf("align-self");
     private static final int ID_rowGap = ComputedStyle.idOf("row-gap");
+    private static final int ID_columnGap = ComputedStyle.idOf("column-gap");
     private static final int ID_gridTemplateColumns = ComputedStyle.idOf("grid-template-columns");
     private static final int ID_gridTemplateRows = ComputedStyle.idOf("grid-template-rows");
     private static final int ID_gridTemplateAreas = ComputedStyle.idOf("grid-template-areas");
@@ -63,6 +64,8 @@ public final class FlexGridStyle {
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment alignSelf;
     /** {@code row-gap}。 */
     public final long rowGap;
+    /** {@code column-gap}。 */
+    public final long columnGap;
     /** {@code grid-template-columns}。 */
     public final String gridTemplateColumns;
     /** {@code grid-template-rows}。 */
@@ -105,6 +108,7 @@ public final class FlexGridStyle {
         this.justifySelf = StyleReader.keyword(cs, ID_justifySelf, com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment.class);
         this.alignSelf = StyleReader.keyword(cs, ID_alignSelf, com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment.class);
         this.rowGap = StyleReader.length(cs, ID_rowGap, ex);
+        this.columnGap = StyleReader.length(cs, ID_columnGap, ex);
         this.gridTemplateColumns = StyleReader.text(cs, ID_gridTemplateColumns);
         this.gridTemplateRows = StyleReader.text(cs, ID_gridTemplateRows);
         this.gridTemplateAreas = StyleReader.text(cs, ID_gridTemplateAreas);
@@ -144,6 +148,7 @@ public final class FlexGridStyle {
                 && justifySelf == o.justifySelf
                 && alignSelf == o.alignSelf
                 && rowGap == o.rowGap
+                && columnGap == o.columnGap
                 && java.util.Objects.equals(gridTemplateColumns, o.gridTemplateColumns)
                 && java.util.Objects.equals(gridTemplateRows, o.gridTemplateRows)
                 && java.util.Objects.equals(gridTemplateAreas, o.gridTemplateAreas)
@@ -161,7 +166,7 @@ public final class FlexGridStyle {
 
     @Override
     public int hashCode() {
-        int h = 26;
+        int h = 27;
         h = h * 31 + System.identityHashCode(flexDirection);
         h = h * 31 + System.identityHashCode(flexWrap);
         h = h * 31 + Float.floatToIntBits(flexGrow);
@@ -175,6 +180,7 @@ public final class FlexGridStyle {
         h = h * 31 + System.identityHashCode(justifySelf);
         h = h * 31 + System.identityHashCode(alignSelf);
         h = h * 31 + Long.hashCode(rowGap);
+        h = h * 31 + Long.hashCode(columnGap);
         h = h * 31 + java.util.Objects.hashCode(gridTemplateColumns);
         h = h * 31 + java.util.Objects.hashCode(gridTemplateRows);
         h = h * 31 + java.util.Objects.hashCode(gridTemplateAreas);

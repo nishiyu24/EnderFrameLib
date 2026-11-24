@@ -34,11 +34,12 @@ public final class GenStyleGroups {
     private static String group(PropertyRegistry.Property p) {
         String n = p.name();
         if (p.inherited()) return "InheritedStyle";
+        if (n.startsWith("border-image")) return "VisualStyle";
         if (BOX.contains(n) || n.startsWith("margin-") || n.startsWith("padding-")
                 || (n.startsWith("border-") && (n.endsWith("-width") || n.endsWith("-style")))) return "BoxGeomStyle";
         if (TABLE.contains(n)) return "TableStyle";
         if (RARE_NAMES.contains(n) || n.startsWith("transition-") || n.startsWith("animation-") || n.startsWith("position-")
-                || n.startsWith("column-")) return "RareStyle";
+                || (n.startsWith("column-") && !n.equals("column-gap"))) return "RareStyle";
         if (n.startsWith("flex-") || n.equals("order") || n.startsWith("justify-") || n.startsWith("align-")
                 || n.endsWith("-gap") || n.equals("gap") || n.startsWith("grid-")) return "FlexGridStyle";
         if (VISUAL_NAMES.contains(n) || n.startsWith("background-") || n.startsWith("border-") || n.startsWith("outline-")

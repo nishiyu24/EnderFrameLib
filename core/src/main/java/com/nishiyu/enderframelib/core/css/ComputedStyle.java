@@ -1619,8 +1619,6 @@ public final class ComputedStyle {
     /** {@code contain} の値のビット（{@link #containment()}）。 */
     public static final int CONTAIN_SIZE = 1, CONTAIN_INLINE_SIZE = 2, CONTAIN_LAYOUT = 4, CONTAIN_PAINT = 8, CONTAIN_STYLE = 16;
 
-    private volatile int containment = -1;
-
     /** この算出スタイルだけから決まる、利用側（描画順）の派生値の置き場。算出スタイルは不変なので一度作れば使い回せる。 */
     private volatile Object derivedFacts;
 
@@ -1653,33 +1651,8 @@ public final class ComputedStyle {
      * {@code content} は layout paint style。{@code content-visibility: hidden} は size layout paint、{@code auto} は layout paint。
      */
     public int containment() {
-        int cached = containment;
-        if (cached >= 0) return cached;
-        int bits = 0;
-        String declared = properties.get(CssProperty.CONTAIN);
-        if (declared != null) {
-            for (String token : declared.trim().toLowerCase(java.util.Locale.ROOT).split("\s+")) {
-                switch (token) {
-                    case "strict" -> bits |= CONTAIN_SIZE | CONTAIN_LAYOUT | CONTAIN_PAINT | CONTAIN_STYLE;
-                    case "content" -> bits |= CONTAIN_LAYOUT | CONTAIN_PAINT | CONTAIN_STYLE;
-                    case "size" -> bits |= CONTAIN_SIZE;
-                    case "inline-size" -> bits |= CONTAIN_INLINE_SIZE;
-                    case "layout" -> bits |= CONTAIN_LAYOUT;
-                    case "paint" -> bits |= CONTAIN_PAINT;
-                    case "style" -> bits |= CONTAIN_STYLE;
-                    default -> {}
-                }
-            }
-        }
-        switch (keywordOf(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class)) {
-            case HIDDEN -> bits |= CONTAIN_SIZE | CONTAIN_LAYOUT | CONTAIN_PAINT | CONTAIN_STYLE;
-            case AUTO -> bits |= CONTAIN_LAYOUT | CONTAIN_PAINT | CONTAIN_STYLE;
-            default -> {}
-        }
-        containment = bits;
-        return bits;
+        return facts().containment;
     }
-
     /** {@code content-visibility: hidden}: 中身を箱の木に入れない。 */
     public boolean skipsContents() {
         return keywordOf(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class)
@@ -1918,7 +1891,7 @@ public final class ComputedStyle {
 
     /** {@code box-sizing: border-box} か。 */
     public boolean isBorderBox() {
-        return layoutFacts().borderBox;
+        return facts().borderBox;
     }
 
     // ==========================================
@@ -1932,48 +1905,24 @@ public final class ComputedStyle {
     public static final byte LH_NORMAL = 0, LH_PX = 1, LH_PERCENT = 2, LH_EM = 3, LH_NUMBER = 4;
 
 
-    private volatile StyleFacts facts;
-
-    /** 型付きの事実。最初の参照で作る（競って 2 回作っても同じ値）。 */
-    public StyleFacts facts() {
-        StyleFacts f = facts;
-        if (f == null) {
-            f = buildFacts();
-            facts = f;
-        }
-        return f;
-    }
+    private volatile Style typed;
 
     /**
-     * 型付きの事実に、測定・整形が読む宣言の値（{@link StyleFacts#widthStr} など）まで揃えて返す。
-     * 重いので、overflow などの基本の事実（{@link #facts()}）だけで足りる読み手は呼ばない。
+     * 型付きスタイル（M1 の移行中の橋。親との継承群の共有は持たない）。最初の参照で作る（競って 2 回作っても同じ値）。
+     * 導出値 {@link StyleFacts} はこの {@link Style} が構築時に持つ。M1b-b2 でカスケードが直接 {@link Style} を作るまでの橋で、M1c で本体ごと撤去する。
      */
-    public StyleFacts layoutFacts() {
-        StyleFacts f = facts();
-        if (!f.extrasReady) {
-            f.fillExtras(this);
-            f.extrasReady = true;
+    public Style typed() {
+        Style s = typed;
+        if (s == null) {
+            s = Style.of(this, null);
+            typed = s;
         }
-        return f;
+        return s;
     }
 
-    private StyleFacts buildFacts() {
-        // line-height / font-weight は値オブジェクトに覚えた解析結果を引く（同じ文字列なら全スタイルで 1 回だけ解析）
-        CssValue lh = values[idOf(CssProperty.LINE_HEIGHT)];
-        CssValue fw = values[idOf(CssProperty.FONT_WEIGHT)];
-        CssKeywords.ContentVisibility cv = keywordFresh(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class);
-        StyleFacts built = new StyleFacts(computeOverflowAxis(CssProperty.OVERFLOW_X, 0), computeOverflowAxis(CssProperty.OVERFLOW_Y, 1),
-                fw == null ? 400 : fw.fontWeight(),
-                lh == null ? LH_NORMAL : lh.lineHeightKind(), lh == null ? 0f : lh.lineHeightValue(),
-                (containment() & (CONTAIN_SIZE | CONTAIN_INLINE_SIZE)) != 0
-                        || keywordFresh(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsInlineSize(),
-                (containment() & CONTAIN_SIZE) != 0
-                        || keywordFresh(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize(),
-                keywordFresh(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE,
-                "none".equals(getOrDefault(CssProperty.DISPLAY, "block")),
-                definiteDimension(DIM_WIDTH, CssProperty.WIDTH), definiteDimension(DIM_HEIGHT, CssProperty.HEIGHT),
-                cv == CssKeywords.ContentVisibility.AUTO, cv == CssKeywords.ContentVisibility.HIDDEN);
-        return built;
+    /** 型付きの導出値（文字列を読み直さない）。 */
+    public StyleFacts facts() {
+        return typed().facts;
     }
 
     /** 横方向の {@code overflow}。{@code overflow-x} が無ければショートハンド {@code overflow} の最初の値。 */
@@ -2047,38 +1996,6 @@ public final class ComputedStyle {
             packedEdges = edges;
         }
         return edges;
-    }
-
-    /** {@code width} / {@code height} が確定した長さか。詰めた値で決め、0 px に潰れた値と式（内在サイズのキーワードを含む）だけ原文で判る。 */
-    private boolean definiteDimension(int edge, String property) {
-        long v = packedEdge(edge);
-        if (v == com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE || PackedLengths.isAuto(v)) return false;
-        if (PackedLengths.isZeroPx(v) || PackedLengths.isExpression(v)) return definiteLength(get(property));
-        return !PackedLengths.hasPercent(v);
-    }
-
-    private static boolean definiteLength(String value) {
-        if (value == null) return false;
-        String v = value.trim().toLowerCase(java.util.Locale.ROOT);
-        return !v.isEmpty() && !v.equals("auto") && !v.contains("%")
-                && !ValueKeywords.isIntrinsicSizeKeyword(v);
-    }
-
-    private Overflow computeOverflowAxis(String property, int shorthandIndex) {
-        Overflow declared = declaredOverflowAxis(property, shorthandIndex);
-        // paint containment は中身を padding box で切る（overflow: clip と同じ。スクロールコンテナにはならない）
-        if (declared == Overflow.VISIBLE && (containment() & CONTAIN_PAINT) != 0) return Overflow.CLIP;
-        return declared;
-    }
-
-    private Overflow declaredOverflowAxis(String property, int shorthandIndex) {
-        if (properties.containsKey(property)) return keywordFresh(property, Overflow.class);
-        String shorthand = properties.get(CssProperty.OVERFLOW);
-        if (shorthand == null) return Overflow.VISIBLE;
-        String[] parts = shorthand.trim().split("\\s+");
-        String part = parts[Math.min(shorthandIndex, parts.length - 1)];
-        Overflow parsed = CssKeywords.parse(Overflow.class, part);
-        return parsed != null ? parsed : Overflow.VISIBLE;
     }
 
     /** キーワード値（小文字・前後空白なしに正規化）。 */

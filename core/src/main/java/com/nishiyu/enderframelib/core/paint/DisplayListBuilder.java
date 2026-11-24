@@ -756,7 +756,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         }
         com.nishiyu.enderframelib.core.text.model.FontFace face =
                 PaintServices.fontResolver().resolve(effStyle.get(CssPropertyIndex.FONT_FAMILY));
-        com.nishiyu.enderframelib.core.text.model.FontStyle font = effStyle.layoutFacts().fontStyle;
+        com.nishiyu.enderframelib.core.text.model.FontStyle font = effStyle.facts().fontStyle;
         float[] adv = new float[runs.size()];
         float total = 0;
         for (int i = 0; i < adv.length; i++) {

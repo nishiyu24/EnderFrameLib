@@ -802,7 +802,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         int n = kids.size();
         float innerW = Float.isNaN(innerWOverride) ? Math.max(0, box.w - box.horizontalDecoration()) : innerWOverride;
         float percentBase = childPercentageBase(box, space.percentageBlockSize(), ctx);
-        boolean rtl = box.style.layoutFacts().rtl;
+        boolean rtl = box.style.facts().rtl;
         FormattingContext childFmt = FormattingContext.of(FormattingContext.Display.BLOCK, true,
                 box.sizingMode == SizingMode.SHRINK_TO_FIT);
         vf.prepare(n, innerW, percentBase, box, childFmt);

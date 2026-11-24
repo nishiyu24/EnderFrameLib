@@ -43,7 +43,6 @@ public final class BoxGeomStyle {
     private static final int ID_scrollbarWidth = ComputedStyle.idOf("scrollbar-width");
     private static final int ID_verticalAlign = ComputedStyle.idOf("vertical-align");
     private static final int ID_textOverflow = ComputedStyle.idOf("text-overflow");
-    private static final int ID_borderImageWidth = ComputedStyle.idOf("border-image-width");
 
     /** 宣言が 1 つも無いときの共有インスタンス（初期値だけ）。ID_* の初期化より後に置く。 */
     public static final BoxGeomStyle DEFAULT = new BoxGeomStyle(null);
@@ -126,8 +125,6 @@ public final class BoxGeomStyle {
     public final long verticalAlign;
     /** {@code text-overflow}。 */
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.TextOverflow textOverflow;
-    /** {@code border-image-width}。 */
-    public final String borderImageWidth;
 
     private BoxGeomStyle(ComputedStyle cs) {
         CssExprs.Builder ex = new CssExprs.Builder();
@@ -169,7 +166,6 @@ public final class BoxGeomStyle {
         this.scrollbarWidth = StyleReader.keyword(cs, ID_scrollbarWidth, com.nishiyu.enderframelib.core.css.model.CssKeywords.ScrollbarWidth.class);
         this.verticalAlign = StyleReader.length(cs, ID_verticalAlign, ex);
         this.textOverflow = StyleReader.keyword(cs, ID_textOverflow, com.nishiyu.enderframelib.core.css.model.CssKeywords.TextOverflow.class);
-        this.borderImageWidth = StyleReader.text(cs, ID_borderImageWidth);
         this.exprs = ex.build();
     }
 
@@ -220,13 +216,12 @@ public final class BoxGeomStyle {
                 && overflowY == o.overflowY
                 && scrollbarWidth == o.scrollbarWidth
                 && verticalAlign == o.verticalAlign
-                && textOverflow == o.textOverflow
-                && java.util.Objects.equals(borderImageWidth, o.borderImageWidth);
+                && textOverflow == o.textOverflow;
     }
 
     @Override
     public int hashCode() {
-        int h = 39;
+        int h = 38;
         h = h * 31 + java.util.Objects.hashCode(display);
         h = h * 31 + System.identityHashCode(position);
         h = h * 31 + Long.hashCode(top);
@@ -265,7 +260,6 @@ public final class BoxGeomStyle {
         h = h * 31 + System.identityHashCode(scrollbarWidth);
         h = h * 31 + Long.hashCode(verticalAlign);
         h = h * 31 + System.identityHashCode(textOverflow);
-        h = h * 31 + java.util.Objects.hashCode(borderImageWidth);
         return h;
     }
 }

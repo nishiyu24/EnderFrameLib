@@ -29,6 +29,7 @@ public final class VisualStyle {
     private static final int ID_boxShadow = ComputedStyle.idOf("box-shadow");
     private static final int ID_borderImageSource = ComputedStyle.idOf("border-image-source");
     private static final int ID_borderImageSlice = ComputedStyle.idOf("border-image-slice");
+    private static final int ID_borderImageWidth = ComputedStyle.idOf("border-image-width");
     private static final int ID_borderImageOutset = ComputedStyle.idOf("border-image-outset");
     private static final int ID_borderImageRepeat = ComputedStyle.idOf("border-image-repeat");
     private static final int ID_opacity = ComputedStyle.idOf("opacity");
@@ -104,6 +105,8 @@ public final class VisualStyle {
     public final String borderImageSource;
     /** {@code border-image-slice}。 */
     public final String borderImageSlice;
+    /** {@code border-image-width}。 */
+    public final String borderImageWidth;
     /** {@code border-image-outset}。 */
     public final String borderImageOutset;
     /** {@code border-image-repeat}。 */
@@ -173,6 +176,7 @@ public final class VisualStyle {
         this.boxShadow = StyleReader.text(cs, ID_boxShadow);
         this.borderImageSource = StyleReader.text(cs, ID_borderImageSource);
         this.borderImageSlice = StyleReader.text(cs, ID_borderImageSlice);
+        this.borderImageWidth = StyleReader.text(cs, ID_borderImageWidth);
         this.borderImageOutset = StyleReader.text(cs, ID_borderImageOutset);
         this.borderImageRepeat = StyleReader.text(cs, ID_borderImageRepeat);
         this.opacity = StyleReader.number(cs, ID_opacity);
@@ -231,6 +235,7 @@ public final class VisualStyle {
                 && java.util.Objects.equals(boxShadow, o.boxShadow)
                 && java.util.Objects.equals(borderImageSource, o.borderImageSource)
                 && java.util.Objects.equals(borderImageSlice, o.borderImageSlice)
+                && java.util.Objects.equals(borderImageWidth, o.borderImageWidth)
                 && java.util.Objects.equals(borderImageOutset, o.borderImageOutset)
                 && java.util.Objects.equals(borderImageRepeat, o.borderImageRepeat)
                 && Float.floatToIntBits(opacity) == Float.floatToIntBits(o.opacity)
@@ -256,7 +261,7 @@ public final class VisualStyle {
 
     @Override
     public int hashCode() {
-        int h = 45;
+        int h = 46;
         h = h * 31 + borderTopColor;
         h = h * 31 + borderRightColor;
         h = h * 31 + borderBottomColor;
@@ -281,6 +286,7 @@ public final class VisualStyle {
         h = h * 31 + java.util.Objects.hashCode(boxShadow);
         h = h * 31 + java.util.Objects.hashCode(borderImageSource);
         h = h * 31 + java.util.Objects.hashCode(borderImageSlice);
+        h = h * 31 + java.util.Objects.hashCode(borderImageWidth);
         h = h * 31 + java.util.Objects.hashCode(borderImageOutset);
         h = h * 31 + java.util.Objects.hashCode(borderImageRepeat);
         h = h * 31 + Float.floatToIntBits(opacity);

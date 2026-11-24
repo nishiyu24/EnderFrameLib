@@ -43,13 +43,13 @@ final class VerticalWritingEngine extends LayoutEngine {
             return Math.max(0, box.overrideHeight - box.verticalDecoration());
         }
         ComputedStyle style = box.style;
-        StyleFacts facts = style.layoutFacts();
+        StyleFacts facts = style.facts();
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
         float parentH = space.percentageBlockSize();
         float deco = box.verticalDecoration();
         float h;
-        if (facts.hasHeightDeclaration && !facts.heightAuto && !(Float.isNaN(parentH) && facts.heightPercent)) {
+        if (!facts.heightAuto && !(Float.isNaN(parentH) && facts.heightPercent)) {
             float specified = style.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH);
             h = facts.borderBox ? specified - deco : specified;
         } else if (!Float.isNaN(parentH) && parentH > 0) {

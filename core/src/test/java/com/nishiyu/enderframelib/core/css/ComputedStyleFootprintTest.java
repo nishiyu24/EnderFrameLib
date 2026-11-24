@@ -64,7 +64,8 @@ class ComputedStyleFootprintTest {
         for (int i = 0; i < n; i++) sink += touch(new ComputedStyle(warm.asMap(), 16f, 16f));
         long perStyle = (allocatedBytes() - before) / n;
         System.out.println("[computed-style footprint] bytes per style (copy + 12 typed accesses) = " + perStyle + " (" + sink + ")");
-        assertTrue(perStyle < 4500, "スタイル 1 つあたりの割り当てが大きすぎる: " + perStyle + " bytes");
+        // M1b-b1 の橋渡し: 最初の事実の参照で型付き Style（6 群＋導出値）を 1 度作るため増える（実測 8,176 B）。b2 でカスケードが Style を共有して返すまでの暫定値で、b2 で 4500 に戻す
+        assertTrue(perStyle < 9000, "スタイル 1 つあたりの割り当てが大きすぎる: " + perStyle + " bytes");
     }
 
     @Test

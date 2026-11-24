@@ -81,7 +81,7 @@ public final class BoxMeasurer {
         if (box.display != null && box.display.inner() == Inner.TABLE && !box.contentAutoSkipped) TableLayoutEngine.prepareCollapsedBorders(box, ctx);
         resolveBoxEdges(box, parentW, parentH, rootW, rootH);
 
-        StyleFacts facts = style.layoutFacts();
+        StyleFacts facts = style.facts();
         recordStyleAndContextReads(box, facts);
         boolean autoLeft = facts.marginLeftAuto;
         boolean autoRight = facts.marginRightAuto;
@@ -466,9 +466,9 @@ public final class BoxMeasurer {
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 
-        StyleFacts facts = style.layoutFacts();
+        StyleFacts facts = style.facts();
         // 基準の高さが不定（NaN）なら % の高さは auto（CSS 2.2 §10.5）。グリッドの行の大きさを決める段階がこれを使う
-        boolean hasHeight = !box.isHorizontalReturnRoot && facts.hasHeightDeclaration && !facts.heightAuto
+        boolean hasHeight = !box.isHorizontalReturnRoot && !facts.heightAuto
                 && !(Float.isNaN(parentH) && facts.heightPercent);
         boolean overridden = !Float.isNaN(box.overrideHeight);
 
@@ -714,7 +714,7 @@ public final class BoxMeasurer {
         // 直交フロー（縦書き根・縦中横・ラッパー）および fieldset 等は独立した整形コンテキストを作る（CSS Writing Modes §7.1 / HTML §15.3.13）
         if (box.isVerticalWrapper || box.isVerticalRoot || box.isHorizontalReturnRoot
                 || box.isAbsolute || box.isRenderedLegend || com.nishiyu.enderframelib.core.dom.node.ElementTraits.isFieldset(box.node.tag)) return true;
-        StyleFacts facts = box.axisStyle().layoutFacts();
+        StyleFacts facts = box.axisStyle().facts();
         if (facts.floating) return true;
         // flex / grid アイテムは自分の中に独立した整形コンテキストを作る
         if (fmtCtx.isFlexRow() || fmtCtx.isFlexColumn() || fmtCtx.isGrid()) return true;
@@ -772,6 +772,6 @@ public final class BoxMeasurer {
     }
 
     private static boolean isDisplayNone(ComputedStyle style) {
-        return style.layoutFacts().displayNone;
+        return style.facts().displayNone;
     }
 }

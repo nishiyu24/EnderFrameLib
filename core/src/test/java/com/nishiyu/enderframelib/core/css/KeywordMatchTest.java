@@ -75,7 +75,7 @@ class KeywordMatchTest {
             if (wb != null) m.put(CssProperty.WORD_BREAK, wb);
             if (kern != null) m.put(CssProperty.FONT_KERNING, kern);
             m.put(CssProperty.WIDTH, "100px");
-            StyleFacts f = new ComputedStyle(m, 16f, 16f).layoutFacts();
+            StyleFacts f = new ComputedStyle(m, 16f, 16f).facts();
             assertEquals("rtl".equalsIgnoreCase((dir == null ? "ltr" : dir).trim()), f.rtl);
             assertEquals(oldWs(ws), f.whiteSpace);
             assertEquals(oldWb(wb), f.wordBreak);

@@ -58,8 +58,8 @@ public class FlexLayoutEngine extends LayoutEngine {
             LayoutBox child = box.children.get(i);
             if (!child.participatesInFlow()) continue;
             if (isCollapsed(child)) continue;
-            if (axes.row && !child.axisStyle().layoutFacts().edgesAvailableFree) flexUsesAvail = true;
-            if (fillFitCandidate && (grow(child) > 0 || !child.axisStyle().layoutFacts().edgesAvailableFree)) {
+            if (axes.row && !child.axisStyle().facts().edgesAvailableFree) flexUsesAvail = true;
+            if (fillFitCandidate && (grow(child) > 0 || !child.axisStyle().facts().edgesAvailableFree)) {
                 fillFitCandidate = false;
             }
             CssKeywords.Alignment childAlign = alignSelfOf(child, alignItems);
@@ -449,7 +449,7 @@ public class FlexLayoutEngine extends LayoutEngine {
      * （{@code fit-content} など。上書き寸法のときは別の経路で解く）は、測り直すと別の値になり得る。
      */
     private static boolean widthIndependentOfParent(LayoutBox child) {
-        StyleFacts f = child.axisStyle().layoutFacts();
+        StyleFacts f = child.axisStyle().facts();
         if (f.percentGeometry || f.intrinsicWidthKind != StyleFacts.IW_NONE) return false;
         // 縮小幅の箱は min-width / max-width で使える幅と確定幅が変わる（BoxMeasurer.shrinkMaxInnerWidth）ので、測り直しを省かない
         ComputedStyle ax = child.axisStyle();
@@ -755,10 +755,10 @@ public class FlexLayoutEngine extends LayoutEngine {
 
     private static boolean isAuto(ComputedStyle style, int prop) {
         // 余白の四辺は事実から引く（添字の定数と比べる）。それ以外の宣言は従来どおり読む
-        if (prop == CssPropertyIndex.MARGIN_TOP) return style.layoutFacts().autoMarginT;
-        if (prop == CssPropertyIndex.MARGIN_RIGHT) return style.layoutFacts().autoMarginR;
-        if (prop == CssPropertyIndex.MARGIN_BOTTOM) return style.layoutFacts().autoMarginB;
-        if (prop == CssPropertyIndex.MARGIN_LEFT) return style.layoutFacts().autoMarginL;
+        if (prop == CssPropertyIndex.MARGIN_TOP) return style.facts().autoMarginT;
+        if (prop == CssPropertyIndex.MARGIN_RIGHT) return style.facts().autoMarginR;
+        if (prop == CssPropertyIndex.MARGIN_BOTTOM) return style.facts().autoMarginB;
+        if (prop == CssPropertyIndex.MARGIN_LEFT) return style.facts().autoMarginL;
         return "auto".equalsIgnoreCase(style.getOrDefault(prop, "0").trim());
     }
 
@@ -846,7 +846,7 @@ public class FlexLayoutEngine extends LayoutEngine {
 
     /** {@code align-items} の {@code normal} は flex では stretch。 */
     private static CssKeywords.Alignment alignItemsOf(ComputedStyle style) {
-        return style.layoutFacts().alignItems;
+        return style.facts().alignItems;
     }
 
     /**
@@ -854,7 +854,7 @@ public class FlexLayoutEngine extends LayoutEngine {
      * {@link StyleFacts} が寄せ済み（{@code safe center} の safe は {@link CssKeywords#parse} が落とし済み）。
      */
     static CssKeywords.Alignment alignSelfOf(LayoutBox child, CssKeywords.Alignment alignItems) {
-        StyleFacts facts = child.style.layoutFacts();
+        StyleFacts facts = child.style.facts();
         return facts.alignSelfAuto ? alignItems : facts.alignSelf;
     }
 
