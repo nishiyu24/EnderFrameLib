@@ -68,7 +68,7 @@
    - 出力が完全不変であり、一時状態（`overrideWidth`, `floatSpace` 等）は計算中の引数・局所スタックにしか存在しないため、**「入力が同じなら前回の `LayoutFragment` をそのまま返す」** だけで全段の整合性が保証される。可変 `LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`resetPlacements` は存在理由ごと消滅させる。
 
 2. **グループ共有・型付き不変スタイル（脱 `CssValue[207]` 文字列配列）**
-   - CSS プロパティを継承性・利用箇所に応じた機能グループ別不変構造体（`InheritedStyle`, `BoxGeomStyle`, `VisualStyle`, `FlexGridStyle`, `TableStyle`, `RareStyle`）へ分離する。
+   - CSS プロパティを継承性・利用箇所に応じた機能グループ別不変構造体（`InheritedStyle`, `BoxGeomStyle`, `VisualStyle`, `FlexGridStyle`, `TableStyle`, `RareStyle`）へ分離する。M2c で「レイアウトに効く群」と「描画だけの群」の軸を加え、継承群も 2 つに分ける（§3.4.2-3。描画だけの変化がレイアウトの入力の参照を変えないため）。
    - 初期値グループは静的シングルトンを共有し、親から受け継ぐ `InheritedStyle` が未変更なら子も同一参照を共有する。長さは 64-bit プリミティブ値 `CssLength`、色・キーワードは `int` ARGB / `enum` / bitfield で直接保持し、文字列ラッパー配列と `Map<String, String>` 受け渡しを根絶する。
 
 3. **階層的・数値 ID ベースの `DisplayScene`（フラット `DisplayItem` 完全廃止）**
@@ -113,7 +113,7 @@
 │ L2: DOM, ChangeLedger, Style & Incremental BoxTreeCompiler                 │
 │     (`core/dom/*`, `core/css/*`)                                           │
 │     軽量 `DomNode` + `ChangeLedger` + `SelectorIndex` + 不変 `Style`        │
-│     `BoxTreeCompiler`: `(DOM, ChangeLedger, prev) -> BoxNode / BoxChunk`   │
+│     `BoxTreeCompiler`（`core/box/*`）: `(DOM, ChangeLedger, prev) -> BoxNode / BoxChunk` │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ L1: Text, Media, 2D/3D Primitives & RHI (`core/text/*`, `core/raster/*`,   │
 │     `core/scene3d/*`, `core/kernel/gpu/rhi/*`, `core/kernel/memory/*`)     │
@@ -440,7 +440,7 @@ M2a の縦割りスパイク合格（**2026-11-25 Go。§3.3 C**）を前提と�
 | **M2b-3** | Grid: `GridLayoutEngine` のアルゴリズム（配置・トラックのサイズ解決・揃え。純粋な static 関数）と `TrackList` を移植し、子を測るつなぎ目（`minContentContribution(LayoutBox, ctx)` など）だけを `LayoutCache` へ差し替える（§3.4.2-2） | 旧経路だけ合格の grid 系（14 件）が 0・同梱の実文書 7 本中 6 本が grid を使うので `RealDocumentFramesTest` の文書で幾何一致（§3.4.2-4） | 未着手 |
 | **M2b-4** | Table: `TableLayoutEngine` の列幅・行の高さ・`border-collapse` の計算を同じ形で移植（親が決めた列幅・行の高さは `ConstraintSpace` で子へ渡し、箱へ書かない）・匿名の表の箱は `BoxTreeCompiler` で作る | 旧経路だけ合格の表系（8 件）が 0 | 未着手 |
 | **M2b-5** | 縦書き（`writing-mode`・`text-orientation`）・双方向（`direction: rtl`・`unicode-bidi`）・`anchor()` 位置指定・コンテナクエリ（容器を整形 → 子孫を解き直す 2 段。現在は全体の作り直し） | 旧経路だけ合格の縦書き・双方向系（13 件）が 0・**新経路の WPT ≥ 旧経路の合格数（160）** | 未着手 |
-| **M2c** | **描画の入力を断片木へ（新経路を既定にする前提）**: ① `Style` の群を生成器で「レイアウトに効く群」と「描画だけの群」に分け、描画だけの変化では `BoxNode`・断片を作り直さない（§3.4.2-3）② 描画（`DisplayListBuilder`・`FragmentPaint`・`PaintOrder`・`BoxDecorationPainter` ほか 17 本）の入力を `LayoutBox` から「断片木 ＋ 節の現在のスタイル」へ替え、描画の記憶は断片の同一性（`==`）の 1 層に（`PaintStamps`・箱の汚れのリストを使わない）③ 問い合わせ（CSSOM の `BoxLayoutQuery`・当たり判定・スクロール・`UiFocus`・`ElementInspector`・MOD 3 本）を断片木から答える ④ ビュー単位の経路の選択を経て新経路を既定に。出力（`DisplayItem`）は変えない（`DisplayScene` 化は M3b） | `RealDocumentFramesTest`・`GpuBaselineTest`・`VkBaselineTest`・`costGate`・`memoryAndLatencyGate` が新経路で緑・hover / 文字の変更の 1 フレームが旧経路の交互 A/B 比 ≤ 1.0 | 未着手 |
+| **M2c** | **描画の入力を断片木へ（新経路を既定にする前提）**: ① `Style` の群を生成器で「レイアウトに効く群」と「描画だけの群」に分け、描画だけの変化では `BoxNode`・断片を作り直さない（§3.4.2-3）② 断片木（と最新の群の木）から描画項目を作る新しいクラスを書き、描画の記憶は断片の同一性（`==`）の 1 層だけにする。旧 `DisplayListBuilder`・`FragmentPaint`・`PaintOrder`・`InkState`・`PaintStamps` ほか（描画の 17 本のうち入力側）は付け替えずに M2c の中で削除する③ 問い合わせ（CSSOM の `BoxLayoutQuery`・当たり判定・スクロール・`UiFocus`・`ElementInspector`・MOD 3 本）を断片木から答える ④ ビュー単位の経路の選択（構築時の引数。`Shortcut`・`EngineFlags` にしない）を経て新経路を既定に。出力（`DisplayItem`）は変えない（`DisplayScene` 化は M3b） | `RealDocumentFramesTest`・`GpuBaselineTest`・`VkBaselineTest`・`costGate`・`memoryAndLatencyGate` が新経路で緑・hover / 文字の変更の 1 フレームが旧経路の交互 A/B 比 ≤ 1.0 | 未着手 |
 | **M2b-6** | 旧経路（`LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads`・`PartialBuild`・`RenderTreeBuilder`/`RenderPipeline` の旧多段分岐・旧エンジン本体・レイアウト系 `Shortcut`・グローバルエポック・一時アダプタ `FragmentProjection`・`LegacyParityTest` の旧経路側）を一括削除 | 上の完了ゲート（削除 ≥ 4,500 行・エポック 0・一時アダプタ 0・KPI 更新） | 未着手 |
 
 
@@ -466,9 +466,9 @@ M2a の縦割りスパイク合格（**2026-11-25 Go。§3.3 C**）を前提と�
 
 2. **旧エンジンは「アルゴリズムは移植・つなぎ目は差し替え」。** grid・表・縦書きの旧エンジンは、`LayoutBox` の欄への書き込みが少なく（grid 8・表 12 か所）、記憶の仕組み（`MeasureMemo` ほか）への参照は 0 で、トラックの配置・サイズ解決・列幅などの計算は純粋な static 関数（`TrackList` は完全に独立）。書き直さずに計算を `core/layout/fragment` の新しいクラス（≤ 600 行）へ移し、子を測る関数だけを `LayoutCache`（`minMax`・`layout`）を呼ぶ形に替え、結果は断片で返す。旧クラスは旧経路が動いている間は残し、M2b-6 で消す。
 
-3. **描画だけの変化はレイアウトを作り直さない（構造で）。** 実測: `varied-list-2000` の hover（色だけが変わる）で、新経路はレイアウトに 0.44 ms を使っていた。色は継承群（`InheritedStyle`）にあり、`li` の `BoxNode` が変わって子を解き直しチャンクが外れるため。旧経路は `PropertyRegistry` の `Invalidation.PAINT` でプロパティごとに判定している。新経路では述語を足さず、**生成器（`scripts/GenStyleGroups.java`）で群を「レイアウトに効く群」と「描画だけの群」に分ける**（継承群も 2 つに分ける）。`BoxTreeCompiler` は解き直した結果のレイアウト群が前回と同じ参照（`shareEqualGroups`）なら `BoxNode` を作り直さず、新しいスタイルは描画の側が節ごとに引く。レイアウトは描画だけの群を読まない（`ArchitectureHealthTest` で `core/layout/fragment` からの参照を禁止する）。M2c ①で行う。
+3. **描画だけの変化はレイアウトを作り直さない（構造で）。** 実測: `varied-list-2000` の hover（色だけが変わる）で、新経路はレイアウトに 0.44 ms を使っていた。色は継承群（`InheritedStyle`）にあり、`li` の `BoxNode` が変わって子を解き直しチャンクが外れるため。旧経路は `PropertyRegistry` の `Invalidation.PAINT` でプロパティごとに判定している。新経路では述語を足さず、**生成器（`scripts/GenStyleGroups.java`）で群を「レイアウトに効く群」と「描画だけの群」に分ける**（継承群も 2 つに分ける）。`BoxTreeCompiler` は**2 つの不変の木**を出す: レイアウトの入力の木（レイアウト群・種類・文字・子だけを持つ。解き直した結果のレイアウト群が前回と同じ参照〔`shareEqualGroups`〕なら前回の参照のまま）と、最新の全ての群を持つ木。`LayoutCache` はレイアウトの入力の木の参照（`==`）で照合し、描画は 2 つの木と断片木を並走して読む。**節 → 最新スタイルのような可変の側表は作らない**（2 つ目のスタイルの置き場になり、原則 4 の「単一のメモ化言語・状態の系統を増やさない」と原則 1 の「入力は不変」に反するため）。レイアウトは描画だけの群を読まない（`ArchitectureHealthTest` で `core/layout/fragment` からの参照を禁止する）。M2c ①で行う。
 
-4. **新経路を既定にする前に、描画の入力を断片木へ替える（M2c を新設）。** 実測: 一時アダプタ（`FragmentProjection`）経由で hover の 1 フレームを描くと、射影 16.7 ms ＋ 描き直し 10.4 ms（旧経路の 1 フレームは 0.39 ms）。旧描画の記憶（`FragmentPaint` の `IdentityHashMap<LayoutBox, Memo>`・`PaintStamps`）は箱のインスタンスの使い回しを前提にしており、毎フレーム新しい箱では一度も当たらないうえ、古い箱の記憶が溜まり続けてメモリが尽きる（`OutOfMemoryError` を確認）。したがって**一時アダプタは 1 フレームの検証（WPT・画素一致）専用**とし、対話のフレームには使わない。M2c で描画の入力を「断片木 ＋ 節の現在のスタイル」に替え、描画の記憶は断片の同一性（`==`）の 1 層にする。出力（`DisplayItem`）は変えないので、並行している M3a（MOD のレンダラの撤去。`DisplayItem` の消費側）と衝突しない。`DisplayScene` 化（出力側）は M3b に残す。
+4. **新経路を既定にする前に、描画の入力を断片木へ替える（M2c を新設）。** 実測: 一時アダプタ（`FragmentProjection`）経由で hover の 1 フレームを描くと、射影 16.7 ms ＋ 描き直し 10.4 ms（旧経路の 1 フレームは 0.39 ms。調査時にその場で交互 3 回測った参考値で、正式な時間の主張は M2c で足す交互 A/B のゲートで行う）。旧描画の記憶（`FragmentPaint` の `IdentityHashMap<LayoutBox, Memo>`・`PaintStamps`）は箱のインスタンスの使い回しを前提にしており、毎フレーム新しい箱では一度も当たらないうえ、古い箱の記憶が溜まり続けてメモリが尽きる（`OutOfMemoryError` を確認）。したがって**一時アダプタは 1 フレームの検証（WPT・画素一致）専用**とし、対話のフレームには使わない。M2c では、断片木（と方針 3 の最新の群の木）から描画項目を作る**新しいクラスを書き**、描画の記憶は断片の同一性（`==`）をキーとする 1 層だけにする。旧 `DisplayListBuilder`・`FragmentPaint`（52 欄の `Memo`）・`PaintOrder`・`InkState`・窓のずらし・`PaintStamps` は**鍵を付け替えて延命せず、M2c の中で削除する**（§1.1 の根本欠陥 2・3 そのものなので、付け替えは運用ルール 2 の「壊れた土台の上の対症療法」になる。運用ルール 7 の「置き換えたら同じ段で削除」）。新経路の既定化に使うビュー単位の経路の選択は、ビューの構築時の引数として持ち、プロセス共有のスイッチ（`Shortcut`・`EngineFlags`）にはしない。M2b-6 で引数ごと消す。出力（`DisplayItem`）は変えないので、並行している M3a（MOD のレンダラの撤去。`DisplayItem` の消費側）と衝突しない。`DisplayScene` 化（出力側）は M3b に残す。
 
 5. **入力側の未実装は `BoxTreeCompiler` に閉じて作る（M2b-1）。**
    - 疑似要素: `BoxNode` に疑似の種類（`::before` / `::after` / `::marker`）を持たせ、持ち主の節と種類の組で照合する（DOM に疑似の節を作らない）。カウンタ・引用符は文書順に依る非局所の依存なので、使う文書では変更のあった節より後ろの兄弟と子孫を解き直す規則を足す。
@@ -479,10 +479,12 @@ M2a の縦割りスパイク合格（**2026-11-25 Go。§3.3 C**）を前提と�
 6. **検証の物差しを段ごとに足す。**
    - WPT: `WptV3BaselineTest` のラチェット（段ごとに分類の旧経路だけ合格を 0 へ）。
    - 増分の正しさ: `IncrementalOracleTest` に段ごとの機能の変異を足す（全再計算と全断片の一致）。
-   - 幾何の一致の掃引（M2b-1 で新設）: WPT の 260 文書と同梱の実文書 7 本の全ての箱の位置と大きさを、DOM の節ごとに旧経路と比べ（許容 1/64 px）、完全に一致した文書の数をラチェットにする。画素の合否より細かく、M2c の前に実文書の差を潰す物差しになる。
+   - 幾何の一致の掃引（M2b-1 で新設）: WPT の 260 文書と同梱の実文書 7 本の全ての箱の位置と大きさを、DOM の節ごとに旧経路と比べ（許容 1/64 px）、完全に一致した文書の数をラチェットにする。画素の合否より細かく、M2c の前に実文書の差を潰す物差しになる。**ただし旧経路は正解の基準ではない**（負の余白の相殺など、仕様からの逸脱を持つ）。差は旧経路の逸脱として記録した除外の一覧で扱い、旧経路の不具合を新経路へ写さない（正しさは運用ルール 6 のとおり WPT・画素一致・`FrameOracle` で決める）。
    - 費用: `:core:m2aSpike` の数値（8,000 行の 1 件挿入 ≤ 1.0 ms ほか）を各段で守り、M2c で hover・文字の変更・幅の変更の交互 A/B を足す（幅の変更は §3.3 C の引き継ぎどおり、文字の節ごとの語の幅を 1 層メモにする）。
 
 7. **並行作業との関係。** M3a（MOD のレンダラの撤去・`CoreGpuSurface`）は別に進んでいる。M2b〜M2c は `core/layout`・`core/box`・描画の入力側を変え、`DisplayItem` とその消費者には触れない。コミットは自分の変更したファイルだけをステージし、プッシュ前の Linux CI（作業ツリーを丸ごと写す）は並行作業の未コミットの変更が無いときに回す。
+
+**v3 の規範との照合（2026-11-25）**: 上の方針を §2.1 の 5 原則・§5 の 7 原則・`CLAUDE.md` の作業規則と照らし、反する読み方ができた 3 点を修正した（方針 3 の可変の側表 → 2 つの不変の木／方針 4 の旧描画の記憶の付け替え → 新しいクラスで置き換えて同じ段で削除／ビュー単位の経路の選択 → 構築時の引数で `Shortcut`・`EngineFlags` にしない）。明確化した 3 点: 幾何の一致の掃引は正解の基準ではない／調査時の時間は参考値で、正式な主張は交互 A/B のゲート／原則 2 の群の列挙と §2.2 の図を更新した。新経路のコード（`core/box`・`core/layout/fragment`）は、プロセス共有の可変状態・`ThreadLocal`・`Atomic`・実時計・`Shortcut`/`EngineFlags`・旧来の記憶（`MeasureMemo` ほか）への参照が 0 であることを確認した（一時アダプタ `FragmentProjection` だけは旧 `LayoutBox.addChild` を通じて旧経路のエポックに触れるが、1 フレームの検証専用で M2b-6 で消える）。
 
 ---
 
