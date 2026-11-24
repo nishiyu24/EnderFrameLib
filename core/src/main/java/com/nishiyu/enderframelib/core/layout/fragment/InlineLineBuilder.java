@@ -364,7 +364,7 @@ final class InlineLineBuilder implements TextRun.Sink {
             for (int i = 0; i < atoms.length; i++) {
                 float[] p = aPos.get(i);
                 float ay = p[3] == VerticalAlign.TOP ? p[2] : p[3] == VerticalAlign.BOTTOM ? lineH - p[4] + p[2] : asc - p[1] + p[2];
-                atoms[i] = new PlacedFragment(aFrag.get(i), atomX[i], LayoutUnit.snap(ay));
+                atoms[i] = new PlacedFragment(aFrag.get(i), LayoutUnit.snap(atomX[i]), LayoutUnit.snap(ay)); // 箱の位置は LayoutUnit の格子
             }
             aFrag.clear();
             aPos.clear();

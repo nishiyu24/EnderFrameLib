@@ -51,6 +51,10 @@ final class BlockFlow implements FormattingEngine {
         w = LayoutUnit.snap(w);
         ml = LayoutUnit.snap(ml);
         float cw = Math.max(0, w - g.hdec());
+        // fieldset の描画される legend は流れに入らず上の枠線にまたがり、中身ははみ出した分だけ下がる（FieldsetLegend）
+        BoxNode legend = text ? null : FieldsetLegend.of(node);
+        FieldsetLegend.Placed lp = legend == null ? null : FieldsetLegend.place(legend, g, cw, prior, s);
+        float spill = lp == null ? 0 : lp.spill();
         // 文書の根とルート要素（html）は独立した整形コンテキスト: 子と余白を相殺しない
         boolean root = space.formattingRoot() || node.node.parent == null || node.node.parent.parent == null
                 || BoxGeometry.establishesBfc(st);
@@ -60,15 +64,15 @@ final class BlockFlow implements FormattingEngine {
         boolean collapseTop = !root && g.pT == 0 && g.bT == 0;
         boolean collapseBottom = !root && g.pB == 0 && g.bB == 0 && heightAuto;
         // 文書の根の子（html）の % の高さの基準は初期包含ブロック（ビューポート）の高さ（CSS 2 §10.5）
-        float childPct = node.node.parent == null ? space.percentHeightBase : heightAuto ? Float.NaN : Math.max(0, fixedH - g.vdec());
+        float childPct = node.node.parent == null ? space.percentHeightBase : heightAuto ? Float.NaN : Math.max(0, fixedH - g.vdec() - spill);
 
         BoxChildren kids = node.flow;
         LineFragment[] lines = null;
         ChunkedFlow flow = null;
         Assembled a;
         List<OutOfFlow.Pending> pend = new ArrayList<>();
-        float insetL = g.bL + g.pL, insetT = g.bT + g.pT;
-        if (text || (kids.hasInline() && !kids.hasBlock())) {
+        float insetL = g.bL + g.pL, insetT = g.bT + g.pT + spill;
+        if (legend == null && (text || (kids.hasInline() && !kids.hasBlock()))) {
             InlineFlow.Result r = InlineFlow.layout(text ? List.of(node) : kids.toList(), st, cw, prior, s);
             lines = r.lines().length > 0 ? r.lines() : null;
             a = new Assembled(r.height());
@@ -78,8 +82,8 @@ final class BlockFlow implements FormattingEngine {
             ConstraintSpace pct = Float.isNaN(childPct) ? base : s.space(cw, Float.NaN, Float.NaN, childPct, 0);
             ChunkedFlow priorFlow = prior != null ? prior.flow : null;
             float[] floatBottom = {0};
-            FlowChunk[] chunks = kids.hasInline() || kids.hasFloat() || kids.hasContents()
-                    ? new FlowChunk[]{mixed(st, kids, base, pct, priorFlow, floatBottom, s)}
+            FlowChunk[] chunks = kids.hasInline() || kids.hasFloat() || kids.hasContents() || legend != null
+                    ? new FlowChunk[]{mixed(st, kids, legend, base, pct, priorFlow, floatBottom, s)}
                     : chunks(kids, base, pct, priorFlow, s);
             a = assemble(chunks, collapseTop, collapseBottom);
             // 独立した整形コンテキストの根は中の float を含んで高さを決める
@@ -90,7 +94,7 @@ final class BlockFlow implements FormattingEngine {
                 for (OutOfFlow.Pending p : chunks[k].pending) pend.add(p.shift(insetL, insetT + a.chunkY[k]));
             }
         }
-        float h = heightAuto ? a.contentH + g.vdec() : fixedH;
+        float h = heightAuto ? a.contentH + g.vdec() + spill : fixedH;
         if (Float.isNaN(space.fixedHeight) && !space.contentBlockSize()) h = g.clampHeight(st, h, space.percentHeightBase, s);
         h = LayoutUnit.snap(h);
 
@@ -109,6 +113,12 @@ final class BlockFlow implements FormattingEngine {
             } else {
                 up = pend.toArray(OutOfFlow.NONE);
             }
+        }
+        if (lp != null) { // legend は置いた断片として持つ（流れの外と同じく border-box 基準）
+            PlacedFragment[] all = new PlacedFragment[1 + (oof == null ? 0 : oof.length)];
+            all[0] = lp.frag();
+            if (oof != null) System.arraycopy(oof, 0, all, 1, oof.length);
+            oof = all;
         }
         return new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, insetL, insetT, through, flow, lines, up, oof);
     }
@@ -175,15 +185,15 @@ final class BlockFlow implements FormattingEngine {
      * インラインとブロックが混在する・float を含む子: インラインの連なりを匿名の塊にして並べ、float を左右に置く
      * （{@link Floats}。同じ容器のインラインの行は float を避ける）。{@code floatBottom[0]} に一番下の float の下端を返す。
      */
-    private static FlowChunk mixed(Style st, BoxChildren kids, ConstraintSpace base, ConstraintSpace pct, ChunkedFlow priorFlow,
-                                   float[] floatBottom, LayoutSession s) {
+    private static FlowChunk mixed(Style st, BoxChildren kids, BoxNode skip, ConstraintSpace base, ConstraintSpace pct,
+                                   ChunkedFlow priorFlow, float[] floatBottom, LayoutSession s) {
         s.cache().chunkComputed();
         Cursor cur = new Cursor(priorFlow, 0, priorFlow != null ? priorFlow.chunks.length - 1 : -1);
         ChunkBuilder b = new ChunkBuilder(8, s);
         List<BoxNode> run = new ArrayList<>();
         Floats.Space exc = Floats.Space.EMPTY;
         for (BoxNode child : kids.toList()) {
-            if (child.kind == BoxKind.NONE) continue;
+            if (child.kind == BoxKind.NONE || child == skip) continue; // skip: fieldset の描画される legend
             if (OutOfFlow.is(child)) {
                 flushRun(st, run, base, b, exc, s);
                 b.addOutOfFlow(child);

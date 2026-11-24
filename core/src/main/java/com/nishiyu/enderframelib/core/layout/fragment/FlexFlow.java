@@ -46,7 +46,10 @@ final class FlexFlow implements FormattingEngine {
         float cw = Math.max(0, w - g.hdec());
         float fixedH = !Float.isNaN(space.fixedHeight) ? space.fixedHeight
                 : space.contentBlockSize() ? Float.NaN : g.specifiedHeight(st, space.percentHeightBase, s);
-        float ch = Float.isNaN(fixedH) ? Float.NaN : Math.max(0, fixedH - g.vdec());
+        BoxNode legend = FieldsetLegend.of(node);
+        FieldsetLegend.Placed lp = legend == null ? null : FieldsetLegend.place(legend, g, cw, prior, s);
+        float spill = lp == null ? 0 : lp.spill();
+        float ch = Float.isNaN(fixedH) ? Float.NaN : Math.max(0, fixedH - g.vdec() - spill);
         // 高さが auto なら、内容の高さを min/max-height で挟む（内容だけを測る pass 1 では挟まない）
         boolean clampH = Float.isNaN(ch) && !space.contentBlockSize();
         float minCH = clampH ? g.clampHeight(st, 0, space.percentHeightBase, s) - g.vdec() : Float.isNaN(ch) ? 0 : ch;
@@ -55,10 +58,10 @@ final class FlexFlow implements FormattingEngine {
 
         FlexLines fl = new FlexLines(st, cw, ch, minCH, maxCH, s);
         List<BoxNode> outOfFlow = new ArrayList<>();
-        List<FlexItem> items = items(node, cw, prior, outOfFlow, fl.row(), s);
+        List<FlexItem> items = items(node, legend, cw, prior, outOfFlow, fl.row(), s);
         float contentH = LayoutUnit.snap(fl.run(items));
         fl.mirror(items);
-        float insetL = g.bL + g.pL, insetT = g.bT + g.pT;
+        float insetL = g.bL + g.pL, insetT = g.bT + g.pT + spill;
 
         int n = items.size();
         LayoutFragment[] frags = new LayoutFragment[n];
@@ -84,7 +87,7 @@ final class FlexFlow implements FormattingEngine {
             }
         }
         FlowChunk fc = new FlowChunk(null, null, frags, xs, ys, contentH, 0, 0, 0, 0, false, slots, null, 0);
-        float h = Float.isNaN(fixedH) ? contentH + g.vdec() : fixedH;
+        float h = Float.isNaN(fixedH) ? contentH + g.vdec() + spill : fixedH;
         if (Float.isNaN(space.fixedHeight) && !space.contentBlockSize()) h = g.clampHeight(st, h, space.percentHeightBase, s);
         h = LayoutUnit.snap(h);
         OutOfFlow.Pending[] up = null;
@@ -96,6 +99,12 @@ final class FlexFlow implements FormattingEngine {
                 up = pend.toArray(OutOfFlow.NONE);
             }
         }
+        if (lp != null) { // fieldset の描画される legend は置いた断片として持つ（FieldsetLegend）
+            PlacedFragment[] all = new PlacedFragment[1 + (oof == null ? 0 : oof.length)];
+            all[0] = lp.frag();
+            if (oof != null) System.arraycopy(oof, 0, all, 1, oof.length);
+            oof = all;
+        }
         float baseline = Float.isNaN(fl.baseline) ? Float.NaN : LayoutUnit.snap(insetT + fl.baseline);
         return new LayoutFragment(node, space, w, h, LayoutUnit.snap(ml), Math.max(0, g.mT), Math.min(0, g.mT),
                 Math.max(0, g.mB), Math.min(0, g.mB), insetL, insetT, false,
@@ -106,13 +115,13 @@ final class FlexFlow implements FormattingEngine {
      * 項目（{@code display: none}・畳まれる空白・{@code visibility: collapse} を除き、{@code order} で安定に並べる）と、それぞれの
      * 前回の候補。
      */
-    private static List<FlexItem> items(BoxNode node, float cw, LayoutFragment prior, List<BoxNode> outOfFlow, boolean row,
-                                        LayoutSession s) {
+    private static List<FlexItem> items(BoxNode node, BoxNode legend, float cw, LayoutFragment prior, List<BoxNode> outOfFlow,
+                                        boolean row, LayoutSession s) {
         FlowChunk pc = prior != null && prior.flow != null && prior.flow.chunks.length == 1 ? prior.flow.chunks[0] : null;
         List<BoxNode> kids = new ArrayList<>();
         boolean ordered = false;
         for (BoxNode k : node.flow.toList()) {
-            if (k.kind == BoxKind.NONE || k.collapsibleWhitespace()) continue;
+            if (k.kind == BoxKind.NONE || k.collapsibleWhitespace() || k == legend) continue;
             if (OutOfFlow.is(k)) { // 流れの外: 項目にしない
                 outOfFlow.add(k);
                 continue;
@@ -156,6 +165,7 @@ final class FlexFlow implements FormattingEngine {
         List<BoxNode> kids = new ArrayList<>();
         for (BoxNode k : node.flow.toList()) {
             if (k.kind == BoxKind.NONE || k.collapsibleWhitespace() || OutOfFlow.is(k) || FlexLines.isCollapsed(k)) continue;
+            if (k == FieldsetLegend.of(node)) continue;
             kids.add(k);
         }
         kids.sort((a, b) -> Float.compare(Style.num(a.style.flexGrid.order, 0), Style.num(b.style.flexGrid.order, 0)));
@@ -191,7 +201,7 @@ final class FlexFlow implements FormattingEngine {
             max += gapW * (n - 1);
             if (!wrap) min += gapW * (n - 1);
         }
-        return new MinMaxSizes(LayoutUnit.snap(min + g.hdec()), LayoutUnit.snap(max + g.hdec()));
+        return FieldsetLegend.withLegend(new MinMaxSizes(LayoutUnit.snap(min + g.hdec()), LayoutUnit.snap(max + g.hdec())), node, g, s);
     }
 
     /**

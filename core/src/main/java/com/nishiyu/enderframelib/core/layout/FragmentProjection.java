@@ -100,7 +100,15 @@ public final class FragmentProjection {
             if (!placed.contains(c) && (c.isInlineFlow() || c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT)) fitInline(c);
         }
         if (f.oof != null) { // 流れの外の断片は包含ブロックの子として後ろに置く（描画の順も位置指定の子が後）
-            for (PlacedFragment p : f.oof) lb.addChild(block(p.frag(), p.x(), p.y()));
+            for (PlacedFragment p : f.oof) {
+                LayoutBox c = block(p.frag(), p.x(), p.y());
+                // fieldset の描画される legend（FieldsetLegend が置いた）: 旧描画が枠線を切り欠く印
+                c.isRenderedLegend = f.box != null && p.frag().box != null && p.frag().box.style.box.position != com.nishiyu.enderframelib.core.css.model.Position.ABSOLUTE
+                        && p.frag().box.style.box.position != com.nishiyu.enderframelib.core.css.model.Position.FIXED
+                        && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isFieldset(f.box.node.tag)
+                        && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isLegend(p.frag().box.node.tag);
+                lb.addChild(c);
+            }
         }
         return lb;
     }

@@ -68,7 +68,10 @@ final class GridFlow implements FormattingEngine {
         float cw = Math.max(0, w - g.hdec());
         float fixedH = !Float.isNaN(space.fixedHeight) ? space.fixedHeight
                 : space.contentBlockSize() ? Float.NaN : g.specifiedHeight(st, space.percentHeightBase, s);
-        float ch = Float.isNaN(fixedH) ? Float.NaN : Math.max(0, fixedH - g.vdec());
+        BoxNode legend = FieldsetLegend.of(node);
+        FieldsetLegend.Placed lp = legend == null ? null : FieldsetLegend.place(legend, g, cw, prior, s);
+        float spill = lp == null ? 0 : lp.spill();
+        float ch = Float.isNaN(fixedH) ? Float.NaN : Math.max(0, fixedH - g.vdec() - spill);
 
         List<BoxNode> outOfFlow = new ArrayList<>();
         Grid grid = build(node, cw, ch, prior, outOfFlow, s);
@@ -83,10 +86,10 @@ final class GridFlow implements FormattingEngine {
         }
         float[] rowSizes = sizeRows(grid, fg, ch, s);
         float contentH = GridTracks.sum(rowSizes) + grid.rowGap * Math.max(0, rowSizes.length - 1);
-        float h = Float.isNaN(fixedH) ? contentH + g.vdec() : fixedH;
+        float h = Float.isNaN(fixedH) ? contentH + g.vdec() + spill : fixedH;
         if (Float.isNaN(space.fixedHeight) && !space.contentBlockSize()) h = g.clampHeight(st, h, space.percentHeightBase, s);
         h = LayoutUnit.snap(h);
-        float innerH = Math.max(0, h - g.vdec());
+        float innerH = Math.max(0, h - g.vdec() - spill);
         if (Float.isNaN(ch)) { // 高さが決まった: % の高さの項目をその高さで測り直し、行を確定し直す
             for (GridItem it : grid.items) {
                 if (!BoxGeometry.usesPercentHeight(it.box.style)) continue;
@@ -100,7 +103,7 @@ final class GridFlow implements FormattingEngine {
         boolean rtl = st.facts.rtl;
         for (GridItem it : grid.items) align(it, st, colSizes, rowSizes, colOff, rowOff, grid, cw, rtl, s);
 
-        float insetL = g.bL + g.pL, insetT = g.bT + g.pT;
+        float insetL = g.bL + g.pL, insetT = g.bT + g.pT + spill;
         int n = grid.items.size();
         LayoutFragment[] frags = new LayoutFragment[n];
         float[] xs = new float[n], ys = new float[n];
@@ -144,6 +147,12 @@ final class GridFlow implements FormattingEngine {
             else up = pend.toArray(OutOfFlow.NONE);
         }
         if (!placed.isEmpty()) oof = placed.toArray(new PlacedFragment[0]);
+        if (lp != null) { // fieldset の描画される legend は置いた断片として持つ（FieldsetLegend）
+            PlacedFragment[] all = new PlacedFragment[1 + (oof == null ? 0 : oof.length)];
+            all[0] = lp.frag();
+            if (oof != null) System.arraycopy(oof, 0, all, 1, oof.length);
+            oof = all;
+        }
         return new LayoutFragment(node, space, w, h, LayoutUnit.snap(ml), Math.max(0, g.mT), Math.min(0, g.mT),
                 Math.max(0, g.mB), Math.min(0, g.mB), insetL, insetT, false,
                 new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}, 0, false), null, up, oof, baseline(grid, insetT));
@@ -156,8 +165,9 @@ final class GridFlow implements FormattingEngine {
         float colGap = FlexLines.gap(st, fg.columnGap, cw, s), rowGap = FlexLines.gap(st, fg.rowGap, ch, s);
         FlowChunk pc = prior != null && prior.flow != null && prior.flow.chunks.length == 1 ? prior.flow.chunks[0] : null;
         List<BoxNode> kids = new ArrayList<>();
+        BoxNode legend = FieldsetLegend.of(node);
         for (BoxNode k : node.flow.toList()) {
-            if (k.kind == BoxKind.NONE || k.collapsibleWhitespace()) continue;
+            if (k.kind == BoxKind.NONE || k.collapsibleWhitespace() || k == legend) continue;
             if (outOfFlow != null && OutOfFlow.is(k)) {
                 outOfFlow.add(k);
                 continue;
@@ -387,6 +397,6 @@ final class GridFlow implements FormattingEngine {
         float gaps = grid.colGap * Math.max(0, grid.colDefs.size() - 1);
         float max = GridTracks.sum(GridTracks.size(grid.colDefs, grid.items, true, Float.NaN, grid.colGap, null, false)) + gaps;
         float min = GridTracks.sum(GridTracks.size(grid.colDefs, grid.items, true, Float.NaN, grid.colGap, null, true)) + gaps;
-        return new MinMaxSizes(LayoutUnit.snap(min + g.hdec()), LayoutUnit.snap(max + g.hdec()));
+        return FieldsetLegend.withLegend(new MinMaxSizes(LayoutUnit.snap(min + g.hdec()), LayoutUnit.snap(max + g.hdec())), node, g, s);
     }
 }

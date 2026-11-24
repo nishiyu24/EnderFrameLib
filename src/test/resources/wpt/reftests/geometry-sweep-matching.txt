@@ -19,6 +19,8 @@ css/css-flexbox/balance/balance-min-line-count-007.html
 css/css-flexbox/balance/balance-start-bias-002-ref.html
 css/css-flexbox/balance/balance-start-bias-002.html
 css/css-flexbox/css-flexbox-row-ref.html
+css/css-flexbox/fieldset-baseline-alignment-ref.html
+css/css-flexbox/fieldset-baseline-alignment.html
 css/css-flexbox/flex-002.htm
 css/css-flexbox/flex-align-content-space-between.html
 css/css-flexbox/flex-basis-003.html
