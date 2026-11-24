@@ -131,7 +131,7 @@
 | 1 | **M0** | **新ゲートの先行設置とロックイン解除〔完了〕** | **順序厳守**: 新ゲート（`MemoryAndLatencyGate`・`ArchitectureHealthTest`）先行設置・緑確認 → 旧ラチェット 8 本・`memo*` 判定・`shortcutMatrix`・`*Verifier` 3 種を削除、`Shortcut` 新規追加禁止・上限凍結（`37 → 35` へ減少、M1〜M3b で旧経路ごと削除） | 保護空白ゼロでゲート置換完了、`Shortcut` 上限 `35` 凍結（新規追加 0） |
 | 2 | **M1** | **`ComputedStyle` の完全刷新〔完了〕**（M1a・M1b・M1c 完了） | `CssValue[207]`・`StyleSlice`・`DIFF_MEMO`・`StyleMap`・`SHARED`・`PackedLengths`・`TypedValueCache`・`StateStyleMemo` 全廃 → 6 グループ不変構造体 `Style`（`InheritedStyle` 参照共有＋等価判定含む）+ 64-bit `CssLength` + 不変 `StyleFacts` 導入、`layout`/`paint`/`common`/`dom` の読み口を型付きへ完全切替、スタイル系 `Shortcut`/`EngineFlags`（`STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT`）削除 | `ComputedStyle` 2,095 → **398 行**（`Style` 229 行）、`varied-list` Style 層 **3.5 MB**・`large-list` **9.63 MB**（全体 `varied-list` 35.96 MB の残り約 32 MB は M2b/M3b/M5 対象の `LayoutBox`/`InlineFragment`/`DisplayItem`/`TextShaper`）、読み口文字列参照 `0` |
 | 3 | **M2a** | **入力側増分 `BoxTreeCompiler` 設計と縦割りスパイク関門〔完了・Go〕** | `ChangeLedger` 接続・継承打ち切り・`BoxChildren`（32 子チャンク）・`ConstraintSpace` 比較方式確定（**値等価＝案 A を採用**）・`computeMinMaxSizes` + 固定少数スロット設計。**実 DOM + M1 実 `Style` 上で Block + Text + 入れ子 Flex（2 パス）の独立スパイク**を実測し Go/No-Go 判定（新設 `core/box/`・`core/layout/fragment/`） | **全 5 基準合格**: 8,000 行挿入 `0.11〜0.16 ms`（同 JVM 交互 A/B で旧経路 `4.3〜5.9 ms`）、入れ子 Flex 指数爆発 0（深さ 8 で箱あたり ≤ 2 回・追い出し 0）、レイアウト層ヒープ増分 `large-list 0.54 MB`・`varied-list 1.87 MB`、全再計算と 100% 一致 |
-| 4 | **M2b** | **全 `FormattingEngine` 移植と `LayoutBox` 一括解体** | float 非侵入/相対除外・`computeMinMaxSizes`・全エンジン段階移植を経て `LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads`・`PartialBuild`・レイアウト系 `Shortcut` 等（約 4,500 行超）を削除 | 全エンジン WPT ≥ 160/260 & `FrameOracle` 一致、旧コード削除 `≥ 4,500 行`、レイアウト増分 `≤ 4.0 MB` / 中間全体 `≤ 14.0 MB` |
+| 4 | **M2b** | **全 `FormattingEngine` 移植と `LayoutBox` 一括解体**（進行中。段分けは §3.4.1、方針は §3.4.2: M2b-1〜5 でエンジンを新経路へ → **M2c で描画の入力を断片木へ** → M2b-6 で旧経路を削除） | float 非侵入/相対除外・`computeMinMaxSizes`・全エンジン段階移植を経て `LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads`・`PartialBuild`・レイアウト系 `Shortcut` 等（約 4,500 行超）を削除 | 全エンジン WPT ≥ 160/260 & `FrameOracle` 一致、旧コード削除 `≥ 4,500 行`、レイアウト増分 `≤ 4.0 MB` / 中間全体 `≤ 14.0 MB` |
 | 5 | **M3a** | **`CoreGpuSurface` 品質検証と MOD レガシーレンダラ先行撤去** | `useCoreBackend` の全描画要件（`<mc-scene>`・`<scene-3d>`・画像フォールバック・ビットマップ書体・ツールチップ）の事前品質確認関門を通過した上で、MOD `client/renderer` 9,369 行を M3b より先に撤去し `DisplayItem` 消費者を激減させる | MOD 描画 `≤ 1,500 行`・フォールバック `0 件`・`runGameTestServer` & 実機スクショ回帰全件合格 |
 | 6 | **M3b** | **フラット `DisplayItem` 廃止と階層的 `DisplayScene`** | `DisplayItem`・`FragmentPaint`・`PaintSceneDriver`・`HitTestIndex`・残存 `Shortcut.java` を完全廃止し、`SceneChildren`（32 子チャンクカリング）+ `StickyConstraint` 付き `DisplayScene` + L4 単方向化を完了 | `varied-list fontsize` 10.76 → ≤ 5.0 ms（144Hz 達成）、3 者画素一致 100%、`Shortcut` 38 → **0** |
 | 7 | **M4** | **L5 ホスト層純化と MOD 循環依存解消** | `UiView` / `StandaloneView` を `EngineView` + `InputController` + `StandaloneHost` へ統合、MOD `EnderScreenDelegate` 縮小・循環依存解消 | L5 ≤ 1,200 行、MOD 循環 5 → 0 |
@@ -435,12 +435,54 @@ M2a の縦割りスパイク合格（**2026-11-25 Go。§3.3 C**）を前提と�
 | 段 | 内容 | 完了条件 | 状態 |
 | :--- | :--- | :--- | :--- |
 | **M2b-0** | **一時アダプタと新経路の検証の足場**: 断片木 → 描画用の `LayoutBox` 木への射影（`core/layout/FragmentProjection`。幾何・縁・行の文字片〔語ごと〕を写すだけで、旧エンジンの測定は呼ばない）と、WPT を新経路で回す `WptV3BaselineTest`（合格一覧 `reftest-passing-v3.txt` をラチェットで固定。`-Dwpt.v3.update=true` で締める）。ビュー単位の経路の選択は、ハーネスが新経路を直接組めば足りたので M2b-6 へ回した | 旧経路の WPT ≥ 160/260 不変・新経路の合格数を記録・射影の往復（M2a の文書で旧経路と画素一致） | **完了 2026-11-25**: 新経路 **65/260**（flexbox 29・grid 23・text 13。旧経路 160）、旧経路だけ合格 118・新経路だけ合格 11。`ProjectionPixelParityTest`（ブロック・折り返し・flex の 3 文書で旧経路と**画素一致**）。射影で見つけた新経路の不具合 1 件（ルート要素〔`html`〕を独立した整形コンテキストにしておらず、子の余白と相殺していた）を直した。最初の計数 72 は文字片が描かれず、テストと参照が同じく文字を欠いて一致した水増しだった（`BLANK` 29 → 0） |
-| **M2b-1** | Block の拡張（float と `ExclusionSpace`〔非侵入は `EMPTY` 共有〕・clearance・positioned〔absolute/fixed/sticky の静的位置〕・multicol）＋ Inline の完全版（`inline-block` の原子・`vertical-align`・双方向・ブロックを含むインライン・`::before/::after`・`::marker`・カウンタ・引用符）＋ スクロールコンテナの `scrollW/H` | 新経路で Block/Inline 系の WPT サブセットが旧経路と同数以上・`IncrementalOracleTest` に float/positioned の変異を足して 100% 一致 | **進行中**: ① 位置指定（`OutOfFlow`・`PlacedFragment`。relative は親が置く位置のずれ、absolute/fixed は静的位置を断片に載せて包含ブロックまで上げ、包含ブロックが自分の大きさを決めた後で整形する LayoutNG 型。`IncrementalOracleTest` に absolute/relative の変異を追加して 100% 一致）② 折り返し候補を UAX #14（`LineBreaker`）へ統一（空白の無い和文）③ flex の基準の大きさの修正（`flex-basis` が `content`・基準の無い % なら `height` を見ない／column の pass 1 は `ConstraintSpace.CONTENT_BLOCK_SIZE` で自分の `height` を掛けずに内容を測る）。新経路 WPT **65 → 74/260**。入れ替わり 4 件: 新経路だけの偶然の合格 3 件（テストと参照が同じく誤っていた）と、旧経路も合格の `flex-align-baseline-column-vert-rl-rtl-wrap-reverse`（absolute の箱を column の項目として積んでいた誤りが偶然正解の絵だった。縦書きは M2b-5）④ インライン水準の原子（`BoxKind.INLINE_BLOCK` / `INLINE_FLEX`。縮小して合わせた幅で独立に整形し、行の中に 1 つの塊として置く。行はベースラインより上の最大 ＋ 下の最大で組み、文字片も原子もベースラインへ揃える〔`inline-block` は最後の行・`inline-flex` は最初の行・`overflow` が visible でなければ下の余白の端〕。`LineFragment` に `baseline` と `atoms`）⑤ `text-indent`。新経路 WPT **74 → 91/260**（flexbox 35 → 52）。入れ替わり 1 件: 旧経路も合格の `flexbox-baseline-multi-line-horiz-004`（flex のベースライン揃え・`wrap-reverse`・`align-content`。原子を平らに流していた頃は偶然一致していた。M2b-2 で取り戻す）⑥ float（`Floats`。同じ容器の中で左右に積み入らなければ下へ・`clear`・同じ容器のインラインの行が避ける・BFC の根は float を含む。float・absolute/fixed はブロック水準へ blockify）と、それで見つかった不具合 3 件の修正（高さ 0 の素通しの箱の位置・column flex の主軸の大きさに `min-height`/`max-height`・column の `justify-content: left/right` は start）・内在サイズの末尾の空白の数え落とし・grid と表を BFC の根に。新経路 WPT **91 → 96/260**（入れ替わり 0）。**範囲外として残したもの**: 兄弟の箱の中の行まで float を避けさせる除外領域の受け渡し・float を避けて縮む BFC の箱 |
-| **M2b-2** | Flex の完全版（`*-reverse`・column の折り返し・`align-content`・主軸の auto 余白・ベースライン揃え） | Flex 系 WPT 同数以上・`NestedFlexTest` 緑 | 未着手 |
-| **M2b-3** | Grid（`GridLayoutEngine` 1,341 行の移植。トラックの解決を `ConstraintSpace` の入力に明示） | Grid 系 WPT 同数以上 | 未着手 |
-| **M2b-4** | Table（列幅・行の高さ・`border-collapse` を親から `ConstraintSpace` で渡す。箱へ直接書かない） | Table 系 WPT 同数以上 | 未着手 |
-| **M2b-5** | 縦書き（`VerticalWritingEngine`）・`anchor()` 位置指定・コンテナクエリ | 全 WPT で新経路 ≥ 160/260 | 未着手 |
-| **M2b-6** | 新経路を既定にし（ビュー単位の経路の選択を経て）、旧経路（`LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads`・`PartialBuild`・レイアウト系 `Shortcut`・グローバルエポック・一時アダプタ）を一括削除。描画は M3b まで射影の代わりに断片木を直接読む薄い層へ | 上の完了ゲート（削除 ≥ 4,500 行・エポック 0・一時アダプタ 0・KPI 更新） | 未着手 |
+| **M2b-1** | Block・インラインと入力側の完成: 位置指定・float（除外領域を兄弟の箱へ渡す〔`ConstraintSpace` に相対座標で載せ、侵入しない子は `EMPTY` 共有〕・float を避けて縮む BFC の箱）・インライン水準の原子・置換要素とフォーム部品（内在の大きさ）・`::before/::after/::marker`・カウンタ・引用符・`<br>`・`vertical-align`・`text-align: justify`・スクロールコンテナ（`scrollW/H`・クリップ）・sticky の静的位置・multicol・レイアウトに効くアニメーション（§3.4.2-5） | 新経路で Block/Inline 系の WPT サブセットが旧経路と同数以上・`IncrementalOracleTest` に float/positioned の変異を足して 100% 一致 | **進行中**: ① 位置指定（`OutOfFlow`・`PlacedFragment`。relative は親が置く位置のずれ、absolute/fixed は静的位置を断片に載せて包含ブロックまで上げ、包含ブロックが自分の大きさを決めた後で整形する LayoutNG 型。`IncrementalOracleTest` に absolute/relative の変異を追加して 100% 一致）② 折り返し候補を UAX #14（`LineBreaker`）へ統一（空白の無い和文）③ flex の基準の大きさの修正（`flex-basis` が `content`・基準の無い % なら `height` を見ない／column の pass 1 は `ConstraintSpace.CONTENT_BLOCK_SIZE` で自分の `height` を掛けずに内容を測る）。新経路 WPT **65 → 74/260**。入れ替わり 4 件: 新経路だけの偶然の合格 3 件（テストと参照が同じく誤っていた）と、旧経路も合格の `flex-align-baseline-column-vert-rl-rtl-wrap-reverse`（absolute の箱を column の項目として積んでいた誤りが偶然正解の絵だった。縦書きは M2b-5）④ インライン水準の原子（`BoxKind.INLINE_BLOCK` / `INLINE_FLEX`。縮小して合わせた幅で独立に整形し、行の中に 1 つの塊として置く。行はベースラインより上の最大 ＋ 下の最大で組み、文字片も原子もベースラインへ揃える〔`inline-block` は最後の行・`inline-flex` は最初の行・`overflow` が visible でなければ下の余白の端〕。`LineFragment` に `baseline` と `atoms`）⑤ `text-indent`。新経路 WPT **74 → 91/260**（flexbox 35 → 52）。入れ替わり 1 件: 旧経路も合格の `flexbox-baseline-multi-line-horiz-004`（flex のベースライン揃え・`wrap-reverse`・`align-content`。原子を平らに流していた頃は偶然一致していた。M2b-2 で取り戻す）⑥ float（`Floats`。同じ容器の中で左右に積み入らなければ下へ・`clear`・同じ容器のインラインの行が避ける・BFC の根は float を含む。float・absolute/fixed はブロック水準へ blockify）と、それで見つかった不具合 3 件の修正（高さ 0 の素通しの箱の位置・column flex の主軸の大きさに `min-height`/`max-height`・column の `justify-content: left/right` は start）・内在サイズの末尾の空白の数え落とし・grid と表を BFC の根に。新経路 WPT **91 → 96/260**（入れ替わり 0）。**範囲外として残したもの**: 兄弟の箱の中の行まで float を避けさせる除外領域の受け渡し・float を避けて縮む BFC の箱 |
+| **M2b-2** | Flex の完全版: 折り返し＋`align-content`・column の折り返し・`*-reverse`・`order` との組み合わせ・ベースライン揃え（`align-items/self: baseline`、容器のベースライン）・主軸の auto 余白・absolute の静的位置の揃え（`justify-content`/`align-self`）・`min/max/fit-content` の内在サイズの語・`aspect-ratio` | 旧経路だけ合格の flex 系（調査時 37 件）が 0・`NestedFlexTest` 緑・入れ替わりで落とした `flexbox-baseline-multi-line-horiz-004` を取り戻す | 未着手 |
+| **M2b-3** | Grid: `GridLayoutEngine` のアルゴリズム（配置・トラックのサイズ解決・揃え。純粋な static 関数）と `TrackList` を移植し、子を測るつなぎ目（`minContentContribution(LayoutBox, ctx)` など）だけを `LayoutCache` へ差し替える（§3.4.2-2） | 旧経路だけ合格の grid 系（14 件）が 0・同梱の実文書 7 本中 6 本が grid を使うので `RealDocumentFramesTest` の文書で幾何一致（§3.4.2-4） | 未着手 |
+| **M2b-4** | Table: `TableLayoutEngine` の列幅・行の高さ・`border-collapse` の計算を同じ形で移植（親が決めた列幅・行の高さは `ConstraintSpace` で子へ渡し、箱へ書かない）・匿名の表の箱は `BoxTreeCompiler` で作る | 旧経路だけ合格の表系（8 件）が 0 | 未着手 |
+| **M2b-5** | 縦書き（`writing-mode`・`text-orientation`）・双方向（`direction: rtl`・`unicode-bidi`）・`anchor()` 位置指定・コンテナクエリ（容器を整形 → 子孫を解き直す 2 段。現在は全体の作り直し） | 旧経路だけ合格の縦書き・双方向系（13 件）が 0・**新経路の WPT ≥ 旧経路の合格数（160）** | 未着手 |
+| **M2c** | **描画の入力を断片木へ（新経路を既定にする前提）**: ① `Style` の群を生成器で「レイアウトに効く群」と「描画だけの群」に分け、描画だけの変化では `BoxNode`・断片を作り直さない（§3.4.2-3）② 描画（`DisplayListBuilder`・`FragmentPaint`・`PaintOrder`・`BoxDecorationPainter` ほか 17 本）の入力を `LayoutBox` から「断片木 ＋ 節の現在のスタイル」へ替え、描画の記憶は断片の同一性（`==`）の 1 層に（`PaintStamps`・箱の汚れのリストを使わない）③ 問い合わせ（CSSOM の `BoxLayoutQuery`・当たり判定・スクロール・`UiFocus`・`ElementInspector`・MOD 3 本）を断片木から答える ④ ビュー単位の経路の選択を経て新経路を既定に。出力（`DisplayItem`）は変えない（`DisplayScene` 化は M3b） | `RealDocumentFramesTest`・`GpuBaselineTest`・`VkBaselineTest`・`costGate`・`memoryAndLatencyGate` が新経路で緑・hover / 文字の変更の 1 フレームが旧経路の交互 A/B 比 ≤ 1.0 | 未着手 |
+| **M2b-6** | 旧経路（`LayoutBox`・`MeasureMemo`・`PlacementMemo`・`PaintStamps`・`LayoutReads`・`PartialBuild`・`RenderTreeBuilder`/`RenderPipeline` の旧多段分岐・旧エンジン本体・レイアウト系 `Shortcut`・グローバルエポック・一時アダプタ `FragmentProjection`・`LegacyParityTest` の旧経路側）を一括削除 | 上の完了ゲート（削除 ≥ 4,500 行・エポック 0・一時アダプタ 0・KPI 更新） | 未着手 |
+
+
+#### 3.4.2 M2b の実装方針（2026-11-25 の調査で確定）
+
+**調査の結果**（旧経路だけ合格の WPT 85 件・新経路だけ合格 21 件・両方不合格 79 件、M2b-1 の途中 96/260 の時点）:
+
+| 分類（先に当たった順） | 旧経路だけ合格 | 担う段 |
+| :--- | :---: | :--- |
+| flex の拡張（折り返し＋`align-content` 12・column の折り返し 9・absolute の静的位置の揃え 8・`*-reverse` 8・内在サイズの語 6・ベースライン 5） | 37 | M2b-2 |
+| grid | 14 | M2b-3 |
+| 縦書き・双方向 | 13 | M2b-5 |
+| 表 | 8 | M2b-4 |
+| インライン・文字（`<br>`・`vertical-align`・justify ほか） | 7 | M2b-1 |
+| 疑似要素 | 4 | M2b-1 |
+| float の残り・基礎 | 各 1 | M2b-1 |
+
+同梱の実文書 7 本の使用機能: flex 7・grid 6・スクロールコンテナ 6・アニメーション/トランジション 5・transform 5・フォーム部品 4・画像/SVG/canvas 4・absolute 3。WPT の件数では flex、実文書では grid・スクロール・アニメーション・置換要素が要になる。
+
+**確定した方針**
+
+1. **段の順は M2b-1 → M2b-2 → M2b-3 → M2b-4 → M2b-5 → M2c → M2b-6。** 各段は「その分類の旧経路だけ合格を 0 にする」を完了条件にし、新経路の合格一覧（`reftest-passing-v3.txt`）のラチェットで進捗を固定する。旧経路で合格している項目を新経路で落としてよいのは、原因が後の段の未実装の機能で、計画書に記録した場合だけ（入れ替わり）。入れ替わりは M2b-6 までに全て取り戻す。
+
+2. **旧エンジンは「アルゴリズムは移植・つなぎ目は差し替え」。** grid・表・縦書きの旧エンジンは、`LayoutBox` の欄への書き込みが少なく（grid 8・表 12 か所）、記憶の仕組み（`MeasureMemo` ほか）への参照は 0 で、トラックの配置・サイズ解決・列幅などの計算は純粋な static 関数（`TrackList` は完全に独立）。書き直さずに計算を `core/layout/fragment` の新しいクラス（≤ 600 行）へ移し、子を測る関数だけを `LayoutCache`（`minMax`・`layout`）を呼ぶ形に替え、結果は断片で返す。旧クラスは旧経路が動いている間は残し、M2b-6 で消す。
+
+3. **描画だけの変化はレイアウトを作り直さない（構造で）。** 実測: `varied-list-2000` の hover（色だけが変わる）で、新経路はレイアウトに 0.44 ms を使っていた。色は継承群（`InheritedStyle`）にあり、`li` の `BoxNode` が変わって子を解き直しチャンクが外れるため。旧経路は `PropertyRegistry` の `Invalidation.PAINT` でプロパティごとに判定している。新経路では述語を足さず、**生成器（`scripts/GenStyleGroups.java`）で群を「レイアウトに効く群」と「描画だけの群」に分ける**（継承群も 2 つに分ける）。`BoxTreeCompiler` は解き直した結果のレイアウト群が前回と同じ参照（`shareEqualGroups`）なら `BoxNode` を作り直さず、新しいスタイルは描画の側が節ごとに引く。レイアウトは描画だけの群を読まない（`ArchitectureHealthTest` で `core/layout/fragment` からの参照を禁止する）。M2c ①で行う。
+
+4. **新経路を既定にする前に、描画の入力を断片木へ替える（M2c を新設）。** 実測: 一時アダプタ（`FragmentProjection`）経由で hover の 1 フレームを描くと、射影 16.7 ms ＋ 描き直し 10.4 ms（旧経路の 1 フレームは 0.39 ms）。旧描画の記憶（`FragmentPaint` の `IdentityHashMap<LayoutBox, Memo>`・`PaintStamps`）は箱のインスタンスの使い回しを前提にしており、毎フレーム新しい箱では一度も当たらないうえ、古い箱の記憶が溜まり続けてメモリが尽きる（`OutOfMemoryError` を確認）。したがって**一時アダプタは 1 フレームの検証（WPT・画素一致）専用**とし、対話のフレームには使わない。M2c で描画の入力を「断片木 ＋ 節の現在のスタイル」に替え、描画の記憶は断片の同一性（`==`）の 1 層にする。出力（`DisplayItem`）は変えないので、並行している M3a（MOD のレンダラの撤去。`DisplayItem` の消費側）と衝突しない。`DisplayScene` 化（出力側）は M3b に残す。
+
+5. **入力側の未実装は `BoxTreeCompiler` に閉じて作る（M2b-1）。**
+   - 疑似要素: `BoxNode` に疑似の種類（`::before` / `::after` / `::marker`）を持たせ、持ち主の節と種類の組で照合する（DOM に疑似の節を作らない）。カウンタ・引用符は文書順に依る非局所の依存なので、使う文書では変更のあった節より後ろの兄弟と子孫を解き直す規則を足す。
+   - 置換要素とフォーム部品: `BoxKind.REPLACED` を足し、内在の大きさは旧経路と同じ供給元（`ReplacedElements`・画像の大きさの `HostServices`）から引く。
+   - アニメーション・トランジション: レイアウトに効くプロパティの補間値は `StyleSource` が `StyleAnimator` で解き（時刻は `Clock` 注入）、動いている節はアニメーションの駆動側が毎フレーム `ChangeLedger` へ `STYLE` を追記する（入口は台帳 1 本のまま）。描画だけのプロパティ（opacity・transform・色）の補間は今までどおり描画の側。
+   - スクロールコンテナ: 断片はスクロールで溢れた範囲（`scrollW/H`）を持ち、スクロール量はレイアウトの入力にしない（描画・ビューの側で足す）。sticky はレイアウトでは静的位置だけを出し、ずれは描画の側で解く。
+
+6. **検証の物差しを段ごとに足す。**
+   - WPT: `WptV3BaselineTest` のラチェット（段ごとに分類の旧経路だけ合格を 0 へ）。
+   - 増分の正しさ: `IncrementalOracleTest` に段ごとの機能の変異を足す（全再計算と全断片の一致）。
+   - 幾何の一致の掃引（M2b-1 で新設）: WPT の 260 文書と同梱の実文書 7 本の全ての箱の位置と大きさを、DOM の節ごとに旧経路と比べ（許容 1/64 px）、完全に一致した文書の数をラチェットにする。画素の合否より細かく、M2c の前に実文書の差を潰す物差しになる。
+   - 費用: `:core:m2aSpike` の数値（8,000 行の 1 件挿入 ≤ 1.0 ms ほか）を各段で守り、M2c で hover・文字の変更・幅の変更の交互 A/B を足す（幅の変更は §3.3 C の引き継ぎどおり、文字の節ごとの語の幅を 1 層メモにする）。
+
+7. **並行作業との関係。** M3a（MOD のレンダラの撤去・`CoreGpuSurface`）は別に進んでいる。M2b〜M2c は `core/layout`・`core/box`・描画の入力側を変え、`DisplayItem` とその消費者には触れない。コミットは自分の変更したファイルだけをステージし、プッシュ前の Linux CI（作業ツリーを丸ごと写す）は並行作業の未コミットの変更が無いときに回す。
 
 ---
 
