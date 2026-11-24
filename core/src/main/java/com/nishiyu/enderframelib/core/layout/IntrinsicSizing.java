@@ -169,9 +169,9 @@ final class IntrinsicSizing {
     static float inlineDecoration(LayoutBox box, LayoutContext ctx) {
         if (box.display.inner() == LayoutBox.Display.Inner.TABLE) return box.horizontalDecoration();
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
-        ComputedStyle s = box.axisStyle();
-        return LayoutUnit.snap(s.edgeLength(ComputedStyle.EDGE_PADDING_L, 0, rootW, rootH)) + LayoutUnit.snap(s.edgeLength(ComputedStyle.EDGE_PADDING_R, 0, rootW, rootH))
-                + LayoutUnit.snap(s.edgeLength(ComputedStyle.EDGE_BORDER_L, 0, rootW, rootH)) + LayoutUnit.snap(s.edgeLength(ComputedStyle.EDGE_BORDER_R, 0, rootW, rootH));
+        com.nishiyu.enderframelib.core.css.Style t = box.axisStyle().typed();
+        return LayoutUnit.snap(t.boxPx(t.box.paddingLeft, 0, rootW, rootH)) + LayoutUnit.snap(t.boxPx(t.box.paddingRight, 0, rootW, rootH))
+                + LayoutUnit.snap(t.boxPx(t.box.borderLeftWidth, 0, rootW, rootH)) + LayoutUnit.snap(t.boxPx(t.box.borderRightWidth, 0, rootW, rootH));
     }
 
     static float ownInlineMargins(LayoutBox box, LayoutContext ctx) {

@@ -805,8 +805,8 @@ public class LayoutBox {
      */
     float intrinsicInlineMargins(LayoutContext ctx) {
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
-        ComputedStyle s = axisStyle();
-        return s.edgeLength(ComputedStyle.EDGE_MARGIN_L, 0, rootW, rootH) + s.edgeLength(ComputedStyle.EDGE_MARGIN_R, 0, rootW, rootH);
+        com.nishiyu.enderframelib.core.css.Style t = axisStyle().typed();
+        return t.boxPx(t.box.marginLeft, 0, rootW, rootH) + t.boxPx(t.box.marginRight, 0, rootW, rootH);
     }
     public float verticalDecoration() { return pT + pB + bT + bB + legendSpill; }
 

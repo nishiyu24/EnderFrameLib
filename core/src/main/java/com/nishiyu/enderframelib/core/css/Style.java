@@ -85,6 +85,16 @@ public final class Style {
         return CssLength.resolve(len, exprs, percentBase, inherited.fontSize, inherited.rootFontSizePx, vw, vh);
     }
 
+    /** {@link BoxGeomStyle} の長さ（余白・パディング・枠線の幅・寸法）を px へ解く。{@code percentBase} は % の基準。 */
+    public float boxPx(long len, float percentBase, float rootW, float rootH) {
+        return CssLength.resolve(len, box.exprs, percentBase, inherited.fontSize, inherited.rootFontSizePx, rootW, rootH);
+    }
+
+    /** {@link FlexGridStyle} の長さ（gap・flex-basis）を px へ解く。 */
+    public float gridPx(long len, float percentBase, float rootW, float rootH) {
+        return CssLength.resolve(len, flexGrid.exprs, percentBase, inherited.fontSize, inherited.rootFontSizePx, rootW, rootH);
+    }
+
     @Override
     public boolean equals(Object other) {
         if (this == other) return true;

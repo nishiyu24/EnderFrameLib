@@ -9,6 +9,7 @@ import com.nishiyu.enderframelib.core.layout.model.*;
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
@@ -229,42 +230,29 @@ public final class BoxMeasurer {
     }
 
     // 箱ごとに何度も引くプロパティは、名前ではなく添字で引く（文字列のハッシュと表引きを省く）
-    private static final int ID_MARGIN_TOP = CssPropertyIndex.MARGIN_TOP;
-    private static final int ID_MARGIN_RIGHT = CssPropertyIndex.MARGIN_RIGHT;
-    private static final int ID_MARGIN_BOTTOM = CssPropertyIndex.MARGIN_BOTTOM;
-    private static final int ID_MARGIN_LEFT = CssPropertyIndex.MARGIN_LEFT;
-    private static final int ID_PADDING_TOP = CssPropertyIndex.PADDING_TOP;
-    private static final int ID_PADDING_RIGHT = CssPropertyIndex.PADDING_RIGHT;
-    private static final int ID_PADDING_BOTTOM = CssPropertyIndex.PADDING_BOTTOM;
-    private static final int ID_PADDING_LEFT = CssPropertyIndex.PADDING_LEFT;
-    private static final int ID_BORDER_TOP_WIDTH = CssPropertyIndex.BORDER_TOP_WIDTH;
-    private static final int ID_BORDER_RIGHT_WIDTH = CssPropertyIndex.BORDER_RIGHT_WIDTH;
-    private static final int ID_BORDER_BOTTOM_WIDTH = CssPropertyIndex.BORDER_BOTTOM_WIDTH;
-    private static final int ID_BORDER_LEFT_WIDTH = CssPropertyIndex.BORDER_LEFT_WIDTH;
-    private static final int ID_ROW_GAP = CssPropertyIndex.ROW_GAP;
-    private static final int ID_COLUMN_GAP = CssPropertyIndex.COLUMN_GAP;
     private static final int ID_BORDER_COLLAPSE = CssPropertyIndex.BORDER_COLLAPSE;
 
     private static void resolveBoxEdges(LayoutBox box, float parentW, float parentH, float rootW, float rootH) {
         ComputedStyle style = box.axisStyle();
+        Style t = style.typed();
 
-        box.mT = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_T, parentW, rootW, rootH));
-        box.mR = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_R, parentW, rootW, rootH));
-        box.mB = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_B, parentW, rootW, rootH));
-        box.mL = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_L, parentW, rootW, rootH));
+        box.mT = LayoutUnit.snap(t.boxPx(t.box.marginTop, parentW, rootW, rootH));
+        box.mR = LayoutUnit.snap(t.boxPx(t.box.marginRight, parentW, rootW, rootH));
+        box.mB = LayoutUnit.snap(t.boxPx(t.box.marginBottom, parentW, rootW, rootH));
+        box.mL = LayoutUnit.snap(t.boxPx(t.box.marginLeft, parentW, rootW, rootH));
         box.ownMarginTop = box.mT;
         box.ownMarginBottom = box.mB;
 
-        box.pT = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_PADDING_T, parentW, rootW, rootH));
-        box.pR = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_PADDING_R, parentW, rootW, rootH));
-        box.pB = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_PADDING_B, parentW, rootW, rootH));
-        box.pL = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_PADDING_L, parentW, rootW, rootH));
+        box.pT = LayoutUnit.snap(t.boxPx(t.box.paddingTop, parentW, rootW, rootH));
+        box.pR = LayoutUnit.snap(t.boxPx(t.box.paddingRight, parentW, rootW, rootH));
+        box.pB = LayoutUnit.snap(t.boxPx(t.box.paddingBottom, parentW, rootW, rootH));
+        box.pL = LayoutUnit.snap(t.boxPx(t.box.paddingLeft, parentW, rootW, rootH));
 
 
-        box.bT = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_BORDER_T, parentH, rootW, rootH));
-        box.bR = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_BORDER_R, parentW, rootW, rootH));
-        box.bB = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_BORDER_B, parentH, rootW, rootH));
-        box.bL = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_BORDER_L, parentW, rootW, rootH));
+        box.bT = LayoutUnit.snap(t.boxPx(t.box.borderTopWidth, parentH, rootW, rootH));
+        box.bR = LayoutUnit.snap(t.boxPx(t.box.borderRightWidth, parentW, rootW, rootH));
+        box.bB = LayoutUnit.snap(t.boxPx(t.box.borderBottomWidth, parentH, rootW, rootH));
+        box.bL = LayoutUnit.snap(t.boxPx(t.box.borderLeftWidth, parentW, rootW, rootH));
         if (box.collapsedBorders != null) {
             box.bT = LayoutUnit.snap(box.collapsedBorders[0]);
             box.bR = LayoutUnit.snap(box.collapsedBorders[1]);
@@ -277,8 +265,8 @@ public final class BoxMeasurer {
             box.pT = box.pR = box.pB = box.pL = 0;
         }
 
-        box.rowGap = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_ROW_GAP, parentH, rootW, rootH));
-        box.columnGap = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_COLUMN_GAP, parentW, rootW, rootH));
+        box.rowGap = LayoutUnit.snap(t.gridPx(t.flexGrid.rowGap, parentH, rootW, rootH));
+        box.columnGap = LayoutUnit.snap(t.gridPx(t.flexGrid.columnGap, parentW, rootW, rootH));
     }
 
     private static void resolveWidth(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH,
@@ -498,12 +486,13 @@ public final class BoxMeasurer {
 
         // gap の % は容器自身の内容ボックスが基準（CSS Box Alignment 3 §8.1）。親の寸法で解いた値を、幅と高さが決まったここで解き直す。
         // 高さが不定なら行の gap の % は 0
+        Style t = style.typed();
         String rg = style.get(CssPropertyIndex.ROW_GAP), cg = style.get(CssPropertyIndex.COLUMN_GAP);
         if (cg != null && cg.indexOf('%') >= 0) {
-            box.columnGap = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_COLUMN_GAP, Math.max(0, box.w - box.horizontalDecoration()), rootW, rootH));
+            box.columnGap = LayoutUnit.snap(t.gridPx(t.flexGrid.columnGap, Math.max(0, box.w - box.horizontalDecoration()), rootW, rootH));
         }
         if (rg != null && rg.indexOf('%') >= 0) {
-            box.rowGap = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_ROW_GAP, hasHeight ? Math.max(0, box.h - box.verticalDecoration()) : 0, rootW, rootH));
+            box.rowGap = LayoutUnit.snap(t.gridPx(t.flexGrid.rowGap, hasHeight ? Math.max(0, box.h - box.verticalDecoration()) : 0, rootW, rootH));
         }
 
         // 高さが auto なら内容の高さが箱の高さになる。伸長や stretch はその高さを見て行う

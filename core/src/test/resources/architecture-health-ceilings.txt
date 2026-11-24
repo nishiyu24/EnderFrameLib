@@ -28,7 +28,7 @@ core/src/main/java/com/nishiyu/enderframelib/core/dom/parser/MarkdownParser.java
 core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/shader/ShaderSources.java | 1001
 core/src/main/java/com/nishiyu/enderframelib/core/layout/AnchorPositioning.java | 1121
 core/src/main/java/com/nishiyu/enderframelib/core/layout/BlockLayoutEngine.java | 1454
-core/src/main/java/com/nishiyu/enderframelib/core/layout/BoxMeasurer.java | 777
+core/src/main/java/com/nishiyu/enderframelib/core/layout/BoxMeasurer.java | 766
 core/src/main/java/com/nishiyu/enderframelib/core/layout/BoxTreeBuilder.java | 912
 core/src/main/java/com/nishiyu/enderframelib/core/layout/FlexLayoutEngine.java | 965
 core/src/main/java/com/nishiyu/enderframelib/core/layout/GridLayoutEngine.java | 1341
