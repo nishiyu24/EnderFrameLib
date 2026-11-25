@@ -184,7 +184,8 @@ public final class Style {
     public boolean sameLayout(Style o) {
         if (this == o) return true;
         return o != null && same(inherited, o.inherited) && same(box, o.box) && same(flexGrid, o.flexGrid) && same(table, o.table)
-                && same(rare, o.rare) && java.util.Objects.equals(custom, o.custom) && facts.usesViewportUnits == o.facts.usesViewportUnits;
+                && same(rare, o.rare) && java.util.Objects.equals(custom, o.custom) && facts.usesViewportUnits == o.facts.usesViewportUnits
+                && facts.containsFixed == o.facts.containsFixed;
     }
 
     private static boolean same(Object a, Object b) {

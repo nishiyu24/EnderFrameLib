@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.core.box.StyleSource;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
+import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline;
@@ -44,6 +45,10 @@ final class V3Frame {
     /**
      * 1 フレームを作る。{@code ledger} はこのフレームの凍結済みの台帳（null なら全体を作り直す）。ビューポート・環境変数・規則・書体・
      * スクロールの状態の入れ物が前回と違えば、全体を作り直す。
+     *
+     * <p>描画用の木が前回と同じ実体で、台帳が再スタイルとスクロールだけなら null を返す（前回の表示リストがスクロールの移動量を除いて
+     * そのまま使える。描画器が木の外で読む DOM の値〔属性・文字〕の変化は台帳の別の種別で来るので、ここに入らない）。呼ぶ側は
+     * スクロールの移動で済ませるか、{@link #paint} で描く。</p>
      */
     List<DisplayItem> frame(Document doc, ChangeLedger ledger, int w, int h, float devicePixelRatio, Map<String, String> envNow,
                             InteractionState state, ScrollState scrollState, FontResolver fontResolver) {
@@ -65,13 +70,39 @@ final class V3Frame {
             ledger = null;
         }
         LayoutFragment frag = pipeline.frame(doc.root, ledger, w, h);
+        PaintNode prev = root;
         root = tree.build(frag, pipeline.boxRoot());
+        if (ledger != null && root == prev && onlyRestyleOrScroll(ledger)) return null;
         return painter.paint(root, ledger);
+    }
+
+    /**
+     * 台帳を凍結する前の準備: DOM の変更を規則の範囲（兄弟・祖先・{@code :has()}）へ広げる無効化セットを引くシートを結び、{@code :has()} の
+     * 規則があれば汚れた節の祖先を台帳に足す（凍結の後に足すと次のフレームの世代に入り、1 フレーム遅れる）。
+     */
+    static void beforeFreeze(InteractionState state, StyleSheet sheet) {
+        state.bindStyleSheet(sheet);
+        if (sheet != null && sheet.usesHasSelectors()) state.propagateDirtyToAncestors();
+        else state.discardUnscopedLog();
+    }
+
+    /** 直近のフレームの描画用の木を描く（{@link #frame} が null を返したあと、スクロールの移動で済ませられないとき）。 */
+    List<DisplayItem> paint(ChangeLedger ledger) {
+        return painter.paint(root, ledger);
+    }
+
+    private static boolean onlyRestyleOrScroll(ChangeLedger ledger) {
+        if (ledger.frozenOverflow()) return false;
+        for (int i = 0, n = ledger.frozenSize(); i < n; i++) {
+            if (!ledger.frozenIs(i, ChangeKind.STYLE) && !ledger.frozenIs(i, ChangeKind.SCROLL)) return false;
+            if (ledger.frozenNode(i) == null && ledger.frozenIs(i, ChangeKind.STYLE)) return false; // 絞れない再スタイル
+        }
+        return true;
     }
 
     /** 直近のフレームの描画用の木の根（スクロールの位置を含む見え方。問い合わせが読む。まだ無ければ null）。 */
     PaintView root() {
-        return root != null ? PaintView.root(root, scroll) : null;
+        return root != null ? PaintView.root(root, scroll, width, height) : null;
     }
 
     /** 直近のフレームで中身を 1 つの節にまとめたスクロールコンテナ（スクロールだけの更新で節を動かす）。 */

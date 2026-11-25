@@ -32,4 +32,26 @@ class FixedPositionTest {
             assertEquals(SpikeView.dump(v.scratch()), SpikeView.dump(root), display);
         }
     }
+
+    /**
+     * {@code transform}・{@code filter}・layout / paint containment の箱は、{@code position} に依らず absolute と fixed の両方の包含ブロック
+     * （CSS Transforms 1 §2）。{@code transform} は描画だけの群にあるので、付け外しが増分のレイアウトへ届くこと（{@code Style.sameLayout}）。
+     */
+    @Test
+    void transformFilterAndContainmentContainAbsoluteAndFixed() {
+        for (String prop : new String[]{"transform:translateX(0)", "filter:blur(0)", "contain:paint", "contain:layout"}) {
+            SpikeView v = new SpikeView("<html><body style='margin:0'><div id=t style='width:200px;height:50px;margin:20px'>"
+                    + "<div id=ab style='position:absolute;left:5px;top:6px;width:5px;height:5px'></div>"
+                    + "<div id=fx style='position:fixed;left:7px;top:8px;width:5px;height:5px'></div></div></body></html>", 320, 240);
+            LayoutFragment before = v.frame();
+            assertEquals(5f, SpikeView.find(before, "ab")[0], 0.01f, prop + " 付ける前は初期包含ブロック");
+            ((com.nishiyu.enderframelib.core.dom.node.HtmlElement) v.byId("t")).setAttribute("style", "width:200px;height:50px;margin:20px;" + prop);
+            LayoutFragment after = v.frame();
+            assertEquals(20f + 5f, SpikeView.find(after, "ab")[0], 0.01f, prop + " absolute はこの箱が包含ブロック");
+            assertEquals(20f + 6f, SpikeView.find(after, "ab")[1], 0.01f, prop);
+            assertEquals(20f + 7f, SpikeView.find(after, "fx")[0], 0.01f, prop + " fixed もこの箱が包含ブロック");
+            assertEquals(20f + 8f, SpikeView.find(after, "fx")[1], 0.01f, prop);
+            assertEquals(SpikeView.dump(v.scratch()), SpikeView.dump(after), prop + " 増分と最初から作った結果が一致");
+        }
+    }
 }

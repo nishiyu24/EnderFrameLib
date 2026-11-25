@@ -139,8 +139,9 @@ class LayoutInputTreeTest {
         }
     }
 
+    // transform・filter は none との付け外しで流れの外の子孫の包含ブロックが変わる（StyleFacts.containsFixed。レイアウトへ届く）ので、ここには入れない
     private static final String[] PAINT = {"color:#a00", "background:#0a0", "opacity:.4", "outline:2px solid red",
-            "box-shadow:2px 2px 3px #000", "transform:rotate(3deg)", "text-decoration:underline", "cursor:pointer", "z-index:2",
+            "box-shadow:2px 2px 3px #000", "text-decoration:underline", "cursor:pointer", "z-index:2",
             "border-color:blue", "border-radius:4px", "visibility:visible", ""};
 
     /** 最新の木がゼロから作った木と同じ形・同じ算出スタイルで、レイアウトの入力の木とも同じ形か。 */

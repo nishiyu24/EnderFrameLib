@@ -37,7 +37,7 @@ class ScrollExtentParityTest {
             Map<String, float[]> v3 = new LinkedHashMap<>(), old = new LinkedHashMap<>();
             SpikeView sv = new SpikeView(e.getValue(), W, H);
             collect(FragmentProjection.project(sv.frame(), sv.layout.session()), v3);
-            try (StandaloneView lv = new StandaloneView(e.getValue(), W, H, FontResolver.FALLBACK)) {
+            try (StandaloneView lv = new StandaloneView(e.getValue(), W, H, FontResolver.FALLBACK, com.nishiyu.enderframelib.common.EnginePath.LEGACY)) {
                 lv.frame(1000, new SpikeView.NullBackend(), true);
                 LayoutBox root = lv.ui().layoutRoot();
                 if (root != null) collect(root, old);

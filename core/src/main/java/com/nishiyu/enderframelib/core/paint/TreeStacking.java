@@ -235,8 +235,8 @@ final class TreeStacking {
     /**
      * スクロールするだけで中身が正しく動くコンテナなら中の sticky の箱の式（無ければ空）、そうでなければ null（旧
      * {@code PaintOrder.scrollsAsOneNode}）。中身に固定配置・包含ブロックがコンテナの外の絶対配置が無く、sticky は上の inset だけで
-     * いちばん近いスクロールコンテナがこのコンテナで、sticky の中の sticky でないこと。新経路はまだ sticky のずれを付けない（静的位置の
-     * まま）ので、式の今のずれが 0 の箱だけを許す。
+     * いちばん近いスクロールコンテナがこのコンテナで、sticky の中の sticky でないこと。貼り付きのずれは見え方（{@code PaintView}）が
+     * 付けるので、式がその今のずれと合う箱だけを許す。
      */
     private List<com.nishiyu.enderframelib.core.paint.model.StickyShift> scrollsAsOneNode(PaintView box) {
         if (box.anonymous() || box.w() <= 0 || box.h() <= 0 || !box.style().facts().scrollContainer) return null;
@@ -249,8 +249,8 @@ final class TreeStacking {
         for (PaintView s : stickies) {
             float[] p = boxHasOwnNode(s) ? stickyScrollParams(s, box) : null;
             if (p == null) return null;
-            var shift = new com.nishiyu.enderframelib.core.paint.model.StickyShift(s.node().key(), p[0], p[1], p[2], p[3], p[4], p[5] != 0f, 0f);
-            if (Float.floatToIntBits(shift.dyAt(0f)) != Float.floatToIntBits(0f)) return null; // 式がレイアウト（ずれ 0）と合わない
+            var shift = new com.nishiyu.enderframelib.core.paint.model.StickyShift(s.node().key(), p[0], p[1], p[2], p[3], p[4], p[5] != 0f, s.stickyDy());
+            if (Float.floatToIntBits(shift.dyAt(0f)) != Float.floatToIntBits(s.stickyDy())) return null; // 式が今の貼り付きと合わない
             shifts.add(shift);
         }
         return shifts;
@@ -271,7 +271,7 @@ final class TreeStacking {
         float portH = Math.max(0, port.h() - port.bT() - port.bB());
         float limit = portY + t.boxPx(t.box.top, portH, rootW, rootH);
         float cbBottom = parent.y() + parent.h() - parent.bB() - parent.pB();
-        return new float[]{limit, cbBottom, box.y(), box.h(), box.mB(), parent != port ? 1f : 0f};
+        return new float[]{limit, cbBottom, box.y() - box.stickyDy(), box.h(), box.mB(), parent != port ? 1f : 0f};
     }
 
     private boolean hasUnscrollableDescendant(PaintView container, PaintView box, boolean underSticky, List<PaintView> stickies) {

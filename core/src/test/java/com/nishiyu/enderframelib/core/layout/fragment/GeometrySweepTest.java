@@ -156,7 +156,7 @@ class GeometrySweepTest {
         collect(new SpikeView(html, W, H).frame(), 0, 0, v3);
         Map<String, float[]> old = new LinkedHashMap<>();
         Map<String, String> labels = diffs != null ? new java.util.HashMap<>() : null;
-        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, com.nishiyu.enderframelib.common.EnginePath.LEGACY)) {
             sv.frame(1000, new SpikeView.NullBackend(), true);
             LayoutBox root = sv.ui().layoutRoot();
             if (root != null) collect(root, old, labels);

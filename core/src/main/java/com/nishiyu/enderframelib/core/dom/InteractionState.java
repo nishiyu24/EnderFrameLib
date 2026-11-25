@@ -853,7 +853,7 @@ public class InteractionState implements StyledDocumentState {
             for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) {
                 StateFlags flags = get(cur);
                 if (flags != null) {
-                    flags.markStyleDirty();
+                    flags.markStyleDirty(); ledger.append(cur, com.nishiyu.enderframelib.core.dom.node.ChangeKind.STYLE); // 新経路は台帳を読む
                     flags.markDirtyBelow();
                 }
             }

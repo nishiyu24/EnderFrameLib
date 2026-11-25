@@ -112,7 +112,7 @@ class PaintTreeQueryTest {
         BoxLayoutQuery mine = new BoxLayoutQuery(scroll, () -> { });
         mine.update(PaintView.root(tree, scroll), doc.sheet, w, h);
 
-        try (StandaloneView sv = new StandaloneView(html, w, h, WptReftestRatchetTest.FONTS)) {
+        try (StandaloneView sv = new StandaloneView(html, w, h, WptReftestRatchetTest.FONTS, com.nishiyu.enderframelib.common.EnginePath.LEGACY)) {
             sv.frame(1000, NULL_BACKEND, true);
             // 旧経路のビューが文書に差し込んだ問い合わせ（CSSOM の scrollTo と同じ口でスクロールし、読む前に位置を決め直す）
             LayoutQuery legacy = ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) sv.ui().document().root).layoutQuery();

@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
@@ -110,8 +109,7 @@ class BoundedModelCheckTest {
         var ui = view.ui();
         ui.flushInvalidation();
         List<String> memoized = sigs(ui.renderCache());
-        DisplayListBuilder fresh = new DisplayListBuilder(320, 240, ui.document().sheet.keyframes, ui.scrollState());
-        List<String> expected = sigs(fresh.render(ui.layoutRoot(), false));
+        List<String> expected = sigs(V3Fresh.displayList(ui));
         if (expected.size() != memoized.size()) return "項目の数 " + memoized.size() + " != " + expected.size();
         for (int i = 0; i < expected.size(); i++) if (!expected.get(i).equals(memoized.get(i))) return "項目 " + i + " 違う所: " + around(memoized.get(i), expected.get(i));
         return null;
@@ -142,7 +140,7 @@ class BoundedModelCheckTest {
     /** 列を新しい画面で先頭から実行する。手ごとに、記憶ありと記憶なしを比べる。 */
     private void check(List<Op> ops, List<Integer> seq) {
         sequences++;
-        StandaloneView view = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK);
+        StandaloneView view = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK, EnginePath.V3);
         try {
             String d = firstDifference(view); // 初回
             if (d != null) failures.add("初回: " + d);

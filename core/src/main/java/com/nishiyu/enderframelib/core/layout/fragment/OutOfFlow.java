@@ -58,10 +58,13 @@ final class OutOfFlow {
         return p == Position.ABSOLUTE || p == Position.FIXED;
     }
 
-    /** 流れの外の子孫の包含ブロックになるか（{@code position} が static でない。文書の根は呼び出し側が足す）。 */
+    /**
+     * 流れの外の子孫の包含ブロックになるか（{@code position} が static でない、または {@code transform}・{@code filter}・layout / paint
+     * containment。文書の根は呼び出し側が足す）。
+     */
     static boolean containsOutOfFlow(Style st) {
         Position p = st.box.position;
-        return p != null && p != Position.STATIC;
+        return p != null && p != Position.STATIC || st.facts.containsFixed;
     }
 
     /** 流れの外の子孫の振り分け: この箱が置く分（{@code here}）と、上へ渡す分（{@code up}。無ければ null）。 */
@@ -70,10 +73,11 @@ final class OutOfFlow {
     /**
      * 流れの外の子孫 {@code pend} を、箱（スタイル {@code st}）が包含ブロックとして置く分と上へ渡す分に分ける。位置指定の箱は
      * {@code absolute} だけを置き、{@code fixed}（包含ブロックはビューポート。新経路では文書の根）は上へ渡す（CSS 2.2 §10.1）。
-     * 位置指定でない箱は全てを上へ渡す。
+     * 位置指定でない箱は全てを上へ渡す。{@code transform} などで {@code fixed} の包含ブロックにもなる箱は全てを置く（CSS Transforms 1 §2）。
      */
     static Split split(List<Pending> pend, Style st) {
         if (!containsOutOfFlow(st)) return new Split(List.of(), pend.toArray(NONE));
+        if (st.facts.containsFixed) return new Split(pend, null);
         List<Pending> here = null, up = null;
         for (Pending p : pend) {
             if (p.box().style.box.position == Position.FIXED) {

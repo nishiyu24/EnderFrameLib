@@ -34,7 +34,7 @@ class UiViewTest {
     void loadsDocumentAndBuildsDisplayList() {
         try (UiView view = load()) {
             assertNotNull(view.document());
-            assertNotNull(view.layoutRoot());
+            assertNotNull(view.boxRoot());
             assertEquals(320, view.rootW());
             assertEquals(240, view.rootH());
             assertFalse(view.elements().isEmpty());
@@ -126,7 +126,7 @@ class UiViewTest {
         view.inputScrollOffsets().put("x", 1);
         view.close();
         assertNull(view.document());
-        assertNull(view.layoutRoot());
+        assertNull(view.boxRoot());
         assertTrue(view.renderCache().isEmpty());
         assertTrue(view.inputScrollOffsets().isEmpty());
     }

@@ -156,7 +156,7 @@ class LegacyParityTest {
         LayoutFragment root = new SpikeView(html, 800, 600).frame();
         List<String> diffs = new ArrayList<>();
         int[] compared = {0};
-        try (StandaloneView sv = new StandaloneView(html, 800, 600, FontResolver.FALLBACK)) {
+        try (StandaloneView sv = new StandaloneView(html, 800, 600, FontResolver.FALLBACK, com.nishiyu.enderframelib.common.EnginePath.LEGACY)) {
             sv.frame(1000, new SpikeView.NullBackend(), true);
             LayoutBox legacy = sv.ui().layoutRoot();
             assertNotNull(legacy);

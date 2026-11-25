@@ -60,7 +60,7 @@ public final class M2aSpikeMain {
 
     /** 旧経路: DOM の変更 ＋ 1 フレーム（描画なし）。 */
     private static double legacyChild(String html, String anchorId, int warmup, int ops) {
-        try (StandaloneView v = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
+        try (StandaloneView v = new StandaloneView(html, W, H, FontResolver.FALLBACK, com.nishiyu.enderframelib.common.EnginePath.LEGACY)) {
             SpikeView.NullBackend backend = new SpikeView.NullBackend();
             long now = 1000;
             v.frame(now, backend, true);

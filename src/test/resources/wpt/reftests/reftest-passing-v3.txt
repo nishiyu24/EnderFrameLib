@@ -1,4 +1,4 @@
-# 新経路（M2b の BoxTreeCompiler → FragmentLayout → 一時アダプタ）で合格している reftest（WptV3BaselineTest が固定）
+# 新経路（BoxTreeCompiler → FragmentLayout → PaintTreeBuilder → TreePainter）で合格している reftest（WptV3BaselineTest が固定）
 css/css-flexbox/abspos/abspos-autopos-htb-ltr.html
 css/css-flexbox/abspos/flex-abspos-staticpos-fallback-justify-content-001.html
 css/css-flexbox/abspos/flexbox-abspos-child-001b.html

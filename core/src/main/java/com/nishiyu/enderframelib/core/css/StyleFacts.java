@@ -73,6 +73,12 @@ public final class StyleFacts {
     /** 値のどれかがビューポート／コンテナ基準の単位を使う。 */
     public final boolean usesViewportUnits;
     /**
+     * {@code position} に依らず、{@code absolute} と {@code fixed} の両方の子孫の包含ブロックになる（{@code transform}・{@code filter}・
+     * layout / paint containment）。{@code transform} と {@code filter} は描画だけの群にあるが、この事実はレイアウトが読むので
+     * {@link Style#sameLayout} が照合する。
+     */
+    public final boolean containsFixed;
+    /**
      * 箱自身の横方向の寸法が、親の幅・ビューポートの幅に依らない: {@code width} が % でない確定した長さ、{@code min/max-width}・
      * 余白・パディング・オフセットに % がなく、横の余白も {@code auto} でない。
      */
@@ -136,6 +142,7 @@ public final class StyleFacts {
         floating = b.floatValue != CssKeywords.FloatSide.NONE;
         displayNone = "none".equals(b.display);
         this.usesViewportUnits = usesViewportUnits;
+        containsFixed = isSet(s.visual.transform) || isSet(s.visual.filter) || (bits & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0;
 
         long w = b.width, h = b.height;
         definiteWidth = definite(w, b.exprs);
@@ -238,5 +245,9 @@ public final class StyleFacts {
             case FIRST_BASELINE, LAST_BASELINE -> CssKeywords.Alignment.BASELINE;
             default -> v;
         };
+    }
+
+    private static boolean isSet(String value) {
+        return value != null && !value.isBlank() && !"none".equalsIgnoreCase(value.trim());
     }
 }

@@ -27,20 +27,27 @@ public final class PaintView extends PaintBox {
     private final float x, y;
     /** スクロールの位置（null なら全て 0）。スクロールコンテナの子は、その分だけずらして置く。 */
     private final ScrollState scroll;
+    /** ビューポートの大きさ（スクロールコンテナの外の sticky の基準）。 */
+    private final float vw, vh;
+    /** {@code position: sticky} の貼り付きで足した縦のずれ（{@link #y} に含む。sticky でなければ 0）。 */
+    private final float stickyDy;
     private List<PaintView> kids;
 
-    private PaintView(PaintNode n, PaintView parent, float x, float y, ScrollState scroll) {
+    private PaintView(PaintNode n, PaintView parent, float x, float y, ScrollState scroll, float vw, float vh, float stickyDy) {
         super(n.node, n.anonymous);
         this.n = n;
         this.parent = parent;
         this.x = x;
         this.y = y;
         this.scroll = scroll;
+        this.vw = vw;
+        this.vh = vh;
+        this.stickyDy = stickyDy;
     }
 
     /** 根の節の見え方（文書の左上に置く。スクロールの位置は全て 0）。 */
     public static PaintView root(PaintNode root) {
-        return new PaintView(root, null, 0, 0, null);
+        return new PaintView(root, null, 0, 0, null, root.w, root.h, 0f);
     }
 
     /**
@@ -48,7 +55,12 @@ public final class PaintView extends PaintBox {
      * スクロールコンテナの子〔流れの子と、包含ブロックがそのコンテナの流れの外の子〕は、スクロールした分だけ戻して置く）。
      */
     public static PaintView root(PaintNode root, ScrollState scroll) {
-        return new PaintView(root, null, 0, 0, scroll);
+        return root(root, scroll, root.w, root.h);
+    }
+
+    /** 根の節の見え方。{@code viewportW}, {@code viewportH} はビューポートの大きさ（スクロールコンテナの外の sticky が貼り付く枠）。 */
+    public static PaintView root(PaintNode root, ScrollState scroll, float viewportW, float viewportH) {
+        return new PaintView(root, null, 0, 0, scroll, viewportW, viewportH, 0f);
     }
 
     /** {@code i} 番目の子の見え方。 */
@@ -59,8 +71,15 @@ public final class PaintView extends PaintBox {
             ox -= scroll.getScrollX(o.node());
             oy -= scroll.getScrollY(o.node());
         }
-        return new PaintView(n.children[i], this, ox + n.childX[i], oy + n.childY[i], scroll);
+        PaintNode c = n.children[i];
+        float cx = ox + n.childX[i], cy = oy + n.childY[i];
+        float[] stick = StickyOffset.isSticky(c) ? StickyOffset.of(c, this, cx, cy, vw, vh) : null;
+        if (stick == null) return new PaintView(c, this, cx, cy, scroll, vw, vh, 0f);
+        return new PaintView(c, this, cx + stick[0], cy + stick[1], scroll, vw, vh, stick[1]);
     }
+
+    /** {@code position: sticky} の貼り付きで足した縦のずれ（sticky でない・貼り付いていなければ 0）。 */
+    public float stickyDy() { return stickyDy; }
 
     /**
      * 子の座標の原点になる箱か（旧 {@code PlacementMemo.isInlineFlowForOrigin} の否定）。行の中のインライン要素（外がインラインで中が

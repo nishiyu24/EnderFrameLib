@@ -203,9 +203,18 @@ public class UiView implements AutoCloseable {
     /** 新経路の 1 フレーム（{@code full} なら台帳を読まずに全体を作り直す）。汚れた節の印は台帳に写してあるので片付ける。 */
     private void v3Frame(boolean full) {
         if (document == null || document.root == null) return;
-        List<DisplayItem> elements = v3.frame(document, full ? null : interactionState.changeLedger(), rootW, rootH, devicePixelRatio, env,
-                interactionState, scrollState, fontResolver());
+        interactionState.bindStyleSheet(document.sheet); // DOM の変更を規則の範囲（兄弟・祖先）へ広げる無効化セットを引くシート
+        com.nishiyu.enderframelib.core.dom.node.ChangeLedger ledger = full ? null : interactionState.changeLedger();
+        List<DisplayItem> elements = v3.frame(document, ledger, rootW, rootH, devicePixelRatio, env, interactionState, scrollState, fontResolver());
         interactionState.clearAllStyleDirty();
+        if (elements == null) { // 描画用の木が前回のまま: スクロールが無ければ何もしない、あれば中身の節を動かす
+            if (!scrollState.hasUncheckedChange(scrollAtBuild, java.util.Set.of())) return;
+            if (tryScrollTranslate()) {
+                STAT_SCROLL_TRANSLATED.increment();
+                return;
+            }
+            elements = v3.paint(ledger);
+        }
         publishBuilt(elements);
         publishLayoutToDom();
         applyOverrides();
@@ -1271,6 +1280,7 @@ public class UiView implements AutoCloseable {
         // 動いているうちは毎フレーム再スタイルを要求する（終わった要素は進めた時点で再スタイルの対象になる）
         if (interactionState.advanceAnimations(nowMs())) requestRestyle();
         var ledger = interactionState.changeLedger();
+        if (v3 != null) V3Frame.beforeFreeze(interactionState, document.sheet);
         ledger.freeze(); // 変更台帳を凍結（時間で動くスタイルの印も、この世代に入るよう進めたあとで）。文字・描画だけの属性の変更は台帳から導く（K5b L1）
         List<HtmlNode> texts = ChangeReads.texts(ledger); // null＝あふれ・多すぎ（個々に頼らず全体を作り直す）
         List<HtmlNode> attrNodes = ChangeReads.paintAttrs(ledger, (n, name) -> !isPresentationalAttribute(name) && isPaintOnlyAttribute(n, name));
@@ -1286,7 +1296,11 @@ public class UiView implements AutoCloseable {
             boolean scrollOnly = !nonScrollRepositionPending && level == InvalidationLevel.REPOSITION && !interactionState.hasDirtyNodes();
             repositionPending = nonScrollRepositionPending = false;
             if (resize) recomputeLayout(pendingResizeW, pendingResizeH);
-            else if (!(scrollOnly && texts != null && texts.isEmpty() && attrNodes.isEmpty() && tryScrollTranslate())) v3Frame(false);
+            else if (scrollOnly && texts != null && texts.isEmpty() && attrNodes.isEmpty() && tryScrollTranslate()) STAT_SCROLL_TRANSLATED.increment();
+            else {
+                if (scrollOnly) STAT_SCROLL_FALLBACK.increment();
+                v3Frame(false);
+            }
             return;
         }
         // 文字の変更は再スタイルの経路で測り直す（RESTYLE・NONE のとき）。他の経路と重なったら全体を作り直すので、溜めた分は捨てる
@@ -1710,44 +1724,8 @@ public class UiView implements AutoCloseable {
 
     public boolean handleScrollbarClick(DisplayItem clickedEl, double pixelX, double pixelY) {
         if (clickedEl == null || clickedEl.id() == null) return false;
-        boolean isVTrack = clickedEl.isPart(SB_V_TRACK);
-        boolean isHTrack = clickedEl.isPart(SB_H_TRACK);
-        boolean isVThumb = clickedEl.isPart(SB_V_THUMB);
-        boolean isHThumb = clickedEl.isPart(SB_H_THUMB);
-        if (!isVTrack && !isHTrack && !isVThumb && !isHThumb) return false;
-
-        ensureLayoutFresh();
-        HtmlNode scrollNode = findNode(clickedEl.baseId());
-        com.nishiyu.enderframelib.core.layout.PaintBox box = scrollNode == null ? null : v3 != null ? v3.boxOf(scrollNode)
-                : layoutRoot == null ? null : layoutRoot.findByNode(scrollNode);
-        if (box == null) return false;
-
-        ScrollState state = scrollState;
-
-        if (isVTrack) {
-            float trackY = box.y() + box.bT() + 2;
-            float trackH = box.h() - box.bT() - box.bB() - 4;
-            float thumbH = Math.max(12, trackH * (box.h() / (float) Math.max(1, box.scrollHeight())));
-            float availH = Math.max(1, trackH - thumbH);
-            float ratio = Math.clamp((float) (pixelY - trackY - thumbH / 2.0) / (float) availH, 0f, 1f);
-            float maxScrollY = Math.max(0, box.scrollHeight() - box.h());
-            float curX = state.getScrollX(scrollNode);
-            state.setScroll(scrollNode, curX, ratio * maxScrollY);
-            requestScrollReposition();
-            return true;
-        } else if (isHTrack) {
-            float trackX = box.x() + box.bL() + 2;
-            float trackW = box.w() - box.bL() - box.bR() - 4;
-            float thumbW = Math.max(12, trackW * (box.w() / (float) Math.max(1, box.scrollWidth())));
-            float availW = Math.max(1, trackW - thumbW);
-            float ratio = Math.clamp((float) (pixelX - trackX - thumbW / 2.0) / (float) availW, 0f, 1f);
-            float maxScrollX = Math.max(0, box.scrollWidth() - box.w());
-            float curY = state.getScrollY(scrollNode);
-            state.setScroll(scrollNode, ratio * maxScrollX, curY);
-            requestScrollReposition();
-            return true;
-        }
-        return false;
+        boolean isVTrack = clickedEl.isPart(SB_V_TRACK), isHTrack = clickedEl.isPart(SB_H_TRACK);
+        return (isVTrack || isHTrack) && handleScrollbarDrag(clickedEl.baseId(), isVTrack ? SB_V_TRACK : SB_H_TRACK, pixelX, pixelY);
     }
 
     /** スクロールバーの部品の描画 ID 接尾辞（持ち主の節の ID に続く部分）。 */
@@ -1759,42 +1737,27 @@ public class UiView implements AutoCloseable {
     /** @param nodeId スクロールする節の ID  @param part つかんでいる部品の接尾辞（{@code SB_*}） */
     public boolean handleScrollbarDrag(String nodeId, String part, double pixelX, double pixelY) {
         if (nodeId == null || nodeId.isEmpty() || part == null) return false;
-        boolean isVThumb = part.equals(SB_V_THUMB) || part.equals(SB_V_TRACK);
-        boolean isHThumb = part.equals(SB_H_THUMB) || part.equals(SB_H_TRACK);
-        if (!isVThumb && !isHThumb) return false;
-
+        boolean vertical = part.equals(SB_V_THUMB) || part.equals(SB_V_TRACK);
+        if (!vertical && !part.equals(SB_H_THUMB) && !part.equals(SB_H_TRACK)) return false;
+        // 軌道上の点につまみの中心が来るようにスクロールする
         ensureLayoutFresh();
         HtmlNode scrollNode = findNode(nodeId);
         com.nishiyu.enderframelib.core.layout.PaintBox box = scrollNode == null ? null : v3 != null ? v3.boxOf(scrollNode)
                 : layoutRoot == null ? null : layoutRoot.findByNode(scrollNode);
         if (box == null) return false;
-
-        ScrollState state = scrollState;
-
-        if (isVThumb) {
-            float trackY = box.y() + box.bT() + 2;
-            float trackH = box.h() - box.bT() - box.bB() - 4;
+        if (vertical) {
+            float trackY = box.y() + box.bT() + 2, trackH = box.h() - box.bT() - box.bB() - 4;
             float thumbH = Math.max(12, trackH * (box.h() / (float) Math.max(1, box.scrollHeight())));
-            float availH = Math.max(1, trackH - thumbH);
-            float ratio = Math.clamp((float) (pixelY - trackY - thumbH / 2.0) / (float) availH, 0f, 1f);
-            float maxScrollY = Math.max(0, box.scrollHeight() - box.h());
-            float curX = state.getScrollX(scrollNode);
-            state.setScroll(scrollNode, curX, ratio * maxScrollY);
-            requestScrollReposition();
-            return true;
-        } else if (isHThumb) {
-            float trackX = box.x() + box.bL() + 2;
-            float trackW = box.w() - box.bL() - box.bR() - 4;
+            float ratio = Math.clamp((float) (pixelY - trackY - thumbH / 2.0) / (float) Math.max(1, trackH - thumbH), 0f, 1f);
+            scrollState.setScroll(scrollNode, scrollState.getScrollX(scrollNode), ratio * Math.max(0, box.scrollHeight() - box.h()));
+        } else {
+            float trackX = box.x() + box.bL() + 2, trackW = box.w() - box.bL() - box.bR() - 4;
             float thumbW = Math.max(12, trackW * (box.w() / (float) Math.max(1, box.scrollWidth())));
-            float availW = Math.max(1, trackW - thumbW);
-            float ratio = Math.clamp((float) (pixelX - trackX - thumbW / 2.0) / (float) availW, 0f, 1f);
-            float maxScrollX = Math.max(0, box.scrollWidth() - box.w());
-            float curY = state.getScrollY(scrollNode);
-            state.setScroll(scrollNode, ratio * maxScrollX, curY);
-            requestScrollReposition();
-            return true;
+            float ratio = Math.clamp((float) (pixelX - trackX - thumbW / 2.0) / (float) Math.max(1, trackW - thumbW), 0f, 1f);
+            scrollState.setScroll(scrollNode, ratio * Math.max(0, box.scrollWidth() - box.w()), scrollState.getScrollY(scrollNode));
         }
-        return false;
+        requestScrollReposition();
+        return true;
     }
 
     public UIHitResult hitTest(double pixelX, double pixelY) {

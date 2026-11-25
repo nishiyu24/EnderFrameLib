@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * 子の増減のあとの結果が、独立の基準と一致すること（K5b L2: 局所パッチは撤去済みで、子の増減は変更台帳 {@code CHILDREN} から触れられた親だけを
- * 組み直す）。基準は 2 つ: ①記憶の無い {@code DisplayListBuilder} が今の箱の木から作る表示リスト〔描画の記憶の古さを見つける〕②{@link FrameOracle}
+ * 組み直す）。基準は 2 つ: ①記憶の無い新経路がゼロから作る表示リスト〔{@link V3Fresh}。レイアウトと描画の記憶の古さを見つける〕②{@link FrameOracle}
  * 〔DOM を複製して最初から作った箱の木との比較〕。差分でない基準を全体のフラグの切り替えで作らない〔並列に走る他のテストを乱す〕。
  * 兄弟の規則・番号つきマーカー・文字の子も同じ文書に混ぜる。
  */
@@ -152,7 +152,7 @@ class ChildPatchTest {
     /** 記憶の無いビルダーが、今の箱の木から作る表示リスト。 */
     private static List<DisplayItem> freshList(StandaloneView v) {
         UiView ui = v.ui();
-        return new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(420, 520, ui.document().sheet.keyframes, ui.scrollState()).render(ui.layoutRoot(), false);
+        return V3Fresh.displayList(ui);
     }
 
     private static void sameItems(List<DisplayItem> expected, List<DisplayItem> actual, String step) {
@@ -184,7 +184,7 @@ class ChildPatchTest {
 
     private void run(String sep, boolean structural, int seeds) {
         for (long seed = 1; seed <= seeds; seed++) {
-            try (StandaloneView v = new StandaloneView(html(sep, structural), 420, 520, FontResolver.FALLBACK)) {
+            try (StandaloneView v = new StandaloneView(html(sep, structural), 420, 520, FontResolver.FALLBACK, EnginePath.V3)) {
                 sameItems(freshList(v), flush(v), "seed " + seed + " 初回");
                 Random r = new Random(seed);
                 for (int step = 0; step < 50; step++) {

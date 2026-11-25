@@ -259,8 +259,22 @@ public class ScrollTranslateTest {
         } finally {
             view.close();
         }
-        // 下の inset の sticky（式を持たない）・固定配置を含むコンテナは従来どおり作り直す
-        for (String hdr : new String[]{".hdr{position:sticky;top:auto;bottom:0;background:#fc6}", ".hdr{position:fixed;top:0;background:#fc6}"}) {
+        // 固定配置は描画用の木で根へ出る（包含ブロックはビューポート）ので、コンテナの中身に入らず、コンテナは節にまとめてよい
+        StandaloneView fx = new StandaloneView(html().replace(".hdr{position:sticky;top:0;background:#fc6}", ".hdr{position:fixed;top:0;background:#fc6}"), W, H, FontResolver.FALLBACK, EnginePath.V3);
+        try {
+            List<String> ids = new ArrayList<>();
+            DisplayItem hdr = null;
+            for (DisplayItem it : fx.items()) {
+                if (synthetic(it.id())) ids.add(it.id());
+                if ("hdr".equals(it.id())) hdr = it;
+            }
+            assertTrue(ids.contains("stick_scrollc"), "固定配置の子孫は中身の外なので、まとめる: " + ids);
+            assertTrue(hdr != null && !"stick_scrollc".equals(hdr.hints().parentId()), "固定配置の項目は中身の節の下に無い");
+        } finally {
+            fx.close();
+        }
+        // 下の inset の sticky（式を持たない）を含むコンテナは従来どおり作り直す
+        for (String hdr : new String[]{".hdr{position:sticky;top:auto;bottom:0;background:#fc6}"}) {
             StandaloneView v2 = new StandaloneView(html().replace(".hdr{position:sticky;top:0;background:#fc6}", hdr), W, H, FontResolver.FALLBACK);
             try {
                 List<String> ids = new ArrayList<>();

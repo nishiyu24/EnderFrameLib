@@ -97,6 +97,69 @@ class V3ViewTest {
         }
     }
 
+    /**
+     * {@code position: sticky} はスクロールコンテナの内側の縁で止まり、親の内容の箱の外へは出ない。スクロール量はレイアウトの入力に
+     * しないので、貼り付きは描画用の木の見え方（{@code PaintView}）が付け、中身の節を動かす更新とゼロから描いた面が一致する。
+     */
+    @Test
+    void stickyHeaderSticksToTheScrollportAndStopsAtItsParent() {
+        StringBuilder rows = new StringBuilder();
+        for (int i = 0; i < 12; i++) rows.append("<div style='height:20px'>row ").append(i).append("</div>");
+        String html = "<style>body{margin:0}#sc{position:absolute;left:10px;top:30px;width:150px;height:100px;overflow:auto;border:2px solid #333}"
+                + ".h{position:sticky;top:0;height:16px;background:#fc6}</style><div id=sc><div id=g1><div class=h id=h1>one</div>" + rows
+                + "</div><div id=g2><div class=h id=h2>two</div>" + rows + "</div></div>";
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+            SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
+            sv.frame(1000, live, true);
+            HtmlNode sc = sv.ui().findNode("sc");
+            float[][] cases = {{0f, 32f, 32f + 256f}, {60f, 32f, 32f + 256f - 60f}, {250f, 32f + 256f - 250f - 16f, 32f + 256f - 250f}, {300f, 32f + 256f - 300f - 16f, 32f}};
+            long now = 1000;
+            for (float[] c : cases) {
+                sv.ui().scrollState().setScroll(sc, 0f, c[0]);
+                sv.ui().requestScrollReposition();
+                now += 16;
+                sv.frame(now, live, true);
+                assertEquals(c[1], box(sv.ui().boxRoot(), "h1").y(), 0.01f, "scroll " + c[0] + " の 1 つ目の見出し");
+                assertEquals(c[2], box(sv.ui().boxRoot(), "h2").y(), 0.01f, "scroll " + c[0] + " の 2 つ目の見出し");
+                assertSame("scroll " + c[0], sv, live);
+            }
+        }
+    }
+
+    /** {@code :has()} の持ち主（祖先）は、子孫の変化と同じフレームで解き直す（新経路は台帳だけを読むので、祖先も台帳に載ること）。 */
+    @Test
+    void hasSelectorRestylesTheAncestorInTheSameFrame() {
+        String html = "<style>body{margin:0} .card{padding:4px;border:1px solid #888} .card:has(.on){padding:20px} .card:has(p:empty){margin-left:30px}</style>"
+                + "<div class=card id=c><span id=s>x</span><p id=p>t</p></div><div id=after>after</div>";
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+            SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
+            long now = 1000;
+            sv.frame(now, live, true);
+            HtmlElement s = (HtmlElement) sv.ui().findNode("s");
+            HtmlNode c = sv.ui().findNode("c"), p = sv.ui().findNode("p");
+            List<Runnable> steps = List.of(() -> s.setAttribute("class", "on"), () -> s.removeAttribute("class"), () -> {
+                HtmlElement e = new HtmlElement("b");
+                e.setAttribute("class", "on");
+                c.appendChild(e);
+            }, () -> c.removeChild(c.children.getLast()), () -> p.updateTextContent(""), () -> p.updateTextContent("back"));
+            for (int i = 0; i < steps.size(); i++) {
+                steps.get(i).run();
+                now += 16;
+                sv.frame(now, live, true);
+                assertEquals(null, FrameOracle.firstDifference(sv), "手 " + i);
+            }
+        }
+    }
+
+    private static com.nishiyu.enderframelib.core.layout.PaintBox box(com.nishiyu.enderframelib.core.layout.PaintBox b, String id) {
+        if (b.node != null && !b.isAnonymous && id.equals(b.node.getId())) return b;
+        for (var c : b.paintChildren()) {
+            var f = box(c, id);
+            if (f != null) return f;
+        }
+        return null;
+    }
+
     /** ビューの面（{@code live}）が、同じ状態からゼロから新経路で描いた面と画素で一致すること。 */
     private static void assertSame(String what, StandaloneView sv, SoftwareRenderBackend live) {
         UiView ui = sv.ui();
