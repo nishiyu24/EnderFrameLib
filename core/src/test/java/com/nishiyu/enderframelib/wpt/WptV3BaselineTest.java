@@ -47,9 +47,9 @@ class WptV3BaselineTest {
         Document doc = new UiDocumentCompiler().parseDocument(html, "", w, h);
         InteractionState state = new InteractionState();
         if (doc.root instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd) hd.setInteractionState(state);
-        BoxNode boxes = new BoxTreeCompiler(new StyleSource(doc.sheet, state, Map.of(), w, h)).compile(doc.root, null);
         LayoutSession session = new LayoutSession(WptReftestRatchetTest.FONTS);
-        LayoutFragment frag = new FragmentLayout(session).layout(boxes, w, h);
+        LayoutFragment frag = new com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline(new StyleSource(doc.sheet, state, Map.of(), w, h), session)
+                .frame(doc.root, null, w, h);
         LayoutBox root = FragmentProjection.project(frag, session);
         SoftwareRenderBackend b = new SoftwareRenderBackend(w, h, 1f);
         b.render(new DisplayListBuilder(w, h, doc.sheet.keyframes, new ScrollState()).render(root), WptReftestRatchetTest.T0);

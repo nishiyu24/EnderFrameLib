@@ -116,6 +116,15 @@ public final class Style {
     }
 
     /** テキストの節用: 親の継承群と {@code --*} をそのまま共有し、他の 5 群は {@code DEFAULT} を指す。 */
+    /** 問い合わせコンテナの種類（{@code container-type}。M2b-5 の新経路の入力側が読む）。 */
+    public com.nishiyu.enderframelib.core.css.model.ContainerType containerType() {
+        var t = rare.containerType;
+        return t == com.nishiyu.enderframelib.core.css.model.CssKeywords.ContainerType.SIZE ? com.nishiyu.enderframelib.core.css.model.ContainerType.SIZE
+                : t == com.nishiyu.enderframelib.core.css.model.CssKeywords.ContainerType.INLINE_SIZE
+                ? com.nishiyu.enderframelib.core.css.model.ContainerType.INLINE_SIZE
+                : com.nishiyu.enderframelib.core.css.model.ContainerType.NORMAL;
+    }
+
     public static Style forTextChild(Style parent) {
         if (parent == null || parent == DEFAULT) return DEFAULT;
         CustomProperties custom = parent.custom != null ? parent.custom.onlyCustom() : null;

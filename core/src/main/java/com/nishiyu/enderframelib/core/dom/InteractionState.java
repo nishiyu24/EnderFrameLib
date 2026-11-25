@@ -371,6 +371,9 @@ public class InteractionState implements StyledDocumentState {
         return flags != null ? flags.computedStyle : null;
     }
 
+    /** 記録した問い合わせコンテナの内容ボックスの幅（{@code height} なら高さ）。{@link #setContainerSize}。測っていなければ NaN。 */
+    public float containerSize(HtmlNode node, boolean height) { StateFlags f = get(node); return f == null ? Float.NaN : height ? f.containerHeight : f.containerWidth; }
+
     public StateFlags get(HtmlNode node) {
         if (node == null) return null;
         if (node.hasNodeId()) {

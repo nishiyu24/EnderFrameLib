@@ -72,6 +72,13 @@ class IncrementalOracleTest {
     @Test
     void writingModes() { run("writing"); }
 
+    /**
+     * M2b-5: コンテナ問い合わせ（容器の付け外し・名前・容器の幅を変えて問い合わせの結果が反転する・cqw の単位）の変異。容器の寸法は
+     * 整形の後で測るので、増分の 2 段（容器の部分木の解き直し）が全再計算と一致すること。
+     */
+    @Test
+    void containerQueries() { run("containers"); }
+
     private static void run(String kind) {
         String html = switch (kind) {
             case "large" -> SpikeView.largeList(300);
@@ -87,6 +94,7 @@ class IncrementalOracleTest {
             case "lists" -> lists();
             case "tables" -> tablesDoc();
             case "writing" -> SpikeView.nestedFlex(4, 3, true);
+            case "containers" -> SpikeView.nestedFlex(4, 3, true).replace("</style>", CONTAINER_CSS + "</style>");
             case "flexx" -> SpikeView.nestedFlex(4, 3, true).replace(".f{display:flex;flex-wrap:wrap;", ".f{display:flex;flex-wrap:wrap;height:220px;");
             default -> SpikeView.nestedFlex(4, 2);
         };
@@ -99,6 +107,7 @@ class IncrementalOracleTest {
                     : kind.equals("tables") && rnd.nextInt(4) > 0 ? mutateTable(v, rnd, step)
                     : kind.equals("flexx") && rnd.nextInt(3) > 0 ? mutateFlex(v, rnd)
                     : kind.equals("writing") && rnd.nextInt(4) > 0 ? mutateWriting(v, rnd)
+                    : kind.equals("containers") && rnd.nextInt(4) > 0 ? mutateContainers(v, rnd)
                     : kind.equals("pseudo") && rnd.nextInt(3) > 0 ? mutatePseudo(v, rnd)
                     : kind.equals("lists") && rnd.nextInt(3) > 0 ? mutateList(v, rnd, step)
                     : (kind.equals("text") || kind.equals("pseudo")) && rnd.nextBoolean() ? mutateText(v, rnd, step) : mutate(v, rnd, step);
@@ -339,6 +348,30 @@ class IncrementalOracleTest {
         String st = FLEX_STYLES[rnd.nextInt(FLEX_STYLES.length)];
         target.setAttribute("style", st);
         return st + " " + target.tag + " " + target.attrs.get("id");
+    }
+
+    private static final String CONTAINER_CSS = " .q{container-type:inline-size} .n{container:side / inline-size}"
+            + " @container (min-width: 200px){ .leaf{padding:4px 8px} .c{gap:3px} }"
+            + " @container (max-width: 120px){ .leaf{display:block;width:20cqw} }"
+            + " @container side (min-width: 300px){ .f{flex-direction:column} }";
+    private static final String[] CONTAINER_STYLES = {
+            "", "width:90px", "width:150px", "width:260px", "width:420px", "padding:0 30px", "flex-grow:0;width:110px",
+    };
+
+    /** コンテナの変異を 1 つ加える（要素を容器にする・外す・名前を付ける、または幅を変える）。 */
+    static String mutateContainers(SpikeView v, Random rnd) {
+        List<HtmlNode> elems = new ArrayList<>();
+        collect(v.doc.root, elems);
+        HtmlElement target = (HtmlElement) elems.get(rnd.nextInt(elems.size()));
+        if (rnd.nextBoolean()) {
+            String base = target.attrs.getOrDefault("class", "").replace(" q", "").replace(" n", "");
+            String cls = base + new String[]{"", " q", " n"}[rnd.nextInt(3)];
+            target.setAttribute("class", cls.trim());
+            return "containers class=" + cls + " " + target.attrs.get("id");
+        }
+        String st = CONTAINER_STYLES[rnd.nextInt(CONTAINER_STYLES.length)];
+        target.setAttribute("style", st);
+        return "containers " + st + " " + target.tag + " " + target.attrs.get("id");
     }
 
     private static final String[] WRITING_STYLES = {

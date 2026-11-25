@@ -24,6 +24,8 @@ import java.util.Map;
 public final class StyleSource {
     private final StyleSheet sheet;
     private final StateLookup lookup;
+    /** カスケードが読む問い合わせ先: 要素の状態は {@link #lookup}、コンテナ問い合わせはコンパイル中の祖先の列（M2b-5）。 */
+    private final ContainerScope scope;
     private final Map<String, String> env;
     private final int viewportW, viewportH;
     private float rootFontSize = ComputedStyle.DEFAULT_FONT_SIZE;
@@ -32,6 +34,7 @@ public final class StyleSource {
     public StyleSource(StyleSheet sheet, StateLookup lookup, Map<String, String> env, int viewportW, int viewportH) {
         this.sheet = sheet;
         this.lookup = lookup != null ? lookup : SelectorMatcher.STATIC_ATTRIBUTES;
+        this.scope = new ContainerScope(this.lookup);
         this.env = env != null ? env : Map.of();
         this.viewportW = viewportW;
         this.viewportH = viewportH;
@@ -57,21 +60,22 @@ public final class StyleSource {
         boolean isRoot = node.parent != null && node.parent.parent == null && "html".equalsIgnoreCase(node.tag);
         float rootFont = isRoot ? ComputedStyle.DEFAULT_FONT_SIZE : rootFontSize;
         float rootLh = isRoot ? Float.NaN : rootLineHeight;
-        Map<String, String> raw = StyleResolver.resolveStyleSet(node, p, sheet).resolve(lookup);
+        Map<String, String> raw = StyleResolver.resolveStyleSet(node, p, sheet).resolve(scope);
         if (node.attrs.containsKey("hidden")) raw.put(CssProperty.DISPLAY, "none");
+        ContainerBox container = scope.nearestSizeContainer(node.parent); // cqw などの単位の基準
         ComputedStyle cs = StyleResolver.finalizeComputedStyleOwned(raw, sheet, env, p, p.inherited.fontSize,
-                rootFont, rootLh, viewportW, viewportH, ContainerBox.NONE_SIZE);
+                rootFont, rootLh, viewportW, viewportH, container);
         StyleAnimator anim = animator();
         if (anim != null && sheet != null && !node.isPseudoNode) {
             long now = ((InteractionState) lookup).animationTimeMs();
             anim.observe(node, before == null ? null : new ComputedStyle(before), cs, p, sheet.keyframes, now);
             Map<String, String> values = anim.sample(node, now);
             if (!values.isEmpty()) { // 動いている: 目標値の宣言にアニメーションの値を重ねて解き直す
-                Map<String, String> animated = StyleResolver.resolveStyleSet(node, p, sheet).resolve(lookup);
+                Map<String, String> animated = StyleResolver.resolveStyleSet(node, p, sheet).resolve(scope);
                 if (node.attrs.containsKey("hidden")) animated.put(CssProperty.DISPLAY, "none");
                 animated.putAll(values);
                 cs = StyleResolver.finalizeComputedStyleOwned(animated, sheet, env, p, p.inherited.fontSize,
-                        rootFont, rootLh, viewportW, viewportH, ContainerBox.NONE_SIZE);
+                        rootFont, rootLh, viewportW, viewportH, container);
             }
         }
         if (isRoot) {
@@ -86,14 +90,14 @@ public final class StyleSource {
      * 箱を作らない（{@code content} が none / normal・{@code display: none}・規則が無い）なら null。
      */
     public Style pseudo(HtmlNode owner, Style ownerStyle, boolean after) {
-        ComputedStyle cs = com.nishiyu.enderframelib.core.css.GeneratedContentStyles.resolve(owner, after, sheet, lookup,
+        ComputedStyle cs = com.nishiyu.enderframelib.core.css.GeneratedContentStyles.resolve(owner, after, sheet, scope,
                 new ComputedStyle(ownerStyle), env, rootFontSize, rootLineHeight, viewportW, viewportH);
         return cs == null ? null : Style.of(cs, ownerStyle);
     }
 
     /** {@code ::marker} の規則が宣言したスタイル（規則が無ければ null。{@link MarkerBoxes}）。 */
     public com.nishiyu.enderframelib.core.css.ComputedStyle markerDeclared(HtmlNode owner, Style ownerStyle) {
-        return com.nishiyu.enderframelib.core.css.GeneratedContentStyles.markerDeclared(owner, sheet, lookup, new ComputedStyle(ownerStyle),
+        return com.nishiyu.enderframelib.core.css.GeneratedContentStyles.markerDeclared(owner, sheet, scope, new ComputedStyle(ownerStyle),
                 env, rootFontSize, rootLineHeight, viewportW, viewportH);
     }
 
@@ -111,6 +115,24 @@ public final class StyleSource {
         for (HtmlNode n : anim.advance(((InteractionState) lookup).animationTimeMs())) {
             ledger.append(n, com.nishiyu.enderframelib.core.dom.node.ChangeKind.STYLE);
         }
+    }
+
+    /** コンパイル中の祖先の列（{@link BoxTreeCompiler} が要素を解く間だけ積む。コンテナ問い合わせの相手）。 */
+    ContainerScope scope() {
+        return scope;
+    }
+
+    /** シートがコンテナ（{@code container-type}・{@code container-name}）か {@code @container} を使うか。 */
+    public boolean usesContainers() {
+        return sheet != null && (sheet.declaresContainers() || sheet.usesContainerQueries());
+    }
+
+    /**
+     * コンテナの要素 {@code node} の内容ボックスの寸法（{@code container-type: inline-size} なら高さは NaN）を記録する（レイアウトの後で
+     * 駆動側が測って呼ぶ。1 ビューの状態で、旧経路と同じく {@link InteractionState} に置く）。前と違えば true（その部分木を解き直す）。
+     */
+    public boolean setContainerSize(HtmlNode node, float width, float height) {
+        return lookup instanceof InteractionState is && is.setContainerSize(node, width, height);
     }
 
     /** 文字の節のスタイル（親の継承群をそのまま共有する）。 */

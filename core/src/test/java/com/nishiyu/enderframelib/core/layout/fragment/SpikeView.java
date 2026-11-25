@@ -23,6 +23,7 @@ final class SpikeView {
     final Document doc;
     final InteractionState state = new InteractionState();
     final StyleSource styles;
+    final FragmentPipeline pipeline;
     final BoxTreeCompiler compiler;
     final FragmentLayout layout;
     final int vw, vh;
@@ -34,8 +35,9 @@ final class SpikeView {
         this.doc = DocumentLoader.parseDocument(html, null, vw, vh);
         ((HtmlDocument) doc.root).setInteractionState(state);
         this.styles = new StyleSource(doc.sheet, state, null, vw, vh);
-        this.compiler = new BoxTreeCompiler(styles);
-        this.layout = new FragmentLayout(new LayoutSession(FontResolver.FALLBACK));
+        this.pipeline = new FragmentPipeline(styles, new LayoutSession(FontResolver.FALLBACK));
+        this.compiler = pipeline.compiler();
+        this.layout = pipeline.layout();
     }
 
     ChangeLedger ledger() {
@@ -46,8 +48,9 @@ final class SpikeView {
     LayoutFragment frame() {
         styles.appendAnimating(ledger());
         ledger().freeze();
-        boxRoot = compiler.compile(doc.root, ledger());
-        return layout.layout(boxRoot, vw, vh);
+        LayoutFragment f = pipeline.frame(doc.root, ledger(), vw, vh);
+        boxRoot = pipeline.boxRoot();
+        return f;
     }
 
     /** 箱の木だけを作る（計測用）。 */
@@ -67,9 +70,8 @@ final class SpikeView {
 
     /** 同じ DOM をゼロから（前回の木もキャッシュも無しで）作った結果（FrameOracle 相当の独立の面）。 */
     LayoutFragment scratch() {
-        BoxTreeCompiler fresh = new BoxTreeCompiler(new StyleSource(doc.sheet, state, null, vw, vh));
-        BoxNode root = fresh.compile(doc.root, null);
-        return new FragmentLayout(new LayoutSession(FontResolver.FALLBACK)).layout(root, vw, vh);
+        return new FragmentPipeline(new StyleSource(doc.sheet, state, null, vw, vh), new LayoutSession(FontResolver.FALLBACK))
+                .frame(doc.root, null, vw, vh);
     }
 
     /** 旧経路（{@code StandaloneView}）を描画なしで回すためのバックエンド（比較・A/B 用）。 */

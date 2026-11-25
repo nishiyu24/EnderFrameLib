@@ -38,8 +38,9 @@ import java.util.Set;
  * 子の要素を解き直す（文字の節は解き直さない）。</p>
  *
  * <p>非局所の依存は次の規則 1 つに閉じる: 兄弟の位置を読むセレクタ（{@code + ~ :nth-* :empty}）を使う文書では、子の増減が
- * あった親の子を全員解き直す。{@code :has()}・コンテナクエリを使う文書と、台帳があふれた／節を絞れない変更（{@code ENV}・
- * 全体の {@code STYLE}）の世代は、全体を作り直す。</p>
+ * あった親の子を全員解き直す。{@code :has()} を使う文書と、台帳があふれた／節を絞れない変更（{@code ENV}・
+ * 全体の {@code STYLE}）の世代は、全体を作り直す。コンテナ問い合わせは、容器の寸法が変わった（{@link #restyleContainers}）・
+ * 容器の {@code container-type} / {@code container-name} が変わったときに容器の部分木を解き直す（M2b-5）。</p>
  */
 public final class BoxTreeCompiler {
     private static final int SELF_STYLE = 1, SELF_CHILDREN = 2, SELF_TEXT = 4;
@@ -52,6 +53,9 @@ public final class BoxTreeCompiler {
     private final Set<HtmlNode> touched = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<HtmlNode> parentOfTouched = Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean positional, usesInherit;
+    /** 部分木を全て解き直す容器（{@link #restyleContainers}）と、その中を辿っている深さ（0 より大きい間は子孫を全て解き直す）。 */
+    private final Set<HtmlNode> restyleBelow = Collections.newSetFromMap(new IdentityHashMap<>());
+    private int deep;
     /** カウンタを使う文書のコンパイル中だけ非 null（文書順に積み上げる。カウンタを使う文書は常に全体を作り直す）。 */
     private Counters counters;
     private final Counters counterState = new Counters();
@@ -122,6 +126,36 @@ public final class BoxTreeCompiler {
         }
     }
 
+    /**
+     * コンテナ問い合わせの 2 段目（M2b-5）: レイアウトの後で寸法が変わった容器 {@code containers} の子孫を全て解き直す（容器の寸法を読む
+     * {@code @container} と {@code cqw} などの単位）。カウンタ・capitalize を使う文書は文書順の状態を積み直すので全体を作り直す。
+     */
+    public BoxNode restyleContainers(HtmlNode domRoot, java.util.Collection<HtmlNode> containers) {
+        StyleSheet sheet = styles.sheet();
+        if (root == null || root.node != domRoot || (sheet != null && (usesCounters(sheet) || sheetUsesCapitalize))) {
+            return compile(domRoot, null);
+        }
+        stats.reset();
+        positional = sheet != null && sheet.usesPositionalSelectors();
+        usesInherit = sheet != null && sheet.usesInheritKeyword();
+        counters = null;
+        try {
+            for (HtmlNode c : containers) {
+                restyleBelow.add(c);
+                for (HtmlNode cur = c; cur != null && touched.add(cur); cur = cur.parent) {
+                    if (cur.parent != null) parentOfTouched.add(cur.parent);
+                }
+            }
+            root = compileNode(domRoot, Style.DEFAULT, root, false, WritingModes.HORIZONTAL);
+            return root;
+        } finally {
+            restyleBelow.clear();
+            deep = 0;
+            touched.clear();
+            parentOfTouched.clear();
+        }
+    }
+
     /** 凍結した世代から「自身が変わった節」と「触れられた節（祖先を含む）」を作る。全体を作り直すべき世代なら true。 */
     private boolean readLedger(ChangeLedger ledger) {
         StyleSheet sheet = styles.sheet();
@@ -130,8 +164,9 @@ public final class BoxTreeCompiler {
         if (ledger == null) return true;
         if (ledger.frozenOverflow()) return true;
         int n = ledger.frozenSize();
-        if (n > 0 && sheet != null && (sheet.usesHasSelectors() || sheet.declaresContainers() || sheet.usesContainerQueries()
-                || usesCounters(sheet) || sheetUsesCapitalize)) return true; // カウンタ・capitalize の語の続きは文書順の非局所の状態
+        // カウンタ・capitalize の語の続きは文書順の非局所の状態。コンテナ問い合わせは容器の寸法が変わったときに駆動側が
+        // restyleContainers で容器の部分木を解き直す（M2b-5。容器のスタイルの変化は容器の子の解き直しとして届く）
+        if (n > 0 && sheet != null && (sheet.usesHasSelectors() || usesCounters(sheet) || sheetUsesCapitalize)) return true;
         for (int i = 0; i < n; i++) {
             HtmlNode node = ledger.frozenNode(i);
             if (node == null) {
@@ -192,27 +227,38 @@ public final class BoxTreeCompiler {
             // inherit キーワードは要素にしか効かない（文字の節のスタイルは親の継承群だけで決まる）
             boolean elemRestyle = usable && usesInherit && style != prev.computed;
             boolean element = n.nodeType == NodeType.ELEMENT;
-            if (counters != null && element) counters.apply(n, style, listItem(style));
-            int mark = counters != null ? counters.mark() : 0;
-            // 疑似要素: 持ち主を解き直したとき（とカウンタを使う文書）だけ作り直し、それ以外は前回の箱のまま
-            boolean pseudos = element && PseudoBoxes.capable(n);
-            boolean redoPseudo = resolve || counters != null || !usable;
-            if (pseudos && MarkerBoxes.listItem(style)) marker = redoPseudo ? marker(n, style, usable ? prev.marker : null) : prev.marker;
-            if (pseudos) before = redoPseudo ? pseudo(BoxNode.Pseudo.BEFORE, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.BEFORE);
-            int childContext = OrthogonalBoxes.childContext(OrthogonalBoxes.rootCode(n, style, kind, OrthogonalBoxes.flowOf(flow)), flow, style);
-            // 子の縦書きの文脈が変わった（位置指定の付け外しなど、継承値に現れない変化）なら子を解き直す
-            if (usable && childContext != OrthogonalBoxes.childContext(prev.orthogonal, prev.context, prev.computed)) kidsRestyle = true;
-            children = compileChildren(n, style, usable ? prev.children : null, kidsRestyle, elemRestyle, selfKinds, childContext);
-            // 番号に依るマーカー: 子の並びが変わった・子に触れた（li の value は箱を変えない）・自分を解き直した（start・reversed）なら
-            // 文書順に数え直す（カウンタを使う文書は Counters）
-            if (counters == null && children.hasOrdinalMarkers()
-                    && (!usable || children != prev.children || resolve || parentOfTouched.contains(n))) {
-                int[] rebuilt = {0};
-                children = MarkerBoxes.renumber(n, children, styles, counterStyles, rebuilt);
-                stats.rebuiltBoxes += rebuilt[0];
+            // コンテナ問い合わせの相手（擬似要素と子孫の祖先の列。M2b-5）。容器の種類・名前が変わったら子孫を全て解き直す
+            boolean deepen = element && (restyleBelow.contains(n) || (usable && containerChanged(style, prev.computed)));
+            if (element) styles.scope().push(n, style);
+            if (deepen) deep++;
+            try {
+                if (counters != null && element) counters.apply(n, style, listItem(style));
+                int mark = counters != null ? counters.mark() : 0;
+                // 疑似要素: 持ち主を解き直したとき（とカウンタを使う文書）だけ作り直し、それ以外は前回の箱のまま
+                boolean pseudos = element && PseudoBoxes.capable(n);
+                // 寸法が変わった容器の疑似要素も解き直す（疑似要素にとっては持ち主が容器。M2b-5）
+                boolean redoPseudo = resolve || counters != null || !usable || deepen || deep > 0;
+                if (pseudos && MarkerBoxes.listItem(style)) marker = redoPseudo ? marker(n, style, usable ? prev.marker : null) : prev.marker;
+                if (pseudos) before = redoPseudo ? pseudo(BoxNode.Pseudo.BEFORE, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.BEFORE);
+                int childContext = OrthogonalBoxes.childContext(OrthogonalBoxes.rootCode(n, style, kind, OrthogonalBoxes.flowOf(flow)), flow, style);
+                // 子の縦書きの文脈が変わった（位置指定の付け外しなど、継承値に現れない変化）なら子を解き直す
+                if (usable && childContext != OrthogonalBoxes.childContext(prev.orthogonal, prev.context, prev.computed)) kidsRestyle = true;
+                if (deep > 0) kidsRestyle = true;
+                children = compileChildren(n, style, usable ? prev.children : null, kidsRestyle, elemRestyle, selfKinds, childContext);
+                // 番号に依るマーカー: 子の並びが変わった・子に触れた（li の value は箱を変えない）・自分を解き直した（start・reversed）なら
+                // 文書順に数え直す（カウンタを使う文書は Counters）
+                if (counters == null && children.hasOrdinalMarkers()
+                        && (!usable || children != prev.children || resolve || parentOfTouched.contains(n))) {
+                    int[] rebuilt = {0};
+                    children = MarkerBoxes.renumber(n, children, styles, counterStyles, rebuilt);
+                    stats.rebuiltBoxes += rebuilt[0];
+                }
+                if (pseudos) after = redoPseudo ? pseudo(BoxNode.Pseudo.AFTER, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.AFTER);
+                if (counters != null) counters.release(mark);
+            } finally {
+                if (deepen) deep--;
+                if (element) styles.scope().pop();
             }
-            if (pseudos) after = redoPseudo ? pseudo(BoxNode.Pseudo.AFTER, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.AFTER);
-            if (counters != null) counters.release(mark);
         }
         // 置換要素の大きさの入力（属性・選択肢の文字）の写し。値が前回と同じなら前回の参照（属性だけの変化も箱の変化として下流へ届く）
         ReplacedInput replaced = kind == BoxKind.NONE || kind == BoxKind.TEXT ? null
@@ -270,6 +316,11 @@ public final class BoxTreeCompiler {
             sheetUsesCapitalize = com.nishiyu.enderframelib.core.css.GeneratedContentStyles.usesCapitalize(sheet);
         }
         return sheetUsesCounters;
+    }
+
+    /** 容器の種類・名前が変わったか（非継承なので子の解き直しとして届かない。子孫のコンテナ問い合わせの相手が変わる）。 */
+    private static boolean containerChanged(Style a, Style b) {
+        return a.rare.containerType != b.rare.containerType || !java.util.Objects.equals(a.rare.containerName, b.rare.containerName);
     }
 
     private static boolean listItem(Style st) {
