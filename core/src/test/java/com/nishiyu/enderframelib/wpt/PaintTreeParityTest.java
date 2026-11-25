@@ -55,15 +55,38 @@ class PaintTreeParityTest {
     @Test
     void paintTreeMatchesTheProjectionOnRealDocuments() throws Exception {
         List<String> bad = new ArrayList<>();
+        for (var e : realDocuments().entrySet()) {
+            String diff = compare(e.getValue());
+            if (diff != null) bad.add(e.getKey() + ": " + diff);
+        }
+        assertEquals(List.of(), bad);
+    }
+
+    /** 実文書の表示リストも旧描画と同じか（旧描画が窓付きになる文書は数えない）。 */
+    @Test
+    void treePainterMatchesTheLegacyPainterOnRealDocuments() throws Exception {
+        List<String> bad = new ArrayList<>();
+        int windowed = 0;
+        for (var e : realDocuments().entrySet()) {
+            String diff = compareItems(e.getValue());
+            if (diff == WINDOWED) windowed++;
+            else if (diff != null) bad.add(e.getKey() + ": " + diff);
+        }
+        System.out.println("TREE-PAINTER real " + (9 - windowed - bad.size()) + "/" + (9 - windowed) + " (窓付き " + windowed + ")");
+        assertEquals(List.of(), bad);
+    }
+
+    /** 同梱の実文書（{@code GeometrySweepTest.REAL_DOCS} と同じ 9 本）。 */
+    private static Map<String, String> realDocuments() throws java.io.IOException {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
         for (String name : List.of("showcase.html", "voidwave.html", "surface_test.html", "animation_test.html", "media_test.html",
                 "hud_test.html", "item_block_test.html", "machine_ui.html", "guidebook.md")) {
             java.nio.file.Path p = java.nio.file.Path.of("src/main/resources/data/enderframelib/enderframe_ui").resolve(name);
             if (!java.nio.file.Files.exists(p)) p = java.nio.file.Path.of("src/test/resources/benchmark").resolve(name);
             String text = java.nio.file.Files.readString(p, java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n");
-            String diff = compare(name.endsWith(".md") ? com.nishiyu.enderframelib.core.dom.parser.MarkdownParser.toHtml(text) : text);
-            if (diff != null) bad.add(name + ": " + diff);
+            out.put(name, name.endsWith(".md") ? com.nishiyu.enderframelib.core.dom.parser.MarkdownParser.toHtml(text) : text);
         }
-        assertEquals(List.of(), bad);
+        return out;
     }
 
     /** 1 文書: 新経路で組み、射影と描画用の木を比べる。一致すれば null、違えば最初の違い。 */
@@ -129,9 +152,36 @@ class PaintTreeParityTest {
         List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> mine = new com.nishiyu.enderframelib.core.paint.TreePainter(w, h,
                 doc.sheet.keyframes, new com.nishiyu.enderframelib.core.layout.model.ScrollState()).paint(tree);
         for (int i = 0; i < Math.min(legacy.size(), mine.size()); i++) {
-            if (!legacy.get(i).equals(mine.get(i))) return "#" + i + "\n  旧描画: " + legacy.get(i) + "\n  新描画: " + mine.get(i);
+            if (!same(legacy.get(i), mine.get(i))) return "#" + i + "\n  旧描画: " + legacy.get(i) + "\n  新描画: " + mine.get(i);
         }
         return legacy.size() == mine.size() ? null : "項目の数 " + legacy.size() + " / " + mine.size();
+    }
+
+    /** 値の比較（record と配列は中身で比べる。{@code ClipShape} などは配列を欄に持ち、{@code equals} が配列を参照で比べるため）。 */
+    static boolean same(Object a, Object b) {
+        if (java.util.Objects.equals(a, b)) return true;
+        if (a == null || b == null || a.getClass() != b.getClass()) return false;
+        if (a.getClass().isArray()) {
+            int n = java.lang.reflect.Array.getLength(a);
+            if (n != java.lang.reflect.Array.getLength(b)) return false;
+            for (int i = 0; i < n; i++) if (!same(java.lang.reflect.Array.get(a, i), java.lang.reflect.Array.get(b, i))) return false;
+            return true;
+        }
+        if (a instanceof List<?> la && b instanceof List<?> lb) {
+            if (la.size() != lb.size()) return false;
+            for (int i = 0; i < la.size(); i++) if (!same(la.get(i), lb.get(i))) return false;
+            return true;
+        }
+        if (!a.getClass().isRecord()) return false;
+        try {
+            for (var c : a.getClass().getRecordComponents()) {
+                c.getAccessor().setAccessible(true);
+                if (!same(c.getAccessor().invoke(a), c.getAccessor().invoke(b))) return false;
+            }
+            return true;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** {@link PaintBox} として読める欄を並べる（2 つの実装に共通の物差し）。 */

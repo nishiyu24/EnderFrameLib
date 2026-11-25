@@ -8,8 +8,9 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * M2b-0 の一時アダプタ（{@code FragmentProjection}）の確認: 新経路と旧経路で幾何が一致する文書（M2a の {@code LegacyParityTest}）では、
- * 射影した {@code LayoutBox} の木を同じ {@code DisplayListBuilder} で描いた画素も旧経路と一致すること。
+ * 新経路の描画の確認: 新経路と旧経路で幾何が一致する文書（M2a の {@code LegacyParityTest}）では、新経路の描画（M2c ②-4 から描画用の木
+ * {@code PaintTreeBuilder} と新しい描画 {@code TreePainter}。それまでは一時アダプタ {@code FragmentProjection} と旧経路の
+ * {@code DisplayListBuilder}）の画素も旧経路と一致すること。
  */
 class ProjectionPixelParityTest {
 

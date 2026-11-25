@@ -57,6 +57,8 @@ final class TreeStacking {
         final float sx0, sy0;
         String thumbVId, thumbHId;
         float kx, ky, fx0, fy0;
+        /** 中身の中の sticky の箱の式（スクロールだけの更新で節に貼り付きのずれの増減を足す）。 */
+        List<com.nishiyu.enderframelib.core.paint.model.StickyShift> stickies = List.of();
 
         ScrollContent(PaintView box, String contentId, float sx0, float sy0) {
             this.box = box;
@@ -91,7 +93,7 @@ final class TreeStacking {
     List<ScrollContentInfo> scrollContentInfos() {
         List<ScrollContentInfo> out = new ArrayList<>(scrollContents.size());
         for (ScrollContent c : scrollContents) {
-            out.add(new ScrollContentInfo(c.box.node(), c.contentId, c.thumbVId, c.thumbHId, c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0, List.of()));
+            out.add(new ScrollContentInfo(c.box.node(), c.contentId, c.thumbVId, c.thumbHId, c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0, c.stickies));
         }
         return out;
     }
@@ -210,9 +212,11 @@ final class TreeStacking {
         ClipRect childClip = computeChildClipRect(box, clip);
         contentClips.put(box, childClip);
         String childParent = "root".equals(tag) ? null : box.anonymous() ? parentId : box.node().key();
-        if (com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() && scrollsAsOneNode(box)) {
+        List<com.nishiyu.enderframelib.core.paint.model.StickyShift> stickies;
+        if (com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() && (stickies = scrollsAsOneNode(box)) != null) {
             ScrollContent content = new ScrollContent(box, box.node().scrollContentKey(),
                     scrollState.getScrollX(box.node()), scrollState.getScrollY(box.node()));
+            content.stickies = stickies;
             scrollContentOf.put(box, content);
             scrollContents.add(content);
             childParent = content.contentId;
@@ -229,20 +233,58 @@ final class TreeStacking {
     }
 
     /**
-     * スクロールするだけで中身が正しく動くコンテナか（旧 {@code PaintOrder.scrollsAsOneNode}）。中身に sticky・固定配置・包含ブロックが
-     * コンテナの外の絶対配置が無い（sticky の式は新経路にまだ無いので、sticky を含めば作り直しにする）。
+     * スクロールするだけで中身が正しく動くコンテナなら中の sticky の箱の式（無ければ空）、そうでなければ null（旧
+     * {@code PaintOrder.scrollsAsOneNode}）。中身に固定配置・包含ブロックがコンテナの外の絶対配置が無く、sticky は上の inset だけで
+     * いちばん近いスクロールコンテナがこのコンテナで、sticky の中の sticky でないこと。新経路はまだ sticky のずれを付けない（静的位置の
+     * まま）ので、式の今のずれが 0 の箱だけを許す。
      */
-    private boolean scrollsAsOneNode(PaintView box) {
-        if (box.anonymous() || box.w() <= 0 || box.h() <= 0 || !box.style().facts().scrollContainer) return false;
+    private List<com.nishiyu.enderframelib.core.paint.model.StickyShift> scrollsAsOneNode(PaintView box) {
+        if (box.anonymous() || box.w() <= 0 || box.h() <= 0 || !box.style().facts().scrollContainer) return null;
         String tag = box.node().tag;
-        if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) return false;
-        return !hasUnscrollableDescendant(box, box);
+        if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) return null;
+        List<PaintView> stickies = new ArrayList<>(0);
+        if (hasUnscrollableDescendant(box, box, false, stickies)) return null;
+        if (stickies.isEmpty()) return List.of();
+        List<com.nishiyu.enderframelib.core.paint.model.StickyShift> shifts = new ArrayList<>(stickies.size());
+        for (PaintView s : stickies) {
+            float[] p = boxHasOwnNode(s) ? stickyScrollParams(s, box) : null;
+            if (p == null) return null;
+            var shift = new com.nishiyu.enderframelib.core.paint.model.StickyShift(s.node().key(), p[0], p[1], p[2], p[3], p[4], p[5] != 0f, 0f);
+            if (Float.floatToIntBits(shift.dyAt(0f)) != Float.floatToIntBits(0f)) return null; // 式がレイアウト（ずれ 0）と合わない
+            shifts.add(shift);
+        }
+        return shifts;
     }
 
-    private static boolean hasUnscrollableDescendant(PaintView container, PaintView box) {
+    /** sticky の箱のスクロールの式（旧 {@code ScrollExtentCalc.stickyScrollParams}。使えなければ null）。 */
+    private float[] stickyScrollParams(PaintView box, PaintView port) {
+        PaintView parent = box.paintParent();
+        if (!isSticky(box) || parent == null) return null;
+        PaintView near = parent;
+        while (near != null && !near.style().facts().scrollContainer) near = near.paintParent();
+        if (near != port) return null;
+        Style t = box.axisStyle().typed();
+        if (com.nishiyu.enderframelib.core.css.CssLength.isAutoOrUndeclared(t.box.top) || !com.nishiyu.enderframelib.core.css.CssLength.isAutoOrUndeclared(t.box.bottom)
+                || !com.nishiyu.enderframelib.core.css.CssLength.isAutoOrUndeclared(t.box.left)
+                || !com.nishiyu.enderframelib.core.css.CssLength.isAutoOrUndeclared(t.box.right)) return null;
+        float portY = port.y() + port.bT();
+        float portH = Math.max(0, port.h() - port.bT() - port.bB());
+        float limit = portY + t.boxPx(t.box.top, portH, rootW, rootH);
+        float cbBottom = parent.y() + parent.h() - parent.bB() - parent.pB();
+        return new float[]{limit, cbBottom, box.y(), box.h(), box.mB(), parent != port ? 1f : 0f};
+    }
+
+    private boolean hasUnscrollableDescendant(PaintView container, PaintView box, boolean underSticky, List<PaintView> stickies) {
         for (PaintView child : box.paintChildren()) {
             if (child.displayNone()) continue;
-            if (isFixed(child) || isSticky(child)) return true;
+            if (isFixed(child)) return true;
+            if (isSticky(child)) {
+                if (!com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.on() || underSticky
+                        || stickyScrollParams(child, container) == null) return true;
+                stickies.add(child);
+                if (hasUnscrollableDescendant(container, child, true, stickies)) return true;
+                continue;
+            }
             if (child.isAbsolute()) {
                 PaintView cb = containingBlock(child);
                 if (cb == null) return true;
@@ -255,7 +297,7 @@ final class TreeStacking {
                 }
                 if (!inside) return true;
             }
-            if (hasUnscrollableDescendant(container, child)) return true;
+            if (hasUnscrollableDescendant(container, child, underSticky, stickies)) return true;
         }
         return false;
     }

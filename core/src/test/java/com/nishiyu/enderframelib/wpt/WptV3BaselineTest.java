@@ -7,7 +7,6 @@ import com.nishiyu.enderframelib.core.box.BoxTreeCompiler;
 import com.nishiyu.enderframelib.core.box.StyleSource;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.FragmentProjection;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.fragment.FragmentLayout;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
@@ -32,7 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * M2b の進捗の物差し（計画書 §3.4.1 M2b-0）: 同じ WPT の reftest を、新経路（{@code BoxTreeCompiler} → {@code FragmentLayout} →
- * 一時アダプタ {@link FragmentProjection} → 旧経路と同じ {@link DisplayListBuilder}）で描いて比べる。テスト側も参照側も新経路で描く。
+ * 描画用の木 {@code PaintTreeBuilder} → 新しい描画 {@code TreePainter}。M2c ②-4 で一時アダプタ {@link FragmentProjection} と旧経路の
+ * {@link DisplayListBuilder} から替えた）で描いて比べる。テスト側も参照側も新経路で描く。
  *
  * <p>合格の一覧は {@code reftest-passing-v3.txt} にラチェットで固定する（落ちたら回帰、増えたら {@code -Dwpt.v3.update=true} で締める）。
  * 旧経路の一覧と同じく、判定するのは一覧を作った OS（Windows）だけ。M2b の各段で合格数を増やし、M2b-6 で旧経路の 160 以上に届かせる。</p>
@@ -48,11 +48,14 @@ class WptV3BaselineTest {
         InteractionState state = new InteractionState();
         if (doc.root instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd) hd.setInteractionState(state);
         LayoutSession session = new LayoutSession(WptReftestRatchetTest.FONTS);
-        LayoutFragment frag = new com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline(new StyleSource(doc.sheet, state, Map.of(), w, h), session)
-                .frame(doc.root, null, w, h);
-        LayoutBox root = FragmentProjection.project(frag, session);
+        com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline pipeline =
+                new com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline(new StyleSource(doc.sheet, state, Map.of(), w, h), session);
+        LayoutFragment frag = pipeline.frame(doc.root, null, w, h);
+        com.nishiyu.enderframelib.core.paint.tree.PaintNode tree =
+                new com.nishiyu.enderframelib.core.paint.tree.PaintTreeBuilder(session).build(frag, pipeline.boxRoot());
         SoftwareRenderBackend b = new SoftwareRenderBackend(w, h, 1f);
-        b.render(new DisplayListBuilder(w, h, doc.sheet.keyframes, new ScrollState()).render(root), WptReftestRatchetTest.T0);
+        b.render(new com.nishiyu.enderframelib.core.paint.TreePainter(w, h, doc.sheet.keyframes, new ScrollState()).paint(tree),
+                WptReftestRatchetTest.T0);
         return b.pixmap();
     }
 
@@ -117,7 +120,7 @@ class WptV3BaselineTest {
 
         if (Boolean.getBoolean("wpt.v3.update")) {
             List<String> out = new ArrayList<>();
-            out.add("# 新経路（M2b の BoxTreeCompiler → FragmentLayout → 一時アダプタ）で合格している reftest（WptV3BaselineTest が固定）");
+            out.add("# 新経路（BoxTreeCompiler → FragmentLayout → PaintTreeBuilder → TreePainter）で合格している reftest（WptV3BaselineTest が固定）");
             out.addAll(passing);
             Files.write(PASSING_V3, out, StandardCharsets.UTF_8);
             System.out.println("WPT-V3 一覧を更新: " + passing.size());
