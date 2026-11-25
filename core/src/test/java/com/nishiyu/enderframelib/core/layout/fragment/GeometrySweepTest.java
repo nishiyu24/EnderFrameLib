@@ -66,16 +66,22 @@ class GeometrySweepTest {
             Files.write(LIST, out, StandardCharsets.UTF_8);
             return;
         }
-        TreeSet<String> locked = new TreeSet<>();
-        if (Files.exists(LIST)) {
-            for (String l : Files.readAllLines(LIST, StandardCharsets.UTF_8)) if (!l.isBlank() && !l.startsWith("#")) locked.add(l.trim());
-        }
+        TreeSet<String> locked = matchingList();
         TreeSet<String> regressed = new TreeSet<>(locked);
         regressed.removeAll(matching);
         TreeSet<String> gained = new TreeSet<>(matching);
         gained.removeAll(locked);
         assertEquals(new TreeSet<String>(), regressed, "旧経路と幾何が一致していた文書がずれた");
         assertEquals(new TreeSet<String>(), gained, "新しく一致した文書が一覧に無い（-Dgeom.sweep.update=true で締める）");
+    }
+
+    /** 固定した一致の一覧（{@code geometry-sweep-matching.txt}）。 */
+    static TreeSet<String> matchingList() throws IOException {
+        TreeSet<String> locked = new TreeSet<>();
+        if (Files.exists(LIST)) {
+            for (String l : Files.readAllLines(LIST, StandardCharsets.UTF_8)) if (!l.isBlank() && !l.startsWith("#")) locked.add(l.trim());
+        }
+        return locked;
     }
 
     /** 調べる用: {@code -Dgeom.sweep.diag=<文書>[,...]} のずれた箱を出す。 */
@@ -92,7 +98,7 @@ class GeometrySweepTest {
     }
 
     /** WPT の文書（テストと参照、時間切れの組を除く）と実文書。 */
-    private static Map<String, String> documents() throws IOException {
+    static Map<String, String> documents() throws IOException {
         Map<String, String> out = new LinkedHashMap<>();
         TreeSet<String> hangs = new TreeSet<>();
         Path hp = WPT.resolve("reftest-hangs.txt");
@@ -205,7 +211,7 @@ class GeometrySweepTest {
     }
 
     /** 根からの子の番号の道筋（DOM の木に無い節は null）。 */
-    private static String path(HtmlNode n) {
+    static String path(HtmlNode n) {
         StringBuilder sb = new StringBuilder();
         for (HtmlNode c = n; c.parent != null; c = c.parent) {
             int i = c.parent.children.indexOf(c);

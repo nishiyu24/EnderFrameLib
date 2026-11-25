@@ -36,6 +36,10 @@ class ProjectionPixelParityTest {
             "<html><body style='margin:0'><ul><li>disc</li><li style='list-style-type:square'>square</li></ul>"
                     + "<ol start=3><li>three</li><li value=9>nine</li><li style='list-style-position:inside'>inside</li></ol>"
                     + "<details><summary>closed</summary><p>hidden</p></details><details open><summary>open</summary><p>shown</p></details></body></html>",
+            // M2b-1: スクロールコンテナのつまみの大きさ（到達範囲 ScrollableOverflow）
+            "<html><body style='margin:0'><div style='overflow:auto;width:200px;height:80px;border:1px solid #888'>"
+                    + "<p style='margin:4px'>one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen</p>"
+                    + "<div style='width:320px;height:40px;background:#cde'></div></div></body></html>",
         };
         for (String html : docs) {
             Pixmap legacy = legacy(html), v3 = WptV3BaselineTest.render(html);

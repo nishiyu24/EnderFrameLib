@@ -111,7 +111,6 @@ css/css-grid/alignment/grid-justify-content-end-001.html
 css/css-grid/grid-definition/grid-auto-fit-with-calc.html
 css/css-grid/grid-items/grid-item-direction-rtl-001.html
 css/css-grid/grid-items/grid-minimum-size-grid-items-003.html
-css/css-grid/grid-lanes/overflow/grid-lanes-overflowing-container-010.html
 css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/alignment/column-subgrid-alignment-in-subgridded-axis-001.html
 css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/row/grid-lanes-subgrid-002e.html
 css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/track-sizing/column-subgrid-auto-fill-005.html

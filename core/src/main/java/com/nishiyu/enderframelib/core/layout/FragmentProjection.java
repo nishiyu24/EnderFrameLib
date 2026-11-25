@@ -36,13 +36,16 @@ import java.util.Map;
  *   <li>インライン要素の行ごとの箱（{@code LineFragment.Span}）→ その要素の箱の文字でない断片（背景・枠線。旧 {@code placeSpan} と同じ形）。</li>
  * </ul>
  *
- * <p>まだ写さないもの（M2b の各段で足す）: {@code ::first-line}・スクロール量。</p>
+ * <p>到達範囲（{@code scrollWidth} など）は新経路の {@code ScrollableOverflow} が断片木から求めた値を写す。
+ * まだ写さないもの（M2b の各段で足す）: {@code ::first-line}・スクロール量。</p>
  */
 public final class FragmentProjection {
     private final LayoutSession session;
     private final Map<BoxNode, com.nishiyu.enderframelib.core.dom.node.HtmlNode> synthetic = new IdentityHashMap<>();
     /** 断片から位置を決めて置いた箱（インラインの外接矩形合わせの対象外）。 */
     private final java.util.Set<LayoutBox> placed = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    /** 1 回の写しの間だけの断片の到達範囲の表（{@link com.nishiyu.enderframelib.core.layout.fragment.ScrollableOverflow}）。 */
+    private final Map<LayoutFragment, float[]> overflow = new IdentityHashMap<>();
 
     private FragmentProjection(LayoutSession session) {
         this.session = session;
@@ -70,8 +73,11 @@ public final class FragmentProjection {
         lb.mT = g.mT; lb.mR = g.mR; lb.mB = g.mB; lb.mL = f.marginLeft;
         lb.pT = g.pT; lb.pR = g.pR; lb.pB = g.pB; lb.pL = g.pL;
         lb.bT = g.bT; lb.bR = g.bR; lb.bB = g.bB; lb.bL = g.bL;
-        lb.scrollWidth = f.width;
-        lb.scrollHeight = f.height;
+        float[] ov = com.nishiyu.enderframelib.core.layout.fragment.ScrollableOverflow.of(f, overflow, session); // スクロールの範囲
+        lb.scrollWidth = ov[0];
+        lb.scrollHeight = ov[1];
+        lb.descendantOverflowRight = ov[2];
+        lb.descendantOverflowBottom = ov[3];
         lb.lineHeightPx = InlineFlow.lineHeight(b.style, session.face(b.style));
         if (b.kind == BoxKind.TEXT) { // flex の項目になった文字の節: 文字片を自分に持つ（文字の箱は原点に足されないので親の基準で置く）
             Map<BoxNode, LayoutBox> boxes = new IdentityHashMap<>();
