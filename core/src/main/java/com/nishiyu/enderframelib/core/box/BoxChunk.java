@@ -13,19 +13,21 @@ public final class BoxChunk extends BoxChildren {
 
     private final BoxNode[] items;
     /** 中身の事実（構築時に 1 回だけ求める不変の導出値）: インライン水準の子・ブロック水準の子があるか。 */
-    private final boolean inline, block, floats, contents, ordinals;
+    private final boolean inline, block, floats, contents, ordinals, table;
 
     /** {@code items} の所有権を受け取る（呼び出し側は以後書き換えない）。 */
     BoxChunk(BoxNode[] items) {
         this.items = items;
-        boolean in = false, bl = false, fl = false, co = false, od = false;
+        boolean in = false, bl = false, fl = false, co = false, od = false, tb = false;
         for (BoxNode b : items) {
+            if (b.kind.tableInternal()) tb = true;
             if (b.marker != null && b.marker.ordinal != MarkerBoxes.NO_ORDINAL) od = true;
             if (b.kind == BoxKind.CONTENTS) { // 中身の事実を引き継ぐ（中身のチャンクは構築済み）
                 co = true;
                 in |= b.flow.hasInline();
                 bl |= b.flow.hasBlock();
                 fl |= b.flow.hasFloat();
+                tb |= b.flow.hasTableInternal();
                 continue;
             }
             if (b.kind.blockLevel() && b.style.facts.floating) fl = true;
@@ -37,7 +39,11 @@ public final class BoxChunk extends BoxChildren {
         this.floats = fl;
         this.contents = co;
         this.ordinals = od;
+        this.table = tb;
     }
+
+    /** 表の内部の箱（{@link BoxKind#tableInternal()}）を含むか（{@code display: contents} の中身を含む。匿名の表の箱を作るかの判定）。 */
+    public boolean hasTableInternal() { return table; }
 
     /** 番号に依るマーカー（{@link MarkerBoxes}）を持つ子を含むか（親が子の並びを組み直したら数え直す）。 */
     public boolean hasOrdinalMarkers() { return ordinals; }

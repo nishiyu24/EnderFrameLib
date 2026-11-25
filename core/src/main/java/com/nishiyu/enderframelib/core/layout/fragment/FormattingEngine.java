@@ -21,6 +21,7 @@ public interface FormattingEngine {
     static FormattingEngine of(BoxNode node) {
         if (ReplacedFlow.is(node)) return ReplacedFlow.INSTANCE;
         if (node.kind.flexContainer()) return FlexFlow.INSTANCE;
+        if (node.kind.tableContainer()) return TableFlow.INSTANCE;
         return node.kind.gridContainer() ? GridFlow.INSTANCE : BlockFlow.INSTANCE;
     }
 }

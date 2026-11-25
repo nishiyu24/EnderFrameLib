@@ -177,6 +177,8 @@ final class FlexLines {
         float content = it.frag.height;
         long fb = cst.flexGrid.flexBasis;
         float specH = ig.specifiedHeight(cst, ch, s);
+        // 表の height は表の格子の箱の高さで、項目（表の外枠の箱）はキャプションをその外に足す（M2b-4。CSS Tables 3 §3.10）
+        if (!Float.isNaN(specH) && it.box.kind.tableContainer()) specH += TableFlow.captionExtent(it.frag, s);
         if (basisDefinite(cst, fb, ch)) {
             float b = LayoutUnit.snap(cst.gridPx(fb, Float.isFinite(ch) ? ch : 0, s.viewportW(), s.viewportH()));
             it.base = Math.max(ig.vdec(), cst.facts.borderBox ? b : b + ig.vdec());

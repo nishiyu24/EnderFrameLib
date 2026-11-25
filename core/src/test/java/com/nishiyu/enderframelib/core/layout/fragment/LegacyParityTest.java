@@ -104,6 +104,29 @@ class LegacyParityTest {
                 + "</body></html>", List.of());
     }
 
+    /**
+     * M2b-4: 表（自動レイアウトの列幅・border-spacing・colspan / rowspan・枠線の重ね・キャプション・セルの縦揃え・固定レイアウト・
+     * 割合の列・匿名の表の箱）。枠線を重ねる表のセルには px の幅を与える: 旧経路はセルの min-content にスタイルの枠線（重ねる前の全幅）を
+     * 足しており、幅が内容で決まるセルを使う枠線（半分ずつ）の分だけ広く取る逸脱がある（新経路は使う枠線。{@code TableLayoutTest}）。
+     */
+    @Test
+    void tableMatchesLegacy() {
+        String box = "<div style='width:30px;height:12px'></div>";
+        assertParity("<html><head><style>td{padding:2px}</style></head><body style='margin:0'>"
+                + "<table id=t1 style='border-spacing:3px 5px'><tr><td id=a>alpha</td><td id=b>beta gamma</td></tr>"
+                + "<tr><td id=c colspan=2>a wide cell spanning</td></tr><tr><td id=d rowspan=2>" + box + "</td><td id=e>x</td></tr>"
+                + "<tr><td id=f>y</td></tr></table>"
+                + "<table id=t2 style='border-collapse:collapse;border:4px solid'><caption id=cap>caption</caption><tr>"
+                + "<td id=g style='border:2px solid;width:40px'>g</td><td id=h style='border:6px solid;vertical-align:bottom;height:40px;width:40px'>h</td>"
+                + "</tr></table>"
+                + "<table id=t3 style='table-layout:fixed;width:300px'><tr><td id=i style='width:80px'>i</td><td id=j>j</td><td id=k>k</td></tr></table>"
+                + "<table id=t4 style='width:400px'><tr><td id=l style='width:30%'>l</td><td id=m>m</td></tr></table>"
+                + "<div id=an><div id=n style='display:table-cell'>n</div><div id=o style='display:table-cell'>" + box + "</div></div>"
+                + "<div id=t5 style='display:table;margin:0 auto'><div style='display:table-row'><div id=p style='display:table-cell;vertical-align:middle'>p</div>"
+                + "<div id=q style='display:table-cell;height:50px'>q</div></div></div>"
+                + "</body></html>", List.of());
+    }
+
     /** M2b-1: vertical-align（原子の位置と、持ち上げた文字・原子で広がる行の高さ）。 */
     @Test
     void verticalAlignMatchesLegacy() {

@@ -40,6 +40,19 @@ class ProjectionPixelParityTest {
             "<html><body style='margin:0'><div style='overflow:auto;width:200px;height:80px;border:1px solid #888'>"
                     + "<p style='margin:4px'>one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen</p>"
                     + "<div style='width:320px;height:40px;background:#cde'></div></div></body></html>",
+            // M2b-4: 表（分離した枠線・border-spacing・colspan・行の高さまで伸びるセルの背景・縦揃え）
+            "<html><body style='margin:0'><table style='border:2px solid #333;border-spacing:3px;background:#eee'><tr>"
+                    + "<td style='border:1px solid #c00;background:#fee'>a</td><td style='background:#efe;vertical-align:bottom'>bb</td>"
+                    + "<td style='height:40px;background:#ccf'>tall</td></tr><tr><td colspan=2 style='background:#eef'>wide cell</td><td>x</td></tr>"
+                    + "</table></body></html>",
+            // M2b-4: 枠線を重ねる表（使う枠線は半分ずつ）とキャプション。セルの幅は px（旧経路はセルの min-content に重ねる前の枠線を
+            // 足す逸脱があり、内容で決まる幅は新経路と違う。LegacyParityTest#tableMatchesLegacy）
+            "<html><body style='margin:0'><table style='border-collapse:collapse;border:4px solid #000'><caption style='background:#ffc'>cap</caption>"
+                    + "<tr><td style='border:2px solid #c00;width:40px'>x</td><td style='border:6px solid #00c;width:50px'>y</td></tr>"
+                    + "<tr><td style='border:1px solid #0a0'>z</td><td>w</td></tr></table></body></html>",
+            // M2b-4: 匿名の表の箱（表の外のセルの並び）
+            "<html><body style='margin:0'><div><div style='display:table-cell;background:#fcc;padding:4px'>a</div>"
+                    + "<div style='display:table-cell;background:#cfc'>b b</div></div></body></html>",
         };
         for (String html : docs) {
             Pixmap legacy = legacy(html), v3 = WptV3BaselineTest.render(html);

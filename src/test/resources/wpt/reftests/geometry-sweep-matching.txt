@@ -128,7 +128,10 @@ css/css-flexbox/flexbox_justifycontent-spacearound.html
 css/css-flexbox/flexbox_justifycontent-stretch.html
 css/css-flexbox/flexbox_order-box-ref.html
 css/css-flexbox/flexbox_order-box.html
+css/css-flexbox/flexbox_rowspan-ref.html
+css/css-flexbox/flexbox_rowspan.html
 css/css-flexbox/flexbox_stf-fixpos.html
+css/css-flexbox/flexbox_stf-table.html
 css/css-flexbox/flexbox_wrap-reverse-ref.html
 css/css-flexbox/flexbox_wrap-reverse.html
 css/css-flexbox/gap-004-rtl-ref.html
@@ -155,6 +158,8 @@ css/css-flexbox/reference/flex-direction-column-ref.html
 css/css-flexbox/reference/flexbox-flex-direction-ref.htm
 css/css-flexbox/reference/justify-content-001-ref.html
 css/css-flexbox/stretched-child-in-nested-flexbox-003.html
+css/css-flexbox/table-as-item-fixed-min-width.html
+css/css-flexbox/table-as-item-min-content-height-1.tentative.html
 css/css-flexbox/table-as-item-specified-height.html
 css/css-grid/abspos/grid-abspos-staticpos-align-self-001-ref.html
 css/css-grid/abspos/grid-abspos-staticpos-align-self-001.html
@@ -291,9 +296,11 @@ css/css-text/text-autospace/text-autospace-elements-005b.html
 css/css-text/text-indent/reference/text-indent-percentage-002-ref.html
 css/css-text/text-indent/text-indent-percentage-002.html
 css/css-text/text-justify/text-justify-distribute-001.html
+css/css-text/text-transform/reference/text-transform-full-size-kana-004-ref.html
 css/css-text/text-transform/reference/text-transform-tailoring-001-ref.html
 css/css-text/text-transform/reference/text-transform-tailoring-004-ref.html
 css/css-text/text-transform/text-transform-capitalize-033-ref.html
+css/css-text/text-transform/text-transform-full-size-kana-004.html
 css/css-text/text-transform/text-transform-lowercase-102-ref.xht
 css/css-text/text-transform/text-transform-lowercase-102.xht
 css/css-text/text-transform/text-transform-tailoring-001.html
@@ -311,6 +318,7 @@ css/css-text/white-space/reference/white-space-pre-031-ref.html
 css/css-text/white-space/reference/white-space-pre-wrap-justify-004-ref.html
 css/css-text/white-space/reference/white-space-wrap-after-nowrap-001-ref.html
 css/css-text/white-space/reference/ws-break-spaces-applies-to-001-ref.html
+css/css-text/white-space/reference/ws-break-spaces-applies-to-006-ref.html
 css/css-text/white-space/tab-stop-threshold-003.html
 css/css-text/white-space/text-wrap-balance-align-001.html
 css/css-text/white-space/text-wrap-balance-line-clamp-004.html
@@ -319,6 +327,7 @@ css/css-text/white-space/trailing-ogham-003.html
 css/css-text/white-space/white-space-intrinsic-size-023.html
 css/css-text/white-space/white-space-pre-wrap-justify-004.html
 css/css-text/white-space/ws-break-spaces-applies-to-005.html
+css/css-text/white-space/ws-break-spaces-applies-to-011.html
 css/css-text/word-break/auto-phrase/reference/word-break-auto-phrase-001-ref.html
 css/css-text/word-break/auto-phrase/reference/word-break-auto-phrase-intrinsic-001-ref.html
 css/css-text/word-break/auto-phrase/word-break-auto-phrase-001.html

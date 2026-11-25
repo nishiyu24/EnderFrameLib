@@ -211,11 +211,12 @@ public final class BoxTreeCompiler {
                 : ReplacedInput.of(n, styles.viewportW(), styles.viewportH());
         if (replaced != null && prev != null && replaced.equals(prev.replaced)) replaced = prev.replaced;
         if (prev != null && style == prev.style && kind == prev.kind && text == prev.text && children == prev.children
-                && replaced == prev.replaced
+                && replaced == prev.replaced && TableBoxes.spanOf(n, kind, BoxNode.Pseudo.NONE) == prev.span
                 && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)
                 && marker == prev.marker) return prev;
         stats.rebuiltBoxes++;
-        return new BoxNode(n, style, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL);
+        return new BoxNode(n, style, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL,
+                prev != null ? prev.flow : null);
     }
 
     /**

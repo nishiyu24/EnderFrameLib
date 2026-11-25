@@ -7,7 +7,8 @@ import com.nishiyu.enderframelib.core.dom.node.NodeType;
 /**
  * 箱の種類（Engine v3 M2a）。整形エンジンの振り分けに要る粒度だけを持つ。
  *
- * <p>表はまだ区別しない（{@link #BLOCK} に寄せる。M2b-4 で種類を足す）。</p>
+ * <p>表（M2b-4）: 表の内部の箱（行グループ・行・セル・キャプション・列）は表・行グループ・行の子としてだけ現れる。それ以外の親の下に
+ * 現れた表の内部の箱は、入力側が匿名の表・行・セルで包む（{@link TableBoxes}。CSS 2.2 §17.2.1）。</p>
  */
 public enum BoxKind {
     /** 箱を作らない（{@code display: none}・コメント）。子は辿らない。 */
@@ -28,6 +29,20 @@ public enum BoxKind {
     GRID,
     /** インライン水準の原子で、中はグリッド（{@code inline-grid}）。 */
     INLINE_GRID,
+    /** 表（{@code table}。M2b-4）。ブロック水準で、独立した整形コンテキスト。 */
+    TABLE,
+    /** インライン水準の原子で、中は表（{@code inline-table}）。 */
+    INLINE_TABLE,
+    /** 行グループ（{@code table-row-group} / {@code table-header-group} / {@code table-footer-group}）。 */
+    TABLE_ROW_GROUP,
+    /** 行（{@code table-row}）。 */
+    TABLE_ROW,
+    /** セル（{@code table-cell}）。中はブロックの流れ（独立した整形コンテキスト）。 */
+    TABLE_CELL,
+    /** キャプション（{@code table-caption}）。中はブロックの流れ。 */
+    TABLE_CAPTION,
+    /** 列・列グループ（{@code table-column} / {@code table-column-group}）。描かれず、列の幅と {@code visibility: collapse} だけに効く。 */
+    TABLE_COLUMN,
     /**
      * 箱を作らず、子（と疑似要素）を親の子として並べる（{@code display: contents}。M2b-1）。子のスタイルの継承元ではある。
      * レイアウトは {@link BoxChildren#toList()} で中身へ展開して読む。
@@ -49,6 +64,13 @@ public enum BoxKind {
             case "inline-grid" -> INLINE_GRID;
             case "inline" -> INLINE;
             case "contents" -> CONTENTS;
+            case "table" -> TABLE;
+            case "inline-table" -> INLINE_TABLE;
+            case "table-row-group", "table-header-group", "table-footer-group" -> TABLE_ROW_GROUP;
+            case "table-row" -> TABLE_ROW;
+            case "table-cell" -> TABLE_CELL;
+            case "table-caption" -> TABLE_CAPTION;
+            case "table-column", "table-column-group" -> TABLE_COLUMN;
             default -> BLOCK;
         };
         // 置換要素と部品（img・input・button ほか）はインライン水準なら原子（行の中に 1 つの塊として置く）
@@ -57,7 +79,10 @@ public enum BoxKind {
         return k == NONE ? NONE : blockified(k, style);
     }
 
-    /** float・位置指定（absolute / fixed）の箱はブロック水準になる（CSS Display §2.7 blockification）。 */
+    /**
+     * float・位置指定（absolute / fixed）の箱はブロック水準になる（CSS Display §2.7 blockification。表の内部の箱はブロック、
+     * {@code inline-table} は表。CSS 2.2 §9.7）。
+     */
     private static BoxKind blockified(BoxKind k, Style style) {
         var p = style.box.position;
         boolean out = style.facts.floating
@@ -67,18 +92,33 @@ public enum BoxKind {
             case INLINE, INLINE_BLOCK -> BLOCK;
             case INLINE_FLEX -> FLEX;
             case INLINE_GRID -> GRID;
+            case INLINE_TABLE -> TABLE;
+            case TABLE_ROW_GROUP, TABLE_ROW, TABLE_CELL, TABLE_CAPTION, TABLE_COLUMN -> BLOCK;
             default -> k;
         };
     }
 
-    /** ブロックの流れに並ぶ箱か（{@link #BLOCK} / {@link #FLEX} / {@link #GRID}）。 */
+    /** ブロックの流れに並ぶ箱か（{@link #BLOCK} / {@link #FLEX} / {@link #GRID} / {@link #TABLE}）。 */
     public boolean blockLevel() {
-        return this == BLOCK || this == FLEX || this == GRID;
+        return this == BLOCK || this == FLEX || this == GRID || this == TABLE;
     }
 
-    /** 行の中に 1 つの塊として置くインライン水準の原子か（{@link #INLINE_BLOCK} / {@link #INLINE_FLEX} / {@link #INLINE_GRID}）。 */
+    /**
+     * 行の中に 1 つの塊として置くインライン水準の原子か（{@link #INLINE_BLOCK} / {@link #INLINE_FLEX} / {@link #INLINE_GRID} /
+     * {@link #INLINE_TABLE}）。
+     */
     public boolean atomicInline() {
-        return this == INLINE_BLOCK || this == INLINE_FLEX || this == INLINE_GRID;
+        return this == INLINE_BLOCK || this == INLINE_FLEX || this == INLINE_GRID || this == INLINE_TABLE;
+    }
+
+    /** 表か（{@link #TABLE} / {@link #INLINE_TABLE}）。 */
+    public boolean tableContainer() {
+        return this == TABLE || this == INLINE_TABLE;
+    }
+
+    /** 表の内部の箱か（行グループ・行・セル・キャプション・列）。表・行グループ・行の外では匿名の箱で包まれる。 */
+    public boolean tableInternal() {
+        return this == TABLE_ROW_GROUP || this == TABLE_ROW || this == TABLE_CELL || this == TABLE_CAPTION || this == TABLE_COLUMN;
     }
 
     /** 中身が flex か（{@link #FLEX} / {@link #INLINE_FLEX}）。 */

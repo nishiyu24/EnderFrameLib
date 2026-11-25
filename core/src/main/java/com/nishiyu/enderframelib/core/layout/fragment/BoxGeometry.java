@@ -20,6 +20,14 @@ public final class BoxGeometry {
 
     /** {@code cbw} は包含ブロックの幅（余白・パディングの % の基準）。 */
     public BoxGeometry(Style st, float cbw, LayoutSession s) {
+        this(st, cbw, null, s);
+    }
+
+    /**
+     * {@code space} が枠線を重ねる表のセルの使う枠線（{@link ConstraintSpace#borders}）を持てば、枠線の幅はスタイルでなくそれ
+     * （M2b-4。旧経路の {@code collapsedBorders}）。
+     */
+    public BoxGeometry(Style st, float cbw, ConstraintSpace space, LayoutSession s) {
         BoxGeomStyle b = st.box;
         mT = len(st, b.marginTop, cbw, s);
         mR = len(st, b.marginRight, cbw, s);
@@ -31,10 +39,11 @@ public final class BoxGeometry {
         pR = Math.max(0, len(st, b.paddingRight, cbw, s));
         pB = Math.max(0, len(st, b.paddingBottom, cbw, s));
         pL = Math.max(0, len(st, b.paddingLeft, cbw, s));
-        bT = Math.max(0, len(st, b.borderTopWidth, cbw, s));
-        bR = Math.max(0, len(st, b.borderRightWidth, cbw, s));
-        bB = Math.max(0, len(st, b.borderBottomWidth, cbw, s));
-        bL = Math.max(0, len(st, b.borderLeftWidth, cbw, s));
+        TableBorders.Edges used = space != null ? space.borders : null;
+        bT = used != null ? used.top() : Math.max(0, len(st, b.borderTopWidth, cbw, s));
+        bR = used != null ? used.right() : Math.max(0, len(st, b.borderRightWidth, cbw, s));
+        bB = used != null ? used.bottom() : Math.max(0, len(st, b.borderBottomWidth, cbw, s));
+        bL = used != null ? used.left() : Math.max(0, len(st, b.borderLeftWidth, cbw, s));
     }
 
     float hdec() { return pL + pR + bL + bR; }

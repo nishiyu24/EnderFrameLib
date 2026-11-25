@@ -14,8 +14,11 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
  * （§3.3 M2a の知見）。描画（M3b）が要る番号は {@code node.nodeId()} で引ける。</p>
  */
 public final class BoxNode {
-    /** 疑似要素の種類（M2b-1）。疑似要素の箱とその中の文字の節は持ち主の要素の節を {@link #node} に持つ。 */
-    public enum Pseudo { NONE, BEFORE, AFTER, MARKER }
+    /**
+     * 疑似要素の種類（M2b-1）。疑似要素の箱とその中の文字の節は持ち主の要素の節を {@link #node} に持つ。{@link #ANONYMOUS} は表の匿名の箱
+     * （M2b-4。{@link TableBoxes}）で、包んだ子の親の節を {@link #node} に持ち、{@link #children} は包んだ子の並び。
+     */
+    public enum Pseudo { NONE, BEFORE, AFTER, MARKER, ANONYMOUS }
 
     /** 元の DOM の節（文書の根も含む）。疑似要素の箱では持ち主の要素。 */
     public final HtmlNode node;
@@ -33,7 +36,8 @@ public final class BoxNode {
     public final Pseudo pseudo;
     /**
      * レイアウトが並べる子: {@link #children} の前後に {@code ::before} / {@code ::after} の箱を 1 個ずつのチャンクで足した並び。
-     * 疑似要素が無ければ {@link #children} と同じ参照（追加の確保なし）。
+     * 疑似要素が無ければ {@link #children} と同じ参照（追加の確保なし）。表の構造を補う箱が要る親では、匿名の表・行・セルで包み
+     * 表・行グループ・行の子の空白だけの文字を除いた並び（{@link TableBoxes}。要らなければ同じ参照）。
      */
     public final BoxChildren flow;
     /** 置換要素・部品なら大きさを決める入力の写し（{@link ReplacedInput}）。それ以外は null。 */
@@ -45,6 +49,11 @@ public final class BoxNode {
     public final BoxNode marker;
     /** マーカーの箱なら組んだ番号（番号に依らなければ {@link MarkerBoxes#NO_ORDINAL}）。それ以外は {@link MarkerBoxes#NO_ORDINAL}。 */
     public final int ordinal;
+    /**
+     * 表のセルの {@code colspan} / {@code rowspan}・列の {@code span} の属性の写し（M2b-4。{@link TableBoxes#spanOf}）。属性はスタイルに
+     * 現れないので入力側が写し、レイアウトは生きた DOM を読まない（属性だけの変化も箱の作り直しとして届く）。それ以外は 0。
+     */
+    public final int span;
 
     public BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children) {
         this(node, style, kind, text, children, Pseudo.NONE, null, null, null, null, MarkerBoxes.NO_ORDINAL);
@@ -56,6 +65,12 @@ public final class BoxNode {
      */
     BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
             ReplacedInput replaced, BoxNode marker, int ordinal) {
+        this(node, style, kind, text, children, pseudo, before, after, replaced, marker, ordinal, null);
+    }
+
+    /** {@code prevFlow} は同じ節の前回の {@link #flow}（匿名の表の箱を前回の参照のまま使うための候補。無ければ null）。 */
+    BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
+            ReplacedInput replaced, BoxNode marker, int ordinal, BoxChildren prevFlow) {
         this.node = node;
         this.style = style;
         this.kind = kind;
@@ -63,24 +78,31 @@ public final class BoxNode {
         this.children = children;
         this.pseudo = pseudo;
         BoxNode lead = marker != null && MarkerBoxes.inside(style) ? marker : null;
-        this.flow = before == null && after == null && lead == null ? children : BoxChildren.withPseudos(lead, before, children, after);
+        BoxChildren raw = before == null && after == null && lead == null ? children : BoxChildren.withPseudos(lead, before, children, after);
+        this.flow = TableBoxes.fixup(node, style, kind, raw, prevFlow);
         this.replaced = replaced;
         this.marker = marker;
         this.ordinal = ordinal;
+        this.span = TableBoxes.spanOf(node, kind, pseudo);
     }
 
     /** {@link #flow} に足した疑似要素の箱（{@code ::before} / {@code ::after}。{@code ::marker} は {@link #marker}。無ければ null）。 */
     public BoxNode pseudoChild(Pseudo which) {
         if (which == Pseudo.MARKER) return marker;
-        if (flow == children || flow.size() == 0) return null;
-        int first = flow.get(0).pseudo == Pseudo.MARKER ? 1 : 0;
+        return flow == children ? null : pseudoIn(flow, which);
+    }
+
+    /** 並び {@code kids} の先頭（末尾）の疑似要素の箱。表の匿名の箱に包まれていれば中を辿る（{@link TableBoxes}）。 */
+    private static BoxNode pseudoIn(BoxChildren kids, Pseudo which) {
+        if (kids.size() == 0) return null;
         if (which == Pseudo.BEFORE) {
-            if (flow.size() <= first) return null;
-            BoxNode b = flow.get(first);
-            return b.pseudo == which ? b : null;
+            int first = kids.get(0).pseudo == Pseudo.MARKER ? 1 : 0;
+            if (kids.size() <= first) return null;
+            BoxNode b = kids.get(first);
+            return b.pseudo == Pseudo.ANONYMOUS ? pseudoIn(b.children, which) : b.pseudo == which ? b : null;
         }
-        BoxNode b = flow.get(flow.size() - 1);
-        return b.pseudo == which ? b : null;
+        BoxNode b = kids.get(kids.size() - 1);
+        return b.pseudo == Pseudo.ANONYMOUS ? pseudoIn(b.children, which) : b.pseudo == which ? b : null;
     }
 
     /** 流れに入らない（{@code list-style-position: outside} の）マーカーの箱（無ければ null）。 */

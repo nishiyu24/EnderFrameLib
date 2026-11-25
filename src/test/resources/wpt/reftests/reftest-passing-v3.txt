@@ -77,7 +77,9 @@ css/css-flexbox/flexbox_justifycontent-left-001.html
 css/css-flexbox/flexbox_justifycontent-spacearound.html
 css/css-flexbox/flexbox_justifycontent-stretch.html
 css/css-flexbox/flexbox_order-box.html
+css/css-flexbox/flexbox_rowspan.html
 css/css-flexbox/flexbox_stf-fixpos.html
+css/css-flexbox/flexbox_stf-table.html
 css/css-flexbox/flexbox_wrap-reverse.html
 css/css-flexbox/gap-004-rtl.html
 css/css-flexbox/gap-006-ltr.html
@@ -88,6 +90,7 @@ css/css-flexbox/grid-flex-item-006.html
 css/css-flexbox/intrinsic-size/col-wrap-006.html
 css/css-flexbox/intrinsic-size/col-wrap-014.html
 css/css-flexbox/intrinsic-size/row-003.html
+css/css-flexbox/item-with-table-with-infinite-max-intrinsic-width.html
 css/css-flexbox/multiline-last-baseline-item-count.html
 css/css-flexbox/order/order-with-column-reverse.html
 css/css-flexbox/percentage-heights-007.html
@@ -95,7 +98,10 @@ css/css-flexbox/percentage-heights-017.html
 css/css-flexbox/percentage-size-quirks-003.html
 css/css-flexbox/stretch-obeys-min-max-001.html
 css/css-flexbox/stretched-child-in-nested-flexbox-003.html
+css/css-flexbox/table-as-item-fixed-min-width.html
+css/css-flexbox/table-as-item-min-content-height-1.tentative.html
 css/css-flexbox/table-as-item-specified-height.html
+css/css-flexbox/table-as-item-stretch-cross-size-5.html
 css/css-grid/abspos/grid-abspos-staticpos-align-self-001.html
 css/css-grid/abspos/grid-abspos-staticpos-align-self-rtl-003.html
 css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-001.html
@@ -148,6 +154,7 @@ css/css-text/white-space/white-space-intrinsic-size-023.html
 css/css-text/white-space/white-space-pre-032.html
 css/css-text/white-space/white-space-wrap-after-nowrap-001.html
 css/css-text/white-space/ws-break-spaces-applies-to-005.html
+css/css-text/white-space/ws-break-spaces-applies-to-011.html
 css/css-text/word-break/auto-phrase/word-break-auto-phrase-007.html
 css/css-text/word-break/word-break-break-all-062.html
 css/css-text/word-break/word-break-break-all-inline-005.html

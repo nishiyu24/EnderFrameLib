@@ -58,6 +58,13 @@ class IncrementalOracleTest {
     @Test
     void replacedElements() { run("replaced"); }
 
+    /**
+     * M2b-4: 表（行の挿入・削除、{@code colspan} / {@code rowspan} の属性だけの変化、枠線の重ね・間隔・固定レイアウト・縦揃え・
+     * {@code visibility: collapse}・キャプションの位置・表示型の切り替えで匿名の表の箱が増減する変異）。
+     */
+    @Test
+    void tables() { run("tables"); }
+
     private static void run(String kind) {
         String html = switch (kind) {
             case "large" -> SpikeView.largeList(300);
@@ -71,6 +78,7 @@ class IncrementalOracleTest {
                     + "<img id=ri><input id=rin size=5><select id=rs><option id=ro>x</option></select>"
                     + "<svg id=rv viewBox='0 0 10 5' width=30></svg></div></body>");
             case "lists" -> lists();
+            case "tables" -> tablesDoc();
             case "flexx" -> SpikeView.nestedFlex(4, 3, true).replace(".f{display:flex;flex-wrap:wrap;", ".f{display:flex;flex-wrap:wrap;height:220px;");
             default -> SpikeView.nestedFlex(4, 2);
         };
@@ -80,6 +88,7 @@ class IncrementalOracleTest {
         for (int step = 0; step < 80; step++) {
             String op = kind.equals("replaced") && rnd.nextInt(3) > 0 ? mutateReplaced(v, rnd)
                     : kind.equals("grid") && rnd.nextInt(3) > 0 ? mutateGrid(v, rnd)
+                    : kind.equals("tables") && rnd.nextInt(4) > 0 ? mutateTable(v, rnd, step)
                     : kind.equals("flexx") && rnd.nextInt(3) > 0 ? mutateFlex(v, rnd)
                     : kind.equals("pseudo") && rnd.nextInt(3) > 0 ? mutatePseudo(v, rnd)
                     : kind.equals("lists") && rnd.nextInt(3) > 0 ? mutateList(v, rnd, step)
@@ -94,6 +103,72 @@ class IncrementalOracleTest {
                     }
                 }
                 assertEquals(b.size(), a.size(), kind + " step " + step + " (" + op + ") 断片の数");
+            }
+        }
+    }
+
+    private static String tablesDoc() {
+        StringBuilder sb = new StringBuilder("<html><head><style>body{margin:8px} td{padding:2px}</style></head><body>");
+        sb.append("<table id=t0 style='border-spacing:2px'><caption id=cap>caption text</caption><thead><tr><th>h1</th><th>h2</th><th>h3</th></tr></thead>")
+                .append("<tbody id=tb>");
+        for (int r = 0; r < 6; r++) {
+            sb.append("<tr><td id=c").append(r).append(">cell ").append(r).append("</td><td>").append("word ".repeat(r % 3 + 1))
+                    .append("</td><td>").append(r).append("</td></tr>");
+        }
+        sb.append("</tbody><tfoot><tr><td colspan=3>foot</td></tr></tfoot></table>")
+                .append("<table id=t1 style='border-collapse:collapse;border:3px solid'><tr><td id=r0 rowspan=2>a</td><td style='border:1px solid'>b</td></tr>")
+                .append("<tr><td style='border:5px solid'>c</td></tr></table>")
+                .append("<div id=an><div style='display:table-cell'>anon a</div> <div id=ac style='display:table-cell'>anon b</div>text</div>")
+                .append("<div id=dt style='display:table;width:300px'><div style='display:table-row'><div id=dm style='display:table-cell;vertical-align:middle'>m</div>")
+                .append("<div style='display:table-cell;height:40px'>tall</div></div></div>")
+                .append("<p>inline <span id=it style='display:inline-table'><span style='display:table-cell'>it</span></span> after</p>");
+        return sb.append("</body></html>").toString();
+    }
+
+    private static final String[] TABLE_STYLES = {
+            "border-collapse:collapse", "border-spacing:5px 1px", "table-layout:fixed;width:250px", "width:60%", "vertical-align:bottom",
+            "vertical-align:baseline;padding-top:6px", "visibility:collapse", "caption-side:bottom", "display:table-cell", "display:table-row",
+            "display:table", "display:inline-table", "border:4px solid", "border:3px hidden", "height:80px", "text-align:right",
+            "display:table-caption", "width:120px", "margin:0 auto", "display:none",
+    };
+
+    /** 表の変異を 1 つ加える（行の挿入・削除・span の属性・スタイル）。 */
+    private static String mutateTable(SpikeView v, Random rnd, int step) {
+        HtmlNode tb = v.byId("tb");
+        switch (rnd.nextInt(5)) {
+            case 0 -> {
+                if (tb == null) return "skip";
+                HtmlElement tr = new HtmlElement("tr");
+                HtmlElement td = new HtmlElement("td");
+                td.updateTextContent("new " + step);
+                tr.appendChild(td);
+                List<HtmlNode> rows = new ArrayList<>();
+                for (HtmlNode c : tb.children) if (c instanceof HtmlElement) rows.add(c);
+                tb.insertBefore(tr, rows.isEmpty() ? null : rows.get(rnd.nextInt(rows.size())));
+                return "insert tr";
+            }
+            case 1 -> {
+                if (tb == null) return "skip";
+                List<HtmlNode> rows = new ArrayList<>();
+                for (HtmlNode c : tb.children) if (c instanceof HtmlElement) rows.add(c);
+                if (rows.isEmpty()) return "skip";
+                tb.removeChild(rows.get(rnd.nextInt(rows.size())));
+                return "remove tr";
+            }
+            case 2 -> {
+                HtmlElement c = (HtmlElement) v.byId(rnd.nextBoolean() ? "c" + rnd.nextInt(6) : "r0");
+                if (c == null) return "skip";
+                String a = rnd.nextBoolean() ? "colspan" : "rowspan";
+                c.setAttribute(a, Integer.toString(rnd.nextInt(4)));
+                return a + " " + c.attrs.get("id");
+            }
+            default -> {
+                List<HtmlNode> elems = new ArrayList<>();
+                collect(v.doc.root, elems);
+                HtmlElement target = (HtmlElement) elems.get(rnd.nextInt(elems.size()));
+                String st = TABLE_STYLES[rnd.nextInt(TABLE_STYLES.length)];
+                target.setAttribute("style", st);
+                return st + " " + target.tag + " " + target.attrs.get("id");
             }
         }
     }

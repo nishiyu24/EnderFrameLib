@@ -46,6 +46,8 @@ public final class FragmentProjection {
     private final java.util.Set<LayoutBox> placed = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     /** 1 回の写しの間だけの断片の到達範囲の表（{@link com.nishiyu.enderframelib.core.layout.fragment.ScrollableOverflow}）。 */
     private final Map<LayoutFragment, float[]> overflow = new IdentityHashMap<>();
+    /** 表の匿名の箱に付けた番号（持ち主ごとに一意の鍵を作る。旧 {@code BoxTreeBuilder.createAnonymous} と同じ形）。 */
+    private final Map<com.nishiyu.enderframelib.core.dom.node.HtmlNode, Integer> anonymousCounts = new IdentityHashMap<>();
 
     private FragmentProjection(LayoutSession session) {
         this.session = session;
@@ -63,7 +65,8 @@ public final class FragmentProjection {
     /** ブロック水準の断片 1 つ（{@code x}, {@code y} は親の border-box 基準）。 */
     private LayoutBox block(LayoutFragment f, float x, float y) {
         BoxNode b = f.box;
-        LayoutBox lb = new LayoutBox(nodeOf(b), new ComputedStyle(b.style));
+        LayoutBox lb = b.pseudo == BoxNode.Pseudo.ANONYMOUS ? LayoutBox.anonymous(nodeOf(b), new ComputedStyle(b.style))
+                : new LayoutBox(nodeOf(b), new ComputedStyle(b.style));
         placed.add(lb);
         lb.x = x;
         lb.y = y;
@@ -73,6 +76,7 @@ public final class FragmentProjection {
         lb.mT = g.mT; lb.mR = g.mR; lb.mB = g.mB; lb.mL = f.marginLeft;
         lb.pT = g.pT; lb.pR = g.pR; lb.pB = g.pB; lb.pL = g.pL;
         lb.bT = g.bT; lb.bR = g.bR; lb.bB = g.bB; lb.bL = g.bL;
+        tableEdges(lb, f);
         float[] ov = com.nishiyu.enderframelib.core.layout.fragment.ScrollableOverflow.of(f, overflow, session); // スクロールの範囲
         lb.scrollWidth = ov[0];
         lb.scrollHeight = ov[1];
@@ -122,6 +126,28 @@ public final class FragmentProjection {
             }
         }
         return lb;
+    }
+
+    /**
+     * 表の箱の縁（M2b-4）: 枠線を重ねる表とセルは表が決めた使う枠線（旧描画は {@code collapsedBorders} で枠線の記憶を止める）で、表は
+     * padding を持たない。行グループと行は旧経路と同じく縁を持たない（表が大きさだけを決め、自分では測られない）。
+     */
+    private void tableEdges(LayoutBox lb, LayoutFragment f) {
+        BoxNode b = f.box;
+        com.nishiyu.enderframelib.core.layout.fragment.TableBorders.Edges e = f.space.usedBorders();
+        if (b.kind.tableContainer() && b.style.inherited.borderCollapse == com.nishiyu.enderframelib.core.css.model.CssKeywords.BorderCollapse.COLLAPSE) {
+            e = com.nishiyu.enderframelib.core.layout.fragment.TableBorders.ofTable(b, session);
+            lb.pT = lb.pR = lb.pB = lb.pL = 0;
+        }
+        if (e != null) {
+            lb.bT = e.top(); lb.bR = e.right(); lb.bB = e.bottom(); lb.bL = e.left();
+            lb.collapsedBorders = new float[]{e.top(), e.right(), e.bottom(), e.left()};
+        }
+        if (b.kind == BoxKind.TABLE_ROW || b.kind == BoxKind.TABLE_ROW_GROUP) {
+            lb.mT = lb.mR = lb.mB = lb.mL = 0;
+            lb.pT = lb.pR = lb.pB = lb.pL = 0;
+            lb.bT = lb.bR = lb.bB = lb.bL = 0;
+        }
     }
 
     /** インライン水準の子孫（文字の節・インライン要素）の箱を、DOM の入れ子のまま {@code parent} の下へ足す。 */
@@ -283,6 +309,14 @@ public final class FragmentProjection {
      */
     private com.nishiyu.enderframelib.core.dom.node.HtmlNode nodeOf(BoxNode b) {
         if (b.pseudo == BoxNode.Pseudo.NONE) return b.node;
+        if (b.pseudo == BoxNode.Pseudo.ANONYMOUS) { // 表の匿名の箱: 持ち主の子のように親だけを繋いだ使い捨ての節
+            return synthetic.computeIfAbsent(b, k -> {
+                com.nishiyu.enderframelib.core.dom.node.HtmlNode n = new com.nishiyu.enderframelib.core.dom.node.HtmlNode("div");
+                n.parent = k.node;
+                n.setId(k.node.key() + "_anon" + anonymousCounts.merge(k.node, 1, Integer::sum));
+                return n;
+            });
+        }
         return synthetic.computeIfAbsent(b, k -> {
             com.nishiyu.enderframelib.core.dom.node.HtmlNode n = k.kind == BoxKind.TEXT
                     ? new com.nishiyu.enderframelib.core.dom.node.HtmlText(k.text)

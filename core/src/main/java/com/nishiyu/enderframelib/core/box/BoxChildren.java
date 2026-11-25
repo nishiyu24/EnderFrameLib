@@ -50,6 +50,12 @@ public abstract sealed class BoxChildren permits BoxChunk, BoxChildren.Chunked {
         return false;
     }
 
+    /** どれかのチャンクが表の内部の箱を含むか（O(チャンク数)。{@link TableBoxes}）。 */
+    public boolean hasTableInternal() {
+        for (int c = 0, n = chunkCount(); c < n; c++) if (chunk(c).hasTableInternal()) return true;
+        return false;
+    }
+
     /** どれかのチャンクが {@code display: contents} の子を含むか（O(チャンク数)）。 */
     public boolean hasContents() {
         for (int c = 0, n = chunkCount(); c < n; c++) if (chunk(c).hasContents()) return true;

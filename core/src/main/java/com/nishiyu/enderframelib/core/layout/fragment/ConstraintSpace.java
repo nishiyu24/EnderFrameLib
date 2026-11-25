@@ -27,12 +27,23 @@ public final class ConstraintSpace {
      * 矩形だけ）。独立した整形コンテキストを作らないブロックの子にだけ載り、それ以外は {@link Floats.Space#EMPTY}。値等価で鍵に入る。
      */
     final Floats.Space exclusions;
+    /**
+     * 枠線を重ねる表（{@code border-collapse: collapse}）のセルの使う枠線の幅（表が隣のセル・表の枠線と重ねて決めた半分ずつ。M2b-4）。
+     * それ以外は null（スタイルの枠線）。値等価で鍵に入る。旧経路の箱への書き込み（{@code collapsedBorders}）の代わり。
+     */
+    final TableBorders.Edges borders;
 
     public ConstraintSpace(float availableWidth, float fixedWidth, float fixedHeight, float percentHeightBase, int flags) {
         this(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, Floats.Space.EMPTY);
     }
 
     ConstraintSpace(float availableWidth, float fixedWidth, float fixedHeight, float percentHeightBase, int flags, Floats.Space exclusions) {
+        this(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, exclusions, null);
+    }
+
+    ConstraintSpace(float availableWidth, float fixedWidth, float fixedHeight, float percentHeightBase, int flags, Floats.Space exclusions,
+                    TableBorders.Edges borders) {
+        this.borders = borders;
         this.availableWidth = availableWidth;
         this.fixedWidth = fixedWidth;
         this.fixedHeight = fixedHeight;
@@ -43,10 +54,19 @@ public final class ConstraintSpace {
 
     /** 除外領域だけを差し替えた制約（同じなら自分）。 */
     ConstraintSpace withExclusions(Floats.Space e) {
-        return e.equals(exclusions) ? this : new ConstraintSpace(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, e);
+        return e.equals(exclusions) ? this : new ConstraintSpace(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, e, borders);
+    }
+
+    /** セルの使う枠線だけを差し替えた制約（同じなら自分）。 */
+    ConstraintSpace withBorders(TableBorders.Edges b) {
+        return java.util.Objects.equals(b, borders) ? this
+                : new ConstraintSpace(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, exclusions, b);
     }
 
     public boolean formattingRoot() { return (flags & FORMATTING_ROOT) != 0; }
+
+    /** 枠線を重ねる表のセルの使う枠線（無ければ null。描画の一時アダプタが読む）。 */
+    public TableBorders.Edges usedBorders() { return borders; }
 
     public boolean contentBlockSize() { return (flags & CONTENT_BLOCK_SIZE) != 0; }
 
@@ -59,7 +79,8 @@ public final class ConstraintSpace {
                 && Float.floatToIntBits(fixedWidth) == Float.floatToIntBits(s.fixedWidth)
                 && Float.floatToIntBits(fixedHeight) == Float.floatToIntBits(s.fixedHeight)
                 && Float.floatToIntBits(percentHeightBase) == Float.floatToIntBits(s.percentHeightBase)
-                && (exclusions == s.exclusions || exclusions.equals(s.exclusions));
+                && (exclusions == s.exclusions || exclusions.equals(s.exclusions))
+                && java.util.Objects.equals(borders, s.borders);
     }
 
     @Override
@@ -68,7 +89,7 @@ public final class ConstraintSpace {
         h = h * 31 + Float.floatToIntBits(fixedWidth);
         h = h * 31 + Float.floatToIntBits(fixedHeight);
         h = h * 31 + Float.floatToIntBits(percentHeightBase);
-        return (h * 31 + flags) * 31 + exclusions.hashCode();
+        return ((h * 31 + flags) * 31 + exclusions.hashCode()) * 31 + java.util.Objects.hashCode(borders);
     }
 
     @Override

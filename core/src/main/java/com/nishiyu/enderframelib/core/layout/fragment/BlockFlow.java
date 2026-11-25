@@ -37,7 +37,7 @@ final class BlockFlow implements FormattingEngine {
     public LayoutFragment layout(BoxNode node, ConstraintSpace space, LayoutFragment prior, LayoutSession s) {
         Style st = node.style;
         float cbw = space.availableWidth;
-        BoxGeometry g = new BoxGeometry(st, cbw, s);
+        BoxGeometry g = new BoxGeometry(st, cbw, space, s); // 枠線を重ねる表のセルは表が決めた枠線（space.borders）
         boolean text = node.kind == BoxKind.TEXT;
         float w, ml = g.mL;
         if (!Float.isNaN(space.fixedWidth)) {
