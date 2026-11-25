@@ -2,32 +2,34 @@
 
 `:core` は Minecraft に依存しない純 Java の HTML/CSS 組み込み UI エンジン。現在は **Engine v3 への破壊的再設計**の最中。次を**先に読む**。
 
-- `core/ENGINE_REARCHITECTURE_PLAN.md` — **優先順位表は §3 の 1 つだけ**（本流 Phase M0〜M6〔M2 は M2a/M2b〕＋独立トラック P1〜P5〔群 A 性能・B ホストと配布・C 汎用ツールキット化〕。位置づけ〔JavaFX と並ぶ汎用 UI 基盤〕は §3.0b）。M2 の入力側（DOM → `BoxNode`）の増分設計と縦割りスパイク関門（M2a。完了・Go）は §3.3（実装で設計から変えた点・M2b への引き継ぎは §3.3 C）、KPI は §4、運用ルール（7 原則）は §5。
-- `core/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md` — 旧計画（C/K/L/W 系）と §6-1〜205 の経緯・計測。**読み物であり、指示ではない**。旧 `DESIGN_INCREMENTAL_KERNEL.md` は廃止し、ARCHIVE の付録 5 へ移設した（持ち越す知見は付録 5.A。新しい知見はここへ積む）。
+- `core/ENGINE_REARCHITECTURE_PLAN.md` — **まず §0（現在地）を読む**。**優先順位表は §3 の 1 つだけ**（本流 Phase M0〜M6〔M2 は M2a/M2b/M2c、M3 は M3a/M3b/M3c〕＋独立トラック P1〜P5。位置づけ〔JavaFX と並ぶ汎用 UI 基盤〕は §3.0b）。2026-11-26 の軌道修正の理由は §1.3、中間表現と記憶の鍵の予算は §2.3、KPI は §4、運用ルール（8 原則）は §5。
+- `core/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md` — 旧計画（C/K/L/W 系）と §6-1〜205 の経緯・計測。**読み物であり、指示ではない**。旧 `DESIGN_INCREMENTAL_KERNEL.md` は廃止し、ARCHIVE の付録 5 へ移設した（持ち越す知見は付録 5.A。新しい知見はここへ積む）。軌道修正の前の計画書の全文（M2a の設計・M2b〜M2c の作業記録）は索引から辿る `archive/07`。コードの注釈の「計画書 §3.3 C」「§3.4.x」はそこを指す。
 
 ## 作業の規則（計画書 §5 の要約。迷ったら §5 が正）
 
 - **土台を変える仕事は破壊的でよい**: 可変 `LayoutBox`・`ComputedStyle`・フラット `DisplayItem` の上に対症療法のキャッシュを足さない。データ構造（入出力の分離・参照共有・階層表現）から直す。
-- **キャッシュは不変入力の参照同一性（`==`）による 1 層メモ化だけ**。足さない: 新しい `F_*` フラグ・純粋性の述語・`*Verifier`・`Shortcut`・40 欄ハッシュの後追い検証（`PaintStamps` 型）・読み取り台帳（`LayoutReads` 型）・出力のその場書き換えパッチ。足切りに使ってよい入口は変更台帳 `ChangeLedger` だけ。
+- **キャッシュは計画書 §2.3 の表の鍵による 1 層メモ化だけ**（構造の入力は `==`、`ConstraintSpace` は値等価）。足さない: 新しい `F_*` フラグ・純粋性の述語（子から親へ伝える「使い回せるか」を含む）・`*Verifier`・`Shortcut`・多欄の後追い照合（`PaintStamps` 型。描く文脈の照合を含む）・読み取り台帳（`LayoutReads` 型）・使い回さない部品の列挙・出力のその場書き換えパッチ。足切りに使ってよい入口は変更台帳 `ChangeLedger` だけ。一時の例外は計画書の「凍結した例外」の表に載せたものだけ（今は `TreePainter` の記憶。M3b で削除）。
 - **プロセスグローバルな可変状態を足さない**: `static volatile`・共有エポック・業務ロジックの `ThreadLocal`・新しい `Shortcut`。状態は 1 ビュー（`EngineView`）に閉じる。
 - **クラス規模**: 新規・刷新するクラスは ≤ 600 行を原則とし、1,000 行超を作らない。
-- **旧経路の扱い**: 新設した型で置き換えたら、**同じフェーズ内で旧型・旧経路を削除する**。フラグやフォールバックで両立させたまま完了としない（運用ルール 7）。
+- **旧経路の扱い**: 新設した型で置き換えたら、**既定の切り替えと旧型・旧経路の削除を同じフェーズ内で行う**。削除を後の段に集めない。旧経路の速さに追いつく最適化を削除の前提にしない。フラグやフォールバックで両立させたまま完了としない（運用ルール 7）。
+- **性能と正しさの判定に旧経路を使わない**: 性能は絶対の上限（`latency:*`）と同じ経路の増分 / 全再計算の比（`ab-inc-vs-full:*`）で、描画まで含めた 1 フレームとヒープで判定する。旧経路との比は記録だけ。正しさは WPT・`FrameOracle`・3 者画素一致・人が確かめたゴールデンで見て、旧経路と項目単位で一致させる番人は作らない（運用ルール 6）。
+- **計画書は状態表**: 作業のたびに §0 と §4 を上書きし、経緯はコミットの本文と ARCHIVE（付録 5.A に 1 行）へ書く。表のセルは 500 字程度まで（運用ルール 8）。
 - **完了の定義は 3 点**: 旧コード・旧経路の完全削除／テスト緑／計画書 §4 の KPI 更新。
 - **不具合は先に再現してから直す**: `FrameOracle`（最初から作った独立の面との比較）または既知欠陥の変異で再現し、構造の側で直す。直したら同じコミットで `core/src/test/resources/regression-catalog.txt` に 1 行足す。
 - **時間の主張は交互 A/B だけ**: 絶対値はセッションで ±40% ずれる。旧版の worktree と現在を交互に 3 回ずつ・中央値で比べる（`powershell -File scripts/ab-gate.ps1`）、または `:core:memoryAndLatencyGate` の交互 A/B・ヒープ実測を使う。内部カウンタ（`memo*`）の固定で性能を主張しない。
 - **時刻は注入**: コアは `System.nanoTime`/`currentTimeMillis` を読まない（`core/kernel/Clock.java` だけ）。テストは `Clock.Manual`（`StandaloneView.clock(...)`・`ResizeSettle.freezeClock`）を使い、実時間を `sleep` で待たない。
 
-### 移行状態（Phase M0・M1・M2a 完了、M2b 進行中〔M2b-0・M2b-2・M2b-4 完了〕）
+### 移行状態（M0・M1・M2a・M2b 完了、M2c〔改訂〕進行中。詳細は計画書 §0・§3.2）
 
-- **M0 完了**: 旧ラチェット 8 本・`*Verifier` 3 種・`VERIFY_MEMO` / `VERIFY_BOX_MEMO`・`:core:shortcutMatrix`・`costGate` の `memo*` 判定を撤去し、**`ArchitectureHealthTest`** と **`:core:memoryAndLatencyGate`** が稼働。
-- **M1 完了（M1a + M1b + M1c）**: `core/css/` を型付き 6 群不変構造体 `Style`（`CssLength` 64-bit・`CssExprs`・`CustomProperties`・`StyleFacts`）＋薄いラッパー `ComputedStyle`（`2,095 → 398 行`）へ移行し、`CssValue.java`・`PackedLengths.java`・`TypedValueCache.java`・`StateStyleMemo.java`・`StyleSlice`/`DIFF_MEMO`/`StyleMap`/`SHARED`・スタイル系 `Shortcut`/`EngineFlags`（`STYLE_SHARE`・`TEXT_STYLE_FROM_PARENT`、上限 `35 → 33` / `45 → 43`）を削除。群クラス（`InheritedStyle` ほか 5 つ・`StyleProperties`・`StyleDiff`）は `scripts/GenStyleGroups.java` の**生成物なので手で直さない**（`PropertyRegistry` を変えたら再実行。`StyleGroupCoverageTest` が足し忘れを検出）。
-- **M2a 完了（判定 Go。計画書 §3.3 C）**: 旧経路と独立の新経路を新設した。L2 `core/box/`（不変 `BoxNode`・可変長チャンク列 `BoxChildren`/`BoxChunk`・`BoxTreeCompiler`〔凍結した `ChangeLedger` だけを入口に前回の木と DOM を並走〕・`StyleSource`）、L3 `core/layout/fragment/`（値等価の `ConstraintSpace`・不変 `LayoutFragment`・`FlowChunk`/`ChunkedFlow`・`LayoutCache`〔前回の断片木がキャッシュ、2 パスの 4 スロットは `FlowChunk.slots`、`MinMaxSizes` は弱参照の表〕・`BlockFlow`/`InlineFlow`/`FlexFlow`・入口 `FragmentLayout`）。番人は `IncrementalOracleTest`（全再計算と全断片の一致）・`LegacyParityTest`（旧経路と 1/64 px 以内）・`NestedFlexTest`・`BoxTreeCompilerTest`・`M2aSpikeGateTest`、実測は `./gradlew :core:m2aSpike`。M2b はこの型の上へ全エンジンを移植して `LayoutBox` ほかを削除する（スパイクの範囲外の一覧と引き継ぎ課題は §3.3 C）。
-- **M2b 進行中（段分けは計画書 §3.4.1）**: M2b-0 完了。一時アダプタ `core/layout/FragmentProjection`（断片木 → 描画用 `LayoutBox`。M2b-6 で削除）と、新経路の WPT のラチェット `WptV3BaselineTest`（`reftest-passing-v3.txt`、現在 170/260〔旧経路だけ合格 0。M2b-1〜M2b-4 完了（multicol は M2c の後）・M2b-5 完了（縦書き `OrthogonalFlow`・`match-parent`・コンテナクエリの 2 段 `FragmentPipeline`・`anchor()` `AnchorPlacement`）。M2c 進行中（① 描画だけの群 `InheritedPaintStyle` / `VisualStyle` の分割と 2 つの木 `BoxNode.layout` 完了。② は 4 段で、②-1 箱 1 つの描画を `PaintBox` を読む `BoxItemPainter` / `TextRunPainter` へ取り出した。②-2 断片木と最新の木から不変の描画用の木 `core.paint.tree`（`PaintTreeBuilder`）を作った。②-3 新しい描画 `TreePainter` / `TreeStacking`（記憶は描画用の木の節の同一性の 1 層）を作り、旧描画と表示リストの全項目が一致。②-4 新経路の WPT をこの描画で回す。③ 問い合わせ〔CSSOM・フォーカス・インスペクタ〕を `PaintBox` で答え、スクロールは `PaintView` が足す。④-1 ビューの構築時の引数 `EnginePath` で新経路（`V3Frame`）を選べるようにした〔既定は旧経路〕。④-2 前半: 旧経路の仕組みのテストを削除し、番人を `PaintBox`・`V3Fresh` で読むようにし、新経路の包含ブロック・兄弟結合子・sticky を直した。④-2 後半: `::first-line`・流れの外の箱の auto の余白・置換要素の大きさ・状態の規則の印・CSSOM・`content-visibility` の描画の省略・段ごとの計測を新経路へ移し、既定を新経路にした全件で残るのはゴールデンだけ。④-3 前半: 既定を新経路にした画素の比べ合わせで違いを 3 種に分け、新経路の描画の順の欠陥〔流れの外の箱を文書順に〕を直し、交互 A/B の行を足した。次は ④-3 後半〔hover・文字の変更の 1 フレームを旧経路以下へ（今は 2.5 倍・1.3 倍）・costGate・保持ヒープ・クライアントの `layoutRoot()`・既定の切り替え〕）。実文書の幾何は `GeometrySweepTest`、実文書のずれは全て記録した旧経路の逸脱と丸めであることを `GeometryDeviationsTest`（`geometry-sweep-deviations.txt`）が固定〕。増えたら `-Dwpt.v3.update=true`）。各段で新経路の合格数を増やし、M2b-6 で旧経路の 160 に届かせてから旧経路を削除する。**実装方針は計画書 §3.4.2**（段の順 M2b-1→2→3→4→5→M2c→M2b-6・旧エンジンは「アルゴリズムは移植・つなぎ目は差し替え」・描画だけの変化はスタイルの群の分割で構造的にレイアウトから外す・一時アダプタは 1 フレームの検証専用で、対話のフレームの前に M2c で断片木から描画項目を作る新しいクラスに置き換え、旧描画の記憶〔`FragmentPaint.Memo`・`PaintStamps` ほか〕は付け替えずに削除・描画だけの変化はレイアウトの入力の木と最新の群の木の 2 つの不変の木で扱い、可変の側表は作らない）。
+- **完了**: M0（新ゲート `ArchitectureHealthTest`・`:core:memoryAndLatencyGate`）・M1（型付きの不変 `Style`。群のクラスは `scripts/GenStyleGroups.java` の**生成物なので手で直さない**。`PropertyRegistry` を変えたら再実行し、`StyleGroupCoverageTest` が足し忘れを検出）・M2a（`core/box` の `BoxTreeCompiler`・`core/layout/fragment` の `LayoutFragment`/`LayoutCache`）・M2b（全エンジンを新経路へ移植。`WptV3BaselineTest` 170/260・旧経路だけ合格 0。増えたら `-Dwpt.v3.update=true`）。
+- **新経路の形**: 凍結した台帳 → `BoxNode`（レイアウトの入力の木と最新の木。`BoxNode.layout`）→ 断片木 → 描画用の木（`core.paint.tree`）→ `TreePainter` → `DisplayItem`。ビューの構築時の引数 `EnginePath`（`V3Frame`）で選び、**既定はまだ `LEGACY`**。描画用の木と `TreePainter` は M3b で `DisplayScene` に吸収して消す（新しい最適化を足さない）。
+- **M2c（改訂）の段**: M2c-1 新経路の保持ヒープの段ごとの内訳と判定（次の一手）→ M2c-2 既定を新経路へ切り替え（ゴールデン・`costGate` の基準を新経路で取り直す。条件は絶対値と自己比較）→ M2c-3 `LayoutBox` ほか旧レイアウト経路・`EnginePath`・`FragmentProjection`・旧経路を相手にする物差し（`LegacyParityTest`・`GeometrySweepTest`・`GeometryDeviationsTest` ほか）を削除。multicol は一時的に失い M3c で戻す。
+- **その後**: M3a（MOD の旧レンダラの撤去。並行して進めてよい）→ M3b（`DisplayScene`。親相対座標・`int nodeId`・記憶は `(断片 ==, 最新の箱 ==)` だけ・描画は DOM を読まない）→ M3c（multicol）→ M4 → M5 → M6。
 
 ## 検証の手順
 
 - 作業中は `.\gradlew.bat :core:quickTest`（または `--tests`）。項目の完了時に全件の `:core:test`（`ArchitectureHealthTest`・`MemoryAndLatencyGateTest` 等を含む）・直列の `:core:costGate`・`:core:memoryAndLatencyGate`。
-- **正しさの番人（外から見た出力）**: `WptReftestRatchetTest`（160/260 以上）・`GpuBaselineTest`・`VkBaselineTest`・`RealDocumentFramesTest`・`FrameOracle`（`-Dverify.oracle=true`）・`ApiBoundaryTest`。M1 以降は各フェーズの完了ゲート（計画書 §3）の数値も確認する。
+- **正しさの番人（外から見た出力）**: `WptV3BaselineTest`（新経路 170/260 以上。M2c-3 までは旧経路の `WptReftestRatchetTest` 160/260 も）・`GpuBaselineTest`・`VkBaselineTest`・`RealDocumentFramesTest`・`FrameOracle`（`-Dverify.oracle=true`）・`ApiBoundaryTest`。M1 以降は各フェーズの完了ゲート（計画書 §3）の数値も確認する。
 - **push の前に** `powershell -File scripts/ci-linux.ps1 -Full`（WSL。Windows の緑は CI の緑ではない）。
 - 並列実行でだけ落ちるテストは、まず実時計に依る経路（リサイズの間引きなど）を疑う。`resize` の後は `ResizeSettle` で反映を待つ。
 
