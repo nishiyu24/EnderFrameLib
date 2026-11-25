@@ -122,7 +122,7 @@
 
 ---
 
-## 3. 破壊的再設計ロードマップ（唯一の優先順位表: 本流 Phase M0〜M6 ＋ 独立トラック P1〜P3）
+## 3. 破壊的再設計ロードマップ（唯一の優先順位表: 本流 Phase M0〜M6 ＋ 独立トラック P1〜P5）
 
 ### 3.0a 本流ロードマップ（Engine v3 アーキテクチャ刷新: Phase M0〜M6）
 
@@ -138,15 +138,21 @@
 | 8 | **M5** | **DOM 整理と 1,000 行超クラス 0 の達成** | `DocumentArena` 二重同期解消、`HtmlNode`/`HtmlElement` 責務分割、`SelectorIndex` 独立、`ArchitectureHealthTest` による 1,000 行超強制阻止（※起動/並列/AWT 窓は別トラックへ分離） | 1,000 行超クラス **0 個**、`DocumentArena` 二重同期 `0`、全体保持ヒープ `varied-list ≤ 12.0 MB`・`large-list ≤ 4.5 MB` 達成 |
 | 9 | **M6** | **品質ゲート最終固定と配布（v2.0.0 GA）** | `ArchitectureHealthTest` のハードゲート上限を 600 行へ確定、Linux CI 完全通過、API 署名確定、Maven Central / GitHub Packages 公開 | **全クラス ≤ 600 行（ハードゲート強制）**、グローバル mutable static = 0 |
 
-### 3.0b 独立トラック（アーキテクチャ刷新と非依存／後続の別優先順位: Track P1〜P3）
+### 3.0b 独立トラック（本流と非依存／後続の別優先順位: Track P1〜P5）
 
-M5 へ混在していた起動高速化・非同期並列化・AWT 窓統合は、データ構造刷新とは独立した課題であるため、本流の膨張を防ぐ目的で別トラックとして管理する（詳細は §3.9）。
+本流（M0〜M6）はエンジン内部のデータ構造の刷新だけを扱う。それと独立に進められる課題、または M6 の後に続く課題を、目的別の 3 群の独立トラックとして管理する（詳細は §3.9）。
 
-| トラック | タイトル | 前提条件 | 主な対象 | 完了時の定量的成果 |
-| :--- | :--- | :---: | :--- | :--- |
-| **Track P1** | **コールド起動短縮（旧 B6）**（**P1a 完了**・P1b 未着手） | **なし（随時着手可）** | P1a: `SystemFonts` の起動ごとの全フォルダ走査をディスクの書体の目録（`FontCatalog`）で撤廃〔完了 2026-11-25〕。P1b: JVM の冷えた起動（クラスのロード・インタープリタ実行）を AOT キャッシュ（JEP 483）等で縮める | P1a: 書体の読み込み `243 → 24 ms`（実書体の起動 `786 → 718 ms`）。P1b: コールド起動 `546 → ≤ 200 ms`（Chrome `304 ms` 以下） |
-| **Track P2** | **並列レイアウト・描画スレッド分離（旧 B7）** | **M3b 完了** | 不変 `LayoutFragment` / `DisplayScene` 上での `LayoutTaskPool` と論理/描画非同期パイプライン | `voidwave.html open` 等の初回構築 `9.15 → ≤ 5.5 ms` |
-| **Track P3** | **窓×描画直交分離・標準 AWT 窓ホスト（旧 G7）** | **M4 完了推奨** | `WindowHost` SPI・AWT `JFrame`（`BufferStrategy`・損傷矩形 Blit・OS IME）と `:core-glfw` 直交選択 | `:core` 単体 144Hz 起動＋`SOFTWARE`/`GL`/`VULKAN` 直交選択 |
+**位置づけ（2026-11-25 確定）**: `:core` 系は Minecraft に依存しない汎用の HTML/CSS レイアウト・描画エンジンであり、MOD はその利用者の 1 つにすぎない（依存は MOD → Core の一方向）。目標は **JavaFX・Compose Multiplatform Desktop と並ぶ Java の汎用 UI 基盤**とする。ただし勝ち筋の順序は次のとおり。
+1. **先に強い分野を取る**（M6 まで）: 既存の GL/Vulkan の描画ループへの埋め込み（LWJGL・libGDX・jMonkeyEngine・Minecraft 等。JavaFX が苦手とする領域）と、決定的なヘッドレス描画。
+2. **M6 の後に汎用ツールキットへ広げる**（群 C・Track P5）: JavaFX に対して欠けているもの（アクセシビリティ・状態バインディング・高機能部品・OS 統合）を埋める。
+
+| 群 | トラック | タイトル | 前提条件 | 主な対象 | 完了時の定量的成果 |
+| :--- | :--- | :--- | :---: | :--- | :--- |
+| **A. 性能** | **Track P1** | **コールド起動短縮（旧 B6）**（**P1a 完了**・P1b 未着手） | **なし（随時着手可）** | P1a: `SystemFonts` の起動ごとの全フォルダ走査をディスクの書体の目録（`FontCatalog`）で撤廃〔完了 2026-11-25〕。P1b: JVM の冷えた起動（クラスのロード・インタープリタ実行）を AOT キャッシュ（JEP 483）等で縮める | P1a: 書体の読み込み `243 → 24 ms`（実書体の起動 `786 → 718 ms`）。P1b: コールド起動 `546 → ≤ 200 ms`（Chrome `304 ms` 以下） |
+| **A. 性能** | **Track P2** | **並列レイアウト・描画スレッド分離（旧 B7）** | **M3b 完了** | 不変 `LayoutFragment` / `DisplayScene` 上での `LayoutTaskPool` と論理/描画非同期パイプライン | `voidwave.html open` 等の初回構築 `9.15 → ≤ 5.5 ms` |
+| **B. ホストと配布** | **Track P3** | **窓×描画直交分離・標準 AWT 窓ホスト（旧 G7）** | **M4 完了推奨** | `WindowHost` SPI・AWT `JFrame`（`BufferStrategy`・損傷矩形 Blit・OS IME）と `:core-glfw` 直交選択 | `:core` 単体 144Hz 起動＋`SOFTWARE`/`GL`/`VULKAN` 直交選択 |
+| **B. ホストと配布** | **Track P4** | **リポジトリの Core 主体化・分割・独立名への改名** | **P4-1: なし（M2b の段の切れ目で着手）／P4-2: M4 完了・API 確定（M6 と同時）** | P4-1: 同一リポジトリ内で MOD を `mod/` サブプロジェクトへ移し、ルートを NeoForge 非依存に、MOD のテストが借りる `:core` テスト出力を `testFixtures` へ。P4-2: エンジンを独立名へ改名（パッケージ・`groupId`）し、`git filter-repo` で履歴付きの別リポジトリへ切り出す。MOD は公開版に依存（同時開発は `includeBuild`） | P4-1: `:core` 系だけのビルドで NeoForge の設定処理 `0`。P4-2: エンジンのリポジトリ単体で全ゲート緑・Maven Central 公開、MOD はバージョン指定の依存だけで `runGameTestServer` 緑、エンジン側のソースに `enderframelib` の名前 `0` |
+| **C. 汎用ツールキット化** | **Track P5** | **JavaFX と並ぶ汎用 UI 基盤へ**（P5a〜P5f） | **P5f の測定基盤: なし／他: M6 完了（P5d は P3 も）** | P5a アクセシビリティ → P5b Java 側の状態バインディング → P5c 仮想化した高機能部品 → P5d OS 統合、並行して P5e 複雑な文字体系・P5f JavaFX / Compose との比較測定と公開物 | 業務アプリ相当の見本（フォーム・表・木・メニュー）が Windows / macOS / Linux でスクリーンリーダーから操作可能、JavaFX・Compose との交互 A/B の比較表を公開 |
 
 ---
 
@@ -638,7 +644,9 @@ M3a により MOD レガシーレンダラは既に撤去されているため�
 
 ---
 
-### 3.9 独立トラック詳細（Track P1〜P3: 本流と分離された最適化・ホスト拡張）
+### 3.9 独立トラック詳細（Track P1〜P5: 群 A 性能・群 B ホストと配布・群 C 汎用ツールキット化）
+
+#### 群 A. 性能
 
 - **Track P1: コールド起動短縮（旧 B6）**
   - **前提条件**: なし（M0〜M6 と独立にいつでも着手・単独出荷可能）。
@@ -653,10 +661,50 @@ M3a により MOD レガシーレンダラは既に撤去されているため�
   - **前提条件**: **Phase M3b 完了**（不変 `LayoutFragment` + 不変 `DisplayScene` の確立後）。
   - **スコープ**: データ競合ゼロの不変ツリー上でサブツリー単位の並列レイアウト（`LayoutTaskPool`）および論理スレッド／描画スレッドの非同期パイプライン分離を実装する。
   - **完了ゲート**: 全実文書の初回構築（`voidwave.html open` 等）：`9.15 ms → ≤ 5.5 ms`（全シナリオ 144Hz 予算 `6.94 ms` 以内）。
+
+#### 群 B. ホストと配布
+
 - **Track P3: 窓×描画直交分離と標準 Java 2D/AWT 窓ホスト（旧 G7）**
   - **前提条件**: **Phase M4 完了推奨**（L5 `EngineView` / `InputController` 分離後。必要時は独立先行も可）。
   - **スコープ**: `WindowHost` SPI と標準 Java 2D/AWT 窓ホスト（`JFrame` + `BufferStrategy` + `DataBufferInt` 損傷矩形 Blit + `InputMethodRequests` による OS 標準 IME 連携）を整備し、`:core` 単体（GLFW/GL 不要）での 144Hz 起動と `:core-glfw` 上での `SOFTWARE` / `GL` / `VULKAN` 直交選択を完成させる。
   - **完了ゲート**: `:core` 単体（AWT 窓・GLFW/GL 非依存）での 144Hz 起動確認、および `:core-glfw` 上での 3 バックエンド直交切替テスト全通過。
+- **Track P4: リポジトリの Core 主体化・分割・独立名への改名（2026-11-25 追加）**
+  - **背景**: `:core` 系は Minecraft に依存せず、MOD が `:core` 系に依存する（MOD → Core の一方向）。それなのにリポジトリのルートは NeoForge のプロジェクトで、名前も MOD 由来の `EnderFrameLib` のままである。開発の重心は `:core` 系へ移っており（2026-09 以降の変更ファイル延べ数: `core` 7,352 / MOD `src` 3,255）。Git の pack は約 25 MiB で容量は問題ではなく、問題は構造の結合である。現状の結合点はルート `build.gradle` の 4 つ: (1) `api project(':core')` ほか 4 モジュール依存、(2) NeoForge 実行設定が `:core` 系の `sourceSet` を直接取り込む（開発時ホットリロード）、(3) MOD のテストが `:core` のテスト出力（`GoldenFiles` 等）を借りる、(4) MOD の JAR 作成時に `:core` 系の `META-INF/services` を結合する。加えて、`:core` だけを触る作業でも毎回 NeoForge の設定処理が走る。
+  - **今すぐ分割しない理由**: M2b〜M2c〜M2b-6 は `:core` の API を破壊的に変え続け、M3a（MOD 描画の撤去）と M4（`EngineView` と MOD `SessionContext` の同時改修）は Core と MOD を同じ変更で触る。この間に分割すると「Core 公開 → MOD のバージョン更新 → 修正」が 2 リポジトリにまたがり、1 コミットで両側を直せる利点を失う。
+  - **P4-1（前提なし。M2b の段の切れ目で単独コミットとして着手）: 同一リポジトリ内の構成変更**
+    1. MOD を `src/` からサブプロジェクト `mod/` へ移し、ルートを NeoForge プラグインを持たない素の Gradle にする（`:core` 系だけのビルドで NeoForge を読み込まない）。
+    2. MOD のテストが借りている `:core` のテスト出力を `java-test-fixtures` の `testFixtures(project(':core'))` に置き換える。
+    3. ルートの README・ARCHITECTURE・CLAUDE.md の主役を Core にし、MOD 固有の文書（`TEST_SPEC_*`・`COMMAND_GUIDE.md` 等）を `mod/` 配下へ移す。
+    4. 完了ゲート: `:core:test`・`:core:costGate`・`:core:memoryAndLatencyGate`・`ci-linux.ps1 -Full`・MOD の `runGameTestServer` が全緑、`:core` 系だけのビルドで NeoForge の設定処理 `0`。
+  - **P4-2（前提: M4 完了・`ApiBoundaryTest` / `ApiSignatureTest` で API 確定。M6 の Maven 公開と同時に行う）: 独立名への改名とリポジトリ分割**
+    1. **改名**: エンジンを Minecraft を連想させない独立名へ改める。汎用 UI 基盤として JavaFX 等と並ぶ（§3.0b の位置づけ）には、`Ender` の名前は MOD 用ライブラリに見えて不利なため。パッケージ `com.nishiyu.enderframelib.*` と `groupId` の変更は API を壊すので、M6 の API 署名確定と同じ版（v2.0.0 GA）に 1 回でまとめる。MOD は `EnderFrameLib` の名前のまま残す。
+    2. **名前の候補と重複調査**（2026-11-25 の Web 検索。商標と GitHub の Organization 名は未確認。確定前に再確認する）:
+
+       | 候補 | 由来 | 重複の状況 | 判定 |
+       | :--- | :--- | :--- | :---: |
+       | **Weft** | 織物の横糸（箱の木を織って 1 枚の画面にする） | Java の UI・レイアウトでは該当なし。Maven Central に `org.commonjava.cdi.util:weft`（Red Hat の CDI スレッド供給の小部品）、GitHub に Cocoa 用と Gleam 用の小さな UI ライブラリ | **第一候補** |
+       | **Quire** | 製本の折丁（紙を束ねた単位） | Java の UI ライブラリでは該当なし。Getty の出版ツール Quire、プロジェクト管理サービス quire.io | 候補 |
+       | **Facet** | 宝石の切り子面（バックエンドを差し替える面） | Java の同名 UI ライブラリはないが、一般語で「Facets」の名の旧フレームワークが複数ある | 次点（検索で埋もれる） |
+       | Vellum | 羊皮紙 | **Minecraft 用の HTML で画面を書く GUI ライブラリ「Vellum GUI」が存在**（同分野の競合） | 不可 |
+       | Tessera | モザイクの小片 | **ConsenSys の Java 製品が Maven Central に多数**（`net.consensys.quorum.tessera`） | 不可 |
+    3. `git filter-repo` で Core 系（`core*`・`scripts`・関連文書）を履歴付きで新リポジトリ（新しい名前）へ切り出す。現リポジトリ `EnderFrameLib` は MOD 側として残す。
+    4. エンジンを Maven Central に公開し（M6）、MOD は固定バージョンに依存させる。両方を同時に触るときは MOD 側 `settings.gradle` の `includeBuild('../<engine>')`（composite build）で今と同じ開発感覚を保つ。
+    5. CI（`ci-linux.ps1`・WPT ラチェット・GPU ゴールデン）はエンジン側へ移し、MOD 側の CI は MOD のテストだけにする。
+    6. 完了ゲート: エンジンのリポジトリ単体で全ゲート緑・Maven Central 公開、エンジン側のソースに `enderframelib` の名前 `0`、MOD リポジトリはバージョン指定の依存だけで `runGameTestServer`・実機スクリーンショット回帰が緑。
+
+#### 群 C. 汎用ツールキット化
+
+- **Track P5: JavaFX と並ぶ汎用 UI 基盤へ（2026-11-25 追加）**
+  - **目的**: §3.0b の位置づけの 2 段目。JavaFX・Compose Multiplatform Desktop と比べて欠けているものを埋め、業務アプリを作れる汎用ツールキットにする。2026-11-25 の棚卸しでは、IME の変換中文字（composition）と Bidi（`BidiText`）は実装済み、アクセシビリティのツリーは未実装、複雑な文字体系の字形処理は到達度が未確認。
+  - **前提条件**: P5f の測定基盤は随時。それ以外は **M6 完了**（API が確定してから利用者向けの層を積む）。P5d は Track P3 も前提。
+  - **項目と順序**（P5a → P5b → P5c → P5d の順。P5e・P5f は並行）:
+    - **P5a アクセシビリティ**: DOM と ARIA から役割・名前・状態のアクセシビリティツリーを不変の木として作り、OS の支援技術（Windows UI Automation・macOS NSAccessibility・Linux AT-SPI）へ橋渡しする。業務・公共向けでは採用条件そのものなので最優先。ゲート: 見本アプリをナレーター / NVDA・VoiceOver・Orca で操作でき、ツリーの内容を自動テストで固定。
+    - **P5b Java 側の状態バインディングと部品モデル**: 型付きスタイル API（`01edc0dc`）の延長で、Java の状態と画面を結ぶ仕組み（JavaFX の Property / バインディング、FXML に相当するもの）を用意する。状態はビュー（`EngineView`）に閉じ、プロセスグローバルな可変状態を足さない（§5）。
+    - **P5c 高機能部品**: 仮想化した一覧・表・木（M3b のチャンク単位のカリングの上に作る）、日付選択、分割ペイン等。ゲート: 10 万行の表のスクロールで 144Hz 予算内。
+    - **P5d OS 統合**（Track P3 の AWT 窓ホストの上）: ネイティブのメニュー、ファイルダイアログ、ドラッグ＆ドロップ、クリップボードの形式、複数窓、モニターごとの HiDPI、全 OS での IME。
+    - **P5e 複雑な文字体系**: アラビア文字・インド系文字の字形処理とフォントのフォールバックの到達度を先に棚卸しし、不足を埋める。ゲート: 該当する WPT と独自の参照画像テストを `WptV3BaselineTest` 等のラチェットに追加。
+    - **P5f 比較測定と公開物**: 同じ画面を JavaFX と Compose Desktop でも作り、起動時間・保持ヒープ・フレーム時間を交互 A/B（§5 の規則どおり絶対値ではなく交互の中央値）で比べる測定基盤を随時用意する。比較の主張と公開は M6 の後。あわせて文書・見本・入門を整える。
+  - **完了ゲート**: 業務アプリ相当の見本（フォーム・表・木・メニュー・ダイアログ）が Windows / macOS / Linux でスクリーンリーダーから操作でき、JavaFX・Compose との交互 A/B の比較表を公開している。
 
 ---
 
@@ -682,7 +730,7 @@ M3a により MOD レガシーレンダラは既に撤去されているため�
 
 ## 5. 新・運用ルール（二度と構造崩壊とパッチ地獄に戻らないための 7 原則）
 
-1. **優先順位表は §3（本流 Phase M0〜M6 と独立トラック P1〜P3）の 1 つだけとする。** 新しい課題は §3 に統合し、完了したフェーズの成果と数値は §4 を上書き更新する。
+1. **優先順位表は §3（本流 Phase M0〜M6 と独立トラック P1〜P5）の 1 つだけとする。** 新しい課題は §3 に統合し、完了したフェーズの成果と数値は §4 を上書き更新する。
 2. **壊れた IR や可変オブジェクトの上に対症療法的キャッシュを足さない。** 速度・メモリ問題が出たときはまずデータ構造（入力と出力の分離・参照共有・階層表現）を疑い、破壊的変更で根を絶つ。
 3. **入力側の変更検知入口は `ChangeLedger` のみ、下流キャッシュは「1 層メモ化」のみ許可する。** 構造入力（`BoxNode` / `BoxChunk` / `Style` / `LayoutFragment`）は参照同一性（`==`）、`ConstraintSpace` / `MinMaxContext` は値等価（`==` 高速パス付き）またはビュー内インターンで照合し、併せて `MinMaxSizes` の 1 層メモ化と 2 パス測定向け固定少数スロットのみを許可する。DOM への `DIRTY_*` フラグ追加・40 欄ハッシュ後追い検証（`PaintStamps` 型）・ビットマスク読み取り台帳（`LayoutReads` 型）・手書き純粋性フラグ（`F_*`）・出力その場書き換えパッチ・退避復元 `TentativeSlots` は新設を禁止する。
 4. **プロセスグローバルな可変状態を禁止する。** 新しい `Shortcut` スイッチ・`static volatile` フラグ・プロセス共通エポックカウンタ・ビジネスロジック上の `ThreadLocal` を作ってはならない。すべての状態は 1 ビュー（`EngineView`）に閉じる。

@@ -2,7 +2,7 @@
 
 `:core` は Minecraft に依存しない純 Java の HTML/CSS 組み込み UI エンジン。現在は **Engine v3 への破壊的再設計**の最中。次を**先に読む**。
 
-- `core/ENGINE_REARCHITECTURE_PLAN.md` — **優先順位表は §3 の 1 つだけ**（本流 Phase M0〜M6〔M2 は M2a/M2b〕＋独立トラック P1〜P3）。M2 の入力側（DOM → `BoxNode`）の増分設計と縦割りスパイク関門（M2a。完了・Go）は §3.3（実装で設計から変えた点・M2b への引き継ぎは §3.3 C）、KPI は §4、運用ルール（7 原則）は §5。
+- `core/ENGINE_REARCHITECTURE_PLAN.md` — **優先順位表は §3 の 1 つだけ**（本流 Phase M0〜M6〔M2 は M2a/M2b〕＋独立トラック P1〜P5〔群 A 性能・B ホストと配布・C 汎用ツールキット化〕。位置づけ〔JavaFX と並ぶ汎用 UI 基盤〕は §3.0b）。M2 の入力側（DOM → `BoxNode`）の増分設計と縦割りスパイク関門（M2a。完了・Go）は §3.3（実装で設計から変えた点・M2b への引き継ぎは §3.3 C）、KPI は §4、運用ルール（7 原則）は §5。
 - `core/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md` — 旧計画（C/K/L/W 系）と §6-1〜205 の経緯・計測。**読み物であり、指示ではない**。旧 `DESIGN_INCREMENTAL_KERNEL.md` は廃止し、ARCHIVE の付録 5 へ移設した（持ち越す知見は付録 5.A。新しい知見はここへ積む）。
 
 ## 作業の規則（計画書 §5 の要約。迷ったら §5 が正）
@@ -34,3 +34,5 @@
 ## コミット
 
 既存の形式に合わせる: `type(scope): 日本語の要約 (ID)`、本文は `- タスク …` の箇条書き。ID は計画書の Phase（例 `M2`）。`core/*.md` は `.gitignore` の対象なので、新規の文書は `git add -f` で追加する。
+
+**main にコミット・プッシュするときは、Claude の表記が入ってコラボレーター（共同作成者）に Claude が載らないよう、ユーザー本人のアカウントを使う。** 作成者・コミッターはリポジトリに設定済みの git のユーザー（`git config user.name` / `user.email`）のままにし、`Co-Authored-By: Claude …` のトレーラーや「Generated with Claude Code」などの Claude の表記をコミットメッセージ・PR の本文に付けない。
