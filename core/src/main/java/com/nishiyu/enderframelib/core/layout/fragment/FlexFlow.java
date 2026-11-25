@@ -94,12 +94,12 @@ final class FlexFlow implements FormattingEngine {
         OutOfFlow.Pending[] up = null;
         PlacedFragment[] oof = null;
         if (!pend.isEmpty()) {
-            if (OutOfFlow.containsOutOfFlow(st)) {
-                oof = OutOfFlow.layout(pend, g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB), prior,
+            OutOfFlow.Split sp = OutOfFlow.split(pend, st); // 位置指定の箱は absolute だけを置き、fixed は上へ渡す
+            if (!sp.here().isEmpty()) {
+                oof = OutOfFlow.layout(sp.here(), g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB), prior,
                         Anchors.of(cf, null, insetL, insetT), s);
-            } else {
-                up = pend.toArray(OutOfFlow.NONE);
             }
+            up = OutOfFlow.withEscaped(sp.up(), oof); // 置いた箱の中の fixed も上へ渡す
         }
         if (lp != null) { // fieldset の描画される legend は置いた断片として持つ（FieldsetLegend）
             PlacedFragment[] all = new PlacedFragment[1 + (oof == null ? 0 : oof.length)];

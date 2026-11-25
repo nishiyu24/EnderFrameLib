@@ -6,6 +6,7 @@ import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.LayoutQuery;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import org.jetbrains.annotations.Nullable;
 
@@ -20,11 +21,11 @@ public final class BoxLayoutQuery implements LayoutQuery {
 
     private final ScrollState scrollState;
     private final Runnable onScrollChanged;
-    private LayoutBox root;
+    private PaintBox root;
     private StyleSheet sheet;
     private int viewportW;
     private int viewportH;
-    private Map<HtmlNode, LayoutBox> index;
+    private Map<HtmlNode, PaintBox> index;
 
     /**
      * @param onScrollChanged スクロール位置を変えたときに呼ぶ（位置の決め直しと描き直しを求める）
@@ -41,7 +42,11 @@ public final class BoxLayoutQuery implements LayoutQuery {
         this.freshener = freshener;
     }
 
-    public void update(LayoutBox root, StyleSheet sheet, int viewportW, int viewportH) {
+    /**
+     * 直近のレイアウトの結果に差し替える。{@code root} は旧経路の箱の木の根か、新経路の描画用の木の根の見え方（M2c ③。
+     * {@code PaintView}。スクロールの位置を含めて作ったもの）。
+     */
+    public void update(PaintBox root, StyleSheet sheet, int viewportW, int viewportH) {
         this.root = root;
         this.sheet = sheet;
         this.viewportW = viewportW;
@@ -49,34 +54,41 @@ public final class BoxLayoutQuery implements LayoutQuery {
         this.index = null;
     }
 
-    private LayoutBox boxOf(HtmlNode node) {
+    private PaintBox boxOf(HtmlNode node) {
         freshener.run();
         if (root == null || node == null) return null;
         if (index == null) {
-            Map<HtmlNode, LayoutBox> built = new IdentityHashMap<>();
+            Map<HtmlNode, PaintBox> built = new IdentityHashMap<>();
             collect(root, built);
             index = built;
         }
         return index.get(node);
     }
 
-    private static void collect(LayoutBox box, Map<HtmlNode, LayoutBox> out) {
+    private static void collect(PaintBox box, Map<HtmlNode, PaintBox> out) {
         if (box.node != null && !box.node.isPseudoNode) out.putIfAbsent(box.node, box);
-        for (LayoutBox child : box.children) collect(child, out);
+        for (PaintBox child : box.paintChildren()) collect(child, out);
     }
 
-    private static boolean positioned(LayoutBox box) {
-        return box.isAbsolute() || box.isFixed() || box.isRelative() || box.isSticky();
+    private static boolean positioned(PaintBox box) {
+        com.nishiyu.enderframelib.core.css.model.Position p = box.style() != null ? box.style().typed().box.position : null;
+        return p != null && p != com.nishiyu.enderframelib.core.css.model.Position.STATIC;
+    }
+
+    /** 旧経路の仮想化した流れの、まだ置いていない子の推定位置（それ以外は null）。M2b-6 で旧経路と一緒に消す。 */
+    private static float[] virtualOffset(PaintBox box) {
+        return box instanceof LayoutBox lb && lb.parent != null && lb.parent.isVirtualizedFlow() && lb.contentAutoSkipped
+                ? lb.parent.virtualOffsetOf(lb) : null;
     }
 
     @Nullable
     @Override
     public BoxMetrics metrics(HtmlNode node) {
-        LayoutBox box = boxOf(node);
-        if (box == null || (box.display() != null && box.display().isNone())) return null;
+        PaintBox box = boxOf(node);
+        if (box == null || box.displayNone()) return null;
         HtmlNode offsetParent = null;
         for (HtmlNode a = node.parent; a != null; a = a.parent) {
-            LayoutBox ab = boxOf(a);
+            PaintBox ab = boxOf(a);
             if (ab != null && positioned(ab)) {
                 offsetParent = a;
                 break;
@@ -84,23 +96,21 @@ public final class BoxLayoutQuery implements LayoutQuery {
         }
         float x = box.x();
         float y = box.y();
-        if (box.parent != null && box.parent.isVirtualizedFlow() && box.contentAutoSkipped) {
-            float[] est = box.parent.virtualOffsetOf(box);
-            if (est != null) {
-                x = est[0];
-                y = est[1];
-            }
+        float[] est = virtualOffset(box);
+        if (est != null) {
+            x = est[0];
+            y = est[1];
         }
         return new BoxMetrics(x, y, box.w(), box.h(),
                 box.bL(), box.bT(), box.bR(), box.bB(),
                 box.pL(), box.pT(), box.pR(), box.pB(),
                 box.mL(), box.mT(), box.mR(), box.mB(),
                 box.scrollWidth(), box.scrollHeight(),
-                box.style != null && box.style.facts().borderBox, box.isScrollContainer(), clips(box), box.isCollapsedTable(), offsetParent);
+                box.style() != null && box.style().facts().borderBox, box.isScrollContainer(), clips(box), box.isCollapsedTable(), offsetParent);
     }
 
-    private static boolean clips(LayoutBox box) {
-        return box.style != null && (box.style.overflowX().clips() || box.style.overflowY().clips());
+    private static boolean clips(PaintBox box) {
+        return box.style() != null && (box.style().overflowX().clips() || box.style().overflowY().clips());
     }
 
     @Override
@@ -126,21 +136,19 @@ public final class BoxLayoutQuery implements LayoutQuery {
 
     @Override
     public void scrollIntoView(HtmlNode node) {
-        LayoutBox target = boxOf(node);
+        PaintBox target = boxOf(node);
         if (target == null) return;
         float ex = target.x();
         float ey = target.y();
-        if (target.parent != null && target.parent.isVirtualizedFlow() && target.contentAutoSkipped) {
-            float[] est = target.parent.virtualOffsetOf(target);
-            if (est != null) {
-                ex = est[0];
-                ey = est[1];
-            }
+        float[] est = virtualOffset(target);
+        if (est != null) {
+            ex = est[0];
+            ey = est[1];
         }
         float ew = target.w();
         boolean changed = false;
         for (HtmlNode a = node.parent; a != null; a = a.parent) {
-            LayoutBox ab = boxOf(a);
+            PaintBox ab = boxOf(a);
             BoxMetrics m = ab != null ? metrics(a) : null;
             if (m == null || !m.scrolls()) continue;
             float curX = scrollState.getScrollX(a);

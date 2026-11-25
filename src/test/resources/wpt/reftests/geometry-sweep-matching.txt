@@ -201,6 +201,8 @@ css/css-grid/grid-items/aspect-ratio-002.html
 css/css-grid/grid-items/grid-item-direction-rtl-001-ref.html
 css/css-grid/grid-items/grid-item-direction-rtl-001.html
 css/css-grid/grid-items/grid-minimum-size-grid-items-003.html
+css/css-grid/grid-lanes/abspos/row-grid-lanes-out-of-flow-001-ref.html
+css/css-grid/grid-lanes/abspos/row-grid-lanes-out-of-flow-001.html
 css/css-grid/grid-lanes/alignment/column-align-items-010-ref.html
 css/css-grid/grid-lanes/alignment/column-align-items-010.html
 css/css-grid/grid-lanes/alignment/column-dense-packing-align-items-multi-span-001-ref.html

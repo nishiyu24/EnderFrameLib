@@ -133,13 +133,23 @@ final class BlockFlow implements FormattingEngine {
         PlacedFragment[] oof = null;
         if (!pend.isEmpty()) {
             boolean docRoot = node.node.parent == null;
-            if (docRoot || OutOfFlow.containsOutOfFlow(st)) { // 包含ブロック: パディングの箱で流れの外の子孫を置く（文書の根は初期包含ブロック）
+            // 包含ブロック: パディングの箱で流れの外の子孫を置く（文書の根は初期包含ブロックで fixed も置く。位置指定の箱は absolute だけ）
+            OutOfFlow.Split sp = docRoot ? new OutOfFlow.Split(pend, null) : OutOfFlow.split(pend, st);
+            if (!sp.here().isEmpty()) {
                 float cbW = docRoot ? w : Math.max(0, w - g.bL - g.bR);
                 float cbH = docRoot && Float.isFinite(space.percentHeightBase) ? space.percentHeightBase : Math.max(0, h - g.bT - g.bB);
-                oof = OutOfFlow.layout(pend, docRoot ? 0 : g.bL, docRoot ? 0 : g.bT, cbW, cbH, prior, Anchors.of(flow, lines, insetL, insetT), s);
-            } else {
-                up = pend.toArray(OutOfFlow.NONE);
+                Anchors anchors = Anchors.of(flow, lines, insetL, insetT);
+                oof = OutOfFlow.layout(sp.here(), docRoot ? 0 : g.bL, docRoot ? 0 : g.bT, cbW, cbH, prior, anchors, s);
+                // 置いた箱の中の fixed: 文書の根はその場で置き切り、それ以外は上へ渡す
+                for (OutOfFlow.Pending[] esc = docRoot ? OutOfFlow.withEscaped(null, oof) : null; esc != null; ) {
+                    PlacedFragment[] more = OutOfFlow.layout(List.of(esc), 0, 0, cbW, cbH, prior, anchors, s);
+                    PlacedFragment[] all = java.util.Arrays.copyOf(oof, oof.length + more.length);
+                    System.arraycopy(more, 0, all, oof.length, more.length);
+                    oof = all;
+                    esc = OutOfFlow.withEscaped(null, more);
+                }
             }
+            up = docRoot ? null : OutOfFlow.withEscaped(sp.up(), oof);
         }
         if (lp != null) oof = OutsideMarker.prepend(lp.frag(), oof); // legend は置いた断片として持つ（流れの外と同じく border-box 基準）
         LayoutFragment out = new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, insetL, insetT, through, flow, lines, up, oof,

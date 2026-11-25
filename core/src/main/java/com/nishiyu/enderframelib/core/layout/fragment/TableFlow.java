@@ -263,12 +263,12 @@ final class TableFlow implements FormattingEngine {
         OutOfFlow.Pending[] up = null;
         PlacedFragment[] oof = null;
         if (!pend.isEmpty()) {
-            if (OutOfFlow.containsOutOfFlow(node.style)) {
-                oof = OutOfFlow.layout(pend, w.bL, w.bT, Math.max(0, W - w.bL - w.bR), Math.max(0, h - w.bT - w.bB), prior,
+            OutOfFlow.Split sp = OutOfFlow.split(pend, node.style); // 位置指定の箱は absolute だけを置き、fixed は上へ渡す
+            if (!sp.here().isEmpty()) {
+                oof = OutOfFlow.layout(sp.here(), w.bL, w.bT, Math.max(0, W - w.bL - w.bR), Math.max(0, h - w.bT - w.bB), prior,
                         Anchors.of(single(fc), null, insetL, insetT), s);
-            } else {
-                up = pend.toArray(OutOfFlow.NONE);
             }
+            up = OutOfFlow.withEscaped(sp.up(), oof); // 置いた箱の中の fixed も上へ渡す
         }
         return new LayoutFragment(node, space, W, h, LayoutUnit.snap(ml), Math.max(0, g.mT), Math.min(0, g.mT), Math.max(0, g.mB),
                 Math.min(0, g.mB), insetL, insetT, false, single(fc), null, up, oof, baseline);

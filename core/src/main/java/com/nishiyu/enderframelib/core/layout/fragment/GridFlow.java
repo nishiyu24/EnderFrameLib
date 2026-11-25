@@ -131,7 +131,7 @@ final class GridFlow implements FormattingEngine {
         List<PlacedFragment> placed = new ArrayList<>();
         for (BoxNode b : outOfFlow) {
             float fx = selfFactor(b.style, st, true, rtl), fy = selfFactor(b.style, st, false, false);
-            if (containing) { // 包含ブロックはグリッドの線が示す領域（§10.1）。静的位置はその領域の中で揃える
+            if (containing && b.style.box.position != com.nishiyu.enderframelib.core.css.model.Position.FIXED) { // 包含ブロックはグリッドの線が示す領域（§10.1）。静的位置はその領域の中で揃える（fixed はビューポート）
                 float padW = Math.max(0, w - g.bL - g.bR), padH = Math.max(0, h - g.bT - g.bB);
                 GridPlacement.Placement pl = GridPlacement.Placement.of(b.style);
                 float[] x = absoluteAxis(pl.colStart(), pl.colEnd(), grid.cols, colSizes, colOff, rtl ? g.pR : g.pL, padW);
@@ -145,11 +145,13 @@ final class GridFlow implements FormattingEngine {
             }
         }
         if (!pend.isEmpty()) {
-            if (containing) placed.addAll(List.of(OutOfFlow.layout(pend, g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB),
-                    prior, anchors, s)));
-            else up = pend.toArray(OutOfFlow.NONE);
+            OutOfFlow.Split sp = OutOfFlow.split(pend, st); // 位置指定の箱は absolute だけを置き、fixed は上へ渡す
+            if (!sp.here().isEmpty()) placed.addAll(List.of(OutOfFlow.layout(sp.here(), g.bL, g.bT, Math.max(0, w - g.bL - g.bR),
+                    Math.max(0, h - g.bT - g.bB), prior, anchors, s)));
+            up = sp.up();
         }
         if (!placed.isEmpty()) oof = placed.toArray(new PlacedFragment[0]);
+        up = OutOfFlow.withEscaped(up, oof); // 置いた箱の中の fixed も上へ渡す
         if (lp != null) { // fieldset の描画される legend は置いた断片として持つ（FieldsetLegend）
             PlacedFragment[] all = new PlacedFragment[1 + (oof == null ? 0 : oof.length)];
             all[0] = lp.frag();

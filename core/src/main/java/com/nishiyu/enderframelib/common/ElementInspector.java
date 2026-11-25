@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
@@ -46,10 +46,10 @@ public final class ElementInspector {
     /** 要素の検査結果。要素でない・レイアウトされていない（{@code display: none} など）なら null。 */
     public static Info inspect(UiView ui, HtmlNode node) {
         if (ui == null || node == null || node.nodeType != NodeType.ELEMENT) return null;
-        LayoutBox box = find(ui.layoutRoot(), node);
-        if (box == null || (box.display() != null && box.display().isNone())) return null;
+        PaintBox box = UiFocus.findBox(ui.layoutRoot(), node);
+        if (box == null || box.displayNone()) return null;
         Map<String, String> shown = new LinkedHashMap<>();
-        ComputedStyle computed = box.style;
+        ComputedStyle computed = box.style();
         if (computed != null) {
             com.nishiyu.enderframelib.core.css.Style st = computed.typed();
             for (String p : SHOWN) {
@@ -75,16 +75,6 @@ public final class ElementInspector {
             for (String c : cls.trim().split("\\s+")) if (!c.isEmpty()) sb.append('.').append(c);
         }
         return sb.toString();
-    }
-
-    private static LayoutBox find(LayoutBox box, HtmlNode node) {
-        if (box == null) return null;
-        if (box.node == node) return box;
-        for (LayoutBox child : box.elementChildren) {
-            LayoutBox hit = find(child, node);
-            if (hit != null) return hit;
-        }
-        return null;
     }
 
     /** ポインタ {@code (x, y)} の下の要素（ホバーと同じヒットテスト）。無ければ null。 */

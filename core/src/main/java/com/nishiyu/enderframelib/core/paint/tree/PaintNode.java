@@ -32,7 +32,7 @@ public final class PaintNode {
     public final ComputedStyle style;
     final LayoutBox.Display display;
     final boolean anonymous, verticalWrapper, renderedLegend, text;
-    final float w, h, mB, pT, pR, pB, pL, bT, bR, bB, bL;
+    final float w, h, mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
     final float[] collapsedBorders;
     final float scrollWidth, scrollHeight, lineHeight;
     final TreeRun[] runs;
@@ -53,7 +53,10 @@ public final class PaintNode {
         this.text = d.text;
         this.w = d.w;
         this.h = d.h;
+        this.mT = d.mT;
+        this.mR = d.mR;
         this.mB = d.mB;
+        this.mL = d.mL;
         this.pT = d.pT;
         this.pR = d.pR;
         this.pB = d.pB;

@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 
@@ -84,12 +84,12 @@ public final class UiFocus {
         return out;
     }
 
-    private static void collect(UiView ui, LayoutBox layout, HtmlNode node, Map<String, DisplayItem> items,
+    private static void collect(UiView ui, PaintBox layout, HtmlNode node, Map<String, DisplayItem> items,
                                 List<Candidate> out, int[] order) {
         if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("inert")) return;
-        LayoutBox box = findBox(layout, node);
+        PaintBox box = findBox(layout, node);
         // display:none の部分木は箱があっても描かれない。ここから先へは降りない
-        if (box != null && box.style != null && box.style.typed().facts.displayNone) return;
+        if (box != null && box.style() != null && box.style().typed().facts.displayNone) return;
         Integer tab = explicitTabIndex(node);
         boolean focusable = !node.attrs.containsKey("disabled") && !ui.interactionState().isInert(node)
                 && (tab != null || isNaturallyFocusable(node));
@@ -178,12 +178,12 @@ public final class UiFocus {
         return map;
     }
 
-    /** レイアウト木から節の箱を探す（無名の箱は除く）。 */
-    public static LayoutBox findBox(LayoutBox from, HtmlNode node) {
+    /** レイアウトの結果の木（旧経路の箱の木か、新経路の描画用の木の見え方）から節の箱を探す（無名の箱は除く）。 */
+    public static PaintBox findBox(PaintBox from, HtmlNode node) {
         if (from == null) return null;
         if (from.node == node && !from.isAnonymous) return from;
-        for (LayoutBox child : from.children) {
-            LayoutBox hit = findBox(child, node);
+        for (PaintBox child : from.paintChildren()) {
+            PaintBox hit = findBox(child, node);
             if (hit != null) return hit;
         }
         return null;

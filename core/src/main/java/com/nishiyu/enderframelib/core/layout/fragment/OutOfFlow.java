@@ -64,6 +64,48 @@ final class OutOfFlow {
         return p != null && p != Position.STATIC;
     }
 
+    /** 流れの外の子孫の振り分け: この箱が置く分（{@code here}）と、上へ渡す分（{@code up}。無ければ null）。 */
+    record Split(List<Pending> here, Pending[] up) { }
+
+    /**
+     * 流れの外の子孫 {@code pend} を、箱（スタイル {@code st}）が包含ブロックとして置く分と上へ渡す分に分ける。位置指定の箱は
+     * {@code absolute} だけを置き、{@code fixed}（包含ブロックはビューポート。新経路では文書の根）は上へ渡す（CSS 2.2 §10.1）。
+     * 位置指定でない箱は全てを上へ渡す。
+     */
+    static Split split(List<Pending> pend, Style st) {
+        if (!containsOutOfFlow(st)) return new Split(List.of(), pend.toArray(NONE));
+        List<Pending> here = null, up = null;
+        for (Pending p : pend) {
+            if (p.box().style.box.position == Position.FIXED) {
+                if (up == null) up = new java.util.ArrayList<>();
+                up.add(p);
+            } else {
+                if (here == null) here = new java.util.ArrayList<>(pend.size());
+                here.add(p);
+            }
+        }
+        return new Split(here == null ? List.of() : here, up == null ? null : up.toArray(NONE));
+    }
+
+    /**
+     * 置いた流れの外の断片 {@code placed} が上へ渡した {@code fixed}（置いた位置の分ずらして包含ブロックの border-box 基準にする）を
+     * {@code up} に足した列。無ければ {@code up} のまま（null もあり得る）。
+     */
+    static Pending[] withEscaped(Pending[] up, PlacedFragment[] placed) {
+        if (placed == null) return up;
+        List<Pending> out = null;
+        for (PlacedFragment p : placed) {
+            Pending[] pend = p.frag().pending;
+            if (pend == null) continue;
+            if (out == null) {
+                out = new java.util.ArrayList<>();
+                if (up != null) out.addAll(List.of(up));
+            }
+            for (Pending q : pend) out.add(q.shift(p.x(), p.y()));
+        }
+        return out == null ? up : out.toArray(NONE);
+    }
+
     /** {@code position: relative} のずれ {dx, dy}（ずれなしなら null）。{@code cbw}, {@code cbh} は % の基準。 */
     static float[] relativeOffset(Style st, float cbw, float cbh, LayoutSession s) {
         if (st.box.position != Position.RELATIVE) return null;

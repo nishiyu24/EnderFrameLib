@@ -154,7 +154,7 @@ public final class PaintTreeBuilder {
         d.w = f.width;
         d.h = f.height;
         BoxGeometry g = new BoxGeometry(b.style, f.space.availableWidth, session);
-        d.mB = g.mB;
+        d.mT = g.mT; d.mR = g.mR; d.mB = g.mB; d.mL = f.marginLeft;
         d.pT = g.pT; d.pR = g.pR; d.pB = g.pB; d.pL = g.pL;
         d.bT = g.bT; d.bR = g.bR; d.bB = g.bB; d.bL = g.bL;
         tableEdges(d, f);
@@ -234,7 +234,7 @@ public final class PaintTreeBuilder {
             d.collapsedBorders = new float[]{e.top(), e.right(), e.bottom(), e.left()};
         }
         if (b.kind == BoxKind.TABLE_ROW || b.kind == BoxKind.TABLE_ROW_GROUP) {
-            d.mB = 0;
+            d.mT = d.mR = d.mB = d.mL = 0;
             d.pT = d.pR = d.pB = d.pL = 0;
             d.bT = d.bR = d.bB = d.bL = 0;
         }
@@ -306,7 +306,7 @@ public final class PaintTreeBuilder {
         d.lineHeight = InlineFlow.lineHeight(c.style, session.face(c.style));
         if (!d.text) {
             BoxGeometry g = new BoxGeometry(c.style, cbw, session);
-            d.mB = g.mB;
+            d.mT = g.mT; d.mR = g.mR; d.mB = g.mB; d.mL = g.mL;
             d.pT = g.pT; d.pR = g.pR; d.pB = g.pB; d.pL = g.pL;
             d.bT = g.bT; d.bR = g.bR; d.bB = g.bB; d.bL = g.bL;
         }
@@ -456,7 +456,7 @@ public final class PaintTreeBuilder {
         ComputedStyle style;
         LayoutBox.Display display;
         boolean anonymous, verticalWrapper, renderedLegend, text, placed;
-        float x, y, w, h, mB, pT, pR, pB, pL, bT, bR, bB, bL;
+        float x, y, w, h, mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
         float[] collapsedBorders;
         float scrollWidth, scrollHeight, lineHeight;
         final List<TreeRun> runs = new ArrayList<>(0);

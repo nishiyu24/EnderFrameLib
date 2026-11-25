@@ -72,8 +72,17 @@ public abstract class PaintBox {
     public abstract float pB();
     public abstract float pL();
 
-    /** 下の余白（{@code <legend>} が {@code <fieldset>} の枠線を切り欠く範囲）。 */
+    /** 余白（下は {@code <legend>} が {@code <fieldset>} の枠線を切り欠く範囲にも使う。CSSOM・インスペクタが読む）。 */
+    public abstract float mT();
+    public abstract float mR();
     public abstract float mB();
+    public abstract float mL();
+
+    /** スクロールコンテナか（{@code overflow} が visible / clip 以外）。 */
+    public abstract boolean isScrollContainer();
+
+    /** 枠線を重ねる（{@code border-collapse: collapse}）表か（CSSOM の client の寸法に外周の枠線を数えない）。 */
+    public abstract boolean isCollapsedTable();
 
     /** スクロールで溢れた範囲の幅・高さ（border-box の左上から）。 */
     public abstract float scrollWidth();

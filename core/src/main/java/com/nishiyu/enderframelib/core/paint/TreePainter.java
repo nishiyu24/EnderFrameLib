@@ -108,7 +108,7 @@ public final class TreePainter {
         reused = built = 0;
         touched = readLedger(ledger);
         Memo prev = touched != null && rel == memoRel && memoW == stacking.rootW && memoH == stacking.rootH ? rootMemo : null;
-        PaintView top = PaintView.root(root);
+        PaintView top = PaintView.root(root, stacking.scrollState);
         canvasSource = null;
         List<DisplayItem> out = new ArrayList<>();
         if ("root".equals(top.node().tag)) {

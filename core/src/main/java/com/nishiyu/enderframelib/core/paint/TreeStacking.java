@@ -41,7 +41,7 @@ final class TreeStacking {
 
     int rootW, rootH;
     boolean parentRelative = true;
-    private final ScrollState scrollState;
+    final ScrollState scrollState;
     private final BoxAnimation anim;
 
     // ---- 1 回の描画の間だけ ----

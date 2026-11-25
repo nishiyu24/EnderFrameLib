@@ -588,7 +588,7 @@ public final class StandaloneView implements AutoCloseable {
             if (it.hints().scrollable()) scrollers.put(it.baseId(), it);
         }
         // 画面の外の項目は作っていないので、位置はレイアウトの箱から読む
-        LayoutBox targetBox = UiFocus.findBox(ui.layoutRoot(), node);
+        com.nishiyu.enderframelib.core.layout.PaintBox targetBox = UiFocus.findBox(ui.layoutRoot(), node);
         if (targetBox == null) return false;
         for (HtmlNode p = node.parent; p != null; p = p.parent) {
             DisplayItem box = DisplayItem.resolveAbsolute(items, scrollers.get(p.key()));

@@ -5,6 +5,7 @@ import com.nishiyu.enderframelib.core.css.model.Position;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.layout.PaintRun;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 import com.nishiyu.enderframelib.core.text.model.ShapedLine;
 
@@ -24,25 +25,41 @@ public final class PaintView extends PaintBox {
     public final PaintNode n;
     private final PaintView parent;
     private final float x, y;
+    /** スクロールの位置（null なら全て 0）。スクロールコンテナの子は、その分だけずらして置く。 */
+    private final ScrollState scroll;
     private List<PaintView> kids;
 
-    private PaintView(PaintNode n, PaintView parent, float x, float y) {
+    private PaintView(PaintNode n, PaintView parent, float x, float y, ScrollState scroll) {
         super(n.node, n.anonymous);
         this.n = n;
         this.parent = parent;
         this.x = x;
         this.y = y;
+        this.scroll = scroll;
     }
 
-    /** 根の節の見え方（文書の左上に置く）。 */
+    /** 根の節の見え方（文書の左上に置く。スクロールの位置は全て 0）。 */
     public static PaintView root(PaintNode root) {
-        return new PaintView(root, null, 0, 0);
+        return new PaintView(root, null, 0, 0, null);
+    }
+
+    /**
+     * 根の節の見え方。{@code scroll} はスクロールの位置（M2c ③。スクロール量はレイアウトの入力にしないので、ビューの側でここで足す。
+     * スクロールコンテナの子〔流れの子と、包含ブロックがそのコンテナの流れの外の子〕は、スクロールした分だけ戻して置く）。
+     */
+    public static PaintView root(PaintNode root, ScrollState scroll) {
+        return new PaintView(root, null, 0, 0, scroll);
     }
 
     /** {@code i} 番目の子の見え方。 */
     public PaintView child(int i) {
         PaintView o = isOrigin() ? this : originParent();
-        return new PaintView(n.children[i], this, (o != null ? o.x : 0) + n.childX[i], (o != null ? o.y : 0) + n.childY[i]);
+        float ox = o != null ? o.x : 0, oy = o != null ? o.y : 0;
+        if (o != null && scroll != null && o.isScrollContainer()) {
+            ox -= scroll.getScrollX(o.node());
+            oy -= scroll.getScrollY(o.node());
+        }
+        return new PaintView(n.children[i], this, ox + n.childX[i], oy + n.childY[i], scroll);
     }
 
     /**
@@ -94,7 +111,16 @@ public final class PaintView extends PaintBox {
     @Override public float pR() { return n.pR; }
     @Override public float pB() { return n.pB; }
     @Override public float pL() { return n.pL; }
+    @Override public float mT() { return n.mT; }
+    @Override public float mR() { return n.mR; }
     @Override public float mB() { return n.mB; }
+    @Override public float mL() { return n.mL; }
+    @Override public boolean isScrollContainer() { return n.style.facts().scrollContainer; }
+
+    @Override
+    public boolean isCollapsedTable() {
+        return n.box != null && com.nishiyu.enderframelib.core.layout.fragment.TableBorders.collapses(n.box);
+    }
     @Override public float scrollWidth() { return n.scrollWidth; }
     @Override public float scrollHeight() { return n.scrollHeight; }
     @Override public float lineHeightPx() { return n.lineHeight; }
