@@ -6,6 +6,7 @@ import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.InheritedStyle;
+import com.nishiyu.enderframelib.core.css.InheritedPaintStyle;
 import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
@@ -341,7 +342,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
                 rawRadii[2] = Math.min(radii.bottomRight(), radii.bottomRightV());
                 rawRadii[3] = Math.min(radii.bottomLeft(), radii.bottomLeftV());
             }
-            int color = box.style.typed().inherited.color;
+            int color = box.style.typed().inheritedPaint.color;
             BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
             float fontHVal = Math.max(1.0f, box.style.fontSizePx());
             decor.drawMaskLayers(elements, box, box.node.key(), null, radii, border, fontHVal, 0.5f, 0.5f);
@@ -519,7 +520,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         Style st = box.style.typed();
         // 何が壊れていたか: 以前は 0x00000000 をオフホワイトに書き換えていたので、color: transparent の文字が
         // 白で描かれていた。color は継承するので、宣言の無い箱にも親か初期値（black）が届いている
-        int color = st.inherited.color;
+        int color = st.inheritedPaint.color;
 
         // 背景色と画像のレイヤーは別物（色はいちばん下）。background ショートハンドは算出の段で
         // ロングハンドに展開済み。キャンバスに背景を譲った要素は色を描かない
@@ -558,7 +559,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
         float fontHVal = Math.max(1.0f, st.inherited.fontSize);
         int itemCount = (int) parseFloatAttr(box.node.attrs, "data-count", 1f);
 
-        boolean pointerEventsNone = st.inherited.pointerEvents == CssKeywords.PointerEvents.NONE;
+        boolean pointerEventsNone = st.inheritedPaint.pointerEvents == CssKeywords.PointerEvents.NONE;
         if (pointerEventsNone) anchorEvents.pointerEventsNone();
 
         boolean useRel = parentRelative && PaintOrder.boxHasOwnNode(box);
@@ -815,15 +816,15 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
             props.reuseAttrs(prevItem.events());
             props.reuseCandidate(prevItem.hints());
         }
-        InheritedStyle inh = style.typed().inherited;
+        InheritedStyle inh = style.typed().inherited; InheritedPaintStyle paint = style.typed().inheritedPaint;
         props.put("font-weight", inh.fontWeight == 700 ? "bold"
                 : inh.fontWeight == 400 ? "normal" : Integer.toString(inh.fontWeight));
         if (inh.fontFamily != null) props.fontFamily(inh.fontFamily);
-        if (inh.textDecoration != null) props.put("text-decoration", inh.textDecoration);
+        if (paint.textDecoration != null) props.put("text-decoration", paint.textDecoration);
         putFontEvents(style, props);
         float strokeWidth = com.nishiyu.enderframelib.core.css.TextStroke.widthPx(style);
         if (strokeWidth > 0f) {
-            String colorValue = inh.webkitTextStrokeColor;
+            String colorValue = paint.webkitTextStrokeColor;
             int strokeColor = colorValue == null || colorValue.isBlank() || "currentcolor".equalsIgnoreCase(colorValue.trim())
                     ? resolvedColor : ColorParser.parseColor(colorValue);
             props.put("text-stroke", strokeWidth + " " + Integer.toHexString(strokeColor));
@@ -832,8 +833,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
     }
 
     private List<BoxDecorations.Shadow> textShadowsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, int resolvedColor, ItemProps props) {
-        InheritedStyle inh = style.typed().inherited;
-        String shadowValue = inh.textShadow;
+        InheritedStyle inh = style.typed().inherited; String shadowValue = style.typed().inheritedPaint.textShadow;
         if (shadowValue == null || shadowValue.isBlank() || "none".equalsIgnoreCase(shadowValue.trim())) return List.of();
         List<BoxDecorations.Shadow> list = suppressTextShadow ? List.of()
                 : BoxDecorations.parseBoxShadows(shadowValue, resolvedColor, rootW, rootH, inh.fontSize, inh.rootFontSizePx)
@@ -878,7 +878,7 @@ private int renderToFlatBuf(LayoutBox box, boolean cullOffscreen) {
                 int before = elements.size();
                 if (fl != null) {
                     InheritedStyle flInh = fl.typed().inherited;
-                    int flColor = flInh.hasColor ? flInh.color : color;
+                    int flColor = fl.typed().inheritedPaint.hasColor ? fl.typed().inheritedPaint.color : color;
                     float flFontH = Math.max(1.0f, flInh.fontSize);
                     ItemProps flEvents = textPropsForStyle(fl, partsEvents, flColor, prevItem);
                     List<BoxDecorations.Shadow> flShadows = textShadowsForStyle(fl, flColor, flEvents);

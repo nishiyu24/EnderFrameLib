@@ -286,7 +286,8 @@ public final class ComputedStyle {
         if (previous == null) return 2;
         if (this == previous) return 0;
         Style o = previous.style;
-        if (!style.inherited.equals(o.inherited) || !Objects.equals(style.custom, o.custom)) return 2;
+        if (!style.inherited.equals(o.inherited) || !style.inheritedPaint.equals(o.inheritedPaint)
+                || !Objects.equals(style.custom, o.custom)) return 2;
         if (!style.box.equals(o.box) || !style.visual.equals(o.visual) || !style.flexGrid.equals(o.flexGrid)
                 || !style.table.equals(o.table) || !style.rare.equals(o.rare)) return 1;
         return 0;

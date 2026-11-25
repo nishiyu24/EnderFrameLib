@@ -618,7 +618,7 @@ public final class BoxDecorationPainter {
 
     /** {@code currentColor} になる色（要素の {@code color}）。 */
     private static int currentColor(LayoutBox box) {
-        return box.style.typed().inherited.color;
+        return box.style.typed().inheritedPaint.color;
     }
 
     private void drawImageLayers(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.BackgroundLayer> layers,

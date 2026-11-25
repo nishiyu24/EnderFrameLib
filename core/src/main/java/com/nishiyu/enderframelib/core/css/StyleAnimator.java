@@ -98,7 +98,7 @@ public final class StyleAnimator {
      */
     public void observe(HtmlNode node, ComputedStyle before, ComputedStyle target, Style parentStyle,
                         Map<String, Keyframes> keyframes, long now) {
-        RareStyle r = target.typed().rare;
+        VisualStyle r = target.typed().visual;
         boolean hasTransitionSpec = hasValue(r.transition) || hasValue(r.transitionDuration);
         boolean hasAnimationSpec = hasValue(r.animation) || hasValue(r.animationName);
         if (!hasEntries && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;

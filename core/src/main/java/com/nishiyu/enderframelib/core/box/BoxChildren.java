@@ -93,6 +93,41 @@ public abstract sealed class BoxChildren permits BoxChunk, BoxChildren.Chunked {
         throw new IndexOutOfBoundsException(index);
     }
 
+    /**
+     * レイアウトの入力の木の側の並び（M2c。{@link BoxNode#layout}）。全ての子が自分自身をレイアウトの入力とするなら同じ参照。そうで
+     * なければ子をレイアウトの入力の箱に替えた並びで、子のレイアウトの入力の箱が {@code prev}（前回のレイアウトの入力の箱の並び）と
+     * 1 つずつ同じなら {@code prev} そのもの（最新の木の側でチャンクの切れ目が変わっても〔隣り合う 2 つを作り直すと 1 つにまとまる〕
+     * レイアウトの入力は前回の参照のまま）。違えば同じ形の位置のチャンクごとに前回の参照を使う。
+     */
+    BoxChildren layoutView(BoxChildren prev) {
+        int n = chunkCount();
+        int first = 0;
+        while (first < n && chunk(first).self()) first++;
+        if (first == n) return this;
+        if (prev != null && prev.size() == size() && sameLayoutItems(prev)) return prev;
+        BoxChunk[] out = new BoxChunk[n];
+        boolean aligned = prev != null && prev.chunkCount() == n;
+        for (int c = 0; c < n; c++) out[c] = chunk(c).layoutChunk(aligned ? prev.chunk(c) : null);
+        return n == 1 ? out[0] : new Chunked(out, size());
+    }
+
+    /** 子のレイアウトの入力の箱が {@code prev} の子と順に同じ参照か（チャンクの切れ目は問わない）。 */
+    private boolean sameLayoutItems(BoxChildren prev) {
+        int pc = 0, pi = 0;
+        BoxChunk p = prev.chunk(0);
+        for (int c = 0, n = chunkCount(); c < n; c++) {
+            BoxChunk ch = chunk(c);
+            for (int i = 0, m = ch.size(); i < m; i++) {
+                while (pi == p.size()) {
+                    p = prev.chunk(++pc);
+                    pi = 0;
+                }
+                if (ch.get(i).layout != p.get(pi++)) return false;
+            }
+        }
+        return true;
+    }
+
     /** 子の列から新しく並べる（{@link #CHUNK} ごとに切る）。 */
     public static BoxChildren of(List<BoxNode> kids) {
         int n = kids.size();

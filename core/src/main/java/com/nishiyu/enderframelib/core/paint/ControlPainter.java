@@ -252,8 +252,8 @@ final class ControlPainter {
                     ItemProps phEvents = passiveBorderEvents.copy();
                     phEvents.pointerEventsNone();
                     // ::placeholder の color（UA の既定は #aaa）。規則が掛からなければ既定の色
-                    int placeholderColor = box.placeholderStyle != null && box.placeholderStyle.typed().inherited.hasColor
-                            ? box.placeholderStyle.typed().inherited.color
+                    int placeholderColor = box.placeholderStyle != null && box.placeholderStyle.typed().inheritedPaint.hasColor
+                            ? box.placeholderStyle.typed().inheritedPaint.color
                             : DEFAULT_PLACEHOLDER_COLOR;
                     long phKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_PLACEHOLDER) : 0L;
                     addElement(elements, id, PaintSupport.partId(box, id, 18, "_ph"), ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, placeholderColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, phKey);
@@ -442,7 +442,7 @@ final class ControlPainter {
 
     /** {@code accent-color}。auto（UA の既定）なら null。 */
     static Integer accentColor(LayoutBox box, int textColor) {
-        String v = box.style.typed().inherited.accentColor;
+        String v = box.style.typed().inheritedPaint.accentColor;
         if (v == null) return null;
         v = v.trim();
         if (v.isEmpty() || "auto".equalsIgnoreCase(v)) return null;

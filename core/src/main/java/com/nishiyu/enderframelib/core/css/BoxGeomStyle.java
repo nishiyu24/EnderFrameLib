@@ -13,7 +13,6 @@ public final class BoxGeomStyle {
     static final int ID_left = ComputedStyle.idOf("left");
     static final int ID_floatValue = ComputedStyle.idOf("float");
     static final int ID_clear = ComputedStyle.idOf("clear");
-    static final int ID_zIndex = ComputedStyle.idOf("z-index");
     static final int ID_width = ComputedStyle.idOf("width");
     static final int ID_height = ComputedStyle.idOf("height");
     static final int ID_minWidth = ComputedStyle.idOf("min-width");
@@ -65,8 +64,6 @@ public final class BoxGeomStyle {
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.FloatSide floatValue;
     /** {@code clear}。 */
     public final com.nishiyu.enderframelib.core.css.model.CssKeywords.Clear clear;
-    /** {@code z-index}。 */
-    public final float zIndex;
     /** {@code width}。 */
     public final long width;
     /** {@code height}。 */
@@ -136,7 +133,6 @@ public final class BoxGeomStyle {
         this.left = StyleReader.length(cs, ID_left, ex);
         this.floatValue = StyleReader.keyword(cs, ID_floatValue, com.nishiyu.enderframelib.core.css.model.CssKeywords.FloatSide.class);
         this.clear = StyleReader.keyword(cs, ID_clear, com.nishiyu.enderframelib.core.css.model.CssKeywords.Clear.class);
-        this.zIndex = StyleReader.number(cs, ID_zIndex);
         this.width = StyleReader.length(cs, ID_width, ex);
         this.height = StyleReader.length(cs, ID_height, ex);
         this.minWidth = StyleReader.length(cs, ID_minWidth, ex);
@@ -189,7 +185,6 @@ public final class BoxGeomStyle {
                 && left == o.left
                 && floatValue == o.floatValue
                 && clear == o.clear
-                && Float.floatToIntBits(zIndex) == Float.floatToIntBits(o.zIndex)
                 && width == o.width
                 && height == o.height
                 && minWidth == o.minWidth
@@ -223,7 +218,7 @@ public final class BoxGeomStyle {
 
     @Override
     public int hashCode() {
-        int h = 38;
+        int h = 37;
         h = h * 31 + java.util.Objects.hashCode(display);
         h = h * 31 + System.identityHashCode(position);
         h = h * 31 + Long.hashCode(top);
@@ -232,7 +227,6 @@ public final class BoxGeomStyle {
         h = h * 31 + Long.hashCode(left);
         h = h * 31 + System.identityHashCode(floatValue);
         h = h * 31 + System.identityHashCode(clear);
-        h = h * 31 + Float.floatToIntBits(zIndex);
         h = h * 31 + Long.hashCode(width);
         h = h * 31 + Long.hashCode(height);
         h = h * 31 + Long.hashCode(minWidth);

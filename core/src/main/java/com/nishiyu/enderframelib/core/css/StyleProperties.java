@@ -6,31 +6,31 @@ public final class StyleProperties {
 
     private static final String[] INSPECTABLE = {
 
-        "visibility", "border-collapse", "border-spacing", "caption-side", "empty-cells", "list-style-type", "list-style-position", "list-style-image", 
-        "font-family", "font-size", "font-weight", "font-style", "font-variant", "font-kerning", "line-height", "letter-spacing", 
-        "word-spacing", "text-indent", "text-align", "text-align-last", "text-justify", "tab-size", "text-wrap", "text-wrap-style", 
-        "text-transform", "white-space", "word-break", "overflow-wrap", "direction", "color", "accent-color", "text-decoration", 
-        "text-shadow", "-webkit-text-stroke-width", "-webkit-text-stroke-color", "quotes", "writing-mode", "text-orientation", "cursor", "pointer-events", 
-        "display", "position", "top", "right", "bottom", "left", "float", "clear", 
-        "z-index", "width", "height", "min-width", "min-height", "max-width", "max-height", "box-sizing", 
-        "aspect-ratio", "margin-top", "margin-right", "margin-bottom", "margin-left", "padding-top", "padding-right", "padding-bottom", 
-        "padding-left", "border-top-width", "border-top-style", "border-right-width", "border-right-style", "border-bottom-width", "border-bottom-style", "border-left-width", 
-        "border-left-style", "overflow-x", "overflow-y", "scrollbar-width", "vertical-align", "text-overflow", "border-top-color", "border-right-color", 
-        "border-bottom-color", "border-left-color", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius", "outline-color", "outline-style", 
-        "outline-width", "outline-offset", "object-position", "background-color", "background-image", "background-position", "background-size", "background-repeat", 
+        "visibility", "border-collapse", "border-spacing", "caption-side", "list-style-type", "list-style-position", "list-style-image", "font-family", 
+        "font-size", "font-weight", "font-style", "font-variant", "font-kerning", "line-height", "letter-spacing", "word-spacing", 
+        "text-indent", "text-align", "text-align-last", "text-justify", "tab-size", "text-wrap", "text-wrap-style", "text-transform", 
+        "white-space", "word-break", "overflow-wrap", "direction", "quotes", "writing-mode", "text-orientation", "display", 
+        "position", "top", "right", "bottom", "left", "float", "clear", "width", 
+        "height", "min-width", "min-height", "max-width", "max-height", "box-sizing", "aspect-ratio", "margin-top", 
+        "margin-right", "margin-bottom", "margin-left", "padding-top", "padding-right", "padding-bottom", "padding-left", "border-top-width", 
+        "border-top-style", "border-right-width", "border-right-style", "border-bottom-width", "border-bottom-style", "border-left-width", "border-left-style", "overflow-x", 
+        "overflow-y", "scrollbar-width", "vertical-align", "text-overflow", "z-index", "border-top-color", "border-right-color", "border-bottom-color", 
+        "border-left-color", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius", "outline-color", "outline-style", "outline-width", 
+        "outline-offset", "column-rule-color", "object-position", "background-color", "background-image", "background-position", "background-size", "background-repeat", 
         "background-clip", "background-origin", "background-attachment", "box-shadow", "border-image-source", "border-image-slice", "border-image-width", "border-image-outset", 
         "border-image-repeat", "opacity", "transform", "transform-origin", "rotate", "translate", "scale", "filter", 
         "mix-blend-mode", "isolation", "clip-path", "backdrop-filter", "mask-image", "mask-position", "mask-size", "mask-repeat", 
-        "mask-origin", "mask-clip", "mask-mode", "mask-composite", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", 
-        "flex-basis", "order", "justify-content", "align-content", "justify-items", "align-items", "justify-self", "align-self", 
-        "row-gap", "column-gap", "grid-template-columns", "grid-template-rows", "grid-template-areas", "grid-auto-columns", "grid-auto-rows", "grid-auto-flow", 
-        "grid-column-start", "grid-column-end", "grid-row-start", "grid-row-end", "grid-column", "grid-row", "grid-area", "table-layout", 
-        "column-count", "column-width", "column-fill", "column-span", "column-rule-color", "column-rule-style", "column-rule-width", "appearance", 
-        "contain", "content-visibility", "contain-intrinsic-width", "contain-intrinsic-height", "container-type", "container-name", "anchor-name", "position-anchor", 
-        "position-area", "position-try-fallbacks", "position-try-order", "content", "counter-reset", "counter-increment", "counter-set", "src", 
-        "object-fit", "break-inside", "perspective", "user-select", "transition-property", "transition-duration", "transition-delay", "transition-timing-function", 
-        "transition", "animation-name", "animation-duration", "animation-delay", "animation-timing-function", "animation-iteration-count", "animation-direction", "animation-fill-mode", 
-        "animation"
+        "mask-origin", "mask-clip", "mask-mode", "mask-composite", "user-select", "transition-property", "transition-duration", "transition-delay", 
+        "transition-timing-function", "transition", "animation-name", "animation-duration", "animation-delay", "animation-timing-function", "animation-iteration-count", "animation-direction", 
+        "animation-fill-mode", "animation", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis", "order", 
+        "justify-content", "align-content", "justify-items", "align-items", "justify-self", "align-self", "row-gap", "column-gap", 
+        "grid-template-columns", "grid-template-rows", "grid-template-areas", "grid-auto-columns", "grid-auto-rows", "grid-auto-flow", "grid-column-start", "grid-column-end", 
+        "grid-row-start", "grid-row-end", "grid-column", "grid-row", "grid-area", "table-layout", "column-count", "column-width", 
+        "column-fill", "column-span", "column-rule-style", "column-rule-width", "appearance", "contain", "content-visibility", "contain-intrinsic-width", 
+        "contain-intrinsic-height", "container-type", "container-name", "anchor-name", "position-anchor", "position-area", "position-try-fallbacks", "position-try-order", 
+        "content", "counter-reset", "counter-increment", "counter-set", "src", "object-fit", "break-inside", "perspective", 
+        "empty-cells", "color", "accent-color", "text-decoration", "text-shadow", "-webkit-text-stroke-width", "-webkit-text-stroke-color", "cursor", 
+        "pointer-events"
     };
 
     private static final byte[] GROUP_BITS = initGroupBits();
@@ -41,7 +41,6 @@ public final class StyleProperties {
         b[InheritedStyle.ID_borderCollapse] = 1;
         b[InheritedStyle.ID_borderSpacing] = 1;
         b[InheritedStyle.ID_captionSide] = 1;
-        b[InheritedStyle.ID_emptyCells] = 1;
         b[InheritedStyle.ID_listStyleType] = 1;
         b[InheritedStyle.ID_listStylePosition] = 1;
         b[InheritedStyle.ID_listStyleImage] = 1;
@@ -66,17 +65,9 @@ public final class StyleProperties {
         b[InheritedStyle.ID_wordBreak] = 1;
         b[InheritedStyle.ID_overflowWrap] = 1;
         b[InheritedStyle.ID_direction] = 1;
-        b[InheritedStyle.ID_color] = 1;
-        b[InheritedStyle.ID_accentColor] = 1;
-        b[InheritedStyle.ID_textDecoration] = 1;
-        b[InheritedStyle.ID_textShadow] = 1;
-        b[InheritedStyle.ID_webkitTextStrokeWidth] = 1;
-        b[InheritedStyle.ID_webkitTextStrokeColor] = 1;
         b[InheritedStyle.ID_quotes] = 1;
         b[InheritedStyle.ID_writingMode] = 1;
         b[InheritedStyle.ID_textOrientation] = 1;
-        b[InheritedStyle.ID_cursor] = 1;
-        b[InheritedStyle.ID_pointerEvents] = 1;
         b[BoxGeomStyle.ID_display] = 2;
         b[BoxGeomStyle.ID_position] = 2;
         b[BoxGeomStyle.ID_top] = 2;
@@ -85,7 +76,6 @@ public final class StyleProperties {
         b[BoxGeomStyle.ID_left] = 2;
         b[BoxGeomStyle.ID_floatValue] = 2;
         b[BoxGeomStyle.ID_clear] = 2;
-        b[BoxGeomStyle.ID_zIndex] = 2;
         b[BoxGeomStyle.ID_width] = 2;
         b[BoxGeomStyle.ID_height] = 2;
         b[BoxGeomStyle.ID_minWidth] = 2;
@@ -115,6 +105,7 @@ public final class StyleProperties {
         b[BoxGeomStyle.ID_scrollbarWidth] = 2;
         b[BoxGeomStyle.ID_verticalAlign] = 2;
         b[BoxGeomStyle.ID_textOverflow] = 2;
+        b[VisualStyle.ID_zIndex] = 4;
         b[VisualStyle.ID_borderTopColor] = 4;
         b[VisualStyle.ID_borderRightColor] = 4;
         b[VisualStyle.ID_borderBottomColor] = 4;
@@ -127,6 +118,7 @@ public final class StyleProperties {
         b[VisualStyle.ID_outlineStyle] = 4;
         b[VisualStyle.ID_outlineWidth] = 4;
         b[VisualStyle.ID_outlineOffset] = 4;
+        b[VisualStyle.ID_columnRuleColor] = 4;
         b[VisualStyle.ID_objectPosition] = 4;
         b[VisualStyle.ID_backgroundColor] = 4;
         b[VisualStyle.ID_backgroundImage] = 4;
@@ -161,6 +153,20 @@ public final class StyleProperties {
         b[VisualStyle.ID_maskClip] = 4;
         b[VisualStyle.ID_maskMode] = 4;
         b[VisualStyle.ID_maskComposite] = 4;
+        b[VisualStyle.ID_userSelect] = 4;
+        b[VisualStyle.ID_transitionProperty] = 4;
+        b[VisualStyle.ID_transitionDuration] = 4;
+        b[VisualStyle.ID_transitionDelay] = 4;
+        b[VisualStyle.ID_transitionTimingFunction] = 4;
+        b[VisualStyle.ID_transition] = 4;
+        b[VisualStyle.ID_animationName] = 4;
+        b[VisualStyle.ID_animationDuration] = 4;
+        b[VisualStyle.ID_animationDelay] = 4;
+        b[VisualStyle.ID_animationTimingFunction] = 4;
+        b[VisualStyle.ID_animationIterationCount] = 4;
+        b[VisualStyle.ID_animationDirection] = 4;
+        b[VisualStyle.ID_animationFillMode] = 4;
+        b[VisualStyle.ID_animation] = 4;
         b[FlexGridStyle.ID_flexDirection] = 8;
         b[FlexGridStyle.ID_flexWrap] = 8;
         b[FlexGridStyle.ID_flexGrow] = 8;
@@ -193,7 +199,6 @@ public final class StyleProperties {
         b[RareStyle.ID_columnWidth] = 32;
         b[RareStyle.ID_columnFill] = 32;
         b[RareStyle.ID_columnSpan] = 32;
-        b[RareStyle.ID_columnRuleColor] = 32;
         b[RareStyle.ID_columnRuleStyle] = 32;
         b[RareStyle.ID_columnRuleWidth] = 32;
         b[RareStyle.ID_appearance] = 32;
@@ -216,20 +221,15 @@ public final class StyleProperties {
         b[RareStyle.ID_objectFit] = 32;
         b[RareStyle.ID_breakInside] = 32;
         b[RareStyle.ID_perspective] = 32;
-        b[RareStyle.ID_userSelect] = 32;
-        b[RareStyle.ID_transitionProperty] = 32;
-        b[RareStyle.ID_transitionDuration] = 32;
-        b[RareStyle.ID_transitionDelay] = 32;
-        b[RareStyle.ID_transitionTimingFunction] = 32;
-        b[RareStyle.ID_transition] = 32;
-        b[RareStyle.ID_animationName] = 32;
-        b[RareStyle.ID_animationDuration] = 32;
-        b[RareStyle.ID_animationDelay] = 32;
-        b[RareStyle.ID_animationTimingFunction] = 32;
-        b[RareStyle.ID_animationIterationCount] = 32;
-        b[RareStyle.ID_animationDirection] = 32;
-        b[RareStyle.ID_animationFillMode] = 32;
-        b[RareStyle.ID_animation] = 32;
+        b[InheritedPaintStyle.ID_emptyCells] = 64;
+        b[InheritedPaintStyle.ID_color] = 64;
+        b[InheritedPaintStyle.ID_accentColor] = 64;
+        b[InheritedPaintStyle.ID_textDecoration] = 64;
+        b[InheritedPaintStyle.ID_textShadow] = 64;
+        b[InheritedPaintStyle.ID_webkitTextStrokeWidth] = 64;
+        b[InheritedPaintStyle.ID_webkitTextStrokeColor] = 64;
+        b[InheritedPaintStyle.ID_cursor] = 64;
+        b[InheritedPaintStyle.ID_pointerEvents] = 64;
         return b;
     }
 
@@ -240,7 +240,6 @@ public final class StyleProperties {
             case "border-collapse" -> s.inherited.borderCollapse != null ? s.inherited.borderCollapse.cssName() : null;
             case "border-spacing" -> s.inherited.borderSpacing;
             case "caption-side" -> s.inherited.captionSide != null ? s.inherited.captionSide.cssName() : null;
-            case "empty-cells" -> s.inherited.emptyCells;
             case "list-style-type" -> s.inherited.listStyleType;
             case "list-style-position" -> s.inherited.listStylePosition != null ? s.inherited.listStylePosition.cssName() : null;
             case "list-style-image" -> s.inherited.listStyleImage;
@@ -265,17 +264,9 @@ public final class StyleProperties {
             case "word-break" -> s.inherited.wordBreak;
             case "overflow-wrap" -> s.inherited.overflowWrap != null ? s.inherited.overflowWrap.cssName() : null;
             case "direction" -> s.inherited.direction;
-            case "color" -> s.inherited.hasColor ? col(s.inherited.color) : null;
-            case "accent-color" -> s.inherited.accentColor;
-            case "text-decoration" -> s.inherited.textDecoration;
-            case "text-shadow" -> s.inherited.textShadow;
-            case "-webkit-text-stroke-width" -> s.inherited.webkitTextStrokeWidth;
-            case "-webkit-text-stroke-color" -> s.inherited.webkitTextStrokeColor;
             case "quotes" -> s.inherited.quotes;
             case "writing-mode" -> s.inherited.writingMode;
             case "text-orientation" -> s.inherited.textOrientation;
-            case "cursor" -> s.inherited.cursor;
-            case "pointer-events" -> s.inherited.pointerEvents != null ? s.inherited.pointerEvents.cssName() : null;
             case "display" -> s.box.display;
             case "position" -> s.box.position != null ? s.box.position.cssName() : null;
             case "top" -> CssLength.toCssString(s.box.top, s.box.exprs);
@@ -284,7 +275,6 @@ public final class StyleProperties {
             case "left" -> CssLength.toCssString(s.box.left, s.box.exprs);
             case "float" -> s.box.floatValue != null ? s.box.floatValue.cssName() : null;
             case "clear" -> s.box.clear != null ? s.box.clear.cssName() : null;
-            case "z-index" -> num(s.box.zIndex);
             case "width" -> CssLength.toCssString(s.box.width, s.box.exprs);
             case "height" -> CssLength.toCssString(s.box.height, s.box.exprs);
             case "min-width" -> CssLength.toCssString(s.box.minWidth, s.box.exprs);
@@ -314,6 +304,7 @@ public final class StyleProperties {
             case "scrollbar-width" -> s.box.scrollbarWidth != null ? s.box.scrollbarWidth.cssName() : null;
             case "vertical-align" -> CssLength.toCssString(s.box.verticalAlign, s.box.exprs);
             case "text-overflow" -> s.box.textOverflow != null ? s.box.textOverflow.cssName() : null;
+            case "z-index" -> num(s.visual.zIndex);
             case "border-top-color" -> (s.visual.currentColorMask & 1) != 0 ? null : col(s.visual.borderTopColor);
             case "border-right-color" -> (s.visual.currentColorMask & 2) != 0 ? null : col(s.visual.borderRightColor);
             case "border-bottom-color" -> (s.visual.currentColorMask & 4) != 0 ? null : col(s.visual.borderBottomColor);
@@ -326,6 +317,7 @@ public final class StyleProperties {
             case "outline-style" -> s.visual.outlineStyle != null ? s.visual.outlineStyle.cssName() : null;
             case "outline-width" -> CssLength.toCssString(s.visual.outlineWidth, s.visual.exprs);
             case "outline-offset" -> CssLength.toCssString(s.visual.outlineOffset, s.visual.exprs);
+            case "column-rule-color" -> s.visual.columnRuleColorCurrent ? null : col(s.visual.columnRuleColor);
             case "object-position" -> s.visual.objectPosition;
             case "background-color" -> s.visual.hasBackgroundColor ? col(s.visual.backgroundColor) : null;
             case "background-image" -> s.visual.backgroundImage;
@@ -360,6 +352,20 @@ public final class StyleProperties {
             case "mask-clip" -> s.visual.maskClip;
             case "mask-mode" -> s.visual.maskMode;
             case "mask-composite" -> s.visual.maskComposite;
+            case "user-select" -> s.visual.userSelect;
+            case "transition-property" -> s.visual.transitionProperty;
+            case "transition-duration" -> s.visual.transitionDuration;
+            case "transition-delay" -> s.visual.transitionDelay;
+            case "transition-timing-function" -> s.visual.transitionTimingFunction;
+            case "transition" -> s.visual.transition;
+            case "animation-name" -> s.visual.animationName;
+            case "animation-duration" -> s.visual.animationDuration;
+            case "animation-delay" -> s.visual.animationDelay;
+            case "animation-timing-function" -> s.visual.animationTimingFunction;
+            case "animation-iteration-count" -> s.visual.animationIterationCount;
+            case "animation-direction" -> s.visual.animationDirection;
+            case "animation-fill-mode" -> s.visual.animationFillMode;
+            case "animation" -> s.visual.animation;
             case "flex-direction" -> s.flexGrid.flexDirection != null ? s.flexGrid.flexDirection.cssName() : null;
             case "flex-wrap" -> s.flexGrid.flexWrap != null ? s.flexGrid.flexWrap.cssName() : null;
             case "flex-grow" -> num(s.flexGrid.flexGrow);
@@ -392,7 +398,6 @@ public final class StyleProperties {
             case "column-width" -> CssLength.toCssString(s.rare.columnWidth, s.rare.exprs);
             case "column-fill" -> s.rare.columnFill;
             case "column-span" -> s.rare.columnSpan;
-            case "column-rule-color" -> s.rare.columnRuleColorCurrent ? null : col(s.rare.columnRuleColor);
             case "column-rule-style" -> s.rare.columnRuleStyle != null ? s.rare.columnRuleStyle.cssName() : null;
             case "column-rule-width" -> CssLength.toCssString(s.rare.columnRuleWidth, s.rare.exprs);
             case "appearance" -> s.rare.appearance;
@@ -415,20 +420,15 @@ public final class StyleProperties {
             case "object-fit" -> s.rare.objectFit;
             case "break-inside" -> s.rare.breakInside;
             case "perspective" -> s.rare.perspective;
-            case "user-select" -> s.rare.userSelect;
-            case "transition-property" -> s.rare.transitionProperty;
-            case "transition-duration" -> s.rare.transitionDuration;
-            case "transition-delay" -> s.rare.transitionDelay;
-            case "transition-timing-function" -> s.rare.transitionTimingFunction;
-            case "transition" -> s.rare.transition;
-            case "animation-name" -> s.rare.animationName;
-            case "animation-duration" -> s.rare.animationDuration;
-            case "animation-delay" -> s.rare.animationDelay;
-            case "animation-timing-function" -> s.rare.animationTimingFunction;
-            case "animation-iteration-count" -> s.rare.animationIterationCount;
-            case "animation-direction" -> s.rare.animationDirection;
-            case "animation-fill-mode" -> s.rare.animationFillMode;
-            case "animation" -> s.rare.animation;
+            case "empty-cells" -> s.inheritedPaint.emptyCells;
+            case "color" -> s.inheritedPaint.hasColor ? col(s.inheritedPaint.color) : null;
+            case "accent-color" -> s.inheritedPaint.accentColor;
+            case "text-decoration" -> s.inheritedPaint.textDecoration;
+            case "text-shadow" -> s.inheritedPaint.textShadow;
+            case "-webkit-text-stroke-width" -> s.inheritedPaint.webkitTextStrokeWidth;
+            case "-webkit-text-stroke-color" -> s.inheritedPaint.webkitTextStrokeColor;
+            case "cursor" -> s.inheritedPaint.cursor;
+            case "pointer-events" -> s.inheritedPaint.pointerEvents != null ? s.inheritedPaint.pointerEvents.cssName() : null;
             default -> s.custom != null ? s.custom.get(name) : null;
         };
     }
@@ -479,7 +479,6 @@ public final class StyleProperties {
             if (inh.borderCollapse != InheritedStyle.DEFAULT.borderCollapse && inh.borderCollapse != null) into.putById(InheritedStyle.ID_borderCollapse, inh.borderCollapse.cssName());
             if (inh.borderSpacing != null) into.putById(InheritedStyle.ID_borderSpacing, inh.borderSpacing);
             if (inh.captionSide != InheritedStyle.DEFAULT.captionSide && inh.captionSide != null) into.putById(InheritedStyle.ID_captionSide, inh.captionSide.cssName());
-            if (inh.emptyCells != null) into.putById(InheritedStyle.ID_emptyCells, inh.emptyCells);
             if (inh.listStyleType != null) into.putById(InheritedStyle.ID_listStyleType, inh.listStyleType);
             if (inh.listStylePosition != InheritedStyle.DEFAULT.listStylePosition && inh.listStylePosition != null) into.putById(InheritedStyle.ID_listStylePosition, inh.listStylePosition.cssName());
             if (inh.listStyleImage != null) into.putById(InheritedStyle.ID_listStyleImage, inh.listStyleImage);
@@ -504,17 +503,21 @@ public final class StyleProperties {
             if (inh.wordBreak != null) into.putById(InheritedStyle.ID_wordBreak, inh.wordBreak);
             if (inh.overflowWrap != InheritedStyle.DEFAULT.overflowWrap && inh.overflowWrap != null) into.putById(InheritedStyle.ID_overflowWrap, inh.overflowWrap.cssName());
             if (inh.direction != null) into.putById(InheritedStyle.ID_direction, inh.direction);
-            if (inh.hasColor) into.putById(InheritedStyle.ID_color, col(inh.color));
-            if (inh.accentColor != null) into.putById(InheritedStyle.ID_accentColor, inh.accentColor);
-            if (inh.textDecoration != null) into.putById(InheritedStyle.ID_textDecoration, inh.textDecoration);
-            if (inh.textShadow != null) into.putById(InheritedStyle.ID_textShadow, inh.textShadow);
-            if (inh.webkitTextStrokeWidth != null) into.putById(InheritedStyle.ID_webkitTextStrokeWidth, inh.webkitTextStrokeWidth);
-            if (inh.webkitTextStrokeColor != null) into.putById(InheritedStyle.ID_webkitTextStrokeColor, inh.webkitTextStrokeColor);
             if (inh.quotes != null) into.putById(InheritedStyle.ID_quotes, inh.quotes);
             if (inh.writingMode != null) into.putById(InheritedStyle.ID_writingMode, inh.writingMode);
             if (inh.textOrientation != null) into.putById(InheritedStyle.ID_textOrientation, inh.textOrientation);
-            if (inh.cursor != null) into.putById(InheritedStyle.ID_cursor, inh.cursor);
-            if (inh.pointerEvents != InheritedStyle.DEFAULT.pointerEvents && inh.pointerEvents != null) into.putById(InheritedStyle.ID_pointerEvents, inh.pointerEvents.cssName());
+        }
+        InheritedPaintStyle paint = parent.inheritedPaint;
+        if (paint != InheritedPaintStyle.DEFAULT) {
+            if (paint.emptyCells != null) into.putById(InheritedPaintStyle.ID_emptyCells, paint.emptyCells);
+            if (paint.hasColor) into.putById(InheritedPaintStyle.ID_color, col(paint.color));
+            if (paint.accentColor != null) into.putById(InheritedPaintStyle.ID_accentColor, paint.accentColor);
+            if (paint.textDecoration != null) into.putById(InheritedPaintStyle.ID_textDecoration, paint.textDecoration);
+            if (paint.textShadow != null) into.putById(InheritedPaintStyle.ID_textShadow, paint.textShadow);
+            if (paint.webkitTextStrokeWidth != null) into.putById(InheritedPaintStyle.ID_webkitTextStrokeWidth, paint.webkitTextStrokeWidth);
+            if (paint.webkitTextStrokeColor != null) into.putById(InheritedPaintStyle.ID_webkitTextStrokeColor, paint.webkitTextStrokeColor);
+            if (paint.cursor != null) into.putById(InheritedPaintStyle.ID_cursor, paint.cursor);
+            if (paint.pointerEvents != InheritedPaintStyle.DEFAULT.pointerEvents && paint.pointerEvents != null) into.putById(InheritedPaintStyle.ID_pointerEvents, paint.pointerEvents.cssName());
         }
         if (parent.custom != null) {
             for (var e : parent.custom.asMap().entrySet()) {
@@ -528,14 +531,14 @@ public final class StyleProperties {
     public static String getCssom(Style s, String name) {
         if (s == null || name == null) return null;
         return switch (name) {
-            case "color" -> s.inherited.hasColor ? rgbCol(s.inherited.color) : null;
+            case "color" -> s.inheritedPaint.hasColor ? rgbCol(s.inheritedPaint.color) : null;
             case "background-color" -> s.visual.hasBackgroundColor ? rgbCol(s.visual.backgroundColor) : null;
             case "border-top-color" -> (s.visual.currentColorMask & 1) != 0 ? null : rgbCol(s.visual.borderTopColor);
             case "border-right-color" -> (s.visual.currentColorMask & 2) != 0 ? null : rgbCol(s.visual.borderRightColor);
             case "border-bottom-color" -> (s.visual.currentColorMask & 4) != 0 ? null : rgbCol(s.visual.borderBottomColor);
             case "border-left-color" -> (s.visual.currentColorMask & 8) != 0 ? null : rgbCol(s.visual.borderLeftColor);
             case "outline-color" -> (s.visual.currentColorMask & 32) != 0 ? "invert" : ((s.visual.currentColorMask & 16) != 0 ? null : rgbCol(s.visual.outlineColor));
-            case "column-rule-color" -> s.rare.columnRuleColorCurrent ? null : rgbCol(s.rare.columnRuleColor);
+            case "column-rule-color" -> s.visual.columnRuleColorCurrent ? null : rgbCol(s.visual.columnRuleColor);
             default -> get(s, name);
         };
     }

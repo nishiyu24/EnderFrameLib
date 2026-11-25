@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.RareStyle;
+import com.nishiyu.enderframelib.core.css.VisualStyle;
 import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.VisualStyle;
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
@@ -117,7 +117,7 @@ final class BoxAnimation {
      * {@link AnimationSpec} に解決する。
      */
     AnimationSpec parseAnimationDef(ComputedStyle style, float baseW, float baseH, int baseColor, int baseBgColor) {
-        RareStyle r = style.typed().rare;
+        VisualStyle r = style.typed().visual;
         if (r.animation == null && r.animationName == null) {
             return AnimationSpec.NONE;
         }
@@ -245,7 +245,7 @@ final class BoxAnimation {
             new java.util.concurrent.ConcurrentHashMap<>();
 
     static TransitionSpec parseTransitionSpec(ComputedStyle style) {
-        RareStyle r = style.typed().rare;
+        VisualStyle r = style.typed().visual;
         String tr = r.transition, tp = r.transitionProperty, tdur = r.transitionDuration, td = r.transitionDelay, ttf = r.transitionTimingFunction;
         if (tr == null && tp == null && tdur == null && td == null && ttf == null) return NONE_TRANSITION;
         return resolveTransitionSpec(tr, tp, tdur, td, ttf);
@@ -354,12 +354,12 @@ final class BoxAnimation {
     AnimationSpec textColorAnimation(LayoutBox text, AnimationSpec own) {
         AnimationSpec colorAnim = own.withChannels(AnimationSpec.CH_COLOR);
         if (!colorAnim.isEmpty()) return colorAnim;
-        int inherited = text.style.typed().inherited.color;
+        int inherited = text.style.typed().inheritedPaint.color;
         for (LayoutBox a = text.parent; a != null && a.style != null; a = a.parent) {
             Style as = a.style.typed();
-            if (as.inherited.color != inherited) break;
-            if (as.rare.animation != null || as.rare.animationName != null) {
-                AnimationSpec anim = parseAnimationDef(a.style, a.w(), a.h(), as.inherited.color, 0).withChannels(AnimationSpec.CH_COLOR);
+            if (as.inheritedPaint.color != inherited) break;
+            if (as.visual.animation != null || as.visual.animationName != null) {
+                AnimationSpec anim = parseAnimationDef(a.style, a.w(), a.h(), as.inheritedPaint.color, 0).withChannels(AnimationSpec.CH_COLOR);
                 if (!anim.isEmpty()) return anim;
             }
             // 祖先の要素が自分の色を宣言していれば、その上の祖先の色は継承されない
@@ -371,7 +371,7 @@ final class BoxAnimation {
     /** 親と違う色を持っている（= 自分で color を宣言した）か。 */
     static boolean declaresOwnColor(LayoutBox box) {
         return box.parent != null && box.parent.style != null
-                && box.style.typed().inherited.color != box.parent.style.typed().inherited.color;
+                && box.style.typed().inheritedPaint.color != box.parent.style.typed().inheritedPaint.color;
     }
 
     record TransitionSpec(int durationMs, int delayMs, String easing, String property) {}

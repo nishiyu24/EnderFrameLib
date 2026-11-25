@@ -35,6 +35,8 @@ import org.junit.jupiter.api.Test;
  *   <li>パッケージ循環数（SCC）: {@code :core} と MOD 本体の強連結成分（SCC）の増加・拡大禁止。</li>
  *   <li>{@code :core} 境界純度: Minecraft / NeoForge / 上位層 / プレビュー API への非依存。</li>
  *   <li>既存 {@code Shortcut} / {@code EngineFlags} の上限凍結: 新規追加を禁止し、単調減少のみ許可。</li>
+ *   <li>新経路のレイアウト（{@code core/layout/fragment}）は描画だけの群（{@code Style.inheritedPaint}・{@code Style.visual}）を読まない
+ *       （M2c。描画だけの変化はレイアウトの入力の木を変えないので、読むと古い値を読む。計画書 §3.4.2-3）。</li>
  * </ol>
  */
 class ArchitectureHealthTest {
@@ -371,6 +373,34 @@ class ArchitectureHealthTest {
         assertEquals(List.of(), bad, "Shortcut / EngineFlags 上限凍結違反");
     }
 
+    // ---- 6. 新経路のレイアウトは描画だけの群を読まない（M2c） ----
+
+    /** 描画だけの群とその読み手（{@code Style} の補助）。 */
+    private static final Pattern PAINT_GROUP_READ = Pattern.compile(
+            "\\.(inheritedPaint|visual)\\b|\\b(InheritedPaintStyle|VisualStyle)\\b|\\.(visPx|borderColor|outlineColor|columnRuleColor)\\(");
+
+    static List<String> checkPaintGroupReads(Path dir) throws IOException {
+        List<String> bad = new ArrayList<>();
+        if (!Files.isDirectory(dir)) return bad;
+        try (var files = Files.walk(dir)) {
+            for (Path f : files.filter(x -> x.toString().endsWith(".java")).sorted().toList()) {
+                List<String> lines = Files.readAllLines(f, StandardCharsets.UTF_8);
+                for (int i = 0; i < lines.size(); i++) {
+                    String line = lines.get(i).trim();
+                    if (line.startsWith("*") || line.startsWith("//") || line.startsWith("/*")) continue;
+                    if (PAINT_GROUP_READ.matcher(line).find()) bad.add(dir.relativize(f) + ":" + (i + 1) + ": " + line);
+                }
+            }
+        }
+        return bad;
+    }
+
+    @Test
+    void fragmentLayoutDoesNotReadPaintOnlyGroups() throws IOException {
+        List<String> bad = checkPaintGroupReads(repoRoot().resolve("core/src/main/java/com/nishiyu/enderframelib/core/layout/fragment"));
+        assertEquals(List.of(), bad, "新経路のレイアウトが描画だけの群を読んでいる（M2c）");
+    }
+
     // ---- 検査器自身の検証 ----
 
     @Test
@@ -399,5 +429,10 @@ class ArchitectureHealthTest {
                     assertEquals(1, sc.epochs());
                 });
         assertFalse(checkFrozenSwitches(List.of("CUTOFF"), List.of("CUTOFF")).stream().findAny().isPresent());
+
+        RatchetSupport.withTempSources(Map.of("Flow.java",
+                "class Flow {\n  int a(Style s) { return s.inheritedPaint.color; }\n  /** s.visual は描画 */\n"
+                        + "  float b(Style s) { return s.box.width + s.visPx(0, 0, 0, 0); }\n  int c(Style s) { return s.inherited.fontWeight; }\n}"),
+                dir -> assertEquals(2, checkPaintGroupReads(dir).size(), "描画だけの群を読む行は 2 行"));
     }
 }

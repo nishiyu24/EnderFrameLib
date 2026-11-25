@@ -771,7 +771,7 @@ public class LayoutBox {
         this.isAbsolute = "absolute".equals(pos) || this.isFixed;
         this.isRelative = "relative".equals(pos);
         this.isSticky = "sticky".equals(pos);
-        this.zIndex = (int) com.nishiyu.enderframelib.core.css.Style.num(newStyle.typed().box.zIndex, 0f);
+        this.zIndex = (int) com.nishiyu.enderframelib.core.css.Style.num(newStyle.typed().visual.zIndex, 0f);
         if (newStyle.facts().contentVisibilityAuto) {
             markContentAutoSubtree();
         } else if (this.contentAutoSkipped) {

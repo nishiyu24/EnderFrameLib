@@ -332,11 +332,11 @@ public class ValueModelTest {
         ComputedStyle parent = computeRoot("color: blue");
         // 以前は解けない色を不透明な白で描いていた。宣言が無効なら color は親から継承する
         ComputedStyle child = computeChild(parent, "color: blue; color: notacolor; background-color: nope");
-        assertEquals(0xFF0000FF, child.typed().inherited.hasColor ? child.typed().inherited.color : 0);
+        assertEquals(0xFF0000FF, child.typed().inheritedPaint.hasColor ? child.typed().inheritedPaint.color : 0);
         assertNull(child.get(CssProperty.BACKGROUND_COLOR));
         // var() が色にならなければ算出時に無効（unset。color は継承、background-color は初期値）
         ComputedStyle viaVar = computeChild(parent, "--c: 12px; color: var(--c); background-color: var(--c)");
-        assertEquals(0xFF0000FF, viaVar.typed().inherited.hasColor ? viaVar.typed().inherited.color : 0);
+        assertEquals(0xFF0000FF, viaVar.typed().inheritedPaint.hasColor ? viaVar.typed().inheritedPaint.color : 0);
         assertEquals("transparent", viaVar.get(CssProperty.BACKGROUND_COLOR));
         // outline-color だけは invert を取る
         assertEquals("invert", computeChild(parent, "outline-color: invert").get("outline-color"));
@@ -345,7 +345,7 @@ public class ValueModelTest {
     @Test
     public void testTransparentColorIsKeptAsTransparent() {
         ComputedStyle s = computeChild(computeRoot("color: blue"), "color: transparent");
-        assertEquals(0x00000000, s.typed().inherited.hasColor ? s.typed().inherited.color : 0xFFFFFFFF);
+        assertEquals(0x00000000, s.typed().inheritedPaint.hasColor ? s.typed().inheritedPaint.color : 0xFFFFFFFF);
     }
 
     // ---- W10: 単位と数式

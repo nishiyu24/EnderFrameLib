@@ -185,7 +185,7 @@ class StyleTypedParityTest {
         assertSame(CssKeywords.BoxSizing.CONTENT_BOX, d.box.boxSizing);
         assertFalse(CssLength.isDeclared(d.box.width)); // 宣言の無い長さは UNDECLARED（0 px。読み手が「宣言があるか」を問える）
         assertFalse(CssLength.isDeclared(d.box.maxWidth));
-        assertEquals(0xFF000000, d.inherited.color);
+        assertEquals(0xFF000000, d.inheritedPaint.color);
         assertEquals(16f, d.inherited.fontSize);
     }
 }

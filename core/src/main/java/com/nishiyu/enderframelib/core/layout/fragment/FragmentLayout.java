@@ -19,12 +19,15 @@ public final class FragmentLayout {
     /** 前回の結果（まだ無ければ null）。 */
     public LayoutFragment root() { return root; }
 
-    /** 初期包含ブロック（ビューポートの幅・高さ）で根から整形する。変わっていない部分木は前回の断片をそのまま使う。 */
+    /**
+     * 初期包含ブロック（ビューポートの幅・高さ）で根から整形する。変わっていない部分木は前回の断片をそのまま使う。読むのは
+     * レイアウトの入力の木（{@link BoxNode#layout}。M2c）なので、描画だけの変化では根の断片がそのまま返る。
+     */
     public LayoutFragment layout(BoxNode boxRoot, int viewportW, int viewportH) {
         session.viewport(viewportW, viewportH);
         session.cache().beginFrame();
         ConstraintSpace space = session.space(viewportW, viewportW, Float.NaN, viewportH, ConstraintSpace.FORMATTING_ROOT);
-        root = session.cache().layout(boxRoot, space, root, session);
+        root = session.cache().layout(boxRoot.layout, space, root, session);
         return root;
     }
 }

@@ -12,7 +12,6 @@ final class StyleDiff {
             if (x.borderCollapse != y.borderCollapse) v.changed("border-collapse", false, true);
             if (!java.util.Objects.equals(x.borderSpacing, y.borderSpacing)) v.changed("border-spacing", false, true);
             if (x.captionSide != y.captionSide) v.changed("caption-side", false, true);
-            if (!java.util.Objects.equals(x.emptyCells, y.emptyCells)) v.changed("empty-cells", true, true);
             if (!java.util.Objects.equals(x.listStyleType, y.listStyleType)) v.changed("list-style-type", false, true);
             if (x.listStylePosition != y.listStylePosition) v.changed("list-style-position", false, true);
             if (!java.util.Objects.equals(x.listStyleImage, y.listStyleImage)) v.changed("list-style-image", false, true);
@@ -37,17 +36,9 @@ final class StyleDiff {
             if (!java.util.Objects.equals(x.wordBreak, y.wordBreak)) v.changed("word-break", false, true);
             if (x.overflowWrap != y.overflowWrap) v.changed("overflow-wrap", false, true);
             if (!java.util.Objects.equals(x.direction, y.direction)) v.changed("direction", false, true);
-            if (x.hasColor != y.hasColor || (x.hasColor && x.color != y.color)) v.changed("color", true, true);
-            if (!java.util.Objects.equals(x.accentColor, y.accentColor)) v.changed("accent-color", true, true);
-            if (!java.util.Objects.equals(x.textDecoration, y.textDecoration)) v.changed("text-decoration", true, true);
-            if (!java.util.Objects.equals(x.textShadow, y.textShadow)) v.changed("text-shadow", true, true);
-            if (!java.util.Objects.equals(x.webkitTextStrokeWidth, y.webkitTextStrokeWidth)) v.changed("-webkit-text-stroke-width", true, true);
-            if (!java.util.Objects.equals(x.webkitTextStrokeColor, y.webkitTextStrokeColor)) v.changed("-webkit-text-stroke-color", true, true);
             if (!java.util.Objects.equals(x.quotes, y.quotes)) v.changed("quotes", false, true);
             if (!java.util.Objects.equals(x.writingMode, y.writingMode)) v.changed("writing-mode", false, true);
             if (!java.util.Objects.equals(x.textOrientation, y.textOrientation)) v.changed("text-orientation", false, true);
-            if (!java.util.Objects.equals(x.cursor, y.cursor)) v.changed("cursor", true, true);
-            if (x.pointerEvents != y.pointerEvents) v.changed("pointer-events", true, true);
         }
         if (a.box != b.box) {
             BoxGeomStyle x = a.box, y = b.box;
@@ -59,7 +50,6 @@ final class StyleDiff {
             if (!CssLength.same(x.left, x.exprs, y.left, y.exprs)) v.changed("left", false, false);
             if (x.floatValue != y.floatValue) v.changed("float", false, false);
             if (x.clear != y.clear) v.changed("clear", false, false);
-            if (Float.floatToIntBits(x.zIndex) != Float.floatToIntBits(y.zIndex)) v.changed("z-index", true, false);
             if (!CssLength.same(x.width, x.exprs, y.width, y.exprs)) v.changed("width", false, false);
             if (!CssLength.same(x.height, x.exprs, y.height, y.exprs)) v.changed("height", false, false);
             if (!CssLength.same(x.minWidth, x.exprs, y.minWidth, y.exprs)) v.changed("min-width", false, false);
@@ -92,6 +82,7 @@ final class StyleDiff {
         }
         if (a.visual != b.visual) {
             VisualStyle x = a.visual, y = b.visual;
+            if (Float.floatToIntBits(x.zIndex) != Float.floatToIntBits(y.zIndex)) v.changed("z-index", true, false);
             if (((x.currentColorMask & 1) != (y.currentColorMask & 1)) || ((x.currentColorMask & 1) == 0 && x.borderTopColor != y.borderTopColor)) v.changed("border-top-color", true, false);
             if (((x.currentColorMask & 2) != (y.currentColorMask & 2)) || ((x.currentColorMask & 2) == 0 && x.borderRightColor != y.borderRightColor)) v.changed("border-right-color", true, false);
             if (((x.currentColorMask & 4) != (y.currentColorMask & 4)) || ((x.currentColorMask & 4) == 0 && x.borderBottomColor != y.borderBottomColor)) v.changed("border-bottom-color", true, false);
@@ -104,6 +95,7 @@ final class StyleDiff {
             if (x.outlineStyle != y.outlineStyle) v.changed("outline-style", true, false);
             if (!CssLength.same(x.outlineWidth, x.exprs, y.outlineWidth, y.exprs)) v.changed("outline-width", true, false);
             if (!CssLength.same(x.outlineOffset, x.exprs, y.outlineOffset, y.exprs)) v.changed("outline-offset", true, false);
+            if (x.columnRuleColorCurrent != y.columnRuleColorCurrent || (!x.columnRuleColorCurrent && x.columnRuleColor != y.columnRuleColor)) v.changed("column-rule-color", true, false);
             if (!java.util.Objects.equals(x.objectPosition, y.objectPosition)) v.changed("object-position", true, false);
             if (x.hasBackgroundColor != y.hasBackgroundColor || (x.hasBackgroundColor && x.backgroundColor != y.backgroundColor)) v.changed("background-color", true, false);
             if (!java.util.Objects.equals(x.backgroundImage, y.backgroundImage)) v.changed("background-image", true, false);
@@ -138,6 +130,20 @@ final class StyleDiff {
             if (!java.util.Objects.equals(x.maskClip, y.maskClip)) v.changed("mask-clip", true, false);
             if (!java.util.Objects.equals(x.maskMode, y.maskMode)) v.changed("mask-mode", true, false);
             if (!java.util.Objects.equals(x.maskComposite, y.maskComposite)) v.changed("mask-composite", true, false);
+            if (!java.util.Objects.equals(x.userSelect, y.userSelect)) v.changed("user-select", true, false);
+            if (!java.util.Objects.equals(x.transitionProperty, y.transitionProperty)) v.changed("transition-property", true, false);
+            if (!java.util.Objects.equals(x.transitionDuration, y.transitionDuration)) v.changed("transition-duration", true, false);
+            if (!java.util.Objects.equals(x.transitionDelay, y.transitionDelay)) v.changed("transition-delay", true, false);
+            if (!java.util.Objects.equals(x.transitionTimingFunction, y.transitionTimingFunction)) v.changed("transition-timing-function", true, false);
+            if (!java.util.Objects.equals(x.transition, y.transition)) v.changed("transition", true, false);
+            if (!java.util.Objects.equals(x.animationName, y.animationName)) v.changed("animation-name", true, false);
+            if (!java.util.Objects.equals(x.animationDuration, y.animationDuration)) v.changed("animation-duration", true, false);
+            if (!java.util.Objects.equals(x.animationDelay, y.animationDelay)) v.changed("animation-delay", true, false);
+            if (!java.util.Objects.equals(x.animationTimingFunction, y.animationTimingFunction)) v.changed("animation-timing-function", true, false);
+            if (!java.util.Objects.equals(x.animationIterationCount, y.animationIterationCount)) v.changed("animation-iteration-count", true, false);
+            if (!java.util.Objects.equals(x.animationDirection, y.animationDirection)) v.changed("animation-direction", true, false);
+            if (!java.util.Objects.equals(x.animationFillMode, y.animationFillMode)) v.changed("animation-fill-mode", true, false);
+            if (!java.util.Objects.equals(x.animation, y.animation)) v.changed("animation", true, false);
         }
         if (a.flexGrid != b.flexGrid) {
             FlexGridStyle x = a.flexGrid, y = b.flexGrid;
@@ -179,7 +185,6 @@ final class StyleDiff {
             if (!CssLength.same(x.columnWidth, x.exprs, y.columnWidth, y.exprs)) v.changed("column-width", false, false);
             if (!java.util.Objects.equals(x.columnFill, y.columnFill)) v.changed("column-fill", false, false);
             if (!java.util.Objects.equals(x.columnSpan, y.columnSpan)) v.changed("column-span", false, false);
-            if (x.columnRuleColorCurrent != y.columnRuleColorCurrent || (!x.columnRuleColorCurrent && x.columnRuleColor != y.columnRuleColor)) v.changed("column-rule-color", true, false);
             if (x.columnRuleStyle != y.columnRuleStyle) v.changed("column-rule-style", false, false);
             if (!CssLength.same(x.columnRuleWidth, x.exprs, y.columnRuleWidth, y.exprs)) v.changed("column-rule-width", false, false);
             if (!java.util.Objects.equals(x.appearance, y.appearance)) v.changed("appearance", false, false);
@@ -202,20 +207,18 @@ final class StyleDiff {
             if (!java.util.Objects.equals(x.objectFit, y.objectFit)) v.changed("object-fit", false, false);
             if (!java.util.Objects.equals(x.breakInside, y.breakInside)) v.changed("break-inside", false, false);
             if (!java.util.Objects.equals(x.perspective, y.perspective)) v.changed("perspective", false, false);
-            if (!java.util.Objects.equals(x.userSelect, y.userSelect)) v.changed("user-select", true, false);
-            if (!java.util.Objects.equals(x.transitionProperty, y.transitionProperty)) v.changed("transition-property", true, false);
-            if (!java.util.Objects.equals(x.transitionDuration, y.transitionDuration)) v.changed("transition-duration", true, false);
-            if (!java.util.Objects.equals(x.transitionDelay, y.transitionDelay)) v.changed("transition-delay", true, false);
-            if (!java.util.Objects.equals(x.transitionTimingFunction, y.transitionTimingFunction)) v.changed("transition-timing-function", true, false);
-            if (!java.util.Objects.equals(x.transition, y.transition)) v.changed("transition", true, false);
-            if (!java.util.Objects.equals(x.animationName, y.animationName)) v.changed("animation-name", true, false);
-            if (!java.util.Objects.equals(x.animationDuration, y.animationDuration)) v.changed("animation-duration", true, false);
-            if (!java.util.Objects.equals(x.animationDelay, y.animationDelay)) v.changed("animation-delay", true, false);
-            if (!java.util.Objects.equals(x.animationTimingFunction, y.animationTimingFunction)) v.changed("animation-timing-function", true, false);
-            if (!java.util.Objects.equals(x.animationIterationCount, y.animationIterationCount)) v.changed("animation-iteration-count", true, false);
-            if (!java.util.Objects.equals(x.animationDirection, y.animationDirection)) v.changed("animation-direction", true, false);
-            if (!java.util.Objects.equals(x.animationFillMode, y.animationFillMode)) v.changed("animation-fill-mode", true, false);
-            if (!java.util.Objects.equals(x.animation, y.animation)) v.changed("animation", true, false);
+        }
+        if (a.inheritedPaint != b.inheritedPaint) {
+            InheritedPaintStyle x = a.inheritedPaint, y = b.inheritedPaint;
+            if (!java.util.Objects.equals(x.emptyCells, y.emptyCells)) v.changed("empty-cells", true, true);
+            if (x.hasColor != y.hasColor || (x.hasColor && x.color != y.color)) v.changed("color", true, true);
+            if (!java.util.Objects.equals(x.accentColor, y.accentColor)) v.changed("accent-color", true, true);
+            if (!java.util.Objects.equals(x.textDecoration, y.textDecoration)) v.changed("text-decoration", true, true);
+            if (!java.util.Objects.equals(x.textShadow, y.textShadow)) v.changed("text-shadow", true, true);
+            if (!java.util.Objects.equals(x.webkitTextStrokeWidth, y.webkitTextStrokeWidth)) v.changed("-webkit-text-stroke-width", true, true);
+            if (!java.util.Objects.equals(x.webkitTextStrokeColor, y.webkitTextStrokeColor)) v.changed("-webkit-text-stroke-color", true, true);
+            if (!java.util.Objects.equals(x.cursor, y.cursor)) v.changed("cursor", true, true);
+            if (x.pointerEvents != y.pointerEvents) v.changed("pointer-events", true, true);
         }
         if (a.custom != b.custom && (a.custom == null || !a.custom.equals(b.custom))) {
             java.util.Map<String, String> ex = a.custom != null ? a.custom.asMap() : java.util.Map.of();

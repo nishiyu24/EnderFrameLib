@@ -29,9 +29,10 @@ class StyleSharingTest {
     void childDoesNotShareWhenAnInheritedValueChanges() {
         Style parent = Style.of(cs(16f, "color", "red"), null);
         Style child = Style.of(cs(16f, "color", "blue"), parent);
-        assertNotSame(parent.inherited, child.inherited);
-        assertNotEquals(parent.inherited, child.inherited);
-        assertEquals(0xFF0000FF, child.inherited.color);
+        assertNotSame(parent.inheritedPaint, child.inheritedPaint);
+        assertNotEquals(parent.inheritedPaint, child.inheritedPaint);
+        assertSame(parent.inherited, child.inherited, "描画だけの継承プロパティの違いはレイアウトの継承群を変えない（M2c）");
+        assertEquals(0xFF0000FF, child.inheritedPaint.color);
         // フォントサイズの違いも継承群の違い
         assertNotEquals(Style.of(cs(16f), null).inherited, Style.of(cs(20f), null).inherited);
     }
@@ -52,7 +53,10 @@ class StyleSharingTest {
 
         Style inherit = Style.of(cs(16f, "color", "blue", "font-size", "20px", "padding-top", "3px"), null);
         Style s2 = inherit.shareEqualGroups(prev);
-        assertNotSame(prev.inherited, s2.inherited);
+        assertNotSame(prev.inheritedPaint, s2.inheritedPaint);
+        assertSame(prev.inherited, s2.inherited);
+        assertTrue(s2.sameLayout(prev), "色だけの違いはレイアウトに効く群が同じ（M2c）");
+        assertFalse(boxOnly.shareEqualGroups(prev).sameLayout(prev));
         assertSame(prev.box, s2.box);
         assertSame(boxOnly, boxOnly.shareEqualGroups(null));
     }
@@ -66,7 +70,8 @@ class StyleSharingTest {
         assertSame(TableStyle.DEFAULT, s.table);
         assertSame(RareStyle.DEFAULT, s.rare);
         assertNull(s.custom);
-        assertNotSame(InheritedStyle.DEFAULT, s.inherited);
+        assertSame(InheritedStyle.DEFAULT, s.inherited);
+        assertNotSame(InheritedPaintStyle.DEFAULT, s.inheritedPaint);
         assertSame(InheritedStyle.DEFAULT, Style.of(cs(16f), null).inherited);
         assertEquals(Style.DEFAULT, Style.of(cs(16f), null));
     }
@@ -116,7 +121,7 @@ class StyleSharingTest {
         assertEquals(0x1E, ps.visual.currentColorMask & 0x1F); // border-top declared; right/bottom/left/outline = currentcolor
         assertTrue(ps.visual.hasBackgroundColor);
         assertTrue(ps.flexGrid.justifyContentSafe);
-        assertFalse(ps.rare.columnRuleColorCurrent);
+        assertFalse(ps.visual.columnRuleColorCurrent);
 
         Style text = Style.forTextChild(ps);
         assertSame(ps.inherited, text.inherited);

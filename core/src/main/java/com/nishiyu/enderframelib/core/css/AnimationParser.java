@@ -31,7 +31,7 @@ public final class AnimationParser {
      * @return 適用するアニメーション。名前が無い・{@code none}・該当する {@code @keyframes} が無いときは null
      */
     public static AnimationTiming parse(ComputedStyle style, Predicate<String> knownKeyframes) {
-        RareStyle r = style.typed().rare;
+        VisualStyle r = style.typed().visual;
         String shorthand = r.animation;
         String name = "";
         int duration = 1000;
@@ -112,7 +112,7 @@ public final class AnimationParser {
         List<Integer> delays = new ArrayList<>();
         List<String> easings = new ArrayList<>();
 
-        RareStyle r = style.typed().rare;
+        VisualStyle r = style.typed().visual;
         String shorthand = r.transition;
         if (shorthand != null && !shorthand.isBlank()) {
             if (shorthand.trim().equalsIgnoreCase("none")) {

@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 class StyleGroupCoverageTest {
 
     private static final Class<?>[] GROUPS = {InheritedStyle.class, BoxGeomStyle.class, VisualStyle.class,
-            FlexGridStyle.class, TableStyle.class, RareStyle.class};
+            FlexGridStyle.class, TableStyle.class, RareStyle.class, InheritedPaintStyle.class};
 
     private static Set<Integer> idsOf(Class<?> group) throws ReflectiveOperationException {
         Set<Integer> ids = new HashSet<>();
@@ -52,11 +52,13 @@ class StyleGroupCoverageTest {
 
     @Test
     void inheritedGroupHoldsExactlyTheInheritedProperties() throws ReflectiveOperationException {
-        for (int id : idsOf(InheritedStyle.class)) {
-            assertTrue(PropertyRegistry.isInherited(ComputedStyle.CssPropertyId.name(id)), ComputedStyle.CssPropertyId.name(id));
+        for (Class<?> g : new Class<?>[]{InheritedStyle.class, InheritedPaintStyle.class}) {
+            for (int id : idsOf(g)) {
+                assertTrue(PropertyRegistry.isInherited(ComputedStyle.CssPropertyId.name(id)), ComputedStyle.CssPropertyId.name(id));
+            }
         }
         for (Class<?> g : GROUPS) {
-            if (g == InheritedStyle.class) continue;
+            if (g == InheritedStyle.class || g == InheritedPaintStyle.class) continue;
             for (int id : idsOf(g)) {
                 assertFalse(PropertyRegistry.isInherited(ComputedStyle.CssPropertyId.name(id)),
                         ComputedStyle.CssPropertyId.name(id) + " は継承するのに " + g.getSimpleName() + " にある");

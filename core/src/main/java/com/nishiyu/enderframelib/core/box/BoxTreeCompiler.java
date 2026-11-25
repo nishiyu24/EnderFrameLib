@@ -222,7 +222,8 @@ public final class BoxTreeCompiler {
             if (prev != null && prev.text != null && prev.text.equals(text)) text = prev.text;
         } else if (kind != BoxKind.NONE) {
             boolean usable = prev != null && prev.kind != BoxKind.NONE && prev.kind != BoxKind.TEXT;
-            boolean kidsRestyle = !usable || style.inherited != prev.computed.inherited || style.custom != prev.computed.custom
+            boolean kidsRestyle = !usable || style.inherited != prev.computed.inherited || style.inheritedPaint != prev.computed.inheritedPaint
+                    || style.custom != prev.computed.custom
                     || (resolve && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isDetails(n.tag));
             // inherit キーワードは要素にしか効かない（文字の節のスタイルは親の継承群だけで決まる）
             boolean elemRestyle = usable && usesInherit && style != prev.computed;
@@ -287,7 +288,7 @@ public final class BoxTreeCompiler {
                 && marker == prev.marker) return prev;
         stats.rebuiltBoxes++;
         return new BoxNode(n, layoutStyle, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL,
-                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover);
+                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover, prev != null ? prev.layout : null);
     }
 
     /**

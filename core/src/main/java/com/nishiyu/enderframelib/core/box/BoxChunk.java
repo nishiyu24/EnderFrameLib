@@ -14,12 +14,15 @@ public final class BoxChunk extends BoxChildren {
     private final BoxNode[] items;
     /** 中身の事実（構築時に 1 回だけ求める不変の導出値）: インライン水準の子・ブロック水準の子があるか。 */
     private final boolean inline, block, floats, contents, ordinals, table;
+    /** 全ての子が自分自身をレイアウトの入力とするか（{@link BoxNode#layout}。M2c）。 */
+    private final boolean self;
 
     /** {@code items} の所有権を受け取る（呼び出し側は以後書き換えない）。 */
     BoxChunk(BoxNode[] items) {
         this.items = items;
-        boolean in = false, bl = false, fl = false, co = false, od = false, tb = false;
+        boolean in = false, bl = false, fl = false, co = false, od = false, tb = false, sf = true;
         for (BoxNode b : items) {
+            if (b.layout != b) sf = false;
             if (b.kind.tableInternal()) tb = true;
             if (b.marker != null && b.marker.ordinal != MarkerBoxes.NO_ORDINAL) od = true;
             if (b.kind == BoxKind.CONTENTS) { // 中身の事実を引き継ぐ（中身のチャンクは構築済み）
@@ -40,6 +43,21 @@ public final class BoxChunk extends BoxChildren {
         this.contents = co;
         this.ordinals = od;
         this.table = tb;
+        this.self = sf;
+    }
+
+    /** 全ての子が自分自身をレイアウトの入力とするか（M2c）。 */
+    boolean self() { return self; }
+
+    /**
+     * 子を {@link BoxNode#layout} に替えたチャンク（M2c）。{@code prev}（前回のレイアウトの入力の側の同じ位置のチャンク）と中身が同じなら
+     * その参照（描画だけの変化でレイアウトのチャンク単位の照合を外さない）。
+     */
+    BoxChunk layoutChunk(BoxChunk prev) {
+        if (self) return this;
+        BoxNode[] out = new BoxNode[items.length];
+        for (int i = 0; i < out.length; i++) out[i] = items[i].layout;
+        return prev != null && prev.sameItems(out, 0, out.length) ? prev : new BoxChunk(out);
     }
 
     /** 表の内部の箱（{@link BoxKind#tableInternal()}）を含むか（{@code display: contents} の中身を含む。匿名の表の箱を作るかの判定）。 */

@@ -133,7 +133,9 @@ final class MarkerBoxes {
                 && prevText.text == text) {
             return prev;
         }
-        BoxNode tb = new BoxNode(owner, ts, BoxKind.TEXT, text, BoxChunk.EMPTY, BoxNode.Pseudo.MARKER, null, null, null, null, NO_ORDINAL);
-        return new BoxNode(owner, st, kind, null, new BoxChunk(new BoxNode[]{tb}), BoxNode.Pseudo.MARKER, null, null, null, null, ord);
+        BoxNode tb = new BoxNode(owner, ts, BoxKind.TEXT, text, BoxChunk.EMPTY, BoxNode.Pseudo.MARKER, null, null, null, null, NO_ORDINAL,
+                prevText != null ? prevText.layout : null);
+        return new BoxNode(owner, st, kind, null, new BoxChunk(new BoxNode[]{tb}), BoxNode.Pseudo.MARKER, null, null, null, null, ord,
+                prev != null ? prev.layout : null);
     }
 }

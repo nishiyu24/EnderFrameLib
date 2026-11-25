@@ -49,7 +49,7 @@ final class PaintSupport {
      */
     static boolean hidesEmptyCell(LayoutBox box) {
         if (box.display() == null || box.display().inner() != LayoutBox.Display.Inner.TABLE_CELL || box.collapsedBorders() != null) return false;
-        String ec = box.style.typed().inherited.emptyCells;
+        String ec = box.style.typed().inheritedPaint.emptyCells;
         if (ec == null || !"hide".equalsIgnoreCase(ec.trim())) return false;
         return hasNoContent(box);
     }

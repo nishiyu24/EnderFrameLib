@@ -490,7 +490,7 @@ public final class PaintOrder {
         if (style == null) return false;
         if (style.derivedFacts() instanceof StyleFacts cached) return cached.hasMovingProps();
         Style st = style.typed();
-        return st.rare.animation != null || st.rare.animationName != null || hasTransformOrFilterProps(st);
+        return st.visual.animation != null || st.visual.animationName != null || hasTransformOrFilterProps(st);
     }
 
     private static boolean hasTransformOrFilterProps(Style st) {
@@ -508,14 +508,14 @@ public final class PaintOrder {
         STAT_FACTS_COMPUTED.increment();
         Style st = style.typed();
         VisualStyle v = st.visual;
-        boolean zAuto = Float.isNaN(st.box.zIndex);
+        boolean zAuto = Float.isNaN(st.visual.zIndex);
         boolean mask = styleHasMask(style);
         boolean stacking = !isNone(v.transform) || !isNone(v.filter)
                 || !isNone(v.clipPath) || !isNone(v.backdropFilter) || mask
                 || v.isolation == CssKeywords.Isolation.ISOLATE
                 || !"normal".equals(mixBlendMode(v));
         String[] overflow = overflowPair(style);
-        boolean hasAnimation = st.rare.animation != null || st.rare.animationName != null;
+        boolean hasAnimation = st.visual.animation != null || st.visual.animationName != null;
         boolean hasMovingProps = hasAnimation || hasTransformOrFilterProps(st);
         StyleFacts facts = new StyleFacts(st.facts.displayNone, zAuto,
                 Style.num(v.opacity, 1f), stacking, mask, overflow[0], overflow[1],
@@ -558,7 +558,7 @@ public final class PaintOrder {
         float opacity = Style.num(v.opacity, 1f);
         boolean opacityMoves = animatesOpacity.test(box);
         float fontPx = st.inherited.fontSize, rootFontPx = st.inherited.rootFontSizePx;
-        int fgColor = st.inherited.color;
+        int fgColor = st.inheritedPaint.color;
         List<FilterOp> filters = FilterOp.parse(v.filter, new FilterOp.Context(rootW, rootH, fontPx, rootFontPx, fgColor));
         BlendMode blend = BlendMode.fromCss(mixBlendMode(v));
         boolean isolate = hasBlendDescendant(box);

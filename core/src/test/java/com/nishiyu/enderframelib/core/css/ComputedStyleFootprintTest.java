@@ -38,10 +38,10 @@ class ComputedStyleFootprintTest {
         acc += st.boxPx(st.box.height, 500, 800, 600);
         acc += st.boxPx(st.box.marginTop, 500, 800, 600);
         acc += st.boxPx(st.box.paddingLeft, 500, 800, 600);
-        acc += st.inherited.color;
+        acc += st.inheritedPaint.color;
         acc += st.visual.backgroundColor;
         acc += st.visual.opacity;
-        acc += st.box.zIndex;
+        acc += st.visual.zIndex;
         acc += st.box.position.ordinal();
         acc += st.box.floatValue.ordinal();
         acc += s.overflowX().ordinal();

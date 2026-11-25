@@ -50,8 +50,10 @@ final class PseudoBoxes {
         if (prev != null && prev.style == st && prev.kind == kind && prevText != null && prevText.style == ts && prevText.text == text) {
             return prev;
         }
-        BoxNode tb = new BoxNode(owner, ts, BoxKind.TEXT, text, BoxChunk.EMPTY, which, null, null, null, null, MarkerBoxes.NO_ORDINAL);
-        return new BoxNode(owner, st, kind, null, new BoxChunk(new BoxNode[]{tb}), which, null, null, null, null, MarkerBoxes.NO_ORDINAL);
+        BoxNode tb = new BoxNode(owner, ts, BoxKind.TEXT, text, BoxChunk.EMPTY, which, null, null, null, null, MarkerBoxes.NO_ORDINAL,
+                prevText != null ? prevText.layout : null);
+        return new BoxNode(owner, st, kind, null, new BoxChunk(new BoxNode[]{tb}), which, null, null, null, null, MarkerBoxes.NO_ORDINAL,
+                prev != null ? prev.layout : null);
     }
 
     /**

@@ -1,10 +1,11 @@
 package com.nishiyu.enderframelib.core.css;
 
 /**
- * 生成物（{@code scripts/GenStyleGroups.java}。手で直さない）: 継承されないプロパティの型付き不変構造体。
+ * 生成物（{@code scripts/GenStyleGroups.java}。手で直さない）: 継承されない、描画だけのプロパティの型付き不変構造体（新経路のレイアウトは読まない。M2c）。
  * 値は構築時に 1 回だけ解いた型付きのフィールドで、文字列を読み直さない。{@link #equals} は全フィールドの値等価。
  */
 public final class VisualStyle {
+    static final int ID_zIndex = ComputedStyle.idOf("z-index");
     static final int ID_borderTopColor = ComputedStyle.idOf("border-top-color");
     static final int ID_borderRightColor = ComputedStyle.idOf("border-right-color");
     static final int ID_borderBottomColor = ComputedStyle.idOf("border-bottom-color");
@@ -17,6 +18,7 @@ public final class VisualStyle {
     static final int ID_outlineStyle = ComputedStyle.idOf("outline-style");
     static final int ID_outlineWidth = ComputedStyle.idOf("outline-width");
     static final int ID_outlineOffset = ComputedStyle.idOf("outline-offset");
+    static final int ID_columnRuleColor = ComputedStyle.idOf("column-rule-color");
     static final int ID_objectPosition = ComputedStyle.idOf("object-position");
     static final int ID_backgroundColor = ComputedStyle.idOf("background-color");
     static final int ID_backgroundImage = ComputedStyle.idOf("background-image");
@@ -51,12 +53,28 @@ public final class VisualStyle {
     static final int ID_maskClip = ComputedStyle.idOf("mask-clip");
     static final int ID_maskMode = ComputedStyle.idOf("mask-mode");
     static final int ID_maskComposite = ComputedStyle.idOf("mask-composite");
+    static final int ID_userSelect = ComputedStyle.idOf("user-select");
+    static final int ID_transitionProperty = ComputedStyle.idOf("transition-property");
+    static final int ID_transitionDuration = ComputedStyle.idOf("transition-duration");
+    static final int ID_transitionDelay = ComputedStyle.idOf("transition-delay");
+    static final int ID_transitionTimingFunction = ComputedStyle.idOf("transition-timing-function");
+    static final int ID_transition = ComputedStyle.idOf("transition");
+    static final int ID_animationName = ComputedStyle.idOf("animation-name");
+    static final int ID_animationDuration = ComputedStyle.idOf("animation-duration");
+    static final int ID_animationDelay = ComputedStyle.idOf("animation-delay");
+    static final int ID_animationTimingFunction = ComputedStyle.idOf("animation-timing-function");
+    static final int ID_animationIterationCount = ComputedStyle.idOf("animation-iteration-count");
+    static final int ID_animationDirection = ComputedStyle.idOf("animation-direction");
+    static final int ID_animationFillMode = ComputedStyle.idOf("animation-fill-mode");
+    static final int ID_animation = ComputedStyle.idOf("animation");
 
     /** 宣言が 1 つも無いときの共有インスタンス（初期値だけ）。ID_* の初期化より後に置く。 */
     public static final VisualStyle DEFAULT = new VisualStyle(null);
 
     /** {@code calc()} 等の式の表。式を持たない値は共有の空表。 */
     public final CssExprs exprs;
+    /** {@code z-index}。 */
+    public final float zIndex;
     /** {@code border-top-color}。 */
     public final int borderTopColor;
     /** {@code border-right-color}。 */
@@ -81,6 +99,8 @@ public final class VisualStyle {
     public final long outlineWidth;
     /** {@code outline-offset}。 */
     public final long outlineOffset;
+    /** {@code column-rule-color}。 */
+    public final int columnRuleColor;
     /** {@code object-position}。 */
     public final String objectPosition;
     /** {@code background-color}。 */
@@ -149,13 +169,44 @@ public final class VisualStyle {
     public final String maskMode;
     /** {@code mask-composite}。 */
     public final String maskComposite;
+    /** {@code user-select}。 */
+    public final String userSelect;
+    /** {@code transition-property}。 */
+    public final String transitionProperty;
+    /** {@code transition-duration}。 */
+    public final String transitionDuration;
+    /** {@code transition-delay}。 */
+    public final String transitionDelay;
+    /** {@code transition-timing-function}。 */
+    public final String transitionTimingFunction;
+    /** {@code transition}。 */
+    public final String transition;
+    /** {@code animation-name}。 */
+    public final String animationName;
+    /** {@code animation-duration}。 */
+    public final String animationDuration;
+    /** {@code animation-delay}。 */
+    public final String animationDelay;
+    /** {@code animation-timing-function}。 */
+    public final String animationTimingFunction;
+    /** {@code animation-iteration-count}。 */
+    public final String animationIterationCount;
+    /** {@code animation-direction}。 */
+    public final String animationDirection;
+    /** {@code animation-fill-mode}。 */
+    public final String animationFillMode;
+    /** {@code animation}。 */
+    public final String animation;
     /** {@code border-*-color}(bit 0..3) と {@code outline-color}(bit 4) が {@code currentcolor}/{@code invert}/未宣言か。 */
     public final byte currentColorMask;
     /** {@code background-color} が明示宣言されたか（canvas 背景判定用）。 */
     public final boolean hasBackgroundColor;
+    /** {@code column-rule-color} が {@code currentcolor}/未宣言か。 */
+    public final boolean columnRuleColorCurrent;
 
     private VisualStyle(StyleReader.Source cs) {
         CssExprs.Builder ex = new CssExprs.Builder();
+        this.zIndex = StyleReader.number(cs, ID_zIndex);
         this.borderTopColor = StyleReader.color(cs, ID_borderTopColor);
         this.borderRightColor = StyleReader.color(cs, ID_borderRightColor);
         this.borderBottomColor = StyleReader.color(cs, ID_borderBottomColor);
@@ -168,6 +219,7 @@ public final class VisualStyle {
         this.outlineStyle = StyleReader.keyword(cs, ID_outlineStyle, com.nishiyu.enderframelib.core.css.model.BorderStyle.class);
         this.outlineWidth = StyleReader.length(cs, ID_outlineWidth, ex);
         this.outlineOffset = StyleReader.length(cs, ID_outlineOffset, ex);
+        this.columnRuleColor = StyleReader.color(cs, ID_columnRuleColor);
         this.objectPosition = StyleReader.text(cs, ID_objectPosition);
         this.backgroundColor = StyleReader.color(cs, ID_backgroundColor);
         this.backgroundImage = StyleReader.text(cs, ID_backgroundImage);
@@ -202,6 +254,20 @@ public final class VisualStyle {
         this.maskClip = StyleReader.text(cs, ID_maskClip);
         this.maskMode = StyleReader.text(cs, ID_maskMode);
         this.maskComposite = StyleReader.text(cs, ID_maskComposite);
+        this.userSelect = StyleReader.text(cs, ID_userSelect);
+        this.transitionProperty = StyleReader.text(cs, ID_transitionProperty);
+        this.transitionDuration = StyleReader.text(cs, ID_transitionDuration);
+        this.transitionDelay = StyleReader.text(cs, ID_transitionDelay);
+        this.transitionTimingFunction = StyleReader.text(cs, ID_transitionTimingFunction);
+        this.transition = StyleReader.text(cs, ID_transition);
+        this.animationName = StyleReader.text(cs, ID_animationName);
+        this.animationDuration = StyleReader.text(cs, ID_animationDuration);
+        this.animationDelay = StyleReader.text(cs, ID_animationDelay);
+        this.animationTimingFunction = StyleReader.text(cs, ID_animationTimingFunction);
+        this.animationIterationCount = StyleReader.text(cs, ID_animationIterationCount);
+        this.animationDirection = StyleReader.text(cs, ID_animationDirection);
+        this.animationFillMode = StyleReader.text(cs, ID_animationFillMode);
+        this.animation = StyleReader.text(cs, ID_animation);
         int cc = 0;
         if (StyleReader.isCurrentColor(cs, ID_borderTopColor, false)) cc |= 1;
         if (StyleReader.isCurrentColor(cs, ID_borderRightColor, false)) cc |= 2;
@@ -211,6 +277,7 @@ public final class VisualStyle {
         if (StyleReader.isInvertKeyword(cs, ID_outlineColor)) cc |= 32;
         this.currentColorMask = (byte) cc;
         this.hasBackgroundColor = StyleReader.isDeclared(cs, ID_backgroundColor);
+        this.columnRuleColorCurrent = StyleReader.isCurrentColor(cs, ID_columnRuleColor, false);
         this.exprs = ex.build();
     }
 
@@ -224,6 +291,7 @@ public final class VisualStyle {
         if (this == other) return true;
         if (!(other instanceof VisualStyle o)) return false;
         return exprs.equals(o.exprs)
+                && Float.floatToIntBits(zIndex) == Float.floatToIntBits(o.zIndex)
                 && borderTopColor == o.borderTopColor
                 && borderRightColor == o.borderRightColor
                 && borderBottomColor == o.borderBottomColor
@@ -236,6 +304,7 @@ public final class VisualStyle {
                 && outlineStyle == o.outlineStyle
                 && outlineWidth == o.outlineWidth
                 && outlineOffset == o.outlineOffset
+                && columnRuleColor == o.columnRuleColor
                 && java.util.Objects.equals(objectPosition, o.objectPosition)
                 && backgroundColor == o.backgroundColor
                 && java.util.Objects.equals(backgroundImage, o.backgroundImage)
@@ -270,13 +339,29 @@ public final class VisualStyle {
                 && java.util.Objects.equals(maskClip, o.maskClip)
                 && java.util.Objects.equals(maskMode, o.maskMode)
                 && java.util.Objects.equals(maskComposite, o.maskComposite)
+                && java.util.Objects.equals(userSelect, o.userSelect)
+                && java.util.Objects.equals(transitionProperty, o.transitionProperty)
+                && java.util.Objects.equals(transitionDuration, o.transitionDuration)
+                && java.util.Objects.equals(transitionDelay, o.transitionDelay)
+                && java.util.Objects.equals(transitionTimingFunction, o.transitionTimingFunction)
+                && java.util.Objects.equals(transition, o.transition)
+                && java.util.Objects.equals(animationName, o.animationName)
+                && java.util.Objects.equals(animationDuration, o.animationDuration)
+                && java.util.Objects.equals(animationDelay, o.animationDelay)
+                && java.util.Objects.equals(animationTimingFunction, o.animationTimingFunction)
+                && java.util.Objects.equals(animationIterationCount, o.animationIterationCount)
+                && java.util.Objects.equals(animationDirection, o.animationDirection)
+                && java.util.Objects.equals(animationFillMode, o.animationFillMode)
+                && java.util.Objects.equals(animation, o.animation)
                 && currentColorMask == o.currentColorMask
-                && hasBackgroundColor == o.hasBackgroundColor;
+                && hasBackgroundColor == o.hasBackgroundColor
+                && columnRuleColorCurrent == o.columnRuleColorCurrent;
     }
 
     @Override
     public int hashCode() {
-        int h = 46;
+        int h = 62;
+        h = h * 31 + Float.floatToIntBits(zIndex);
         h = h * 31 + borderTopColor;
         h = h * 31 + borderRightColor;
         h = h * 31 + borderBottomColor;
@@ -289,6 +374,7 @@ public final class VisualStyle {
         h = h * 31 + System.identityHashCode(outlineStyle);
         h = h * 31 + Long.hashCode(outlineWidth);
         h = h * 31 + Long.hashCode(outlineOffset);
+        h = h * 31 + columnRuleColor;
         h = h * 31 + java.util.Objects.hashCode(objectPosition);
         h = h * 31 + backgroundColor;
         h = h * 31 + java.util.Objects.hashCode(backgroundImage);
@@ -323,6 +409,20 @@ public final class VisualStyle {
         h = h * 31 + java.util.Objects.hashCode(maskClip);
         h = h * 31 + java.util.Objects.hashCode(maskMode);
         h = h * 31 + java.util.Objects.hashCode(maskComposite);
+        h = h * 31 + java.util.Objects.hashCode(userSelect);
+        h = h * 31 + java.util.Objects.hashCode(transitionProperty);
+        h = h * 31 + java.util.Objects.hashCode(transitionDuration);
+        h = h * 31 + java.util.Objects.hashCode(transitionDelay);
+        h = h * 31 + java.util.Objects.hashCode(transitionTimingFunction);
+        h = h * 31 + java.util.Objects.hashCode(transition);
+        h = h * 31 + java.util.Objects.hashCode(animationName);
+        h = h * 31 + java.util.Objects.hashCode(animationDuration);
+        h = h * 31 + java.util.Objects.hashCode(animationDelay);
+        h = h * 31 + java.util.Objects.hashCode(animationTimingFunction);
+        h = h * 31 + java.util.Objects.hashCode(animationIterationCount);
+        h = h * 31 + java.util.Objects.hashCode(animationDirection);
+        h = h * 31 + java.util.Objects.hashCode(animationFillMode);
+        h = h * 31 + java.util.Objects.hashCode(animation);
         return h;
     }
 }

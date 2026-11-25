@@ -31,8 +31,20 @@ public final class GenStyleGroups {
     private static final Set<String> VISUAL_NAMES = Set.of("opacity", "transform", "transform-origin", "rotate", "translate",
             "scale", "filter", "mix-blend-mode", "isolation", "clip-path", "backdrop-filter", "box-shadow", "object-position");
 
+    /**
+     * 描画だけのプロパティ（{@code PropertyRegistry.isPaintOnly}）のうち、新経路のレイアウトが読むもの（M2c。{@code visibility: collapse}
+     * は表の行・列と flex の項目を畳む）。これはレイアウトに効く群に残す。
+     */
+    private static final Set<String> PAINT_READ_BY_LAYOUT = Set.of("visibility");
+
+    /**
+     * 群の決め方。M2c で「レイアウトに効く群」と「描画だけの群」の軸を足した（計画書 §3.4.2-3）: 描画だけのプロパティは、継承するものは
+     * {@code InheritedPaintStyle}、しないものは {@code VisualStyle} へ集める。描画だけの変化はレイアウトの群の参照を変えないので、新経路の
+     * 入力側は前回のレイアウトの入力の木をそのまま使える（{@code BoxNode#layout}）。
+     */
     private static String group(PropertyRegistry.Property p) {
         String n = p.name();
+        if (PropertyRegistry.isPaintOnly(n) && !PAINT_READ_BY_LAYOUT.contains(n)) return p.inherited() ? "InheritedPaintStyle" : "VisualStyle";
         if (p.inherited()) return "InheritedStyle";
         if (n.startsWith("border-image")) return "VisualStyle";
         if (BOX.contains(n) || n.startsWith("margin-") || n.startsWith("padding-")
@@ -88,7 +100,8 @@ public final class GenStyleGroups {
     public static void main(String[] args) throws IOException {
         Path out = Path.of(args[0]);
         Map<String, List<Field>> groups = new LinkedHashMap<>();
-        for (String g : List.of("InheritedStyle", "BoxGeomStyle", "VisualStyle", "FlexGridStyle", "TableStyle", "RareStyle")) {
+        for (String g : List.of("InheritedStyle", "BoxGeomStyle", "VisualStyle", "FlexGridStyle", "TableStyle", "RareStyle",
+                "InheritedPaintStyle")) {
             groups.put(g, new ArrayList<>());
         }
         for (PropertyRegistry.Property p : PropertyRegistry.all()) {
@@ -118,6 +131,7 @@ public final class GenStyleGroups {
                 case "VisualStyle" -> "s.visual";
                 case "FlexGridStyle" -> "s.flexGrid";
                 case "TableStyle" -> "s.table";
+                case "InheritedPaintStyle" -> "s.inheritedPaint";
                 default -> "s.rare";
             };
             for (Field f : e.getValue()) {
@@ -173,26 +187,31 @@ public final class GenStyleGroups {
         s.append("        return argb == 0 ? \"transparent\" : \"rgba(\" + r + \",\" + g + \",\" + b + \",\" + CssNumbers.trimmed4(a / 255.0) + \")\";\n    }\n\n");
         s.append("    public static void inheritInto(Style parent, StyleTable into) {\n");
         s.append("        if (parent == null || parent == Style.DEFAULT) return;\n");
-        s.append("        InheritedStyle inh = parent.inherited;\n");
-        s.append("        if (inh != InheritedStyle.DEFAULT) {\n");
-        for (Field f : groups.get("InheritedStyle")) {
-            s.append(inheritStmt(f));
+        for (String g : List.of("InheritedStyle", "InheritedPaintStyle")) {
+            String var = g.equals("InheritedStyle") ? "inh" : "paint";
+            s.append("        ").append(g).append(' ').append(var).append(" = parent.")
+             .append(g.equals("InheritedStyle") ? "inherited" : "inheritedPaint").append(";\n");
+            s.append("        if (").append(var).append(" != ").append(g).append(".DEFAULT) {\n");
+            for (Field f : groups.get(g)) {
+                s.append(inheritStmt(g, var, f));
+            }
+            s.append("        }\n");
         }
-        s.append("        }\n        if (parent.custom != null) {\n            for (var e : parent.custom.asMap().entrySet()) {\n");
+        s.append("        if (parent.custom != null) {\n            for (var e : parent.custom.asMap().entrySet()) {\n");
         s.append("                String k = e.getKey();\n                if (k.startsWith(\"--\") || StyleResolver.inheritsAsLonghand(k)) into.put(k, e.getValue());\n");
         s.append("            }\n        }\n    }\n\n");
         s.append("    /** CSSOM {@code getComputedStyle} 形式（色は {@code rgb(...)} / {@code rgba(...)}）。 */\n");
         s.append("    public static String getCssom(Style s, String name) {\n");
         s.append("        if (s == null || name == null) return null;\n");
         s.append("        return switch (name) {\n");
-        s.append("            case \"color\" -> s.inherited.hasColor ? rgbCol(s.inherited.color) : null;\n");
+        s.append("            case \"color\" -> s.inheritedPaint.hasColor ? rgbCol(s.inheritedPaint.color) : null;\n");
         s.append("            case \"background-color\" -> s.visual.hasBackgroundColor ? rgbCol(s.visual.backgroundColor) : null;\n");
         s.append("            case \"border-top-color\" -> (s.visual.currentColorMask & 1) != 0 ? null : rgbCol(s.visual.borderTopColor);\n");
         s.append("            case \"border-right-color\" -> (s.visual.currentColorMask & 2) != 0 ? null : rgbCol(s.visual.borderRightColor);\n");
         s.append("            case \"border-bottom-color\" -> (s.visual.currentColorMask & 4) != 0 ? null : rgbCol(s.visual.borderBottomColor);\n");
         s.append("            case \"border-left-color\" -> (s.visual.currentColorMask & 8) != 0 ? null : rgbCol(s.visual.borderLeftColor);\n");
         s.append("            case \"outline-color\" -> (s.visual.currentColorMask & 32) != 0 ? \"invert\" : ((s.visual.currentColorMask & 16) != 0 ? null : rgbCol(s.visual.outlineColor));\n");
-        s.append("            case \"column-rule-color\" -> s.rare.columnRuleColorCurrent ? null : rgbCol(s.rare.columnRuleColor);\n");
+        s.append("            case \"column-rule-color\" -> s.visual.columnRuleColorCurrent ? null : rgbCol(s.visual.columnRuleColor);\n");
         s.append("            default -> get(s, name);\n");
         s.append("        };\n    }\n\n");
         s.append("    private static String rgbCol(int argb) {\n");
@@ -202,17 +221,18 @@ public final class GenStyleGroups {
         return s.toString();
     }
 
-    private static String inheritStmt(Field f) {
-        String id = "InheritedStyle.ID_" + f.name;
+    private static String inheritStmt(String cls, String v, Field f) {
+        String id = cls + ".ID_" + f.name;
+        String d = cls + ".DEFAULT";
         return switch (f.kind) {
-            case COLOR -> "            if (inh.hasColor) into.putById(" + id + ", col(inh.color));\n";
-            case FONT_SIZE -> "            if (Float.floatToIntBits(inh.fontSize) != Float.floatToIntBits(InheritedStyle.DEFAULT.fontSize)) into.putById(" + id + ", px(inh.fontSize));\n";
-            case FONT_WEIGHT -> "            if (inh.fontWeight != 400) into.putById(" + id + ", inh.fontWeight == 700 ? \"bold\" : Integer.toString(inh.fontWeight));\n";
-            case LINE_HEIGHT -> "            if (inh.lineHeightKind != InheritedStyle.DEFAULT.lineHeightKind || Float.floatToIntBits(inh.lineHeightValue) != Float.floatToIntBits(InheritedStyle.DEFAULT.lineHeightValue)) into.putById(" + id + ", lh(inh.lineHeightKind, inh.lineHeightValue));\n";
-            case LENGTH -> "            if (CssLength.isDeclared(inh." + f.name + ")) into.putById(" + id + ", CssLength.toCssString(inh." + f.name + ", inh.exprs));\n";
-            case NUMBER -> "            if (!Float.isNaN(inh." + f.name + ")) into.putById(" + id + ", num(inh." + f.name + "));\n";
-            case ENUM -> "            if (inh." + f.name + " != InheritedStyle.DEFAULT." + f.name + " && inh." + f.name + " != null) into.putById(" + id + ", inh." + f.name + ".cssName());\n";
-            case TEXT -> "            if (inh." + f.name + " != null) into.putById(" + id + ", inh." + f.name + ");\n";
+            case COLOR -> "            if (" + v + ".hasColor) into.putById(" + id + ", col(" + v + ".color));\n";
+            case FONT_SIZE -> "            if (Float.floatToIntBits(" + v + ".fontSize) != Float.floatToIntBits(" + d + ".fontSize)) into.putById(" + id + ", px(" + v + ".fontSize));\n";
+            case FONT_WEIGHT -> "            if (" + v + ".fontWeight != 400) into.putById(" + id + ", " + v + ".fontWeight == 700 ? \"bold\" : Integer.toString(" + v + ".fontWeight));\n";
+            case LINE_HEIGHT -> "            if (" + v + ".lineHeightKind != " + d + ".lineHeightKind || Float.floatToIntBits(" + v + ".lineHeightValue) != Float.floatToIntBits(" + d + ".lineHeightValue)) into.putById(" + id + ", lh(" + v + ".lineHeightKind, " + v + ".lineHeightValue));\n";
+            case LENGTH -> "            if (CssLength.isDeclared(" + v + "." + f.name + ")) into.putById(" + id + ", CssLength.toCssString(" + v + "." + f.name + ", " + v + ".exprs));\n";
+            case NUMBER -> "            if (!Float.isNaN(" + v + "." + f.name + ")) into.putById(" + id + ", num(" + v + "." + f.name + "));\n";
+            case ENUM -> "            if (" + v + "." + f.name + " != " + d + "." + f.name + " && " + v + "." + f.name + " != null) into.putById(" + id + ", " + v + "." + f.name + ".cssName());\n";
+            case TEXT -> "            if (" + v + "." + f.name + " != null) into.putById(" + id + ", " + v + "." + f.name + ");\n";
         };
     }
 
@@ -285,11 +305,15 @@ public final class GenStyleGroups {
 
     private static String render(String cls, List<Field> fields) {
         boolean inherited = cls.equals("InheritedStyle");
+        boolean inheritedPaint = cls.equals("InheritedPaintStyle");
         boolean hasLength = fields.stream().anyMatch(f -> f.kind == Kind.LENGTH);
         StringBuilder s = new StringBuilder();
         s.append("package com.nishiyu.enderframelib.core.css;\n\n");
         s.append("/**\n * 生成物（{@code scripts/GenStyleGroups.java}。手で直さない）: ");
-        s.append(inherited ? "子孫へ継承されるプロパティの型付き不変構造体。" : "継承されないプロパティの型付き不変構造体。");
+        s.append(inherited ? "子孫へ継承される、レイアウトに効くプロパティの型付き不変構造体。"
+                : inheritedPaint ? "子孫へ継承される、描画だけのプロパティの型付き不変構造体（新経路のレイアウトは読まない。M2c）。"
+                : cls.equals("VisualStyle") ? "継承されない、描画だけのプロパティの型付き不変構造体（新経路のレイアウトは読まない。M2c）。"
+                : "継承されないプロパティの型付き不変構造体。");
         s.append("\n * 値は構築時に 1 回だけ解いた型付きのフィールドで、文字列を読み直さない。{@link #equals} は全フィールドの値等価。\n */\n");
         s.append("public final class ").append(cls).append(" {\n");
         for (Field f : fields) {
@@ -314,10 +338,12 @@ public final class GenStyleGroups {
         if (inherited) {
             s.append("    /** 文書のルートのフォントサイズ（px）。{@code rem} の基準で、ルートから子孫へ受け継がれる。 */\n");
             s.append("    public final float rootFontSizePx;\n");
-            s.append("    /** {@code color} が明示宣言（または継承）されているか（{@code ::placeholder}/{@code ::first-line} 用）。 */\n");
-            s.append("    public final boolean hasColor;\n");
             s.append("    /** 書体と字間の不変指定（継承群と同一寿命）。 */\n");
             s.append("    public final com.nishiyu.enderframelib.core.text.model.FontStyle fontStyleSpec;\n");
+        }
+        if (inheritedPaint) {
+            s.append("    /** {@code color} が明示宣言（または継承）されているか（{@code ::placeholder}/{@code ::first-line} 用）。 */\n");
+            s.append("    public final boolean hasColor;\n");
         }
         if (cls.equals("VisualStyle")) {
             s.append("    /** {@code border-*-color}(bit 0..3) と {@code outline-color}(bit 4) が {@code currentcolor}/{@code invert}/未宣言か。 */\n");
@@ -325,7 +351,7 @@ public final class GenStyleGroups {
             s.append("    /** {@code background-color} が明示宣言されたか（canvas 背景判定用）。 */\n");
             s.append("    public final boolean hasBackgroundColor;\n");
         }
-        if (cls.equals("RareStyle")) {
+        if (cls.equals("VisualStyle")) {
             s.append("    /** {@code column-rule-color} が {@code currentcolor}/未宣言か。 */\n");
             s.append("    public final boolean columnRuleColorCurrent;\n");
         }
@@ -345,6 +371,8 @@ public final class GenStyleGroups {
         }
         if (inherited) {
             s.append("        this.rootFontSizePx = cs != null ? cs.rootFontSizePx() : ComputedStyle.DEFAULT_FONT_SIZE;\n");
+        }
+        if (inheritedPaint) {
             s.append("        this.hasColor = StyleReader.isDeclared(cs, ID_color);\n");
         }
         if (cls.equals("VisualStyle")) {
@@ -358,7 +386,7 @@ public final class GenStyleGroups {
             s.append("        this.currentColorMask = (byte) cc;\n");
             s.append("        this.hasBackgroundColor = StyleReader.isDeclared(cs, ID_backgroundColor);\n");
         }
-        if (cls.equals("RareStyle")) {
+        if (cls.equals("VisualStyle")) {
             s.append("        this.columnRuleColorCurrent = StyleReader.isCurrentColor(cs, ID_columnRuleColor, false);\n");
         }
         if (hasLength) s.append("        this.exprs = ex.build();\n");
@@ -388,13 +416,15 @@ public final class GenStyleGroups {
         }
         if (inherited) {
             terms.add("Float.floatToIntBits(rootFontSizePx) == Float.floatToIntBits(o.rootFontSizePx)");
+        }
+        if (inheritedPaint) {
             terms.add("hasColor == o.hasColor");
         }
         if (cls.equals("VisualStyle")) {
             terms.add("currentColorMask == o.currentColorMask");
             terms.add("hasBackgroundColor == o.hasBackgroundColor");
         }
-        if (cls.equals("RareStyle")) {
+        if (cls.equals("VisualStyle")) {
             terms.add("columnRuleColorCurrent == o.columnRuleColorCurrent");
         }
         s.append(String.join("\n                && ", terms)).append(";\n    }\n\n");
@@ -421,6 +451,7 @@ public final class GenStyleGroups {
                 case "VisualStyle" -> "visual";
                 case "FlexGridStyle" -> "flexGrid";
                 case "TableStyle" -> "table";
+                case "InheritedPaintStyle" -> "inheritedPaint";
                 default -> "rare";
             };
             s.append("        if (a.").append(field).append(" != b.").append(field).append(") {\n");
@@ -449,6 +480,7 @@ public final class GenStyleGroups {
                 case "VisualStyle" -> "visual";
                 case "FlexGridStyle" -> "flexGrid";
                 case "TableStyle" -> "table";
+                case "InheritedPaintStyle" -> "inheritedPaint";
                 default -> "rare";
             };
             List<Field> layoutFields = e.getValue().stream().filter(f -> !PropertyRegistry.isPaintOnly(f.prop)).toList();
@@ -471,6 +503,7 @@ public final class GenStyleGroups {
                 case "VisualStyle" -> "visual";
                 case "FlexGridStyle" -> "flexGrid";
                 case "TableStyle" -> "table";
+                case "InheritedPaintStyle" -> "inheritedPaint";
                 default -> "rare";
             };
             List<Field> nonPosLayout = e.getValue().stream()
