@@ -113,6 +113,8 @@ final class FlexLines {
             it.base = Math.max(ig.hdec(), cst.facts.borderBox ? b : b + ig.hdec());
         } else if (CssLength.isAutoOrUndeclared(fb) && !Float.isNaN(specW)) { // 幅を見るのは flex-basis: auto だけ
             it.base = specW;
+        } else if (CssLength.isAutoOrUndeclared(fb) && !Float.isNaN(ratioBase(it))) { // aspect-ratio と確定した交差軸の大きさ（§9.2 3B）
+            it.base = ratioBase(it);
         } else {
             mm = cache.minMax(it.box, s); // 内容基準の基準の大きさ（仮のレイアウトをしない）
             it.base = intrinsicBasis(fb, cst, mm, avail);
@@ -127,6 +129,22 @@ final class FlexLines {
         } else {
             it.minMain = ig.hdec();
         }
+    }
+
+    /**
+     * {@code aspect-ratio} を持ち幅が auto の row の項目の、確定した交差軸の大きさ（指定の高さ、または 1 行の容器の確定した高さへの
+     * stretch）を比で移した基準の大きさ（CSS Flexbox §9.2 3B。旧 {@code FlexLayoutEngine.ratioBaseSize}）。当たらなければ NaN。
+     */
+    private float ratioBase(FlexItem it) {
+        Style cst = it.box.style;
+        BoxGeometry ig = it.g;
+        if (!(BoxGeometry.aspectRatio(cst) > 0) || !BoxGeometry.autoWidth(cst)) return Float.NaN;
+        float h = ig.specifiedHeight(cst, ch, s);
+        if (Float.isNaN(h)) {
+            if (wrap || Float.isNaN(ch) || it.align != Alignment.STRETCH || it.autoCS || it.autoCE) return Float.NaN;
+            h = Math.max(0, ch - it.mCS - it.mCE);
+        }
+        return ig.ratioWidth(cst, ig.clampHeight(cst, h, ch, s), cw, s);
     }
 
     /** 内容基準の基準の大きさ: {@code min-content} / {@code fit-content} の語ならその内在サイズ、他は max-content。 */

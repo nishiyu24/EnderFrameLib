@@ -44,6 +44,10 @@ final class BlockFlow implements FormattingEngine {
             w = space.fixedWidth;
         } else {
             float spec = g.specifiedWidth(node, cbw, cbw - g.mL - g.mR, s);
+            if (Float.isNaN(spec) && !text) { // aspect-ratio: 確定した高さから幅を決める
+                float hd = !Float.isNaN(space.fixedHeight) ? space.fixedHeight : g.specifiedHeight(st, space.percentHeightBase, s);
+                if (!Float.isNaN(hd)) spec = g.ratioWidth(st, g.clampHeight(st, hd, space.percentHeightBase, s), cbw, s);
+            }
             w = g.clampWidth(st, Float.isNaN(spec) ? Math.max(0, cbw - g.mL - g.mR) : spec, cbw, s);
             if (g.autoML && g.autoMR) ml = Math.max(0, (cbw - w) / 2f);
             else if (g.autoML) ml = Math.max(0, cbw - w - g.mR);
@@ -61,10 +65,15 @@ final class BlockFlow implements FormattingEngine {
         float fixedH = !Float.isNaN(space.fixedHeight) ? space.fixedHeight
                 : space.contentBlockSize() ? Float.NaN : g.specifiedHeight(st, space.percentHeightBase, s);
         boolean heightAuto = Float.isNaN(fixedH);
+        // aspect-ratio: 高さが auto なら幅から決めた高さ（中身がそれより高ければ伸びる。自動の最小サイズ）。比で決めた高さは確定
+        float ratio = text ? Float.NaN : BoxGeometry.aspectRatio(st);
+        float ratioH = heightAuto && ratio > 0 ? g.heightFromWidth(st, ratio, w) : Float.NaN;
         boolean collapseTop = !root && g.pT == 0 && g.bT == 0;
         boolean collapseBottom = !root && g.pB == 0 && g.bB == 0 && heightAuto;
         // 文書の根の子（html）の % の高さの基準は初期包含ブロック（ビューポート）の高さ（CSS 2 §10.5）
-        float childPct = node.node.parent == null ? space.percentHeightBase : heightAuto ? Float.NaN : Math.max(0, fixedH - g.vdec() - spill);
+        float childPct = node.node.parent == null ? space.percentHeightBase
+                : !Float.isNaN(ratioH) ? Math.max(0, ratioH - g.vdec() - spill)
+                : heightAuto ? Float.NaN : Math.max(0, fixedH - g.vdec() - spill);
         // 同じ BFC の外の float（親が渡す。独立した整形コンテキストの根は受け取らない）を内容ボックス基準へ
         Floats.Space inherited = root || text || space.exclusions.isEmpty() ? Floats.Space.EMPTY
                 : space.exclusions.translate(-(ml + g.bL + g.pL), -(g.bT + g.pT + spill));
@@ -110,6 +119,7 @@ final class BlockFlow implements FormattingEngine {
             }
         }
         float h = heightAuto ? a.contentH + g.vdec() + spill : fixedH;
+        if (!Float.isNaN(ratioH)) h = Math.max(h, ratioH);
         if (Float.isNaN(space.fixedHeight) && !space.contentBlockSize()) h = g.clampHeight(st, h, space.percentHeightBase, s);
         h = LayoutUnit.snap(h);
 

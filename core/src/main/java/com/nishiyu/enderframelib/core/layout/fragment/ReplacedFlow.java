@@ -24,7 +24,8 @@ import com.nishiyu.enderframelib.core.text.model.FontStyle;
  * </ul>
  *
  * <p>範囲外: 外部の画像の大きさの解決（読み込み後の大きさ。旧経路は {@code IntrinsicSizeResolver}。読み込みの完了を台帳へ流す形で
- * M2c に入れる）・{@code object-fit}（描画の側）・{@code aspect-ratio} プロパティ。</p>
+ * M2c に入れる）・{@code object-fit}（描画の側）。{@code video} / {@code iframe} は中身を描かず既定の物体の大きさ 300 x 150
+ * （属性の {@code width} / {@code height} があればそれ。旧経路は置換要素として扱っていない）。</p>
  */
 final class ReplacedFlow implements FormattingEngine {
     static final ReplacedFlow INSTANCE = new ReplacedFlow();
@@ -51,6 +52,7 @@ final class ReplacedFlow implements FormattingEngine {
             CustomElementPainter p = ReplacedElements.painterOf(tag);
             return new Intrinsic(p.sceneMinWidth(), p.sceneHeight(), false, p.sceneFillsWidth());
         }
+        if (ElementTraits.isEmbeddedMedia(tag)) return new Intrinsic(r.width(), r.height(), false, false); // 読み込み前の既定の大きさ
         if (ElementTraits.isBuiltinReplacedImage(tag) || ReplacedElements.isHostImageLike(tag)) {
             if (r.width() > 0 && r.height() > 0) return new Intrinsic(r.width(), r.height(), true, false);
             float fb = r.pending() ? LayoutMetrics.PENDING_IMAGE_SIZE : LayoutMetrics.FALLBACK_REPLACED_SIZE;

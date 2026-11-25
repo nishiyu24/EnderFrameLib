@@ -93,6 +93,47 @@ public final class BoxGeometry {
         return borderBox(st) ? Math.max(h, vdec()) : h + vdec();
     }
 
+    /** {@code aspect-ratio} の幅 / 高さ（{@code auto} だけ・解けなければ NaN。{@code auto 1/1} の auto は置換要素の内在の比の指定で、ここでは無視）。 */
+    static float aspectRatio(Style st) {
+        String v = st.box.aspectRatio;
+        if (v == null) return Float.NaN;
+        String t = v.trim().toLowerCase(java.util.Locale.ROOT).replace("auto", "").trim();
+        if (t.isEmpty()) return Float.NaN;
+        try {
+            int slash = t.indexOf('/');
+            if (slash < 0) return Float.parseFloat(t);
+            float rw = Float.parseFloat(t.substring(0, slash).trim()), rh = Float.parseFloat(t.substring(slash + 1).trim());
+            return rh > 0 ? rw / rh : Float.NaN;
+        } catch (NumberFormatException e) {
+            return Float.NaN;
+        }
+    }
+
+    /** {@code width} が auto（内在サイズの語でもない）か。 */
+    static boolean autoWidth(Style st) {
+        return CssLength.isAutoOrUndeclared(st.box.width);
+    }
+
+    /** 比 {@code ratio} の箱の border-box の高さに対する border-box の幅（{@code box-sizing: border-box} なら比は border-box に掛かる。CSS Sizing 4 §5.1）。 */
+    float widthFromHeight(Style st, float ratio, float borderH) {
+        return borderBox(st) ? Math.max(hdec(), borderH * ratio) : Math.max(0, borderH - vdec()) * ratio + hdec();
+    }
+
+    /** 比 {@code ratio} の箱の border-box の幅に対する border-box の高さ。 */
+    float heightFromWidth(Style st, float ratio, float borderW) {
+        return borderBox(st) ? Math.max(vdec(), borderW / ratio) : Math.max(0, borderW - hdec()) / ratio + vdec();
+    }
+
+    /**
+     * 比から決まる幅（border-box）: {@code width} が auto で {@code aspect-ratio} があり、高さ（border-box）{@code borderH} が確定して
+     * いれば、高さを比で移した幅を {@code min/max-width} で挟んだ値。当たらなければ NaN。
+     */
+    float ratioWidth(Style st, float borderH, float cbw, LayoutSession s) {
+        float r = aspectRatio(st);
+        if (!(r > 0) || Float.isNaN(borderH) || !autoWidth(st)) return Float.NaN;
+        return clampWidth(st, widthFromHeight(st, r, borderH), cbw, s);
+    }
+
     /** {@code min-width} / {@code max-width} で幅（border-box）を挟む。 */
     float clampWidth(Style st, float w, float cbw, LayoutSession s) {
         long max = st.box.maxWidth, min = st.box.minWidth;
@@ -130,6 +171,16 @@ public final class BoxGeometry {
         long v = st.box.width;
         if (Float.isNaN(spec) && CssLength.isKeyword(v, CssLength.KW_MIN_CONTENT)) spec = content.min;
         if (Float.isNaN(spec) && CssLength.isKeyword(v, CssLength.KW_MAX_CONTENT)) spec = content.max;
+        float r = aspectRatio(st);
+        if (Float.isNaN(spec) && r > 0 && autoWidth(st)) { // aspect-ratio: 確定した高さ・min-height を比で幅へ移す（CSS Sizing 4 §5.1）
+            float h = specifiedHeight(st, Float.NaN, s);
+            if (!Float.isNaN(h)) {
+                spec = widthFromHeight(st, r, clampHeight(st, h, Float.NaN, s));
+            } else if (definite(st, st.box.minHeight, Float.NaN)) {
+                float t = widthFromHeight(st, r, clampHeight(st, 0, Float.NaN, s));
+                content = new MinMaxSizes(Math.max(content.min, t), Math.max(content.max, t));
+            }
+        }
         if (!Float.isNaN(spec)) {
             float w = clampWidth(st, spec, Float.NaN, s);
             return new MinMaxSizes(w, w);

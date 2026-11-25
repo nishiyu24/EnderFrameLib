@@ -174,12 +174,18 @@ final class FlexFlow implements FormattingEngine {
             if (!Float.isNaN(w)) return new MinMaxSizes(LayoutUnit.snap(w + g.hdec()), LayoutUnit.snap(w + g.hdec()));
         }
         float gapW = row ? FlexLines.gap(st, fg.columnGap, Float.NaN, s) : 0;
+        float specH = g.specifiedHeight(st, Float.NaN, s);
+        float innerH = Float.isNaN(specH) ? Float.NaN : Math.max(0, specH - g.vdec());
         float min = 0, max = 0;
         for (BoxNode k : kids) {
             Style cst = k.style;
             BoxGeometry ig = new BoxGeometry(cst, Float.NaN, s);
             MinMaxSizes m = ig.contribution(cst, s.cache().minMax(k, s), s);
             float cmin = m.min, cmax = m.max;
+            if (row && !wrap && !Float.isNaN(innerH)) { // aspect-ratio の項目は、確定した高さへ stretch した大きさを比で移した幅
+                float t = ratioContribution(new FlexItem(k, ig, null, st, true), innerH, s);
+                if (!Float.isNaN(t)) cmin = cmax = t;
+            }
             long fb = cst.flexGrid.flexBasis;
             if (row && Style.num(cst.flexGrid.flexShrink, 1) <= 0 && FlexLines.basisDefinite(cst, fb, Float.NaN)) {
                 float b = LayoutUnit.snap(cst.gridPx(fb, 0, s.viewportW(), s.viewportH()));
@@ -202,6 +208,15 @@ final class FlexFlow implements FormattingEngine {
             if (!wrap) min += gapW * (n - 1);
         }
         return FieldsetLegend.withLegend(new MinMaxSizes(LayoutUnit.snap(min + g.hdec()), LayoutUnit.snap(max + g.hdec())), node, g, s);
+    }
+
+    /** 幅が auto で stretch される {@code aspect-ratio} の項目の、容器の内容の高さ {@code innerH} から比で移した幅（無ければ NaN）。 */
+    private static float ratioContribution(FlexItem it, float innerH, LayoutSession s) {
+        Style cst = it.box.style;
+        BoxGeometry ig = it.g;
+        if (!(BoxGeometry.aspectRatio(cst) > 0) || !BoxGeometry.autoWidth(cst) || !Float.isNaN(ig.specifiedHeight(cst, innerH, s))
+                || it.align != com.nishiyu.enderframelib.core.css.model.CssKeywords.Alignment.STRETCH || it.autoCross()) return Float.NaN;
+        return ig.ratioWidth(cst, ig.clampHeight(cst, Math.max(0, innerH - it.mCS - it.mCE), innerH, s), Float.NaN, s);
     }
 
     /**

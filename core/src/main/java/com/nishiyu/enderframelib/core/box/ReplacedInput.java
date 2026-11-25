@@ -34,7 +34,7 @@ public record ReplacedInput(String tag, String type, int size, float width, floa
     static ReplacedInput of(HtmlNode n, float viewportW, float viewportH) {
         if (n.nodeType != NodeType.ELEMENT) return null;
         String tag = n.tag;
-        if (ElementTraits.isButton(tag) || !ReplacedElements.isReplacedTag(tag)) return null;
+        if (ElementTraits.isButton(tag) || !(ReplacedElements.isReplacedTag(tag) || ElementTraits.isEmbeddedMedia(tag))) return null;
         String type = n.attrs.getOrDefault("type", "text");
         int size = -1;
         String sz = n.attrs.get("size");
@@ -47,7 +47,7 @@ public record ReplacedInput(String tag, String type, int size, float width, floa
         }
         float w = Float.NaN, h = Float.NaN;
         boolean pending = false;
-        if (ElementTraits.isCanvas(tag)) {
+        if (ElementTraits.isCanvas(tag) || ElementTraits.isEmbeddedMedia(tag)) { // 既定の物体の大きさ 300 x 150（CSS Images 3 §4.1）
             w = attr(n, "width", 300);
             h = attr(n, "height", 150);
         } else if (ElementTraits.isSvg(tag)) {

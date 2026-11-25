@@ -7,6 +7,7 @@ css/css-flexbox/align-content-002.htm
 css/css-flexbox/align-content-wrap-004.html
 css/css-flexbox/align-self-002.html
 css/css-flexbox/align-self-011.html
+css/css-flexbox/aspect-ratio-intrinsic-size-010.html
 css/css-flexbox/balance/balance-004.html
 css/css-flexbox/balance/balance-line-count-intrinsic-002.html
 css/css-flexbox/balance/balance-min-line-count-007.html
@@ -22,6 +23,7 @@ css/css-flexbox/flex-flow-009.html
 css/css-flexbox/flex-grow-003.html
 css/css-flexbox/flex-height-min-content.html
 css/css-flexbox/flex-item-min-height-min-content.html
+css/css-flexbox/flex-item-transferred-sizes-padding-content-sizing.html
 css/css-flexbox/flex-minimum-height-flex-items-013.html
 css/css-flexbox/flex-minimum-height-flex-items-024.html
 css/css-flexbox/flex-order-last-baseline.html

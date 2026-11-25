@@ -52,7 +52,8 @@ public enum BoxKind {
             default -> BLOCK;
         };
         // 置換要素と部品（img・input・button ほか）はインライン水準なら原子（行の中に 1 つの塊として置く）
-        if (k == INLINE && com.nishiyu.enderframelib.core.replaced.ReplacedElements.isReplacedTag(node.tag)) k = INLINE_BLOCK;
+        if (k == INLINE && (com.nishiyu.enderframelib.core.replaced.ReplacedElements.isReplacedTag(node.tag)
+                || com.nishiyu.enderframelib.core.dom.node.ElementTraits.isEmbeddedMedia(node.tag))) k = INLINE_BLOCK;
         return k == NONE ? NONE : blockified(k, style);
     }
 

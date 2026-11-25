@@ -207,6 +207,11 @@ public final class ElementTraits {
         return "ol".equalsIgnoreCase(tag);
     }
 
+    /** 埋め込みの {@code video} / {@code iframe}（中身を描かない置換要素。既定の大きさ 300 x 150）。 */
+    public static boolean isEmbeddedMedia(String tag) {
+        return "video".equalsIgnoreCase(tag) || "iframe".equalsIgnoreCase(tag);
+    }
+
     public static boolean isListItem(String tag) {
         return "li".equalsIgnoreCase(tag);
     }

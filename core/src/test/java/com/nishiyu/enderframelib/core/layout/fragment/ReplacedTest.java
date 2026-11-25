@@ -51,6 +51,18 @@ class ReplacedTest {
 
     /** 部品: 文字の入力欄の既定の幅 90（{@code size} で 8 px 倍）、チェック類の内在の大きさは 16（UA の指定は 13px）。 */
     @Test
+    void videoAndIframeUseTheDefaultObjectSize() {
+        // 既定の物体の大きさ 300 x 150（中身のフォールバックは描かない）。iframe は UA の枠線 2px
+        float[] v = at("<video id=v><p>fallback text</p></video>", "v");
+        assertEquals(300, v[2], EPS);
+        assertEquals(150, v[3], EPS);
+        float[] f = at("<iframe id=f></iframe>", "f");
+        assertEquals(304, f[2], EPS);
+        assertEquals(154, f[3], EPS);
+        assertEquals(640, at("<video id=v width=640></video>", "v")[2], EPS); // 属性の幅
+    }
+
+    @Test
     void controlDefaultSizes() {
         assertEquals(90, at("<input id=i style='" + RESET + "'>", "i")[2], EPS);
         assertEquals(80, at("<input id=i size=10 style='" + RESET + "'>", "i")[2], EPS);
