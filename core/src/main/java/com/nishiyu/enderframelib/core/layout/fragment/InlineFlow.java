@@ -41,13 +41,16 @@ public final class InlineFlow {
      * 前回の断片（行に置いた原子の候補を引く。無ければ null）。
      */
     static Result layout(List<BoxNode> kids, Style container, float availW, LayoutFragment prior, LayoutSession s) {
-        return layout(kids, container, availW, prior, Floats.Space.EMPTY, 0, s);
+        return layout(kids, container, availW, prior, Floats.Space.EMPTY, 0, Float.NaN, s);
     }
 
-    /** float を避けて組む（{@code exc} は容器の内容ボックス基準、{@code originY} はこの行の並びの上端の容器での位置）。 */
+    /**
+     * float を避けて組む（{@code exc} は容器の内容ボックス基準、{@code originY} はこの行の並びの上端の容器での位置、{@code pctH} は行に置く
+     * 原子の % の高さの基準〔容器の確定した内容の高さ。不定なら NaN〕）。
+     */
     static Result layout(List<BoxNode> kids, Style container, float availW, LayoutFragment prior, Floats.Space exc, float originY,
-                         LayoutSession s) {
-        Result r = build(kids, container, availW, prior, exc, originY, 0, s);
+                         float pctH, LayoutSession s) {
+        Result r = build(kids, container, availW, prior, exc, originY, 0, pctH, s);
         int n = r.lines.length;
         if (n < 2 || n > 10 || !balanced(container) || !exc.isEmpty() || !r.pending.isEmpty() || !balanceable(kids)) return r;
         // text-wrap: balance（CSS Text 4 §6.1）: 行数を変えずに、折り返しの判定の幅をできるだけ狭めて組み直す（旧 FlowBuilder.balanceLines。
@@ -55,7 +58,7 @@ public final class InlineFlow {
         float lo = 0, hi = availW;
         for (int iter = 0; iter < 12 && hi - lo > 1f; iter++) {
             float mid = (lo + hi) / 2;
-            Result t = build(kids, container, availW, prior, exc, originY, mid, s);
+            Result t = build(kids, container, availW, prior, exc, originY, mid, pctH, s);
             if (t.lines.length == n) {
                 lo = mid;
                 r = t;
@@ -67,8 +70,8 @@ public final class InlineFlow {
     }
 
     private static Result build(List<BoxNode> kids, Style container, float availW, LayoutFragment prior, Floats.Space exc, float originY,
-                                float shrink, LayoutSession s) {
-        InlineLineBuilder b = new InlineLineBuilder(container, availW, prior, exc, originY, shrink, s);
+                                float shrink, float pctH, LayoutSession s) {
+        InlineLineBuilder b = new InlineLineBuilder(container, availW, prior, exc, originY, shrink, pctH, s);
         for (BoxNode k : kids) b.add(k);
         return b.finish();
     }

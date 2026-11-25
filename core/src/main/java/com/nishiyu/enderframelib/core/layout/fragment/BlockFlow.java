@@ -86,7 +86,7 @@ final class BlockFlow implements FormattingEngine {
         List<OutOfFlow.Pending> pend = new ArrayList<>();
         float insetL = g.bL + g.pL, insetT = g.bT + g.pT + spill;
         if (legend == null && (text || (kids.hasInline() && !kids.hasBlock()))) {
-            InlineFlow.Result r = InlineFlow.layout(text ? List.of(node) : kids.toList(), st, cw, prior, inherited, 0, s);
+            InlineFlow.Result r = InlineFlow.layout(text ? List.of(node) : kids.toList(), st, cw, prior, inherited, 0, childPct, s);
             lines = r.lines().length > 0 ? r.lines() : null;
             a = new Assembled(r.height());
             for (OutOfFlow.Pending p : r.pending()) pend.add(p.shift(insetL, insetT));
@@ -231,7 +231,7 @@ final class BlockFlow implements FormattingEngine {
         for (BoxNode child : kids.toList()) {
             if (child.kind == BoxKind.NONE || child == skip) continue; // skip: fieldset の描画される legend
             if (OutOfFlow.is(child)) {
-                flushRun(st, run, base, b, exc, s);
+                flushRun(st, run, base, pct.percentHeightBase, b, exc, s);
                 b.addOutOfFlow(child);
                 continue;
             }
@@ -239,7 +239,7 @@ final class BlockFlow implements FormattingEngine {
                 run.add(child);
                 continue;
             }
-            flushRun(st, run, base, b, exc, s);
+            flushRun(st, run, base, pct.percentHeightBase, b, exc, s);
             if (Floats.is(child)) {
                 // 流れの箱が始まる前の float は内容ボックスの上端（チャンク基準で -lead）から積み、位置は内容ボックス基準で持つ（ChunkedFlow.y）
                 boolean leading = !b.started();
@@ -260,18 +260,19 @@ final class BlockFlow implements FormattingEngine {
                 exc = FloatAvoid.intrude(child, sp, exc, b, prev, s);
             }
         }
-        flushRun(st, run, base, b, exc, s);
+        flushRun(st, run, base, pct.percentHeightBase, b, exc, s);
         floatBottom[0] = exc.bottom();
         excOut[0] = exc;
         return b.build(null, pct, null);
     }
 
-    private static void flushRun(Style st, List<BoxNode> run, ConstraintSpace base, ChunkBuilder b, Floats.Space exc, LayoutSession s) {
+    private static void flushRun(Style st, List<BoxNode> run, ConstraintSpace base, float pctH, ChunkBuilder b, Floats.Space exc,
+                                 LayoutSession s) {
         if (run.isEmpty()) return;
         boolean blank = true;
         for (BoxNode n : run) blank &= n.collapsibleWhitespace();
         if (!blank) {
-            InlineFlow.Result r = InlineFlow.layout(run, st, base.availableWidth, null, exc, b.flowY(), s);
+            InlineFlow.Result r = InlineFlow.layout(run, st, base.availableWidth, null, exc, b.flowY(), pctH, s);
             if (r.lines().length > 0 || !r.pending().isEmpty()) {
                 b.add(new LayoutFragment(null, base, base.availableWidth, r.height(), 0, 0, 0, 0, 0, 0, 0, r.lines().length == 0,
                         null, r.lines().length > 0 ? r.lines() : null,

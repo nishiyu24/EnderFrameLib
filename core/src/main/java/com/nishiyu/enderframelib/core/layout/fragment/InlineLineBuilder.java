@@ -28,6 +28,8 @@ final class InlineLineBuilder implements TextRun.Sink {
     private static final float EPS = InlineFlow.EPS;
 
     private final float availW, strutAsc, strutDesc, strutH, originY, shrink;
+    /** 原子の % の高さの基準（容器の確定した内容の高さ。不定なら NaN。CSS 2 §10.5）。 */
+    private final float pctH;
     private final LineAlign align;
     private final WhiteSpace containerWs;
     private final LayoutSession s;
@@ -74,8 +76,10 @@ final class InlineLineBuilder implements TextRun.Sink {
     /**
      * @param shrink 折り返しの判定に使う幅から引く量（{@code text-wrap: balance} が行を揃えるために狭める。行の幅と揃えは元のまま）
      */
-    InlineLineBuilder(Style container, float availW, LayoutFragment prior, Floats.Space exc, float originY, float shrink, LayoutSession s) {
+    InlineLineBuilder(Style container, float availW, LayoutFragment prior, Floats.Space exc, float originY, float shrink, float pctH,
+                      LayoutSession s) {
         this.shrink = shrink;
+        this.pctH = pctH;
         this.exc = exc;
         this.originY = originY;
         this.availW = availW;
@@ -389,7 +393,7 @@ final class InlineLineBuilder implements TextRun.Sink {
             w = Math.min(Math.max(mm.min, availW - g.mL - g.mR), mm.max);
         }
         w = LayoutUnit.snap(g.clampWidth(cs, Math.max(0, w), availW, s));
-        ConstraintSpace space = s.space(availW, w, Float.NaN, Float.NaN, ConstraintSpace.FORMATTING_ROOT);
+        ConstraintSpace space = s.space(availW, w, Float.NaN, pctH, ConstraintSpace.FORMATTING_ROOT);
         LayoutFragment f = s.cache().layout(n, space, priorAtom(n), s);
         float outerW = g.mL + f.width + g.mR;
         float gap = hasContent ? pending : 0;

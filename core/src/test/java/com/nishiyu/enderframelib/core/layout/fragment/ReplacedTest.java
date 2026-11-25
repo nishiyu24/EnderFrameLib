@@ -60,6 +60,8 @@ class ReplacedTest {
         assertEquals(304, f[2], EPS);
         assertEquals(154, f[3], EPS);
         assertEquals(640, at("<video id=v width=640></video>", "v")[2], EPS); // 属性の幅
+        // 幅が % の置換要素は縮められる: min-content の寄与は 0（CSS Sizing 3 §5.2.2。実文書 media_test のグリッドの列）
+        assertEquals(0, at("<div id=d style='width:min-content'><video style='width:100%'></video></div>", "d")[2], EPS);
     }
 
     @Test
@@ -72,6 +74,34 @@ class ReplacedTest {
         float shortSel = at("<select id=s style='" + RESET + "'><option>a</option></select>", "s")[2];
         float longSel = at("<select id=s style='" + RESET + "'><option>a</option><option>a much longer label</option></select>", "s")[2];
         assertTrue(longSel > shortSel + 20, shortSel + " / " + longSel);
+    }
+
+    /**
+     * 行の中の原子の % の高さは、容器の確定した内容の高さが基準（CSS 2 §10.5。ブロックと混在する流れの匿名の行でも同じ）。容器の高さが
+     * 不定なら auto。実文書 item_block_test の {@code height: 100%} の img で検出（幾何の一致の掃引）。
+     */
+    @Test
+    void percentHeightOfAnAtomInALineUsesTheDefiniteContainerHeight() {
+        assertEquals(45, at("<div style='height:90px'><canvas id=c style='" + RESET + "height:50%'></canvas></div>", "c")[3], EPS);
+        assertEquals(90, at("<div style='width:200px;height:90px'><span id=s style='display:inline-block;width:100%;height:100%'></span></div>",
+                "s")[3], EPS);
+        assertEquals(45, at("<div style='height:90px'><div>block</div><canvas id=c style='" + RESET + "height:50%'></canvas></div>", "c")[3], EPS);
+        assertEquals(150, at("<div><canvas id=c style='" + RESET + "height:50%'></canvas></div>", "c")[3], EPS); // 不定: 内在の 150
+    }
+
+    /**
+     * 部品の見た目のチェックボックス・ラジオボタンのベースラインは枠線の箱の下端（下の余白を含めない。WebKit / Blink と旧経路と同じ）。
+     * 同じ余白の inline-block（下の余白の端がベースライン）より下の余白の分だけ下に置く。{@code appearance: none} なら inline-block と同じ。
+     */
+    @Test
+    void nativeCheckboxSitsOnTheBaselineWithItsBorderBox() {
+        SpikeView v = new SpikeView("<html><body style='margin:0;font-size:16px'><div>x <span id=s style='display:inline-block;width:13px;"
+                + "height:13px;margin:3px 3px 3px 4px'></span> <input id=c type=checkbox> <input id=r type=radio> "
+                + "<input id=n type=checkbox style='appearance:none;width:13px;height:13px'></div></body></html>", 800, 600);
+        float s = at(v, "s")[1];
+        assertEquals(s + 3, at(v, "c")[1], EPS);
+        assertEquals(s + 3, at(v, "r")[1], EPS);
+        assertEquals(s, at(v, "n")[1], EPS);
     }
 
     /** ブロック水準の置換要素は auto 余白で中央へ。行の中では原子として並ぶ。flex の項目の内在サイズにもなる。 */

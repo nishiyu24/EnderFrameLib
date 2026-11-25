@@ -360,15 +360,22 @@ class IncrementalOracleTest {
             case 0 -> e.setAttribute("width", Integer.toString(10 + rnd.nextInt(200)));
             case 1 -> e.setAttribute("height", Integer.toString(10 + rnd.nextInt(90)));
             case 2 -> e.setAttribute("size", Integer.toString(1 + rnd.nextInt(30)));
-            case 3 -> e.setAttribute("style", rnd.nextBoolean() ? "display:block;margin:0 auto;width:" + (20 + rnd.nextInt(100)) + "px"
-                    : "height:" + (10 + rnd.nextInt(60)) + "px;padding:" + rnd.nextInt(6) + "px");
+            case 3 -> e.setAttribute("style", switch (rnd.nextInt(3)) {
+                case 0 -> "display:block;margin:0 auto;width:" + (20 + rnd.nextInt(100)) + "px";
+                case 1 -> "height:" + (10 + rnd.nextInt(60)) + "%"; // 容器の高さが確定していれば % の高さの基準になる
+                default -> "height:" + (10 + rnd.nextInt(60)) + "px;padding:" + rnd.nextInt(6) + "px";
+            });
             case 4 -> {
                 HtmlElement o = (HtmlElement) v.byId("ro");
                 if (o != null) o.updateTextContent("option " + "w".repeat(rnd.nextInt(20)));
             }
             default -> {
                 HtmlElement p = (HtmlElement) v.byId("rp");
-                if (p != null) p.setAttribute("style", rnd.nextBoolean() ? "display:flex;flex-wrap:wrap" : "display:grid;grid-template-columns:1fr 1fr");
+                if (p != null) p.setAttribute("style", switch (rnd.nextInt(3)) {
+                    case 0 -> "display:flex;flex-wrap:wrap";
+                    case 1 -> "height:" + (60 + rnd.nextInt(120)) + "px"; // 行の中の原子の % の高さの基準
+                    default -> "display:grid;grid-template-columns:1fr 1fr";
+                });
             }
         }
         return "replaced " + e.tag;

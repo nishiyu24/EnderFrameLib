@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.core.layout.fragment;
 
 import com.nishiyu.enderframelib.core.box.BoxNode;
 import com.nishiyu.enderframelib.core.box.ReplacedInput;
+import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
@@ -122,7 +123,21 @@ final class ReplacedFlow implements FormattingEngine {
         if (Float.isNaN(space.fixedHeight)) h = g.clampHeight(st, h, pct, s);
         h = LayoutUnit.snap(h);
         return new LayoutFragment(node, space, w, h, LayoutUnit.snap(ml), Math.max(0, g.mT), Math.min(0, g.mT),
-                Math.max(0, g.mB), Math.min(0, g.mB), g.bL + g.pL, g.bT + g.pT, false, null, null, null, null);
+                Math.max(0, g.mB), Math.min(0, g.mB), g.bL + g.pL, g.bT + g.pT, false, null, null, null, null,
+                borderBoxBaseline(node) ? h : Float.NaN);
+    }
+
+    /**
+     * 部品の見た目で描くチェックボックス・ラジオボタンと range は、ベースラインが枠線の箱の下端（下の余白を含めない。WebKit / Blink の
+     * {@code RenderTheme::baselinePosition} と旧 {@code BlockLayoutEngine.atomicBaseline} と同じ）。他の置換要素は下の余白の端。
+     */
+    private static boolean borderBoxBaseline(BoxNode n) {
+        ReplacedInput r = n.replaced;
+        if (r == null || !ElementTraits.isInputTag(r.tag())) return false;
+        String type = r.type().trim().toLowerCase(java.util.Locale.ROOT);
+        if (type.equals("range")) return true;
+        String appearance = n.style.rare.appearance;
+        return (type.equals("checkbox") || type.equals("radio")) && appearance != null && !appearance.trim().equalsIgnoreCase("none");
     }
 
     /** 内在サイズ: 指定の幅が無ければ内在の幅（高さだけ指定された画像は比から）。min と max は同じ。 */
@@ -135,6 +150,8 @@ final class ReplacedFlow implements FormattingEngine {
         float specH = g.specifiedHeight(st, Float.NaN, s);
         float w = !Float.isNaN(specH) && ratio > 0 ? Math.max(0, specH - g.vdec()) * ratio + g.hdec() : in.w() + g.hdec();
         w = LayoutUnit.snap(w);
-        return new MinMaxSizes(w, w);
+        // 幅・最大の幅が % の置換要素は縮められる: min-content の寄与は 0（CSS Sizing 3 §5.2.2 compressible replaced elements）
+        boolean compressible = CssLength.hasPercent(st.box.width, st.box.exprs) || CssLength.hasPercent(st.box.maxWidth, st.box.exprs);
+        return new MinMaxSizes(compressible ? LayoutUnit.snap(g.hdec()) : w, w);
     }
 }
