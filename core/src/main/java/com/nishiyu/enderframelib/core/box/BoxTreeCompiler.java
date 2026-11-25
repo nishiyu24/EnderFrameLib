@@ -1,6 +1,8 @@
 package com.nishiyu.enderframelib.core.box;
 
 import com.nishiyu.enderframelib.core.css.Style;
+import com.nishiyu.enderframelib.core.css.OrthogonalStyles;
+import com.nishiyu.enderframelib.core.css.WritingModes;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
@@ -111,7 +113,7 @@ public final class BoxTreeCompiler {
         if (counters != null) counters.clear();
         if (sheet != null) counterStyles = com.nishiyu.enderframelib.core.css.CounterStyles.of(sheet.counterStyles);
         try {
-            root = compileNode(domRoot, Style.DEFAULT, full ? null : root, full);
+            root = compileNode(domRoot, Style.DEFAULT, full ? null : root, full, WritingModes.HORIZONTAL);
             return root;
         } finally {
             self.clear();
@@ -150,23 +152,25 @@ public final class BoxTreeCompiler {
 
     /**
      * 節 1 つ。{@code prev} は同じ節の前回の箱（無ければ null）。{@code restyle} は親の継承値が変わった・兄弟の位置が
-     * 変わったなど、この節自身を解き直すべきとき。
+     * 変わったなど、この節自身を解き直すべきとき。{@code parentStyle} は親のカスケードの算出スタイル（軸を入れ替える前）、
+     * {@code flow} は節を置く縦書きの文脈（M2b-5。{@link OrthogonalBoxes#childContext} の符号。横書きなら 0）。文脈は祖先の継承値
+     * {@code writing-mode} と位置指定で決まるので、変われば祖先か自分の解き直しとして届く。
      */
-    private BoxNode compileNode(HtmlNode n, Style parentStyle, BoxNode prev, boolean restyle) {
-        if (prev != null && !restyle && !touched.contains(n)) return prev; // 1. O(1) 完全スキップ
+    private BoxNode compileNode(HtmlNode n, Style parentStyle, BoxNode prev, boolean restyle, int flow) {
+        if (prev != null && !restyle && !touched.contains(n) && prev.context == flow) return prev; // 1. O(1) 完全スキップ
         int selfKinds = self.getOrDefault(n, 0);
         // 文字の節のスタイルは親だけで決まる（Style.forTextChild）ので、文字の節への STYLE は解き直しの理由にしない
         boolean resolve = prev == null || restyle || ((selfKinds & SELF_STYLE) != 0 && n.nodeType != NodeType.TEXT);
         Style style;
         if (n.nodeType == NodeType.TEXT) {
-            style = resolve ? styles.text(parentStyle) : prev.style;
+            style = resolve ? styles.text(parentStyle) : prev.computed;
         } else if (n.nodeType == NodeType.ELEMENT) {
-            style = resolve ? styles.element(n, parentStyle, prev != null ? prev.style : null) : prev.style;
+            style = resolve ? styles.element(n, parentStyle, prev != null ? prev.computed : null) : prev.computed;
         } else {
             style = Style.DEFAULT;
         }
         if (resolve) stats.restyled++;
-        if (prev != null) style = style.shareEqualGroups(prev.style); // 2. 継承の打ち切り
+        if (prev != null) style = style.shareEqualGroups(prev.computed); // 2. 継承の打ち切り
         BoxKind kind = BoxKind.of(n, style);
         // 閉じた details の summary 以外の子は箱を作らない（HTML §15.5.? 。旧 RenderTreeBuilder と同じ。open の付け外しは details の
         // 解き直しとして届き、下の kidsRestyle で子を解き直す）
@@ -183,10 +187,10 @@ public final class BoxTreeCompiler {
             if (prev != null && prev.text != null && prev.text.equals(text)) text = prev.text;
         } else if (kind != BoxKind.NONE) {
             boolean usable = prev != null && prev.kind != BoxKind.NONE && prev.kind != BoxKind.TEXT;
-            boolean kidsRestyle = !usable || style.inherited != prev.style.inherited || style.custom != prev.style.custom
+            boolean kidsRestyle = !usable || style.inherited != prev.computed.inherited || style.custom != prev.computed.custom
                     || (resolve && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isDetails(n.tag));
             // inherit キーワードは要素にしか効かない（文字の節のスタイルは親の継承群だけで決まる）
-            boolean elemRestyle = usable && usesInherit && style != prev.style;
+            boolean elemRestyle = usable && usesInherit && style != prev.computed;
             boolean element = n.nodeType == NodeType.ELEMENT;
             if (counters != null && element) counters.apply(n, style, listItem(style));
             int mark = counters != null ? counters.mark() : 0;
@@ -195,7 +199,10 @@ public final class BoxTreeCompiler {
             boolean redoPseudo = resolve || counters != null || !usable;
             if (pseudos && MarkerBoxes.listItem(style)) marker = redoPseudo ? marker(n, style, usable ? prev.marker : null) : prev.marker;
             if (pseudos) before = redoPseudo ? pseudo(BoxNode.Pseudo.BEFORE, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.BEFORE);
-            children = compileChildren(n, style, usable ? prev.children : null, kidsRestyle, elemRestyle, selfKinds);
+            int childContext = OrthogonalBoxes.childContext(OrthogonalBoxes.rootCode(n, style, kind, OrthogonalBoxes.flowOf(flow)), flow, style);
+            // 子の縦書きの文脈が変わった（位置指定の付け外しなど、継承値に現れない変化）なら子を解き直す
+            if (usable && childContext != OrthogonalBoxes.childContext(prev.orthogonal, prev.context, prev.computed)) kidsRestyle = true;
+            children = compileChildren(n, style, usable ? prev.children : null, kidsRestyle, elemRestyle, selfKinds, childContext);
             // 番号に依るマーカー: 子の並びが変わった・子に触れた（li の value は箱を変えない）・自分を解き直した（start・reversed）なら
             // 文書順に数え直す（カウンタを使う文書は Counters）
             if (counters == null && children.hasOrdinalMarkers()
@@ -211,13 +218,28 @@ public final class BoxTreeCompiler {
         ReplacedInput replaced = kind == BoxKind.NONE || kind == BoxKind.TEXT ? null
                 : ReplacedInput.of(n, styles.viewportW(), styles.viewportH());
         if (replaced != null && prev != null && replaced.equals(prev.replaced)) replaced = prev.replaced;
-        if (prev != null && style == prev.style && kind == prev.kind && text == prev.text && children == prev.children
+        // 縦書きの文脈（M2b-5）: レイアウトが読むスタイルは軸を入れ替えたもの、直交フローの根は流れの中身を包む箱のスタイルを持つ。
+        // 算出スタイルと文脈が前回と同じなら前回の参照（レイアウトのキャッシュが == で照合する）
+        int axis = n.nodeType == NodeType.ELEMENT && kind != BoxKind.NONE ? OrthogonalBoxes.axisOf(flow, style) : WritingModes.HORIZONTAL;
+        int orth = kind == BoxKind.NONE ? 0 : OrthogonalBoxes.rootCode(n, style, kind, OrthogonalBoxes.flowOf(flow));
+        boolean sameStyle = prev != null && style == prev.computed;
+        Style layoutStyle = axis == WritingModes.HORIZONTAL ? style
+                : sameStyle && prev.context == flow ? prev.style : OrthogonalStyles.axisSwapped(style, axis);
+        Style wrapperStyle = null;
+        if (orth != 0) {
+            BoxNode pw = sameStyle && prev.orthogonal == orth && prev.kind == kind ? OrthogonalBoxes.wrapperOf(prev) : null;
+            wrapperStyle = pw != null ? pw.style : OrthogonalStyles.wrapper(style, OrthogonalBoxes.verticalFlow(orth),
+                    !OrthogonalBoxes.returnsToHorizontal(orth), OrthogonalBoxes.wrapperDisplay(kind, orth));
+        }
+        if (prev != null && style == prev.computed && layoutStyle == prev.style && orth == prev.orthogonal && flow == prev.context
+                && (orth == 0 || wrapperStyle == OrthogonalBoxes.wrapperOf(prev).style)
+                && kind == prev.kind && text == prev.text && children == prev.children
                 && replaced == prev.replaced && TableBoxes.spanOf(n, kind, BoxNode.Pseudo.NONE) == prev.span
                 && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)
                 && marker == prev.marker) return prev;
         stats.rebuiltBoxes++;
-        return new BoxNode(n, style, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL,
-                prev != null ? prev.flow : null);
+        return new BoxNode(n, layoutStyle, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL,
+                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle);
     }
 
     /**
@@ -257,12 +279,12 @@ public final class BoxTreeCompiler {
 
     /** 子の並び。前回の並びのチャンクのうち、DOM の並びが同じで触れられていないものは参照のまま使う。 */
     private BoxChildren compileChildren(HtmlNode p, Style pStyle, BoxChildren prevKids, boolean parentChanged, boolean elemRestyle,
-                                        int selfKinds) {
+                                        int selfKinds, int flow) {
         List<HtmlNode> dom = p.children;
         int n = dom.size();
         if (prevKids == null) {
             List<BoxNode> fresh = new ArrayList<>(n);
-            for (int i = 0; i < n; i++) fresh.add(compileNode(dom.get(i), pStyle, null, true));
+            for (int i = 0; i < n; i++) fresh.add(compileNode(dom.get(i), pStyle, null, true, flow));
             BoxChildren out = BoxChildren.of(fresh);
             if (out.chunkCount() > 1) stats.rebuiltChunks += out.chunkCount();
             return out;
@@ -289,7 +311,7 @@ public final class BoxTreeCompiler {
             int base = pending.size();
             for (int i = d; i < end; i++) {
                 HtmlNode ch = dom.get(i);
-                pending.add(compileNode(ch, pStyle, findIn(c, ch, i - d), restyleAll || (elemRestyle && ch.nodeType == NodeType.ELEMENT)));
+                pending.add(compileNode(ch, pStyle, findIn(c, ch, i - d), restyleAll || (elemRestyle && ch.nodeType == NodeType.ELEMENT), flow));
             }
             if (pending.size() - base == c.size() && sameAs(c, pending, base)) { // 中身が前回と同じ: チャンクも同じ参照
                 for (int i = pending.size() - 1; i >= base; i--) pending.remove(i);
@@ -299,7 +321,7 @@ public final class BoxTreeCompiler {
             }
             d = end;
         }
-        for (int i = d; i < n; i++) pending.add(compileNode(dom.get(i), pStyle, null, true)); // 末尾に足された子
+        for (int i = d; i < n; i++) pending.add(compileNode(dom.get(i), pStyle, null, true, flow)); // 末尾に足された子
         flush(pending, out, chunked);
         if (out.size() == prevKids.chunkCount()) {
             boolean same = true;

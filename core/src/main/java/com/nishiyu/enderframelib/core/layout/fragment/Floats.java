@@ -156,7 +156,7 @@ final class Floats {
             w = Math.min(Math.max(mm.min, cw - g.mL - g.mR), mm.max);
         }
         w = LayoutUnit.snap(g.clampWidth(st, Math.max(0, w), cw, s));
-        float pct = BoxGeometry.usesPercentHeight(st) ? pctBase : Float.NaN;
+        float pct = BoxGeometry.usesPercentHeight(box) ? pctBase : Float.NaN;
         LayoutFragment f = s.cache().layout(box, s.space(cw, w, Float.NaN, pct, ConstraintSpace.FORMATTING_ROOT), prior, s);
         float outerW = g.mL + f.width + g.mR, outerH = g.mT + f.height + g.mB;
         boolean right = right(st);

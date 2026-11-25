@@ -81,7 +81,7 @@ final class GridFlow implements FormattingEngine {
         float[] colSizes = GridTracks.size(grid.colDefs, grid.items, true, cw, grid.colGap, fg.justifyContent, false);
         for (GridItem it : grid.items) { // 列の領域の幅で測る（高さは内容から。% の高さはグリッドの高さが確定していればそれ）
             float areaW = span(colSizes, it.colStart, it.colSpan, grid.colGap);
-            it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, BoxGeometry.usesPercentHeight(it.box.style) ? ch : Float.NaN, s),
+            it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, BoxGeometry.usesPercentHeight(it.box) ? ch : Float.NaN, s),
                     it.slots, s);
         }
         float[] rowSizes = sizeRows(grid, fg, ch, s);
@@ -92,7 +92,7 @@ final class GridFlow implements FormattingEngine {
         float innerH = Math.max(0, h - g.vdec() - spill);
         if (Float.isNaN(ch)) { // 高さが決まった: % の高さの項目をその高さで測り直し、行を確定し直す
             for (GridItem it : grid.items) {
-                if (!BoxGeometry.usesPercentHeight(it.box.style)) continue;
+                if (!BoxGeometry.usesPercentHeight(it.box)) continue;
                 float areaW = span(colSizes, it.colStart, it.colSpan, grid.colGap);
                 it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, innerH, s), it.slots, s);
             }
@@ -264,7 +264,7 @@ final class GridFlow implements FormattingEngine {
             }
             fw = LayoutUnit.snap(fw);
         }
-        return s.space(areaW, fw, fixedH, BoxGeometry.usesPercentHeight(cst) ? pct : Float.NaN, ConstraintSpace.FORMATTING_ROOT);
+        return s.space(areaW, fw, fixedH, BoxGeometry.usesPercentHeight(it.box) ? pct : Float.NaN, ConstraintSpace.FORMATTING_ROOT);
     }
 
     /** 行が確定してから、項目を領域の中で揃える（stretch・% の高さの測り直し・auto 余白・{@code *-self}）。 */
@@ -285,7 +285,7 @@ final class GridFlow implements FormattingEngine {
             if (t != it.frag.height || Float.isNaN(it.frag.space.fixedHeight) || it.frag.space.availableWidth != areaW) {
                 it.frag = cache.layout(it.box, itemSpace(it, st, areaW, t, areaH, s), it.slots, s);
             }
-        } else if (BoxGeometry.usesPercentHeight(cst) && it.frag.space.percentHeightBase != areaH) {
+        } else if (BoxGeometry.usesPercentHeight(it.box) && it.frag.space.percentHeightBase != areaH) {
             it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, areaH, s), it.slots, s);
         }
         Alignment justifySelf = selfAlignment(cst, st, true);

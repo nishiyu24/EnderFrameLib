@@ -181,7 +181,7 @@ final class BlockFlow implements FormattingEngine {
                 BoxNode child = c.get(i);
                 if (OutOfFlow.is(child)) { b.addOutOfFlow(child); continue; }
                 if (!child.kind.blockLevel()) continue; // 畳まれる空白・display: none
-                ConstraintSpace sp = BoxGeometry.usesPercentHeight(child.style) ? pct : base;
+                ConstraintSpace sp = BoxGeometry.usesPercentHeight(child) ? pct : base;
                 b.add(cache.layout(child, sp, cur.find(child), s), 0);
             }
             out[k] = b.build(c, pct, null);
@@ -251,7 +251,7 @@ final class BlockFlow implements FormattingEngine {
             }
             var clear = child.style.box.clear;
             if (clear != null && clear != com.nishiyu.enderframelib.core.css.model.CssKeywords.Clear.NONE) b.clearTo(exc.clearance(clear));
-            ConstraintSpace sp = BoxGeometry.usesPercentHeight(child.style) ? pct : base;
+            ConstraintSpace sp = BoxGeometry.usesPercentHeight(child) ? pct : base;
             LayoutFragment prev = cur.find(child);
             if (FloatAvoid.avoids(child)) {
                 if (exc.isEmpty()) b.add(s.cache().layout(child, sp, prev, s), 0);

@@ -65,6 +65,13 @@ class IncrementalOracleTest {
     @Test
     void tables() { run("tables"); }
 
+    /**
+     * M2b-5: 縦書き（{@code writing-mode} の付け替えで直交フローの根と包む箱ができる・消える、縦書きの中の横書きへ戻す根、根の直下の
+     * 位置指定の子の付け外しで軸を入れ替えない部分木が変わる、縦書きの flex・grid、大きさ・余白）の変異。
+     */
+    @Test
+    void writingModes() { run("writing"); }
+
     private static void run(String kind) {
         String html = switch (kind) {
             case "large" -> SpikeView.largeList(300);
@@ -79,6 +86,7 @@ class IncrementalOracleTest {
                     + "<svg id=rv viewBox='0 0 10 5' width=30></svg></div></body>");
             case "lists" -> lists();
             case "tables" -> tablesDoc();
+            case "writing" -> SpikeView.nestedFlex(4, 3, true);
             case "flexx" -> SpikeView.nestedFlex(4, 3, true).replace(".f{display:flex;flex-wrap:wrap;", ".f{display:flex;flex-wrap:wrap;height:220px;");
             default -> SpikeView.nestedFlex(4, 2);
         };
@@ -90,6 +98,7 @@ class IncrementalOracleTest {
                     : kind.equals("grid") && rnd.nextInt(3) > 0 ? mutateGrid(v, rnd)
                     : kind.equals("tables") && rnd.nextInt(4) > 0 ? mutateTable(v, rnd, step)
                     : kind.equals("flexx") && rnd.nextInt(3) > 0 ? mutateFlex(v, rnd)
+                    : kind.equals("writing") && rnd.nextInt(4) > 0 ? mutateWriting(v, rnd)
                     : kind.equals("pseudo") && rnd.nextInt(3) > 0 ? mutatePseudo(v, rnd)
                     : kind.equals("lists") && rnd.nextInt(3) > 0 ? mutateList(v, rnd, step)
                     : (kind.equals("text") || kind.equals("pseudo")) && rnd.nextBoolean() ? mutateText(v, rnd, step) : mutate(v, rnd, step);
@@ -330,6 +339,25 @@ class IncrementalOracleTest {
         String st = FLEX_STYLES[rnd.nextInt(FLEX_STYLES.length)];
         target.setAttribute("style", st);
         return st + " " + target.tag + " " + target.attrs.get("id");
+    }
+
+    private static final String[] WRITING_STYLES = {
+            "writing-mode:vertical-rl;height:120px", "writing-mode:vertical-lr", "writing-mode:sideways-lr;height:80px",
+            "writing-mode:sideways-rl", "writing-mode:horizontal-tb", "writing-mode:horizontal-tb;width:60px;height:30px",
+            "position:absolute;top:3px;left:5px;width:40px", "position:relative;writing-mode:vertical-rl;height:70px", "",
+            "display:flex;writing-mode:vertical-rl;flex-wrap:wrap;height:90px;gap:3px", "display:flex;flex-direction:column;writing-mode:vertical-lr",
+            "display:grid;writing-mode:vertical-lr;grid-template-columns:20px 1fr", "display:inline-block;writing-mode:vertical-rl;width:50px",
+            "width:30px;height:40px", "margin:2px 7px 0 3px;padding:4px 1px;border-left:3px solid", "direction:rtl;writing-mode:vertical-rl",
+    };
+
+    /** 縦書きの変異を 1 つ加える（要素の style を置き換える）。 */
+    static String mutateWriting(SpikeView v, Random rnd) {
+        List<HtmlNode> elems = new ArrayList<>();
+        collect(v.doc.root, elems);
+        HtmlElement target = (HtmlElement) elems.get(rnd.nextInt(elems.size()));
+        String st = WRITING_STYLES[rnd.nextInt(WRITING_STYLES.length)];
+        target.setAttribute("style", st);
+        return "writing " + st + " " + target.tag + " " + target.attrs.get("id");
     }
 
     private static final String[] GRID_STYLES = {

@@ -118,7 +118,7 @@ final class TableFlow implements FormattingEngine {
         float pct = space.percentHeightBase;
         for (TableStructure.Cell c : t.cells) {
             float cw = cellWidth(colX, c, w.hs, n);
-            ConstraintSpace sp = s.space(cw, cw, Float.NaN, BoxGeometry.usesPercentHeight(c.box.style) ? pct : Float.NaN,
+            ConstraintSpace sp = s.space(cw, cw, Float.NaN, BoxGeometry.usesPercentHeight(c.box) ? pct : Float.NaN,
                     ConstraintSpace.FORMATTING_ROOT).withBorders(c.borders);
             c.slots = pr.slots(c.box);
             c.natural = cache.layout(c.box, sp, c.slots, s);

@@ -53,6 +53,12 @@ class ProjectionPixelParityTest {
             // M2b-4: 匿名の表の箱（表の外のセルの並び）
             "<html><body style='margin:0'><div><div style='display:table-cell;background:#fcc;padding:4px'>a</div>"
                     + "<div style='display:table-cell;background:#cfc'>b b</div></div></body></html>",
+            // M2b-5: 縦書きの根（文字・枠線・横書きへ戻す根・縦書きの flex）。包む箱の transform で回す
+            "<html><body style='margin:0'><div style='writing-mode:vertical-rl;height:120px;border:2px solid #900;padding:3px;background:#ffe'>"
+                    + "縦書き abc<div style='width:10px;height:30px;background:#09c;margin-top:4px'></div>"
+                    + "<div style='writing-mode:horizontal-tb;width:50px;background:#cfc'>横 xy</div></div>"
+                    + "<div style='display:flex;writing-mode:vertical-lr;height:90px;gap:4px'><div style='width:20px;height:30px;background:#c0c'></div>"
+                    + "<div style='width:15px;flex-grow:1;background:#0c0'></div></div></body></html>",
         };
         for (String html : docs) {
             Pixmap legacy = legacy(html), v3 = WptV3BaselineTest.render(html);

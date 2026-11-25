@@ -201,6 +201,14 @@ public final class BoxGeometry {
      * 高さに % を使うか（子の制約に % の高さの基準を載せるかの判定。キーの粗粒化）。{@code position: relative} の % の
      * {@code top} / {@code bottom} も包含ブロックの高さが基準なので含める（WPT css-grid/relative-grandchild）。
      */
+    /**
+     * % の高さの基準が要る箱か: % の高さを持つ（{@link #usesPercentHeight(Style)}）か、直交フローの根（行の長さが包含ブロックの確定した
+     * 高さで決まる。M2b-5）。
+     */
+    static boolean usesPercentHeight(BoxNode b) {
+        return b.orthogonal != 0 || usesPercentHeight(b.style);
+    }
+
     static boolean usesPercentHeight(Style st) {
         BoxGeomStyle b = st.box;
         if (CssLength.hasPercent(b.height, b.exprs) || CssLength.hasPercent(b.minHeight, b.exprs)

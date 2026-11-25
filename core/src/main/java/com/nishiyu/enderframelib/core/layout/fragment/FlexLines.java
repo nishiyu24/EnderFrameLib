@@ -428,8 +428,9 @@ final class FlexLines {
             case BASELINE -> row ? lineBase - it.baseline : 0;
             default -> 0;
         };
-        boolean flexRel = it.align == Alignment.FLEX_START || it.align == Alignment.FLEX_END || it.align == Alignment.STRETCH
-                || (it.align == Alignment.BASELINE && !row);
+        // column の baseline は交差軸（横）にベースラインを持たないので safe self-start（CSS Box Alignment 3 §9.3）: wrap-reverse で
+        // 裏返さない（旧 FlexLayoutEngine と同じ）
+        boolean flexRel = it.align == Alignment.FLEX_START || it.align == Alignment.FLEX_END || it.align == Alignment.STRETCH;
         if (wrapReverse && flexRel) off = cross - outer - off;
         it.crossPos = lineStart + off + it.mCS;
     }
@@ -464,7 +465,7 @@ final class FlexLines {
     // ---- 共通 ----
 
     private ConstraintSpace itemSpace(FlexItem it, float fixedW, float fixedH, int extra) {
-        float pct = BoxGeometry.usesPercentHeight(it.box.style) ? ch : Float.NaN;
+        float pct = BoxGeometry.usesPercentHeight(it.box) ? ch : Float.NaN;
         return s.space(cw, fixedW, fixedH, pct, ConstraintSpace.FORMATTING_ROOT | extra);
     }
 

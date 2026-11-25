@@ -88,6 +88,19 @@ class FlexFeaturesTest {
         assertEquals(80, at(html, "b")[1], EPS);
     }
 
+    /**
+     * column の容器の {@code align-items: baseline} は交差軸（横）にベースラインが無いので safe self-start（CSS Box Alignment 3 §9.3）:
+     * 項目自身の {@code direction} の始点に寄せ、{@code wrap-reverse} では裏返さない（WPT flex-align-baseline-column-vert-rl-rtl-wrap-reverse）。
+     */
+    @Test
+    void columnBaselineFallsBackToSelfStart() {
+        String html = doc("<div style='display:flex;flex-direction:column;flex-wrap:wrap-reverse;align-items:baseline;width:100px;height:100px;direction:rtl'>"
+                + "<div id=a style='width:40px;height:20px'></div></div>");
+        assertEquals(60, at(html, "a")[0], EPS); // rtl の始点は右
+        String ltr = html.replace("direction:rtl", "direction:ltr");
+        assertEquals(0, at(ltr, "a")[0], EPS); // wrap-reverse で右へ裏返さない
+    }
+
     /** ベースライン揃え: 上の余白の大きい項目に合わせて他が下がり、容器のベースラインはその項目のもの（§8.3・§8.5）。 */
     @Test
     void baselineAlignment() {

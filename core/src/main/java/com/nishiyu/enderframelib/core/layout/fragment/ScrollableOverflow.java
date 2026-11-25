@@ -71,7 +71,11 @@ public final class ScrollableOverflow {
                         if (ch.lines != null) lines(ch.lines, x, y, a, memo, s);
                         continue;
                     }
-                    child(ch, x, y, k == lastK && i == lastI, a, memo, s);
+                    if (ch.box.pseudo == BoxNode.Pseudo.ORTHOGONAL) {
+                        orthogonal(f.box, ch, x, y, a, memo, s);
+                    } else {
+                        child(ch, x, y, k == lastK && i == lastI, a, memo, s);
+                    }
                     any = true;
                 }
             }
@@ -124,6 +128,34 @@ public final class ScrollableOverflow {
             float[] r = of(c, memo, s);
             a.desc(x + r[2], y + r[3]);
         }
+    }
+
+    /**
+     * 直交フローの包む箱 {@code c}（M2b-5。{@code (x, y)} は回転の原点）: 描画の {@code transform} で回した物理の矩形で数える（旧
+     * {@code ScrollExtentCalc} と同じ）。縦書きの根は 90°（{@code sideways-lr} は -90°）、横書きへ戻す根は逆向き、{@code vertical-lr} は転置。
+     */
+    private static void orthogonal(BoxNode root, LayoutFragment c, float x, float y, Acc a, Map<LayoutFragment, float[]> memo, LayoutSession s) {
+        int code = root.orthogonal;
+        int flow = com.nishiyu.enderframelib.core.box.OrthogonalBoxes.verticalFlow(code);
+        boolean ret = com.nishiyu.enderframelib.core.box.OrthogonalBoxes.returnsToHorizontal(code);
+        boolean transposed = com.nishiyu.enderframelib.core.css.WritingModes.isTransposed(flow);
+        boolean ccw = com.nishiyu.enderframelib.core.css.WritingModes.isCounterClockwise(flow);
+        boolean plus90 = !transposed && (ret ? ccw : !ccw); // 90°: 論理の (W, H) は x 方向へ -H、y 方向へ +W
+        float[] r = of(c, memo, s);
+        float lw = Math.max(c.width, r[2]), lh = Math.max(c.height, r[3]);
+        float right, bottom;
+        if (transposed) {
+            right = x + lh;
+            bottom = y + lw;
+        } else if (plus90) {
+            right = x;
+            bottom = y + lw;
+        } else {
+            right = x + lh;
+            bottom = y;
+        }
+        a.ext(right, bottom);
+        a.desc(right, bottom);
     }
 
     /** 行の文字片・インライン要素の箱・原子（行の原点が {@code (ox, oy)}）。 */

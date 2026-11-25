@@ -16,14 +16,27 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 public final class BoxNode {
     /**
      * 疑似要素の種類（M2b-1）。疑似要素の箱とその中の文字の節は持ち主の要素の節を {@link #node} に持つ。{@link #ANONYMOUS} は表の匿名の箱
-     * （M2b-4。{@link TableBoxes}）で、包んだ子の親の節を {@link #node} に持ち、{@link #children} は包んだ子の並び。
+     * （M2b-4。{@link TableBoxes}）で、包んだ子の親の節を {@link #node} に持ち、{@link #children} は包んだ子の並び。{@link #ORTHOGONAL} は
+     * 直交フローの根の流れの中身を包む箱（M2b-5。{@link OrthogonalBoxes}）で、根の節を {@link #node} に持つ。
      */
-    public enum Pseudo { NONE, BEFORE, AFTER, MARKER, ANONYMOUS }
+    public enum Pseudo { NONE, BEFORE, AFTER, MARKER, ANONYMOUS, ORTHOGONAL }
 
     /** 元の DOM の節（文書の根も含む）。疑似要素の箱では持ち主の要素。 */
     public final HtmlNode node;
-    /** 算出スタイル（M1 の不変 {@link Style}）。文字の節は親の継承群を共有した {@link Style#forTextChild}。 */
+    /**
+     * レイアウトが読むスタイル（M1 の不変 {@link Style}）。文字の節は親の継承群を共有した {@link Style#forTextChild}。縦書きの文脈
+     * （{@link #context}）の箱では物理のプロパティを論理の軸へ入れ替えたもの（{@code OrthogonalStyles#axisSwapped}）。
+     */
     public final Style style;
+    /**
+     * カスケードの算出スタイル（軸を入れ替える前。子の継承元・アニメーションの前回の値・前回との照合に使う）。縦書きの文脈の外では
+     * {@link #style} と同じ参照。
+     */
+    public final Style computed;
+    /** この箱をコンパイルした縦書きの文脈の符号（{@link OrthogonalBoxes#childContext}。横書きの文脈なら 0。M2b-5）。 */
+    final short context;
+    /** 直交フローの根の種類の符号（{@link OrthogonalBoxes}。根でなければ 0。M2b-5）。 */
+    public final byte orthogonal;
     public final BoxKind kind;
     /** 文字の節だけ非 null。親の {@code white-space} で正規化し {@code text-transform} を掛けた中身（{@link TextContent}）。 */
     public final String text;
@@ -71,15 +84,28 @@ public final class BoxNode {
     /** {@code prevFlow} は同じ節の前回の {@link #flow}（匿名の表の箱を前回の参照のまま使うための候補。無ければ null）。 */
     BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
             ReplacedInput replaced, BoxNode marker, int ordinal, BoxChildren prevFlow) {
+        this(node, style, kind, text, children, pseudo, before, after, replaced, marker, ordinal, prevFlow, style, 0, 0, null);
+    }
+
+    /**
+     * 縦書きの文脈の箱（M2b-5）。{@code computed} は軸を入れ替える前の算出スタイル、{@code context} は文脈の符号、
+     * {@code orthogonal} は直交フローの根の符号で、根なら {@code wrapperStyle} の箱で流れの中身を包む（{@link OrthogonalBoxes#wrap}）。
+     */
+    BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
+            ReplacedInput replaced, BoxNode marker, int ordinal, BoxChildren prevFlow, Style computed, int context, int orthogonal,
+            Style wrapperStyle) {
         this.node = node;
         this.style = style;
+        this.computed = computed;
+        this.context = (short) context;
+        this.orthogonal = (byte) orthogonal;
         this.kind = kind;
         this.text = text;
         this.children = children;
         this.pseudo = pseudo;
         BoxNode lead = marker != null && MarkerBoxes.inside(style) ? marker : null;
         BoxChildren raw = before == null && after == null && lead == null ? children : BoxChildren.withPseudos(lead, before, children, after);
-        this.flow = TableBoxes.fixup(node, style, kind, raw, prevFlow);
+        this.flow = wrapperStyle != null ? OrthogonalBoxes.wrap(node, wrapperStyle, raw, prevFlow) : TableBoxes.fixup(node, style, kind, raw, prevFlow);
         this.replaced = replaced;
         this.marker = marker;
         this.ordinal = ordinal;
@@ -89,7 +115,13 @@ public final class BoxNode {
     /** {@link #flow} に足した疑似要素の箱（{@code ::before} / {@code ::after}。{@code ::marker} は {@link #marker}。無ければ null）。 */
     public BoxNode pseudoChild(Pseudo which) {
         if (which == Pseudo.MARKER) return marker;
-        return flow == children ? null : pseudoIn(flow, which);
+        if (flow == children) return null;
+        if (orthogonal != 0) { // 直交フローの根: 包む箱の中の並び（位置指定の疑似要素は根の直下）
+            BoxNode w = OrthogonalBoxes.wrapperOf(this);
+            BoxNode in = w != null && w.flow != w.children ? pseudoIn(w.flow, which) : w != null ? pseudoIn(w.children, which) : null;
+            return in != null ? in : pseudoIn(flow, which);
+        }
+        return pseudoIn(flow, which);
     }
 
     /** 並び {@code kids} の先頭（末尾）の疑似要素の箱。表の匿名の箱に包まれていれば中を辿る（{@link TableBoxes}）。 */
@@ -99,10 +131,15 @@ public final class BoxNode {
             int first = kids.get(0).pseudo == Pseudo.MARKER ? 1 : 0;
             if (kids.size() <= first) return null;
             BoxNode b = kids.get(first);
-            return b.pseudo == Pseudo.ANONYMOUS ? pseudoIn(b.children, which) : b.pseudo == which ? b : null;
+            return wraps(b) ? pseudoIn(b.children, which) : b.pseudo == which ? b : null;
         }
         BoxNode b = kids.get(kids.size() - 1);
-        return b.pseudo == Pseudo.ANONYMOUS ? pseudoIn(b.children, which) : b.pseudo == which ? b : null;
+        return wraps(b) ? pseudoIn(b.children, which) : b.pseudo == which ? b : null;
+    }
+
+    /** 子を包む匿名の箱（表の匿名の箱・直交フローの包む箱）か。 */
+    private static boolean wraps(BoxNode b) {
+        return b.pseudo == Pseudo.ANONYMOUS || b.pseudo == Pseudo.ORTHOGONAL;
     }
 
     /** 流れに入らない（{@code list-style-position: outside} の）マーカーの箱（無ければ null）。 */
@@ -112,8 +149,9 @@ public final class BoxNode {
 
     /** マーカーだけを差し替えた箱（{@link MarkerBoxes#renumber} が番号を直すとき）。 */
     BoxNode withMarker(BoxNode m) {
+        BoxNode w = orthogonal != 0 ? OrthogonalBoxes.wrapperOf(this) : null;
         return new BoxNode(node, style, kind, text, children, pseudo, pseudoChild(Pseudo.BEFORE), pseudoChild(Pseudo.AFTER), replaced, m,
-                ordinal);
+                ordinal, flow, computed, context, orthogonal, w != null ? w.style : null);
     }
 
     /** 中身が無い・空白だけで畳まれる文字の節か（ブロックの流れでは箱を作らない）。 */

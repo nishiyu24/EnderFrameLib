@@ -67,6 +67,8 @@ public final class FragmentProjection {
         BoxNode b = f.box;
         LayoutBox lb = b.pseudo == BoxNode.Pseudo.ANONYMOUS ? LayoutBox.anonymous(nodeOf(b), new ComputedStyle(b.style))
                 : new LayoutBox(nodeOf(b), new ComputedStyle(b.style));
+        // 直交フローの包む箱: 旧描画がスタイルの transform で回す（旧経路の生成箱と同じ印）
+        if (b.pseudo == BoxNode.Pseudo.ORTHOGONAL) lb.isVerticalWrapper = true;
         placed.add(lb);
         lb.x = x;
         lb.y = y;
@@ -309,6 +311,18 @@ public final class FragmentProjection {
      */
     private com.nishiyu.enderframelib.core.dom.node.HtmlNode nodeOf(BoxNode b) {
         if (b.pseudo == BoxNode.Pseudo.NONE) return b.node;
+        if (b.pseudo == BoxNode.Pseudo.ORTHOGONAL) { // 直交フローの包む箱: 旧経路の生成箱と同じ鍵の形（_vw / _hw）
+            return synthetic.computeIfAbsent(b, k -> {
+                com.nishiyu.enderframelib.core.dom.node.HtmlNode n = new com.nishiyu.enderframelib.core.dom.node.HtmlNode("div");
+                n.isPseudoNode = true;
+                n.parent = k.node;
+
+                n.setId(k.node.key() + (k.style.inherited.writingMode != null
+                        && com.nishiyu.enderframelib.core.css.WritingModes.flowOf(k.style.inherited.writingMode)
+                        == com.nishiyu.enderframelib.core.css.WritingModes.HORIZONTAL ? "_hw" : "_vw"));
+                return n;
+            });
+        }
         if (b.pseudo == BoxNode.Pseudo.ANONYMOUS) { // 表の匿名の箱: 持ち主の子のように親だけを繋いだ使い捨ての節
             return synthetic.computeIfAbsent(b, k -> {
                 com.nishiyu.enderframelib.core.dom.node.HtmlNode n = new com.nishiyu.enderframelib.core.dom.node.HtmlNode("div");

@@ -7,11 +7,13 @@ css/css-flexbox/align-content-002.htm
 css/css-flexbox/align-content-wrap-004.html
 css/css-flexbox/align-self-002.html
 css/css-flexbox/align-self-011.html
+css/css-flexbox/alignment/flex-align-baseline-column-vert-rl-rtl-wrap-reverse.html
 css/css-flexbox/aspect-ratio-intrinsic-size-010.html
 css/css-flexbox/balance/balance-004.html
 css/css-flexbox/balance/balance-line-count-intrinsic-002.html
 css/css-flexbox/balance/balance-min-line-count-007.html
 css/css-flexbox/css-box-justify-content.html
+css/css-flexbox/css-flexbox-row-wrap.html
 css/css-flexbox/fieldset-baseline-alignment.html
 css/css-flexbox/flex-002.htm
 css/css-flexbox/flex-align-content-space-between.html
@@ -33,6 +35,7 @@ css/css-flexbox/flexbox-align-self-baseline-horiz-002.xhtml
 css/css-flexbox/flexbox-align-self-horiz-005.xhtml
 css/css-flexbox/flexbox-baseline-align-self-baseline-horiz-001.html
 css/css-flexbox/flexbox-baseline-multi-line-horiz-004.html
+css/css-flexbox/flexbox-basic-block-horiz-001v.xhtml
 css/css-flexbox/flexbox-break-request-horiz-002a.html
 css/css-flexbox/flexbox-column-row-gap-003.html
 css/css-flexbox/flexbox-flex-flow-001.html
@@ -40,6 +43,7 @@ css/css-flexbox/flexbox-flex-wrap-horiz-001.html
 css/css-flexbox/flexbox-flex-wrap-wrap.htm
 css/css-flexbox/flexbox-justify-content-horiz-001b.xhtml
 css/css-flexbox/flexbox-justify-content-vert-001b.xhtml
+css/css-flexbox/flexbox-justify-content-wmvert-001.xhtml
 css/css-flexbox/flexbox-mbp-horiz-001.xhtml
 css/css-flexbox/flexbox-mbp-horiz-003v.xhtml
 css/css-flexbox/flexbox-overflow-horiz-001.html
@@ -49,6 +53,7 @@ css/css-flexbox/flexbox-safe-overflow-position-002.html
 css/css-flexbox/flexbox-single-line-clamp-3.html
 css/css-flexbox/flexbox-with-pseudo-elements-001.html
 css/css-flexbox/flexbox-writing-mode-004.html
+css/css-flexbox/flexbox-writing-mode-slr-rtl.html
 css/css-flexbox/flexbox_align-content-flexstart.html
 css/css-flexbox/flexbox_align-items-center-2.html
 css/css-flexbox/flexbox_align-items-flexstart.html
@@ -81,6 +86,8 @@ css/css-flexbox/flexbox_rowspan.html
 css/css-flexbox/flexbox_stf-fixpos.html
 css/css-flexbox/flexbox_stf-table.html
 css/css-flexbox/flexbox_wrap-reverse.html
+css/css-flexbox/gap-001-rl.html
+css/css-flexbox/gap-003-lr.html
 css/css-flexbox/gap-004-rtl.html
 css/css-flexbox/gap-006-ltr.html
 css/css-flexbox/gap-007-rtl.html
