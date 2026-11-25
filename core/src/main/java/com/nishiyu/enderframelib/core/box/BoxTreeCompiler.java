@@ -161,7 +161,7 @@ public final class BoxTreeCompiler {
         if (n.nodeType == NodeType.TEXT) {
             style = resolve ? styles.text(parentStyle) : prev.style;
         } else if (n.nodeType == NodeType.ELEMENT) {
-            style = resolve ? styles.element(n, parentStyle) : prev.style;
+            style = resolve ? styles.element(n, parentStyle, prev != null ? prev.style : null) : prev.style;
         } else {
             style = Style.DEFAULT;
         }

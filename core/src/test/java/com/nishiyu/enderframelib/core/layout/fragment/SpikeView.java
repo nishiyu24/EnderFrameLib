@@ -42,8 +42,9 @@ final class SpikeView {
         return state.changeLedger();
     }
 
-    /** 1 フレーム: 台帳を凍結し、箱の木を増分で作り、整形する。 */
+    /** 1 フレーム: 動いている節を台帳へ足し、台帳を凍結し、箱の木を増分で作り、整形する。 */
     LayoutFragment frame() {
+        styles.appendAnimating(ledger());
         ledger().freeze();
         boxRoot = compiler.compile(doc.root, ledger());
         return layout.layout(boxRoot, vw, vh);
