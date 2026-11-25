@@ -70,7 +70,7 @@ public final class UiFocus {
     public static List<Candidate> tabOrder(UiView ui) {
         Map<String, DisplayItem> items = itemsByNode(ui.renderCache());
         List<Candidate> out = new ArrayList<>();
-        collect(ui, ui.layoutRoot(), ui.rootNode(), items, out, new int[]{0});
+        collect(ui, ui.boxRoot(), ui.rootNode(), items, out, new int[]{0});
         out.sort((a, b) -> {
             boolean aPos = a.tabIndex() > 0, bPos = b.tabIndex() > 0;
             if (aPos && bPos) {

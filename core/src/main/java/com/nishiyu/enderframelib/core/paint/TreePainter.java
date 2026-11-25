@@ -53,6 +53,7 @@ public final class TreePainter {
     private final TreeStacking stacking;
     private final PaintSupport.CaptureList scratch = new PaintSupport.CaptureList(64);
     private PaintView canvasSource;
+    private float devicePixelRatio = 1f;
 
     /** 前回の根の記憶と、その時のビューポート・座標の方式。 */
     private Memo rootMemo;
@@ -66,6 +67,11 @@ public final class TreePainter {
     public TreePainter(int rootW, int rootH, Map<String, Keyframes> keyframes, ScrollState scrollState) {
         this.painter = new BoxItemPainter(rootW, rootH, keyframes != null ? keyframes : Map.of(), fragIds);
         this.stacking = new TreeStacking(rootW, rootH, scrollState != null ? scrollState : new ScrollState(), painter.anim);
+    }
+
+    /** 装置の画素比（画像の候補の選び方。既定は 1）。 */
+    public void setDevicePixelRatio(float dpr) {
+        this.devicePixelRatio = dpr;
     }
 
     /** ビューポートの大きさが変わった。 */
@@ -102,7 +108,7 @@ public final class TreePainter {
         boolean rel = DisplayListBuilder.parentRelativeSource.getAsBoolean();
         painter.parentRelative = rel;
         stacking.parentRelative = rel;
-        painter.decor.setDevicePixelRatio(1f);
+        painter.decor.setDevicePixelRatio(devicePixelRatio);
         stacking.beginPass();
         fragIds.set(0);
         reused = built = 0;

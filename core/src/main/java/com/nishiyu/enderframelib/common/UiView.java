@@ -98,6 +98,8 @@ public class UiView implements AutoCloseable {
     /** {@code <scene-3d>} の子要素（{@code <mesh-3d>} など）の属性を 3D ワールドへ写す（再スタイル・再レイアウトを伴うフレームで走る）。 */
     private Scene3DDomSync scene3dSync = new Scene3DDomSync(this::getOrCreateScene3dWorld);
     LayoutBox layoutRoot;
+    /** 新経路（M2c ④）の 1 ビューのフレーム。旧経路なら null（構築時の引数 {@link EnginePath} で決まり、途中で変えない）。 */
+    final V3Frame v3;
     private boolean serverManaged = false;
     private boolean headlessState = false;
     private boolean requested = false;
@@ -183,8 +185,30 @@ public class UiView implements AutoCloseable {
     private final List<UiPubSub.VirtualListBinding> virtualListBindings = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public UiView(String sessionId) {
+        this(sessionId, EnginePath.LEGACY);
+    }
+
+    /** {@code path} はレイアウトと描画の経路（M2c ④。構築時に決め、途中で変えない）。 */
+    public UiView(String sessionId, EnginePath path) {
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId must not be null");
         this.timers = new UiTimers(sessionId);
+        this.v3 = path == EnginePath.V3 ? new V3Frame() : null;
+    }
+
+    /** レイアウトの結果の木の根（旧経路は箱の木、新経路は描画用の木の見え方。CSSOM・フォーカス・インスペクタが読む）。 */
+    public com.nishiyu.enderframelib.core.layout.PaintBox boxRoot() {
+        return v3 != null ? v3.root() : layoutRoot();
+    }
+
+    /** 新経路の 1 フレーム（{@code full} なら台帳を読まずに全体を作り直す）。汚れた節の印は台帳に写してあるので片付ける。 */
+    private void v3Frame(boolean full) {
+        if (document == null || document.root == null) return;
+        List<DisplayItem> elements = v3.frame(document, full ? null : interactionState.changeLedger(), rootW, rootH, devicePixelRatio, env,
+                interactionState, scrollState, fontResolver());
+        interactionState.clearAllStyleDirty();
+        publishBuilt(elements);
+        publishLayoutToDom();
+        applyOverrides();
     }
 
     // ------------------------------------------------------------------
@@ -526,8 +550,9 @@ public class UiView implements AutoCloseable {
 
     /** CSSOM View が読む箱の木を差し替え、ResizeObserver / IntersectionObserver へ知らせる。 */
     void publishLayoutToDom() {
-        if (boxLayoutQuery == null || document == null || layoutRoot == null) return;
-        boxLayoutQuery.update(layoutRoot, document.sheet, rootW, rootH);
+        com.nishiyu.enderframelib.core.layout.PaintBox root = v3 != null ? v3.root() : layoutRoot;
+        if (boxLayoutQuery == null || document == null || root == null) return;
+        boxLayoutQuery.update(root, document.sheet, rootW, rootH);
         if (document.root instanceof HtmlDocument live) live.notifyLayoutObservers();
     }
 
@@ -976,6 +1001,7 @@ public class UiView implements AutoCloseable {
 
     /** 直近に作った表示リストの、中身を 1 つの節にまとめたスクロールコンテナ。既定の描画（{@link DisplayListBuilder}）が持つ。 */
     protected List<ScrollContentInfo> builtScrollContents() {
+        if (v3 != null) return v3.scrollContents();
         var builder = paintBuilder;
         return builder != null && com.nishiyu.enderframelib.core.EngineContext.current().host().boxRenderer() == com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer.DEFAULT
                 ? builder.scrollContents() : List.of();
@@ -1228,7 +1254,7 @@ public class UiView implements AutoCloseable {
      * 箱の木もある（初回の構築ではない）。このとき以降の処理はすべて何もしないので、省いても結果は変わらない。
      */
     private boolean isIdleFrame(boolean resize, InvalidationLevel level, List<HtmlNode> texts, List<HtmlNode> attrNodes) {
-        return !(resize || level != InvalidationLevel.NONE || layoutRoot == null || layoutStale
+        return !(resize || level != InvalidationLevel.NONE || (v3 != null ? v3.root() == null : layoutRoot == null) || layoutStale
                 || repositionPending || nonScrollRepositionPending || interactionState.hasDirtyNodes()
                 || texts == null || !texts.isEmpty() || !attrNodes.isEmpty());
     }
@@ -1256,6 +1282,13 @@ public class UiView implements AutoCloseable {
             return;
         }
         scene3dSync.sync(document.root); // DOM（属性・束縛）が変わったかもしれないフレームだけ、3D の記述を世界へ写す
+        if (v3 != null) { // 新経路: 入口は台帳 1 本。スクロール量だけの変化は中身の節を動かし、それ以外は増分で組み直す
+            boolean scrollOnly = !nonScrollRepositionPending && level == InvalidationLevel.REPOSITION && !interactionState.hasDirtyNodes();
+            repositionPending = nonScrollRepositionPending = false;
+            if (resize) recomputeLayout(pendingResizeW, pendingResizeH);
+            else if (!(scrollOnly && texts != null && texts.isEmpty() && attrNodes.isEmpty() && tryScrollTranslate())) v3Frame(false);
+            return;
+        }
         // 文字の変更は再スタイルの経路で測り直す（RESTYLE・NONE のとき）。他の経路と重なったら全体を作り直すので、溜めた分は捨てる
         boolean hadPendingText = texts == null || !texts.isEmpty();
         if (hadPendingText && (texts == null || level != InvalidationLevel.RESTYLE && level != InvalidationLevel.NONE)) {
@@ -1477,8 +1510,8 @@ public class UiView implements AutoCloseable {
                 // ビューポートだけが変わったときは CSS を読み直さず、@media の条件だけ評価し直す
                 doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withSize(width, height));
             }
-            NodeStateSnapshot carried = NodeStateSnapshot.capture(doc.root, scrollState, interactionState);
-            adoptServerTree(doc.root, rootNode);
+            ServerTreeAdoption.NodeStateSnapshot carried = ServerTreeAdoption.NodeStateSnapshot.capture(doc.root, scrollState, interactionState);
+            ServerTreeAdoption.adopt(doc.root, rootNode);
             carried.restore(doc.root, scrollState, interactionState);
         }
 
@@ -1488,6 +1521,11 @@ public class UiView implements AutoCloseable {
         scene3dSync.sync(doc.root); // 初回の記述を世界へ（以後は再スタイル・再レイアウトを伴うフレームで差分だけ）
 
         interactionState.markAllDirty();
+        if (v3 != null) {
+            v3.reset();
+            v3Frame(true);
+            return;
+        }
         // 再同期で同じ文書を差し替えたときは、使い回せる箱（クライアント所有の島など）を前回の木から拾う
         LayoutBox rootBox = parser.layoutDocument(
                 doc, width, height, env, scrollState, fontResolver(), interactionState,
@@ -1498,83 +1536,6 @@ public class UiView implements AutoCloseable {
         publishBuilt(elements);
 
         applyOverrides();
-    }
-
-    /**
-     * 再同期で届いた全木を、生きている文書の中身にする。文書のハンドル（{@code doc.root}）は変えない。
-     * クライアント所有（{@code data-owner="client"}）の部分木は捨てず、新しい木の同じ id の位置へ付け替える。
-     * 新しい木に同じ id の要素が無ければ、その持ち主がサーバー側で消えたのでクライアント所有の部分木も一緒に消える。
-     */
-    private static void adoptServerTree(HtmlNode liveRoot, HtmlNode freshRoot) {
-        if (liveRoot == freshRoot) return;
-
-        Map<String, HtmlNode> clientIslands = new LinkedHashMap<>();
-        collectClientOwnedIslands(liveRoot, clientIslands);
-
-        for (HtmlNode stale : new ArrayList<>(liveRoot.children)) {
-            liveRoot.removeChild(stale);
-        }
-        for (HtmlNode fresh : new ArrayList<>(freshRoot.children)) {
-            liveRoot.appendChild(fresh);
-        }
-
-        for (Map.Entry<String, HtmlNode> island : clientIslands.entrySet()) {
-            HtmlNode placeholder = liveRoot.getNodeById(island.getKey());
-            if (placeholder != null && placeholder.parent != null) {
-                placeholder.parent.replaceChild(island.getValue(), placeholder);
-            }
-        }
-    }
-
-    /**
-     * 再同期で木を差し替えても戻す、節に紐づく状態（スクロール位置・フォーカス・ホバー）。
-     * 状態は節そのものをキーに持つので、作り直された節へは id をたよりに移す。id の無い節は対象外。
-     */
-    record NodeStateSnapshot(Map<String, float[]> scrolls, String focusedId, boolean focusVisible, String hoveredId) {
-
-        static NodeStateSnapshot capture(HtmlNode root, ScrollState scrollState, InteractionState interaction) {
-            Map<String, float[]> scrolls = new LinkedHashMap<>();
-            collectScrolls(root, scrollState, scrolls);
-            HtmlNode focused = interaction.focusedNode();
-            boolean visible = focused != null && interaction.get(focused) != null && interaction.get(focused).isFocusVisible();
-            HtmlNode hovered = interaction.hoveredNode();
-            return new NodeStateSnapshot(scrolls, focused != null ? focused.key() : "", visible,
-                    hovered != null ? hovered.key() : "");
-        }
-
-        private static void collectScrolls(HtmlNode node, ScrollState scrollState, Map<String, float[]> out) {
-            float x = scrollState.getScrollX(node);
-            float y = scrollState.getScrollY(node);
-            if ((x != 0 || y != 0) && !node.key().isEmpty()) out.put(node.key(), new float[]{x, y});
-            for (HtmlNode child : node.children) collectScrolls(child, scrollState, out);
-        }
-
-        void restore(HtmlNode root, ScrollState scrollState, InteractionState interaction) {
-            for (Map.Entry<String, float[]> entry : scrolls.entrySet()) {
-                HtmlNode node = root.getNodeById(entry.getKey());
-                if (node != null) scrollState.setScroll(node, entry.getValue()[0], entry.getValue()[1]);
-            }
-            if (!focusedId.isEmpty()) {
-                HtmlNode node = root.getNodeById(focusedId);
-                if (node != null) interaction.setFocusedNode(node, focusVisible);
-            }
-            if (!hoveredId.isEmpty()) {
-                HtmlNode node = root.getNodeById(hoveredId);
-                if (node != null) interaction.setHoveredNode(node);
-            }
-        }
-    }
-
-    /** 最上位のクライアント所有の部分木（id を持つもの）を集める。その内側は島ごと運ぶので降りない。 */
-    private static void collectClientOwnedIslands(HtmlNode node, Map<String, HtmlNode> islands) {
-        for (HtmlNode child : node.children) {
-            boolean declaredClientOwned = Ownership.parse(child.attrs.get(Ownership.ATTRIBUTE)) == Ownership.CLIENT;
-            if (declaredClientOwned && !child.key().isEmpty()) {
-                islands.put(child.key(), child);
-            } else {
-                collectClientOwnedIslands(child, islands);
-            }
-        }
     }
 
     /** 直近の更新の内訳（診断表示用）。毎フレームの文字列の組み立て（{@code String.format}）を避けるため、読まれたときに作る（B12）。 */
@@ -1621,6 +1582,12 @@ public class UiView implements AutoCloseable {
                 if (mediaChanged) interactionState.markAllDirty();
             }
 
+            if (v3 != null) { // 新経路: ビューポート・規則が変わったので全体を組み直す
+                v3Frame(true);
+                lastLayoutFinishedNanos = clock.nanos();
+                lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
+                return;
+            }
             // 前回の箱の木から差分レイアウトする（変わっていない部分木は measure を飛ばす）
             LayoutBox rootBox = partialOk && oldRootW == newRootW && oldRootH == newRootH
                     ? PartialBuild.tryRun(doc, newRootW, newRootH, env, scrollState, fontResolver(), interactionState, layoutRoot) : null;
@@ -1750,10 +1717,9 @@ public class UiView implements AutoCloseable {
         if (!isVTrack && !isHTrack && !isVThumb && !isHThumb) return false;
 
         ensureLayoutFresh();
-        if (layoutRoot == null) return false;
-
         HtmlNode scrollNode = findNode(clickedEl.baseId());
-        LayoutBox box = scrollNode != null ? layoutRoot.findByNode(scrollNode) : null;
+        com.nishiyu.enderframelib.core.layout.PaintBox box = scrollNode == null ? null : v3 != null ? v3.boxOf(scrollNode)
+                : layoutRoot == null ? null : layoutRoot.findByNode(scrollNode);
         if (box == null) return false;
 
         ScrollState state = scrollState;
@@ -1798,10 +1764,9 @@ public class UiView implements AutoCloseable {
         if (!isVThumb && !isHThumb) return false;
 
         ensureLayoutFresh();
-        if (layoutRoot == null) return false;
-
         HtmlNode scrollNode = findNode(nodeId);
-        LayoutBox box = scrollNode != null ? layoutRoot.findByNode(scrollNode) : null;
+        com.nishiyu.enderframelib.core.layout.PaintBox box = scrollNode == null ? null : v3 != null ? v3.boxOf(scrollNode)
+                : layoutRoot == null ? null : layoutRoot.findByNode(scrollNode);
         if (box == null) return false;
 
         ScrollState state = scrollState;
@@ -1924,6 +1889,7 @@ public class UiView implements AutoCloseable {
         }
         document = null;
         layoutRoot = null;
+        if (v3 != null) v3.reset();
         nodeBoxIndex = null;
         env.clear();
         interactionState.clear();

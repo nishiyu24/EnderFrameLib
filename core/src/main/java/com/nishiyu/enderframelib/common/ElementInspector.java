@@ -46,7 +46,7 @@ public final class ElementInspector {
     /** 要素の検査結果。要素でない・レイアウトされていない（{@code display: none} など）なら null。 */
     public static Info inspect(UiView ui, HtmlNode node) {
         if (ui == null || node == null || node.nodeType != NodeType.ELEMENT) return null;
-        PaintBox box = UiFocus.findBox(ui.layoutRoot(), node);
+        PaintBox box = UiFocus.findBox(ui.boxRoot(), node);
         if (box == null || box.displayNone()) return null;
         Map<String, String> shown = new LinkedHashMap<>();
         ComputedStyle computed = box.style();

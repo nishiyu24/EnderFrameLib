@@ -129,19 +129,13 @@ public class InteractionState implements StyledDocumentState {
     private HtmlNode focusedNode = null;
 
     /** ポインタの下の節。無ければ null。 */
-    public HtmlNode hoveredNode() {
-        return hoveredNode;
-    }
+    public HtmlNode hoveredNode() { return hoveredNode; }
 
     /** 押下中の節。無ければ null。 */
-    public HtmlNode activeNode() {
-        return activeNode;
-    }
+    public HtmlNode activeNode() { return activeNode; }
 
     /** フォーカス中の節。無ければ null。 */
-    public HtmlNode focusedNode() {
-        return focusedNode;
-    }
+    public HtmlNode focusedNode() { return focusedNode; }
 
     public static class StateFlags {
         /**
@@ -996,6 +990,7 @@ public class InteractionState implements StyledDocumentState {
         flags.clearUnscoped();
     }
 
+    /** 全ての節の再スタイルの印を片付ける（新経路: 変化は変更台帳に写してあるので印は使わない。M2c ④）。 */ public void clearAllStyleDirty() { if (dirtyCount.get() > 0) { forEachFlags((n, f) -> { f.clearStyleDirtyFlag(); f.clearSubtreeDirty(); f.clearDirtyBelow(); f.clearUnscoped(); }); dirtyCount.set(0); } }
     /** 汚れた節が残っているかもしれないか（O(1)。個数の帳簿は実数以上なので、false なら確実に無い）。 */
     public boolean mayHaveDirtyNodes() { return dirtyCount.get() > 0; }
 
