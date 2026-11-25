@@ -453,6 +453,47 @@ tasks.register('profileClasspath') {
     }
 }
 
+// ---- Track P1b: コールド起動の AOT キャッシュ（JEP 483 / 514）----
+// エンジンのコンパイル・テスト・MOD は Java 21 のまま。JDK 25 はこのタスクの子 JVM（訓練と計測）だけが使い、
+// 実行時に初めて解決する（他のタスクの設定では取りに行かない）。AOT キャッシュはクラスパスが jar だけのときしか使えないので、
+// 計測用のクラス（jmh）も jar にまとめる。
+//   ./gradlew :core:coldStartAb                                  訓練（無ければ）→ JDK 21 / 25 / 25+AOT の交互 A/B
+//   ./gradlew :core:coldStartAb -Pab.rounds=7 -Pab.retrain -Pab.doc=large-list-2000 -Pab.fonts=fallback
+def jmhJar = tasks.register('jmhJar', Jar) {
+    archiveClassifier = 'jmh'
+    from sourceSets.jmh.output
+    destinationDirectory = layout.buildDirectory.dir('aot')
+}
+tasks.register('coldStartAb', JavaExec) {
+    group = 'verification'
+    description = 'コールド起動の交互 A/B: JDK 21 / JDK 25 / JDK 25 + AOT キャッシュ（ColdStartAbMain）'
+    dependsOn tasks.named('jar'), jmhJar
+    classpath = sourceSets.jmh.output + sourceSets.jmh.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.bench.ColdStartAbMain'
+    workingDir = rootProject.projectDir
+    def java21 = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    def java25 = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+    def mainDirs = sourceSets.main.output
+    def runtime = sourceSets.jmh.runtimeClasspath
+    def coreJar = tasks.named('jar').flatMap { it.archiveFile }
+    def benchJar = jmhJar.flatMap { it.archiveFile }
+    def aotFile = layout.buildDirectory.file('aot/coldstart.aot')
+    outputs.upToDateWhen { false }
+    jvmArgumentProviders.add({
+        def dirs = mainDirs.files
+        def jars = [coreJar.get().asFile, benchJar.get().asFile] +
+                runtime.files.findAll { it.isFile() && it.name.endsWith('.jar') && !dirs.contains(it) }
+        def props = [
+                "-Dab.java21=${java21.get().executablePath.asFile.absolutePath}",
+                "-Dab.java25=${java25.get().executablePath.asFile.absolutePath}",
+                "-Dab.cp=${jars.collect { it.absolutePath }.join(File.pathSeparator)}",
+                "-Dab.aot=${aotFile.get().asFile.absolutePath}"]
+        ['ab.rounds', 'ab.doc', 'ab.fonts', 'ab.train'].each { k -> if (project.hasProperty(k)) props << "-D${k}=${project.property(k)}" }
+        if (project.hasProperty('ab.retrain')) props << '-Dab.retrain=true'
+        props.collect { it.toString() }
+    } as CommandLineArgumentProvider)
+}
+
 tasks.register('memoryAndLatencyGate', JavaExec) {
     group = 'verification'
     description = '保持ヒープ（MB）と交互 A/B 実行時間（ms）のみを監視する回帰ゲート（MemoryAndLatencyGate）'

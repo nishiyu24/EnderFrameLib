@@ -86,5 +86,15 @@ public class ColdStartMain {
                     .forEach(e -> System.out.println("TOP " + e.getValue() + " " + e.getKey()));
         }
         v.close();
+        // -Dcold.train=N: 計測の後に代表文書を N 回ずつ開いて描く（AOT キャッシュの訓練用。JDK 25 はメソッドのプロファイルも
+        // キャッシュに残すので、1 回開くだけより厚い訓練の方が初回から最適化済みに近い。計測の数値には入らない）
+        int train = Integer.getInteger("cold.train", 0);
+        for (int r = 0; r < train; r++) {
+            for (String d : new String[] {Workloads.SHOWCASE, Workloads.GUIDEBOOK, Workloads.LARGE_LIST, "varied-list-200"}) {
+                try (StandaloneView t = new StandaloneView(Workloads.html(d), Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, resolver)) {
+                    for (int i = 0; i < 3; i++) t.frame(1000 + i * 16, b, true);
+                }
+            }
+        }
     }
 }

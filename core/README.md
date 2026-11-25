@@ -234,6 +234,8 @@ java -XX:AOTCache=app.aot        -cp <same jars>             YourMain     # norm
 
 Measured on Windows / JDK 27 (`ColdStartMain`, median of 7 fresh JVMs, 800x600): the showcase page went from 482 ms to `220 ms`, and a 2,000-row list from 575 ms to `249 ms`. The cache must be built from the same jars (directories are rejected) and the same JDK.
 
+To reproduce in this repository: `./gradlew :core:coldStartAb` trains a cache with a JDK 25 toolchain (only that task uses JDK 25; the engine and the mod still build and run on Java 21) and alternates fresh JVMs on JDK 21, JDK 25, and JDK 25 + cache. Measured on Windows, showcase with system fonts, median of 7 rounds: `540 / 473 / 228 ms` open + first frame (`0.42x`). The cache is only used at runtime on the JDK that built it; Minecraft 1.21.1 runs on Java 21, so the mod does not benefit.
+
 System fonts: the first start scans the OS font folders (opening every font file with FreeType; about 250-400 ms for ~500 files on Windows) and writes a catalog to the per-user cache folder (`%LOCALAPPDATA%\EnderFrame`, `~/Library/Caches/EnderFrame`, or `$XDG_CACHE_HOME/enderframe`). Later starts read the catalog instead (about 25 ms) as long as the font folders' modification times are unchanged; installing or removing a font invalidates it. To control the location, build the resolver yourself with `SystemFonts.load(roots, catalogPath, locale)` (`null` disables the catalog).
 
 ---
