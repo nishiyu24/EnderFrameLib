@@ -10,26 +10,27 @@ public final class StyleProperties {
         "font-family", "font-size", "font-weight", "font-style", "font-variant", "font-kerning", "line-height", "letter-spacing", 
         "word-spacing", "text-indent", "text-align", "text-align-last", "text-justify", "tab-size", "text-wrap", "text-wrap-style", 
         "text-transform", "white-space", "word-break", "overflow-wrap", "direction", "color", "accent-color", "text-decoration", 
-        "text-shadow", "-webkit-text-stroke-width", "-webkit-text-stroke-color", "writing-mode", "text-orientation", "cursor", "pointer-events", "display", 
-        "position", "top", "right", "bottom", "left", "float", "clear", "z-index", 
-        "width", "height", "min-width", "min-height", "max-width", "max-height", "box-sizing", "aspect-ratio", 
-        "margin-top", "margin-right", "margin-bottom", "margin-left", "padding-top", "padding-right", "padding-bottom", "padding-left", 
-        "border-top-width", "border-top-style", "border-right-width", "border-right-style", "border-bottom-width", "border-bottom-style", "border-left-width", "border-left-style", 
-        "overflow-x", "overflow-y", "scrollbar-width", "vertical-align", "text-overflow", "border-top-color", "border-right-color", "border-bottom-color", 
-        "border-left-color", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius", "outline-color", "outline-style", "outline-width", 
-        "outline-offset", "object-position", "background-color", "background-image", "background-position", "background-size", "background-repeat", "background-clip", 
-        "background-origin", "background-attachment", "box-shadow", "border-image-source", "border-image-slice", "border-image-width", "border-image-outset", "border-image-repeat", 
-        "opacity", "transform", "transform-origin", "rotate", "translate", "scale", "filter", "mix-blend-mode", 
-        "isolation", "clip-path", "backdrop-filter", "mask-image", "mask-position", "mask-size", "mask-repeat", "mask-origin", 
-        "mask-clip", "mask-mode", "mask-composite", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis", 
-        "order", "justify-content", "align-content", "justify-items", "align-items", "justify-self", "align-self", "row-gap", 
-        "column-gap", "grid-template-columns", "grid-template-rows", "grid-template-areas", "grid-auto-columns", "grid-auto-rows", "grid-auto-flow", "grid-column-start", 
-        "grid-column-end", "grid-row-start", "grid-row-end", "grid-column", "grid-row", "grid-area", "table-layout", "column-count", 
-        "column-width", "column-fill", "column-span", "column-rule-color", "column-rule-style", "column-rule-width", "appearance", "contain", 
-        "content-visibility", "contain-intrinsic-width", "contain-intrinsic-height", "container-type", "container-name", "anchor-name", "position-anchor", "position-area", 
-        "position-try-fallbacks", "position-try-order", "content", "counter-reset", "counter-increment", "counter-set", "src", "object-fit", 
-        "break-inside", "perspective", "user-select", "transition-property", "transition-duration", "transition-delay", "transition-timing-function", "transition", 
-        "animation-name", "animation-duration", "animation-delay", "animation-timing-function", "animation-iteration-count", "animation-direction", "animation-fill-mode", "animation"
+        "text-shadow", "-webkit-text-stroke-width", "-webkit-text-stroke-color", "quotes", "writing-mode", "text-orientation", "cursor", "pointer-events", 
+        "display", "position", "top", "right", "bottom", "left", "float", "clear", 
+        "z-index", "width", "height", "min-width", "min-height", "max-width", "max-height", "box-sizing", 
+        "aspect-ratio", "margin-top", "margin-right", "margin-bottom", "margin-left", "padding-top", "padding-right", "padding-bottom", 
+        "padding-left", "border-top-width", "border-top-style", "border-right-width", "border-right-style", "border-bottom-width", "border-bottom-style", "border-left-width", 
+        "border-left-style", "overflow-x", "overflow-y", "scrollbar-width", "vertical-align", "text-overflow", "border-top-color", "border-right-color", 
+        "border-bottom-color", "border-left-color", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius", "outline-color", "outline-style", 
+        "outline-width", "outline-offset", "object-position", "background-color", "background-image", "background-position", "background-size", "background-repeat", 
+        "background-clip", "background-origin", "background-attachment", "box-shadow", "border-image-source", "border-image-slice", "border-image-width", "border-image-outset", 
+        "border-image-repeat", "opacity", "transform", "transform-origin", "rotate", "translate", "scale", "filter", 
+        "mix-blend-mode", "isolation", "clip-path", "backdrop-filter", "mask-image", "mask-position", "mask-size", "mask-repeat", 
+        "mask-origin", "mask-clip", "mask-mode", "mask-composite", "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", 
+        "flex-basis", "order", "justify-content", "align-content", "justify-items", "align-items", "justify-self", "align-self", 
+        "row-gap", "column-gap", "grid-template-columns", "grid-template-rows", "grid-template-areas", "grid-auto-columns", "grid-auto-rows", "grid-auto-flow", 
+        "grid-column-start", "grid-column-end", "grid-row-start", "grid-row-end", "grid-column", "grid-row", "grid-area", "table-layout", 
+        "column-count", "column-width", "column-fill", "column-span", "column-rule-color", "column-rule-style", "column-rule-width", "appearance", 
+        "contain", "content-visibility", "contain-intrinsic-width", "contain-intrinsic-height", "container-type", "container-name", "anchor-name", "position-anchor", 
+        "position-area", "position-try-fallbacks", "position-try-order", "content", "counter-reset", "counter-increment", "counter-set", "src", 
+        "object-fit", "break-inside", "perspective", "user-select", "transition-property", "transition-duration", "transition-delay", "transition-timing-function", 
+        "transition", "animation-name", "animation-duration", "animation-delay", "animation-timing-function", "animation-iteration-count", "animation-direction", "animation-fill-mode", 
+        "animation"
     };
 
     private static final byte[] GROUP_BITS = initGroupBits();
@@ -71,6 +72,7 @@ public final class StyleProperties {
         b[InheritedStyle.ID_textShadow] = 1;
         b[InheritedStyle.ID_webkitTextStrokeWidth] = 1;
         b[InheritedStyle.ID_webkitTextStrokeColor] = 1;
+        b[InheritedStyle.ID_quotes] = 1;
         b[InheritedStyle.ID_writingMode] = 1;
         b[InheritedStyle.ID_textOrientation] = 1;
         b[InheritedStyle.ID_cursor] = 1;
@@ -269,6 +271,7 @@ public final class StyleProperties {
             case "text-shadow" -> s.inherited.textShadow;
             case "-webkit-text-stroke-width" -> s.inherited.webkitTextStrokeWidth;
             case "-webkit-text-stroke-color" -> s.inherited.webkitTextStrokeColor;
+            case "quotes" -> s.inherited.quotes;
             case "writing-mode" -> s.inherited.writingMode;
             case "text-orientation" -> s.inherited.textOrientation;
             case "cursor" -> s.inherited.cursor;
@@ -507,6 +510,7 @@ public final class StyleProperties {
             if (inh.textShadow != null) into.putById(InheritedStyle.ID_textShadow, inh.textShadow);
             if (inh.webkitTextStrokeWidth != null) into.putById(InheritedStyle.ID_webkitTextStrokeWidth, inh.webkitTextStrokeWidth);
             if (inh.webkitTextStrokeColor != null) into.putById(InheritedStyle.ID_webkitTextStrokeColor, inh.webkitTextStrokeColor);
+            if (inh.quotes != null) into.putById(InheritedStyle.ID_quotes, inh.quotes);
             if (inh.writingMode != null) into.putById(InheritedStyle.ID_writingMode, inh.writingMode);
             if (inh.textOrientation != null) into.putById(InheritedStyle.ID_textOrientation, inh.textOrientation);
             if (inh.cursor != null) into.putById(InheritedStyle.ID_cursor, inh.cursor);

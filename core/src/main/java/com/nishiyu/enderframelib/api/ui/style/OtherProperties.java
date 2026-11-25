@@ -9,7 +9,7 @@ import static com.nishiyu.enderframelib.api.ui.style.Keyword.*;
 /**
  * プロパティ関数の群（{@code PropertyRegistry} から生成）。{@link Css} が全群を継承するので {@code import static ...style.Css.*} で使う。
  *
- * <p>まだ型の無いもの（{@link Raw} を受ける）: contain, contain-intrinsic-inline-size, contain-intrinsic-block-size, contain-intrinsic-size, container-name, anchor-name, position-anchor, position-area, position-try-fallbacks, position-try, container, content, counter-reset, counter-increment, counter-set, src, transition-property, transition-timing-function, transition, animation-name, animation-timing-function, animation-iteration-count, animation-direction, animation-fill-mode, animation。</p>
+ * <p>まだ型の無いもの（{@link Raw} を受ける）: contain, contain-intrinsic-inline-size, contain-intrinsic-block-size, contain-intrinsic-size, container-name, anchor-name, position-anchor, position-area, position-try-fallbacks, position-try, container, content, quotes, counter-reset, counter-increment, counter-set, src, transition-property, transition-timing-function, transition, animation-name, animation-timing-function, animation-iteration-count, animation-direction, animation-fill-mode, animation。</p>
  */
 @ApiStatus.AvailableSince("1.0")
 public abstract class OtherProperties extends TextProperties {
@@ -52,6 +52,8 @@ public abstract class OtherProperties extends TextProperties {
     public static Declaration container(Raw v) { return d("container", v); }
     // content
     public static Declaration content(Raw v) { return d("content", v); }
+    // quotes
+    public static Declaration quotes(Raw v) { return d("quotes", v); }
     // counter-reset
     public static Declaration counterReset(Raw v) { return d("counter-reset", v); }
     // counter-increment

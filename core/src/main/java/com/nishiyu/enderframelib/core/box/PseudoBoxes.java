@@ -15,7 +15,8 @@ import java.util.Locale;
  *
  * <p>前回の同じ種類の疑似要素の箱があり、スタイル・種類・文字が同じなら前回の参照をそのまま返す（下流のキャッシュが当たる）。
  * {@code content} の評価（文字列・{@code attr()}・{@code counter()}・{@code counters()}）は旧 {@code BoxTreeBuilder.evaluateContent}
- * のアルゴリズムの移植。{@code open-quote} などの引用符は旧経路と同じく何も出さない。</p>
+ * のアルゴリズムの移植。{@code open-quote} / {@code close-quote} / {@code no-open-quote} / {@code no-close-quote} は {@link Quotes}
+ * （旧経路は何も出さない）。</p>
  */
 final class PseudoBoxes {
     private PseudoBoxes() { }
@@ -35,7 +36,9 @@ final class PseudoBoxes {
         Style st = styles.pseudo(owner, ownerStyle, which == BoxNode.Pseudo.AFTER);
         if (st == null) return null;
         if (counters != null) counters.apply(owner, st, false);
-        String raw = evaluate(st.rare.content, owner, counters, counterStyles);
+        int[] qd = Quotes.depth(owner, which == BoxNode.Pseudo.AFTER, counters);
+        String raw = evaluate(st.rare.content, owner, st, qd, counters, counterStyles);
+        if (counters != null) counters.quoteDepth = qd[0]; // 文書順の深さを次の疑似要素へ
         BoxNode prevText = prev != null && prev.children.size() == 1 ? prev.children.get(0) : null;
         if (prev != null) st = st.shareEqualGroups(prev.style);
         BoxKind kind = BoxKind.of(owner, st);
@@ -51,8 +54,11 @@ final class PseudoBoxes {
         return new BoxNode(owner, st, kind, null, new BoxChunk(new BoxNode[]{tb}), which, null, null, null, null, MarkerBoxes.NO_ORDINAL);
     }
 
-    /** {@code content} の値（文字列・{@code attr()}・{@code counter()}・{@code counters()} の並び）を評価する。 */
-    static String evaluate(String content, HtmlNode owner, Counters counters, CounterStyles cs) {
+    /**
+     * {@code content} の値（文字列・{@code attr()}・{@code counter()}・{@code counters()}・引用符の語の並び）を評価する。{@code st} は
+     * 疑似要素のスタイル（{@code quotes}）、{@code depth} は引用符の入れ子の深さ（{@link Quotes#depth}。評価で増減する）。
+     */
+    static String evaluate(String content, HtmlNode owner, Style st, int[] depth, Counters counters, CounterStyles cs) {
         if (content == null) return "";
         StringBuilder out = new StringBuilder();
         int i = 0, n = content.length();
@@ -76,8 +82,10 @@ final class PseudoBoxes {
                     String name = content.substring(i, open).trim().toLowerCase(Locale.ROOT);
                     out.append(function(name, content.substring(open + 1, close).trim(), owner, counters, cs));
                     i = close + 1;
-                } else { // open-quote などのキーワード: 引用符の入れ子は持たないので何も出さない
-                    i = space < 0 ? n : space;
+                } else { // open-quote などの語
+                    int end = space < 0 ? n : space;
+                    out.append(Quotes.keyword(content.substring(i, end), st, depth));
+                    i = end;
                 }
             }
         }

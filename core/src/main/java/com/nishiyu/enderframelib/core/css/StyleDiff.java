@@ -43,6 +43,7 @@ final class StyleDiff {
             if (!java.util.Objects.equals(x.textShadow, y.textShadow)) v.changed("text-shadow", true, true);
             if (!java.util.Objects.equals(x.webkitTextStrokeWidth, y.webkitTextStrokeWidth)) v.changed("-webkit-text-stroke-width", true, true);
             if (!java.util.Objects.equals(x.webkitTextStrokeColor, y.webkitTextStrokeColor)) v.changed("-webkit-text-stroke-color", true, true);
+            if (!java.util.Objects.equals(x.quotes, y.quotes)) v.changed("quotes", false, true);
             if (!java.util.Objects.equals(x.writingMode, y.writingMode)) v.changed("writing-mode", false, true);
             if (!java.util.Objects.equals(x.textOrientation, y.textOrientation)) v.changed("text-orientation", false, true);
             if (!java.util.Objects.equals(x.cursor, y.cursor)) v.changed("cursor", true, true);
@@ -255,6 +256,7 @@ final class StyleDiff {
             if (!java.util.Objects.equals(x.wordBreak, y.wordBreak)) return true;
             if (x.overflowWrap != y.overflowWrap) return true;
             if (!java.util.Objects.equals(x.direction, y.direction)) return true;
+            if (!java.util.Objects.equals(x.quotes, y.quotes)) return true;
             if (!java.util.Objects.equals(x.writingMode, y.writingMode)) return true;
             if (!java.util.Objects.equals(x.textOrientation, y.textOrientation)) return true;
         }
@@ -401,6 +403,7 @@ final class StyleDiff {
             if (!java.util.Objects.equals(x.wordBreak, y.wordBreak)) return -1;
             if (x.overflowWrap != y.overflowWrap) return -1;
             if (!java.util.Objects.equals(x.direction, y.direction)) return -1;
+            if (!java.util.Objects.equals(x.quotes, y.quotes)) return -1;
             if (!java.util.Objects.equals(x.writingMode, y.writingMode)) return -1;
             if (!java.util.Objects.equals(x.textOrientation, y.textOrientation)) return -1;
         }

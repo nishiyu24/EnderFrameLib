@@ -30,7 +30,11 @@ final class Counters {
     /** 逆順に数える {@code list-item}（{@code <ol reversed>}）の実体の位置。 */
     private final Set<Integer> reversed = new HashSet<>();
 
+    /** 引用符の入れ子の深さ（文書順に積み上がる。カウンタの範囲とは別で、子を抜けても戻さない）。 */
+    int quoteDepth;
+
     void clear() {
+        quoteDepth = 0;
         names.clear();
         values.clear();
         reversed.clear();

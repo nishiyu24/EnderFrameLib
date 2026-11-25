@@ -40,6 +40,7 @@ public final class InheritedStyle {
     static final int ID_textShadow = ComputedStyle.idOf("text-shadow");
     static final int ID_webkitTextStrokeWidth = ComputedStyle.idOf("-webkit-text-stroke-width");
     static final int ID_webkitTextStrokeColor = ComputedStyle.idOf("-webkit-text-stroke-color");
+    static final int ID_quotes = ComputedStyle.idOf("quotes");
     static final int ID_writingMode = ComputedStyle.idOf("writing-mode");
     static final int ID_textOrientation = ComputedStyle.idOf("text-orientation");
     static final int ID_cursor = ComputedStyle.idOf("cursor");
@@ -122,6 +123,8 @@ public final class InheritedStyle {
     public final String webkitTextStrokeWidth;
     /** {@code -webkit-text-stroke-color}。 */
     public final String webkitTextStrokeColor;
+    /** {@code quotes}。 */
+    public final String quotes;
     /** {@code writing-mode}。 */
     public final String writingMode;
     /** {@code text-orientation}。 */
@@ -176,6 +179,7 @@ public final class InheritedStyle {
         this.textShadow = StyleReader.text(cs, ID_textShadow);
         this.webkitTextStrokeWidth = StyleReader.text(cs, ID_webkitTextStrokeWidth);
         this.webkitTextStrokeColor = StyleReader.text(cs, ID_webkitTextStrokeColor);
+        this.quotes = StyleReader.text(cs, ID_quotes);
         this.writingMode = StyleReader.text(cs, ID_writingMode);
         this.textOrientation = StyleReader.text(cs, ID_textOrientation);
         this.cursor = StyleReader.text(cs, ID_cursor);
@@ -235,6 +239,7 @@ public final class InheritedStyle {
                 && java.util.Objects.equals(textShadow, o.textShadow)
                 && java.util.Objects.equals(webkitTextStrokeWidth, o.webkitTextStrokeWidth)
                 && java.util.Objects.equals(webkitTextStrokeColor, o.webkitTextStrokeColor)
+                && java.util.Objects.equals(quotes, o.quotes)
                 && java.util.Objects.equals(writingMode, o.writingMode)
                 && java.util.Objects.equals(textOrientation, o.textOrientation)
                 && java.util.Objects.equals(cursor, o.cursor)
@@ -245,7 +250,7 @@ public final class InheritedStyle {
 
     @Override
     public int hashCode() {
-        int h = 39;
+        int h = 40;
         h = h * 31 + System.identityHashCode(visibility);
         h = h * 31 + System.identityHashCode(borderCollapse);
         h = h * 31 + java.util.Objects.hashCode(borderSpacing);
@@ -281,6 +286,7 @@ public final class InheritedStyle {
         h = h * 31 + java.util.Objects.hashCode(textShadow);
         h = h * 31 + java.util.Objects.hashCode(webkitTextStrokeWidth);
         h = h * 31 + java.util.Objects.hashCode(webkitTextStrokeColor);
+        h = h * 31 + java.util.Objects.hashCode(quotes);
         h = h * 31 + java.util.Objects.hashCode(writingMode);
         h = h * 31 + java.util.Objects.hashCode(textOrientation);
         h = h * 31 + java.util.Objects.hashCode(cursor);

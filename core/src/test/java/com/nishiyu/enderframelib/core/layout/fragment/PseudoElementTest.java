@@ -73,7 +73,7 @@ class PseudoElementTest {
         SpikeView v = view("a::after{content:' (' attr(href) ')'} q::before{content:open-quote}", "<a id=a href=x.html>link</a><q id=q>q</q>");
         v.frame();
         assertEquals(" (x.html)", text(box(v, "a").pseudoChild(BoxNode.Pseudo.AFTER)));
-        assertEquals("", text(box(v, "q").pseudoChild(BoxNode.Pseudo.BEFORE)), "引用符は旧経路と同じく何も出さない");
+        assertEquals("“", text(box(v, "q").pseudoChild(BoxNode.Pseudo.BEFORE)), "open-quote は深さ 0 の開きの引用符（QuotesTest）");
     }
 
     @Test

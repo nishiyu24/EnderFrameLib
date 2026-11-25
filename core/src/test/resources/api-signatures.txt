@@ -1783,6 +1783,7 @@ public abstract class api.ui.style.OtherProperties extends api.ui.style.TextProp
     public static api.ui.style.Declaration api.ui.style.OtherProperties.positionTry(api.ui.style.Raw)
     public static api.ui.style.Declaration api.ui.style.OtherProperties.positionTryFallbacks(api.ui.style.Raw)
     public static api.ui.style.Declaration api.ui.style.OtherProperties.positionTryOrder(api.ui.style.Keyword$PositionTryOrder)
+    public static api.ui.style.Declaration api.ui.style.OtherProperties.quotes(api.ui.style.Raw)
     public static api.ui.style.Declaration api.ui.style.OtherProperties.src(api.ui.style.Raw)
     public static api.ui.style.Declaration api.ui.style.OtherProperties.transition(api.ui.style.Raw)
     public static api.ui.style.Declaration api.ui.style.OtherProperties.transitionDelay(api.ui.style.Value<api.ui.style.Time>)

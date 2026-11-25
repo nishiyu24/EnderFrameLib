@@ -52,7 +52,8 @@ final class MarkerBoxes {
         if (c.equalsIgnoreCase("none")) return null;
         boolean byType = c.isEmpty() || c.equalsIgnoreCase("normal");
         String type = Style.or(ownerStyle.inherited.listStyleType, "disc");
-        String raw = byType ? cs.marker(type, ordinal) : PseudoBoxes.evaluate(content, owner, counters, cs);
+        String raw = byType ? cs.marker(type, ordinal)
+                : PseudoBoxes.evaluate(content, owner, ownerStyle, Quotes.depth(owner, false, counters), counters, cs);
         if (raw == null || raw.isEmpty()) return null;
         // 番号に依るか（1 と 2 で表現が変わる型）。カウンタを使う文書は全体を作り直すので数え直さない
         int ord = byType && counters == null && !Objects.equals(cs.marker(type, 1), cs.marker(type, 2)) ? ordinal : NO_ORDINAL;

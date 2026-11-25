@@ -212,6 +212,11 @@ public final class ElementTraits {
         return "video".equalsIgnoreCase(tag) || "iframe".equalsIgnoreCase(tag);
     }
 
+    /** 引用の {@code q}（UA の {@code ::before} / {@code ::after} が引用符を出す）。 */
+    public static boolean isQuote(String tag) {
+        return "q".equalsIgnoreCase(tag);
+    }
+
     public static boolean isListItem(String tag) {
         return "li".equalsIgnoreCase(tag);
     }

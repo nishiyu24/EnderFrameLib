@@ -301,6 +301,8 @@ public final class PropertyRegistry {
 
         // ---- 生成内容・置換要素
         layout("content", "normal", false, ValueType.STRING, false);
+        // 引用符の組（open-quote / close-quote が入れ子の深さで選ぶ。auto は既定の “ ” ‘ ’。CSS Generated Content 3 §2.1）
+        layout("quotes", "auto", true, ValueType.OTHER, false);
         for (String p : List.of("counter-reset", "counter-increment", "counter-set")) {
             layout(p, "none", false, ValueType.LIST, false);
         }
