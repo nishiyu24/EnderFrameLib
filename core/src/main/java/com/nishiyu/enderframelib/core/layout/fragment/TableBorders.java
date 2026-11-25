@@ -22,6 +22,11 @@ public final class TableBorders {
 
     private TableBorders() { }
 
+    /** 枠線を重ねる（{@code border-collapse: collapse}）表か。 */
+    public static boolean collapses(BoxNode table) {
+        return table.kind.tableContainer() && table.style.inherited.borderCollapse == com.nishiyu.enderframelib.core.css.model.CssKeywords.BorderCollapse.COLLAPSE;
+    }
+
     /** 枠線を重ねる表 {@code table} の使う枠線（描画の一時アダプタが読む。表の格子から求め直す）。 */
     public static Edges ofTable(BoxNode table, LayoutSession s) {
         return collapse(table, TableStructure.of(table), s);

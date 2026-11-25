@@ -186,6 +186,21 @@ public final class BoxNode {
         return b.pseudo == Pseudo.ANONYMOUS || b.pseudo == Pseudo.ORTHOGONAL;
     }
 
+    /** DOM に節を持たない箱（疑似要素・表の匿名の箱・直交フローの包む箱）か（{@link #pseudo} が {@link Pseudo#NONE} でない）。 */
+    public boolean generated() {
+        return pseudo != Pseudo.NONE;
+    }
+
+    /** 表の匿名の箱か（{@link Pseudo#ANONYMOUS}）。 */
+    public boolean anonymousTableBox() {
+        return pseudo == Pseudo.ANONYMOUS;
+    }
+
+    /** 直交フローの根の中身を包む箱か（{@link Pseudo#ORTHOGONAL}）。 */
+    public boolean orthogonalWrapper() {
+        return pseudo == Pseudo.ORTHOGONAL;
+    }
+
     /** 流れに入らない（{@code list-style-position: outside} の）マーカーの箱（無ければ null）。 */
     public BoxNode outsideMarker() {
         return marker != null && (flow.size() == 0 || flow.get(0) != marker) ? marker : null;
