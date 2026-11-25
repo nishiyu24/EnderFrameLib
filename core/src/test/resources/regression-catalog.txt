@@ -122,3 +122,4 @@ M2c | ChangeLedgerTest#hoverAndResizeReachTheLedger | 新経路の描画用の�
 M2c | ClockInjectionTest#resizeThrottleFollowsTheInjectedClock | リサイズの間引きが旧経路の箱の木の有無だけを見て、新経路のビューでは間引かなかった
 M2c | TypedCssCoverageTest#tableKeywordsAreAcceptedByTheEngine | 新経路のビューで CSSOM の算出スタイルが旧経路の再スタイルの印からしか読めず空だった（最新の箱の木から答える）
 M2c | ContentVisibilityVirtualListTest#standaloneViewHandles100kVirtualScrollEndToEnd | 新経路が画面から遠い content-visibility: auto の箱も描き、10 万行の表示リストが O(N) になった（描くときに関連の余白で外す）
+M2c | V3ViewTest#outOfFlowBoxesPaintInDocumentOrderWithPositionedSiblings | 描画用の木が流れの外の箱を包含ブロックの子の末尾に置き、位置指定の層（z-index: auto）を文書順でなく描いた（voidwave の背景の光が見出しの上に重なった。一時アダプタも同じ）

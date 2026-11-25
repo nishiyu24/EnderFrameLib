@@ -151,6 +151,25 @@ class V3ViewTest {
         }
     }
 
+    /**
+     * 位置指定の層（z-index: auto）は文書順に描く: 包含ブロックの子にした流れの外の箱も、文書で後ろにある位置指定の兄弟より先に描く
+     * （voidwave の背景の光が見出しの上に重なった）。
+     */
+    @Test
+    void outOfFlowBoxesPaintInDocumentOrderWithPositionedSiblings() {
+        String html = "<style>body{margin:0}</style><div style='position:relative;width:200px;height:100px'>"
+                + "<div style='position:absolute;left:0;top:0;width:200px;height:100px;background:#f00'></div>"
+                + "<div style='position:relative;width:100px;height:50px;background:#00f'></div>"
+                + "<div style='position:absolute;left:150px;top:0;width:50px;height:50px;background:#0f0'></div></div>";
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+            SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
+            sv.frame(1000, live, true);
+            assertEquals(0xFF0000FF, live.pixmap().get(20, 20), "後ろの relative の兄弟が前の absolute の上");
+            assertEquals(0xFF00FF00, live.pixmap().get(170, 20), "後ろの absolute は前の relative の上");
+            assertEquals(0xFFFF0000, live.pixmap().get(120, 80), "absolute だけの所");
+        }
+    }
+
     private static com.nishiyu.enderframelib.core.layout.PaintBox box(com.nishiyu.enderframelib.core.layout.PaintBox b, String id) {
         if (b.node != null && !b.isAnonymous && id.equals(b.node.getId())) return b;
         for (var c : b.paintChildren()) {

@@ -124,10 +124,26 @@ public final class FragmentProjection {
                         && p.frag().box.style.box.position != com.nishiyu.enderframelib.core.css.model.Position.FIXED
                         && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isFieldset(f.box.node.tag)
                         && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isLegend(p.frag().box.node.tag);
+                int at = documentOrderIndex(lb, c.node); // 文書順（新経路の描画用の木と同じ規則。位置指定の層は木の順に描く）
                 lb.addChild(c);
+                if (at < lb.children.size() - 1) lb.children.add(at, lb.children.remove(lb.children.size() - 1));
             }
         }
         return lb;
+    }
+
+    /** 流れの外の箱（DOM の節 {@code node}）を {@code lb} の子に足す位置: 文書順で後ろにある最初の子の前（無ければ末尾）。 */
+    private static int documentOrderIndex(LayoutBox lb, com.nishiyu.enderframelib.core.dom.node.HtmlNode node) {
+        if (node == null || node.isPseudoNode) return lb.children.size();
+        for (int i = 0, n = lb.children.size(); i < n; i++) {
+            com.nishiyu.enderframelib.core.dom.node.HtmlNode cn = lb.children.get(i).node;
+            if (cn == null || cn == node || cn.isPseudoNode) continue;
+            int pos = node.compareDocumentPosition(cn);
+            if ((pos & com.nishiyu.enderframelib.api.dom.Node.DOCUMENT_POSITION_DISCONNECTED) != 0) continue;
+            if ((pos & com.nishiyu.enderframelib.api.dom.Node.DOCUMENT_POSITION_FOLLOWING) != 0
+                    && (pos & com.nishiyu.enderframelib.api.dom.Node.DOCUMENT_POSITION_CONTAINED_BY) == 0) return i;
+        }
+        return lb.children.size();
     }
 
     /**

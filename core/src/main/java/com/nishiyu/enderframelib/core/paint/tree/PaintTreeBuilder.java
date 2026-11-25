@@ -166,15 +166,25 @@ public final class PaintTreeBuilder {
         d.y = y;
         d.w = f.width;
         d.h = f.height;
-        BoxGeometry g = new BoxGeometry(b.style, f.space.availableWidth, session);
-        d.mT = g.mT; d.mR = g.mR; d.mB = g.mB; d.mL = f.marginLeft;
-        d.pT = g.pT; d.pR = g.pR; d.pB = g.pB; d.pL = g.pL;
-        d.bT = g.bT; d.bR = g.bR; d.bB = g.bB; d.bL = g.bL;
-        tableEdges(d, f);
-        float[] ov = ScrollableOverflow.of(f, overflow, session);
-        d.scrollWidth = ov[0];
-        d.scrollHeight = ov[1];
-        d.lineHeight = InlineFlow.lineHeight(b.style, session.face(b.style));
+        if (old != null) { // 同じ断片（描画だけが変わった箱）: 縁・スクロール範囲・行の高さは断片とレイアウトの入力だけで決まるので前回のまま
+            d.mT = old.mT; d.mR = old.mR; d.mB = old.mB; d.mL = old.mL;
+            d.pT = old.pT; d.pR = old.pR; d.pB = old.pB; d.pL = old.pL;
+            d.bT = old.bT; d.bR = old.bR; d.bB = old.bB; d.bL = old.bL;
+            d.collapsedBorders = old.collapsedBorders;
+            d.scrollWidth = old.scrollWidth;
+            d.scrollHeight = old.scrollHeight;
+            d.lineHeight = old.lineHeight;
+        } else {
+            BoxGeometry g = new BoxGeometry(b.style, f.space.availableWidth, session);
+            d.mT = g.mT; d.mR = g.mR; d.mB = g.mB; d.mL = f.marginLeft;
+            d.pT = g.pT; d.pR = g.pR; d.pB = g.pB; d.pL = g.pL;
+            d.bT = g.bT; d.bR = g.bR; d.bB = g.bB; d.bL = g.bL;
+            tableEdges(d, f);
+            float[] ov = ScrollableOverflow.of(f, overflow, session);
+            d.scrollWidth = ov[0];
+            d.scrollHeight = ov[1];
+            d.lineHeight = InlineFlow.lineHeight(b.style, session.face(b.style));
+        }
         Map<Object, PaintNode> kids = childIndex(before);
         if (b.kind == BoxKind.TEXT) { // flex の項目になった文字の節: 文字片を自分に持つ（文字の箱は原点に足されないので親の基準で置く）
             Map<BoxNode, Draft> boxes = new IdentityHashMap<>();
@@ -206,16 +216,34 @@ public final class PaintTreeBuilder {
         for (Child c : d.children) { // 断片から置いた箱（原子・flex の項目に blockify したインライン要素）は位置を持つので触らない
             if (c.n instanceof Draft cd && !cd.placed && (cd.text || inlineFlow(cd.display))) fitInline(cd);
         }
-        if (f.oof != null) { // 流れの外の断片は包含ブロックの子として後ろに置く（描画の順も位置指定の子が後）
+        if (f.oof != null) { // 流れの外の断片は包含ブロックの子にする。並びは文書順（位置指定の層は木の順に描くので、後ろの兄弟より前）
             for (PlacedFragment p : f.oof) {
                 BoxNode cb = p.frag().box;
                 // fieldset の描画される legend（FieldsetLegend が置いた）: 旧描画が枠線を切り欠く印
                 boolean isLegend = cb != null && cb.style.box.position != Position.ABSOLUTE && cb.style.box.position != Position.FIXED
                         && ElementTraits.isFieldset(b.node.tag) && ElementTraits.isLegend(cb.node.tag);
-                d.add(block(p.frag(), p.x(), p.y(), kids, isLegend), p.x(), p.y());
+                d.children.add(documentOrderIndex(d, cb != null ? cb.node : null), new Child(block(p.frag(), p.x(), p.y(), kids, isLegend), p.x(), p.y()));
             }
         }
         return d;
+    }
+
+    /**
+     * 流れの外の箱（DOM の節 {@code node}）を {@code d} の子に足す位置: 文書順で後ろにある最初の子の前（無ければ末尾）。自分を含む子
+     * （祖先）・DOM に無い生成の節は比べない。
+     */
+    private static int documentOrderIndex(Draft d, HtmlNode node) {
+        if (node == null || node.isPseudoNode) return d.children.size();
+        for (int i = 0, n = d.children.size(); i < n; i++) {
+            Object c = d.children.get(i).n();
+            HtmlNode cn = c instanceof Draft cd ? cd.node : c instanceof PaintNode pn ? pn.node : null;
+            if (cn == null || cn == node || cn.isPseudoNode) continue;
+            int pos = node.compareDocumentPosition(cn);
+            if ((pos & com.nishiyu.enderframelib.api.dom.Node.DOCUMENT_POSITION_DISCONNECTED) != 0) continue;
+            if ((pos & com.nishiyu.enderframelib.api.dom.Node.DOCUMENT_POSITION_FOLLOWING) != 0
+                    && (pos & com.nishiyu.enderframelib.api.dom.Node.DOCUMENT_POSITION_CONTAINED_BY) == 0) return i;
+        }
+        return d.children.size();
     }
 
     /** 前回の節の合成の節の番号（表の匿名の箱）が、今回の文書順の番号と同じか。同じなら番号を進めて true。 */

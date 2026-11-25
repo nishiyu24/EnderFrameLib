@@ -194,7 +194,8 @@ public class ChangeLedgerTest {
             ChangeLedger l = v.ui().interactionState().changeLedger();
             v.frame(1000, be, true);
             assertEquals(0, l.pendingCount());
-            v.mouseMove(10, 5, be.sessionId());
+            // :hover の規則（.row:hover）が掛かる行の上へ（状態を読む規則の無い要素のホバーは何も変えないので台帳に載らない）
+            v.mouseMove(20, 15, be.sessionId());
             assertTrue(l.pendingCount() > 0, "ホバーで台帳に載る（対話状態の入口）");
             v.frame(1016, be, true);
             v.resize(300, 240);

@@ -675,6 +675,8 @@ public class InteractionState implements StyledDocumentState {
             markDirty(node);
             return;
         }
+        // :hover / :active は規則からしか読まれない: この要素の状態を読む規則が無ければ、自分も兄弟・子孫も変わらない（:has() は除く）
+        if ((stateBits & ~(ElementState.HOVER | ElementState.ACTIVE)) == 0 && !sheet.usesHasSelectors() && (com.nishiyu.enderframelib.core.css.StyleStateAutomaton.interactiveMask(node, sheet) & stateBits) == 0) return;
         dirty(node, false);
         invalidate(node, sets.forState(stateBits));
     }
@@ -932,9 +934,7 @@ public class InteractionState implements StyledDocumentState {
     public void setAnimationTime(long ms) { this.animationTimeMs = ms; }
 
     /** 設定されていなければ現在時刻。 */
-    public long animationTimeMs() {
-        return animationTimeMs != Long.MIN_VALUE ? animationTimeMs : Clock.SYSTEM.millis();
-    }
+    public long animationTimeMs() { return animationTimeMs != Long.MIN_VALUE ? animationTimeMs : Clock.SYSTEM.millis(); }
 
     /**
      * 時刻を進め、値が変わる要素を再スタイルの対象にする（要素自身だけ。子孫への波及は再スタイルが算出値の変化から決める）。

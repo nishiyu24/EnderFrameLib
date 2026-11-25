@@ -66,6 +66,15 @@ public final class MemoryAndLatencyGate {
             {"varied-list-2000", "hover", "100", "200", "0.60"},
     };
 
+    /**
+     * 新経路と旧経路の交互 A/B（M2c の完了条件: hover・文字の変更の 1 フレームが旧経路以下）: {doc, scenario, warmup, frames, maxRatio}。
+     * 比は 新経路 / 旧経路。既定を新経路にする（M2c ④-3）までは出すだけで判定しない。M2b-6 で旧経路と一緒に消す。
+     */
+    static final String[][] AB_V3_VS_LEGACY_RUNS = {
+            {"showcase", "hover", "200", "300", "1.00"},
+            {"showcase", "text", "200", "300", "1.00"},
+    };
+
     /** 単独の基準時間計測シナリオ（git base 指定時は交互 A/B 対象）: {doc, scenario, warmup, frames}。 */
     static final String[][] LATENCY_RUNS = {
             {"showcase", "open", "60", "100"},
@@ -280,7 +289,11 @@ public final class MemoryAndLatencyGate {
         String html = loadHtml(doc);
         boolean forceFull = mode.equals("full");
         NullBackend backend = new NullBackend();
-        StandaloneView[] view = {new StandaloneView(html, VIEWPORT_W, VIEWPORT_H, FontResolver.FALLBACK)};
+        // legacy / v3 は経路を選ぶ（新経路と旧経路の交互 A/B）。inc / full はビューの既定の経路
+        StandaloneView[] view = {mode.equals("legacy") || mode.equals("v3")
+                ? new StandaloneView(html, VIEWPORT_W, VIEWPORT_H, FontResolver.FALLBACK, mode.equals("legacy")
+                        ? com.nishiyu.enderframelib.common.EnginePath.LEGACY : com.nishiyu.enderframelib.common.EnginePath.V3)
+                : new StandaloneView(html, VIEWPORT_W, VIEWPORT_H, FontResolver.FALLBACK)};
         long[] now = {1000};
         view[0].frame(now[0], backend, true);
         ScenarioTarget t = ScenarioTarget.find(view[0], doc);
@@ -439,6 +452,24 @@ public final class MemoryAndLatencyGate {
             abMaxRatio.put(key, Double.parseDouble(r[4]));
             System.out.printf(Locale.ROOT, "GATE %-34s inc=%.4f ms  full=%.4f ms (ratio=%.3fx)%n",
                     key, median(incRounds), median(fullRounds), median(incRounds) / median(fullRounds));
+        }
+
+        for (String[] r : AB_V3_VS_LEGACY_RUNS) {
+            String key = "ab-v3-vs-legacy:" + r[0] + ":" + r[1];
+            if (!only.isEmpty() && !key.contains(only)) continue;
+            int warm = Integer.parseInt(r[2]), frames = Integer.parseInt(r[3]);
+            double[] legacyRounds = new double[AB_ROUNDS], v3Rounds = new double[AB_ROUNDS];
+            for (int round = 0; round < AB_ROUNDS; round++) {
+                if ((round & 1) == 0) {
+                    legacyRounds[round] = spawnLatency(cp, r[0], r[1], "legacy", warm, frames);
+                    v3Rounds[round] = spawnLatency(cp, r[0], r[1], "v3", warm, frames);
+                } else {
+                    v3Rounds[round] = spawnLatency(cp, r[0], r[1], "v3", warm, frames);
+                    legacyRounds[round] = spawnLatency(cp, r[0], r[1], "legacy", warm, frames);
+                }
+            }
+            System.out.printf(Locale.ROOT, "GATE %-34s v3=%.4f ms  legacy=%.4f ms (ratio=%.3fx, 上限 %s は既定の切り替えから)%n",
+                    key, median(v3Rounds), median(legacyRounds), median(v3Rounds) / median(legacyRounds), r[4]);
         }
 
         Map<String, Double> latMeasured = new LinkedHashMap<>();

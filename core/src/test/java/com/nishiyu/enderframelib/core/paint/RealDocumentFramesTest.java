@@ -7,7 +7,7 @@ import com.nishiyu.enderframelib.common.UiView;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.dom.parser.MarkdownParser;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -40,7 +40,7 @@ import org.junit.jupiter.api.Test;
  * </ol>
  */
 class RealDocumentFramesTest {
-    private static final int W = 800, H = 600;
+    static final int W = 800, H = 600;
     private static final long T0 = 10_000L;
     private static final Path FIXTURES = Path.of("src/main/resources/data/enderframelib/enderframe_ui");
     private static final Path TEST_FIXTURES = Path.of("src/test/resources/benchmark");
@@ -91,8 +91,15 @@ class RealDocumentFramesTest {
      */
     static void script(String doc, com.nishiyu.enderframelib.core.paint.RenderBackend backend, boolean full, boolean keepPixels,
                        Consumer<Frame> sink) throws IOException {
+        script(doc, backend, full, keepPixels, sink, null);
+    }
+
+    /** {@code path} はビューの経路（null なら既定。旧経路との比べ合わせ。M2b-6 で引数ごと消す）。 */
+    static void script(String doc, com.nishiyu.enderframelib.core.paint.RenderBackend backend, boolean full, boolean keepPixels,
+                       Consumer<Frame> sink, com.nishiyu.enderframelib.common.EnginePath path) throws IOException {
         String html = html(doc);
-        try (StandaloneView v = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
+        try (StandaloneView v = path == null ? new StandaloneView(html, W, H, FontResolver.FALLBACK)
+                : new StandaloneView(html, W, H, FontResolver.FALLBACK, path)) {
             long[] t = {T0};
             Recorder rec = new Recorder(v, backend, full, keepPixels, sink, doc);
             rec.frame("open", t[0]);
@@ -258,16 +265,16 @@ class RealDocumentFramesTest {
 
     /** 画面の中にある、文書の根でない最初のスクロールコンテナの中心。 */
     private static double[] firstScrollContainer(StandaloneView v) {
-        LayoutBox root = v.ui().layoutRoot();
+        PaintBox root = v.ui().boxRoot();
         return root == null ? null : findScroll(root, root);
     }
 
-    private static double[] findScroll(LayoutBox b, LayoutBox root) {
+    private static double[] findScroll(PaintBox b, PaintBox root) {
         if (b != root && b.isScrollContainer() && b.w() > 20 && b.h() > 20 && b.x() >= 0 && b.y() >= 0 && b.x() + b.w() / 2 < W && b.y() + b.h() / 2 < H
-                && b.node != null && !"body".equals(b.node.tag) && !"html".equals(b.node.tag)) {
+                && b.node != null && !b.isAnonymous && !"body".equals(b.node.tag) && !"html".equals(b.node.tag)) {
             return new double[]{b.x() + b.w() / 2.0, b.y() + b.h() / 2.0};
         }
-        if (b.children != null) for (LayoutBox c : b.children) {
+        for (PaintBox c : b.paintChildren()) {
             double[] r = findScroll(c, root);
             if (r != null) return r;
         }
