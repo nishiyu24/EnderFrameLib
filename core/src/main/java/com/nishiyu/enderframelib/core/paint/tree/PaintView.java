@@ -56,6 +56,9 @@ public final class PaintView extends PaintBox {
         return ReplacedElements.isReplacedTag(n.node.tag);
     }
 
+    /** {@code display} を外と中に分けたもの（旧経路の箱と同じ規則で、描画の木の節のスタイルから決めた値）。 */
+    public LayoutBox.Display display() { return n.display; }
+
     @Override public ComputedStyle style() { return n.style; }
     @Override public ComputedStyle axisStyle() { return n.style; }
     @Override public PaintView paintParent() { return parent; }

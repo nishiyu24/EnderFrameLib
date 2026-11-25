@@ -134,7 +134,7 @@ final class FragmentPaint {
     List<LayoutBox> paintOrder(LayoutBox root) {
         List<LayoutBox> out = new ArrayList<>();
         Fragment top = buildTop(root, false, false);
-        top.emitted.copyTo(new DisplayItem[top.size()], 0, (box, s, e) -> out.add(box));
+        top.emitted.copyTo(new DisplayItem[top.size()], 0, (box, s, e) -> out.add((LayoutBox) box));
         return out;
     }
 

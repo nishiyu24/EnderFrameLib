@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import java.util.Arrays;
@@ -31,7 +30,7 @@ abstract class FragSeq {
 
     /** 箱が描いた項目の範囲 {@code [start, end)}（展開した配列の中の位置）を、描いた順に受け取る。 */
     interface OwnerSink {
-        void owner(LayoutBox box, int start, int end);
+        void owner(Object box, int start, int end);
     }
 
     /** レイヤーの錨の項目を、出力の項目数（span）つきの項目へ作り直す関数（{@code DisplayListBuilder.withLayer}）。 */
@@ -52,8 +51,9 @@ abstract class FragSeq {
 
     /** 箱 {@code owner} が描いた項目（0 件でも「描いた」の記録になる）。 */
     static final class Owned extends Leaf {
-        final LayoutBox owner;
-        Owned(LayoutBox owner, DisplayItem[] a) { super(a); this.owner = owner; }
+        /** 描いた箱（旧経路の {@code LayoutBox} か、描画用の木の節）。 */
+        final Object owner;
+        Owned(Object owner, DisplayItem[] a) { super(a); this.owner = owner; }
         @Override boolean empty() { return false; }
         @Override int copyTo(DisplayItem[] dst, int off, OwnerSink sink) {
             int end = super.copyTo(dst, off, sink);

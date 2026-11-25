@@ -74,11 +74,11 @@ final class Fragment {
         this.emitted = FragSeq.EMPTY;
     }
 
-    Fragment(LayoutBox box, DisplayItem[] own, DisplayItem[] ownAfter, Kind kind, int z, Fragment[] kids, FragSeq[] agg) {
+    Fragment(Object box, DisplayItem[] own, DisplayItem[] ownAfter, Kind kind, int z, Fragment[] kids, FragSeq[] agg) {
         this(box, own, ownAfter, false, kind, z, null, null, null, kids.length, kids, null, agg);
     }
 
-    Fragment(LayoutBox box, DisplayItem[] own, DisplayItem[] ownAfter, boolean drawn, Kind kind, int z, LayerSpec layer,
+    Fragment(Object box, DisplayItem[] own, DisplayItem[] ownAfter, boolean drawn, Kind kind, int z, LayerSpec layer,
              FragSeq.Anchor anchor, Fragment[] kids, FragSeq[] agg) {
         this(box, own, ownAfter, drawn, kind, z, layer, anchor, null, kids.length, kids, null, agg);
     }
@@ -90,12 +90,12 @@ final class Fragment {
      */
     record Extras(DisplayItem[] layerMask, boolean hoist, DisplayItem[] backdrop) {}
 
-    Fragment(LayoutBox box, DisplayItem[] own, DisplayItem[] ownAfter, boolean drawn, Kind kind, int z, LayerSpec layer,
+    Fragment(Object box, DisplayItem[] own, DisplayItem[] ownAfter, boolean drawn, Kind kind, int z, LayerSpec layer,
              FragSeq.Anchor anchor, Extras extras, Fragment[] kids, FragSeq[] agg) {
         this(box, own, ownAfter, drawn, kind, z, layer, anchor, extras, kids.length, kids, null, agg);
     }
 
-    Fragment(LayoutBox box, DisplayItem[] own, DisplayItem[] ownAfter, boolean drawn, Kind kind, int z, LayerSpec layer,
+    Fragment(Object box, DisplayItem[] own, DisplayItem[] ownAfter, boolean drawn, Kind kind, int z, LayerSpec layer,
              FragSeq.Anchor anchor, Extras extras, int kidCount, Fragment[] smallKids, Fragment[][] bigKids, FragSeq[] agg) {
         DisplayItem[] layerMask = extras == null ? null : extras.layerMask();
         this.own = own;

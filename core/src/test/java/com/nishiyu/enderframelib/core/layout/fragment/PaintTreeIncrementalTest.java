@@ -102,6 +102,69 @@ class PaintTreeIncrementalTest {
         }
     }
 
+    /** 新しい描画の記憶（M2c ②-3）: 前回の結果を使った表示リスト = 新しく描いた表示リスト。描画だけ・寸法・属性だけの変化を混ぜる。 */
+    @Test
+    void painterMemoMatchesAFreshPaint() {
+        for (String kind : new String[]{"varied", "flex", "text"}) {
+            String html = switch (kind) {
+                case "varied" -> SpikeView.variedList(80).replace("</style>", " .sc{height:60px;overflow:auto}</style>");
+                case "text" -> SpikeView.inlineText(14).replace("</style>", " .pb::before{content:'[' attr(id) ']';color:#900}</style>");
+                default -> SpikeView.nestedFlex(4, 3, true);
+            };
+            SpikeView v = new SpikeView(html, 640, 480);
+            PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
+            com.nishiyu.enderframelib.core.paint.TreePainter painter = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
+                    v.doc.sheet.keyframes, null);
+            painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
+            Random rnd = new Random(kind.hashCode() * 17L + 3);
+            for (int step = 0; step < 60; step++) {
+                List<HtmlNode> elems = new ArrayList<>();
+                collect(v.doc.root, elems);
+                HtmlElement target = (HtmlElement) elems.get(rnd.nextInt(elems.size()));
+                String op;
+                int r = rnd.nextInt(5);
+                if (r <= 1) {
+                    op = PAINT[rnd.nextInt(PAINT.length)];
+                    String old = target.getAttribute("style");
+                    target.setAttribute("style", (old == null || old.isEmpty() ? "" : old + ";") + op);
+                } else if (r == 2) {
+                    op = "hover";
+                    v.state.setHoveredNode(target);
+                } else if (r == 3) {
+                    op = "attr";
+                    target.setAttribute(rnd.nextBoolean() ? "title" : "data-pan-x", Integer.toString(rnd.nextInt(30)));
+                } else {
+                    op = IncrementalOracleTest.mutate(v, rnd, step);
+                }
+                PaintNode tree = b.build(v.frame(), v.boxRoot);
+                List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> inc = painter.paint(tree, v.ledger());
+                List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> fresh = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw,
+                        v.vh, v.doc.sheet.keyframes, null).paint(tree);
+                for (int i = 0; i < Math.min(inc.size(), fresh.size()); i++) {
+                    if (!inc.get(i).equals(fresh.get(i))) {
+                        throw new AssertionError(kind + " step " + step + " (" + op + " on " + target.tag + ") #" + i
+                                + "\n  新しく: " + fresh.get(i) + "\n  記憶:   " + inc.get(i));
+                    }
+                }
+                assertEquals(fresh.size(), inc.size(), kind + " step " + step + " (" + op + ") 項目の数");
+            }
+        }
+    }
+
+    @Test
+    void hoverRepaintsOnlyTheHoveredItem() {
+        SpikeView v = new SpikeView(SpikeView.variedList(200), 640, 480);
+        PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
+        com.nishiyu.enderframelib.core.paint.TreePainter painter = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
+                v.doc.sheet.keyframes, null);
+        painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
+        int all = painter.built();
+        v.state.setHoveredNode(v.byId("item-50"));
+        painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
+        assertTrue(painter.built() < 30, "作り直した箱 " + painter.built() + " / " + all);
+        assertTrue(painter.reused() > 100, "使い回した部分木 " + painter.reused());
+    }
+
     private static final String[] PAINT = {"color:#a00", "background:#0a0", "opacity:.4", "outline:2px solid red", "border-color:blue",
             "text-decoration:underline", "z-index:2", "box-shadow:1px 1px 2px #000", ""};
 

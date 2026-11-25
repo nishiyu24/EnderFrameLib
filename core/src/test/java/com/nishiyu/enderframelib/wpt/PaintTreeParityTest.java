@@ -86,6 +86,54 @@ class PaintTreeParityTest {
         return a.size() == b.size() ? null : "節の数 " + a.size() + " / " + b.size();
     }
 
+    /** 新しい描画（M2c ②-3。{@code TreePainter}）の表示リストが、旧描画（射影の箱を {@code DisplayListBuilder} で描いたもの）と同じか。 */
+    @Test
+    void treePainterMatchesTheLegacyPainterOnEveryDocument() throws Exception {
+        Map<String, String> pairs = WptReftestRatchetTest.manifest();
+        TreeSet<String> hangs = WptReftestRatchetTest.readList(WptReftestRatchetTest.HANGS);
+        TreeSet<String> docs = new TreeSet<>();
+        for (var e : pairs.entrySet()) {
+            if (hangs.contains(e.getKey())) continue;
+            docs.add(e.getKey());
+            docs.add(e.getValue());
+        }
+        List<String> bad = new ArrayList<>();
+        int windowed = 0;
+        for (String id : docs) {
+            String diff = compareItems(WptReftestRatchetTest.read(id));
+            if (diff == WINDOWED) windowed++;
+            else if (diff != null) bad.add(id + ": " + diff);
+        }
+        System.out.println("TREE-PAINTER parity " + (docs.size() - bad.size() - windowed) + "/" + (docs.size() - windowed) + " (窓付き " + windowed + ")");
+        for (String b : bad.subList(0, Math.min(8, bad.size()))) System.out.println("TREE-PAINTER " + b);
+        assertEquals(List.of(), bad);
+    }
+
+    private static final String WINDOWED = "windowed";
+
+    /** 1 文書の表示リストを比べる。一致すれば null、旧描画が窓付きなら {@link #WINDOWED}、違えば最初の違い。 */
+    static String compareItems(String html) {
+        int w = WptReftestRatchetTest.W, h = WptReftestRatchetTest.H;
+        Document doc = new UiDocumentCompiler().parseDocument(html, "", w, h);
+        InteractionState state = new InteractionState();
+        if (doc.root instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd) hd.setInteractionState(state);
+        LayoutSession session = new LayoutSession(WptReftestRatchetTest.FONTS);
+        FragmentPipeline pipeline = new FragmentPipeline(new StyleSource(doc.sheet, state, Map.of(), w, h), session);
+        LayoutFragment frag = pipeline.frame(doc.root, null, w, h);
+        LayoutBox projected = FragmentProjection.project(frag, session);
+        com.nishiyu.enderframelib.core.paint.DisplayListBuilder dlb = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h,
+                doc.sheet.keyframes, new com.nishiyu.enderframelib.core.layout.model.ScrollState());
+        List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> legacy = dlb.render(projected);
+        if (dlb.isWindowed()) return WINDOWED;
+        PaintNode tree = new PaintTreeBuilder(session).build(frag, pipeline.boxRoot());
+        List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> mine = new com.nishiyu.enderframelib.core.paint.TreePainter(w, h,
+                doc.sheet.keyframes, new com.nishiyu.enderframelib.core.layout.model.ScrollState()).paint(tree);
+        for (int i = 0; i < Math.min(legacy.size(), mine.size()); i++) {
+            if (!legacy.get(i).equals(mine.get(i))) return "#" + i + "\n  旧描画: " + legacy.get(i) + "\n  新描画: " + mine.get(i);
+        }
+        return legacy.size() == mine.size() ? null : "項目の数 " + legacy.size() + " / " + mine.size();
+    }
+
     /** {@link PaintBox} として読める欄を並べる（2 つの実装に共通の物差し）。 */
     static void dump(PaintBox b, int depth, List<String> out) {
         StringBuilder s = new StringBuilder("  ".repeat(depth));
