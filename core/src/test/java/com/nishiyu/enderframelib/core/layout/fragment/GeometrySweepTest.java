@@ -29,13 +29,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * <p><b>旧経路は正解の基準ではない</b>（負の余白の相殺など仕様からの逸脱を持つ）。これは画素の合否より細かい「差の在りか」の
  * 物差しで、新経路を既定にする前（M2c）に実文書の差を潰すのに使う。旧経路の逸脱が原因で一覧から外すときは計画書に記録する。
  * 比べるのは両方に箱がある要素だけ（疑似要素は比べない）。インライン要素は行ごとの箱（{@link LineFragment.Span}）を囲む矩形を、
- * 旧経路の {@code fitToFragments} の矩形と比べる。</p>
+ * 旧経路の {@code fitToFragments} の矩形と比べる。同梱の実文書のずれは、全て記録した旧経路の逸脱か丸めであることを
+ * {@link GeometryDeviationsTest} が固定する。</p>
+ *
+ * <p>調べる用の指定（{@link #diagnose}）: {@code -Dgeom.sweep.diag=<文書 または HTML ファイルの道筋>[,...]}・
+ * {@code -Dgeom.sweep.diagMax=<出す行数>}（既定 40）・{@code -Dgeom.sweep.all=true}（一致した箱も出す）・
+ * {@code -Dgeom.sweep.inject=<CSS>}（両方の経路へ同じ規則を足す。例: 字間を 0 にして他の差だけを見る）。</p>
  */
 class GeometrySweepTest {
     private static final float TOL = 1f / 64f + 1e-4f;
     private static final Path WPT = Path.of("src/test/resources/wpt/reftests");
     private static final Path LIST = WPT.resolve("geometry-sweep-matching.txt");
-    private static final List<String> REAL_DOCS = List.of("showcase.html", "voidwave.html", "surface_test.html", "animation_test.html",
+    static final List<String> REAL_DOCS = List.of("showcase.html", "voidwave.html", "surface_test.html", "animation_test.html",
             "media_test.html", "hud_test.html", "item_block_test.html", "machine_ui.html", "guidebook.md");
     private static final int W = 800, H = 600;
 
@@ -84,16 +89,33 @@ class GeometrySweepTest {
         return locked;
     }
 
-    /** 調べる用: {@code -Dgeom.sweep.diag=<文書>[,...]} のずれた箱を出す。 */
+    /** 調べる用: ずれた箱（要素の class・id つき）を出す（指定はクラスの説明）。 */
     @Test
     void diagnose() throws IOException {
         String ids = System.getProperty("geom.sweep.diag");
         org.junit.jupiter.api.Assumptions.assumeTrue(ids != null && !ids.isBlank());
         Map<String, String> docs = documents();
+        String inject = System.getProperty("geom.sweep.inject");
+        int max = Integer.getInteger("geom.sweep.diagMax", 40);
         for (String id : ids.split(",")) {
-            List<String> diffs = new ArrayList<>();
-            compare(docs.get(id), diffs);
-            System.out.println("GEOM-DIAG " + id + " " + diffs.size() + "\n  " + String.join("\n  ", diffs.subList(0, Math.min(40, diffs.size()))));
+            String html = docs.containsKey(id) ? docs.get(id) : Files.readString(Path.of(id), StandardCharsets.UTF_8);
+            if (inject != null) html = html.replaceFirst("</head>", "<style>" + inject + "</style></head>");
+            List<Diff> diffs = new ArrayList<>();
+            compare(html, diffs, Boolean.getBoolean("geom.sweep.all"));
+            StringBuilder sb = new StringBuilder("GEOM-DIAG " + id + " " + diffs.size());
+            for (int i = 0; i < Math.min(max, diffs.size()); i++) sb.append("\n  ").append(diffs.get(i).describe());
+            System.out.println(sb);
+        }
+    }
+
+    /** ずれた箱: DOM の道筋・要素の印（class と id。調べる用）・旧経路と新経路の {x, y, 幅, 高さ}。 */
+    record Diff(String path, String label, float[] legacy, float[] v3) {
+        String describe() {
+            return String.format(java.util.Locale.ROOT, "%s%s legacy=%s v3=%s", path, label, rect(legacy), rect(v3));
+        }
+
+        static String rect(float[] r) {
+            return String.format(java.util.Locale.ROOT, "%.2f,%.2f %.2fx%.2f", r[0], r[1], r[2], r[3]);
         }
     }
 
@@ -125,17 +147,19 @@ class GeometrySweepTest {
 
     /** {比べた箱の数, ずれた箱の数}。 */
     static int[] compare(String html) {
-        return compare(html, null);
+        return compare(html, null, false);
     }
 
-    private static int[] compare(String html, List<String> diffs) {
+    /** {@code diffs} が null でなければずれた箱（{@code all} なら一致した箱も）を文書順に足す。 */
+    static int[] compare(String html, List<Diff> diffs, boolean all) {
         Map<String, float[]> v3 = new LinkedHashMap<>();
         collect(new SpikeView(html, W, H).frame(), 0, 0, v3);
         Map<String, float[]> old = new LinkedHashMap<>();
+        Map<String, String> labels = diffs != null ? new java.util.HashMap<>() : null;
         try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             sv.frame(1000, new SpikeView.NullBackend(), true);
             LayoutBox root = sv.ui().layoutRoot();
-            if (root != null) collect(root, old);
+            if (root != null) collect(root, old, labels);
         }
         int compared = 0, bad = 0;
         for (var e : v3.entrySet()) {
@@ -143,15 +167,10 @@ class GeometrySweepTest {
             if (o == null) continue;
             compared++;
             float[] n = e.getValue();
-            for (int i = 0; i < 4; i++) {
-                if (Math.abs(o[i] - n[i]) > TOL) {
-                    bad++;
-                    if (diffs != null) {
-                        diffs.add(String.format("%s legacy=%.2f,%.2f %.2fx%.2f v3=%.2f,%.2f %.2fx%.2f", e.getKey(), o[0], o[1], o[2], o[3], n[0], n[1], n[2], n[3]));
-                    }
-                    break;
-                }
-            }
+            boolean differs = false;
+            for (int i = 0; i < 4; i++) differs |= Math.abs(o[i] - n[i]) > TOL;
+            if (differs) bad++;
+            if (diffs != null && (differs || all)) diffs.add(new Diff(e.getKey(), labels.getOrDefault(e.getKey(), ""), o, n));
         }
         return new int[]{compared, bad};
     }
@@ -202,12 +221,18 @@ class GeometrySweepTest {
         }
     }
 
-    private static void collect(LayoutBox b, Map<String, float[]> out) {
+    private static void collect(LayoutBox b, Map<String, float[]> out, Map<String, String> labels) {
         if (b.node != null && b.node.nodeType == NodeType.ELEMENT) {
             String k = path(b.node);
-            if (k != null) out.putIfAbsent(k, new float[]{b.x(), b.y(), b.w(), b.h()});
+            if (k != null) {
+                out.putIfAbsent(k, new float[]{b.x(), b.y(), b.w(), b.h()});
+                if (labels != null) {
+                    String c = b.node.attrs.get("class"), id = b.node.attrs.get("id");
+                    labels.putIfAbsent(k, (c != null ? "[." + c + "]" : "") + (id != null ? "[#" + id + "]" : ""));
+                }
+            }
         }
-        for (LayoutBox c : b.children) collect(c, out);
+        for (LayoutBox c : b.children) collect(c, out, labels);
     }
 
     /** 根からの子の番号の道筋（DOM の木に無い節は null）。 */
