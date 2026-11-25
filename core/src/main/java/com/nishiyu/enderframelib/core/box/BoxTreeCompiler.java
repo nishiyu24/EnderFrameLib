@@ -216,6 +216,7 @@ public final class BoxTreeCompiler {
         String text = null;
         BoxChildren children = BoxChunk.EMPTY;
         BoxNode before = null, after = null, marker = null;
+        Style firstLine = null;
         if (kind == BoxKind.TEXT) {
             text = TextContent.of(n.text, style, style.inherited.textTransform == com.nishiyu.enderframelib.core.css.model.CssKeywords.TextTransform.CAPITALIZE
                     && TextContent.continuesWord(n));
@@ -255,6 +256,10 @@ public final class BoxTreeCompiler {
                     stats.rebuiltBoxes += rebuilt[0];
                 }
                 if (pseudos) after = redoPseudo ? pseudo(BoxNode.Pseudo.AFTER, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.AFTER);
+                if (element && firstLineContainer(kind)) { // ::first-line（値が前回と同じなら前回の参照）
+                    firstLine = redoPseudo || !usable ? styles.firstLine(n, style) : prev.firstLine;
+                    if (usable && firstLine != null && firstLine.equals(prev.firstLine)) firstLine = prev.firstLine;
+                }
                 if (counters != null) counters.release(mark);
             } finally {
                 if (deepen) deep--;
@@ -285,10 +290,15 @@ public final class BoxTreeCompiler {
                 && kind == prev.kind && text == prev.text && children == prev.children
                 && replaced == prev.replaced && popover == prev.popover && TableBoxes.spanOf(n, kind, BoxNode.Pseudo.NONE) == prev.span
                 && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)
-                && marker == prev.marker) return prev;
+                && marker == prev.marker && firstLine == prev.firstLine) return prev;
         stats.rebuiltBoxes++;
         return new BoxNode(n, layoutStyle, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL,
-                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover, prev != null ? prev.layout : null);
+                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover, firstLine, prev != null ? prev.layout : null);
+    }
+
+    /** {@code ::first-line} を持てるブロックコンテナ（ブロック・インラインブロック・表のセルと見出し。旧 {@code LayoutBox.isFirstLineContainer}）。 */
+    private static boolean firstLineContainer(BoxKind kind) {
+        return kind == BoxKind.BLOCK || kind == BoxKind.INLINE_BLOCK || kind == BoxKind.TABLE_CELL || kind == BoxKind.TABLE_CAPTION;
     }
 
     /**

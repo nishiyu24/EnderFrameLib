@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.layout.fragment;
 
+import com.nishiyu.enderframelib.core.diag.PipelineStage;
+import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.box.BoxNode;
 import com.nishiyu.enderframelib.core.box.BoxTreeCompiler;
 import com.nishiyu.enderframelib.core.box.StyleSource;
@@ -42,8 +44,12 @@ public final class FragmentPipeline {
     /** 1 フレーム。{@code ledger} は凍結済みの台帳（null なら全体を作り直す）。 */
     public LayoutFragment frame(HtmlNode domRoot, ChangeLedger ledger, int viewportW, int viewportH) {
         if (styles.sheet() != null) layout.session().positionTryRules(styles.sheet().positionTryRules);
+        long t0 = StageProfiler.begin(PipelineStage.BOX_TREE);
         boxRoot = compiler.compile(domRoot, ledger);
+        StageProfiler.end(PipelineStage.BOX_TREE, t0);
+        long t1 = StageProfiler.begin(PipelineStage.LAYOUT);
         LayoutFragment f = layout.layout(boxRoot, viewportW, viewportH);
+        StageProfiler.end(PipelineStage.LAYOUT, t1);
         if (!styles.usesContainers()) return f;
         for (int pass = 0; pass < MAX_CONTAINER_PASSES; pass++) {
             List<HtmlNode> changed = new ArrayList<>();

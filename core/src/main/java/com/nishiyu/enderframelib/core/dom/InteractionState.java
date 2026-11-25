@@ -104,13 +104,9 @@ public class InteractionState implements StyledDocumentState {
     public final com.nishiyu.enderframelib.core.css.ShareCache styleShare =
             new com.nishiyu.enderframelib.core.css.ShareCache();
 
-    public void bindStyleSheet(StyleSheet sheet) {
-        this.sheet = sheet;
-    }
+    public void bindStyleSheet(StyleSheet sheet) { this.sheet = sheet; }
 
-    private InvalidationSets invalidationSets() {
-        return sheet != null ? sheet.invalidationSets() : null;
-    }
+    private InvalidationSets invalidationSets() { return sheet != null ? sheet.invalidationSets() : null; }
 
     /** 現在 {@code :hover} な節（ポインタの下の節とその祖先）。 */
     private ArrayList<HtmlNode> hoveredChain = new ArrayList<>(16);
@@ -129,7 +125,7 @@ public class InteractionState implements StyledDocumentState {
     private HtmlNode focusedNode = null;
 
     /** ポインタの下の節。無ければ null。 */
-    public HtmlNode hoveredNode() { return hoveredNode; }
+    public HtmlNode hoveredNode() { return hoveredNode; } // 押下中・フォーカス中の節も同じく読むだけ
 
     /** 押下中の節。無ければ null。 */
     public HtmlNode activeNode() { return activeNode; }
@@ -359,8 +355,13 @@ public class InteractionState implements StyledDocumentState {
      */
     private final List<HtmlNode> unscopedLog = new ArrayList<>();
 
+    /** 算出スタイルの問い合わせ先（新経路のビューが箱の木を結ぶ。null なら旧経路の印の値）。 */
+    private java.util.function.Function<HtmlNode, ComputedStyle> styleLookup;
+    public void bindStyleLookup(java.util.function.Function<HtmlNode, ComputedStyle> lookup) { styleLookup = lookup; }
+
     /** 確定済みの算出スタイル。まだ再スタイルされていなければ null。 */
     public ComputedStyle computedStyleOf(HtmlNode node) {
+        if (styleLookup != null) return styleLookup.apply(node);
         StateFlags flags = get(node);
         return flags != null ? flags.computedStyle : null;
     }
@@ -382,9 +383,7 @@ public class InteractionState implements StyledDocumentState {
     }
 
     @Override
-    public ElementState stateOf(HtmlNode node) {
-        return ElementState.of(stateBitsOf(node));
-    }
+    public ElementState stateOf(HtmlNode node) { return ElementState.of(stateBitsOf(node)); }
 
     /** {@link #stateOf} のビット集合そのもの（値オブジェクトを作らない）。 */
     private static final int TRI_MASK = ElementState.CHECKED | ElementState.DISABLED
@@ -577,9 +576,7 @@ public class InteractionState implements StyledDocumentState {
     }
 
     /** モーダル {@code <dialog>} が 1 つ以上開いているか。 */
-    public boolean hasActiveModal() {
-        return activeModalDialog() != null;
-    }
+    public boolean hasActiveModal() { return activeModalDialog() != null; }
 
     /**
      * 節が不活性（{@code inert} 属性の配下、または最前面モーダル {@code <dialog>} の外側）か。
@@ -745,9 +742,7 @@ public class InteractionState implements StyledDocumentState {
         return false;
     }
 
-    private static char asciiLower(char c) {
-        return (c >= 'A' && c <= 'Z') ? (char) (c + 32) : c;
-    }
+    private static char asciiLower(char c) { return (c >= 'A' && c <= 'Z') ? (char) (c + 32) : c; }
 
     /**
      * 子の増減で汚す。{@code changedAt} は {@code parent} の子のうち増減があった位置
@@ -861,9 +856,7 @@ public class InteractionState implements StyledDocumentState {
     }
 
     /** {@code :has()} を使わない文書では {@link #propagateDirtyToAncestors} が呼ばれないので、記録が溜まらないよう捨てる。 */
-    public void discardUnscopedLog() {
-        unscopedLog.clear();
-    }
+    public void discardUnscopedLog() { unscopedLog.clear(); }
 
     /**
      * 問い合わせコンテナの寸法を記録する。以前と違う（NaN から測れた場合も含む）ならその要素を汚して true を返す。
@@ -936,9 +929,7 @@ public class InteractionState implements StyledDocumentState {
     }
 
     /** 再スタイルがアニメーションの値を決めるときの時刻（ms）。フレームの先頭で決めると、同じフレームの値が揃う。 */
-    public void setAnimationTime(long ms) {
-        this.animationTimeMs = ms;
-    }
+    public void setAnimationTime(long ms) { this.animationTimeMs = ms; }
 
     /** 設定されていなければ現在時刻。 */
     public long animationTimeMs() {

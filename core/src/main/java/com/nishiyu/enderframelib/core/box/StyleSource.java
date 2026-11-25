@@ -95,6 +95,16 @@ public final class StyleSource {
         return cs == null ? null : Style.of(cs, ownerStyle);
     }
 
+    /**
+     * ブロックコンテナ {@code owner} の {@code ::first-line} のスタイル（継承元は持ち主。規則が無い・何も宣言しないなら null）。1 行目の
+     * 文字の節に効くスタイルは {@code FirstLine}（core.layout.fragment）が持ち主との差から作る。
+     */
+    public Style firstLine(HtmlNode owner, Style ownerStyle) {
+        ComputedStyle cs = com.nishiyu.enderframelib.core.css.GeneratedContentStyles.firstLineDeclared(owner, sheet, scope,
+                new ComputedStyle(ownerStyle), env, rootFontSize, rootLineHeight, viewportW, viewportH);
+        return cs == null ? null : Style.of(cs, ownerStyle);
+    }
+
     /** {@code ::marker} の規則が宣言したスタイル（規則が無ければ null。{@link MarkerBoxes}）。 */
     public com.nishiyu.enderframelib.core.css.ComputedStyle markerDeclared(HtmlNode owner, Style ownerStyle) {
         return com.nishiyu.enderframelib.core.css.GeneratedContentStyles.markerDeclared(owner, sheet, scope, new ComputedStyle(ownerStyle),

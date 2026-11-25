@@ -11,7 +11,6 @@ import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
@@ -120,7 +119,7 @@ public class ChangeLedgerTest {
         ui.flushInvalidation();
         List<String> live = new ArrayList<>(), fresh = new ArrayList<>();
         for (DisplayItem i : ui.renderCache()) live.add(sig(i));
-        for (DisplayItem i : new DisplayListBuilder(320, 240, ui.document().sheet.keyframes, ui.scrollState()).render(ui.layoutRoot(), false)) fresh.add(sig(i));
+        for (DisplayItem i : V3Fresh.displayList(ui)) fresh.add(sig(i));
         return List.of(live, fresh);
     }
 
@@ -128,7 +127,7 @@ public class ChangeLedgerTest {
     void randomChangesMatchAFreshBuildAtEveryStepWithTheLedgerAsTheOnlyInlet() {
         for (long seed = 1; seed <= 12; seed++) {
             Random rnd = new Random(seed);
-            try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK); var be = new MutationScenario.NoDraw()) {
+            try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK, EnginePath.V3); var be = new MutationScenario.NoDraw()) {
                 ResizeSettle.freezeClock(v); // 止めた時計: リサイズの間引きが実時間に依らない
                 v.frame(1000, be, true);
                 for (int step = 0; step < 40; step++) {
@@ -161,16 +160,15 @@ public class ChangeLedgerTest {
     }
 
     /**
-     * 文字の測り直し〔{@code tryRelayoutInPlace(textBoxes)}〕の入口は台帳だけ: 追記が取りこぼされると、測り直しの経路に乗らない
-     * 〔表示は再スタイルの汚れ印の別経路が拾うので壊れないが、それは L3 で台帳へ寄せる対象〕。
+     * 文字の変化の入口は台帳だけ（M2c ④。新経路は汚れ印を読まない）: 台帳に載れば最初から作った結果と同じになり、追記が取りこぼされると
+     * 反映されない（別の経路が拾って偶然に正しくなることが無い）。
      */
     @Test
     void theLedgerIsTheOnlyInletOfTheTextRelayout() {
         for (boolean drop : new boolean[]{false, true}) {
-            try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK); var be = new MutationScenario.NoDraw()) {
+            try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK, EnginePath.V3); var be = new MutationScenario.NoDraw()) {
                 ResizeSettle.freezeClock(v);
                 v.frame(1000, be, true);
-                long hits = UiView.TEXT_PATCH_HITS.get();
                 HtmlText text = (HtmlText) v.root().getNodeById("tail").children.get(0);
                 text.setData("changed text that is rather longer");
                 if (drop) {
@@ -179,15 +177,20 @@ public class ChangeLedgerTest {
                     l.freeze(); // 追記が失われた状態（世代が 1 つ進んで捨てられる）
                 }
                 List<List<String>> r = liveAndFresh(v);
-                assertEquals(r.get(1), r.get(0), "どちらでも結果は最初から作った結果と同じ");
-                assertEquals(drop ? 0 : 1, UiView.TEXT_PATCH_HITS.get() - hits, drop ? "台帳に載らなければ文字の測り直しの経路に乗らない" : "台帳に載れば文字の測り直しの経路に乗る");
+                boolean shown = r.get(0).stream().anyMatch(sig -> sig.contains("|changed"));
+                if (drop) {
+                    assertFalse(shown, "台帳に載らなければ文字の変化は反映されない（新経路の入口は台帳だけ）");
+                } else {
+                    assertTrue(shown, "台帳に載れば文字の変化が反映される");
+                    assertEquals(r.get(1), r.get(0), "最初から作った結果と同じ");
+                }
             }
         }
     }
 
     @Test
     void hoverAndResizeReachTheLedger() {
-        try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK); var be = new MutationScenario.NoDraw()) {
+        try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK, EnginePath.V3); var be = new MutationScenario.NoDraw()) {
             ChangeLedger l = v.ui().interactionState().changeLedger();
             v.frame(1000, be, true);
             assertEquals(0, l.pendingCount());

@@ -12,6 +12,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.fragment.BoxGeometry;
+import com.nishiyu.enderframelib.core.layout.fragment.FirstLine;
 import com.nishiyu.enderframelib.core.layout.fragment.InlineFlow;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
@@ -49,8 +50,19 @@ public final class PaintTreeBuilder {
     private int built, reused;
 
     public PaintTreeBuilder(LayoutSession session) {
-        this.session = session;
+        this(session, null);
     }
+
+    /**
+     * {@code sheet} は状態の擬似クラス（{@code :hover} など）の規則を引くシート（null なら引かない）。規則が掛かる要素は、背景が透明でも
+     * 当たり判定の項目を出す（旧経路の {@code hasInteractiveRules}）。
+     */
+    public PaintTreeBuilder(LayoutSession session, com.nishiyu.enderframelib.core.css.StyleSheet sheet) {
+        this.session = session;
+        this.sheet = sheet;
+    }
+
+    private final com.nishiyu.enderframelib.core.css.StyleSheet sheet;
 
     /** 前回の結果（まだ無ければ null）。 */
     public PaintNode root() {
@@ -148,6 +160,7 @@ public final class PaintTreeBuilder {
         d.anonymous = b.anonymousTableBox();
         d.verticalWrapper = b.orthogonalWrapper();
         d.renderedLegend = legend;
+        d.interactive = interactive(d.node, b);
         d.placed = true;
         d.x = x;
         d.y = y;
@@ -166,14 +179,14 @@ public final class PaintTreeBuilder {
         if (b.kind == BoxKind.TEXT) { // flex の項目になった文字の節: 文字片を自分に持つ（文字の箱は原点に足されないので親の基準で置く）
             Map<BoxNode, Draft> boxes = new IdentityHashMap<>();
             boxes.put(b, d);
-            lines(d, f.lines, x + f.insetLeft, y + f.insetTop, boxes, kids);
+            lines(d, f.lines, x + f.insetLeft, y + f.insetTop, boxes, kids, null);
             return d;
         }
         float cx = f.insetLeft, cy = f.insetTop;
         Map<BoxNode, Draft> textBoxes = new IdentityHashMap<>();
         if (f.lines != null) {
             inlineChildren(b, lb, d, textBoxes, f.width - d.bL - d.pL - d.pR - d.bR);
-            lines(d, f.lines, cx, cy, textBoxes, kids);
+            lines(d, f.lines, cx, cy, textBoxes, kids, lb.firstLine != null ? lb : null);
         }
         if (f.flow != null) {
             f.flow.forEach((child, x1, y1) -> {
@@ -186,7 +199,7 @@ public final class PaintTreeBuilder {
                         for (LineFragment.Piece p : l.pieces()) collectAncestors(b, lb, p.text(), d, anon, cbw);
                         for (LineFragment.Span sp : l.spans()) collectAncestors(b, lb, sp.box(), d, anon, cbw);
                     }
-                    lines(d, child.lines, cx + x1, cy + y1, anon, kids);
+                    lines(d, child.lines, cx + x1, cy + y1, anon, kids, null);
                 }
             });
         }
@@ -303,6 +316,7 @@ public final class PaintTreeBuilder {
         d.style = new ComputedStyle(lc.style);
         d.display = LayoutBox.Display.of(d.node, d.style).blockified(d.style);
         d.text = c.kind == BoxKind.TEXT;
+        d.interactive = !d.text && interactive(d.node, c);
         d.lineHeight = InlineFlow.lineHeight(c.style, session.face(c.style));
         if (!d.text) {
             BoxGeometry g = new BoxGeometry(c.style, cbw, session);
@@ -359,10 +373,21 @@ public final class PaintTreeBuilder {
         return first == null ? null : new float[]{first.x(), first.y(), first.x() + first.w(), first.y() + first.h()};
     }
 
-    /** 行の文字片を文字の節の断片にする（{@code ox}, {@code oy} はブロックの border-box 基準の行の原点）。 */
-    private void lines(Draft block, LineFragment[] lines, float ox, float oy, Map<BoxNode, Draft> boxes, Map<Object, PaintNode> prev) {
+    /**
+     * 行の文字片を文字の節の断片にする（{@code ox}, {@code oy} はブロックの border-box 基準の行の原点）。{@code firstLineOwner} は
+     * {@code ::first-line} を持つブロックコンテナ（最新の木の箱。無ければ null）で、1 行目の語はそのスタイルを掛けて描き、背景の矩形を覚える。
+     */
+    private void lines(Draft block, LineFragment[] lines, float ox, float oy, Map<BoxNode, Draft> boxes, Map<Object, PaintNode> prev,
+                       BoxNode firstLineOwner) {
         if (lines == null) return;
-        for (LineFragment l : lines) {
+        if (firstLineOwner != null && lines.length > 0) {
+            block.firstLine = new ComputedStyle(firstLineOwner.firstLine);
+            LineFragment l0 = lines[0];
+            if (l0.width() > 0 && l0.height() > 0) block.firstLineBgRect = new float[]{ox + l0.x(), oy + l0.y(), l0.width(), l0.height()};
+        }
+        for (int li = 0; li < lines.length; li++) {
+            LineFragment l = lines[li];
+            boolean first = li == 0 && firstLineOwner != null;
             float lineBase = l.baseline();
             for (PlacedFragment a : l.atoms()) { // インライン水準の原子: ブロックの border-box 基準に置いた箱
                 float ax = ox + l.x() + a.x(), ay = oy + l.y() + a.y();
@@ -376,7 +401,8 @@ public final class PaintTreeBuilder {
             for (LineFragment.Piece p : l.pieces()) {
                 Draft tb = boxes.get(p.text());
                 if (tb == null) continue;
-                Style st = p.text().style;
+                Style st = first ? FirstLine.of(tb.style.typed(), firstLineOwner.style, firstLineOwner.firstLine) : p.text().style;
+                ComputedStyle fl = first ? new ComputedStyle(st) : null;
                 FontFace face = session.face(st);
                 FontStyle fs = st.facts.fontStyle;
                 float runH = InlineFlow.lineHeight(st, face), runBase = InlineFlow.runBaseline(st, session);
@@ -388,7 +414,7 @@ public final class PaintTreeBuilder {
                     int stop = InlineFlow.nextBreak(text, i, n, st.facts.wordBreak); // 折り返し候補（UAX #14）ごと
                     String word = text.substring(i, stop);
                     float w = stop == n ? end - x : face.advance(word, fs);
-                    tb.runs.add(new TreeRun(x, fy, w, runH, word, runBase, true, true));
+                    tb.runs.add(new TreeRun(x, fy, w, runH, word, runBase, true, true, fl));
                     x += w;
                     i = stop;
                 }
@@ -449,6 +475,12 @@ public final class PaintTreeBuilder {
     private record Child(Object n, float x, float y) { }
 
     /** 構築の間だけの可変の節（{@link #freeze} で不変の {@link PaintNode} にする）。 */
+    /** 要素に状態の擬似クラスの規則が掛かるか（疑似要素の箱は持ち主の値）。 */
+    private boolean interactive(HtmlNode node, BoxNode b) {
+        return sheet != null && node != null && node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.ELEMENT
+                && !node.isPseudoNode && com.nishiyu.enderframelib.core.css.StyleResolver.hasInteractiveRules(b.node, sheet);
+    }
+
     static final class Draft {
         BoxNode box;
         LayoutFragment frag;
@@ -459,6 +491,9 @@ public final class PaintTreeBuilder {
         float x, y, w, h, mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
         float[] collapsedBorders;
         float scrollWidth, scrollHeight, lineHeight;
+        ComputedStyle firstLine;
+        float[] firstLineBgRect;
+        boolean interactive;
         final List<TreeRun> runs = new ArrayList<>(0);
         final List<Child> children = new ArrayList<>(0);
 

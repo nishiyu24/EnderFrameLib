@@ -196,10 +196,24 @@ public final class TreePainter {
         return c == tmp.length ? tmp : Arrays.copyOf(tmp, c);
     }
 
+    /** {@code content-visibility: auto} の箱を「利用者に関連する」とみなす、ビューポートの外の余白（CSS px。旧経路と同じ値）。 */
+    static final float CONTENT_VISIBILITY_MARGIN = 640f;
+
+    /**
+     * 箱の枠線の箱が、ビューポートを関連の余白（{@link #CONTENT_VISIBILITY_MARGIN}）だけ広げた矩形にかかるか（CSS Contain 2 §4.1 の
+     * 「利用者に関連する」。位置はスクロールの位置を足した見え方なので、スクロールで関連が変わる。旧経路と同じ余白）。
+     */
+    private boolean nearViewport(PaintView box) {
+        float m = CONTENT_VISIBILITY_MARGIN;
+        return box.x() + Math.max(0f, box.w()) >= -m && box.x() <= stacking.rootW + m
+                && box.y() + Math.max(0f, box.h()) >= -m && box.y() <= stacking.rootH + m;
+    }
+
     /** 箱 1 つとその部分木（旧 {@code FragmentPaint.buildFresh} の手順）。描かない箱なら null。{@link #lastMemo} に記憶を残す。 */
     private Fragment build(PaintView box, ClipRect clip, String parentId, Memo prev) {
         lastMemo = null;
         if (box.displayNone() || PaintOrder.factsOf(box.style()).displayNone() || ElementTraits.isOption(box.node().tag)) return null;
+        if (box.style().isContentVisibilityAuto() && !nearViewport(box)) return null; // 画面から遠い content-visibility: auto は描かない
         PaintView origin = TreeStacking.effectiveParentNodeBox(box, parentId);
         int pox = origin != null ? Math.round(origin.x()) : 0, poy = origin != null ? Math.round(origin.y()) : 0;
         boolean canvas = box == canvasSource;

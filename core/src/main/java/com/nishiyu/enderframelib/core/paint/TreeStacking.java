@@ -277,7 +277,7 @@ final class TreeStacking {
     private boolean hasUnscrollableDescendant(PaintView container, PaintView box, boolean underSticky, List<PaintView> stickies) {
         for (PaintView child : box.paintChildren()) {
             if (child.displayNone()) continue;
-            if (isFixed(child)) return true;
+            if (isFixed(child) || child.style().isContentVisibilityAuto()) return true; // 描くかどうかがスクロールの位置で変わる
             if (isSticky(child)) {
                 if (!com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.on() || underSticky
                         || stickyScrollParams(child, container) == null) return true;

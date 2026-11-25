@@ -35,6 +35,11 @@ public final class PaintNode {
     final float w, h, mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
     final float[] collapsedBorders;
     final float scrollWidth, scrollHeight, lineHeight;
+    /** ブロックコンテナの {@code ::first-line} のスタイルと、1 行目の背景を敷く矩形（箱の左上基準の {x, y, 幅, 高さ}。無ければ null）。 */
+    final ComputedStyle firstLine;
+    final float[] firstLineBgRect;
+    /** 状態の擬似クラスの規則が掛かる要素か（背景が透明でも当たり判定の項目を出す）。 */
+    final boolean interactive;
     final TreeRun[] runs;
     final PaintNode[] children;
     final float[] childX, childY;
@@ -69,6 +74,9 @@ public final class PaintNode {
         this.scrollWidth = d.scrollWidth;
         this.scrollHeight = d.scrollHeight;
         this.lineHeight = d.lineHeight;
+        this.firstLine = d.firstLine;
+        this.firstLineBgRect = d.firstLineBgRect;
+        this.interactive = d.interactive;
         this.runs = d.runs.isEmpty() ? NO_RUNS : d.runs.toArray(NO_RUNS);
         this.children = children;
         this.childX = childX;

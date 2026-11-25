@@ -2,11 +2,12 @@ package com.nishiyu.enderframelib.core.layout.fragment;
 
 import com.nishiyu.enderframelib.core.box.BoxKind;
 import com.nishiyu.enderframelib.core.box.BoxNode;
+import com.nishiyu.enderframelib.core.layout.fragment.InlineSpans.Open;
+import com.nishiyu.enderframelib.core.layout.fragment.InlineSpans.SpanAt;
 import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
-import com.nishiyu.enderframelib.core.text.TextShaper;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import com.nishiyu.enderframelib.core.text.model.WhiteSpace;
@@ -70,14 +71,17 @@ final class InlineLineBuilder implements TextRun.Sink {
     private float x, asc, desc, pending, cursor, lineL, lineW;
     private boolean hasContent, pendingWraps, afterWrapSpace;
     private int lastChar = -1;
-    /** 走査中の節の書式。 */
+    /** 走査中の節の書式（1 行目なら {@code ::first-line} を掛けたスタイルで測る）。 */
     private TextRun.Metrics run;
+    /** {@code ::first-line} のスタイル（無い・1 行目を閉じたら null）。 */
+    private Style firstLine;
 
     /**
      * @param shrink 折り返しの判定に使う幅から引く量（{@code text-wrap: balance} が行を揃えるために狭める。行の幅と揃えは元のまま）
      */
-    InlineLineBuilder(Style container, float availW, LayoutFragment prior, Floats.Space exc, float originY, float shrink, float pctH,
-                      LayoutSession s) {
+    InlineLineBuilder(Style container, Style firstLine, float availW, LayoutFragment prior, Floats.Space exc, float originY, float shrink,
+                      float pctH, LayoutSession s) {
+        this.firstLine = firstLine;
         this.shrink = shrink;
         this.pctH = pctH;
         this.exc = exc;
@@ -222,7 +226,7 @@ final class InlineLineBuilder implements TextRun.Sink {
     private void text(BoxNode box) {
         String t = box.text;
         if (t.isEmpty()) return;
-        run = TextRun.Metrics.of(box, s);
+        run = TextRun.Metrics.of(box, firstLine != null ? FirstLine.of(box.style, container, firstLine) : box.style, s);
         alignItem(null, null, run.ascent() + run.descent(), run.ascent());
         TextRun.scan(run, this);
         run = null;
@@ -263,6 +267,18 @@ final class InlineLineBuilder implements TextRun.Sink {
     // ---- TextRun.Sink ----
 
     @Override
+    public TextRun.Metrics metrics(TextRun.Metrics scanned) {
+        return run;
+    }
+
+    /** 1 行目を閉じた: 以後の語は節の本来のスタイルで測る（走査中の語は呼ぶ側が測り直す）。 */
+    private void leaveFirstLine() {
+        if (firstLine == null) return;
+        firstLine = null;
+        if (run != null && run.style() != run.box().style) run = TextRun.Metrics.of(run.box(), run.box().style, s);
+    }
+
+    @Override
     public boolean triesWhole() {
         return true;
     }
@@ -288,8 +304,13 @@ final class InlineLineBuilder implements TextRun.Sink {
         float closing = end == run.box().text.length() ? trail : 0; // 直後に閉じる箱の終了端は最後の語と一緒に行に入る
         if (!hasContent) dropBelowFloats(x + w - hang + closing);
         if (breakable && hasContent && x + gap + w - hang + closing > lineW - shrink + EPS) {
+            boolean onFirst = firstLine != null;
             newLine(true);
             gap = 0;
+            if (onFirst) { // 1 行目の書式で測った語を、2 行目の書式で測り直す
+                w = run.advance(start, end);
+                hang = TextRun.hangOf(run, start, end, w);
+            }
         }
         float gapAt = gapCarry ? gapCarryAt : gap > 0 ? x : Float.NaN;
         x += gap;
@@ -388,6 +409,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         Style cs = n.style;
         BoxGeometry g = new BoxGeometry(cs, availW, s);
         float w = g.specifiedWidth(n, availW, availW - g.mL - g.mR, s);
+        if (Float.isNaN(w) && ReplacedFlow.fillsWidth(n)) w = ReplacedFlow.fill(n, availW - g.mL - g.mR);
         if (Float.isNaN(w)) {
             MinMaxSizes mm = s.cache().minMax(n, s);
             w = Math.min(Math.max(mm.min, availW - g.mL - g.mR), mm.max);
@@ -501,7 +523,7 @@ final class InlineLineBuilder implements TextRun.Sink {
                 spans[i] = spanAt.get(i).span(atomX[na + 2 * i], atomX[na + 2 * i + 1], lineH, asc);
                 depth[i] = spanAt.get(i).ob().depth;
             }
-            sortByDepth(spans, depth); // 外側の箱が先（描く順）
+            InlineSpans.sortByDepth(spans, depth); // 外側の箱が先（描く順）
             spanAt.clear();
         }
         lines.add(new LineFragment(LayoutUnit.snap(off), cursor, width, lineH, LayoutUnit.snap(asc), pieces, atoms, spans));
@@ -530,21 +552,7 @@ final class InlineLineBuilder implements TextRun.Sink {
                 ob.start = x;
             }
         }
-    }
-
-    /** 入れ子の浅い順に並べる（同じ深さは出した順のまま。挿入整列: 1 行の箱は数個）。 */
-    private static void sortByDepth(LineFragment.Span[] spans, int[] depth) {
-        for (int i = 1; i < spans.length; i++) {
-            LineFragment.Span v = spans[i];
-            int d = depth[i], j = i - 1;
-            while (j >= 0 && depth[j] > d) {
-                spans[j + 1] = spans[j];
-                depth[j + 1] = depth[j];
-                j--;
-            }
-            spans[j + 1] = v;
-            depth[j + 1] = d;
-        }
+        leaveFirstLine();
     }
 
     InlineFlow.Result finish() {
@@ -559,42 +567,5 @@ final class InlineLineBuilder implements TextRun.Sink {
             if (g.mL != 0 || g.mR != 0 || g.bL + g.pL + g.pR + g.bR != 0 || g.bT + g.pT + g.pB + g.bB != 0) return true;
         }
         return false;
-    }
-
-    /** 開いているインライン要素の箱（1 回の整形の間だけの作業域。旧 {@code BlockLayoutEngine.OpenBox}）。 */
-    private static final class Open {
-        final BoxNode box;
-        final int depth;
-        final BoxGeometry g;
-        final byte align;
-        final float raise, ascent, descent, lineHeight;
-        float start, marginStart;
-        boolean startEdge = true, hasContent, reopen;
-
-        Open(BoxNode box, int depth, BoxGeometry g, byte align, float raise, float ascent, float descent, float lineHeight) {
-            this.box = box;
-            this.depth = depth;
-            this.g = g;
-            this.align = align;
-            this.raise = raise;
-            this.ascent = ascent;
-            this.descent = descent;
-            this.lineHeight = lineHeight;
-        }
-    }
-
-    /** 今の行に出した箱の分（左右の端は行の左端基準）。 */
-    private record SpanAt(Open ob, float left, float right, boolean startEdge, boolean endEdge) {
-        /** 縦の位置を決めた {@link LineFragment.Span}（行の高さ {@code lineH}・行のベースライン {@code lineBase}）。 */
-        LineFragment.Span span(float l, float r, float lineH, float lineBase) {
-            float above = TextShaper.leadingAbove(ob.lineHeight, ob.ascent, ob.descent) + ob.ascent; // 自分の行の高さの上端からベースライン
-            float baseY = ob.align == VerticalAlign.TOP ? above
-                    : ob.align == VerticalAlign.BOTTOM ? lineH - ob.lineHeight + above : lineBase - ob.raise;
-            BoxGeometry g = ob.g;
-            float top = LayoutUnit.snap(baseY - ob.ascent - g.pT - g.bT);
-            float h = LayoutUnit.snap(g.bT + g.pT + ob.ascent + ob.descent + g.pB + g.bB);
-            return new LineFragment.Span(ob.box, l, top, Math.max(0, r - l), h, // 横は文字片と同じく丸めない（行の左端と二重に丸めない）
-                    LayoutUnit.snap(baseY) - top, startEdge, endEdge);
-        }
     }
 }

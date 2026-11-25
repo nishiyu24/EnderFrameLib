@@ -43,6 +43,14 @@ final class TextRun {
 
         /** 保った改行。 */
         void forcedBreak();
+
+        /**
+         * これから測る語の書式（既定は走査した節の書式 {@code scanned}）。行を組む側は {@code ::first-line} の 1 行目の間だけ別の
+         * スタイルで測り、1 行目を閉じたら節の本来の書式へ戻す（文字・{@code white-space} は同じ）。
+         */
+        default Metrics metrics(Metrics scanned) {
+            return scanned;
+        }
     }
 
     /**
@@ -52,7 +60,11 @@ final class TextRun {
     record Metrics(BoxNode box, Style style, FontFace face, FontStyle fs, WhiteSpace ws, WordBreak wb, float spaceW,
                   float ascent, float descent, float wordSpacing) {
         static Metrics of(BoxNode box, LayoutSession s) {
-            Style st = box.style;
+            return of(box, box.style, s);
+        }
+
+        /** 節 {@code box} を、スタイル {@code st}（{@code ::first-line} を掛けたものなど）で測る書式。 */
+        static Metrics of(BoxNode box, Style st, LayoutSession s) {
             FontFace face = s.face(st);
             FontStyle fs = st.facts.fontStyle;
             float lh = InlineFlow.lineHeight(st, face);
@@ -111,36 +123,39 @@ final class TextRun {
         String t = r.box.text;
         int from = a, to = b;
         if (t.charAt(from) == ' ') {
-            k.space(r.spaceW, r.ws.wraps());
+            k.space(k.metrics(r).spaceW, r.ws.wraps());
             from++;
         }
         boolean trailing = to > from && t.charAt(to - 1) == ' ';
         if (trailing) to--;
         if (to > from) {
             if (!r.ws.wraps()) {
-                float w = r.advance(from, to);
-                k.word(from, to, w, otherSpaces(r, from, to, w), true);
+                Metrics m = k.metrics(r);
+                float w = m.advance(from, to);
+                k.word(from, to, w, otherSpaces(m, from, to, w), true);
             } else {
                 // word-spacing があれば語ごとに置く（一時アダプタが片を語ごとに割って書体の幅で並べ直すので、片を語に揃える）
-                float whole = k.triesWhole() && r.wordSpacing == 0 ? r.advance(from, to) : Float.NaN;
+                Metrics m0 = k.metrics(r);
+                float whole = k.triesWhole() && m0.wordSpacing == 0 ? m0.advance(from, to) : Float.NaN;
                 if (!Float.isNaN(whole) && k.fits(whole)) {
-                    k.word(from, to, whole, otherSpaces(r, from, to, whole), true); // 1 行に収まる: 語ごとに測らない
+                    k.word(from, to, whole, otherSpaces(m0, from, to, whole), true); // 1 行に収まる: 語ごとに測らない
                 } else {
                     for (int w = from; w < to; ) {
                         int brk = InlineFlow.nextBreak(t, w, to, r.wb);
                         int core = brk;
                         while (core > w && t.charAt(core - 1) == ' ') core--;
                         if (core > w) {
-                            float ww = r.advance(w, core);
-                            k.word(w, core, ww, otherSpaces(r, w, core, ww), w == from);
+                            Metrics m = k.metrics(r);
+                            float ww = m.advance(w, core);
+                            k.word(w, core, ww, otherSpaces(m, w, core, ww), w == from);
                         }
-                        if (core < brk) k.space(r.spaceW, true);
+                        if (core < brk) k.space(k.metrics(r).spaceW, true);
                         w = brk;
                     }
                 }
             }
         }
-        if (trailing) k.space(r.spaceW, r.ws.wraps());
+        if (trailing) k.space(k.metrics(r).spaceW, r.ws.wraps());
     }
 
     private static void preserved(Metrics r, int a, int b, Sink k) {
@@ -148,9 +163,10 @@ final class TextRun {
         boolean wraps = r.ws.wraps(), bs = r.ws.breaksSpaces();
         int tab = t.indexOf('\t', a);
         if ((tab < 0 || tab >= b) && (!wraps || k.triesWhole())) {
-            float whole = r.advance(a, b);
+            Metrics m = k.metrics(r);
+            float whole = m.advance(a, b);
             if (!wraps || k.fits(whole)) {
-                k.word(a, b, whole, wraps && !bs ? trailingSpaces(r, a, b, whole) : 0, true);
+                k.word(a, b, whole, wraps && !bs ? trailingSpaces(m, a, b, whole) : 0, true);
                 return;
             }
         }
@@ -173,8 +189,9 @@ final class TextRun {
                     if (sp > i && sp < j) j = sp;
                 }
             }
-            float w = r.advance(i, j);
-            k.word(i, j, w, wraps && !bs ? trailingSpaces(r, i, j, w) : 0, i == a);
+            Metrics m = k.metrics(r);
+            float w = m.advance(i, j);
+            k.word(i, j, w, wraps && !bs ? trailingSpaces(m, i, j, w) : 0, i == a);
             i = j;
         }
     }
@@ -189,6 +206,12 @@ final class TextRun {
         while (core > a && hangingSpace(t.charAt(core - 1))) core--;
         if (core == b) return 0;
         return core == a ? w : w - r.advance(a, core);
+    }
+
+    /** 語 {@code [a, b)}（幅 {@code w}）のうち行末にぶら下がる幅（{@link Sink#word} の {@code hang} と同じ規則。測り直した語に使う）。 */
+    static float hangOf(Metrics r, int a, int b, float w) {
+        if (r.ws.collapses()) return otherSpaces(r, a, b, w);
+        return r.ws.wraps() && !r.ws.breaksSpaces() ? trailingSpaces(r, a, b, w) : 0;
     }
 
     private static boolean hangingSpace(char c) {

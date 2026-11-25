@@ -113,3 +113,10 @@ M2c | FixedPositionTest#fixedInsidePositionedAncestorsUsesTheViewport, PaintTree
 M2c | FixedPositionTest#transformFilterAndContainmentContainAbsoluteAndFixed, FrameOracleTest#invalidationLeakMutantsAreAllKilled | 新経路のレイアウトが transform・filter・layout / paint containment の箱を流れの外の子孫の包含ブロックにせず（位置指定だけを見た）、transform は描画だけの群にあるので付け外しもレイアウトへ届かなかった（StyleFacts.containsFixed を Style.sameLayout が照合する）
 M2c | SiblingCombinatorInvalidationTest#secondChildListChangeAfterAFlushStillRestylesSiblings | 新経路のビューが DOM の無効化セットを引くシートを結ばず（旧経路の再スタイルだけが結んでいた）、兄弟結合子の規則で class を外しても後ろの兄弟が台帳に載らず古い余白のまま残った
 M2c | V3ViewTest#stickyHeaderSticksToTheScrollportAndStopsAtItsParent, ScrollTranslateTest#movingTheContentNodeMatchesRebuildingEveryTime | 新経路が position: sticky の貼り付きを付けず（静的位置のまま）、中身の節を動かす更新（貼り付きの式を足す）と描き直した面がずれた（貼り付きはスクロールの位置を足す見え方 PaintView が付ける）
+M2c | Scene3DConnectionTest#hostSceneStillFillsParentWidth, CustomElementPainterTest#hostSceneUsesPainterDimensions | 新経路がインラインのホストの 3D の場面を縮小して合わせ（最小の幅 64）、旧経路と違って親の幅へ広げなかった
+M2c | FixedPositionTest#autoMarginsCenterAnOutOfFlowBoxBetweenItsInsets, InertTest#modalDialogMakesBackgroundInertEvenWithTransparentBackdrop | 新経路が両方のオフセットと大きさの決まった流れの外の箱の auto の余白を配らず（モーダルの dialog が左上に出た）、高さ fit-content を上下のオフセットの間へ伸ばした
+M2c | FirstLineFlowTest#firstLineFontSizeWrapsTheFirstLineAndTheRestUsesTheNormalFont, FirstLinePseudoElementTest#firstLineWorksInVerticalRlWritingMode | 新経路が ::first-line を写さず（色・背景・書体）、1 行目の書体で測った語を 2 行目でも使わないよう 1 行目を閉じたら測り直す
+M2c | ChangeLedgerTest#hoverAndResizeReachTheLedger | 新経路の描画用の木が状態の擬似クラスの規則の印を持たず、透明な要素の当たり判定の項目が出ないのでホバーが届かなかった
+M2c | ClockInjectionTest#resizeThrottleFollowsTheInjectedClock | リサイズの間引きが旧経路の箱の木の有無だけを見て、新経路のビューでは間引かなかった
+M2c | TypedCssCoverageTest#tableKeywordsAreAcceptedByTheEngine | 新経路のビューで CSSOM の算出スタイルが旧経路の再スタイルの印からしか読めず空だった（最新の箱の木から答える）
+M2c | ContentVisibilityVirtualListTest#standaloneViewHandles100kVirtualScrollEndToEnd | 新経路が画面から遠い content-visibility: auto の箱も描き、10 万行の表示リストが O(N) になった（描くときに関連の余白で外す）

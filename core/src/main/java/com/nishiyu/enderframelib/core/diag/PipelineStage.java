@@ -4,7 +4,7 @@ package com.nishiyu.enderframelib.core.diag;
 public enum PipelineStage {
     /** 再スタイルと箱の木の生成/再利用（{@code buildLayoutTree}）。 */
     STYLE_BUILD("style+build"),
-    /** 匿名ボックスの整形（{@code BoxTreeBuilder}）。 */
+    /** 箱の木（旧経路は匿名ボックスの整形 {@code BoxTreeBuilder}、新経路はスタイルを解いて組む {@code BoxTreeCompiler}）。 */
     BOX_TREE("box-tree"),
     /** 局所の再スタイル（{@code restyleLayoutTree}。ホバー・class のトグルなど）。 */
     RESTYLE_LOCAL("restyle-local"),
@@ -12,6 +12,10 @@ public enum PipelineStage {
     LAYOUT_MEASURE("layout.measure"),
     /** 同じく配置（位置決め）。 */
     LAYOUT_PLACE("layout.place"),
+    /** 新経路の断片のレイアウト（{@code FragmentLayout}。測ると置くを分けない）。 */
+    LAYOUT("layout"),
+    /** 新経路の描画用の木（{@code PaintTreeBuilder}）。 */
+    PAINT_TREE("paint-tree"),
     /** measure を飛ばした位置決めだけ（スクロール・ドラッグ）。 */
     REPOSITION("reposition"),
     /** ディスプレイリスト生成。 */

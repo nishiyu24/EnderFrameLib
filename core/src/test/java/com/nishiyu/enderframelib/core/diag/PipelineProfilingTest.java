@@ -60,7 +60,8 @@ class PipelineProfilingTest {
     @Test
     void everyPipelineStageIsRecorded() {
         StageProfiler.enable(true);
-        StandaloneView view = new StandaloneView(HTML, 160, 120);
+        StandaloneView view = new StandaloneView(HTML, 160, 120, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(),
+                com.nishiyu.enderframelib.common.EnginePath.V3);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(160, 120, 1f);
              ProfilingRenderBackend wrapped = new ProfilingRenderBackend(cpu)) {
             view.frame(1000, wrapped, true);
@@ -68,8 +69,9 @@ class PipelineProfilingTest {
             view.frame(1016, wrapped, false);
         }
         Set<PipelineStage> seen = StageProfiler.snapshot().stream().map(StageProfiler.StageStats::stage).collect(Collectors.toSet());
-        for (PipelineStage s : List.of(PipelineStage.STYLE_BUILD, PipelineStage.BOX_TREE, PipelineStage.LAYOUT_MEASURE, PipelineStage.LAYOUT_PLACE,
-                PipelineStage.DISPLAY_LIST, PipelineStage.PAINT)) {
+        // 新経路の段（スタイルは箱の木を組むときに解き、測ると置くは分けない。M2c ④）
+        for (PipelineStage s : List.of(PipelineStage.BOX_TREE, PipelineStage.LAYOUT, PipelineStage.PAINT_TREE, PipelineStage.DISPLAY_LIST,
+                PipelineStage.PAINT)) {
             assertTrue(seen.contains(s), "記録されていない段: " + s + " / 記録: " + seen);
         }
         assertFalse(seen.contains(PipelineStage.GPU), "GPU 版を使っていないので GPU は空");

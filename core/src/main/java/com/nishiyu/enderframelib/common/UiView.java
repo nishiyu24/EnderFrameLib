@@ -193,6 +193,7 @@ public class UiView implements AutoCloseable {
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId must not be null");
         this.timers = new UiTimers(sessionId);
         this.v3 = path == EnginePath.V3 ? new V3Frame() : null;
+        if (v3 != null) interactionState.bindStyleLookup(v3::styleOf); // CSSOM の算出スタイルは新経路の箱の木から
     }
 
     /** レイアウトの結果の木の根（旧経路は箱の木、新経路は描画用の木の見え方。CSSOM・フォーカス・インスペクタが読む）。 */
@@ -1248,7 +1249,7 @@ public class UiView implements AutoCloseable {
             return false;
         }
         long sinceLastLayout = clock.nanos() - lastLayoutFinishedNanos;
-        if (layoutRoot != null && sinceLastLayout < lastLayoutCostNanos * RESIZE_THROTTLE_FACTOR) {
+        if ((v3 != null ? v3.root() != null : layoutRoot != null) && sinceLastLayout < lastLayoutCostNanos * RESIZE_THROTTLE_FACTOR) {
             invalidated();
             return false;
         }
@@ -1353,8 +1354,6 @@ public class UiView implements AutoCloseable {
      * <p>条件: 文字以外の汚れが無い・コンテナクエリが無い・変わった文字の箱がすべて見つかる・文字の前後とも空白だけではない
      * （空白だけの Text は箱の木に入るかどうかが変わる）・表や入力部品、{@code <style>} の中ではない。</p>
      */
-
-
 
     /** 再スタイル経路（{@code restyleAndUpdate}）の行き先の内訳（計測用）。 */
     /** 表示リストのビルダーが無かった回数（計測用）。 */

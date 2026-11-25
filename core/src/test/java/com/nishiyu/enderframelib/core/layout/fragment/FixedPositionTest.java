@@ -54,4 +54,29 @@ class FixedPositionTest {
             assertEquals(SpikeView.dump(v.scratch()), SpikeView.dump(after), prop + " 増分と最初から作った結果が一致");
         }
     }
+
+    /**
+     * 両方のオフセットと大きさが決まった流れの外の箱は、auto の余白で余りを分けて中央へ寄る（CSS 2.2 §10.3.7・§10.6.4。UA の
+     * {@code dialog} の中央寄せ）。高さが内在サイズの語（{@code fit-content}）なら上下のオフセットの間へ伸ばさず内容の高さにする。
+     */
+    @Test
+    void autoMarginsCenterAnOutOfFlowBoxBetweenItsInsets() {
+        SpikeView v = new SpikeView("<html><body style='margin:0'><div style='position:relative;width:300px;height:200px'>"
+                + "<div id=a style='position:absolute;inset:0;margin:auto;width:100px;height:40px'></div>"
+                + "<div id=b style='position:absolute;left:0;right:0;top:0;bottom:0;margin:auto;width:fit-content;height:fit-content'><div style='width:60px;height:30px'></div></div>"
+                + "<div id=c style='position:absolute;left:0;right:0;top:0;bottom:0;margin:auto auto auto 10px;width:100px;height:40px'></div>"
+                + "<div id=d style='position:absolute;left:0;right:0;top:0;bottom:0'></div></div></body></html>", 640, 480);
+        LayoutFragment root = v.frame();
+        float[] a = SpikeView.find(root, "a"), b = SpikeView.find(root, "b"), c = SpikeView.find(root, "c"), d = SpikeView.find(root, "d");
+        assertEquals(100f, a[0], 0.01f, "左右の auto の余白で中央");
+        assertEquals(80f, a[1], 0.01f, "上下の auto の余白で中央");
+        assertEquals(120f, b[0], 0.01f, "fit-content の幅でも中央");
+        assertEquals(85f, b[1], 0.01f, "fit-content の高さは内容の高さで、中央");
+        assertEquals(30f, b[3], 0.01f);
+        assertEquals(10f, c[0], 0.01f, "左だけ指定なら右の auto が余りを取る");
+        assertEquals(80f, c[1], 0.01f);
+        assertEquals(300f, d[2], 0.01f, "大きさが auto ならオフセットの間いっぱい");
+        assertEquals(200f, d[3], 0.01f);
+        assertEquals(SpikeView.dump(v.scratch()), SpikeView.dump(root));
+    }
 }

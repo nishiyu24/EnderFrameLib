@@ -148,8 +148,9 @@ final class OutOfFlow {
             float l = inset(st, st.box.left, cbW, s), r = inset(st, st.box.right, cbW, s);
             float t = inset(st, st.box.top, cbH, s), b = inset(st, st.box.bottom, cbH, s);
             float w = g.specifiedWidth(box, cbW, cbW - (Float.isNaN(l) ? 0 : l) - (Float.isNaN(r) ? 0 : r) - g.mL - g.mR, s);
+            boolean widthFromInsets = Float.isNaN(w) && !Float.isNaN(l) && !Float.isNaN(r);
             if (Float.isNaN(w)) {
-                if (!Float.isNaN(l) && !Float.isNaN(r)) {
+                if (widthFromInsets) {
                     w = cbW - l - r - g.mL - g.mR;
                 } else { // 縮小して合わせる: min(max(min-content, 使える幅), max-content)
                     MinMaxSizes mm = s.cache().minMax(box, s);
@@ -159,18 +160,38 @@ final class OutOfFlow {
             }
             w = LayoutUnit.snap(g.clampWidth(st, Math.max(0, w), cbW, s));
             float fixedH = g.specifiedHeight(st, cbH, s);
-            if (Float.isNaN(fixedH) && !Float.isNaN(t) && !Float.isNaN(b)) fixedH = Math.max(0, cbH - t - b - g.mT - g.mB);
+            // 高さが auto なら上下のオフセットの間いっぱい。内在サイズの語（fit-content など）は内容の高さ（上下の auto の余白で中央へ寄せる）
+            boolean heightFromInsets = Float.isNaN(fixedH) && !Float.isNaN(t) && !Float.isNaN(b) && !CssLength.isKeyword(st.box.height);
+            if (heightFromInsets) fixedH = Math.max(0, cbH - t - b - g.mT - g.mB);
             if (!Float.isNaN(fixedH)) fixedH = LayoutUnit.snap(g.clampHeight(st, fixedH, cbH, s));
             ConstraintSpace space = s.space(cbW, w, fixedH, cbH, ConstraintSpace.FORMATTING_ROOT);
             LayoutFragment f = s.cache().layout(box, space, priorOf(prior, box), s);
-            float x = !Float.isNaN(l) ? cbX + l + g.mL : !Float.isNaN(r) ? cbX + cbW - r - f.width - g.mR
+            float ml = g.mL, mt = g.mT;
+            // 左右（上下）のオフセットと幅（高さ）が決まっていて余白が auto なら、余りを auto の余白へ配る（CSS 2.2 §10.3.7・§10.6.4）
+            if (!Float.isNaN(l) && !Float.isNaN(r) && !widthFromInsets) {
+                ml = autoMargin(cbW - l - r - f.width, g.mL, g.mR, g.autoML, g.autoMR, true);
+            }
+            if (!Float.isNaN(t) && !Float.isNaN(b) && !heightFromInsets) {
+                mt = autoMargin(cbH - t - b - f.height, g.mT, g.mB, CssLength.isAuto(st.box.marginTop), CssLength.isAuto(st.box.marginBottom), false);
+            }
+            float x = !Float.isNaN(l) ? cbX + l + ml : !Float.isNaN(r) ? cbX + cbW - r - f.width - g.mR
                     : p.x() + g.mL + p.dx(f.width + g.mL + g.mR);
-            float y = !Float.isNaN(t) ? cbY + t + g.mT : !Float.isNaN(b) ? cbY + cbH - b - f.height - g.mB
+            float y = !Float.isNaN(t) ? cbY + t + mt : !Float.isNaN(b) ? cbY + cbH - b - f.height - g.mB
                     : p.y() + g.mT + p.dy(f.height + g.mT + g.mB);
             out[i] = new PlacedFragment(f, LayoutUnit.snap(x), LayoutUnit.snap(y));
             if (anchors != null) anchors.placed(out[i]);
         }
         return out;
+    }
+
+    /**
+     * 始まりの側の余白: {@code free} は両方のオフセットと箱の間の余り（余白を含めない）。両方 auto なら等分（横は負なら始まりの側を 0）、
+     * 片方だけ auto ならその側が余りから他方を引いた分、どちらも auto でなければ指定のまま（終わりの側を捨てる）。
+     */
+    private static float autoMargin(float free, float start, float end, boolean autoStart, boolean autoEnd, boolean inline) {
+        if (autoStart && autoEnd) return inline && free < 0 ? 0 : free / 2;
+        if (autoStart) return free - end;
+        return start;
     }
 
     static LayoutFragment priorOf(LayoutFragment prior, BoxNode box) {

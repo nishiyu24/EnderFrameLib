@@ -32,6 +32,13 @@ public final class GeneratedContentStyles {
                 rootLineHeight, viewportW, viewportH);
     }
 
+    /** {@code ::first-line} の規則が宣言したスタイル（{@link StyleResolver#resolvePseudoStyle} の FIRST_LINE。規則が無ければ null）。 */
+    public static ComputedStyle firstLineDeclared(HtmlNode owner, StyleSheet sheet, StateLookup lookup, ComputedStyle ownerStyle,
+                                                  Map<String, String> env, float rootFontSize, float rootLineHeight, int viewportW, int viewportH) {
+        return StyleResolver.resolvePseudoStyle(owner, StyleResolver.PseudoType.FIRST_LINE, sheet, lookup, ownerStyle, env, rootFontSize,
+                rootLineHeight, viewportW, viewportH);
+    }
+
     /** {@code list-style-position: inside}（マーカーを流れの中の原子にする）か。 */
     public static boolean markerInside(Style st) {
         return st.inherited.listStylePosition == com.nishiyu.enderframelib.core.css.model.CssKeywords.ListStylePosition.INSIDE;

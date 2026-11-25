@@ -29,7 +29,7 @@ class RelativeElementsTest {
             assertTrue(abs.stream().noneMatch(i -> i.hints().relativeOrigin()), "絶対座標のリストに相対の印は無い");
             assertEquals(AbsoluteItems.of(rel), abs);
             // 一番内側の文字は、親相対では原点付近・絶対では箱の位置（20+10+5+7 だけずれる）
-            DisplayItem relText = rel.stream().filter(i -> i.type() == ElementType.TEXT && "inner ".equals(i.text())).findFirst().orElseThrow();
+            DisplayItem relText = rel.stream().filter(i -> i.type() == ElementType.TEXT && "inner".equals(i.text().trim())).findFirst().orElseThrow();
             DisplayItem absText = abs.stream().filter(i -> i.id().equals(relText.id())).findFirst().orElseThrow();
             assertTrue(absText.x() > relText.x() && absText.y() > relText.y(), "絶対座標は相対より親の原点だけ大きい");
         } finally {

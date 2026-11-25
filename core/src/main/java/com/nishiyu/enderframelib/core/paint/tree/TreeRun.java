@@ -12,8 +12,15 @@ final class TreeRun implements PaintRun {
     private final float x, y, w, h, baseline;
     private final String text;
     private final boolean startEdge, endEdge;
+    /** 1 行目の語に効く {@code ::first-line} を掛けたスタイル（1 行目でない・規則が無ければ null）。 */
+    private final ComputedStyle firstLine;
 
     TreeRun(float x, float y, float w, float h, String text, float baseline, boolean startEdge, boolean endEdge) {
+        this(x, y, w, h, text, baseline, startEdge, endEdge, null);
+    }
+
+    TreeRun(float x, float y, float w, float h, String text, float baseline, boolean startEdge, boolean endEdge, ComputedStyle firstLine) {
+        this.firstLine = firstLine;
         this.x = x;
         this.y = y;
         this.w = w;
@@ -33,9 +40,8 @@ final class TreeRun implements PaintRun {
     @Override public boolean startEdge() { return startEdge; }
     @Override public boolean endEdge() { return endEdge; }
 
-    /** {@code ::first-line} は新経路でまだ写さない（M2b の範囲外の一覧。旧経路の射影と同じく null）。 */
     @Override
     public ComputedStyle firstLineStyleFor(PaintBox target) {
-        return null;
+        return firstLine;
     }
 }

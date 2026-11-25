@@ -2,6 +2,8 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.box.StyleSource;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
+import com.nishiyu.enderframelib.core.diag.PipelineStage;
+import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
@@ -64,16 +66,18 @@ final class V3Frame {
             dpr = devicePixelRatio;
             LayoutSession session = new LayoutSession(fontResolver);
             pipeline = new FragmentPipeline(new StyleSource(doc.sheet, state, env, w, h), session);
-            tree = new PaintTreeBuilder(session);
+            tree = new PaintTreeBuilder(session, doc.sheet);
             painter = new TreePainter(w, h, doc.sheet != null ? doc.sheet.keyframes : Map.of(), scrollState);
             painter.setDevicePixelRatio(devicePixelRatio);
             ledger = null;
         }
         LayoutFragment frag = pipeline.frame(doc.root, ledger, w, h);
         PaintNode prev = root;
+        long t0 = StageProfiler.begin(PipelineStage.PAINT_TREE);
         root = tree.build(frag, pipeline.boxRoot());
+        StageProfiler.end(PipelineStage.PAINT_TREE, t0);
         if (ledger != null && root == prev && onlyRestyleOrScroll(ledger)) return null;
-        return painter.paint(root, ledger);
+        return paint(ledger);
     }
 
     /**
@@ -88,7 +92,12 @@ final class V3Frame {
 
     /** 直近のフレームの描画用の木を描く（{@link #frame} が null を返したあと、スクロールの移動で済ませられないとき）。 */
     List<DisplayItem> paint(ChangeLedger ledger) {
-        return painter.paint(root, ledger);
+        long t0 = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
+        try {
+            return painter.paint(root, ledger);
+        } finally {
+            StageProfiler.end(PipelineStage.DISPLAY_LIST, t0);
+        }
     }
 
     private static boolean onlyRestyleOrScroll(ChangeLedger ledger) {
@@ -114,6 +123,25 @@ final class V3Frame {
     com.nishiyu.enderframelib.core.layout.PaintBox boxOf(HtmlNode node) {
         PaintView r = root();
         return r != null ? UiFocus.findBox(r, node) : null;
+    }
+
+    /**
+     * 要素 {@code node} の算出スタイル（CSSOM の {@code getComputedStyle}）。最新の箱の木は DOM の子と 1 対 1 なので、根からの子の位置を
+     * 辿る（{@code display: none} の要素も箱を持つ。その子孫と、まだ組んでいない節は null）。
+     */
+    com.nishiyu.enderframelib.core.css.ComputedStyle styleOf(HtmlNode node) {
+        com.nishiyu.enderframelib.core.box.BoxNode b = pipeline != null ? pipeline.boxRoot() : null;
+        if (b == null || node == null) return null;
+        java.util.ArrayDeque<HtmlNode> path = new java.util.ArrayDeque<>();
+        for (HtmlNode cur = node; cur != null && cur != b.node; cur = cur.parent) path.push(cur);
+        HtmlNode parent = b.node;
+        for (HtmlNode cur : path) {
+            int i = parent == null ? -1 : parent.children.indexOf(cur);
+            if (i < 0 || i >= b.children.size()) return null;
+            b = b.children.get(i);
+            parent = cur;
+        }
+        return b.node == node && b.kind != com.nishiyu.enderframelib.core.box.BoxKind.TEXT ? new com.nishiyu.enderframelib.core.css.ComputedStyle(b.computed) : null;
     }
 
     /** 文書を入れ替えた（前回の木を捨てて次のフレームで全体を作る）。 */

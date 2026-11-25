@@ -101,7 +101,7 @@ public final class OrthogonalBoxes {
      * 根の流れ: 包む箱 1 つと、根の直下に残る位置指定の子。{@code raw} は疑似要素を足した子の並び、{@code prevFlow} は前回の流れ
      * （包む箱が同じスタイルで同じ子なら前回の参照を使う）。
      */
-    static BoxChildren wrap(HtmlNode owner, Style wrapperStyle, BoxChildren raw, BoxChildren prevFlow) {
+    static BoxChildren wrap(HtmlNode owner, Style wrapperStyle, BoxChildren raw, BoxChildren prevFlow, Style firstLine) {
         List<BoxNode> inner = null, outside = new ArrayList<>();
         for (int i = 0, n = raw.size(); i < n; i++) {
             BoxNode k = raw.get(i);
@@ -118,12 +118,12 @@ public final class OrthogonalBoxes {
         BoxChildren kids = inner == null ? raw : BoxChildren.of(inner);
         BoxNode prevWrapper = prevFlow != null && prevFlow.size() > 0 && prevFlow.get(0).pseudo == BoxNode.Pseudo.ORTHOGONAL ? prevFlow.get(0) : null;
         BoxNode wrapper;
-        if (prevWrapper != null && prevWrapper.style == wrapperStyle && prevWrapper.children == kids) {
+        if (prevWrapper != null && prevWrapper.style == wrapperStyle && prevWrapper.children == kids && prevWrapper.firstLine == firstLine) {
             wrapper = prevWrapper;
         } else {
             BoxKind kind = BoxKind.of(owner, wrapperStyle);
             wrapper = new BoxNode(owner, wrapperStyle, kind, null, kids, BoxNode.Pseudo.ORTHOGONAL, null, null, null, null,
-                    MarkerBoxes.NO_ORDINAL, prevWrapper != null ? prevWrapper.flow : null);
+                    MarkerBoxes.NO_ORDINAL, prevWrapper != null ? prevWrapper.flow : null, wrapperStyle, 0, 0, null, null, firstLine, null);
         }
         if (outside.isEmpty() && prevFlow != null && prevFlow.size() == 1 && prevFlow.get(0) == wrapper) return prevFlow;
         List<BoxNode> all = new ArrayList<>(1 + outside.size());

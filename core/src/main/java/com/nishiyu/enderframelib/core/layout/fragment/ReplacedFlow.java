@@ -38,6 +38,16 @@ final class ReplacedFlow implements FormattingEngine {
         return n.replaced != null && n.pseudo == BoxNode.Pseudo.NONE;
     }
 
+    /** 幅が auto なら包含ブロックの幅いっぱいに広がる置換要素（ホストの 3D の場面）か。インラインの中でも縮小して合わせない（旧経路と同じ）。 */
+    static boolean fillsWidth(BoxNode n) {
+        return is(n) && ReplacedElements.isHostScene(n.replaced.tag()) && ReplacedElements.painterOf(n.replaced.tag()).sceneFillsWidth();
+    }
+
+    /** {@link #fillsWidth} の箱の幅（使える幅 {@code avail}。最小の幅より狭くしない）。 */
+    static float fill(BoxNode n, float avail) {
+        return Math.max(ReplacedElements.painterOf(n.replaced.tag()).sceneMinWidth(), avail);
+    }
+
     /** 内容ボックスの内在の {幅, 高さ}、画像類か（比を使う）、包含ブロックの幅いっぱいか（3D の場面）。 */
     private record Intrinsic(float w, float h, boolean image, boolean fillsWidth) {
         float ratio() {
@@ -110,7 +120,7 @@ final class ReplacedFlow implements FormattingEngine {
             float spec = g.specifiedWidth(st, cbw, s);
             if (Float.isNaN(spec)) {
                 if (!Float.isNaN(specH) && ratio > 0) spec = Math.max(0, specH - g.vdec()) * ratio + g.hdec();
-                else if (in.fillsWidth()) spec = Math.max(in.w(), cbw - g.mL - g.mR);
+                else if (in.fillsWidth()) spec = fill(node, cbw - g.mL - g.mR);
                 else spec = in.w() + g.hdec();
             }
             w = g.clampWidth(st, spec, cbw, s);

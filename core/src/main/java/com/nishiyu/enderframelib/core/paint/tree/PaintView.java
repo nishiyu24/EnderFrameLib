@@ -152,13 +152,12 @@ public final class PaintView extends PaintBox {
 
     @Override public boolean isVerticalWrapper() { return n.verticalWrapper; }
 
-    /** 状態の規則の印は ②-3 で入れる（旧経路の射影と同じく今は false）。 */
-    @Override public boolean interactiveRules() { return false; }
+    @Override public boolean interactiveRules() { return n.interactive; }
 
     @Override public float[] collapsedBorders() { return n.collapsedBorders; }
     @Override public float[][] columnRules() { return null; }
-    @Override public float[] firstLineBgRect() { return null; }
-    @Override public ComputedStyle firstLine() { return null; }
+    @Override public float[] firstLineBgRect() { return n.firstLineBgRect; }
+    @Override public ComputedStyle firstLine() { return n.firstLine; }
     @Override public ComputedStyle placeholder() { return null; }
 
     @Override
