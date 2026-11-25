@@ -207,6 +207,10 @@ public final class ElementTraits {
         return "ol".equalsIgnoreCase(tag);
     }
 
+    public static boolean isListItem(String tag) {
+        return "li".equalsIgnoreCase(tag);
+    }
+
     public static boolean isImage(String tag) {
         return "img".equalsIgnoreCase(tag);
     }

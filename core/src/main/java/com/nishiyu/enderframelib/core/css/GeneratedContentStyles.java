@@ -23,6 +23,21 @@ public final class GeneratedContentStyles {
     }
 
     /**
+     * {@code ::marker} の規則が宣言したスタイル（{@link StyleResolver#resolvePseudoStyle} の MARKER。規則が無ければ null）。
+     * 箱のスタイルは持ち主の {@link ComputedStyle#derivedMarker} で UA の上書きを掛けて作る。
+     */
+    public static ComputedStyle markerDeclared(HtmlNode owner, StyleSheet sheet, StateLookup lookup, ComputedStyle ownerStyle,
+                                               Map<String, String> env, float rootFontSize, float rootLineHeight, int viewportW, int viewportH) {
+        return StyleResolver.resolvePseudoStyle(owner, StyleResolver.PseudoType.MARKER, sheet, lookup, ownerStyle, env, rootFontSize,
+                rootLineHeight, viewportW, viewportH);
+    }
+
+    /** {@code list-style-position: inside}（マーカーを流れの中の原子にする）か。 */
+    public static boolean markerInside(Style st) {
+        return st.inherited.listStylePosition == com.nishiyu.enderframelib.core.css.model.CssKeywords.ListStylePosition.INSIDE;
+    }
+
+    /**
      * 文書が CSS のカウンタを使うか（{@code counter-*} の宣言が list-item 以外の名前を持つ・値に {@code counter()} / {@code counters()}）。
      * UA の暗黙の {@code list-item}（{@code menu, ol, ul { counter-reset: list-item }}）だけなら使わない扱い。
      */

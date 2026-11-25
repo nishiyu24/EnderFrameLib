@@ -168,15 +168,22 @@ public final class BoxTreeCompiler {
         if (resolve) stats.restyled++;
         if (prev != null) style = style.shareEqualGroups(prev.style); // 2. 継承の打ち切り
         BoxKind kind = BoxKind.of(n, style);
+        // 閉じた details の summary 以外の子は箱を作らない（HTML §15.5.? 。旧 RenderTreeBuilder と同じ。open の付け外しは details の
+        // 解き直しとして届き、下の kidsRestyle で子を解き直す）
+        if (kind != BoxKind.NONE && n.parent != null
+                && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isHiddenByClosedDetails(n.parent, n.parent.attrs.containsKey("open"), n)) {
+            kind = BoxKind.NONE;
+        }
         String text = null;
         BoxChildren children = BoxChunk.EMPTY;
-        BoxNode before = null, after = null;
+        BoxNode before = null, after = null, marker = null;
         if (kind == BoxKind.TEXT) {
             text = TextContent.of(n.text, style);
             if (prev != null && prev.text != null && prev.text.equals(text)) text = prev.text;
         } else if (kind != BoxKind.NONE) {
             boolean usable = prev != null && prev.kind != BoxKind.NONE && prev.kind != BoxKind.TEXT;
-            boolean kidsRestyle = !usable || style.inherited != prev.style.inherited || style.custom != prev.style.custom;
+            boolean kidsRestyle = !usable || style.inherited != prev.style.inherited || style.custom != prev.style.custom
+                    || (resolve && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isDetails(n.tag));
             // inherit キーワードは要素にしか効かない（文字の節のスタイルは親の継承群だけで決まる）
             boolean elemRestyle = usable && usesInherit && style != prev.style;
             boolean element = n.nodeType == NodeType.ELEMENT;
@@ -185,8 +192,17 @@ public final class BoxTreeCompiler {
             // 疑似要素: 持ち主を解き直したとき（とカウンタを使う文書）だけ作り直し、それ以外は前回の箱のまま
             boolean pseudos = element && PseudoBoxes.capable(n);
             boolean redoPseudo = resolve || counters != null || !usable;
+            if (pseudos && MarkerBoxes.listItem(style)) marker = redoPseudo ? marker(n, style, usable ? prev.marker : null) : prev.marker;
             if (pseudos) before = redoPseudo ? pseudo(BoxNode.Pseudo.BEFORE, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.BEFORE);
             children = compileChildren(n, style, usable ? prev.children : null, kidsRestyle, elemRestyle, selfKinds);
+            // 番号に依るマーカー: 子の並びが変わった・子に触れた（li の value は箱を変えない）・自分を解き直した（start・reversed）なら
+            // 文書順に数え直す（カウンタを使う文書は Counters）
+            if (counters == null && children.hasOrdinalMarkers()
+                    && (!usable || children != prev.children || resolve || parentOfTouched.contains(n))) {
+                int[] rebuilt = {0};
+                children = MarkerBoxes.renumber(n, children, styles, counterStyles, rebuilt);
+                stats.rebuiltBoxes += rebuilt[0];
+            }
             if (pseudos) after = redoPseudo ? pseudo(BoxNode.Pseudo.AFTER, n, style, usable ? prev : null) : prev.pseudoChild(BoxNode.Pseudo.AFTER);
             if (counters != null) counters.release(mark);
         }
@@ -196,9 +212,22 @@ public final class BoxTreeCompiler {
         if (replaced != null && prev != null && replaced.equals(prev.replaced)) replaced = prev.replaced;
         if (prev != null && style == prev.style && kind == prev.kind && text == prev.text && children == prev.children
                 && replaced == prev.replaced
-                && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)) return prev;
+                && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)
+                && marker == prev.marker) return prev;
         stats.rebuiltBoxes++;
-        return new BoxNode(n, style, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced);
+        return new BoxNode(n, style, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL);
+    }
+
+    /**
+     * リスト項目のマーカー。番号はカウンタを使う文書なら {@code Counters} の値、それ以外は前回の番号（無ければ 1）を仮に使い、親が
+     * {@link MarkerBoxes#renumber} で直す。
+     */
+    private BoxNode marker(HtmlNode owner, Style style, BoxNode prev) {
+        int ordinal = counters != null ? counters.value(Counters.LIST_ITEM)
+                : prev != null && prev.ordinal != MarkerBoxes.NO_ORDINAL ? prev.ordinal : 1;
+        BoxNode b = MarkerBoxes.build(owner, style, prev, styles, counters, counterStyles, ordinal);
+        if (b != null && b != prev) stats.rebuiltBoxes += 2;
+        return b;
     }
 
     private BoxNode pseudo(BoxNode.Pseudo which, HtmlNode owner, Style style, BoxNode prevOwner) {

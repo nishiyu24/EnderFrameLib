@@ -114,13 +114,13 @@ final class BlockFlow implements FormattingEngine {
                 up = pend.toArray(OutOfFlow.NONE);
             }
         }
-        if (lp != null) { // legend は置いた断片として持つ（流れの外と同じく border-box 基準）
-            PlacedFragment[] all = new PlacedFragment[1 + (oof == null ? 0 : oof.length)];
-            all[0] = lp.frag();
-            if (oof != null) System.arraycopy(oof, 0, all, 1, oof.length);
-            oof = all;
-        }
-        return new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, insetL, insetT, through, flow, lines, up, oof);
+        if (lp != null) oof = OutsideMarker.prepend(lp.frag(), oof); // legend は置いた断片として持つ（流れの外と同じく border-box 基準）
+        LayoutFragment out = new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, insetL, insetT, through, flow, lines, up, oof);
+        // 外側の ::marker は項目を整形した後で、最初の行のベースラインに揃えて左外に置く（OutsideMarker）
+        PlacedFragment marker = text || node.marker == null ? null : OutsideMarker.place(node, out, cw, prior, s);
+        if (marker == null) return out;
+        return new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, insetL, insetT, through, flow, lines, up,
+                OutsideMarker.prepend(marker, oof));
     }
 
     /** ブロック水準の子だけの流れ: チャンクごとに前回の {@link FlowChunk} を引き、外れたチャンクだけ並べ直す。 */

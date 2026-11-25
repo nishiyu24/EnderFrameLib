@@ -35,6 +35,10 @@ class IncrementalOracleTest {
     @Test
     void inlineText() { run("text"); }
 
+    /** M2b-1: リストのマーカー（項目の挿入・削除・start・reversed・value・型・位置）と details の開閉の変異。 */
+    @Test
+    void listMarkers() { run("lists"); }
+
     /** M2b-1: 疑似要素（::before / ::after の付け外し・attr() の値・表示型の切り替え）の変異。 */
     @Test
     void pseudoElements() { run("pseudo"); }
@@ -66,6 +70,7 @@ class IncrementalOracleTest {
             case "replaced" -> SpikeView.inlineText(16).replace("</body>", "<div id=rp><canvas id=rc width=50 height=20></canvas>"
                     + "<img id=ri><input id=rin size=5><select id=rs><option id=ro>x</option></select>"
                     + "<svg id=rv viewBox='0 0 10 5' width=30></svg></div></body>");
+            case "lists" -> lists();
             case "flexx" -> SpikeView.nestedFlex(4, 3, true).replace(".f{display:flex;flex-wrap:wrap;", ".f{display:flex;flex-wrap:wrap;height:220px;");
             default -> SpikeView.nestedFlex(4, 2);
         };
@@ -77,6 +82,7 @@ class IncrementalOracleTest {
                     : kind.equals("grid") && rnd.nextInt(3) > 0 ? mutateGrid(v, rnd)
                     : kind.equals("flexx") && rnd.nextInt(3) > 0 ? mutateFlex(v, rnd)
                     : kind.equals("pseudo") && rnd.nextInt(3) > 0 ? mutatePseudo(v, rnd)
+                    : kind.equals("lists") && rnd.nextInt(3) > 0 ? mutateList(v, rnd, step)
                     : (kind.equals("text") || kind.equals("pseudo")) && rnd.nextBoolean() ? mutateText(v, rnd, step) : mutate(v, rnd, step);
             LayoutFragment inc = v.frame();
             List<String> a = SpikeView.dump(inc), b = SpikeView.dump(v.scratch());
@@ -88,6 +94,68 @@ class IncrementalOracleTest {
                     }
                 }
                 assertEquals(b.size(), a.size(), kind + " step " + step + " (" + op + ") 断片の数");
+            }
+        }
+    }
+
+    private static String lists() {
+        StringBuilder sb = new StringBuilder("<html><head><style>body{margin:8px} li{padding:1px}</style></head><body>");
+        for (int l = 0; l < 4; l++) {
+            sb.append(l % 2 == 0 ? "<ol id=l" : "<ul id=l").append(l).append(l == 2 ? " start=4" : "").append(">");
+            for (int i = 0; i < 6 + l; i++) sb.append("<li>item ").append(l).append('.').append(i).append(i == 2 ? "<ol><li>sub</li><li>sub2</li></ol>" : "").append("</li>");
+            sb.append(l % 2 == 0 ? "</ol>" : "</ul>");
+        }
+        for (int d = 0; d < 3; d++) sb.append("<details id=d").append(d).append(d == 1 ? " open" : "").append("><summary>sum ").append(d)
+                .append("</summary><p>body ").append(d).append("</p></details>");
+        return sb.append("</body></html>").toString();
+    }
+
+    private static final String[] LIST_STYLES = {"list-style-type:upper-roman", "list-style-position:inside", "list-style-type:none",
+            "list-style-type:square", "display:block", "display:none", "list-style-type:decimal-leading-zero;font-size:20px"};
+
+    /** リストの変異（項目の挿入・削除・属性・スタイル・details の開閉）。 */
+    private static String mutateList(SpikeView v, Random rnd, int step) {
+        HtmlNode list = v.byId("l" + rnd.nextInt(4));
+        if (list == null) return "skip"; // 汎用の変異が消した
+        List<HtmlNode> items = new ArrayList<>();
+        for (HtmlNode c : list.children) if (c instanceof HtmlElement) items.add(c);
+        switch (rnd.nextInt(7)) {
+            case 0 -> {
+                HtmlElement e = new HtmlElement("li");
+                e.updateTextContent("new " + step);
+                list.insertBefore(e, items.isEmpty() ? null : items.get(rnd.nextInt(items.size())));
+                return "insert li";
+            }
+            case 1 -> {
+                if (items.isEmpty()) return "skip";
+                list.removeChild(items.get(rnd.nextInt(items.size())));
+                return "remove li";
+            }
+            case 2 -> {
+                ((HtmlElement) list).setAttribute(rnd.nextBoolean() ? "start" : "reversed", String.valueOf(rnd.nextInt(9)));
+                return "start/reversed";
+            }
+            case 3 -> {
+                if (items.isEmpty()) return "skip";
+                ((HtmlElement) items.get(rnd.nextInt(items.size()))).setAttribute("value", String.valueOf(rnd.nextInt(20)));
+                return "value";
+            }
+            case 4 -> {
+                if (items.isEmpty()) return "skip";
+                String st = LIST_STYLES[rnd.nextInt(LIST_STYLES.length)];
+                ((HtmlElement) items.get(rnd.nextInt(items.size()))).setAttribute("style", st);
+                return "item " + st;
+            }
+            case 5 -> {
+                ((HtmlElement) list).setAttribute("style", LIST_STYLES[rnd.nextInt(LIST_STYLES.length)]);
+                return "list style";
+            }
+            default -> {
+                HtmlElement d = (HtmlElement) v.byId("d" + rnd.nextInt(3));
+                if (d == null) return "skip";
+                if (d.attrs.containsKey("open")) d.removeAttribute("open");
+                else d.setAttribute("open", "");
+                return "toggle details";
             }
         }
     }

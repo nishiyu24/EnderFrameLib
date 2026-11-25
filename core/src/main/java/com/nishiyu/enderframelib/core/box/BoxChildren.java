@@ -28,6 +28,11 @@ public abstract sealed class BoxChildren permits BoxChunk, BoxChildren.Chunked {
     public abstract BoxChunk chunk(int i);
 
     /** どれかのチャンクがインライン水準の子を含むか（O(チャンク数)）。 */
+    public boolean hasOrdinalMarkers() {
+        for (int c = 0, n = chunkCount(); c < n; c++) if (chunk(c).hasOrdinalMarkers()) return true;
+        return false;
+    }
+
     public boolean hasInline() {
         for (int c = 0, n = chunkCount(); c < n; c++) if (chunk(c).hasInline()) return true;
         return false;
@@ -115,8 +120,9 @@ public abstract sealed class BoxChildren permits BoxChunk, BoxChildren.Chunked {
      * {@code kids} の前後に疑似要素の箱を 1 個ずつのチャンクで足した並び（{@link BoxNode#flow}）。{@code kids} のチャンクは同じ参照のまま
      * 並ぶので、レイアウトのチャンク単位の照合はそのまま当たる。
      */
-    static BoxChildren withPseudos(BoxNode before, BoxChildren kids, BoxNode after) {
-        List<BoxChunk> chunks = new java.util.ArrayList<>(kids.chunkCount() + 2);
+    static BoxChildren withPseudos(BoxNode marker, BoxNode before, BoxChildren kids, BoxNode after) {
+        List<BoxChunk> chunks = new java.util.ArrayList<>(kids.chunkCount() + 3);
+        if (marker != null) chunks.add(new BoxChunk(new BoxNode[]{marker}));
         if (before != null) chunks.add(new BoxChunk(new BoxNode[]{before}));
         for (int c = 0, n = kids.chunkCount(); c < n; c++) chunks.add(kids.chunk(c));
         if (after != null) chunks.add(new BoxChunk(new BoxNode[]{after}));

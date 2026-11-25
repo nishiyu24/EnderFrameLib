@@ -47,8 +47,8 @@ final class PseudoBoxes {
         if (prev != null && prev.style == st && prev.kind == kind && prevText != null && prevText.style == ts && prevText.text == text) {
             return prev;
         }
-        BoxNode tb = new BoxNode(owner, ts, BoxKind.TEXT, text, BoxChunk.EMPTY, which, null, null, null);
-        return new BoxNode(owner, st, kind, null, new BoxChunk(new BoxNode[]{tb}), which, null, null, null);
+        BoxNode tb = new BoxNode(owner, ts, BoxKind.TEXT, text, BoxChunk.EMPTY, which, null, null, null, null, MarkerBoxes.NO_ORDINAL);
+        return new BoxNode(owner, st, kind, null, new BoxChunk(new BoxNode[]{tb}), which, null, null, null, null, MarkerBoxes.NO_ORDINAL);
     }
 
     /** {@code content} の値（文字列・{@code attr()}・{@code counter()}・{@code counters()} の並び）を評価する。 */

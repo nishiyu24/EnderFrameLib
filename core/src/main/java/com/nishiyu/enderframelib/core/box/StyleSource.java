@@ -66,6 +66,12 @@ public final class StyleSource {
         return cs == null ? null : Style.of(cs, ownerStyle);
     }
 
+    /** {@code ::marker} の規則が宣言したスタイル（規則が無ければ null。{@link MarkerBoxes}）。 */
+    public com.nishiyu.enderframelib.core.css.ComputedStyle markerDeclared(HtmlNode owner, Style ownerStyle) {
+        return com.nishiyu.enderframelib.core.css.GeneratedContentStyles.markerDeclared(owner, sheet, lookup, new ComputedStyle(ownerStyle),
+                env, rootFontSize, rootLineHeight, viewportW, viewportH);
+    }
+
     /** 文字の節のスタイル（親の継承群をそのまま共有する）。 */
     public Style text(Style parent) {
         return Style.forTextChild(parent);

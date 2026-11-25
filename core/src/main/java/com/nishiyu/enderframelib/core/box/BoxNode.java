@@ -15,7 +15,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
  */
 public final class BoxNode {
     /** 疑似要素の種類（M2b-1）。疑似要素の箱とその中の文字の節は持ち主の要素の節を {@link #node} に持つ。 */
-    public enum Pseudo { NONE, BEFORE, AFTER }
+    public enum Pseudo { NONE, BEFORE, AFTER, MARKER }
 
     /** 元の DOM の節（文書の根も含む）。疑似要素の箱では持ち主の要素。 */
     public final HtmlNode node;
@@ -38,29 +38,60 @@ public final class BoxNode {
     public final BoxChildren flow;
     /** 置換要素・部品なら大きさを決める入力の写し（{@link ReplacedInput}）。それ以外は null。 */
     public final ReplacedInput replaced;
+    /**
+     * リスト項目の {@code ::marker} の箱（{@link MarkerBoxes}。無ければ null）。{@code list-style-position: inside} なら {@link #flow} の
+     * 先頭にも入る（行の中の原子）。{@code outside} なら流れに入らず、レイアウトが項目の左外に置く（{@link #outsideMarker}）。
+     */
+    public final BoxNode marker;
+    /** マーカーの箱なら組んだ番号（番号に依らなければ {@link MarkerBoxes#NO_ORDINAL}）。それ以外は {@link MarkerBoxes#NO_ORDINAL}。 */
+    public final int ordinal;
 
     public BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children) {
-        this(node, style, kind, text, children, Pseudo.NONE, null, null, null);
+        this(node, style, kind, text, children, Pseudo.NONE, null, null, null, null, MarkerBoxes.NO_ORDINAL);
     }
 
-    /** {@code before} / {@code after} は疑似要素の箱（無ければ null）。 */
+    /**
+     * {@code before} / {@code after} は疑似要素の箱、{@code marker} は {@code ::marker} の箱（無ければ null）。{@code ordinal} はマーカーの
+     * 箱の番号（{@link #ordinal}）。
+     */
     BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
-            ReplacedInput replaced) {
+            ReplacedInput replaced, BoxNode marker, int ordinal) {
         this.node = node;
         this.style = style;
         this.kind = kind;
         this.text = text;
         this.children = children;
         this.pseudo = pseudo;
-        this.flow = before == null && after == null ? children : BoxChildren.withPseudos(before, children, after);
+        BoxNode lead = marker != null && MarkerBoxes.inside(style) ? marker : null;
+        this.flow = before == null && after == null && lead == null ? children : BoxChildren.withPseudos(lead, before, children, after);
         this.replaced = replaced;
+        this.marker = marker;
+        this.ordinal = ordinal;
     }
 
-    /** {@link #flow} に足した疑似要素の箱（無ければ null）。 */
+    /** {@link #flow} に足した疑似要素の箱（{@code ::before} / {@code ::after}。{@code ::marker} は {@link #marker}。無ければ null）。 */
     public BoxNode pseudoChild(Pseudo which) {
+        if (which == Pseudo.MARKER) return marker;
         if (flow == children || flow.size() == 0) return null;
-        BoxNode b = which == Pseudo.BEFORE ? flow.get(0) : flow.get(flow.size() - 1);
+        int first = flow.get(0).pseudo == Pseudo.MARKER ? 1 : 0;
+        if (which == Pseudo.BEFORE) {
+            if (flow.size() <= first) return null;
+            BoxNode b = flow.get(first);
+            return b.pseudo == which ? b : null;
+        }
+        BoxNode b = flow.get(flow.size() - 1);
         return b.pseudo == which ? b : null;
+    }
+
+    /** 流れに入らない（{@code list-style-position: outside} の）マーカーの箱（無ければ null）。 */
+    public BoxNode outsideMarker() {
+        return marker != null && (flow.size() == 0 || flow.get(0) != marker) ? marker : null;
+    }
+
+    /** マーカーだけを差し替えた箱（{@link MarkerBoxes#renumber} が番号を直すとき）。 */
+    BoxNode withMarker(BoxNode m) {
+        return new BoxNode(node, style, kind, text, children, pseudo, pseudoChild(Pseudo.BEFORE), pseudoChild(Pseudo.AFTER), replaced, m,
+                ordinal);
     }
 
     /** 中身が無い・空白だけで畳まれる文字の節か（ブロックの流れでは箱を作らない）。 */

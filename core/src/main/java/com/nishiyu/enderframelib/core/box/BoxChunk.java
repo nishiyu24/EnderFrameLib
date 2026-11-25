@@ -13,13 +13,14 @@ public final class BoxChunk extends BoxChildren {
 
     private final BoxNode[] items;
     /** 中身の事実（構築時に 1 回だけ求める不変の導出値）: インライン水準の子・ブロック水準の子があるか。 */
-    private final boolean inline, block, floats, contents;
+    private final boolean inline, block, floats, contents, ordinals;
 
     /** {@code items} の所有権を受け取る（呼び出し側は以後書き換えない）。 */
     BoxChunk(BoxNode[] items) {
         this.items = items;
-        boolean in = false, bl = false, fl = false, co = false;
+        boolean in = false, bl = false, fl = false, co = false, od = false;
         for (BoxNode b : items) {
+            if (b.marker != null && b.marker.ordinal != MarkerBoxes.NO_ORDINAL) od = true;
             if (b.kind == BoxKind.CONTENTS) { // 中身の事実を引き継ぐ（中身のチャンクは構築済み）
                 co = true;
                 in |= b.flow.hasInline();
@@ -35,7 +36,11 @@ public final class BoxChunk extends BoxChildren {
         this.block = bl;
         this.floats = fl;
         this.contents = co;
+        this.ordinals = od;
     }
+
+    /** 番号に依るマーカー（{@link MarkerBoxes}）を持つ子を含むか（親が子の並びを組み直したら数え直す）。 */
+    public boolean hasOrdinalMarkers() { return ordinals; }
 
     /** {@code display: contents} の子を含むか（レイアウトはチャンク単位で使い回さず、展開した列で並べる）。 */
     public boolean hasContents() { return contents; }

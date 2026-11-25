@@ -32,6 +32,10 @@ class ProjectionPixelParityTest {
             // M2b-1: インライン要素の行ごとの箱（背景・枠線・角丸。行をまたぐ箱は端を切る）と、中身の無い枠線つきの箱
             "<html><body style='margin:0'><p style='width:160px;margin:0;line-height:22px'>aa <span style='padding:0 4px;border:2px solid #090;"
                     + "background:#cfc;border-radius:3px'>bb cc dd ee ff gg</span> hh <span style='border-left:12px solid #00c'></span>ii</p></body></html>",
+            // M2b-1: リストの外側・内側のマーカー（番号・記号）と閉じた／開いた details の summary の ▸ / ▾
+            "<html><body style='margin:0'><ul><li>disc</li><li style='list-style-type:square'>square</li></ul>"
+                    + "<ol start=3><li>three</li><li value=9>nine</li><li style='list-style-position:inside'>inside</li></ol>"
+                    + "<details><summary>closed</summary><p>hidden</p></details><details open><summary>open</summary><p>shown</p></details></body></html>",
         };
         for (String html : docs) {
             Pixmap legacy = legacy(html), v3 = WptV3BaselineTest.render(html);
