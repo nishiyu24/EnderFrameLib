@@ -121,9 +121,9 @@ final class Floats {
             return y;
         }
 
-        /** 新しい float の上端の下限（前の float の上端より上には置かない）。 */
+        /** 新しい float の上端の下限（前の float の上端より上には置かない。float が無ければ -∞）。 */
         float lastTop() {
-            float y = 0;
+            float y = Float.NEGATIVE_INFINITY;
             for (float[] f : rects) y = Math.max(y, f[3]);
             return y;
         }

@@ -93,4 +93,14 @@ class FloatIntrusionTest {
         assertEquals(0, p.lines[0].x(), EPS);
         assertEquals(60, p.height, EPS);
     }
+
+    @Test
+    void floatBeforeTheFirstChildWithAMarginStartsAtTheContentTop() {
+        // 親は padding で余白を相殺しない: float は内容の上端 0〜50、p は自分の上の余白 30 の下（30〜）。1 行目（30〜50）だけ避ける
+        LayoutFragment r = root("<div style='width:300px;padding-top:1px'><div class=f></div><p id=p style='margin-top:30px'>a<br>b</p></div>");
+        LayoutFragment p = frag(r, "p");
+        assertEquals(100, p.lines[0].x(), EPS);
+        assertEquals(0, p.lines[1].x(), EPS);
+        assertEquals(1, SpikeView.find(r, "p")[1] - 30, EPS); // p の位置は内容の上端（1）＋ 30
+    }
 }

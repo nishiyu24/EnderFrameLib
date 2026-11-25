@@ -100,12 +100,14 @@ final class BlockFlow implements FormattingEngine {
             FlowChunk[] chunks = mixed ? null : chunks(kids, base, pct, priorFlow, s);
             if (chunks != null && exportsFloats(chunks)) chunks = null; // 子孫の float が後ろの兄弟に掛かる: 混在の流れで並べ直す
             Floats.Space in = inherited;
-            if (chunks == null) chunks = new FlowChunk[]{mixed(st, kids, legend, base, pct, priorFlow, floatBottom, in, excOut, s)};
+            boolean mixedFlow = chunks == null;
+            if (mixedFlow) chunks = new FlowChunk[]{mixed(st, kids, legend, base, pct, priorFlow, floatBottom, in, 0, excOut, s)};
             a = assemble(chunks, collapseTop, collapseBottom);
-            if (!inherited.isEmpty() && a.chunkY.length == 1 && a.chunkY[0] != 0) {
-                // 流れの原点（最初の子の相殺しない余白の下）を 0 と見積もって外れた: 正しい原点の座標で受け取った float を並べ直す
+            if (mixedFlow && a.chunkY.length == 1 && a.chunkY[0] != 0 && (!inherited.isEmpty() || chunks[0].leadCount > 0)) {
+                // 流れの原点（最初の子の相殺しない余白の下）を 0 と見積もって外れた: 受け取った float と、流れの前に置いた float の
+                // 除外領域を正しい原点の座標で並べ直す（float 自身の位置は ChunkedFlow.y が内容ボックスの上端から解く）
                 in = inherited.translate(0, -a.chunkY[0]);
-                chunks = new FlowChunk[]{mixed(st, kids, legend, base, pct, priorFlow, floatBottom, in, excOut, s)};
+                chunks = new FlowChunk[]{mixed(st, kids, legend, base, pct, priorFlow, floatBottom, in, a.chunkY[0], excOut, s)};
                 a = assemble(chunks, collapseTop, collapseBottom);
             }
             // 独立した整形コンテキストを作らない箱は、自分の部分木が置いた float を親へ返す（後ろの兄弟が避ける。border-box 基準）
@@ -214,12 +216,13 @@ final class BlockFlow implements FormattingEngine {
 
     /**
      * インラインとブロックが混在する・float を含む子: インラインの連なりを匿名の塊にして並べ、float を左右に置く
-     * （{@link Floats}。同じ BFC のインラインの行は float を避ける）。{@code inherited} は外の float（チャンク基準）で、
+     * （{@link Floats}。同じ BFC のインラインの行は float を避ける）。{@code inherited} は外の float（チャンク基準）、{@code lead} は
+     * チャンクの原点の内容ボックスでの位置（流れの箱が始まる前に置いた float の除外領域をチャンク基準へ移す分）で、
      * {@code floatBottom[0]} に一番下の float の下端、{@code excOut[0]} に最後の除外領域（{@code inherited} が先頭）を返す。
      */
     private static FlowChunk mixed(Style st, BoxChildren kids, BoxNode skip, ConstraintSpace base, ConstraintSpace pct,
-                                   ChunkedFlow priorFlow, float[] floatBottom, Floats.Space inherited, Floats.Space[] excOut,
-                                   LayoutSession s) {
+                                   ChunkedFlow priorFlow, float[] floatBottom, Floats.Space inherited, float lead,
+                                   Floats.Space[] excOut, LayoutSession s) {
         s.cache().chunkComputed();
         Cursor cur = new Cursor(priorFlow, 0, priorFlow != null ? priorFlow.chunks.length - 1 : -1);
         ChunkBuilder b = new ChunkBuilder(8, s);
@@ -238,9 +241,12 @@ final class BlockFlow implements FormattingEngine {
             }
             flushRun(st, run, base, b, exc, s);
             if (Floats.is(child)) {
-                Floats.Placed p = Floats.place(child, exc, b.flowY(), base.availableWidth, pct.percentHeightBase, cur.find(child), s);
+                // 流れの箱が始まる前の float は内容ボックスの上端（チャンク基準で -lead）から積み、位置は内容ボックス基準で持つ（ChunkedFlow.y）
+                boolean leading = !b.started();
+                Floats.Placed p = Floats.place(child, exc, leading ? -lead : b.flowY(), base.availableWidth, pct.percentHeightBase,
+                        cur.find(child), s);
                 exc = p.space();
-                b.addFloat(p.frag(), p.x(), p.y());
+                b.addFloat(p.frag(), p.x(), leading ? p.y() + lead : p.y());
                 continue;
             }
             var clear = child.style.box.clear;
@@ -392,6 +398,10 @@ final class BlockFlow implements FormattingEngine {
                 if (pend == null) pend = new ArrayList<>();
                 for (OutOfFlow.Pending p : f.pending) pend.add(p.shift(x, y));
             }
+        }
+
+        boolean started() {
+            return started;
         }
 
         /** 次の流れの箱 {@code f} の border-box の上端を {@code y} に置く（float の下へ下げた箱。前の余白とは相殺しない）。 */
