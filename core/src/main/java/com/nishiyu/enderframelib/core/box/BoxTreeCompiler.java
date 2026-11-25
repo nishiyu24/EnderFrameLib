@@ -57,7 +57,7 @@ public final class BoxTreeCompiler {
     /** {@link com.nishiyu.enderframelib.core.css.GeneratedContentStyles#usesCounters} を規則の版ごとに 1 回だけ求めた値（このビューの実例に閉じる）。 */
     private StyleSheet countedSheet;
     private int countedVersion = -1;
-    private boolean sheetUsesCounters;
+    private boolean sheetUsesCounters, sheetUsesCapitalize;
 
     private final Stats stats = new Stats();
 
@@ -129,7 +129,7 @@ public final class BoxTreeCompiler {
         if (ledger.frozenOverflow()) return true;
         int n = ledger.frozenSize();
         if (n > 0 && sheet != null && (sheet.usesHasSelectors() || sheet.declaresContainers() || sheet.usesContainerQueries()
-                || usesCounters(sheet))) return true; // カウンタは文書順に積み上がる非局所の状態
+                || usesCounters(sheet) || sheetUsesCapitalize)) return true; // カウンタ・capitalize の語の続きは文書順の非局所の状態
         for (int i = 0; i < n; i++) {
             HtmlNode node = ledger.frozenNode(i);
             if (node == null) {
@@ -178,7 +178,8 @@ public final class BoxTreeCompiler {
         BoxChildren children = BoxChunk.EMPTY;
         BoxNode before = null, after = null, marker = null;
         if (kind == BoxKind.TEXT) {
-            text = TextContent.of(n.text, style);
+            text = TextContent.of(n.text, style, style.inherited.textTransform == com.nishiyu.enderframelib.core.css.model.CssKeywords.TextTransform.CAPITALIZE
+                    && TextContent.continuesWord(n));
             if (prev != null && prev.text != null && prev.text.equals(text)) text = prev.text;
         } else if (kind != BoxKind.NONE) {
             boolean usable = prev != null && prev.kind != BoxKind.NONE && prev.kind != BoxKind.TEXT;
@@ -244,6 +245,7 @@ public final class BoxTreeCompiler {
             countedSheet = sheet;
             countedVersion = sheet.rules.version();
             sheetUsesCounters = com.nishiyu.enderframelib.core.css.GeneratedContentStyles.usesCounters(sheet);
+            sheetUsesCapitalize = com.nishiyu.enderframelib.core.css.GeneratedContentStyles.usesCapitalize(sheet);
         }
         return sheetUsesCounters;
     }

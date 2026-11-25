@@ -54,6 +54,15 @@ public final class GeneratedContentStyles {
         return false;
     }
 
+    /** 文書の規則が {@code text-transform: capitalize} を使うか（語の続きが前の節の文字に依る非局所の依存）。 */
+    public static boolean usesCapitalize(StyleSheet sheet) {
+        for (StyleSheet.StyleRule rule : sheet.rules) {
+            String v = rule.properties.get("text-transform");
+            if (v != null && v.toLowerCase(java.util.Locale.ROOT).contains("capitalize")) return true;
+        }
+        return false;
+    }
+
     private static boolean namesOtherThanListItem(String value) {
         for (String t : value.trim().split("\\s+")) {
             if (t.isEmpty() || t.equalsIgnoreCase("none") || t.equalsIgnoreCase("list-item") || t.matches("[+-]?\\d+")) continue;

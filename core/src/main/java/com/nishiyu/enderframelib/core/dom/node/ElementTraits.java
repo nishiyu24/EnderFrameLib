@@ -217,6 +217,11 @@ public final class ElementTraits {
         return "q".equalsIgnoreCase(tag);
     }
 
+    /** 語の途中で開いて閉じる書式の要素（{@code text-transform: capitalize} の語の続きはこの外へ出て探す。旧経路と同じ並び）。 */
+    public static boolean isWordInlineFormatting(String tag) {
+        return "span".equals(tag) || "b".equals(tag) || "i".equals(tag) || "a".equals(tag) || "em".equals(tag);
+    }
+
     public static boolean isListItem(String tag) {
         return "li".equalsIgnoreCase(tag);
     }

@@ -319,4 +319,19 @@ class InlineTextTest {
         LayoutFragment pct = layout("<div><div id=t style=\"display:inline-block;word-spacing:50%\">aa bb</div></div>", "t");
         assertEquals(adv("aa ", st) + 8, pct.lines[0].pieces()[1].x(), EPS);
     }
+
+    @Test
+    void capitalizeDoesNotStartAWordThatContinuesAcrossAnElement() {
+        // p<b>ass</b>: ass は語の続きなので大文字にしない。空白の後の語・ブロックの境目の後は大文字
+        SpikeView v = new SpikeView("<html><head><style>body{margin:0} .c{text-transform:capitalize}</style></head><body>"
+                + "<p id=p class=c>foo<b>bar</b> baz</p><div class=c><p>x</p><p id=q>yes</p></div></body></html>", 800, 600);
+        LayoutFragment r = v.frame();
+        assertEquals("FoobarBaz", lineText(frag(r, "p").lines[0]).replace(" ", "")); // 片の間の空白は片に入らない
+        assertEquals("Yes", lineText(frag(r, "q").lines[0]).trim());
+        // 前の節の文字が変わると続きの判定も変わる: capitalize を使う文書は全体を作り直すので最初から作った結果と同じ
+        v.byId("p").children.get(0).updateTextContent("foo ");
+        LayoutFragment inc = v.frame();
+        assertEquals(SpikeView.dump(v.scratch()), SpikeView.dump(inc));
+        assertTrue(lineText(frag(inc, "p").lines[0]).contains("Bar"));
+    }
 }
