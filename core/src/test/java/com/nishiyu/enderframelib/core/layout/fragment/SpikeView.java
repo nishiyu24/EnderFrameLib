@@ -96,6 +96,10 @@ final class SpikeView {
             for (LineFragment l : f.lines) {
                 StringBuilder sb = new StringBuilder();
                 for (LineFragment.Piece p : l.pieces()) sb.append('[').append(p.string()).append('@').append(fmt(p.x())).append(']');
+                for (LineFragment.Span sp : l.spans()) {
+                    sb.append('{').append(sp.box().node.tag).append(idOf(sp.box().node)).append('@').append(fmt(sp.x())).append(',').append(fmt(sp.y()))
+                            .append(' ').append(fmt(sp.width())).append('x').append(fmt(sp.height())).append(sp.startEdge() ? "<" : "").append(sp.endEdge() ? ">" : "").append('}');
+                }
                 out.add(String.format(Locale.ROOT, "%s| %.3f,%.3f %.3fx%.3f b%.3f %s", "  ".repeat(depth + 1), cx + l.x(), cy + l.y(), l.width(), l.height(), l.baseline(), sb));
                 for (PlacedFragment a : l.atoms()) dump(a.frag(), cx + l.x() + a.x(), cy + l.y() + a.y(), depth + 2, out);
             }
@@ -132,6 +136,29 @@ final class SpikeView {
         }
         if (f.flow != null) f.flow.forEach((c, x1, y1) -> find(c, cx + x1, cy + y1, id, hit));
         if (f.oof != null) for (PlacedFragment p : f.oof) find(p.frag(), x + p.x(), y + p.y(), id, hit);
+    }
+
+    /** {@code id} のインライン要素の行ごとの箱の絶対位置 {x, y, w, h, 開始端, 終了端}（行の順）。 */
+    static List<float[]> spans(LayoutFragment root, String id) {
+        List<float[]> out = new ArrayList<>();
+        spans(root, 0, 0, id, out);
+        return out;
+    }
+
+    private static void spans(LayoutFragment f, float x, float y, String id, List<float[]> out) {
+        float cx = x + f.insetLeft, cy = y + f.insetTop;
+        if (f.lines != null) {
+            for (LineFragment l : f.lines) {
+                for (LineFragment.Span sp : l.spans()) {
+                    if (id.equals(sp.box().node.attrs.get("id"))) {
+                        out.add(new float[]{cx + l.x() + sp.x(), cy + l.y() + sp.y(), sp.width(), sp.height(), sp.startEdge() ? 1 : 0, sp.endEdge() ? 1 : 0});
+                    }
+                }
+                for (PlacedFragment a : l.atoms()) spans(a.frag(), cx + l.x() + a.x(), cy + l.y() + a.y(), id, out);
+            }
+        }
+        if (f.flow != null) f.flow.forEach((c, x1, y1) -> spans(c, cx + x1, cy + y1, id, out));
+        if (f.oof != null) for (PlacedFragment p : f.oof) spans(p.frag(), x + p.x(), y + p.y(), id, out);
     }
 
     // ---- 文書 ----

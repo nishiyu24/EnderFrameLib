@@ -28,7 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  *
  * <p><b>旧経路は正解の基準ではない</b>（負の余白の相殺など仕様からの逸脱を持つ）。これは画素の合否より細かい「差の在りか」の
  * 物差しで、新経路を既定にする前（M2c）に実文書の差を潰すのに使う。旧経路の逸脱が原因で一覧から外すときは計画書に記録する。
- * 比べるのは両方に箱がある要素だけ（新経路のインライン要素は行の断片へ平らに入るので箱を持たない。疑似要素は比べない）。</p>
+ * 比べるのは両方に箱がある要素だけ（疑似要素は比べない）。インライン要素は行ごとの箱（{@link LineFragment.Span}）を囲む矩形を、
+ * 旧経路の {@code fitToFragments} の矩形と比べる。</p>
  */
 class GeometrySweepTest {
     private static final float TOL = 1f / 64f + 1e-4f;
@@ -158,9 +159,41 @@ class GeometrySweepTest {
         float cx = x + f.insetLeft, cy = y + f.insetTop;
         if (f.lines != null) {
             for (LineFragment l : f.lines) for (PlacedFragment a : l.atoms()) collect(a.frag(), cx + l.x() + a.x(), cy + l.y() + a.y(), out);
+            spans(f.lines, cx, cy, out);
         }
         if (f.flow != null) f.flow.forEach((c, x1, y1) -> collect(c, cx + x1, cy + y1, out));
         if (f.oof != null) for (PlacedFragment p : f.oof) collect(p.frag(), x + p.x(), y + p.y(), out);
+    }
+
+    /**
+     * インライン要素の矩形 = 行ごとの箱を囲む矩形（旧 {@code BlockLayoutEngine.fitToFragments} と同じく大きさ 0 の箱は除き、全部 0 なら
+     * 最初の箱）。同じ要素の箱は複数の行・混在の流れの塊にまたがるので、集めてから囲む。
+     */
+    private static void spans(LineFragment[] lines, float cx, float cy, Map<String, float[]> out) {
+        Map<String, float[]> acc = new LinkedHashMap<>();
+        for (LineFragment l : lines) {
+            for (LineFragment.Span sp : l.spans()) {
+                if (sp.box().pseudo != com.nishiyu.enderframelib.core.box.BoxNode.Pseudo.NONE) continue;
+                String k = path(sp.box().node);
+                if (k == null) continue;
+                float x = cx + l.x() + sp.x(), y = cy + l.y() + sp.y();
+                float[] r = acc.get(k);
+                boolean empty = sp.width() <= 0 || sp.height() <= 0;
+                if (r == null) {
+                    acc.put(k, new float[]{x, y, x + sp.width(), y + sp.height(), empty ? 0 : 1});
+                } else if (!empty) {
+                    if (r[4] == 0) {
+                        r[0] = x; r[1] = y; r[2] = x + sp.width(); r[3] = y + sp.height(); r[4] = 1;
+                    } else {
+                        r[0] = Math.min(r[0], x); r[1] = Math.min(r[1], y); r[2] = Math.max(r[2], x + sp.width()); r[3] = Math.max(r[3], y + sp.height());
+                    }
+                }
+            }
+        }
+        for (var e : acc.entrySet()) {
+            float[] r = e.getValue();
+            out.putIfAbsent(e.getKey(), new float[]{r[0], r[1], r[2] - r[0], r[3] - r[1]});
+        }
     }
 
     private static void collect(LayoutBox b, Map<String, float[]> out) {

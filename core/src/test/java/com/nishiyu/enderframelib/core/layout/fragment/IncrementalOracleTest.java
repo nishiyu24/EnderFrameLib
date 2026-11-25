@@ -157,6 +157,8 @@ class IncrementalOracleTest {
             "white-space:nowrap", "white-space:pre", "white-space:pre-wrap", "white-space:pre-line", "white-space:break-spaces",
             "text-transform:uppercase", "text-transform:capitalize", "text-align:justify", "text-align:justify;text-align-last:justify",
             "text-align:center", "text-align:end", "direction:rtl", "letter-spacing:3px", "tab-size:3", "word-break:keep-all",
+            "padding:0 6px;border:2px solid;margin:0 4px", "border-left:12px solid", "padding:3px 9px", "margin-right:30px",
+            "text-wrap:balance", "text-wrap:balance;text-align:center",
             "word-break:break-all", "width:min-content", "width:max-content", "width:fit-content", "display:inline-block;width:fit-content",
             "vertical-align:super", "vertical-align:-4px", "display:inline-block;height:30px;vertical-align:middle",
             "display:inline-block;height:40px;vertical-align:top", "display:inline-block;height:25px;vertical-align:bottom",

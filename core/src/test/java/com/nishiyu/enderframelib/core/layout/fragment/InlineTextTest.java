@@ -285,4 +285,23 @@ class InlineTextTest {
         }
         assertEquals(List.of(), fails);
     }
+
+    @Test
+    void textWrapBalanceKeepsTheLineCountAndEvensTheLines() {
+        // 貪欲なら "aa bb cc" / "dd"。balance は行数（2）を変えずに折り返しの幅を狭め、"aa bb" / "cc dd" にする（CSS Text 4 §6.1）
+        LayoutFragment probe = layout("<div id=t>x</div>", "t");
+        Style st = probe.box.style;
+        float w = adv("aa bb cc", st) + 2;
+        for (String mode : new String[]{"text-wrap:balance", "text-wrap-style:balance"}) {
+            LayoutFragment f = layout("<div id=t style=\"width:" + w + "px;" + mode + "\">aa bb cc dd</div>", "t");
+            assertEquals(2, f.lines.length, mode);
+            assertEquals("aa bb", lineText(f.lines[0]).stripTrailing(), mode);
+            assertEquals("cc dd", lineText(f.lines[1]).stripTrailing(), mode);
+        }
+        LayoutFragment greedy = layout("<div id=t style=\"width:" + w + "px\">aa bb cc dd</div>", "t");
+        assertEquals("aa bb cc", lineText(greedy.lines[0]).stripTrailing());
+        // 揃えは元の幅のまま: 右揃えの行の右端は箱の右端
+        LayoutFragment right = layout("<div id=t style=\"width:" + w + "px;text-wrap:balance;text-align:right\">aa bb cc dd</div>", "t");
+        assertEquals(w, right.lines[0].x() + right.lines[0].width(), 0.05f);
+    }
 }

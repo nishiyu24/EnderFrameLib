@@ -32,7 +32,11 @@ import java.util.Map;
  *       ascent/descent と半分の行間から求める）。</li>
  * </ul>
  *
- * <p>まだ写さないもの（M2b の各段で足す）: インライン要素の背景・枠線の断片・{@code ::first-line}・スクロール量。</p>
+ * <ul>
+ *   <li>インライン要素の行ごとの箱（{@code LineFragment.Span}）→ その要素の箱の文字でない断片（背景・枠線。旧 {@code placeSpan} と同じ形）。</li>
+ * </ul>
+ *
+ * <p>まだ写さないもの（M2b の各段で足す）: {@code ::first-line}・スクロール量。</p>
  */
 public final class FragmentProjection {
     private final LayoutSession session;
@@ -79,7 +83,7 @@ public final class FragmentProjection {
         Map<BoxNode, LayoutBox> textBoxes = new IdentityHashMap<>();
         Map<BoxNode, List<LayoutBox>> parents = new IdentityHashMap<>();
         if (f.lines != null) {
-            inlineChildren(b, lb, textBoxes, parents, new ArrayList<>());
+            inlineChildren(b, lb, textBoxes, parents, new ArrayList<>(), f.width - lb.bL - lb.pL - lb.pR - lb.bR);
             lines(lb, f.lines, cx, cy, textBoxes, parents);
         }
         if (f.flow != null) {
@@ -91,6 +95,7 @@ public final class FragmentProjection {
                     Map<BoxNode, List<LayoutBox>> anonParents = new IdentityHashMap<>();
                     for (LineFragment l : child.lines) {
                         for (LineFragment.Piece p : l.pieces()) collectAncestors(b, p.text(), lb, anon, anonParents);
+                        for (LineFragment.Span sp : l.spans()) collectAncestors(b, sp.box(), lb, anon, anonParents);
                     }
                     lines(lb, child.lines, cx + x1, cy + y1, anon, anonParents);
                 }
@@ -115,23 +120,24 @@ public final class FragmentProjection {
 
     /** インライン水準の子孫（文字の節・インライン要素）の箱を、DOM の入れ子のまま {@code parent} の下へ足す。 */
     private void inlineChildren(BoxNode owner, LayoutBox parent, Map<BoxNode, LayoutBox> textBoxes,
-                                Map<BoxNode, List<LayoutBox>> parents, List<LayoutBox> chain) {
+                                Map<BoxNode, List<LayoutBox>> parents, List<LayoutBox> chain, float cbw) {
         for (int i = 0, n = owner.flow.size(); i < n; i++) {
             BoxNode c = owner.flow.get(i);
             if (c.kind == BoxKind.NONE || c.kind.atomicInline()) continue; // 原子は行の断片から写す
             if (c.kind == BoxKind.CONTENTS) { // 箱を作らない: 中身を同じ親の下へ
-                inlineChildren(c, parent, textBoxes, parents, chain);
+                inlineChildren(c, parent, textBoxes, parents, chain, cbw);
                 continue;
             }
             LayoutBox lb = new LayoutBox(nodeOf(c), new ComputedStyle(c.style));
             lb.lineHeightPx = InlineFlow.lineHeight(c.style, session.face(c.style));
+            if (c.kind != BoxKind.TEXT) inlineEdges(lb, c, cbw);
             parent.addChild(lb);
+            textBoxes.put(c, lb); // 文字の節（文字片）とインライン要素（行ごとの箱の断片）
             if (c.kind == BoxKind.TEXT) {
-                textBoxes.put(c, lb);
                 parents.put(c, new ArrayList<>(chain));
             } else {
                 chain.add(0, lb);
-                inlineChildren(c, lb, textBoxes, parents, chain);
+                inlineChildren(c, lb, textBoxes, parents, chain, cbw);
                 chain.remove(0);
             }
         }
@@ -152,6 +158,7 @@ public final class FragmentProjection {
             if (lb == null) {
                 lb = new LayoutBox(nodeOf(n), new ComputedStyle(n.style));
                 lb.lineHeightPx = InlineFlow.lineHeight(n.style, session.face(n.style));
+                if (n.kind != BoxKind.TEXT) inlineEdges(lb, n, ownerBox.w - ownerBox.bL - ownerBox.pL - ownerBox.pR - ownerBox.bR);
                 parent.addChild(lb);
                 boxes.put(n, lb);
             }
@@ -159,6 +166,14 @@ public final class FragmentProjection {
             parent = lb;
         }
         parents.put(text, chain);
+    }
+
+    /** インライン要素の箱の余白・枠線・padding（旧描画が枠線の幅と行ごとの断片の端を読む。{@code cbw} は包含ブロックの幅）。 */
+    private void inlineEdges(LayoutBox lb, BoxNode n, float cbw) {
+        BoxGeometry g = new BoxGeometry(n.style, cbw, session);
+        lb.mT = g.mT; lb.mR = g.mR; lb.mB = g.mB; lb.mL = g.mL;
+        lb.pT = g.pT; lb.pR = g.pR; lb.pB = g.pB; lb.pL = g.pL;
+        lb.bT = g.bT; lb.bR = g.bR; lb.bB = g.bB; lb.bL = g.bL;
     }
 
     private static boolean pathTo(BoxNode from, BoxNode target, List<BoxNode> path) {
@@ -180,6 +195,7 @@ public final class FragmentProjection {
     private static float[] fitInline(LayoutBox b) {
         float x0 = Float.POSITIVE_INFINITY, y0 = Float.POSITIVE_INFINITY, x1 = Float.NEGATIVE_INFINITY, y1 = Float.NEGATIVE_INFINITY;
         for (LayoutBox.InlineFragment f : b.inlineFragments) {
+            if (!f.isText()) continue;
             x0 = Math.min(x0, f.x); y0 = Math.min(y0, f.y); x1 = Math.max(x1, f.x + f.w); y1 = Math.max(y1, f.y + f.h);
         }
         for (LayoutBox c : b.children) {
@@ -187,12 +203,34 @@ public final class FragmentProjection {
             if (r == null) continue;
             x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]);
         }
-        if (x0 > x1) return null;
-        b.x = 0; // 旧経路と同じく、インラインの箱は原点に置き寸法だけ外接矩形にする（文字片は最も近いブロック基準）
+        float[] own = spanBounds(b);
+        if (x0 > x1 && own == null) return null;
+        if (own != null) { // 旧 BlockLayoutEngine.fitToFragments と同じく、インライン要素の矩形は行ごとの箱の断片を囲む矩形
+            b.x = own[0];
+            b.y = own[1];
+            b.w = own[2] - own[0];
+            b.h = own[3] - own[1];
+            return x0 > x1 ? own : new float[]{Math.min(x0, own[0]), Math.min(y0, own[1]), Math.max(x1, own[2]), Math.max(y1, own[3])};
+        }
+        b.x = 0; // 文字の箱は原点に置き寸法だけ外接矩形にする（文字片は最も近いブロック基準）
         b.y = 0;
         b.w = x1 - x0;
         b.h = y1 - y0;
         return new float[]{x0, y0, x1, y1};
+    }
+
+    /** 箱の断片（文字でない断片）を囲む矩形。大きさ 0 の断片は除き、全部 0 なら最初の断片（旧経路と同じ）。無ければ null。 */
+    private static float[] spanBounds(LayoutBox b) {
+        float x0 = Float.POSITIVE_INFINITY, y0 = Float.POSITIVE_INFINITY, x1 = Float.NEGATIVE_INFINITY, y1 = Float.NEGATIVE_INFINITY;
+        LayoutBox.InlineFragment first = null;
+        for (LayoutBox.InlineFragment f : b.inlineFragments) {
+            if (f.isText()) continue;
+            if (first == null) first = f;
+            if (f.w <= 0 || f.h <= 0) continue;
+            x0 = Math.min(x0, f.x); y0 = Math.min(y0, f.y); x1 = Math.max(x1, f.x + f.w); y1 = Math.max(y1, f.y + f.h);
+        }
+        if (x0 <= x1) return new float[]{x0, y0, x1, y1};
+        return first == null ? null : new float[]{first.x, first.y, first.x + first.w, first.y + first.h};
     }
 
     /** 行の文字片を、文字の節の箱の {@link LayoutBox.InlineFragment} にする（{@code ox}, {@code oy} はブロックの border-box 基準の行の原点）。 */
@@ -203,6 +241,11 @@ public final class FragmentProjection {
             float lineBase = l.baseline();
             for (PlacedFragment a : l.atoms()) { // インライン水準の原子: ブロックの border-box 基準に置いた箱
                 block.addChild(block(a.frag(), ox + l.x() + a.x(), oy + l.y() + a.y()));
+            }
+            for (LineFragment.Span sp : l.spans()) { // インライン要素の行ごとの箱（背景・枠線を描く断片）
+                LayoutBox eb = boxes.get(sp.box());
+                if (eb != null) eb.addFragment(ox + l.x() + sp.x(), oy + l.y() + sp.y(), sp.width(), sp.height(), null,
+                        sp.baseline(), 0, null, sp.startEdge(), sp.endEdge());
             }
             for (LineFragment.Piece p : l.pieces()) {
                 LayoutBox tb = boxes.get(p.text());

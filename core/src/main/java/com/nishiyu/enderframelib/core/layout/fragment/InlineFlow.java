@@ -47,9 +47,48 @@ public final class InlineFlow {
     /** float を避けて組む（{@code exc} は容器の内容ボックス基準、{@code originY} はこの行の並びの上端の容器での位置）。 */
     static Result layout(List<BoxNode> kids, Style container, float availW, LayoutFragment prior, Floats.Space exc, float originY,
                          LayoutSession s) {
-        InlineLineBuilder b = new InlineLineBuilder(container, availW, prior, exc, originY, s);
+        Result r = build(kids, container, availW, prior, exc, originY, 0, s);
+        int n = r.lines.length;
+        if (n < 2 || n > 10 || !balanced(container) || !exc.isEmpty() || !r.pending.isEmpty() || !balanceable(kids)) return r;
+        // text-wrap: balance（CSS Text 4 §6.1）: 行数を変えずに、折り返しの判定の幅をできるだけ狭めて組み直す（旧 FlowBuilder.balanceLines。
+        // 狭める量は 1px 単位まで二分探索）。行の幅と揃えは元のまま
+        float lo = 0, hi = availW;
+        for (int iter = 0; iter < 12 && hi - lo > 1f; iter++) {
+            float mid = (lo + hi) / 2;
+            Result t = build(kids, container, availW, prior, exc, originY, mid, s);
+            if (t.lines.length == n) {
+                lo = mid;
+                r = t;
+            } else {
+                hi = mid;
+            }
+        }
+        return r;
+    }
+
+    private static Result build(List<BoxNode> kids, Style container, float availW, LayoutFragment prior, Floats.Space exc, float originY,
+                                float shrink, LayoutSession s) {
+        InlineLineBuilder b = new InlineLineBuilder(container, availW, prior, exc, originY, shrink, s);
         for (BoxNode k : kids) b.add(k);
         return b.finish();
+    }
+
+    /** {@code text-wrap: balance} / {@code text-wrap-style: balance}。 */
+    static boolean balanced(Style st) {
+        String w = st.inherited.textWrapStyle;
+        if (w != null && w.trim().equalsIgnoreCase("balance")) return true;
+        String t = st.inherited.textWrap;
+        return t != null && t.toLowerCase(java.util.Locale.ROOT).contains("balance");
+    }
+
+    /** 組み直しても副作用の無い並び（float・流れの外の箱を含まない）か。 */
+    private static boolean balanceable(List<BoxNode> kids) {
+        for (BoxNode k : kids) {
+            if (k.kind == BoxKind.NONE || k.kind == BoxKind.TEXT) continue;
+            if (OutOfFlow.is(k) || Floats.is(k)) return false;
+            if ((k.kind == BoxKind.INLINE || k.kind == BoxKind.CONTENTS) && !balanceable(k.flow.toList())) return false;
+        }
+        return true;
     }
 
     /** {@code kids} の内在サイズ（内容ボックスの幅）。 */

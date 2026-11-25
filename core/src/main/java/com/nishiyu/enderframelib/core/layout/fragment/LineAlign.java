@@ -79,20 +79,21 @@ record LineAlign(TextAlign normal, boolean justifyNormal, TextAlign last, boolea
     }
 
     /**
-     * 両端揃え: {@code pieces}（左から順、{@code spaceBefore[i]} は片 {@code i} の前に畳まれた空白があったか）を揃えの機会ごとに割り、
-     * 余り {@code extra} を機会の数で等分してずらした片の列を返す。原子は左端より前の機会の数だけずらす（{@code atomX} を書き換える）。
-     * 機会が無ければ null（揃えない）。
+     * 両端揃え: {@code pieces}（左から順、{@code gapAt[i]} は片 {@code i} の前の畳まれた空白の始まりの x。無ければ NaN）を揃えの機会
+     * ごとに割り、余り {@code extra} を機会の数で等分してずらした片の列を返す。機会の位置は前に空白があればその始まり、無ければ前の片の
+     * 終わり。{@code xs}（原子の左端・インライン要素の箱の端）は、その位置以前の機会の数だけずらす（書き換える）。{@code rightEdge[i]} の
+     * 端（箱の終了端）は、その位置より厳密に前の機会だけ（{@code </span> }の後ろの空白は箱の外）。機会が無ければ null（揃えない）。
      */
-    LineFragment.Piece[] justify(LineFragment.Piece[] pieces, boolean[] spaceBefore, float extra, float[] atomX, LayoutSession s) {
+    LineFragment.Piece[] justify(LineFragment.Piece[] pieces, float[] gapAt, float extra, float[] xs, boolean[] rightEdge, LayoutSession s) {
         if (extra <= 0.01f || pieces.length == 0) return null;
         List<LineFragment.Piece> segs = new ArrayList<>(pieces.length * 2);
-        List<Boolean> gap = new ArrayList<>(pieces.length * 2);
-        for (int i = 0; i < pieces.length; i++) split(pieces[i], spaceBefore[i], segs, gap, s);
+        List<Float> gap = new ArrayList<>(pieces.length * 2);
+        for (int i = 0; i < pieces.length; i++) split(pieces[i], gapAt[i], segs, gap, s);
         int n = segs.size();
         boolean[] opp = new boolean[n]; // opp[i]: 片 i と i+1 の間が機会か
         int count = 0;
         for (int i = 0; i + 1 < n; i++) {
-            if (opportunity(segs.get(i), segs.get(i + 1), gap.get(i + 1))) {
+            if (opportunity(segs.get(i), segs.get(i + 1), !Float.isNaN(gap.get(i + 1)))) {
                 opp[i] = true;
                 count++;
             }
@@ -108,19 +109,20 @@ record LineAlign(TextAlign normal, boolean justifyNormal, TextAlign last, boolea
             out[i] = new LineFragment.Piece(p.text(), p.start(), p.end(), LayoutUnit.snap(p.x() + acc), p.width(), p.dy());
             if (opp[i]) {
                 acc += each;
-                oppEnd[k++] = p.x() + p.width();
+                float g = gap.get(i + 1);
+                oppEnd[k++] = Float.isNaN(g) ? p.x() + p.width() : g;
             }
         }
-        for (int a = 0; a < atomX.length; a++) {
+        for (int a = 0; a < xs.length; a++) {
             float shift = 0;
-            for (float e : oppEnd) if (e <= atomX[a] + 0.01f) shift += each;
-            atomX[a] = LayoutUnit.snap(atomX[a] + shift);
+            for (float e : oppEnd) if (rightEdge[a] ? e < xs[a] - 0.01f : e <= xs[a] + 0.01f) shift += each;
+            xs[a] = LayoutUnit.snap(xs[a] + shift);
         }
         return out;
     }
 
     /** 片を折り返しの機会（UAX #14）ごとに割る。最後の小片は片の幅の残りで終える（{@code letter-spacing} の差し引きを保つ）。 */
-    private static void split(LineFragment.Piece p, boolean spaceBefore, List<LineFragment.Piece> out, List<Boolean> gap, LayoutSession s) {
+    private static void split(LineFragment.Piece p, float gapAt, List<LineFragment.Piece> out, List<Float> gap, LayoutSession s) {
         BoxNode box = p.text();
         String t = box.text;
         Style st = box.style;
@@ -132,7 +134,7 @@ record LineAlign(TextAlign normal, boolean justifyNormal, TextAlign last, boolea
             int b = InlineFlow.nextBreak(t, i, p.end(), st.facts.wordBreak);
             float w = b == p.end() ? end - x : face.advance(t.substring(i, b), fs);
             out.add(new LineFragment.Piece(box, i, b, x, w, p.dy()));
-            gap.add(first && spaceBefore);
+            gap.add(first ? gapAt : Float.NaN);
             first = false;
             x += w;
             i = b;

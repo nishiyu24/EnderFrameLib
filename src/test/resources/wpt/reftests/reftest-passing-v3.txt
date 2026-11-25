@@ -137,8 +137,10 @@ css/css-text/text-autospace/text-autospace-vertical-combine-001.html
 css/css-text/text-indent/text-indent-percentage-002.html
 css/css-text/text-transform/text-transform-lowercase-102.xht
 css/css-text/text-transform/text-transform-tailoring-004.html
+css/css-text/white-space/line-edge-white-space-collapse-002.html
 css/css-text/white-space/tab-stop-threshold-003.html
 css/css-text/white-space/text-wrap-balance-align-001.html
+css/css-text/white-space/text-wrap-balance-overflow-002.html
 css/css-text/white-space/trailing-ogham-003.html
 css/css-text/white-space/white-space-applies-to-text-001.html
 css/css-text/white-space/white-space-intrinsic-size-023.html
