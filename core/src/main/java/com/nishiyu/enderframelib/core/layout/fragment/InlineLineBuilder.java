@@ -106,6 +106,19 @@ final class InlineLineBuilder implements TextRun.Sink {
         lineW = Math.max(0, av[1] - av[0]);
     }
 
+    /**
+     * 空の行に幅 {@code need} の最初の中身が float の横に入らなければ、入るか float が無くなるまで次に float が終わる所へ行を下げる
+     * （CSS 2.2 §9.5.1。旧 {@code LineBuilder.dropBelowFloats}）。
+     */
+    private void dropBelowFloats(float need) {
+        for (int guard = 0; guard < 64 && need > lineW + EPS && lineW < availW - EPS; guard++) {
+            float next = exc.nextBottom(originY + cursor);
+            if (next == Float.POSITIVE_INFINITY) return;
+            cursor = next - originY;
+            startLine();
+        }
+    }
+
     void add(BoxNode n) {
         add(n, containerWs);
     }
@@ -269,6 +282,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         boolean breakable = first ? boundary(run.box().text.charAt(start)) : run.ws().wraps();
         float gap = hasContent ? pending : 0;
         float closing = end == run.box().text.length() ? trail : 0; // 直後に閉じる箱の終了端は最後の語と一緒に行に入る
+        if (!hasContent) dropBelowFloats(x + w - hang + closing);
         if (breakable && hasContent && x + gap + w - hang + closing > lineW - shrink + EPS) {
             newLine(true);
             gap = 0;
@@ -327,7 +341,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         gapCarry = false;
         markContent();
         int k = pBox.size() - 1;
-        if (k >= 0 && pBox.get(k) == box && pEnd[k] <= start && spacesOnly(box.text, pEnd[k], start)) {
+        if (k >= 0 && pBox.get(k) == box && pEnd[k] <= start && spacesOnly(box.text, pEnd[k], start) && run.wordSpacing() == 0) {
             pEnd[k] = end;
             pW[k] = x + w - pX[k];
             return;
@@ -379,6 +393,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         LayoutFragment f = s.cache().layout(n, space, priorAtom(n), s);
         float outerW = g.mL + f.width + g.mR;
         float gap = hasContent ? pending : 0;
+        if (!hasContent) dropBelowFloats(x + outerW);
         boolean breakable = hasContent && (pending > 0 ? pendingWraps : afterWrapSpace || ws.wraps());
         if (breakable && x + gap + outerW > lineW - shrink + EPS) {
             newLine(true);

@@ -45,16 +45,27 @@ final class TextRun {
         void forcedBreak();
     }
 
-    /** 1 つの節の文字の書式（走査の間だけ使う）。 */
+    /**
+     * 1 つの節の文字の書式（走査の間だけ使う）。{@code spaceW} は畳まれる空白 1 つの幅（{@code word-spacing} を含む）、
+     * {@code wordSpacing} は語の区切りの文字（空白・改行しない空白）ごとに足す幅（CSS Text 3 §8.1。旧経路は持たない）。
+     */
     record Metrics(BoxNode box, Style style, FontFace face, FontStyle fs, WhiteSpace ws, WordBreak wb, float spaceW,
-                  float ascent, float descent) {
+                  float ascent, float descent, float wordSpacing) {
         static Metrics of(BoxNode box, LayoutSession s) {
             Style st = box.style;
             FontFace face = s.face(st);
             FontStyle fs = st.facts.fontStyle;
             float lh = InlineFlow.lineHeight(st, face);
             float ra = InlineFlow.runBaseline(st, s);
-            return new Metrics(box, st, face, fs, st.facts.whiteSpace, st.facts.wordBreak, face.advance(" ", fs), ra, lh - ra);
+            float wsp = wordSpacing(st, s);
+            return new Metrics(box, st, face, fs, st.facts.whiteSpace, st.facts.wordBreak, face.advance(" ", fs) + wsp, ra, lh - ra, wsp);
+        }
+
+        private static float wordSpacing(Style st, LayoutSession s) {
+            long v = st.inherited.wordSpacing;
+            if (!com.nishiyu.enderframelib.core.css.CssLength.isDeclared(v) || com.nishiyu.enderframelib.core.css.CssLength.isKeyword(v)) return 0;
+            // % は自分の書体の大きさ（1em）が基準で、% のまま継承する（CSS Text 4 §8.1）
+            return st.px(v, st.inherited.exprs, st.facts.fontStyle.fontSizePx(), s.viewportW(), s.viewportH());
         }
 
         /**
@@ -64,6 +75,12 @@ final class TextRun {
         float advance(int start, int end) {
             String t = box.text;
             float w = face.advance(start == 0 && end == t.length() ? t : t.substring(start, end), fs);
+            if (wordSpacing != 0) { // 区間の中の語の区切りの文字（保った空白・1 語にまとめた区間の空白）
+                for (int i = start; i < end; i++) {
+                    char c = t.charAt(i);
+                    if (c == ' ' || c == '\u00A0') w += wordSpacing;
+                }
+            }
             return end == t.length() ? w - fs.letterSpacingPx() : w;
         }
     }
@@ -104,7 +121,8 @@ final class TextRun {
                 float w = r.advance(from, to);
                 k.word(from, to, w, otherSpaces(r, from, to, w), true);
             } else {
-                float whole = k.triesWhole() ? r.advance(from, to) : Float.NaN;
+                // word-spacing があれば語ごとに置く（一時アダプタが片を語ごとに割って書体の幅で並べ直すので、片を語に揃える）
+                float whole = k.triesWhole() && r.wordSpacing == 0 ? r.advance(from, to) : Float.NaN;
                 if (!Float.isNaN(whole) && k.fits(whole)) {
                     k.word(from, to, whole, otherSpaces(r, from, to, whole), true); // 1 行に収まる: 語ごとに測らない
                 } else {

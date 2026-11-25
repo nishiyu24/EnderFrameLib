@@ -83,4 +83,14 @@ class FloatIntrusionTest {
         LayoutFragment r = root("<div id=d style='overflow:hidden;width:300px'><p><span class=f></span>x</p></div>");
         assertEquals(50, frag(r, "d").height, EPS);
     }
+
+    @Test
+    void lineThatDoesNotFitBesideFloatsDropsBelowThem() {
+        // 残り幅 50 に最初の語（16 文字の w）が入らない: 行は float の下端 40 まで下がり、左端から始まる（CSS 2.2 §9.5.1）
+        LayoutFragment r = root("<div style='width:300px'><div style='float:left;width:250px;height:40px'></div><p id=p>wwwwwwwwwwwwwwww</p></div>");
+        LayoutFragment p = frag(r, "p");
+        assertEquals(40, p.lines[0].y(), EPS);
+        assertEquals(0, p.lines[0].x(), EPS);
+        assertEquals(60, p.height, EPS);
+    }
 }

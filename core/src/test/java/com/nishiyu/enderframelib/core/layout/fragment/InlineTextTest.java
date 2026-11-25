@@ -304,4 +304,19 @@ class InlineTextTest {
         LayoutFragment right = layout("<div id=t style=\"width:" + w + "px;text-wrap:balance;text-align:right\">aa bb cc dd</div>", "t");
         assertEquals(w, right.lines[0].x() + right.lines[0].width(), 0.05f);
     }
+
+    @Test
+    void wordSpacingWidensEachWordSeparator() {
+        // word-spacing は語の区切りの空白ごとに足す（CSS Text 3 §8.1）。行の片の位置と、縮小して合わせた幅（内在サイズ）の両方
+        LayoutFragment f = layout("<div><div id=t style=\"display:inline-block;word-spacing:10px\">aa bb cc</div></div>", "t");
+        Style st = f.box.style;
+        LineFragment l = f.lines[0];
+        assertEquals(3, l.pieces().length);
+        assertEquals(adv("aa ", st) + 10, l.pieces()[1].x(), EPS);
+        assertEquals(adv("aa bb ", st) + 20, l.pieces()[2].x(), EPS);
+        assertEquals(adv("aa bb cc", st) + 20, f.width, EPS);
+        // % は自分の書体の大きさ（16px）が基準: 50% = 8px
+        LayoutFragment pct = layout("<div><div id=t style=\"display:inline-block;word-spacing:50%\">aa bb</div></div>", "t");
+        assertEquals(adv("aa ", st) + 8, pct.lines[0].pieces()[1].x(), EPS);
+    }
 }

@@ -346,8 +346,6 @@ css/css-text/word-space-transform/reference/word-space-transform-025-ref.html
 css/css-text/word-space-transform/word-space-transform-005.html
 css/css-text/word-space-transform/word-space-transform-018.html
 css/css-text/word-space-transform/word-space-transform-025.html
-css/css-text/word-spacing/reference/word-spacing-percent-001-ref.html
-css/css-text/word-spacing/word-spacing-percent-001.html
 css/reference/blank.html
 css/reference/ref-filled-green-100px-square-only.html
 css/reference/ref-filled-green-100px-square.xht
