@@ -87,6 +87,7 @@ final class FlexFlow implements FormattingEngine {
             }
         }
         FlowChunk fc = new FlowChunk(null, null, frags, xs, ys, contentH, 0, 0, 0, 0, false, slots, null, 0);
+        ChunkedFlow cf = new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}, 0, false);
         float h = Float.isNaN(fixedH) ? contentH + g.vdec() + spill : fixedH;
         if (Float.isNaN(space.fixedHeight) && !space.contentBlockSize()) h = g.clampHeight(st, h, space.percentHeightBase, s);
         h = LayoutUnit.snap(h);
@@ -94,7 +95,8 @@ final class FlexFlow implements FormattingEngine {
         PlacedFragment[] oof = null;
         if (!pend.isEmpty()) {
             if (OutOfFlow.containsOutOfFlow(st)) {
-                oof = OutOfFlow.layout(pend, g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB), prior, s);
+                oof = OutOfFlow.layout(pend, g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB), prior,
+                        Anchors.of(cf, null, insetL, insetT), s);
             } else {
                 up = pend.toArray(OutOfFlow.NONE);
             }
@@ -108,7 +110,7 @@ final class FlexFlow implements FormattingEngine {
         float baseline = Float.isNaN(fl.baseline) ? Float.NaN : LayoutUnit.snap(insetT + fl.baseline);
         return new LayoutFragment(node, space, w, h, LayoutUnit.snap(ml), Math.max(0, g.mT), Math.min(0, g.mT),
                 Math.max(0, g.mB), Math.min(0, g.mB), insetL, insetT, false,
-                new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}, 0, false), null, up, oof, baseline);
+                cf, null, up, oof, baseline);
     }
 
     /**

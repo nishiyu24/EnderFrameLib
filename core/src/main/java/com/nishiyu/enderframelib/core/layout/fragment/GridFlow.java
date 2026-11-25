@@ -123,6 +123,8 @@ final class GridFlow implements FormattingEngine {
             }
         }
         FlowChunk fc = new FlowChunk(null, null, frags, xs, ys, LayoutUnit.snap(innerH), 0, 0, 0, 0, false, slots, null, 0);
+        ChunkedFlow cf = new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}, 0, false);
+        Anchors anchors = Anchors.of(cf, null, insetL, insetT);
         boolean containing = OutOfFlow.containsOutOfFlow(st);
         PlacedFragment[] oof = null;
         OutOfFlow.Pending[] up = null;
@@ -137,13 +139,14 @@ final class GridFlow implements FormattingEngine {
                 if (rtl) x[0] = padW - x[0] - x[1]; // rtl の列は右の padding 端から数える
                 float[] area = {x[0], y[0], x[1], y[1]};
                 OutOfFlow.Pending p = new OutOfFlow.Pending(b, g.bL + area[0], g.bT + area[1], area[2], area[3], fx, fy);
-                placed.addAll(List.of(OutOfFlow.layout(List.of(p), g.bL + area[0], g.bT + area[1], area[2], area[3], prior, s)));
+                placed.addAll(List.of(OutOfFlow.layout(List.of(p), g.bL + area[0], g.bT + area[1], area[2], area[3], prior, anchors, s)));
             } else {
                 pend.add(new OutOfFlow.Pending(b, insetL, insetT, cw, innerH, fx, fy));
             }
         }
         if (!pend.isEmpty()) {
-            if (containing) placed.addAll(List.of(OutOfFlow.layout(pend, g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB), prior, s)));
+            if (containing) placed.addAll(List.of(OutOfFlow.layout(pend, g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB),
+                    prior, anchors, s)));
             else up = pend.toArray(OutOfFlow.NONE);
         }
         if (!placed.isEmpty()) oof = placed.toArray(new PlacedFragment[0]);
@@ -155,7 +158,7 @@ final class GridFlow implements FormattingEngine {
         }
         return new LayoutFragment(node, space, w, h, LayoutUnit.snap(ml), Math.max(0, g.mT), Math.min(0, g.mT),
                 Math.max(0, g.mB), Math.min(0, g.mB), insetL, insetT, false,
-                new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}, 0, false), null, up, oof, baseline(grid, insetT));
+                cf, null, up, oof, baseline(grid, insetT));
     }
 
     /** 項目を集めて置き、トラックの定義を作る。{@code cw} / {@code ch} は % と {@code auto-fill} の基準（不定なら NaN）。 */

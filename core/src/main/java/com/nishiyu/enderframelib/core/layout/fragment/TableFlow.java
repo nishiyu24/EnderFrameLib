@@ -264,7 +264,8 @@ final class TableFlow implements FormattingEngine {
         PlacedFragment[] oof = null;
         if (!pend.isEmpty()) {
             if (OutOfFlow.containsOutOfFlow(node.style)) {
-                oof = OutOfFlow.layout(pend, w.bL, w.bT, Math.max(0, W - w.bL - w.bR), Math.max(0, h - w.bT - w.bB), prior, s);
+                oof = OutOfFlow.layout(pend, w.bL, w.bT, Math.max(0, W - w.bL - w.bR), Math.max(0, h - w.bT - w.bB), prior,
+                        Anchors.of(single(fc), null, insetL, insetT), s);
             } else {
                 up = pend.toArray(OutOfFlow.NONE);
             }

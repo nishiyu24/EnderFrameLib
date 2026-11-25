@@ -19,8 +19,8 @@ import java.util.List;
  *       {@link #layout} で整形し、{@link PlacedFragment} として自分の断片に持つ（LayoutNG と同じ形。断片は純粋な出力のまま）。</li>
  * </ul>
  *
- * <p>M2b-1 の範囲外: {@code fixed} の包含ブロックはビューポートでなく文書の根（スクロール 0 のときに一致）・{@code sticky}・
- * {@code anchor()}。</p>
+ * <p>M2b-1 の範囲外: {@code fixed} の包含ブロックはビューポートでなく文書の根（スクロール 0 のときに一致）・{@code sticky}。
+ * {@code anchor()} などのアンカー位置指定は {@link AnchorPlacement}（M2b-5）。</p>
  */
 final class OutOfFlow {
     private OutOfFlow() { }
@@ -83,15 +83,21 @@ final class OutOfFlow {
 
     /**
      * 包含ブロックのパディングの箱（border-box 基準の左上 {@code cbX, cbY}・大きさ {@code cbW, cbH}）で、流れの外の箱を整形して置く。
-     * {@code prior} は包含ブロックの前回の断片（置いた断片を子の候補に使う）。
+     * {@code prior} は包含ブロックの前回の断片（置いた断片を子の候補に使う）。{@code anchors} は包含ブロックの中のアンカー（M2b-5。
+     * {@code anchor()} などを使う箱は {@link AnchorPlacement} が置き、置いた断片は後ろの箱のアンカーになる）。
      */
-    static PlacedFragment[] layout(List<Pending> list, float cbX, float cbY, float cbW, float cbH, LayoutFragment prior,
+    static PlacedFragment[] layout(List<Pending> list, float cbX, float cbY, float cbW, float cbH, LayoutFragment prior, Anchors anchors,
                                    LayoutSession s) {
         PlacedFragment[] out = new PlacedFragment[list.size()];
         for (int i = 0; i < out.length; i++) {
             Pending p = list.get(i);
             BoxNode box = p.box();
             Style st = box.style;
+            if (AnchorPlacement.applies(st)) {
+                out[i] = AnchorPlacement.place(p, cbX, cbY, cbW, cbH, prior, anchors, s);
+                if (anchors != null) anchors.placed(out[i]);
+                continue;
+            }
             BoxGeometry g = new BoxGeometry(st, cbW, s);
             float l = inset(st, st.box.left, cbW, s), r = inset(st, st.box.right, cbW, s);
             float t = inset(st, st.box.top, cbH, s), b = inset(st, st.box.bottom, cbH, s);
@@ -116,11 +122,12 @@ final class OutOfFlow {
             float y = !Float.isNaN(t) ? cbY + t + g.mT : !Float.isNaN(b) ? cbY + cbH - b - f.height - g.mB
                     : p.y() + g.mT + p.dy(f.height + g.mT + g.mB);
             out[i] = new PlacedFragment(f, LayoutUnit.snap(x), LayoutUnit.snap(y));
+            if (anchors != null) anchors.placed(out[i]);
         }
         return out;
     }
 
-    private static LayoutFragment priorOf(LayoutFragment prior, BoxNode box) {
+    static LayoutFragment priorOf(LayoutFragment prior, BoxNode box) {
         if (prior == null || prior.oof == null) return null;
         for (PlacedFragment p : prior.oof) if (p.frag().box != null && p.frag().box.node == box.node) return p.frag();
         return null;

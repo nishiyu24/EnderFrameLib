@@ -136,7 +136,7 @@ final class BlockFlow implements FormattingEngine {
             if (docRoot || OutOfFlow.containsOutOfFlow(st)) { // 包含ブロック: パディングの箱で流れの外の子孫を置く（文書の根は初期包含ブロック）
                 float cbW = docRoot ? w : Math.max(0, w - g.bL - g.bR);
                 float cbH = docRoot && Float.isFinite(space.percentHeightBase) ? space.percentHeightBase : Math.max(0, h - g.bT - g.bB);
-                oof = OutOfFlow.layout(pend, docRoot ? 0 : g.bL, docRoot ? 0 : g.bT, cbW, cbH, prior, s);
+                oof = OutOfFlow.layout(pend, docRoot ? 0 : g.bL, docRoot ? 0 : g.bT, cbW, cbH, prior, Anchors.of(flow, lines, insetL, insetT), s);
             } else {
                 up = pend.toArray(OutOfFlow.NONE);
             }

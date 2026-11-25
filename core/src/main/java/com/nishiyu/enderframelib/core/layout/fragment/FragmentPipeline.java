@@ -41,6 +41,7 @@ public final class FragmentPipeline {
 
     /** 1 フレーム。{@code ledger} は凍結済みの台帳（null なら全体を作り直す）。 */
     public LayoutFragment frame(HtmlNode domRoot, ChangeLedger ledger, int viewportW, int viewportH) {
+        if (styles.sheet() != null) layout.session().positionTryRules(styles.sheet().positionTryRules);
         boxRoot = compiler.compile(domRoot, ledger);
         LayoutFragment f = layout.layout(boxRoot, viewportW, viewportH);
         if (!styles.usesContainers()) return f;

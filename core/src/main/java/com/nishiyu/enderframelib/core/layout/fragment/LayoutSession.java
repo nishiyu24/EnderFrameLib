@@ -16,6 +16,7 @@ public final class LayoutSession {
     private final LayoutCache cache = new LayoutCache();
     private final Map<String, FontFace> faces = new HashMap<>();
     private float viewportW, viewportH;
+    private Map<String, com.nishiyu.enderframelib.core.css.model.PositionTryRule> positionTryRules = Map.of();
 
     public LayoutSession(FontResolver fonts) {
         this.fonts = fonts != null ? fonts : FontResolver.FALLBACK;
@@ -30,6 +31,16 @@ public final class LayoutSession {
     void viewport(float w, float h) {
         viewportW = w;
         viewportH = h;
+    }
+
+    /** シートの {@code @position-try} の規則（M2b-5。名前 → 規則。シートが変われば箱の木を作り直すので、キャッシュは古くならない）。 */
+    public Map<String, com.nishiyu.enderframelib.core.css.model.PositionTryRule> positionTryRules() {
+        return positionTryRules;
+    }
+
+    /** 駆動側がフレームの始めにシートの規則を渡す。 */
+    public void positionTryRules(Map<String, com.nishiyu.enderframelib.core.css.model.PositionTryRule> rules) {
+        positionTryRules = rules != null ? rules : Map.of();
     }
 
     /** {@code font-family} の書体（ファミリ名ごとに 1 度だけ引く）。 */

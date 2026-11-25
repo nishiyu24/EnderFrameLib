@@ -94,21 +94,22 @@ final class OrthogonalFlow implements FormattingEngine {
             BoxNode k = node.flow.get(i);
             if (k != wrapper && OutOfFlow.is(k)) pend.add(new OutOfFlow.Pending(k, insetL, insetT));
         }
-        OutOfFlow.Pending[] up = null;
-        PlacedFragment[] oof = null;
-        if (!pend.isEmpty()) {
-            if (OutOfFlow.containsOutOfFlow(st)) {
-                oof = OutOfFlow.layout(pend, g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB), prior, s);
-            } else {
-                up = pend.toArray(OutOfFlow.NONE);
-            }
-        }
         ChunkedFlow chunks = null;
         if (!frags.isEmpty()) {
             float[] xs = {pos.get(0)[0]}, ys = {pos.get(0)[1]};
             FlowChunk fc = new FlowChunk(null, null, frags.toArray(new LayoutFragment[0]), xs, ys, Math.max(0, h - g.vdec()), 0, 0, 0, 0,
                     false, null, null, 0);
             chunks = new ChunkedFlow(new FlowChunk[]{fc}, new float[]{0}, 0, false);
+        }
+        OutOfFlow.Pending[] up = null;
+        PlacedFragment[] oof = null;
+        if (!pend.isEmpty()) {
+            if (OutOfFlow.containsOutOfFlow(st)) {
+                oof = OutOfFlow.layout(pend, g.bL, g.bT, Math.max(0, w - g.bL - g.bR), Math.max(0, h - g.bT - g.bB), prior,
+                        Anchors.of(chunks, null, insetL, insetT), s);
+            } else {
+                up = pend.toArray(OutOfFlow.NONE);
+            }
         }
         return new LayoutFragment(node, space, w, h, LayoutUnit.snap(ml), Math.max(0, g.mT), Math.min(0, g.mT),
                 Math.max(0, g.mB), Math.min(0, g.mB), insetL, insetT, false, chunks, null, up, oof, Float.NaN);

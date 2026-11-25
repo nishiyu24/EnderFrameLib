@@ -264,6 +264,8 @@ public final class BoxTreeCompiler {
         ReplacedInput replaced = kind == BoxKind.NONE || kind == BoxKind.TEXT ? null
                 : ReplacedInput.of(n, styles.viewportW(), styles.viewportH());
         if (replaced != null && prev != null && replaced.equals(prev.replaced)) replaced = prev.replaced;
+        PopoverLink popover = kind == BoxKind.NONE ? null : PopoverLink.of(n); // 暗黙のアンカーの属性の写し（M2b-5）
+        if (popover != null && prev != null && popover.equals(prev.popover)) popover = prev.popover;
         // 縦書きの文脈（M2b-5）: レイアウトが読むスタイルは軸を入れ替えたもの、直交フローの根は流れの中身を包む箱のスタイルを持つ。
         // 算出スタイルと文脈が前回と同じなら前回の参照（レイアウトのキャッシュが == で照合する）
         int axis = n.nodeType == NodeType.ELEMENT && kind != BoxKind.NONE ? OrthogonalBoxes.axisOf(flow, style) : WritingModes.HORIZONTAL;
@@ -280,12 +282,12 @@ public final class BoxTreeCompiler {
         if (prev != null && style == prev.computed && layoutStyle == prev.style && orth == prev.orthogonal && flow == prev.context
                 && (orth == 0 || wrapperStyle == OrthogonalBoxes.wrapperOf(prev).style)
                 && kind == prev.kind && text == prev.text && children == prev.children
-                && replaced == prev.replaced && TableBoxes.spanOf(n, kind, BoxNode.Pseudo.NONE) == prev.span
+                && replaced == prev.replaced && popover == prev.popover && TableBoxes.spanOf(n, kind, BoxNode.Pseudo.NONE) == prev.span
                 && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)
                 && marker == prev.marker) return prev;
         stats.rebuiltBoxes++;
         return new BoxNode(n, layoutStyle, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL,
-                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle);
+                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover);
     }
 
     /**

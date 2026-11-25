@@ -67,6 +67,8 @@ public final class BoxNode {
      * 現れないので入力側が写し、レイアウトは生きた DOM を読まない（属性だけの変化も箱の作り直しとして届く）。それ以外は 0。
      */
     public final int span;
+    /** ポップオーバーの呼び出し元・ポップオーバー自身なら属性の写し（暗黙のアンカー。{@link PopoverLink}。M2b-5）。それ以外は null。 */
+    public final PopoverLink popover;
 
     public BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children) {
         this(node, style, kind, text, children, Pseudo.NONE, null, null, null, null, MarkerBoxes.NO_ORDINAL);
@@ -84,7 +86,7 @@ public final class BoxNode {
     /** {@code prevFlow} は同じ節の前回の {@link #flow}（匿名の表の箱を前回の参照のまま使うための候補。無ければ null）。 */
     BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
             ReplacedInput replaced, BoxNode marker, int ordinal, BoxChildren prevFlow) {
-        this(node, style, kind, text, children, pseudo, before, after, replaced, marker, ordinal, prevFlow, style, 0, 0, null);
+        this(node, style, kind, text, children, pseudo, before, after, replaced, marker, ordinal, prevFlow, style, 0, 0, null, null);
     }
 
     /**
@@ -93,7 +95,8 @@ public final class BoxNode {
      */
     BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
             ReplacedInput replaced, BoxNode marker, int ordinal, BoxChildren prevFlow, Style computed, int context, int orthogonal,
-            Style wrapperStyle) {
+            Style wrapperStyle, PopoverLink popover) {
+        this.popover = popover;
         this.node = node;
         this.style = style;
         this.computed = computed;
@@ -151,7 +154,7 @@ public final class BoxNode {
     BoxNode withMarker(BoxNode m) {
         BoxNode w = orthogonal != 0 ? OrthogonalBoxes.wrapperOf(this) : null;
         return new BoxNode(node, style, kind, text, children, pseudo, pseudoChild(Pseudo.BEFORE), pseudoChild(Pseudo.AFTER), replaced, m,
-                ordinal, flow, computed, context, orthogonal, w != null ? w.style : null);
+                ordinal, flow, computed, context, orthogonal, w != null ? w.style : null, popover);
     }
 
     /** 中身が無い・空白だけで畳まれる文字の節か（ブロックの流れでは箱を作らない）。 */
