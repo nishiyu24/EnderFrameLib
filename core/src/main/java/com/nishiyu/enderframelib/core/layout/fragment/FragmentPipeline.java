@@ -25,7 +25,7 @@ public final class FragmentPipeline {
     /** 容器の寸法の確定を繰り返す上限（旧 {@code RenderPipeline.MAX_CONTAINER_PASSES} と同じ）。 */
     static final int MAX_CONTAINER_PASSES = 4;
 
-    private final StyleSource styles;
+    private StyleSource styles;
     private final BoxTreeCompiler compiler;
     private final FragmentLayout layout;
     private BoxNode boxRoot;
@@ -34,6 +34,15 @@ public final class FragmentPipeline {
         this.styles = styles;
         this.compiler = new BoxTreeCompiler(styles);
         this.layout = new FragmentLayout(session);
+    }
+
+    /**
+     * スタイルの解き方を差し替える（ビューポートの大きさの変化）。次のフレームは全ての要素を解き直すが、箱の木は前回と照合して値が同じ箱を
+     * 前回の参照のまま使い（{@link BoxTreeCompiler#restyleWith}）、整形は前回の断片木をキャッシュにする（制約が同じ部分木は整形しない）。
+     */
+    public void restyleWith(StyleSource styles) {
+        this.styles = styles;
+        compiler.restyleWith(styles);
     }
 
     public BoxTreeCompiler compiler() { return compiler; }

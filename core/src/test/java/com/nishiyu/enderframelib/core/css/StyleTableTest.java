@@ -126,7 +126,7 @@ class StyleTableTest {
         plain.put("--v", "1");
         plain.put("made-up-prop", "m");
         ComputedStyle viaMap = new ComputedStyle(plain, 20f, 16f);
-        ComputedStyle viaTable = ComputedStyle.ofOwned(StyleTable.copyOf(plain), 16f, 16f, (Style) null);
+        ComputedStyle viaTable = ComputedStyle.ofOwned(StyleTable.copyOf(plain), 16f, 16f, (Style) null, false);
         assertTrue(ComputedStyle.sameDeclarations(viaMap, viaTable));
         assertEquals(viaMap.fontSizePx(), viaTable.fontSizePx());
         assertEquals("1", viaTable.customProperties().get("--v"));

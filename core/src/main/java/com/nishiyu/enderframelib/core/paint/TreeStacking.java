@@ -32,15 +32,18 @@ import static com.nishiyu.enderframelib.core.paint.PaintSupport.isInvisible;
  * 描画用の木の重なりの規則（M2c ②-3。旧 {@code PaintOrder} の規則を {@link PaintView} へ移植したもの）: 子の中身に掛けるクリップ・
  * 子の項目の親・スタッキングコンテキストと層の種類・レイヤーの指定・スクロールバー・スクロールの中身の節。1 回の描画の間だけの表を持つ
  * （{@link #beginPass} で空にする）。旧経路の記憶（クリップの使い回し・節の記憶）・窓・sticky の式は持たない。
+ *
+ * <p>項目の座標は常に親の節からの相対（旧経路の既定）で、中身を 1 つの節にまとめられるスクロールコンテナは常にまとめる。旧経路の
+ * 切り分け用の切り替え（{@code Shortcut}・文脈の {@code parentRelativeDisplayItems}）は読まない（プロセス共有の状態に依らない）。</p>
  */
 final class TreeStacking {
     /** 切らない軸のクリップの端（旧経路と同じ値）。 */
     static final float UNCLIPPED = PaintOrder.UNCLIPPED;
     private static final RenderMeta MOVING_NODE_META = new RenderMeta(null, null, null, 12.0f, 0.5f, 0.5f, 1, false);
     private static final Corners SCROLLBAR_CORNERS = new Corners(2, 2, 2, 2);
+    static final ScrollContentInfo[] NO_SCROLLS = new ScrollContentInfo[0];
 
     int rootW, rootH;
-    boolean parentRelative = true;
     final ScrollState scrollState;
     private final BoxAnimation anim;
 
@@ -48,7 +51,8 @@ final class TreeStacking {
     private final Map<PaintView, ClipRect> contentClips = new IdentityHashMap<>();
     private final Map<PaintView, Boolean> blendDescendants = new IdentityHashMap<>();
     private final Map<PaintView, ScrollContent> scrollContentOf = new IdentityHashMap<>();
-    private final List<ScrollContent> scrollContents = new ArrayList<>();
+    /** 中身の節の記録（文書順。使い回した部分木の分は記憶から足す）。 */
+    private final List<ScrollContentInfo> scrollInfos = new ArrayList<>();
 
     /** 中身を 1 つの節にまとめたスクロールコンテナ（旧 {@code PaintOrder.ScrollContent}）。 */
     static final class ScrollContent {
@@ -82,7 +86,7 @@ final class TreeStacking {
         contentClips.clear();
         blendDescendants.clear();
         scrollContentOf.clear();
-        scrollContents.clear();
+        scrollInfos.clear();
     }
 
     ScrollContent scrollContentOf(PaintView box) {
@@ -91,11 +95,32 @@ final class TreeStacking {
 
     /** 直近の描画で中身の節を作ったスクロールコンテナの記録。 */
     List<ScrollContentInfo> scrollContentInfos() {
-        List<ScrollContentInfo> out = new ArrayList<>(scrollContents.size());
-        for (ScrollContent c : scrollContents) {
-            out.add(new ScrollContentInfo(c.box.node(), c.contentId, c.thumbVId, c.thumbHId, c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0, c.stickies));
+        return new ArrayList<>(scrollInfos);
+    }
+
+    /** これまでに記録した中身の節の数（部分木の記録の始まりの印）。 */
+    int scrollInfoCount() {
+        return scrollInfos.size();
+    }
+
+    /** 箱 {@code box} の中身の節の記録を確定する（スクロールバーを描いた後。中身の節が無ければ何もしない）。 */
+    void finishScrollContent(PaintView box) {
+        ScrollContent c = scrollContentOf.get(box);
+        if (c != null) {
+            scrollInfos.add(new ScrollContentInfo(c.box.node(), c.contentId, c.thumbVId, c.thumbHId, c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0,
+                    c.stickies));
         }
-        return out;
+    }
+
+    /** 印 {@code mark} の後に記録した中身の節（部分木の分。記憶に持たせる）。 */
+    ScrollContentInfo[] scrollInfosSince(int mark) {
+        int n = scrollInfos.size() - mark;
+        return n == 0 ? NO_SCROLLS : scrollInfos.subList(mark, scrollInfos.size()).toArray(new ScrollContentInfo[n]);
+    }
+
+    /** 使い回した部分木の中身の節の記録を足す（描いた時のスクロールの位置〔{@code sx0}〕のまま。動かすのはホストの節）。 */
+    void replayScrollContents(ScrollContentInfo[] recorded) {
+        if (recorded.length > 0) scrollInfos.addAll(java.util.Arrays.asList(recorded));
     }
 
     // ---- 箱の素性 ----
@@ -213,12 +238,11 @@ final class TreeStacking {
         contentClips.put(box, childClip);
         String childParent = "root".equals(tag) ? null : box.anonymous() ? parentId : box.node().key();
         List<com.nishiyu.enderframelib.core.paint.model.StickyShift> stickies;
-        if (com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() && (stickies = scrollsAsOneNode(box)) != null) {
+        if ((stickies = scrollsAsOneNode(box)) != null) {
             ScrollContent content = new ScrollContent(box, box.node().scrollContentKey(),
                     scrollState.getScrollX(box.node()), scrollState.getScrollY(box.node()));
             content.stickies = stickies;
             scrollContentOf.put(box, content);
-            scrollContents.add(content);
             childParent = content.contentId;
         }
         return new ChildContext(childClip, childParent);
@@ -279,8 +303,7 @@ final class TreeStacking {
             if (child.displayNone()) continue;
             if (isFixed(child) || child.style().isContentVisibilityAuto()) return true; // 描くかどうかがスクロールの位置で変わる
             if (isSticky(child)) {
-                if (!com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.on() || underSticky
-                        || stickyScrollParams(child, container) == null) return true;
+                if (underSticky || stickyScrollParams(child, container) == null) return true;
                 stickies.add(child);
                 if (hasUnscrollableDescendant(container, child, true, stickies)) return true;
                 continue;
@@ -332,8 +355,8 @@ final class TreeStacking {
                 rx3 = Math.max(0f, r[3] - box.bL()); ry3 = Math.max(0f, r[7] - box.bB());
             }
         }
-        int ox = parentRelative && boxHasOwnNode(box) && clipX ? Math.round(box.x()) : 0;
-        int oy = parentRelative && boxHasOwnNode(box) && clipY ? Math.round(box.y()) : 0;
+        int ox = boxHasOwnNode(box) && clipX ? Math.round(box.x()) : 0;
+        int oy = boxHasOwnNode(box) && clipY ? Math.round(box.y()) : 0;
         float[] chainOwn = elliptical
                 ? new float[]{minX - ox, minY - oy, maxX - ox, maxY - oy, rx0, rx1, rx2, rx3, ry0, ry1, ry2, ry3}
                 : new float[]{minX - ox, minY - oy, maxX - ox, maxY - oy, rx0, rx1, rx2, rx3};
@@ -354,7 +377,7 @@ final class TreeStacking {
         List<FilterOp> filters = FilterOp.parse(v.filter, new FilterOp.Context(rootW, rootH, fontPx, rootFontPx, fgColor));
         BlendMode blend = BlendMode.fromCss(v.mixBlendMode == null ? "normal" : v.mixBlendMode.trim().toLowerCase(java.util.Locale.ROOT));
         boolean isolate = hasBlendDescendant(box);
-        boolean rel = parentRelative && boxHasOwnNode(box);
+        boolean rel = boxHasOwnNode(box);
         float lx = rel ? box.x() - Math.round(box.x()) : box.x();
         float ly = rel ? box.y() - Math.round(box.y()) : box.y();
         float[] border = {lx, ly, box.w(), box.h()};
@@ -425,7 +448,7 @@ final class TreeStacking {
     /** スクロールバー（旧 {@code PaintOrder.drawScrollbarsIfNeeded}）。 */
     void drawScrollbars(List<DisplayItem> elements, PaintView box, ClipRect clipRect) {
         if (box.style().typed().box.scrollbarWidth == com.nishiyu.enderframelib.core.css.model.CssKeywords.ScrollbarWidth.NONE) return;
-        PaintSupport.CaptureList cap = (parentRelative && boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
+        PaintSupport.CaptureList cap = (boxHasOwnNode(box) && elements instanceof PaintSupport.CaptureList c) ? c : null;
         int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
         if (cap != null) cap.setOrigin(Math.round(box.x()), Math.round(box.y()));
         try {

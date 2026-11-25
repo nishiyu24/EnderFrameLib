@@ -28,6 +28,8 @@ public final class StyleSource {
     private final ContainerScope scope;
     private final Map<String, String> env;
     private final int viewportW, viewportH;
+    /** 構築した時に掛かっていた規則（{@code @media} の有効・無効。規則の並びの位置の集合で、値で比べる）。 */
+    private final java.util.BitSet activeRules;
     private float rootFontSize = ComputedStyle.DEFAULT_FONT_SIZE;
     private float rootLineHeight = Float.NaN;
 
@@ -38,11 +40,23 @@ public final class StyleSource {
         this.env = env != null ? env : Map.of();
         this.viewportW = viewportW;
         this.viewportH = viewportH;
+        this.activeRules = new java.util.BitSet();
+        if (sheet != null) {
+            for (int i = 0, n = sheet.rules.size(); i < n; i++) if (sheet.rules.get(i).mediaActive) activeRules.set(i);
+        }
     }
 
     public StyleSheet sheet() { return sheet; }
     public int viewportW() { return viewportW; }
     public int viewportH() { return viewportH; }
+
+    /**
+     * {@code other} と同じ規則の集合を掛けるか（同じシートで、構築した時の {@code @media} の有効・無効が同じ）。ビューポートの大きさだけが
+     * 変わったときに、全ての要素を解き直すか（規則が替わった）、ビューポートに依る要素だけを解き直すかを決める（{@link BoxTreeCompiler}）。
+     */
+    public boolean sameRules(StyleSource other) {
+        return other != null && other.sheet == sheet && other.activeRules.equals(activeRules);
+    }
 
     /** 要素の算出スタイル。{@code parent} は親の {@link Style}（根の直下は {@link Style#DEFAULT}）。 */
     public Style element(HtmlNode node, Style parent) {

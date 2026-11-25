@@ -51,6 +51,8 @@ A6b | IncrementalVsFullTest#absoluteCoordinatesPatchMatchesFullRelayoutAndNeverG
 
 §6-182, K3 | FrameOracleTest#scrollExtentMatchesAfterDisplayTypeChange | display の型を変えた箱の子テキストに残る遅延消去待ちの inlineFragments を ScrollExtentCalc が読み、scrollHeight 等が大きく残った（layouts 種 1・種 3）
 
+M2c | ViewportResizeTest#resizeRestylesIncrementallyAndMatchesAFreshBuild | 派生の事実 StyleFacts.usesViewportUnits を値を解いた後に数えていたので、値を解く段で px になる font-size の vw などを数え落とした（ビューポートの変化でその要素を解き直さず、文字の大きさが古いまま残った。解く前の宣言で数える）
+
 # --- 描画（表示リスト・差分パッチ・クリップ） ---
 M2b | BackendSessionReleaseTest#closingAnOwnedSessionDropsItsAnimationState, BackendSessionReleaseTest#closingABorrowedSessionKeepsTheOwnersState | 描画器（Software・GPU）が閉じても CssAnimator の既定の置き場に自分のセッションの補間状態（表示項目を握る）を残し、描画器を作るたびに溜まって、全テストを 1 本の JVM で流す CI（4 コア）がヒープ 3g を使い切って落ちた
 K4, §6-185 | PaintTreeIncrementalTest#painterMemoMatchesAFreshPaint | 親（親 id の無い枠）が平行移動しても、変わった子が無いと子の断片を全部再利用して古い位置の項目を出した（K3 で shiftSubtree が子の印を進めなくなった穴。窓付き＋位置指定の子孫の行で顕在）（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）

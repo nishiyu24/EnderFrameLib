@@ -37,6 +37,8 @@ import org.junit.jupiter.api.Test;
  *   <li>既存 {@code Shortcut} / {@code EngineFlags} の上限凍結: 新規追加を禁止し、単調減少のみ許可。</li>
  *   <li>新経路のレイアウト（{@code core/layout/fragment}）は描画だけの群（{@code Style.inheritedPaint}・{@code Style.visual}）を読まない
  *       （M2c。描画だけの変化はレイアウトの入力の木を変えないので、読むと古い値を読む。計画書 §3.4.2-3）。</li>
+ *   <li>新経路（{@link #NEW_PATH_SOURCES}）は {@code Shortcut}・{@code EngineFlags}・文脈の切り替え・{@code static volatile}・
+ *       {@code ThreadLocal} を読まない（計画書 §5-4。状態は 1 ビューに閉じ、旧経路の切り分けの切り替えは旧経路と一緒に消える）。</li>
  * </ol>
  */
 class ArchitectureHealthTest {
@@ -380,15 +382,21 @@ class ArchitectureHealthTest {
             "\\.(inheritedPaint|visual)\\b|\\b(InheritedPaintStyle|VisualStyle)\\b|\\.(visPx|borderColor|outlineColor|columnRuleColor)\\(");
 
     static List<String> checkPaintGroupReads(Path dir) throws IOException {
+        return checkCodeLines(dir, PAINT_GROUP_READ);
+    }
+
+    /** {@code path}（ディレクトリなら配下の .java 全て、ファイルならそれ 1 つ）のコメントでない行のうち {@code p} に当たる行。 */
+    static List<String> checkCodeLines(Path path, Pattern p) throws IOException {
         List<String> bad = new ArrayList<>();
-        if (!Files.isDirectory(dir)) return bad;
-        try (var files = Files.walk(dir)) {
+        if (!Files.exists(path)) return bad;
+        Path base = Files.isDirectory(path) ? path : path.getParent();
+        try (var files = Files.walk(path)) {
             for (Path f : files.filter(x -> x.toString().endsWith(".java")).sorted().toList()) {
                 List<String> lines = Files.readAllLines(f, StandardCharsets.UTF_8);
                 for (int i = 0; i < lines.size(); i++) {
                     String line = lines.get(i).trim();
                     if (line.startsWith("*") || line.startsWith("//") || line.startsWith("/*")) continue;
-                    if (PAINT_GROUP_READ.matcher(line).find()) bad.add(dir.relativize(f) + ":" + (i + 1) + ": " + line);
+                    if (p.matcher(line).find()) bad.add(base.relativize(f) + ":" + (i + 1) + ": " + line);
                 }
             }
         }
@@ -399,6 +407,35 @@ class ArchitectureHealthTest {
     void fragmentLayoutDoesNotReadPaintOnlyGroups() throws IOException {
         List<String> bad = checkPaintGroupReads(repoRoot().resolve("core/src/main/java/com/nishiyu/enderframelib/core/layout/fragment"));
         assertEquals(List.of(), bad, "新経路のレイアウトが描画だけの群を読んでいる（M2c）");
+    }
+
+    // ---- 7. 新経路はプロセス共有の切り替え・可変状態を読まない（M2c） ----
+
+    /**
+     * 新経路のソース（新経路のパッケージと、旧経路と同じパッケージに置いた新経路のクラス）。旧経路と共有する箱 1 つの描画の道具
+     * （{@code BoxItemPainter} ほか）は旧経路の削除（M2b-6）まで対象外。
+     */
+    static final List<String> NEW_PATH_SOURCES = List.of(
+            "core/src/main/java/com/nishiyu/enderframelib/core/box",
+            "core/src/main/java/com/nishiyu/enderframelib/core/layout/fragment",
+            "core/src/main/java/com/nishiyu/enderframelib/core/paint/tree",
+            "core/src/main/java/com/nishiyu/enderframelib/core/paint/TreePainter.java",
+            "core/src/main/java/com/nishiyu/enderframelib/core/paint/TreeStacking.java",
+            "core/src/main/java/com/nishiyu/enderframelib/common/V3Frame.java");
+
+    /** 近道・切り分けの切り替え（{@code Shortcut}・{@code EngineFlags}・文脈の {@code ContextFlags}）・{@code static volatile}・{@code ThreadLocal}。 */
+    private static final Pattern PROCESS_SWITCH_READ = Pattern.compile(
+            "\\b(Shortcut|EngineFlags|ContextFlags|ThreadLocal)\\b|\\bstatic\\s+volatile\\b|parentRelativeSource|\\.flags\\(\\)");
+
+    @Test
+    void newPathDoesNotReadProcessSwitches() throws IOException {
+        List<String> bad = new ArrayList<>();
+        for (String s : NEW_PATH_SOURCES) {
+            Path p = repoRoot().resolve(s);
+            assertTrue(Files.exists(p), "新経路のソースが無い: " + s);
+            bad.addAll(checkCodeLines(p, PROCESS_SWITCH_READ));
+        }
+        assertEquals(List.of(), bad, "新経路がプロセス共有の切り替え・可変状態を読んでいる（計画書 §5-4。状態は 1 ビューに閉じる）");
     }
 
     // ---- 検査器自身の検証 ----
@@ -434,5 +471,11 @@ class ArchitectureHealthTest {
                 "class Flow {\n  int a(Style s) { return s.inheritedPaint.color; }\n  /** s.visual は描画 */\n"
                         + "  float b(Style s) { return s.box.width + s.visPx(0, 0, 0, 0); }\n  int c(Style s) { return s.inherited.fontWeight; }\n}"),
                 dir -> assertEquals(2, checkPaintGroupReads(dir).size(), "描画だけの群を読む行は 2 行"));
+
+        RatchetSupport.withTempSources(Map.of("Painter.java",
+                "class Painter {\n  boolean a() { return Shortcut.SCROLL_CONTENT_NODES.on(); }\n  /** Shortcut は読まない */\n"
+                        + "  boolean b() { return DisplayListBuilder.parentRelativeSource.getAsBoolean(); }\n"
+                        + "  boolean c() { return EngineContext.current().flags().parentRelativeDisplayItems(); }\n  int d() { return 1; }\n}"),
+                dir -> assertEquals(3, checkCodeLines(dir, PROCESS_SWITCH_READ).size(), "切り替えを読む行は 3 行"));
     }
 }

@@ -1592,11 +1592,11 @@ public class UiView implements AutoCloseable {
             } else if (oldRootW != newRootW || oldRootH != newRootH) {
                 boolean mediaChanged = doc.sheet.updateMediaEnvironment(
                         doc.sheet.mediaEnvironment().withSize(newRootW, newRootH));
-                if (mediaChanged) interactionState.markAllDirty();
+                if (mediaChanged && v3 == null) interactionState.markAllDirty(); // 新経路は解き方の差し替えで全ての要素を解き直す
             }
 
-            if (v3 != null) { // 新経路: ビューポート・規則が変わったので全体を組み直す
-                v3Frame(true);
+            if (v3 != null) { // 新経路: 大きさだけの変化は増分（V3Frame）、同じ大きさでの呼び出し（画像の到着など台帳の外の変化）は全体を組み直す
+                v3Frame(oldRootW == newRootW && oldRootH == newRootH);
                 lastLayoutFinishedNanos = clock.nanos();
                 lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
                 return;

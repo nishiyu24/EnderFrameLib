@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
 import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
@@ -17,7 +16,6 @@ import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
 import com.nishiyu.enderframelib.core.paint.tree.PaintNode;
 import com.nishiyu.enderframelib.core.paint.tree.PaintView;
-import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,7 +23,6 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -34,11 +31,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  * （層別の並び {@link Fragment} / {@link FragSeq} で合成する）、規則は {@link TreeStacking}、箱 1 つ自身の項目は {@link BoxItemPainter}。
  * 出力（{@link DisplayItem}）は旧経路の {@code DisplayListBuilder} と同じ形。
  *
- * <p><b>記憶は 1 層</b>: 描画用の木の節（{@link PaintNode}。断片の同一性で使い回される）が前回と同じ参照で、描く文脈（クリップ・親の id・
- * 絶対位置・項目の原点・キャンバスの背景の役・親の表示の種類・ビューポート）も同じなら、前回の部分木の結果（{@link Fragment}）を
- * そのまま使う。記憶は前回の木の形のまま持ち（{@link Memo} が子の記憶を持つ。節 → 結果の大域の表は作らない）、使い回した部分木の
- * 記憶はそのまま次へ渡る。描画の項目が DOM を直に読む所（属性・入力の値）があるので、変更台帳に載った節とその祖先は使い回さない
- * （入口は台帳 1 本）。スクロールに依る部分木（スクロールバー・スクロールの中身の節）と、旧経路でも記憶しない部品も使い回さない。</p>
+ * <p><b>記憶は 1 層</b>: 鍵は {@code (描画用の木の節 ==, 描く文脈 {@link Context} の値等価)}。節（{@link PaintNode}。断片の同一性で
+ * 使い回される）は不変の構造の入力なので参照で、文脈（クリップ・親の id・絶対位置・項目の原点・キャンバスの背景の役・親の表示の種類・
+ * スクロールコンテナなら自分のスクロールの位置）は親から渡る値なので {@code ConstraintSpace} と同じく値で照合する（計画書 §2.1-4。
+ * 表示項目が絶対の座標・クリップ・親の id を持つ間〔M3b の {@code DisplayScene} まで〕は文脈も入力）。ビューポートと装置の画素比が
+ * 変われば記憶を全て捨てる。記憶は前回の木の形のまま持ち（{@link Memo} が子の記憶を持つ。節 → 結果の大域の表は作らない）、使い回した
+ * 部分木の記憶はそのまま次へ渡る。描画の項目が DOM を直に読む所（属性・入力の値・子の文字）があるので、変更台帳に載った節とその祖先は
+ * 使い回さない（入口は台帳 1 本）。台帳に載らない入力（画像・SVG の到着）はホストが全体を組み直す（{@code recomputeLayout}。台帳なしの
+ * フレームは記憶を使わない）。記憶してよい箱をタグ名で決める一覧は持たない。</p>
+ *
+ * <p>項目の座標は常に親の節からの相対（旧経路の既定）。旧経路の切り分け用の切り替え（文脈の {@code parentRelativeDisplayItems}）は読まない。</p>
  */
 public final class TreePainter {
     /** 背景の指定が無い文書のキャンバス（旧経路と同じく透明）。 */
@@ -55,10 +57,10 @@ public final class TreePainter {
     private PaintView canvasSource;
     private float devicePixelRatio = 1f;
 
-    /** 前回の根の記憶と、その時のビューポート・座標の方式。 */
+    /** 前回の根の記憶と、その時のビューポート・装置の画素比。 */
     private Memo rootMemo;
     private int memoW, memoH;
-    private boolean memoRel;
+    private float memoDpr;
     /** 1 回の描画の間だけ: 台帳に載った節とその祖先（null なら全て使い回さない）。 */
     private Set<HtmlNode> touched;
     private Memo lastMemo;
@@ -105,15 +107,13 @@ public final class TreePainter {
      * 表示リストを作る。{@code ledger} はこのフレームの凍結済みの変更台帳（前回の描画からの変化）で、null なら前回の結果を使わない。
      */
     public List<DisplayItem> paint(PaintNode root, ChangeLedger ledger) {
-        boolean rel = DisplayListBuilder.parentRelativeSource.getAsBoolean();
-        painter.parentRelative = rel;
-        stacking.parentRelative = rel;
         painter.decor.setDevicePixelRatio(devicePixelRatio);
         stacking.beginPass();
         fragIds.set(0);
         reused = built = 0;
         touched = readLedger(ledger);
-        Memo prev = touched != null && rel == memoRel && memoW == stacking.rootW && memoH == stacking.rootH ? rootMemo : null;
+        Memo prev = touched != null && memoW == stacking.rootW && memoH == stacking.rootH
+                && Float.compare(memoDpr, devicePixelRatio) == 0 ? rootMemo : null;
         PaintView top = PaintView.root(root, stacking.scrollState, stacking.rootW, stacking.rootH);
         canvasSource = null;
         List<DisplayItem> out = new ArrayList<>();
@@ -140,7 +140,7 @@ public final class TreePainter {
             out.addAll(Arrays.asList(items));
             memoW = stacking.rootW;
             memoH = stacking.rootH;
-            memoRel = rel;
+            memoDpr = devicePixelRatio;
             return out;
         } finally {
             touched = null;
@@ -167,7 +167,7 @@ public final class TreePainter {
             TreeStacking.ChildContext cc = stacking.enterChildren(root, null, null);
             Memo[] kidMemos = new Memo[root.paintChildren().size()];
             Fragment[] kids = kids(root, cc, prev, kidMemos);
-            rootMemo = new Memo(root.n, null, null, null, 0, 0, 0, 0, false, null, false, kidMemos);
+            rootMemo = new Memo(root.n, null, null, false, TreeStacking.NO_SCROLLS, kidMemos);
             return new Fragment(root.n, Fragment.NONE, Fragment.NONE, false, Fragment.Kind.ROOT, 0, null, null, null, kids.length,
                     kids.length < 64 ? kids : null, kids.length >= 64 ? Fragment.chunkifyFrom(null, kids, kids.length) : null,
                     Fragment.aggregate(kids));
@@ -215,14 +215,10 @@ public final class TreePainter {
         if (box.displayNone() || PaintOrder.factsOf(box.style()).displayNone() || ElementTraits.isOption(box.node().tag)) return null;
         if (box.style().isContentVisibilityAuto() && !nearViewport(box)) return null; // 画面から遠い content-visibility: auto は描かない
         PaintView origin = TreeStacking.effectiveParentNodeBox(box, parentId);
-        int pox = origin != null ? Math.round(origin.x()) : 0, poy = origin != null ? Math.round(origin.y()) : 0;
-        boolean canvas = box == canvasSource;
-        PaintView parent = box.paintParent();
-        LayoutBox.Display parentDisplay = parent != null ? parent.display() : null;
-        if (prev != null && prev.node == box.n && prev.reusable && !touched(box) && Objects.equals(prev.clip, clip)
-                && Objects.equals(prev.parentId, parentId) && Float.compare(prev.ax, box.x()) == 0 && Float.compare(prev.ay, box.y()) == 0
-                && prev.pox == pox && prev.poy == poy && prev.canvas == canvas && Objects.equals(prev.parentDisplay, parentDisplay)) {
+        Context ctx = Context.of(box, clip, parentId, origin, box == canvasSource, stacking);
+        if (prev != null && prev.node == box.n && prev.reusable && !touched(box) && prev.ctx.equals(ctx)) {
             reused++;
+            stacking.replayScrollContents(prev.scrolls);
             lastMemo = prev;
             return prev.frag;
         }
@@ -232,18 +228,16 @@ public final class TreePainter {
         LayerSpec layer = kind == Fragment.Kind.STACKING && hasSelf ? stacking.layerSpecFor(box) : null;
         boolean valueControl = ElementTraits.isValueControl(box.node().tag);
         TreeStacking.ChildContext cc = valueControl ? null : stacking.enterChildren(box, clip, parentId);
-        boolean ownNode = stacking.parentRelative && TreeStacking.boxHasOwnNode(box);
-        boolean reusable = memoizable(box);
+        boolean ownNode = TreeStacking.boxHasOwnNode(box);
+        boolean reusable = true;
 
         DisplayItem[] own = Fragment.NONE;
         boolean drawn = false;
         if (hasSelf) {
             scratch.resetForBuild();
             fragIds.set(0); // 部品の ID は箱ごとに数える
-            painter.drawBox(scratch, box, clip, parentId, null, origin, ownNode, canvas);
-            TreeStacking.ScrollContent content = stacking.scrollContentOf(box);
+            painter.drawBox(scratch, box, clip, parentId, null, origin, ownNode, ctx.canvas());            TreeStacking.ScrollContent content = stacking.scrollContentOf(box);
             if (content != null) { // 箱の項目のあと・子孫の項目の前に、中身を動かす節
-                reusable = false;
                 int sox = scratch.originX, soy = scratch.originY;
                 if (ownNode) scratch.setOrigin(Math.round(box.x()), Math.round(box.y()));
                 try {
@@ -258,11 +252,12 @@ public final class TreePainter {
         Fragment.Extras ex = extras(box, kind, layer, ownNode);
         DisplayItem[] after = Fragment.NONE;
         if (!valueControl && TreeStacking.wantsScrollbars(box)) {
-            reusable = false;
             scratch.resetForBuild();
             stacking.drawScrollbars(scratch, box, clip);
             after = scratch.toArray(new DisplayItem[0]);
         }
+        int scrollMark = stacking.scrollInfoCount();
+        stacking.finishScrollContent(box); // 文書順（子より前）に記録する
         int z = kind == Fragment.Kind.STACKING ? (TreeStacking.isZIndexAuto(box) ? 0 : TreeStacking.zIndex(box)) : 0;
         Fragment result;
         Memo[] kidMemos = NO_MEMOS;
@@ -284,7 +279,7 @@ public final class TreePainter {
             result = !drawn && after.length == 0 && ex == null && agg == Fragment.NO_KIDS ? Fragment.EMPTY
                     : new Fragment(box.n, own, after, drawn, kind, z, layer, BoxItemPainter::withLayer, ex, c, small, big, agg);
         }
-        lastMemo = new Memo(box.n, result, clip, parentId, box.x(), box.y(), pox, poy, canvas, parentDisplay, reusable, kidMemos);
+        lastMemo = new Memo(box.n, ctx, result, reusable, stacking.scrollInfosSince(scrollMark), kidMemos);
         return result;
     }
 
@@ -293,34 +288,6 @@ public final class TreePainter {
         if (touched == null) return true;
         HtmlNode h = box.node();
         return touched.contains(h) || ((h.isPseudoNode || box.anonymous()) && h.parent != null && touched.contains(h.parent));
-    }
-
-    /**
-     * 箱の項目が箱の入力（描画用の木の節）だけで決まるか（旧 {@code DisplayListBuilder.memoizable} と同じ除外）。表・フォームの部品・
-     * SVG・動画・{@code srcset} 付きの画像など、描画が別の資源や状態を読む箱は毎回描く。
-     */
-    private static boolean memoizable(PaintView box) {
-        String tag = box.node().tag;
-        if (tag == null) return false;
-        if (tag.indexOf('-') >= 0) return ReplacedElements.isHost(tag);
-        switch (tag) {
-            case "video", "audio", "svg", "canvas", "textarea", "select", "fieldset", "legend", "input", "button",
-                 "table", "caption", "thead", "tbody", "tfoot", "tr", "td", "th", "col", "colgroup" -> {
-                return false;
-            }
-            case "img" -> {
-                Map<String, String> attrs = box.node().attrs;
-                if (attrs.containsKey("srcset") || attrs.containsKey("sizes")) return false;
-                String src = Style.or(box.style().typed().rare.src, attrs.getOrDefault("src", ""));
-                if (com.nishiyu.enderframelib.core.raster.svg.SvgImage.looksLikeSvg(src)) return false;
-            }
-            default -> { }
-        }
-        if (box.collapsedBorders() != null || box.display() == null) return false;
-        return switch (box.display().inner()) {
-            case FLOW, FLOW_ROOT, FLEX, GRID, NONE -> true;
-            default -> false;
-        };
     }
 
     /** マスクの項目（レイヤーがマスクを求めるとき）と Top Layer の印（旧 {@code FragmentPaint.extras}。{@code ::backdrop} は新経路にまだ無い）。 */
@@ -336,9 +303,25 @@ public final class TreePainter {
         return mask == null && !hoist ? null : new Fragment.Extras(mask, hoist, null);
     }
 
-    /** 箱 1 つの記憶: 描いた文脈・部分木の結果・子の記憶（子の並びの位置）。前回の木の形のまま持つ。 */
-    private record Memo(PaintNode node, Fragment frag, ClipRect clip, String parentId, float ax, float ay, int pox, int poy, boolean canvas,
-                        LayoutBox.Display parentDisplay, boolean reusable, Memo[] kids) {
+    /**
+     * 箱の項目が節（{@link PaintNode}）の外から受け取る入力。親から渡る値なので値で照合する（record の等価。クリップは値の等価を持つ）。
+     * {@code x}・{@code y} は箱の絶対位置（スクロールと sticky の貼り付きを足した見え方の位置）、{@code originX}・{@code originY} は項目の
+     * 座標の原点にする節の位置（親相対の原点）、{@code scrollX}・{@code scrollY} は箱がスクロールコンテナなら自分のスクロールの位置
+     * （スクロールバーのつまみ・中身の節の基準。それ以外は 0）。
+     */
+    record Context(ClipRect clip, String parentId, float x, float y, int originX, int originY, boolean canvas,
+                   LayoutBox.Display parentDisplay, float scrollX, float scrollY) {
+        static Context of(PaintView box, ClipRect clip, String parentId, PaintView origin, boolean canvas, TreeStacking stacking) {
+            PaintView parent = box.paintParent();
+            boolean scrolls = box.isScrollContainer();
+            return new Context(clip, parentId, box.x(), box.y(), origin != null ? Math.round(origin.x()) : 0,
+                    origin != null ? Math.round(origin.y()) : 0, canvas, parent != null ? parent.display() : null,
+                    scrolls ? stacking.scrollState.getScrollX(box.node()) : 0f, scrolls ? stacking.scrollState.getScrollY(box.node()) : 0f);
+        }
+    }
+
+    /** 箱 1 つの記憶: 描いた文脈・部分木の結果・部分木の中身の節の記録（文書順）・子の記憶（子の並びの位置）。前回の木の形のまま持つ。 */
+    private record Memo(PaintNode node, Context ctx, Fragment frag, boolean reusable, ScrollContentInfo[] scrolls, Memo[] kids) {
         /** 子の記憶を、描画用の木の節と DOM の節（合成でない節）で引けるようにする。 */
         Map<Object, Memo> index() {
             if (kids.length == 0) return null;

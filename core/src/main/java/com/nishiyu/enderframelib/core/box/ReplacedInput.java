@@ -30,6 +30,13 @@ import java.util.List;
  */
 public record ReplacedInput(String tag, String type, int size, float width, float height, boolean pending, List<String> labels) {
 
+    /** {@link #of} の写しがビューポートの大きさに依るか（{@code img} の {@code srcset} は {@code sizes} と候補をビューポートで選ぶ）。 */
+    static boolean dependsOnViewport(HtmlNode n) {
+        if (n == null || n.nodeType != NodeType.ELEMENT || !ElementTraits.isImage(n.tag)) return false;
+        String srcset = n.attrs.get("srcset");
+        return srcset != null && !srcset.isBlank();
+    }
+
     /** 置換要素なら写しを作る（{@code button} は中身を持つので作らない）。そうでなければ null。 */
     static ReplacedInput of(HtmlNode n, float viewportW, float viewportH) {
         if (n.nodeType != NodeType.ELEMENT) return null;

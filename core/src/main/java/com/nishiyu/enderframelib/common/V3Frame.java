@@ -29,8 +29,10 @@ import java.util.Objects;
  * 描画用の木（{@link PaintTreeBuilder}）→ 表示リスト（{@link TreePainter}）。入口は台帳 1 本で、旧経路の再スタイル・位置の決め直し・
  * 文字の差分・部分構築の分かれ道は持たない。状態はこのビューに閉じる（プロセス共有はしない）。
  *
- * <p>スタイルの解き方（{@link StyleSource}）はビューポート・環境変数・規則の版を持つので、そのどれかが変わったら作り直して全体を組む。
- * それ以外のフレームは台帳に載った変化だけを、前回の箱の木・断片木・描画用の木・描画の記憶から増分で作る。</p>
+ * <p>スタイルの解き方（{@link StyleSource}）はビューポート・環境変数・規則の版を持つ。環境変数・規則・書体・装置の画素比が変わったら
+ * 作り直して全体を組む。ビューポートの大きさだけが変わったら解き方だけを差し替え（全ての要素を解き直すが、箱・断片・描画用の木は前回と
+ * 照合して使い回す。描画の記憶はビューポートに依るので捨てる）、それ以外のフレームは台帳に載った変化だけを、前回の箱の木・断片木・
+ * 描画用の木・描画の記憶から増分で作る。</p>
  */
 final class V3Frame {
     private FragmentPipeline pipeline;
@@ -45,8 +47,8 @@ final class V3Frame {
     private PaintNode root;
 
     /**
-     * 1 フレームを作る。{@code ledger} はこのフレームの凍結済みの台帳（null なら全体を作り直す）。ビューポート・環境変数・規則・書体・
-     * スクロールの状態の入れ物が前回と違えば、全体を作り直す。
+     * 1 フレームを作る。{@code ledger} はこのフレームの凍結済みの台帳（null なら全体を作り直す）。環境変数・規則・書体・装置の画素比・
+     * スクロールの状態の入れ物が前回と違えば、全体を作り直す。ビューポートの大きさだけの変化は増分で組む。
      *
      * <p>描画用の木が前回と同じ実体で、台帳が再スタイルとスクロールだけなら null を返す（前回の表示リストがスクロールの移動量を除いて
      * そのまま使える。描画器が木の外で読む DOM の値〔属性・文字〕の変化は台帳の別の種別で来るので、ここに入らない）。呼ぶ側は
@@ -54,8 +56,15 @@ final class V3Frame {
      */
     List<DisplayItem> frame(Document doc, ChangeLedger ledger, int w, int h, float devicePixelRatio, Map<String, String> envNow,
                             InteractionState state, ScrollState scrollState, FontResolver fontResolver) {
-        boolean rebuild = pipeline == null || w != width || h != height || doc.sheet != sheet || !Objects.equals(envNow, env)
+        boolean rebuild = pipeline == null || doc.sheet != sheet || !Objects.equals(envNow == null ? Map.of() : envNow, env)
                 || fontResolver != fonts || scrollState != scroll || Float.compare(devicePixelRatio, dpr) != 0;
+        boolean resized = !rebuild && (w != width || h != height);
+        if (resized) {
+            width = w;
+            height = h;
+            pipeline.restyleWith(new StyleSource(doc.sheet, state, env, w, h));
+            painter.setViewport(w, h);
+        }
         if (rebuild) {
             width = w;
             height = h;
@@ -76,7 +85,8 @@ final class V3Frame {
         long t0 = StageProfiler.begin(PipelineStage.PAINT_TREE);
         root = tree.build(frag, pipeline.boxRoot());
         StageProfiler.end(PipelineStage.PAINT_TREE, t0);
-        if (ledger != null && root == prev && onlyRestyleOrScroll(ledger)) return null;
+        // ビューポートが変われば木が同じでも描き直す（キャンバスの背景・固定配置・vw の描画だけの値）
+        if (ledger != null && !resized && root == prev && onlyRestyleOrScroll(ledger)) return null;
         return paint(ledger);
     }
 

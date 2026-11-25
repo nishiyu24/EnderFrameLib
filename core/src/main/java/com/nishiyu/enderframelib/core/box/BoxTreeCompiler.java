@@ -45,7 +45,9 @@ import java.util.Set;
 public final class BoxTreeCompiler {
     private static final int SELF_STYLE = 1, SELF_CHILDREN = 2, SELF_TEXT = 4;
 
-    private final StyleSource styles;
+    private StyleSource styles;
+    /** 前回のコンパイルで使った解き方（{@link #restyleWith} で替わったら次のコンパイルで全ての要素を解き直す）。 */
+    private StyleSource compiledWith;
     private BoxNode root;
 
     // ---- 1 回のコンパイルの間だけ使う（凍結した台帳から作る） ----
@@ -105,24 +107,79 @@ public final class BoxTreeCompiler {
     public BoxNode root() { return root; }
 
     /**
+     * スタイルの解き方を差し替える（ビューポートの大きさの変化: {@code vw} などの単位・メディアクエリ・置換要素の候補が変わる）。次の
+     * {@link #compile} は、掛かる規則が替わった（{@link StyleSource#sameRules} でない）なら全ての要素を、そうでなければビューポートに依る
+     * 要素（{@link #markViewportDependent}）だけを解き直す。どちらも前回の木と並走して、値が同じ群は前回のインスタンスへ寄せ、何も変わらない
+     * 箱は前回の参照のまま返す（下流のレイアウトのキャッシュが {@code ==} で当たる）。
+     */
+    public void restyleWith(StyleSource styles) {
+        this.styles = styles;
+    }
+
+    /**
      * 箱の木を作る。{@code ledger} は呼び出し側が凍結済みであること（この世代の変更を読む）。最初の呼び出し、根の節が
-     * 変わったとき、全体に効く世代は、全体を作り直す。
+     * 変わったとき、全体に効く世代は、全体を作り直す。解き方が前回と違えば（{@link #restyleWith}）その分を解き直す。
      */
     public BoxNode compile(HtmlNode domRoot, ChangeLedger ledger) {
         stats.reset();
         boolean full = readLedger(ledger) || root == null || root.node != domRoot;
-        stats.full = full;
         StyleSheet sheet = styles.sheet();
+        boolean resolved = !full && styles != compiledWith;
+        // カウンタ・capitalize の語の続きは文書順の状態を積み直すので、解き直すなら全体を作り直す（restyleContainers と同じ）
+        if (resolved && sheet != null && (usesCounters(sheet) || sheetUsesCapitalize)) full = true;
+        boolean rulesChanged = resolved && !styles.sameRules(compiledWith);
+        compiledWith = styles;
+        stats.full = full;
         counters = full && usesCounters(sheet) ? counterState : null;
         if (counters != null) counters.clear();
         if (sheet != null) counterStyles = com.nishiyu.enderframelib.core.css.CounterStyles.of(sheet.counterStyles);
+        if (resolved && !full) {
+            if (rulesChanged) {
+                touched.add(domRoot);
+                deep = 1; // 根から下の全ての要素を解き直す（restyleContainers の容器の部分木と同じ）
+            } else {
+                markViewportDependent(domRoot);
+            }
+        }
         try {
             root = compileNode(domRoot, Style.DEFAULT, full ? null : root, full, WritingModes.HORIZONTAL);
             return root;
         } finally {
+            deep = 0;
             self.clear();
             touched.clear();
             parentOfTouched.clear();
+        }
+    }
+
+    /**
+     * 掛かる規則が同じままビューポートの大きさだけが変わった: 前回の算出値がビューポートの単位を使った要素（派生の事実
+     * {@code StyleFacts.usesViewportUnits}）・ビューポートで候補を選ぶ置換要素（{@link ReplacedInput#dependsOnViewport}）と、ルート要素
+     * （{@code rem} の基準を解き方に覚えさせる）を、台帳の {@code STYLE} と同じく「自身が変わった節」にする。継承値が変われば子孫は
+     * 継承の打ち切りの規則で解き直される。
+     */
+    private void markViewportDependent(HtmlNode domRoot) {
+        for (HtmlNode c : domRoot.children) if (c.nodeType == NodeType.ELEMENT) markSelf(c, SELF_STYLE);
+        java.util.ArrayDeque<BoxNode> stack = new java.util.ArrayDeque<>();
+        stack.push(root);
+        while (!stack.isEmpty()) {
+            BoxNode b = stack.pop();
+            if (b.kind != BoxKind.TEXT && b.node != null && b.computed != null
+                    && (b.computed.facts.usesViewportUnits || ReplacedInput.dependsOnViewport(b.node))) {
+                markSelf(b.node.isPseudoNode && b.node.parent != null ? b.node.parent : b.node, SELF_STYLE);
+            }
+            BoxChildren kids = b.children;
+            for (int c = 0, cn = kids.chunkCount(); c < cn; c++) {
+                BoxChunk ch = kids.chunk(c);
+                for (int i = 0, n = ch.size(); i < n; i++) stack.push(ch.get(i));
+            }
+        }
+    }
+
+    private void markSelf(HtmlNode node, int bit) {
+        self.merge(node, bit, (a, b) -> a | b);
+        for (HtmlNode cur = node; cur != null && touched.add(cur); cur = cur.parent) {
+            if (cur.parent != null) parentOfTouched.add(cur.parent);
         }
     }
 

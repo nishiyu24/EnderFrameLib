@@ -165,6 +165,62 @@ class PaintTreeIncrementalTest {
         assertTrue(painter.reused() > 100, "使い回した部分木 " + painter.reused());
     }
 
+    private static final String CONTROLS_DOC = "<html><head><style>li:hover{color:#c00} .sc{height:60px;overflow:auto;border:1px solid #444}"
+            + " td{border:1px solid #888}</style></head><body><table id=t><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table>"
+            + "<form id=f><input id=in value=abc><select id=sel><option>x</option><option>y</option></select><textarea id=ta>t</textarea>"
+            + "<button id=btn>b</button></form><div class=sc id=sc>" + rows("div", "r", 30) + "</div><ul id=list>" + rows("li", "li", 40) + "</ul></body></html>";
+
+    private static String rows(String tag, String id, int n) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 1; i <= n; i++) sb.append('<').append(tag).append(" id=").append(id).append(i).append(">row ").append(i).append("</").append(tag).append('>');
+        return sb.toString();
+    }
+
+    /**
+     * 表・フォームの部品・スクロールコンテナ（スクロールバーと中身の節）も記憶する（記憶してよい箱をタグ名で決める一覧は無い。描画が DOM を
+     * 読む所は台帳で、スクロールの位置は文脈で照合する）。hover で作り直すのは触れた箱と祖先だけで、使い回したスクロールコンテナの中身の節の
+     * 記録も残る。
+     */
+    @Test
+    void controlsTablesAndScrollContainersAreReused() {
+        SpikeView v = new SpikeView(CONTROLS_DOC, 640, 480);
+        PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
+        com.nishiyu.enderframelib.core.layout.model.ScrollState scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
+        com.nishiyu.enderframelib.core.paint.TreePainter painter = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
+                v.doc.sheet.keyframes, scroll);
+        painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
+        int all = painter.built();
+        assertEquals(1, painter.scrollContents().size(), "中身を 1 つの節にまとめたスクロールコンテナ");
+        v.state.setHoveredNode(v.byId("li20"));
+        PaintNode tree = b.build(v.frame(), v.boxRoot);
+        List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> inc = painter.paint(tree, v.ledger());
+        assertTrue(painter.built() < 10, "作り直した箱 " + painter.built() + " / " + all);
+        assertEquals(new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh, v.doc.sheet.keyframes, scroll).paint(tree), inc);
+        assertEquals(1, painter.scrollContents().size(), "使い回したスクロールコンテナの中身の節の記録");
+    }
+
+    /** スクロールの位置は台帳を通らずに変わることがあるので、スクロールコンテナの記憶は自分のスクロールの位置を文脈として照合する。 */
+    @Test
+    void scrollContainerMemoFollowsTheScrollPosition() {
+        SpikeView v = new SpikeView(CONTROLS_DOC, 640, 480);
+        PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
+        com.nishiyu.enderframelib.core.layout.model.ScrollState scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
+        com.nishiyu.enderframelib.core.paint.TreePainter painter = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
+                v.doc.sheet.keyframes, scroll);
+        painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
+        int step = 0;
+        for (float y : new float[]{20f, 45f, 45f, 0f}) {
+            scroll.setScroll(v.byId("sc"), 0f, y);
+            v.state.setHoveredNode(v.byId("li" + (1 + step++ % 40))); // 台帳にはリストの hover だけが載る
+            PaintNode tree = b.build(v.frame(), v.boxRoot);
+            List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> inc = painter.paint(tree, v.ledger());
+            com.nishiyu.enderframelib.core.paint.TreePainter fresh = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
+                    v.doc.sheet.keyframes, scroll);
+            assertEquals(fresh.paint(tree), inc, "scrollY=" + y);
+            assertEquals(fresh.scrollContents(), painter.scrollContents(), "scrollY=" + y + " の中身の節の記録");
+        }
+    }
+
     private static final String[] PAINT = {"color:#a00", "background:#0a0", "opacity:.4", "outline:2px solid red", "border-color:blue",
             "text-decoration:underline", "z-index:2", "box-shadow:1px 1px 2px #000", ""};
 

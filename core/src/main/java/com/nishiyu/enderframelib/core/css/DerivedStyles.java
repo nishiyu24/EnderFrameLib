@@ -63,7 +63,7 @@ final class DerivedStyles {
         tbl.putById(CssPropertyIndex.DISPLAY, "inline-block");
         tbl.putById(CssPropertyIndex.WHITE_SPACE, "pre");
         tbl.putById(CssPropertyIndex.TEXT_TRANSFORM, "none");
-        return ComputedStyle.ofOwned(tbl, parent.fontSizePx(), parent.rootFontSizePx(), parent.typed());
+        return ComputedStyle.ofOwned(tbl, parent.fontSizePx(), parent.rootFontSizePx(), parent.typed(), false);
     }
 
     static ComputedStyle markerFromDeclared(ComputedStyle declared) {
@@ -92,7 +92,7 @@ final class DerivedStyles {
             if (grp != null) copyProps(root.typed(), tbl, grp);
             if (copyBoxSizes) copyProps(root.typed(), tbl, ORTHO_BOX_SIZES);
         }
-        return ComputedStyle.ofOwned(tbl, root.fontSizePx(), root.rootFontSizePx(), root.typed());
+        return ComputedStyle.ofOwned(tbl, root.fontSizePx(), root.rootFontSizePx(), root.typed(), false);
     }
 
     private static void copyProps(Style src, StyleTable dst, int[] ids) {

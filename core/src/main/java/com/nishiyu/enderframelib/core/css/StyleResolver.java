@@ -891,10 +891,10 @@ public class StyleResolver {
         Style p = parentStyle != null ? parentStyle : Style.DEFAULT;
         substituteVariables(style, rawStyle, sheet, env, p, typedMetrics);
         PropertyRegistry.expandShorthands(style);
-        ValueComputer.compute(style, new ValueComputer.Context(
-                p, parentFontSize, rootFontSize, viewportW, viewportH,
+        boolean viewport = style.anyValueDependsOnViewport(); // 解く前に見る（font-size などの vw は px に解かれて値から消える）
+        ValueComputer.compute(style, new ValueComputer.Context(p, parentFontSize, rootFontSize, viewportW, viewportH,
                 container.width(), container.height(), rootLineHeight));
-        return ComputedStyle.ofOwned(style, parentFontSize, rootFontSize, p);
+        return ComputedStyle.ofOwned(style, parentFontSize, rootFontSize, p, viewport);
     }
 
     /** 登録したカスタムプロパティの絶対化に使う、この要素のフォントサイズ（var() を含むなら親のまま）。 */

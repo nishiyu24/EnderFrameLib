@@ -84,7 +84,7 @@ public final class ComputedStyle {
         return new ComputedStyle(properties, own, rootFontSize);
     }
 
-    static ComputedStyle ofOwned(StyleTable owned, float parentFontSize, float rootFontSize, Style parent) {
+    static ComputedStyle ofOwned(StyleTable owned, float parentFontSize, float rootFontSize, Style parent, boolean readViewport) {
         float own = parentFontSize;
         String fontSize = owned.textById(CssPropertyIndex.FONT_SIZE);
         if (fontSize != null) {
@@ -96,7 +96,7 @@ public final class ComputedStyle {
             @Override public float fontSizePx() { return elFont; }
             @Override public float rootFontSizePx() { return rootFontSize; }
         };
-        return new ComputedStyle(Style.fromSource(src, owned.extras, owned.anyValueDependsOnViewport(), parent, owned.groupMask));
+        return new ComputedStyle(Style.fromSource(src, owned.extras, readViewport || owned.anyValueDependsOnViewport(), parent, owned.groupMask));
     }
 
     private static Style styleFromMap(Map<String, String> source, float elFont, float rootFont, Style parent) {
