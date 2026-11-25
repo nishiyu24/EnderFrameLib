@@ -5,7 +5,8 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.InheritedStyle;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
+import com.nishiyu.enderframelib.core.layout.PaintRun;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
@@ -22,16 +23,15 @@ import com.nishiyu.enderframelib.core.css.model.Visibility;
 /** {@link DisplayListBuilder} の部品群が共通で使う、状態を持たない道具（要素の追加・クリップ・属性の読み取りなど）。 */
 final class PaintSupport {
     /** flex / grid アイテムは位置指定が無くても z-index でコンテキストを作る（CSS Flexbox §5.4 / Grid §9.5）。 */
-    static boolean isFlexOrGridItem(LayoutBox box) {
-        if (box.parent == null || box.isAbsolute()) return false;
-        LayoutBox.Display.Inner inner = box.parent.display().inner();
-        return inner == LayoutBox.Display.Inner.FLEX || inner == LayoutBox.Display.Inner.GRID;
+    static boolean isFlexOrGridItem(PaintBox box) {
+        if (box.paintParent() == null || box.isAbsolute()) return false;
+        return box.inFlexOrGrid();
     }
 
     /** 中身ごと 1 つの単位として描くインラインレベルの箱（inline-block / inline-flex など）と flex / grid アイテム。 */
-    static boolean isAtomicInline(LayoutBox box) {
+    static boolean isAtomicInline(PaintBox box) {
         if (isFlexOrGridItem(box)) return true;
-        return box.display().isInlineLevel() && box.display().inner() != LayoutBox.Display.Inner.FLOW;
+        return box.atomicInline();
     }
 
     /**
@@ -39,28 +39,28 @@ final class PaintSupport {
      *
      * LIMITATION(制約): 表の行・列の {@code collapse} も hidden と同じで、場所を詰めない。README の "Not supported" に対応。
      */
-    static boolean isInvisible(LayoutBox box) {
-        return box.style.typed().inherited.visibility != Visibility.VISIBLE;
+    static boolean isInvisible(PaintBox box) {
+        return box.style().typed().inherited.visibility != Visibility.VISIBLE;
     }
 
     /**
      * {@code empty-cells: hide} で、枠線も背景も描かない空のセルか（CSS 2.2 §17.6.1.1）。
      * {@code border-collapse: separate} の表のセルだけで、中身が空白だけ（子孫に要素も語も無い）のもの。
      */
-    static boolean hidesEmptyCell(LayoutBox box) {
-        if (box.display() == null || box.display().inner() != LayoutBox.Display.Inner.TABLE_CELL || box.collapsedBorders() != null) return false;
-        String ec = box.style.typed().inheritedPaint.emptyCells;
+    static boolean hidesEmptyCell(PaintBox box) {
+        if (!box.tableCell() || box.collapsedBorders() != null) return false;
+        String ec = box.style().typed().inheritedPaint.emptyCells;
         if (ec == null || !"hide".equalsIgnoreCase(ec.trim())) return false;
         return hasNoContent(box);
     }
 
-    private static boolean hasNoContent(LayoutBox box) {
-        for (LayoutBox.InlineFragment f : box.inlineFragments) {
-            if (!f.isText() || !f.text.isBlank()) return false;
+    private static boolean hasNoContent(PaintBox box) {
+        for (PaintRun f : box.runs()) {
+            if (!f.isText() || !f.text().isBlank()) return false;
         }
-        for (LayoutBox c : box.children) {
-            if (c.display() != null && c.display().isNone()) continue;
-            if (c.node != null && c.node.tag != null && !c.node.tag.isEmpty() && !c.node.tag.startsWith("#")) return false;
+        for (PaintBox c : box.paintChildren()) {
+            if (c.displayNone()) continue;
+            if (c.node() != null && c.node().tag != null && !c.node().tag.isEmpty() && !c.node().tag.startsWith("#")) return false;
             if (!hasNoContent(c)) return false;
         }
         return true;
@@ -159,8 +159,8 @@ final class PaintSupport {
         return radius <= 0 ? 0 : Math.max(0, Math.round(radius + grow));
     }
 
-    static String partId(LayoutBox box, String id, int slot, String suffix) {
-        return box != null && box.node != null && id.equals(box.node.key()) ? box.node.partKey(slot, suffix) : id + suffix;
+    static String partId(PaintBox box, String id, int slot, String suffix) {
+        return box != null && box.node() != null && id.equals(box.node().key()) ? box.node().partKey(slot, suffix) : id + suffix;
     }
 
     private static final Object FONT_ATTRS_KEY = new Object();
@@ -169,8 +169,8 @@ final class PaintSupport {
      * 描画側が測定と同じ書体・字の位置を引けるように、書体の照合と字の送りに効く指定を載せる
      * （太さ・斜体・カーニング・字間）。算出スタイルだけで決まるため、不変マップをスタイルへメモ化する。
      */
-    static void putFontEvents(LayoutBox box, ItemProps events) {
-        putFontEvents(box.style, events);
+    static void putFontEvents(PaintBox box, ItemProps events) {
+        putFontEvents(box.style(), events);
     }
 
     /** 算出スタイルを直接渡す版（{@code ::first-line} の断片用）。 */

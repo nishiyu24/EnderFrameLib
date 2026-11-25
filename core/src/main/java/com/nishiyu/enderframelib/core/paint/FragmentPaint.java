@@ -366,7 +366,7 @@ final class FragmentPaint {
         }
         m.f0x = fx; m.f0y = fy;
         m.canvasSource = box == b.canvasBackgroundSource; m.interactive = box.hasInteractiveRules;
-        m.suppressShadow = b.suppressTextShadow; m.oneNode = order.scrollContentOf(box) != null;
+        m.suppressShadow = b.suppressTextShadow(); m.oneNode = order.scrollContentOf(box) != null;
         m.flexOrGridItem = PaintSupport.isFlexOrGridItem(box);
         m.flexOrGridContainer = isFlexOrGridContainer(box);
         LayoutBox flOwner = box.inlineFragments.isEmpty() ? null : box.inlineFragments.get(0).firstLineOwner;
@@ -446,7 +446,7 @@ final class FragmentPaint {
         if (!box.inlineFragments.isEmpty()) { LayoutBox.InlineFragment f0 = box.inlineFragments.get(0); fx = f0.x; fy = f0.y; }
         return Float.compare(m.f0x, fx) == 0 && Float.compare(m.f0y, fy) == 0
                 && m.canvasSource == (box == b.canvasBackgroundSource) && m.interactive == box.hasInteractiveRules
-                && m.suppressShadow == b.suppressTextShadow && m.placeholder == box.placeholderStyle
+                && m.suppressShadow == b.suppressTextShadow() && m.placeholder == box.placeholderStyle
                 && m.oneNode == (order.scrollContentOf(box) != null);
     }
 
@@ -569,7 +569,7 @@ final class FragmentPaint {
             lastHasFirstLine = box.firstLineStyle != null; lastKidsHaveScrolls = false;
             lastKidsSkipped = false; lastKidIndex = null; lastWasPillar2 = false; lastHasBuiltMemos = false;
             if (!drawn && after.length == 0 && ex == null) return Fragment.EMPTY;
-            return new Fragment(box, own, after, drawn, kind, z, layer, DisplayListBuilder::withLayer, ex, 0, NO_FRAGMENTS, null, Fragment.NO_KIDS);
+            return new Fragment(box, own, after, drawn, kind, z, layer, BoxItemPainter::withLayer, ex, 0, NO_FRAGMENTS, null, Fragment.NO_KIDS);
         }
 
         List<LayoutBox> ch = box.children;
@@ -666,7 +666,7 @@ final class FragmentPaint {
             lastAllKidsMemo = true; lastHasFirstLine = false; lastKidsHaveScrolls = false;
             lastKidsSkipped = true; lastKidIndex = m.kidIndex; lastWasPillar2 = true; lastDirtyCount = 0; lastHasBuiltMemos = false;
             if (!drawn && after.length == 0 && ex == null && m.frag.agg == Fragment.NO_KIDS) return Fragment.EMPTY;
-            return new Fragment(box, own, after, drawn, kind, z, layer, DisplayListBuilder::withLayer, ex,
+            return new Fragment(box, own, after, drawn, kind, z, layer, BoxItemPainter::withLayer, ex,
                     m.frag.kidCount, m.frag.smallKids, m.frag.bigKids, m.frag.agg);
         }
         for (int k = 0; k < dc; k++) if (db.boxes[k].isAbsolute()) return null;
@@ -740,7 +740,7 @@ final class FragmentPaint {
         lastAllKidsMemo = allMemo; lastHasFirstLine = hasFl; lastKidsHaveScrolls = kidsScrolls;
         lastKidsSkipped = true; lastKidIndex = m.kidIndex; lastWasPillar2 = true; lastDirtyCount = dc; lastHasBuiltMemos = false;
         if (!drawn && after.length == 0 && ex == null && nextAgg == Fragment.NO_KIDS) return Fragment.EMPTY;
-        return new Fragment(box, own, after, drawn, kind, z, layer, DisplayListBuilder::withLayer, ex,
+        return new Fragment(box, own, after, drawn, kind, z, layer, BoxItemPainter::withLayer, ex,
                 prevFrag.kidCount, null, nextBig, nextAgg);
     }
 
@@ -759,6 +759,6 @@ final class FragmentPaint {
         lastAllKidsMemo = allMemo; lastHasFirstLine = hasFl; lastKidsHaveScrolls = kidsScrolls;
         lastKidsSkipped = skipped; lastKidIndex = kIdx; lastWasPillar2 = wasPillar2; lastDirtyCount = dc; lastHasBuiltMemos = hasBuiltMemos;
         if (!drawn && after.length == 0 && ex == null && agg == Fragment.NO_KIDS) return Fragment.EMPTY;
-        return new Fragment(box, own, after, drawn, kind, z, layer, DisplayListBuilder::withLayer, ex, c, small, big, agg);
+        return new Fragment(box, own, after, drawn, kind, z, layer, BoxItemPainter::withLayer, ex, c, small, big, agg);
     }
 }

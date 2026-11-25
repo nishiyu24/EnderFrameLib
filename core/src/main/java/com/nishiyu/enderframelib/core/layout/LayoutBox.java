@@ -41,9 +41,8 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  * フィールドが public なのは、レンダラがこの結果を読み取る値オブジェクトだからで、
  * 書き換えてよいのはレイアウト中のエンジンだけ。
  */
-public class LayoutBox {
+public class LayoutBox extends PaintBox {
 
-    public final HtmlNode node;
     public ComputedStyle style;
     /** {@code display} を outer / inner に分けたもの。{@link #updateStyle} が算出スタイルから決める。 */
     Display display;
@@ -64,8 +63,6 @@ public class LayoutBox {
      * 匿名ブロック・匿名表ボックス・{@code display: contents} が作れなかった（軸 6）。
      */
     public final List<LayoutBox> elementChildren = new CompactList<>();
-    /** DOM に無い箱（匿名ブロック・匿名表ボックス・{@code ::marker}）。{@link #node} は持ち主に紐づけた合成ノード。 */
-    public final boolean isAnonymous;
 
     /**
      * 縦書きの根（{@code writing-mode: vertical-*} を持ち、親は横書き）。内容は {@link #isVerticalWrapper} の箱 1 つに包まれ、
@@ -123,7 +120,7 @@ public class LayoutBox {
     /** {@link #elementChildren} に疑似要素（{@code ::before}/{@code ::after}）の子を含むか。 */
     public boolean hasPseudoElementChild = false;
     /** 前回の {@link #buildLayoutTree} 等で集めたノード索引表（ルート箱が保持し、次の構築へ渡す）。 */
-    private ReusableTable reusableTable;
+    ReusableTable reusableTable;
     /** {@code restyleLayoutTree} が子孫のスタイルを更新したが、まだ {@code markLayoutChanges} を終えていない根か。 */
     public boolean hasUnmarkedChanges = false;
     /** {@code restyleLayoutTree} が構造変化（{@code BoxTreeBuilder} 再構築必須）を検出した根か。 */
@@ -714,8 +711,7 @@ public class LayoutBox {
     }
 
     private LayoutBox(HtmlNode node, ComputedStyle style, boolean anonymous) {
-        this.node = node;
-        this.isAnonymous = anonymous;
+        super(node, anonymous);
         updateStyle(style);
     }
 
@@ -886,11 +882,6 @@ public class LayoutBox {
         return measureMemo.blockChildFitWidth(this);
     }
 
-    /** 燃料切れのために前回の測定を使った回数の累計（診断・テスト用）。 */
-    public static long measureFuelReused() {
-        return MeasureMemo.fuelReused();
-    }
-
     /** 仮の測定を飛ばした回数（効き具合を測るテスト・診断用）。 */
     public static long tentativeSkipped() {
         return MeasureMemo.tentativeSkipped();
@@ -951,153 +942,11 @@ public class LayoutBox {
         PlacementMemo.finishResetPlacements(staleFrags);
     }
 
-    /**
-     * 前回の箱の木から、DOM の節ごとの箱を O(1) 配列で引ける索引表。
-     * 構築パス自身が次の構築用に埋めることで、再構築前の全木走査（{@code collectReusableBoxes}）と
-     * {@code IdentityHashMap} 確保を省く。
-     */
-    public static final class ReusableTable {
-        final com.nishiyu.enderframelib.core.kernel.memory.DocumentArena arena;
-        private LayoutBox[] byId;
-        private LayoutBox[] spareById;
-        private int maxUsedId = -1;
-        private java.util.IdentityHashMap<HtmlNode, LayoutBox> unindexed;
-
-        private ReusableTable(com.nishiyu.enderframelib.core.kernel.memory.DocumentArena arena,
-                              LayoutBox[] recycled, int cap) {
-            this.arena = arena;
-            if (arena != null) {
-                this.byId = (recycled != null && recycled.length >= cap)
-                        ? recycled : new LayoutBox[Math.max(64, cap)];
-            } else {
-                this.byId = null;
-            }
-        }
-
-        public static ReusableTable createForBuild(HtmlNode rootNode, ReusableTable previous) {
-            var arena = rootNode != null && rootNode.hasNodeId() ? rootNode.arena() : null;
-            int cap = arena != null ? Math.max(64, arena.highWater()) : 0;
-            LayoutBox[] spare = (previous != null && previous.arena == arena) ? previous.spareById : null;
-            if (previous != null && previous.arena == arena) previous.spareById = null;
-            return new ReusableTable(arena, spare, cap);
-        }
-
-        public boolean matchesRoot(HtmlNode rootNode) {
-            var rootArena = rootNode != null && rootNode.hasNodeId() ? rootNode.arena() : null;
-            return arena == rootArena;
-        }
-
-        public void putIfAbsent(HtmlNode node, LayoutBox box) {
-            if (node == null || box == null) return;
-            if (arena != null && node.hasNodeId() && node.arena() == arena) {
-                int id = node.nodeId();
-                if (id >= byId.length) {
-                    byId = java.util.Arrays.copyOf(byId, Math.max(byId.length * 2, id + 1));
-                }
-                if (byId[id] == null) {
-                    byId[id] = box;
-                    if (id > maxUsedId) maxUsedId = id;
-                }
-            } else {
-                if (unindexed == null) unindexed = new java.util.IdentityHashMap<>();
-                unindexed.putIfAbsent(node, box);
-            }
-        }
-
-        public LayoutBox take(HtmlNode node) {
-            if (node == null) return null;
-            if (arena != null && node.hasNodeId() && node.arena() == arena) {
-                int id = node.nodeId();
-                if (id < byId.length) {
-                    LayoutBox b = byId[id];
-                    if (b != null) {
-                        byId[id] = null;
-                        return b.node == node ? b : null;
-                    }
-                }
-                return null;
-            }
-            return unindexed != null ? unindexed.remove(node) : null;
-        }
-
-        public void remove(HtmlNode node) {
-            take(node);
-        }
-
-        /** 外さずに引く（部分構築が、辿らない部分木の箱を表に残したまま確かめる）。 */
-        public LayoutBox peek(HtmlNode node) {
-            if (node == null) return null;
-            if (arena != null && node.hasNodeId() && node.arena() == arena) {
-                int id = node.nodeId();
-                LayoutBox b = id < byId.length ? byId[id] : null;
-                return b != null && b.node == node ? b : null;
-            }
-            return unindexed != null ? unindexed.get(node) : null;
-        }
-
-        public void releaseAfterBuild(ReusableTable previous) {
-            if (previous == null || previous == this || previous.arena != this.arena) return;
-            if (previous.byId != null) {
-                if (previous.maxUsedId >= 0) {
-                    int limit = Math.min(previous.maxUsedId + 1, previous.byId.length);
-                    java.util.Arrays.fill(previous.byId, 0, limit, null);
-                    previous.maxUsedId = -1;
-                }
-                this.spareById = previous.byId;
-                previous.byId = null;
-            }
-            if (previous.unindexed != null) previous.unindexed.clear();
-        }
-    }
-
-    public void setReusableTable(ReusableTable table) {
-        this.reusableTable = table;
-    }
-
-    public static ReusableTable acquireReusableTable(LayoutBox rootBox, HtmlNode docRoot) {
-        if (rootBox == null) return null;
-        ReusableTable existing = rootBox.reusableTable;
-        rootBox.reusableTable = null;
-        if (existing != null && existing.matchesRoot(docRoot)) {
-            return existing;
-        }
-        ReusableTable collected = ReusableTable.createForBuild(docRoot, null);
-        collectReusableBoxes(rootBox, collected);
-        return collected;
-    }
-
     public boolean isInTableScope() {
         for (LayoutBox cur = this; cur != null; cur = cur.parent) {
             if (isTableBox(cur) || cur.measureMemo.everLaidOutAsTable()) return true;
         }
         return false;
-    }
-
-    /**
-     * 差分ビルド中に {@code box} を次フレーム用の再利用テーブルへ登録し、表スコープ（子孫を再利用不可にする境界）に入るかを返す。
-     */
-    public static boolean recordReusableForBuild(ReusableTable out, LayoutBox box) {
-        boolean table = isTableBox(box);
-        if (out != null && !box.isAnonymous && !box.node.isPseudoNode
-                && !isInternalTableBox(box)) {
-            out.putIfAbsent(box.node, box);
-        }
-        return table || box.measureMemo.everLaidOutAsTable();
-    }
-
-    private static void collectReusableBoxes(LayoutBox box, ReusableTable out) {
-        if (box.isAnonymous || box.node.isPseudoNode) return;
-        boolean table = isTableBox(box);
-        if (isInternalTableBox(box)) return;
-        out.putIfAbsent(box.node, box);
-        if (table || box.measureMemo.everLaidOutAsTable()) return;
-        List<LayoutBox> kids = box.elementChildren;
-        for (int i = 0, n = kids.size(); i < n; i++) collectReusableBoxes(kids.get(i), out);
-    }
-
-    /** 外側の table/inline-table 以外の表内部ボックス（行・セル・キャプション等）か。 */
-    public static boolean isInternalTableBox(LayoutBox box) {
-        return isTableBox(box) && box.display.inner() != Display.Inner.TABLE;
     }
 
     /** 前回か今、表のエンジンの書き込みを受けた（受けうる）箱か。匿名の箱や差分レイアウトで使い回すかどうかの判断に使う。 */
@@ -1540,13 +1389,31 @@ public class LayoutBox {
     public boolean subtreeHasContentAuto() { return subtreeHasContentAuto; }
     public float devicePixelRatio() { return devicePixelRatio; }
 
+    // ---- PaintBox（M2c ②: 箱 1 つを描く道具が読む口。旧経路の箱は自分の欄をそのまま返す） ----
+    @Override public ComputedStyle style() { return style; }
+    @Override public LayoutBox paintParent() { return parent; }
+    @Override public List<LayoutBox> paintChildren() { return children; }
+    @Override public List<InlineFragment> runs() { return inlineFragments; }
+    @Override public boolean interactiveRules() { return hasInteractiveRules; }
+    @Override public ComputedStyle firstLine() { return firstLineStyle; }
+    @Override public ComputedStyle placeholder() { return placeholderStyle; }
+
+    @Override
+    public int displayTraits() {
+        if (display == null) return 0;
+        Display.Inner inner = display.inner();
+        return (inner == Display.Inner.TABLE_CELL ? TABLE_CELL : 0) | (display.isNone() ? DISPLAY_NONE : 0)
+                | (display.isInlineLevel() && inner != Display.Inner.FLOW ? ATOMIC_INLINE : 0)
+                | (inner == Display.Inner.FLEX || inner == Display.Inner.GRID ? FLEX_OR_GRID : 0);
+    }
+
     /** 描画パイプラインからの DPI スケール更新用。 */
     public void setDevicePixelRatio(float dpr) {
         this.devicePixelRatio = dpr;
     }
 
     /** インライン整形で 1 行に置かれた断片（テキスト 1 語、インラインブロック 1 つ、またはインラインボックスの 1 行分）。 */
-    public static class InlineFragment {
+    public static class InlineFragment implements PaintRun {
         public LayoutBox box;
         public float x, y, w, h;
         /**
@@ -1567,6 +1434,18 @@ public class LayoutBox {
         /** 1 行目の断片に適用された {@code ::first-line} の実効算出スタイル（2 行目以降は null）。 */
         public ComputedStyle firstLineStyle;
         public LayoutBox firstLineOwner;
+
+        @Override public float x() { return x; }
+        @Override public float y() { return y; }
+        @Override public float w() { return w; }
+        @Override public float h() { return h; }
+        @Override public float baseline() { return baseline; }
+        @Override public String text() { return text; }
+        @Override public boolean startEdge() { return startEdge; }
+        @Override public boolean endEdge() { return endEdge; }
+        @Override public ComputedStyle firstLineStyleFor(PaintBox target) {
+            return effectiveFirstLineStyle(target instanceof LayoutBox b ? b : null);
+        }
 
         /** {@code ::first-line} 適用時の実効スタイル（ペイントのみの変化を再レイアウトなしで反映する）。 */
         public ComputedStyle effectiveFirstLineStyle(LayoutBox target) {

@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.css.VisualStyle;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.media.ImageChoice;
 import com.nishiyu.enderframelib.core.media.ImageSources;
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -323,7 +323,7 @@ public final class BoxDecorations {
     }
 
     /** {@code border-box} / {@code padding-box} / {@code content-box} の矩形。 */
-    public static Rect boxArea(LayoutBox box, String which) {
+    public static Rect boxArea(PaintBox box, String which) {
         return boxArea(box.x(), box.y(), box.w(), box.h(), box.bL(), box.bT(), box.bR(), box.bB(),
                 box.pL(), box.pT(), box.pR(), box.pB(), which);
     }
@@ -349,7 +349,7 @@ public final class BoxDecorations {
 
     private record ParsedPosition(String hEdge, String hOff, String vEdge, String vOff) {}
 
-    public static List<Rect> tiles(BackgroundLayer layer, LayoutBox box, int[] intrinsic, float rootW, float rootH,
+    public static List<Rect> tiles(BackgroundLayer layer, PaintBox box, int[] intrinsic, float rootW, float rootH,
                                    float fontSize, float rootFontSize) {
         return tiles(layer, boxArea(box, layer.origin()), boxArea(box, layer.clip()),
                 intrinsic, rootW, rootH, fontSize, rootFontSize);

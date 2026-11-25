@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.paint;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CustomProperties;
 import com.nishiyu.enderframelib.core.css.Style;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.HashMap;
@@ -399,8 +399,8 @@ final class ItemProps {
     private static final String[] NO_HANDLERS = new String[0];
 
     /** スタイルの {@code on*} の名前（小文字）と値を {@code [名前, 値, 名前, 値, …]} で。 */
-    private static String[] styleHandlersOf(LayoutBox box) {
-        CustomProperties custom = box.style.typed().custom;
+    private static String[] styleHandlersOf(PaintBox box) {
+        CustomProperties custom = box.style().typed().custom;
         if (custom == null) return NO_HANDLERS;
         java.util.List<String> out = null;
         for (Map.Entry<String, String> entry : custom.asMap().entrySet()) {
@@ -414,26 +414,26 @@ final class ItemProps {
         return out == null ? NO_HANDLERS : out.toArray(new String[0]);
     }
 
-    static ItemProps forParts(LayoutBox box, String id, TransitionSpec transSpec) {
+    static ItemProps forParts(PaintBox box, String id, TransitionSpec transSpec) {
         return populateForParts(new ItemProps(), box, id, transSpec);
     }
 
-    static ItemProps populateForParts(ItemProps partsEvents, LayoutBox box, String id, TransitionSpec transSpec) {
+    static ItemProps populateForParts(ItemProps partsEvents, PaintBox box, String id, TransitionSpec transSpec) {
         return populateForParts(partsEvents, box, id, transSpec, null);
     }
 
     /** @param prevAttrs 前に出した部品の属性（無ければ null）。同じ値なら属性の表を作り直さず使い回す。 */
-    static ItemProps populateForParts(ItemProps partsEvents, LayoutBox box, String id, TransitionSpec transSpec,
+    static ItemProps populateForParts(ItemProps partsEvents, PaintBox box, String id, TransitionSpec transSpec,
                                       Map<String, String> prevAttrs) {
         partsEvents.reset();
         partsEvents.reuseAttrs(prevAttrs);
-        long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.paintHandle()) : 0L;
+        long nodeKey = box.node() != null ? DisplayItem.nodeKeyOf(box.node().paintHandle()) : 0L;
         partsEvents.parentId(id, nodeKey);
         applyTransitionEvents(partsEvents, transSpec);
-        String fontFamily = box.style.typed().inherited.fontFamily;
+        String fontFamily = box.style().typed().inherited.fontFamily;
         if (fontFamily != null) partsEvents.fontFamily(fontFamily);
         putFontEvents(box, partsEvents);
-        Map<String, String> nodeAttrs = box.node.attrs;
+        Map<String, String> nodeAttrs = box.node().attrs;
         if (!nodeAttrs.isEmpty()) {
             if (nodeAttrs.containsKey("title")) partsEvents.title(nodeAttrs.get("title"));
             else if (nodeAttrs.containsKey("data-tooltip")) partsEvents.title(nodeAttrs.get("data-tooltip"));
@@ -450,12 +450,12 @@ final class ItemProps {
         Overflow overflowY = ax.overflowY();
         boolean isScrollable = overflowX == Overflow.SCROLL || overflowX == Overflow.AUTO
                 || overflowY == Overflow.SCROLL || overflowY == Overflow.AUTO
-                || "root".equals(box.node.tag) || "html".equals(box.node.tag) || "body".equals(box.node.tag);
+                || "root".equals(box.node().tag) || "html".equals(box.node().tag) || "body".equals(box.node().tag);
         if (isScrollable) {
             partsEvents.scroll(box.scrollWidth(), box.scrollHeight());
         }
 
-        if (box.node.hasEventAttributes()) {
+        if (box.node().hasEventAttributes()) {
             nodeAttrs.forEach((k, v) -> {
                 if (k != null && k.regionMatches(true, 0, "on", 0, 2)) {
                     partsEvents.put(k.toLowerCase(Locale.ROOT), v);
@@ -463,15 +463,15 @@ final class ItemProps {
             });
         }
         // スタイルの on* は算出スタイルだけで決まる。全プロパティを走査するので、スタイルごとに 1 回だけ集める
-        String[] styleHandlers = (String[]) box.style.paintMemo(STYLE_HANDLERS, k -> styleHandlersOf(box));
+        String[] styleHandlers = (String[]) box.style().paintMemo(STYLE_HANDLERS, k -> styleHandlersOf(box));
         for (int i = 0; i < styleHandlers.length; i += 2) partsEvents.put(styleHandlers[i], styleHandlers[i + 1]);
 
-        String tag = box.node.tag;
+        String tag = box.node().tag;
         if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isClickActivated(tag) && !partsEvents.containsKey("onclick")) {
             partsEvents.put("onclick", id);
         }
-        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isLabel(tag) && box.node.attrs.containsKey("for") && !partsEvents.containsKey("onclick")) {
-            partsEvents.put("onclick", "label_for:" + box.node.attrs.get("for"));
+        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isLabel(tag) && box.node().attrs.containsKey("for") && !partsEvents.containsKey("onclick")) {
+            partsEvents.put("onclick", "label_for:" + box.node().attrs.get("for"));
         }
         return partsEvents;
     }

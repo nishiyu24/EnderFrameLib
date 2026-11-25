@@ -12,7 +12,7 @@ import com.nishiyu.enderframelib.core.css.model.KeyframeBlock;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.model.EasingFunction;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.css.AnimationParser;
 import com.nishiyu.enderframelib.core.css.AnimationTiming;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
@@ -100,8 +100,8 @@ final class BoxAnimation {
     static final TransitionSpec NONE_TRANSITION = new TransitionSpec(0, 0, EasingFunction.DEFAULT_EASING, "all");
 
     /** 箱の算出値の {@code translate} / {@code rotate} / {@code scale} / {@code transform} を宣言順に合成して {@code {tx, ty, sx, sy, rot}} にする。 */
-    float[] transformOf(LayoutBox box) {
-        Style st = box.style.typed();
+    float[] transformOf(PaintBox box) {
+        Style st = box.style().typed();
         VisualStyle v = st.visual;
         String tr = v.translate, rot = v.rotate, sc = v.scale, tf = v.transform;
         if ((tr == null || tr.isEmpty()) && (rot == null || rot.isEmpty())
@@ -351,15 +351,15 @@ final class BoxAnimation {
      * 何が壊れていたか: 文字の DisplayItem には文字ノード自身のアニメーション（常に none）しか載せていなかったので、
      * {@code <span style="animation: kfTextFlash ...">} の文字色が変わらなかった。
      */
-    AnimationSpec textColorAnimation(LayoutBox text, AnimationSpec own) {
+    AnimationSpec textColorAnimation(PaintBox text, AnimationSpec own) {
         AnimationSpec colorAnim = own.withChannels(AnimationSpec.CH_COLOR);
         if (!colorAnim.isEmpty()) return colorAnim;
-        int inherited = text.style.typed().inheritedPaint.color;
-        for (LayoutBox a = text.parent; a != null && a.style != null; a = a.parent) {
-            Style as = a.style.typed();
+        int inherited = text.style().typed().inheritedPaint.color;
+        for (PaintBox a = text.paintParent(); a != null && a.style() != null; a = a.paintParent()) {
+            Style as = a.style().typed();
             if (as.inheritedPaint.color != inherited) break;
             if (as.visual.animation != null || as.visual.animationName != null) {
-                AnimationSpec anim = parseAnimationDef(a.style, a.w(), a.h(), as.inheritedPaint.color, 0).withChannels(AnimationSpec.CH_COLOR);
+                AnimationSpec anim = parseAnimationDef(a.style(), a.w(), a.h(), as.inheritedPaint.color, 0).withChannels(AnimationSpec.CH_COLOR);
                 if (!anim.isEmpty()) return anim;
             }
             // 祖先の要素が自分の色を宣言していれば、その上の祖先の色は継承されない
@@ -369,9 +369,9 @@ final class BoxAnimation {
     }
 
     /** 親と違う色を持っている（= 自分で color を宣言した）か。 */
-    static boolean declaresOwnColor(LayoutBox box) {
-        return box.parent != null && box.parent.style != null
-                && box.style.typed().inheritedPaint.color != box.parent.style.typed().inheritedPaint.color;
+    static boolean declaresOwnColor(PaintBox box) {
+        return box.paintParent() != null && box.paintParent().style() != null
+                && box.style().typed().inheritedPaint.color != box.paintParent().style().typed().inheritedPaint.color;
     }
 
     record TransitionSpec(int durationMs, int delayMs, String easing, String property) {}

@@ -104,8 +104,8 @@ final class RenderTreeBuilder {
                                              Map<String, String> env, int force,
                                              float parentFontSize, RenderPipeline.StyleScope scope, InteractionState interactionState,
                                              boolean siblingInvalidation,
-                                             LayoutBox.ReusableTable prevReusable,
-                                             LayoutBox.ReusableTable nextReusable,
+                                             com.nishiyu.enderframelib.core.layout.ReusableTable prevReusable,
+                                             com.nishiyu.enderframelib.core.layout.ReusableTable nextReusable,
                                              boolean inTableScope,
                                              LayoutBox directPrev,
                                              ContainerBox parentSizeContainer, boolean ancestorHasMoving) {
@@ -117,8 +117,8 @@ final class RenderTreeBuilder {
                                              Map<String, String> env, int force,
                                              float parentFontSize, RenderPipeline.StyleScope scope, InteractionState interactionState,
                                              boolean siblingInvalidation,
-                                             LayoutBox.ReusableTable prevReusable,
-                                             LayoutBox.ReusableTable nextReusable,
+                                             com.nishiyu.enderframelib.core.layout.ReusableTable prevReusable,
+                                             com.nishiyu.enderframelib.core.layout.ReusableTable nextReusable,
                                              boolean inTableScope,
                                              LayoutBox directPrev,
                                              ContainerBox parentSizeContainer, boolean ancestorHasMoving,
@@ -132,8 +132,8 @@ final class RenderTreeBuilder {
                                              Map<String, String> env, int force,
                                              float parentFontSize, RenderPipeline.StyleScope scope, InteractionState interactionState,
                                              boolean siblingInvalidation,
-                                             LayoutBox.ReusableTable prevReusable,
-                                             LayoutBox.ReusableTable nextReusable,
+                                             com.nishiyu.enderframelib.core.layout.ReusableTable prevReusable,
+                                             com.nishiyu.enderframelib.core.layout.ReusableTable nextReusable,
                                              boolean inTableScope,
                                              LayoutBox directPrev,
                                              ContainerBox parentSizeContainer, boolean ancestorHasMoving,
@@ -244,7 +244,7 @@ final class RenderTreeBuilder {
                     && childForce == RenderPipeline.FORCE_NONE && !childForceIfInherits;
             if (!deferClear) box.elementChildren.clear();
             box.refreshStyle(computed);
-            if (box.display().isNone() || LayoutBox.isInternalTableBox(box)) {
+            if (box.display().isNone() || com.nishiyu.enderframelib.core.layout.ReusableTable.isInternalTableBox(box)) {
                 box = null;
                 prevBefore = null;
                 prevAfter = null;
@@ -259,12 +259,12 @@ final class RenderTreeBuilder {
         }
         // 表のエンジンは中の箱へ直接書き込むので、表の中は作り直す。display: none の部分木は測られないので、
         // 使い回すと前回の寸法が残る（新しく作った箱は 0）。コンテナクエリの寸法などが読むので作り直す
-        boolean entersTable = LayoutBox.recordReusableForBuild(inTableScope ? null : nextReusable, box);
+        boolean entersTable = com.nishiyu.enderframelib.core.layout.ReusableTable.record(inTableScope ? null : nextReusable, box);
         if (partial != null) partial.visited(box);
         boolean childInTableScope = inTableScope || entersTable;
         boolean stopChildReuse = childInTableScope || box.display().isNone();
-        LayoutBox.ReusableTable childPrevReusable = stopChildReuse ? null : prevReusable;
-        LayoutBox.ReusableTable childNextReusable = childInTableScope ? null : nextReusable;
+        com.nishiyu.enderframelib.core.layout.ReusableTable childPrevReusable = stopChildReuse ? null : prevReusable;
+        com.nishiyu.enderframelib.core.layout.ReusableTable childNextReusable = childInTableScope ? null : nextReusable;
         box.hasInteractiveRules = hasInteractive;
         boolean selfOrAncestorMoving = stampMoving(box, computed, ancestorHasMoving);
         // 持ち主のスタイルのキャッシュが有効なら、状態も祖先・兄弟も前回のままなので疑似要素の規則の当たり方も前回のまま。

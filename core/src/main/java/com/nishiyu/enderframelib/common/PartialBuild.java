@@ -32,13 +32,13 @@ import java.util.Set;
  */
 final class PartialBuild {
     private final ChangeLedger ledger;
-    private final LayoutBox.ReusableTable table;
+    private final com.nishiyu.enderframelib.core.layout.ReusableTable table;
     /** 今回辿った（作り直した・使い回して辿った）節の箱。 */
     private final Map<HtmlNode, LayoutBox> visited = new IdentityHashMap<>();
     /** 触れられた親ごとの子の差分 {前の件数, 後ろの件数}〔{@link #splitKids}。そのフレームの中だけ〕。 */
     private final Map<LayoutBox, int[]> splits = new IdentityHashMap<>();
 
-    private PartialBuild(ChangeLedger ledger, LayoutBox.ReusableTable table) {
+    private PartialBuild(ChangeLedger ledger, com.nishiyu.enderframelib.core.layout.ReusableTable table) {
         this.ledger = ledger;
         this.table = table;
     }
@@ -52,7 +52,7 @@ final class PartialBuild {
         if (ledger.frozenOverflow() || ledger.frozenSize() == 0 || ledger.frozenNodeless()) return null;
         if (doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries() || prev.subtreeHasContentAuto()) return null;
         if (doc.authorCss != null && (doc.authorCss.contains("counter") || doc.authorCss.contains("quote"))) return null;
-        LayoutBox.ReusableTable table = LayoutBox.acquireReusableTable(prev, doc.root);
+        com.nishiyu.enderframelib.core.layout.ReusableTable table = com.nishiyu.enderframelib.core.layout.ReusableTable.acquire(prev, doc.root);
         try {
             if (table == null || table.peek(doc.root) != prev) return null;
             st.bindStyleSheet(doc.sheet);
@@ -76,7 +76,7 @@ final class PartialBuild {
             }
             return root;
         } finally {
-            prev.setReusableTable(table);
+            com.nishiyu.enderframelib.core.layout.ReusableTable.attach(prev, table);
         }
     }
 
@@ -98,7 +98,7 @@ final class PartialBuild {
      * {@code node} の部分木を辿らず、前回の箱をそのまま返せるなら、その箱。返せなければ null。
      * 台帳に触れられておらず、スタイルの記憶が有効で、表の外で、前回の箱が表にある箱だけ。
      */
-    LayoutBox keep(HtmlNode node, LayoutBox.ReusableTable prev, boolean ancestorMoving, ComputedStyle computed) {
+    LayoutBox keep(HtmlNode node, com.nishiyu.enderframelib.core.layout.ReusableTable prev, boolean ancestorMoving, ComputedStyle computed) {
         return prev == null || ledger.touches(node) ? null : intact(prev.peek(node), ancestorMoving, computed);
     }
 
@@ -107,7 +107,7 @@ final class PartialBuild {
     }
 
     private static LayoutBox intact(LayoutBox box, boolean ancestorMoving, ComputedStyle computed) {
-        if (box == null || LayoutBox.isInternalTableBox(box) || box.touchedByTableEngine()) return null;
+        if (box == null || com.nishiyu.enderframelib.core.layout.ReusableTable.isInternalTableBox(box) || box.touchedByTableEngine()) return null;
         // 番号つきのリスト項目は、兄弟の増減で印の番号が変わる（番号を使わない none・disc・circle・square は兄弟に依らない）
         if (box.display().listItem() && !unnumbered(com.nishiyu.enderframelib.core.css.Style.or(box.style.typed().inherited.listStyleType, "disc"))) return null;
         return box.movingStamped && box.selfOrAncestorMoving == (ancestorMoving || PaintOrder.hasMovingProps(computed)) ? box : null;

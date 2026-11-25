@@ -37,25 +37,25 @@ class MeasureFuelGuardTest {
         // 実物（WPT）。以前はレイアウトが終わらなかった（W9 燃料導入時は 66,800 測定 / 燃料 31 回）
         String html = java.nio.file.Files.readString(java.nio.file.Path.of(
                 "src/test/resources/wpt/reftests/css/css-flexbox/flexbox-justify-content-horiz-001b.xhtml"));
-        long before = LayoutBox.measureFuelReused();
+        long before = MeasureMemo.fuelReused();
         long mBefore = LayoutBox.measurementsComputed();
         SoftwareRendering.displayList(html, 800, 600, FontResolver.FALLBACK);
         long measured = LayoutBox.measurementsComputed() - mBefore;
-        assertEquals(before, LayoutBox.measureFuelReused(), "W9b: 燃料は 0 であるべき");
+        assertEquals(before, MeasureMemo.fuelReused(), "W9b: 燃料は 0 であるべき");
         assertTrue(measured < 1000, "W9b: 測定回数が線形で収束すべき（実測=" + measured + "）");
     }
 
     @Test
     @Timeout(30)
     void nestedFloatFlexScalesLinearlyAndMatchesUnreused() {
-        long f0 = LayoutBox.measureFuelReused();
+        long f0 = MeasureMemo.fuelReused();
         long m0 = LayoutBox.measurementsComputed();
         SoftwareRendering.displayList(nestedFloatFlex("flex-start", 12), 800, 600, FontResolver.FALLBACK);
         long m12 = LayoutBox.measurementsComputed() - m0;
         long m1 = LayoutBox.measurementsComputed();
         SoftwareRendering.displayList(nestedFloatFlex("flex-start", 24), 800, 600, FontResolver.FALLBACK);
         long m24 = LayoutBox.measurementsComputed() - m1;
-        assertEquals(f0, LayoutBox.measureFuelReused(), "深い入れ子 float+flex でも燃料は 0");
+        assertEquals(f0, MeasureMemo.fuelReused(), "深い入れ子 float+flex でも燃料は 0");
         assertTrue(m24 <= m12 * 3, "深さ 12 -> 24 で指数爆発しない: m12=" + m12 + ", m24=" + m24);
 
         // 先立つ float がある非 BFC ブロック（hadIncomingFloats=true）や非 BFC の空フローを含む入れ子で、再利用 OFF と結果一致
@@ -143,11 +143,11 @@ class MeasureFuelGuardTest {
 
     @Test
     void ordinaryDocumentsNeverRunOutOfFuel() {
-        long before = LayoutBox.measureFuelReused();
+        long before = MeasureMemo.fuelReused();
         StringBuilder sb = new StringBuilder("<html><body>");
         for (int i = 0; i < 2000; i++) sb.append("<div style='display:flex;gap:4px'><span>item ").append(i).append("</span><div style='flex:1'>x</div></div>");
         SoftwareRendering.displayList(sb.append("</body></html>").toString(), 800, 600, FontResolver.FALLBACK);
         SoftwareRendering.displayList(nestedFloatFlex("flex-start", 8), 800, 600, FontResolver.FALLBACK);
-        assertEquals(before, LayoutBox.measureFuelReused(), "普通の文書・浅い入れ子では前回の測定へ落とさない");
+        assertEquals(before, MeasureMemo.fuelReused(), "普通の文書・浅い入れ子では前回の測定へ落とさない");
     }
 }

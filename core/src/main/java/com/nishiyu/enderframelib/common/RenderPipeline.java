@@ -151,8 +151,8 @@ public class RenderPipeline {
 
         LayoutBox rootBox = incremental ? previousRoot : null;
         for (int settle = 0; settle <= MAX_CONTAINER_PASSES; settle++) {
-            LayoutBox.ReusableTable prevReusable = incremental ? LayoutBox.acquireReusableTable(rootBox, doc.root) : null;
-            LayoutBox.ReusableTable nextReusable = LayoutBox.ReusableTable.createForBuild(doc.root, prevReusable);
+            com.nishiyu.enderframelib.core.layout.ReusableTable prevReusable = incremental ? com.nishiyu.enderframelib.core.layout.ReusableTable.acquire(rootBox, doc.root) : null;
+            com.nishiyu.enderframelib.core.layout.ReusableTable nextReusable = com.nishiyu.enderframelib.core.layout.ReusableTable.createForBuild(doc.root, prevReusable);
             stats().boxes = stats().restyled = stats().reused = 0;
             stats().allocResolve = stats().allocCompute = stats().allocAnimated = 0;
             long tA = Clock.SYSTEM.nanos();
@@ -170,7 +170,7 @@ public class RenderPipeline {
                 StageProfiler.end(PipelineStage.STYLE_BUILD, profBuild);
             }
             nextReusable.releaseAfterBuild(prevReusable);
-            rootBox.setReusableTable(nextReusable);
+            com.nishiyu.enderframelib.core.layout.ReusableTable.attach(rootBox, nextReusable);
             rootBox.positionTryRules = doc.sheet.positionTryRules;
             long tB = Clock.SYSTEM.nanos();
             long aB = track ? threadAllocatedBytes() : 0;
