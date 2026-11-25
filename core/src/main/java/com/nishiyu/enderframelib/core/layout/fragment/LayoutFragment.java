@@ -40,6 +40,11 @@ public final class LayoutFragment {
      * NaN なら中の行から求める（{@link InlineFlow#baselineOf}）。
      */
     public final float baseline;
+    /**
+     * この断片の部分木が置いた float の除外領域（自分の border-box 基準）。独立した整形コンテキストを作らないブロックだけが持ち、
+     * 親が後ろの兄弟に避けさせる（{@link Floats}）。無ければ {@link Floats.Space#EMPTY}。
+     */
+    final Floats.Space floatsOut;
 
     LayoutFragment(BoxNode box, ConstraintSpace space, float width, float height, float marginLeft,
                    float topPos, float topNeg, float bottomPos, float bottomNeg, float insetLeft, float insetTop,
@@ -53,6 +58,15 @@ public final class LayoutFragment {
                    float topPos, float topNeg, float bottomPos, float bottomNeg, float insetLeft, float insetTop,
                    boolean collapseThrough, ChunkedFlow flow, LineFragment[] lines, OutOfFlow.Pending[] pending,
                    PlacedFragment[] oof, float baseline) {
+        this(box, space, width, height, marginLeft, topPos, topNeg, bottomPos, bottomNeg, insetLeft, insetTop, collapseThrough,
+                flow, lines, pending, oof, baseline, Floats.Space.EMPTY);
+    }
+
+    LayoutFragment(BoxNode box, ConstraintSpace space, float width, float height, float marginLeft,
+                   float topPos, float topNeg, float bottomPos, float bottomNeg, float insetLeft, float insetTop,
+                   boolean collapseThrough, ChunkedFlow flow, LineFragment[] lines, OutOfFlow.Pending[] pending,
+                   PlacedFragment[] oof, float baseline, Floats.Space floatsOut) {
+        this.floatsOut = floatsOut;
         this.box = box;
         this.space = space;
         this.width = width;

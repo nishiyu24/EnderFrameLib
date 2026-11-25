@@ -30,6 +30,8 @@ public final class FlowChunk {
      * 余白の領域の上端が基準で、親が先頭の余白を自分と相殺するかで最終の位置が変わる（{@link ChunkedFlow#y}）。
      */
     final int leadCount;
+    /** 子のどれかが float を外へ返すか（{@link LayoutFragment#floatsOut}。ブロックだけの流れはこのとき混在の流れで並べ直す）。 */
+    final boolean exportsFloats;
 
     FlowChunk(BoxChunk source, ConstraintSpace space, LayoutFragment[] frags, float[] x, float[] y, float height,
               float leadPos, float leadNeg, float trailPos, float trailNeg, boolean through, LayoutFragment[][] slots,
@@ -48,6 +50,14 @@ public final class FlowChunk {
         this.slots = slots;
         this.pending = pending;
         this.leadCount = leadCount;
+        boolean ex = false;
+        for (LayoutFragment f : frags) {
+            if (f != null && !f.floatsOut.isEmpty()) {
+                ex = true;
+                break;
+            }
+        }
+        this.exportsFloats = ex;
     }
 
     /** この制約で並べた、このチャンクの結果か。 */

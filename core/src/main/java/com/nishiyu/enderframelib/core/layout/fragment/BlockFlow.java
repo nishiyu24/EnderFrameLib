@@ -65,6 +65,10 @@ final class BlockFlow implements FormattingEngine {
         boolean collapseBottom = !root && g.pB == 0 && g.bB == 0 && heightAuto;
         // 文書の根の子（html）の % の高さの基準は初期包含ブロック（ビューポート）の高さ（CSS 2 §10.5）
         float childPct = node.node.parent == null ? space.percentHeightBase : heightAuto ? Float.NaN : Math.max(0, fixedH - g.vdec() - spill);
+        // 同じ BFC の外の float（親が渡す。独立した整形コンテキストの根は受け取らない）を内容ボックス基準へ
+        Floats.Space inherited = root || text || space.exclusions.isEmpty() ? Floats.Space.EMPTY
+                : space.exclusions.translate(-(ml + g.bL + g.pL), -(g.bT + g.pT + spill));
+        Floats.Space floatsOut = Floats.Space.EMPTY;
 
         BoxChildren kids = node.flow;
         LineFragment[] lines = null;
@@ -73,7 +77,7 @@ final class BlockFlow implements FormattingEngine {
         List<OutOfFlow.Pending> pend = new ArrayList<>();
         float insetL = g.bL + g.pL, insetT = g.bT + g.pT + spill;
         if (legend == null && (text || (kids.hasInline() && !kids.hasBlock()))) {
-            InlineFlow.Result r = InlineFlow.layout(text ? List.of(node) : kids.toList(), st, cw, prior, s);
+            InlineFlow.Result r = InlineFlow.layout(text ? List.of(node) : kids.toList(), st, cw, prior, inherited, 0, s);
             lines = r.lines().length > 0 ? r.lines() : null;
             a = new Assembled(r.height());
             for (OutOfFlow.Pending p : r.pending()) pend.add(p.shift(insetL, insetT));
@@ -82,10 +86,21 @@ final class BlockFlow implements FormattingEngine {
             ConstraintSpace pct = Float.isNaN(childPct) ? base : s.space(cw, Float.NaN, Float.NaN, childPct, 0);
             ChunkedFlow priorFlow = prior != null ? prior.flow : null;
             float[] floatBottom = {0};
-            FlowChunk[] chunks = kids.hasInline() || kids.hasFloat() || kids.hasContents() || legend != null
-                    ? new FlowChunk[]{mixed(st, kids, legend, base, pct, priorFlow, floatBottom, s)}
-                    : chunks(kids, base, pct, priorFlow, s);
+            Floats.Space[] excOut = {Floats.Space.EMPTY};
+            boolean mixed = kids.hasInline() || kids.hasFloat() || kids.hasContents() || legend != null || !inherited.isEmpty();
+            FlowChunk[] chunks = mixed ? null : chunks(kids, base, pct, priorFlow, s);
+            if (chunks != null && exportsFloats(chunks)) chunks = null; // 子孫の float が後ろの兄弟に掛かる: 混在の流れで並べ直す
+            Floats.Space in = inherited;
+            if (chunks == null) chunks = new FlowChunk[]{mixed(st, kids, legend, base, pct, priorFlow, floatBottom, in, excOut, s)};
             a = assemble(chunks, collapseTop, collapseBottom);
+            if (!inherited.isEmpty() && a.chunkY.length == 1 && a.chunkY[0] != 0) {
+                // 流れの原点（最初の子の相殺しない余白の下）を 0 と見積もって外れた: 正しい原点の座標で受け取った float を並べ直す
+                in = inherited.translate(0, -a.chunkY[0]);
+                chunks = new FlowChunk[]{mixed(st, kids, legend, base, pct, priorFlow, floatBottom, in, excOut, s)};
+                a = assemble(chunks, collapseTop, collapseBottom);
+            }
+            // 独立した整形コンテキストを作らない箱は、自分の部分木が置いた float を親へ返す（後ろの兄弟が避ける。border-box 基準）
+            if (!root && chunks.length == 1) floatsOut = excOut[0].suffix(in.size()).translate(insetL, insetT + a.chunkY[0]);
             // 独立した整形コンテキストの根は中の float を含んで高さを決める
             if (root && chunks.length == 1) a.contentH = Math.max(a.contentH, LayoutUnit.snap(a.chunkY[0] + floatBottom[0]));
             flow = chunks.length > 0 ? new ChunkedFlow(chunks, a.chunkY, a.firstStarted, collapseTop) : null;
@@ -115,12 +130,13 @@ final class BlockFlow implements FormattingEngine {
             }
         }
         if (lp != null) oof = OutsideMarker.prepend(lp.frag(), oof); // legend は置いた断片として持つ（流れの外と同じく border-box 基準）
-        LayoutFragment out = new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, insetL, insetT, through, flow, lines, up, oof);
+        LayoutFragment out = new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, insetL, insetT, through, flow, lines, up, oof,
+                Float.NaN, floatsOut);
         // 外側の ::marker は項目を整形した後で、最初の行のベースラインに揃えて左外に置く（OutsideMarker）
         PlacedFragment marker = text || node.marker == null ? null : OutsideMarker.place(node, out, cw, prior, s);
         if (marker == null) return out;
         return new LayoutFragment(node, space, w, h, ml, tp, tn, bp, bn, insetL, insetT, through, flow, lines, up,
-                OutsideMarker.prepend(marker, oof));
+                OutsideMarker.prepend(marker, oof), Float.NaN, floatsOut);
     }
 
     /** ブロック水準の子だけの流れ: チャンクごとに前回の {@link FlowChunk} を引き、外れたチャンクだけ並べ直す。 */
@@ -154,11 +170,16 @@ final class BlockFlow implements FormattingEngine {
                 if (OutOfFlow.is(child)) { b.addOutOfFlow(child); continue; }
                 if (!child.kind.blockLevel()) continue; // 畳まれる空白・display: none
                 ConstraintSpace sp = BoxGeometry.usesPercentHeight(child.style) ? pct : base;
-                b.add(cache.layout(child, sp, cur.find(child), s));
+                b.add(cache.layout(child, sp, cur.find(child), s), 0);
             }
             out[k] = b.build(c, pct, null);
         }
         return out;
+    }
+
+    private static boolean exportsFloats(FlowChunk[] chunks) {
+        for (FlowChunk c : chunks) if (c.exportsFloats) return true;
+        return false;
     }
 
     /** 今のチャンク {@code k} と同じ参照の前回のチャンクの位置（無ければ -1）。 */
@@ -183,15 +204,17 @@ final class BlockFlow implements FormattingEngine {
 
     /**
      * インラインとブロックが混在する・float を含む子: インラインの連なりを匿名の塊にして並べ、float を左右に置く
-     * （{@link Floats}。同じ容器のインラインの行は float を避ける）。{@code floatBottom[0]} に一番下の float の下端を返す。
+     * （{@link Floats}。同じ BFC のインラインの行は float を避ける）。{@code inherited} は外の float（チャンク基準）で、
+     * {@code floatBottom[0]} に一番下の float の下端、{@code excOut[0]} に最後の除外領域（{@code inherited} が先頭）を返す。
      */
     private static FlowChunk mixed(Style st, BoxChildren kids, BoxNode skip, ConstraintSpace base, ConstraintSpace pct,
-                                   ChunkedFlow priorFlow, float[] floatBottom, LayoutSession s) {
+                                   ChunkedFlow priorFlow, float[] floatBottom, Floats.Space inherited, Floats.Space[] excOut,
+                                   LayoutSession s) {
         s.cache().chunkComputed();
         Cursor cur = new Cursor(priorFlow, 0, priorFlow != null ? priorFlow.chunks.length - 1 : -1);
         ChunkBuilder b = new ChunkBuilder(8, s);
         List<BoxNode> run = new ArrayList<>();
-        Floats.Space exc = Floats.Space.EMPTY;
+        Floats.Space exc = inherited;
         for (BoxNode child : kids.toList()) {
             if (child.kind == BoxKind.NONE || child == skip) continue; // skip: fieldset の描画される legend
             if (OutOfFlow.is(child)) {
@@ -213,10 +236,17 @@ final class BlockFlow implements FormattingEngine {
             var clear = child.style.box.clear;
             if (clear != null && clear != com.nishiyu.enderframelib.core.css.model.CssKeywords.Clear.NONE) b.clearTo(exc.clearance(clear));
             ConstraintSpace sp = BoxGeometry.usesPercentHeight(child.style) ? pct : base;
-            b.add(s.cache().layout(child, sp, cur.find(child), s));
+            LayoutFragment prev = cur.find(child);
+            if (FloatAvoid.avoids(child)) {
+                if (exc.isEmpty()) b.add(s.cache().layout(child, sp, prev, s), 0);
+                else FloatAvoid.place(child, sp, exc, b, prev, s);
+            } else { // 外の float を渡し、子が置いた float を受け取る（除外領域が空なら鍵は変わらない）
+                exc = FloatAvoid.intrude(child, sp, exc, b, prev, s);
+            }
         }
         flushRun(st, run, base, b, exc, s);
         floatBottom[0] = exc.bottom();
+        excOut[0] = exc;
         return b.build(null, pct, null);
     }
 
@@ -229,7 +259,7 @@ final class BlockFlow implements FormattingEngine {
             if (r.lines().length > 0 || !r.pending().isEmpty()) {
                 b.add(new LayoutFragment(null, base, base.availableWidth, r.height(), 0, 0, 0, 0, 0, 0, 0, r.lines().length == 0,
                         null, r.lines().length > 0 ? r.lines() : null,
-                        r.pending().isEmpty() ? null : r.pending().toArray(OutOfFlow.NONE), null));
+                        r.pending().isEmpty() ? null : r.pending().toArray(OutOfFlow.NONE), null), 0);
             }
         }
         run.clear();
@@ -295,7 +325,7 @@ final class BlockFlow implements FormattingEngine {
     }
 
     /** 1 チャンクの子を縦に並べ、兄弟の間の余白を相殺する（1 回の整形の間だけの作業域）。 */
-    private static final class ChunkBuilder {
+    static final class ChunkBuilder {
         private LayoutFragment[] frags;
         private float[] xs, ys;
         private int n;
@@ -312,7 +342,8 @@ final class BlockFlow implements FormattingEngine {
             ys = new float[frags.length];
         }
 
-        void add(LayoutFragment f) {
+        /** 流れの箱を次の位置に置く（{@code dx} は外の float を避けて右へ寄せる分）。 */
+        void add(LayoutFragment f, float dx) {
             if (n == frags.length) {
                 frags = java.util.Arrays.copyOf(frags, n * 2);
                 xs = java.util.Arrays.copyOf(xs, n * 2);
@@ -339,7 +370,7 @@ final class BlockFlow implements FormattingEngine {
                 pp = f.bottomPos;
                 pn = f.bottomNeg;
             }
-            float x = f.marginLeft;
+            float x = f.marginLeft + dx;
             if (f.box != null) { // position: relative は流れを変えず置く位置だけずらす
                 float[] rel = OutOfFlow.relativeOffset(f.box.style, f.space.availableWidth, f.space.percentHeightBase, s);
                 if (rel != null) { x += rel[0]; y += rel[1]; }
@@ -351,6 +382,21 @@ final class BlockFlow implements FormattingEngine {
                 if (pend == null) pend = new ArrayList<>();
                 for (OutOfFlow.Pending p : f.pending) pend.add(p.shift(x, y));
             }
+        }
+
+        /** 次の流れの箱 {@code f} の border-box の上端を {@code y} に置く（float の下へ下げた箱。前の余白とは相殺しない）。 */
+        void placeAt(float y, LayoutFragment f) {
+            if (!started) {
+                started = true;
+                leadCount = n;
+            }
+            cursor = y - Math.max(0, f.topPos) - Math.min(0, f.topNeg);
+            pp = pn = 0;
+        }
+
+        /** 上の余白 {@code (tp, tn)} の流れの箱を次に置いたときの border-box の上端（チャンク基準。素通しの箱は除く）。 */
+        float peekY(float tp, float tn) {
+            return started ? cursor + Math.max(pp, tp) + Math.min(pn, tn) : 0;
         }
 
         /** 次の流れの箱の上端が来るはずの位置（チャンクの上端基準。相殺前の余白は正の最大 ＋ 負の最小で足す）。 */

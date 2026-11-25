@@ -22,13 +22,28 @@ public final class ConstraintSpace {
     /** % の高さの基準（確定していなければ NaN）。 */
     public final float percentHeightBase;
     public final int flags;
+    /**
+     * 同じ BFC の外の float の除外領域（x は包含ブロックの内容ボックス、y は自分の border-box の上端が基準。自分の上端より下に掛かる
+     * 矩形だけ）。独立した整形コンテキストを作らないブロックの子にだけ載り、それ以外は {@link Floats.Space#EMPTY}。値等価で鍵に入る。
+     */
+    final Floats.Space exclusions;
 
     public ConstraintSpace(float availableWidth, float fixedWidth, float fixedHeight, float percentHeightBase, int flags) {
+        this(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, Floats.Space.EMPTY);
+    }
+
+    ConstraintSpace(float availableWidth, float fixedWidth, float fixedHeight, float percentHeightBase, int flags, Floats.Space exclusions) {
         this.availableWidth = availableWidth;
         this.fixedWidth = fixedWidth;
         this.fixedHeight = fixedHeight;
         this.percentHeightBase = percentHeightBase;
         this.flags = flags;
+        this.exclusions = exclusions;
+    }
+
+    /** 除外領域だけを差し替えた制約（同じなら自分）。 */
+    ConstraintSpace withExclusions(Floats.Space e) {
+        return e.equals(exclusions) ? this : new ConstraintSpace(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, e);
     }
 
     public boolean formattingRoot() { return (flags & FORMATTING_ROOT) != 0; }
@@ -43,7 +58,8 @@ public final class ConstraintSpace {
                 && Float.floatToIntBits(availableWidth) == Float.floatToIntBits(s.availableWidth)
                 && Float.floatToIntBits(fixedWidth) == Float.floatToIntBits(s.fixedWidth)
                 && Float.floatToIntBits(fixedHeight) == Float.floatToIntBits(s.fixedHeight)
-                && Float.floatToIntBits(percentHeightBase) == Float.floatToIntBits(s.percentHeightBase);
+                && Float.floatToIntBits(percentHeightBase) == Float.floatToIntBits(s.percentHeightBase)
+                && (exclusions == s.exclusions || exclusions.equals(s.exclusions));
     }
 
     @Override
@@ -52,7 +68,7 @@ public final class ConstraintSpace {
         h = h * 31 + Float.floatToIntBits(fixedWidth);
         h = h * 31 + Float.floatToIntBits(fixedHeight);
         h = h * 31 + Float.floatToIntBits(percentHeightBase);
-        return h * 31 + flags;
+        return (h * 31 + flags) * 31 + exclusions.hashCode();
     }
 
     @Override
