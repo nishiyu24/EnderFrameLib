@@ -334,4 +334,21 @@ class InlineTextTest {
         assertEquals(SpikeView.dump(v.scratch()), SpikeView.dump(inc));
         assertTrue(lineText(frag(inc, "p").lines[0]).contains("Bar"));
     }
+
+    /**
+     * {@code text-align: match-parent} は親の算出値の start / end を親の {@code direction} で解いた left / right になり、子孫はそれを
+     * 継承する（CSS Text 3 §7.1。算出値の段階で解くので、新経路の行組みは親を辿らない）。
+     */
+    @Test
+    void matchParentResolvesStartAgainstTheParentDirection() {
+        String atom = "<span id=a style='display:inline-block;width:20px;height:5px'></span>";
+        SpikeView v = new SpikeView("<html><body style='margin:0'><div dir=rtl style='text-align:start;width:200px'>"
+                + "<div dir=ltr style='text-align:match-parent'>" + atom + "<div id=g>" + atom.replace("id=a", "id=b") + "</div></div></div>"
+                + "<div dir=ltr style='text-align:end;width:200px'><div dir=rtl style='text-align:match-parent'>"
+                + atom.replace("id=a", "id=c") + "</div></div></body></html>", 800, 600);
+        LayoutFragment r = v.frame();
+        assertEquals(180, SpikeView.find(r, "a")[0], EPS); // 親の start は rtl で right
+        assertEquals(180, SpikeView.find(r, "b")[0], EPS); // 子孫は解いた right を継承する（自分の ltr で start に戻さない）
+        assertEquals(180, SpikeView.find(r, "c")[0], EPS); // 親の end は ltr で right
+    }
 }

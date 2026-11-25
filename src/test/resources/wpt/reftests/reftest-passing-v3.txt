@@ -140,6 +140,7 @@ css/css-text/overflow-wrap/overflow-wrap-anywhere-011.html
 css/css-text/tab-size/tab-size-inline-001.html
 css/css-text/text-align/text-align-justify-bidi-control.html
 css/css-text/text-align/text-align-last-justify-br.html
+css/css-text/text-align/text-align-match-parent-01.html
 css/css-text/text-autospace/text-autospace-vertical-combine-001.html
 css/css-text/text-indent/text-indent-percentage-002.html
 css/css-text/text-transform/text-transform-lowercase-102.xht

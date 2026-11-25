@@ -71,8 +71,9 @@ class TypedCssCoverageTest {
         }
     }
 
-    /** 算出値が書いた値と違って正しいもの（相対の値は親から解決される。親は既定の 400）。 */
-    private static final Map<String, String> RELATIVE = Map.of("font-weight:bolder", "bold", "font-weight:lighter", "100");
+    /** 算出値が書いた値と違って正しいもの（相対の値は親から解決される。親は既定の 400・text-align: start・ltr）。 */
+    private static final Map<String, String> RELATIVE = Map.of("font-weight:bolder", "bold", "font-weight:lighter", "100",
+            "text-align:match-parent", "left"); // match-parent は親の start を親の ltr で解いた left（CSS Text 3 §7.1）
 
     /** 生成した全キーワード（登録表の列挙と、生成器の表で補った {@code display} など）が、エンジンにそのまま受け入れられること（算出値が同じ）。 */
     @Test

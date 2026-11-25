@@ -116,6 +116,7 @@ final class ValueComputer {
     private static void computeTable(StyleTable style, Context ctx) {
         resolveCssWideKeywords(style, ctx);
         String[] v = style.values;
+        resolveMatchParent(style, ctx);
 
         String fontSize = style.textById(CssPropertyIndex.FONT_SIZE);
         float ownFontSize = ctx.parentFontSize();
@@ -215,6 +216,27 @@ final class ValueComputer {
      * {@code min-content} / {@code max-content} / {@code fit-content} は、初期値と同じに振る舞う
      * （CSS Sizing 3 §5.1）。算出値を初期値に直しておけば、レイアウトの側は特別扱いしなくてよい。
      */
+    /**
+     * {@code text-align: match-parent} の算出値は、親の算出値の {@code start} / {@code end} を親の {@code direction} で解いた
+     * {@code left} / {@code right}（それ以外は親の値そのもの。CSS Text 3 §7.1）。子孫はこの解いた値を継承する。
+     */
+    private static void resolveMatchParent(StyleTable style, Context ctx) {
+        if (!KeywordMatch.is(style.textById(CssPropertyIndex.TEXT_ALIGN), "match-parent")) return;
+        Style p = ctx.parent();
+        com.nishiyu.enderframelib.core.css.model.TextAlign pa = p != null ? p.inherited.textAlign : null;
+        String dir = p != null ? p.inherited.direction : null;
+        boolean rtl = dir != null && "rtl".equalsIgnoreCase(dir.trim());
+        String resolved = pa == null ? (rtl ? "right" : "left") : switch (pa) {
+            case START, MATCH_PARENT -> rtl ? "right" : "left";
+            case END -> rtl ? "left" : "right";
+            case LEFT -> "left";
+            case RIGHT -> "right";
+            case CENTER -> "center";
+            case JUSTIFY -> "justify";
+        };
+        style.putById(CssPropertyIndex.TEXT_ALIGN, resolved);
+    }
+
     private static void computeBlockSizeKeywords(StyleTable style) {
         String[] v = style.values;
         for (int id : BLOCK_SIZE_IDS) {

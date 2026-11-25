@@ -17,8 +17,8 @@ import java.util.Locale;
  * 「折り返した行」か「最終行（強制改行の前の行を含む）」かで {@code text-align} / {@code text-align-last} を選ぶ。
  *
  * <ul>
- *   <li>{@code start} / {@code end} は容器の {@code direction} で左右に直す。{@code match-parent} は親のスタイルが要るので、
- *       ここでは {@code start} と同じに扱う（計画書 §3.4.1 M2b-5 の双方向で親の向きを渡す）。</li>
+ *   <li>{@code start} / {@code end} は容器の {@code direction} で左右に直す。{@code match-parent} は算出値の段階で親の値と向きから
+ *       {@code left} / {@code right} に解いてあり（{@code ValueComputer}。CSS Text 3 §7.1）、ここへは来ない。</li>
  *   <li>{@code justify}: 行の余りを、揃えの機会（語の後ろの空白・CJK の字の間、{@code text-justify: inter-character} なら
  *       文字の間すべて）に等しく配る。文字片を機会ごとに割って位置をずらした新しい片の列を返す（断片は不変のまま）。</li>
  * </ul>
