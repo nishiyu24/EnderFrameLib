@@ -232,6 +232,23 @@ class TableLayoutTest {
         assertEquals(20, at(html, "c")[1], EPS);
     }
 
+    /** 表の {@code width} が列の最大の和より広ければ、余りを列の最大幅の比で配る（§17.5.2.2）。 */
+    @Test
+    void definiteWidthDistributesTheExtraByMaxContent() {
+        String html = doc("<table id=t style='width:200px;border-spacing:0'><tr><td>" + box(30, 5) + "</td><td id=b>" + box(10, 5) + "</td></tr></table>");
+        assertEquals(200, at(html, "t")[2], EPS);
+        assertEquals(30 + 160 * 0.75f, at(html, "b")[0], EPS); // 余り 160 を 30 : 10 で配る
+    }
+
+    /** 表の {@code height} は格子に掛かり、キャプションはその外。column flex の項目ではキャプションを含む全体が項目の大きさ（§17.4）。 */
+    @Test
+    void tableHeightIsTheGridAndCaptionsAddToItInAColumnFlex() {
+        String html = doc("<div id=f style='display:flex;flex-direction:column;width:100px'><div id=t style='display:table;height:80px'>"
+                + "<div style='display:table-caption'>" + box(10, 7) + "</div><div style='display:table-cell'>" + box(10, 10) + "</div></div></div>");
+        assertEquals(87, at(html, "t")[3], EPS);
+        assertEquals(87, at(html, "f")[3], EPS);
+    }
+
     private static BoxNode find(BoxNode b, String id) {
         if (b.node != null && b.pseudo == BoxNode.Pseudo.NONE && id.equals(b.node.attrs.get("id"))) return b;
         for (int i = 0; i < b.children.size(); i++) {
