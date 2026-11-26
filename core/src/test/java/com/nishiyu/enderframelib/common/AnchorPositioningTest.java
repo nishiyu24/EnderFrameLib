@@ -114,7 +114,6 @@ public class AnchorPositioningTest {
     }
 
     @Test
-    @Disabled("G8 position-try の flip-block で入れ替えた余白を描画用の木が読まない（位置は正しい）。計画書 §3.2「新経路の穴（M2c-3 の移植で見えた）」")
     public void positionTryFlipBlockAvoidsBottomOverflow() {
         PaintView root = layout(
                 "<style>#a{left:100px;top:265px;width:80px;height:25px}</style>"
@@ -125,6 +124,26 @@ public class AnchorPositioningTest {
         assertEquals(265 - 4 - 30, t.y(), 0.5f);
         assertEquals(0, t.mT(), 0.5f);
         assertEquals(4, t.mB(), 0.5f);
+    }
+
+    /** 候補で入れ替えた余白は、アンカーが動いて候補が変わったフレームでも、変わった候補の余白になる（前回の節を使い回さない。G8）。 */
+    @Test
+    public void flippedMarginsFollowTheChosenFallbackAcrossFrames() {
+        String html = CSS + "<div id=a style='top:265px'></div>"
+                + "<div id=t style='position-anchor:--a;height:30px;margin-top:4px;top:anchor(bottom);left:anchor(left);"
+                + "position-try-fallbacks:flip-block'></div>";
+        try (StandaloneView v = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
+            var a = v.root().ownerDocument.getElementById("a");
+            float[][] expect = {{0, 4}, {4, 0}, {0, 4}}; // 下にはみ出す（上へ反転）→ 収まる → はみ出す
+            String[] tops = {"265px", "20px", "265px"};
+            for (int i = 0; i < tops.length; i++) {
+                a.setAttribute("style", "top:" + tops[i]);
+                v.ui().flushInvalidation();
+                PaintView t = find(v.ui().boxRoot(), "t");
+                assertEquals(expect[i][0], t.mT(), 0.5f, "frame " + i + " margin-top");
+                assertEquals(expect[i][1], t.mB(), 0.5f, "frame " + i + " margin-bottom");
+            }
+        }
     }
 
     @Test

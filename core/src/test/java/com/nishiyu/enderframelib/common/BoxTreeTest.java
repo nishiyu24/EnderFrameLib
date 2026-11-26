@@ -6,7 +6,6 @@ import com.nishiyu.enderframelib.core.box.Display;
 import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -184,21 +183,36 @@ public class BoxTreeTest {
     }
 
     @Test
-    @Disabled("G4 list-style-image のマーカーが新経路に無い。計画書 §3.2「新経路の穴（M2c-3 の移植で見えた）」")
     public void testListStyleImageReplacesTheMarkerText() {
         String svg = "data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2712%27%20height%3D%2710%27%2F%3E";
         PaintView root = layout("<ul style=\"list-style-image: url(" + svg + ");\"><li id=\"a\">a</li></ul>"
                 + "<ul style=\"list-style-image: url(" + svg + "); list-style-type: square\"><li id=\"b\" style=\"list-style-image: none\">b</li></ul>");
         PaintView marker = marker(findElement(root, "a"));
         assertNotNull(marker);
-        PaintView image = marker.paintChildren().getFirst();
-        assertEquals("img", image.node.tag);
+        // 描画用の木は行の原子を行の文字の後ろに足す（並びは描く順に効かない）ので、画像の子を引いて確かめる
+        PaintView image = marker.paintChildren().stream().filter(c -> "img".equals(c.node.tag)).findFirst().orElse(null);
+        assertNotNull(image, "マーカーの中の画像");
+        assertTrue(marker.paintChildren().stream().noneMatch(c -> c.node.text != null && !c.node.text.isBlank()), "記号の文字は無い");
         assertEquals(svg, image.node.attrs.get("src"));
         assertEquals(12, image.w(), 0.01f);
         assertEquals(10, image.h(), 0.01f);
         assertTrue(marker.w() >= 12, "marker.w()=" + marker.w());
         // list-style-image: none は list-style-type の記号に戻る
         assertEquals("▪ ", markerText(findElement(root, "b")));
+    }
+
+    @Test
+    public void listStyleImageChangesMatchAFullRebuild() {
+        String svg = "data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2712%27%20height%3D%2710%27%2F%3E";
+        String big = svg.replace("12", "20");
+        String html = "<style>body{margin:0}</style><ul id=u><li id=a>a</li><li id=b>b</li></ul>";
+        for (String to : new String[]{"list-style-image:url(" + svg + ")", "list-style-image:url(" + big + ")"}) {
+            IncrementalVsFullTest.assertIncrementalMatchesFull(html, v -> { },
+                    v -> v.root().ownerDocument.getElementById("u").setAttribute("style", to));
+        }
+        IncrementalVsFullTest.assertIncrementalMatchesFull(html,
+                v -> v.root().ownerDocument.getElementById("u").setAttribute("style", "list-style-image:url(" + svg + ")"),
+                v -> v.root().ownerDocument.getElementById("u").setAttribute("style", "list-style-image:none"));
     }
 
     @Test

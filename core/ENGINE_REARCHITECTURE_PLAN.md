@@ -13,12 +13,12 @@
 | :--- | :--- |
 | 完了 | M0・M1・M2a・M2b（レイアウトの移植。WPT 170/260）・**M2c**（M2c-1 保持ヒープの内訳・M2c-2 既定を新経路へ切り替え・**M2c-3 旧経路の削除**。経路は 1 本。§3.2） |
 | 進行中 | M3a（MOD の旧レンダラの撤去。別作業） |
-| 次の一手 | **M2c-3 の移植で見えた新経路の穴（§3.2 の G1〜G9）を直す**。最優先は **G1**（インラインの中のブロックの中身が描かれない。既定のインラインのカスタム要素がブロックを包む形で起きる。M2c-2 の既定の切り替えから既定の経路にある）。並行して M3a、両方の後に M3b |
+| 次の一手 | **新経路の穴の残り（§3.2）**: G2 subgrid（親のトラックの寸法へ子が寄与する本来の算法の移植）と G8 の残り（スクロールで position-try を選び直す。スクロール量をどの入力として扱うかを §2.3 の鍵の予算で先に決める）。G1・G4〜G7・G8 の余白・G9 は 2026-11-26 に直した。並行して M3a、両方の後に M3b |
 | 止まっている条件 | M3b は M3a の完了待ち |
 | 期限付きの緩和 | ヒープの上限（`varied-list-2000` 68.5 MB・`large-list-2000` 19.3 MB）と latency の 2 行（`varied-list-2000:fontsize` 157.7 ms・`large-list-8000:child` 57.9 ms）を新経路の実測から置き直した。M3b の完了ゲートで 14.0 / 5.5 MB と切り替え前の上限（46.6 / 16.5 ms）以下へ戻す（§4.1） |
 | 二重に持っているもの | なし（旧レイアウト経路・`EnginePath`・一時アダプタ `FragmentProjection`・旧描画の駆動を M2c-3 で削除した）。平坦な `DisplayItem` を作る描画（`TreePainter`・`BoxItemPainter` ほか）は M3b まで |
 | 凍結中の例外 | `TreePainter` の記憶（§3.2 の「凍結した例外」の表。M3b で削除する） |
-| 一時的に無い機能 | multicol（M3c で戻す）と §3.2 の新経路の穴 G1〜G9（見つけたテストは `@Disabled` で理由に G 番号を書いて残す） |
+| 一時的に無い機能 | multicol（G3。M3c で戻す）・subgrid（G2）・スクロールによる position-try の選び直し（G8 の残り）。見つけたテストは `@Disabled` で理由に G 番号を書いて残す |
 
 ---
 
@@ -266,15 +266,15 @@ DOM の後、バックエンドの前に置く中間表現は次の 3 段だけ�
 
 | # | 穴 | 見つけたテスト | 状態 |
 | :---: | :--- | :--- | :--- |
-| G1 | インラインの中のブロック（CSS 2.1 §9.2.1.1）: 中のブロックが行の中の箱になり、その中身が描かれない（既定でインラインのカスタム要素がブロックを包む `<template component>` などで起きる） | `ComponentSlotTest#componentLaysOutAndScopesItsStyle` | 未着手（最優先） |
-| G2 | `subgrid` | `SubgridTest`（13 件。うち 12 件が新経路で落ちる） | 未着手 |
+| G1 | インラインの中のブロック（CSS 2.1 §9.2.1.1）: 中のブロックが行の中の箱になり、その中身が描かれない（既定でインラインのカスタム要素がブロックを包む `<template component>` などで起きる） | `ComponentSlotTest#componentLaysOutAndScopesItsStyle`・`BlockInInlineTest` | **完了**（インラインの内容をブロックの前後の区間に割り〔`InlineSegment`〕、ブロックは持ち主の流れに置く。描画用の木では割れたインラインの下） |
+| G2 | `subgrid` | `SubgridTest`（13 件。うち 12 件が新経路で落ちる） | 未着手（次の一手） |
 | G3 | multicol | `MulticolTest`（14 件。うち 12 件が新経路で落ちる） | M3c |
-| G4 | `list-style-image` のマーカー | `BoxTreeTest#testListStyleImageReplacesTheMarkerText` | 未着手 |
-| G5 | `::backdrop` | `TopLayerTest#modalDialogPaintsBackdropBehindItself` | 未着手 |
-| G6 | `::first-line` の `text-transform` | `FirstLinePseudoElementTest`（1 件） | 未着手 |
-| G7 | `min-width: 0` の入力欄の min-content の寄与（flex の自動の最小寸法） | `FlexMinContentTest#rowFlexItemDoesNotShrinkBelowTheSumOfItsItems` | 未着手 |
-| G8 | `position-try`: `flip-block` で入れ替えた余白を描画用の木が読まない（位置は正しい）・スクロールで候補を選び直さない（スクロール量はレイアウトの入力でない） | `AnchorPositioningTest`（2 件） | 未着手 |
-| G9 | ブラウザとの差 2 件（子に原子を持つインライン要素の前で折り返さない・枠線を重ねる表のスクロール範囲） | `WebFidelityTest`（`known-divergences.txt` の M2c の行） | 未着手 |
+| G4 | `list-style-image` のマーカー | `BoxTreeTest#testListStyleImageReplacesTheMarkerText` | **完了**（画像の置換要素のマーカー〔`MarkerBoxes`〕） |
+| G5 | `::backdrop` | `TopLayerTest#modalDialogPaintsBackdropBehindItself` | **完了**（箱の木が描画だけが読むスタイルとして持ち、`TreePainter` が Top Layer の箱の直前に描く） |
+| G6 | `::first-line` の `text-transform` | `FirstLinePseudoElementTest`（1 件） | **完了**（1 行目の語を測るときと描くときに `FirstLine.transform`） |
+| G7 | `min-width: 0` の入力欄の min-content の寄与（flex の自動の最小寸法） | `FlexMinContentTest#rowFlexItemDoesNotShrinkBelowTheSumOfItsItems` | **完了**（部品の min-content は確定した min-width。`ReplacedFlow`） |
+| G8 | `position-try`: `flip-block` で入れ替えた余白を描画用の木が読まない（位置は正しい）・スクロールで候補を選び直さない（スクロール量はレイアウトの入力でない） | `AnchorPositioningTest`（2 件） | 余白は**完了**（`PlacedFragment.margins`）。スクロールの選び直しは未着手（設計が先。ARCHIVE 5.A） |
+| G9 | ブラウザとの差 2 件（子に原子を持つインライン要素の前で折り返さない・枠線を重ねる表のスクロール範囲） | `WebFidelityTest`（`known-divergences.txt` の M2c の行） | **完了**（台帳 11 行 → 0 行） |
 
 移植の途中で新経路の欠陥を 2 件直した（回帰カタログ M2c の行）: rtl の包含ブロックで幅と余白が決まりすぎたブロックを右に寄せる（§10.3.3。包含ブロックの向きを `ConstraintSpace.CONTAINER_RTL` で渡す）・インライン要素の中の絶対配置の子に位置の無い写しを作っていた（CSSOM の矩形が 0 になる）。M2c-3 の作業で足した欠陥（文書を開いた直後のフレームがもう一度全体を組み直す）も同じ版で直した。
 

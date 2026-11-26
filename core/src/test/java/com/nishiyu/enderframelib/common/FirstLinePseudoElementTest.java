@@ -7,7 +7,6 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -38,7 +37,6 @@ public class FirstLinePseudoElementTest {
     }
 
     @Test
-    @Disabled("G6 ::first-line の text-transform が新経路に無い。計画書 §3.2「新経路の穴（M2c-3 の移植で見えた）」")
     public void firstLineAppliesColorFontWeightTextTransformAndBackgroundOnlyToLine1() {
         String html = "<style>body{margin:0;background:#fff} "
                 + "p{margin:0;width:90px;font:16px/22px monospace;color:#000} "

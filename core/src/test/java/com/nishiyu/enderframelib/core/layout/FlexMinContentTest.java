@@ -8,7 +8,6 @@ import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -69,7 +68,6 @@ public class FlexMinContentTest {
     }
 
     @Test
-    @Disabled("G7 min-width: 0 の入力欄の min-content の寄与が新経路では内在の幅のまま。計画書 §3.2「新経路の穴（M2c-3 の移植で見えた）」")
     void rowFlexItemDoesNotShrinkBelowTheSumOfItsItems() {
         PaintView root = layout(SEARCH_BAR);
         PaintView wrap = byId(root, "wrap");

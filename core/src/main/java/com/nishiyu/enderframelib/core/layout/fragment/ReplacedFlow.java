@@ -162,6 +162,22 @@ final class ReplacedFlow implements FormattingEngine {
         w = LayoutUnit.snap(w);
         // 幅・最大の幅が % の置換要素は縮められる: min-content の寄与は 0（CSS Sizing 3 §5.2.2 compressible replaced elements）
         boolean compressible = CssLength.hasPercent(st.box.width, st.box.exprs) || CssLength.hasPercent(st.box.maxWidth, st.box.exprs);
-        return new MinMaxSizes(compressible ? LayoutUnit.snap(g.hdec()) : w, w);
+        if (compressible) return new MinMaxSizes(LayoutUnit.snap(g.hdec()), w);
+        // 部品（画像でない置換要素）に確定した min-width があれば、min-content はその値（旧 IntrinsicSizing と同じ。G7: min-width: 0 の
+        // 入力欄は flex の項目の min-content の和に padding と border の分だけを寄与し、検索欄が細くなれる）
+        if (!image(node) && CssLength.isDefinite(st.box.minWidth, st.box.exprs)) {
+            float min = BoxGeometry.len(st, st.box.minWidth, Float.NaN, s);
+            min = st.box.boxSizing == com.nishiyu.enderframelib.core.css.model.CssKeywords.BoxSizing.BORDER_BOX
+                    ? Math.max(min, g.hdec()) : min + g.hdec();
+            return new MinMaxSizes(Math.min(w, LayoutUnit.snap(min)), w);
+        }
+        return new MinMaxSizes(w, w);
+    }
+
+    /** 画像・映像・ホストの場面（内在の大きさを持つ置換要素）か。部品（input・select ほか）でない。 */
+    private static boolean image(BoxNode n) {
+        String tag = n.replaced.tag();
+        return ReplacedElements.isHostScene(tag) || ElementTraits.isEmbeddedMedia(tag) || ElementTraits.isBuiltinReplacedImage(tag)
+                || ReplacedElements.isHostImageLike(tag);
     }
 }

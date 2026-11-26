@@ -6,7 +6,6 @@ import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -109,7 +108,6 @@ public class ComponentSlotTest {
     }
 
     @Test
-    @Disabled("G1 インラインの中のブロック（CSS 2.1 §9.2.1.1）が新経路に無い: 中身が描かれない。計画書 §3.2「新経路の穴（M2c-3 の移植で見えた）」")
     public void componentLaysOutAndScopesItsStyle() {
         String html = CARD + """
                 <style>@scope (my-card) { h3 { color: #123456; } }</style>

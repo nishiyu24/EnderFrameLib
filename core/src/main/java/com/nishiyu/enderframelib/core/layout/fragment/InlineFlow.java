@@ -50,7 +50,13 @@ public final class InlineFlow {
      */
     static Result layout(List<BoxNode> kids, Style container, Style firstLine, float availW, LayoutFragment prior, Floats.Space exc,
                          float originY, float pctH, LayoutSession s) {
-        Result r = build(kids, container, firstLine, availW, prior, exc, originY, 0, pctH, s);
+        return layout(kids, container, firstLine, availW, prior, exc, originY, pctH, 0, s);
+    }
+
+    /** インラインの中のブロックで割った内容の区間 {@code segment} だけを組む（{@link InlineSegment}。0 が最初のブロックの前）。 */
+    static Result layout(List<BoxNode> kids, Style container, Style firstLine, float availW, LayoutFragment prior, Floats.Space exc,
+                         float originY, float pctH, int segment, LayoutSession s) {
+        Result r = build(kids, container, firstLine, availW, prior, exc, originY, 0, pctH, segment, s);
         int n = r.lines.length;
         if (n < 2 || n > 10 || !balanced(container) || !exc.isEmpty() || !r.pending.isEmpty() || !balanceable(kids)) return r;
         // text-wrap: balance（CSS Text 4 §6.1）: 行数を変えずに、折り返しの判定の幅をできるだけ狭めて組み直す（旧 FlowBuilder.balanceLines。
@@ -58,7 +64,7 @@ public final class InlineFlow {
         float lo = 0, hi = availW;
         for (int iter = 0; iter < 12 && hi - lo > 1f; iter++) {
             float mid = (lo + hi) / 2;
-            Result t = build(kids, container, firstLine, availW, prior, exc, originY, mid, pctH, s);
+            Result t = build(kids, container, firstLine, availW, prior, exc, originY, mid, pctH, segment, s);
             if (t.lines.length == n) {
                 lo = mid;
                 r = t;
@@ -70,8 +76,8 @@ public final class InlineFlow {
     }
 
     private static Result build(List<BoxNode> kids, Style container, Style firstLine, float availW, LayoutFragment prior, Floats.Space exc,
-                                float originY, float shrink, float pctH, LayoutSession s) {
-        InlineLineBuilder b = new InlineLineBuilder(container, firstLine, availW, prior, exc, originY, shrink, pctH, s);
+                                float originY, float shrink, float pctH, int segment, LayoutSession s) {
+        InlineLineBuilder b = new InlineLineBuilder(container, firstLine, availW, prior, exc, originY, shrink, pctH, segment, s);
         for (BoxNode k : kids) b.add(k);
         return b.finish();
     }

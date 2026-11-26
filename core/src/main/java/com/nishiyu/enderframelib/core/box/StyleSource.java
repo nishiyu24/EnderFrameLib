@@ -130,6 +130,13 @@ public final class StyleSource {
         return cs == null ? null : Style.of(cs, ownerStyle);
     }
 
+    /** {@code ::backdrop} のスタイル（継承元は持ち主。規則が無ければ null。描画だけが読む）。 */
+    public Style backdrop(HtmlNode owner, Style ownerStyle) {
+        ComputedStyle cs = com.nishiyu.enderframelib.core.css.GeneratedContentStyles.backdropDeclared(owner, sheet, scope,
+                new ComputedStyle(ownerStyle), env, rootFontSize, rootLineHeight, viewportW, viewportH);
+        return cs == null ? null : Style.of(cs, ownerStyle);
+    }
+
     /** {@code ::marker} の規則が宣言したスタイル（規則が無ければ null。{@link MarkerBoxes}）。 */
     public com.nishiyu.enderframelib.core.css.ComputedStyle markerDeclared(HtmlNode owner, Style ownerStyle) {
         return com.nishiyu.enderframelib.core.css.GeneratedContentStyles.markerDeclared(owner, sheet, scope, new ComputedStyle(ownerStyle),

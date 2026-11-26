@@ -40,7 +40,7 @@ final class AnchorPlacement {
     }
 
     /** 位置を決めた 1 つの候補。{@code imcbW} / {@code imcbH} は inset で縮めた包含ブロックの寸法。 */
-    private record Result(float x, float y, float w, float h, float imcbW, float imcbH, boolean fits) { }
+    private record Result(float x, float y, float w, float h, float imcbW, float imcbH, boolean fits, AnchorTry.Spec spec) { }
 
     /** 1 回の配置の文脈（箱・包含ブロック・アンカー）。 */
     private record Ctx(BoxNode box, Style st, BoxGeometry g, Anchors anchors, OutOfFlow.Pending p,
@@ -84,7 +84,9 @@ final class AnchorPlacement {
         }
         float w = LayoutUnit.snap(Math.max(0, win.w)), h = LayoutUnit.snap(Math.max(0, win.h));
         LayoutFragment f = s.cache().layout(box, s.space(cbW, w, h, cbH, ConstraintSpace.FORMATTING_ROOT), OutOfFlow.priorOf(prior, box), s);
-        return new PlacedFragment(f, LayoutUnit.snap(win.x), LayoutUnit.snap(win.y));
+        AnchorTry.Spec sp = win.spec;
+        boolean flipped = sp != null && (sp.mT != g.mT || sp.mR != g.mR || sp.mB != g.mB || sp.mL != g.mL);
+        return new PlacedFragment(f, LayoutUnit.snap(win.x), LayoutUnit.snap(win.y), flipped ? new float[]{sp.mT, sp.mR, sp.mB, sp.mL} : null);
     }
 
     // ---- 自然な大きさ（border-box）
@@ -224,7 +226,7 @@ final class AnchorPlacement {
         }
         boolean fits = x - ml >= refX - OVERFLOW_EPS && x + w + mr <= refX + refW + OVERFLOW_EPS
                 && y - mt >= refY - OVERFLOW_EPS && y + h + mb <= refY + refH + OVERFLOW_EPS;
-        return new Result(x, y, w, h, imcbW, imcbH, fits);
+        return new Result(x, y, w, h, imcbW, imcbH, fits, spec);
     }
 
     /** 候補の幅（高さ）: 宣言が {@code anchor-size()}・長さ・auto（基本が固定なら内容から測り直す）、無ければ自然な大きさ。 */

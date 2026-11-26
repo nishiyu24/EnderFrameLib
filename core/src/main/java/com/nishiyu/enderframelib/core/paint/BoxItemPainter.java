@@ -135,6 +135,28 @@ final class BoxItemPainter {
         }
     }
 
+    /**
+     * {@code ::backdrop}（旧 {@code PaintOrder.drawBackdrop} の移植）: 背景色の矩形をビューポート全面に置く（固定配置の箱と同じく
+     * スクロールしない。クリップは掛けない）。色か不透明度が 0 なら何も出さない。
+     */
+    void drawBackdrop(List<DisplayItem> elements, PaintBox box, com.nishiyu.enderframelib.core.css.Style bd, boolean ownNode) {
+        int color = bd.visual.backgroundColor;
+        float opacity = com.nishiyu.enderframelib.core.css.Style.num(bd.visual.opacity, 1.0f);
+        if ((color >>> 24) == 0 || opacity <= 0f) return;
+        PaintSupport.CaptureList cap = (ownNode && elements instanceof PaintSupport.CaptureList c) ? c : null;
+        int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
+        if (cap != null) cap.setOrigin(Math.round(box.x()), Math.round(box.y()));
+        try {
+            String key = box.node().key();
+            int handle = box.node().paintHandle();
+            ItemProps props = new ItemProps().parentId(key, handle > 0 ? DisplayItem.nodeKeyOf(handle) : 0L);
+            PaintSupport.addElement(elements, key, key + "_backdrop", ElementType.RECT, 0, 0, rootW, rootH, "", 0, color, props, 0,
+                    opacity, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, null, 0L);
+        } finally {
+            if (cap != null) cap.setOrigin(prevOx, prevOy);
+        }
+    }
+
     /** 文字の影を出さない（マスクに影が混ざらないように）。 */
     private boolean suppressTextShadow;
 

@@ -290,9 +290,9 @@ public final class TreePainter {
         return touched.contains(h) || ((h.isPseudoNode || box.anonymous()) && h.parent != null && touched.contains(h.parent));
     }
 
-    /** マスクの項目（レイヤーがマスクを求めるとき）と Top Layer の印（旧 {@code FragmentPaint.extras}。{@code ::backdrop} は新経路にまだ無い）。 */
+    /** マスクの項目（レイヤーがマスクを求めるとき）と Top Layer の印・{@code ::backdrop}（旧 {@code FragmentPaint.extras}）。 */
     private Fragment.Extras extras(PaintView box, Fragment.Kind kind, LayerSpec layer, boolean ownNode) {
-        DisplayItem[] mask = null;
+        DisplayItem[] mask = null, backdrop = null;
         boolean hoist = kind == Fragment.Kind.STACKING && TreeStacking.isTopLayer(box);
         if (layer != null && layer.wantsMask()) {
             scratch.resetForBuild();
@@ -300,7 +300,12 @@ public final class TreePainter {
             painter.drawMask(scratch, box, ownNode);
             mask = scratch.toArray(new DisplayItem[0]);
         }
-        return mask == null && !hoist ? null : new Fragment.Extras(mask, hoist, null);
+        if (hoist && box.backdrop() != null) { // ::backdrop はビューポート全面に、Top Layer の箱の直前に描く（G5）
+            scratch.resetForBuild();
+            painter.drawBackdrop(scratch, box, box.backdrop(), ownNode);
+            backdrop = scratch.toArray(new DisplayItem[0]);
+        }
+        return mask == null && !hoist ? null : new Fragment.Extras(mask, hoist, backdrop);
     }
 
     /**

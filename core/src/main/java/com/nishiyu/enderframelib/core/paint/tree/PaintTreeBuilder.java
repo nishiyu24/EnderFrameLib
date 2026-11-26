@@ -128,6 +128,8 @@ public final class PaintTreeBuilder {
                 out.putIfAbsent(b, n);
                 if (!b.generated()) out.putIfAbsent(b.node, n);
             }
+        } else { // インライン要素の節: 中のインラインの中のブロック（断片を持つ）も同じ親の子の候補にする
+            for (PaintNode c : n.children) index(c, out);
         }
     }
 
@@ -199,12 +201,17 @@ public final class PaintTreeBuilder {
             lines(d, f.lines, cx, cy, textBoxes, kids, lb.firstLine != null ? lb : null);
         }
         if (f.flow != null) {
+            // 混在の流れのインライン要素の節は、流れ全体で 1 つ（インラインの中のブロックで割れた要素も、前後の塊の分を同じ節に持つ）
+            Map<BoxNode, Draft> anon = new IdentityHashMap<>();
+            float cbw = d.w - d.bL - d.pL - d.pR - d.bR;
+            java.util.Set<BoxNode> direct = b.flow.hasBlockInInline() ? directChildren(b) : null;
             f.flow.forEach((child, x1, y1) -> {
                 if (child.box != null) {
-                    d.add(block(child, cx + x1, cy + y1, kids, false), cx + x1, cy + y1);
+                    // インラインの中のブロック（CSS 2.1 §9.2.1.1）: 流れには兄弟として並ぶが、描画用の木では DOM のままインラインの祖先の下
+                    Draft parent = direct != null && !direct.contains(child.box)
+                            ? ancestors(b, lb, child.box, d, anon, cbw, false) : null;
+                    (parent != null ? parent : d).add(block(child, cx + x1, cy + y1, kids, false), cx + x1, cy + y1);
                 } else { // 混在の流れの匿名の塊: 中のインラインの子をこの箱の下へ足し、行を写す
-                    Map<BoxNode, Draft> anon = new IdentityHashMap<>();
-                    float cbw = d.w - d.bL - d.pL - d.pR - d.bR;
                     for (LineFragment l : child.lines) {
                         for (LineFragment.Piece p : l.pieces()) collectAncestors(b, lb, p.text(), d, anon, cbw);
                         for (LineFragment.Span sp : l.spans()) collectAncestors(b, lb, sp.box(), d, anon, cbw);
@@ -222,7 +229,12 @@ public final class PaintTreeBuilder {
                 // fieldset の描画される legend（FieldsetLegend が置いた）: 旧描画が枠線を切り欠く印
                 boolean isLegend = cb != null && cb.style.box.position != Position.ABSOLUTE && cb.style.box.position != Position.FIXED
                         && ElementTraits.isFieldset(b.node.tag) && ElementTraits.isLegend(cb.node.tag);
-                d.children.add(documentOrderIndex(d, cb != null ? cb.node : null), new Child(block(p.frag(), p.x(), p.y(), kids, isLegend), p.x(), p.y()));
+                // position-try の候補を持つ箱は、候補が入れ替えた余白（p.margins）が断片に載らないので前回の節を使わない（G8）
+                boolean tries = cb != null && cb.style.rare.positionTryFallbacks != null;
+                Object placed = block(p.frag(), p.x(), p.y(), tries ? null : kids, isLegend);
+                float[] m = p.margins();
+                if (m != null && placed instanceof Draft pd) { pd.mT = m[0]; pd.mR = m[1]; pd.mB = m[2]; pd.mL = m[3]; }
+                d.children.add(documentOrderIndex(d, cb != null ? cb.node : null), new Child(placed, p.x(), p.y()));
             }
         }
         return d;
@@ -310,17 +322,25 @@ public final class PaintTreeBuilder {
     /** 混在の流れの文字の節 {@code target} とそのインラインの祖先の箱を（まだ無ければ）{@code ownerDraft} の下に作る。 */
     private void collectAncestors(BoxNode owner, BoxNode latestOwner, BoxNode target, Draft ownerDraft, Map<BoxNode, Draft> boxes,
                                   float cbw) {
-        if (boxes.containsKey(target)) return;
+        if (!boxes.containsKey(target)) ancestors(owner, latestOwner, target, ownerDraft, boxes, cbw, true);
+    }
+
+    /**
+     * {@code owner} から {@code target} までのインラインの祖先の箱を（まだ無ければ）作り、最も内側の節を返す（{@code withTarget} なら
+     * {@code target} 自身も作る。インラインの祖先が無ければ {@code ownerDraft}、辿れなければ null）。
+     */
+    private Draft ancestors(BoxNode owner, BoxNode latestOwner, BoxNode target, Draft ownerDraft, Map<BoxNode, Draft> boxes, float cbw,
+                            boolean withTarget) {
         List<BoxNode> path = new ArrayList<>();
         List<Integer> at = new ArrayList<>();
-        if (!pathTo(owner, target, -1, path, at)) return;
+        if (!pathTo(owner, target, -1, path, at)) return null;
         Draft parent = ownerDraft;
         BoxNode cur = latestOwner;
-        for (int i = 1; i < path.size(); i++) {
+        for (int i = 1, end = withTarget ? path.size() : path.size() - 1; i < end; i++) {
             BoxNode n = path.get(i);
             cur = cur.flow.get(at.get(i));
             if (n.kind == BoxKind.CONTENTS) continue; // 箱を作らない
-            if (outOfFlow(n)) return; // 流れの外の箱の中身は、包含ブロックが置いたその箱の下にある
+            if (outOfFlow(n)) return null; // 流れの外の箱の中身は、包含ブロックが置いたその箱の下にある
             Draft d = boxes.get(n);
             if (d == null) {
                 d = inlineDraft(n, cur, cbw);
@@ -329,6 +349,14 @@ public final class PaintTreeBuilder {
             }
             parent = d;
         }
+        return parent;
+    }
+
+    /** {@code owner} の流れの子（{@code display: contents} は中身）。インラインの中のブロックをそれ以外と分ける。 */
+    private static java.util.Set<BoxNode> directChildren(BoxNode owner) {
+        java.util.Set<BoxNode> out = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        out.addAll(owner.flow.toList());
+        return out;
     }
 
     private static boolean pathTo(BoxNode from, BoxNode target, int index, List<BoxNode> path, List<Integer> at) {
@@ -374,13 +402,23 @@ public final class PaintTreeBuilder {
             if (!f.isText()) continue;
             x0 = Math.min(x0, f.x()); y0 = Math.min(y0, f.y()); x1 = Math.max(x1, f.x() + f.w()); y1 = Math.max(y1, f.y() + f.h());
         }
+        float[] blocks = null;
         for (Child c : b.children) {
+            // インラインの中のブロック（作った節か前回のまま使う節）: 位置は断片のまま。要素の矩形はその border-box も囲む（割れたインラインの全体）
+            if (c.n instanceof PaintNode pn) {
+                blocks = union(blocks, new float[]{c.x, c.y, c.x + pn.w, c.y + pn.h});
+                continue;
+            }
             if (!(c.n instanceof Draft cd)) continue;
+            if (cd.placed) {
+                blocks = union(blocks, new float[]{cd.x, cd.y, cd.x + cd.w, cd.y + cd.h});
+                continue;
+            }
             float[] r = fitInline(cd);
             if (r == null) continue;
             x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]);
         }
-        float[] own = spanBounds(b);
+        float[] own = blocks == null ? spanBounds(b) : union(spanBounds(b), blocks);
         if (x0 > x1 && own == null) return null;
         if (own != null) { // 旧 BlockLayoutEngine.fitToFragments と同じく、インライン要素の矩形は行ごとの箱の断片を囲む矩形
             b.x = own[0];
@@ -394,6 +432,11 @@ public final class PaintTreeBuilder {
         b.w = x1 - x0;
         b.h = y1 - y0;
         return new float[]{x0, y0, x1, y1};
+    }
+
+    private static float[] union(float[] a, float[] b) {
+        if (a == null) return b;
+        return new float[]{Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])};
     }
 
     /** 箱の断片（文字でない断片）を囲む矩形。大きさ 0 の断片は除き、全部 0 なら最初の断片（旧経路と同じ）。無ければ null。 */
@@ -445,7 +488,8 @@ public final class PaintTreeBuilder {
                 float runH = InlineFlow.lineHeight(st, face), runBase = InlineFlow.runBaseline(st, session);
                 float fy = LayoutUnit.snap(oy + l.y() + (lineBase - runBase) + p.dy());
                 // 旧経路と同じく折り返し候補ごと（後ろの空白を含む）の断片にする。最後の語だけは片の幅の残りで終わらせる
-                String text = p.string();
+                String text = first // 1 行目の text-transform（レイアウトが測ったのと同じく節の中身全体に掛けた文字の片）
+                        ? FirstLine.transform(p.text().text, p.text().style, st).substring(p.start(), p.end()) : p.string();
                 float x = ox + l.x() + p.x(), end = x + p.width();
                 for (int i = 0, n = text.length(); i < n; ) {
                     int stop = InlineFlow.nextBreak(text, i, n, st.facts.wordBreak); // 折り返し候補（UAX #14）ごと

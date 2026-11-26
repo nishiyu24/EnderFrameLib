@@ -90,6 +90,11 @@ public final class PaintView extends PaintBox {
         return ReplacedElements.isReplacedTag(n.node.tag);
     }
 
+    /** {@code ::backdrop} のスタイル（Top Layer に入れる要素で規則があるときだけ。無ければ null）。 */
+    public com.nishiyu.enderframelib.core.css.Style backdrop() {
+        return n.box != null ? n.box.backdrop : null;
+    }
+
     /** {@code display} を外と中に分けたもの（旧経路の箱と同じ規則で、描画の木の節のスタイルから決めた値）。 */
     public Display display() { return n.display; }
 

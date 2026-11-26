@@ -51,6 +51,13 @@ final class MarkerBoxes {
         String c = content == null ? "" : content.trim();
         if (c.equalsIgnoreCase("none")) return null;
         boolean byType = c.isEmpty() || c.equalsIgnoreCase("normal");
+        String image = byType ? imageUrl(ownerStyle.inherited.listStyleImage) : null;
+        if (image != null) { // list-style-image: content が無ければ記号の代わりに画像（CSS Lists 3 §3.1）
+            Style st = new ComputedStyle(ownerStyle).derivedMarker(declared).typed();
+            if (prev != null) st = st.shareEqualGroups(prev.style);
+            BoxKind kind = BoxKind.of(owner, st);
+            return kind == BoxKind.NONE || kind == BoxKind.TEXT ? null : makeImage(owner, st, kind, image, prev, styles);
+        }
         String type = Style.or(ownerStyle.inherited.listStyleType, "disc");
         String raw = byType ? cs.marker(type, ordinal)
                 : PseudoBoxes.evaluate(content, owner, ownerStyle, Quotes.depth(owner, false, counters), counters, cs);
@@ -121,6 +128,51 @@ final class MarkerBoxes {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /**
+     * 画像のマーカー（旧 {@code BoxTreeBuilder.createImageMarker} の移植）: 画像の置換要素と続く空白 1 文字。画像の節は DOM に無い使い捨ての
+     * {@code img}（{@code isPseudoNode}。持ち主の子のように親だけを繋ぐ）で、画像が同じなら前回の節と箱を使い回す。
+     */
+    private static BoxNode makeImage(HtmlNode owner, Style st, BoxKind kind, String url, BoxNode prev, StyleSource styles) {
+        BoxNode prevImg = prev != null && prev.children.size() == 2 && prev.children.get(0).replaced != null ? prev.children.get(0) : null;
+        BoxNode prevGap = prevImg != null ? prev.children.get(1) : null;
+        HtmlNode img = prevImg != null && url.equals(prevImg.node.attrs.get("src")) ? prevImg.node : imageNode(owner, url);
+        ReplacedInput r = ReplacedInput.of(img, styles.viewportW(), styles.viewportH());
+        if (prevImg != null && prevImg.node == img && Objects.equals(r, prevImg.replaced)) r = prevImg.replaced;
+        Style ts = styles.text(st);
+        if (prevGap != null) ts = ts.shareEqualGroups(prevGap.style);
+        if (prevImg != null && prev.style == st && prev.kind == kind && prevImg.node == img && prevImg.replaced == r && prevImg.style == st
+                && prevGap.style == ts) {
+            return prev;
+        }
+        BoxNode ib = new BoxNode(img, st, BoxKind.INLINE_BLOCK, null, BoxChunk.EMPTY, BoxNode.Pseudo.NONE, null, null, r, null, NO_ORDINAL,
+                prevImg != null ? prevImg.layout : null);
+        BoxNode gap = new BoxNode(owner, ts, BoxKind.TEXT, TextContent.of(" ", ts), BoxChunk.EMPTY, BoxNode.Pseudo.MARKER, null, null, null,
+                null, NO_ORDINAL, prevGap != null ? prevGap.layout : null);
+        return new BoxNode(owner, st, kind, null, new BoxChunk(new BoxNode[]{ib, gap}), BoxNode.Pseudo.MARKER, null, null, null, null,
+                NO_ORDINAL, prev != null ? prev.layout : null);
+    }
+
+    private static HtmlNode imageNode(HtmlNode owner, String url) {
+        HtmlNode image = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("img");
+        image.isPseudoNode = true;
+        image.setAttribute("src", url); // 親に繋ぐ前に書く（DOM の観測者には見えない節なので、属性の変更を通知させない）
+        image.parent = owner;
+        image.setId(owner.key() + "_marker_img");
+        return image;
+    }
+
+    /** {@code list-style-image} の {@code url(...)} の中身。{@code none} や url 以外は null。 */
+    static String imageUrl(String value) {
+        if (value == null) return null;
+        String v = value.trim();
+        if (v.length() < 6 || !v.regionMatches(true, 0, "url(", 0, 4) || !v.endsWith(")")) return null;
+        String inner = v.substring(4, v.length() - 1).trim();
+        if (inner.length() >= 2 && (inner.charAt(0) == '"' || inner.charAt(0) == '\'') && inner.charAt(inner.length() - 1) == inner.charAt(0)) {
+            inner = inner.substring(1, inner.length() - 1);
+        }
+        return inner.isEmpty() ? null : inner;
     }
 
     private static BoxNode make(HtmlNode owner, Style st, BoxKind kind, String raw, int ord, BoxNode prev, StyleSource styles) {

@@ -58,7 +58,7 @@ final class TextRun {
      * {@code wordSpacing} は語の区切りの文字（空白・改行しない空白）ごとに足す幅（CSS Text 3 §8.1。旧経路は持たない）。
      */
     record Metrics(BoxNode box, Style style, FontFace face, FontStyle fs, WhiteSpace ws, WordBreak wb, float spaceW,
-                  float ascent, float descent, float wordSpacing) {
+                  float ascent, float descent, float wordSpacing, String measured) {
         static Metrics of(BoxNode box, LayoutSession s) {
             return of(box, box.style, s);
         }
@@ -70,7 +70,10 @@ final class TextRun {
             float lh = InlineFlow.lineHeight(st, face);
             float ra = InlineFlow.runBaseline(st, s);
             float wsp = wordSpacing(st, s);
-            return new Metrics(box, st, face, fs, st.facts.whiteSpace, st.facts.wordBreak, face.advance(" ", fs) + wsp, ra, lh - ra, wsp);
+            // ::first-line の text-transform は測る文字だけに掛ける（長さは同じなので折り返しの機会と片の位置は節の中身のまま）
+            String measured = st == box.style ? box.text : FirstLine.transform(box.text, box.style, st);
+            return new Metrics(box, st, face, fs, st.facts.whiteSpace, st.facts.wordBreak, face.advance(" ", fs) + wsp, ra, lh - ra, wsp,
+                    measured);
         }
 
         private static float wordSpacing(Style st, LayoutSession s) {
@@ -85,7 +88,7 @@ final class TextRun {
          * （CSS Text 3 §8.2。旧経路と同じ）ので、節の末尾で終わる区間からは 1 つ分を引く。行を組む側と測る側が同じ幅を使う。
          */
         float advance(int start, int end) {
-            String t = box.text;
+            String t = measured;
             float w = face.advance(start == 0 && end == t.length() ? t : t.substring(start, end), fs);
             if (wordSpacing != 0) { // 区間の中の語の区切りの文字（保った空白・1 語にまとめた区間の空白）
                 for (int i = start; i < end; i++) {

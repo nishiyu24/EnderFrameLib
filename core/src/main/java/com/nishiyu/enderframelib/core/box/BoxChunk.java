@@ -14,13 +14,18 @@ public final class BoxChunk extends BoxChildren {
     private final BoxNode[] items;
     /** 中身の事実（構築時に 1 回だけ求める不変の導出値）: インライン水準の子・ブロック水準の子があるか。 */
     private final boolean inline, block, floats, contents, ordinals, table;
+    /**
+     * 流れの中のブロック水準の子（float・流れの外の箱でないもの）があるか・インライン要素として辿る子の内容の中にそれがあるか
+     * （インラインの中のブロック。CSS 2.1 §9.2.1.1。G1）。辿る規則は行を組む側（{@code InlineSegment#descends}）と同じ。
+     */
+    private final boolean inFlowBlock, blockInInline;
     /** 全ての子が自分自身をレイアウトの入力とするか（{@link BoxNode#layout}。M2c）。 */
     private final boolean self;
 
     /** {@code items} の所有権を受け取る（呼び出し側は以後書き換えない）。 */
     BoxChunk(BoxNode[] items) {
         this.items = items;
-        boolean in = false, bl = false, fl = false, co = false, od = false, tb = false, sf = true;
+        boolean in = false, bl = false, fl = false, co = false, od = false, tb = false, sf = true, ib = false, bi = false;
         for (BoxNode b : items) {
             if (b.layout != b) sf = false;
             if (b.kind.tableInternal()) tb = true;
@@ -31,8 +36,16 @@ public final class BoxChunk extends BoxChildren {
                 bl |= b.flow.hasBlock();
                 fl |= b.flow.hasFloat();
                 tb |= b.flow.hasTableInternal();
+                ib |= b.flow.hasInFlowBlock();
+                bi |= b.flow.hasBlockInInline();
                 continue;
             }
+            var pos = b.kind == BoxKind.NONE || b.kind == BoxKind.TEXT ? null : b.style.box.position;
+            boolean outOfFlow = pos == com.nishiyu.enderframelib.core.css.model.Position.ABSOLUTE
+                    || pos == com.nishiyu.enderframelib.core.css.model.Position.FIXED;
+            if (b.kind.blockLevel() && !b.style.facts.floating && !outOfFlow) ib = true;
+            else if (b.kind != BoxKind.NONE && b.kind != BoxKind.TEXT && !b.kind.atomicInline() && !outOfFlow
+                    && (b.flow.hasInFlowBlock() || b.flow.hasBlockInInline())) bi = true;
             if (b.kind.blockLevel() && b.style.facts.floating) fl = true;
             if (b.kind.blockLevel()) bl = true;
             else if (b.kind == BoxKind.INLINE || b.kind.atomicInline() || (b.kind == BoxKind.TEXT && !b.collapsibleWhitespace())) in = true;
@@ -44,6 +57,8 @@ public final class BoxChunk extends BoxChildren {
         this.ordinals = od;
         this.table = tb;
         this.self = sf;
+        this.inFlowBlock = ib;
+        this.blockInInline = bi;
     }
 
     /** 全ての子が自分自身をレイアウトの入力とするか（M2c）。 */
@@ -77,6 +92,12 @@ public final class BoxChunk extends BoxChildren {
 
     /** ブロック水準の子（{@link BoxKind#blockLevel()}）を含むか。 */
     public boolean hasBlock() { return block; }
+
+    /** 流れの中のブロック水準の子（float・流れの外の箱でない）を含むか（{@code display: contents} の中身を含む）。 */
+    public boolean hasInFlowBlock() { return inFlowBlock; }
+
+    /** インライン要素として辿る子の内容の中に、流れの中のブロック水準の箱があるか（インラインの中のブロック。CSS 2.1 §9.2.1.1）。 */
+    public boolean hasBlockInInline() { return blockInInline; }
 
     @Override public int size() { return items.length; }
     @Override public int chunkCount() { return 1; }

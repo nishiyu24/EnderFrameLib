@@ -75,12 +75,16 @@ final class InlineLineBuilder implements TextRun.Sink {
     private TextRun.Metrics run;
     /** {@code ::first-line} のスタイル（無い・1 行目を閉じたら null）。 */
     private Style firstLine;
+    /** 組む区間（インラインの中のブロックで割った内容のどこか。{@link InlineSegment}）。 */
+    private final InlineSegment seg;
 
     /**
      * @param shrink 折り返しの判定に使う幅から引く量（{@code text-wrap: balance} が行を揃えるために狭める。行の幅と揃えは元のまま）
+     * @param segment 組む区間（インラインの中のブロックの前後。0 が最初）
      */
     InlineLineBuilder(Style container, Style firstLine, float availW, LayoutFragment prior, Floats.Space exc, float originY, float shrink,
-                      float pctH, LayoutSession s) {
+                      float pctH, int segment, LayoutSession s) {
+        this.seg = new InlineSegment(segment);
         this.firstLine = firstLine;
         this.shrink = shrink;
         this.pctH = pctH;
@@ -98,7 +102,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         this.containerWs = container.facts.whiteSpace;
         this.asc = strutAsc;
         this.desc = strutDesc;
-        this.x = InlineFlow.textIndent(container, availW, s); // 最初の行だけの字下げ（% は内容ボックスの幅が基準）
+        this.x = segment == 0 ? InlineFlow.textIndent(container, availW, s) : 0; // 最初の行だけの字下げ（% は内容ボックスの幅が基準）
         startLine();
     }
 
@@ -131,11 +135,15 @@ final class InlineLineBuilder implements TextRun.Sink {
         add(n, containerWs);
     }
 
-    /** {@code ws} は {@code n} の親（インラインの持ち主）の {@code white-space}（原子の前後の機会を決める）。 */
+    /**
+     * {@code ws} は {@code n} の親（インラインの持ち主）の {@code white-space}（原子の前後の機会を決める）。組む区間の外の内容は
+     * 辿るだけで置かない（{@link InlineSegment}）。
+     */
     private void add(BoxNode n, WhiteSpace ws) {
+        if (seg.stopped()) return;
         switch (n.kind) {
             case NONE -> { }
-            case TEXT -> text(n);
+            case TEXT -> { if (seg.active()) text(n); }
             case CONTENTS -> { // 箱を作らない: 中身を親の続きとして並べる
                 float outerTrail = trail;
                 for (int i = 0, c = n.flow.size(); i < c; i++) {
@@ -146,7 +154,15 @@ final class InlineLineBuilder implements TextRun.Sink {
             }
             default -> {
                 if (OutOfFlow.is(n)) { // 流れの外: 今の行の今の位置を静的位置として渡す
-                    oofPending.add(new OutOfFlow.Pending(n, x, cursor));
+                    if (seg.active()) oofPending.add(new OutOfFlow.Pending(n, x, cursor));
+                    return;
+                }
+                if (InlineSegment.splits(n)) { // インラインの中のブロック: 行を割る（ブロック自体は持ち主の流れが置く。CSS 2.1 §9.2.1.1）
+                    if (seg.boundary()) resume();
+                    return;
+                }
+                if (!seg.active()) {
+                    if (InlineSegment.descends(n)) inlineBox(n, null);
                     return;
                 }
                 if (InlineFlow.isBreak(n)) {
@@ -161,31 +177,65 @@ final class InlineLineBuilder implements TextRun.Sink {
                     atom(n, ws);
                     return;
                 }
-                Open ob = openBox(n);
-                WhiteSpace inner = n.style.facts.whiteSpace;
-                boolean va = !VerticalAlign.isBaseline(n.style);
-                inlParent.add(currentParent());
-                inl.add(n);
-                if (va) vaDepth++;
-                float outerTrail = trail;
-                for (int i = 0, c = n.flow.size(); i < c; i++) {
-                    trail = i == c - 1 ? outerTrail + ob.g.pR + ob.g.bR + ob.g.mR : 0;
-                    add(n.flow.get(i), inner);
-                }
-                trail = outerTrail;
-                inl.removeLast();
-                inlParent.removeLast();
-                if (va) vaDepth--;
-                closeBox(ob);
+                inlineBox(n, openBox(n, false));
             }
         }
+    }
+
+    /** インライン要素 {@code n} の中を辿る（{@code ob} は開いた箱。区間の外なら null で、中で区間が始まれば続きとして開く）。 */
+    private void inlineBox(BoxNode n, Open ob) {
+        InlineSegment.Entry skipped = null;
+        if (ob != null) enter(n);
+        else skipped = seg.push(n);
+        WhiteSpace inner = n.style.facts.whiteSpace;
+        float outerTrail = trail;
+        for (int i = 0, c = n.flow.size(); i < c && !seg.stopped(); i++) {
+            Open cur = ob != null ? ob : skipped.open;
+            trail = i == c - 1 && cur != null ? outerTrail + cur.g.pR + cur.g.bR + cur.g.mR : 0;
+            add(n.flow.get(i), inner);
+        }
+        trail = outerTrail;
+        if (skipped != null) {
+            seg.pop();
+            ob = skipped.open;
+        }
+        if (ob == null) return;
+        leave(n);
+        if (seg.stopped()) cut(ob);
+        else closeBox(ob);
+    }
+
+    /** 区間がここから始まる: 飛ばしている間に入ったインライン要素を、開始端の無い続きとして開く（外側から）。 */
+    private void resume() {
+        for (InlineSegment.Entry e : seg.skipped()) {
+            e.open = openBox(e.box, true);
+            enter(e.box);
+        }
+    }
+
+    private void enter(BoxNode n) {
+        inlParent.add(currentParent());
+        inl.add(n);
+        if (!VerticalAlign.isBaseline(n.style)) vaDepth++;
+    }
+
+    private void leave(BoxNode n) {
+        inl.removeLast();
+        inlParent.removeLast();
+        if (!VerticalAlign.isBaseline(n.style)) vaDepth--;
+    }
+
+    /** 区間の終わり（次のブロック）で開いている箱を、終了端の無い分として閉じる。 */
+    private void cut(Open ob) {
+        open.remove(open.size() - 1);
+        spanAt.add(new SpanAt(ob, ob.start, Math.max(ob.start, x), ob.startEdge, false));
     }
 
     /**
      * インライン要素の箱を開く（旧 {@code LineBuilder.openBox} の移植）。前に畳まれる空白が待っていれば箱の開始端より前へ出す
      * （空白は箱の外の文字に属する）。開始端（左の margin・border・padding）の分だけ進める。
      */
-    private Open openBox(BoxNode n) {
+    private Open openBox(BoxNode n, boolean continuation) {
         BoxGeometry g = new BoxGeometry(n.style, availW, s);
         FontFace face = s.face(n.style);
         FontStyle fs = n.style.facts.fontStyle;
@@ -201,9 +251,14 @@ final class InlineLineBuilder implements TextRun.Sink {
             clearPending();
         }
         ob.marginStart = x;
-        x += g.mL;
-        ob.start = x;
-        x += g.bL + g.pL;
+        if (continuation) { // 区間の頭の続き: 開始端（左の margin・border・padding）は前の区間にある
+            ob.startEdge = false;
+            ob.start = x;
+        } else {
+            x += g.mL;
+            ob.start = x;
+            x += g.bL + g.pL;
+        }
         open.add(ob);
         return ob;
     }
@@ -421,7 +476,7 @@ final class InlineLineBuilder implements TextRun.Sink {
         float gap = hasContent ? pending : 0;
         if (!hasContent) dropBelowFloats(x + outerW);
         boolean breakable = hasContent && (pending > 0 ? pendingWraps : afterWrapSpace || ws.wraps());
-        if (breakable && x + gap + outerW > lineW - shrink + EPS) {
+        if (breakable && x + gap + outerW + trail > lineW - shrink + EPS) { // 閉じる箱の終了端も同じ行に入る（文字の fits と同じ）
             newLine(true);
             gap = 0;
         }
@@ -504,28 +559,11 @@ final class InlineLineBuilder implements TextRun.Sink {
         } else {
             off += align.offset(soft, lineW, width);
         }
-        PlacedFragment[] atoms = LineFragment.NO_ATOMS;
-        if (!aFrag.isEmpty()) {
-            atoms = new PlacedFragment[aFrag.size()];
-            for (int i = 0; i < atoms.length; i++) {
-                float[] p = aPos.get(i);
-                float ay = p[3] == VerticalAlign.TOP ? p[2] : p[3] == VerticalAlign.BOTTOM ? lineH - p[4] + p[2] : asc - p[1] + p[2];
-                atoms[i] = new PlacedFragment(aFrag.get(i), LayoutUnit.snap(atomX[i]), LayoutUnit.snap(ay)); // 箱の位置は LayoutUnit の格子
-            }
-            aFrag.clear();
-            aPos.clear();
-        }
-        LineFragment.Span[] spans = LineFragment.NO_SPANS;
-        if (ns > 0) {
-            spans = new LineFragment.Span[ns];
-            int[] depth = new int[ns];
-            for (int i = 0; i < ns; i++) {
-                spans[i] = spanAt.get(i).span(atomX[na + 2 * i], atomX[na + 2 * i + 1], lineH, asc);
-                depth[i] = spanAt.get(i).ob().depth;
-            }
-            InlineSpans.sortByDepth(spans, depth); // 外側の箱が先（描く順）
-            spanAt.clear();
-        }
+        PlacedFragment[] atoms = InlineSpans.atoms(aFrag, aPos, atomX, lineH, asc);
+        LineFragment.Span[] spans = InlineSpans.spans(spanAt, atomX, na, lineH, asc);
+        aFrag.clear();
+        aPos.clear();
+        spanAt.clear();
         lines.add(new LineFragment(LayoutUnit.snap(off), cursor, width, lineH, LayoutUnit.snap(asc), pieces, atoms, spans));
         cursor += lineH;
         pBox.clear();
@@ -556,16 +594,7 @@ final class InlineLineBuilder implements TextRun.Sink {
     }
 
     InlineFlow.Result finish() {
-        if (hasContent || !pBox.isEmpty() || !aFrag.isEmpty() || anyDecorated()) newLine(false);
+        if (hasContent || !pBox.isEmpty() || !aFrag.isEmpty() || InlineSpans.decorated(spanAt)) newLine(false);
         return new InlineFlow.Result(lines.toArray(new LineFragment[0]), cursor, oofPending);
-    }
-
-    /** 今の行の箱に、余白・枠線・padding を持つものがあるか（中身の無い行でも、そういう箱があれば行を作る。CSS 2.2 §9.4.2）。 */
-    private boolean anyDecorated() {
-        for (SpanAt a : spanAt) {
-            BoxGeometry g = a.ob().g;
-            if (g.mL != 0 || g.mR != 0 || g.bL + g.pL + g.pR + g.bR != 0 || g.bT + g.pT + g.pB + g.bB != 0) return true;
-        }
-        return false;
     }
 }

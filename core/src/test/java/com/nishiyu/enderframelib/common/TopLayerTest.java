@@ -6,7 +6,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -109,7 +108,6 @@ public class TopLayerTest {
 
     /** モーダルの dialog は ::backdrop をビューポート全面に、dialog の直前に描く。閉じたら消える。 */
     @Test
-    @Disabled("G5 ::backdrop が新経路に無い。計画書 §3.2「新経路の穴（M2c-3 の移植で見えた）」")
     public void modalDialogPaintsBackdropBehindItself() {
         Ctx c = new Ctx("<style>dialog::backdrop{background:rgba(255,0,0,0.5)}</style><dialog id=d>x</dialog>");
         c.el("d").showModal();

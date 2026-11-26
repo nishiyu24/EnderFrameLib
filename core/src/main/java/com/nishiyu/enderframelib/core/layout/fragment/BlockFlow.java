@@ -86,7 +86,7 @@ final class BlockFlow implements FormattingEngine {
         Assembled a;
         List<OutOfFlow.Pending> pend = new ArrayList<>();
         float insetL = g.bL + g.pL, insetT = g.bT + g.pT + spill;
-        if (legend == null && (text || (kids.hasInline() && !kids.hasBlock()))) {
+        if (legend == null && (text || (kids.hasInline() && !kids.hasBlock() && !kids.hasBlockInInline()))) {
             InlineFlow.Result r = InlineFlow.layout(text ? List.of(node) : kids.toList(), st, text ? null : node.firstLine, cw, prior, inherited, 0,
                     childPct, s);
             lines = r.lines().length > 0 ? r.lines() : null;
@@ -241,18 +241,30 @@ final class BlockFlow implements FormattingEngine {
         ChunkBuilder b = new ChunkBuilder(8, s);
         List<BoxNode> run = new ArrayList<>();
         Floats.Space exc = inherited;
+        int seg = 0; // run の内容のうち、インラインの中のブロックで割って置き終えた区間の数（次に組む区間）
         for (BoxNode child : kids.toList()) {
             if (child.kind == BoxKind.NONE || child == skip) continue; // skip: fieldset の描画される legend
             if (OutOfFlow.is(child)) {
-                flushRun(st, run, base, pct.percentHeightBase, b, exc, s);
+                flushRun(st, run, seg, base, pct.percentHeightBase, b, exc, s);
+                seg = 0;
                 b.addOutOfFlow(child);
                 continue;
             }
             if (!child.kind.blockLevel()) {
                 run.add(child);
+                if (InlineSegment.descends(child) && (child.flow.hasInFlowBlock() || child.flow.hasBlockInInline())) { // 原子の中は割らない
+                    // インラインの中のブロック（CSS 2.1 §9.2.1.1）: 前の区間の行を匿名の塊にして、ブロックをこの流れの子として並べる
+                    List<BoxNode> blocks = new ArrayList<>();
+                    InlineSegment.collect(child, blocks);
+                    for (BoxNode blk : blocks) {
+                        layoutRun(st, run, seg++, base, pct.percentHeightBase, b, exc, s);
+                        exc = inFlowBlock(blk, base, pct, cur, b, exc, s);
+                    }
+                }
                 continue;
             }
-            flushRun(st, run, base, pct.percentHeightBase, b, exc, s);
+            flushRun(st, run, seg, base, pct.percentHeightBase, b, exc, s);
+            seg = 0;
             if (Floats.is(child)) {
                 // 流れの箱が始まる前の float は内容ボックスの上端（チャンク基準で -lead）から積み、位置は内容ボックス基準で持つ（ChunkedFlow.y）
                 boolean leading = !b.started();
@@ -262,38 +274,48 @@ final class BlockFlow implements FormattingEngine {
                 b.addFloat(p.frag(), p.x(), leading ? p.y() + lead : p.y());
                 continue;
             }
-            var clear = child.style.box.clear;
-            if (clear != null && clear != com.nishiyu.enderframelib.core.css.model.CssKeywords.Clear.NONE) b.clearTo(exc.clearance(clear));
-            ConstraintSpace sp = BoxGeometry.usesPercentHeight(child) ? pct : base;
-            LayoutFragment prev = cur.find(child);
-            if (FloatAvoid.avoids(child)) {
-                if (exc.isEmpty()) b.add(s.cache().layout(child, sp, prev, s), 0);
-                else FloatAvoid.place(child, sp, exc, b, prev, s);
-            } else { // 外の float を渡し、子が置いた float を受け取る（除外領域が空なら鍵は変わらない）
-                exc = FloatAvoid.intrude(child, sp, exc, b, prev, s);
-            }
+            exc = inFlowBlock(child, base, pct, cur, b, exc, s);
         }
-        flushRun(st, run, base, pct.percentHeightBase, b, exc, s);
+        flushRun(st, run, seg, base, pct.percentHeightBase, b, exc, s);
         floatBottom[0] = exc.bottom();
         excOut[0] = exc;
         return b.build(null, pct, null);
     }
 
-    private static void flushRun(Style st, List<BoxNode> run, ConstraintSpace base, float pctH, ChunkBuilder b, Floats.Space exc,
-                                 LayoutSession s) {
+    /** 流れの中のブロック水準の子を 1 つ置く（clear・float を避ける箱・float を受け取る箱）。更新した除外領域を返す。 */
+    private static Floats.Space inFlowBlock(BoxNode child, ConstraintSpace base, ConstraintSpace pct, Cursor cur, ChunkBuilder b,
+                                           Floats.Space exc, LayoutSession s) {
+        var clear = child.style.box.clear;
+        if (clear != null && clear != com.nishiyu.enderframelib.core.css.model.CssKeywords.Clear.NONE) b.clearTo(exc.clearance(clear));
+        ConstraintSpace sp = BoxGeometry.usesPercentHeight(child) ? pct : base;
+        LayoutFragment prev = cur.find(child);
+        if (!FloatAvoid.avoids(child)) return FloatAvoid.intrude(child, sp, exc, b, prev, s); // 外の float を渡し、子が置いた float を受け取る
+        if (exc.isEmpty()) b.add(s.cache().layout(child, sp, prev, s), 0);
+        else FloatAvoid.place(child, sp, exc, b, prev, s);
+        return exc;
+    }
+
+    private static void flushRun(Style st, List<BoxNode> run, int seg, ConstraintSpace base, float pctH, ChunkBuilder b,
+                                 Floats.Space exc, LayoutSession s) {
+        layoutRun(st, run, seg, base, pctH, b, exc, s);
+        run.clear();
+    }
+
+    /** インラインの連なり {@code run} の区間 {@code seg}（{@link InlineSegment}）を匿名の塊にして置く。 */
+    private static void layoutRun(Style st, List<BoxNode> run, int seg, ConstraintSpace base, float pctH, ChunkBuilder b,
+                                  Floats.Space exc, LayoutSession s) {
         if (run.isEmpty()) return;
         boolean blank = true;
         for (BoxNode n : run) blank &= n.collapsibleWhitespace();
         if (!blank) {
             // LIMITATION: 混在の流れの匿名の塊には ::first-line を掛けない（1 行目がチャンクの中にあり、チャンクの記憶と分けられない）
-            InlineFlow.Result r = InlineFlow.layout(run, st, null, base.availableWidth, null, exc, b.flowY(), pctH, s);
+            InlineFlow.Result r = InlineFlow.layout(run, st, null, base.availableWidth, null, exc, b.flowY(), pctH, seg, s);
             if (r.lines().length > 0 || !r.pending().isEmpty()) {
                 b.add(new LayoutFragment(null, base, base.availableWidth, r.height(), 0, 0, 0, 0, 0, 0, 0, r.lines().length == 0,
                         null, r.lines().length > 0 ? r.lines() : null,
                         r.pending().isEmpty() ? null : r.pending().toArray(OutOfFlow.NONE), null), 0);
             }
         }
-        run.clear();
     }
 
     /** チャンクを縦に並べ、チャンク境界を跨いで余白を相殺した結果。 */

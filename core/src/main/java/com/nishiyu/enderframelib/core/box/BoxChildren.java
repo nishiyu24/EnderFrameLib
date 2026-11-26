@@ -44,6 +44,18 @@ public abstract sealed class BoxChildren permits BoxChunk, BoxChildren.Chunked {
         return false;
     }
 
+    /** どれかのチャンクが流れの中のブロック水準の子を含むか（{@link BoxChunk#hasInFlowBlock()}）。 */
+    public boolean hasInFlowBlock() {
+        for (int c = 0, n = chunkCount(); c < n; c++) if (chunk(c).hasInFlowBlock()) return true;
+        return false;
+    }
+
+    /** どれかのチャンクがインラインの中のブロックを含むか（{@link BoxChunk#hasBlockInInline()}）。 */
+    public boolean hasBlockInInline() {
+        for (int c = 0, n = chunkCount(); c < n; c++) if (chunk(c).hasBlockInInline()) return true;
+        return false;
+    }
+
     /** どれかのチャンクが float の子を含むか（O(チャンク数)）。 */
     public boolean hasFloat() {
         for (int c = 0, n = chunkCount(); c < n; c++) if (chunk(c).hasFloat()) return true;

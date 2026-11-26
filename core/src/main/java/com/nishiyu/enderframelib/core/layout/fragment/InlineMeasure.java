@@ -37,6 +37,14 @@ final class InlineMeasure implements TextRun.Sink {
             }
             default -> {
                 if (OutOfFlow.is(n)) return;
+                if (InlineSegment.splits(n)) { // インラインの中のブロック: 前後で行が割れ、自分は 1 行を占める（CSS 2.1 §9.2.1.1）
+                    forcedBreak();
+                    MinMaxSizes c = new BoxGeometry(n.style, Float.NaN, s).contribution(n.style, s.cache().minMax(n, s), s);
+                    float m = BlockFlow.fixedMargin(n.style, n.style.box.marginLeft, s) + BlockFlow.fixedMargin(n.style, n.style.box.marginRight, s);
+                    min = Math.max(min, c.min + m);
+                    max = Math.max(max, c.max + m);
+                    return;
+                }
                 if (InlineFlow.isBreak(n)) {
                     forcedBreak();
                     return;

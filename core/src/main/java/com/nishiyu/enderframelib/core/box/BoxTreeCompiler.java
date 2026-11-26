@@ -291,7 +291,7 @@ public final class BoxTreeCompiler {
         String text = null;
         BoxChildren children = BoxChunk.EMPTY;
         BoxNode before = null, after = null, marker = null;
-        Style firstLine = null;
+        Style firstLine = null, backdrop = null;
         if (kind == BoxKind.TEXT) {
             text = TextContent.of(n.text, style, style.inherited.textTransform == com.nishiyu.enderframelib.core.css.model.CssKeywords.TextTransform.CAPITALIZE
                     && TextContent.continuesWord(n));
@@ -335,6 +335,10 @@ public final class BoxTreeCompiler {
                     firstLine = redoPseudo || !usable ? styles.firstLine(n, style) : prev.firstLine;
                     if (usable && firstLine != null && firstLine.equals(prev.firstLine)) firstLine = prev.firstLine;
                 }
+                if (element && topLayerCapable(n)) { // ::backdrop（描画だけが読む。値が前回と同じなら前回の参照）
+                    backdrop = redoPseudo || !usable ? styles.backdrop(n, style) : prev.backdrop;
+                    if (usable && backdrop != null && backdrop.equals(prev.backdrop)) backdrop = prev.backdrop;
+                }
                 if (counters != null) counters.release(mark);
             } finally {
                 if (deepen) deep--;
@@ -365,10 +369,16 @@ public final class BoxTreeCompiler {
                 && kind == prev.kind && text == prev.text && children == prev.children
                 && replaced == prev.replaced && popover == prev.popover && TableBoxes.spanOf(n, kind, BoxNode.Pseudo.NONE) == prev.span
                 && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)
-                && marker == prev.marker && firstLine == prev.firstLine) return prev;
+                && marker == prev.marker && firstLine == prev.firstLine && backdrop == prev.backdrop) return prev;
         stats.rebuiltBoxes++;
         return new BoxNode(n, layoutStyle, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL,
-                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover, firstLine, prev != null ? prev.layout : null);
+                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover, firstLine, backdrop,
+                prev != null ? prev.layout : null);
+    }
+
+    /** {@code ::backdrop} を持てる要素（Top Layer に入る {@code dialog}・{@code popover}。旧 {@code RenderTreeBuilder} と同じ）。 */
+    private static boolean topLayerCapable(HtmlNode n) {
+        return "dialog".equals(n.tag) || n.attrs != null && n.attrs.containsKey("popover");
     }
 
     /** {@code ::first-line} を持てるブロックコンテナ（ブロック・インラインブロック・表のセルと見出し。旧 {@code LayoutBox.isFirstLineContainer}）。 */

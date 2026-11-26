@@ -146,7 +146,7 @@ TTF / OTF 以外の `@font-face` で登録した書体）だけの話。シス�
   `BitmapFontFace.MC_LINE_GAP_RATIO` として与え、`normal` = 1.15 にしている。
   F2 以前は 1.375 の固定値だった。
 
-## 既知の差異（34 件）
+## 既知の差異（23 件）
 
 ほとんどは R0 で測定を拡張し、計算値の列（`display` / `position` / `box-sizing` / `overflow` と、
 ケースが宣言した `opacity` / `transform` / `color` など）と
@@ -182,21 +182,11 @@ TTF / OTF 以外の `@font-face` で登録した書体）だけの話。シス�
 ### R7（テキストと国際化）
 - `forced-line-breaks#box.scrollHeight`: ブラウザ 62 / エンジン 60（強制改行の末尾行送り・ベースラインの 2px の差。原因は、行の高さ 20px より高い書体の内容領域（Noto Sans JP の ascent + descent = 24px）の下端がスクロール範囲に入ること。エンジンは Phase 4 で内容領域を算入するようにしたが、このコーパスの測定は書体を持たない `FontResolver.FALLBACK` なので 60 のまま。システムの書体では `DirectionLayoutTest` が固定している）
 
-### M2c（経路を 1 本にして新経路で測って見えた差）
-- `inline-box-wrap#row3.h`: ブラウザ 20 / エンジン 10（新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る））
-- `inline-box-wrap#row3.z`: ブラウザ 0 / エンジン 1（新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る））
-- `inline-box-wrap#row3.scrollWidth`: ブラウザ 110 / エンジン 120（新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る））
-- `inline-box-wrap#row3.scrollHeight`: ブラウザ 21 / エンジン 11（新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る））
-- `inline-box-wrap#row3.clientHeight`: ブラウザ 20 / エンジン 10（新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る））
-- `inline-box-wrap#u.x`: ブラウザ 8 / エンジン 68（新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る））
-- `inline-box-wrap#u.y`: ブラウザ 87 / エンジン 77（新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る））
-- `inline-box-wrap#h.x`: ブラウザ 8 / エンジン 68（新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る））
-- `inline-box-wrap#h.y`: ブラウザ 78 / エンジン 68（新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る））
-- `table-border-collapse#t.scrollWidth`: ブラウザ 90 / エンジン 92（新経路の枠線を重ねる表のスクロール範囲が、外周の枠線の半分を足している）
-- `table-border-collapse#t.scrollHeight`: ブラウザ 26 / エンジン 28（新経路の枠線を重ねる表のスクロール範囲が、外周の枠線の半分を足している）
-
 ## 解消済みの差異
 
+- **M2c の 11 行（台帳 11 行 → 0 行。G9）**: 新経路で測って見えた差。`inline-box-wrap` の `row3`（原子を最後の子に持つインライン要素の
+  終了端を、原子と同じ行に入るかの判定に数えていなかった）と `table-border-collapse` の `t.scrollWidth` / `t.scrollHeight`（枠線を重ねる
+  表のスクロール範囲をセルの端までにする R9 の規則が新経路に無かった）。
 - **R9（台帳 4 行 → 0 行）**: `table-border-collapse` の `t.scrollWidth` / `t.scrollHeight` / `t.clientWidth` / `t.clientHeight`。
   ブラウザは `border-collapse: collapse` の表で、外周の枠線の半分を `clientLeft` などに数えず（`clientWidth` は箱の幅のまま）、
   `scrollWidth` / `scrollHeight` はセルの端まで測る（箱より 2px 小さくなる）。エンジンも同じにした

@@ -25,16 +25,3 @@ overflow-size#scroller.clientWidth R5: スクロールバー表示による clie
 overflow-size#content.w R5: スクロールバーの内側での子の % 幅縮小
 overflow-size#content.scrollWidth R5: スクロールバーの内側での子の % 幅縮小
 overflow-size#content.clientWidth R5: スクロールバーの内側での子の % 幅縮小
-
-# M2c（経路を 1 本にし、このコーパスを新経路で測るようになって見えた差。M2c-2 の既定の切り替えから。計画書 §3.2 の「新経路の穴」）
-inline-box-wrap#row3.h M2c: 新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る）
-inline-box-wrap#row3.z M2c: 新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る）
-inline-box-wrap#row3.scrollWidth M2c: 新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る）
-inline-box-wrap#row3.scrollHeight M2c: 新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る）
-inline-box-wrap#row3.clientHeight M2c: 新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る）
-inline-box-wrap#u.x M2c: 新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る）
-inline-box-wrap#u.y M2c: 新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る）
-inline-box-wrap#h.x M2c: 新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る）
-inline-box-wrap#h.y M2c: 新経路の行分割が、子に原子を持つインライン要素の前で折り返さない（ブラウザは g の後で折り返して h を次の行へ送る）
-table-border-collapse#t.scrollWidth M2c: 新経路の枠線を重ねる表のスクロール範囲が、外周の枠線の半分を足している
-table-border-collapse#t.scrollHeight M2c: 新経路の枠線を重ねる表のスクロール範囲が、外周の枠線の半分を足している

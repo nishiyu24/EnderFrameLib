@@ -89,6 +89,11 @@ public final class ScrollableOverflow {
                 any = true;
             }
         }
+        boolean visible = (st.box.overflowX == null || st.box.overflowX == Overflow.VISIBLE)
+                && (st.box.overflowY == null || st.box.overflowY == Overflow.VISIBLE);
+        // 枠線を重ねる表（クリップしない）: ブラウザはセルの端まで測る（外周の枠線の半分と padding を足さず、箱の大きさで下駄を履かせない。
+        // 旧 ScrollExtentCalc の isCollapsedTable と同じ。G9）
+        if (visible && TableBorders.collapses(f.box)) return new float[]{a.extR, a.extB, a.descR, a.descB};
         if (!any) return new float[]{Math.max(w, g.pL + g.bL + g.pR + g.bR), Math.max(h, g.pT + g.bT + g.pB + g.bB), w, h};
         return new float[]{Math.max(Math.max(w, a.extR + g.pR + g.bR), a.descR), Math.max(Math.max(h, a.extB + g.pB + g.bB), a.descB),
                 a.descR, a.descB};
