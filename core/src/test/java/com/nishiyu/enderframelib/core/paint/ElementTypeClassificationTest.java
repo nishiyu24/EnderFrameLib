@@ -92,7 +92,7 @@ class ElementTypeClassificationTest {
         Path root = Path.of("core/src/main/java");
         if (!Files.isDirectory(root)) root = Path.of("src/main/java");
         List<Path> roots = new ArrayList<>(List.of(root));
-        Path host = Path.of("src/main/java"); // ルート（Minecraft 側）。ルートから走るときだけ
+        Path host = Path.of("mod/src/main/java"); // MOD（Minecraft 側）。リポジトリ直下から走るときだけ
         if (Files.isDirectory(Path.of("core/src/main/java")) && Files.isDirectory(host)) roots.add(host);
         List<String> offenders = new ArrayList<>();
         List<String> labels = List.of("CANVAS", "VIDEO", "CHECKBOX", "CIRCLE_BORDER", "ROUNDED_BORDER");

@@ -1,0 +1,84 @@
+package com.nishiyu.enderframelib.core;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
+
+/**
+ * ゴールデンファイル（期待出力）の読み書きヘルパー。
+ *
+ * 意図的な挙動変更でゴールデンを更新したいときは、システムプロパティを付けて実行する:
+ *   ./gradlew test -Dgolden.update=true
+ * 更新後は必ず差分を目視してからコミットすること。
+ */
+public final class GoldenFiles {
+
+    /** ゴールデンの置き場（リポジトリ直下から）。:core は core/src/test/resources/golden、:mod のテストは -Dgolden.dir で自分の置き場を渡す。 */
+    private static final Path GOLDEN_DIR = Paths.get(System.getProperty("golden.dir", "core/src/test/resources/golden"));
+    /** 入力に使う同梱の文書（MOD のデータパックの資源）。 */
+    private static final Path FIXTURE_DIR = Paths.get("mod/src/main/resources/data/enderframelib/enderframe_ui");
+
+    private GoldenFiles() {}
+
+    public static boolean isUpdateMode() {
+        return Boolean.getBoolean("golden.update");
+    }
+
+    /** MOD の同梱の文書（mod/src/main/resources 配下）を入力として読む */
+    public static String readFixture(String fileName) {
+        return readNormalized(FIXTURE_DIR.resolve(fileName));
+    }
+
+    /**
+     * actual をゴールデンと比較する。ゴールデンが無い場合、または更新モードの場合は書き出す。
+     */
+    public static void assertMatches(String goldenName, String actual) {
+        Path golden = GOLDEN_DIR.resolve(goldenName);
+        String normalized = normalize(actual);
+
+        if (isUpdateMode() || !Files.exists(golden)) {
+            write(golden, normalized);
+            if (!isUpdateMode()) {
+                System.out.println("ゴールデンを新規作成しました: " + golden + " — 内容を確認してコミットしてください。");
+            }
+            return;
+        }
+        assertEquals(readNormalized(golden), normalized, "ゴールデンとの差分: " + golden);
+    }
+
+    private static String readNormalized(Path path) {
+        try {
+            return normalize(Files.readString(path));
+        } catch (IOException e) {
+            throw new UncheckedIOException("ファイルを読めません: " + path.toAbsolutePath(), e);
+        }
+    }
+
+    private static void write(Path path, String content) {
+        try {
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, content);
+        } catch (IOException e) {
+            throw new UncheckedIOException("ファイルを書けません: " + path.toAbsolutePath(), e);
+        }
+    }
+
+    /** 改行コードと末尾空白の差で落ちないようにする */
+    private static String normalize(String s) {
+        return s.replace("\r\n", "\n").stripTrailing();
+    }
+}

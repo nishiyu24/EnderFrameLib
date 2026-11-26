@@ -84,7 +84,7 @@ class PortabilityRatchetTest {
      */
     private static final Set<String> GL_PACKAGE_IMPORTERS = Set.of(
             "core-glfw/src/main/java/com/nishiyu/enderframelib/common/StandaloneViewer.java",
-            "src/main/java/com/nishiyu/enderframelib/client/renderer/MinecraftHostSurface.java");
+            "mod/src/main/java/com/nishiyu/enderframelib/client/renderer/MinecraftHostSurface.java");
 
     private static final Pattern MAIN_FUNCTION = Pattern.compile("void\\s+main\\s*\\(\\s*\\)");
     private static final Pattern VERSION_LINE = Pattern.compile("(?m)(^[ \\t]*|\")#version[ \\t]+\\d+");
@@ -119,7 +119,7 @@ class PortabilityRatchetTest {
     @Test
     void glPackageIsImportedFromOutsideOnlyByTheKnownEntryPoints() throws IOException {
         Set<String> found = new TreeSet<>();
-        for (String base : new String[]{"core/src/main/java", "core-vulkan/src/main/java", "core-glfw/src/main/java", "src/main/java"}) {
+        for (String base : new String[]{"core/src/main/java", "core-vulkan/src/main/java", "core-glfw/src/main/java", "mod/src/main/java"}) {
             Path root = Path.of(base);
             if (!Files.isDirectory(root)) continue;
             try (Stream<Path> files = Files.walk(root)) {

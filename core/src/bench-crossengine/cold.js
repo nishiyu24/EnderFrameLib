@@ -6,7 +6,7 @@ const [,, doc='showcase', runsArg='5', gpuMode='gpu']=process.argv; const RUNS=p
 const CHROME='C:/Program Files/Google/Chrome/Application/chrome.exe';
 function largeList(n){let s='<html><head><style>body { margin: 8px; } ul { list-style: none; padding: 0; } li { padding: 4px; border-bottom: 1px solid #ccc; }</style></head><body><div id="scroller" style="height: 400px; overflow-y: auto;"><ul>';for(let i=1;i<=n;i++)s+='<li id="item-'+i+'">Row item #'+i+' with description text</li>';return s+'</ul></div></body></html>';}
 const BEACON='<script>addEventListener("load",()=>requestAnimationFrame(()=>requestAnimationFrame(()=>fetch("/done",{method:"POST",body:"x"}))));</script>';
-const html=(doc.startsWith('large-list')?largeList(parseInt(doc.split('-')[2]||'500')):fs.readFileSync(path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8'))+BEACON;
+const html=(doc.startsWith('large-list')?largeList(parseInt(doc.split('-')[2]||'500')):fs.readFileSync(path.join(__dirname,'../../../mod/src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8'))+BEACON;
 async function once(){
   return new Promise(resolve=>{
     let t0,child;

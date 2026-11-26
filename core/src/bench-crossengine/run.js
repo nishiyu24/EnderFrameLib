@@ -1,12 +1,12 @@
 const http=require('http'),fs=require('fs'),path=require('path'),cp=require('child_process'),os=require('os');
 const [,, browser, doc, tag] = process.argv;
 const FONT=process.env.BENCH_FONT||'';   // 全要素へ同じ書体を強制（bench.html の ?font=）
-function fixture(name){ const a=path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui',name); return fs.existsSync(a)?a:path.join(__dirname,'../../../src/test/resources/benchmark',name); }
+function fixture(name){ const a=path.join(__dirname,'../../../mod/src/main/resources/data/enderframelib/enderframe_ui',name); return fs.existsSync(a)?a:path.join(__dirname,'../../../core/src/test/resources/benchmark',name); }
 const exe = {chrome:'C:/Program Files/Google/Chrome/Application/chrome.exe', edge:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', firefox:'C:/Program Files/Mozilla Firefox/firefox.exe'}[browser];
 const dir=__dirname; let child;
 const srv=http.createServer((req,res)=>{
   if(req.method==='POST'){let b='';req.on('data',d=>b+=d);req.on('end',()=>{fs.writeFileSync(path.join(dir,`res-${browser}-${doc}${FONT?'-'+FONT:''}.json`),b);res.end('ok');console.log('got result');setTimeout(()=>{child.kill();srv.close();process.exit(0)},300);});return;}
-  const u=req.url.split('?')[0]; const f=u.startsWith('/fixture/')?fixture(path.basename(u)):u==='/showcase.html'?path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui/showcase.html'):path.join(dir,u==='/'?'bench.html':u);
+  const u=req.url.split('?')[0]; const f=u.startsWith('/fixture/')?fixture(path.basename(u)):u==='/showcase.html'?path.join(__dirname,'../../../mod/src/main/resources/data/enderframelib/enderframe_ui/showcase.html'):path.join(dir,u==='/'?'bench.html':u);
   if(fs.existsSync(f)){res.setHeader('Content-Type',f.endsWith('.html')?'text/html':'text/plain');res.end(fs.readFileSync(f));}else{res.statusCode=404;res.end();}
 }).listen(0,()=>{
   const port=srv.address().port; const url=`http://127.0.0.1:${port}/bench.html?doc=${doc}${FONT?'&font='+encodeURIComponent(FONT):''}`;

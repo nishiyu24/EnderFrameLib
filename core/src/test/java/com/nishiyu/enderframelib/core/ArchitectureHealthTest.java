@@ -59,7 +59,7 @@ class ArchitectureHealthTest {
     private static final String CEILINGS_TABLE = "architecture-health-ceilings.txt";
     private static final List<String> ALL_MODULE_MAIN_ROOTS = List.of(
             "core/src/main/java", "core-gl/src/main/java", "core-vulkan/src/main/java",
-            "core-glfw/src/main/java", "src/main/java");
+            "core-glfw/src/main/java", "mod/src/main/java");
     private static final List<String> PURE_JAVA_MAIN_ROOTS = List.of(
             "core/src/main/java", "core-gl/src/main/java", "core-vulkan/src/main/java",
             "core-glfw/src/main/java");
@@ -293,7 +293,7 @@ class ArchitectureHealthTest {
         List<String> coreBad = checkSccs(coreSccs, FROZEN_CORE_SCCS, MAX_CORE_SCC);
         assertTrue(coreBad.isEmpty(), ":core のパッケージ循環違反: " + String.join("; ", coreBad));
 
-        List<TreeSet<String>> modSccs = packageSccs(root.resolve("src/main/java/com/nishiyu/enderframelib"));
+        List<TreeSet<String>> modSccs = packageSccs(root.resolve("mod/src/main/java/com/nishiyu/enderframelib"));
         List<String> modBad = checkSccs(modSccs, FROZEN_MOD_SCCS, MAX_MOD_SCC);
         assertTrue(modBad.isEmpty(), "MOD 側のパッケージ循環違反: " + String.join("; ", modBad));
     }
@@ -510,7 +510,7 @@ class ArchitectureHealthTest {
     void legacyLayoutPathTypesStayGone() throws IOException {
         List<String> bad = new ArrayList<>();
         List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
-        roots.addAll(List.of("core/src/test/java", "core/src/jmh/java", "core/demo/java", "src/test/java"));
+        roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
         for (String root : roots) bad.addAll(checkLegacyTypes(repoRoot().resolve(root)));
         assertEquals(List.of(), bad, "旧レイアウト経路の型が戻った（M2c-3 で消した。計画書 §3.2）");
     }
@@ -526,7 +526,7 @@ class ArchitectureHealthTest {
     @Test
     void legacyModRendererStaysGone() throws IOException {
         List<String> bad = new ArrayList<>();
-        for (String root : List.of("src/main/java", "src/test/java", "core/src/main/java")) {
+        for (String root : List.of("mod/src/main/java", "mod/src/test/java", "core/src/main/java")) {
             bad.addAll(checkTypeNames(repoRoot().resolve(root), LEGACY_MOD_RENDERER_TYPES));
         }
         assertEquals(List.of(), bad, "MOD の旧レンダラが戻った（M3a で消した。面はコアの描画だけが描く。計画書 §3.3）");

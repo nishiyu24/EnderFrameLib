@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 class SoftwarePaintCostTest {
 
     private static final String CRLF = "\r\n", LF = "\n";
-    private static final Path FIXTURES = Path.of("src/main/resources/data/enderframelib/enderframe_ui");
+    private static final Path FIXTURES = Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui");
 
     private static List<DisplayItem> items(String html, int w, int h) {
         UiDocumentCompiler parser = new UiDocumentCompiler();

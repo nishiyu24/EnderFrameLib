@@ -2,14 +2,15 @@
 // HTML/CSS の解釈・レイアウト・ディスプレイリスト・ソフトウェア描画・純 LWJGL の GL 描画を含む。
 plugins {
     id 'java-library'
+    id 'java-test-fixtures'
     id 'maven-publish'
 }
 
-group = mod_group_id
-version = mod_version
+group = engine_group_id
+version = engine_version
 
 base {
-    archivesName = mod_id + '-core'
+    archivesName = engine_artifact_prefix + '-core'
 }
 
 java {
@@ -69,7 +70,14 @@ dependencies {
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.9'
+
+    // テストの補助（src/testFixtures）。:core のテストと :mod のテストが共有する（GoldenFiles・TestBoxes・UiEventFixture）
+    testFixturesImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
 }
+
+// テストの補助は公開物（Maven の POM・Gradle のモジュール）に載せない
+components.java.withVariantsFromConfiguration(configurations.testFixturesApiElements) { skip() }
+components.java.withVariantsFromConfiguration(configurations.testFixturesRuntimeElements) { skip() }
 
 // エンジン再設計 Milestone 0: 利用側に JVM の起動フラグ（プレビュー機能・追加モジュール・ネイティブアクセス許可）も
 // 追加ネイティブ依存も要求しない。コンパイルにもテスト実行にも特別なフラグを渡さない（KernelBaselineTest が番をする）。
@@ -83,8 +91,8 @@ tasks.withType(JavaExec).configureEach {
 }
 
 
-// テストはリポジトリ直下の src/test/resources（フォント・ゴールデン等）と src/main/resources を相対パスで読む
-sourceSets.test.resources.srcDir rootProject.file('src/test/resources')
+// テストはリポジトリ直下を作業ディレクトリにして、core/src/test/resources（フォント・ゴールデン・WPT 等）と
+// MOD の同梱の文書（mod/src/main/resources/data/enderframelib/enderframe_ui）を相対パスで読む
 
 // ---- テストの体制（2026-11-19。CONTRIBUTING.md「テストの回し方」）----
 //   ./gradlew :core:quickTest              開発中の確認。@Tag("slow")（種を多数回すファズ型）と @Tag("timing") を外し、JVM を分けて並列
@@ -106,9 +114,10 @@ def rootDir = rootProject.projectDir
 ext.repoFilesReadByTests = files(
         { rootDir.listFiles().findAll { it.isFile() && it.name.endsWith('.md') } },
         { new File(rootDir, 'core').listFiles().findAll { it.isFile() && it.name.endsWith('.md') } },
+        { new File(rootDir, 'mod').listFiles().findAll { it.isFile() && it.name.endsWith('.md') } },
         ['core/src/main/java', 'core-gl/src/main/java', 'core-vulkan/src/main/java', 'core-glfw/src/main/java',
-         'src/main/java', 'src/main/resources', 'core/demo/resources', 'core/src/bench-crossengine',
-         'core/src/test/java', 'src/test/java', '.github/workflows', 'scripts', 'core/baseline']
+         'mod/src/main/java', 'mod/src/main/resources', 'core/demo/resources', 'core/src/bench-crossengine',
+         'core/src/test/java', 'core/src/testFixtures/java', 'mod/src/test/java', '.github/workflows', 'scripts', 'core/baseline', 'docs']
                 .collect { new File(rootDir, it) }.findAll { it.exists() })
 def configureCoreTest = { Test t, List<String> includeTagList, List<String> excludeTagList, int forks ->
     t.inputs.files(repoFilesReadByTests).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('repoFilesReadByTests')
@@ -163,7 +172,7 @@ publishing {
     publications {
         register('mavenJava', MavenPublication) {
             from components.java
-            artifactId = mod_id + '-core'
+            artifactId = engine_artifact_prefix + '-core'
             pom {
                 name = 'EnderFrameLib Core'
                 description = 'High-performance pure-Java HTML/CSS UI and layout engine.'
@@ -552,8 +561,8 @@ def publishTaskPaths = [':core', ':core-gl', ':core-vulkan', ':core-glfw'].colle
 def verifyPoms = tasks.register('verifyPublishedPoms') {
     dependsOn publishTaskPaths
     def repoDir = rootProject.file('repo')
-    def groupPath = mod_group_id.replace('.', '/')
-    def ver = mod_version
+    def groupPath = engine_group_id.replace('.', '/')
+    def ver = engine_version
     doLast {
         def expectedDeps = [
                 'enderframelib-core'       : ['org.lwjgl:lwjgl', 'org.lwjgl:lwjgl-freetype'],
@@ -592,5 +601,5 @@ tasks.register('verifyPublishedModules', GradleBuild) {
     dependsOn verifyPoms
     dir = rootProject.file('scripts/consumer-check')
     tasks = ['run']
-    startParameter.projectProperties = ['efl.version': mod_version.toString()]
+    startParameter.projectProperties = ['efl.version': engine_version.toString()]
 }

@@ -42,8 +42,8 @@ import org.junit.jupiter.api.Test;
 class RealDocumentFramesTest {
     static final int W = 800, H = 600;
     private static final long T0 = 10_000L;
-    private static final Path FIXTURES = Path.of("src/main/resources/data/enderframelib/enderframe_ui");
-    private static final Path TEST_FIXTURES = Path.of("src/test/resources/benchmark");
+    private static final Path FIXTURES = Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui");
+    private static final Path TEST_FIXTURES = Path.of("core/src/test/resources/benchmark");
 
     /** 同梱の実文書（{@code FineProfileMain} / {@code CostGateMain} と同じ 9 本）。 */
     static final List<String> DOCS = List.of("showcase.html", "voidwave.html", "surface_test.html", "animation_test.html",

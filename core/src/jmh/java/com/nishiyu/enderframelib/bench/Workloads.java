@@ -21,7 +21,7 @@ public final class Workloads {
     /** 行ごとにデザイン（余白・色・枠・文字サイズ・文章の長さ・入れ子）が違う {@code varied-list-N}。共有できるスタイルがほぼ無い最悪側の比較用。 */
     public static final String VARIED_LIST = "varied-list";
 
-    private static final Path FIXTURES = Path.of("src/main/resources/data/enderframelib/enderframe_ui");
+    private static final Path FIXTURES = Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui");
 
     private Workloads() { }
 
@@ -47,7 +47,7 @@ public final class Workloads {
     public static boolean isList(String name) { return name.equals(LARGE_LIST) || name.startsWith(LARGE_LIST + "-") || name.startsWith(VARIED_LIST + "-"); }
 
     /** テスト用の文書（機械 UI の {@code machine_ui.html}）の置き場。{@link #FIXTURES} に無い名前はここから読む。 */
-    private static final Path TEST_FIXTURES = Path.of("src/test/resources/benchmark");
+    private static final Path TEST_FIXTURES = Path.of("core/src/test/resources/benchmark");
 
     private static String read(String file) throws IOException {
         Path p = FIXTURES.resolve(file);

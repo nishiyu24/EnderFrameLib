@@ -143,8 +143,8 @@ class StaticFrameGateTest {
     /** 番人: ホストが判定を自前で持ち直す（毎回の toArray 確保・個別の時間依存判定）形に戻ると失敗する。 */
     @Test
     void hostUsesTheGateInsteadOfItsOwnCopy() throws IOException {
-        Path src = Path.of("../src/main/java/com/nishiyu/enderframelib/client/renderer/MinecraftHostSurface.java");
-        if (!Files.exists(src)) src = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/MinecraftHostSurface.java");
+        Path src = Path.of("../mod/src/main/java/com/nishiyu/enderframelib/client/renderer/MinecraftHostSurface.java");
+        if (!Files.exists(src)) src = Path.of("mod/src/main/java/com/nishiyu/enderframelib/client/renderer/MinecraftHostSurface.java");
         if (!Files.exists(src)) return; // :core 単体で配られた場合はホストが無い
         String t = Files.readString(src);
         assertTrue(t.contains("StaticFrameGate"), "ホストは StaticFrameGate を使う");

@@ -15,7 +15,7 @@ EnderFrameLib は、ブラウザ標準（HTML / CSS / UI Events / WHATWG DOM）�
 ## 1. 層と依存の向き
 
 > Gradle のモジュールは 5 つ。`:core`（`core/`）が Minecraft に依存しない `core`・`common`・`api/dom`・`api/event` などのパッケージを持ち、
-> ルート（NeoForge Mod）が `:core` を取り込んで Mod の JAR に同梱する。パッケージ名はモジュールをまたいでも同じ。
+> `:mod`（NeoForge の MOD。`mod/`）が `:core` を取り込んで MOD の JAR に同梱する。ルートはプラグインを持たない素の Gradle。パッケージ名はモジュールをまたいでも同じ。
 > GPU の実装と窓は `:core` から分けた 3 つのモジュールにある: `:core-gl`（OpenGL 3.2。`core.paint.gl`）・`:core-vulkan`（Vulkan 1.1。
 > `core.paint.vulkan`）・`:core-glfw`（GLFW の窓と単体ビューア）。`:core` はこの 3 つにも OpenGL・GLFW・Vulkan にも依存せず、
 > `ServiceLoader` で見つける（無ければソフトウェア描画だけが動く。`:core:verifyCoreDependencyGraph` と `:core:runCoreOnlySmoke` が検査する）。
@@ -230,7 +230,7 @@ flowchart TD
 ## 7. 管理指標とアーキテクチャの番人（ラチェット）
 
 コードの肥大化と責務の重複の再発を防ぐため、次の指標を
-[`ArchitectureTest`](src/test/java/com/nishiyu/enderframelib/core/ArchitectureTest.java) で機械的に検査し、
+[`ArchitectureTest`](mod/src/test/java/com/nishiyu/enderframelib/core/ArchitectureTest.java) で機械的に検査し、
 上限を超えたらビルドを落とす。上限は下げる方向にだけ動かす（[CONTRIBUTING.md](CONTRIBUTING.md)）。
 
 | 指標 | 検査対象 | 上限 |

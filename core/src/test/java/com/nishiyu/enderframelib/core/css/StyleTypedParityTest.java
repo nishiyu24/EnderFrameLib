@@ -154,7 +154,7 @@ class StyleTypedParityTest {
 
     @Test
     void realDocumentsMatchTheOldReadersForEveryElement() throws Exception {
-        Path dir = Path.of("src/main/resources/data/enderframelib/enderframe_ui");
+        Path dir = Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui");
         int docs = 0, styles = 0;
         for (String name : List.of("showcase.html", "voidwave.html", "surface_test.html", "animation_test.html", "media_test.html",
                 "hud_test.html", "item_block_test.html", "machine_ui.html", "guidebook.md")) {

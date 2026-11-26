@@ -14,7 +14,7 @@
 
 ```bash
 # 窓で表示（幅 高さ は省略可。既定 1024×768）
-./gradlew :core:runViewer --args="src/main/resources/data/enderframelib/enderframe_ui/voidwave.html 1280 800"
+./gradlew :core:runViewer --args="mod/src/main/resources/data/enderframelib/enderframe_ui/voidwave.html 1280 800"
 
 # 自分の HTML / Web 上のページ
 ./gradlew :core:runViewer --args="C:/path/to/page.html 1280 800"

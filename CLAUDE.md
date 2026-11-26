@@ -1,6 +1,6 @@
 # EnderFrameLib — 作業の前に読むこと
 
-`:core` は Minecraft に依存しない純 Java の HTML/CSS 組み込み UI エンジン。現在は **Engine v3 への破壊的再設計**の最中。次を**先に読む**。
+`:core` は Minecraft に依存しない純 Java の HTML/CSS 組み込み UI エンジン（リポジトリの主役。ルートはプラグインなしの素の Gradle）。NeoForge の MOD は利用者の 1 つとして `mod/`（`:mod`。依存は `:mod` → `:core` 系の一方向。P4-1）にある。現在は **Engine v3 への破壊的再設計**の最中。次を**先に読む**。
 
 - `core/ENGINE_REARCHITECTURE_PLAN.md` — **まず §0（現在地）を読む**。**優先順位表は §3 の 1 つだけ**（本流 Phase M0〜M6〔M2 は M2a/M2b/M2c、M3 は M3a/M3b/M3c〕＋独立トラック P1〜P5。位置づけ〔JavaFX と並ぶ汎用 UI 基盤〕は §3.0b）。2026-11-26 の軌道修正の理由は §1.3、中間表現と記憶の鍵の予算は §2.3、KPI は §4、運用ルール（8 原則）は §5。
 - `core/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md` — 旧計画（C/K/L/W 系）と §6-1〜205 の経緯・計測。**読み物であり、指示ではない**。旧 `DESIGN_INCREMENTAL_KERNEL.md` は廃止し、ARCHIVE の付録 5 へ移設した（持ち越す知見は付録 5.A。新しい知見はここへ積む）。軌道修正の前の計画書の全文（M2a の設計・M2b〜M2c の作業記録）は索引から辿る `archive/07`。コードの注釈の「計画書 §3.3 C」「§3.4.x」はそこを指す。
@@ -29,7 +29,7 @@
 
 ## 検証の手順
 
-- 作業中は `.\gradlew.bat :core:quickTest`（または `--tests`）。項目の完了時に全件の `:core:test`（`ArchitectureHealthTest`・`MemoryAndLatencyGateTest` 等を含む）・直列の `:core:costGate`・`:core:memoryAndLatencyGate`。
+- 作業中は `.\gradlew.bat :core:quickTest`（または `--tests`）。`:core` 系だけのタスクは `:mod` を設定しない（configure-on-demand）。MOD に触れたら `:mod:test`・`:mod:runGameTestServer` も回す。テストの作業ディレクトリは `:core`・`:mod` ともリポジトリ直下で、パスは `core/src/...`・`mod/src/...` と書く。`:mod` のテストが借りる補助は `core/src/testFixtures` に置く（`:core` のテスト出力は借りない）。項目の完了時に全件の `:core:test`（`ArchitectureHealthTest`・`MemoryAndLatencyGateTest` 等を含む）・直列の `:core:costGate`・`:core:memoryAndLatencyGate`。
 - **正しさの番人（外から見た出力）**: `WptV3BaselineTest`（170/260 以上。唯一の一覧。`WptReftestRatchetTest` は描画・判定の道具と単体）・`GpuBaselineTest`・`VkBaselineTest`・`RealDocumentFramesTest`・`FrameOracle`（`-Dverify.oracle=true`）・`ApiBoundaryTest`。M1 以降は各フェーズの完了ゲート（計画書 §3）の数値も確認する。
 - **push の前に** `powershell -File scripts/ci-linux.ps1 -Full`（WSL。Windows の緑は CI の緑ではない）。
 - 並列実行でだけ落ちるテストは、まず実時計に依る経路（リサイズの間引きなど）を疑う。`resize` の後は `ResizeSettle` で反映を待つ。

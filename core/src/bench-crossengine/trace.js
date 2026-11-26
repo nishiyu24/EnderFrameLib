@@ -5,8 +5,8 @@ const CHROME='C:/Program Files/Google/Chrome/Application/chrome.exe';
 // BENCH_FONT=<family>: 全要素へ同じ書体を強制する（:core 側の -Pprofile.font と同じ規則。Workloads.withFont と同じ文字列）
 const FONT=process.env.BENCH_FONT||'';
 function withFont(html){ if(!FONT) return html; const rule='* { font-family: '+FONT+' !important; } '; const i=html.indexOf('<style>'); return i>=0? html.slice(0,i+7)+rule+html.slice(i+7) : html+'<style>'+rule+'</style>'; }
-// <name>.html: 同梱の実文書（enderframe_ui）か、テスト用の文書（src/test/resources/benchmark）
-function fixture(name){ const a=path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui',name); return fs.existsSync(a)?a:path.join(__dirname,'../../../src/test/resources/benchmark',name); }
+// <name>.html: 同梱の実文書（enderframe_ui）か、テスト用の文書（core/src/test/resources/benchmark）
+function fixture(name){ const a=path.join(__dirname,'../../../mod/src/main/resources/data/enderframelib/enderframe_ui',name); return fs.existsSync(a)?a:path.join(__dirname,'../../../core/src/test/resources/benchmark',name); }
 function largeList(n){let s='<html><head><style>body { margin: 8px; } ul { list-style: none; padding: 0; } li { padding: 4px; border-bottom: 1px solid #ccc; } li.fh { background: #eef; }</style></head><body><div id="scroller" style="height: 400px; overflow-y: auto;"><ul>';
  for(let i=1;i<=n;i++) s+='<li id="item-'+i+'">Row item #'+i+' with description text</li>'; return s+'</ul></div></body></html>';}
 const SCRIPT=`<script>
@@ -39,7 +39,7 @@ function init(){
 addEventListener('load',()=>setTimeout(init,300));
 </script>`;
 const srv=http.createServer((req,res)=>{
-  let html = doc.endsWith('.html') ? fs.readFileSync(fixture(doc),'utf8').replace(/:hover/g,'.fh') : doc.startsWith('varied-list') ? fs.readFileSync(process.env.VARIED_FILE,'utf8') : doc.startsWith('large-list') ? largeList(parseInt(doc.split('-')[2]||'500')) : fs.readFileSync(path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8').replace(/:hover/g,'.fh');
+  let html = doc.endsWith('.html') ? fs.readFileSync(fixture(doc),'utf8').replace(/:hover/g,'.fh') : doc.startsWith('varied-list') ? fs.readFileSync(process.env.VARIED_FILE,'utf8') : doc.startsWith('large-list') ? largeList(parseInt(doc.split('-')[2]||'500')) : fs.readFileSync(path.join(__dirname,'../../../mod/src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8').replace(/:hover/g,'.fh');
   html=withFont(html)+SCRIPT; res.setHeader('Content-Type','text/html'); res.end(html);
 }).listen(0,async()=>{
   const port=srv.address().port, dbg=9300+Math.floor(Math.random()*500);

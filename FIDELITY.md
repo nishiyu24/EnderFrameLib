@@ -15,9 +15,9 @@
 
 | | |
 |---|---|
-| コーパス | `src/main/resources/assets/enderframelib/preview/fidelity/cases/*.html`（索引は `cases.txt`。138 ケース） |
-| ブラウザ側の期待値 | `src/test/resources/fidelity/expected/*.txt` |
-| 台帳（機械可読） | `src/test/resources/fidelity/known-divergences.txt` |
+| コーパス | `core/src/main/resources/assets/enderframelib/preview/fidelity/cases/*.html`（索引は `cases.txt`。138 ケース） |
+| ブラウザ側の期待値 | `core/src/test/resources/fidelity/expected/*.txt` |
+| 台帳（機械可読） | `core/src/test/resources/fidelity/known-divergences.txt` |
 | 比較 | `WebFidelityTest`（幾何は許容誤差 ±0.5px、描画順は完全一致、計算値は文字列の完全一致） |
 | ブラウザ側の採取 | `/enderframe devkit` が出す `fidelity-dump.html` |
 
@@ -46,8 +46,8 @@
 **台帳が古い**として落ちる。後者が各フェーズの完了条件になる。
 
 ```bash
-./gradlew test --tests '*WebFidelityTest'
-./gradlew test --tests '*WebFidelityTest' -Dfidelity.dump=true   # 現状の出力を build/fidelity へ
+./gradlew :core:test --tests '*WebFidelityTest'
+./gradlew :core:test --tests '*WebFidelityTest' -Dfidelity.dump=true   # 現状の出力を build/fidelity へ
 ```
 
 ブラウザ側は `fidelity-dump.html` を開いて「測定する」を押すか、ヘッドレスで採る
@@ -103,13 +103,13 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
 
 | テスト | 期待値 | 比べるもの |
 |---|---|---|
-| `ChromeTextMetricsParityTest` | `src/test/resources/fonts/chrome-win-ja-text-metrics*.txt` | システムの書体での文字列の幅と縦の寸法（書体・太さ 100〜900・斜体・16 / 13px・総称ファミリ・字単位の代替、詰めの有無） |
-| `ShowcaseChromeParityTest` | `src/test/resources/showcase-chrome/showcase-*.txt` | `showcase.html` の要素の矩形（854×480・1366×768・1920×1080・2560×1440） |
+| `ChromeTextMetricsParityTest` | `core/src/test/resources/fonts/chrome-win-ja-text-metrics*.txt` | システムの書体での文字列の幅と縦の寸法（書体・太さ 100〜900・斜体・16 / 13px・総称ファミリ・字単位の代替、詰めの有無） |
+| `ShowcaseChromeParityTest` | `mod/src/test/resources/showcase-chrome/showcase-*.txt` | `showcase.html` の要素の矩形（854×480・1366×768・1920×1080・2560×1440） |
 | `ShowcaseWebComparisonTest` | テスト内の実測値 | 854×480 の字幅に依存しない幾何と、字幅の違う書体での重なり・はみ出しの無さ |
-| `ToggleBaselineTest` | `src/test/resources/inline-chrome/` | チェックボックス・ラジオ・range を含む行の高さと位置 |
-| `FieldsetLegendTest` | `src/test/resources/fieldset-chrome/` | `legend` を枠線に重ねる配置 |
+| `ToggleBaselineTest` | `mod/src/test/resources/inline-chrome/` | チェックボックス・ラジオ・range を含む行の高さと位置 |
+| `FieldsetLegendTest` | `mod/src/test/resources/fieldset-chrome/` | `legend` を枠線に重ねる配置 |
 | `HtmlTreeConstructionTest` | テスト内の木 | HTML のツリー構築（下記） |
-| WPT の採用ケース | `src/test/resources/wpt/manifest.json` | DOM・UI Events・CSS の振る舞い（38 ケース。dom 22・uievents 4・css 12、台帳 0 行） |
+| WPT の採用ケース | `core/src/test/resources/wpt/manifest.json` | DOM・UI Events・CSS の振る舞い（38 ケース。dom 22・uievents 4・css 12、台帳 0 行） |
 
 矩形のコーパスの外で、**HTML のツリー構築**もブラウザと突き合わせている（W7）。
 `HtmlTreeConstructionTest` の各ケースは、入力を Edge 155 の `DOMParser`（文書）と innerHTML（断片。文脈は

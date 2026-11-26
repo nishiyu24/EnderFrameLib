@@ -135,7 +135,7 @@ class ParentPoseShareTest {
     /** 姿勢を作った数（1 フレームあたり）。{@code voidwave.html} の中身のスクロールを、往復で {@code frames} フレーム回す。 */
     private static double posesPerScrollFrame(boolean reuse) throws Exception {
         com.nishiyu.enderframelib.core.kernel.Shortcut.REUSE_IDLE_POSES.set(reuse);
-        String html = Files.readString(Path.of("src/main/resources/data/enderframelib/enderframe_ui/voidwave.html"), StandardCharsets.UTF_8);
+        String html = Files.readString(Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui/voidwave.html"), StandardCharsets.UTF_8);
         int frames = 40;
         try (SoftwareRenderBackend backend = new SoftwareRenderBackend(640, 400, 1f);
              StandaloneView v = new StandaloneView(html, 640, 400, FontResolver.FALLBACK)) {

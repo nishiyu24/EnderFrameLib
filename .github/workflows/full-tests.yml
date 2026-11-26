@@ -44,8 +44,8 @@ jobs:
         with:
           name: test-results
           path: |
-            build/reports/tests/test
-            build/test-results/test
+            mod/build/reports/tests/test
+            mod/build/test-results/test
             core/build/reports/tests/test
             core/build/test-results/test
           if-no-files-found: ignore

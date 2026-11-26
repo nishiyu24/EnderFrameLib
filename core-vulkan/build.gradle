@@ -5,11 +5,11 @@ plugins {
 
 ext.publishDescription = 'Vulkan 1.1 GPU backend for EnderFrameLib core (headless, swapchain, or host-owned VkDevice).'
 
-group = mod_group_id
-version = mod_version
+group = engine_group_id
+version = engine_version
 
 base {
-    archivesName = mod_id + '-core-vulkan'
+    archivesName = engine_artifact_prefix + '-core-vulkan'
 }
 
 java {

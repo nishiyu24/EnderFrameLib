@@ -33,7 +33,7 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  *
  * 忠実度を目視判断から外すのが目的。コーパス（preview/fidelity/cases）を
  * エンジンに通した結果と、同じコーパスをブラウザで測った期待値
- * （src/test/resources/fidelity/expected）を突き合わせる。
+ * （core/src/test/resources/fidelity/expected）を突き合わせる。
  *
  * 期待値と違ってよいのは {@code known-divergences.txt} に載っている差だけで、
  * 台帳に無い差が出たら回帰として落ちる。逆に台帳に載っているのに一致した差は
@@ -43,8 +43,8 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  */
 public class WebFidelityTest {
 
-    private static final Path EXPECTED_DIR = Path.of("src/test/resources/fidelity/expected");
-    private static final Path LEDGER = Path.of("src/test/resources/fidelity/known-divergences.txt");
+    private static final Path EXPECTED_DIR = Path.of("core/src/test/resources/fidelity/expected");
+    private static final Path LEDGER = Path.of("core/src/test/resources/fidelity/known-divergences.txt");
     private static final Path FIDELITY_DOC = Path.of("FIDELITY.md");
 
     @Test

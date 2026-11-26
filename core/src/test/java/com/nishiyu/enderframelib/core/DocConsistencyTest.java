@@ -45,11 +45,14 @@ class DocConsistencyTest {
     private static final Path CORE_README = ROOT.resolve("core/README.md");
     private static final Path BENCHMARK = ROOT.resolve("BENCHMARK.md");
 
-    /** 検査する文書: リポジトリ直下・docs・追跡している core 配下の README。 */
+    /** 検査する文書: リポジトリ直下・MOD（mod/ 直下）・docs・追跡している core 配下の README。 */
     private static List<Path> trackedDocs() throws IOException {
         List<Path> out = new ArrayList<>();
-        try (Stream<Path> s = Files.list(ROOT)) {
-            s.filter(p -> p.getFileName().toString().endsWith(".md")).sorted().forEach(out::add);
+        for (Path dir : List.of(ROOT, ROOT.resolve("mod"))) {
+            if (!Files.isDirectory(dir)) continue;
+            try (Stream<Path> s = Files.list(dir)) {
+                s.filter(p -> p.getFileName().toString().endsWith(".md")).sorted().forEach(out::add);
+            }
         }
         Path docs = ROOT.resolve("docs");
         if (Files.isDirectory(docs)) {

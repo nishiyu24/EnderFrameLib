@@ -3,7 +3,7 @@
 # （build test + runGameTestServer）なので、CI より厳しい。全テストの確認はここが担う。
 #
 # なぜ要るか: 開発は Windows で行うが、CI は ubuntu-latest。書体・GPU(OpenGL/Vulkan の有無)・パス・ファイルの実行ビットが
-# 違うため、Windows で全件緑でも CI だけ赤くなる（ルート JAR のサービスファイル重複、書体幅に依るテスト、OS 別の合格一覧など）。
+# 違うため、Windows で全件緑でも CI だけ赤くなる（MOD の JAR のサービスファイル重複、書体幅に依るテスト、OS 別の合格一覧など）。
 # push する前にこれを回せば、同じ失敗をローカルで見られる。
 #
 # 使い方:
@@ -11,7 +11,7 @@
 #                 EFL_CI_FULL=1 scripts/ci-linux.sh         さらに costGate と memoryAndLatencyGate（約 6 分）
 #   Windows:      powershell -File scripts/ci-linux.ps1 [-Full]   （WSL の Ubuntu 上でこのスクリプトを呼ぶ）
 #
-# 既定で回すのは「Windows で緑でも Linux だけ赤になるもの」（書体・パス・ルート JAR・OS 別の合格一覧）を見る build test だけ。
+# 既定で回すのは「Windows で緑でも Linux だけ赤になるもの」（書体・パス・MOD の JAR・OS 別の合格一覧）を見る build test だけ。
 # costGate と memoryAndLatencyGate のヒープは CI（build.yml）が push のたびに必ず回す。交互 A/B 遅延の比は共有ランナーで揺れるので -Full だけで見る。
 # 近道（Shortcut）・確保量・ヒープ・計測の基準値に触れた変更のときだけ -Full で先に見る（§6-116）。
 #
@@ -62,8 +62,9 @@ if [ -z "$archive" ]; then
   (cd "$REPO" && git archive --format=tar "$tree") > "$archive" || exit 1
   rm -f "$tmpindex"
 fi
-# 前回の成果物（build/ と .gradle/）は残して、ソースだけ入れ替える
-find "$WORK" -mindepth 1 -maxdepth 1 ! -name build ! -name .gradle -exec rm -rf {} +
+# 前回の成果物（build/ と .gradle/、MOD の mod/build/〔NeoForge の準備物〕）は残して、ソースだけ入れ替える
+find "$WORK" -mindepth 1 -maxdepth 1 ! -name build ! -name .gradle ! -name mod -exec rm -rf {} +
+if [ -d "$WORK/mod" ]; then find "$WORK/mod" -mindepth 1 -maxdepth 1 ! -name build -exec rm -rf {} +; fi
 tar xf "$archive" -C "$WORK" || { echo "[ci-linux] スナップショットの展開に失敗"; exit 1; }
 
 cd "$WORK" || exit 1
@@ -94,8 +95,8 @@ fi
 
 # CI の 2 つ目のステップ（build.yml の "Game test server"）。専用サーバーを 1 回走らせてセッション寿命を確認する。build が通ったときだけ
 if [ "$status" = 0 ]; then
-  echo "[ci-linux] ./gradlew runGameTestServer --stacktrace"
-  env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew runGameTestServer --stacktrace --console=plain 2>&1 | tee -a "$WORK/../last.log"
+  echo "[ci-linux] ./gradlew :mod:runGameTestServer --stacktrace"
+  env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR ./gradlew :mod:runGameTestServer --stacktrace --console=plain 2>&1 | tee -a "$WORK/../last.log"
   status=${PIPESTATUS[0]}
 fi
 

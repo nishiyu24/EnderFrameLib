@@ -7,7 +7,7 @@
 #
 # 有効にする（clone ごとに 1 回）:  git config core.hooksPath .githooks   （scripts/install-hooks.ps1 でも可）
 #
-# 過去の失敗: ルート JAR が複数モジュールの同名サービスファイルで重複 → `jar` が落ちる。Windows で `test` だけ回していると
+# 過去の失敗: MOD の JAR が複数モジュールの同名サービスファイルで重複 → `jar` が落ちる。Windows で `test` だけ回していると
 # 見逃す（`build` を回していなかった）。書体・GPU・OS 別の合格一覧に依るテストは Linux でしか失敗しないので、
 # 大きな変更の前は EFL_PREPUSH_LINUX=1 を付けるか、scripts/ci-linux.ps1 を直接回す。
 cd "$(git rev-parse --show-toplevel)" || exit 1

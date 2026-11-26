@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 class VkBaselineTest {
     private static final long T0 = 10_000L;
     private static final int W = 800, H = 600;
-    private static final Path FIXTURES = Path.of("src/main/resources/data/enderframelib/enderframe_ui");
+    private static final Path FIXTURES = Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui");
 
     private static final String[] PALETTE = {"#fff", "#eef", "#fee", "#efe", "#ffe", "#eff", "#fef", "#dde", "#edd", "#ded", "#eed"};
     private static final String[] BORDER = {"#ccc", "#99c", "#c99", "#9c9", "#cc9", "#9cc", "#c9c", "#888"};

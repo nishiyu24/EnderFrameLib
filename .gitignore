@@ -3,13 +3,14 @@
 /build/
 /core/build/
 /core/.gradle/
+/mod/build/
 /repo/
 
-# データジェネレータの出力（build.gradle が srcDir として読むが、生成物なので追跡しない）
-/src/generated/
+# データジェネレータの出力（mod/build.gradle が srcDir として読むが、生成物なので追跡しない）
+/mod/src/generated/
 
-# 開発用の Minecraft 実行ディレクトリ（ワールド・設定・ログ・DL キャッシュ）
-/run/
+# 開発用の Minecraft 実行ディレクトリ（ワールド・設定・ログ・DL キャッシュ。ModDevGradle の既定で :mod の下）
+/mod/run/
 
 # IDE
 /.idea/

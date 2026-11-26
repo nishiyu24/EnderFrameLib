@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 
 /** 同梱の実文書は、どの図形も CPU 層へ落ちず GPU が受け取る（被覆率 100%。B4）。 */
 class RealDocumentCoverageTest {
-    private static final Path DIR = Path.of("src/main/resources/data/enderframelib/enderframe_ui");
+    private static final Path DIR = Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui");
 
     @Test
     void bundledDocumentsAreFullyCoveredByTheGpu() throws Exception {

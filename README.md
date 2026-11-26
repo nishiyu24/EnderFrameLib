@@ -5,7 +5,7 @@
 
 **EnderFrameLib** is an **in-process, pure-Java 21 HTML/CSS UI rendering engine** (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`), accompanied by an **optional Minecraft 1.21.1 (NeoForge) integration mod** built on top of the engine.
 
-The core engine has **zero dependencies on Minecraft or NeoForge**. It parses HTML5 documents, cascades and animates CSS, runs Flexbox / Grid / Block / Table / Multicolumn / Vertical-writing layout, shapes text using OS or `@font-face` fonts, and renders through interchangeable CPU, OpenGL 3.2+, and Vulkan 1.1 backends — suitable for desktop tools, custom game engines, server-side headless image generation, and embedded UI overlays. The root project adds a full-featured Minecraft mod integration (GUI screens, HUDs, in-world block/hologram/item displays, headless `UIState` networking, and `<mc-*>` elements) as one host implementation of that engine.
+The core engine has **zero dependencies on Minecraft or NeoForge**. It parses HTML5 documents, cascades and animates CSS, runs Flexbox / Grid / Block / Table / Multicolumn / Vertical-writing layout, shapes text using OS or `@font-face` fonts, and renders through interchangeable CPU, OpenGL 3.2+, and Vulkan 1.1 backends — suitable for desktop tools, custom game engines, server-side headless image generation, and embedded UI overlays. The `mod/` subproject (`:mod`) adds a full-featured Minecraft mod integration (GUI screens, HUDs, in-world block/hologram/item displays, headless `UIState` networking, and `<mc-*>` elements) as one host implementation of that engine.
 
 > **Status:** Usable, pre-1.0 API evolution in practice (artifact version `2.0.0`). The supported public surface is `com.nishiyu.enderframelib.api.*`; everything outside `api/` is `@ApiStatus.Internal` and subject to change.
 
@@ -39,7 +39,7 @@ EnderFrameLib takes a third path: **a compact, deterministic HTML/CSS layout and
 At its heart, EnderFrameLib consists of two layers in one repository:
 
 1. **The Engine (`:core` + `:core-gl` / `:core-vulkan` / `:core-glfw`)** — A standalone Java library for embedding HTML/CSS surfaces into any JVM application, game engine, or headless pipeline. It exposes a clean Java API (`EnderEngine`, `WebViewSurface`, `Document`, `UI` DSL, and `api.spi` host extensions) with no game-specific assumptions.
-2. **The Minecraft Integration (Root `:EnderFrameLib` module)** — A NeoForge 1.21.1 mod built on top of `:core` that showcases what a host application can build with the engine: player screens, HUD overlays, interactive in-world multiblock panels, floating holograms, held-item displays, datapack UIs, and tick-synchronized server/client state.
+2. **The Minecraft Integration (`mod/`, Gradle project `:mod`)** — A NeoForge 1.21.1 mod built on top of `:core` that showcases what a host application can build with the engine: player screens, HUD overlays, interactive in-world multiblock panels, floating holograms, held-item displays, datapack UIs, and tick-synchronized server/client state.
 
 ---
 
@@ -68,7 +68,7 @@ The engine and its backends are cleanly split into five Gradle modules. `:core` 
 | **`:core-gl`** | `enderframelib-core-gl` | OpenGL 3.2+ Core `GpuBackendProvider` (instanced SDF renderer + shared host GL context support) | `:core`, `lwjgl-opengl`, `lwjgl-glfw` |
 | **`:core-vulkan`** | `enderframelib-core-vulkan` | Vulkan 1.1 `GpuBackendProvider` (headless, swapchain, or borrowed host `VkDevice`) | `:core`, `lwjgl-vulkan` |
 | **`:core-glfw`** | `enderframelib-core-glfw` | Standalone GLFW `WindowHost` and `StandaloneViewer` desktop launcher | `:core`, `:core-gl`, `lwjgl-glfw` |
-| **Root (Mod)** | `enderframelib` | **Optional Minecraft 1.21.1 (NeoForge) host:** GUI screens, HUDs, in-world block/hologram/item surfaces, `UIState` sync, `/enderframe` commands, `<mc-*>` tags, DevKit export | `:core*`, NeoForge 21.1.248+, JNA |
+| **`:mod`** (`mod/`) | `enderframelib` (mod JAR) | **Optional Minecraft 1.21.1 (NeoForge) host:** GUI screens, HUDs, in-world block/hologram/item surfaces, `UIState` sync, `/enderframe` commands, `<mc-*>` tags, DevKit export | `:core*`, NeoForge 21.1.248+, JNA |
 
 Inside `:core`, dependencies are strictly unidirectional across 7 architectural layers (`L1`–`L7`), mechanically enforced in CI by `LayerDependencyRatchetTest`, `PackageCycleRatchetTest`, `ModulePurityRatchetTest`, and `ApiBoundaryTest` (ensuring `api.*` never leaks internal implementation types).
 
@@ -88,7 +88,7 @@ Inside `:core`, dependencies are strictly unidirectional across 7 architectural 
 
 ## Optional Minecraft Integration (NeoForge Mod)
 
-When installed in Minecraft 1.21.1 (NeoForge), the root module wires EnderFrameLib into the game as a complete mod and host showcase:
+When installed in Minecraft 1.21.1 (NeoForge), the `:mod` subproject wires EnderFrameLib into the game as a complete mod and host showcase:
 
 - **Unified Document Surfaces:** Render the exact same HTML/CSS as player GUI screens, persistent HUD overlays, multiblock in-world block screens (`EnderScreenBlockEntity`), floating holograms (including interactive billboard menus), or held-item displays (`EnderScreenItem`).
 - **Headless Server State (`UIState`):** For machine/block UIs, keep HTML templates on the client (`assets/<modid>/enderframe_ui/`) and hold only typed key/value state on the server. Only changed keys are synced per server tick; viewers automatically close when the owner block is removed.
@@ -219,7 +219,7 @@ EnderEngine.html(html).size(1024, 768).openWindow();
 ```
 
 ```bash
-./gradlew :core:runViewer --args="src/main/resources/data/enderframelib/enderframe_ui/voidwave.html 1280 800"
+./gradlew :core:runViewer --args="mod/src/main/resources/data/enderframelib/enderframe_ui/voidwave.html 1280 800"
 ```
 
 **4. Pure-Java reactive UI DSL (`api.ui.UI`):**
@@ -273,7 +273,7 @@ side = "BOTH"
 1. **Server-driven HTML & HUDs (`EnderFrameAPI`)** — Open ad-hoc HTML strings (`Ui.html(...)`) or datapack UIs (`Ui.datapack("mymod:menu")`), attach persistent HUDs (`hud(...)`), and push live updates via pub/sub channels (`publish(...)`) with ACL checks (`addSubscriptionCheck(...)`).
 2. **Machine UIs & In-World Surfaces with Headless `UIState` (Recommended)** — Ship the HTML template on the client (`assets/<modid>/enderframe_ui/<name>.html`), hold only key/value `UIState` on the server (`EnderFrameAPI.get().stateOf(blockEntity, "mymod:crusher")`), and bind values declaratively with `data-bind="key"` / `{{key}}` / `data-if`. The exact same model powers multiblock `EnderScreenBlockEntity` screens, interactive billboards (`Surfaces.hologram(...)`), and `EnderScreenItem` displays.
 3. **Client-Driven UI & Hybrid Ownership (`EnderFrameClientAPI`)** — Open client-only documents with `ClientSession`, mutate the live `Document` directly, schedule `requestAnimationFrame` / `setTimeout` / `setInterval`, and combine client-owned and server-owned subtrees (`data-owner="server|client"`, `data-forward`, `onclick="server:name"`).
-4. **In-Game Commands & Browser DevKit** — Use `/enderframe open`, `/enderframe hud`, `/enderframe patch`, `/enderframe publish`, `/enderframe desktop`, and `/enderframe devkit` (exports `<gameDir>/enderframe_devkit/` for live authoring in a regular browser). See [COMMAND_GUIDE.md](COMMAND_GUIDE.md).
+4. **In-Game Commands & Browser DevKit** — Use `/enderframe open`, `/enderframe hud`, `/enderframe patch`, `/enderframe publish`, `/enderframe desktop`, and `/enderframe devkit` (exports `<gameDir>/enderframe_devkit/` for live authoring in a regular browser). See [COMMAND_GUIDE.md](mod/COMMAND_GUIDE.md).
 
 ---
 
@@ -345,22 +345,25 @@ Known gaps are documented here so you do not have to discover them by debugging;
 ## Building from Source & Project Layout
 
 ```bash
-./gradlew build test                                        # compile all modules + run CI test suite
+./gradlew build test                                        # compile all projects + run the full test suite (engine + mod)
 ./gradlew :core:quickTest                                   # fast :core check (~2 min, skips slow & timing tags)
 ./gradlew :core:test                                        # full Minecraft-free :core suite
 ./gradlew :core:costGate                                    # allocation & fast-path regression gate
 ./gradlew :core:verifyPublishedModules                      # publish engine modules to ./repo & verify standalone consumer
 ./gradlew :core:runViewer --args="page.html 1280 800"       # launch standalone GLFW viewer
-./gradlew runClient                                         # launch Minecraft 1.21.1 client with the mod
-./gradlew runGameTestServer                                 # run server-side lifecycle GameTests
+./gradlew :mod:test                                         # headless tests of the Minecraft mod
+./gradlew :mod:runClient                                    # launch Minecraft 1.21.1 client with the mod
+./gradlew :mod:runGameTestServer                            # run server-side lifecycle GameTests
 ```
+
+The root is a plain Gradle build with no plugins. Engine-only tasks (`:core:*`, `:core-gl:*`, …) never configure `:mod`, so they run without NeoForge or Minecraft setup (configure-on-demand in `gradle.properties`; CI checks this). Dependencies point one way: `:mod` → `:core*`.
 
 ```text
 core/         (:core) Pure-Java 21 HTML/CSS engine, layout, DOM/events, UI DSL, <scene-3d>, CPU rasterizer, RHI, SPI
 core-gl/      (:core-gl) OpenGL 3.2+ Core GPU backend
 core-vulkan/  (:core-vulkan) Vulkan 1.1 GPU backend
 core-glfw/    (:core-glfw) GLFW WindowHost & StandaloneViewer
-src/          (Root NeoForge Mod) Optional Minecraft 1.21.1 integration:
+mod/          (:mod) Optional NeoForge mod for Minecraft 1.21.1 — one host of the engine (see mod/README.md):
                 api/      Mod-facing API (EnderFrameAPI, EnderFrameClientAPI, UIState, EnderScreenBlockEntity)
                 common/   Shared resource loading, <mc-*> custom elements, DevKit export
                 server/   Headless UIState, HTML sessions, pub/sub, commands, datapacks, ACL
@@ -382,7 +385,8 @@ docs/         Task-oriented guides for both standalone engine & mod usage
   - [docs/getting-started.md](docs/getting-started.md) — Mod installation and first server-driven UI (English).
   - [docs/headless-state.md](docs/headless-state.md) — Machine UIs and in-world screens with `UIState` (English).
   - [docs/client-and-hybrid.md](docs/client-and-hybrid.md) — Client-driven UIs and hybrid server/client DOM ownership (English).
-  - [docs/commands-and-devkit.md](docs/commands-and-devkit.md) & [COMMAND_GUIDE.md](COMMAND_GUIDE.md) — `/enderframe` commands and DevKit browser preview.
+  - [mod/README.md](mod/README.md) — The `:mod` subproject: layout, Gradle tasks, and in-game test specifications.
+  - [docs/commands-and-devkit.md](docs/commands-and-devkit.md) & [mod/COMMAND_GUIDE.md](mod/COMMAND_GUIDE.md) — `/enderframe` commands and DevKit browser preview.
   - [docs/migration.md](docs/migration.md) — Detailed migration notes and breaking changes (English).
 - **Engineering & Quality:**
   - [ARCHITECTURE.md](ARCHITECTURE.md) — Module layout, 7-layer dependency rules, and architectural ratchets (Japanese).

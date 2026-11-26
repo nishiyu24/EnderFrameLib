@@ -21,7 +21,7 @@ Third-party components
 
 1. lunex_video (bundled binary)
 
-   File: src/main/resources/assets/enderframelib/natives/lunex_video.dll
+   File: mod/src/main/resources/assets/enderframelib/natives/lunex_video.dll
    A native video decoding library, shipped inside the mod jar and
    extracted at runtime by client/renderer/WebMediaManager.
 

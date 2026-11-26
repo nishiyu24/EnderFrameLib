@@ -11,8 +11,11 @@
 # CI と同等のフルビルド＋テスト（timing タグ除外は任意）
 ./gradlew build test
 
-# core だけ（Minecraft 非依存の単体テスト全件）
+# core だけ（Minecraft 非依存の単体テスト全件。:mod〔NeoForge〕は設定されない）
 ./gradlew :core:test
+
+# MOD のヘッドレスのテスト（Minecraft は起動しない）
+./gradlew :mod:test
 
 # 開発中の高速確認（slow・timing タグを除外して約 2 分）
 ./gradlew :core:quickTest
@@ -26,8 +29,8 @@
 # アーキテクチャ健全性・Shortcut 凍結チェック
 ./gradlew :core:test --tests '*ArchitectureHealthTest'
 
-# 単独 JVM での性能・メモリベンチマーク回帰判定
-./gradlew benchmark
+# 単独 JVM での性能・メモリベンチマーク回帰判定（MOD）
+./gradlew :mod:benchmark
 
 # クラス名・パターンで絞る
 ./gradlew :core:test --tests '*StandaloneMultiClickTest'
@@ -53,7 +56,7 @@ GL / Vulkan を作れない環境では GPU 依存テストはスキップされ
 ./gradlew :core:runViewer --args="page.html 1280 800 --png out.png --after 5000"
 
 # リポジトリ同梱のサンプル
-./gradlew :core:runViewer --args="src/main/resources/data/enderframelib/enderframe_ui/voidwave.html 1280 800"
+./gradlew :core:runViewer --args="mod/src/main/resources/data/enderframelib/enderframe_ui/voidwave.html 1280 800"
 ```
 
 ## テストサイト（ライブラリだけで動くデモ）
@@ -92,21 +95,21 @@ Java 側は時計・カウンタ・進捗バー・ログの追加と削除・表
 # 公開物（POM・独立消費者プロジェクト）の整合検査
 ./gradlew :core:verifyPublishedModules
 
-# Mod 本体（core 群のクラスを同梱した jar）
-./gradlew build
+# Mod 本体（core 群のクラスを同梱した jar。mod/build/libs）
+./gradlew :mod:build
 ```
 
 ## Minecraft（NeoForge）
 
 ```bash
 # 開発クライアントを起動
-./gradlew runClient
+./gradlew :mod:runClient
 
 # 開発サーバーを起動
-./gradlew runServer
+./gradlew :mod:runServer
 
 # サーバー側ライフサイクルの GameTest を実行
-./gradlew runGameTestServer
+./gradlew :mod:runGameTestServer
 ```
 
 ## 便利なもの

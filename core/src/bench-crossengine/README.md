@@ -23,8 +23,8 @@
   `:core` は `-Pprofile.font=Arial`（`java` 直呼びなら `-Dprofile.font=Arial`）、Chrome は `BENCH_FONT=Arial node trace.js …`。
   どちらも文書の最初の `<style>` の先頭に `* { font-family: Arial !important; }` を足す（同じ文字列）。
 - **ワーカー数**: `-Pthreads=N`（`-Denderframe.threads=N`）。既定は論理コア数 − 1。少ないコアのホストでの値を見るときに使う。
-- **実文書**: 文書名に `voidwave.html` のようなファイル名を渡すと、`src/main/resources/data/enderframelib/enderframe_ui/`
-  （無ければ `src/test/resources/benchmark/`）から読む。`:core` と `trace.js` で同じ要素を触る（最初の 2 つの `button`、無ければ
+- **実文書**: 文書名に `voidwave.html` のようなファイル名を渡すと、`mod/src/main/resources/data/enderframelib/enderframe_ui/`
+  （無ければ `core/src/test/resources/benchmark/`）から読む。`:core` と `trace.js` で同じ要素を触る（最初の 2 つの `button`、無ければ
   `class="btn"` の要素 2 つ。文字は `button` / `label` の外の最初の文字）。変化が起きない組み合わせ（スクロールできない文書の
   `scroll` など）は `drawn=0` になるので、比較から外す。
 

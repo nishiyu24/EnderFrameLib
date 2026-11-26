@@ -29,7 +29,7 @@ import org.junit.jupiter.api.Test;
  * 描画は OS の書体（{@link #FONTS}）・800×600・等倍・透明な地。許容差は {@code <meta name=fuzzy>} に従う（無ければ完全一致）。
  */
 class WptReftestRatchetTest {
-    static final Path DIR = Path.of("src/test/resources/wpt/reftests");
+    static final Path DIR = Path.of("core/src/test/resources/wpt/reftests");
     private static final Path MANIFEST = DIR.resolve("manifest.tsv");
     /** レイアウトが終わらない（エンジンの不具合）組。走らせない。直したら一覧から外す。 */
     static final Path HANGS = DIR.resolve("reftest-hangs.txt");

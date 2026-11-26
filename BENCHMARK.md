@@ -27,12 +27,12 @@
 
 ## 2. 回帰の基準値（固定）
 
-- **ファイル**: `src/test/resources/benchmark/baseline.txt`（2026-10-24 に更新、3 回測った中央値。初回は 2026-10-20）
+- **ファイル**: `mod/src/test/resources/benchmark/baseline.txt`（2026-10-24 に更新、3 回測った中央値。初回は 2026-10-20）
 - **テスト**: `PerformanceBenchmarkTest`（厳密モード時: ウォームアップ 5 回、測定 15 回の平均 / 通常 `test` 時: ウォームアップ 1 回、測定 2 回のスモーク実行）
-- **通常テストとの分離**: `./gradlew test`（全件実行）では `IncrementalLayoutFuzzTest` 等の先行テストによる GC・CPU 負荷で実時間が揺れるため、決定論的な検証（描画結果の生成・基準値ファイルの整合性・保持 DOM ノード数）のみを強制し、実時間（ms）と GC ヒープ差分の超過は警告（`[WARN]`）出力に留める。厳密な回帰判定（「実測 ≤ 基準値 × 2.0 + 3ms」を超えたら落とす）は単独 JVM で走る `./gradlew benchmark`（または `-Dbenchmark.enforce=true`）で行う。レポートは `build/reports/benchmark-results.txt`。
+- **通常テストとの分離**: `./gradlew test`（全件実行）では `IncrementalLayoutFuzzTest` 等の先行テストによる GC・CPU 負荷で実時間が揺れるため、決定論的な検証（描画結果の生成・基準値ファイルの整合性・保持 DOM ノード数）のみを強制し、実時間（ms）と GC ヒープ差分の超過は警告（`[WARN]`）出力に留める。厳密な回帰判定（「実測 ≤ 基準値 × 2.0 + 3ms」を超えたら落とす）は単独 JVM で走る `./gradlew :mod:benchmark`（または `-Dbenchmark.enforce=true`）で行う。レポートは `build/reports/benchmark-results.txt`。
 
 ```bash
-./gradlew benchmark                                                          # 単独 JVM で厳密な回帰判定（-Dbenchmark.enforce=true）
+./gradlew :mod:benchmark                                                     # 単独 JVM で厳密な回帰判定（-Dbenchmark.enforce=true）
 ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.enforce=true  # PerformanceBenchmarkTest のみ厳密実行
 ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.update=true   # 基準値の更新（git diff で確認してからコミット）
 ```
@@ -129,10 +129,10 @@ R1 の時点では対話状態とスクロール量をノードの参照をキ�
 ## 6. サーバー状態とパケット帯域（H0 → H1）
 
 - **測定日**: 2026-10-23（H0）/ 2026-10-24（H1・番号化）
-- **測定対象**: 代表的な機械 UI `Electric Crusher`（`src/test/resources/benchmark/machine_ui.html`。スロット 2 個、進捗バー、
+- **測定対象**: 代表的な機械 UI `Electric Crusher`（`core/src/test/resources/benchmark/machine_ui.html`。スロット 2 個、進捗バー、
   エネルギーバー、状態表示、電源ボタン）
 - **H0（互換モード）**: サーバーの `WebSession` が DOM を持ち、初回に DOM を直列化して送り（`dom_sync`）、以後は
-  `DomMutationRecord` を送る。値は `src/test/resources/benchmark/server_baseline.txt` に固定し、
+  `DomMutationRecord` を送る。値は `mod/src/test/resources/benchmark/server_baseline.txt` に固定し、
   `PacketBandwidthTest` / `StateMemoryBenchmarkTest` が完全一致で確かめる。
 - **H1（Headless State）**: サーバーは `UIState` の Key-Value だけを持ち、初回はテンプレート ID と初期状態
   （`OpenUiS2CPacket`）、以後は変わったキーだけ（`StateDeltaS2CPacket`）を送る。`HeadlessStateBandwidthAndMemoryTest` が
@@ -171,7 +171,7 @@ R1 の時点では対話状態とスクロール量をノードの参照をキ�
 
 ### インクリメンタル計測（R0+、2026-10-25）
 
-500 行のリストで局所変更 1 回あたりの時間。基準値は `src/test/resources/benchmark/incremental-baseline.txt`。
+500 行のリストで局所変更 1 回あたりの時間。基準値は `mod/src/test/resources/benchmark/incremental-baseline.txt`。
 
 | 操作 | 時間 |
 | :--- | :---: |
@@ -311,8 +311,8 @@ guidebook 7.9 / 5.7 / 3.4 / 8.0 ms、large-list 19.8 / 9.4 / 9.2 / 13.7 ms。Res
 
 ### 実文書（同梱のデモ・テスト用の文書 5 本）
 
-代表文書 3 種（showcase・large-list・varied-list）以外で同じ傾向になるかを見る。文書は `src/main/resources/data/enderframelib/enderframe_ui/` の
-4 本と `src/test/resources/benchmark/machine_ui.html`。
+代表文書 3 種（showcase・large-list・varied-list）以外で同じ傾向になるかを見る。文書は `mod/src/main/resources/data/enderframelib/enderframe_ui/` の
+4 本と `core/src/test/resources/benchmark/machine_ui.html`。
 
 | 文書 | シナリオ | :core mean ms（範囲） | p50 ms | 確保 KB/フレーム | 描いたフレーム | Chrome ms | 比 | 144Hz |
 | :-- | :-- | :--: | :--: | :--: | :--: | :--: | :--: | :--: |

@@ -24,8 +24,8 @@ import org.junit.jupiter.api.Test;
  */
 class TextNodeStyleEquivalenceTest {
     private static final int W = 800, H = 600;
-    private static final Path WPT = Path.of("src/test/resources/wpt/reftests");
-    private static final Path UI = Path.of("src/main/resources/data/enderframelib/enderframe_ui");
+    private static final Path WPT = Path.of("core/src/test/resources/wpt/reftests");
+    private static final Path UI = Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui");
 
     @Test
     void textNodeStyleFromParentMatchesFullCascade() throws IOException {

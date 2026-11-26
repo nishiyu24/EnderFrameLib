@@ -83,7 +83,7 @@ class StyleFactsGoldenTest {
         Map<String, String> lines = new LinkedHashMap<>();
         int i = 0;
         for (ComputedStyle cs : samples()) lines.put("synthetic-" + (i++), dump(cs));
-        Path dir = Path.of("src/main/resources/data/enderframelib/enderframe_ui");
+        Path dir = Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui");
         for (String name : List.of("showcase.html", "voidwave.html", "surface_test.html", "animation_test.html", "media_test.html",
                 "hud_test.html", "item_block_test.html", "machine_ui.html", "guidebook.md")) {
             Path p = dir.resolve(name);

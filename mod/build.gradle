@@ -1,0 +1,271 @@
+// エンジン（:core 系）の利用者の 1 つである NeoForge の MOD。依存は :mod → :core 系の一方向（計画書 P4-1）。
+// MOD のテストもリポジトリ直下を作業ディレクトリにして走る（:core のテストと同じく、パスはリポジトリ直下から書く）
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'net.neoforged.moddev' version '2.0.148'
+    id 'idea'
+}
+
+version = mod_version
+group = mod_group_id
+
+sourceSets.main.resources {
+    srcDir('src/generated/resources')
+    exclude("**/*.bbmodel")
+    exclude("src/generated/**/.cache")
+}
+
+evaluationDependsOn(':core')
+evaluationDependsOn(':core-gl')
+evaluationDependsOn(':core-vulkan')
+evaluationDependsOn(':core-glfw')
+
+repositories {
+    // JNA はここから解決する。ModDevGradle が NeoForge / Parchment 用の
+    // リポジトリを足すが、通常の依存の出所は明示しておく
+    mavenCentral()
+}
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+
+    runs {
+        client {
+            client()
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        server {
+            server()
+            programArgument '--nogui'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        gameTestServer {
+            type = "gameTestServer"
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        data {
+            data()
+            programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+        }
+
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+            sourceSet(project(':core').sourceSets.main)
+            sourceSet(project(':core-gl').sourceSets.main)
+            sourceSet(project(':core-vulkan').sourceSets.main)
+            sourceSet(project(':core-glfw').sourceSets.main)
+        }
+    }
+}
+
+configurations {
+    runtimeClasspath.extendsFrom localRuntime
+    testCompileClasspath.extendsFrom compileClasspath
+    testRuntimeClasspath.extendsFrom runtimeClasspath
+}
+
+dependencies {
+    // Minecraft に依存しない描画コア（単体でも動く）。Mod の JAR にはクラスと資源を同梱する
+    api project(':core')
+    // GPU 実装（CoreGpuSurface が OpenGL を使う）と窓。Minecraft 本体が LWJGL を持つので、Mod の JAR にはクラスだけを取り込む
+    api project(':core-gl')
+    api project(':core-vulkan')
+    api project(':core-glfw')
+
+    // :core のテストの補助（GoldenFiles・TestBoxes・UiEventFixture）。:core のテスト出力そのものは借りない
+    testImplementation testFixtures(project(':core'))
+
+    implementation 'net.java.dev.jna:jna:5.14.0'
+    implementation 'net.java.dev.jna:jna-platform:5.14.0'
+
+    // core/ は slf4j でログを出すため、ヘッドレステストの実行にも必要
+    testImplementation 'org.slf4j:slf4j-api:2.0.9'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from "src/main/templates"
+    into "build/generated/sources/modMetadata"
+}
+
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            from components.java
+        }
+    }
+    repositories {
+        maven {
+            url = uri(rootProject.file('repo'))
+        }
+    }
+}
+
+// core 系モジュールの出力を Mod の JAR に取り込む（jarJar は project 依存を扱えないため）。
+// 複数のモジュールが同名の META-INF/services/<SPI> を持つ（例: GpuBackendProvider を :core-gl と :core-vulkan が登録）ので、
+// そのまま重ねると jar タスクが「重複したエントリ」で落ちる。行を結合した 1 つのファイルを作って取り込む
+def serviceModules = [':core', ':core-gl', ':core-vulkan', ':core-glfw']
+def mergedServicesDir = layout.buildDirectory.dir('generated/mergedServices')
+def mergeServices = tasks.register('mergeServiceFiles') {
+    // ルート自身の登録（McHostElements など）も、:core の登録（公開 SPI の橋渡し）と同じ SPI 名なので同じ結合に入れる
+    def sources = serviceModules.collect { project(it).file('src/main/resources/META-INF/services') } + [file('src/main/resources/META-INF/services')]
+    inputs.files(sources.collect { fileTree(it) })
+    outputs.dir(mergedServicesDir)
+    doLast {
+        Map<String, Set<String>> merged = new TreeMap<>()
+        sources.each { dir ->
+            if (!dir.isDirectory()) return
+            dir.listFiles().sort { it.name }.each { f ->
+                f.readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }.each {
+                    merged.computeIfAbsent(f.name) { new LinkedHashSet<String>() }.add(it)
+                }
+            }
+        }
+        def out = new File(mergedServicesDir.get().asFile, 'META-INF/services')
+        out.deleteDir()
+        out.mkdirs()
+        String nl = new String([10] as char[])
+        merged.each { name, lines -> new File(out, name).setText(lines.toList().join(nl) + nl, 'UTF-8') }
+    }
+}
+tasks.named('jar', Jar) {
+    dependsOn mergeServices
+    serviceModules.each { path ->
+        from(project(path).sourceSets.main.output) { exclude 'META-INF/services/**' }
+    }
+    from(mergedServicesDir)
+    // ルート自身の META-INF/services は結合済みのファイルに入っているので、重ねて取り込まない
+    exclude { e -> e.relativePath.pathString.startsWith('META-INF/services/') && !e.file.toPath().startsWith(mergedServicesDir.get().asFile.toPath()) }
+}
+
+// Mod の JAR に、全モジュールのサービス登録（ServiceLoader 用）が揃っていること。結合に失敗すると、GPU 実装や窓が見つからなくなる
+tasks.register('verifyModJarServices') {
+    group = 'verification'
+    description = 'Mod の JAR の META-INF/services に、:core 系モジュールの全 SPI 登録が含まれることを検査する'
+    dependsOn tasks.named('jar')
+    def jarFile = tasks.named('jar', Jar).flatMap { it.archiveFile }
+    doLast {
+        def expected = new TreeMap<String, Set<String>>()
+        serviceModules.each { path ->
+            def dir = project(path).file('src/main/resources/META-INF/services')
+            if (dir.isDirectory()) dir.listFiles().each { f ->
+                f.readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }.each {
+                    expected.computeIfAbsent(f.name) { new TreeSet<String>() }.add(it)
+                }
+            }
+        }
+        def zip = new java.util.zip.ZipFile(jarFile.get().asFile)
+        try {
+            def names = zip.entries().toList().collect { it.name }
+            expected.each { name, lines ->
+                def path = 'META-INF/services/' + name
+                if (names.count(path) != 1) throw new GradleException("JAR の ${path} が ${names.count(path)} 個（1 個であるべき）")
+                def actual = zip.getInputStream(zip.getEntry(path)).getText('UTF-8').readLines().collect { it.trim() }.findAll { it }
+                def missing = lines.findAll { !(it in actual) }
+                if (!missing.isEmpty()) throw new GradleException("JAR の ${path} に ${missing} が無い")
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+tasks.named('check') { dependsOn 'verifyModJarServices' }
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+idea {
+    module {
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}
+
+// --- 追加: JUnitを実行するための設定 ---
+// MOD のテストはリポジトリ直下から相対パスで読む（mod/src/...・core/src/...・ルートの文書）。ゴールデンは mod/src/test/resources/golden
+tasks.withType(Test).configureEach {
+    workingDir = rootProject.projectDir
+    systemProperty 'golden.dir', 'mod/src/test/resources/golden'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+    // :core と同じく、テストのクラスを JVM ごとに振り分けて並列に流す（-Ptest.forks=N。既定はコア数 / 6、1〜4）
+    maxParallelForks = project.hasProperty('test.forks') ? project.property('test.forks').toString().toInteger()
+            : Math.max(1, Math.min(4, Runtime.runtime.availableProcessors().intdiv(6)))
+    // ArchitectureTest などがクラスパスの外から読むファイル（文書・全モジュールのソース）。core/build.gradle の repoFilesReadByTests
+    inputs.files(project(':core').repoFilesReadByTests).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('repoFilesReadByTests')
+
+    testLogging {
+        showStandardStreams = true
+    }
+    // -D で渡したフラグは Gradle デーモンのプロパティになるだけで、テスト JVM には伝わらない。
+    // CONTRIBUTING に書いてある -Dgolden.update=true が黙って無効になっていたため明示的に渡す。
+    // inputs.property があるのは、フラグを変えただけでは UP-TO-DATE で素通りしてしまうため。
+    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.parser.dropnewlinews'].each { key ->
+        def value = System.getProperty(key)
+        if (value != null) systemProperty key, value
+        inputs.property key, value ?: ''
+    }
+}
+
+// 全件テスト（test）では GC や他テストの負荷で実時間・ヒープ差分が揺れるため、
+// 厳密な性能回帰判定は単独 JVM で走るこのタスク（または -Dbenchmark.enforce=true）で行う。
+tasks.register('benchmark', Test) {
+    description = 'Runs performance and memory benchmarks in an isolated JVM with strict threshold enforcement.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform()
+    testLogging {
+        showStandardStreams = true
+    }
+    include '**/PerformanceBenchmarkTest.class', '**/StateMemoryBenchmarkTest.class', '**/RasterBenchmarkTest.class'
+    systemProperty 'benchmark.enforce', 'true'
+    ['benchmark.update', 'benchmark.factor', 'benchmark.slackMs'].each { key ->
+        def value = System.getProperty(key)
+        if (value != null) systemProperty key, value
+        inputs.property key, value ?: ''
+    }
+    outputs.upToDateWhen { false }
+}

@@ -16,7 +16,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 - ブラウザとの差異の台帳: [FIDELITY.md](FIDELITY.md)
 - 規約（コメントの種類、ゴールデン更新、3 点セット）: [CONTRIBUTING.md](CONTRIBUTING.md)
 - 利用者から見える制約: [README.md](README.md) の "Not supported"
-- 実機・機能別の手動/自動テスト仕様書: [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md)
+- 実機・機能別の手動/自動テスト仕様書: [TEST_SPEC_SURFACE.md](mod/TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](mod/TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](mod/TEST_SPEC_MEDIA.md)
 
 ---
 
@@ -65,13 +65,13 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
   5. `WebMediaManagerRedirectTest.redirectFollowingIsAlwaysInspected`（2 本目の接続が自動追従のまま・307/308 未対応・相対 `Location` は常に遮断 → T8 の 4）
   6. `WebMediaManagerRedirectTest.uniqueLocalIpv6IsRejected`（`isUrlSafe` が IPv6 ユニークローカル `fc00::/7` を素通りする → T8 の 4）
 - 有効なまま通る SSRF テスト: ループバック・プライベート・リンクローカル・IPv4 の別表記（10 進・16 進・8 進整数・省略形）・IPv4 射影 IPv6・非 http スキーム・許可ドメインの回り込み。
-- 実機仕様書との結びつけ: [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md) §3 の C-1（共有セッションのサイズ競合）と B-1 / B-2（一人称のはみ出し）は Phase 1 の 5 番、[TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md) §3 の A〜C 表と [TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md) の実機手順は、Phase 1 完了時の再実施項目とする。
+- 実機仕様書との結びつけ: [TEST_SPEC_SURFACE.md](mod/TEST_SPEC_SURFACE.md) §3 の C-1（共有セッションのサイズ競合）と B-1 / B-2（一人称のはみ出し）は Phase 1 の 5 番、[TEST_SPEC_BLOCKS_ITEMS.md](mod/TEST_SPEC_BLOCKS_ITEMS.md) §3 の A〜C 表と [TEST_SPEC_MEDIA.md](mod/TEST_SPEC_MEDIA.md) の実機手順は、Phase 1 完了時の再実施項目とする。
 
 機能修正やパイプライン改修に入る前に、現状のテストとベンチマークが見落としていた領域をすべて自動テスト・ラチェットとして先に固定する。
 
 1. **進行中の自動テスト・実機仕様書の検証と統合**
    - 作業ツリーに追加された `SurfaceStateTest`・`HologramPickTest`・`AdHocSessionLifecycleTest`・`UIStateLoadTest` および `gametest/WebScreenGameTest` の全件通過を確認する。
-   - [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md) の検証項目と既知不具合（§3）を本計画の完了条件に結びつける。
+   - [TEST_SPEC_SURFACE.md](mod/TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](mod/TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](mod/TEST_SPEC_MEDIA.md) の検証項目と既知不具合（§3）を本計画の完了条件に結びつける。
 2. **`ArchitectureTest`（番人ラチェット）の強化**
    - **M1 拡張（静的コールバック・サーバー状態の混入防止）**:
      - `ClientScreenInteractionManager.clientEventCallback` のように、画面やセッションごとのコールバックをシングルトンの static フィールドに持つことを禁止し、`SessionContext` への集約を強制する。
@@ -118,7 +118,7 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 4. **`WebMediaManager` のネットワーク・外部プロセス安全化（T8）**
    - リダイレクト処理を 301 / 302 / 303 / 307 / 308 対応・最大 5 ホップ・`URI.resolve` による相対 URL 解決に改め、各ホップで `isUrlSafe` を検査する。
    - 外部バイナリ `yt-dlp` の無検証ダウンロードと毎回の自己更新（`yt-dlp -U`）を廃止し、設定による明示的な有効化と SHA-256 検証（または事前導入バイナリの参照のみ）に限定する。
-5. **R3 残課題と Surface 既知不具合（[TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md) §3）の解消**
+5. **R3 残課題と Surface 既知不具合（[TEST_SPEC_SURFACE.md](mod/TEST_SPEC_SURFACE.md) §3）の解消**
    - 互換モード `WebSession` の変異が画面を開き直さなくてもライブ反映される経路の確認と、フル再同期フォールバック時の節状態（スクロール・フォーカス・選択範囲）の引き継ぎ。
    - **C-1（共有セッションのサイズ競合）**: 同じ `sessionId` をアスペクト比の異なるブロック面・ホログラム・手持ちアイテムで共有した際、後から描画した面のサイズで先方のレイアウトが潰れないよう、論理ビューポートまたは面ごとのレイアウトキャッシュを分離する。
    - **B-1 / B-2（一人称視点のアイテム Surface のはみ出し）**: `surface_test_item.json` の `firstperson_righthand` / `lefthand` の display transform 調整とクリッピングの確認。
@@ -328,7 +328,7 @@ WPT の枠（`WptHarness` / `WptDomBehaviorTest` / `WptManifestTest`、固定 SH
   あわせて、値に空白を含む計算値（`rgb(10, 20, 30)` / `matrix(1, 0, 0, 1, 0, 0)`）が列区切りで
   切れていたのを、二重引用符で包む形式に直した（ブラウザ側 `fidelity-dump.html` も同じ規則）。
 - WPT manifest の各ケースに `browserExpectation` を記録し、サブテスト単位の既知差分を
-  `src/test/resources/wpt/known-divergences.txt` で管理する。`WptBehaviorTest` が `@WptCase` のパスを
+  `core/src/testFixtures/resources/wpt/known-divergences.txt` で管理する。`WptBehaviorTest` が `@WptCase` のパスを
   `WptHarness.test` に結び、台帳に無い失敗は回帰、載っているのに通ったものは古い台帳として落とす。
 - ディスプレイリストのゴールデンは R6 で効果ごとに増やす前提（変更なし）。
 - 検証: `./gradlew test` は 553 件・失敗 0（2026-10-20）。
@@ -693,7 +693,7 @@ AUI も本物の再レイアウトは全文書なので、レイアウト境界�
 - **装飾**: 3 色以上のグラデーションを `WebSdfShader` へ統合（`GradientStrip` の撤廃）。ガウスの `box-shadow`（今の段階的な層をやめる）・透明背景で外側の影を抜く・inset 影の角丸、楕円の角、
   角丸に沿う dashed / dotted、`outline` の角丸、インライン断片の背景画像、`background-attachment: fixed / local`。
 - **旧 W12**: スクロールのヒットテスト（`ClientScreenInteractionManager.handleScrollLocally`）が祖先の変換の逆行列とクリップを通ること、
-  `<mc-scene>` / `<mc-entity>` / `<img src="item:...">` のシザー、スクロール端にかかるテキスト行の部分クリップ、複数 Surface バッティング時の半透明順序（[TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md) A-14）。
+  `<mc-scene>` / `<mc-entity>` / `<img src="item:...">` のシザー、スクロール端にかかるテキスト行の部分クリップ、複数 Surface バッティング時の半透明順序（[TEST_SPEC_SURFACE.md](mod/TEST_SPEC_SURFACE.md) A-14）。
 
 **参照**: AUI `render/FilterRenderer`（FBO プール・backdrop 用プール）、`render/Mask`、`render/ClipPath`、`render/CssBlendMode`、`style/Transform`。
 
@@ -820,7 +820,7 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
   台帳の行が消えることがフェーズの完了条件。
 - R0 / R0+ で入れる計算値の列・DOM の振る舞いテスト・ディスプレイリストのゴールデン・全文書および差分性能ベンチ。
 - `ArchitectureTest`・`ApiBoundaryTest`（`core` が Minecraft に依存しない・公開 API に内部型が漏れない・M1〜M8 および新規ラチェットが後退しない）。
-- `./gradlew runClient` の実機確認と `gametest/WebScreenGameTest`、および [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md)。
+- `./gradlew runClient` の実機確認と `gametest/WebScreenGameTest`、および [TEST_SPEC_SURFACE.md](mod/TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](mod/TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](mod/TEST_SPEC_MEDIA.md)。
 
 ## 台帳と README の同期
 

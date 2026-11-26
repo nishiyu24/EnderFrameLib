@@ -68,7 +68,7 @@ class RegressionCatalogTest {
     static Map<String, List<Path>> testSources() throws IOException {
         Map<String, List<Path>> out = new HashMap<>();
         try (Stream<Path> dirs = Files.list(root())) {
-            List<Path> roots = new ArrayList<>(List.of(root().resolve("src/test/java")));
+            List<Path> roots = new ArrayList<>();
             dirs.filter(Files::isDirectory).map(d -> d.resolve("src/test/java")).forEach(roots::add);
             for (Path r : roots) {
                 if (!Files.isDirectory(r)) continue;

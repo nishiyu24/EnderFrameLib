@@ -5,7 +5,7 @@
 const http=require('http'),fs=require('fs'),path=require('path'),cp=require('child_process'),os=require('os');
 const [,, gpuMode='gpu', nArg='60'] = process.argv; const N=parseInt(nArg);
 const CHROME='C:/Program Files/Google/Chrome/Application/chrome.exe';
-const HTML=fs.readFileSync(path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8').replace(/:hover/g,'.fh')+`<script>
+const HTML=fs.readFileSync(path.join(__dirname,'../../../mod/src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8').replace(/:hover/g,'.fh')+`<script>
 window.__lat=[];let frame=0,pending=null;
 (function loop(){frame++;requestAnimationFrame(loop);})();
 const b=[...document.querySelectorAll('.btn')].slice(0,2);

@@ -3,19 +3,25 @@
 ## 開発環境
 
 - JDK 21（`java.toolchain` で固定。別バージョンが入っていても Gradle が取得する）
-- Minecraft 1.21.1 / NeoForge 21.1.248 / ModDevGradle 2.0.148
+- MOD（`:mod`）だけ: Minecraft 1.21.1 / NeoForge 21.1.248 / ModDevGradle 2.0.148
+
+リポジトリの主役は Minecraft に依存しない UI エンジン（`:core`・`:core-gl`・`:core-vulkan`・`:core-glfw`）で、ルートは
+プラグインを持たない素の Gradle。NeoForge の MOD は利用者の 1 つとして `mod/`（`:mod`）にある（依存は `:mod` → `:core` 系の一方向）。
+`:core` 系だけのタスク（`:core:test` など）は `:mod` を設定しないので、NeoForge・Minecraft の準備は走らない
+（`gradle.properties` の configure-on-demand。CI の build が番をする）。
 
 ```bash
-./gradlew build test          # CI と同じ経路（性能ベンチはスモーク動作のみ・実時間閾値では落とさない）
-./gradlew benchmark           # 単独 JVM での厳密な性能・メモリ回帰テスト（-Dbenchmark.enforce=true）
+./gradlew build test          # CI と同じ経路（全プロジェクト。性能ベンチはスモーク動作のみ・実時間閾値では落とさない）
 ./gradlew :core:quickTest    # 開発中の確認（約 2 分）。slow・timing を外した :core のテストを並列で
 ./gradlew :core:test         # Minecraft 非依存の :core の全件（約 3 分。slow を含み、timing は後から直列）
-./gradlew runClient
-./gradlew runServer
-./gradlew runGameTestServer   # サーバー側ライフサイクルのゲームテスト
+./gradlew :mod:test          # MOD のテスト（Minecraft を起動しないヘッドレスのテスト）
+./gradlew :mod:benchmark     # MOD の単独 JVM での厳密な性能・メモリ回帰テスト（-Dbenchmark.enforce=true）
+./gradlew :mod:runClient
+./gradlew :mod:runServer
+./gradlew :mod:runGameTestServer   # サーバー側ライフサイクルのゲームテスト
 ```
 
-`run/`・`.idea/`・`repo/`・`src/generated/` は追跡しない。
+`mod/run/`・`.idea/`・`repo/`・`mod/src/generated/` は追跡しない。
 生成物やワールドデータをコミットに混ぜないこと。
 
 ---
@@ -150,7 +156,7 @@ network/  →  core/, api/（ペイロードの登録で server のハンドラ�
 
 CI は 2 本ある（どちらも Linux の ubuntu-latest。GPU なし）:
 
-- `build`（毎回の push / PR）: **テストを除く**全て。`./gradlew build -x test`（全モジュールのコンパイル・ルート JAR・ビルド時 SPIR-V 検証・`:core` の依存グラフ検査・`:core` 単独のスモーク）と `runGameTestServer`。環境差で赤くならない検査だけにしてある。
+- `build`（毎回の push / PR）: **テストを除く**全て。`./gradlew build -x test`（全モジュールのコンパイル・MOD の JAR・ビルド時 SPIR-V 検証・`:core` の依存グラフ検査・`:core` 単独のスモーク）、`:core` 系だけのビルドが `:mod` を設定しないことの検査、`:core:test` と `:mod:runGameTestServer`。環境差で赤くならない検査だけにしてある。
 - `full-tests`（手動 + 毎日 1 回）: 全テスト。書体・GPU が開発機と違うので環境差で落ちうる。毎回は回さず、失敗は注釈とサマリーに出す。
 
 全テストの責任は開発機が持つ（下の `ci-linux.ps1` と pre-push フック）。開発は Windows が中心なので、
@@ -158,28 +164,31 @@ CI は 2 本ある（どちらも Linux の ubuntu-latest。GPU なし）:
 
 | 過去の原因 | 防ぐもの |
 | :-- | :-- |
-| ルート JAR が複数モジュールの同名 `META-INF/services/*` を重ねて `jar` が落ちた（`test` だけ回して `build` を回していなかった） | ルート `build.gradle` がサービスファイルを結合する。`verifyModJarServices`（`check` に含まれる）が JAR の登録を検査する。pre-push が `build -x test` を回す |
+| MOD の JAR が複数モジュールの同名 `META-INF/services/*` を重ねて `jar` が落ちた（`test` だけ回して `build` を回していなかった） | `mod/build.gradle` がサービスファイルを結合する。`verifyModJarServices`（`check` に含まれる）が JAR の登録を検査する。pre-push が `build -x test` を回す |
 | 書体の幅・種類に依るテスト（OS の書体が内蔵書体と同じ見た目になる、文字の位置が環境で違うなど） | テストは書体・OS に依存した値を断定しない（座標は文字を避ける、環境ごとに違う差を比較しない）。`scripts/ci-linux.ps1` で Linux の結果を先に見る |
 | OS ごとに通る・通らないが違う合格一覧（WPT の reftest） | 一覧は作った OS（Windows）でだけ判定する。他の OS では差分を出力するだけ（`-Dwpt.reftest.strict=true` で強制） |
 | GPU が無い環境（CI）でだけ起きる差 | `scripts/ci-linux.sh` は `DISPLAY` を外して実行する（GL・Vulkan のテストは中断になる。CI と同じ） |
 
-- **Linux で CI と同じ手順を回す**: `powershell -File scripts/ci-linux.ps1`（WSL の Ubuntu。JDK 21 は自動取得）。既定は `build test` と `runGameTestServer` で約 3 分。近道（`Shortcut`）・確保量・ヒープ・計測の基準値に触れた変更は `-Full` で `costGate` と `memoryAndLatencyGate` も回す（約 6 分。CI が push ごとに回すものを先に見る）。大きな変更・モジュールや依存の追加・テストの追加の前後に回す。
+- **Linux で CI と同じ手順を回す**: `powershell -File scripts/ci-linux.ps1`（WSL の Ubuntu。JDK 21 は自動取得）。既定は `build test` と `:mod:runGameTestServer` で約 3 分。近道（`Shortcut`）・確保量・ヒープ・計測の基準値に触れた変更は `-Full` で `costGate` と `memoryAndLatencyGate` も回す（約 6 分。CI が push ごとに回すものを先に見る）。大きな変更・モジュールや依存の追加・テストの追加の前後に回す。
 - **push 前フック**: `powershell -File scripts/install-hooks.ps1`（clone ごとに 1 回）。以降 `git push` で `./gradlew build -x test` が走る。`EFL_PREPUSH_LINUX=1 git push` で Linux の全件も回す。急ぐときは `git push --no-verify`。
 - **CI が赤くなったら**: ジョブの「Summarize test failures」のサマリーと注釈に、失敗したテスト名とメッセージが出る（ログを開かなくても読める。注釈は API の `check-runs/<id>/annotations` でも取れる）。
 
 ## テスト
 
 ```
-core/src/test/java/.../        :core モジュールのテスト（core/・common/・WPT の移植ハーネス。Minecraft を使わない）
-src/test/java/.../core/        ArchitectureTest（両モジュールのソースを走査）
-src/test/java/.../api/         API 境界テスト（内部型が漏れていないか）
-src/test/resources/golden/     期待出力
-src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の台帳
+core/src/test/java/.../             :core モジュールのテスト（core/・common/・WPT の移植。Minecraft を使わない）
+core/src/testFixtures/java/.../     :core と :mod のテストが共有する補助（GoldenFiles・TestBoxes・WptHarness ほか。公開物には載せない）
+core/src/test/resources/golden/     :core の期待出力（フレーム・実文書・スタイル・パーサ）
+core/src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の台帳
+mod/src/test/java/.../core/         ArchitectureTest（MOD と :core のソースを走査）
+mod/src/test/java/.../api/          API 境界テスト（内部型が漏れていないか）
+mod/src/test/resources/golden/      MOD の期待出力（表示リスト）
 ```
 
 - `core/` に手を入れる変更には、素の JUnit テストを付ける。`./gradlew :core:test` で Minecraft なしに単体実行できる
-  （作業ディレクトリはリポジトリ直下。テスト資源は `src/test/resources` を共有する）。
-  ソースは `core/src/main/java`、Minecraft に触れる側は `src/main/java`。
+  （作業ディレクトリはリポジトリ直下。`:mod` のテストも同じで、パスはリポジトリ直下から書く）。
+  ソースは `core/src/main/java`、Minecraft に触れる側は `mod/src/main/java`。
+  `:mod` のテストが使う補助は `core/src/testFixtures` に置き、`testFixtures(project(':core'))` で借りる（`:core` のテスト出力そのものは借りない）。
   Minecraft の起動が要らないので、ここが唯一安く速く検証できる層。
 - **テストの回し方**（24 コアの開発機での目安。2 コアの CI では並列にならず、従来と同じ直列）:
 
@@ -194,7 +203,7 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   - **`@Tag("slow")`**: 1 メソッドで 20 秒を超えるもの（種を多数回すファズ型など）に付ける。`quickTest` からは外れるが、`test` では流れる。
   - **`@Tag("timing")`**: 実時間で合否を決めるもの。並列の JVM と同時に流すと揺れるので、`test` の後に `timingTest` が 1 本の JVM で流す。CI は `-Ptest.excludeTags=timing` で外す（`TimingTagPolicyTest` が見張る）。
   - `costGate` の途中確認は `-Pcostgate.only=voidwave`（名前で絞る）か `-Pcostgate.parallel=4`（約 80 秒）。並列では経路の回数は一致するが確保量が最大 20% ずれるので、合否は既定の直列で取る。
-- **テストのパッケージは本体に合わせる。** `src/test/java` に本体の無いパッケージを作らない
+- **テストのパッケージは本体に合わせる。** `mod/src/test/java` に本体の無いパッケージを作らない
   （WPT の移植ハーネスだけは例外）。`ArchitectureTest` が検査する。
 - **管理指標の上限は下げる方向にだけ動かす。** `ArchitectureTest` の M1〜M8 は
   構造整理（T0）で記録した実測値から始めたもので（現在の上限は [ARCHITECTURE.md](ARCHITECTURE.md) §7）、フェーズの作業で数を減らしたら
@@ -210,9 +219,9 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   確認してからコミットする。** 更新モードで通しただけの差分は受け取らない。
 - **Web 挙動との差はゴールデンではなくブラウザ実測で固定する。**
   `WebFidelityTest` が忠実度コーパス
-  （`src/main/resources/assets/enderframelib/preview/fidelity/cases/`）を
+  （`core/src/main/resources/assets/enderframelib/preview/fidelity/cases/`）を
   エンジンに通し、ブラウザで測った期待値
-  （`src/test/resources/fidelity/expected/`）と突き合わせる。
+  （`core/src/test/resources/fidelity/expected/`）と突き合わせる。
   幾何（x / y / w / h）は ±0.5px、描画順の列（z）は完全一致。列の定義と
   コーパスを書くときの約束は [FIDELITY.md](FIDELITY.md) の「仕組み」にある。
   計算値の列（`opacity` / `transform` / `color` など）はケースの
@@ -221,8 +230,8 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   宣言した列が期待値に 1 つも無いと `WebFidelityTest` が「比較されていない」として落とす。
 
   ```bash
-  ./gradlew test --tests '*WebFidelityTest'
-  ./gradlew test --tests '*WebFidelityTest' -Dfidelity.dump=true   # 現状の出力を build/fidelity へ
+  ./gradlew :core:test --tests '*WebFidelityTest'
+  ./gradlew :core:test --tests '*WebFidelityTest' -Dfidelity.dump=true   # 現状の出力を build/fidelity へ
   ```
 
   ブラウザ側の期待値は `/enderframe devkit` が出す `fidelity-dump.html` で採る。
@@ -239,16 +248,16 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   HTML のツリー構築も同じ考え方で、`HtmlTreeConstructionTest` の期待値はブラウザ
   （`DOMParser` と innerHTML）が組んだ木を書き出したもの。パーサの出力を期待値にしない。
 
-  一致しない差異は `src/test/resources/fidelity/known-divergences.txt` と
+  一致しない差異は `core/src/test/resources/fidelity/known-divergences.txt` と
   [FIDELITY.md](FIDELITY.md) の**両方**に同じキー（`case#id.field`）で書く
   （前者に書いて後者に書き忘れるとテストが落ちる）。
   **台帳に無い差異は回帰として落ち、台帳にあるのに一致した差異も「台帳が古い」として
   落ちる。** 差異を 1 つ埋めたら、同じコミットで台帳の行・コードの `LIMITATION`・
   README の "Not supported" を揃えて消す。
 - **WPT の採用ケースは manifest と台帳の両方で管理する。**
-  `src/test/resources/wpt/manifest.json` の各ケースには、固定 SHA の上流 testharness を
+  `core/src/test/resources/wpt/manifest.json` の各ケースには、固定 SHA の上流 testharness を
   ブラウザで実行した結果を `browserExpectation`（`pass` / `fail`）として書く。
-  ブラウザと一致しないサブテストは `src/test/resources/wpt/known-divergences.txt` に
+  ブラウザと一致しないサブテストは `core/src/testFixtures/resources/wpt/known-divergences.txt` に
   `<WPT のパス>#<サブテスト名> <フェーズ>: <理由>` の形で載せる
   （例: `dom/nodes/Node-nodeType.html#Element nodeType must be 1 R2: …`）。
   移植クラスは `WptBehaviorTest` を継承し、サブテストを `WptHarness.test(...)` で書く。
@@ -256,7 +265,7 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   **台帳に無い失敗は回帰、台帳にあるのに通ったものは古い台帳**として落とす。
   manifest にだけ残ったケース、台帳にだけ残ったキーも `WptManifestTest` が落とす。
 - **性能ベンチの基準値はリポジトリに固定する。**
-  `src/test/resources/benchmark/baseline.txt` が showcase.html・guidebook.md・500 項目リストの
+  `mod/src/test/resources/benchmark/baseline.txt` が showcase.html・guidebook.md・500 項目リストの
   再スタイル / 再レイアウト / ディスプレイリスト / スクロール 1 段の基準値を持つ。
   全件テスト（`./gradlew test`）では先行テストの GC や CPU 負荷で実時間が揺れるため、
   通常実行時の `PerformanceBenchmarkTest` / `StateMemoryBenchmarkTest` は少ない反復で
@@ -273,7 +282,7 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
 
   マシンが変わって恒久的に遅い/速い場合は `-Dbenchmark.update=true` で更新し、**必ず `git diff` で数値の変化を確認してからコミットする。**
   一時的な環境差は `-Dbenchmark.factor=2.5` / `-Dbenchmark.slackMs=10` で緩める。
-  サーバー側の基準値（互換モードのパケット量とヒープ）は `src/test/resources/benchmark/server_baseline.txt` にあり、
+  サーバー側の基準値（互換モードのパケット量とヒープ）は `mod/src/test/resources/benchmark/server_baseline.txt` にあり、
   `PacketBandwidthTest` / `StateMemoryBenchmarkTest` が完全一致で、`HeadlessStateBandwidthAndMemoryTest` が
   Headless State との削減率で使う。実測と経緯は [BENCHMARK.md](BENCHMARK.md)。
 - **UA の既定値は `ua.css` が唯一の出所。** ブラウザプレビューは
@@ -295,7 +304,7 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   エンジンの出力を期待値にしない。一覧は [FIDELITY.md](FIDELITY.md) の「コーパスの外でブラウザと突き合わせているもの」。
 - サーバー側のライフサイクル（ログアウト・ディメンション移動・サーバー停止で
   static マップが空に戻るか）は `gametest/WebScreenGameTest` が
-  `./gradlew runGameTestServer` で検証する。
+  `./gradlew :mod:runGameTestServer` で検証する。
   サーバー側に状態を持つマップを追加したら、`EnderFrameServerState.isEmpty()`
   と `describeState()` にも足すこと。破棄の経路は
   `EnderFrameServerState` の 1 箇所に集める（Headless State の `UIStateManager` もここから

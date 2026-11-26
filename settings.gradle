@@ -10,11 +10,15 @@ plugins {
 
 rootProject.name = 'EnderFrameLib'
 
-// Minecraft に依存しない描画コア。ルートの NeoForge Mod がこれを取り込む
-include 'core'
-
-// GPU 実装と窓は :core から分けた別モジュール（:core は OpenGL・GLFW・Vulkan へのコンパイル依存を持たない）。
+// リポジトリの主役は Minecraft に依存しない HTML/CSS の UI エンジン（:core 系）。ルートは素の Gradle で、プラグインを持たない。
+// :core = エンジン本体（OpenGL・GLFW・Vulkan へのコンパイル依存を持たない）
 // :core-gl = OpenGL 3.2 バックエンド、:core-vulkan = Vulkan 1.1 バックエンド、:core-glfw = GLFW の窓と StandaloneViewer
+include 'core'
 include 'core-gl'
 include 'core-vulkan'
 include 'core-glfw'
+
+// エンジンの利用者の 1 つである NeoForge の MOD（サンプル兼 Minecraft への組み込み）。依存は :mod → :core 系の一方向。
+// gradle.properties の configure-on-demand により、:core 系だけのタスク（:core:test など）では :mod を設定しない
+// （NeoForge・Minecraft の設定処理が走らない。計画書 P4-1）
+include 'mod'

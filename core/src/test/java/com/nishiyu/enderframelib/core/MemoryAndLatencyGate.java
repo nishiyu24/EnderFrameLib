@@ -98,7 +98,7 @@ public final class MemoryAndLatencyGate {
     }
 
     private static String readFixture(String name) throws IOException {
-        Path p = Path.of("src/main/resources/data/enderframelib/enderframe_ui", name);
+        Path p = Path.of("mod/src/main/resources/data/enderframelib/enderframe_ui", name);
         return Files.readString(p, StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 

@@ -43,10 +43,10 @@ core/src/main/java/com/nishiyu/enderframelib/core/text/font/LoadedFace.java | 94
 core-gl/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlDevice.java | 1110
 core-vulkan/src/main/java/com/nishiyu/enderframelib/core/paint/vulkan/VkDevice.java | 1428
 core-vulkan/src/main/java/com/nishiyu/enderframelib/core/paint/vulkan/VkPipelines.java | 603
-src/main/java/com/nishiyu/enderframelib/client/gui/EnderScreenDelegate.java | 1317
-src/main/java/com/nishiyu/enderframelib/client/gui/desktop/LinuxDesktopScreen.java | 951
-src/main/java/com/nishiyu/enderframelib/client/renderer/WebHudRenderer.java | 619
-src/main/java/com/nishiyu/enderframelib/client/renderer/WebMediaManager.java | 1312
-src/main/java/com/nishiyu/enderframelib/gametest/WebScreenGameTest.java | 939
-src/main/java/com/nishiyu/enderframelib/server/EnderFrameCommands.java | 1834
-src/main/java/com/nishiyu/enderframelib/server/WebSessionManager.java | 635
+mod/src/main/java/com/nishiyu/enderframelib/client/gui/EnderScreenDelegate.java | 1317
+mod/src/main/java/com/nishiyu/enderframelib/client/gui/desktop/LinuxDesktopScreen.java | 951
+mod/src/main/java/com/nishiyu/enderframelib/client/renderer/WebHudRenderer.java | 619
+mod/src/main/java/com/nishiyu/enderframelib/client/renderer/WebMediaManager.java | 1312
+mod/src/main/java/com/nishiyu/enderframelib/gametest/WebScreenGameTest.java | 939
+mod/src/main/java/com/nishiyu/enderframelib/server/EnderFrameCommands.java | 1834
+mod/src/main/java/com/nishiyu/enderframelib/server/WebSessionManager.java | 635
