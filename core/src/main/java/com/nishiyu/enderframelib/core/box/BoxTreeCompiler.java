@@ -43,12 +43,14 @@ import java.util.Set;
  * 容器の {@code container-type} / {@code container-name} が変わったときに容器の部分木を解き直す（M2b-5）。</p>
  */
 public final class BoxTreeCompiler {
-    private static final int SELF_STYLE = 1, SELF_CHILDREN = 2, SELF_TEXT = 4;
+    private static final int SELF_STYLE = 1, SELF_CHILDREN = 2, SELF_TEXT = 4, SELF_ANCHOR = 8;
 
     private StyleSource styles;
     /** 前回のコンパイルで使った解き方（{@link #restyleWith} で替わったら次のコンパイルで全ての要素を解き直す）。 */
     private StyleSource compiledWith;
     private BoxNode root;
+    /** ビューが持つ、流れの外の要素の覚えたスクロール量（G8。{@link #remembered}）。箱を作るときに写す。 */
+    private Map<HtmlNode, RememberedScroll> remembered = Map.of();
 
     // ---- 1 回のコンパイルの間だけ使う（凍結した台帳から作る） ----
     private final Map<HtmlNode, Integer> self = new IdentityHashMap<>();
@@ -130,6 +132,14 @@ public final class BoxTreeCompiler {
      */
     public void restyleWith(StyleSource styles) {
         this.styles = styles;
+    }
+
+    /**
+     * ビューが持つ覚えたスクロール量の表を結ぶ（G8。参照を持つだけで写さない）。値が変わった要素は、ビューが台帳の
+     * {@link ChangeKind#ANCHOR} で知らせる（知らせない限り前回の箱の値のまま）。
+     */
+    public void remembered(Map<HtmlNode, RememberedScroll> table) {
+        this.remembered = table != null ? table : Map.of();
     }
 
     /**
@@ -249,7 +259,8 @@ public final class BoxTreeCompiler {
             }
             int bit = ledger.frozenIs(i, ChangeKind.CHILDREN) ? SELF_CHILDREN
                     : ledger.frozenIs(i, ChangeKind.TEXT) ? SELF_TEXT
-                    : ledger.frozenIs(i, ChangeKind.SCROLL) ? 0 : SELF_STYLE;
+                    : ledger.frozenIs(i, ChangeKind.SCROLL) ? 0
+                    : ledger.frozenIs(i, ChangeKind.ANCHOR) ? SELF_ANCHOR : SELF_STYLE;
             if (bit == 0) continue;
             if (ledger.frozenIs(i, ChangeKind.STYLE_SUBTREE)) restyleBelow.add(node); // 子孫を全て解き直す（容器の 2 段目と同じ仕組み）
             self.merge(node, bit, (a, b) -> a | b);
@@ -351,6 +362,10 @@ public final class BoxTreeCompiler {
         if (replaced != null && prev != null && replaced.equals(prev.replaced)) replaced = prev.replaced;
         PopoverLink popover = kind == BoxKind.NONE ? null : PopoverLink.of(n); // 暗黙のアンカーの属性の写し（M2b-5）
         if (popover != null && prev != null && popover.equals(prev.popover)) popover = prev.popover;
+        // 覚えたスクロール量（G8。全て 0 なら載せない。値が前回と同じなら前回の参照）
+        RememberedScroll anchorScroll = kind == BoxKind.NONE || n.nodeType != NodeType.ELEMENT ? null : remembered.get(n);
+        if (anchorScroll != null && anchorScroll.zero()) anchorScroll = null;
+        if (anchorScroll != null && prev != null && anchorScroll.equals(prev.anchorScroll)) anchorScroll = prev.anchorScroll;
         // 縦書きの文脈（M2b-5）: レイアウトが読むスタイルは軸を入れ替えたもの、直交フローの根は流れの中身を包む箱のスタイルを持つ。
         // 算出スタイルと文脈が前回と同じなら前回の参照（レイアウトのキャッシュが == で照合する）
         int axis = n.nodeType == NodeType.ELEMENT && kind != BoxKind.NONE ? OrthogonalBoxes.axisOf(flow, style) : WritingModes.HORIZONTAL;
@@ -369,10 +384,11 @@ public final class BoxTreeCompiler {
                 && kind == prev.kind && text == prev.text && children == prev.children
                 && replaced == prev.replaced && popover == prev.popover && TableBoxes.spanOf(n, kind, BoxNode.Pseudo.NONE) == prev.span
                 && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)
-                && marker == prev.marker && firstLine == prev.firstLine && backdrop == prev.backdrop) return prev;
+                && marker == prev.marker && firstLine == prev.firstLine && backdrop == prev.backdrop
+                && anchorScroll == prev.anchorScroll) return prev;
         stats.rebuiltBoxes++;
         return new BoxNode(n, layoutStyle, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL,
-                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover, firstLine, backdrop,
+                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover, firstLine, backdrop, anchorScroll,
                 prev != null ? prev.layout : null);
     }
 

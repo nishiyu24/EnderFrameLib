@@ -969,7 +969,7 @@ public class UiView implements AutoCloseable {
         // 動いているうちは毎フレーム再スタイルを要求する（終わった要素は進めた時点で再スタイルの対象になる）
         if (interactionState.advanceAnimations(nowMs())) requestRestyle();
         var ledger = interactionState.changeLedger();
-        V3Frame.beforeFreeze(interactionState, document.sheet);
+        v3.beforeFreeze(interactionState, document.sheet, repositionPending ? scrollState : null, scrollAtBuild);
         ledger.freeze(); // 変更台帳を凍結（時間で動くスタイルの印も、この世代に入るよう進めたあとで）。変化は全て台帳から読む
 
         boolean resize = resizeDue();

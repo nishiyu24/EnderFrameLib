@@ -126,6 +126,30 @@ class V3ViewTest {
         }
     }
 
+    /**
+     * 中身を 1 つの節にまとめないスクロールコンテナ（下の inset の sticky を含む）は、スクロールしたフレームで今のスクロール量で描く。
+     * 描画の記憶がコンテナの祖先（文脈が変わらない）を使い回して、中身が古いスクロール量のまま出ていた（G8 の作業で発見。スクロールした
+     * コンテナを台帳に節つきの {@code SCROLL} で載せ、祖先を使い回さない）。
+     */
+    @Test
+    void scrollContainerNotMovedAsOneNodeRepaintsUnderAReusedAncestor() {
+        String html = "<style>body{margin:0}#sc{width:200px;height:120px;overflow-y:auto}.r{height:20px;background:#9cf;margin-bottom:4px}"
+                + "#st{position:sticky;bottom:0;height:10px;background:#f00}</style><div id=w><div id=sc>" + "<div class=r></div>".repeat(12)
+                + "<div id=st></div></div></div><p>tail</p>";
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
+            SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
+            sv.frame(1000, live, true);
+            assertTrue(sv.ui().v3.scrollContents().isEmpty(), "前提: 中身を 1 つの節にまとめないコンテナ");
+            long now = 1000;
+            for (float s : new float[]{30f, 75f, 0f}) {
+                sv.ui().scrollState().setScroll(sv.ui().findNode("sc"), 0f, s);
+                sv.ui().requestScrollReposition();
+                sv.frame(now += 16, live, true);
+                assertSame("scroll " + s, sv, live);
+            }
+        }
+    }
+
     /** {@code :has()} の持ち主（祖先）は、子孫の変化と同じフレームで解き直す（新経路は台帳だけを読むので、祖先も台帳に載ること）。 */
     @Test
     void hasSelectorRestylesTheAncestorInTheSameFrame() {

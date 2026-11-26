@@ -229,11 +229,13 @@ public final class PaintTreeBuilder {
                 // fieldset の描画される legend（FieldsetLegend が置いた）: 旧描画が枠線を切り欠く印
                 boolean isLegend = cb != null && cb.style.box.position != Position.ABSOLUTE && cb.style.box.position != Position.FIXED
                         && ElementTraits.isFieldset(b.node.tag) && ElementTraits.isLegend(cb.node.tag);
-                // position-try の候補を持つ箱は、候補が入れ替えた余白（p.margins）が断片に載らないので前回の節を使わない（G8）
-                boolean tries = cb != null && cb.style.rare.positionTryFallbacks != null;
+                // position-try の候補を持つ箱・スクロールに追従する箱は、候補が入れ替えた余白（p.margins）・追従の入力（p.follow）が
+                // 断片に載らないので前回の節を使わない（G8）
+                boolean tries = cb != null && cb.style.rare.positionTryFallbacks != null || p.follow() != null;
                 Object placed = block(p.frag(), p.x(), p.y(), tries ? null : kids, isLegend);
                 float[] m = p.margins();
                 if (m != null && placed instanceof Draft pd) { pd.mT = m[0]; pd.mR = m[1]; pd.mB = m[2]; pd.mL = m[3]; }
+                if (placed instanceof Draft pd) pd.follow = p.follow();
                 d.children.add(documentOrderIndex(d, cb != null ? cb.node : null), new Child(placed, p.x(), p.y()));
             }
         }
@@ -575,6 +577,7 @@ public final class PaintTreeBuilder {
         ComputedStyle firstLine;
         float[] firstLineBgRect;
         boolean interactive;
+        com.nishiyu.enderframelib.core.layout.fragment.AnchorScroll follow;
         final List<TreeRun> runs = new ArrayList<>(0);
         final List<Child> children = new ArrayList<>(0);
 

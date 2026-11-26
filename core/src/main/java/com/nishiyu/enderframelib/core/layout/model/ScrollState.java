@@ -72,6 +72,22 @@ public class ScrollState {
         return false;
     }
 
+    /** {@code baseline}（{@link #snapshot} の写し）から位置が変わった節を {@code out} へ渡す。 */
+    public void changedSince(Map<HtmlNode, float[]> baseline, java.util.function.Consumer<HtmlNode> out) {
+        if (!anyScroll && baseline.isEmpty()) return;
+        synchronized (offsetsByNode) {
+            for (Map.Entry<HtmlNode, float[]> e : offsetsByNode.entrySet()) {
+                float[] v = e.getValue();
+                float[] was = baseline.get(e.getKey());
+                boolean zero = v[0] == 0f && v[1] == 0f;
+                if (was == null ? !zero : was[0] != v[0] || was[1] != v[1]) out.accept(e.getKey());
+            }
+            for (HtmlNode node : baseline.keySet()) {
+                if (!offsetsByNode.containsKey(node)) out.accept(node);
+            }
+        }
+    }
+
     /** 今のスクロール位置の写し（節 → {x, y}）。スクロールした節の数だけ。 */
     public Map<HtmlNode, float[]> snapshot() {
         if (!anyScroll) return Map.of();

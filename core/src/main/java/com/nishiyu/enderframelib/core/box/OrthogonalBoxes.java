@@ -123,7 +123,7 @@ public final class OrthogonalBoxes {
         } else {
             BoxKind kind = BoxKind.of(owner, wrapperStyle);
             wrapper = new BoxNode(owner, wrapperStyle, kind, null, kids, BoxNode.Pseudo.ORTHOGONAL, null, null, null, null,
-                    MarkerBoxes.NO_ORDINAL, prevWrapper != null ? prevWrapper.flow : null, wrapperStyle, 0, 0, null, null, firstLine, null, null);
+                    MarkerBoxes.NO_ORDINAL, prevWrapper != null ? prevWrapper.flow : null, wrapperStyle, 0, 0, null, null, firstLine, null, null, null);
         }
         if (outside.isEmpty() && prevFlow != null && prevFlow.size() == 1 && prevFlow.get(0) == wrapper) return prevFlow;
         List<BoxNode> all = new ArrayList<>(1 + outside.size());

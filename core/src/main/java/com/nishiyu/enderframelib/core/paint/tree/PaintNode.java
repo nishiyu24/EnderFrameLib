@@ -45,6 +45,10 @@ public final class PaintNode {
     final float[] childX, childY;
     /** 匿名の箱だけを辿って届く匿名の箱の数（自分を含む。匿名でなければ 0）。合成の節の番号を前回と揃えるのに使う。 */
     final int anonChain;
+    /** スクロールコンテナの中のアンカーへの追従の入力（{@link AnchorFollow}。G8。無ければ null）。 */
+    final com.nishiyu.enderframelib.core.layout.fragment.AnchorScroll follow;
+    /** 自分か子孫が {@link #follow} を持つか（ビューが追従する箱を探すとき、持たない部分木へ降りない）。 */
+    final boolean anchoredBelow;
 
     PaintNode(PaintTreeBuilder.Draft d, PaintNode[] children, float[] childX, float[] childY) {
         this.box = d.box;
@@ -87,6 +91,10 @@ public final class PaintNode {
             for (PaintNode c : children) chain += c.anonChain;
         }
         this.anonChain = chain;
+        this.follow = d.follow;
+        boolean below = follow != null;
+        for (int i = 0; !below && i < children.length; i++) below = children[i].anchoredBelow;
+        this.anchoredBelow = below;
     }
 
     /** 子の数。 */

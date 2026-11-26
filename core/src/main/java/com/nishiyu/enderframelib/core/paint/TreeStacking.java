@@ -82,6 +82,9 @@ final class TreeStacking {
         this.anim = anim;
     }
 
+    /** 外の箱が追従するスクロールコンテナ（G8。{@link #scrollsAsOneNode} で中身を 1 つの節にしない）。描く回ごとに置く。 */
+    java.util.Set<com.nishiyu.enderframelib.core.dom.node.HtmlNode> followedScrollers = java.util.Set.of();
+
     void beginPass() {
         contentClips.clear();
         blendDescendants.clear();
@@ -266,6 +269,7 @@ final class TreeStacking {
         if (box.anonymous() || box.w() <= 0 || box.h() <= 0 || !box.style().facts().scrollContainer) return null;
         String tag = box.node().tag;
         if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) return null;
+        if (followedScrollers.contains(box.node())) return null; // 外の箱が中のアンカーに追従する（G8。中身だけ動かしても外の箱が動かない）
         List<PaintView> stickies = new ArrayList<>(0);
         if (hasUnscrollableDescendant(box, box, false, stickies)) return null;
         if (stickies.isEmpty()) return List.of();

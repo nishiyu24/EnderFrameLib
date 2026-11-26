@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.layout.fragment;
 
 import com.nishiyu.enderframelib.core.box.BoxNode;
+import com.nishiyu.enderframelib.core.box.RememberedScroll;
 import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.css.Style;
@@ -22,8 +23,9 @@ import java.util.Locale;
  *   <li>アンカーが見つからない {@code anchor()} は 0（旧経路と同じ）。</li>
  * </ul>
  *
- * <p>旧経路と違う点: アンカーは包含ブロックの中身からだけ探す（{@link Anchors}）。スクロールの量はレイアウトの入力にしないので、
- * スクロールに追従する {@code position: fixed} の候補の選び直しは描画の側（M2c）。</p>
+ * <p>旧経路と違う点: アンカーは包含ブロックの中身からだけ探す（{@link Anchors}）。スクロールの量はレイアウトの入力にしない
+ * （仕様 §3.3）: アンカーはスクロールコンテナが初期位置にあるものとして探し、箱の覚えたスクロール量（{@link BoxNode#anchorScroll}）
+ * だけずらす。スクロールへの追従と候補の選び直しの入力は {@link AnchorScroll} として出し、描画とビューが使う（G8）。</p>
  */
 final class AnchorPlacement {
     private static final float OVERFLOW_EPS = 0.05f;
@@ -44,7 +46,7 @@ final class AnchorPlacement {
 
     /** 1 回の配置の文脈（箱・包含ブロック・アンカー）。 */
     private record Ctx(BoxNode box, Style st, BoxGeometry g, Anchors anchors, OutOfFlow.Pending p,
-                       float cbX, float cbY, float cbW, float cbH, LayoutSession s) { }
+                       float cbX, float cbY, float cbW, float cbH, LayoutSession s, java.util.Set<BoxNode> seen) { }
 
     /** 流れの外の箱 {@code p} を、包含ブロック（border-box 基準の {@code (cbX, cbY)} から {@code cbW} × {@code cbH}）に置く。 */
     static PlacedFragment place(OutOfFlow.Pending p, float cbX, float cbY, float cbW, float cbH, LayoutFragment prior, Anchors anchors,
@@ -52,7 +54,7 @@ final class AnchorPlacement {
         BoxNode box = p.box();
         Style st = box.style;
         BoxGeometry g = new BoxGeometry(st, cbW, s);
-        Ctx c = new Ctx(box, st, g, anchors, p, cbX, cbY, cbW, cbH, s);
+        Ctx c = new Ctx(box, st, g, anchors, p, cbX, cbY, cbW, cbH, s, new java.util.LinkedHashSet<>());
         float mw = naturalWidth(c);
         float mh = naturalHeight(c, mw, prior);
         AnchorTry.Spec base = AnchorTry.base(st, g);
@@ -86,7 +88,32 @@ final class AnchorPlacement {
         LayoutFragment f = s.cache().layout(box, s.space(cbW, w, h, cbH, ConstraintSpace.FORMATTING_ROOT), OutOfFlow.priorOf(prior, box), s);
         AnchorTry.Spec sp = win.spec;
         boolean flipped = sp != null && (sp.mT != g.mT || sp.mR != g.mR || sp.mB != g.mB || sp.mL != g.mL);
-        return new PlacedFragment(f, LayoutUnit.snap(win.x), LayoutUnit.snap(win.y), flipped ? new float[]{sp.mT, sp.mR, sp.mB, sp.mL} : null);
+        float x = LayoutUnit.snap(win.x), y = LayoutUnit.snap(win.y);
+        return new PlacedFragment(f, x, y, flipped ? new float[]{sp.mT, sp.mR, sp.mB, sp.mL} : null,
+                follow(c, sp, x, y, f.width, f.height, !none(fb)));
+    }
+
+    /**
+     * スクロールへの追従の入力（G8。参照したアンカーがどれもスクロールコンテナの中に無ければ null）。{@code x}, {@code y}, {@code w},
+     * {@code h} は置いた border-box。
+     */
+    private static AnchorScroll follow(Ctx c, AnchorTry.Spec sp, float x, float y, float w, float h, boolean retries) {
+        if (c.seen.isEmpty() || sp == null) return null;
+        Anchors.Hit dh = hit(c, null, sp.positionAnchor);
+        BoxNode[] chain = dh != null ? dh.scrollers() : new BoxNode[0];
+        boolean fx = chain.length > 0 && (sp.area != null || AnchorTry.isAnchorFn(sp.left) || AnchorTry.isAnchorFn(sp.right));
+        boolean fy = chain.length > 0 && (sp.area != null || AnchorTry.isAnchorFn(sp.top) || AnchorTry.isAnchorFn(sp.bottom));
+        float[] used = {0, 0};
+        RememberedScroll mem = c.box.anchorScroll;
+        if (mem != null) for (BoxNode b : chain) mem.addTo(b.node, used);
+        com.nishiyu.enderframelib.core.dom.node.HtmlNode[] all = new com.nishiyu.enderframelib.core.dom.node.HtmlNode[c.seen.size()];
+        int i = 0;
+        for (BoxNode b : c.seen) all[i++] = b.node;
+        com.nishiyu.enderframelib.core.dom.node.HtmlNode[] followed = new com.nishiyu.enderframelib.core.dom.node.HtmlNode[chain.length];
+        for (int k = 0; k < chain.length; k++) followed[k] = chain[k].node;
+        return new AnchorScroll(all, followed, fx, fy, used[0], used[1],
+                new float[]{x - sp.mL, y - sp.mT, x + w + sp.mR, y + h + sp.mB},
+                new float[]{c.cbX, c.cbY, c.cbX + c.cbW, c.cbY + c.cbH}, retries);
     }
 
     // ---- 自然な大きさ（border-box）
@@ -343,6 +370,20 @@ final class AnchorPlacement {
      * （暗黙のアンカー）。
      */
     private static float[] anchor(Ctx c, String name, String positionAnchor) {
+        Anchors.Hit h = hit(c, name, positionAnchor);
+        if (h == null) return null;
+        float[] r = h.rect();
+        if (h.scrollers().length == 0) return r;
+        java.util.Collections.addAll(c.seen, h.scrollers());
+        RememberedScroll mem = c.box.anchorScroll;
+        if (mem == null) return r;
+        float[] off = {0, 0}; // 覚えたスクロール量だけずらす（仕様 §3.3。G8）
+        for (BoxNode b : h.scrollers()) mem.addTo(b.node, off);
+        return off[0] == 0 && off[1] == 0 ? r : new float[]{r[0] - off[0], r[1] - off[1], r[2], r[3]};
+    }
+
+    /** アンカー（名前が無ければ {@code position-anchor}、それも auto なら暗黙のアンカー。無ければ null）。 */
+    private static Anchors.Hit hit(Ctx c, String name, String positionAnchor) {
         if (c.anchors == null) return null;
         if (name == null) name = positionAnchor;
         if (name != null && !name.isBlank() && !"auto".equalsIgnoreCase(name.trim())) return c.anchors.named(name.trim());

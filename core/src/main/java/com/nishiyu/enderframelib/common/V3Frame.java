@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.box.RememberedScroll;
 import com.nishiyu.enderframelib.core.box.StyleSource;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
@@ -8,6 +9,7 @@ import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.layout.fragment.AnchorScroll;
 import com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
@@ -15,6 +17,7 @@ import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.TreePainter;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
+import com.nishiyu.enderframelib.core.paint.tree.AnchorFollow;
 import com.nishiyu.enderframelib.core.paint.tree.PaintNode;
 import com.nishiyu.enderframelib.core.paint.tree.PaintTreeBuilder;
 import com.nishiyu.enderframelib.core.paint.tree.PaintView;
@@ -45,6 +48,12 @@ final class V3Frame {
     private float dpr = 1f;
     private ScrollState scroll;
     private PaintNode root;
+    /**
+     * 流れの外の要素のアンカーの覚えたスクロール量（G8。計画書 §3.2「G8 の後半の設計」）。ビューの履歴で、アンカーの再計算点
+     * （{@link #settleAnchors}）でだけ書き換え、台帳の {@link ChangeKind#ANCHOR} で箱の木へ入る。全体の作り直しをまたいで持ち、文書の
+     * 入れ替えで捨てる。
+     */
+    private final Map<HtmlNode, RememberedScroll> remembered = new java.util.IdentityHashMap<>();
     /** 次の全体の作り直しに渡す、作り直す前の要素の算出スタイル（{@link #rebuildKeepingHistory}。そのフレームだけ持つ）。 */
     private Map<HtmlNode, com.nishiyu.enderframelib.core.css.Style> history;
 
@@ -81,6 +90,7 @@ final class V3Frame {
             fresh.history(history);
             history = null;
             pipeline = new FragmentPipeline(fresh, session);
+            pipeline.compiler().remembered(remembered);
             tree = new PaintTreeBuilder(session, doc.sheet);
             painter = new TreePainter(w, h, doc.sheet != null ? doc.sheet.keyframes : Map.of(), scrollState);
             painter.setDevicePixelRatio(devicePixelRatio);
@@ -92,9 +102,45 @@ final class V3Frame {
         long t0 = StageProfiler.begin(PipelineStage.PAINT_TREE);
         root = tree.build(frag, pipeline.boxRoot());
         StageProfiler.end(PipelineStage.PAINT_TREE, t0);
+        settleAnchors(doc, w, h);
         // ビューポートが変われば木が同じでも描き直す（キャンバスの背景・固定配置・vw の描画だけの値）
         if (ledger != null && !resized && root == prev && onlyRestyleOrScroll(ledger)) return null;
         return paint(ledger);
+    }
+
+    /**
+     * アンカーの再計算点（G8。CSS Anchor Positioning 1 §3.3・§6.5）。スクロールコンテナの中のアンカーに追従する箱ごとに、覚えたスクロール量が
+     * 無い（箱を作り始めた）のに今の量が 0 でない、または今の量でずらした箱が包含ブロックからはみ出して候補が他にあるなら、覚えた量を今の量に
+     * 置き、台帳の {@code ANCHOR} でこのフレームのうちにもう 1 回だけ組む（取り直した直後はずらす量が 0 なので繰り返さない）。今回の木に
+     * 無い要素の覚えた量は捨てる（次に箱を作り始めたときが再計算点）。
+     */
+    private void settleAnchors(Document doc, int w, int h) {
+        if (remembered.isEmpty() && !AnchorFollow.any(root)) return;
+        List<PaintNode> nodes = new java.util.ArrayList<>();
+        AnchorFollow.collect(root, nodes);
+        Map<HtmlNode, RememberedScroll> keep = new java.util.IdentityHashMap<>();
+        ChangeLedger recalc = null;
+        for (PaintNode n : nodes) {
+            HtmlNode el = n.node;
+            if (el == null || el.isPseudoNode) continue; // 疑似要素は覚えない（箱を作るたびに再計算点）
+            AnchorScroll a = AnchorFollow.of(n);
+            RememberedScroll known = remembered.get(el);
+            RememberedScroll now = AnchorFollow.snapshot(a, scroll);
+            boolean point = known == null ? !now.zero() : AnchorFollow.needsRecalculation(a, scroll);
+            keep.put(el, point || known == null ? now : known);
+            if (point) {
+                if (recalc == null) recalc = new ChangeLedger();
+                recalc.append(el, ChangeKind.ANCHOR);
+            }
+        }
+        remembered.clear();
+        remembered.putAll(keep);
+        if (recalc == null) return;
+        recalc.freeze();
+        long t0 = StageProfiler.begin(PipelineStage.PAINT_TREE);
+        LayoutFragment frag = pipeline.frame(doc.root, recalc, w, h);
+        root = tree.build(frag, pipeline.boxRoot());
+        StageProfiler.end(PipelineStage.PAINT_TREE, t0);
     }
 
     /**
@@ -109,6 +155,7 @@ final class V3Frame {
         fonts = fontResolver;
         LayoutSession session = new LayoutSession(fontResolver);
         pipeline = new FragmentPipeline(new StyleSource(sheet, new InteractionState(), Map.of(), w, h), session);
+        remembered.clear();
         tree = new PaintTreeBuilder(session, sheet);
         painter = new TreePainter(w, h, sheet != null ? sheet.keyframes : Map.of(), scrollState);
         LayoutFragment frag = pipeline.frameSubtree(root, w, h);
@@ -119,11 +166,34 @@ final class V3Frame {
     /**
      * 台帳を凍結する前の準備: DOM の変更を規則の範囲（兄弟・祖先・{@code :has()}）へ広げる無効化セットを引くシートを結び、{@code :has()} の
      * 規則があれば汚れた節の祖先を台帳に足す（凍結の後に足すと次のフレームの世代に入り、1 フレーム遅れる）。
+     *
+     * <p>{@code scroll} が非 null（スクロールの更新を要求された）なら、前回描いたとき（{@code atBuild}）から位置が変わったスクロール
+     * コンテナ（直近の箱の木でスクロールコンテナの要素だけ。値だけ動いた非スクロールの要素は描画に効かない）を台帳に節つきの
+     * {@link ChangeKind#SCROLL} で載せる。描画の記憶はその祖先を使い回さない（中身を 1 つの節にまとめていない
+     * コンテナは、文脈の変わらない祖先の記憶が当たると古いスクロール量のまま出た。G8 の作業で発見）。</p>
      */
-    static void beforeFreeze(InteractionState state, StyleSheet sheet) {
+    void beforeFreeze(InteractionState state, StyleSheet sheet, ScrollState scroll, Map<HtmlNode, float[]> atBuild) {
         state.bindStyleSheet(sheet);
         if (sheet != null && sheet.usesHasSelectors()) state.propagateDirtyToAncestors();
         else state.discardUnscopedLog();
+        if (scroll != null) {
+            ChangeLedger ledger = state.changeLedger();
+            scroll.changedSince(atBuild, n -> {
+                com.nishiyu.enderframelib.core.box.BoxNode b = latestBoxOf(n);
+                if (b != null && b.computed.facts.scrollContainer) ledger.append(n, ChangeKind.SCROLL);
+            });
+        }
+    }
+
+    /** 直近の箱の木で要素 {@code node} の箱（DOM の子と 1 対 1 なので根からの子の位置を辿る。無ければ null。確保しない）。 */
+    private com.nishiyu.enderframelib.core.box.BoxNode latestBoxOf(HtmlNode node) {
+        com.nishiyu.enderframelib.core.box.BoxNode root = pipeline != null ? pipeline.boxRoot() : null;
+        if (root == null || node == null) return null;
+        if (node == root.node) return root;
+        com.nishiyu.enderframelib.core.box.BoxNode parent = latestBoxOf(node.parent);
+        if (parent == null || parent.kind == com.nishiyu.enderframelib.core.box.BoxKind.TEXT) return null;
+        int i = node.parent.children.indexOf(node);
+        return i < 0 || i >= parent.children.size() ? null : parent.children.get(i);
     }
 
     /** 直近のフレームの描画用の木を描く（{@link #frame} が null を返したあと、スクロールの移動で済ませられないとき）。 */
@@ -143,6 +213,11 @@ final class V3Frame {
             if (ledger.frozenNode(i) == null && ledger.frozenIs(i, ChangeKind.STYLE)) return false; // 絞れない再スタイル
         }
         return true;
+    }
+
+    /** 覚えたスクロール量の表（G8。読むだけ。テストがゼロから組む面へ同じ履歴を渡す）。 */
+    Map<HtmlNode, RememberedScroll> remembered() {
+        return java.util.Collections.unmodifiableMap(remembered);
     }
 
     /** 直近のフレームの描画用の木の根（スクロールの位置を含む見え方。問い合わせが読む。まだ無ければ null）。 */
@@ -187,13 +262,16 @@ final class V3Frame {
     void rebuildKeepingHistory() {
         Map<HtmlNode, com.nishiyu.enderframelib.core.css.Style> before = pipeline != null && pipeline.boxRoot() != null
                 ? com.nishiyu.enderframelib.core.box.BoxTreeCompiler.elementStyles(pipeline.boxRoot()) : null;
+        Map<HtmlNode, RememberedScroll> keepScroll = new java.util.IdentityHashMap<>(remembered); // 覚えたスクロール量も履歴（G8）
         reset();
         history = before;
+        remembered.putAll(keepScroll);
     }
 
     /** 文書を入れ替えた（前回の木を捨てて次のフレームで全体を作る）。 */
     void reset() {
         history = null;
+        remembered.clear();
         pipeline = null;
         root = null;
     }

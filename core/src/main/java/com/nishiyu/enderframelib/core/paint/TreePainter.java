@@ -109,6 +109,7 @@ public final class TreePainter {
     public List<DisplayItem> paint(PaintNode root, ChangeLedger ledger) {
         painter.decor.setDevicePixelRatio(devicePixelRatio);
         stacking.beginPass();
+        stacking.followedScrollers = com.nishiyu.enderframelib.core.paint.tree.AnchorFollow.followedScrollers(root);
         fragIds.set(0);
         reused = built = 0;
         touched = readLedger(ledger);
@@ -154,7 +155,7 @@ public final class TreePainter {
         for (int i = 0, n = ledger.frozenSize(); i < n; i++) {
             HtmlNode node = ledger.frozenNode(i);
             if (node == null) {
-                if (ledger.frozenIs(i, ChangeKind.SCROLL)) continue;
+                if (ledger.frozenIs(i, ChangeKind.SCROLL)) continue; // どのコンテナかは節つきの SCROLL が別に載る
                 return null;
             }
             for (HtmlNode cur = node; cur != null && out.add(cur); cur = cur.parent) { }

@@ -64,9 +64,9 @@ animation_test.html/scrollB	4b84f8e0 1080 89ee6ca9
 animation_test.html/innerScrollA	becc23c7 1080 a85cea42
 animation_test.html/innerScrollB	97853d3 1080 17d163cd
 animation_test.html/scrollBack	4865c200 1080 de1b3cc6
-animation_test.html/textLong	26dff32f 1089 de1b3cc6
-animation_test.html/textShort	fe4857f3 1080 de1b3cc6
-animation_test.html/textBack	1f4a2a3d 1080 de1b3cc6
+animation_test.html/textLong	5a1bbecd 1089 de1b3cc6
+animation_test.html/textShort	9b941e 1080 de1b3cc6
+animation_test.html/textBack	6541fb6 1080 de1b3cc6
 animation_test.html/resize700	4ff650fa 1083 ff123f0d
 media_test.html/open	bedf3e5b 2383 12791719
 media_test.html/hover0a	bedf3e5b 2383 12791719

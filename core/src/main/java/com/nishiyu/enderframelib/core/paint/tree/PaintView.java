@@ -71,6 +71,17 @@ public final class PaintView extends PaintBox {
         }
         PaintNode c = n.children[i];
         float cx = ox + n.childX[i], cy = oy + n.childY[i];
+        if (c.follow == null && !StickyOffset.isSticky(c)) return new PaintView(c, this, cx, cy, scroll, vw, vh, 0f);
+        return shifted(c, cx, cy);
+    }
+
+    /** 見え方の位置だけをずらす子: スクロールしたアンカーへの追従（G8。レイアウトの後の平行移動）と sticky の貼り付き。 */
+    private PaintView shifted(PaintNode c, float cx, float cy) {
+        if (c.follow != null && scroll != null) {
+            float[] d = AnchorFollow.shift(c.follow, scroll);
+            cx += d[0];
+            cy += d[1];
+        }
         float[] stick = StickyOffset.isSticky(c) ? StickyOffset.of(c, this, cx, cy, vw, vh) : null;
         if (stick == null) return new PaintView(c, this, cx, cy, scroll, vw, vh, 0f);
         return new PaintView(c, this, cx + stick[0], cy + stick[1], scroll, vw, vh, stick[1]);

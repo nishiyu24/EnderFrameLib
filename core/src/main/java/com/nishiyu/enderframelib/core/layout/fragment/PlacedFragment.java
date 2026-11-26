@@ -5,10 +5,11 @@ package com.nishiyu.enderframelib.core.layout.fragment;
  * border-box 基準の、この断片の border-box の左上。不変。
  *
  * <p>{@code margins} は {@code position-try} の候補が余白を入れ替えたときの使った余白 {上, 右, 下, 左}（{@code flip-block} など。G8）。
- * スタイルどおりなら null。</p>
+ * スタイルどおりなら null。{@code follow} はスクロールコンテナの中のアンカーに合わせて置いた箱のスクロールへの追従の入力
+ * （{@link AnchorScroll}。G8）。それ以外は null。</p>
  */
-public record PlacedFragment(LayoutFragment frag, float x, float y, float[] margins) {
+public record PlacedFragment(LayoutFragment frag, float x, float y, float[] margins, AnchorScroll follow) {
     public PlacedFragment(LayoutFragment frag, float x, float y) {
-        this(frag, x, y, null);
+        this(frag, x, y, null, null);
     }
 }

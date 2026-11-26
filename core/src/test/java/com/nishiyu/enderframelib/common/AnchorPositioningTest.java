@@ -5,7 +5,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -252,7 +251,6 @@ public class AnchorPositioningTest {
     }
 
     @Test
-    @Disabled("G8 スクロール量が新経路のレイアウトの入力でないので、スクロールで position-try の候補を選び直さない。計画書 §3.2「新経路の穴（M2c-3 の移植で見えた）」")
     public void positionTryFlipsOnScrollReposition() {
         UiDocumentCompiler c = new UiDocumentCompiler();
         Document doc = c.parseDocument(
