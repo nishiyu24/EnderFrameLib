@@ -173,21 +173,19 @@ GUI 画面（`AbstractEnderScreen` / `AbstractEnderContainerScreen`、共通部�
 `data-for` の行は鍵（`data-row-key` か添字）で既存ノードを再利用する。
 
 ### 描画（`client/renderer`）
-`TreePainter`（`:core`）がレイアウト結果をディスプレイリストにし、`DisplayItemDrawer` が描く。角丸（楕円の角を含む）・角丸に沿う破線・
-グラデーション・角丸クリップ・ガウス影は SDF シェーダー（`WebSdfShader`）で 1 枚の四角形に描き、画面の面（GUI・HUD）でのグループ
-`opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask-image`・回転した角丸クリップは
-FBO プール（`LayerPool`・`LayerCompositor`、VRAM 予算は `VramBudget`）で合成する。FBO は画面全体ではなく、箱と子孫の外接矩形にフィルターの滲みを足した大きさ（`LayerBounds`。子孫に変形があるときは画面いっぱい）。描く項目が重ならない単純な `opacity` はレイヤーにせず部品ごとの不透明度で描き、中身が前のフレームと同じ（補間値・状態の要約と項目のインスタンスが同じ）レイヤーはフィルターまで済んだ絵を保持して描き直さない（`LayerCompositor.drawCached`）。
+MOD の面（GUI・コンテナ・HUD・ビルボード・ブロック・ホログラム・アイテム・地図）は、`SurfaceRenderer` を入口に
+`MinecraftHostSurface` だけが描く（M3a で旧レンダラ `DisplayItemDrawer`・`WebSdfShader`・`LayerCompositor` ほかを撤去した）。
+`TreePainter`（`:core`）が作った項目の一覧を、Minecraft の GL コンテキストとテクスチャを共有する見えないコンテキストの
+`LwjglGlRenderBackend`（コアの GPU 描画。スタンドアロンと同じコード）で面のテクスチャへ描き、1 枚の板として貼る。
+角丸・グラデーション・影・フィルター・クリップ・文字はすべてコアが描く。
 
-クリップ（`overflow`・自分の箱で切る背景）は、祖先ごとの連鎖（`ClipRect.chain`。持ち主の要素 id と、その要素の空間の矩形）として項目に載る。
-合成した 1 つの矩形は、祖先どうしの変形が違うと（動くレールの中の `overflow`、回る要素と動かない角丸の祖先）どの空間にも属さず、
-切り口がずれたり、円が歪んだりする。描画側（`DisplayItemDrawer`）は、変形のある項目だけ、`ClipResolver` で連鎖を 1 つずつ項目の空間へ直す:
-平行移動だけの違いは矩形のずらしで正確（頂点のクリップ）、回転・拡縮の違いは 1 つをシェーダーが持ち主の空間の角丸矩形として当て
-（`WebSdfShader.setClipTransform`）、軸平行の持ち主はシザーでも切る。要素を「元の位置が画面の外」で捨てる判定（描画項目・文字）も、
-変形のある項目では外す（動いて画面へ入ってくる項目を捨てない）。錨の移動・回転・拡縮・不透明度の変化は絵の要約に入れず、箱の画素への写り（変換）の差として保持した絵を貼り直す（`LayerBounds.reuseMap`。拡縮が 0.5〜2 倍を外れる・枠で切れた絵・混合ありは描き直す）。システム書体と `@font-face`（TTF / OTF）の
-文字は `OutlineTextRenderer` がデバイスピクセルでラスタライズして描く（置き場の破棄は `AtlasCache`、VRAM の見積もりは `AtlasFootprint`）。
-グラデーションは停止点の区間ごとに同じ矩形を重ね、画素ごとの色をシェーダーが計算する（帯・格子には刻まない）。
-`TreePainter` は順序（`TreeStacking`）・アニメーション（`BoxAnimation`）・飾り（`BoxDecorationPainter`）・フォーム部品（`ControlPainter`）に、
-`DisplayItemDrawer` は背景・部品・メディア・文字の各 `*Renderer` に責務を分けて持たせている。
+Minecraft だけが描ける中身（`item:`・`entity:`・`player:` の画像、`<mc-scene>`、ビットマップ書体の文字）は、
+`MinecraftHostTextures` が面を描く前に Minecraft の描画で項目ごとのテクスチャ（FBO）へ描き、コアの差し込み口
+`HostTextures` で項目の中身として渡す。コアは背景・枠線・クリップ・不透明度・重なりの順を自分で描き、その中身の矩形にテクスチャを貼るので、
+後から重ねる形と違ってポップアップがアイテムを正しく隠す。共有コンテキストの同期は Minecraft 側のフェンスをコアが待つ（`waitForHost`）。
+画像・動画・キャンバス・流体・効果のアイコンの画素は `MinecraftMediaBridge`（`ImageProvider`）、書体は `WebFontManager.McFontResolver` が渡す。
+編集中の欄のキャレットは `SurfaceEditOverlay` が、スタンドアロンと同じ計算（`TextFieldOverlay`）で項目として足す。
+`title` のツールチップ（`SurfaceTooltip`）と遠距離の 1 色の塗りだけは、ホストの飾りとして板の上に Minecraft の描画で重ねる。
 
 ---
 

@@ -15,19 +15,14 @@ import com.nishiyu.enderframelib.core.dom.node.DefaultActionContext;
 import com.nishiyu.enderframelib.core.dom.node.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
-import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.paint.model.PaintFrame;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
-import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
-import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import com.nishiyu.enderframelib.core.text.model.FontStyle;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -931,49 +926,12 @@ public final class StandaloneView implements AutoCloseable {
         return null;
     }
 
-    private OutlineFontFace faceOf(DisplayItem el) {
-        String family = el.hints().fontFamily();
-        if (family == null && el.events() != null) family = el.events().get("font-family");
-        FontFace f = fonts.resolve(family);
-        if (f instanceof OutlineFontFace o) return o;
-        f = SystemFonts.system().resolve(family);
-        return f instanceof OutlineFontFace o ? o : null;
-    }
-
-    private static FontStyle styleOf(DisplayItem el, float fontPx) {
-        Map<String, String> ev = el.events() != null ? el.events() : Map.of();
-        int weight = LayoutMetrics.numericWeight(ev.get("font-weight"));
-        String style = ev.getOrDefault("font-style", "normal").trim();
-        float spacing = 0f;
-        try {
-            spacing = Float.parseFloat(ev.getOrDefault("letter-spacing", "0"));
-        } catch (NumberFormatException ignored) {
-        }
-        boolean kerning = !"none".equalsIgnoreCase(ev.getOrDefault("font-kerning", "auto").trim());
-        return new FontStyle(fontPx, weight >= 600, !style.equalsIgnoreCase("normal"), spacing, weight, kerning);
-    }
-
-    private static float fontPx(DisplayItem el) {
-        RenderMeta meta = el.meta();
-        return meta != null && meta.fontHeight() > 0f ? meta.fontHeight() : Math.max(1f, el.height());
-    }
-
     /** 点（文書座標）の下の文字位置。欄の項目が無ければ -1。 */
     private int caretAt(HtmlNode field, double px, double py) {
         DisplayItem el = fieldItem(field);
-        OutlineFontFace face = el != null ? faceOf(el) : null;
+        OutlineFontFace face = el != null ? TextFieldOverlay.face(fonts, el) : null;
         if (face == null) return -1;
-        String text = valueOf(field);
-        FontStyle style = styleOf(el, fontPx(el));
-        if (!ElementTraits.isTextarea(field.tag)) {
-            return OutlineFontFace.nearestBoundary(text, face.positions(text, style), px - (el.x() + 4f));
-        }
-        String[] lines = text.split("\n", -1);
-        float lineH = (el.meta() != null ? el.meta() : RenderMeta.EMPTY).resolvedLineHeight();
-        int row = Math.max(0, Math.min(lines.length - 1, (int) Math.floor((py - el.y() - 4f) / lineH)));
-        int offset = 0;
-        for (int i = 0; i < row; i++) offset += lines[i].length() + 1;
-        return offset + OutlineFontFace.nearestBoundary(lines[row], face.positions(lines[row], style), px - (el.x() + 4f));
+        return TextFieldOverlay.caretAt(el, face, valueOf(field), ElementTraits.isTextarea(field.tag), px, py);
     }
 
     /** フォーカス中のテキスト欄の選択範囲（行ごとの矩形）とキャレット。 */
@@ -981,80 +939,9 @@ public final class StandaloneView implements AutoCloseable {
         HtmlNode field = interaction.focusedNode();
         if (field == null || popup.isOpen() || !isTextControl(field)) return List.of();
         DisplayItem el = fieldItem(field);
-        OutlineFontFace face = el != null ? faceOf(el) : null;
+        OutlineFontFace face = el != null ? TextFieldOverlay.face(fonts, el) : null;
         if (face == null) return List.of();
-        TextEditing.State st = editState(field);
-        String text = valueOf(field);
-        FontStyle style = styleOf(el, fontPx(el));
-        boolean area = ElementTraits.isTextarea(field.tag);
-        float glyphH = face.ascent(style) + face.descent(style);
-        float lineH = area ? (el.meta() != null ? el.meta() : RenderMeta.EMPTY).resolvedLineHeight() : el.height();
-        float left = el.x() + 4f, right = el.x() + el.width() - 4f;
-        int caretColor = (el.color() >>> 24) == 0 ? 0xFF000000 : (el.color() | 0xFF000000);
-        List<DisplayItem> out = new ArrayList<>();
-        String[] lines = area ? text.split("\n", -1) : new String[]{text};
-        int offset = 0;
-        for (int row = 0; row < lines.length; row++) {
-            String line = lines[row];
-            float top = area ? el.y() + 4f + row * lineH + (lineH - glyphH) / 2f : el.y() + (el.height() - glyphH) / 2f;
-            if (top > el.y() + el.height()) break;
-            float[] pos = face.positions(line, style);
-            if (st.hasSelection() && st.start() <= offset + line.length() && st.end() >= offset) {
-                int lo = Math.max(0, st.start() - offset), hi = Math.min(line.length(), st.end() - offset);
-                float x0 = Math.min(right, left + pos[lo]);
-                float x1 = Math.min(right, left + pos[hi]);
-                // 行をまたぐ選択は、行末の改行も塗る
-                if (st.end() > offset + line.length() && row < lines.length - 1) x1 = Math.min(right, x1 + 4f);
-                if (x1 > x0) out.add(overlayRect(field, "_sel" + row, x0, top, x1 - x0, glyphH, 0x663B82F6));
-            }
-            if (st.isComposing() && st.compositionText != null && !st.compositionText.isEmpty()) {
-                if (st.caret >= offset && st.caret <= offset + line.length()) {
-                    int relCaret = st.caret - offset;
-                    float preeditX0 = Math.min(right, left + pos[relCaret]);
-                    float[] preeditPos = face.positions(st.compositionText, style);
-                    float preeditW = preeditPos.length > 0 ? preeditPos[preeditPos.length - 1] : 0f;
-                    float preeditX1 = Math.min(right, preeditX0 + preeditW);
-                    int bg = (el.bgColor() >>> 24) == 0 ? 0xFFFFFFFF : el.bgColor();
-                    if (preeditX0 < right) {
-                        out.add(overlayRect(field, "_ime_clr", preeditX0, top - 2f, right - preeditX0, glyphH + 4f, bg));
-                    }
-                    if (preeditX1 > preeditX0) {
-                        out.add(overlayRect(field, "_ime_bg", preeditX0, top, preeditX1 - preeditX0, glyphH, 0x333B82F6));
-                        out.add(overlayRect(field, "_ime_ul", preeditX0, top + glyphH - 1f, preeditX1 - preeditX0, 2f, 0xFF3B82F6));
-                        out.add(overlayText(field, "_ime_txt", preeditX0, top, preeditX1 - preeditX0, glyphH, st.compositionText, el));
-                    }
-                    if (relCaret < line.length() && preeditX1 < right) {
-                        String remainder = line.substring(relCaret);
-                        out.add(overlayText(field, "_ime_rem", preeditX1, top, right - preeditX1, glyphH, remainder, el));
-                    }
-                    int curIdx = Math.max(0, Math.min(st.compositionText.length(), st.compositionCursor));
-                    float cx = Math.min(right, preeditX0 + (curIdx < preeditPos.length ? preeditPos[curIdx] : preeditW));
-                    out.add(overlayRect(field, "_caret", cx, top, 1f, glyphH, caretColor));
-                }
-            } else {
-                if (st.caret >= offset && st.caret <= offset + line.length()) {
-                    float cx = Math.min(right, left + pos[st.caret - offset]);
-                    out.add(overlayRect(field, "_caret", cx, top, 1f, glyphH, caretColor));
-                }
-            }
-            offset += line.length() + 1;
-        }
-        return out;
-    }
-
-    private static DisplayItem overlayText(HtmlNode field, String part, float x, float y, float w, float h, String text, DisplayItem el) {
-        int left = Math.round(x), top = Math.round(y);
-        int color = (el.color() >>> 24) == 0 ? 0xFF000000 : (el.color() | 0xFF000000);
-        return new DisplayItem(field.key() + part, field.key(), ElementType.TEXT, left, top,
-                Math.max(1, Math.round(x + w) - left), Math.max(1, Math.round(y + h) - top), text, color, 0,
-                Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL, el.meta());
-    }
-
-    private static DisplayItem overlayRect(HtmlNode field, String part, float x, float y, float w, float h, int argb) {
-        int left = Math.round(x), top = Math.round(y);
-        return new DisplayItem(field.key() + part, field.key(), ElementType.RECT, left, top,
-                Math.max(1, Math.round(x + w) - left), Math.max(1, Math.round(y + h) - top), "", 0, argb,
-                Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL, null);
+        return TextFieldOverlay.build(field.key(), el, face, valueOf(field), ElementTraits.isTextarea(field.tag), editState(field));
     }
 
     private boolean replaceValue(HtmlNode field, String next, String data, String inputType) {

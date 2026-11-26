@@ -73,7 +73,7 @@ public class InvisibleInputScreen extends Screen {
 
     @Override
     public void render(@NotNull GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // 背景を暗くせず、3Dスクリーン上のカーソル描画(DisplayItemDrawer)に任せる
+        // 背景を暗くせず、3D スクリーン上のキャレット（面の描画が重ねる）に任せる
     }
 
     @Override

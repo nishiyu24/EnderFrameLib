@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** ゲーム内の再描画スキップ（CoreGpuSurface）が頼る「動いているアニメがあるか」の判定。 */
+/** ゲーム内の再描画スキップ（MinecraftHostSurface）が頼る「動いているアニメがあるか」の判定。 */
 class ActiveAnimationTest {
 
     private static final String STATIC = "<html><body style='margin:0'>"

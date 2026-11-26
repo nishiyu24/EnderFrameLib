@@ -21,13 +21,13 @@ import java.util.Optional;
  * 描画コアの {@link ImageProvider} の Minecraft 版。画像（ネットワーク・リソースパックのテクスチャ）と動画を、
  * コアが読める画素（{@link Pixmap}）にして渡す。{@code raster:}・{@code data:}・SVG は標準の解決に任せる。
  *
- * <p>動画は、従来の描画と同じく再生の維持（音声の位置・{@code keepAlive}）とフレームの更新をここで行い、
+ * <p>動画は、再生の維持（音声の位置・{@code keepAlive}）とフレームの更新をここで行い、
  * 届いたフレームを同じ {@code Pixmap} に書き込んで返す（GPU 側は中身の更新を検知して上げ直す）。
  * 描画スレッドでだけ使う。
  */
-final class McMediaImages implements ImageProvider {
+final class MinecraftMediaBridge implements ImageProvider {
 
-    static final McMediaImages INSTANCE = new McMediaImages();
+    static final MinecraftMediaBridge INSTANCE = new MinecraftMediaBridge();
 
     private static final int MAX_CACHED = 128;
 
@@ -39,7 +39,7 @@ final class McMediaImages implements ImageProvider {
     private String sessionId = "";
     private BlockPos audioPos;
 
-    private McMediaImages() {}
+    private MinecraftMediaBridge() {}
 
     /** 描画の前に、そのパスの音声の文脈を渡す。 */
     void begin(PaintRequest pass) {
@@ -51,21 +51,6 @@ final class McMediaImages implements ImageProvider {
 
     void clear() {
         cache.clear();
-    }
-
-    /** この項目をコアで描けるか。描けないもの（エンティティ・アイテム・流体・プレイヤーの頭など）は従来の経路。 */
-    static boolean supports(DisplayItem item) {
-        String src = item.text();
-        if (src == null || src.isEmpty()) return true; // 何も描かない
-        if (item.type() == ElementType.VIDEO || item.type() == ElementType.CANVAS) return true;
-        if (src.startsWith("raster:") || src.startsWith("data:") || src.startsWith("http://") || src.startsWith("https://")) {
-            return true;
-        }
-        if (src.startsWith("effect:")) return true; // 効果アイコンはスプライトを画素にして渡す
-        if (src.startsWith("fluid:")) return true;  // 流体は静止テクスチャを色付けして画素にして渡す
-        if (src.indexOf(':') < 0) return false;
-        // 名前空間つきの PNG のテクスチャだけ（entity: player: item: などは別の描き方）
-        return src.endsWith(".png") && ResourceLocation.tryParse(src) != null;
     }
 
     @Override
@@ -110,7 +95,7 @@ final class McMediaImages implements ImageProvider {
     }
 
     /**
-     * 流体: 静止テクスチャの 1 枚目に色（{@code getTintColor}）を掛けて渡す。従来の描画と同じく、角丸があれば
+     * 流体: 静止テクスチャの 1 枚目に色（{@code getTintColor}）を掛けて渡す。角丸があれば
      * 引き伸ばし、無ければ 16 単位のタイルで敷き詰める。
      */
     private Image fluid(DisplayItem el) {
@@ -150,7 +135,7 @@ final class McMediaImages implements ImageProvider {
         }
     }
 
-    /** NativeImage の ABGR 画素に ARGB の色を掛けて ARGB にする（色のアルファが 0 なら不透明として扱う、従来と同じ）。 */
+    /** NativeImage の ABGR 画素に ARGB の色を掛けて ARGB にする（色のアルファが 0 なら不透明として扱う）。 */
     static int tintArgb(int abgr, int tintArgb) {
         int a = abgr >>> 24, b = (abgr >> 16) & 0xFF, g = (abgr >> 8) & 0xFF, r = abgr & 0xFF;
         int ta = tintArgb >>> 24;
@@ -213,7 +198,7 @@ final class McMediaImages implements ImageProvider {
 
     /**
      * {@code <canvas>}: 2D コンテキストの画素（{@code Pixmap}）をそのまま渡す。描き足されたら版を進めて GPU に上げ直させる。
-     * 何も描いていなければ描かない（従来の経路と同じ）。
+     * 何も描いていなければ描かない。
      */
     private Image canvas(DisplayItem el) {
         String session = sessionId.isEmpty() ? "unknown" : sessionId;
@@ -237,7 +222,7 @@ final class McMediaImages implements ImageProvider {
         }
     }
 
-    /** 従来の描画（{@code MediaElementRenderer}）と同じ手順で動画を進め、フレームの画素を返す。 */
+    /** 動画の再生を維持（音声の位置・{@code keepAlive}）してフレームを進め、その画素を返す。 */
     private Image video(DisplayItem el) {
         if (el.text() == null || el.text().isEmpty()) return null;
         WebMediaManager.VideoTexture video = WebMediaManager.getVideoTexture(el.text());

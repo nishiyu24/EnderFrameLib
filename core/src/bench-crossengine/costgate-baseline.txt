@@ -33,7 +33,7 @@ surface_test.html text | allocBytes=101811 drawn=600 elements=123 items=564
 animation_test.html hover | allocBytes=237204 drawn=600 elements=229 items=1080 allocTol=7
 animation_test.html text | allocBytes=89911 drawn=600 elements=229 items=1085
 media_test.html text | allocBytes=104104 drawn=600 elements=332 items=2388 allocTol=25
-hud_test.html text | allocBytes=46350 drawn=600 elements=22 items=68
+hud_test.html text | allocBytes=48888 drawn=600 elements=22 items=68
 item_block_test.html text | allocBytes=115189 drawn=600 elements=506 items=3380
 machine_ui.html scroll | allocBytes=3716 drawn=0 elements=22 items=68
 machine_ui.html text | allocBytes=44640 drawn=600 elements=22 items=72

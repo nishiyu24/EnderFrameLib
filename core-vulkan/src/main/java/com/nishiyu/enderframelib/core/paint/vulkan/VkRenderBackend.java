@@ -91,8 +91,8 @@ public final class VkRenderBackend implements RenderBackend, GpuSink {
     public long windowHandle() { return gpu.windowHandle(); }
 
     public VkRenderBackend fonts(FontResolver resolver) { gpu.fonts(resolver); return this; }
-    public VkRenderBackend images(ImageProvider provider) { gpu.images(provider); return this; }
-    public VkRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) { gpu.scene3dWorlds(provider); return this; }
+    public VkRenderBackend images(ImageProvider provider) { gpu.resources().images(provider); return this; }
+    public VkRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) { gpu.resources().scene3dWorlds(provider); return this; }
     public VkRenderBackend clearColor(int argb) { gpu.clearColor(argb); return this; }
 
     public Scene3DRenderer scene3dRenderer() { return gpu.scene3dRenderer(); }

@@ -13,6 +13,7 @@ import com.nishiyu.enderframelib.core.paint.gpu.Scene3DRenderer;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
+import com.nishiyu.enderframelib.core.paint.resource.HostTextures;
 import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
@@ -76,14 +77,17 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     public void resize(int cssW, int cssH) { gpu.resize(cssW, cssH); }
     public void finish() { gpu.finish(); }
     public void waitForRender() { gpu.waitForRender(); }
+    /** ホストの GL コンテキストが置いた {@code GLsync} を、以後のこのバックエンドの描画に待たせる（ホストのテクスチャを読む前）。 */
+    public void waitForHost(long glSync) { context.waitForHost(glSync); }
     public void present() { gpu.present(); }
     public boolean shouldClose() { return gpu.shouldClose(); }
     public void pollEvents() { gpu.pollEvents(); }
     public long windowHandle() { return gpu.windowHandle(); }
 
     public LwjglGlRenderBackend fonts(FontResolver resolver) { gpu.fonts(resolver); return this; }
-    public LwjglGlRenderBackend images(ImageProvider provider) { gpu.images(provider); return this; }
-    public LwjglGlRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) { gpu.scene3dWorlds(provider); return this; }
+    public LwjglGlRenderBackend images(ImageProvider provider) { gpu.resources().images(provider); return this; }
+    public LwjglGlRenderBackend hostTextures(HostTextures provider) { gpu.resources().hostTextures(provider); return this; }
+    public LwjglGlRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) { gpu.resources().scene3dWorlds(provider); return this; }
     public LwjglGlRenderBackend clearColor(int argb) { gpu.clearColor(argb); return this; }
 
     public Scene3DRenderer scene3dRenderer() { return gpu.scene3dRenderer(); }

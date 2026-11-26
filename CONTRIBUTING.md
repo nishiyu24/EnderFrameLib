@@ -284,7 +284,7 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   システムの書体 `SystemFonts` と Minecraft の書体を振り分ける）、
   折り返し・空白の畳み方・省略は `TextShaper` だけが決める。
   行送りは `LayoutMetrics.lineHeightPx`、`line-height` の解析はそこだけ。
-  **描画側（`DisplayItemDrawer` / `OutlineTextRenderer`）でテキストを測り直さないこと。**
+  **描画側（コアの `TextRaster`・MOD の `MinecraftHostTextures`）でテキストを測り直さないこと。**
   `font.width` / `plainSubstrByWidth` でレイアウトの決定をやり直すと、
   予約した行数と見える行数が食い違う（F2 以前がその状態だった）。
   システムの書体の字の位置は `OutlineFontFace.positions`（測定と同じ値）を使う。

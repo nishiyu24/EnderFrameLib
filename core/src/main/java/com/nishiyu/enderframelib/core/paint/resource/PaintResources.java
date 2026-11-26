@@ -17,6 +17,17 @@ public final class PaintResources {
     private volatile FontResolver fonts = SystemFonts.system();
     private volatile ImageProvider images = ImageProvider.standard();
     private volatile LongFunction<Scene3DWorld> scene3dWorlds = id -> null;
+    private volatile HostTextures hostTextures = HostTextures.NONE;
+
+    public HostTextures hostTextures() {
+        return hostTextures;
+    }
+
+    /** null なら既定（何も渡さない）へ戻す。 */
+    public PaintResources hostTextures(HostTextures provider) {
+        this.hostTextures = provider == null ? HostTextures.NONE : provider;
+        return this;
+    }
 
     public FontResolver fonts() {
         return fonts;

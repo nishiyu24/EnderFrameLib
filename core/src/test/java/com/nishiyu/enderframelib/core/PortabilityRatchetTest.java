@@ -80,11 +80,11 @@ class PortabilityRatchetTest {
      * {@code core.paint.gl} の外から、その型を import しているファイル（リポジトリ全体の main。{@code :core-gl} 自身
      * は除く）。{@code :core} は G4 の {@code ServiceLoader}（{@code GpuBackendProvider}）で見つけるので 1 つも持たない。残るのは、
      * GL を直接使う窓 {@code StandaloneViewer}（{@code :core-glfw}。{@code :core-gl} に依存する）と、ホスト（Minecraft）の
-     * {@code CoreGpuSurface}（G5 で一本化するまで）。
+     * {@code MinecraftHostSurface}（M3a で MOD の描画をこれ 1 本にした）。
      */
     private static final Set<String> GL_PACKAGE_IMPORTERS = Set.of(
             "core-glfw/src/main/java/com/nishiyu/enderframelib/common/StandaloneViewer.java",
-            "src/main/java/com/nishiyu/enderframelib/client/renderer/CoreGpuSurface.java");
+            "src/main/java/com/nishiyu/enderframelib/client/renderer/MinecraftHostSurface.java");
 
     private static final Pattern MAIN_FUNCTION = Pattern.compile("void\\s+main\\s*\\(\\s*\\)");
     private static final Pattern VERSION_LINE = Pattern.compile("(?m)(^[ \\t]*|\")#version[ \\t]+\\d+");

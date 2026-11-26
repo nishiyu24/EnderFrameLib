@@ -290,8 +290,8 @@ public class WebHudRenderer {
         poseStack.scale(screenScale, screenScale, 1.0f);
 
         var bufferSource = mc.renderBuffers().bufferSource();
-        int logicWidth = (int) Math.ceil((float) lastSentWidth / DisplayItemDrawer.RESOLUTION);
-        int logicHeight = (int) Math.ceil((float) lastSentHeight / DisplayItemDrawer.RESOLUTION);
+        int logicWidth = (int) Math.ceil((float) lastSentWidth / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
+        int logicHeight = (int) Math.ceil((float) lastSentHeight / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
 
         SurfaceRenderer.draw(screenKey, hudElements, logicWidth, logicHeight, SurfaceStyle.hud(), poseStack, bufferSource);
 

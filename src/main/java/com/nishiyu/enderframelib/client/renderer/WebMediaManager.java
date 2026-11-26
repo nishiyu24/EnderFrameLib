@@ -11,7 +11,6 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.mojang.blaze3d.platform.NativeImage;
-import com.mojang.blaze3d.platform.TextureUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
@@ -33,8 +32,6 @@ import net.neoforged.neoforge.event.level.LevelEvent;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.openal.AL10;
 import org.lwjgl.openal.AL11;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL21;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -597,15 +594,13 @@ public class WebMediaManager {
         private ByteBuffer audioReadBuffer = null;
         private VideoStreamServer.Handle streamHandle = null;
 
-        private volatile boolean captureCpu = false;
         private com.nishiyu.enderframelib.core.raster.Pixmap cpuFrame;
 
         /**
-         * 直近のフレームの画素（描画コアが読む）。初めて呼んだ以降、フレームが届くたびに同じ {@code Pixmap} を
+         * 直近のフレームの画素（描画コアが読む）。フレームが届くたびに同じ {@code Pixmap} を
          * 書き換えて {@code markChanged()} する。最初のフレームが届くまでは null。描画スレッドから呼ぶ。
          */
         public synchronized com.nishiyu.enderframelib.core.raster.Pixmap cpuFrame() {
-            captureCpu = true;
             return cpuFrame;
         }
 
@@ -741,11 +736,7 @@ public class WebMediaManager {
                     // 固有サイズが分かったので、大きさ未指定の <img>(GIF) をレイアウトし直させる
                     publishVideoSize(url, videoWidth, videoHeight);
                     RenderSystem.recordRenderCall(() -> {
-                        if (this.isClosed) return;
-                        RenderSystem.bindTexture(this.getId());
-                        TextureUtil.prepareImage(this.getId(), videoWidth, videoHeight);
-                        this.setFilter(true, false);
-                        this.isInitialized = true;
+                        if (!this.isClosed) this.isInitialized = true;
                     });
                 }
 
@@ -1092,17 +1083,8 @@ public class WebMediaManager {
                         }
                     }
                 }
-                if (copied) {
-                    RenderSystem.bindTexture(this.getId());
-                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, this.getId());
-                    GL21.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
-                    GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
-                    GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, 0);
-                    GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);
-                    GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
-                    GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, this.width, this.height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, this.pixelBuffer);
-                    if (this.captureCpu) captureCpuFrame();
-                }
+                // 描画コアが読むのは CPU の画素だけ（M3a で GPU のテクスチャへの転送をやめた）
+                if (copied) captureCpuFrame();
             } catch (Exception ignored) {}
 
             if (this.hasAudio && !this.isPaused && this.playbackSpeed > 0.0F && this.audioReadBuffer != null) {

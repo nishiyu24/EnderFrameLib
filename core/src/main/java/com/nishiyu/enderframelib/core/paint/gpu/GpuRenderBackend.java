@@ -15,7 +15,6 @@ import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
-import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
@@ -32,7 +31,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.LongFunction;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -256,15 +254,8 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         return this;
     }
 
-    public GpuRenderBackend images(ImageProvider provider) {
-        resources.images(provider);
-        return this;
-    }
-
-    public GpuRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) {
-        resources.scene3dWorlds(provider);
-        return this;
-    }
+    /** 画像・3D の場面・ホストの中身の供給元（差し替えは持ち主に書けば、CPU の保険の描画器にも見える）。書体は {@link #fonts}。 */
+    public PaintResources resources() { return resources; }
 
     public GpuRenderBackend clearColor(int argb) {
         this.clearPremul = Pixmap.premultiply(argb);

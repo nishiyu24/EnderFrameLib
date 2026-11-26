@@ -86,7 +86,7 @@ class GpuRenderBackendRecordingTest {
         RecordingGpuDevice rec = new RecordingGpuDevice();
         try (GpuRenderBackend backend = new GpuRenderBackend(() -> rec, CpuLayerFallback::new, 400, 400, 1f);
              StandaloneView view = new StandaloneView(html, 400, 400, FontResolver.FALLBACK)) {
-            backend.scene3dWorlds(view::scene3dWorld);
+            backend.resources().scene3dWorlds(view::scene3dWorld);
             Scene3DWorld world = view.scene3dWorldById("s3d");
             assertNotNull(world, "<scene-3d id=s3d> のワールドが取得できること");
             world.clearColorArgb(0xFF102030);

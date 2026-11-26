@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
@@ -9,16 +10,18 @@ import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Matrix4f;
 
 import java.util.List;
 
 /**
  * セッションを面に描く唯一の入口。画面・コンテナ画面・HUD・ビルボード・ブロック・ホログラム・アイテム・地図の
  * どのホストも、姿勢（{@code PoseStack}）を作ってここを呼ぶだけで、同期の確認・空の判定・ホバーの取得・
- * 描画パスの組み立ては 1 か所にある。置き場所の違いは姿勢と大きさ、描き方の違いは {@link SurfaceStyle}。
+ * 描画の指定の組み立ては 1 か所にある。置き場所の違いは姿勢と大きさ、描き方の違いは {@link SurfaceStyle}。
+ * 描くのはコアの描画（{@link MinecraftHostSurface}）だけ（M3a で MOD の旧レンダラを撤去した）。
  */
 public final class SurfaceRenderer {
 
@@ -39,15 +42,9 @@ public final class SurfaceRenderer {
     public static boolean draw(String sessionId, SurfaceGeometry geometry, SurfaceStyle style,
                                PoseStack poseStack, MultiBufferSource buffer) {
         SessionContext session = ClientWebManager.getSession(sessionId);
-        // GPU 経路は親相対のまま読める。従来の経路へ落ちたときだけ、paint の中で絶対座標へ直す
         List<DisplayItem> elements = session != null ? session.relativeElements() : List.of();
         PaintOffsets offsets = session != null ? session.paintOffsets() : PaintOffsets.EMPTY;
-        float step = switch (style.depth()) {
-            case SurfaceStyle.Depth.Geometry g -> geometry.zStep() * g.scale();
-            case SurfaceStyle.Depth.Fixed f -> f.step();
-        };
-        float sub = style.depth() instanceof SurfaceStyle.Depth.Fixed f ? f.sub() : step * 0.5f;
-        return paint(sessionId, elements, offsets, geometry.paintBlocksW(), geometry.paintBlocksH(), step, sub, style, poseStack, buffer);
+        return paint(sessionId, elements, offsets, geometry.paintBlocksW(), geometry.paintBlocksH(), style, poseStack, buffer);
     }
 
     /**
@@ -56,45 +53,38 @@ public final class SurfaceRenderer {
      */
     public static boolean draw(String sessionId, List<DisplayItem> elements, int widthBlocks, int heightBlocks,
                                SurfaceStyle style, PoseStack poseStack, MultiBufferSource buffer) {
-        if (!(style.depth() instanceof SurfaceStyle.Depth.Fixed f)) {
-            throw new IllegalArgumentException("a surface without geometry needs a fixed depth");
-        }
         SessionContext session = ClientWebManager.getSession(sessionId);
         PaintOffsets offsets = session != null ? session.paintOffsets() : PaintOffsets.EMPTY;
-        return paint(sessionId, elements, offsets, widthBlocks, heightBlocks, f.step(), f.sub(), style, poseStack, buffer);
+        return paint(sessionId, elements, offsets, widthBlocks, heightBlocks, style, poseStack, buffer);
     }
 
     private static boolean paint(String sessionId, List<DisplayItem> elements, PaintOffsets paintOffsets, int widthBlocks, int heightBlocks,
-                                 float step, float sub, SurfaceStyle style, PoseStack poseStack, MultiBufferSource buffer) {
-        boolean empty = elements == null || elements.isEmpty();
-        // 遠距離の塗りだけは、要素が無くても描く
-        if (empty && style.lodColor() == 0) return false;
+                                 SurfaceStyle style, PoseStack poseStack, MultiBufferSource buffer) {
+        if (style.lodActive()) return drawLod(style.lodColor(), widthBlocks, heightBlocks, poseStack, buffer);
+        if (elements == null || elements.isEmpty()) return false;
         String hovered = style.hovered() != null ? style.hovered() : ClientScreenInteractionManager.getHoveredId(sessionId);
-        SurfaceStyle.Detail detail = style.detail();
         SurfaceStyle.Audio audio = style.audio();
-        PaintRequest request = new PaintRequest(empty ? List.of() : elements, paintOffsets, widthBlocks, heightBlocks, poseStack, buffer,
-                style.light(), style.overlay(), detail.items(), detail.text(), detail.rounded(),
-                step, sub, hovered != null ? hovered : "", style.lodColor(), style.lodActive(),
-                Minecraft.getInstance().level, audio.play(), audio.twoD(), sessionId, audio.pos(),
-                style.flatLayers(), style.screenSpaceText());
-        // 試験的: 描画コア（Minecraft 非依存の GPU バックエンド）で描ける面はそちらに任せる
+        PaintRequest request = new PaintRequest(elements, paintOffsets, widthBlocks, heightBlocks, poseStack, buffer,
+                style.light(), hovered != null ? hovered : "", sessionId, audio.play(), audio.twoD(), audio.pos(),
+                style.screenSpaceText());
         long tSurface = StageProfiler.begin(PipelineStage.SURFACE);
         try {
-            if (!CoreGpuSurface.tryDraw(request)) {
-                long tLegacy = StageProfiler.begin(PipelineStage.SURFACE_LEGACY);
-                try {
-                    if (!empty) {
-                        List<DisplayItem> absolute = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(elements);
-                        if (absolute != elements) request = request.withElements(absolute);
-                    }
-                    request.render();
-                } finally {
-                    StageProfiler.end(PipelineStage.SURFACE_LEGACY, tLegacy);
-                }
-            }
+            return MinecraftHostSurface.draw(request);
         } finally {
             StageProfiler.end(PipelineStage.SURFACE, tSurface);
         }
+    }
+
+    /** 遠距離の面: 全体を 1 色で塗る（アルファ 0 なら何も描かない）。 */
+    private static boolean drawLod(int argb, int widthBlocks, int heightBlocks, PoseStack poseStack, MultiBufferSource buffer) {
+        if ((argb >>> 24) == 0) return false;
+        float w = widthBlocks * SurfaceGeometry.RESOLUTION, h = heightBlocks * SurfaceGeometry.RESOLUTION;
+        Matrix4f m = poseStack.last().pose();
+        VertexConsumer b = buffer.getBuffer(RenderType.gui());
+        b.addVertex(m, 0, 0, 0).setColor(argb);
+        b.addVertex(m, 0, h, 0).setColor(argb);
+        b.addVertex(m, w, h, 0).setColor(argb);
+        b.addVertex(m, w, 0, 0).setColor(argb);
         return true;
     }
 }

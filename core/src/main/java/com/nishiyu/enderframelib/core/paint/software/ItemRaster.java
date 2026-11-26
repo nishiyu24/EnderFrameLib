@@ -5,6 +5,7 @@ import com.nishiyu.enderframelib.core.paint.emit.SoftShapes;
 import com.nishiyu.enderframelib.core.paint.emit.Clip;
 import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
 import com.nishiyu.enderframelib.core.paint.emit.ShapeGeometry;
+import com.nishiyu.enderframelib.core.paint.resource.HostTextures;
 import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
@@ -33,6 +34,28 @@ final class ItemRaster {
 
     ItemRaster(SoftwareRenderBackend backend) {
         this.backend = backend;
+    }
+
+    /**
+     * ホストが自分の描画系で描いた中身（{@link HostTextures}。ゲームのモデル・ホストのシーン・ビットマップ書体の文字）を貼る。
+     * 聞くのは GPU の受け口があり、中身を持つ種類（画像・シーン・文字）の項目だけ。貼ったら true。
+     * ホストが渡さない・受け口が断る（せん断した姿勢など）ときは false で、普段の描き方に任せる。
+     */
+    boolean drawHostTexture(DisplayItem el, float[] rx, float[] ry, Resolved res, Clip clip, float opacity) {
+        var sink = backend.route.current();
+        if (sink == null) return false;
+        switch (el.type().rasterRoute()) {
+            case IMAGE, SCENE, TEXT_ALWAYS -> { }
+            case TEXT_IF_ANY -> {
+                if (el.text() == null || el.text().isEmpty()) return false;
+            }
+            default -> { return false; }
+        }
+        HostTextures host = backend.resources.hostTextures();
+        if (host == HostTextures.NONE) return false;
+        float scale = (float) res.pose().meanScale();
+        TextureRef t = host.texture(el, Math.max(1, (int) Math.ceil(el.width() * scale)), Math.max(1, (int) Math.ceil(el.height() * scale)));
+        return t != null && t.isValid() && GpuAttempt.externalTexture(sink, el, t, rx, ry, res.pose(), clip, opacity, scale);
     }
 
     void drawScene3d(DisplayItem el, float[] rx, float[] ry, Resolved res, Clip clip, float opacity) {

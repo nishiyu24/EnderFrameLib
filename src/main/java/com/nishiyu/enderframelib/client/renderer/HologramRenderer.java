@@ -13,7 +13,6 @@ import org.jetbrains.annotations.ApiStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.culling.Frustum;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
@@ -171,8 +170,7 @@ public final class HologramRenderer {
         poseStack.translate(-geometry.virtualW() / 2.0, -geometry.virtualH() / 2.0, 0);
 
         // 発光で描く
-        SurfaceStyle style = SurfaceStyle.world(0xF000F0, OverlayTexture.NO_OVERLAY, distSqr)
-                .withDepth(SurfaceStyle.Depth.geometry());
+        SurfaceStyle style = SurfaceStyle.world(0xF000F0);
         // 表示専用ならホバーは無し。インタラクティブなら、照準から求めたセッションの現在値に任せる
         if (!spec.interactive()) style = style.withHovered("");
         SurfaceRenderer.draw(sessionId, geometry, style, poseStack, buffer);

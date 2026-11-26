@@ -88,8 +88,7 @@ R1 の時点では対話状態とスクロール量をノードの参照をキ�
 | `left` / `top` のドラッグ 1 段 | 再スタイル後に箱の木を作り直して measure × 2 + layout | 14 ms | 再スタイル後に layout だけ | 3.7〜4.0 ms |
 
 リサイズは、さらに描画キューで 1 フレーム 1 回にまとめ、直前のレイアウトにかかった時間の 2 倍が過ぎるまで次の反映を待つ
-（`SessionContext.RESIZE_THROTTLE_FACTOR`）。毎フレームの描画（`DisplayItemDrawer.renderElements`）は、祖先の変形を
-フレーム内で覚えて使い回すので、要素数 × 木の深さだった祖先の評価が要素数に比例するだけになった（ゲーム内での計測は未実施）。
+（`SessionContext.RESIZE_THROTTLE_FACTOR`）。（当時の MOD の旧レンダラ `DisplayItemDrawer` の祖先の変形の使い回しは、M3a で旧レンダラごと撤去した。今の面はコアの描画が描く。）
 
 ---
 

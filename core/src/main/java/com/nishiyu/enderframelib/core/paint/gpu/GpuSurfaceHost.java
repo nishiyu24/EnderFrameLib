@@ -26,6 +26,9 @@ public interface GpuSurfaceHost extends AutoCloseable {
 
     default void waitForRender() {}
 
+    /** ホストのコンテキストが置いたフェンス（GL なら {@code GLsync}）を、このコンテキストの以後の命令に待たせる。対応しない実装は何もしない。 */
+    default void waitForHost(long fence) {}
+
     default void finish() {}
 
     default void present(GpuTexture colorTarget, int width, int height) {}

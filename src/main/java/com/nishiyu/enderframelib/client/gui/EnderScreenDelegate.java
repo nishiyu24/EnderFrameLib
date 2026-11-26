@@ -889,7 +889,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
             if (elements == null) return;
             PoseStack pose = guiGraphics.pose();
             pose.pushPose();
-            pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.ZLayers.DEVTOOLS_OVERLAY_Z);
+            pose.translate(0, 0, 350f); // 面の上の飾りの奥行き: 選択欄 300 < ドラッグ 320 < DevTools 350
 
             String banner = " [F12] EnderFrame DevTools | [F5] Hot Reload | [Tab/Arrows] Focus | Viewport: "
                     + virtualWidth + "x" + virtualHeight + " | Mouse: (" + webX + ", " + webY + ") ";
@@ -1203,7 +1203,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
             if (!isDragging()) return;
             PoseStack pose = guiGraphics.pose();
             pose.pushPose();
-            pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.ZLayers.DRAG_DROP_OVERLAY_Z);
+            pose.translate(0, 0, 320f); // 選択欄のポップアップ（300）より手前
             int w = Math.max(60, font.width(draggingLabel) + 12);
             guiGraphics.fill(webX + 6, webY + 6, webX + 6 + w, webY + 24, 0xAA89B4FA);
             guiGraphics.drawString(font, draggingLabel, webX + 12, webY + 11, 0xFF11111B, false);
@@ -1291,7 +1291,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
             if (!popup.isOpen()) return;
             PoseStack pose = guiGraphics.pose();
             pose.pushPose();
-            pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.ZLayers.DROPDOWN_POPUP_OVERLAY_Z);
+            pose.translate(0, 0, 300f); // 面（z 0）とフォーカスの枠より手前
 
             int popupX = popup.x(), popupY = popup.y(), popupW = popup.width();
             int itemH = SelectPopup.ROW_HEIGHT;

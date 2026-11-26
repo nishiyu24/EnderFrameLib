@@ -757,15 +757,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float[] rx = scratchRx, ry = scratchRy;
         ElementType type = el.type();
 
-        if (type == ElementType.CIRCLE_BORDER) {
-            if (itemRaster.drawCircleBorder(el, anim, res, clip, opacity)) return;
-        }
+        if (type == ElementType.CIRCLE_BORDER && itemRaster.drawCircleBorder(el, anim, res, clip, opacity)) return;
         if (type == ElementType.ROUNDED_BORDER) {
             RoundedBorderSpec spec = el.meta() != null ? el.meta().roundedBorder() : null;
             if (spec != null) itemRaster.drawRoundedBorder(el, spec, rx, ry, res, clip, opacity);
             return;
         }
         if (type != ElementType.RANGE) itemRaster.drawBackground(el, anim, rx, ry, res, clip, opacity);
+        if (itemRaster.drawHostTexture(el, rx, ry, res, clip, opacity)) return; // ホストが描いた中身（HostTextures）
 
         // 網羅形の switch 式（default なし）。経路を足したらここがコンパイルで直し漏れを知らせる
         boolean handled = switch (type.rasterRoute()) {

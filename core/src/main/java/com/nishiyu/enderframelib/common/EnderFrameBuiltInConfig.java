@@ -19,20 +19,6 @@ public class EnderFrameBuiltInConfig {
 
     @ConfigEntry(
             category = "Rendering",
-            label = "Use SDF Shader",
-            description = "Enable hardware-accelerated Signed Distance Field (SDF) rendering for anti-aliased rounded corners and borders."
-    )
-    public static volatile boolean useSdfShader = true;
-
-    @ConfigEntry(
-            category = "Rendering",
-            label = "Use Core GPU Backend (Experimental)",
-            description = "Draw surfaces with the standalone, Minecraft-independent GPU renderer where possible (surfaces with canvas, 3D scenes, entity/item/fluid images or bitmap fonts keep using the legacy renderer). Requires re-opening the surface after changing."
-    )
-    public static volatile boolean useCoreBackend = false;
-
-    @ConfigEntry(
-            category = "Rendering",
             label = "Default UI Accent Color",
             description = "Primary accent color used across default Web UI components.",
             colorPicker = true

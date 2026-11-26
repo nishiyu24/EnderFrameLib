@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.client.gui;
 
-import com.nishiyu.enderframelib.client.renderer.TextElementRenderer;
 import com.nishiyu.enderframelib.common.TextEditing;
+import com.nishiyu.enderframelib.common.TextFieldOverlay;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -9,7 +9,6 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
-import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
@@ -53,33 +52,10 @@ public class TextareaEditor {
             return;
         }
 
-        // 行送り・ガター幅・フォントの倍率は描画側と同じ出所から取る。
-        // 以前はここが行高 11px / ガター 28px を固定で持ち、倍率も掛けていなかったため、
-        // クリックした位置と実際に動くキャレットの位置が食い違っていた。
-        RenderMeta meta = taEl.meta() != null ? taEl.meta() : RenderMeta.EMPTY;
-        float textScale = meta.textScale();
-        float lineHeight = meta.resolvedLineHeight();
-        float gutterW = TextElementRenderer.textareaGutterWidth(taEl, textScale);
-
-        String[] lines = fullText.split("\n", -1);
-        int scrollRow = TextEditState.getTextareaScrollRow(sessionId, renderTaId);
-        int clickedRow = Math.clamp(scrollRow + (int) ((localY - 4.0) / lineHeight), 0, Math.max(0, lines.length - 1));
-
-        String lineStr = lines[clickedRow];
-        OutlineFontFace outline = WebFontManager.outlineFaceFor(taEl);
-        int clickedCol;
-        if (outline != null) {
-            // 描画（DisplayItemDrawer）は行を左端 + ガター + 2px から置く
-            float[] pos = outline.positions(lineStr, WebFontManager.fontStyleFor(taEl, meta.fontHeight()));
-            clickedCol = OutlineFontFace.nearestBoundary(lineStr, pos, localX - gutterW - 2.0);
-        } else {
-            clickedCol = font.plainSubstrByWidth(lineStr,
-                    Math.max(0, (int) ((localX - gutterW) / textScale))).length();
-        }
-
-        int index = 0;
-        for (int i = 0; i < clickedRow; i++) index += lines[i].length() + 1;
-        index += Math.min(clickedCol, lineStr.length());
+        // 位置は描画（コアの textarea の描き方）と同じ計算で決める（スタンドアロンのビューと共有する TextFieldOverlay）
+        OutlineFontFace face = TextFieldOverlay.face(WebFontManager.fonts(), taEl);
+        int index = face == null ? fullText.length()
+                : TextFieldOverlay.caretAt(taEl, face, fullText, true, taEl.x() + localX, taEl.y() + localY);
         TextEditState.setTextareaCursor(sessionId, renderTaId, index);
     }
 
@@ -203,7 +179,7 @@ public class TextareaEditor {
     /**
      * テキスト入力・テキストエリアのキャレット位置とスクロール状態。
      *
-     * 何が壊れていたか: 同じ状態が DisplayItemDrawer 側に 3 本の static マップとして
+     * 何が壊れていたか: 同じ状態が旧レンダラ側に 3 本の static マップとして
      * 二重に存在し、編集側 (TextareaEditor / EnderScreenDelegate) が書くのは
      * こちら、描画側が読むのはあちらだったため、textarea のキャレットは常に
      * 文末に描かれ、矢印キー・Home / End・クリックでの移動もホイールスクロールも

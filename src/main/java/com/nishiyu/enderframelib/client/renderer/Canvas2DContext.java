@@ -43,9 +43,4 @@ public class Canvas2DContext extends CanvasSurface {
         return this;
     }
 
-    /** 描画用のテクスチャ。何も描いていなければ null。 */
-    synchronized WebMediaManager.ImageInfo texture(String key) {
-        if (context2d().modCount() == 0) return null;
-        return RasterTextures.textureFor(key, context2d().bitmap(), context2d().modCount(), width(), height());
-    }
 }

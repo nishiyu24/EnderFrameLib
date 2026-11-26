@@ -10,7 +10,6 @@ import com.nishiyu.enderframelib.client.ReactiveStateStore;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.renderer.SurfaceRenderer;
 import com.nishiyu.enderframelib.client.renderer.SurfaceStyle;
-import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -282,8 +281,8 @@ public class AbstractEnderScreen extends Screen implements EnderScreenHost {
             poseStack.scale(guiScaleFactor, guiScaleFactor, 1.0f);
 
             var bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
-            int logicW = (int) Math.ceil(virtualWidth / DisplayItemDrawer.RESOLUTION);
-            int logicH = (int) Math.ceil(virtualHeight / DisplayItemDrawer.RESOLUTION);
+            int logicW = (int) Math.ceil(virtualWidth / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
+            int logicH = (int) Math.ceil(virtualHeight / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
 
             SurfaceRenderer.draw(sessionId, elements, logicW, logicH,
                     SurfaceStyle.gui(true).withHovered(hoveredId), poseStack, bufferSource);

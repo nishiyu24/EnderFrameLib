@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer.surface;
 
 import com.nishiyu.enderframelib.client.SessionContext;
-import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 
@@ -14,14 +13,17 @@ import net.minecraft.core.Direction;
  */
 public record SurfaceGeometry(float widthBlocks, float heightBlocks, float pixelsPerBlock) {
 
+    /** 1 ブロックあたりの既定の仮想ピクセル数（面のテクスチャはブロック数 × これの CSS px）。 */
+    public static final float RESOLUTION = 32.0f;
+
     public static SurfaceGeometry ofBlocks(float widthBlocks, float heightBlocks) {
-        return new SurfaceGeometry(widthBlocks, heightBlocks, DisplayItemDrawer.RESOLUTION);
+        return new SurfaceGeometry(widthBlocks, heightBlocks, RESOLUTION);
     }
 
     /** セッションの解像度を、縦横比を保って {@code surfaceW × surfaceH} ブロックの面に収める。配置は {@link SurfaceFit}。 */
     public static SurfaceFit fit(SessionContext session, float surfaceW, float surfaceH) {
-        int pw = session != null ? session.rootW() : Math.round(surfaceW * DisplayItemDrawer.RESOLUTION);
-        int ph = session != null ? session.rootH() : Math.round(surfaceH * DisplayItemDrawer.RESOLUTION);
+        int pw = session != null ? session.rootW() : Math.round(surfaceW * RESOLUTION);
+        int ph = session != null ? session.rootH() : Math.round(surfaceH * RESOLUTION);
         float ppb = Math.max(pw / surfaceW, ph / surfaceH);
         SurfaceGeometry content = new SurfaceGeometry(pw / ppb, ph / ppb, ppb);
         return new SurfaceFit(content, (surfaceW - content.widthBlocks()) / 2f, (surfaceH - content.heightBlocks()) / 2f);
@@ -67,11 +69,11 @@ public record SurfaceGeometry(float widthBlocks, float heightBlocks, float pixel
 
     /** {@link PaintRequest} に渡す画面の大きさ。ブロック数の単位だが、描画範囲の判定は 32 px/ブロックで行うため、仮想ピクセルから逆算する。 */
     public int paintBlocksW() {
-        return (int) Math.ceil(virtualW() / DisplayItemDrawer.RESOLUTION);
+        return (int) Math.ceil(virtualW() / RESOLUTION);
     }
 
     public int paintBlocksH() {
-        return (int) Math.ceil(virtualH() / DisplayItemDrawer.RESOLUTION);
+        return (int) Math.ceil(virtualH() / RESOLUTION);
     }
 
     /** 仮想ピクセル 1 つ分の大きさ（ブロック単位）。 */

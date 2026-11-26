@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
-/** Phase B-2: 静止フレームで再描画を飛ばす判定（ホストの CoreGpuSurface から切り出した純粋部品）。 */
+/** Phase B-2: 静止フレームで再描画を飛ばす判定（ホストの MinecraftHostSurface から切り出した純粋部品）。 */
 class StaticFrameGateTest {
 
     private static List<DisplayItem> items(String body) {
@@ -143,8 +143,8 @@ class StaticFrameGateTest {
     /** 番人: ホストが判定を自前で持ち直す（毎回の toArray 確保・個別の時間依存判定）形に戻ると失敗する。 */
     @Test
     void hostUsesTheGateInsteadOfItsOwnCopy() throws IOException {
-        Path src = Path.of("../src/main/java/com/nishiyu/enderframelib/client/renderer/CoreGpuSurface.java");
-        if (!Files.exists(src)) src = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/CoreGpuSurface.java");
+        Path src = Path.of("../src/main/java/com/nishiyu/enderframelib/client/renderer/MinecraftHostSurface.java");
+        if (!Files.exists(src)) src = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/MinecraftHostSurface.java");
         if (!Files.exists(src)) return; // :core 単体で配られた場合はホストが無い
         String t = Files.readString(src);
         assertTrue(t.contains("StaticFrameGate"), "ホストは StaticFrameGate を使う");

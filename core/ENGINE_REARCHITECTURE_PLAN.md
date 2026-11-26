@@ -1,6 +1,6 @@
 # EnderFrameLib 根本再設計プラン（Engine v3: 破壊的アーキテクチャ刷新）
 
-> **更新日**: 2026-11-26（**軌道修正**。M2 の中間診断〔§1.3〕に基づき、M2c 以降を組み替えた。**一本化と削除を先に行い、出力の作り直しをその次に行う**。同日 M2c-1・M2c-2・**M2c-3** を完了し、経路を 1 本にした。移植したテストが見つけた新経路の穴 G1〜G9 は §3.2）
+> **更新日**: 2026-11-26（**軌道修正**。M2 の中間診断〔§1.3〕に基づき、M2c 以降を組み替えた。**一本化と削除を先に行い、出力の作り直しをその次に行う**。同日 M2c-1・M2c-2・**M2c-3** を完了し、経路を 1 本にした。移植したテストが見つけた新経路の穴 G1〜G9 は §3.2。同日 **M3a** を完了し、MOD の面もコアの描画だけで描くようにした〔§3.3〕）
 > **対象**: `:core`（569 ファイル・約 10.8 万行。`com.nishiyu.enderframelib.core.*` / `common.*` / `api.*`）と組み込みサンプル MOD（`src/main/java/...`）の境界・描画・ホスト層を含む全体構造。
 > **旧計画の全面撤回宣言（2026-11-24）**: 従来の `C 系`・`K 系`・`K5b`・`L5 (W0〜W3)`・`K4h`・`B14` と `core/DESIGN_INCREMENTAL_KERNEL.md` の「既存キャッシュ温存＋増分カーネル延命」方針は撤回・凍結した（§1.2）。本計画は**破壊的変更を全面的に許可**し、データ表現・中間表現・描画契約・ホスト統合の土台を作り直す。
 > **この文書の書き方（運用ルール 8）**: 本書は**状態表であり作業ログではない**。段ごとの経緯・途中で分かった点・変異検証の記録はコミットの本文と [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) に書く。2026-11-26 以前の本文（M1 の段の記録・M2a の設計とスパイクの実測・M2b〜M2c の作業記録）は、原文のまま ARCHIVE の索引から辿れる `archive/07` へ移した。
@@ -11,12 +11,12 @@
 
 | 項目 | 状態 |
 | :--- | :--- |
-| 完了 | M0・M1・M2a・M2b（レイアウトの移植。WPT 170/260）・**M2c**（M2c-1 保持ヒープの内訳・M2c-2 既定を新経路へ切り替え・**M2c-3 旧経路の削除**。経路は 1 本。§3.2） |
-| 進行中 | M3a（MOD の旧レンダラの撤去。別作業） |
-| 次の一手 | **新経路の穴の残りは G3 multicol だけ**（M3c で戻す）。G1〜G9（G3 を除く）は 2026-11-26 に直した（G8 の後半は §3.2「G8 の後半の設計」のとおり実装）。並行して M3a、両方の後に M3b |
-| 止まっている条件 | M3b は M3a の完了待ち |
-| 期限付きの緩和 | ヒープの上限（`varied-list-2000` 68.5 MB・`large-list-2000` 19.3 MB）と latency の 2 行（`varied-list-2000:fontsize` 157.7 ms・`large-list-8000:child` 57.9 ms）を新経路の実測から置き直した。M3b の完了ゲートで 14.0 / 5.5 MB と切り替え前の上限（46.6 / 16.5 ms）以下へ戻す（§4.1） |
-| 二重に持っているもの | なし（旧レイアウト経路・`EnginePath`・一時アダプタ `FragmentProjection`・旧描画の駆動を M2c-3 で削除した）。平坦な `DisplayItem` を作る描画（`TreePainter`・`BoxItemPainter` ほか）は M3b まで |
+| 完了 | M0・M1・M2a・M2b（レイアウトの移植。WPT 170/260）・M2c（M2c-1 保持ヒープの内訳・M2c-2 既定を新経路へ切り替え・M2c-3 旧経路の削除。経路は 1 本。§3.2）・**M3a**（MOD の旧レンダラの撤去。面はコアの描画だけが描く。§3.3） |
+| 進行中 | なし |
+| 次の一手 | **M3b**（`DisplayScene`。§3.4）。`DisplayItem` の消費者は `:core` と MOD の `MinecraftHostSurface`（項目の一覧をそのままコアへ渡すだけ）になった。新経路の穴の残りは G3 multicol（M3c） |
+| 止まっている条件 | なし |
+| 期限付きの緩和 | ヒープの上限（`varied-list-2000` 68.5 MB・`large-list-2000` 19.3 MB）と latency の 2 行（`varied-list-2000:fontsize` 157.7 ms・`large-list-8000:child` 57.9 ms）を新経路の実測から置き直した。M3b の完了ゲートで 14.0 / 5.5 MB と切り替え前の上限（46.6 / 16.5 ms）以下へ戻す（§4.1）。`P8bRetentionTest` の粗い天井も同じ扱いで 24 → 30 MB（M3a の作業中に、旧い天井の上に乗っていたと交互の実測で分かった。HEAD も 23.7〜24.0 MB） |
+| 二重に持っているもの | なし（旧レイアウト経路・`EnginePath`・一時アダプタ・旧描画の駆動を M2c-3 で、MOD の旧レンダラと `useCoreBackend` の切り替えを M3a で削除した）。平坦な `DisplayItem` を作る描画（`TreePainter`・`BoxItemPainter` ほか）は M3b まで |
 | 凍結中の例外 | `TreePainter` の記憶（§3.2 の「凍結した例外」の表。M3b で削除する） |
 | 一時的に無い機能 | multicol（G3。M3c で戻す）。見つけたテストは `@Disabled` で理由に G 番号を書いて残す |
 
@@ -183,7 +183,7 @@ DOM の後、バックエンドの前に置く中間表現は次の 3 段だけ�
 | 3 | **M2a** | 入力側の増分と縦割りスパイクの関門 | `core/box`（`BoxTreeCompiler`）・`core/layout/fragment`（`LayoutFragment`・`LayoutCache`） | 5 基準に合格（ただしレイアウトだけで判定。§1.3-2） | **完了・Go** |
 | 4 | **M2b** | 全エンジンのレイアウトを新経路へ移植 | Block・Inline・float・位置指定・Flex・Grid・Table・縦書き・双方向・`anchor()`・コンテナクエリ | 新経路の WPT 170/260（旧経路だけ合格 0） | **完了**（multicol は M3c） |
 | 5 | **M2c（改訂）** | **新経路への一本化と旧経路の削除**（旧 M2b-6 を吸収） | 既定を新経路へ切り替え、`LayoutBox` ほか旧レイアウト経路・`EnginePath`・旧経路を相手にする物差しを削除 | §3.2 の完了ゲート | **完了**（2026-11-26。移植で見えた新経路の穴 G1〜G9 は §3.2） |
-| 6 | **M3a** | `CoreGpuSurface` の品質検証と MOD の旧レンダラの撤去 | MOD `client/renderer` を撤去して `DisplayItem` の消費者を減らす（M2c と並行してよい。M3b の前提） | MOD の描画 ≤ 1,500 行・フォールバック 0 | 進行中（別作業） |
+| 6 | **M3a** | `CoreGpuSurface` の品質検証と MOD の旧レンダラの撤去 | MOD `client/renderer` を撤去して `DisplayItem` の消費者を減らす（M2c と並行してよい。M3b の前提） | MOD の描画 ≤ 1,500 行・フォールバック 0 | **完了**（2026-11-26。§3.3） |
 | 7 | **M3b（改訂）** | **`DisplayScene` と描画の作り直し** | 平坦な `DisplayItem`・旧描画の層・描画用の木・`TreePainter` の記憶・`PaintSceneDriver`・`HitTestIndex`・`Shortcut` を全廃 | §3.4 の完了ゲート（中間表現 3 段・ヒープ ≤ 14.0 / 5.5 MB・`Shortcut` 0） | 未着手 |
 | 8 | **M3c** | multicol（ブロックの断片化） | `LayoutFragment` の断片化と、列ごとの断片の scene | WPT の css-multicol を足し、新経路のラチェットで固定 | 未着手 |
 | 9 | **M4** | L5 ホスト層の純化と MOD の循環の解消 | `UiView`/`StandaloneView` → `EngineView` + `InputController` + `StandaloneHost` | L5 ≤ 1,200 行・MOD の循環 0 | 未着手 |
@@ -299,23 +299,24 @@ DOM の後、バックエンドの前に置く中間表現は次の 3 段だけ�
 
 ---
 
-### 3.3 Phase M3a: `CoreGpuSurface` の品質検証と MOD の旧レンダラの撤去〔進行中・別作業〕
+### 3.3 Phase M3a: MOD の旧レンダラの撤去と描画の一本化〔完了 2026-11-26〕
 
-平坦な `DisplayItem` を廃止する M3b の前に、MOD の旧レンダラ（`client/renderer` 27 ファイル・9,711 行。`useCoreBackend = false` が既定）を撤去し、`DisplayItem` の消費者を `:core` だけにする。M2c と並行してよい。
+平坦な `DisplayItem` を廃止する M3b の前に、MOD の旧レンダラ（`client/renderer` 27 ファイル・9,703 行。`useCoreBackend = false` が既定）を撤去し、MOD の面をコアの描画だけで描くようにした。
 
-- **Step 1（撤去の前提の関門）**: `useCoreBackend = true` で、MOD の全画面・全要素（GUI・コンテナ・HUD・ブロック面・ホログラム・アイテム・地図・`<mc-scene>`・`<scene-3d>`・メディア・ビットマップ書体・ツールチップ）をコアの経路で描けるようにする。
-  - 合格の基準: レガシー経路へのフォールバックの発火 `0 件`・対象の全種別の実機スクリーンショットの回帰が合格・`./gradlew runGameTestServer` が全件緑。
-- **Step 2（一括撤去）**: 次のものを削除する。
-  - `DisplayItemDrawer`・`LayerCompositor`・`WebSdfShader`・`TextElementRenderer`・`OutlineTextRenderer`・`BackgroundRenderer`・`ControlElementRenderer`・`MediaElementRenderer`・`RoundedRectRasterizer`
-  - `useCoreBackend` の切り替え・`CoreGpuSurface.BROKEN` のフォールバック
-  - 残すアダプタは `MinecraftMediaBridge`・`MinecraftFontAdapter`・`MinecraftHostSurface` だけ。
-- **完了ゲート**:
-  - `client/renderer` `≤ 1,500 行`・切り替えの分岐 `0`・フォールバック `0 件`。
-  - 撤去の後に `runGameTestServer` 全件と実機スクリーンショットの回帰を通す。
+| 段 | 内容 | 状態 |
+| :--- | :--- | :--- |
+| Step 1（コアで描けなかった中身） | ①**ホストの中身の口 `HostTextures`**（`core.paint.resource`。GPU のバックエンドだけが、画像・シーン・文字の項目で聞く）: Minecraft だけが描ける中身（`item:`・`entity:`・`player:`・`<mc-scene>`・ビットマップ書体の文字）を `MinecraftHostTextures` が面を描く前に項目ごとの FBO へ描き、コアが項目の中身として重なりの順どおりに貼る（後から重ねる形と違い、ポップアップがアイテムを隠す）。共有コンテキストの同期は Minecraft 側のフェンスを `LwjglGlRenderBackend.waitForHost` で待つ ②**キャレット**: `StandaloneView` の選択・キャレット・IME の項目を `TextFieldOverlay`（`common`）へ出し、MOD は自分の編集の状態で同じ計算を使う（`SurfaceEditOverlay`。textarea のクリック位置も同じ） ③ツールチップ（`SurfaceTooltip`）・遠距離の 1 色の塗り（`SurfaceRenderer`）は旧レンダラから切り離した | **完了** |
+| Step 2（一括撤去） | `DisplayItemDrawer`・`LayerCompositor`・`WebSdfShader`・`TextElementRenderer`・`OutlineTextRenderer`・`BackgroundRenderer`・`ControlElementRenderer`・`MediaElementRenderer`・`RoundedRectRasterizer`・`RasterTextures`、設定 `useCoreBackend`・`useSdfShader`、`CoreGpuSurface` の `enabled`・`BROKEN`・`drawable` のフォールバック、動画のフレームの GPU への転送（コアは CPU の画素を読む）を削除。`CoreGpuSurface` → `MinecraftHostSurface`、`McMediaImages` → `MinecraftMediaBridge`。`SurfaceStyle` から旧レンダラだけの指定（奥行きの積み方・距離の間引き・層の平坦化）を外した | **完了** |
+
+**完了ゲートの結果**: 旧レンダラの型の参照 0（`ArchitectureHealthTest#legacyModRendererStaysGone` を足した）・切り替えの分岐 0・フォールバック 0（描けなかったフレームは何も描かずセッションごとに 1 度記録する）。`client/renderer` は 9,703 → 4,667 行（MOD 全体 26,444 → 21,364 行）。うち**面を描く経路**（`MinecraftHostSurface`・`MinecraftHostTextures`・`MinecraftMediaBridge`・`SurfaceRenderer`・`SurfaceStyle`・`PaintRequest`・`SurfaceTooltip`・`SurfaceEditOverlay`）は計 1,277 行で ≤ 1,500 を満たす。残りの 3,390 行は描画ではない部品（`WebMediaManager` の取得と復号 1,312・HUD の置き場所 618・書体の登録 358・`<mc-scene>` の状態・ホスト〔ブロック・ホログラム・アイテム〕の姿勢・`SafeHttpClient`）で、パッケージの整理は M4（MOD の循環の解消）で行う。実機: 下の手順で旧レンダラと見比べ、全種別が描けることと欠落 0 件を人が確かめた。旧レンダラとの画素差の基準（≤ 0.1%）は運用ルール 6 に従って使わない（コアは別の書体のラスタライズで、旧レンダラ自身の欠陥〔語間の空白が詰まる・ブロック面の `<mc-scene>` が描かれない・`font-family: minecraft` がシステムの書体〕も直った）。
+
+**実機の確かめ方**: 一時的なデータパック（`efl_m3a`。ブロック面・ホログラム・HUD・GUI〔`m3a_check`: アイテム・個数・エンティティ・プレイヤーの頭・流体・効果・`<mc-scene>`・ビットマップ書体・入力欄・textarea・`title`〕・showcase・media_test を順に開いて `say CAPn`）と、Minecraft の窓を `PrintWindow` で撮るスクリプト（入力欄・textarea のクリックとホバーは `PostMessage`）。見つけた欠陥: ①光沢のあるアイテムで頂点の置き場が 1 つだと "Not building!"（描き方ごとの置き場を持つ） ②親相対の項目で textarea の文字が切り落とされる（コアの欠陥。回帰カタログ M3a） ③GUI の面を GUI の倍率で描いて最近傍で縮めていたため、細い線の列が落ちる（面は姿勢の倍率 × GUI の倍率で描く。ビットマップ書体の字形は 1 画素より細い画素を持つので、文字のテクスチャは 2 倍で描いて線形で縮める）。
+
+**残したもの・差**: ツールチップは旧レンダラと同じく Minecraft の書体を面の 1 px = 1 単位で描くので、1 CSS px が画面の 1 画素の GUI では小さい（旧来から。M4 で入力の層と一緒に直す）。textarea の行番号・Lua の色分け（`data-line-numbers`・`data-syntax`。同梱の文書の使用 0）とキャレットの点滅・入力欄の横スクロールは旧レンダラだけの機能で、コアの textarea・入力欄と同じ見た目になった。ワールドの面は旧レンダラの明るさ（`packedLight`）を使わない（コアの経路は以前から発光扱い）。
 
 ---
 
-### 3.4 Phase M3b（改訂）: `DisplayScene` と描画の作り直し〔未着手。前提: M2c・M3a 完了〕
+### 3.4 Phase M3b（改訂）: `DisplayScene` と描画の作り直し〔未着手。前提（M2c・M3a）は完了〕
 
 平坦な `DisplayItem` に潰してから `PaintSceneDriver` で階層を復元する往復をやめる。同時に、M2c で凍結した描画の例外を全て消す。
 
@@ -437,17 +438,17 @@ M2c-3 で旧経路と一緒に一時的に失う multicol を、新経路で作�
 
 時間の主張は交互 A/B の中央値だけ（絶対値はセッションで ±40% ずれる）。「現在」の列は作業のたびに上書きする。
 
-| 軸 | 指標 / シナリオ | M0 着手前（2026-11-24） | 現在（2026-11-26。M2c-3 の後） | 目標（達成フェーズ） |
+| 軸 | 指標 / シナリオ | M0 着手前（2026-11-24） | 現在（2026-11-26。M3a の後） | 目標（達成フェーズ） |
 | :--- | :--- | :---: | :---: | :---: |
-| **構造** | `:core` 本体の行数・ファイル数 | `113,195 行`・515 | **`109,243 行`・574**（M2c-3 で旧経路を削除し −22,027 行。その後の新経路の穴の修正で +1,128 行） | `≤ 120,000 行`（M2c。**達成**）→ M3b 以降は各フェーズで減らす |
+| **構造** | `:core` 本体の行数・ファイル数 | `113,195 行`・515 | **`109,337 行`・576**（M2c-3 で旧経路を削除し −22,027 行。その後の新経路の穴の修正で +1,128 行、M3a で +94 行〔`HostTextures`・`TextFieldOverlay`。`StandaloneView` −113〕） | `≤ 120,000 行`（M2c。**達成**）→ M3b 以降は各フェーズで減らす |
 | **構造** | 経路の数 | 1 | **1**（M2c-3 で `EnginePath` と旧経路を削除） | **1**（M2c。**達成**） |
 | **構造** | 中間表現の段数（DOM の後〜バックエンドの前） | 6〜7 | 7（箱の木 → 断片木 → 描画用の木 → `Fragment`/`FragSeq` → `DisplayItem`。旧経路は削除） | **3**（M3b） |
 | **構造** | 増分・キャッシュ専用のコードの規模 | 42 ファイル・`6,360 行` 相当 | 旧経路の分は削除（`MeasureMemo`・`PlacementMemo`・`LayoutReads`・`PaintStamps`・`PartialBuild`・`ChangeReads` ほか）。`ChangeLedger` 156 ＋ `BoxTreeCompiler` 531 ＋ `LayoutCache` 187 行と、凍結した `TreePainter` の記憶 | **`≤ 1,000 行`**（M3b） |
 | **構造** | `LayoutBox` / `ComputedStyle` / `UiView` の行数 | `1,785` / `2,095` / `2,005` | **削除** / `451` / `1,499` | 削除（M2c。**達成**）/ `≤ 450`（M5 の整理で戻す）/ 解体（M4） |
 | **構造** | 1,000 行超 / 600 行超のクラス（`:core` 本体） | `19` / `55` | `13` / `38` | `0`（M5）/ `0`（M6） |
 | **構造** | `Shortcut` / `EngineFlags` | `35` / `45`（M0 で凍結） | `16` / `24`（レイアウト系 0。残りは GL・ソフトウェア描画・シートの雛形の切り替え） | レイアウト系 0（M2c。**達成**）→ `0` / `0`（M3b） |
-| **構造** | `static volatile` / `ThreadLocal` | 約 `50` / `27` | `42` / `15`（`Atomic`/`LongAdder` 18・共有エポック 0。`ArchitectureHealthTest` の上限を下げた） | グローバルな可変の static `0`（M6） |
-| **構造** | MOD の旧レンダラ（`client/renderer`） | `9,369 行` | `9,703 行`（M3a の作業中） | `≤ 1,500 行`（M3a） |
+| **構造** | `static volatile` / `ThreadLocal` | 約 `50` / `27` | `40` / `15`（`Atomic`/`LongAdder` 18・共有エポック 0。M3a で旧レンダラの設定 2 つを消し、`ArchitectureHealthTest` の上限を下げた） | グローバルな可変の static `0`（M6） |
+| **構造** | MOD の旧レンダラ（`client/renderer`） | `9,369 行` | **旧レンダラ 0**。`client/renderer` 4,667 行のうち面を描く経路は `1,277 行`（残りは媒体の取得・HUD の置き場所・書体の登録など描画でない部品。§3.3） | `≤ 1,500 行`（M3a。**達成**） |
 | **性能** | `large-list-8000 child`（1 件挿入） | `7.89 ms` | 描画を含む **`27.3 ms`**（ゲートの latency。M2c-3 の後。箱の木とレイアウトは 0.3 ms、描画用の木と表示リストが大半〔8 万項目〕。上限は M3b まで 57.9 ms） | 描画を含めて **`≤ 1.0 ms`**（M3b） |
 | **性能** | hover / 文字の変更の 1 フレーム（showcase） | — | `ab-inc-vs-full` は `0.140` / `0.074`（上限 0.90 / 0.98。M2c-3 の後。旧経路との比は旧経路と一緒に無くなった） | `ab-inc-vs-full` の上限内（M2c。**達成**）→ 締め直す（M3b） |
 | **性能** | `varied-list-2000 fontsize`（4 スレッド・実書体） | `10.76 ms` | 未計測。ゲートの latency（1 スレッド・FALLBACK）は **`78.7 ms`**（箱の木 26・レイアウト 10・描画 40。上限は M3b まで 157.7 ms） | **`≤ 5.0 ms`**（M3b） |
@@ -456,7 +457,7 @@ M2c-3 で旧経路と一緒に一時的に失う multicol を、新経路で作�
 | **性能** | コールド起動（`showcase`） | `546 ms`（書体なし） | 書体の読み込み `243 → 24 ms`（P1a）・JDK 25 + AOT `540 → 228 ms`（P1b） | **`≤ 200 ms`**（P1b） |
 | **メモリ** | 保持ヒープ `varied-list-2000` / `large-list-2000` | `35.96` / `9.63 MB` | **`53.2` / `13.9 MB`**（G8 の後のゲート。内訳は §4.1。ゲートの上限は M3b まで新経路の実測 +25% +2 MB）。`costGate` の `surface_test.html open` の確保は 6.71 → 4.41 MB（開いた直後の全体の組み直しを消した） | **`≤ 14.0` / `≤ 5.5 MB`**（M3b）→ **`≤ 12.0` / `≤ 4.5 MB`**（M5） |
 | **正しさ** | WPT 参照画像比較 | `160 / 260` | **`170 / 260`**（一覧は `reftest-passing-v3.txt` の 1 つ。旧経路の一覧は削除） | `≥ 170 / 260`（M2c 以降） |
-| **正しさ** | 3 者画素一致・`FrameOracle` | 緑 | 緑（2026-11-26 の G8 の後。Windows の `:core:test` 2,775 件・スキップ 21〔G3 multicol ほか〕・ルートの `:test` 477 件・WSL の `ci-linux.ps1 -Full`） | 緑を保つ |
+| **正しさ** | 3 者画素一致・`FrameOracle` | 緑 | 緑（2026-11-27 の M3a の後。Windows の `:core:test` 2,786 件・スキップ 21〔G3 multicol ほか〕・ルートの `:test` 457 件〔旧レンダラだけのテストを削除〕・`runGameTestServer` 5 件・`costGate`・`memoryAndLatencyGate` OK・WSL の `ci-linux.ps1 -Full`〔3,249 件・失敗 0〕・実機の確かめ〔§3.3〕） | 緑を保つ |
 
 ### 4.1 新経路の保持ヒープと時間の段ごとの内訳（M2c-1・M2c-2。2026-11-26）
 

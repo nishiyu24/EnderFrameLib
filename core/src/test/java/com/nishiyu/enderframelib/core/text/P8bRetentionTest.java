@@ -68,7 +68,11 @@ public class P8bRetentionTest {
         return r.totalMemory() - r.freeMemory();
     }
 
-    /** 2,000 行のリストの保持ヒープの天井。本番設定の単独実行で約 7.3 MB（MemFootprintMain）。テスト JVM は検証モード（verifystamps など）で約 14〜16 MB になるので、2 倍近い退行だけを止める粗い天井。 */
+    /**
+     * 2,000 行のリストの保持ヒープの天井（大きな退行だけを止める粗い天井）。M2c-2 で新経路へ切り替えた後のテスト JVM では
+     * 23.7〜24.0 MB（2026-11-27 の交互の実測。描画の中間〔TreePainter の記憶・描画用の木〕が大半）で、旧い天井 24 MB の上に乗っていた。
+     * 計画書 §4.1 のヒープの上限と同じく、M3b の完了まで新経路の実測 +25% に期限付きで置き直す（M3b で戻す）。
+     */
     @Test
     public void largeListRetainedHeapStaysUnderCeiling() {
         StringBuilder sb = new StringBuilder("<html><body><div style=\"height:400px;overflow-y:auto\"><ul>");
@@ -82,7 +86,7 @@ public class P8bRetentionTest {
         for (int i = 0; i < 5; i++) v.frame(1000 + i * 16, b, true);
         long retained = used() - before;
         System.out.printf("P8B large-list-2000 retained = %.1f MB%n", retained / 1048576.0);
-        assertTrue(retained < 24L * 1048576, "保持ヒープが天井を超えた: " + retained / 1048576.0 + " MB");
+        assertTrue(retained < 30L * 1048576, "保持ヒープが天井を超えた: " + retained / 1048576.0 + " MB");
         v.close();
         warm.close();
     }

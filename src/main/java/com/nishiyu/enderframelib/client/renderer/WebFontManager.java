@@ -262,6 +262,11 @@ public class WebFontManager {
         return FontFaceRules.prefersMinecraftFont(fontFamily, REGISTERED_FACES::containsKey);
     }
 
+    /** 測定と描画が使う書体の解決（{@link McFontResolver}）。 */
+    public static com.nishiyu.enderframelib.core.text.model.FontResolver fonts() {
+        return McFontResolver.INSTANCE;
+    }
+
     /** 要素の文字をシステムの書体で描くならその書体、Minecraft の書体で描くなら null。 */
     public static OutlineFontFace outlineFaceFor(DisplayItem el) {
         String family = el.events() != null ? el.events().get("font-family") : null;

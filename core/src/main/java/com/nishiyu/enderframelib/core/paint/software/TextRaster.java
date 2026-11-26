@@ -196,10 +196,10 @@ final class TextRaster {
         float ascent = face.ascent(style), descent = face.descent(style);
         int alpha = (anim.color() >>> 24) & 0xFF;
         if (alpha < 4) return;
-        // 箱の外へは出さない
+        // 箱の外へは出さない。箱は項目の座標（親相対のことがある）なので、項目自身の姿勢で解く
         List<ClipPart> parts = new ArrayList<>(clip.parts());
         backend.clipOwnerCount = 0; // 持ち主の記録は使わない
-        backend.addClipPart(parts, new float[]{el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), 0, 0, 0, 0}, null);
+        backend.addClipPart(parts, new float[]{el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), 0, 0, 0, 0}, el.id());
         Clip boxed = backend.finishClip(parts);
         String[] lines = full.replace("\r\n", "\n").split("\n", -1);
         for (int i = 0; i < lines.length; i++) {

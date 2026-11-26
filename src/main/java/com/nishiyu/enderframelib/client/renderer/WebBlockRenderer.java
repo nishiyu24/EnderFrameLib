@@ -56,7 +56,7 @@ public class WebBlockRenderer<T extends BlockEntity & WebScreenBlockEntity> impl
 
         Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
         double distSqr = Vec3.atCenterOf(be.getBlockPos()).distanceToSqr(camera.getPosition());
-        SurfaceStyle style = SurfaceStyle.world(packedLight, packedOverlay, distSqr)
+        SurfaceStyle style = SurfaceStyle.world(packedLight)
                 .withAudio(SurfaceStyle.Audio.at(be.getBlockPos()))
                 .withLod(lodColor, distSqr);
 

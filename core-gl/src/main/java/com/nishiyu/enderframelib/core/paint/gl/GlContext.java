@@ -206,6 +206,17 @@ final class GlContext implements GpuSurfaceHost {
     }
 
     @Override
+    public void waitForHost(long fence) {
+        if (closed || fence == 0L || myCaps == null || !myCaps.OpenGL32) return;
+        enter();
+        try {
+            GL32.glWaitSync(fence, 0, GL32.GL_TIMEOUT_IGNORED);
+        } finally {
+            exit();
+        }
+    }
+
+    @Override
     public void finish() {
         if (closed) return;
         enter();

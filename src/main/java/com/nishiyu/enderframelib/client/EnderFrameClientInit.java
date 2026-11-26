@@ -1,9 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.client.renderer.MediaElementRenderer;
 import com.nishiyu.enderframelib.core.text.font.LoadedFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
-import com.nishiyu.enderframelib.client.renderer.OutlineTextRenderer;
 import com.nishiyu.enderframelib.core.text.model.*;
 
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -17,10 +15,9 @@ import com.nishiyu.enderframelib.client.gui.AbstractEnderScreen;
 import com.nishiyu.enderframelib.client.gui.EnderConfigScreen;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.raster.svg.SvgSources;
+import com.nishiyu.enderframelib.client.renderer.MinecraftHostSurface;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
-import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
-import com.nishiyu.enderframelib.client.renderer.WebSdfShader;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.client.renderer.WebMediaManager;
 import com.nishiyu.enderframelib.client.renderer.WebMediaManager.ClientImageRegistry;
@@ -54,7 +51,6 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import com.nishiyu.enderframelib.api.dom.Document;
@@ -69,10 +65,8 @@ public class EnderFrameClientInit {
         modEventBus.addListener((RegisterClientReloadListenersEvent event) -> {
             event.registerReloadListener((ResourceManagerReloadListener) resourceManager -> {
                 WebFontManager.clearCache();
-                OutlineTextRenderer.clear();
                 LoadedFace.releaseIdle(0);
-                WebSdfShader.reload();
-                com.nishiyu.enderframelib.client.renderer.LayerCompositor.reload();
+                MinecraftHostSurface.release();
                 ClientTemplateManager.clearCache();
             });
         });
@@ -80,28 +74,17 @@ public class EnderFrameClientInit {
         SystemFonts.warmUpAsync();
         // ch / ex は、測定と描画が使う書体の指標（「0」の送り幅・x ハイト）で決める
         com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withGlyphFontResolver(WebFontManager.McFontResolver.INSTANCE));
-        // 効果のあるフレームが続かなければ、レイヤーの FBO は手放す（効果のある箱があるときだけ確保する）
-        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.ClientTickEvent.Post event) ->
-                com.nishiyu.enderframelib.client.renderer.LayerCompositor.trimIdle());
-        NeoForge.EVENT_BUS.addListener((LevelEvent.Unload event) -> {
-            if (event.getLevel() != null && event.getLevel().isClientSide()) {
-                MediaElementRenderer.clearEntityPreviewCache();
-            }
-        });
         NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut event) -> {
-            MediaElementRenderer.clearEntityPreviewCache();
             ClientScheduler.clearAll();
             StateNbtConverter.clearReceivedKeyTables();
             Surfaces.clearHolograms();
-            com.nishiyu.enderframelib.client.renderer.CoreGpuSurface.release();
+            MinecraftHostSurface.release();
         });
 
         EnderFrameClientAPI.setInstance(EnderFrameClientAPIImpl.INSTANCE);
         InGameProfiler.init();
 
         EnderFrameBuiltInConfig.runtimeApplier = () -> {
-            DisplayItemDrawer.useSdfShader = EnderFrameBuiltInConfig.useSdfShader;
-            com.nishiyu.enderframelib.client.renderer.CoreGpuSurface.setEnabled(EnderFrameBuiltInConfig.useCoreBackend);
             ClientScreenInteractionManager.setEnableDefaultUiSounds(EnderFrameBuiltInConfig.enableDefaultUiSounds);
             WebMediaManager.allowExternalMedia = EnderFrameBuiltInConfig.enableExternalWebMedia;
             WebMediaManager.allowYtDlp = EnderFrameBuiltInConfig.allowYtDlp;

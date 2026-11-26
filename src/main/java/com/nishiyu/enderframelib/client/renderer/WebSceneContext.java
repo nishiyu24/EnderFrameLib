@@ -2,13 +2,11 @@ package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.core.paint.model.*;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
-import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.ZLayers;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -209,14 +207,17 @@ public class WebSceneContext {
         }
     }
 
-    public void renderScene(DisplayItem el, PoseStack poseStack, MultiBufferSource buffer, float finalOpacity, float zOffset) {
+    /**
+     * 箱（左上が原点の {@code w × h} CSS px）へ、ブロックの構造を描く。描く先は面の項目のテクスチャ
+     * （{@link MinecraftHostTextures}）で、箱の外は描かれない。不透明度と角丸はコアが貼るときに掛ける。
+     */
+    void render(DisplayItem el, PoseStack poseStack, MultiBufferSource buffer, float w, float h) {
         syncFromHtmlAttributes(el.events());
-        if (blocks.isEmpty() || finalOpacity <= 0.01f) return;
+        if (blocks.isEmpty()) return;
 
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
         int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
         int visibleCount = 0;
-
         for (BlockPos pos : blocks.keySet()) {
             if (pos.getY() > maxVisibleY) continue;
             minX = Math.min(minX, pos.getX()); maxX = Math.max(maxX, pos.getX());
@@ -226,42 +227,21 @@ public class WebSceneContext {
         }
         if (visibleCount == 0) return;
 
-        float sizeX = (maxX - minX + 1);
-        float sizeY = (maxY - minY + 1);
-        float sizeZ = (maxZ - minZ + 1);
+        float sizeX = (maxX - minX + 1), sizeY = (maxY - minY + 1), sizeZ = (maxZ - minZ + 1);
         float maxSpan = Math.max(2.0f, Math.max(sizeX, Math.max(sizeY, sizeZ)));
-
-        float centerX = minX + sizeX * 0.5f;
-        float centerY = minY + sizeY * 0.5f;
-        float centerZ = minZ + sizeZ * 0.5f;
-
-        float maxPanX = el.width() * 0.42f;
-        float maxPanY = el.height() * 0.42f;
-        this.panX = Math.clamp(this.panX, -maxPanX, maxPanX);
-        this.panY = Math.clamp(this.panY, -maxPanY, maxPanY);
-
-        float baseScale = (Math.min(el.width(), el.height()) * 0.52f / maxSpan) * this.zoom;
-        float screenCX = el.x() + el.width() * 0.5f + this.panX;
-        float screenCY = el.y() + el.height() * 0.5f + this.panY;
-
+        float centerX = minX + sizeX * 0.5f, centerY = minY + sizeY * 0.5f, centerZ = minZ + sizeZ * 0.5f;
+        this.panX = Math.clamp(this.panX, -w * 0.42f, w * 0.42f);
+        this.panY = Math.clamp(this.panY, -h * 0.42f, h * 0.42f);
+        float baseScale = (Math.min(w, h) * 0.52f / maxSpan) * this.zoom;
         float currentYaw = this.rotationY;
-        if (this.autoRotate) {
-            currentYaw += (System.currentTimeMillis() % 36000L) / 1000.0f * autoRotateSpeed;
-        }
+        if (this.autoRotate) currentYaw += (net.minecraft.Util.getMillis() % 36000L) / 1000.0f * autoRotateSpeed;
 
         Minecraft mc = Minecraft.getInstance();
         BlockRenderDispatcher blockRenderer = mc.getBlockRenderer();
         Font font = mc.font;
-
-        // DisplayItemDrawer.enableScissorRect でこれまでのバッチをフラッシュし、<mc-scene> の矩形で OpenGL Scissor を有効化
-        boolean scissorEnabled = DisplayItemDrawer.enableScissorRect(
-                poseStack.last().pose(), buffer,
-                el.x(), el.y(), el.x() + el.width(), el.y() + el.height()
-        );
-
         poseStack.pushPose();
         try {
-            poseStack.translate(screenCX, screenCY, zOffset + ZLayers.SCENE_PREVIEW_Z);
+            poseStack.translate(w * 0.5f + this.panX, h * 0.5f + this.panY, 100f);
             poseStack.scale(baseScale, -baseScale, baseScale);
             poseStack.mulPose(Axis.XP.rotationDegrees(this.rotationX));
             poseStack.mulPose(Axis.YP.rotationDegrees(currentYaw));
@@ -272,55 +252,41 @@ public class WebSceneContext {
                 if (pos.getY() > maxVisibleY) continue;
                 BlockState state = entry.getValue();
                 if (state.getRenderShape() == RenderShape.INVISIBLE) continue;
-
                 poseStack.pushPose();
                 poseStack.translate(pos.getX(), pos.getY(), pos.getZ());
                 try {
-                    blockRenderer.renderSingleBlock(
-                            state, poseStack, buffer,
-                            LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
-                            ModelData.EMPTY, null
-                    );
-                } catch (Exception ignored) {}
+                    blockRenderer.renderSingleBlock(state, poseStack, buffer, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
+                            ModelData.EMPTY, null);
+                } catch (Exception ignored) {
+                    // 描けないブロック（特殊なモデルなど）は飛ばす
+                }
                 poseStack.popPose();
             }
 
             if (!highlights.isEmpty()) {
                 VertexConsumer lineBuilder = buffer.getBuffer(RenderType.gui());
                 for (Map.Entry<BlockPos, Integer> hl : highlights.entrySet()) {
-                    BlockPos pos = hl.getKey();
-                    if (pos.getY() > maxVisibleY) continue;
-                    drawHighlightBox(poseStack, lineBuilder, pos, hl.getValue(), finalOpacity);
+                    if (hl.getKey().getY() > maxVisibleY) continue;
+                    drawHighlightBox(poseStack, lineBuilder, hl.getKey(), hl.getValue(), 1f);
                 }
             }
 
-            if (!labels.isEmpty()) {
-                for (Map.Entry<BlockPos, String> lbl : labels.entrySet()) {
-                    BlockPos pos = lbl.getKey();
-                    if (pos.getY() > maxVisibleY) continue;
-                    String text = lbl.getValue();
-                    if (text == null || text.isEmpty()) continue;
-
-                    poseStack.pushPose();
-                    poseStack.translate(pos.getX() + 0.5f, pos.getY() + 1.25f, pos.getZ() + 0.5f);
-                    poseStack.mulPose(Axis.YP.rotationDegrees(-currentYaw));
-                    poseStack.mulPose(Axis.XP.rotationDegrees(-this.rotationX));
-                    float textScale = 0.025f;
-                    poseStack.scale(textScale, -textScale, textScale);
-                    int tw = font.width(text);
-                    font.drawInBatch(text, -tw / 2.0f, 0, 0xFFFFFFFF, true, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0x88000000, LightTexture.FULL_BRIGHT);
-                    poseStack.popPose();
-                }
+            for (Map.Entry<BlockPos, String> lbl : labels.entrySet()) {
+                BlockPos pos = lbl.getKey();
+                String text = lbl.getValue();
+                if (pos.getY() > maxVisibleY || text == null || text.isEmpty()) continue;
+                poseStack.pushPose();
+                poseStack.translate(pos.getX() + 0.5f, pos.getY() + 1.25f, pos.getZ() + 0.5f);
+                poseStack.mulPose(Axis.YP.rotationDegrees(-currentYaw));
+                poseStack.mulPose(Axis.XP.rotationDegrees(-this.rotationX));
+                poseStack.scale(0.025f, -0.025f, 0.025f);
+                font.drawInBatch(text, -font.width(text) / 2.0f, 0, 0xFFFFFFFF, true, poseStack.last().pose(), buffer,
+                        Font.DisplayMode.NORMAL, 0x88000000, LightTexture.FULL_BRIGHT);
+                poseStack.popPose();
             }
-
-            if (buffer instanceof MultiBufferSource.BufferSource bs) {
-                bs.endBatch();
-            }
+            if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch();
         } finally {
             poseStack.popPose();
-            if (scissorEnabled) {
-                RenderSystem.disableScissor();
-            }
         }
     }
 

@@ -8,6 +8,8 @@ import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.nishiyu.enderframelib.EnderFrameLib;
+import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry;
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.StaticFrameGate;
@@ -18,6 +20,7 @@ import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL32;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -25,26 +28,24 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Minecraft に依存しない描画コア（{@link LwjglGlRenderBackend}）で面を描き、結果のテクスチャを 1 枚の板として貼る。
+ * Minecraft の中の面を描く唯一の描画: Minecraft に依存しない描画コア（{@link LwjglGlRenderBackend}）で面を描き、
+ * 結果のテクスチャを 1 枚の板として貼る（M3a で MOD の旧レンダラと既定の切り替え・フォールバックを撤去した）。
  *
  * <p>コアのバックエンドは Minecraft の GL コンテキストとテクスチャを共有する見えないコンテキストで動く
  * （{@link LwjglGlRenderBackend#sharedWith}）。描いた結果は共有テクスチャなので、読み戻さずにそのまま貼れる。
- * 呼び出しの前後で Minecraft の GL コンテキストと状態は元に戻る。これにより、スタンドアロンのアプリと
- * 同じ描画コードが Minecraft の画面・ブロック・ホログラムでも動く。
+ * 呼び出しの前後で Minecraft の GL コンテキストと状態は元に戻る。Minecraft だけが描ける中身（アイテム・エンティティ・
+ * プレイヤーの頭・{@code <mc-scene>}・ビットマップ書体）は {@link MinecraftHostTextures} が先にテクスチャへ描き、
+ * コアが項目の中身として重なりの順どおりに貼る。画像・動画・キャンバスの画素は {@link MinecraftMediaBridge}、
+ * 書体は {@code WebFontManager.McFontResolver} が渡す。
  *
- * <p>試験的な機能で、既定では無効（{@link #enabled}）。コアが描けない内容（{@code <canvas>}・3D シーン・
- * エンティティ／アイテム／流体／プレイヤーの頭などの画像・ビットマップ書体）を含む面は {@link #tryDraw} が {@code false} を返し、
- * 従来の描画経路がそのまま描く。例外が出たら以後その面はコアを使わない。
+ * <p>描けなかった（GL の失敗など）フレームは何も描かず、原因をセッションごとに 1 度だけ記録する。
  */
-public final class CoreGpuSurface {
-
-    /** {@code EnderFrameBuiltInConfig.useCoreBackend} の反映先。 */
-    static volatile boolean enabled = false;
+public final class MinecraftHostSurface {
 
     /**
      * 使っていない面（{@link #IDLE_MS} 以上描いていない）のバックエンドは、この数まで残す（また見たときに作り直さない）。
      * 描いている最中の面はこの数に関係なく残す。同時に見える面がこれより多いとき、毎フレーム閉じて作り直すと
-     * 共有コンテキストとテクスチャの生成・全面の描き直しが続き、従来の経路より重くなる。
+     * 共有コンテキストとテクスチャの生成・全面の描き直しが続く。
      */
     static final int KEEP_IDLE = 8;
     /** 描いている面でも、これを超えたら古い順に閉じる（GPU メモリの上限）。 */
@@ -58,7 +59,8 @@ public final class CoreGpuSurface {
     private static final Map<Key, LwjglGlRenderBackend> BACKENDS = new LinkedHashMap<>(16, 0.75f, true);
     /** 面ごとの最後に描いた時刻（{@code Util.getMillis}）。{@link #BACKENDS} と同じ鍵を持つ。 */
     private static final Map<Key, Long> LAST_USED = new java.util.HashMap<>();
-    private static final java.util.Set<String> BROKEN = new java.util.HashSet<>();
+    /** 描けなかったことを記録済みのセッション（ログを埋めない）。 */
+    private static final java.util.Set<String> REPORTED = new java.util.HashSet<>();
     /** GPU のタイマークエリを張り済みのバックエンド（閉じたものは {@link #clear}・{@link #dropSession} で外す）。 */
     private static final java.util.Set<LwjglGlRenderBackend> GPU_TIMED =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
@@ -67,65 +69,48 @@ public final class CoreGpuSurface {
      * バックエンドごとの「直前に描いた内容」の判定（core の {@link StaticFrameGate}。項目は不変で、変わるときは別の
      * インスタンスになるので、同じ項目が並んでいてアニメーションも動いていなければ描き直しても同じ絵になる）。
      */
-    private static final Map<LwjglGlRenderBackend, StaticFrameGate> PAINTED =
-            new java.util.IdentityHashMap<>();
+    private static final Map<LwjglGlRenderBackend, StaticFrameGate> PAINTED = new java.util.IdentityHashMap<>();
 
     /** 面の再描画を飛ばせるか。既定は有効。切り分け用に {@code -Denderframe.core.noskip=true} で止められる。 */
     private static final boolean SKIP_STATIC = !Boolean.getBoolean("enderframe.core.noskip");
 
-    private CoreGpuSurface() {}
+    private MinecraftHostSurface() {}
 
-    /** 設定の反映側から有効・無効を切り替える。無効にしたら共有テクスチャを持つバックエンドを閉じる。 */
-    public static void setEnabled(boolean value) {
-        if (enabled && !value) clear();
-        enabled = value;
-    }
-
-    /** 共有テクスチャを持つバックエンドをすべて閉じる（リソースの再読み込み・ワールドを離れるとき）。 */
+    /** 共有テクスチャを持つバックエンドと、Minecraft が描いた中身をすべて捨てる（資源の再読み込み・ワールドを離れるとき）。 */
     public static void release() {
         clear();
     }
 
-    /**
-     * コアで描けるなら描いて {@code true}。描けない（無効・内容が対象外・失敗）なら何もせず {@code false}。
-     */
-    static boolean tryDraw(PaintRequest pass) {
-        if (!enabled || !RenderSystem.isOnRenderThread()) return false;
+    /** 面を描く。描いたら {@code true}。項目が無い・描画スレッドでない・描けなかったなら何も描かず {@code false}。 */
+    static boolean draw(PaintRequest pass) {
+        if (!RenderSystem.isOnRenderThread()) return false;
         String session = pass.sessionId() == null ? "" : pass.sessionId();
-        if (BROKEN.contains(session)) return false;
-        if (!passEligible(pass)) return false;
-        List<DisplayItem> items = pass.elements();
-        if (items == null || items.isEmpty() || !drawable(items)) return false;
-        // 面の大きさはブロック数。項目の座標は RESOLUTION 倍の px（従来の経路が maxAllowedX = screenWidth * RESOLUTION と同じ）
-        int w = Math.round(pass.screenWidth() * DisplayItemDrawer.RESOLUTION);
-        int h = Math.round(pass.screenHeight() * DisplayItemDrawer.RESOLUTION);
+        List<DisplayItem> base = pass.elements();
+        if (base == null || base.isEmpty()) return false;
+        // 面の大きさはブロック数。項目の座標は RESOLUTION 倍の px
+        int w = Math.round(pass.screenWidth() * SurfaceGeometry.RESOLUTION);
+        int h = Math.round(pass.screenHeight() * SurfaceGeometry.RESOLUTION);
         if (w <= 0 || h <= 0) return false;
 
         try {
-            float dpr = pass.screenSpaceText() ? (float) Minecraft.getInstance().getWindow().getGuiScale() : 2f;
-            dpr = Math.max(1f, Math.min(dpr, (float) MAX_TEXTURE_SIDE / Math.max(w, h)));
+            float dpr = Math.max(1f, Math.min(devicePixelRatio(pass), (float) MAX_TEXTURE_SIDE / Math.max(w, h)));
             LwjglGlRenderBackend backend = backendFor(new Key(session, w, h, Math.round(dpr * 1000)), w, h, dpr);
             backend.fonts(WebFontManager.McFontResolver.INSTANCE);
-            McMediaImages.INSTANCE.begin(pass);
-            backend.images(McMediaImages.INSTANCE);
+            MinecraftMediaBridge.INSTANCE.begin(pass);
+            backend.images(MinecraftMediaBridge.INSTANCE);
+            backend.hostTextures(MinecraftHostTextures.INSTANCE);
             // 計測が有効なら GPU のタイマークエリも張る（面ごとに 1 度。無効の間は GL を呼ばない）
             if (StageProfiler.enabled() && GPU_TIMED.add(backend)) backend.enableGpuTiming();
+            List<DisplayItem> items = SurfaceEditOverlay.withCaret(ClientWebManager.getSession(session), session, base);
             StaticFrameGate gate = PAINTED.computeIfAbsent(backend, b -> new StaticFrameGate(SKIP_STATIC));
             int fontGen = WebFontManager.McFontResolver.generation();
+            flushPending(pass.buffer());
             if (gate.canSkip(items, pass.paintOffsets(), fontGen)) {
                 // 変化もアニメも無い: 前回描いたテクスチャをそのまま貼る（GPU の描画も CPU 側の組み立ても無し）
                 StageProfiler.end(PipelineStage.SURFACE_CORE_SKIPPED, StageProfiler.begin(PipelineStage.SURFACE_CORE_SKIPPED));
             } else {
-                long tRender = StageProfiler.begin(PipelineStage.SURFACE_CORE_RENDER);
-                try {
-                    long now = net.minecraft.Util.getMillis();
-                    backend.render(items, pass.paintOffsets(), now);
-                    gate.painted(items, pass.paintOffsets(), fontGen, backend.hasActiveAnimation(items, now));
-                } finally {
-                    StageProfiler.end(PipelineStage.SURFACE_CORE_RENDER, tRender);
-                }
+                render(backend, gate, items, pass, session, dpr, fontGen);
             }
-            flushPending(pass.buffer());
             long tBlit = StageProfiler.begin(PipelineStage.SURFACE_CORE_BLIT);
             try {
                 drawTexture(backend, pass.poseStack().last().pose(), w, h);
@@ -133,41 +118,47 @@ public final class CoreGpuSurface {
                 StageProfiler.end(PipelineStage.SURFACE_CORE_BLIT, tBlit);
             }
             drawTooltip(pass, items, w, h);
+            REPORTED.remove(session);
             return true;
         } catch (Throwable t) {
-            BROKEN.add(session);
-            EnderFrameLib.LOGGER.warn("[EnderFrameLib] core GPU backend failed for session '{}'; falling back to the legacy renderer", session, t);
+            if (REPORTED.add(session)) {
+                EnderFrameLib.LOGGER.error("[EnderFrameLib] failed to draw surface '{}' with the core renderer", session, t);
+            }
             dropSession(session);
             return false;
         }
     }
 
     /**
-     * 描き方の指定として、コアに任せてよいパスか。遠距離の単色塗り（LOD）だけは従来の経路が Quad 1 枚で描く。
-     *
-     * <p>距離による部品の間引き（{@link SurfaceStyle.Detail#atDistance}）は見ない。間引きは従来の経路が毎フレーム描く量を
-     * 減らすためのもので、コアは内容が変わらない限り前回のテクスチャを貼るだけなので、全部を描いても遠くで重くならない。
-     * 間引きを理由に従来の経路へ回すと、16 ブロックより遠い面ほど重くなる（実測で 1 枚 0.05 ms → 0.87 ms）。
+     * 面の 1 px が画面の何画素か。画面に平行な面（GUI・HUD）は姿勢の倍率 × GUI の倍率で、テクスチャを画面と 1 対 1 で貼る
+     * （GUI の倍率だけを使うと、1 CSS px が画面の 1 画素の画面では 3 倍などで描いてから縮めて貼ることになり、
+     * 最近傍で縮めたときにビットマップ書体の細い画素の列が落ちていた）。ワールドの面は見る距離が決まらないので 2 倍に固定する。
      */
-    static boolean passEligible(PaintRequest pass) {
-        return !pass.isLodMode();
+    static float devicePixelRatio(PaintRequest pass) {
+        if (!pass.screenSpaceText()) return 2f;
+        Matrix4f pose = pass.poseStack().last().pose();
+        float scale = (float) Math.hypot(pose.m00(), pose.m01());
+        return (float) (scale * Minecraft.getInstance().getWindow().getGuiScale());
     }
 
-    /**
-     * コアが描ける内容か。対象外が 1 つでもあれば従来の経路に任せる。
-     *
-     * <p>{@code :hover} などの見た目は、節の状態が変わったときにスタイル解決の側が項目へ反映する（描画は項目を描くだけ）ので、
-     * ホバー中の要素も対象に含める。{@code transition} の補間はコアの {@code CssAnimator} が進める。
-     */
-    static boolean drawable(List<DisplayItem> items) {
-        for (DisplayItem it : items) {
-            if (it.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.SCENE) return false;
-            if (it.type().rasterRoute() == com.nishiyu.enderframelib.core.paint.model.ElementType.RasterRoute.IMAGE && !McMediaImages.supports(it)) return false;
+    /** Minecraft が描く中身を用意してから、コアで描く。 */
+    private static void render(LwjglGlRenderBackend backend, StaticFrameGate gate, List<DisplayItem> items, PaintRequest pass,
+                               String session, float dpr, int fontGen) {
+        long tRender = StageProfiler.begin(PipelineStage.SURFACE_CORE_RENDER);
+        MinecraftHostTextures.Prepared host = MinecraftHostTextures.Prepared.NONE;
+        try {
+            host = MinecraftHostTextures.INSTANCE.prepare(items, session, dpr, !pass.screenSpaceText());
+            if (host.fence() != 0L) backend.waitForHost(host.fence());
+            long now = net.minecraft.Util.getMillis();
+            backend.render(items, pass.paintOffsets(), now);
+            gate.painted(items, pass.paintOffsets(), fontGen, host.animating() || backend.hasActiveAnimation(items, now));
+        } finally {
+            if (host.fence() != 0L) GL32.glDeleteSync(host.fence());
+            StageProfiler.end(PipelineStage.SURFACE_CORE_RENDER, tRender);
         }
-        return true;
     }
 
-    /** ホバー中の要素の {@code title} をツールチップとして板の上に重ねる（コアは描かない。従来の経路と同じ見た目・位置）。 */
+    /** ホバー中の要素の {@code title} をツールチップとして板の上に重ねる（ホストの飾り。コアは描かない）。 */
     private static void drawTooltip(PaintRequest pass, List<DisplayItem> items, int w, int h) {
         String hovered = pass.hoveredId();
         if (hovered == null || hovered.isEmpty()) return;
@@ -175,7 +166,7 @@ public final class CoreGpuSurface {
         String text = null;
         for (DisplayItem it : items) {
             if (!hovered.equals(it.baseId())) continue;
-            text = DisplayItemDrawer.extractTooltipText(it);
+            text = SurfaceTooltip.textOf(it);
             if (text != null) {
                 target = it;
                 break;
@@ -184,10 +175,8 @@ public final class CoreGpuSurface {
         if (target == null || text.isEmpty()) return;
         net.minecraft.client.gui.Font font = WebFontManager.getDefaultFont();
         if (font == null) font = Minecraft.getInstance().font;
-        float z = DisplayItemDrawer.ZLayers.ELEMENT_Z_STEP * 4 + 0.05f;
         target = DisplayItem.resolveAbsolute(items, target); // 項目は親相対のことがある
-        DisplayItemDrawer.renderTooltipOverlay(pass.poseStack(), pass.buffer(), font, target, text,
-                w, h, z, pass.packedLight());
+        SurfaceTooltip.draw(pass.poseStack(), pass.buffer(), font, target, text, w, h, 0.2f, pass.packedLight());
         flushPending(pass.buffer());
     }
 
@@ -210,11 +199,7 @@ public final class CoreGpuSurface {
             if (gone == null) continue;
             GPU_TIMED.remove(gone);
             PAINTED.remove(gone);
-            try {
-                gone.close();
-            } catch (Throwable ignored) {
-                // 後始末の失敗は握りつぶす
-            }
+            closeQuietly(gone);
         }
         return b;
     }
@@ -251,36 +236,33 @@ public final class CoreGpuSurface {
                 LAST_USED.remove(e.getKey());
                 GPU_TIMED.remove(e.getValue());
                 PAINTED.remove(e.getValue());
-                try {
-                    e.getValue().close();
-                } catch (Throwable ignored) {
-                    // 後始末の失敗は握りつぶす
-                }
+                closeQuietly(e.getValue());
             }
         }
     }
 
-    /** 全部閉じる（リソースの再読み込み・ワールドを抜けるとき）。 */
-    static void clear() {
-        for (LwjglGlRenderBackend b : BACKENDS.values()) {
-            try {
-                b.close();
-            } catch (Throwable ignored) {
-                // 後始末の失敗は握りつぶす
-            }
+    private static void closeQuietly(LwjglGlRenderBackend b) {
+        try {
+            b.close();
+        } catch (Throwable ignored) {
+            // 後始末の失敗は握りつぶす
         }
+    }
+
+    static void clear() {
+        for (LwjglGlRenderBackend b : BACKENDS.values()) closeQuietly(b);
         BACKENDS.clear();
         LAST_USED.clear();
         GPU_TIMED.clear();
         PAINTED.clear();
-        BROKEN.clear();
-        McMediaImages.INSTANCE.clear();
+        REPORTED.clear();
+        MinecraftMediaBridge.INSTANCE.clear();
+        if (RenderSystem.isOnRenderThread()) MinecraftHostTextures.INSTANCE.clear();
     }
 
     /** 描きかけの頂点を先に吐き出し、この板との前後関係を保つ。 */
     private static void flushPending(MultiBufferSource buffer) {
         if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch();
-        WebSdfShader.endPass();
     }
 
     /** 共有テクスチャ（事前乗算・下端が先頭）を、面の左上を原点とする {@code w × h} の板に貼る。 */

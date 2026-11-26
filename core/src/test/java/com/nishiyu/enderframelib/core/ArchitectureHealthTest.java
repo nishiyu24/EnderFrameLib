@@ -46,7 +46,7 @@ class ArchitectureHealthTest {
 
     static final int NEW_CLASS_MAX_LINES = 600;
     static final int MAX_OVER_1000_CLASSES = 20;
-    static final int MAX_VOLATILE_STATIC = 42;
+    static final int MAX_VOLATILE_STATIC = 40;
     static final int MAX_THREAD_LOCAL_STATIC = 15;
     static final int MAX_ATOMIC_STATIC = 18;
     static final int MAX_EPOCH_STATIC = 0;
@@ -492,7 +492,11 @@ class ArchitectureHealthTest {
             "ScrollExtentCalc", "MulticolLayout", "ContextFlags", "FenwickVirtualList");
 
     static List<String> checkLegacyTypes(Path base) throws IOException {
-        Pattern p = Pattern.compile("\\b(" + String.join("|", LEGACY_PATH_TYPES) + ")\\b");
+        return checkTypeNames(base, LEGACY_PATH_TYPES);
+    }
+
+    static List<String> checkTypeNames(Path base, List<String> names) throws IOException {
+        Pattern p = Pattern.compile("\\b(" + String.join("|", names) + ")\\b");
         List<String> bad = new ArrayList<>();
         if (!Files.isDirectory(base)) return bad;
         for (Path f : RatchetSupport.javaFiles(base)) {
@@ -509,6 +513,23 @@ class ArchitectureHealthTest {
         roots.addAll(List.of("core/src/test/java", "core/src/jmh/java", "core/demo/java", "src/test/java"));
         for (String root : roots) bad.addAll(checkLegacyTypes(repoRoot().resolve(root)));
         assertEquals(List.of(), bad, "旧レイアウト経路の型が戻った（M2c-3 で消した。計画書 §3.2）");
+    }
+
+    // ---- 9. MOD の旧レンダラが戻らない（M3a の完了ゲート。計画書 §3.3） ----
+
+    /** M3a で消した MOD の旧レンダラの型と、旧レンダラへ切り替える設定。識別子として現れたら失敗（注釈と文字列は数えない）。 */
+    static final List<String> LEGACY_MOD_RENDERER_TYPES = List.of(
+            "DisplayItemDrawer", "LayerCompositor", "WebSdfShader", "TextElementRenderer", "OutlineTextRenderer",
+            "BackgroundRenderer", "ControlElementRenderer", "MediaElementRenderer", "RoundedRectRasterizer", "RasterTextures",
+            "CoreGpuSurface", "McMediaImages", "useCoreBackend", "useSdfShader");
+
+    @Test
+    void legacyModRendererStaysGone() throws IOException {
+        List<String> bad = new ArrayList<>();
+        for (String root : List.of("src/main/java", "src/test/java", "core/src/main/java")) {
+            bad.addAll(checkTypeNames(repoRoot().resolve(root), LEGACY_MOD_RENDERER_TYPES));
+        }
+        assertEquals(List.of(), bad, "MOD の旧レンダラが戻った（M3a で消した。面はコアの描画だけが描く。計画書 §3.3）");
     }
 
     @Test

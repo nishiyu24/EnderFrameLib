@@ -12,7 +12,6 @@ import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.WebRecipeViewerBridge;
 import com.nishiyu.enderframelib.client.renderer.SurfaceRenderer;
 import com.nishiyu.enderframelib.client.renderer.SurfaceStyle;
-import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -426,8 +425,8 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
             poseStack.translate(this.leftPos, this.topPos, 0);
 
             var bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
-            int logicW = (int) Math.ceil(virtualWidth / DisplayItemDrawer.RESOLUTION);
-            int logicH = (int) Math.ceil(virtualHeight / DisplayItemDrawer.RESOLUTION);
+            int logicW = (int) Math.ceil(virtualWidth / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
+            int logicH = (int) Math.ceil(virtualHeight / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
 
             SurfaceRenderer.draw(sessionId, elements, logicW, logicH,
                     SurfaceStyle.gui(false).withHovered(hoveredId), poseStack, bufferSource);

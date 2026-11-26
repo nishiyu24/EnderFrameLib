@@ -112,7 +112,7 @@ public class WebItemRendererHelper {
                 displayContext == ItemDisplayContext.THIRD_PERSON_LEFT_HAND);
 
         SurfaceGeometry geometry = SurfaceGeometry.ofVirtual(layoutW, layoutH, physicalWidthInBlocks);
-        SurfaceStyle style = SurfaceStyle.item(packedLight, packedOverlay)
+        SurfaceStyle style = SurfaceStyle.item(packedLight)
                 .withAudio(new SurfaceStyle.Audio(playAudio, true, null));
         // GUI（ホットバー・インベントリのスロット）は入力を受けないのでホバーを抜く
         if (displayContext == ItemDisplayContext.GUI) style = style.withHovered("");
