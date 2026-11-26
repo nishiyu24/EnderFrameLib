@@ -9,7 +9,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
+import com.nishiyu.enderframelib.core.dom.node.NodeIds;
 import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -63,7 +63,7 @@ class InteractionStateOwnershipTest {
     @Test
     void virtualNodesKeepIndependentStatesAcrossViewsWithoutArenaAllocation() {
         HtmlDocument doc = (HtmlDocument) HtmlParser.parseDocument("<div id='host'></div>");
-        DocumentArena arena = doc.arena();
+        NodeIds arena = doc.nodeIds();
         int liveBefore = arena.liveCount();
         HtmlNode virtual = new HtmlNode("span");
         virtual.parent = doc.getElementById("host");
@@ -179,10 +179,10 @@ class InteractionStateOwnershipTest {
     }
 
     @Test
-    void virtualNodeDescendantsKeepPerViewSlotsWithoutEvictingDocumentArena() {
+    void virtualNodeDescendantsKeepPerViewSlotsWithoutEvictingDocumentNumbers() {
         HtmlDocument doc = (HtmlDocument) HtmlParser.parseDocument("<div id='host'></div>");
         HtmlNode host = doc.getElementById("host");
-        DocumentArena arena = doc.arena();
+        NodeIds arena = doc.nodeIds();
         int liveBefore = arena.liveCount();
 
         InteractionState viewA = new InteractionState();

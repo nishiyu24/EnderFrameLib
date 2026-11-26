@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
+import com.nishiyu.enderframelib.core.dom.node.NodeIds;
 import java.lang.management.ManagementFactory;
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +27,7 @@ class BindingPatchTableTest {
     void compilesStyleBindingsIntoDirectPatches() {
         HtmlDocument d = doc();
         HtmlNode root = d;
-        BindingPatchTable t = new BindingPatchTable(d.arena());
+        BindingPatchTable t = new BindingPatchTable(d.nodeIds());
         int n = t.compile(root);
         assertEquals(5, n, "hp_pct x2 / alpha / fs / grow（calc() 混在は対象外）");
         assertTrue(t.hasKey("hp_pct"));
@@ -40,7 +40,7 @@ class BindingPatchTableTest {
         HtmlDocument d = doc();
         HtmlNode bar = d.getElementById("bar");
         HtmlNode two = d.getElementById("two");
-        DocumentArena arena = bar.arena();
+        NodeIds arena = bar.nodeIds();
         BindingPatchTable t = new BindingPatchTable(arena);
         t.compile(d);
 
@@ -55,7 +55,7 @@ class BindingPatchTableTest {
 
     @Test
     void registerGrowsColumnsForLateNodes() {
-        DocumentArena arena = new DocumentArena(8);
+        NodeIds arena = new NodeIds(8);
         BindingPatchTable t = new BindingPatchTable(arena);
         t.register("k", 5000, BindingPatchTable.F_WIDTH_PX);
         assertEquals(0, t.setFloat("k", 3f) == 1 ? 0 : 1, "未使用の節番号でも書ける（汚れは立てない）");
@@ -67,7 +67,7 @@ class BindingPatchTableTest {
     @Test
     void hotPathAllocatesNothing() {
         HtmlDocument d = doc();
-        BindingPatchTable t = new BindingPatchTable(d.arena());
+        BindingPatchTable t = new BindingPatchTable(d.nodeIds());
         t.compile(d);
         for (int i = 0; i < 200_000; i++) t.setFloat("hp_pct", i);
         var mx = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
@@ -194,7 +194,7 @@ class BindingPatchTableTest {
     void directSetClearsWithNaNAndOnlyDirtiesOnChange() {
         HtmlDocument d = doc();
         HtmlNode bar = d.getElementById("bar");
-        BindingPatchTable t = new BindingPatchTable(bar.arena());
+        BindingPatchTable t = new BindingPatchTable(bar.nodeIds());
         int id = bar.nodeId();
         assertTrue(t.set(id, BindingPatchTable.F_WIDTH_PCT, 10f));
         assertFalse(t.set(id, BindingPatchTable.F_WIDTH_PCT, 10f));

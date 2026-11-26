@@ -674,10 +674,10 @@ public final class Bindings {
 
         private com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable tableFor(HtmlNode vNode) {
             if (patchRoot == null) return null;
-            var arena = patchRoot.arena();
-            if (arena == null || !vNode.hasNodeId() || vNode.arena() != arena) return null;
-            if (patchTable == null || !patchTable.isFor(arena)) {
-                patchTable = new com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable(arena);
+            var ids = patchRoot.nodeIds();
+            if (ids == null || !vNode.hasNodeId() || vNode.nodeIds() != ids) return null;
+            if (patchTable == null || !patchTable.isFor(ids)) {
+                patchTable = new com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable(ids);
             }
             return patchTable;
         }

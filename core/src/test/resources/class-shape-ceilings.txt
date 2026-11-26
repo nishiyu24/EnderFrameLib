@@ -7,7 +7,7 @@
 common/UiView.java | 16 | 140 | 0 | 0
 api/ui/UI.java | 0 | 132 | 1 | 0
 core/raster/canvas/CanvasRenderingContext2D.java | 0 | 128 | 0 | 0
-core/dom/node/HtmlNode.java | 6 | 115 | 0 | 0
+core/dom/node/HtmlNode.java | 6 | 0 | 0 | 0
 core/paint/gpu/GpuRenderBackend.java | 0 | 104 | 0 | 1
 core/paint/CssAnimator.java | 44 | 0 | 0 | 0
 core/css/Selector.java | 32 | 0 | 0 | 0

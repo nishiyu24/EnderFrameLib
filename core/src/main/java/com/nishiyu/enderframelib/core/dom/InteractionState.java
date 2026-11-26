@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 import java.util.function.BiConsumer;
 
 /**
@@ -31,15 +30,15 @@ import java.util.function.BiConsumer;
  *
  * <p>ノードオブジェクト自身（{@link HtmlNode}）が唯一のキー。文字列 ID は、ネットワークと描画の境界で
  * ノードへ解決してから渡す（解決は {@link HtmlNode#getNodeById} の索引が担う）。
- * 状態の実体は各ビューの表に保持し（文書上の節は {@link DocumentArena.NodeSlots}、仮想の節は
+ * 状態の実体は各ビューの表に保持し（文書上の節は {@link NodeIds.NodeSlots}、仮想の節は
  * {@link VirtualNodeSlots}）、{@link HtmlNode} 自体は書き換えない。擬似状態は {@link StateFlags#state} の 1 本の整数
- * （{@link ElementState} のビット）が唯一の記憶で、アリーナの列へ写し書きはしない
+ * （{@link ElementState} のビット）が唯一の記憶で、番号の表の列へ写し書きはしない
  * （写しは誰にも読まれず、書くだけの二重コストだった）。</p>
  */
 public class InteractionState implements StyledDocumentState {
 
-    /** アリーナごとの列挙用の表。節が文書から外れて番号の世代が進めば、その項は自然に無効になる。 */
-    private record Tab(DocumentArena arena, DocumentArena.NodeSlots<StateFlags> slots) {}
+    /** 番号の空間ごとの列挙用の表。節が文書から外れて番号の世代が進めば、その項は自然に無効になる。 */
+    private record Tab(NodeIds ids, NodeIds.NodeSlots<StateFlags> slots) {}
 
     private final List<Tab> tabs = new ArrayList<>(2);
     private volatile Tab lastTab;
@@ -47,35 +46,35 @@ public class InteractionState implements StyledDocumentState {
     /** 直近の {@code restyleBoxRecursive} が根の子孫へ降りたか（ルート専用再レイアウトの印付け省略判定用）。 */
     public boolean restyleDescended;
 
-    private Tab findTab(DocumentArena arena) {
+    private Tab findTab(NodeIds ids) {
         Tab t = lastTab;
-        if (t != null && t.arena == arena) return t;
+        if (t != null && t.ids == ids) return t;
         synchronized (this) {
             for (Tab other : tabs) {
-                if (other.arena == arena) return lastTab = other;
+                if (other.ids == ids) return lastTab = other;
             }
-            if (arena.hasSlots(this)) return tabFor(arena);
+            if (ids.hasSlots(this)) return tabFor(ids);
             return null;
         }
     }
 
-    private synchronized Tab tabFor(DocumentArena arena) {
+    private synchronized Tab tabFor(NodeIds ids) {
         Tab t = lastTab;
-        if (t != null && t.arena == arena) return t;
+        if (t != null && t.ids == ids) return t;
         for (Tab other : tabs) {
-            if (other.arena == arena) return lastTab = other;
+            if (other.ids == ids) return lastTab = other;
         }
         if (tabs.size() >= MAX_TABS) {
             int evict = (tabs.get(0) == lastTab && tabs.size() > 1) ? 1 : 0;
             Tab dropped = tabs.remove(evict);
-            dropped.arena.dropSlots(this);
+            dropped.ids.dropSlots(this);
         }
-        t = new Tab(arena, arena.slots(this));
+        t = new Tab(ids, ids.slots(this));
         tabs.add(t);
         return lastTab = t;
     }
 
-    /** アリーナに載せない節（仮想の節）の表。節が回収されれば項は消える。 */
+    /** 番号を持たない節（仮想の節）の表。節が回収されれば項は消える。 */
     private volatile VirtualNodeSlots<StateFlags> loose;
 
     private void forEachFlags(BiConsumer<HtmlNode, StateFlags> visitor) {
@@ -88,7 +87,7 @@ public class InteractionState implements StyledDocumentState {
         if (v != null) v.forEach(visitor);
         for (Tab tab : tabCopy) {
             tab.slots.forEach((id, flags) -> {
-                if (tab.arena.owner(id) instanceof HtmlNode node) visitor.accept(node, flags);
+                if (tab.ids.owner(id) instanceof HtmlNode node) visitor.accept(node, flags);
             });
         }
     }
@@ -308,7 +307,7 @@ public class InteractionState implements StyledDocumentState {
     public StateFlags getOrCreate(HtmlNode node) {
         if (node == null) return new StateFlags();
         if (node.hasNodeId()) {
-            Tab t = findTab(node.arena());
+            Tab t = findTab(node.nodeIds());
             if (t != null) {
                 StateFlags found = t.slots.get(node.nodeId());
                 if (found != null) return found;
@@ -327,7 +326,7 @@ public class InteractionState implements StyledDocumentState {
             }
         }
         synchronized (this) {
-            DocumentArena a = node.arena();
+            NodeIds a = node.nodeIds();
             int id = node.nodeId();
             Tab t = tabFor(a);
             StateFlags found = t.slots.get(id);
@@ -372,7 +371,7 @@ public class InteractionState implements StyledDocumentState {
     public StateFlags get(HtmlNode node) {
         if (node == null) return null;
         if (node.hasNodeId()) {
-            Tab t = findTab(node.arena());
+            Tab t = findTab(node.nodeIds());
             return t != null ? t.slots.get(node.nodeId()) : null;
         }
         if (node.isVirtualNode()) {
@@ -998,7 +997,7 @@ public class InteractionState implements StyledDocumentState {
 
     public synchronized void clear() {
         if (loose != null) loose.clear();
-        for (Tab tab : tabs) tab.arena.dropSlots(this);
+        for (Tab tab : tabs) tab.ids.dropSlots(this);
         tabs.clear();
         lastTab = null;
         dirtyCount.set(0);
