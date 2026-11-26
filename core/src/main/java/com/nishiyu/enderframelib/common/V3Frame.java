@@ -91,7 +91,7 @@ final class V3Frame {
             history = null;
             pipeline = new FragmentPipeline(fresh, session);
             pipeline.compiler().remembered(remembered);
-            tree = new PaintTreeBuilder(session, doc.sheet);
+            tree = new PaintTreeBuilder(session);
             painter = new TreePainter(w, h, doc.sheet != null ? doc.sheet.keyframes : Map.of(), scrollState);
             painter.setDevicePixelRatio(devicePixelRatio);
             ledger = null;
@@ -156,7 +156,7 @@ final class V3Frame {
         LayoutSession session = new LayoutSession(fontResolver);
         pipeline = new FragmentPipeline(new StyleSource(sheet, new InteractionState(), Map.of(), w, h), session);
         remembered.clear();
-        tree = new PaintTreeBuilder(session, sheet);
+        tree = new PaintTreeBuilder(session);
         painter = new TreePainter(w, h, sheet != null ? sheet.keyframes : Map.of(), scrollState);
         LayoutFragment frag = pipeline.frameSubtree(root, w, h);
         this.root = tree.build(frag, pipeline.boxRoot());
@@ -223,6 +223,11 @@ final class V3Frame {
     /** 直近のフレームの描画用の木の根（スクロールの位置を含む見え方。問い合わせが読む。まだ無ければ null）。 */
     PaintView root() {
         return root != null ? PaintView.root(root, scroll, width, height) : null;
+    }
+
+    /** 描画器（直近の描画で使い回した部分木・作り直した箱の数をテストが読む。まだ無ければ null）。 */
+    TreePainter painter() {
+        return painter;
     }
 
     /** 直近のフレームで中身を 1 つの節にまとめたスクロールコンテナ（スクロールだけの更新で節を動かす）。 */

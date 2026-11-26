@@ -36,9 +36,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * スクロールコンテナなら自分のスクロールの位置）は親から渡る値なので {@code ConstraintSpace} と同じく値で照合する（計画書 §2.1-4。
  * 表示項目が絶対の座標・クリップ・親の id を持つ間〔M3b の {@code DisplayScene} まで〕は文脈も入力）。ビューポートと装置の画素比が
  * 変われば記憶を全て捨てる。記憶は前回の木の形のまま持ち（{@link Memo} が子の記憶を持つ。節 → 結果の大域の表は作らない）、使い回した
- * 部分木の記憶はそのまま次へ渡る。描画の項目が DOM を直に読む所（属性・入力の値・子の文字）があるので、変更台帳に載った節とその祖先は
- * 使い回さない（入口は台帳 1 本）。台帳に載らない入力（画像・SVG の到着）はホストが全体を組み直す（{@code recomputeLayout}。台帳なしの
- * フレームは記憶を使わない）。記憶してよい箱をタグ名で決める一覧は持たない。</p>
+ * 部分木の記憶はそのまま次へ渡る。描画は DOM を読まない（M3b-1・決定 F）: 属性・入力の値・textarea の中身・状態の規則が掛かるかは
+ * 箱の木が写して最新の箱に持つ（{@code BoxNode.values}）ので、属性だけの変化も節（{@link PaintNode}）の変化として届き、変更台帳に
+ * 載った節の祖先を数えなくてよい。台帳を読むのは、スクロールしたコンテナ（節つきの {@code SCROLL}）の祖先を使い回さないためだけ
+ * （文脈の絶対位置が祖先で変わらないまま中身の位置が変わる。計画書 §3.2 の凍結した例外で、M3b-2 の親相対の scene で消す）。台帳に
+ * 載らない入力（画像・SVG の到着）はホストが全体を組み直す（{@code recomputeLayout}。台帳なしのフレームは記憶を使わない）。記憶して
+ * よい箱をタグ名で決める一覧は持たない。</p>
  *
  * <p>項目の座標は常に親の節からの相対（旧経路の既定）。旧経路の切り分け用の切り替え（文脈の {@code parentRelativeDisplayItems}）は読まない。</p>
  */
@@ -61,8 +64,8 @@ public final class TreePainter {
     private Memo rootMemo;
     private int memoW, memoH;
     private float memoDpr;
-    /** 1 回の描画の間だけ: 台帳に載った節とその祖先（null なら全て使い回さない）。 */
-    private Set<HtmlNode> touched;
+    /** 1 回の描画の間だけ: 台帳に節つきの {@code SCROLL} で載ったスクロールコンテナとその祖先（null なら全て使い回さない）。 */
+    private Set<HtmlNode> scrolled;
     private Memo lastMemo;
     private int reused, built;
 
@@ -112,8 +115,8 @@ public final class TreePainter {
         stacking.followedScrollers = com.nishiyu.enderframelib.core.paint.tree.AnchorFollow.followedScrollers(root);
         fragIds.set(0);
         reused = built = 0;
-        touched = readLedger(ledger);
-        Memo prev = touched != null && memoW == stacking.rootW && memoH == stacking.rootH
+        scrolled = readLedger(ledger);
+        Memo prev = scrolled != null && memoW == stacking.rootW && memoH == stacking.rootH
                 && Float.compare(memoDpr, devicePixelRatio) == 0 ? rootMemo : null;
         PaintView top = PaintView.root(root, stacking.scrollState, stacking.rootW, stacking.rootH);
         canvasSource = null;
@@ -144,20 +147,21 @@ public final class TreePainter {
             memoDpr = devicePixelRatio;
             return out;
         } finally {
-            touched = null;
+            scrolled = null;
         }
     }
 
-    /** 台帳に載った節とその祖先（節を絞れない変更・あふれなら null で、何も使い回さない）。 */
+    /**
+     * 台帳に節つきの {@code SCROLL} で載ったスクロールコンテナとその祖先（あふれなら null で、何も使い回さない）。他の種別は読まない:
+     * 描画の入力は全て節（最新の箱が写した DOM の値を含む）と文脈にあり、節の同一性と文脈の値で照合できる。節の無い {@code SCROLL} は
+     * どのコンテナかを節つきの {@code SCROLL} が別に載せる。
+     */
     private static Set<HtmlNode> readLedger(ChangeLedger ledger) {
         if (ledger == null || ledger.frozenOverflow()) return null;
         Set<HtmlNode> out = Collections.newSetFromMap(new IdentityHashMap<>());
         for (int i = 0, n = ledger.frozenSize(); i < n; i++) {
             HtmlNode node = ledger.frozenNode(i);
-            if (node == null) {
-                if (ledger.frozenIs(i, ChangeKind.SCROLL)) continue; // どのコンテナかは節つきの SCROLL が別に載る
-                return null;
-            }
+            if (node == null || !ledger.frozenIs(i, ChangeKind.SCROLL)) continue;
             for (HtmlNode cur = node; cur != null && out.add(cur); cur = cur.parent) { }
         }
         return out;
@@ -217,7 +221,7 @@ public final class TreePainter {
         if (box.style().isContentVisibilityAuto() && !nearViewport(box)) return null; // 画面から遠い content-visibility: auto は描かない
         PaintView origin = TreeStacking.effectiveParentNodeBox(box, parentId);
         Context ctx = Context.of(box, clip, parentId, origin, box == canvasSource, stacking);
-        if (prev != null && prev.node == box.n && prev.reusable && !touched(box) && prev.ctx.equals(ctx)) {
+        if (prev != null && prev.node == box.n && prev.reusable && !scrolledBelow(box) && prev.ctx.equals(ctx)) {
             reused++;
             stacking.replayScrollContents(prev.scrolls);
             lastMemo = prev;
@@ -284,11 +288,11 @@ public final class TreePainter {
         return result;
     }
 
-    /** 台帳に載った節（か、その祖先）か。疑似要素などの合成の節は持ち主で見る。 */
-    private boolean touched(PaintView box) {
-        if (touched == null) return true;
+    /** スクロールしたコンテナ（か、その祖先）か。疑似要素などの合成の節は持ち主で見る。 */
+    private boolean scrolledBelow(PaintView box) {
+        if (scrolled == null) return true;
         HtmlNode h = box.node();
-        return touched.contains(h) || ((h.isPseudoNode || box.anonymous()) && h.parent != null && touched.contains(h.parent));
+        return scrolled.contains(h) || ((h.isPseudoNode || box.anonymous()) && h.parent != null && scrolled.contains(h.parent));
     }
 
     /** マスクの項目（レイヤーがマスクを求めるとき）と Top Layer の印・{@code ::backdrop}（旧 {@code FragmentPaint.extras}）。 */

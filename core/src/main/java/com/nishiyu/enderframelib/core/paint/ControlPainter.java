@@ -45,16 +45,16 @@ final class ControlPainter {
         float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
 
         ItemProps sceneEvents = partsEvents.copy();
-        if (box.node().attrs.containsKey("data-blocks")) sceneEvents.put("data-blocks", box.node().attrs.get("data-blocks"));
-        if (box.node().attrs.containsKey("slice-y")) sceneEvents.put("data-slice-y", box.node().attrs.get("slice-y"));
-        else if (box.node().attrs.containsKey("data-slice-y")) sceneEvents.put("data-slice-y", box.node().attrs.get("data-slice-y"));
-        if (box.node().attrs.containsKey("auto-rotate")) sceneEvents.put("data-auto-rotate", box.node().attrs.get("auto-rotate"));
+        if (box.values().attrs().containsKey("data-blocks")) sceneEvents.put("data-blocks", box.values().attrs().get("data-blocks"));
+        if (box.values().attrs().containsKey("slice-y")) sceneEvents.put("data-slice-y", box.values().attrs().get("slice-y"));
+        else if (box.values().attrs().containsKey("data-slice-y")) sceneEvents.put("data-slice-y", box.values().attrs().get("data-slice-y"));
+        if (box.values().attrs().containsKey("auto-rotate")) sceneEvents.put("data-auto-rotate", box.values().attrs().get("auto-rotate"));
 
         if (Scene3DTags.isScene(box.node().tag)) {
             // ビルトイン 3D ビューポート: バックエンドが Scene3DWorld を引くための識別（nodeId）と種類
             sceneEvents.put(Scene3DTags.KIND_ATTR, Scene3DTags.KIND_3D);
             sceneEvents.put(Scene3DTags.WORLD_ATTR, Long.toString(box.node().nodeId()));
-            String orbit = box.node().attrs.get("data-orbit");
+            String orbit = box.values().attrs().get("data-orbit");
             if (orbit != null && (orbit.isEmpty() || orbit.equalsIgnoreCase("true") || orbit.equals("1"))) {
                 sceneEvents.put(Scene3DTags.ORBIT_ATTR, "true");
             }
@@ -71,11 +71,11 @@ final class ControlPainter {
         Style st = box.style().typed();
         // img は srcset / sizes から密度に合う候補を選ぶ（無ければ src）
         ImageChoice chosen = ElementTraits.isImage(box.node().tag)
-                ? ImageSources.forImg(box.node().attrs, decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
-        String src = Style.or(st.rare.src, chosen != null ? chosen.url() : box.node().attrs.getOrDefault("src", ""));
+                ? ImageSources.forImg(box.values().attrs(), decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
+        String src = Style.or(st.rare.src, chosen != null ? chosen.url() : box.values().attrs().getOrDefault("src", ""));
         com.nishiyu.enderframelib.core.dom.node.CustomElementPainter hostPainter =
                 com.nishiyu.enderframelib.core.replaced.ReplacedElements.painterOf(box.node().tag);
-        if (hostPainter != null) src = hostPainter.resolveSrc(box.node().attrs, src);
+        if (hostPainter != null) src = hostPainter.resolveSrc(box.values().attrs(), src);
 
         String tag = box.node().tag;
         boolean gif = ElementTraits.isImage(tag) && isRemoteGif(src);
@@ -84,8 +84,8 @@ final class ControlPainter {
         if (type == ElementType.VIDEO) {
             mediaEvents = partsEvents.copy();
             // GIF は音の無い繰り返しの動画として扱う。video / audio は属性で決める
-            if (gif || box.node().attrs.containsKey("loop")) mediaEvents.put("media-loop", "1");
-            if (gif || box.node().attrs.containsKey("muted")) mediaEvents.put("media-muted", "1");
+            if (gif || box.values().attrs().containsKey("loop")) mediaEvents.put("media-loop", "1");
+            if (gif || box.values().attrs().containsKey("muted")) mediaEvents.put("media-muted", "1");
         }
         ImageFitMode fitMode = ImageFitMode.fromString(Style.or(st.rare.objectFit, "fill"));
 
@@ -116,7 +116,7 @@ final class ControlPainter {
             imageEvents = mediaEvents.copy();
             imageEvents.put("object-position", position);
         }
-        String hitAlpha = box.node().attrs.get("data-hit-alpha");
+        String hitAlpha = box.values().attrs().get("data-hit-alpha");
         if (hitAlpha != null && (ElementTraits.isImage(box.node().tag))) {
             // 透明な部分のクリックを下へ通す（既定の閾値は半透明 = 128。値で 0〜255 を指定できる）
             if (imageEvents == mediaEvents) imageEvents = mediaEvents.copy();
@@ -164,8 +164,8 @@ final class ControlPainter {
         float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
         // canvas の画素の大きさは width / height 属性（既定 300×150）。内容ボックスへは object-fit で収める
         ItemProps canvasEvents = partsEvents.copy();
-        canvasEvents.put("canvas-width", box.node().attrs.getOrDefault("width", ""));
-        canvasEvents.put("canvas-height", box.node().attrs.getOrDefault("height", ""));
+        canvasEvents.put("canvas-width", box.values().attrs().getOrDefault("width", ""));
+        canvasEvents.put("canvas-height", box.values().attrs().getOrDefault("height", ""));
         Style st = box.style().typed();
         String position = st.visual.objectPosition;
         if (position != null && !position.isBlank()) canvasEvents.put("object-position", position);
@@ -178,15 +178,15 @@ final class ControlPainter {
                                      ItemProps partsEvents, ItemProps passiveBorderEvents,
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim) {
-        String val = box.node().attrs.getOrDefault("value", box.node().getTextContent());
+        String val = box.values().attrs().getOrDefault("value", box.values().text());
         float innerX = box.x() + border.bwLeft();
         float innerY = box.y() + border.bwTop();
         float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
         float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
 
         ItemProps taEvents = partsEvents.copy();
-        if (box.node().attrs.containsKey("data-syntax")) taEvents.put("data-syntax", box.node().attrs.get("data-syntax"));
-        if (box.node().attrs.containsKey("data-line-numbers")) taEvents.put("data-line-numbers", box.node().attrs.get("data-line-numbers"));
+        if (box.values().attrs().containsKey("data-syntax")) taEvents.put("data-syntax", box.values().attrs().get("data-syntax"));
+        if (box.values().attrs().containsKey("data-line-numbers")) taEvents.put("data-line-numbers", box.values().attrs().get("data-line-numbers"));
 
         long taKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_TEXTAREA) : 0L;
         if (border.useRoundedBorder()) {
@@ -202,7 +202,7 @@ final class ControlPainter {
                                    ItemProps partsEvents, ItemProps passiveBorderEvents,
                                    BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
-        String currentVal = box.node().attrs.getOrDefault("value", "");
+        String currentVal = box.values().attrs().getOrDefault("value", "");
         String displayLabel = DomUtils.resolveSelectDisplayLabel(box.node(), currentVal) + " \u25be";
         float innerX = box.x() + border.bwLeft(), innerY = box.y() + border.bwTop();
         float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
@@ -224,8 +224,8 @@ final class ControlPainter {
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
-        String inputType = box.node().attrs.getOrDefault("type", "text");
-        String val = resolveLiveInputValue(id, box.node().attrs.getOrDefault("value", ""));
+        String inputType = box.values().attrs().getOrDefault("type", "text");
+        String val = resolveLiveInputValue(id, box.values().attrs().getOrDefault("value", ""));
 
         float innerX = box.x() + border.bwLeft();
         float innerY = box.y() + border.bwTop();
@@ -244,8 +244,8 @@ final class ControlPainter {
             }
             default -> {
                 drawBorderedControl(elements, id, "_input", ElementType.INPUT, box, innerX, innerY, innerW, innerH, val, color, bgColor, fallbackRadius, partsEvents, innerEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-                if (box.node().attrs.containsKey("placeholder")) {
-                    String placeholderText = val.isEmpty() ? box.node().attrs.get("placeholder") : "";
+                if (box.values().attrs().containsKey("placeholder")) {
+                    String placeholderText = val.isEmpty() ? box.values().attrs().get("placeholder") : "";
                     // 入力欄の内容領域をそのまま渡す。縦方向の中央寄せは書体の
                     // ascent / descent を知っている描画側が 1 箇所で行う
                     float phX = box.x() + border.bwLeft() + 4;
@@ -280,8 +280,8 @@ final class ControlPainter {
     void drawNativeToggle(List<DisplayItem> elements, PaintBox box, String id, boolean radio, int color,
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, int transDur, AnimationSpec colorBgAnim) {
-        boolean mixed = !radio && box.node().attrs.containsKey("indeterminate");
-        boolean checked = box.node().attrs.containsKey("checked");
+        boolean mixed = !radio && box.values().attrs().containsKey("indeterminate");
+        boolean checked = box.values().attrs().containsKey("checked");
         int stateColor = border.bcTop();
         Integer accent = accentColor(box, color);
         // accent-color が白と見分けにくければ暗い配色（Chrome の実測。濃淡の向きもこれで決まる）
@@ -405,8 +405,8 @@ final class ControlPainter {
 
     /** レンジの値の文字列（{@code 値:最小:最大}）。 */
     static String rangeData(PaintBox box, String val) {
-        String min = box.node().attrs.getOrDefault("min", "0");
-        String max = box.node().attrs.getOrDefault("max", "100");
+        String min = box.values().attrs().getOrDefault("min", "0");
+        String max = box.values().attrs().getOrDefault("max", "100");
         if (val.isEmpty()) val = "50";
         int colonIdx = val.indexOf(':');
         if (colonIdx > 0) val = val.substring(0, colonIdx);
@@ -430,13 +430,13 @@ final class ControlPainter {
 
     /** {@code appearance: none} のレンジ。 */
     static boolean isPlainRange(PaintBox box) {
-        return "range".equalsIgnoreCase(box.node().attrs.getOrDefault("type", "").trim())
+        return "range".equalsIgnoreCase(box.values().attrs().getOrDefault("type", "").trim())
                 && !StyleResolver.isNativeRange(box.node(), box.style().typed());
     }
 
     /** {@code appearance: none} のチェックボックス・ラジオボタン。 */
     static boolean isPlainToggle(PaintBox box) {
-        String type = box.node().attrs.getOrDefault("type", "").trim().toLowerCase(Locale.ROOT);
+        String type = box.values().attrs().getOrDefault("type", "").trim().toLowerCase(Locale.ROOT);
         return (type.equals("checkbox") || type.equals("radio")) && !StyleResolver.isNativeToggle(box.node(), box.style().typed());
     }
 

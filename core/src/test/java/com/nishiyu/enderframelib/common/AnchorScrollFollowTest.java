@@ -145,7 +145,7 @@ class AnchorScrollFollowTest {
         FragmentPipeline p = new FragmentPipeline(new StyleSource(doc.sheet, ui.interactionState(), ui.env(), W, H), session);
         p.compiler().remembered(ui.v3.remembered());
         LayoutFragment f = p.frame(doc.root, null, W, H);
-        PaintNode tree = new PaintTreeBuilder(session, doc.sheet).build(f, p.boxRoot());
+        PaintNode tree = new PaintTreeBuilder(session).build(f, p.boxRoot());
         List<DisplayItem> fresh = new TreePainter(W, H, doc.sheet.keyframes, ui.scrollState()).paint(tree);
         SoftwareRenderBackend b = new SoftwareRenderBackend(W, H, 1f);
         b.render(fresh, 0);

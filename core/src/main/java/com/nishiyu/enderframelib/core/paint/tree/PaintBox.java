@@ -39,6 +39,12 @@ public abstract class PaintBox {
     /** 算出スタイル。 */
     public abstract ComputedStyle style();
 
+    /**
+     * 描画が読む DOM の値（属性・textarea の中身・状態の規則が掛かるか）の写し（M3b-1・決定 F。箱の木が作る。DOM に無い箱では空）。
+     * 描画はこれだけを読み、生きた DOM の属性・文字を読まない（{@code ArchitectureHealthTest#paintDoesNotReadDomValues}）。
+     */
+    public abstract com.nishiyu.enderframelib.core.box.DomValues values();
+
     /** 物理の寸法・余白・枠線・角丸・overflow を箱の局所の軸で読むスタイル（縦書きの中の箱。それ以外は {@link #style}）。 */
     public abstract ComputedStyle axisStyle();
 

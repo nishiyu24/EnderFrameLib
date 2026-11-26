@@ -110,6 +110,11 @@ public final class PaintView extends PaintBox {
     public Display display() { return n.display; }
 
     @Override public ComputedStyle style() { return n.style; }
+
+    @Override
+    public com.nishiyu.enderframelib.core.box.DomValues values() {
+        return n.box != null ? n.box.values : com.nishiyu.enderframelib.core.box.DomValues.NONE;
+    }
     @Override public ComputedStyle axisStyle() { return n.style; }
     @Override public PaintView paintParent() { return parent; }
 

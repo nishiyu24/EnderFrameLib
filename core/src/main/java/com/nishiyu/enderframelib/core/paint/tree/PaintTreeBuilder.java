@@ -49,20 +49,13 @@ public final class PaintTreeBuilder {
     private final Map<HtmlNode, Integer> anonymousCounts = new IdentityHashMap<>();
     private int built, reused;
 
-    public PaintTreeBuilder(LayoutSession session) {
-        this(session, null);
-    }
-
     /**
-     * {@code sheet} は状態の擬似クラス（{@code :hover} など）の規則を引くシート（null なら引かない）。規則が掛かる要素は、背景が透明でも
-     * 当たり判定の項目を出す（旧経路の {@code hasInteractiveRules}）。
+     * 状態の擬似クラスの規則が掛かるか（背景が透明でも当たり判定の項目を出す）は、箱の木が写した値（{@code BoxNode.values}。M3b-1）を
+     * 読むので、シートは受け取らない。
      */
-    public PaintTreeBuilder(LayoutSession session, com.nishiyu.enderframelib.core.css.StyleSheet sheet) {
+    public PaintTreeBuilder(LayoutSession session) {
         this.session = session;
-        this.sheet = sheet;
     }
-
-    private final com.nishiyu.enderframelib.core.css.StyleSheet sheet;
 
     /** 前回の結果（まだ無ければ null）。 */
     public PaintNode root() {
@@ -162,7 +155,7 @@ public final class PaintTreeBuilder {
         d.anonymous = b.anonymousTableBox();
         d.verticalWrapper = b.orthogonalWrapper();
         d.renderedLegend = legend;
-        d.interactive = interactive(d.node, b);
+        d.interactive = interactive(d.node, lb);
         d.placed = true;
         d.x = x;
         d.y = y;
@@ -383,7 +376,7 @@ public final class PaintTreeBuilder {
         d.style = new ComputedStyle(lc.style);
         d.display = Display.of(d.node, d.style).blockified(d.style);
         d.text = c.kind == BoxKind.TEXT;
-        d.interactive = !d.text && interactive(d.node, c);
+        d.interactive = !d.text && interactive(d.node, lc);
         d.lineHeight = InlineFlow.lineHeight(c.style, session.face(c.style));
         if (!d.text) {
             BoxGeometry g = new BoxGeometry(c.style, cbw, session);
@@ -558,10 +551,12 @@ public final class PaintTreeBuilder {
     private record Child(Object n, float x, float y) { }
 
     /** 構築の間だけの可変の節（{@link #freeze} で不変の {@link PaintNode} にする）。 */
-    /** 要素に状態の擬似クラスの規則が掛かるか（疑似要素の箱は持ち主の値）。 */
-    private boolean interactive(HtmlNode node, BoxNode b) {
-        return sheet != null && node != null && node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.ELEMENT
-                && !node.isPseudoNode && com.nishiyu.enderframelib.core.css.StyleResolver.hasInteractiveRules(b.node, sheet);
+    /**
+     * 要素に状態の擬似クラスの規則が掛かるか（箱の木が写した値。M3b-1・決定 F。疑似要素・匿名の箱・DOM に無い節の箱は false）。
+     * {@code latest} は最新の木の箱。
+     */
+    private static boolean interactive(HtmlNode node, BoxNode latest) {
+        return node != null && !node.isPseudoNode && latest.values.interactive();
     }
 
     static final class Draft {

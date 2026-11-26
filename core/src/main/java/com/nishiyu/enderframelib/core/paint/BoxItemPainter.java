@@ -242,9 +242,9 @@ final class BoxItemPainter {
 
         float opacity = Style.num(st.visual.opacity, 1.0f);
         float[] tr = anim.transformOf(box);
-        float tx = tr[0] + parseFloatAttr(box.node().attrs, "data-pan-x", 0f);
-        float ty = tr[1] + parseFloatAttr(box.node().attrs, "data-pan-y", 0f);
-        float zoom = parseFloatAttr(box.node().attrs, "data-zoom", 1.0f);
+        float tx = tr[0] + parseFloatAttr(box.values().attrs(), "data-pan-x", 0f);
+        float ty = tr[1] + parseFloatAttr(box.values().attrs(), "data-pan-y", 0f);
+        float zoom = parseFloatAttr(box.values().attrs(), "data-zoom", 1.0f);
         float sx = tr[2] * zoom;
         float sy = tr[3] * zoom;
         float rot = tr[4];
@@ -269,7 +269,7 @@ final class BoxItemPainter {
         // 算出済みの font-size をそのまま運ぶ。描画側は書体の em からの倍率に直す。
         // 以前は 16 倍した「倍率」を渡し、描画側が 12 で割るという二重の換算だった。
         float fontHVal = Math.max(1.0f, st.inherited.fontSize);
-        int itemCount = (int) parseFloatAttr(box.node().attrs, "data-count", 1f);
+        int itemCount = (int) parseFloatAttr(box.values().attrs(), "data-count", 1f);
 
         boolean pointerEventsNone = st.inheritedPaint.pointerEvents == CssKeywords.PointerEvents.NONE;
         if (pointerEventsNone) anchorEvents.pointerEventsNone();
@@ -362,9 +362,9 @@ final class BoxItemPainter {
             switch (box.node().tag) {
                 case "img", "video", "audio" -> controls.drawMediaElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
                 case "progress", "meter" -> {
-                    String val = box.node().attrs.getOrDefault("value", "0");
-                    String min = box.node().attrs.getOrDefault("min", "0");
-                    String max = box.node().attrs.getOrDefault("max", "100");
+                    String val = box.values().attrs().getOrDefault("value", "0");
+                    String min = box.values().attrs().getOrDefault("min", "0");
+                    String max = box.values().attrs().getOrDefault("max", "100");
                     // 何が壊れていたか: ここが RANGE を出していたため、progress / meter が
                     // つまみ付きのスライダーとして描かれていた。進捗バーの描画実装
                     // (ControlElementRenderer.renderProgressElement) は呼ばれない死にコードだった。
@@ -379,7 +379,7 @@ final class BoxItemPainter {
                     if (isPlainRange(box)) {
                         // appearance: none のレンジは作者の CSS で描いた箱に、つまみ（::-webkit-slider-thumb は部品のまま）だけを重ねる
                         decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevItems);
-                        controls.drawNativeRange(elements, box, id, rangeData(box, resolveLiveInputValue(id, box.node().attrs.getOrDefault("value", ""))),
+                        controls.drawNativeRange(elements, box, id, rangeData(box, resolveLiveInputValue(id, box.values().attrs().getOrDefault("value", ""))),
                                 color, false, partsEvents, border, baseMeta, transDur, colorBgAnim);
                     } else if (isPlainToggle(box)) {
                         // appearance: none のチェックボックス・ラジオボタンは普通の箱（作者の枠線・背景だけで描き、印は無い）

@@ -147,7 +147,7 @@ final class MarkerBoxes {
             return prev;
         }
         BoxNode ib = new BoxNode(img, st, BoxKind.INLINE_BLOCK, null, BoxChunk.EMPTY, BoxNode.Pseudo.NONE, null, null, r, null, NO_ORDINAL,
-                prevImg != null ? prevImg.layout : null);
+                prevImg != null ? prevImg.layout : null, DomValues.of(img, null, true, prevImg != null ? prevImg.values : null));
         BoxNode gap = new BoxNode(owner, ts, BoxKind.TEXT, TextContent.of(" ", ts), BoxChunk.EMPTY, BoxNode.Pseudo.MARKER, null, null, null,
                 null, NO_ORDINAL, prevGap != null ? prevGap.layout : null);
         return new BoxNode(owner, st, kind, null, new BoxChunk(new BoxNode[]{ib, gap}), BoxNode.Pseudo.MARKER, null, null, null, null,

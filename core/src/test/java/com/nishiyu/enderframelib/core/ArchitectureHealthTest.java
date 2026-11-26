@@ -40,6 +40,8 @@ import org.junit.jupiter.api.Test;
  *   <li>新経路（{@link #NEW_PATH_SOURCES}）は {@code Shortcut}・{@code EngineFlags}・文脈の切り替え・{@code static volatile}・
  *       {@code ThreadLocal} を読まない（計画書 §5-4。状態は 1 ビューに閉じ、旧経路の切り分けの切り替えは旧経路と一緒に消える）。</li>
  *   <li>旧レイアウト経路の型（{@link #LEGACY_PATH_TYPES}）が全モジュールの本体・テストに戻らない（M2c-3 の完了ゲート）。</li>
+ *   <li>描画（{@code core/paint}）は DOM の節の属性・文字・状態の規則の照合を読まない（M3b-1・決定 F。描画が読む値は箱の木が
+ *       {@code BoxNode.values} に写す）。</li>
  * </ol>
  */
 class ArchitectureHealthTest {
@@ -439,6 +441,22 @@ class ArchitectureHealthTest {
         assertEquals(List.of(), bad, "新経路がプロセス共有の切り替え・可変状態を読んでいる（計画書 §5-4。状態は 1 ビューに閉じる）");
     }
 
+    // ---- 7b. 描画は DOM を読まない（M3b-1・決定 F。計画書 §3.4） ----
+
+    /**
+     * DOM の節の属性・文字・状態の規則の照合を読む式（{@code HtmlNode} の欄・メソッド名で見る。表示項目の {@code text()} などと
+     * 区別できない {@code .text} の欄は、描画用の木が節の文字を持つので数えない）。
+     */
+    static final Pattern DOM_VALUE_READ = Pattern.compile(
+            "\\.attrs\\b(?!\\s*\\()|\\b(getAttribute|hasAttribute|getAttributeNames|getTextContent|hasEventAttributes|attrsForWrite|getDataset"
+                    + "|hasInteractiveRules|interactiveMask)\\s*\\(");
+
+    @Test
+    void paintDoesNotReadDomValues() throws IOException {
+        List<String> bad = checkCodeLines(repoRoot().resolve("core/src/main/java/com/nishiyu/enderframelib/core/paint"), DOM_VALUE_READ);
+        assertEquals(List.of(), bad, "描画が DOM の値を読んでいる（M3b-1・決定 F。描画が読む値は箱の木が BoxNode.values に写す）");
+    }
+
     // ---- 検査器自身の検証 ----
 
     @Test
@@ -478,6 +496,13 @@ class ArchitectureHealthTest {
                         + "  boolean b() { return DisplayListBuilder.parentRelativeSource.getAsBoolean(); }\n"
                         + "  boolean c() { return EngineContext.current().flags().parentRelativeDisplayItems(); }\n  int d() { return 1; }\n}"),
                 dir -> assertEquals(3, checkCodeLines(dir, PROCESS_SWITCH_READ).size(), "切り替えを読む行は 3 行"));
+
+        RatchetSupport.withTempSources(Map.of("Paint.java",
+                "class Paint {\n  String a(PaintBox b) { return b.node().attrs.get(\"title\"); }\n  /** node.attrs は注釈 */\n"
+                        + "  String b(HtmlNode n) { return n.getTextContent(); }\n  Map<String, String> c(ItemProps p) { return p.attrs(); }\n"
+                        + "  String d(PaintBox b) { return b.values().attr(\"title\"); }\n"
+                        + "  boolean e(HtmlNode n, StyleSheet s) { return StyleResolver.hasInteractiveRules(n, s); }\n}"),
+                dir -> assertEquals(3, checkCodeLines(dir, DOM_VALUE_READ).size(), "DOM の値を読む行は 3 行"));
     }
     // ---- 8. 旧レイアウト経路の型が戻らない（M2c-3 の完了ゲート。計画書 §3.2） ----
 

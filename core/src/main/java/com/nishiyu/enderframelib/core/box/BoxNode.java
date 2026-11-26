@@ -91,6 +91,11 @@ public final class BoxNode {
      */
     public final RememberedScroll anchorScroll;
     /**
+     * 描画が読む DOM の値の写し（{@link DomValues}。M3b-1・決定 F。写すものが無ければ {@link DomValues#NONE}。null にならない）。
+     * 描画だけが読む（レイアウトの入力の照合に入れない）。描画は生きた DOM を読まず、属性だけの変化も最新の箱の変化として届く。
+     */
+    public final DomValues values;
+    /**
      * レイアウトの入力の箱（M2c。クラスの説明の「2 つの木」）。自分（{@code this}）か、描画だけが違う前回の箱か、子孫に描画だけが
      * 違う箱がある最新の箱のために作った、子を全て {@link #layout} に替えた箱。{@code layout.layout == layout} が常に成り立つ。
      */
@@ -106,27 +111,35 @@ public final class BoxNode {
      */
     BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
             ReplacedInput replaced, BoxNode marker, int ordinal, BoxNode prevLayout) {
+        this(node, style, kind, text, children, pseudo, before, after, replaced, marker, ordinal, prevLayout, DomValues.NONE);
+    }
+
+    /** {@code values} は描画が読む DOM の値の写し（{@link #values}。DOM に無い使い捨ての節の箱で、その節の属性を描画へ渡すとき）。 */
+    BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
+            ReplacedInput replaced, BoxNode marker, int ordinal, BoxNode prevLayout, DomValues values) {
         this(node, style, kind, text, children, pseudo, before, after, replaced, marker, ordinal, null, style, 0, 0, null, null, null, null,
-                null, prevLayout);
+                null, values, prevLayout);
     }
 
     /** {@code prevFlow} は同じ節の前回の {@link #flow}（匿名の表の箱を前回の参照のまま使うための候補。無ければ null）。 */
     BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
             ReplacedInput replaced, BoxNode marker, int ordinal, BoxChildren prevFlow) {
         this(node, style, kind, text, children, pseudo, before, after, replaced, marker, ordinal, prevFlow, style, 0, 0, null, null, null, null,
-                null, null);
+                null, DomValues.NONE, null);
     }
 
     /**
      * 縦書きの文脈の箱（M2b-5）。{@code computed} は軸を入れ替える前の算出スタイル、{@code context} は文脈の符号、
      * {@code orthogonal} は直交フローの根の符号で、根なら {@code wrapperStyle} の箱で流れの中身を包む（{@link OrthogonalBoxes#wrap}）。
-     * {@code anchorScroll} は覚えたスクロール量（G8。無ければ null）、{@code prevLayout} は同じ箱の前回のレイアウトの入力の箱（M2c。
-     * 無ければ null）。
+     * {@code anchorScroll} は覚えたスクロール量（G8。無ければ null）、{@code values} は描画が読む DOM の値の写し（M3b-1）、
+     * {@code prevLayout} は同じ箱の前回のレイアウトの入力の箱（M2c。無ければ null）。
      */
     BoxNode(HtmlNode node, Style style, BoxKind kind, String text, BoxChildren children, Pseudo pseudo, BoxNode before, BoxNode after,
             ReplacedInput replaced, BoxNode marker, int ordinal, BoxChildren prevFlow, Style computed, int context, int orthogonal,
-            Style wrapperStyle, PopoverLink popover, Style firstLine, Style backdrop, RememberedScroll anchorScroll, BoxNode prevLayout) {
+            Style wrapperStyle, PopoverLink popover, Style firstLine, Style backdrop, RememberedScroll anchorScroll, DomValues values,
+            BoxNode prevLayout) {
         this.popover = popover;
+        this.values = values != null ? values : DomValues.NONE;
         this.anchorScroll = anchorScroll;
         this.firstLine = firstLine;
         this.backdrop = backdrop;
@@ -161,7 +174,7 @@ public final class BoxNode {
         if (prevL != null && prevL.sameLayoutInput(this, kidsL, bL, aL, mL, wrapperStyle)) return prevL;
         if (kidsL == children && bL == before && aL == after && mL == marker) return this;
         return new BoxNode(node, style, kind, text, kidsL, pseudo, bL, aL, replaced, mL, ordinal, prevL != null ? prevL.flow : null,
-                computed, context, orthogonal, wrapperStyle, popover, firstLine, backdrop, anchorScroll, null);
+                computed, context, orthogonal, wrapperStyle, popover, firstLine, backdrop, anchorScroll, values, null);
     }
 
     /** この（前回のレイアウトの入力の）箱が、新しい箱 {@code b}（子のレイアウトの入力は {@code kidsL} ほか）とレイアウトに効く入力で同じか。 */
@@ -232,7 +245,8 @@ public final class BoxNode {
     BoxNode withMarker(BoxNode m) {
         BoxNode w = orthogonal != 0 ? OrthogonalBoxes.wrapperOf(this) : null;
         return new BoxNode(node, style, kind, text, children, pseudo, pseudoChild(Pseudo.BEFORE), pseudoChild(Pseudo.AFTER), replaced, m,
-                ordinal, flow, computed, context, orthogonal, w != null ? w.style : null, popover, firstLine, backdrop, anchorScroll, layout);
+                ordinal, flow, computed, context, orthogonal, w != null ? w.style : null, popover, firstLine, backdrop, anchorScroll, values,
+                layout);
     }
 
     /** 中身が無い・空白だけで畳まれる文字の節か（ブロックの流れでは箱を作らない）。 */

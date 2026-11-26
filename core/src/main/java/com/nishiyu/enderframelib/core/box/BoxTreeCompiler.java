@@ -366,6 +366,9 @@ public final class BoxTreeCompiler {
         RememberedScroll anchorScroll = kind == BoxKind.NONE || n.nodeType != NodeType.ELEMENT ? null : remembered.get(n);
         if (anchorScroll != null && anchorScroll.zero()) anchorScroll = null;
         if (anchorScroll != null && prev != null && anchorScroll.equals(prev.anchorScroll)) anchorScroll = prev.anchorScroll;
+        // 描画が読む DOM の値（M3b-1・決定 F。値が前回と同じなら前回の参照。属性だけの変化も最新の箱の変化として描画へ届く）
+        DomValues values = kind == BoxKind.NONE ? DomValues.NONE
+                : DomValues.of(n, styles.sheet(), resolve, prev != null ? prev.values : null);
         // 縦書きの文脈（M2b-5）: レイアウトが読むスタイルは軸を入れ替えたもの、直交フローの根は流れの中身を包む箱のスタイルを持つ。
         // 算出スタイルと文脈が前回と同じなら前回の参照（レイアウトのキャッシュが == で照合する）
         int axis = n.nodeType == NodeType.ELEMENT && kind != BoxKind.NONE ? OrthogonalBoxes.axisOf(flow, style) : WritingModes.HORIZONTAL;
@@ -385,10 +388,10 @@ public final class BoxTreeCompiler {
                 && replaced == prev.replaced && popover == prev.popover && TableBoxes.spanOf(n, kind, BoxNode.Pseudo.NONE) == prev.span
                 && before == prev.pseudoChild(BoxNode.Pseudo.BEFORE) && after == prev.pseudoChild(BoxNode.Pseudo.AFTER)
                 && marker == prev.marker && firstLine == prev.firstLine && backdrop == prev.backdrop
-                && anchorScroll == prev.anchorScroll) return prev;
+                && anchorScroll == prev.anchorScroll && values == prev.values) return prev;
         stats.rebuiltBoxes++;
         return new BoxNode(n, layoutStyle, kind, text, children, BoxNode.Pseudo.NONE, before, after, replaced, marker, MarkerBoxes.NO_ORDINAL,
-                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover, firstLine, backdrop, anchorScroll,
+                prev != null ? prev.flow : null, style, flow, orth, wrapperStyle, popover, firstLine, backdrop, anchorScroll, values,
                 prev != null ? prev.layout : null);
     }
 

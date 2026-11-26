@@ -333,7 +333,7 @@ final class TreeStacking {
     ClipRect computeChildClipRect(PaintView box, ClipRect parentClip) {
         String tag = box.node().tag;
         if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag) || "#text".equals(tag)) return parentClip;
-        boolean panZoom = !box.node().attrs.isEmpty() && "true".equalsIgnoreCase(box.node().attrs.get("data-pan-zoom"));
+        boolean panZoom = !box.values().attrs().isEmpty() && "true".equalsIgnoreCase(box.values().attrs().get("data-pan-zoom"));
         PaintFacts facts = PaintFacts.of(box.axisStyle());
         boolean clipX = panZoom || !"visible".equals(facts.overflowX());
         boolean clipY = panZoom || !"visible".equals(facts.overflowY());

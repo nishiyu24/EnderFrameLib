@@ -472,8 +472,8 @@ public final class BoxDecorationPainter {
             }
         }
 
-        if (box.node().attrs.containsKey("data-ghost-item")) {
-            String ghostItem = box.node().attrs.get("data-ghost-item").trim();
+        if (box.values().attrs().containsKey("data-ghost-item")) {
+            String ghostItem = box.values().attrs().get("data-ghost-item").trim();
             if (!ghostItem.isEmpty() && !"minecraft:air".equals(ghostItem)) {
                 float iconX = bounds.x(box) + (bounds.w(box) - 16) / 2;
                 float iconY = bounds.y(box) + (bounds.h(box) - 16) / 2;

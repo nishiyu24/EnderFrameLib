@@ -24,7 +24,7 @@ import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
 final class ItemProps {
 
         private Map<String, String> baseAttrs;
-        private Map<String, String> attrs;
+        private Map<String, String> ownAttrs;
         private String parentId;
         private long parentKey;
         private String title;
@@ -57,7 +57,7 @@ final class ItemProps {
 
         private ItemProps(Map<String, String> baseAttrs, Map<String, String> attrs, ItemProps src) {
             this.baseAttrs = baseAttrs;
-            this.attrs = attrs;
+            this.ownAttrs = attrs;
             this.parentId = src.parentId;
             this.parentKey = src.parentKey;
             this.title = src.title;
@@ -81,7 +81,7 @@ final class ItemProps {
 
         ItemProps reset() {
             this.baseAttrs = null;
-            this.attrs = null;
+            this.ownAttrs = null;
             this.parentId = null;
             this.parentKey = 0L;
             this.title = null;
@@ -112,7 +112,7 @@ final class ItemProps {
 
         ItemProps copy() {
             materializePending();
-            return new ItemProps(baseAttrs, attrs == null || attrs.isEmpty() ? null : new HashMap<>(attrs), this);
+            return new ItemProps(baseAttrs, ownAttrs == null || ownAttrs.isEmpty() ? null : new HashMap<>(ownAttrs), this);
         }
 
         /** {@code src} と同じ属性・ヒントを借り受ける作業用複製（呼び出し元で {@code put} しないこと）。 */
@@ -121,7 +121,7 @@ final class ItemProps {
             this.candidateAttrs = null;
             this.pendingCount = 0;
             this.baseAttrs = src.baseAttrs;
-            this.attrs = (src.attrs == null || src.attrs.isEmpty()) ? null : src.attrs;
+            this.ownAttrs = (src.ownAttrs == null || src.ownAttrs.isEmpty()) ? null : src.ownAttrs;
             this.parentId = src.parentId;
             this.parentKey = src.parentKey;
             this.title = src.title;
@@ -159,21 +159,21 @@ final class ItemProps {
             if (pendingCount == 0) return;
             int n = pendingCount;
             pendingCount = 0;
-            if (attrs == null) attrs = (baseAttrs != null && !baseAttrs.isEmpty()) ? new HashMap<>(baseAttrs) : new HashMap<>(8);
-            for (int i = 0; i < n; i++) attrs.put(pendingKeys[i], candidateAttrs.get(pendingKeys[i]));
+            if (ownAttrs == null) ownAttrs = (baseAttrs != null && !baseAttrs.isEmpty()) ? new HashMap<>(baseAttrs) : new HashMap<>(8);
+            for (int i = 0; i < n; i++) ownAttrs.put(pendingKeys[i], candidateAttrs.get(pendingKeys[i]));
         }
 
         private Map<String, String> ensureAttrs() {
             materializePending();
-            if (attrs == null) {
-                attrs = (baseAttrs != null && !baseAttrs.isEmpty()) ? new HashMap<>(baseAttrs) : new HashMap<>(4);
+            if (ownAttrs == null) {
+                ownAttrs = (baseAttrs != null && !baseAttrs.isEmpty()) ? new HashMap<>(baseAttrs) : new HashMap<>(4);
             }
-            return attrs;
+            return ownAttrs;
         }
 
         void putBaseAttrs(Map<String, String> immutableMap) {
             if (immutableMap == null || immutableMap.isEmpty()) return;
-            if (attrs == null && baseAttrs == null && pendingCount == 0) {
+            if (ownAttrs == null && baseAttrs == null && pendingCount == 0) {
                 baseAttrs = immutableMap;
             } else {
                 ensureAttrs().putAll(immutableMap);
@@ -181,7 +181,7 @@ final class ItemProps {
         }
 
         void put(String key, String value) {
-            if (attrs == null && candidateAttrs != null && pendingCount < pendingKeys.length
+            if (ownAttrs == null && candidateAttrs != null && pendingCount < pendingKeys.length
                     && value != null && value.equals(candidateAttrs.get(key)) && !pendingHas(key)) {
                 pendingKeys[pendingCount++] = key;
                 return;
@@ -195,19 +195,19 @@ final class ItemProps {
         }
 
         String get(String key) {
-            if (pendingCount > 0 && attrs == null && pendingHas(key)) return candidateAttrs.get(key);
-            if (attrs != null) return attrs.get(key);
+            if (pendingCount > 0 && ownAttrs == null && pendingHas(key)) return candidateAttrs.get(key);
+            if (ownAttrs != null) return ownAttrs.get(key);
             return baseAttrs != null ? baseAttrs.get(key) : null;
         }
 
         boolean containsKey(String key) {
-            if (pendingCount > 0 && attrs == null && pendingHas(key)) return true;
-            return (attrs != null && attrs.containsKey(key))
-                    || (attrs == null && baseAttrs != null && baseAttrs.containsKey(key));
+            if (pendingCount > 0 && ownAttrs == null && pendingHas(key)) return true;
+            return (ownAttrs != null && ownAttrs.containsKey(key))
+                    || (ownAttrs == null && baseAttrs != null && baseAttrs.containsKey(key));
         }
 
         Map<String, String> attrs() {
-            if (pendingCount > 0 && attrs == null) {
+            if (pendingCount > 0 && ownAttrs == null) {
                 // 入れたものが全部前の表の項目で、基底の表（書体など）の残りも前の表と同じで、数も合えば、前の表そのもの（作らない）
                 int baseOnly = 0;
                 boolean same = true;
@@ -221,9 +221,9 @@ final class ItemProps {
                 if (same && baseOnly + pendingCount == candidateAttrs.size()) return candidateAttrs;
                 materializePending();
             }
-            if (attrs != null && !attrs.isEmpty()) {
-                if (candidateAttrs != null && attrs.equals(candidateAttrs)) return candidateAttrs;
-                return attrs;
+            if (ownAttrs != null && !ownAttrs.isEmpty()) {
+                if (candidateAttrs != null && ownAttrs.equals(candidateAttrs)) return candidateAttrs;
+                return ownAttrs;
             }
             if (baseAttrs != null && !baseAttrs.isEmpty()) return baseAttrs;
             return Map.of();
@@ -433,7 +433,7 @@ final class ItemProps {
         String fontFamily = box.style().typed().inherited.fontFamily;
         if (fontFamily != null) partsEvents.fontFamily(fontFamily);
         putFontEvents(box, partsEvents);
-        Map<String, String> nodeAttrs = box.node().attrs;
+        Map<String, String> nodeAttrs = box.values().attrs();
         if (!nodeAttrs.isEmpty()) {
             if (nodeAttrs.containsKey("title")) partsEvents.title(nodeAttrs.get("title"));
             else if (nodeAttrs.containsKey("data-tooltip")) partsEvents.title(nodeAttrs.get("data-tooltip"));
@@ -455,7 +455,7 @@ final class ItemProps {
             partsEvents.scroll(box.scrollWidth(), box.scrollHeight());
         }
 
-        if (box.node().hasEventAttributes()) {
+        if (box.values().hasEventHandlers()) {
             nodeAttrs.forEach((k, v) -> {
                 if (k != null && k.regionMatches(true, 0, "on", 0, 2)) {
                     partsEvents.put(k.toLowerCase(Locale.ROOT), v);
@@ -470,8 +470,8 @@ final class ItemProps {
         if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isClickActivated(tag) && !partsEvents.containsKey("onclick")) {
             partsEvents.put("onclick", id);
         }
-        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isLabel(tag) && box.node().attrs.containsKey("for") && !partsEvents.containsKey("onclick")) {
-            partsEvents.put("onclick", "label_for:" + box.node().attrs.get("for"));
+        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isLabel(tag) && box.values().attrs().containsKey("for") && !partsEvents.containsKey("onclick")) {
+            partsEvents.put("onclick", "label_for:" + box.values().attrs().get("for"));
         }
         return partsEvents;
     }
