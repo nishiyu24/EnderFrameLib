@@ -3,13 +3,10 @@ package com.nishiyu.enderframelib.client;
 import com.nishiyu.enderframelib.core.paint.AnimatedValues;
 
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.InteractionState;
+import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -43,11 +40,10 @@ public class AnimationTestSiteParityTest {
     private static final int VIEWPORT_H = 800;
 
     private static String html;
-    private static UiDocumentCompiler compiler;
     private static Document doc;
-    private static LayoutBox rootBox;
+    private static PaintBox rootBox;
     private static List<DisplayItem> displayItems;
-    private static List<LayoutBox> allBoxes;
+    private static List<PaintBox> allBoxes;
 
     @BeforeAll
     static void setUp() throws Exception {
@@ -55,35 +51,29 @@ public class AnimationTestSiteParityTest {
         html = Files.readString(ANIMATION_TEST_PATH, StandardCharsets.UTF_8);
         assertFalse(html.isBlank());
 
-        compiler = new UiDocumentCompiler();
-        doc = compiler.parseDocument(html, "", VIEWPORT_W, VIEWPORT_H);
+        // ビューと同じ経路（凍結した台帳 → 箱の木 → 断片木 → 描画）で 1 フレーム作り、その箱の木と表示リストを読む
+        StandaloneView view = new StandaloneView(html, VIEWPORT_W, VIEWPORT_H, EnderFrameStandalone.defaultFontResolver());
+        doc = view.ui().document();
         assertNotNull(doc);
-
-        ScrollState scrollState = new ScrollState();
-        InteractionState interactionState = new InteractionState();
-        FontResolver fonts = EnderFrameStandalone.defaultFontResolver();
-
-        rootBox = compiler.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), scrollState, fonts, interactionState);
+        rootBox = view.ui().boxRoot();
         assertNotNull(rootBox);
-
-        DisplayListBuilder builder = new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, scrollState);
-        displayItems = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(builder.render(rootBox));
+        displayItems = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(view.items());
         assertNotNull(displayItems);
 
         allBoxes = new ArrayList<>();
         collectBoxes(rootBox, allBoxes);
     }
 
-    private static void collectBoxes(LayoutBox b, List<LayoutBox> out) {
+    private static void collectBoxes(PaintBox b, List<PaintBox> out) {
         out.add(b);
-        for (LayoutBox c : b.children) {
+        for (PaintBox c : b.paintChildren()) {
             collectBoxes(c, out);
         }
     }
 
-    private static List<LayoutBox> findBoxesByClass(String clsName) {
-        List<LayoutBox> result = new ArrayList<>();
-        for (LayoutBox b : allBoxes) {
+    private static List<PaintBox> findBoxesByClass(String clsName) {
+        List<PaintBox> result = new ArrayList<>();
+        for (PaintBox b : allBoxes) {
             if (b.node != null && b.node.attrs != null) {
                 String c = b.node.attrs.get("class");
                 if (c != null && List.of(c.trim().split("\\s+")).contains(clsName)) {
@@ -94,9 +84,9 @@ public class AnimationTestSiteParityTest {
         return result;
     }
 
-    private static LayoutBox findBoxByClass(String clsName) {
-        List<LayoutBox> found = findBoxesByClass(clsName);
-        assertFalse(found.isEmpty(), "クラス ." + clsName + " を持つ LayoutBox が存在すること");
+    private static PaintBox findBoxByClass(String clsName) {
+        List<PaintBox> found = findBoxesByClass(clsName);
+        assertFalse(found.isEmpty(), "クラス ." + clsName + " を持つ PaintBox が存在すること");
         return found.get(0);
     }
 
@@ -168,7 +158,7 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("2-1. .trans-button がパディング（10px）を保持し、Chrome 同等（約 34px）の高さを持つこと")
         void testTransButtonHeight() {
-            LayoutBox btn = findBoxByClass("trans-button");
+            PaintBox btn = findBoxByClass("trans-button");
             // Webサイト上: Chrome 実測値 height = 34.0px (padding: 10px 0 + font-size + border)
             // CSS が脱落した未適用状態: height = 17.0px (padding: 0)
             assertEquals(34.0f, btn.h(), 4.0f,
@@ -179,8 +169,8 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("2-2. .mc-item-card が横並び Flexbox（高さ約 66px）として描画され、アイコン枠が 36x36px の正方形を維持すること")
         void testMcItemCardFlexLayout() {
-            LayoutBox card = findBoxByClass("mc-item-card");
-            LayoutBox itemBox = findBoxByClass("mc-item-box");
+            PaintBox card = findBoxByClass("mc-item-card");
+            PaintBox itemBox = findBoxByClass("mc-item-box");
 
             // Webサイト上: Chrome 実測値 card height = 66.5px, mc-item-box = 36.0 x 36.0px (横並び)
             // CSS 脱落状態: card height = 36.4px, mc-item-box width = 384.7px (親幅いっぱい、縦積み崩壊)
@@ -195,7 +185,7 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("2-3. .toast-pill が横並び Flexbox（高さ約 30px）としてレイアウトされること")
         void testToastPillFlexLayout() {
-            LayoutBox toast = findBoxByClass("toast-pill");
+            PaintBox toast = findBoxByClass("toast-pill");
             // Webサイト上: Chrome 実測値 height = 30.4px (padding: 6px 12px)
             // CSS 脱落状態: height = 18.2px (padding: 0)
             assertEquals(30.4f, toast.h(), 4.0f,
@@ -205,8 +195,8 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("2-4. ヘッダー (.lab-header) の高さが Web（56px）と一致し、テキストの予期せぬ 2 行折り返しが発生しないこと")
         void testHeaderHeightAndNoWrapping() {
-            LayoutBox header = findBoxByClass("lab-header");
-            LayoutBox brandName = findBoxByClass("brand-name");
+            PaintBox header = findBoxByClass("lab-header");
+            PaintBox brandName = findBoxByClass("brand-name");
 
             // Webサイト上: Chrome 実測値 header height = 56.0px, brand-name height = 20.9px (1行)
             // エンジン現状: brand-name が "EnderFrame " と "Lab" に 2 行折り返し、header height = 90.1px に肥大化
@@ -227,7 +217,7 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("3-1. .lab-grid の 3 カラム (.lab-col) が均等に分割されていること")
         void testGridColumnsEqual() {
-            List<LayoutBox> cols = findBoxesByClass("lab-col");
+            List<PaintBox> cols = findBoxesByClass("lab-col");
             assertEquals(3, cols.size(), ".lab-col が 3 列存在すること");
             float w0 = cols.get(0).w();
             for (int i = 1; i < cols.size(); i++) {
@@ -239,9 +229,9 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("3-2. .lab-col がグリッドの行（ビューポートから決まる高さ）に制約され、フッターが画面外に押し出されないこと")
         void testColHeightBoundedByViewport() {
-            LayoutBox col0 = findBoxesByClass("lab-col").get(0);
-            LayoutBox grid = findBoxByClass("lab-grid");
-            LayoutBox footer = findBoxByClass("lab-footer");
+            PaintBox col0 = findBoxesByClass("lab-col").get(0);
+            PaintBox grid = findBoxByClass("lab-grid");
+            PaintBox footer = findBoxByClass("lab-footer");
 
             // 800px のビューポートでは 800 - 12*2(padding) - 56(header) - 12*2(gap) - 36.4(footer) = 659.6px。
             // flex: 1; min-height: 0 のグリッドの auto 行は確定した高さに収まり、
@@ -262,19 +252,18 @@ public class AnimationTestSiteParityTest {
             // レビューの Chrome 実測値 (col 564.6px / footer y 656.6px) は 656.6 + 36.4 + 12 = 705px の
             // ビューポートでの値。同じ高さでレイアウトして一致を確かめる
             int chromeH = 705;
-            Document d = compiler.parseDocument(html, "", VIEWPORT_W, chromeH);
-            LayoutBox root = compiler.layoutDocument(d, VIEWPORT_W, chromeH, Map.of(), new ScrollState(),
-                    EnderFrameStandalone.defaultFontResolver(), new InteractionState());
-            List<LayoutBox> boxes = new ArrayList<>();
-            collectBoxes(root, boxes);
-            LayoutBox col0 = boxes.stream().filter(b -> hasClass(b, "lab-col")).findFirst().orElseThrow();
-            LayoutBox footer = boxes.stream().filter(b -> hasClass(b, "lab-footer")).findFirst().orElseThrow();
+            List<PaintBox> boxes = new ArrayList<>();
+            try (StandaloneView v = new StandaloneView(html, VIEWPORT_W, chromeH, EnderFrameStandalone.defaultFontResolver())) {
+                collectBoxes(v.ui().boxRoot(), boxes);
+            }
+            PaintBox col0 = boxes.stream().filter(b -> hasClass(b, "lab-col")).findFirst().orElseThrow();
+            PaintBox footer = boxes.stream().filter(b -> hasClass(b, "lab-footer")).findFirst().orElseThrow();
 
             assertEquals(564.6f, col0.h(), 1.0f, String.format(".lab-col の高さ (実際: %.1fpx)", col0.h()));
             assertEquals(656.6f, footer.y(), 1.0f, String.format(".lab-footer の y (実際: %.1fpx)", footer.y()));
         }
 
-        private static boolean hasClass(LayoutBox b, String clsName) {
+        private static boolean hasClass(PaintBox b, String clsName) {
             String c = b.node == null || b.node.attrs == null ? null : b.node.attrs.get("class");
             return c != null && List.of(c.trim().split(" +")).contains(clsName);
         }
@@ -363,8 +352,8 @@ public class AnimationTestSiteParityTest {
         void testEasingLaneRunnersMove() {
             String[] lanes = {"lane-linear", "lane-ease", "lane-ease-in", "lane-ease-out", "lane-ease-in-out", "lane-cubic"};
             for (String lane : lanes) {
-                LayoutBox runner = findBoxByClass(lane);
-                LayoutBox laneBox = findBoxByClass("track-lane");
+                PaintBox runner = findBoxByClass(lane);
+                PaintBox laneBox = findBoxByClass("track-lane");
                 assertTrue(runner.w() > 0 && runner.h() > 0, lane + " のランナーに大きさがあること");
 
                 DisplayItem item = displayItems.stream()
@@ -396,7 +385,7 @@ public class AnimationTestSiteParityTest {
         @DisplayName("4-6. ランナーのグラデーション層は、角丸の形をランナー自身の箱で持ち、祖先のクリップとは別に切ること（動いても切り口が元の位置に留まらない）")
         void testRunnerGradientClipFollowsRunner() {
             for (String lane : new String[]{"lane-linear", "lane-ease", "lane-ease-in", "lane-ease-out", "lane-ease-in-out", "lane-cubic"}) {
-                LayoutBox runner = findBoxByClass(lane);
+                PaintBox runner = findBoxByClass(lane);
                 DisplayItem runnerItem = displayItems.stream()
                         .filter(i -> i.animDef() != null && i.animDef().durationMs() == 2000
                                 && Math.abs(i.x() - runner.x()) < 1 && Math.abs(i.y() - runner.y()) < 1)
@@ -423,11 +412,10 @@ public class AnimationTestSiteParityTest {
             String src = "<style>@keyframes kf{0%{color:#ff0000}100%{color:#0000ff}}"
                     + ".a{animation:kf 1s linear infinite}.b{color:#00ff00}</style>"
                     + "<div class='a'>inherit<span class='b'>fixed</span></div>";
-            Document d = compiler.parseDocument(src, "", 400, 200);
-            ScrollState scroll = new ScrollState();
-            LayoutBox root = compiler.layoutDocument(d, 400, 200, Map.of(), scroll,
-                    EnderFrameStandalone.defaultFontResolver(), new InteractionState());
-            List<DisplayItem> items = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(new DisplayListBuilder(400, 200, d.sheet.keyframes, scroll).render(root));
+            List<DisplayItem> items;
+            try (StandaloneView v = new StandaloneView(src, 400, 200, EnderFrameStandalone.defaultFontResolver())) {
+                items = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(v.items());
+            }
             DisplayItem inherit = items.stream().filter(i -> i.type() == ElementType.TEXT && "inherit".equals(i.text().strip())).findFirst().orElseThrow();
             DisplayItem fixed = items.stream().filter(i -> i.type() == ElementType.TEXT && "fixed".equals(i.text().strip())).findFirst().orElseThrow();
             assertTrue((inherit.animDef().animatedChannels() & AnimationSpec.CH_COLOR) != 0, "継承する文字には届くこと");

@@ -490,20 +490,14 @@ class IncrementalVsFullTest {
         }
     }
 
-    private static List<Integer> scrollListPixels(long seed, boolean scrollNodes) {
-        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(scrollNodes);
-        try {
-            MutationScenario.run(MutationFuzz.scrollList(), MutationFuzz.LIST_CLASSES, MutationFuzz.LIST_STYLES, seed, 45, true, true);
-            return new ArrayList<>(MutationScenario.PIXELS);
-        } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(saved);
-        }
+    private static List<Integer> scrollListPixels(long seed, boolean fullEachFrame) {
+        MutationScenario.run(MutationFuzz.scrollList(), MutationFuzz.LIST_CLASSES, MutationFuzz.LIST_STYLES, seed, 45, true, true, fullEachFrame);
+        return new ArrayList<>(MutationScenario.PIXELS);
     }
 
     /**
-     * スクロールする箱の中身を 1 つの節にまとめて平行移動する既定と、毎回作り直す経路（{@code noscrollnode}）の画素が毎手一致すること
-     * （A6b ⑤）。以前は 3 つの原因で食い違った: (a) 減速の途中のスクロール量が小数で、既定は小数の平行移動（縁がぼける）、作り直しは
+     * スクロールする箱の中身を 1 つの節にまとめて平行移動する既定と、毎手全体を作り直した面の画素が毎手一致すること
+     * （A6b ⑤。M2c-2 からは参照を「前回の木と記憶を捨てた全体の作り直し」にした）。以前は 3 つの原因で食い違った: (a) 減速の途中のスクロール量が小数で、既定は小数の平行移動（縁がぼける）、作り直しは
      * 整数へ丸めた位置 (b) つまみも小数の平行移動で、角の縁の画素が違った (c) 窓付きの作り直しで、インラインの入れ子の span の箱の
      * x / y が (0, 0) のまま窓の中と判定され、親（画面外の行）が省かれたのにその項目だけが出て、箱の上端に描かれた（種 7 の手 33）。
      */
@@ -511,7 +505,7 @@ class IncrementalVsFullTest {
     void scrollListPixelsMatchWithAndWithoutScrollContentNode() {
         List<String> bad = new ArrayList<>();
         for (long seed = 1; seed <= 8; seed++) {
-            List<Integer> withNode = scrollListPixels(seed, true), rebuilt = scrollListPixels(seed, false);
+            List<Integer> withNode = scrollListPixels(seed, false), rebuilt = scrollListPixels(seed, true);
             for (int i = 0; i < Math.min(withNode.size(), rebuilt.size()); i++) {
                 if (!withNode.get(i).equals(rebuilt.get(i))) { bad.add("scrolllist/" + seed + " 手 " + i); break; }
             }

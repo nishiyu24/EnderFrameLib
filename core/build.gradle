@@ -519,6 +519,18 @@ tasks.register('m2aSpike', JavaExec) {
     if (project.hasProperty('m2a.only')) systemProperty 'm2a.only', project.property('m2a.only').toString()
 }
 
+// M2c-1: ビューの保持ヒープを段ごとに分ける診断（V3HeapBreakdownMain）。
+//   ./gradlew :core:heapBreakdown [-Pheap.doc=varied-list-2000] [-Pheap.path=V3|LEGACY] [-Pheap.scenario=open|hover]
+tasks.register('heapBreakdown', JavaExec) {
+    group = 'verification'
+    description = 'ビューの保持ヒープの段ごとの内訳（V3HeapBreakdownMain）'
+    classpath = sourceSets.test.output + sourceSets.test.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.common.V3HeapBreakdownMain'
+    workingDir = rootProject.projectDir
+    jvmArgs '-Xmx1g', '-Denderframe.threads=1'
+    ['heap.doc', 'heap.path', 'heap.scenario'].each { k -> if (project.hasProperty(k)) systemProperty k, project.property(k).toString() }
+}
+
 // A1: 時間に依らない量（1 フレームの確保量・近道の経路の回数）の回帰ゲート。シナリオごとに新しい JVM を立てるので check には
 // 繋がず、CI（build.yml）と手元から明示的に回す。
 //   ./gradlew :core:costGate                       判定

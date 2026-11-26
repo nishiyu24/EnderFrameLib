@@ -127,7 +127,7 @@ public final class StandaloneView implements AutoCloseable {
     }
 
     public StandaloneView(String html, int width, int height, FontResolver fonts) {
-        this(html, width, height, fonts, EnginePath.LEGACY);
+        this(html, width, height, fonts, EnginePath.V3);
     }
 
     /** {@code path} はレイアウトと描画の経路（M2c ④）。 */

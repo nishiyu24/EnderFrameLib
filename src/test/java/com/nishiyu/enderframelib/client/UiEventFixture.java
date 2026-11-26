@@ -1,17 +1,12 @@
 package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.api.event.Event;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
-import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import com.nishiyu.enderframelib.common.Document;
@@ -79,16 +74,12 @@ public final class UiEventFixture implements AutoCloseable {
 
     public void load(String bodyHtml) {
         String html = "<html><body style=\"margin:0\">" + bodyHtml + "</body></html>";
-        UiDocumentCompiler parser = new UiDocumentCompiler();
-        document = parser.parseDocument(html, "", WIDTH, HEIGHT);
-        var rootBox = parser.layoutDocument(document, WIDTH, HEIGHT, Map.of(), new ScrollState(),
-                FontResolver.FALLBACK, new InteractionState());
-        List<DisplayItem> built = new DisplayListBuilder(WIDTH, HEIGHT, document.sheet.keyframes, new ScrollState()).render(rootBox);
-        elements = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(built); // 座標を測る用（親相対を絶対へ）
+        // セッション自身のフレーム（ビューの既定の経路）で組む。箱の木・表示リストを外で作って差し込まない
         SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
-        session.setDocument(document);
-        session.setLayoutRoot(rootBox);
-        session.setRenderCache(built);
+        session.loadLocalHtml(html, WIDTH, HEIGHT);
+        session.flushInvalidation();
+        document = session.document();
+        elements = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(session.renderCache()); // 座標を測る用（親相対を絶対へ）
     }
 
     public HtmlNode node(String id) {

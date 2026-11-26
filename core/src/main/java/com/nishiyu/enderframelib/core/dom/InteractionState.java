@@ -807,7 +807,7 @@ public class InteractionState implements StyledDocumentState {
     }
 
     private void dirty(HtmlNode node, boolean subtree) {
-        StateFlags flags = getOrCreate(node); ledger.append(node, com.nishiyu.enderframelib.core.dom.node.ChangeKind.STYLE);
+        StateFlags flags = getOrCreate(node); ledger.append(node, subtree ? com.nishiyu.enderframelib.core.dom.node.ChangeKind.STYLE_SUBTREE : com.nishiyu.enderframelib.core.dom.node.ChangeKind.STYLE); // 子孫まで及ぶなら台帳にもそう書く
         flags.markStyleDirty();
         if (subtree) flags.markSubtreeDirty();
         markAncestorsDirtyBelow(node);

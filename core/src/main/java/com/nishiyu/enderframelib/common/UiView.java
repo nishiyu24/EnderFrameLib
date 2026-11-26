@@ -185,7 +185,7 @@ public class UiView implements AutoCloseable {
     private final List<UiPubSub.VirtualListBinding> virtualListBindings = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public UiView(String sessionId) {
-        this(sessionId, EnginePath.LEGACY);
+        this(sessionId, EnginePath.V3);
     }
 
     /** {@code path} はレイアウトと描画の経路（M2c ④。構築時に決め、途中で変えない）。 */
@@ -210,10 +210,7 @@ public class UiView implements AutoCloseable {
         interactionState.clearAllStyleDirty();
         if (elements == null) { // 描画用の木が前回のまま: スクロールが無ければ何もしない、あれば中身の節を動かす
             if (!scrollState.hasUncheckedChange(scrollAtBuild, java.util.Set.of())) return;
-            if (tryScrollTranslate()) {
-                STAT_SCROLL_TRANSLATED.increment();
-                return;
-            }
+            if (tryScrollTranslate()) { STAT_SCROLL_TRANSLATED.increment(); return; }
             elements = v3.paint(ledger);
         }
         publishBuilt(elements);
@@ -862,7 +859,7 @@ public class UiView implements AutoCloseable {
 
     /** DOM 変更やビューポート変更に伴う再レイアウトを要求する。 */
     public void requestRender() {
-        markInvalidation(InvalidationLevel.RELAYOUT);
+        markInvalidation(v3 != null ? InvalidationLevel.RESTYLE : InvalidationLevel.RELAYOUT); // 新経路は DOM の変更を台帳から読む（RELAYOUT は全体の作り直し）
         invalidated();
     }
 
@@ -1004,9 +1001,10 @@ public class UiView implements AutoCloseable {
             for (int k = 0, sn = info.stickies().size(); k < sn; k++) clearPaintOffset(info.stickies().get(k).nodeId());
         }
         setRenderCache(elements);
-        setScrollBase(com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() ? builtScrollContents() : List.of());
+        setScrollBase(v3 != null || com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() ? builtScrollContents() : List.of()); // 新経路の描画は常に中身を節にまとめる
         scrollAtBuild = scrollState.snapshot();
         scrollWindowAt = scrollAtBuild;
+        if (v3 != null) tryScrollTranslate(); // 新経路の記憶は使い回した中身の節を記憶したときのスクロール量で出す。今との差を節の移動で足す
     }
 
     /** 直近に作った表示リストの、中身を 1 つの節にまとめたスクロールコンテナ。既定の描画（{@link DisplayListBuilder}）が持つ。 */
@@ -1022,7 +1020,7 @@ public class UiView implements AutoCloseable {
      * 動かせるのは、全てのコンテナの移動が範囲内のとき。動かせなければ false（作り直す）。
      */
     private boolean tryScrollTranslate() {
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() || scrollBase.isEmpty()) return false;
+        if (v3 == null && !com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() || scrollBase.isEmpty()) return false;
         // 節にまとめていないコンテナ（sticky などを含む）のスクロール量が変わっていたら、その中身は作り直さないと動かない
         if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
         if (!withinWindow()) return false;
@@ -1296,6 +1294,7 @@ public class UiView implements AutoCloseable {
         if (v3 != null) { // 新経路: 入口は台帳 1 本。スクロール量だけの変化は中身の節を動かし、それ以外は増分で組み直す
             boolean scrollOnly = !nonScrollRepositionPending && level == InvalidationLevel.REPOSITION && !interactionState.hasDirtyNodes();
             repositionPending = nonScrollRepositionPending = false;
+            if (level == InvalidationLevel.RELAYOUT) v3.rebuildKeepingHistory(); // 全体の作り直しの要求: 前回の木と記憶を捨てる（台帳に載らない書体の変化など）
             if (resize) recomputeLayout(pendingResizeW, pendingResizeH);
             else if (scrollOnly && texts != null && texts.isEmpty() && attrNodes.isEmpty() && tryScrollTranslate()) STAT_SCROLL_TRANSLATED.increment();
             else {

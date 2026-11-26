@@ -106,6 +106,22 @@ public final class BoxTreeCompiler {
     /** 前回の結果（まだ無ければ null）。 */
     public BoxNode root() { return root; }
 
+    /** 箱の木 {@code root} の要素の算出スタイル（擬似要素と文字を除く。全体を作り直す前の値として {@link StyleSource#history} へ渡す）。 */
+    public static Map<HtmlNode, Style> elementStyles(BoxNode root) {
+        Map<HtmlNode, Style> out = new IdentityHashMap<>();
+        java.util.ArrayDeque<BoxNode> stack = new java.util.ArrayDeque<>();
+        if (root != null) stack.push(root);
+        while (!stack.isEmpty()) {
+            BoxNode b = stack.pop();
+            if (b.node != null && b.pseudo == BoxNode.Pseudo.NONE && b.node.nodeType == NodeType.ELEMENT && b.computed != null) out.put(b.node, b.computed);
+            for (int c = 0, cn = b.children.chunkCount(); c < cn; c++) {
+                BoxChunk ch = b.children.chunk(c);
+                for (int i = 0, n = ch.size(); i < n; i++) stack.push(ch.get(i));
+            }
+        }
+        return out;
+    }
+
     /**
      * スタイルの解き方を差し替える（ビューポートの大きさの変化: {@code vw} などの単位・メディアクエリ・置換要素の候補が変わる）。次の
      * {@link #compile} は、掛かる規則が替わった（{@link StyleSource#sameRules} でない）なら全ての要素を、そうでなければビューポートに依る
@@ -147,6 +163,7 @@ public final class BoxTreeCompiler {
         } finally {
             deep = 0;
             self.clear();
+            restyleBelow.clear();
             touched.clear();
             parentOfTouched.clear();
         }
@@ -234,6 +251,7 @@ public final class BoxTreeCompiler {
                     : ledger.frozenIs(i, ChangeKind.TEXT) ? SELF_TEXT
                     : ledger.frozenIs(i, ChangeKind.SCROLL) ? 0 : SELF_STYLE;
             if (bit == 0) continue;
+            if (ledger.frozenIs(i, ChangeKind.STYLE_SUBTREE)) restyleBelow.add(node); // 子孫を全て解き直す（容器の 2 段目と同じ仕組み）
             self.merge(node, bit, (a, b) -> a | b);
             for (HtmlNode cur = node; cur != null && touched.add(cur); cur = cur.parent) {
                 if (cur.parent != null) parentOfTouched.add(cur.parent);

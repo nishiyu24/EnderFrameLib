@@ -8,14 +8,13 @@ import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
 import java.util.List;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /**
  * B12: {@code position: sticky}（上の inset だけ）を含むスクロールコンテナも中身を 1 つの節にまとめ、スクロールだけの更新では
  * 表示リストを作り直さず、中身の節の移動に「貼り付きのずれの増減」（{@link com.nishiyu.enderframelib.core.paint.model.StickyShift}）を
- * sticky の箱の節へ足して済ませる。sticky を含むコンテナを従来どおり作り直す構成と、スクロールの毎フレームの画素と
+ * sticky の箱の節へ足して済ませる。毎フレーム全体を作り直した面（参照）と、スクロールの毎フレームの画素と
  * ヒットテストが一致すること、作り直しを実際に省いたことを確かめる。親がコンテナ自身の sticky（ずっと貼り付く）と、
  * 親が中身の中の sticky（節の終わりで外れる）の両方を、貼り付く前・貼り付いている間・外れた後まで回す。
  */
@@ -45,15 +44,10 @@ class StickyScrollNodeTest {
                 + "<div class='row'>bottom</div></div></body></html>";
     }
 
-    @AfterEach
-    void restore() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.set(true);
-    }
-
     record Run(List<int[]> pixels, List<String> hits, long translated) { }
 
+    /** {@code stickyNode = false} は参照: 毎フレームの前に前回の木と記憶を捨てて全体を作り直す（節の移動を使わない）。 */
     static Run run(boolean stickyNode, RenderBackend backend) {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.set(stickyNode);
         long tr0 = UiView.STAT_SCROLL_TRANSLATED.sum();
         List<int[]> pixels = new ArrayList<>();
         List<String> hits = new ArrayList<>();
@@ -65,6 +59,7 @@ class StickyScrollNodeTest {
             for (int step = 0; step < 28; step++) {
                 v.scroll(0, step < 22 ? -1 : 1, backend.sessionId()); // 下へ 22 段、戻りを 6 段
                 for (int f = 0; f < 3; f++) {
+                    if (!stickyNode) v.ui().markInvalidation(com.nishiyu.enderframelib.common.UiView.InvalidationLevel.RELAYOUT);
                     v.frame(t += 16, backend, true);
                     pixels.add(backend.pixmap().pixels().clone());
                 }

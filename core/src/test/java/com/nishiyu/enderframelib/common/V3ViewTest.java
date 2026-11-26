@@ -170,6 +170,90 @@ class V3ViewTest {
         }
     }
 
+    /**
+     * 描画の記憶が使い回したスクロールコンテナの中身の節は、記憶したときのスクロール量の位置で出る（コンテナを含む親の部分木ごと記憶が
+     * 当たったとき）。スクロールの後で別の所が変わって作り直したフレームでも、今のスクロール量との差を節の移動で足すこと（M2c-2。以前は
+     * 差を消したまま足さず、中身が先頭へ戻って描かれた）。
+     */
+    @Test
+    void reusedScrollContentKeepsTheCurrentScrollAfterAnUnrelatedChange() {
+        String html = "<style>body{margin:0;font:12px sans-serif}#sc{width:200px;height:80px;overflow:auto;border:1px solid #333}"
+                + ".r{height:18px;background:#def;margin:2px}</style><div id=w><div id=sc>" + "<div class=r>row</div>".repeat(20) + "</div></div><p id=p>tail</p>";
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+            SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
+            sv.frame(1000, live, true);
+            sv.ui().scrollState().setScroll(sv.ui().findNode("sc"), 0f, 70f);
+            sv.ui().requestScrollReposition();
+            sv.frame(1016, live, true);
+            assertSame("スクロールの後", sv, live);
+            sv.ui().findNode("p").updateTextContent("tail that changed");
+            sv.frame(1032, live, true);
+            assertSame("関係の無い文字の変更の後", sv, live);
+        }
+    }
+
+    /**
+     * 祖先の状態を読む子孫の規則（{@code .list:hover .item}）は、祖先の状態が変わったフレームで子孫を解き直す（M2c-2。無効化セットの
+     * {@code DESCENDANTS} を台帳に {@code STYLE_SUBTREE} として書く。以前は {@code STYLE} だけで、継承値の変わらない子孫を解き直さなかった）。
+     */
+    @Test
+    void ancestorHoverRestylesDescendantsThroughTheLedger() {
+        String html = "<style>body{margin:0;font:14px sans-serif}.list{padding:10px;background:#eee}.item{height:20px;color:#000;background:#fff}"
+                + ".list:hover .item{background:#c00}</style><div class=list id=l><div class=item>one</div><div class=item>two</div></div>";
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+            SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
+            sv.frame(1000, live, true);
+            sv.mouseMove(4, 4, "s"); // .list の padding の上（.item の外）
+            sv.frame(1016, live, true);
+            assertEquals(0xFFCC0000, live.pixmap().get(200, 20), "祖先の :hover で子孫の背景が変わる");
+            assertSame("ホバーの後", sv, live);
+            sv.mouseMove(W - 2, H - 2, "s");
+            sv.frame(1032, live, true);
+            assertEquals(0xFFFFFFFF, live.pixmap().get(200, 20), "ホバーが外れたら戻る");
+        }
+    }
+
+    /**
+     * 全体の作り直しの要求（{@code RELAYOUT}。書体の登録の変化など台帳に載らない変化）は、新経路でも前回の木と記憶を捨てて組み直し、
+     * 走っているトランジションは途中の値を保つ（M2c-2。以前は新経路が要求を読まずに増分で組み、作り直す実装も遷移を終点へ飛ばした）。
+     */
+    @Test
+    void fullRebuildRequestKeepsRunningTransitions() {
+        String html = "<style>body{margin:0}#b{width:100px;height:20px;background:#00f;transition:width 1000ms linear}#b.wide{width:300px}</style><div id=b></div>";
+        float[] widths = new float[2];
+        for (int run = 0; run < 2; run++) {
+            try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+                sv.clock(new com.nishiyu.enderframelib.core.kernel.Clock.Manual());
+                SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
+                sv.frame(1000, live, true);
+                ((HtmlElement) sv.ui().findNode("b")).setAttribute("class", "wide");
+                if (run == 1) sv.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT); // 遷移が始まるフレームを全体の作り直しにする
+                sv.frame(1016, live, true);
+                if (run == 1) sv.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
+                sv.frame(1516, live, true);
+                widths[run] = box(sv.ui().boxRoot(), "b").w();
+            }
+        }
+        assertTrue(widths[0] > 150f && widths[0] < 250f, "増分は遷移の途中: " + widths[0]);
+        assertEquals(widths[0], widths[1], 0.01f, "全体の作り直しも同じ途中の値");
+    }
+
+    /** 全体の作り直しの要求は、台帳に載らない変化（ここでは通知の無い属性の書き換え）も読む（新経路が要求を無視して増分で組まないこと）。 */
+    @Test
+    void fullRebuildRequestReadsChangesOutsideTheLedger() {
+        try (StandaloneView sv = new StandaloneView("<style>body{margin:0}</style><div id=b style='width:100px;height:10px'></div>", W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+            SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
+            sv.frame(1000, live, true);
+            sv.ui().findNode("b").attrs.put("style", "width:50px;height:10px"); // 通知しない書き換え（台帳に載らない）
+            sv.ui().markInvalidation(UiView.InvalidationLevel.RESTYLE);
+            sv.frame(1016, live, true);
+            assertEquals(100f, box(sv.ui().boxRoot(), "b").w(), 0.01f, "増分は台帳に載った変化だけを読む");
+            sv.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
+            sv.frame(1032, live, true);
+            assertEquals(50f, box(sv.ui().boxRoot(), "b").w(), 0.01f, "全体の作り直しは DOM をそのまま読む");
+        }
+    }
+
     private static com.nishiyu.enderframelib.core.layout.PaintBox box(com.nishiyu.enderframelib.core.layout.PaintBox b, String id) {
         if (b.node != null && !b.isAnonymous && id.equals(b.node.getId())) return b;
         for (var c : b.paintChildren()) {

@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.PaintBox;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,9 +32,18 @@ public class SessionAnimationFlowTest {
     private static float widthOf(SessionContext session, String id) {
         HtmlNode node = session.rootNode().getNodeById(id);
         assertNotNull(node);
-        LayoutBox box = session.layoutRoot().findByNode(node);
+        PaintBox box = find(session.boxRoot(), node);
         assertNotNull(box);
         return box.w();
+    }
+
+    private static PaintBox find(PaintBox b, HtmlNode node) {
+        if (b == null || b.node == node) return b;
+        for (PaintBox c : b.paintChildren()) {
+            PaintBox r = find(c, node);
+            if (r != null) return r;
+        }
+        return null;
     }
 
     @Test

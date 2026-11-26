@@ -45,6 +45,8 @@ final class V3Frame {
     private float dpr = 1f;
     private ScrollState scroll;
     private PaintNode root;
+    /** 次の全体の作り直しに渡す、作り直す前の要素の算出スタイル（{@link #rebuildKeepingHistory}。そのフレームだけ持つ）。 */
+    private Map<HtmlNode, com.nishiyu.enderframelib.core.css.Style> history;
 
     /**
      * 1 フレームを作る。{@code ledger} はこのフレームの凍結済みの台帳（null なら全体を作り直す）。環境変数・規則・書体・装置の画素比・
@@ -65,6 +67,7 @@ final class V3Frame {
             pipeline.restyleWith(new StyleSource(doc.sheet, state, env, w, h));
             painter.setViewport(w, h);
         }
+        StyleSource fresh = null;
         if (rebuild) {
             width = w;
             height = h;
@@ -74,13 +77,17 @@ final class V3Frame {
             scroll = scrollState;
             dpr = devicePixelRatio;
             LayoutSession session = new LayoutSession(fontResolver);
-            pipeline = new FragmentPipeline(new StyleSource(doc.sheet, state, env, w, h), session);
+            fresh = new StyleSource(doc.sheet, state, env, w, h);
+            fresh.history(history);
+            history = null;
+            pipeline = new FragmentPipeline(fresh, session);
             tree = new PaintTreeBuilder(session, doc.sheet);
             painter = new TreePainter(w, h, doc.sheet != null ? doc.sheet.keyframes : Map.of(), scrollState);
             painter.setDevicePixelRatio(devicePixelRatio);
             ledger = null;
         }
         LayoutFragment frag = pipeline.frame(doc.root, ledger, w, h);
+        if (fresh != null) fresh.history(null); // 作り直す前の値はこのフレームだけ
         PaintNode prev = root;
         long t0 = StageProfiler.begin(PipelineStage.PAINT_TREE);
         root = tree.build(frag, pipeline.boxRoot());
@@ -113,7 +120,7 @@ final class V3Frame {
     private static boolean onlyRestyleOrScroll(ChangeLedger ledger) {
         if (ledger.frozenOverflow()) return false;
         for (int i = 0, n = ledger.frozenSize(); i < n; i++) {
-            if (!ledger.frozenIs(i, ChangeKind.STYLE) && !ledger.frozenIs(i, ChangeKind.SCROLL)) return false;
+            if (!ledger.frozenIs(i, ChangeKind.STYLE) && !ledger.frozenIs(i, ChangeKind.STYLE_SUBTREE) && !ledger.frozenIs(i, ChangeKind.SCROLL)) return false;
             if (ledger.frozenNode(i) == null && ledger.frozenIs(i, ChangeKind.STYLE)) return false; // 絞れない再スタイル
         }
         return true;
@@ -154,8 +161,20 @@ final class V3Frame {
         return b.node == node && b.kind != com.nishiyu.enderframelib.core.box.BoxKind.TEXT ? new com.nishiyu.enderframelib.core.css.ComputedStyle(b.computed) : null;
     }
 
+    /**
+     * 前回の木と記憶を捨てて次のフレームで全体を作る（書体の登録の変化など台帳に載らない全体の変化・全再計算の計測）。文書は同じなので、
+     * 作り直す前の要素の算出スタイルだけをトランジションの始まりの入力として渡す（捨てると遷移の途中のフレームが終点へ飛ぶ）。
+     */
+    void rebuildKeepingHistory() {
+        Map<HtmlNode, com.nishiyu.enderframelib.core.css.Style> before = pipeline != null && pipeline.boxRoot() != null
+                ? com.nishiyu.enderframelib.core.box.BoxTreeCompiler.elementStyles(pipeline.boxRoot()) : null;
+        reset();
+        history = before;
+    }
+
     /** 文書を入れ替えた（前回の木を捨てて次のフレームで全体を作る）。 */
     void reset() {
+        history = null;
         pipeline = null;
         root = null;
     }

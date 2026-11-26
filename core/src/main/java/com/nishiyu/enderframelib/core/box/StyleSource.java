@@ -32,6 +32,8 @@ public final class StyleSource {
     private final java.util.BitSet activeRules;
     private float rootFontSize = ComputedStyle.DEFAULT_FONT_SIZE;
     private float rootLineHeight = Float.NaN;
+    /** 全体を作り直すフレームだけ持つ、作り直す前の要素の算出スタイル（トランジションの始まりの入力。{@link #history}）。 */
+    private Map<HtmlNode, Style> history;
 
     public StyleSource(StyleSheet sheet, StateLookup lookup, Map<String, String> env, int viewportW, int viewportH) {
         this.sheet = sheet;
@@ -70,6 +72,7 @@ public final class StyleSource {
      * 駆動側が毎フレーム {@link #appendAnimating} で台帳へ {@code STYLE} を足す（入口は台帳 1 本）。
      */
     public Style element(HtmlNode node, Style parent, Style before) {
+        if (before == null && history != null) before = history.get(node);
         Style p = parent != null ? parent : Style.DEFAULT;
         boolean isRoot = node.parent != null && node.parent.parent == null && "html".equalsIgnoreCase(node.tag);
         float rootFont = isRoot ? ComputedStyle.DEFAULT_FONT_SIZE : rootFontSize;
@@ -97,6 +100,14 @@ public final class StyleSource {
             rootLineHeight = cs.lineHeightPx();
         }
         return Style.of(cs, p);
+    }
+
+    /**
+     * 前回の箱の木を捨てて全体を作り直すフレームで、作り直す前の要素の算出スタイルを渡す（null で外す）。前回の箱が無いと
+     * トランジションの始まり（{@link StyleAnimator#observe} の前の値）が見えず、遷移の途中のフレームが終点へ飛ぶため。
+     */
+    public void history(Map<HtmlNode, Style> before) {
+        this.history = before;
     }
 
     /**

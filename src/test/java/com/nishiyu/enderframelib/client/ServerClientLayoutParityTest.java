@@ -241,19 +241,9 @@ public class ServerClientLayoutParityTest {
     private static void flushAndCompare(String label, List<String> history) {
         session(SERVER).flushInvalidation();
         session(CLIENT).flushInvalidation();
-        com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withIncrementalLayout(false));
-        try {
-            session(REFERENCE).flushInvalidation();
-        } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
-        }
+        session(REFERENCE).markInvalidation(com.nishiyu.enderframelib.common.UiView.InvalidationLevel.RELAYOUT); // 参照は毎回、前回の木と記憶を捨てて全体を作り直す
+        session(REFERENCE).flushInvalidation();
         List<DisplayItem> reference = session(REFERENCE).renderCache();
-        for (String id : new String[]{SERVER, CLIENT}) {
-            if (!reference.equals(session(id).renderCache())) {
-                history.add(id + " box tree diff: " + IncrementalLayoutTest.firstBoxDifference(
-                        session(REFERENCE).layoutRoot(), session(id).layoutRoot()));
-            }
-        }
         IncrementalLayoutTest.assertSameDisplayList(reference, session(SERVER).renderCache(), label + " server", history);
         IncrementalLayoutTest.assertSameDisplayList(reference, session(CLIENT).renderCache(), label + " client", history);
     }

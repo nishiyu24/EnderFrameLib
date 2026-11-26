@@ -19,11 +19,11 @@
 - **時間の主張は交互 A/B だけ**: 絶対値はセッションで ±40% ずれる。旧版の worktree と現在を交互に 3 回ずつ・中央値で比べる（`powershell -File scripts/ab-gate.ps1`）、または `:core:memoryAndLatencyGate` の交互 A/B・ヒープ実測を使う。内部カウンタ（`memo*`）の固定で性能を主張しない。
 - **時刻は注入**: コアは `System.nanoTime`/`currentTimeMillis` を読まない（`core/kernel/Clock.java` だけ）。テストは `Clock.Manual`（`StandaloneView.clock(...)`・`ResizeSettle.freezeClock`）を使い、実時間を `sleep` で待たない。
 
-### 移行状態（M0・M1・M2a・M2b 完了、M2c〔改訂〕進行中。詳細は計画書 §0・§3.2）
+### 移行状態（M0・M1・M2a・M2b・M2c-1・M2c-2 完了、M2c-3 が次。詳細は計画書 §0・§3.2）
 
 - **完了**: M0（新ゲート `ArchitectureHealthTest`・`:core:memoryAndLatencyGate`）・M1（型付きの不変 `Style`。群のクラスは `scripts/GenStyleGroups.java` の**生成物なので手で直さない**。`PropertyRegistry` を変えたら再実行し、`StyleGroupCoverageTest` が足し忘れを検出）・M2a（`core/box` の `BoxTreeCompiler`・`core/layout/fragment` の `LayoutFragment`/`LayoutCache`）・M2b（全エンジンを新経路へ移植。`WptV3BaselineTest` 170/260・旧経路だけ合格 0。増えたら `-Dwpt.v3.update=true`）。
-- **新経路の形**: 凍結した台帳 → `BoxNode`（レイアウトの入力の木と最新の木。`BoxNode.layout`）→ 断片木 → 描画用の木（`core.paint.tree`）→ `TreePainter` → `DisplayItem`。ビューの構築時の引数 `EnginePath`（`V3Frame`）で選び、**既定はまだ `LEGACY`**。描画用の木と `TreePainter` は M3b で `DisplayScene` に吸収して消す（新しい最適化を足さない）。
-- **M2c（改訂）の段**: M2c-1 新経路の保持ヒープの段ごとの内訳と判定（次の一手）→ M2c-2 既定を新経路へ切り替え（ゴールデン・`costGate` の基準を新経路で取り直す。条件は絶対値と自己比較）→ M2c-3 `LayoutBox` ほか旧レイアウト経路・`EnginePath`・`FragmentProjection`・旧経路を相手にする物差し（`LegacyParityTest`・`GeometrySweepTest`・`GeometryDeviationsTest` ほか）を削除。multicol は一時的に失い M3c で戻す。
+- **新経路の形**: 凍結した台帳 → `BoxNode`（レイアウトの入力の木と最新の木。`BoxNode.layout`）→ 断片木 → 描画用の木（`core.paint.tree`）→ `TreePainter` → `DisplayItem`。**既定は新経路（`V3`）**。ビューの構築時の引数 `EnginePath.LEGACY` を選ぶのは旧経路を相手にする物差しだけで、M2c-3 で型ごと消す。全体の作り直しは `markInvalidation(RELAYOUT)`（新経路は前回の木と記憶を捨てる。`requestRender()` はフレームの予約だけ）。描画用の木と `TreePainter` は M3b で `DisplayScene` に吸収して消す（新しい最適化を足さない）。
+- **M2c（改訂）の段**: M2c-1 保持ヒープの内訳と判定（完了。`:core:heapBreakdown`）→ M2c-2 既定を新経路へ切り替え（完了。ゴールデン・`costGate`・`memoryAndLatencyGate` の基準は新経路で取り直した。ヒープと latency 2 行の上限は M3b まで新経路の実測。計画書 §0）→ **M2c-3（次の一手）** `LayoutBox` ほか旧レイアウト経路・`EnginePath`・`FragmentProjection`・旧経路を相手にする物差し（`LegacyParityTest`・`GeometrySweepTest`・`GeometryDeviationsTest` ほか）を削除。multicol は一時的に失い M3c で戻す。
 - **その後**: M3a（MOD の旧レンダラの撤去。並行して進めてよい）→ M3b（`DisplayScene`。親相対座標・`int nodeId`・記憶は `(断片 ==, 最新の箱 ==)` だけ・描画は DOM を読まない）→ M3c（multicol）→ M4 → M5 → M6。
 
 ## 検証の手順

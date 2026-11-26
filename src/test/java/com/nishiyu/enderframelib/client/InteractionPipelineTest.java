@@ -161,20 +161,15 @@ public class InteractionPipelineTest {
     void testScrollbarInteraction() {
         SessionContext session = ClientWebManager.getOrCreateSession("testScrollSession");
 
-        Document doc = new UiDocumentCompiler().parseDocument(
-                "<div id=\"scrollBox\" style=\"width:100px;height:100px;overflow:auto;\"><div style=\"height:300px;\"></div></div>",
-                "", 100, 100);
-        session.setDocument(doc);
-        HtmlNode containerNode = doc.root.getElementById("scrollBox");
+        session.loadLocalHtml("<html><body style=\"margin:0\"><div id=\"scrollBox\" style=\"width:100px;height:100px;overflow:auto;\">"
+                + "<div style=\"height:300px;\"></div></div></body></html>", 100, 100);
+        session.flushInvalidation();
+        HtmlNode containerNode = session.document().root.getElementById("scrollBox");
 
-        com.nishiyu.enderframelib.core.layout.LayoutBox box = com.nishiyu.enderframelib.common.RenderPipeline.layoutSubtree(
-                containerNode, doc.sheet, 100, 100, null, session.scrollState(),
-                com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+        com.nishiyu.enderframelib.core.layout.PaintBox box = com.nishiyu.enderframelib.common.UiFocus.findBox(session.boxRoot(), containerNode);
         assertEquals(100f, box.w(), 0.01f);
         assertEquals(100f, box.h(), 0.01f);
         assertEquals(300f, box.scrollHeight(), 0.01f);
-
-        session.setLayoutRoot(box);
 
         DisplayItem trackEl = new DisplayItem(
                 "scrollBox_sb_vt", "scrollBox", ElementType.RECT,

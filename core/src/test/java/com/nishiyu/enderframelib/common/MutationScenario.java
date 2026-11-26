@@ -80,6 +80,12 @@ final class MutationScenario {
 
     /** {@code scroll = true} は、ホイールの手（スクロールする箱の上へ移して回す）を混ぜる。false のときの乱数の列は従来と同じ。 */
     static List<List<String>> run(String html, String[] classes, String[] styles, long seed, int steps, boolean draw, boolean scroll) {
+        return run(html, classes, styles, seed, steps, draw, scroll, false);
+    }
+
+    /** {@code fullEachFrame = true} は、毎手のフレームの前に前回の木と記憶を捨てて全体を作り直す（増分と比べる参照）。 */
+    static List<List<String>> run(String html, String[] classes, String[] styles, long seed, int steps, boolean draw, boolean scroll,
+                                  boolean fullEachFrame) {
         Random rnd = new Random(seed);
         LOG.clear();
         PIXELS.clear();
@@ -140,6 +146,7 @@ final class MutationScenario {
                     default -> LOG.add("(time only)"); // 時間だけ進める
                 }
                 now += 30 + rnd.nextInt(400);
+                if (fullEachFrame) view.ui().markInvalidation(com.nishiyu.enderframelib.common.UiView.InvalidationLevel.RELAYOUT);
                 view.frame(now, backend, true);
                 List<String> sigs = new ArrayList<>();
                 java.util.Set<String> ids = new java.util.HashSet<>();
