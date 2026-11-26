@@ -119,10 +119,9 @@ public class ArchitectureTest {
     private static final List<Path> DOCUMENTS = List.of(
             Paths.get("README.md"),
             Paths.get("CONTRIBUTING.md"),
-            Paths.get("FIDELITY.md"),
-            Paths.get("REFACTORING_PLAN.md"),
-            Paths.get("ARCHITECTURE.md"),
-            Paths.get("BENCHMARK.md")
+            Paths.get("docs/FIDELITY.md"),
+            Paths.get("docs/ARCHITECTURE.md"),
+            Paths.get("docs/BENCHMARK.md")
     );
 
     /** S4 の入力経路。ここが増えたら入力の直し漏れがまた起きる。 */

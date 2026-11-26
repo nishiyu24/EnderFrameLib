@@ -2,7 +2,7 @@ plugins {
     id 'application'
 }
 
-def publishedRepo = file('../../repo')
+def publishedRepo = file('../../build/repo')
 def lwjglVersion = '3.3.3'
 def os = System.getProperty('os.name').toLowerCase()
 def arch = System.getProperty('os.arch').toLowerCase()

@@ -109,7 +109,7 @@ def testForks = project.hasProperty('test.forks') ? project.property('test.forks
 // テストがクラスパスの外から（リポジトリ直下からの相対パスで）読むファイル。文書の整合（DocConsistencyTest）・回帰カタログ・
 // ラチェット（ソースの走査）・ArchitectureTest・CI のワークフロー（TimingTagPolicyTest）・同梱の HTML など。
 // 入力に申告しないと、文書やコメントだけを直したときに test が UP-TO-DATE / FROM-CACHE で素通りする（2026-11-19）。
-// ルートの test（build.gradle）も同じ集合を使う
+// :mod の test（mod/build.gradle）も同じ集合を使う
 def rootDir = rootProject.projectDir
 ext.repoFilesReadByTests = files(
         { rootDir.listFiles().findAll { it.isFile() && it.name.endsWith('.md') } },
@@ -117,7 +117,7 @@ ext.repoFilesReadByTests = files(
         { new File(rootDir, 'mod').listFiles().findAll { it.isFile() && it.name.endsWith('.md') } },
         ['core/src/main/java', 'core-gl/src/main/java', 'core-vulkan/src/main/java', 'core-glfw/src/main/java',
          'mod/src/main/java', 'mod/src/main/resources', 'core/demo/resources', 'core/src/bench-crossengine',
-         'core/src/test/java', 'core/src/testFixtures/java', 'mod/src/test/java', '.github/workflows', 'scripts', 'core/baseline', 'docs']
+         'core/src/test/java', 'core/src/testFixtures/java', 'mod/src/test/java', '.github/workflows', 'scripts', 'core/baseline', 'docs', 'mod/docs']
                 .collect { new File(rootDir, it) }.findAll { it.exists() })
 def configureCoreTest = { Test t, List<String> includeTagList, List<String> excludeTagList, int forks ->
     t.inputs.files(repoFilesReadByTests).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('repoFilesReadByTests')
@@ -200,7 +200,7 @@ publishing {
     repositories {
         maven {
             name = 'localRepo'
-            url = uri(rootProject.file('repo'))
+            url = uri(rootProject.file('build/repo'))
         }
         if (System.getenv('MAVEN_REPO_URL') != null) {
             maven {
@@ -306,7 +306,7 @@ tasks.register('runNoHtmlSite', JavaExec) {
     workingDir = rootProject.projectDir
 }
 
-// ---- 計測（MEASUREMENT.md）----
+// ---- 計測（docs/BENCHMARK.md）----
 // JMH のマイクロベンチと、本番の経路の段別プロファイル。公開物には入れない。
 //   ./gradlew :core:jmh                                   全部（遅い。数分）
 //   ./gradlew :core:jmh -Pjmh.args="PipelineBench.restyle -p doc=showcase -f 1 -wi 2 -i 3 -prof gc"
@@ -555,12 +555,12 @@ tasks.register('mutationFuzz', JavaExec) {
 
 // A10: GPU・窓モジュールも公開物として依存解決できることを確かめる。
 //   ./gradlew :core:verifyPublishedModules
-// 4 モジュール（:core・:core-gl・:core-vulkan・:core-glfw）を repo/ へ公開し、POM の依存（モジュール間・LWJGL の版）を検査したうえで、
+// 4 モジュール（:core・:core-gl・:core-vulkan・:core-glfw）を build/repo/ へ公開し、POM の依存（モジュール間・LWJGL の版）を検査したうえで、
 // project 依存を持たない別プロジェクト（scripts/consumer-check）が公開物だけで README のクイックスタート 4 例を動かす。
 def publishTaskPaths = [':core', ':core-gl', ':core-vulkan', ':core-glfw'].collect { it + ':publishMavenJavaPublicationToLocalRepoRepository' }
 def verifyPoms = tasks.register('verifyPublishedPoms') {
     dependsOn publishTaskPaths
-    def repoDir = rootProject.file('repo')
+    def repoDir = rootProject.file('build/repo')
     def groupPath = engine_group_id.replace('.', '/')
     def ver = engine_version
     doLast {

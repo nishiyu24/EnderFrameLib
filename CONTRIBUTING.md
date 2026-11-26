@@ -21,7 +21,7 @@
 ./gradlew :mod:runGameTestServer   # サーバー側ライフサイクルのゲームテスト
 ```
 
-`mod/run/`・`.idea/`・`repo/`・`mod/src/generated/` は追跡しない。
+`mod/run/`・`.idea/`・`build/`（公開物の出力先 `build/repo/` を含む）・`mod/src/generated/` は追跡しない。
 生成物やワールドデータをコミットに混ぜないこと。
 
 ---
@@ -34,7 +34,7 @@
 | 公開 API（`api/` パッケージ）の Javadoc | **英語** |
 | 内部実装のコメント・Javadoc | **日本語**（既存コードに合わせる） |
 | `README.md`・`NOTICE`・公開されるドキュメント | **英語** |
-| `CONTRIBUTING.md`・`ARCHITECTURE.md`・`REFACTORING_PLAN.md`・`BENCHMARK.md`・`FIDELITY.md` などの開発ドキュメント | **日本語** |
+| `CONTRIBUTING.md` と `docs/` の開発ドキュメント（`ARCHITECTURE.md`・`BENCHMARK.md`・`FIDELITY.md`・計画書） | **日本語** |
 | コミットメッセージ | 件名は英語（Conventional Commits）、本文は日本語でよい |
 
 `api/` を英語にしているのは、このライブラリに対してコンパイルする他 Mod の
@@ -110,7 +110,7 @@ client/, server/  →  core/, api/, common/, network/
 network/  →  core/, api/（ペイロードの登録で server のハンドラを参照する）
 ```
 
-図と各層の責務は [ARCHITECTURE.md](ARCHITECTURE.md) §1。
+図と各層の責務は [ARCHITECTURE.md](docs/ARCHITECTURE.md) §1。
 
 **`core/` は純 Java のリーフである。** `net.minecraft` / `net.neoforged` /
 `com.mojang` / 上位パッケージを import してはならない（完全修飾名での参照も禁止）。
@@ -206,7 +206,7 @@ mod/src/test/resources/golden/      MOD の期待出力（表示リスト）
 - **テストのパッケージは本体に合わせる。** `mod/src/test/java` に本体の無いパッケージを作らない
   （WPT の移植ハーネスだけは例外）。`ArchitectureTest` が検査する。
 - **管理指標の上限は下げる方向にだけ動かす。** `ArchitectureTest` の M1〜M8 は
-  構造整理（T0）で記録した実測値から始めたもので（現在の上限は [ARCHITECTURE.md](ARCHITECTURE.md) §7）、フェーズの作業で数を減らしたら
+  構造整理（T0）で記録した実測値から始めたもので（現在の上限は [ARCHITECTURE.md](docs/ARCHITECTURE.md) §7）、フェーズの作業で数を減らしたら
   同じコミットで上限も下げる。上げる変更は、なぜ増やしたかをレビューで説明する。
 - パーサ・レイアウトの挙動はゴールデンファイルで固定している。
   意図して出力を変えたときは:
@@ -223,7 +223,7 @@ mod/src/test/resources/golden/      MOD の期待出力（表示リスト）
   エンジンに通し、ブラウザで測った期待値
   （`core/src/test/resources/fidelity/expected/`）と突き合わせる。
   幾何（x / y / w / h）は ±0.5px、描画順の列（z）は完全一致。列の定義と
-  コーパスを書くときの約束は [FIDELITY.md](FIDELITY.md) の「仕組み」にある。
+  コーパスを書くときの約束は [FIDELITY.md](docs/FIDELITY.md) の「仕組み」にある。
   計算値の列（`opacity` / `transform` / `color` など）はケースの
   `data-fidelity-properties` か `<meta name="fidelity-properties" content="...">` で宣言する。
   空白を含む値はダンプで二重引用符に包む（`color="rgb(10, 20, 30)"`）。
@@ -249,7 +249,7 @@ mod/src/test/resources/golden/      MOD の期待出力（表示リスト）
   （`DOMParser` と innerHTML）が組んだ木を書き出したもの。パーサの出力を期待値にしない。
 
   一致しない差異は `core/src/test/resources/fidelity/known-divergences.txt` と
-  [FIDELITY.md](FIDELITY.md) の**両方**に同じキー（`case#id.field`）で書く
+  [FIDELITY.md](docs/FIDELITY.md) の**両方**に同じキー（`case#id.field`）で書く
   （前者に書いて後者に書き忘れるとテストが落ちる）。
   **台帳に無い差異は回帰として落ち、台帳にあるのに一致した差異も「台帳が古い」として
   落ちる。** 差異を 1 つ埋めたら、同じコミットで台帳の行・コードの `LIMITATION`・
@@ -284,7 +284,7 @@ mod/src/test/resources/golden/      MOD の期待出力（表示リスト）
   一時的な環境差は `-Dbenchmark.factor=2.5` / `-Dbenchmark.slackMs=10` で緩める。
   サーバー側の基準値（互換モードのパケット量とヒープ）は `mod/src/test/resources/benchmark/server_baseline.txt` にあり、
   `PacketBandwidthTest` / `StateMemoryBenchmarkTest` が完全一致で、`HeadlessStateBandwidthAndMemoryTest` が
-  Headless State との削減率で使う。実測と経緯は [BENCHMARK.md](BENCHMARK.md)。
+  Headless State との削減率で使う。実測と経緯は [BENCHMARK.md](docs/BENCHMARK.md)。
 - **UA の既定値は `ua.css` が唯一の出所。** ブラウザプレビューは
   `ua.css` と組み込みテーマをそのまま同梱して読む。
   `enderframe-devkit.css` に要素セレクタを書かないこと（`CssResourcesTest` が検査する）。
@@ -301,7 +301,7 @@ mod/src/test/resources/golden/      MOD の期待出力（表示リスト）
   描画時に丸めてはいけない（送り幅が変わって測定と合わなくなる）。
 - **Chrome の実測と比べるテスト**（`ChromeTextMetricsParityTest`・`ShowcaseChromeParityTest`・`ToggleBaselineTest`・
   `FieldsetLegendTest`）はシステムの書体で組むので Windows でだけ走る。期待値は Chrome（Windows）で採った値で、
-  エンジンの出力を期待値にしない。一覧は [FIDELITY.md](FIDELITY.md) の「コーパスの外でブラウザと突き合わせているもの」。
+  エンジンの出力を期待値にしない。一覧は [FIDELITY.md](docs/FIDELITY.md) の「コーパスの外でブラウザと突き合わせているもの」。
 - サーバー側のライフサイクル（ログアウト・ディメンション移動・サーバー停止で
   static マップが空に戻るか）は `gametest/WebScreenGameTest` が
   `./gradlew :mod:runGameTestServer` で検証する。

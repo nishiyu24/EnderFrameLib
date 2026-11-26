@@ -2,8 +2,8 @@
 
 `:core` は Minecraft に依存しない純 Java の HTML/CSS 組み込み UI エンジン（リポジトリの主役。ルートはプラグインなしの素の Gradle）。NeoForge の MOD は利用者の 1 つとして `mod/`（`:mod`。依存は `:mod` → `:core` 系の一方向。P4-1）にある。現在は **Engine v3 への破壊的再設計**の最中。次を**先に読む**。
 
-- `core/ENGINE_REARCHITECTURE_PLAN.md` — **まず §0（現在地）を読む**。**優先順位表は §3 の 1 つだけ**（本流 Phase M0〜M6〔M2 は M2a/M2b/M2c、M3 は M3a/M3b/M3c〕＋独立トラック P1〜P5。位置づけ〔JavaFX と並ぶ汎用 UI 基盤〕は §3.0b）。2026-11-26 の軌道修正の理由は §1.3、中間表現と記憶の鍵の予算は §2.3、KPI は §4、運用ルール（8 原則）は §5。
-- `core/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md` — 旧計画（C/K/L/W 系）と §6-1〜205 の経緯・計測。**読み物であり、指示ではない**。旧 `DESIGN_INCREMENTAL_KERNEL.md` は廃止し、ARCHIVE の付録 5 へ移設した（持ち越す知見は付録 5.A。新しい知見はここへ積む）。軌道修正の前の計画書の全文（M2a の設計・M2b〜M2c の作業記録）は索引から辿る `archive/07`。コードの注釈の「計画書 §3.3 C」「§3.4.x」はそこを指す。
+- `docs/plan/ENGINE_REARCHITECTURE_PLAN.md` — **まず §0（現在地）を読む**。**優先順位表は §3 の 1 つだけ**（本流 Phase M0〜M6〔M2 は M2a/M2b/M2c、M3 は M3a/M3b/M3c〕＋独立トラック P1〜P5。位置づけ〔JavaFX と並ぶ汎用 UI 基盤〕は §3.0b）。2026-11-26 の軌道修正の理由は §1.3、中間表現と記憶の鍵の予算は §2.3、KPI は §4、運用ルール（8 原則）は §5。
+- `docs/plan/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md` — 旧計画（C/K/L/W 系）と §6-1〜205 の経緯・計測。**読み物であり、指示ではない**。旧 `DESIGN_INCREMENTAL_KERNEL.md` は廃止し、ARCHIVE の付録 5 へ移設した（持ち越す知見は付録 5.A。新しい知見はここへ積む）。軌道修正の前の計画書の全文（M2a の設計・M2b〜M2c の作業記録）は索引から辿る `docs/plan/archive/07`（MOD 時代の旧 `REFACTORING_PLAN.md` は `archive/00`）。コードの注釈の「計画書 §3.3 C」「§3.4.x」はそこを指す。
 
 ## 作業の規則（計画書 §5 の要約。迷ったら §5 が正）
 
@@ -37,6 +37,6 @@
 
 ## コミット
 
-既存の形式に合わせる: `type(scope): 日本語の要約 (ID)`、本文は `- タスク …` の箇条書き。ID は計画書の Phase（例 `M2`）。`core/*.md` は `.gitignore` の対象なので、新規の文書は `git add -f` で追加する。
+既存の形式に合わせる: `type(scope): 日本語の要約 (ID)`、本文は `- タスク …` の箇条書き。ID は計画書の Phase（例 `M2`）。文書はエンジンのものを `docs/`（計画書は `docs/plan/`）、MOD のものを `mod/docs/` に置く（`core/` の下の `.md` はモジュールの README 以外を `.gitignore` が除く）。
 
 **main にコミット・プッシュするときは、Claude の表記が入ってコラボレーター（共同作成者）に Claude が載らないよう、ユーザー本人のアカウントを使う。** 作成者・コミッターはリポジトリに設定済みの git のユーザー（`git config user.name` / `user.email`）のままにし、`Co-Authored-By: Claude …` のトレーラーや「Generated with Claude Code」などの Claude の表記をコミットメッセージ・PR の本文に付けない。

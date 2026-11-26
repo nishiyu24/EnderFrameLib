@@ -35,5 +35,5 @@ The kit ships the engine's own user-agent sheet (`enderframe-ua.css`) and the
 built-in themes verbatim, and links them in the same order the game does, so the
 preview is not styled by a parallel set of defaults. It also contains
 `fidelity-dump.html`, which measures the fidelity corpus in your browser; the
-measured values are what [FIDELITY.md](../FIDELITY.md) and `WebFidelityTest` compare
+measured values are what [FIDELITY.md](../../docs/FIDELITY.md) and `WebFidelityTest` compare
 the engine against.

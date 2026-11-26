@@ -111,7 +111,7 @@ When installed in Minecraft 1.21.1 (NeoForge), the `:mod` subproject wires Ender
 
 ### Performance Highlights & Honest Caveats
 
-Numbers below come from [BENCHMARK.md](BENCHMARK.md) (`:core` real-frame measurements on Windows, JDK 21, 24 hardware threads, 800×600, warm JVM, Arial font, median of 3 runs, ±10–15% run-to-run variance; headless Chrome 157 measured on the same documents):
+Numbers below come from [BENCHMARK.md](docs/BENCHMARK.md) (`:core` real-frame measurements on Windows, JDK 21, 24 hardware threads, 800×600, warm JVM, Arial font, median of 3 runs, ±10–15% run-to-run variance; headless Chrome 157 measured on the same documents):
 
 - **Idle frames:** Skipped completely (no restyle, layout, or draw).
 - **Incremental updates (OpenGL, real frame):** `scroll` takes `0.007 ms` on the showcase page and `0.09 ms` on a 2,000-row list (Chrome: `0.50 ms`); `:hover` toggle takes `0.10 ms` (Chrome: `1.24 ms`); text update takes `0.17 ms` (Chrome: `1.07 ms`); opening the showcase page in a warm JVM takes `4.19 ms` (Chrome: `5.30 ms`).
@@ -124,7 +124,7 @@ Numbers below come from [BENCHMARK.md](BENCHMARK.md) (`:core` real-frame measure
 
 ### Browser Fidelity Status
 
-Layout and rendering differences against real browsers are tracked mechanically by `WebFidelityTest` and `WptReftestRatchetTest` (see [FIDELITY.md](FIDELITY.md)):
+Layout and rendering differences against real browsers are tracked mechanically by `WebFidelityTest` and `WptReftestRatchetTest` (see [FIDELITY.md](docs/FIDELITY.md)):
 - On the tracked 260-pair WPT reftest subset, **160 pass (62%)**: Flexbox 106/120, Grid 23/80, Text 31/60.
 
 ---
@@ -138,14 +138,14 @@ For the full engine guide, AOT cache instructions, and verified runnable snippet
 > Artifacts are not yet on Maven Central; publish locally from source first.
 
 ```bash
-./gradlew publishMavenJavaPublicationToLocalRepoRepository   # publishes :core, :core-gl, :core-vulkan, :core-glfw to ./repo
-./gradlew :core:verifyPublishedModules                       # verifies POMs & runs scripts/consumer-check against ./repo
+./gradlew publishMavenJavaPublicationToLocalRepoRepository   # publishes :core, :core-gl, :core-vulkan, :core-glfw to ./build/repo
+./gradlew :core:verifyPublishedModules                       # verifies POMs & runs scripts/consumer-check against ./build/repo
 ```
 
 ```kotlin
 repositories {
     mavenCentral()
-    maven { url = uri("path/to/EnderFrameLib/repo") }
+    maven { url = uri("path/to/EnderFrameLib/build/repo") }
 }
 
 val lwjglVersion = "3.3.3"
@@ -241,15 +241,15 @@ mount(rootElement, app);
 
 ## Using the Minecraft 1.21.1 Integration
 
-> This section applies only if you are using EnderFrameLib as a **Minecraft 1.21.1 (NeoForge) mod**. Detailed guides live in [docs/getting-started.md](docs/getting-started.md), [docs/headless-state.md](docs/headless-state.md), [docs/client-and-hybrid.md](docs/client-and-hybrid.md), and [docs/commands-and-devkit.md](docs/commands-and-devkit.md).
+> This section applies only if you are using EnderFrameLib as a **Minecraft 1.21.1 (NeoForge) mod**. Detailed guides live in [mod/docs/](mod/README.md): [getting-started.md](mod/docs/getting-started.md), [headless-state.md](mod/docs/headless-state.md), [client-and-hybrid.md](mod/docs/client-and-hybrid.md), and [commands-and-devkit.md](mod/docs/commands-and-devkit.md).
 
 ### Mod Installation
 
-Publish to `./repo` with `./gradlew publish` (requires Minecraft 1.21.1, NeoForge 21.1.248+, Java 21):
+Publish to `./build/repo` with `./gradlew publish` (requires Minecraft 1.21.1, NeoForge 21.1.248+, Java 21):
 
 ```gradle
 repositories {
-    maven { url = "file:///path/to/enderframelib/repo" }
+    maven { url = "file:///path/to/enderframelib/build/repo" }
 }
 
 dependencies {
@@ -273,7 +273,7 @@ side = "BOTH"
 1. **Server-driven HTML & HUDs (`EnderFrameAPI`)** — Open ad-hoc HTML strings (`Ui.html(...)`) or datapack UIs (`Ui.datapack("mymod:menu")`), attach persistent HUDs (`hud(...)`), and push live updates via pub/sub channels (`publish(...)`) with ACL checks (`addSubscriptionCheck(...)`).
 2. **Machine UIs & In-World Surfaces with Headless `UIState` (Recommended)** — Ship the HTML template on the client (`assets/<modid>/enderframe_ui/<name>.html`), hold only key/value `UIState` on the server (`EnderFrameAPI.get().stateOf(blockEntity, "mymod:crusher")`), and bind values declaratively with `data-bind="key"` / `{{key}}` / `data-if`. The exact same model powers multiblock `EnderScreenBlockEntity` screens, interactive billboards (`Surfaces.hologram(...)`), and `EnderScreenItem` displays.
 3. **Client-Driven UI & Hybrid Ownership (`EnderFrameClientAPI`)** — Open client-only documents with `ClientSession`, mutate the live `Document` directly, schedule `requestAnimationFrame` / `setTimeout` / `setInterval`, and combine client-owned and server-owned subtrees (`data-owner="server|client"`, `data-forward`, `onclick="server:name"`).
-4. **In-Game Commands & Browser DevKit** — Use `/enderframe open`, `/enderframe hud`, `/enderframe patch`, `/enderframe publish`, `/enderframe desktop`, and `/enderframe devkit` (exports `<gameDir>/enderframe_devkit/` for live authoring in a regular browser). See [COMMAND_GUIDE.md](mod/COMMAND_GUIDE.md).
+4. **In-Game Commands & Browser DevKit** — Use `/enderframe open`, `/enderframe hud`, `/enderframe patch`, `/enderframe publish`, `/enderframe desktop`, and `/enderframe devkit` (exports `<gameDir>/enderframe_devkit/` for live authoring in a regular browser). See [COMMAND_GUIDE.md](mod/docs/COMMAND_GUIDE.md).
 
 ---
 
@@ -315,7 +315,7 @@ Full details and upgrade steps are in [docs/migration.md](docs/migration.md).
 
 ## Not Supported
 
-Known gaps are documented here so you do not have to discover them by debugging; code-level `LIMITATION` markers and browser-measured differences are tracked in [FIDELITY.md](FIDELITY.md).
+Known gaps are documented here so you do not have to discover them by debugging; code-level `LIMITATION` markers and browser-measured differences are tracked in [FIDELITY.md](docs/FIDELITY.md).
 
 - **Scripting & `MutationObserver` timing.** No JavaScript anywhere. Behaviour is driven from Java (or server-side / reactive `data-*` attributes in the mod). `onclick` is read only as an action name in the mod host, never evaluated as JS. A Java-side `MutationObserver` API is available, with notifications batched and dispatched on tick/frame or manual flush rather than JS microtasks.
 - **HTML parsing in full.** Formatting elements are reconstructed by the adoption agency algorithm, but SVG and MathML elements are parsed without XML namespaces (tag and attribute names stay lower-case, e.g., `viewBox` becomes `viewbox`). Rules from `<style>` and an SVG's own `<style>` apply to presentation properties (`fill`, `stroke`, `opacity`, …), not `:hover`, pseudo-elements, `@container`, or `var()`.
@@ -349,7 +349,7 @@ Known gaps are documented here so you do not have to discover them by debugging;
 ./gradlew :core:quickTest                                   # fast :core check (~2 min, skips slow & timing tags)
 ./gradlew :core:test                                        # full Minecraft-free :core suite
 ./gradlew :core:costGate                                    # allocation & fast-path regression gate
-./gradlew :core:verifyPublishedModules                      # publish engine modules to ./repo & verify standalone consumer
+./gradlew :core:verifyPublishedModules                      # publish engine modules to ./build/repo & verify standalone consumer
 ./gradlew :core:runViewer --args="page.html 1280 800"       # launch standalone GLFW viewer
 ./gradlew :mod:test                                         # headless tests of the Minecraft mod
 ./gradlew :mod:runClient                                    # launch Minecraft 1.21.1 client with the mod
@@ -359,46 +359,53 @@ Known gaps are documented here so you do not have to discover them by debugging;
 The root is a plain Gradle build with no plugins. Engine-only tasks (`:core:*`, `:core-gl:*`, …) never configure `:mod`, so they run without NeoForge or Minecraft setup (configure-on-demand in `gradle.properties`; CI checks this). Dependencies point one way: `:mod` → `:core*`.
 
 ```text
+README.md, CONTRIBUTING.md, LICENSE*, NOTICE   Entry points, conventions, licenses
 core/         (:core) Pure-Java 21 HTML/CSS engine, layout, DOM/events, UI DSL, <scene-3d>, CPU rasterizer, RHI, SPI
 core-gl/      (:core-gl) OpenGL 3.2+ Core GPU backend
 core-vulkan/  (:core-vulkan) Vulkan 1.1 GPU backend
 core-glfw/    (:core-glfw) GLFW WindowHost & StandaloneViewer
+docs/         Engine documentation: guides, architecture, benchmarks, fidelity ledger, and the plan (docs/plan/)
 mod/          (:mod) Optional NeoForge mod for Minecraft 1.21.1 — one host of the engine (see mod/README.md):
-                api/      Mod-facing API (EnderFrameAPI, EnderFrameClientAPI, UIState, EnderScreenBlockEntity)
-                common/   Shared resource loading, <mc-*> custom elements, DevKit export
-                server/   Headless UIState, HTML sessions, pub/sub, commands, datapacks, ACL
-                client/   Minecraft screen/HUD/world rendering, input synthesis, media
-                network/  State delta, DOM mutation, action, and pub/sub payloads
-docs/         Task-oriented guides for both standalone engine & mod usage
+                src/.../api/      Mod-facing API (EnderFrameAPI, EnderFrameClientAPI, UIState, EnderScreenBlockEntity)
+                src/.../content/  Blocks, <mc-*> custom elements and tag templates
+                src/.../server/   Headless UIState, HTML sessions, pub/sub, commands, datapacks, ACL
+                src/.../client/   Minecraft screen/HUD/world rendering, input synthesis, media
+                src/.../network/  State delta, DOM mutation, action, and pub/sub payloads
+                docs/             Mod guides, command reference, in-game test specifications
+scripts/      CI (ci-linux.ps1), A/B timing gate (ab-gate.ps1), code generators, published-artifact consumer check
+gradle/       Gradle wrapper and the shared publishing script for the engine modules
 ```
+
+Build outputs stay under each project's `build/`; the published engine modules go to `build/repo/` at the root.
 
 ---
 
 ## Documentation Map
 
-- **Standalone Engine (`:core`):**
-  - [core/README.md](core/README.md) — Standalone engine installation, Gradle setup, AOT cache, and compilable Java quick starts (English).
+- **Using the engine (`:core`, no Minecraft):**
+  - [core/README.md](core/README.md) — Installation, Gradle setup, AOT cache, and compilable Java quick starts (English).
   - [docs/standalone-viewer.md](docs/standalone-viewer.md) — Running HTML in a GLFW window or headless PNG without Minecraft (Japanese).
-  - [docs/build-and-run-commands.md](docs/build-and-run-commands.md) — Full Gradle command reference for builds, tests, demos, and viewers (Japanese).
-- **Minecraft Integration (`docs/`):**
-  - [docs/README.md](docs/README.md) — Documentation index and reading order (Japanese).
-  - [docs/getting-started.md](docs/getting-started.md) — Mod installation and first server-driven UI (English).
-  - [docs/headless-state.md](docs/headless-state.md) — Machine UIs and in-world screens with `UIState` (English).
-  - [docs/client-and-hybrid.md](docs/client-and-hybrid.md) — Client-driven UIs and hybrid server/client DOM ownership (English).
-  - [mod/README.md](mod/README.md) — The `:mod` subproject: layout, Gradle tasks, and in-game test specifications.
-  - [docs/commands-and-devkit.md](docs/commands-and-devkit.md) & [mod/COMMAND_GUIDE.md](mod/COMMAND_GUIDE.md) — `/enderframe` commands and DevKit browser preview.
-  - [docs/migration.md](docs/migration.md) — Detailed migration notes and breaking changes (English).
-- **Engineering & Quality:**
-  - [ARCHITECTURE.md](ARCHITECTURE.md) — Module layout, 7-layer dependency rules, and architectural ratchets (Japanese).
-  - [BENCHMARK.md](BENCHMARK.md) — Cross-engine benchmark methodology and measured numbers (Japanese).
-  - [FIDELITY.md](FIDELITY.md) — Browser-measured fidelity corpus and divergence ledger (Japanese).
+  - [docs/build-and-run-commands.md](docs/build-and-run-commands.md) — Gradle command reference for builds, tests, demos, viewers, and publishing (Japanese).
+  - [docs/migration.md](docs/migration.md) — Migration notes and breaking changes (English).
+- **Using the Minecraft mod (`:mod`):**
+  - [mod/README.md](mod/README.md) — The `:mod` subproject: layout, Gradle tasks, and the index of mod documents.
+  - [mod/docs/getting-started.md](mod/docs/getting-started.md) — Mod installation and first server-driven UI (English).
+  - [mod/docs/headless-state.md](mod/docs/headless-state.md) — Machine UIs and in-world screens with `UIState` (English).
+  - [mod/docs/client-and-hybrid.md](mod/docs/client-and-hybrid.md) — Client-driven UIs and hybrid server/client DOM ownership (English).
+  - [mod/docs/commands-and-devkit.md](mod/docs/commands-and-devkit.md) & [mod/docs/COMMAND_GUIDE.md](mod/docs/COMMAND_GUIDE.md) — `/enderframe` commands and DevKit browser preview.
+- **Developing the engine:**
+  - [docs/README.md](docs/README.md) — Index of all engine documents and reading order (Japanese).
   - [CONTRIBUTING.md](CONTRIBUTING.md) — Language, comment, limitation, and testing conventions (Japanese).
+  - [docs/plan/ENGINE_REARCHITECTURE_PLAN.md](docs/plan/ENGINE_REARCHITECTURE_PLAN.md) — The current plan: status, priorities, KPIs, and operating rules (Japanese).
+  - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Module layout, layer dependency rules, and architectural ratchets (Japanese).
+  - [docs/BENCHMARK.md](docs/BENCHMARK.md) — Benchmark methodology and measured numbers (Japanese).
+  - [docs/FIDELITY.md](docs/FIDELITY.md) — Browser-measured fidelity corpus and divergence ledger (Japanese).
 
 ---
 
 ## Contributing & License
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for code conventions, test suites, and how known limitations are recorded across code, `FIDELITY.md`, and this README.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code conventions, test suites, and how known limitations are recorded across code, `docs/FIDELITY.md`, and this README.
 
 **License:** `LGPL-3.0-only`. See [LICENSE](LICENSE) and [LICENSE.GPL-3.0.txt](LICENSE.GPL-3.0.txt).
 

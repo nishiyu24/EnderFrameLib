@@ -9,7 +9,7 @@
 2. 該当コードの `LIMITATION(制約)` コメント
 3. README の "Not supported"（利用者から見える差異のみ）
 
-の 3 箇所に同じ内容で載る。規約は [CONTRIBUTING.md](CONTRIBUTING.md) を参照。
+の 3 箇所に同じ内容で載る。規約は [CONTRIBUTING.md](../CONTRIBUTING.md) を参照。
 
 ## 仕組み
 

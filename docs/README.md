@@ -1,33 +1,47 @@
 # docs 目次
 
+エンジン（`:core` 系）の文書はこのディレクトリ、Minecraft の MOD（`:mod`）の文書は [../mod/docs/](../mod/README.md) にある。
+
+## 使う人向け
+
 | 文書 | 言語 | 内容 |
 |:---|:---:|:---|
-| [getting-started.md](getting-started.md) | EN | 導入（Maven・最初の UI） |
-| [client-and-hybrid.md](client-and-hybrid.md) | EN | クライアント駆動 UI・HUD・ハイブリッド実行モデル |
-| [headless-state.md](headless-state.md) | EN | 機械 UI・ワールド内の面を Headless State で作る |
-| [commands-and-devkit.md](commands-and-devkit.md) | EN | `/enderframe` コマンドの要点とブラウザプレビュー（DevKit。全コマンドは [COMMAND_GUIDE.md](../mod/COMMAND_GUIDE.md)） |
+| [../core/README.md](../core/README.md) | EN | 単体エンジン（`:core` / `:core-gl` / `:core-vulkan` / `:core-glfw`）の導入・Gradle の設定・コンパイルできるコード例 |
+| [standalone-viewer.md](standalone-viewer.md) | JA | Minecraft なしで HTML を窓／PNG に出す |
+| [build-and-run-commands.md](build-and-run-commands.md) | JA | ビルド・テスト・ビューア・デモ・公開の Gradle コマンド集 |
 | [migration.md](migration.md) | EN | 移行メモ・破壊的変更 |
-| [standalone-viewer.md](standalone-viewer.md) | JA | Minecraft なしで HTML を窓／PNG に出す（`:core`） |
-| [build-and-run-commands.md](build-and-run-commands.md) | JA | ビルド・テスト・ビューア起動の Gradle コマンド集（テストサイト `runShowcase` を含む） |
 
-## 読む順の目安
-
-- **単体の Java アプリ・ゲームエンジンで使う（Minecraft 無し）**: [../core/README.md](../core/README.md) → standalone-viewer → build-and-run-commands
-- **Minecraft Mod（NeoForge）から使う**: getting-started → headless-state（固定画面）／ client-and-hybrid（クライアント駆動）→ commands-and-devkit
-- **バージョンを上げる**: migration
-
-## ルートの文書
+## 開発する人向け
 
 | 文書 | 内容 |
 |:---|:---|
-| [../README.md](../README.md) | 全体概要（純 Java エンジン＋任意の Minecraft 統合）と導入案内 |
-| [../ARCHITECTURE.md](../ARCHITECTURE.md) | 構造・層の責務・`ArchitectureTest` の上限 |
-| [../core/README.md](../core/README.md) | 単体エンジン（`:core` / `:core-gl` / `:core-vulkan` / `:core-glfw`）の導入・コード例（英語） |
-| [../FIDELITY.md](../FIDELITY.md) | ブラウザとの差異の台帳 |
-| [../BENCHMARK.md](../BENCHMARK.md) | 性能の基準値と実測 |
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | 規約（言語・コメント・テスト） |
-| [../REFACTORING_PLAN.md](../REFACTORING_PLAN.md) | リファクタリング計画 |
-| [../mod/COMMAND_GUIDE.md](../mod/COMMAND_GUIDE.md) | `/enderframe`（`/ef`）コマンドとデータパック連携の全ガイド |
-| [../mod/TEST_SPEC_BLOCKS_ITEMS.md](../mod/TEST_SPEC_BLOCKS_ITEMS.md) | ブロック・アイテム描画の実機テスト仕様 |
-| [../mod/TEST_SPEC_MEDIA.md](../mod/TEST_SPEC_MEDIA.md) | 動画・音声・画像の実機テスト仕様 |
-| [../mod/TEST_SPEC_SURFACE.md](../mod/TEST_SPEC_SURFACE.md) | ブロック／アイテム表面への Web 画面の実機確認手順 |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | 規約（言語・コメント・テスト・ゴールデンの更新） |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 構造・層の責務・アーキテクチャのラチェット |
+| [BENCHMARK.md](BENCHMARK.md) | 性能の基準値と実測・計り方 |
+| [FIDELITY.md](FIDELITY.md) | ブラウザとの差異の台帳（`WebFidelityTest` が読む） |
+| [plan/ENGINE_REARCHITECTURE_PLAN.md](plan/ENGINE_REARCHITECTURE_PLAN.md) | **現行の計画書**（Engine v3。§0 現在地・§3 優先順位表・§4 KPI・§5 運用ルール） |
+| [plan/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md](plan/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) | 旧計画の経緯と計測・持ち越す知見（付録 5.A）。`plan/archive/` の索引を兼ねる |
+
+`plan/archive/` は過去の計画の原文（読み物であり、指示ではない）。MOD 時代の旧計画 `REFACTORING_PLAN.md` も
+`plan/archive/00_refactoring_plan_mod_era.md` として残してある。原文のまま保存しているので、中のリンクは当時のパスを指す。
+
+## 読む順の目安
+
+- **単体の Java アプリ・ゲームエンジンで使う（Minecraft なし）**: [../core/README.md](../core/README.md) → [standalone-viewer.md](standalone-viewer.md) → [build-and-run-commands.md](build-and-run-commands.md)
+- **Minecraft の MOD（NeoForge）から使う**: [../mod/README.md](../mod/README.md)（MOD の文書の目次）
+- **エンジンに手を入れる**: [../CONTRIBUTING.md](../CONTRIBUTING.md) → [plan/ENGINE_REARCHITECTURE_PLAN.md](plan/ENGINE_REARCHITECTURE_PLAN.md) の §0 → [ARCHITECTURE.md](ARCHITECTURE.md)
+
+## リポジトリの構成
+
+```text
+README.md  CONTRIBUTING.md  CLAUDE.md  LICENSE*  NOTICE   入口・規約・ライセンス
+core/         (:core)        エンジン本体（Minecraft・OpenGL・Vulkan に依存しない）
+core-gl/      (:core-gl)     OpenGL 3.2 バックエンド
+core-vulkan/  (:core-vulkan) Vulkan 1.1 バックエンド
+core-glfw/    (:core-glfw)   GLFW の窓と StandaloneViewer
+mod/          (:mod)         NeoForge 1.21.1 の MOD（エンジンの利用者の 1 つ）。文書は mod/docs/
+docs/                        エンジンの文書（このディレクトリ）。計画書は docs/plan/
+scripts/                     CI・計測・コード生成の補助（ci-linux.ps1・ab-gate.ps1・GenStyleGroups.java ほか）
+gradle/                      wrapper と、モジュール間で共有する適用スクリプト
+build/repo/                  公開物の出力先（./gradlew :core:verifyPublishedModules ほか。追跡しない）
+```

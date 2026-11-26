@@ -21,7 +21,7 @@ It combines off-heap columns on direct `ByteBuffer` + `VarHandle` (standard JDK 
   - **CPU** (in `:core`): 64×64 multithreaded tile rasterizer. No GPU and no window needed; works in headless, CI, and server environments.
   - **OpenGL 3.2+ Core** (`:core-gl`) and **Vulkan 1.1** (`:core-vulkan`): an SDF shader batches rounded rectangles, borders, shadows, gradients, and glyphs into instanced draws. Shapes the GPU path refuses fall back to a CPU layer.
   - `:core` itself has no compile or runtime dependency on OpenGL, GLFW, or Vulkan. GPU backends and the GLFW window (`:core-glfw`) are discovered through `ServiceLoader`.
-- **A subset of web standards** (this is not a browser; see [FIDELITY.md](../FIDELITY.md) for known divergences):
+- **A subset of web standards** (this is not a browser; see [FIDELITY.md](../docs/FIDELITY.md) for known divergences):
   - Layout: Block, Inline, Flexbox, Grid, Table, Multicolumn, and Container Queries (`@container`). Coverage is partial: on a 260-pair subset of WPT reftests, **160 pass (62%)**: flexbox 106/120, grid 23/80, text 31/60 (tracked by `WptReftestRatchetTest`).
   - Colors: RGB, HSL, `oklch`, `display-p3`, and gradients.
   - CSS `@keyframes` and `transition` animations.
@@ -32,7 +32,7 @@ It combines off-heap columns on direct `ByteBuffer` + `VarHandle` (standard JDK 
 
 ### Performance notes
 
-All numbers come from [BENCHMARK.md](../BENCHMARK.md) (section "`:core` の実フレーム計測"): one development machine (Windows, JDK 21, 24 hardware threads, 800×600, warm JVM), median of 3 runs, ±10–15% run-to-run variation. Both engines were forced to the same font (Arial). Chrome figures are per-frame CPU time from traces of headless Chrome 157 on the same documents. The comparison covers this engine's scope only (no JavaScript, single process, a subset of CSS), so it says how long the same change to the same document takes, not which engine is better overall.
+All numbers come from [BENCHMARK.md](../docs/BENCHMARK.md) (section "`:core` の実フレーム計測"): one development machine (Windows, JDK 21, 24 hardware threads, 800×600, warm JVM), median of 3 runs, ±10–15% run-to-run variation. Both engines were forced to the same font (Arial). Chrome figures are per-frame CPU time from traces of headless Chrome 157 on the same documents. The comparison covers this engine's scope only (no JavaScript, single process, a subset of CSS), so it says how long the same change to the same document takes, not which engine is better overall.
 
 Where `:core` is not ahead:
 
@@ -49,8 +49,8 @@ Where `:core` is not ahead:
 > **Not yet on Maven Central.** Until it is published, build from source. All four modules (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`) have Maven publications.
 
 ```
-./gradlew publishMavenJavaPublicationToLocalRepoRepository   # writes all four modules to <repo root>/repo
-./gradlew :core:verifyPublishedModules                       # publishes, checks the POMs, and runs the Quick Start from a separate project that sees only repo/
+./gradlew publishMavenJavaPublicationToLocalRepoRepository   # writes all four modules to <repo root>/build/repo
+./gradlew :core:verifyPublishedModules                       # publishes, checks the POMs, and runs the Quick Start from a separate project that sees only build/repo/
 ```
 
 ### Gradle (Kotlin DSL)
@@ -58,7 +58,7 @@ Where `:core` is not ahead:
 ```kotlin
 repositories {
     mavenCentral()
-    maven { url = uri("path/to/EnderFrameLib/repo") }
+    maven { url = uri("path/to/EnderFrameLib/build/repo") }
 }
 
 val lwjglVersion = "3.3.3"
@@ -242,6 +242,6 @@ System fonts: the first start scans the OS font folders (opening every font file
 
 ## 📖 Further Reading
 
-- [BENCHMARK.md](../BENCHMARK.md): Measured numbers, conditions, and how to reproduce them (Japanese).
-- [ARCHITECTURE.md](../ARCHITECTURE.md): Module layout, layers, and the mechanical checks that guard them (Japanese).
-- [FIDELITY.md](../FIDELITY.md): Ledger of known differences from browsers, with measured cases.
+- [BENCHMARK.md](../docs/BENCHMARK.md): Measured numbers, conditions, and how to reproduce them (Japanese).
+- [ARCHITECTURE.md](../docs/ARCHITECTURE.md): Module layout, layers, and the mechanical checks that guard them (Japanese).
+- [FIDELITY.md](../docs/FIDELITY.md): Ledger of known differences from browsers, with measured cases.

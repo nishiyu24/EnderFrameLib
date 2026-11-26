@@ -57,7 +57,7 @@ archive="${EFL_CI_ARCHIVE:-}"
 if [ -z "$archive" ]; then
   archive="$WORK/../src.tar"
   tmpindex="$(mktemp -u)"
-  # HEAD から始める（.gitignore に当たるが追跡されているファイル〔-f で足した core/*.md など〕も CI の checkout と同じく入れる）
+  # HEAD から始める（.gitignore に当たるが -f で追跡しているファイルも CI の checkout と同じく入れる）
   tree="$(cd "$REPO" && GIT_INDEX_FILE="$tmpindex" git read-tree HEAD && GIT_INDEX_FILE="$tmpindex" git add -A && GIT_INDEX_FILE="$tmpindex" git write-tree)" || { echo "[ci-linux] git でスナップショットを作れません"; exit 1; }
   (cd "$REPO" && git archive --format=tar "$tree") > "$archive" || exit 1
   rm -f "$tmpindex"

@@ -1,48 +1,44 @@
-# ビルド成果物
+# ---- ビルド成果物 ----
 /.gradle/
 /build/
 /core/build/
-/core/.gradle/
+/core-gl/build/
+/core-vulkan/build/
+/core-glfw/build/
 /mod/build/
+/out/
+/bin/
+# 公開物の検査用プロジェクト（scripts/consumer-check）の生成物
+/scripts/consumer-check/.gradle/
+/scripts/consumer-check/build/
+# 旧来の公開先（今は build/repo/）
 /repo/
 
+# ---- 生成物・実行時の出力 ----
 # データジェネレータの出力（mod/build.gradle が srcDir として読むが、生成物なので追跡しない）
 /mod/src/generated/
-
-# 開発用の Minecraft 実行ディレクトリ（ワールド・設定・ログ・DL キャッシュ。ModDevGradle の既定で :mod の下）
+# 開発用の Minecraft 実行ディレクトリ（ワールド・設定・ログ・DL キャッシュ）
 /mod/run/
+# LWJGL が実行時に展開するネイティブライブラリ
+.lwjgl/
+# GPU 出力の基準画像（フォント依存なのでマシンごとに生成）
+/core/baseline/
+# ログ・クラッシュダンプ
+/logs/
+*.log
+*.log.gz
+hs_err_pid*.log
 
-# IDE
+# ---- 文書 ----
+# 文書は docs/（エンジン）と mod/docs/（MOD）に置く。core 配下の .md はモジュールの README 以外を追跡しない（作業メモ用）
+/core/**/*.md
+!/core/**/README.md
+
+# ---- IDE・ツール ----
 /.idea/
 *.iml
 /.vscode/
 /.eclipse/
-/bin/
-
-# ログ
-*.log
-*.log.gz
-hs_err_pid*.log
 /.agents/
 /.gemini/
-
-# IDE のビルド出力
-/out/
-/logs/
-
-# core 配下のドキュメント（README 以外は追跡対象外）
-/core/**/*.md
-!/core/**/README.md
-
-
-# G0: GPU 出力の基準画像（フォント依存なのでマシンごとに生成）
-/core/baseline/
-
-# G4 の分離モジュールのビルド成果物
-/core-gl/build/
-/core-vulkan/build/
-/core-glfw/build/
-
-# A10: 公開物の検査用プロジェクトの生成物
-/scripts/consumer-check/.gradle/
-/scripts/consumer-check/build/
+/.claude/

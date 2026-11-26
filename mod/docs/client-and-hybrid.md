@@ -66,4 +66,4 @@ This applies to documents sent from the server as HTML (`Ui.html`, `Ui.datapack`
 - **Declared event forwarding**: An element forwards events to the server with `data-forward="<event>[:<payload>] …"` and `data-forward-action="<name[:arg]>"` (payload: `value`, `key`, `point`, `target`, `none`). Client listeners run first; the event is sent only if nothing called `preventDefault()` and it reached the declaring element. `onclick="server:name"` is sugar for the same declaration, and inputs/textareas/selects inside server-owned subtrees implicitly forward `input`/`change` values for write-back.
 - **List Reuse**: `data-for` reuses existing node instances by key (`data-row-key` or index) to preserve node identity and internal state.
 
-See also [ARCHITECTURE.md](../ARCHITECTURE.md) for the internal synchronization design.
+See also [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) for the internal synchronization design.

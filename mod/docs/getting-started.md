@@ -1,6 +1,6 @@
 # Getting Started (Minecraft 1.21.1 NeoForge Mod)
 
-> Looking for the **standalone pure-Java engine** (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`, no Minecraft required)? See [core/README.md](../core/README.md) and [standalone-viewer.md](standalone-viewer.md).
+> Looking for the **standalone pure-Java engine** (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`, no Minecraft required)? See [core/README.md](../../core/README.md) and [standalone-viewer.md](../../docs/standalone-viewer.md).
 
 ## Installation
 
@@ -8,7 +8,7 @@ Published to a local Maven repository (`./repo`) by `./gradlew publish`.
 
 ```gradle
 repositories {
-    maven { url = "file:///path/to/enderframelib/repo" }
+    maven { url = "file:///path/to/enderframelib/build/repo" }
 }
 
 dependencies {

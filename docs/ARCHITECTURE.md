@@ -5,10 +5,10 @@ EnderFrameLib は、ブラウザ標準（HTML / CSS / UI Events / WHATWG DOM）�
 本書は、構造整理（T0〜T7）と Headless State（H0〜H4）を経た**現在の**システムの全体像、パッケージ構成、
 責務分担、設計原則、および機械的に守っている管理指標を記述します。
 
-- これから何をどの順でやるか: [REFACTORING_PLAN.md](REFACTORING_PLAN.md)
+- これから何をどの順でやるか: [計画書 ENGINE_REARCHITECTURE_PLAN.md](plan/ENGINE_REARCHITECTURE_PLAN.md)
 - 性能の基準値と実測: [BENCHMARK.md](BENCHMARK.md)
 - ブラウザとの差異の台帳: [FIDELITY.md](FIDELITY.md)
-- 規約（言語・コメント・テスト）: [CONTRIBUTING.md](CONTRIBUTING.md)
+- 規約（言語・コメント・テスト）: [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 ---
 
@@ -20,7 +20,7 @@ EnderFrameLib は、ブラウザ標準（HTML / CSS / UI Events / WHATWG DOM）�
 > `core.paint.vulkan`）・`:core-glfw`（GLFW の窓と単体ビューア）。`:core` はこの 3 つにも OpenGL・GLFW・Vulkan にも依存せず、
 > `ServiceLoader` で見つける（無ければソフトウェア描画だけが動く。`:core:verifyCoreDependencyGraph` と `:core:runCoreOnlySmoke` が検査する）。
 > `ArchitectureTest` / `ApiBoundaryTest` は両モジュールのソースを 1 本の木として検査する。
-> `:core` を単体で使う方法は [core/README.md](core/README.md) と [docs/standalone-viewer.md](docs/standalone-viewer.md)。
+> `:core` を単体で使う方法は [core/README.md](../core/README.md) と [docs/standalone-viewer.md](standalone-viewer.md)。
 
 ```
  client/   server/            （Minecraft / NeoForge に依存する実行系）
@@ -192,7 +192,7 @@ Minecraft だけが描ける中身（`item:`・`entity:`・`player:` の画像�
 ## 5. 描画パイプライン（`common/V3Frame`）
 
 スタイル解決から描画要素の生成までは `V3Frame` の 1 箇所で組み立てる（M5。経路は 1 本。旧 `RenderPipeline` / `LayoutBox` の経路は
-2026-11-26 の M2c-3 で削除した。計画書 `core/ENGINE_REARCHITECTURE_PLAN.md` §3.2）。
+2026-11-26 の M2c-3 で削除した。計画書 [ENGINE_REARCHITECTURE_PLAN.md](plan/ENGINE_REARCHITECTURE_PLAN.md) §3.2）。
 
 ```mermaid
 flowchart TD
@@ -230,8 +230,8 @@ flowchart TD
 ## 7. 管理指標とアーキテクチャの番人（ラチェット）
 
 コードの肥大化と責務の重複の再発を防ぐため、次の指標を
-[`ArchitectureTest`](mod/src/test/java/com/nishiyu/enderframelib/core/ArchitectureTest.java) で機械的に検査し、
-上限を超えたらビルドを落とす。上限は下げる方向にだけ動かす（[CONTRIBUTING.md](CONTRIBUTING.md)）。
+[`ArchitectureTest`](../mod/src/test/java/com/nishiyu/enderframelib/core/ArchitectureTest.java) で機械的に検査し、
+上限を超えたらビルドを落とす。上限は下げる方向にだけ動かす（[CONTRIBUTING.md](../CONTRIBUTING.md)）。
 
 | 指標 | 検査対象 | 上限 |
 |:---|:---|:---:|
@@ -254,7 +254,7 @@ flowchart TD
 - `client/` が `server/` を参照しない（両側で使う型は `network/` か `common/` に置く）。
 - `api/` が実装パッケージを参照しない（`ApiBoundaryTest`）。
 - テストのパッケージが本体のパッケージに対応する（WPT の移植ハーネスを除く）。
-- README・CONTRIBUTING・FIDELITY・REFACTORING_PLAN・ARCHITECTURE・BENCHMARK に、消した型の名前が残っていない。
+- README・CONTRIBUTING・docs の FIDELITY・ARCHITECTURE・BENCHMARK に、消した型の名前が残っていない。
 - サーバーのセッション属性を並行マップで持たない（`WebSession` のフィールドに集約）、`EnderFrameScriptingBridge` が
   グローバルな登録簿を持たない、差分の送り方が `dom_mutations` の 1 系統である。
 

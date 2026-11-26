@@ -89,7 +89,7 @@ Java 側は時計・カウンタ・進捗バー・ログの追加と削除・表
 # core 単体ライブラリの jar（core/build/libs/enderframelib-core-<version>.jar）
 ./gradlew :core:jar
 
-# 単体エンジン 4 モジュール（:core / :core-gl / :core-vulkan / :core-glfw）を ./repo へ公開
+# 単体エンジン 4 モジュール（:core / :core-gl / :core-vulkan / :core-glfw）を ./build/repo へ公開
 ./gradlew publishMavenJavaPublicationToLocalRepoRepository
 
 # 公開物（POM・独立消費者プロジェクト）の整合検査

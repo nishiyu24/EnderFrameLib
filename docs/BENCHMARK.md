@@ -1,7 +1,7 @@
 # EnderFrameLib 性能ベンチマーク
 
 描画パイプラインとサーバー状態の性能の基準値と、フェーズごとの比較記録。
-計画は [REFACTORING_PLAN.md](REFACTORING_PLAN.md)、仕組みは [ARCHITECTURE.md](ARCHITECTURE.md) を参照。
+計画は [計画書](plan/ENGINE_REARCHITECTURE_PLAN.md)、仕組みは [ARCHITECTURE.md](ARCHITECTURE.md) を参照。
 
 数値はすべて開発機（Windows / JDK 21）での JUnit 上の測定で、ゲーム内のフレーム時間ではない。
 マシンが変われば絶対値は変わるので、比べるのは同じ表の中の前後だけにする。
@@ -229,7 +229,7 @@ guidebook 7.9 / 5.7 / 3.4 / 8.0 ms、large-list 19.8 / 9.4 / 9.2 / 13.7 ms。Res
 
 - **道具**: `FineProfileMain`（実フレームの経路 `StandaloneView.frame` を、ウォームアップ 600 フレームの後に 400〜1,500 フレーム回す）。
   Chrome 側は `core/src/bench-crossengine/trace.js`（CDP のトレースから 1 フレームの CPU 時間 = main + raster + draw）。
-  手順は [core/src/bench-crossengine/README.md](core/src/bench-crossengine/README.md)。
+  手順は [core/src/bench-crossengine/README.md](../core/src/bench-crossengine/README.md)。
 - **条件**: 開発機 1 台（Windows・JDK 21・論理 24 スレッド・800×600・ウォーム JVM）。`:core` は 3 回の中央値、Chrome 157（headless・GPU）は 3 回の中央値。
   時間は実行ごとに ±10〜15% 揺れる。**比が 0.85x〜1.15x の行は「互角」と読む。**
 - **比較の範囲**: Chrome の値はこのエンジンが扱う範囲（JavaScript なし・単一文書）での 1 フレームの CPU 時間。Chrome は別プロセスの合成・

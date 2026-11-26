@@ -9,6 +9,7 @@
 | 知りたいこと | ファイル | 旧の節 |
 | :-- | :-- | :-- |
 | 設計原則・144Hz 予算・7 層構造（本編 §1 へ統合済み） | — | 旧 §1 |
+| MOD 時代の旧計画（`REFACTORING_PLAN.md`。第 1〜4 期・Phase 0〜7・H0〜H4・R/T/W 系。2026-10-26 時点） | [`archive/00_refactoring_plan_mod_era.md`](archive/00_refactoring_plan_mod_era.md) | 旧ルートの `REFACTORING_PLAN.md` |
 | 旧スコアボード・モジュール構成マップ（2026-11-10 時点）・サブシステム別の実装済み設計・二重構造 A/B/C の解消記録 | [`archive/01_scoreboard_modules_subsystems.md`](archive/01_scoreboard_modules_subsystems.md) | 旧 §2〜§5 |
 | 実測プロファイル・Chrome 比較・他エンジン横断ベンチ・棄却した仮説 | [`archive/02_profiling_chrome_comparison.md`](archive/02_profiling_chrome_comparison.md) | 旧 §6 |
 | 当時の総合評価・残存課題、Wave 1.7（DoD 再設計・内容アドレス化・反復ブロックのインスタンス化。R0〜R7） | [`archive/03_assessment_and_wave17.md`](archive/03_assessment_and_wave17.md) | 旧 §7〜§8 |

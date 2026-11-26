@@ -125,7 +125,7 @@ class RegressionCatalogTest {
     static Map<String, String> section6() throws IOException {
         Map<String, String> out = new HashMap<>();
         boolean in = false;
-        for (String l : Files.readAllLines(root().resolve("core/ENGINE_REARCHITECTURE_PLAN.md"), StandardCharsets.UTF_8)) {
+        for (String l : Files.readAllLines(root().resolve("docs/plan/ENGINE_REARCHITECTURE_PLAN.md"), StandardCharsets.UTF_8)) {
             if (l.startsWith("## ")) in = l.startsWith("## 6.");
             if (!in) continue;
             Matcher m = SECTION6_ITEM.matcher(l);
@@ -133,7 +133,7 @@ class RegressionCatalogTest {
         }
         // 古い知見（付録 3）は補足資料へ移してある。そちらでは「§6-N. 本文」と書く
         boolean inAppendix = false;
-        for (String l : Files.readAllLines(root().resolve("core/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md"), StandardCharsets.UTF_8)) {
+        for (String l : Files.readAllLines(root().resolve("docs/plan/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md"), StandardCharsets.UTF_8)) {
             if (l.startsWith("## ")) inAppendix = l.startsWith("## 付録 3");
             if (!inAppendix) continue;
             Matcher m = ARCHIVED_ITEM.matcher(l);

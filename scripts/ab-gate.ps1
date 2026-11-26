@@ -1,5 +1,5 @@
 # Alternating A/B timing gate: an old commit (worktree) vs the current working tree.
-# (ENGINE_REARCHITECTURE_PLAN.md operating rule 9 / DESIGN_INCREMENTAL_KERNEL.md section 4, K0 item 5)
+# (docs/plan/ENGINE_REARCHITECTURE_PLAN.md section 5; history in the ARCHIVE appendix 5)
 #
 # Why: absolute times drift +-40% between sessions and single runs wobble +-10..15% (plan 6-180), so a time claim is only valid as a
 # SIMULTANEOUS alternating A/B: old and new run back to back, 3 rounds, the starting side flips every round, compare MEDIANS.

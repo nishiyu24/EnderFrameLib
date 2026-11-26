@@ -45,7 +45,7 @@ public class WebFidelityTest {
 
     private static final Path EXPECTED_DIR = Path.of("core/src/test/resources/fidelity/expected");
     private static final Path LEDGER = Path.of("core/src/test/resources/fidelity/known-divergences.txt");
-    private static final Path FIDELITY_DOC = Path.of("FIDELITY.md");
+    private static final Path FIDELITY_DOC = Path.of("docs/FIDELITY.md");
 
     @Test
     public void testEngineMatchesBrowserExceptKnownDivergences() {

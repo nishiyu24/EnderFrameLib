@@ -1,4 +1,4 @@
-// :core-gl / :core-vulkan / :core-glfw の公開設定（A10）。:core と同じ POM・リポジトリ（repo/ と MAVEN_REPO_URL）。
+// :core-gl / :core-vulkan / :core-glfw の公開設定（A10）。:core と同じ POM・リポジトリ（build/repo/ と MAVEN_REPO_URL）。
 // 適用側は `ext.publishDescription` を先に決める。artifactId は base.archivesName（enderframelib-core-gl など）。
 apply plugin: 'maven-publish'
 
@@ -48,7 +48,7 @@ publishing {
     repositories {
         maven {
             name = 'localRepo'
-            url = uri(rootProject.file('repo'))
+            url = uri(rootProject.file('build/repo'))
         }
         if (System.getenv('MAVEN_REPO_URL') != null) {
             maven {

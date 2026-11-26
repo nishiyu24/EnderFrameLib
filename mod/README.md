@@ -6,7 +6,7 @@ Minecraft; this mod is one host of it. Dependencies point one way: `:mod` → `:
 
 For what the mod offers (GUI screens, HUDs, in-world block / hologram / item surfaces, `UIState` sync,
 `/enderframe` commands, `<mc-*>` elements), see the [repository README](../README.md#optional-minecraft-integration-neoforge-mod)
-and the guides in [docs/](../docs/README.md).
+and the documents below. Engine documents (architecture, benchmarks, fidelity, the plan) are in [../docs/](../docs/README.md).
 
 ## Layout
 
@@ -19,6 +19,7 @@ mod/
   src/main/templates   neoforge.mods.toml template
   src/test/java        headless tests (no Minecraft client is started)
   src/test/resources   mod-only test data (display-list goldens, Chrome-measured rectangles, server baselines)
+  docs/                mod guides, command reference, in-game test specifications (listed below)
   run/                 development game directory (not tracked)
 ```
 
@@ -45,9 +46,18 @@ The mod tests borrow a few helpers from the engine through Gradle test fixtures
 test output itself. Like the engine tests, they run with the repository root as the working directory, so
 paths in tests are written from the root (`mod/src/...`, `core/src/...`).
 
-## In-game test specifications (Japanese)
+## Documents
 
-- [COMMAND_GUIDE.md](COMMAND_GUIDE.md) — `/enderframe` (`/ef`) commands and datapack integration
-- [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md) — web screens on block / item surfaces
-- [TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md) — block and item rendering
-- [TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md) — video, audio and images
+Guides (English):
+
+- [docs/getting-started.md](docs/getting-started.md) — installing the mod and a first server-driven UI
+- [docs/headless-state.md](docs/headless-state.md) — machine UIs and in-world screens with `UIState`
+- [docs/client-and-hybrid.md](docs/client-and-hybrid.md) — client-driven UIs, HUDs, and hybrid server/client DOM ownership
+- [docs/commands-and-devkit.md](docs/commands-and-devkit.md) — `/enderframe` essentials and the DevKit browser preview
+
+Reference and in-game test specifications (Japanese):
+
+- [docs/COMMAND_GUIDE.md](docs/COMMAND_GUIDE.md) — all `/enderframe` (`/ef`) commands and datapack integration
+- [docs/TEST_SPEC_SURFACE.md](docs/TEST_SPEC_SURFACE.md) — web screens on block / item surfaces
+- [docs/TEST_SPEC_BLOCKS_ITEMS.md](docs/TEST_SPEC_BLOCKS_ITEMS.md) — block and item rendering
+- [docs/TEST_SPEC_MEDIA.md](docs/TEST_SPEC_MEDIA.md) — video, audio and images

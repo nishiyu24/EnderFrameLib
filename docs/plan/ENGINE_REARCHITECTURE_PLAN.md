@@ -11,7 +11,7 @@
 
 | 項目 | 状態 |
 | :--- | :--- |
-| 完了 | M0・M1・M2a・M2b（レイアウトの移植。WPT 170/260）・M2c（M2c-1 保持ヒープの内訳・M2c-2 既定を新経路へ切り替え・M2c-3 旧経路の削除。経路は 1 本。§3.2）・**M3a**（MOD の旧レンダラの撤去。面はコアの描画だけが描く。§3.3）。独立トラックは P1a と **P4-1**（ルートを素の Gradle、MOD を `mod/`〔`:mod`〕へ。`:core` 系だけのタスクは `:mod` を設定しない。§3.9） |
+| 完了 | M0・M1・M2a・M2b（レイアウトの移植。WPT 170/260）・M2c（M2c-1 保持ヒープの内訳・M2c-2 既定を新経路へ切り替え・M2c-3 旧経路の削除。経路は 1 本。§3.2）・**M3a**（MOD の旧レンダラの撤去。面はコアの描画だけが描く。§3.3）。独立トラックは P1a と **P4-1**（ルートを素の Gradle、MOD を `mod/`〔`:mod`〕へ。`:core` 系だけのタスクは `:mod` を設定しない。文書はエンジンを `docs/`〔計画書は `docs/plan/`〕、MOD を `mod/docs/` へ。§3.9） |
 | 進行中 | なし |
 | 次の一手 | **M3b**（`DisplayScene`。§3.4）。`DisplayItem` の消費者は `:core` と MOD の `MinecraftHostSurface`（項目の一覧をそのままコアへ渡すだけ）になった。新経路の穴の残りは G3 multicol（M3c） |
 | 止まっている条件 | なし |
@@ -414,7 +414,7 @@ M2c-3 で旧経路と一緒に一時的に失う multicol を、新経路で作�
     2. MOD のテストが借りる `:core` のテスト出力を `testFixtures` にする。
     3. ルートの文書の主役を Core にする。
     - ゲート: 全ゲート緑・`:core` 系だけのビルドで NeoForge の設定処理 `0`。
-    - **結果（2026-11-27 完了）**: ①ルートの `build.gradle` はプラグインなし（`wrapper` の設定だけ）。MOD は `mod/`（`build.gradle`・`gradle.properties`〔Minecraft・NeoForge・MOD の値〕・`src`・`run/`）。エンジンの座標は `engine_group_id`/`engine_version`/`engine_artifact_prefix`（ルートの `gradle.properties`）。`org.gradle.configureondemand=true` で、`:core:test` は root と `:core` 系だけを評価し `:mod` を評価しない（CI の build に検査の段を足した） ②`:mod` は `testFixtures(project(':core'))` だけを借りる（`GoldenFiles`・`TestBoxes`・`WptHarness`/`WptBehaviorTest`・`TransformParseTestBridge` と WPT の既知差分の台帳。公開物には載せない）。テストの資源はコアのもの（WPT・忠実度・書体・パーサのゴールデン・`machine_ui.html`）を `core/src/test/resources`、MOD だけのもの（表示リストのゴールデン・Chrome の矩形・サーバーの基準値）を `mod/src/test/resources` へ分けた。全テストの作業ディレクトリはリポジトリ直下 ③README・ARCHITECTURE・CONTRIBUTING・docs を `:mod` の構成に合わせ、MOD 固有の文書（`COMMAND_GUIDE.md`・`TEST_SPEC_*`）を `mod/` へ移し `mod/README.md` を置いた
+    - **結果（2026-11-27 完了）**: ①ルートの `build.gradle` はプラグインなし（`wrapper` の設定だけ）。MOD は `mod/`（`build.gradle`・`gradle.properties`〔Minecraft・NeoForge・MOD の値〕・`src`・`run/`）。エンジンの座標は `engine_group_id`/`engine_version`/`engine_artifact_prefix`（ルートの `gradle.properties`）。`org.gradle.configureondemand=true` で、`:core:test` は root と `:core` 系だけを評価し `:mod` を評価しない（CI の build に検査の段を足した） ②`:mod` は `testFixtures(project(':core'))` だけを借りる（`GoldenFiles`・`TestBoxes`・`WptHarness`/`WptBehaviorTest`・`TransformParseTestBridge` と WPT の既知差分の台帳。公開物には載せない）。テストの資源はコアのもの（WPT・忠実度・書体・パーサのゴールデン・`machine_ui.html`）を `core/src/test/resources`、MOD だけのもの（表示リストのゴールデン・Chrome の矩形・サーバーの基準値）を `mod/src/test/resources` へ分けた。全テストの作業ディレクトリはリポジトリ直下 ③README・ARCHITECTURE・CONTRIBUTING・docs を `:mod` の構成に合わせ、`mod/README.md` を置いた。続けて文書を置き場で分けた: ルートは README・CONTRIBUTING・CLAUDE・ライセンスだけ、エンジンの文書（ARCHITECTURE・BENCHMARK・FIDELITY）は `docs/`、計画書と ARCHIVE は `docs/plan/`（旧 `core/archive/` は `docs/plan/archive/`、MOD 時代の旧 `REFACTORING_PLAN.md` は `archive/00`）、MOD の文書（導入・Headless State・ハイブリッド・コマンド・`COMMAND_GUIDE`・`TEST_SPEC_*`）は `mod/docs/`。公開物の出力先は `build/repo/`。`DocConsistencyTest` は `docs/`・`mod/docs/` の全体（`docs/plan/archive/` は原文の保存なので除く）のリンクを見る
     - **P4-2 へ持ち越す結合**（別リポジトリにすると切れるもの。今は同じリポジトリなので動く）: コアのテスト・計測が MOD の同梱の文書（`mod/src/main/resources/data/enderframelib/enderframe_ui`。showcase・voidwave ほか）を読む（約 20 ファイル。文書をコアの資料へ移す）・`ArchitectureHealthTest`/`PortabilityRatchetTest` などが MOD のソースを走査する（MOD 側の検査へ移す）・`WptManifestTest` が MOD の uievents の移植のソースを読む（M4 で uievents を `:core` へ）・MOD の `PacketBandwidthTest` が `core/src/test/resources/benchmark/machine_ui.html` を読む
   - **P4-2（M4 完了・API 確定の後。M6 と同時）**: エンジンを独立名へ改名する（パッケージ・`groupId`）。
     1. `git filter-repo` で履歴付きの別リポジトリへ切り出す。
@@ -512,4 +512,5 @@ M2c-3 で旧経路と一緒に一時的に失う multicol を、新経路で作�
 - 旧計画（C 系・K 系・K5b・W0〜W3。2026-11-24 までの設計の記録と知見 `§6-1〜205`）の全文は [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) に退避してある。`RegressionCatalogTest` が参照する `§6-N` は、同じアーカイブの付録 3 に全て保全されている。
 - **2026-11-26 の軌道修正の前の本文**（M1 の段の記録・M2a の設計とスパイクの実測・M2b-0〜M2b-5 と M2c ①〜④-3 前半の作業記録・P1 の計測の詳細）は、原文のまま `archive/07_plan_m0_to_m2c_before_course_correction.md` へ移した（ARCHIVE の索引から辿る）。コードの注釈にある「計画書 §3.3 C」「§3.4.1」「§3.4.2-N」は、その文書の同じ番号の節を指す。
 - `core/DESIGN_INCREMENTAL_KERNEL.md` は廃止し、全文と持ち越す知見を ARCHIVE の付録 5 へ移した。以後の知見は付録 5.A に積む。
-- `CLAUDE.md` は本計画書（§0・§2.3・§3・§5）に従う。`CLAUDE.md`・`ARCHITECTURE.md`・`BENCHMARK.md`・`REFACTORING_PLAN.md` は、各フェーズの完了に合わせて本計画書の内容へ順に同期する。
+- `CLAUDE.md` は本計画書（§0・§2.3・§3・§5）に従う。`CLAUDE.md`・`docs/ARCHITECTURE.md`・`docs/BENCHMARK.md` は、各フェーズの完了に合わせて本計画書の内容へ順に同期する。MOD 時代の旧計画 `REFACTORING_PLAN.md` は閉じ、`archive/00_refactoring_plan_mod_era.md` に原文のまま置いた。
+- 文書の置き場（P4-1）: エンジンの文書は `docs/`（計画書・ARCHIVE は `docs/plan/`、過去の原文は `docs/plan/archive/`）、MOD の文書は `mod/docs/`。目次は `docs/README.md` と `mod/README.md`。

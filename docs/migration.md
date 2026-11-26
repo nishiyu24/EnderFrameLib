@@ -37,7 +37,7 @@
 > before (1em is the font's natural 9px line box, not 12px), `line-height: normal`
 > reserves 1.15em instead of 1.375em, and `line-height: <length>` no longer scales
 > with `font-size`. Documents that were tuned against the old numbers need their
-> font sizes revisited. The reasoning is in [FIDELITY.md](../FIDELITY.md).
+> font sizes revisited. The reasoning is in [FIDELITY.md](FIDELITY.md).
 
 > **Breaking change — box tree.** Layout now runs on a box tree built from the
 > DOM, as in a browser. Inline content that sits next to a block is wrapped in an

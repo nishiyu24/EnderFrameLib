@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -43,9 +44,13 @@ class DocConsistencyTest {
 
     private static final Path ROOT = Path.of("").toAbsolutePath();
     private static final Path CORE_README = ROOT.resolve("core/README.md");
-    private static final Path BENCHMARK = ROOT.resolve("BENCHMARK.md");
+    private static final Path BENCHMARK = ROOT.resolve("docs/BENCHMARK.md");
+    private static final Path ARCHIVED_PLANS = ROOT.resolve("docs/plan/archive");
 
-    /** 検査する文書: リポジトリ直下・MOD（mod/ 直下）・docs・追跡している core 配下の README。 */
+    /**
+     * 検査する文書: リポジトリ直下・mod/ 直下・docs/ と mod/docs/ の全体（計画書と ARCHIVE を含む）・追跡している core 配下の README。
+     * {@code docs/plan/archive/} は過去の計画の原文（当時のパス・消えた型へのリンクをそのまま残す読み物）なので見ない。
+     */
     private static List<Path> trackedDocs() throws IOException {
         List<Path> out = new ArrayList<>();
         for (Path dir : List.of(ROOT, ROOT.resolve("mod"))) {
@@ -54,10 +59,12 @@ class DocConsistencyTest {
                 s.filter(p -> p.getFileName().toString().endsWith(".md")).sorted().forEach(out::add);
             }
         }
-        Path docs = ROOT.resolve("docs");
-        if (Files.isDirectory(docs)) {
+        for (Path docs : List.of(ROOT.resolve("docs"), ROOT.resolve("mod/docs"))) {
+            if (!Files.isDirectory(docs)) continue;
             try (Stream<Path> s = Files.walk(docs)) {
-                s.filter(p -> p.getFileName().toString().endsWith(".md")).sorted().forEach(out::add);
+                s.filter(p -> p.getFileName().toString().endsWith(".md"))
+                        .filter(p -> !p.startsWith(ARCHIVED_PLANS))
+                        .sorted().forEach(out::add);
             }
         }
         out.add(CORE_README);
@@ -117,10 +124,13 @@ class DocConsistencyTest {
     @Test
     void linkCheckerSeesMissingAndUntrackedTargets() {
         Path doc = ROOT.resolve("core/README.md");
-        List<String> bad = brokenLinks(doc, "see [a](NO_SUCH_FILE.md) and [b](ENGINE_REARCHITECTURE_PLAN.md) and [c](../README.md) and `[d](x.md)`");
+        List<String> bad = brokenLinks(doc, "see [a](NO_SUCH_FILE.md) and [b](../docs/plan/ENGINE_REARCHITECTURE_PLAN.md) and [c](../README.md) and `[d](x.md)`");
         assertTrue(bad.stream().anyMatch(s -> s.contains("NO_SUCH_FILE.md")), bad.toString());
-        // 計画書は追跡対象外。手元にあっても無くても、README からのリンクは切れている扱い
-        assertTrue(bad.stream().anyMatch(s -> s.contains("ENGINE_REARCHITECTURE_PLAN.md")), bad.toString());
+        assertTrue(bad.stream().noneMatch(s -> s.contains("ENGINE_REARCHITECTURE_PLAN.md")), "docs/ の計画書は追跡している: " + bad);
+        // core 配下の README 以外の .md は追跡しない（作業メモ）。手元にあっても、リンク先にしてはいけない
+        assertTrue(untrackedCoreDoc(ROOT.resolve("core/NOTES.md")));
+        assertFalse(untrackedCoreDoc(ROOT.resolve("core/README.md")));
+        assertFalse(untrackedCoreDoc(ROOT.resolve("docs/plan/ENGINE_REARCHITECTURE_PLAN.md")));
         assertTrue(bad.stream().noneMatch(s -> s.contains("../README.md")), bad.toString());
         assertTrue(bad.stream().noneMatch(s -> s.contains("x.md")), "コードの中はリンクとして数えない: " + bad);
     }
