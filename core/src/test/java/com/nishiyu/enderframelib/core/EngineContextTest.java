@@ -28,14 +28,14 @@ class EngineContextTest {
         assertSame(EngineContext.global(), EngineContext.current());
     }
 
-    /** S1 ②: 文脈は public な可変の欄を持たない（差し込み口と切り替えは不変の値で、update* が丸ごと差し替える）。 */
+    /** S1 ②: 文脈は public な可変の欄を持たない（差し込み口は不変の値で、updateHost が丸ごと差し替える）。 */
     @Test
     void contextHasNoPublicMutableFields() {
         for (java.lang.reflect.Field f : EngineContext.class.getDeclaredFields()) {
             int m = f.getModifiers();
             assertFalse(java.lang.reflect.Modifier.isPublic(m) && !java.lang.reflect.Modifier.isFinal(m), "public で可変: " + f.getName());
         }
-        for (Class<?> value : List.of(HostServices.class, ContextFlags.class)) {
+        for (Class<?> value : List.of(HostServices.class)) {
             assertTrue(value.isRecord(), value + " は不変の値");
         }
     }
@@ -44,17 +44,12 @@ class EngineContextTest {
     void updatesReplaceOneValueAndKeepTheOthers() {
         EngineContext ctx = new EngineContext();
         assertSame(HostServices.DEFAULTS, ctx.host());
-        assertSame(ContextFlags.DEFAULTS, ctx.flags());
         HostServices before = ctx.host();
         ctx.updateHost(h -> h.withResourceTextResolver(p -> "R:" + p));
         ctx.updateHost(h -> h.withI18nResolver(k -> "T:" + k));
         assertEquals("R:x", ctx.host().resourceTextResolver().apply("x"), "前の差し替えが残る");
         assertEquals("T:y", ctx.host().i18nResolver().apply("y"));
         assertNull(before.resourceTextResolver(), "元の値は変わらない（読んだ側が途中の状態を見ない）");
-        ctx.updateFlags(f -> f.withIncrementalLayout(false));
-        assertFalse(ctx.flags().incrementalLayout());
-        assertTrue(ctx.flags().localRelayout(), "ほかの切り替えはそのまま");
-        assertTrue(EngineContext.global().flags().incrementalLayout(), "別の文脈には響かない");
         assertThrows(NullPointerException.class, () -> ctx.updateHost(h -> null));
     }
 
@@ -134,9 +129,9 @@ class EngineContextTest {
         String bindings = Files.readString(main.resolve("core/dom/Bindings.java"));
         assertFalse(bindings.contains("public static Function<String, String> i18nResolver"));
         assertFalse(bindings.contains("public static BiFunction<String, Object[], String> i18nFormatter"));
-        String rp = Files.readString(main.resolve("common/RenderPipeline.java"));
-        assertFalse(rp.contains("public static IntrinsicSizeResolver intrinsicSizeResolver"));
-        assertFalse(rp.contains("static final List<LayoutBox> layoutChangedBoxes"), "再レイアウトの印付けリストはスレッド単位");
+        String frame = Files.readString(main.resolve("common/FrameRender.java")) + Files.readString(main.resolve("common/V3Frame.java"));
+        assertFalse(frame.contains("public static IntrinsicSizeResolver intrinsicSizeResolver"));
+        assertFalse(frame.contains("static volatile"), "1 回のフレームとビューのフレームはプロセス共有の状態を持たない");
         assertFalse(Files.readString(main.resolve("common/UiDocumentCompiler.java")).contains("IntrinsicSizeResolver intrinsicSizeResolver"));
     }
 }

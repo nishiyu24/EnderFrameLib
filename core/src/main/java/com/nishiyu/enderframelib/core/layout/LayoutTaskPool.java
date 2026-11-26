@@ -11,7 +11,7 @@ import java.util.function.LongConsumer;
 /**
  * 独立した兄弟部分木（再スタイル・測定・配置・変更マーク・後片付け）を並列実行するための共通プール。
  *
- * <p>{@code -Denderframe.layout.noparallel=true} または {@link com.nishiyu.enderframelib.core.kernel.Shortcut#LAYOUT_PARALLEL} で直列実行へ切り替えられ、
+ * <p>{@code -Denderframe.layout.noparallel=true} で直列実行へ切り替えられ（起動時に決まる）、
  * 並列・直列の結果の等価性検証に使う。ワーカー数は {@code -Denderframe.threads=N} か {@link #setWorkerThreads} で決める。
  * ソフトウェア描画のタイル実行（{@link #forEachIndex}）も同じプールを使う。</p>
  */
@@ -252,7 +252,7 @@ public final class LayoutTaskPool {
         if (count <= 0) return;
         int grain = Math.max(1, minGrain);
         ForkJoinPool p = pool;
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() || count < Math.max(PARALLEL_THRESHOLD, grain * 2)
+        if (!EngineFlags.LAYOUT_PARALLEL || count < Math.max(PARALLEL_THRESHOLD, grain * 2)
                 || p.getParallelism() <= 1 || inWorker()) {
             for (int i = 0; i < count; i++) {
                 task.accept(i);
@@ -275,7 +275,7 @@ public final class LayoutTaskPool {
         if (itemCount <= 0) return;
         int chunks = Math.max(1, Math.min(desiredChunks, itemCount));
         ForkJoinPool p = pool;
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.on() || itemCount < PARALLEL_THRESHOLD || chunks <= 1
+        if (!EngineFlags.LAYOUT_PARALLEL || itemCount < PARALLEL_THRESHOLD || chunks <= 1
                 || p.getParallelism() <= 1 || inWorker()) {
             consumer.accept(packSpan(0, 0, itemCount));
             return;

@@ -24,9 +24,17 @@ public final class FragmentLayout {
      * レイアウトの入力の木（{@link BoxNode#layout}。M2c）なので、描画だけの変化では根の断片がそのまま返る。
      */
     public LayoutFragment layout(BoxNode boxRoot, int viewportW, int viewportH) {
+        return layout(boxRoot, viewportW, viewportH, true);
+    }
+
+    /**
+     * {@code fixedRootWidth} が false なら、根の幅を使える幅に固定せず根自身の指定に従わせる（文書の一部の要素を根として組むとき。
+     * {@code width} が auto なら使える幅いっぱい）。文書の根はビューポートの幅に固定する。
+     */
+    LayoutFragment layout(BoxNode boxRoot, int viewportW, int viewportH, boolean fixedRootWidth) {
         session.viewport(viewportW, viewportH);
         session.cache().beginFrame();
-        ConstraintSpace space = session.space(viewportW, viewportW, Float.NaN, viewportH, ConstraintSpace.FORMATTING_ROOT);
+        ConstraintSpace space = session.space(viewportW, fixedRootWidth ? viewportW : Float.NaN, Float.NaN, viewportH, ConstraintSpace.FORMATTING_ROOT);
         root = session.cache().layout(boxRoot.layout, space, root, session);
         return root;
     }

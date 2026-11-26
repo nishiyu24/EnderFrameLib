@@ -50,6 +50,16 @@ public final class FragmentPipeline {
     /** 直前のフレームの箱の木。 */
     public BoxNode boxRoot() { return boxRoot; }
 
+    /**
+     * 要素 {@code root} の部分木だけを、一から組む（HUD の追跡表示など文書の一部を別の面に描く用）。根の幅は根自身の指定に従う
+     * （文書の根と違ってビューポートの幅に固定しない）。
+     */
+    public LayoutFragment frameSubtree(HtmlNode root, int viewportW, int viewportH) {
+        if (styles.sheet() != null) layout.session().positionTryRules(styles.sheet().positionTryRules);
+        boxRoot = compiler.compile(root, null);
+        return layout.layout(boxRoot, viewportW, viewportH, false);
+    }
+
     /** 1 フレーム。{@code ledger} は凍結済みの台帳（null なら全体を作り直す）。 */
     public LayoutFragment frame(HtmlNode domRoot, ChangeLedger ledger, int viewportW, int viewportH) {
         if (styles.sheet() != null) layout.session().positionTryRules(styles.sheet().positionTryRules);

@@ -1,11 +1,11 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.tree.PaintRun;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.BoxGeomStyle;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.Style;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
-import com.nishiyu.enderframelib.core.layout.PaintRun;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -47,7 +47,7 @@ public final class BoxDecorationPainter {
     int rootW() { return rootW; }
     int rootH() { return rootH; }
 
-    /** いま描いている木をレイアウトしたデバイスピクセル比（{@link DisplayListBuilder#render} が描画の頭で入れる）。 */
+    /** いま描いている木をレイアウトしたデバイスピクセル比（{@code DisplayListBuilder#render} が描画の頭で入れる）。 */
     private float devicePixelRatio = 1f;
 
     float devicePixelRatio() { return devicePixelRatio; }

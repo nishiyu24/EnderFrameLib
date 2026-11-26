@@ -9,14 +9,14 @@ import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 /**
- * エンジンがホストから受け取る差し込み（翻訳・JSON リスト解析・画像の固有サイズ解決・箱の描画関数・リソースの代替取得）をまとめた文脈。
+ * エンジンがホストから受け取る差し込み（翻訳・JSON リスト解析・画像の固有サイズ解決・リソースの代替取得）をまとめた文脈。
  * 以前は {@code Bindings} / {@code RenderPipeline} / {@code UiDocumentCompiler} のプロセス全体の static
  * フィールドだったもの。
  *
  * <p>{@link #global()} がホスト（Minecraft など）の既定の文脈。複数のホストやテストを同じ JVM で独立に動かすときは
  * {@link #callWith} / {@link #runWith} で、そのスレッドの間だけ別の文脈に切り替える（他スレッドと global は変わらない）。
- * 文脈が持つのは不変の 2 つの値（{@link HostServices} と {@link ContextFlags}）だけで、差し替えは {@link #updateHost} / {@link #updateFlags}、
- * 読み取りは {@link #current()} 経由（S1 ②。以前は public volatile の欄 14 個で、差し込み口と近道の切り替えが同じ所に並んでいた）。
+ * 文脈が持つのは不変の値 {@link HostServices} だけで、差し替えは {@link #updateHost}、読み取りは {@link #current()} 経由
+ * （S1 ②。以前は public volatile の欄 14 個で、差し込み口と近道の切り替えが同じ所に並んでいた。旧経路の切り替え {@code ContextFlags} は M2c-3 で消した）。
  */
 public final class EngineContext implements BindingHooks {
     private static final EngineContext GLOBAL = new EngineContext();
@@ -44,25 +44,16 @@ public final class EngineContext implements BindingHooks {
                 else runWith(active, r);
             };
         });
-        com.nishiyu.enderframelib.core.paint.DisplayListBuilder.bindParentRelativeSource(() -> current().flags.parentRelativeDisplayItems());
     }
 
     /** ホストの差し込み口（不変。{@link #updateHost} で丸ごと差し替える）。 */
     private volatile HostServices host = HostServices.DEFAULTS;
-    /** 文脈ごとの切り替え（不変。{@link #updateFlags} で丸ごと差し替える）。 */
-    private volatile ContextFlags flags = ContextFlags.DEFAULTS;
 
     /** ホストの差し込み口。 */
     public HostServices host() { return host; }
 
-    /** 文脈ごとの切り替え。 */
-    public ContextFlags flags() { return flags; }
-
     /** 差し込み口を {@code change} の結果へ差し替える（読み替えの間に他のスレッドの差し替えを失わない）。 */
     public synchronized void updateHost(UnaryOperator<HostServices> change) { host = java.util.Objects.requireNonNull(change.apply(host)); }
-
-    /** 切り替えを {@code change} の結果へ差し替える。 */
-    public synchronized void updateFlags(UnaryOperator<ContextFlags> change) { flags = java.util.Objects.requireNonNull(change.apply(flags)); }
 
     @Override public Function<String, String> i18nResolver() { return host.i18nResolver(); }
 

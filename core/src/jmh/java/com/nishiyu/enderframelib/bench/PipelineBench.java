@@ -1,23 +1,21 @@
 package com.nishiyu.enderframelib.bench;
 
 import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.FrameRender;
+import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.model.ScrollState;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.openjdk.jmh.annotations.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * パイプライン各段のマイクロベンチ（JMH）。段の切り方は {@code PerformanceBenchmarkTest.measureDocument} と同じ:
- * 再スタイル / 再レイアウト / ディスプレイリスト生成 / スクロール 1 段。加えて、箱の木を一から作る {@link #fullLayout}。
+ * 1 フレームのマイクロベンチ（JMH。M2c-3 で一本化した経路）: 文書を一から組んで描く {@link #fullFrame} と、同じビューで
+ * {@code :hover} を切り替えた増分の 1 フレーム {@link #hoverFrame}。描画まで含めて測る（計画書 §1.3 決定 G）。
  *
  * <p>JUnit 内の平均と違い、フォークした JVM で JIT のウォームアップと外れ値を分けて測る。
  * {@code -prof gc} を付ければ 1 操作あたりの割り当て量（B/op）も出る（{@code ./gradlew :core:jmh -Pjmh.args="-prof gc"}）。
@@ -33,14 +31,17 @@ public class PipelineBench {
     @Param({Workloads.SHOWCASE, Workloads.GUIDEBOOK, Workloads.LARGE_LIST})
     public String doc;
 
-    private final UiDocumentCompiler parser = new UiDocumentCompiler();
     private Document document;
-    private LayoutBox root;
-    private HtmlNode scroller;
-    private InteractionState hoverState;
-    private LayoutBox hoverRoot;
+    private StandaloneView view;
     private HtmlNode hoverTarget;
     private boolean hoverOn;
+    private long now = 1000;
+
+    private static final RenderBackend NO_DRAW = new RenderBackend() {
+        @Override public void render(List<DisplayItem> items, long nowMs) { }
+        @Override public com.nishiyu.enderframelib.core.raster.Pixmap pixmap() { throw new UnsupportedOperationException(); }
+        @Override public float devicePixelRatio() { return 1f; }
+    };
 
     private static HtmlNode firstButton(HtmlNode n) {
         if ("button".equals(n.tag)) return n;
@@ -53,97 +54,30 @@ public class PipelineBench {
 
     @Setup(Level.Trial)
     public void setUp() {
-        document = parser.parseDocument(Workloads.html(doc), "", Workloads.VIEWPORT_W, Workloads.VIEWPORT_H);
-        scroller = document.root.getElementById("scroller");
-        root = parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
-                FontResolver.FALLBACK, new InteractionState());
-        hoverState = new InteractionState();
-        hoverRoot = parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
-                FontResolver.FALLBACK, hoverState);
-        hoverTarget = firstButton(document.root);
-        inheritedState = new InteractionState();
-        inheritedRoot = parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
-                FontResolver.FALLBACK, inheritedState);
-        inheritedTarget = document.root.querySelector("body");
-        for (int i = 0; i < 4; i++) restyleInherited();
-        // 状態表を温めて、往復の定常状態を測る
-        for (int i = 0; i < 4; i++) hoverToggle();
+        document = new UiDocumentCompiler().parseDocument(Workloads.html(doc), "", Workloads.VIEWPORT_W, Workloads.VIEWPORT_H);
+        view = new StandaloneView(Workloads.html(doc), Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, FontResolver.FALLBACK);
+        hoverTarget = firstButton(view.root());
+        for (int i = 0; i < 4; i++) hoverFrame();
     }
 
-    /** :hover を 1 回切り替えて再スタイルする（状態表を引く経路。{@code <button>} が無い文書は何もしない）。 */
+    @TearDown(Level.Trial)
+    public void tearDown() {
+        view.close();
+    }
+
+    /** 文書を一から組んで描く（前回の木も記憶も無い 1 回だけのフレーム）。 */
     @Benchmark
-    public Object hoverToggle() {
+    public List<DisplayItem> fullFrame() {
+        return FrameRender.document(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, FontResolver.FALLBACK).items();
+    }
+
+    /** {@code :hover} を 1 回切り替えた増分の 1 フレーム（{@code <button>} が無い文書は何もしない）。 */
+    @Benchmark
+    public Object hoverFrame() {
         if (hoverTarget == null) return null;
         hoverOn = !hoverOn;
-        hoverState.setHoveredNode(hoverOn ? hoverTarget : null);
-        return parser.restyleLayoutTree(hoverRoot, document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), hoverState);
-    }
-
-    private InteractionState inheritedState;
-    private LayoutBox inheritedRoot;
-    private HtmlNode inheritedTarget;
-    private boolean inheritedOn;
-
-    /**
-     * 同じ {@link InteractionState} を使い続け、{@code <body>} の継承プロパティ（{@code color}）を 1 つ切り替えて再スタイルする。
-     * 実際の UI で「祖先の継承プロパティだけが変わった」ときの経路（{@code restyle} は毎回状態を捨てる最悪ケース）。
-     */
-    @Benchmark
-    public Object restyleInherited() {
-        if (inheritedTarget == null) return null;
-        String old = inheritedTarget.attrs.get("style");
-        String next = (inheritedOn = !inheritedOn) ? "color:#112233" : "color:#223344";
-        inheritedTarget.attrs.put("style", next);
-        inheritedState.invalidateAttribute(inheritedTarget, "style", old, next);
-        return parser.restyleLayoutTree(inheritedRoot, document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), inheritedState);
-    }
-
-    private boolean narrow;
-
-    /** 同じ状態で、ビューポートの幅を 1px ずつ交互に変えて箱の木を組み直す（幅の変化で測り直しが要る箱の経路）。 */
-    @Benchmark
-    public LayoutBox layoutWidthChange() {
-        narrow = !narrow;
-        return parser.layoutDocument(document, Workloads.VIEWPORT_W - (narrow ? 1 : 0), Workloads.VIEWPORT_H, Map.of(),
-                new ScrollState(), FontResolver.FALLBACK, hoverState);
-    }
-
-    /** 箱の木を一から作って測り、配置する（差分なし）。 */
-    @Benchmark
-    public LayoutBox fullLayout() {
-        return parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
-                FontResolver.FALLBACK, new InteractionState());
-    }
-
-    /** 同じ {@link InteractionState} を使い続けて箱の木を組み直す（実際の画面の定常。節ごとの算出スタイルが有効）。 */
-    @Benchmark
-    public LayoutBox fullLayoutWarm() {
-        return parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
-                FontResolver.FALLBACK, hoverState);
-    }
-
-    @Benchmark
-    public Object restyle() {
-        return parser.restyleLayoutTree(root, document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new InteractionState());
-    }
-
-    @Benchmark
-    public void relayout() {
-        parser.runLayoutPasses(root, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, new ScrollState(), FontResolver.FALLBACK);
-    }
-
-    @Benchmark
-    public List<DisplayItem> displayList() {
-        return new DisplayListBuilder(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, document.sheet.keyframes, new ScrollState())
-                .render(root);
-    }
-
-    /** スクロールコンテナを 20px 動かした再レイアウトとディスプレイリスト生成（コンテナが無い文書は動かさない）。 */
-    @Benchmark
-    public List<DisplayItem> scrollStep() {
-        ScrollState scroll = new ScrollState();
-        scroll.setScroll(scroller, 0, 20);
-        parser.runLayoutPasses(root, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, scroll, FontResolver.FALLBACK);
-        return new DisplayListBuilder(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, document.sheet.keyframes, scroll).render(root);
+        view.ui().setHoveredElement(hoverOn ? hoverTarget.key() : "");
+        view.frame(now += 16, NO_DRAW, true);
+        return view.ui().renderCache();
     }
 }

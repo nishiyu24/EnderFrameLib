@@ -1,12 +1,12 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.tree.PaintRun;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssLength;
 import com.nishiyu.enderframelib.core.css.InheritedStyle;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
-import com.nishiyu.enderframelib.core.layout.PaintRun;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
@@ -20,7 +20,7 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
 import com.nishiyu.enderframelib.core.css.model.Visibility;
 
-/** {@link DisplayListBuilder} の部品群が共通で使う、状態を持たない道具（要素の追加・クリップ・属性の読み取りなど）。 */
+/** {@code DisplayListBuilder} の部品群が共通で使う、状態を持たない道具（要素の追加・クリップ・属性の読み取りなど）。 */
 final class PaintSupport {
     /** flex / grid アイテムは位置指定が無くても z-index でコンテキストを作る（CSS Flexbox §5.4 / Grid §9.5）。 */
     static boolean isFlexOrGridItem(PaintBox box) {

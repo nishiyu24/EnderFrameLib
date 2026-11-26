@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.common.TestBoxes;
+
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
@@ -9,7 +11,7 @@ import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -24,14 +26,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -132,12 +130,12 @@ public class CascadeInfrastructureTest {
 
     @Test
     public void testKeywordPropertiesAreReadAsEnumsWithRegisteredInitialValue() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>.f { position: relative; box-sizing: border-box; overflow-x: hidden; }</style>
                 <div class="f" id="a"></div><div id="b"></div>
                 """);
-        ComputedStyle styled = find(root, "a").style;
-        ComputedStyle plain = find(root, "b").style;
+        ComputedStyle styled = find(root, "a").style();
+        ComputedStyle plain = find(root, "b").style();
         assertEquals(Position.RELATIVE, styled.typed().box.position);
         assertEquals(CssKeywords.BoxSizing.BORDER_BOX, styled.typed().box.boxSizing);
         assertEquals(Overflow.HIDDEN, styled.overflowX());
@@ -160,16 +158,16 @@ public class CascadeInfrastructureTest {
                 .get(CssProperty.COLOR);
     }
 
-    private static LayoutBox layout(String html) {
+    private static PaintView layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", VIEWPORT, VIEWPORT);
         return parser.layoutDocument(doc, VIEWPORT, VIEWPORT, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 
-    private static LayoutBox find(LayoutBox box, String id) {
+    private static PaintView find(PaintView box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (LayoutBox child : box.elementChildren) {
-            LayoutBox hit = find(child, id);
+        for (PaintView child : TestBoxes.elements(box)) {
+            PaintView hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

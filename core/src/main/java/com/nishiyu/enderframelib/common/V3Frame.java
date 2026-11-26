@@ -98,6 +98,25 @@ final class V3Frame {
     }
 
     /**
+     * 要素 {@code root} の部分木だけを、ビューポート {@code w}×{@code h} の根として一から組んで描く（{@code FrameRender#subtree}）。
+     * 前回の木も記憶も使わない（このフレームの状態を作り直す）。根の継承は初期値から始まる。
+     */
+    List<DisplayItem> subtree(HtmlNode root, StyleSheet sheet, int w, int h, ScrollState scrollState, FontResolver fontResolver) {
+        width = w;
+        height = h;
+        this.sheet = sheet;
+        scroll = scrollState;
+        fonts = fontResolver;
+        LayoutSession session = new LayoutSession(fontResolver);
+        pipeline = new FragmentPipeline(new StyleSource(sheet, new InteractionState(), Map.of(), w, h), session);
+        tree = new PaintTreeBuilder(session, sheet);
+        painter = new TreePainter(w, h, sheet != null ? sheet.keyframes : Map.of(), scrollState);
+        LayoutFragment frag = pipeline.frameSubtree(root, w, h);
+        this.root = tree.build(frag, pipeline.boxRoot());
+        return painter.paint(this.root);
+    }
+
+    /**
      * 台帳を凍結する前の準備: DOM の変更を規則の範囲（兄弟・祖先・{@code :has()}）へ広げる無効化セットを引くシートを結び、{@code :has()} の
      * 規則があれば汚れた節の祖先を台帳に足す（凍結の後に足すと次のフレームの世代に入り、1 フレーム遅れる）。
      */
@@ -137,7 +156,7 @@ final class V3Frame {
     }
 
     /** 直近のフレームで {@code node} の箱（無ければ null）。 */
-    com.nishiyu.enderframelib.core.layout.PaintBox boxOf(HtmlNode node) {
+    com.nishiyu.enderframelib.core.paint.tree.PaintBox boxOf(HtmlNode node) {
         PaintView r = root();
         return r != null ? UiFocus.findBox(r, node) : null;
     }

@@ -311,8 +311,8 @@ public class WebFontManager {
         public void clear() {
             faces.clear();
             GENERATION.incrementAndGet();
-            // 文字の幅が変わり得るので、差分レイアウトに前回の measure の結果を使わせない
-            com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
+            // 文字の幅が変わり得るので、前回の木と記憶を使わせない
+            com.nishiyu.enderframelib.client.ClientWebManager.fontsChanged();
         }
 
         /**

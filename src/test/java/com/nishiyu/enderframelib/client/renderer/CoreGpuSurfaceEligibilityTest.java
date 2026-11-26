@@ -108,8 +108,7 @@ class CoreGpuSurfaceEligibilityTest {
         var root = parser.layoutDocument(doc, 200, 100, java.util.Map.of(), scroll,
                 com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, state);
         state.setHoveredNode(doc.root.getElementById("b"));
-        parser.restyleLayoutTree(root, doc, 200, 100, java.util.Map.of(), state);
-        List<DisplayItem> hovered = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(200, 100, doc.sheet.keyframes, scroll).render(root);
+        List<DisplayItem> hovered = com.nishiyu.enderframelib.common.FrameRender.document(doc, 200, 100, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, state).items();
         assertTrue(CoreGpuSurface.drawable(hovered));
         assertTrue(hovered.stream().anyMatch(i -> "b".equals(i.baseId()) && (i.bgColor() & 0xFFFFFF) == 0x00FF00),
                 "ホバー中は緑の背景の項目が出る（コアはその項目をそのまま描く）");

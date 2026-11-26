@@ -42,10 +42,6 @@ public final class ShowcaseApp {
 
     public static void main(String[] args) throws Exception {
         Path html = Path.of("core/demo/resources/showcase.html");
-        if (args.length > 0 && args[0].equals("--paint")) {
-            paintBench(html);
-            return;
-        }
         if (args.length > 0 && args[0].equals("--dump")) {
             StandaloneView v = new StandaloneView(java.nio.file.Files.readString(html), 1280, 800);
             wire(v);
@@ -53,10 +49,6 @@ public final class ShowcaseApp {
                 v.frame(0, cpu, true);
             }
             for (var it : v.items()) if (it.text() != null && (it.text().contains("node-1025") || it.text().equals("1") || it.text().equals("name"))) System.out.println(it.baseId() + " " + it.type() + " x=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).x() + " y=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).y() + " w=" + it.width() + " '" + it.text() + "'");
-            return;
-        }
-        if (args.length > 0 && args[0].equals("--parity")) { // 親相対あり/なしで、wire した状態の連続フレームを比べる（ソフトウェア描画）
-            parity(html);
             return;
         }
         if (args.length > 0 && args[0].equals("--hoverbench")) { // GL 経路で :hover の切替フレームの CPU 時間と確保量を測る
@@ -95,48 +87,6 @@ public final class ShowcaseApp {
         if (!sized) a.addAll(List.of("1280", "800"));
         a.addAll(List.of(args));
         StandaloneViewer.launch(a.toArray(new String[0]), ShowcaseApp::wire);
-    }
-
-    /** 親相対あり/なしの画素比較。違った最初のフレームと範囲を出す。 */
-    private static void parity(Path html) throws Exception {
-        String page = java.nio.file.Files.readString(html);
-        int frames = Integer.getInteger("parity.frames", 80);
-        int[][][] px = new int[2][frames][];
-        java.util.List<com.nishiyu.enderframelib.core.paint.model.DisplayItem>[][] its = new java.util.List[2][frames];
-        for (int mode = 0; mode < 2; mode++) {
-            boolean parentRelative = mode == 1;
-            com.nishiyu.enderframelib.core.EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(parentRelative));
-            StandaloneView view = new StandaloneView(page, 1280, 800);
-            wire(view);
-            try (var sw = new com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend(1280, 800, 1f)) {
-                for (int i = 0; i < frames; i++) {
-                    view.frame(i * 100L, sw, true);
-                    px[mode][i] = sw.pixmap().pixels().clone();
-                    its[mode][i] = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(new ArrayList<>(view.items()));
-                    Thread.sleep(40);
-                }
-            }
-        }
-        for (int f = 0; f < frames; f++) {
-            int diff = 0, x0 = 9999, y0 = 9999, x1 = -1, y1 = -1;
-            for (int i = 0; i < px[0][f].length; i++) {
-                if (px[0][f][i] != px[1][f][i]) { diff++; int x = i % 1280, y = i / 1280; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
-            }
-            if (diff > 100) {
-                var A = its[0][f]; var B = its[1][f];
-                System.out.println("ITEMS off=" + A.size() + " on=" + B.size());
-                int shown = 0;
-                for (int k = 0; k < Math.min(A.size(), B.size()) && shown < 8; k++) {
-                    var a = A.get(k); var b = B.get(k);
-                    if (!a.id().equals(b.id()) || a.x() != b.x() || a.y() != b.y() || a.width() != b.width() || a.height() != b.height() || !java.util.Objects.equals(a.text(), b.text())) {
-                        System.out.println("  #" + k + " off " + a.id() + " " + a.type() + " " + a.x() + "," + a.y() + " " + a.width() + "x" + a.height() + " | on " + b.id() + " " + b.type() + " " + b.x() + "," + b.y() + " " + b.width() + "x" + b.height());
-                        shown++;
-                    }
-                }
-            }
-            if (diff > 100) { System.out.println("PARITY first bad frame " + f + " diff=" + diff + " bbox=" + x0 + "," + y0 + " - " + x1 + "," + y1); return; }
-        }
-        System.out.println("PARITY ok");
     }
 
     private static void hoverBench(Path html) throws Exception {
@@ -225,10 +175,7 @@ public final class ShowcaseApp {
                 Thread.sleep(4);
             }
             // Windows の ThreadMXBean は 15.6ms 刻みなので、中央値ではなく合計から平均を出す
-            var D = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.class;
-            System.out.println("memo: fragment hits=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentMemoHits() + " ownReused=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.fragmentOwnReused());
-            System.out.println("scroll: translated=" + com.nishiyu.enderframelib.common.UiView.STAT_SCROLL_TRANSLATED.sum() + " fallback=" + com.nishiyu.enderframelib.common.UiView.STAT_SCROLL_FALLBACK.sum()
-                    + " other=" + com.nishiyu.enderframelib.common.UiView.STAT_REPOSITION_OTHER.sum());
+            System.out.println("scroll: translated=" + com.nishiyu.enderframelib.common.UiView.STAT_SCROLL_TRANSLATED.sum() + " fallback=" + com.nishiyu.enderframelib.common.UiView.STAT_SCROLL_FALLBACK.sum());
             double cpuMean = java.util.Arrays.stream(cpu).sum() / n, wallMean = java.util.Arrays.stream(wall).sum() / n;
             java.util.Arrays.sort(wall);
             System.out.printf("scroll frames: cpu mean=%.1f | wall mean=%.1f median=%.1f p90=%.1f p99=%.1f max=%.1f ms | %s%n",
@@ -265,40 +212,6 @@ public final class ShowcaseApp {
             }
             System.out.printf("render-only: %.2f ms/frame cpu, %.1f ms/frame wall (%d items)%n", (mx.getCurrentThreadCpuTime() - c0) / 1e6 / n, (System.nanoTime() - w0) / 1e6 / n, items.size());
         }
-    }
-
-    /** 表示リスト作り（DisplayListBuilder.render）だけを、固定のレイアウトに対して繰り返し計る。 */
-    private static void paintBench(Path html) throws Exception {
-        StringBuilder cells = new StringBuilder();
-        for (int i = 0; i < GRID_ROWS * GRID_COLS; i++) cells.append("<div class=\"px\" style=\"animation-delay:-").append(i % 40 / 10.0).append("s\"></div>");
-        String src = java.nio.file.Files.readString(html).replace("<div id=\"grid\"></div>", "<div id=\"grid\">" + cells + "</div>");
-        var compiler = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
-        var doc = compiler.parseDocument(src, "", 1280, 800);
-        var scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
-        var fonts = com.nishiyu.enderframelib.core.text.font.SystemFonts.system();
-        var root = compiler.layoutDocument(doc, 1280, 800, java.util.Map.of(), scroll, fonts, new com.nishiyu.enderframelib.core.dom.InteractionState());
-        int items = 0;
-        for (int i = 0; i < 80; i++) new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(1280, 800, doc.sheet.keyframes, scroll).render(root, false);
-        int n = 150;
-        var mx = java.lang.management.ManagementFactory.getThreadMXBean();
-        long t0 = mx.getCurrentThreadCpuTime();
-        for (int i = 0; i < n; i++) {
-            items = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(1280, 800, doc.sheet.keyframes, scroll).render(root, false).size();
-        }
-        System.out.printf("paint full  : %.1f ms/frame cpu (%d items)%n", (mx.getCurrentThreadCpuTime() - t0) / 1e6 / n, items);
-        // 窓と同じくビルダーを使い回した再レイアウト後の全件描画（変わらない箱は前回の項目を使う）
-        var kept = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(1280, 800, doc.sheet.keyframes, scroll);
-        for (int i = 0; i < 80; i++) kept.render(root, false);
-        t0 = mx.getCurrentThreadCpuTime();
-        for (int i = 0; i < n; i++) items = kept.render(root, false).size();
-        System.out.printf("paint memo  : %.1f ms/frame cpu (%d items)%n", (mx.getCurrentThreadCpuTime() - t0) / 1e6 / n, items);
-        // 窓と同じく、全件で描いたビルダーを使い回して、画面外の箱を省く（スクロール）
-        var b = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(1280, 800, doc.sheet.keyframes, scroll);
-        b.render(root, false);
-        for (int i = 0; i < 80; i++) b.render(root, true);
-        t0 = mx.getCurrentThreadCpuTime();
-        for (int i = 0; i < n; i++) items = b.render(root, true).size();
-        System.out.printf("paint culled: %.1f ms/frame cpu (%d items)%n", (mx.getCurrentThreadCpuTime() - t0) / 1e6 / n, items);
     }
 
     private static float galleryY(StandaloneView v) {

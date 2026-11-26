@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.io.IOException;
@@ -55,24 +55,25 @@ class TextNodeStyleEquivalenceTest {
             UiDocumentCompiler c = new UiDocumentCompiler();
             Document doc = c.parseDocument(html, "", W, H);
             com.nishiyu.enderframelib.core.dom.InteractionState state = new com.nishiyu.enderframelib.core.dom.InteractionState();
-            LayoutBox root = c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-            List<LayoutBox> textBoxes = new ArrayList<>();
+            PaintView root = c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+            List<PaintView> textBoxes = new ArrayList<>();
             collect(root, textBoxes);
             for (int i = 0; i < textBoxes.size(); i++) {
-                LayoutBox b = textBoxes.get(i);
-                ComputedStyle domParent = b.node != null && b.node.parent != null ? state.computedStyleOf(b.node.parent) : null;
-                ComputedStyle parentStyle = domParent != null ? domParent : (b.parent != null ? b.parent.style : null);
+                PaintView b = textBoxes.get(i);
+                boolean generated = b.paintParent() != null && b.paintParent().node != null && b.paintParent().node.isPseudoNode;
+                ComputedStyle domParent = !generated && b.node != null && b.node.parent != null ? state.computedStyleOf(b.node.parent) : null;
+                ComputedStyle parentStyle = domParent != null ? domParent : (b.paintParent() != null ? b.paintParent().style() : null);
                 if (parentStyle == null) continue;
                 compared++;
                 ComputedStyle full = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(
                         com.nishiyu.enderframelib.core.css.StyleResolver.resolveDeclarations(
                                 b.node, parentStyle.typed(), doc.sheet, state),
                         doc.sheet, Map.of(), parentStyle.typed(), parentStyle.fontSizePx(),
-                        parentStyle.typed().inherited.rootFontSizePx, root.style.lineHeightPx(), W, H,
+                        parentStyle.typed().inherited.rootFontSizePx, root.style().lineHeightPx(), W, H,
                         com.nishiyu.enderframelib.core.css.model.ContainerBox.NONE_SIZE);
-                assertSame(parentStyle.typed().inherited, b.style.typed().inherited, "継承群の参照共有: " + p + " #" + i);
-                if (!b.style.typed().equals(full.typed())) {
-                    mismatches.add(p + " #" + i + "\n  fast=" + b.style.asMap() + "\n  full=" + full.asMap());
+                assertSame(parentStyle.typed().inherited, b.style().typed().inherited, "継承群の参照共有: " + p + " #" + i);
+                if (!b.style().typed().equals(full.typed())) {
+                    mismatches.add(p + " #" + i + "\n  fast=" + b.style().asMap() + "\n  full=" + full.asMap());
                 }
             }
         }
@@ -81,8 +82,8 @@ class TextNodeStyleEquivalenceTest {
                 + String.join("\n", mismatches.subList(0, Math.min(3, mismatches.size()))));
     }
 
-    private static void collect(LayoutBox box, List<LayoutBox> out) {
+    private static void collect(PaintView box, List<PaintView> out) {
         if (box.node != null && box.node.nodeType == NodeType.TEXT && !box.isAnonymous) out.add(box);
-        for (LayoutBox c : box.children) collect(c, out);
+        for (PaintView c : box.paintChildren()) collect(c, out);
     }
 }

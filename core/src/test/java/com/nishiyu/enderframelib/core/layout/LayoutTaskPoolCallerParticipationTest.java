@@ -25,13 +25,11 @@ class LayoutTaskPoolCallerParticipationTest {
 
     @BeforeEach
     void fourWorkers() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
         LayoutTaskPool.setWorkerThreads(4);
     }
 
     @AfterEach
     void restore() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.LAYOUT_PARALLEL.set(true);
         LayoutTaskPool.setWorkerThreads(LayoutTaskPool.defaultThreads());
     }
 

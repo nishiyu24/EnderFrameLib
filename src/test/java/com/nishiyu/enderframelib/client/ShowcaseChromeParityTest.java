@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import org.junit.jupiter.api.Assumptions;
@@ -66,14 +66,14 @@ public class ShowcaseChromeParityTest {
     static Map<String, Rect> engine(int w, int h) {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(showcaseHtml, "", w, h);
-        LayoutBox root = compiler.layoutDocument(doc, w, h, Map.of(), new ScrollState(), fonts, new InteractionState());
+        PaintView root = compiler.layoutDocument(doc, w, h, Map.of(), new ScrollState(), fonts, new InteractionState());
         Map<String, Rect> out = new LinkedHashMap<>();
         Map<String, Integer> counters = new LinkedHashMap<>();
         collect(root, new IdentityHashMap<>(), counters, out);
         return out;
     }
 
-    private static void collect(LayoutBox b, IdentityHashMap<HtmlNode, Boolean> seen, Map<String, Integer> counters,
+    private static void collect(PaintView b, IdentityHashMap<HtmlNode, Boolean> seen, Map<String, Integer> counters,
                                 Map<String, Rect> out) {
         if (b.node != null && seen.put(b.node, Boolean.TRUE) == null) {
             String cls = b.node.attrs.get("class");
@@ -84,7 +84,7 @@ public class ShowcaseChromeParityTest {
                 }
             }
         }
-        for (LayoutBox c : b.children) collect(c, seen, counters, out);
+        for (PaintView c : b.paintChildren()) collect(c, seen, counters, out);
     }
 
     /** 位置・大きさの許容差（px）。Chrome の値は 1/64px 単位。 */
@@ -124,11 +124,11 @@ public class ShowcaseChromeParityTest {
                     failures.add(size[0] + "x" + size[1] + " " + e.getKey() + ": エンジンに無い");
                     continue;
                 }
-                float d = Math.max(Math.max(Math.abs(a.x - c.x), Math.abs(a.y - c.y)),
-                        Math.max(Math.abs(a.w - c.w), Math.abs(a.h - c.h)));
+                float d = Math.max(Math.max(Math.abs(a.x - c.x()), Math.abs(a.y - c.y())),
+                        Math.max(Math.abs(a.w - c.w()), Math.abs(a.h - c.h())));
                 if (d > TOLERANCE) {
                     failures.add(String.format("%dx%d %s: ours [%.2f %.2f %.2fx%.2f] chrome [%.2f %.2f %.2fx%.2f]",
-                            size[0], size[1], e.getKey(), a.x, a.y, a.w, a.h, c.x, c.y, c.w, c.h));
+                            size[0], size[1], e.getKey(), a.x, a.y, a.w, a.h, c.x(), c.y(), c.w(), c.h()));
                 }
             }
         }

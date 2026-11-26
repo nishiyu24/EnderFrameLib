@@ -23,15 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -144,8 +140,8 @@ public class ArchitectureTest {
                     + "([A-Za-z_$][\\w$]*)");
     private static final Pattern SPLIT_METHOD = Pattern.compile(
             "\\bstatic\\s+(?:final\\s+)?[\\w.$<>\\[\\],? ]+?\\s+(split\\w*)\\s*\\(\\s*(?:final\\s+)?String\\b");
-    private static final Pattern NEW_LAYOUT_BOX = Pattern.compile("\\bnew\\s+LayoutBox\\s*\\(");
-    private static final Pattern MEASURE_CALL = Pattern.compile("\\.measure\\s*\\(");
+    /** M5 の組み立ての印: 箱の木 → 断片木の段を作る所（M2c-3 で経路を 1 本にしてからは {@code V3Frame} だけ）。 */
+    private static final Pattern NEW_PIPELINE = Pattern.compile("\\bnew\\s+(?:com\\.nishiyu\\.enderframelib\\.core\\.layout\\.fragment\\.)?FragmentPipeline\\s*\\(");
 
     @Test
     public void testCorePackageIsPureJava() throws IOException {
@@ -271,10 +267,10 @@ public class ArchitectureTest {
 
     @Test
     public void testR6DisplayListBuilderRegexDoesNotGrow() throws IOException {
-        // 表示リストを作る一群（DisplayListBuilder とそこから分けた部品）の合計
+        // 表示リストを作る一群（TreePainter・重なりの規則 TreeStacking と、箱 1 つを描く部品）の合計（M2c-3 で旧 DisplayListBuilder・PaintOrder を消した）
         int count = 0;
-        for (String name : List.of("DisplayListBuilder", "PaintSupport", "BoxAnimation", "BoxDecorationPainter",
-                "ControlPainter", "PaintOrder", "ItemProps")) {
+        for (String name : List.of("TreePainter", "TreeStacking", "PaintSupport", "BoxAnimation", "BoxDecorationPainter",
+                "ControlPainter", "ItemProps", "BoxItemPainter", "TextRunPainter")) {
             count += countMatches(Files.readString(resolveMain("core/paint/" + name + ".java")), "Pattern\\.compile\\(");
         }
         assertMetricAtMost("R6 DisplayListBuilder 一群の Pattern.compile", R6_MAX_DISPLAY_LIST_BUILDER_REGEX, count,
@@ -327,13 +323,13 @@ public class ArchitectureTest {
         for (Path root : roots) {
             for (Path path : javaFiles(root)) {
                 String content = Files.readString(path);
-                if (NEW_LAYOUT_BOX.matcher(content).find() && MEASURE_CALL.matcher(content).find()) {
+                if (NEW_PIPELINE.matcher(content).find()) {
                     builders.add(relative(path));
                 }
             }
         }
         assertAtMost("M5 スタイル→レイアウト→ディスプレイリストの組み立て", M5_MAX_PIPELINE_BUILDERS, builders,
-                "入口は UiDocumentCompiler の 1 つにしてください（STRUCTURE_PLAN S7）。");
+                "組み立ては V3Frame の 1 つにしてください（1 回だけのフレームは FrameRender から V3Frame を使う。STRUCTURE_PLAN S7）。");
     }
 
     @Test

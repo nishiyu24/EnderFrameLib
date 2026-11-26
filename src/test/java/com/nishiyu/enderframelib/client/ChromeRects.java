@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.client;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import org.junit.jupiter.api.Assumptions;
@@ -56,17 +56,17 @@ final class ChromeRects {
         String html = Files.readString(Path.of(htmlPath), StandardCharsets.UTF_8);
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", w, h);
-        LayoutBox root = compiler.layoutDocument(doc, w, h, Map.of(), new ScrollState(), fonts, new InteractionState());
+        PaintView root = compiler.layoutDocument(doc, w, h, Map.of(), new ScrollState(), fonts, new InteractionState());
         Map<String, Rect> out = new LinkedHashMap<>();
         collect(root, out);
         return out;
     }
 
-    private static void collect(LayoutBox b, Map<String, Rect> out) {
+    private static void collect(PaintView b, Map<String, Rect> out) {
         if (b.node != null && !b.isAnonymous && b.node.attrs.containsKey("id")) {
             out.putIfAbsent(b.node.attrs.get("id"), new Rect(b.x(), b.y(), b.w(), b.h()));
         }
-        for (LayoutBox c : b.children) collect(c, out);
+        for (PaintView c : b.paintChildren()) collect(c, out);
     }
 
     /** 位置・大きさの差が {@code tolerance} を超える要素（と、エンジンに無い要素）の説明。 */
@@ -78,10 +78,10 @@ final class ChromeRects {
                 failures.add(e.getKey() + ": エンジンに無い");
                 continue;
             }
-            float d = Math.max(Math.max(Math.abs(a.x - c.x), Math.abs(a.y - c.y)), Math.max(Math.abs(a.w - c.w), Math.abs(a.h - c.h)));
+            float d = Math.max(Math.max(Math.abs(a.x - c.x()), Math.abs(a.y - c.y())), Math.max(Math.abs(a.w - c.w()), Math.abs(a.h - c.h())));
             if (d > tolerance) {
                 failures.add(String.format("%s: ours [%.2f %.2f %.2fx%.2f] chrome [%.2f %.2f %.2fx%.2f]",
-                        e.getKey(), a.x, a.y, a.w, a.h, c.x, c.y, c.w, c.h));
+                        e.getKey(), a.x, a.y, a.w, a.h, c.x(), c.y(), c.w(), c.h()));
             }
         }
         return failures;

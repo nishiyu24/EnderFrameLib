@@ -46,7 +46,7 @@ class V3ViewTest {
 
     @Test
     void interactionsMatchAFreshV3Render() {
-        try (StandaloneView sv = new StandaloneView(DOC, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+        try (StandaloneView sv = new StandaloneView(DOC, W, H, FontResolver.FALLBACK)) {
             SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
             long now = 1000;
             sv.frame(now, live, true);
@@ -108,7 +108,7 @@ class V3ViewTest {
         String html = "<style>body{margin:0}#sc{position:absolute;left:10px;top:30px;width:150px;height:100px;overflow:auto;border:2px solid #333}"
                 + ".h{position:sticky;top:0;height:16px;background:#fc6}</style><div id=sc><div id=g1><div class=h id=h1>one</div>" + rows
                 + "</div><div id=g2><div class=h id=h2>two</div>" + rows + "</div></div>";
-        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
             sv.frame(1000, live, true);
             HtmlNode sc = sv.ui().findNode("sc");
@@ -131,7 +131,7 @@ class V3ViewTest {
     void hasSelectorRestylesTheAncestorInTheSameFrame() {
         String html = "<style>body{margin:0} .card{padding:4px;border:1px solid #888} .card:has(.on){padding:20px} .card:has(p:empty){margin-left:30px}</style>"
                 + "<div class=card id=c><span id=s>x</span><p id=p>t</p></div><div id=after>after</div>";
-        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
             long now = 1000;
             sv.frame(now, live, true);
@@ -161,7 +161,7 @@ class V3ViewTest {
                 + "<div style='position:absolute;left:0;top:0;width:200px;height:100px;background:#f00'></div>"
                 + "<div style='position:relative;width:100px;height:50px;background:#00f'></div>"
                 + "<div style='position:absolute;left:150px;top:0;width:50px;height:50px;background:#0f0'></div></div>";
-        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
             sv.frame(1000, live, true);
             assertEquals(0xFF0000FF, live.pixmap().get(20, 20), "後ろの relative の兄弟が前の absolute の上");
@@ -179,7 +179,7 @@ class V3ViewTest {
     void reusedScrollContentKeepsTheCurrentScrollAfterAnUnrelatedChange() {
         String html = "<style>body{margin:0;font:12px sans-serif}#sc{width:200px;height:80px;overflow:auto;border:1px solid #333}"
                 + ".r{height:18px;background:#def;margin:2px}</style><div id=w><div id=sc>" + "<div class=r>row</div>".repeat(20) + "</div></div><p id=p>tail</p>";
-        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
             sv.frame(1000, live, true);
             sv.ui().scrollState().setScroll(sv.ui().findNode("sc"), 0f, 70f);
@@ -200,7 +200,7 @@ class V3ViewTest {
     void ancestorHoverRestylesDescendantsThroughTheLedger() {
         String html = "<style>body{margin:0;font:14px sans-serif}.list{padding:10px;background:#eee}.item{height:20px;color:#000;background:#fff}"
                 + ".list:hover .item{background:#c00}</style><div class=list id=l><div class=item>one</div><div class=item>two</div></div>";
-        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+        try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
             sv.frame(1000, live, true);
             sv.mouseMove(4, 4, "s"); // .list の padding の上（.item の外）
@@ -222,7 +222,7 @@ class V3ViewTest {
         String html = "<style>body{margin:0}#b{width:100px;height:20px;background:#00f;transition:width 1000ms linear}#b.wide{width:300px}</style><div id=b></div>";
         float[] widths = new float[2];
         for (int run = 0; run < 2; run++) {
-            try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+            try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
                 sv.clock(new com.nishiyu.enderframelib.core.kernel.Clock.Manual());
                 SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
                 sv.frame(1000, live, true);
@@ -241,7 +241,7 @@ class V3ViewTest {
     /** 全体の作り直しの要求は、台帳に載らない変化（ここでは通知の無い属性の書き換え）も読む（新経路が要求を無視して増分で組まないこと）。 */
     @Test
     void fullRebuildRequestReadsChangesOutsideTheLedger() {
-        try (StandaloneView sv = new StandaloneView("<style>body{margin:0}</style><div id=b style='width:100px;height:10px'></div>", W, H, FontResolver.FALLBACK, EnginePath.V3)) {
+        try (StandaloneView sv = new StandaloneView("<style>body{margin:0}</style><div id=b style='width:100px;height:10px'></div>", W, H, FontResolver.FALLBACK)) {
             SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
             sv.frame(1000, live, true);
             sv.ui().findNode("b").attrs.put("style", "width:50px;height:10px"); // 通知しない書き換え（台帳に載らない）
@@ -254,7 +254,26 @@ class V3ViewTest {
         }
     }
 
-    private static com.nishiyu.enderframelib.core.layout.PaintBox box(com.nishiyu.enderframelib.core.layout.PaintBox b, String id) {
+    /**
+     * 文書を開いた直後の最初のフレームは静止フレーム（M2c-3）: 開くときの全体の作り直しが、文書を入れたときに溜まった変更
+     * （{@code markAllDirty} の台帳の記録）も消化する。消化しないと、次のフレームが同じ変更を読んでもう一度全体を組み直していた
+     * （2,000 行の一覧で 1 フレーム 130 ms 余り・保持ヒープ +1.6 MB）。
+     */
+    @Test
+    void firstFrameAfterOpeningIsIdle() {
+        StringBuilder rows = new StringBuilder("<ul>");
+        for (int i = 0; i < 300; i++) rows.append("<li id=r").append(i).append(">row ").append(i).append("</li>");
+        try (StandaloneView sv = new StandaloneView(rows.append("</ul>").toString(), W, H, FontResolver.FALLBACK);
+             var be = new MutationScenario.NoDraw()) {
+            List<DisplayItem> opened = sv.ui().renderCache();
+            long idle = UiView.IDLE_FRAMES.get();
+            sv.frame(1000, be, true);
+            assertTrue(opened == sv.ui().renderCache(), "開いた直後のフレームで表示リストを作り直した");
+            assertEquals(idle + 1, UiView.IDLE_FRAMES.get(), "開いた直後のフレームが静止フレームにならない");
+        }
+    }
+
+    private static com.nishiyu.enderframelib.core.paint.tree.PaintBox box(com.nishiyu.enderframelib.core.paint.tree.PaintBox b, String id) {
         if (b.node != null && !b.isAnonymous && id.equals(b.node.getId())) return b;
         for (var c : b.paintChildren()) {
             var f = box(c, id);

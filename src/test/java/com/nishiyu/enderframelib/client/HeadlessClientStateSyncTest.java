@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -163,8 +162,6 @@ public class HeadlessClientStateSyncTest {
     @Test
     @DisplayName("差分で長くなった flex アイテムの文字が折り返さないこと")
     void testGrownFlexItemTextStaysOnOneLine() {
-        var prevRenderer = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
-        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox)));
         try {
             String templateId = "mymod:flex_status";
             ClientTemplateManager.registerTemplate(templateId, """
@@ -185,7 +182,6 @@ public class HeadlessClientStateSyncTest {
             assertEquals(next.height(), status.height(), 0.01, "状態表示が 2 行になった");
             assertEquals(next.y(), status.y(), 0.01, "隣の要素の縦位置がずれた");
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(prevRenderer));
         }
     }
 

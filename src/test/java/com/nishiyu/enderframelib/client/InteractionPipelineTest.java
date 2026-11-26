@@ -23,15 +23,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -166,7 +162,7 @@ public class InteractionPipelineTest {
         session.flushInvalidation();
         HtmlNode containerNode = session.document().root.getElementById("scrollBox");
 
-        com.nishiyu.enderframelib.core.layout.PaintBox box = com.nishiyu.enderframelib.common.UiFocus.findBox(session.boxRoot(), containerNode);
+        com.nishiyu.enderframelib.core.paint.tree.PaintBox box = com.nishiyu.enderframelib.common.UiFocus.findBox(session.boxRoot(), containerNode);
         assertEquals(100f, box.w(), 0.01f);
         assertEquals(100f, box.h(), 0.01f);
         assertEquals(300f, box.scrollHeight(), 0.01f);
@@ -265,12 +261,9 @@ public class InteractionPipelineTest {
         assertNotNull(doc);
         assertNotNull(doc.root);
 
-        com.nishiyu.enderframelib.core.layout.LayoutBox rootBox = parser.layoutDocument(
-                doc, 854, 480, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
-        assertNotNull(rootBox);
-        com.nishiyu.enderframelib.core.paint.DisplayListBuilder renderer =
-                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(854, 480, doc.sheet.keyframes, new ScrollState());
-        List<DisplayItem> elements = renderer.render(rootBox);
+        var frame = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
+        assertNotNull(frame.root());
+        List<DisplayItem> elements = frame.items();
         assertNotNull(elements);
 
         // ルート直下の要素が height: 100% の場合に高さが 0 にならず、子要素群が正しくレンダリングされること

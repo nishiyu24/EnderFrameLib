@@ -1,11 +1,11 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.css.VisualStyle;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.media.ImageChoice;
 import com.nishiyu.enderframelib.core.media.ImageSources;
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 箱の装飾（枠線・輪郭線の線種と背景のレイヤー）を矩形の並びに分ける純関数群。
  *
  * 描画側（{@code DisplayItemDrawer}）が知っているのは塗りの矩形・角丸・グラデーション・画像だけなので、
- * 線種の破線や点、背景のタイルはここで矩形に直してから {@link DisplayListBuilder} が要素にする。
+ * 線種の破線や点、背景のタイルはここで矩形に直してから {@code DisplayListBuilder} が要素にする。
  * Minecraft に依存しないので単体テストで形を確かめられる。
  */
 public final class BoxDecorations {

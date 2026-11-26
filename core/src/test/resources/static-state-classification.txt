@@ -26,9 +26,6 @@ css/ValueComputer.java#OPAQUE_BY_ID | IMMUTABLE_TABLE | 静的初期化で作っ
 diag/StageProfiler.java#STATS | DIAGNOSTIC | 計測用。要素ごとの Stats は synchronized
 dom/node/HtmlNode.java#NO_ATTRS | IMMUTABLE_TABLE | 不変の空の表（Collections.emptyMap）。テキスト・コメントの節が共有し、書くときは節ごとに作り直す
 dom/node/HtmlNode.java#NO_CHILDREN | IMMUTABLE_TABLE | 不変の空の並び（Collections.emptyList）。テキスト・コメントの節が共有する
-layout/BlockLayoutEngine.java#floatMemoScans | DIAGNOSTIC | 診断用の計数（厳密である必要がない。テストが差分で読む）
-layout/LayoutParallelProbe.java#TOTAL_NS | DIAGNOSTIC | 計測用（既定オフ。enderframe.layout.probe）
-layout/model/FormattingContext.java#SHARED | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 media/NativeVideoApi.java#instance | LOCKED | shared が synchronized
 media/NativeVideoApi.java#tried | LOCKED | shared が synchronized
 net/VideoStreamServer.java#server | LOCKED | ensureStarted が synchronized

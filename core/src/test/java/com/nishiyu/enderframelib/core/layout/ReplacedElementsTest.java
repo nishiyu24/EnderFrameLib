@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.box.Display;
+
 import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -68,22 +70,21 @@ class ReplacedElementsTest {
         reg("x-gauge", ReplacedKind.IMAGE_LIKE);
         var node = new com.nishiyu.enderframelib.core.dom.node.HtmlNode("x-gauge");
         var style = new com.nishiyu.enderframelib.core.css.ComputedStyle(java.util.Map.of());
-        assertEquals(LayoutBox.Display.INLINE, LayoutBox.Display.of(node, style));
+        assertEquals(Display.INLINE, Display.of(node, style));
         com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withReplacedElements(null));
-        assertEquals(LayoutBox.Display.BLOCK, LayoutBox.Display.of(node, style));
+        assertEquals(Display.BLOCK, Display.of(node, style));
     }
 
     @Test
     void layoutAndPaintNoLongerHardcodeHostTags() throws IOException {
-        for (String f : List.of("layout/LayoutBox.java", "layout/GridLayoutEngine.java", "layout/FlexLayoutEngine.java",
-                "layout/BlockLayoutEngine.java", "layout/BoxMeasurer.java")) {
+        for (String f : List.of("paint/tree/PaintView.java", "layout/fragment/GridFlow.java", "layout/fragment/FlexFlow.java",
+                "layout/fragment/BlockFlow.java", "layout/fragment/ReplacedFlow.java")) {
             String s = Files.readString(CORE.resolve(f));
             for (String t : List.of("\"mc-fluid\"", "\"mc-entity\"")) {
                 assertFalse(s.contains(t), f + " が " + t + " を直書きしている（ReplacedElements 経由にする）");
             }
         }
-        String dlb = Files.readString(CORE.resolve("paint/DisplayListBuilder.java"));
-        assertFalse(dlb.contains("NON_FRAGMENT_TAGS = Set.of(\n            \"#text\", \"img\", \"mc-"), "NON_FRAGMENT_TAGS にホスト固有タグを戻さない");
-        assertFalse(dlb.contains("!\"mc-fluid\".equals(tag)"));
+        String painter = Files.readString(CORE.resolve("paint/TreePainter.java")) + Files.readString(CORE.resolve("paint/TreeStacking.java"));
+        assertFalse(painter.contains("\"mc-"), "描画にホスト固有タグを直書きしない");
     }
 }

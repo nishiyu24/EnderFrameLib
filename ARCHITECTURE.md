@@ -38,7 +38,7 @@ EnderFrameLib は、ブラウザ標準（HTML / CSS / UI Events / WHATWG DOM）�
 |:---|:---|:---|
 | **`core/`** | `api/dom`・`api/event` のみ | **ブラウザエンジンのコア**。HTML パーサと DOM、CSS（構文・カスケード・値）、ボックスツリーとレイアウト、描画モデル、テキストの測定。Minecraft・上位パッケージの参照は禁止（`ArchitectureTest`）。 |
 | **`api/`** | Minecraft / NeoForge | **公開 API**。下流 Mod がコンパイルする面。実装パッケージ（`core` / `common` / `client` / `server` / `network`）を参照しない（`ApiBoundaryTest`）。<br>`api/dom`・`api/event` は Web IDL の形をした純 Java のインターフェースで、`core/dom` がこれを実装する。 |
-| **`common/`** | `core/`, `api/` | 文書の読み込み（`DocumentLoader`・`UiDocumentCompiler`・`CustomTagExpander`・`CssResources`）、描画パイプラインの組み立て（`RenderPipeline`）、devkit の書き出し（`WebDevKitExporter`）。 |
+| **`common/`** | `core/`, `api/` | 文書の読み込み（`DocumentLoader`・`UiDocumentCompiler`・`CustomTagExpander`・`CssResources`）、1 フレームの組み立て（`V3Frame`。1 回だけのフレームは `FrameRender`）、devkit の書き出し（`WebDevKitExporter`）。 |
 | **`client/`** | `core/`, `api/`, `common/`, `network/` | **クライアント側の実行系**。セッション（`SessionContext`）、入力（`SessionInput`）、宣言的バインディングの状態（`ReactiveStateStore`）、テンプレート（`client/template`）、描画（`client/renderer`）、画面ホスト（`client/gui`）。 |
 | **`server/`** | `core/`, `api/`, `common/`, `network/` | **サーバー側の実行系**。Headless State（`server/state`）、互換モードのセッション（`WebSession` / `WebSessionManager`）、Pub/Sub、コマンド、データパック、アクセス制御とレート制限。 |
 | **`network/`** | `core/`, `api/` | ペイロードの型と登録（`EnderFrameNetwork`）、Headless State の値と NBT の変換とパケット上の番号化（`StateNbtConverter`。キー辞書 `KeyTable`・受信側の辞書。サーバーとクライアントの両方が使う）。登録時に `server.ServerPayloadHandler` を受け口として参照する。 |
@@ -107,7 +107,8 @@ core/
 ├── event/    DOM のイベントディスパッチ（EventDispatcher / CoreEvent / StandardDefaultActions）
 ├── kernel/   Off-Heap の土台: memory/（DocumentArena・AtomTable・OffHeapColumns）、style/（PackedCssValue）、gpu/（描画 API に依らないデバイス層 RHI）。
 │             標準 JDK 21 のダイレクト ByteBuffer + VarHandle だけで作り、JVM フラグも追加依存も要らない
-├── layout/   ボックスツリー（BoxTreeBuilder）と整形コンテキスト（Block / Flex / Grid / Table）、LayoutBox、model/
+├── box/      箱の木（BoxTreeCompiler・BoxNode。変更台帳を入口に増分で作る）
+├── layout/   fragment/（断片木の整形: Block / Inline / Flex / Grid / Table / 縦書き・LayoutCache）、model/、LayoutTaskPool
 ├── paint/    描画モデル（DisplayItem・BoxDecorations・Gradients・AnimationSpec）
 └── text/     テキストの測定（TextShaper）、書体（model/FontFace・BitmapFontFace）、
               システム書体（font/: SystemFonts・FontScanner・FontCatalog・OutlineFontFace・LoadedFace・KerningTable）
@@ -172,7 +173,7 @@ GUI 画面（`AbstractEnderScreen` / `AbstractEnderContainerScreen`、共通部�
 `data-for` の行は鍵（`data-row-key` か添字）で既存ノードを再利用する。
 
 ### 描画（`client/renderer`）
-`DisplayListBuilder` がレイアウト結果をディスプレイリストにし、`DisplayItemDrawer` が描く。角丸（楕円の角を含む）・角丸に沿う破線・
+`TreePainter`（`:core`）がレイアウト結果をディスプレイリストにし、`DisplayItemDrawer` が描く。角丸（楕円の角を含む）・角丸に沿う破線・
 グラデーション・角丸クリップ・ガウス影は SDF シェーダー（`WebSdfShader`）で 1 枚の四角形に描き、画面の面（GUI・HUD）でのグループ
 `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask-image`・回転した角丸クリップは
 FBO プール（`LayerPool`・`LayerCompositor`、VRAM 予算は `VramBudget`）で合成する。FBO は画面全体ではなく、箱と子孫の外接矩形にフィルターの滲みを足した大きさ（`LayerBounds`。子孫に変形があるときは画面いっぱい）。描く項目が重ならない単純な `opacity` はレイヤーにせず部品ごとの不透明度で描き、中身が前のフレームと同じ（補間値・状態の要約と項目のインスタンスが同じ）レイヤーはフィルターまで済んだ絵を保持して描き直さない（`LayerCompositor.drawCached`）。
@@ -185,42 +186,33 @@ FBO プール（`LayerPool`・`LayerCompositor`、VRAM 予算は `VramBudget`）
 変形のある項目では外す（動いて画面へ入ってくる項目を捨てない）。錨の移動・回転・拡縮・不透明度の変化は絵の要約に入れず、箱の画素への写り（変換）の差として保持した絵を貼り直す（`LayerBounds.reuseMap`。拡縮が 0.5〜2 倍を外れる・枠で切れた絵・混合ありは描き直す）。システム書体と `@font-face`（TTF / OTF）の
 文字は `OutlineTextRenderer` がデバイスピクセルでラスタライズして描く（置き場の破棄は `AtlasCache`、VRAM の見積もりは `AtlasFootprint`）。
 グラデーションは停止点の区間ごとに同じ矩形を重ね、画素ごとの色をシェーダーが計算する（帯・格子には刻まない）。
-`DisplayListBuilder` は順序（`PaintOrder`）・アニメーション（`BoxAnimation`）・飾り（`BoxDecorationPainter`）・フォーム部品（`ControlPainter`）に、
+`TreePainter` は順序（`TreeStacking`）・アニメーション（`BoxAnimation`）・飾り（`BoxDecorationPainter`）・フォーム部品（`ControlPainter`）に、
 `DisplayItemDrawer` は背景・部品・メディア・文字の各 `*Renderer` に責務を分けて持たせている。
 
 ---
 
-## 5. 描画パイプライン（`common/RenderPipeline`）
+## 5. 描画パイプライン（`common/V3Frame`）
 
-スタイル解決から描画要素の生成までは `RenderPipeline` の 1 箇所で組み立てる（M5）。
+スタイル解決から描画要素の生成までは `V3Frame` の 1 箇所で組み立てる（M5。経路は 1 本。旧 `RenderPipeline` / `LayoutBox` の経路は
+2026-11-26 の M2c-3 で削除した。計画書 `core/ENGINE_REARCHITECTURE_PLAN.md` §3.2）。
 
 ```mermaid
 flowchart TD
-    DOM["ライブ DOM (HtmlDocument)"] --> Restyle["再スタイル (StyleResolver)"]
-    Restyle --> BoxTree["ボックスツリー構築 (BoxTreeBuilder)"]
-    BoxTree --> Layout["レイアウト (measure → layout)"]
-    Layout --> DisplayList["ディスプレイリスト生成 (DisplayListBuilder)"]
-    DisplayList --> Drawer["Minecraft への描画 (DisplayItemDrawer)"]
+    DOM["ライブ DOM (HtmlDocument)"] --> Ledger["変更台帳 (ChangeLedger。フレームの頭で凍結)"]
+    Ledger --> BoxTree["箱の木 (BoxTreeCompiler → BoxNode。スタイルは StyleSource)"]
+    BoxTree --> Layout["断片木 (FragmentLayout → LayoutFragment。記憶は LayoutCache)"]
+    Layout --> PaintTree["描画用の木 (PaintTreeBuilder → PaintNode / PaintView)"]
+    PaintTree --> DisplayList["ディスプレイリスト (TreePainter)"]
+    DisplayList --> Drawer["バックエンド (CPU / GL / Vulkan / Minecraft)"]
 ```
 
-### 差分レイアウトと近道（R5 の実装済み部分）
-- **差分レイアウト**: 再レイアウトのたびに箱の木を作り直さず、DOM の節ごとに前回の `LayoutBox` を使い回す。
-  measure の入力（制約・親が決めた寸法・ビューポート・書体）と中身の署名（算出スタイル・文字・属性・子の並び）が
-  変わらず、子孫も変わっていなければ `measure` を飛ばす。表とその中、`display: none` の部分木は作り直す。
-- **近道**:
-  - スクロール: 箱の木を作り直さず `layout`（位置決め）だけ。
-  - `left` / `top` のドラッグ: 再スタイルの後に `layout` だけ。
-  - ウィンドウのリサイズ: 文書を保ち、ビューポート単位を使う要素だけ再スタイル。直前のレイアウト時間に応じて間引く
-    （`SessionContext.RESIZE_THROTTLE_FACTOR`）。
-  - 文字だけの更新（`InvalidationLevel.TEXT_PATCH`）: 既存の Text 節の文字が変わっただけ（`Text.data`・
-    `HtmlNode.updateTextContent`・`UiPubSub` / `Bindings.applyDataBinding` の `text` バインディング）なら、スタイル解決と
-    `BoxTreeBuilder` を省き、文字の箱の `displayText` だけ差し替えて `RenderPipeline.relayoutInPlace`
-    （`markLayoutChanges` → 測り直し → 配置）を走らせる。次の場合は従来の `RELAYOUT` へ退く: 文字以外の汚れ・同じフレームの
-    属性/子の変更、前後どちらかが空白だけ、コンテナクエリのある文書、表・フォーム部品・`pre`/`button`/`label` などの中、
-    箱が見つからない、1 フレームに 256 節超。`UiView.textPatchEnabled` で切り分けられ、`TEXT_PATCH_HITS` /
-    `TEXT_PATCH_FALLBACKS` で乗った回数を見られる。要素の `setTextContent` は DOM の仕様どおり Text 節を作り直す
-    （childList の変更）ので `RELAYOUT` のまま。毎フレーム書き換える HUD の文字は `updateTextContent` を使う。
-- 正しさは「全部作り直したときと同じディスプレイリストになる」ことで固定する（`IncrementalLayoutTest`・`IncrementalPipelineTest`・
+### 増分
+- **入口は変更台帳 1 本**: DOM・状態・スクロール・環境の変化は `ChangeLedger` に記録され、フレームの頭で凍結する。
+  箱の木は台帳が触れた節とその範囲だけを作り直し、それ以外は前回の `BoxNode` を共有する。
+- **レイアウトの記憶**: 前回の断片木そのもの。鍵は `(BoxNode ==, ConstraintSpace の値等価)` だけ（計画書 §2.3）。
+- **全体の作り直し**: `markInvalidation(RELAYOUT)` は前回の木と記憶を捨てる（書体の登録の変化など、台帳に載らない変化）。
+- **スクロール量だけの変化**: スクロールコンテナの中身を 1 つの節にまとめてあるので、表示リストを作らずに節を動かす。
+- 正しさは「最初から作った結果と同じ」で固定する（`FrameOracle`・`IncrementalOracleTest`・`IncrementalVsFullTest`・
   `ServerClientLayoutParityTest`）。
 
 ---
@@ -249,14 +241,14 @@ flowchart TD
 | **M2** | フォーカス状態の持ち場 | 1（`InteractionState`） |
 | **M3** | `ClientWebManager` の public static メソッド | 8 |
 | **M4** | テンプレート・バインディング（`{{…}}` / `data-*`）を解釈するクラス | 1（`Bindings`） |
-| **M5** | スタイル → ボックス → レイアウト → ディスプレイリストを組み立てる場所 | 1（`RenderPipeline`） |
+| **M5** | スタイル → ボックス → レイアウト → ディスプレイリストを組み立てる場所 | 1（`V3Frame`） |
 | **M6** | 入力をイベントに変える経路 | 1（`SessionInput`） |
 | **M7** | 2 つ以上のパッケージから参照される入れ子型（`api` は除く） | 0（トップレベルへ出す） |
 | **M8** | CSS の値を文字列で分割する自前の関数 | 8（新しく書かない。`CssSyntax` を使う） |
 | **M1拡張** | シングルトンの static フィールドに持つ画面・セッション単位のコールバック | 0 |
 | **M1拡張** | コマンド定義クラス内のサーバー状態コレクション | 0 |
 | **DOM直書き** | `node/`・パーサ・直列化以外の `.attrs.put` / `.attrs.remove` 直接呼び出し | 0 |
-| **R6** | `DisplayListBuilder` 一群の `Pattern.compile` の数（型付き値と `CssSyntax` を使う） | 0 |
+| **R6** | 表示リストを作る一群（`TreePainter` ほか）の `Pattern.compile` の数（型付き値と `CssSyntax` を使う） | 0 |
 
 指標の外にも、次を同じテストで検査している。
 

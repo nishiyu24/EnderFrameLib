@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.server;
 
-import com.nishiyu.enderframelib.client.PerformanceBenchmarkTest;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -133,7 +132,7 @@ public class StateMemoryBenchmarkTest {
         assertEquals(4900, result.totalDomNodes(), "100 セッションで合計 4900 個の DOM ノードがヒープに常駐していること");
         assertEquals(49, result.nodesPerSession(), "1 セッションあたり 49 個の DOM ノードが保持されていること");
         // メモリ消費量（全件テスト時は先行テストの GC 回収と重なると差分が揺れるため、厳密モード時のみ 1MB 閾値を強制）
-        if (PerformanceBenchmarkTest.isStrictBenchmarkMode()) {
+        if ((Boolean.getBoolean("benchmark.enforce") || Boolean.getBoolean("benchmark.update"))) {
             assertTrue(result.usedMemoryBytes() > 1_000_000,
                     "100 セッション生成により少なくとも 1MB 以上のヒープ消費が増加すること（実測: ~35MB）");
         } else {

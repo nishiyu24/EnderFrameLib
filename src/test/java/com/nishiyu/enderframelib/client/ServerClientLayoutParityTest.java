@@ -1,8 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
@@ -41,20 +39,15 @@ public class ServerClientLayoutParityTest {
     private static final int W = 800;
     private static final int H = 600;
 
-    private com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer previousRenderer;
 
     @BeforeEach
     public void setUp() {
-        previousRenderer = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
-        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox)));
         clearSessions();
     }
 
     @AfterEach
     public void tearDown() {
         clearSessions();
-        com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withIncrementalLayout(true));
-        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(previousRenderer));
     }
 
     private static void clearSessions() {
@@ -67,13 +60,13 @@ public class ServerClientLayoutParityTest {
     public void serverMutationsAndClientOperationsRenderTheSame() {
         for (long seed = 1; seed <= 6; seed++) {
             clearSessions();
-            runParity(IncrementalLayoutTest.KITCHEN_SINK, seed, 60);
+            runParity(KITCHEN_SINK, seed, 60);
         }
     }
 
     @Test
     public void draggingByStyleMatchesAcrossPaths() {
-        String html = IncrementalLayoutTest.KITCHEN_SINK;
+        String html = KITCHEN_SINK;
         open(html);
         List<String> history = new ArrayList<>();
         for (int i = 0; i < 40; i++) {
@@ -244,8 +237,8 @@ public class ServerClientLayoutParityTest {
         session(REFERENCE).markInvalidation(com.nishiyu.enderframelib.common.UiView.InvalidationLevel.RELAYOUT); // 参照は毎回、前回の木と記憶を捨てて全体を作り直す
         session(REFERENCE).flushInvalidation();
         List<DisplayItem> reference = session(REFERENCE).renderCache();
-        IncrementalLayoutTest.assertSameDisplayList(reference, session(SERVER).renderCache(), label + " server", history);
-        IncrementalLayoutTest.assertSameDisplayList(reference, session(CLIENT).renderCache(), label + " client", history);
+        assertSameDisplayList(reference, session(SERVER).renderCache(), label + " server", history);
+        assertSameDisplayList(reference, session(CLIENT).renderCache(), label + " client", history);
     }
 
     private static List<String> elementIds(HtmlNode root) {
@@ -267,5 +260,74 @@ public class ServerClientLayoutParityTest {
             if (child.nodeType != NodeType.TEXT) return false;
         }
         return true;
+    }
+
+    /** 多くの整形の種類を 1 つに混ぜた文書（M2c-3 で消した IncrementalLayoutTest から移した）。 */
+    static final String KITCHEN_SINK = """
+            <html><head><style>
+              body { margin: 6px; font-size: 14px; counter-reset: sec; }
+              .row { display: flex; gap: 6px; align-items: center; }
+              .row > .grow { flex-grow: 1; }
+              .col { display: flex; flex-direction: column; }
+              .grid { display: grid; grid-template-columns: 80px 1fr 2fr; gap: 4px; }
+              .float-l { float: left; width: 60px; height: 40px; background: #345; }
+              .card { border: 2px solid #888; padding: 6px; margin: 4px 0; border-radius: 4px; }
+              .wide { width: 70%; }
+              .hidden { display: none; }
+              .big { font-size: 22px; padding: 10px; }
+              .abs { position: absolute; left: 30px; top: 50px; width: 120px; background: #522; }
+              .rel { position: relative; left: 5px; top: 3px; }
+              .sticky { position: sticky; top: 0; background: #224; }
+              .scroller { height: 90px; overflow-y: auto; }
+              h2::before { counter-increment: sec; content: counter(sec) ". "; }
+              .tag::after { content: " [" attr(data-tag) "]"; }
+              ol li::marker { color: #f80; }
+              .cq { container-type: inline-size; width: 50%; }
+              @container (min-width: 200px) { .cq-inner { padding: 12px; } }
+              table { border-collapse: collapse; }
+              td { border: 1px solid #999; padding: 3px; }
+              pre { white-space: pre; }
+              .upper { text-transform: uppercase; }
+              .ib { display: inline-block; width: 50px; height: 20px; background: #363; }
+            </style></head><body>
+              <div id="desk" style="position: relative; height: 200px;">
+                <div id="win" class="abs card"><div class="row"><span id="title" class="grow">Window title</span><button id="close">x</button></div>
+                  <p id="win-body">Body text that is long enough to wrap inside the window box.</p></div>
+                <span id="badge" class="rel">badge</span>
+              </div>
+              <h2 id="h-a">First section</h2>
+              <div id="flex" class="row card"><div id="f1" class="grow">grow one</div><div id="f2">fixed two</div><div id="f3" class="grow big">three</div></div>
+              <div id="cols" class="col card"><div id="c1">column a</div><div id="c2" class="wide">column b wide</div></div>
+              <h2 id="h-b" class="tag" data-tag="beta">Second section</h2>
+              <div id="grid" class="grid card"><div id="g1">g1</div><div id="g2">g2 longer text here</div><div id="g3">g3</div><div id="g4">g4</div></div>
+              <div id="floaty" class="card"><div id="fl" class="float-l"></div><p id="wrap">Text wrapping around the float with <b id="bold">bold</b> and <i>italic</i> words, enough to need several lines of text.</p></div>
+              <ol id="list"><li id="li1">one</li><li id="li2">two <span class="ib"></span></li><li id="li3" class="upper">three</li></ol>
+              <ul id="ul"><li id="u1">alpha</li><li id="u2">beta</li></ul>
+              <div id="scroller" class="scroller card"><div id="pin" class="sticky">pinned</div><p id="s1">line 1</p><p id="s2">line 2</p><p id="s3">line 3</p><p id="s4">line 4</p></div>
+              <table id="tbl"><tr><td id="t1">a</td><td id="t2">bb</td></tr><tr><td id="t3">ccc</td><td id="t4">d</td></tr></table>
+              <details id="det" open><summary id="sum">More</summary><p id="det-p">details body</p></details>
+              <div id="cq" class="cq card"><div id="cq-inner" class="cq-inner">container query</div></div>
+              <pre id="pre">pre  formatted
+              text</pre>
+              <form id="form"><input id="inp" value="hello" placeholder="type"><textarea id="ta">area</textarea><select id="sel"><option>one</option><option>two</option></select></form>
+              <p id="last">Trailing paragraph with an <span id="inline-span">inline span</span>.</p>
+            </body></html>
+            """;
+
+    /** 表示リストが同じか（M2c-3 で消した IncrementalLayoutTest から移した）。 */
+    static void assertSameDisplayList(List<DisplayItem> expected, List<DisplayItem> actual, String label, List<String> history) {
+        int n = Math.min(expected.size(), actual.size());
+        for (int i = 0; i < n; i++) {
+            if (!expected.get(i).equals(actual.get(i))) {
+                org.junit.jupiter.api.Assertions.fail(label + ": " + i + " 番目の描画要素が違う\n  期待: " + expected.get(i)
+                        + "\n  実際: " + actual.get(i) + "\n  変異の履歴:\n    " + String.join("\n    ", tail(history)));
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(expected.size(), actual.size(), label + ": 描画要素の数が違う\n  変異の履歴:\n    "
+                + String.join("\n    ", tail(history)));
+    }
+
+    private static List<String> tail(List<String> history) {
+        return history.subList(Math.max(0, history.size() - 12), history.size());
     }
 }

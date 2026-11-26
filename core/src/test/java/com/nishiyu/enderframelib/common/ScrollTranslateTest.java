@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -22,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * スクロールだけの更新で表示リストを作り直さず、スクロールコンテナの中身の節を動かして済ませても
- * （{@link com.nishiyu.enderframelib.core.kernel.Shortcut#SCROLL_CONTENT_NODES}）、毎回作り直したときと同じ見た目・同じヒットテストになること。
+ * 、毎フレーム全体を作り直したとき（{@code RELAYOUT}）と同じ見た目・同じヒットテストになること。
  *
  * <p>見た目は「項目の位置 + 祖先のスクロール節の移動量」（実際の描画位置）で比べる（作り直しのほうは位置に焼き込まれている）。
  * 四捨五入の違いで 1 画素までずれうる。画面に入っている項目は、節で動かした側にも必ずあること（作り足りないと端が欠ける）。
@@ -119,7 +118,6 @@ public class ScrollTranslateTest {
     }
 
     private static List<Frame> run(boolean nodes, long seed, int steps) {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(nodes);
         Random rnd = new Random(seed);
         int[][] probes = new int[8][];
         for (int i = 0; i < probes.length; i++) probes[i] = new int[]{rnd.nextInt(W), rnd.nextInt(H)};
@@ -158,6 +156,7 @@ public class ScrollTranslateTest {
                 // 減速は経過時間で進む。数フレーム回して、減速の途中の状態も比べる
                 for (int f = 0, n = 1 + rnd.nextInt(3); f < n; f++) {
                     now += 16 + rnd.nextInt(40);
+                    if (!nodes) view.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT); // 毎回作り直す側
                     view.frame(now, backend, true);
                     for (int spin = 0; spin < 2000 && (view.ui().rootW() != view.width() || view.ui().rootH() != view.height()); spin++) {
                         try {
@@ -182,11 +181,6 @@ public class ScrollTranslateTest {
         boolean outer = p[0] >= r[0] - 1 && p[0] <= r[0] + r[2] + 1 && p[1] >= r[1] - 1 && p[1] <= r[1] + r[3] + 1;
         boolean inner = p[0] > r[0] + 1 && p[0] < r[0] + r[2] - 1 && p[1] > r[1] + 1 && p[1] < r[1] + r[3] - 1;
         return outer && !inner;
-    }
-
-    @AfterEach
-    public void restore() {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(true);
     }
 
     private static void assertSame(Frame expected, Frame actual, String where, java.util.Set<String> allIds) {
@@ -260,7 +254,7 @@ public class ScrollTranslateTest {
             view.close();
         }
         // 固定配置は描画用の木で根へ出る（包含ブロックはビューポート）ので、コンテナの中身に入らず、コンテナは節にまとめてよい
-        StandaloneView fx = new StandaloneView(html().replace(".hdr{position:sticky;top:0;background:#fc6}", ".hdr{position:fixed;top:0;background:#fc6}"), W, H, FontResolver.FALLBACK, EnginePath.V3);
+        StandaloneView fx = new StandaloneView(html().replace(".hdr{position:sticky;top:0;background:#fc6}", ".hdr{position:fixed;top:0;background:#fc6}"), W, H, FontResolver.FALLBACK);
         try {
             List<String> ids = new ArrayList<>();
             DisplayItem hdr = null;

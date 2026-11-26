@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
@@ -8,7 +9,6 @@ import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
@@ -38,8 +38,8 @@ import static com.nishiyu.enderframelib.core.paint.PaintSupport.resolveLiveInput
 
 /**
  * 箱 1 つ自身の描画項目（節の錨・背景・枠線・影・部品・文字の行）を作る（M2c ②。旧 {@code DisplayListBuilder} の箱ごとの描画を
- * 取り出したもの）。読むのは {@link PaintBox} だけで、描く順・クリップ・記憶は呼び出し側が決める。旧経路（{@code LayoutBox}）と、
- * 新経路の断片木から作る描画用の木の両方から使う。
+ * 取り出したもの）。読むのは {@link PaintBox}（描画用の木の見え方）だけで、描く順・クリップ・記憶は呼び出し側（{@code TreePainter}）が
+ * 決める。
  *
  * <p>部品の ID の通し番号 {@link #fragIds} は呼び出し側が箱ごとに 0 にする（他の箱の増減に左右されない）。</p>
  */

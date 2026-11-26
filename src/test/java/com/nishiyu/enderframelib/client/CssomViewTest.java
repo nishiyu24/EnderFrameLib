@@ -7,11 +7,10 @@ import com.nishiyu.enderframelib.api.dom.IntersectionObserver;
 import com.nishiyu.enderframelib.api.dom.ResizeObserver;
 import com.nishiyu.enderframelib.common.BoxLayoutQuery;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -41,7 +40,7 @@ public class CssomViewTest {
         final InteractionState state = new InteractionState();
         final ScrollState scroll = new ScrollState();
         final BoxLayoutQuery query;
-        LayoutBox root;
+        PaintView root;
 
         Page(String html) {
             doc = compiler.parseDocument(html, "", W, H);
@@ -53,14 +52,13 @@ public class CssomViewTest {
         }
 
         void layout() {
-            root = compiler.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK, state, root);
+            root = compiler.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK, state);
             query.update(root, doc.sheet, W, H);
             live.notifyLayoutObservers();
         }
 
         void reposition() {
-            RenderPipeline.repositionLayout(root, W, H, scroll, FontResolver.FALLBACK);
-            live.notifyLayoutObservers();
+            layout(); // スクロール量は描画用の木の見え方で足す（組み直しても箱の寸法は同じ）
         }
 
         Element el(String id) {

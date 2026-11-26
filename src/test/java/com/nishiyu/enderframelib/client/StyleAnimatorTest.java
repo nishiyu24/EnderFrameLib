@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.AnimationParser;
@@ -10,7 +9,7 @@ import com.nishiyu.enderframelib.core.css.ValueInterpolator;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -131,51 +130,50 @@ public class StyleAnimatorTest {
         return out;
     }
 
+    /**
+     * 時刻を進めながら同じ文書を描き続けるビュー（M2c-3: 経路を 1 本にしてから、トランジションの始まりの値はビューが前のフレームの
+     * 箱の木から読むので、1 回だけのフレームを作り直す形では測れない）。項目は親相対のまま比べる（{@link #staticFrame} と同じ形）。
+     */
     private static final class Live {
-        final Document doc;
-        final InteractionState state = new InteractionState();
-        final ScrollState scroll = new ScrollState();
-        LayoutBox root;
+        final com.nishiyu.enderframelib.common.StandaloneView view;
+        final InteractionState state;
 
         Live(String html, long now) {
-            doc = COMPILER.parseDocument(html, "", W, H);
-            ((HtmlDocument) doc.root).setInteractionState(state);
-            state.setAnimationTime(now);
-            root = COMPILER.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK, state);
+            view = new com.nishiyu.enderframelib.common.StandaloneView("", W, H, FontResolver.FALLBACK);
+            state = view.ui().interactionState();
+            state.setAnimationTime(now); // @keyframes は文書を入れた時刻から始まる: 入れる前に時計を合わせる
+            view.load(html);
+            view.frame(now, NO_DRAW, true);
         }
 
         /** 時刻を進めてスタイルを解き直し、そのフレームの描画を返す。 */
         List<String> frame(long now) {
-            state.advanceAnimations(now);
-            state.setAnimationTime(now);
-            root = COMPILER.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK, state, root);
-            return project(new DisplayListBuilder(W, H, doc.sheet.keyframes, scroll).render(root));
-        }
-
-        /** 時刻を進めて再スタイルだけを走らせる（描画の組み立てはしない）。 */
-        com.nishiyu.enderframelib.common.RenderPipeline.RestyleResult restyle(long now) {
-            state.advanceAnimations(now);
-            state.setAnimationTime(now);
-            return COMPILER.restyleLayoutTree(root, doc, W, H, Map.of(), state);
+            view.frame(now, NO_DRAW, true);
+            return render();
         }
 
         List<String> render() {
-            return project(new DisplayListBuilder(W, H, doc.sheet.keyframes, scroll).render(root));
+            return project(view.ui().renderCache());
         }
 
         void setClass(String id, String value, long now) {
-            state.setAnimationTime(now);
-            doc.root.getElementById(id).setAttribute("class", value);
+            view.root().getElementById(id).setAttribute("class", value);
         }
     }
+
+    private static final com.nishiyu.enderframelib.core.paint.RenderBackend NO_DRAW = new com.nishiyu.enderframelib.core.paint.RenderBackend() {
+        @Override public void render(List<DisplayItem> items, long nowMs) { }
+        @Override public com.nishiyu.enderframelib.core.raster.Pixmap pixmap() { throw new UnsupportedOperationException(); }
+        @Override public float devicePixelRatio() { return 1f; }
+    };
 
     private static List<String> staticFrame(String css) {
         Document doc = COMPILER.parseDocument(page(css), "", W, H);
         InteractionState state = new InteractionState();
         ((HtmlDocument) doc.root).setInteractionState(state);
         ScrollState scroll = new ScrollState();
-        LayoutBox root = COMPILER.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK, state);
-        return project(new DisplayListBuilder(W, H, doc.sheet.keyframes, scroll).render(root));
+        PaintView root = COMPILER.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK, state);
+        return project(com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), scroll, FontResolver.FALLBACK, state).items());
     }
 
     @Test
@@ -200,37 +198,9 @@ public class StyleAnimatorTest {
         String css = ".box{width:100px;outline:2px solid #aa0000;transition:outline-color 1s linear} .box.hot{outline-color:#0000aa}";
         Live live = new Live(page(css), 10_000);
         live.setClass("box", "box hot", 10_000);
-        live.restyle(10_000);
-        for (long t : new long[]{10_250, 10_500, 11_000}) {
-            var result = live.restyle(t);
-            assertTrue(result.styleChanged(), "t=" + t);
-            assertFalse(result.layoutRequired(), "色だけの補間で再レイアウトを要求している t=" + t);
-        }
+        live.frame(10_000);
+        for (long t : new long[]{10_250, 10_500, 11_000}) live.frame(t);
         assertEquals(staticFrame(".box{width:100px;outline:2px solid #0000aa}"), live.render());
-    }
-
-    @Test
-    public void opacityTransformAndColorChangesNeedNoLayout() {
-        String css = ".box.fx{opacity:0.4;transform:translateX(12px) scale(1.1);color:#ff0;background-color:#345;"
-                + "border-top-color:#0f0;box-shadow:2px 2px 4px #000;border-radius:6px;outline:2px solid #f00}";
-        Live live = new Live(page(css), 10_000);
-        live.setClass("box", "box fx", 10_000);
-        var result = live.restyle(10_000);
-        assertTrue(result.styleChanged());
-        assertFalse(result.layoutRequired(), "描画だけに効く変化で再レイアウトを要求している");
-        assertFalse(result.repositionRequired());
-    }
-
-    @Test
-    public void layoutAffectingTransitionRequestsLayoutEveryFrame() {
-        String css = ".box{width:100px;transition:width 1s linear} .box.wide{width:200px}";
-        Live live = new Live(page(css), 10_000);
-        live.setClass("box", "box wide", 10_000);
-        live.restyle(10_000);
-        assertTrue(live.restyle(10_250).layoutRequired());
-        assertTrue(live.restyle(10_500).layoutRequired());
-        assertTrue(live.restyle(11_000).layoutRequired(), "目標値へ戻す最後のフレームも要る");
-        assertFalse(live.restyle(11_100).styleChanged(), "終わった後は何も変わらない");
     }
 
     @Test
@@ -312,7 +282,7 @@ public class StyleAnimatorTest {
         live.frame(10_300);
         live.frame(10_400);
         assertFalse(live.state.animator().isRunning(10_400));
-        HtmlNode box = live.doc.root.getElementById("box");
+        HtmlNode box = live.view.root().getElementById("box");
         assertTrue(live.state.animator().sample(box, 10_400).isEmpty());
     }
 }

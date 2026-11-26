@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.wpt;
 
+import com.nishiyu.enderframelib.common.TestBoxes;
+
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -10,7 +12,7 @@ import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import com.nishiyu.enderframelib.wpt.WptHarness.WptCase;
@@ -27,14 +29,10 @@ import static com.nishiyu.enderframelib.wpt.WptHarness.assertNotEqualsWpt;
 import static com.nishiyu.enderframelib.wpt.WptHarness.assertTrueWpt;
 import static com.nishiyu.enderframelib.wpt.WptHarness.test;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -165,7 +163,7 @@ public class WptCssSyntaxBehaviorTest extends WptBehaviorTest {
     @WptCase(path = "css/css-syntax/ident-three-code-points.html",
             description = "Whether a hash token is an id selector depends on the first three code points")
     public void testIdentStartIsDecidedByTheFirstThreeCodePoints() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   main div { background-color:red; }
                   div[name=one], div[name=two] { background: green; }
@@ -187,7 +185,7 @@ public class WptCssSyntaxBehaviorTest extends WptBehaviorTest {
                 """);
         for (String id : List.of("1", "-2", "--3", "---4", "a", "-b", "--c", "---d")) {
             test("id " + id + " should be green", () -> {
-                ComputedStyle style = find(root, id).style;
+                ComputedStyle style = find(root, id).style();
                 assertEqualsWpt(0xFF008000, ColorParser.parseColor(style.get(CssProperty.BACKGROUND_COLOR)), id);
             });
         }
@@ -265,20 +263,20 @@ public class WptCssSyntaxBehaviorTest extends WptBehaviorTest {
         return rule.properties.get("--foo");
     }
 
-    private static LayoutBox layout(String html) {
+    private static PaintView layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", VIEWPORT, VIEWPORT);
         return parser.layoutDocument(doc, VIEWPORT, VIEWPORT, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 
     private static ComputedStyle styleOf(String html, String id) {
-        return find(layout(html), id).style;
+        return find(layout(html), id).style();
     }
 
-    private static LayoutBox find(LayoutBox box, String id) {
+    private static PaintView find(PaintView box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (LayoutBox child : box.elementChildren) {
-            LayoutBox hit = find(child, id);
+        for (PaintView child : TestBoxes.elements(box)) {
+            PaintView hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

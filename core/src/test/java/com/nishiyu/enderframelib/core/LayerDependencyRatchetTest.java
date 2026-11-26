@@ -153,8 +153,8 @@ class LayerDependencyRatchetTest {
 
     @Test
     void detectsUpwardImport() {
-        String src = "package com.nishiyu.enderframelib.core.css;\nimport com.nishiyu.enderframelib.core.layout.LayoutBox;\nclass A {}";
-        assertEquals(Set.of("core/css/A.java -> core.layout.LayoutBox"), upwardReferences("core/css/A.java", src));
+        String src = "package com.nishiyu.enderframelib.core.css;\nimport com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;\nclass A {}";
+        assertEquals(Set.of("core/css/A.java -> core.layout.fragment.LayoutFragment"), upwardReferences("core/css/A.java", src));
     }
 
     @Test

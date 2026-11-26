@@ -4,8 +4,7 @@
 #   setters   = public static void setXxx(...)（static な配線）
 #   pubStatic = public static で final でない欄（グローバルな切り替え・状態）
 # 増やさない。減ったら下げる（-Dratchet.update=true で現在値へ書き直す）。
-core/layout/LayoutBox.java | 34 | 171 | 0 | 0
-common/UiView.java | 16 | 156 | 0 | 0
+common/UiView.java | 16 | 140 | 0 | 0
 api/ui/UI.java | 0 | 132 | 1 | 0
 core/raster/canvas/CanvasRenderingContext2D.java | 0 | 128 | 0 | 0
 core/dom/node/HtmlNode.java | 6 | 115 | 0 | 0
@@ -15,8 +14,6 @@ core/css/Selector.java | 32 | 0 | 0 | 0
 core/dom/InteractionState.java | 30 | 0 | 0 | 0
 common/EnderFrameBuiltInConfig.java | 0 | 0 | 0 | 13
 core/css/StyleSheet.java | 13 | 0 | 0 | 0
-core/diag/PipelineStats.java | 12 | 0 | 0 | 0
-core/layout/GridLayoutEngine.java | 9 | 0 | 0 | 0
 core/scene3d/Raycaster3D.java | 9 | 0 | 0 | 0
 core/paint/AnimatedValues.java | 7 | 0 | 0 | 0
 core/dom/parser/HtmlTokenizer.java | 6 | 0 | 0 | 0
@@ -24,14 +21,11 @@ core/paint/gpu/RectStream.java | 5 | 0 | 0 | 1
 common/TextEditing.java | 4 | 0 | 0 | 0
 common/Document.java | 3 | 0 | 0 | 0
 api/config/EnderConfigManager.java | 0 | 0 | 0 | 2
-core/layout/BlockLayoutEngine.java | 0 | 0 | 0 | 2
 api/dom/MutationObserver.java | 0 | 0 | 0 | 1
 common/UiPubSub.java | 1 | 0 | 0 | 0
 common/UiTimers.java | 1 | 0 | 0 | 0
 core/css/CssParser.java | 0 | 0 | 0 | 1
 core/dom/node/DomUtils.java | 0 | 0 | 1 | 1
 core/dom/node/HtmlDocument.java | 1 | 0 | 0 | 0
-core/layout/TableLayoutEngine.java | 1 | 0 | 0 | 0
-core/paint/DisplayListBuilder.java | 0 | 0 | 0 | 1
 core/paint/gpu/ImageTextureCache.java | 1 | 0 | 0 | 0
 core/layout/LayoutTaskPool.java | 0 | 0 | 1 | 0

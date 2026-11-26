@@ -2,10 +2,9 @@ package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.client.renderer.ControlElementRenderer;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -33,8 +32,8 @@ public class RangeAppearanceTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument("<html><head><style>body { margin: 0; }</style></head><body>" + body + "</body></html>",
                 "", 400, 200);
-        LayoutBox root = compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-        return new DisplayListBuilder(400, 200, doc.sheet.keyframes, new ScrollState()).render(root);
+        PaintView root = compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
     }
 
     private static DisplayItem part(List<DisplayItem> items, String id) {

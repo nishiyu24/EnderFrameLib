@@ -202,6 +202,6 @@ class EngineContextHostSeamsTest {
             assertFalse(src.contains("static synchronized void register"), f + " に static の登録口が戻った（HostServices の with… を使う）");
             assertFalse(src.contains("static synchronized void resetToDefaults"), f + " に static の後始末が戻った");
         }
-        assertFalse(Files.readString(main.resolve("paint/DisplayListBuilder.java")).contains("public static void set"), "DisplayListBuilder に static setter が戻った");
+        assertFalse(Files.readString(main.resolve("paint/TreePainter.java")).contains("public static void set"), "TreePainter に static setter が戻った");
     }
 }

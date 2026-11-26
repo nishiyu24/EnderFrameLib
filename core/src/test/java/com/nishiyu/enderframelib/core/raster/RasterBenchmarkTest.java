@@ -4,8 +4,7 @@ import com.nishiyu.enderframelib.core.raster.canvas.CanvasRenderingContext2D;
 
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -108,10 +107,10 @@ class RasterBenchmarkTest {
         for (int i = 0; i < 40; i++) html.append("<svg width='48' height='48' viewBox='0 0 100 100'>").append(icon(), icon().indexOf("<defs>"), icon().length()).append("<span>x</span>");
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<html><head><style>body{margin:0}</style></head><body>" + html + "</body></html>", "", 800, 600);
-        LayoutBox root = parser.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        PaintView root = parser.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         RasterImageStore.clear();
-        double first = medianMs(1, () -> new DisplayListBuilder(800, 600, doc.sheet.keyframes, new ScrollState()).render(root));
-        double warm = medianMs(15, () -> new DisplayListBuilder(800, 600, doc.sheet.keyframes, new ScrollState()).render(root));
+        double first = medianMs(1, () -> com.nishiyu.enderframelib.common.FrameRender.document(doc, 800, 600, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
+        double warm = medianMs(15, () -> com.nishiyu.enderframelib.common.FrameRender.document(doc, 800, 600, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
         System.out.printf("[R8 benchmark] display list with 40 inline svgs: cold %.2f ms, warm (raster cached) %.2f ms, rasters stored %d%n",
                 first, warm, RasterImageStore.size());
         assertTrue(RasterImageStore.size() >= 1);

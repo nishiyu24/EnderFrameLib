@@ -5,8 +5,7 @@ import com.nishiyu.enderframelib.core.css.AtRuleProcessor;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.LayoutQuery;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import org.jetbrains.annotations.Nullable;
 
@@ -14,7 +13,7 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 
 /**
- * 直近のレイアウト結果（{@link LayoutBox} の木）から {@link LayoutQuery} を答える。レイアウトのたびに
+ * 直近のレイアウト結果（描画用の木の見え方 {@code PaintView}）から {@link LayoutQuery} を答える。レイアウトのたびに
  * {@link #update} で木を差し替える。節 → 箱の索引は最初の問い合わせで作り、更新で捨てる。
  */
 public final class BoxLayoutQuery implements LayoutQuery {
@@ -35,16 +34,9 @@ public final class BoxLayoutQuery implements LayoutQuery {
         this.onScrollChanged = onScrollChanged;
     }
 
-    /** 箱を読む前に呼ぶ。位置の決め直しを後回しにしているとき、ここで済ませる。 */
-    private Runnable freshener = () -> { };
-
-    public void freshener(Runnable freshener) {
-        this.freshener = freshener;
-    }
-
     /**
-     * 直近のレイアウトの結果に差し替える。{@code root} は旧経路の箱の木の根か、新経路の描画用の木の根の見え方（M2c ③。
-     * {@code PaintView}。スクロールの位置を含めて作ったもの）。
+     * 直近のレイアウトの結果に差し替える。{@code root} は描画用の木の根の見え方（{@code PaintView}。スクロールの位置を含めて
+     * 作ったもの）。
      */
     public void update(PaintBox root, StyleSheet sheet, int viewportW, int viewportH) {
         this.root = root;
@@ -55,7 +47,6 @@ public final class BoxLayoutQuery implements LayoutQuery {
     }
 
     private PaintBox boxOf(HtmlNode node) {
-        freshener.run();
         if (root == null || node == null) return null;
         if (index == null) {
             Map<HtmlNode, PaintBox> built = new IdentityHashMap<>();
@@ -75,12 +66,6 @@ public final class BoxLayoutQuery implements LayoutQuery {
         return p != null && p != com.nishiyu.enderframelib.core.css.model.Position.STATIC;
     }
 
-    /** 旧経路の仮想化した流れの、まだ置いていない子の推定位置（それ以外は null）。M2b-6 で旧経路と一緒に消す。 */
-    private static float[] virtualOffset(PaintBox box) {
-        return box instanceof LayoutBox lb && lb.parent != null && lb.parent.isVirtualizedFlow() && lb.contentAutoSkipped
-                ? lb.parent.virtualOffsetOf(lb) : null;
-    }
-
     @Nullable
     @Override
     public BoxMetrics metrics(HtmlNode node) {
@@ -94,14 +79,7 @@ public final class BoxLayoutQuery implements LayoutQuery {
                 break;
             }
         }
-        float x = box.x();
-        float y = box.y();
-        float[] est = virtualOffset(box);
-        if (est != null) {
-            x = est[0];
-            y = est[1];
-        }
-        return new BoxMetrics(x, y, box.w(), box.h(),
+        return new BoxMetrics(box.x(), box.y(), box.w(), box.h(),
                 box.bL(), box.bT(), box.bR(), box.bB(),
                 box.pL(), box.pT(), box.pR(), box.pB(),
                 box.mL(), box.mT(), box.mR(), box.mB(),
@@ -140,11 +118,6 @@ public final class BoxLayoutQuery implements LayoutQuery {
         if (target == null) return;
         float ex = target.x();
         float ey = target.y();
-        float[] est = virtualOffset(target);
-        if (est != null) {
-            ex = est[0];
-            ey = est[1];
-        }
         float ew = target.w();
         boolean changed = false;
         for (HtmlNode a = node.parent; a != null; a = a.parent) {

@@ -68,8 +68,8 @@ class HostElementProviderTest {
 
     @Test
     void coreHoldsNoMinecraftTagLiteralsInRegistries() throws IOException {
-        for (String f : List.of("replaced/ReplacedElements.java", "dom/parser/HtmlParser.java", "paint/DisplayListBuilder.java",
-                "paint/ControlPainter.java", "layout/BoxMeasurer.java")) {
+        for (String f : List.of("replaced/ReplacedElements.java", "dom/parser/HtmlParser.java", "paint/TreePainter.java",
+                "paint/ControlPainter.java", "layout/fragment/ReplacedFlow.java")) {
             String s = Files.readString(CORE.resolve(f));
             for (String t : List.of("\"mc-fluid\"", "\"mc-entity\"", "\"mc-scene\"", "\"mc-slot\"", "\"mc-slot-grid\"",
                     "\"mc-inventory\"", "\"mc-bar\"", "startsWith(\"mc-\")")) {

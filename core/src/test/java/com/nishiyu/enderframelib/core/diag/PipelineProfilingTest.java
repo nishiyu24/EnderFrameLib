@@ -60,8 +60,7 @@ class PipelineProfilingTest {
     @Test
     void everyPipelineStageIsRecorded() {
         StageProfiler.enable(true);
-        StandaloneView view = new StandaloneView(HTML, 160, 120, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(),
-                com.nishiyu.enderframelib.common.EnginePath.V3);
+        StandaloneView view = new StandaloneView(HTML, 160, 120, com.nishiyu.enderframelib.core.text.font.SystemFonts.system());
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(160, 120, 1f);
              ProfilingRenderBackend wrapped = new ProfilingRenderBackend(cpu)) {
             view.frame(1000, wrapped, true);

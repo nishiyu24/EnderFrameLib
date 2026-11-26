@@ -1,9 +1,11 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.common.TestBoxes;
+
 import com.nishiyu.enderframelib.core.css.model.*;
 
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -13,14 +15,10 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -39,7 +37,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testUnlayeredRulesBeatLayeredRulesRegardlessOfSpecificity() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   @layer base { #a { color: #111111; } }
                   .a { color: #222222; }
@@ -51,7 +49,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testLaterLayerBeatsEarlierLayerAndOrderIsFixedByFirstMention() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   @layer reset, theme;
                   @layer theme { div { color: #333333; } }
@@ -64,7 +62,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testImportantInLayersReversesTheLayerOrder() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   @layer first, second;
                   @layer first { div { color: #aaaaaa !important; } }
@@ -79,7 +77,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testNestedAndAnonymousLayers() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   @layer outer { @layer inner { div { color: #010101; } } div { color: #020202; } }
                   @layer { span { color: #030303; } }
@@ -94,7 +92,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testRevertLayerFallsBackToThePreviousLayer() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   @layer a, b;
                   @layer a { div { color: #123456; } }
@@ -109,7 +107,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testNestingWithAmpersandAndImplicitDescendant() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   .card { color: #101010;
                     & .title { color: #202020; }
@@ -129,7 +127,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testNestedAtRulesAndSelectorListSpecificity() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   .a, #b { width: 10px;
                     @media (min-width: 300px) { width: 20px; }
@@ -146,7 +144,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testContainerQueryUsesTheNearestContainerSize() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   .wrap { container-type: inline-size; width: 300px; }
                   .item { color: #111111; }
@@ -160,7 +158,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testNamedContainerAndContainerUnits() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   .outer { container: side / inline-size; width: 200px; }
                   .inner { container-type: inline-size; width: 100px; }
@@ -175,57 +173,8 @@ public class ModernCascadeTest {
     }
 
     @Test
-    public void testBuildAndRestylePassSizeContainerDownWithoutNearestSizeContainerWalk() {
-        String html = """
-                <style>
-                  .outer { container: side / inline-size; width: 200px; }
-                  .inner { container-type: inline-size; width: 100px; }
-                  .item { width: 50cqw; color: #111111; }
-                  .item::before { content: "x"; width: 25cqw; display: inline-block; }
-                  @container side (min-width: 150px) { .item { color: #abcdef; } }
-                </style>
-                <div class="outer" id="o"><div class="inner" id="in"><div class="holder"><div class="item" id="i">x</div></div></div></div>
-                """;
-        var parser = new UiDocumentCompiler();
-        Document doc = parser.parseDocument(html, "", VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-        int[] ancestorWalks = {0};
-        var state = new com.nishiyu.enderframelib.core.dom.InteractionState() {
-            @Override
-            public ContainerBox nearestSizeContainer(com.nishiyu.enderframelib.core.dom.node.HtmlNode from) {
-                ancestorWalks[0]++;
-                return super.nearestSizeContainer(from);
-            }
-        };
-        LayoutBox root = RenderPipeline.buildLayoutTree(doc.root, Map.of(), doc.sheet, Map.of(), false, state);
-        assertEquals(0, ancestorWalks[0], "buildLayoutTree は再帰の引数でコンテナを渡し nearestSizeContainer を呼ばない");
-
-        var outerNode = doc.root.getNodeById("o");
-        var innerNode = doc.root.getNodeById("in");
-        var itemNode = doc.root.getNodeById("i");
-        assertNotNull(outerNode);
-        assertNotNull(innerNode);
-        assertNotNull(itemNode);
-        state.setContainerSize(outerNode, 200, 100);
-        state.setContainerSize(innerNode, 100, 100);
-
-        RenderPipeline.restyleLayoutTree(root, doc, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, Map.of(), state);
-        assertEquals(0, ancestorWalks[0], "restyleLayoutTree も祖先走査 nearestSizeContainer を呼ばない");
-        assertEquals("#abcdef", style(root, "i").get(CssProperty.COLOR));
-        assertEquals("50px", style(root, "i").get(CssProperty.WIDTH));
-        LayoutBox itemBox = find(root, "i");
-        assertNotNull(itemBox);
-        LayoutBox beforeBox = itemBox.elementChildren.stream()
-                .filter(b -> b.node.isPseudoNode && b.node.key().endsWith("_before"))
-                .findFirst().orElse(null);
-        assertNotNull(beforeBox);
-        assertEquals("25px", beforeBox.style.get(CssProperty.WIDTH));
-    }
-
-    // ---- @property
-
-    @Test
     public void testRegisteredPropertyInitialValueAndInheritance() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   @property --gap { syntax: '<length>'; inherits: false; initial-value: 8px; }
                   .box { margin-left: var(--gap); }
@@ -239,7 +188,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testRegisteredLengthPropertyIsComputedToAbsolute() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   @property --size { syntax: '<length>'; inherits: true; initial-value: 0px; }
                   div { font-size: 10px; --size: 2em; width: var(--size); }
@@ -253,7 +202,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testHasMatchesByDescendantChildAndSiblingRelativeSelectors() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>
                   div:has(> p.hit) { color: #111111; }
                   div:has(span) { background-color: #222222; }
@@ -272,23 +221,23 @@ public class ModernCascadeTest {
 
     // ---- helpers
 
-    private static LayoutBox layout(String html) {
+    private static PaintView layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
         return parser.layoutDocument(doc, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, Map.of(), new ScrollState(),
                 FontResolver.FALLBACK);
     }
 
-    private static ComputedStyle style(LayoutBox root, String id) {
-        LayoutBox box = find(root, id);
+    private static ComputedStyle style(PaintView root, String id) {
+        PaintView box = find(root, id);
         assertNotNull(box, "id=" + id + " のボックスが無い");
-        return box.style;
+        return box.style();
     }
 
-    private static LayoutBox find(LayoutBox box, String id) {
+    private static PaintView find(PaintView box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (LayoutBox child : box.elementChildren) {
-            LayoutBox hit = find(child, id);
+        for (PaintView child : TestBoxes.elements(box)) {
+            PaintView hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

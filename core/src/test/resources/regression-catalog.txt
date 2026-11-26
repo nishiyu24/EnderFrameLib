@@ -8,32 +8,32 @@
 # --- レイアウト（増分・平行移動・測定の再利用） ---
 M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の InlineFlow の内在サイズが文字の節の末尾の空白を数え落とし、float・縮小して合わせる箱の max-content が小さくなって 1 行の文が折り返した
 M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の BlockFlow が高さ 0 の素通しの箱を自分の上の余白を足さずに置き（中身が float だけの body が 8 px 上がった）、column flex が min-height を主軸の大きさに使わなかった
-M2b | ProjectionPixelParityTest#blocksTextAndFlexRenderLikeLegacy | v3 の BlockFlow がルート要素（html）を独立した整形コンテキストにせず、子の余白と相殺して html が 16 px 下がった
-M2b | ProjectionPixelParityTest#blocksTextAndFlexRenderLikeLegacy | 一時アダプタ（FragmentProjection）がインラインの箱の外接矩形を合わせる処理を inline-block にも掛け、中に文字を持つ原子を親の原点へ戻していた（前のブロックの上に重なって描かれ、行の先頭の原子だけ偶然正しかった）
+M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress, RealDocumentFramesTest#framesMatchGolden | v3 の BlockFlow がルート要素（html）を独立した整形コンテキストにせず、子の余白と相殺して html が 16 px 下がった（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
+M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress, RealDocumentFramesTest#framesMatchGolden | 一時アダプタ（FragmentProjection）がインラインの箱の外接矩形を合わせる処理を inline-block にも掛け、中に文字を持つ原子を親の原点へ戻していた（前のブロックの上に重なって描かれ、行の先頭の原子だけ偶然正しかった）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 M2b | InlineTextTest#collapseThroughBlockSitsAtTheParentEdgeWhenMarginsCollapse | v3 の BlockFlow が流れの箱より前の高さ 0 の素通しの箱を自分の上の余白の下に置き、親と余白を相殺するときも親の上端に来なかった（中身が float だけの p の float が 16 px 下がった。位置を親の相殺の有無で ChunkedFlow が解く形に直した）
 M2b | InlineTextTest#keepAllHoldsAcrossElementsAndWbrBreaks | LineBreaker が word-break: keep-all でも小書きの仮名・長音（NS）を AL にせず「ょ|う」の間で折り返した（旧経路と共有の折り返し規則）
-M2b | ProjectionPixelParityTest#blocksTextAndFlexRenderLikeLegacy | 一時アダプタが flex の項目になった文字の節の文字片を容器の原点に置き、blockify したインライン要素（span・疑似要素）の項目もインラインの外接矩形合わせで原点へ戻していた（先頭の項目だけ偶然正しかった）
+M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress, RealDocumentFramesTest#framesMatchGolden | 一時アダプタが flex の項目になった文字の節の文字片を容器の原点に置き、blockify したインライン要素（span・疑似要素）の項目もインラインの外接矩形合わせで原点へ戻していた（先頭の項目だけ偶然正しかった）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 M2b | FlexFeaturesTest#fieldsetBaselineSkipsTheLegend | v3 のベースライン（InlineFlow.baselineOf）が fieldset の legend の行を fieldset のベースラインにし、ベースラインで揃える flex の行で隣の項目が legend の高さぶん上にずれた（HTML §15.3.13: legend は枠線の上の見出しでベースラインにならない）
 M2b | GridFeaturesTest#rootPercentHeightUsesTheViewport | v3 の BlockFlow の文書の根が初期包含ブロックの高さを子の % の高さの基準に渡さず、html, body { height: 100% } の実文書で html が内容の高さになった（幾何の一致の掃引 GeometrySweepTest で検出）
 M2b | GridFeaturesTest#stretchedItemIsDefiniteForPercentInsets | v3 のグリッドが伸ばした項目を内容の高さと同じなら測り直さず、確定した高さを持たないまま中の相対位置の % の top が 0 になった（WPT css-grid/relative-grandchild。§6.2 の伸ばした大きさは確定）
 M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の行組み（InlineLineBuilder）が行の原子の x を LayoutUnit の格子へ丸めず、inline-block の fieldset と flex の項目の fieldset で枠線の切り欠きの縁の反エイリアスが 1 段ずれた（WPT fieldset-baseline-alignment）
-M2b | ProjectionPixelParityTest#blocksTextAndFlexRenderLikeLegacy, WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の一時アダプタ（FragmentProjection）がインライン要素の箱に枠線・padding・余白の幅を写さず、新経路でインライン要素の枠線が一切描かれなかった（背景だけ描かれた。WPT line-edge-white-space-collapse-002）
+M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress, RealDocumentFramesTest#framesMatchGolden | v3 の一時アダプタ（FragmentProjection）がインライン要素の箱に枠線・padding・余白の幅を写さず、新経路でインライン要素の枠線が一切描かれなかった（背景だけ描かれた。WPT line-edge-white-space-collapse-002）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 M2b | ListMarkerTest#closedDetailsShowsOnlyTheSummaryWithADisclosureMarker, IncrementalOracleTest#listMarkers | v3 の入力側（BoxTreeCompiler）が閉じた details の summary 以外の子にも箱を作り、新経路で閉じた details の中身が並んだ（旧 RenderTreeBuilder は箱を作らない。幾何の一致の掃引の実文書 voidwave で検出）
-M2b | ProjectionPixelParityTest#blocksTextAndFlexRenderLikeLegacy, ScrollableOverflowTest#scrollContainerReachesItsTallChildPlusEndPadding | v3 の一時アダプタ（FragmentProjection）が到達範囲（scrollWidth / scrollHeight）を箱の大きさのまま写し、新経路でスクロールコンテナのつまみが中身の量に依らず全体の大きさで描かれた（ScrollableOverflow で断片木から求めるようにした）
+M2b | WptV3BaselineTest#newPathPassingListDoesNotRegress, RealDocumentFramesTest#framesMatchGolden, ScrollableOverflowTest#scrollContainerReachesItsTallChildPlusEndPadding | v3 の一時アダプタ（FragmentProjection）が到達範囲（scrollWidth / scrollHeight）を箱の大きさのまま写し、新経路でスクロールコンテナのつまみが中身の量に依らず全体の大きさで描かれた（ScrollableOverflow で断片木から求めるようにした）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 M2b | ReplacedTest#videoAndIframeUseTheDefaultObjectSize | v3 の置換要素（ReplacedFlow）が幅 % の置換要素の min-content の寄与を内在の幅のままにし、video の既定の大きさ 300 を入れた後で実文書 media_test のグリッドの列が 300 に広がった（縮められる置換要素の寄与は 0。CSS Sizing 3 §5.2.2。幾何の一致の掃引で検出）
 M2b | ReplacedTest#percentHeightOfAnAtomInALineUsesTheDefiniteContainerHeight, IncrementalOracleTest#replacedElements | v3 の行組み（InlineLineBuilder）が行の中の原子（img・inline-block）の % の高さの基準を渡さず、高さが確定した容器の中の height: 100% の img が内在の高さのままになった（実文書 item_block_test の流体の img が 16 px。GeometryDeviationsTest で検出）
-M2b | ReplacedTest#nativeCheckboxSitsOnTheBaselineWithItsBorderBox, GeometryDeviationsTest#realDocumentsDifferOnlyByRecordedDeviations | v3 の置換要素（ReplacedFlow）が部品の見た目のチェックボックス・ラジオボタン・range のベースラインを下の余白の端にし、チェックボックスのある行が 3 px 高くなった（WebKit / Blink と旧経路は枠線の箱の下端。実文書 guidebook のタスクリスト）
+M2b | ReplacedTest#nativeCheckboxSitsOnTheBaselineWithItsBorderBox, RealDocumentFramesTest#framesMatchGolden | v3 の置換要素（ReplacedFlow）が部品の見た目のチェックボックス・ラジオボタン・range のベースラインを下の余白の端にし、チェックボックスのある行が 3 px 高くなった（WebKit / Blink と旧経路は枠線の箱の下端。実文書 guidebook のタスクリスト）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 M2b | FlexFeaturesTest#columnBaselineFallsBackToSelfStart, WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の flex（FlexLines）が column の容器の align-items: baseline を flex 相対の揃えとして wrap-reverse で裏返し、縦書きの flex の項目が交差軸の逆の端に置かれた（交差軸にベースラインが無いので safe self-start。旧 FlexLayoutEngine と同じ。WPT flex-align-baseline-column-vert-rl-rtl-wrap-reverse）
-M2a | LegacyParityTest#flexMatchesLegacy | v3 の内在サイズが自分の width を掛けて返し、flex の自動最小サイズが内容の min-content でなく指定の幅になった（width:80px の項目が縮まずにあふれた。内容と親への寄与を分けて直した）
+M2a | FlexFeaturesTest#intrinsicSizes, WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の内在サイズが自分の width を掛けて返し、flex の自動最小サイズが内容の min-content でなく指定の幅になった（width:80px の項目が縮まずにあふれた。内容と親への寄与を分けて直した）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-3 | PaintTreeIncrementalTest#insertingAtTheTopReusesTheShiftedItems | 平行移動が配置されなかった箱（br・断片のない空の span）を動かした（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
 §6-5 | IncrementalOracleTest#flexFeatures | stretch 予定の項目を仮寸法で測り直して flex の確定の測定記録を壊した（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
-§6-11 | WidthOnlyReuseTest#fitReuseDoesNotChangeTheIncrementalResultAcrossFittingAndWrappingWidths, WidthOnlyReuseTest#fillWidthBlocksAndFlexItemsMatchFreshAcrossWrappingBoundary | fill 幅の fitNeed がインライン要素の間の空白を数えず、折り返した測定を誤って使い回した
+§6-11 | ViewportResizeTest#resizeRestylesIncrementallyAndMatchesAFreshBuild, IncrementalOracleTest#flexFeatures | fill 幅の fitNeed がインライン要素の間の空白を数えず、折り返した測定を誤って使い回した（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-12 | PaintTreeIncrementalTest#randomPaintAndLayoutMutationsMatchARebuild | em の余白の格子化漏れ・auto の margin の配置鍵・インラインの中の flex の子孫を shiftSubtree が誤って動かした（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
-§6-14 | TableIncrementalLayoutTest#incrementalLayoutMatchesAFullRebuildOnTables | 表の箱を構造変更から外したら 1px ずれた（表のエンジンが箱へ直接書く欄）
+§6-14 | IncrementalOracleTest#tables, TableLayoutTest#insertedRowReusesOtherCells | 表の箱を構造変更から外したら 1px ずれた（表のエンジンが箱へ直接書く欄）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-18 | IncrementalOracleTest#tables | 再利用された動的な nodeId で別の節の箱を引いた・表の組みの遷移で箱を使い回した（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
-§6-20 | WidthOnlyReuseTest#incrementalResizeMatchesAFreshLayoutAtEveryWidth | 確定測定の葉の再利用が記録と同じ実体を持ち、古い幅の値を別の上書き幅の記録として残した
-§6-38, W9 | MeasureFuelGuardTest#deeplyNestedFloatFlexTerminates, MeasureFuelGuardTest#nestedFloatFlexScalesLinearlyAndMatchesUnreused | 入れ子の float flex で測定の回数が段ごとに跳ね、19 段で終わらなかった
-§6-55, W9b | FlexSameWidthRemeasureTest#randomNestedFlexAndGridDocumentsAreIdentical, MeasureFuelGuardTest#incrementalUpdateInNestedFloatFlexMatchesUnreused | grid の measureTracks が仮の測定の直後に古い % パディングを読んだ（seed 5）・新品の箱が同一パス内の再利用を塞いだ
+§6-20 | ViewportResizeTest#resizeRestylesIncrementallyAndMatchesAFreshBuild | 確定測定の葉の再利用が記録と同じ実体を持ち、古い幅の値を別の上書き幅の記録として残した（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
+§6-38, W9 | NestedFlexTest#scratchAndResizeAreLinearInDepth, IncrementalOracleTest#nestedFlexDepth4 | 入れ子の float flex で測定の回数が段ごとに跳ね、19 段で終わらなかった（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
+§6-55, W9b | IncrementalOracleTest#nestedFlexDepth3, IncrementalOracleTest#gridFeatures, NestedFlexTest#leafChangeRecomputesBoundedAndSecondFrameHitsEverything | grid の measureTracks が仮の測定の直後に古い % パディングを読んだ（seed 5）・新品の箱が同一パス内の再利用を塞いだ（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-80, A6b | IncrementalVsFullTest#layoutsDocumentMatchesFullRelayoutEveryStep, MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout | float を消す・位置指定の子を足す子パッチで兄弟の行と描画の層がずれた（layouts の種 2 / 6 / 7 / 8）
 §6-81, A6b | IncrementalVsFullTest#nestedDocumentMatchesFullRelayoutEveryStep, IncrementalVsFullTest#borderLinesNeverGetNegativeSizeAfterAncestorResize | 足したブロックの子の項目がリストの末尾（flex アイテムの後ろ）に入った・祖先のリサイズで枠線の高さが負になった
 §6-104, T2b | RealDocumentFramesTest#gpuMatchesSoftwareEveryFrame | 回る節の下の止まった部品が差分パッチへ渡らず、GPU が前の姿勢の図形を使い続けた
@@ -44,10 +44,10 @@ M2a | LegacyParityTest#flexMatchesLegacy | v3 の内在サイズが自分の wid
 §6-117, T3 | IncrementalVsFullTest#flexBasisPercentInsideAContentSizedFlexItemResizesTheItem, MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout | 中身の内在幅で寸法が決まる祖先（flex の html の中の縮小幅の body）の下で、子の外寸が同じ変化を cutoff が吸収し、祖先の内在幅が古いまま残った。全面の再レイアウトも同じ記憶を使い回すので、最初から作った面と比べる（nested の種 339）
 §6-118, T3 | MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout | 配置の記憶（KEEP_PLACEMENTS）: 位置を 0 にして捨てた箱の配置が有効のまま残る（resetPlacements / resetPlacementsFast の keepRun >= 0）・相対位置のずらしで動いた子孫の記録が残り平行移動で古いずらしが残る（layouts の種 50 / 146 ほか 13 本。比べる全面は測定の記憶を捨てて組む）
 §6-119, T3 | IncrementalVsFullTest#textOfAFormerFlexItemKeepsItsFragmentsWhenItsSpanStopsFloating, IncrementalVsFullTest#textAddedBesideOnlyAFloatGoesAfterTheFloatLayer, IncrementalVsFullTest#textAddedBesideOnlyAFloatUsesTheTextOfTheAncestorsSiblingsAsTheAnchor, IncrementalVsFullTest#absoluteBoxIsRebasedWhenItsParentMovesButItDoesNot, IncrementalVsFullTest#blockAddedAfterABlockInsideAnInlineGoesAfterIt, IncrementalVsFullTest#textAddedAfterAnAtomicItemWhoseLastChildIsABlockGoesAfterTheItemsText, IncrementalVsFullTest#blockAddedIntoAZeroHeightParentGoesAfterThePrecedingSiblingsBlocks, IncrementalVsFullTest#parentThatStartsToBeDrawnWhenAChildIsAddedMatchesFullRelayout, MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout | 「既知:」15 本: 行の流れの中身になった前の flex の項目の文字の断片が捨てられた（配置の記憶）・子パッチの挿入位置（インラインの層の手がかりが無いとき float の前／インラインの中のブロックの見落とし／アトミックな箱の中の木の順の最後を描画順の最後と見た／描かれない親で先頭 0）・動かない絶対位置の箱の親相対の座標・描かれ始める祖先（layouts の種 1149 / 1048 / 1005、nested の種 1295 / 811 ほか）
-§6-82, A6b | IncrementalVsFullTest#layoutsDocumentWithoutCutoffMatchesFullRelayout | 枠線を重ねる表で、新しく作った箱の最初の測定だけが枠線 0 で幅を取った
+§6-82, A6b | IncrementalVsFullTest#layoutsDocumentMatchesFullRelayoutEveryStep | 枠線を重ねる表で、新しく作った箱の最初の測定だけが枠線 0 で幅を取った（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-85, A11 | WptLayoutFixesTest#newlineBetweenInlineElementsIsASpace, ChildPatchTest#randomInsertAndRemoveWithWhitespaceBetweenChildrenMatchesFullRelayout | パーサが改行を含む空白だけのテキストを捨て、インラインの要素の間の空白が消えた
-4949e89 | WidthOnlyReuseTest#emptyBoxMinContentDoesNotDependOnItsCurrentWidth | 空の箱の min-content が現在の幅を読んだ
-A6b | IncrementalVsFullTest#absoluteCoordinatesPatchMatchesFullRelayoutAndNeverGoesNegative | 絶対座標の局所パッチで新しい高さを二重に引き、枠線の高さが -150 になった
+4949e89 | FlexFeaturesTest#intrinsicSizes | 空の箱の min-content が現在の幅を読んだ（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
+A6b | IncrementalVsFullTest#nestedDocumentMatchesFullRelayoutEveryStep | 絶対座標の局所パッチで新しい高さを二重に引き、枠線の高さが -150 になった（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 
 §6-182, K3 | FrameOracleTest#scrollExtentMatchesAfterDisplayTypeChange | display の型を変えた箱の子テキストに残る遅延消去待ちの inlineFragments を ScrollExtentCalc が読み、scrollHeight 等が大きく残った（layouts 種 1・種 3）
 
@@ -57,15 +57,15 @@ M2c | ViewportResizeTest#resizeRestylesIncrementallyAndMatchesAFreshBuild | 派�
 M2b | BackendSessionReleaseTest#closingAnOwnedSessionDropsItsAnimationState, BackendSessionReleaseTest#closingABorrowedSessionKeepsTheOwnersState | 描画器（Software・GPU）が閉じても CssAnimator の既定の置き場に自分のセッションの補間状態（表示項目を握る）を残し、描画器を作るたびに溜まって、全テストを 1 本の JVM で流す CI（4 コア）がヒープ 3g を使い切って落ちた
 K4, §6-185 | PaintTreeIncrementalTest#painterMemoMatchesAFreshPaint | 親（親 id の無い枠）が平行移動しても、変わった子が無いと子の断片を全部再利用して古い位置の項目を出した（K3 で shiftSubtree が子の印を進めなくなった穴。窓付き＋位置指定の子孫の行で顕在）（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
 §6-27, R5 | ItemReplayPixelTest#replayDoesNotChangeAnyPixelAcrossTheSequence | 項目の再生が補間中の色・上書きされたクリップ slot・CPU 層との順序を見落とした
-§6-59, B3 | ParentRelativeParityTest#pseudoElementTextKeysDoNotCollide | 疑似要素の文字の節の nodeId で鍵を作り、2 つ目以降の文字が消えた
+§6-59, B3 | IncrementalOracleTest#pseudoElements, RealDocumentFramesTest#framesMatchGolden | 疑似要素の文字の節の nodeId で鍵を作り、2 つ目以降の文字が消えた（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-60, B3 | ChildPatchTest#randomInsertAndRemoveMatchesFullRelayout, ChildPatchTest#siblingRulesMakeThePatchStepBackAndStillMatch | 差分再生で使い回す箱の記憶が不変リストで UnsupportedOperationException・ノードのクリップが古いまま子へ伝わった
 §6-61, B3 | GpuRouteTest#routeFollowsCpuLayerNesting, GpuRouteTest#backendHoldsNoGpuSinkField | 項目単位の差分再生が GpuSink を経路（GpuRoute）を通さずに呼んだ
 §6-66, B9 | StaticFrameGateTest#anyChangeForcesRepaint | 項目をセルへ書く形に替えたら、実体の同一性で変化を知る消費者（再生・静止フレームの飛ばし）が黙って壊れた
 §6-83, A6b | IncrementalVsFullTest#repaintedBoxWithoutMemoKeepsScrollContainerClip | 記憶の無い箱を描き直すとき、スクロールする箱の clip が落ちた
 §6-84, A6b | IncrementalVsFullTest#scrollListPixelsMatchWithAndWithoutScrollContentNode, IncrementalVsFullTest#smoothScrollStaysOnWholePixels | 小数のスクロール量で 2 つの経路の画素が違った・インラインの中の span の箱が (0, 0) のまま窓の中と判定された
 be95cfe, A6b | IncrementalVsFullTest#canvasBackgroundFollowsBodyHoverStyleInTheSameFrame, IncrementalVsFullTest#damageRepaintMatchesFullRepaintEveryStep | キャンバスへ渡る body の背景が 1 フレーム古い色のまま・遷移中の項目を止まっていると記録して差分描画に途中の色が残った
-61644d2 | ParentRelativeParityTest#culledAncestorOfAnimatedChildKeepsParity | 窓で省いた親の下に残る動く子の座標が崩れた
-159eec5 | RestylePruneTest#skippingCleanSubtreesGivesTheSameDisplayListAsWalkingEverything | 前に箱が現れると部品の id がずれてアニメーションが別の項目へ移った
+61644d2 | RealDocumentFramesTest#framesMatchGolden, V3ViewTest#interactionsMatchAFreshV3Render | 窓で省いた親の下に残る動く子の座標が崩れた（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
+159eec5 | V3ViewTest#ancestorHoverRestylesDescendantsThroughTheLedger | 前に箱が現れると部品の id がずれてアニメーションが別の項目へ移った（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 80fbfb8 | ClipResolverTest#aClipThatStaysPutFollowsBackToTheItemInsideAMovingRail | 動くレールの中の項目に、止まったクリップが付いて行かなかった
 3766e66 | AnimationTestSiteParityTest#testRunnerGradientClipFollowsRunner | ランナーのグラデーション層のクリップが動きに付いて行かなかった
 e626eb7 | CpuFallbackOfRareShapesTest#cpuFallbackShapeKeepsTheDrawingOrderBetweenGpuShapes | CPU へ回した稀な図形が GPU の図形との描画順を崩した
@@ -74,7 +74,7 @@ e626eb7 | CpuFallbackOfRareShapesTest#cpuFallbackShapeKeepsTheDrawingOrderBetwee
 §6-125 | PatchedMemoNoDuplicateItemsTest#noFrameHasTwoItemsWithTheSameId | 差分パッチが箱の記憶の項目リストへスクロール内容の節（_scrollc）を混ぜ、次の通常の組み立てで同じ id の項目が 2 つ並んだ（画素は同じ）
 §6-125 | NoHtmlSiteTest#buildsAndInteractsWithFullSiteWithoutAnyHtml | ノードの鍵が変わった箱で、古い id・鍵の項目の記憶が当たっていた（箱の項目の検証 VERIFY_BOX_MEMO が見つけた）
 
-§6-131 | WorkerContextPropagationTest#parallelLayoutInAScopedContextMatchesSerialLayout | 並列のワーカーが面の文脈を引き継がず、面に登録した置換要素を取り違えて並列と直列の結果がずれた
+§6-131 | EngineContextTest#scopedContextChangesBehaviourOnlyInsideTheScope | 並列のワーカーが面の文脈を引き継がず、面に登録した置換要素を取り違えて並列と直列の結果がずれた（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-164, C1p | MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout | 親の flex/grid↔block 切替で位置・スタイル不変の子の Fragment.Kind（ATOMIC↔BLOCK 等）が変わるのに FragmentPaint.Memo の鍵に isFlexOrGridItem が無く描画順がずれた
 
 # --- ヒットテスト ---
@@ -105,13 +105,13 @@ dcbad05 | WebControlInteractionTest#testClickingNonFocusableElementDoesNotFocusA
 T3 | MutationSeedRegressionTest#everyRecordedSeedMatchesTheFullRelayout, MutationSeedRegressionTest#knownSeedsStillMismatchUntilFixed, gradle:mutationFuzz | 夜間のファズで見つかった種を固定の種として毎回の CI で回す（直せていない種は「既知:」で残し、直ると赤）
 A10, §6-136 | gradle:verifyPublishedModules | 公開先 URL が Windows のパスで解決できず :core を公開できなかった。公開物だけで別プロジェクトが動くことを検査する
 §6-195, K0b | IntrinsicAndScrollOracleTest#bodyFloatOnly, IntrinsicAndScrollOracleTest#collapsedWhitespaceTextAddsNoScrollExtent | 内在の幅が前回の測定の枠・余白を読み測っていない箱で 0 になった（shrink-to-fit の親の中の fieldset の幅が面で違う）・空白だけで畳まれた文字の箱の 1 行ぶんがスクロール範囲に入った（オラクルで検出）
-§6-194, §6-196, K5 | RepositionReuseTest#scrollOnlyUpdatesMatchAFreshBuildAtTheSameOffsets | スクロールだけの位置の決め直しが毎回全箱の配置を捨てていた（machine_ui scroll の増幅率 28）・古い位置の枠で文字を直す近道が不発のデッドコードだった
+§6-194, §6-196, K5 | ScrollTranslateTest#movingTheContentNodeMatchesRebuildingEveryTime | スクロールだけの位置の決め直しが毎回全箱の配置を捨てていた（machine_ui scroll の増幅率 28）・古い位置の枠で文字を直す近道が不発のデッドコードだった（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-197, K5 | V3ViewTest#interactionsMatchAFreshV3Render | 文字の変更を再スタイルの経路へ寄せた最初の版が、同じフレームに重なった位置の指定（left・top）の再配置を飛ばした（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
 §6-201, K5b | ChildPatchTest#randomInsertAndRemoveMatchesFullRelayout | 混在の内容のインラインの途中へブロックを差し込むと、再利用された匿名ボックスの描画の記憶が古いまま当たり項目が二重に出た（作りたての匿名ボックスが親へ付く前に印を付けて自分だけの待ちリストへ積まれ、印が取り残された。PaintStamps.mark）
 §6-202, K5b | SiblingCombinatorInvalidationTest#removingOrInsertingAPrecedingSiblingRestylesTheFollowingSiblings, SiblingCombinatorInvalidationTest#secondChildListChangeAfterAFlushStillRestylesSiblings, ChildPatchTest#siblingRulesMakeThePatchStepBackAndStillMatch | 隣接・一般兄弟結合子（+ ~）を含む規則が、先行する兄弟の挿入・削除で後続の兄弟を再スタイルしなかった（先頭の子を消すと新しい先頭が前の余白のまま。InvalidationSets の構造の変化の範囲に入っていなかった）
 §6-204 | ChildDiffTest#blocksAppendedBesideTextAndAroundLongListsMatchFresh, FrameOracleTest#layoutsFuzzHasNoDifferenceFromTheFreshSurface | 親の子の差分で、前後の子の先頭・末尾の文字の箱が隣の block の増減で落ちる/残る扱いを見落とし、p に block を足したあと箱の木が最初から作った結果と食い違った
 P1a | FontCatalogTest#foldersChangedRightBeforeTheCatalogWasWrittenAreNotTrusted, FontCatalogTest#addingRemovingOrTouchingAFolderInvalidatesTheCatalog | 書体の目録がフォルダの更新時刻の一致だけで有効と判定し、時刻の刻み（切り捨て・HFS+ 1 秒・FAT 2 秒）の中で起きた書体の追加・削除を見逃した（Linux の CI で検出。目録の書き込みの直前 2 秒以内に変わったフォルダの目録は使わない）
-M2c | FixedPositionTest#fixedInsidePositionedAncestorsUsesTheViewport, PaintTreeQueryTest#scrolledContentMatchesTheLegacyPath | 新経路のレイアウトで、位置指定の祖先（relative・absolute）が fixed の子孫まで包含ブロックとして置いていた（fixed の包含ブロックはビューポート。OutOfFlow.split で absolute だけを置き、fixed は置いた箱の中の分も含めて文書の根まで渡す）
+M2c | FixedPositionTest#fixedInsidePositionedAncestorsUsesTheViewport | 新経路のレイアウトで、位置指定の祖先（relative・absolute）が fixed の子孫まで包含ブロックとして置いていた（fixed の包含ブロックはビューポート。OutOfFlow.split で absolute だけを置き、fixed は置いた箱の中の分も含めて文書の根まで渡す）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 M2c | FixedPositionTest#transformFilterAndContainmentContainAbsoluteAndFixed, FrameOracleTest#invalidationLeakMutantsAreAllKilled | 新経路のレイアウトが transform・filter・layout / paint containment の箱を流れの外の子孫の包含ブロックにせず（位置指定だけを見た）、transform は描画だけの群にあるので付け外しもレイアウトへ届かなかった（StyleFacts.containsFixed を Style.sameLayout が照合する）
 M2c | SiblingCombinatorInvalidationTest#secondChildListChangeAfterAFlushStillRestylesSiblings | 新経路のビューが DOM の無効化セットを引くシートを結ばず（旧経路の再スタイルだけが結んでいた）、兄弟結合子の規則で class を外しても後ろの兄弟が台帳に載らず古い余白のまま残った
 M2c | V3ViewTest#stickyHeaderSticksToTheScrollportAndStopsAtItsParent, ScrollTranslateTest#movingTheContentNodeMatchesRebuildingEveryTime | 新経路が position: sticky の貼り付きを付けず（静的位置のまま）、中身の節を動かす更新（貼り付きの式を足す）と描き直した面がずれた（貼り付きはスクロールの位置を足す見え方 PaintView が付ける）
@@ -121,9 +121,12 @@ M2c | FirstLineFlowTest#firstLineFontSizeWrapsTheFirstLineAndTheRestUsesTheNorma
 M2c | ChangeLedgerTest#hoverAndResizeReachTheLedger | 新経路の描画用の木が状態の擬似クラスの規則の印を持たず、透明な要素の当たり判定の項目が出ないのでホバーが届かなかった
 M2c | ClockInjectionTest#resizeThrottleFollowsTheInjectedClock | リサイズの間引きが旧経路の箱の木の有無だけを見て、新経路のビューでは間引かなかった
 M2c | TypedCssCoverageTest#tableKeywordsAreAcceptedByTheEngine | 新経路のビューで CSSOM の算出スタイルが旧経路の再スタイルの印からしか読めず空だった（最新の箱の木から答える）
-M2c | ContentVisibilityVirtualListTest#standaloneViewHandles100kVirtualScrollEndToEnd | 新経路が画面から遠い content-visibility: auto の箱も描き、10 万行の表示リストが O(N) になった（描くときに関連の余白で外す）
+M2c | V3ViewTest#interactionsMatchAFreshV3Render | 新経路が画面から遠い content-visibility: auto の箱も描き、10 万行の表示リストが O(N) になった（描くときに関連の余白で外す）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 M2c | V3ViewTest#outOfFlowBoxesPaintInDocumentOrderWithPositionedSiblings | 描画用の木が流れの外の箱を包含ブロックの子の末尾に置き、位置指定の層（z-index: auto）を文書順でなく描いた（voidwave の背景の光が見出しの上に重なった。一時アダプタも同じ）
 M2c | V3ViewTest#fullRebuildRequestReadsChangesOutsideTheLedger | 新経路が全体の作り直しの要求（RELAYOUT。書体の登録の変化 fontsChanged など台帳に載らない変化）を読まずに増分で組み、変化が反映されなかった（ゲートと IncrementalVsFullTest の全再計算も、新経路では増分を測っていた）
 M2c | V3ViewTest#fullRebuildRequestKeepsRunningTransitions, RealDocumentFramesTest#incrementalMatchesFullRebuildEveryFrame | 新経路の全体の作り直しが前回の算出スタイルを捨て、遷移が始まるフレームを作り直すとトランジションが始まらず終点へ飛んだ（surface_test の hover の影）
 M2c | V3ViewTest#reusedScrollContentKeepsTheCurrentScrollAfterAnUnrelatedChange, RealDocumentFramesTest#incrementalMatchesFullRebuildEveryFrame | 描画の記憶がスクロールコンテナを含む部分木ごと当たると中身の節を記憶したときのスクロール量で出すのに、ビューが節の移動を消したまま足さず、関係の無い変更のフレームで内側のスクロールが先頭へ戻って描かれた（showcase）
 M2c | V3ViewTest#ancestorHoverRestylesDescendantsThroughTheLedger, IncrementalVsFullTest#cardsDocumentMatchesFullRelayoutEveryStep | 無効化セットが子孫まで（DESCENDANTS）と判定しても台帳には要素自身の STYLE しか書かず、新経路が .list:hover .item の子孫を解き直さなかった（台帳の種別 STYLE_SUBTREE を足した）
+M2c | V3ViewTest#firstFrameAfterOpeningIsIdle, P8bRetentionTest#largeListRetainedHeapStaysUnderCeiling | 経路を 1 本にしたとき静止フレームの判定を台帳で行うようにしたら、文書を入れたときの全体の作り直しが溜まった変更（markAllDirty の記録）を消化せず、開いた直後のフレームがもう一度全体を組み直した（2,000 行で 130 ms 余り・保持ヒープ +1.6 MB）。全体の作り直しで台帳を凍結して消化する
+M2c | FormattingContextTest#testAbsoluteInsideInlineBoxIsPositioned | 描画用の木がインライン要素の中の絶対配置の子を、包含ブロックの流れの外の子として置くのに加えて、インラインの子としても位置の無い 0×0 の写しを作っていた（木の順で先に見つかるので CSSOM の矩形・フォーカスの箱の検索が 0 を返す。インラインの子から流れの外の箱を除く）
+M2c | DirectionLayoutTest#blockChildrenInRtlContainerSitAtTheRightEdge | 新経路のブロックの整形が、幅と左右の余白が決まりすぎた箱を rtl の包含ブロックでも左に置いていた（CSS 2.1 §10.3.3。包含ブロックの向きを制約〔ConstraintSpace.CONTAINER_RTL〕で渡し、左の余白を捨てて右に寄せる）

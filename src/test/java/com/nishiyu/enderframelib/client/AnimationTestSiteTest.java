@@ -3,11 +3,10 @@ package com.nishiyu.enderframelib.client;
 import com.nishiyu.enderframelib.core.paint.AnimatedValues;
 
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -68,11 +67,11 @@ public class AnimationTestSiteTest {
 
         ScrollState scrollState = new ScrollState();
         InteractionState interactionState = new InteractionState();
-        LayoutBox rootBox = compiler.layoutDocument(doc, 854, 480, Map.of(), scrollState, FontResolver.FALLBACK, interactionState);
+        var frame = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, Map.of(), scrollState, FontResolver.FALLBACK, interactionState);
+        PaintView rootBox = frame.root();
         assertNotNull(rootBox);
 
-        DisplayListBuilder renderer = new DisplayListBuilder(854, 480, doc.sheet.keyframes, scrollState);
-        List<DisplayItem> items = renderer.render(rootBox);
+        List<DisplayItem> items = frame.items();
         assertNotNull(items);
         assertTrue(items.size() >= 50, "アニメーション要素やカード群が DisplayList として多数生成されていること (size=" + items.size() + ")");
 

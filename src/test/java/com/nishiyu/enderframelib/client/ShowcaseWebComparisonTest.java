@@ -1,10 +1,9 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -55,11 +54,8 @@ public class ShowcaseWebComparisonTest {
 
     private static RenderResult renderAt(int width, int height, FontResolver fonts) {
         Document doc = compiler.parseDocument(showcaseHtml, "", width, height);
-        LayoutBox rootBox = compiler.layoutDocument(
-                doc, width, height, Map.of(), new ScrollState(), fonts, new InteractionState());
-        DisplayListBuilder renderer = new DisplayListBuilder(width, height, doc.sheet.keyframes, new ScrollState());
-        List<DisplayItem> items = renderer.render(rootBox);
-        return new RenderResult(rootBox, items);
+        var frame = com.nishiyu.enderframelib.common.FrameRender.document(doc, width, height, Map.of(), new ScrollState(), fonts, new InteractionState());
+        return new RenderResult(frame.root(), frame.items());
     }
 
     private static RenderResult inGame() {
@@ -71,21 +67,21 @@ public class ShowcaseWebComparisonTest {
             "uniform", UniformFontFace.RESOLVER,
             "fallback", FontResolver.FALLBACK);
 
-    record RenderResult(LayoutBox rootBox, List<DisplayItem> items) {
-        List<LayoutBox> byClass(String cls) {
-            List<LayoutBox> out = new ArrayList<>();
+    record RenderResult(PaintView rootBox, List<DisplayItem> items) {
+        List<PaintView> byClass(String cls) {
+            List<PaintView> out = new ArrayList<>();
             collect(rootBox, b -> b.node != null && hasClass(b, cls), out);
             return out;
         }
 
-        LayoutBox one(String cls) {
-            List<LayoutBox> found = byClass(cls);
+        PaintView one(String cls) {
+            List<PaintView> found = byClass(cls);
             assertFalse(found.isEmpty(), "." + cls + " が存在すること");
             return found.get(0);
         }
 
-        LayoutBox byId(String id) {
-            List<LayoutBox> out = new ArrayList<>();
+        PaintView byId(String id) {
+            List<PaintView> out = new ArrayList<>();
             collect(rootBox, b -> b.node != null && id.equals(b.node.attrs.get("id")), out);
             assertFalse(out.isEmpty(), "#" + id + " が存在すること");
             return out.get(0);
@@ -95,24 +91,24 @@ public class ShowcaseWebComparisonTest {
             return items.stream().filter(i -> i.type() == ElementType.TEXT && i.text() != null).toList();
         }
 
-        private static boolean hasClass(LayoutBox b, String cls) {
+        private static boolean hasClass(PaintView b, String cls) {
             String attr = b.node.attrs.get("class");
             if (attr == null) return false;
             for (String c : attr.trim().split("\\s+")) if (c.equals(cls)) return true;
             return false;
         }
 
-        private static void collect(LayoutBox b, java.util.function.Predicate<LayoutBox> p, List<LayoutBox> out) {
+        private static void collect(PaintView b, java.util.function.Predicate<PaintView> p, List<PaintView> out) {
             if (p.test(b)) out.add(b);
-            for (LayoutBox c : b.children) collect(c, p, out);
+            for (PaintView c : b.paintChildren()) collect(c, p, out);
         }
     }
 
-    private static boolean overlaps(LayoutBox a, LayoutBox b) {
+    private static boolean overlaps(PaintView a, PaintView b) {
         return a.x() < b.x() + b.w() - EPS && b.x() < a.x() + a.w() - EPS && a.y() < b.y() + b.h() - EPS && b.y() < a.y() + a.h() - EPS;
     }
 
-    private static void assertInside(LayoutBox inner, LayoutBox outer, String what) {
+    private static void assertInside(PaintView inner, PaintView outer, String what) {
         assertTrue(inner.x() >= outer.x() - EPS && inner.x() + inner.w() <= outer.x() + outer.w() + EPS
                         && inner.y() >= outer.y() - EPS && inner.y() + inner.h() <= outer.y() + outer.h() + EPS,
                 () -> String.format("%s: [%.1f,%.1f %.1fx%.1f] が [%.1f,%.1f %.1fx%.1f] の内側にあること",
@@ -120,7 +116,7 @@ public class ShowcaseWebComparisonTest {
     }
 
     /** 箱の中のテキストが 1 行に収まっている（断片がすべて同じ行にある）。 */
-    private static void assertSingleLine(LayoutBox box, String what) {
+    private static void assertSingleLine(PaintView box, String what) {
         List<Float> lineTops = new ArrayList<>();
         collectFragmentTops(box, lineTops);
         assertFalse(lineTops.isEmpty(), what + " にテキストがあること");
@@ -130,9 +126,9 @@ public class ShowcaseWebComparisonTest {
         }
     }
 
-    private static void collectFragmentTops(LayoutBox b, List<Float> out) {
-        for (LayoutBox.InlineFragment f : b.inlineFragments) if (f.isText() && !f.text.isBlank()) out.add(f.y);
-        for (LayoutBox c : b.children) collectFragmentTops(c, out);
+    private static void collectFragmentTops(PaintView b, List<Float> out) {
+        for (var f : b.runs()) if (f.isText() && !f.text().isBlank()) out.add(f.y());
+        for (PaintView c : b.paintChildren()) collectFragmentTops(c, out);
     }
 
     @Nested
@@ -147,35 +143,35 @@ public class ShowcaseWebComparisonTest {
 
         private void searchBarDoesNotCollideWith(String name, FontResolver fonts) {
             RenderResult r = renderAt(W, H, fonts);
-            LayoutBox header = r.byId("header_panel");
-            LayoutBox brand = r.one("brand-logo");
-            LayoutBox search = r.one("search-wrapper");
-            LayoutBox actions = r.one("header-actions");
+            PaintView header = r.byId("header_panel");
+            PaintView brand = r.one("brand-logo");
+            PaintView search = r.one("search-wrapper");
+            PaintView actions = r.one("header-actions");
 
-            for (LayoutBox child : search.getFlowChildren()) {
+            for (PaintView child : com.nishiyu.enderframelib.common.TestBoxes.elementBoxes(search)) {
                 assertInside(child, search, name + ": 検索バーの子 <" + child.node.tag + ">");
             }
             assertFalse(overlaps(brand, search), name + ": ロゴと検索バーが重ならない");
             assertFalse(overlaps(search, actions), name + ": 検索バーとアクションが重ならない");
             assertFalse(overlaps(brand, actions), name + ": ロゴとアクションが重ならない");
-            for (LayoutBox item : List.of(brand, search, actions)) {
+            for (PaintView item : List.of(brand, search, actions)) {
                 assertInside(item, header, name + ": ヘッダーの項目");
             }
-            for (LayoutBox badge : r.byClass("badge-pill")) {
+            for (PaintView badge : r.byClass("badge-pill")) {
                 assertInside(badge, actions, name + ": バッジ");
             }
             // 検索入力は内容（padding と border）より細く潰れない
-            LayoutBox input = r.byId("test_input");
-            assertTrue(input.w() >= input.horizontalDecoration() - EPS, name + ": 検索入力の幅 " + input.w());
+            PaintView input = r.byId("test_input");
+            assertTrue(input.w() >= (input.bL() + input.bR() + input.pL() + input.pR()) - EPS, name + ": 検索入力の幅 " + input.w());
         }
 
         @Test
         @DisplayName("ゲーム内の書体ではブラウザと同じく 1 行に並び、検索入力が十分な幅を持つ")
         void headerIsSingleRowInGame() {
             RenderResult r = inGame();
-            LayoutBox brand = r.one("brand-logo");
-            LayoutBox search = r.one("search-wrapper");
-            LayoutBox actions = r.one("header-actions");
+            PaintView brand = r.one("brand-logo");
+            PaintView search = r.one("search-wrapper");
+            PaintView actions = r.one("header-actions");
 
             // 左から ロゴ → 検索バー → アクション の順に 1 行（Chrome の実測と同じ並び）
             assertTrue(brand.x() + brand.w() <= search.x() + EPS);
@@ -183,12 +179,12 @@ public class ShowcaseWebComparisonTest {
             float searchMid = search.y() + search.h() / 2;
             assertTrue(searchMid > actions.y() && searchMid < actions.y() + actions.h(), "検索バーとアクションが同じ行にある");
             // アクションはヘッダーの右端に揃う（justify-content: space-between）
-            LayoutBox header = r.byId("header_panel");
+            PaintView header = r.byId("header_panel");
             assertEquals(header.x() + header.w() - header.bR() - header.pR(), actions.x() + actions.w(), 1.0f);
 
-            LayoutBox select = r.byId("mode_select");
+            PaintView select = r.byId("mode_select");
             assertEquals(128f, select.w(), EPS, "select は指定幅 128px のまま縮まない（Chrome 実測 128）");
-            LayoutBox input = r.byId("test_input");
+            PaintView input = r.byId("test_input");
             assertTrue(input.w() >= 60, "検索入力は 60px 以上（Chrome 実測 114.9px）: " + input.w());
         }
     }
@@ -205,12 +201,12 @@ public class ShowcaseWebComparisonTest {
 
         private void badgesStayOnOneLineWith(String name, FontResolver fonts) {
             RenderResult r = renderAt(W, H, fonts);
-            List<LayoutBox> pills = r.byClass("badge-pill");
+            List<PaintView> pills = r.byClass("badge-pill");
             assertEquals(3, pills.size());
-            for (LayoutBox pill : pills) assertSingleLine(pill, name + ": ヘッダーのバッジ");
-            List<LayoutBox> productBadges = r.byClass("product-badge");
+            for (PaintView pill : pills) assertSingleLine(pill, name + ": ヘッダーのバッジ");
+            List<PaintView> productBadges = r.byClass("product-badge");
             assertEquals(4, productBadges.size());
-            for (LayoutBox badge : productBadges) assertSingleLine(badge, name + ": 商品バッジ");
+            for (PaintView badge : productBadges) assertSingleLine(badge, name + ": 商品バッジ");
 
             // 「(4)」「$419.97」がバッジの先頭行と同じ行に描かれる
             DisplayItem wishlist = r.texts().stream().filter(i -> i.text().contains("Wishlist")).findFirst().orElseThrow();
@@ -234,8 +230,8 @@ public class ShowcaseWebComparisonTest {
 
         private void columnsMatchChromeWith(String name, FontResolver fonts) {
             RenderResult r = renderAt(W, H, fonts);
-            LayoutBox grid = r.one("web-grid");
-            List<LayoutBox> cols = grid.getFlowChildren();
+            PaintView grid = r.one("web-grid");
+            List<PaintView> cols = com.nishiyu.enderframelib.common.TestBoxes.elementBoxes(grid);
             assertEquals(3, cols.size());
             float[][] chrome = {{12, 190}, {214, 396}, {622, 220}};
             for (int i = 0; i < 3; i++) {
@@ -244,7 +240,7 @@ public class ShowcaseWebComparisonTest {
             }
             assertTrue(cols.get(2).x() + cols.get(2).w() <= W - 12 + EPS, name + ": 右列が画面からはみ出さない");
 
-            List<LayoutBox> cards = r.byClass("product-card");
+            List<PaintView> cards = r.byClass("product-card");
             assertEquals(4, cards.size());
             float[] chromeCardX = {227, 417, 227, 417};
             for (int i = 0; i < 4; i++) {
@@ -257,11 +253,11 @@ public class ShowcaseWebComparisonTest {
         @DisplayName("ゲーム内の書体では商品カードの上段（バッジとタグ）が 1 行に並ぶ")
         void cardMetaRowFits() {
             RenderResult r = inGame();
-            for (LayoutBox meta : r.byClass("card-meta")) {
-                List<LayoutBox> kids = meta.getFlowChildren();
+            for (PaintView meta : r.byClass("card-meta")) {
+                List<PaintView> kids = com.nishiyu.enderframelib.common.TestBoxes.elementBoxes(meta);
                 assertEquals(2, kids.size());
                 assertFalse(overlaps(kids.get(0), kids.get(1)), "バッジとタグが重ならない");
-                for (LayoutBox k : kids) assertInside(k, meta, "カード上段の項目");
+                for (PaintView k : kids) assertInside(k, meta, "カード上段の項目");
                 assertSingleLine(kids.get(1), "カードのタグ");
             }
         }
@@ -307,11 +303,11 @@ public class ShowcaseWebComparisonTest {
             RenderResult r = inGame();
             DisplayItem select = r.items().stream().filter(i -> i.type() == ElementType.SELECT).findFirst().orElseThrow();
             assertEquals("All Departments ▾", select.text());
-            LayoutBox box = r.byId("mode_select");
-            FontStyle font = new FontStyle(box.style.fontSizePx(), LayoutMetrics.isBold(box.style), false, 0);
+            PaintView box = r.byId("mode_select");
+            FontStyle font = new FontStyle(box.style().fontSizePx(), LayoutMetrics.isBold(box.style()), false, 0);
             float label = UniformFontFace.FACE.advance(select.text(), font);
-            assertTrue(label <= box.w() - box.horizontalDecoration() + EPS,
-                    "ラベル幅 " + label + " が select の内容幅 " + (box.w() - box.horizontalDecoration()) + " に収まる");
+            assertTrue(label <= box.w() - (box.bL() + box.bR() + box.pL() + box.pR()) + EPS,
+                    "ラベル幅 " + label + " が select の内容幅 " + (box.w() - (box.bL() + box.bR() + box.pL() + box.pR())) + " に収まる");
         }
     }
 
@@ -324,7 +320,7 @@ public class ShowcaseWebComparisonTest {
         void diagonalGradientIsOneExactQuad() {
             RenderResult r = inGame();
             // header: linear-gradient(135deg, #1e293b, #0f172a)。135deg は左上が始点、右下が終点ちょうど
-            LayoutBox header = r.byId("header_panel");
+            PaintView header = r.byId("header_panel");
             float px = header.x() + header.bL(), py = header.y() + header.bT();
             float pw = header.w() - header.bL() - header.bR(), ph = header.h() - header.bT() - header.bB();
             List<DisplayItem> tiles = r.items().stream()
@@ -367,9 +363,9 @@ public class ShowcaseWebComparisonTest {
             assertFalse(LayoutMetrics.isBoldWeight("normal"));
 
             RenderResult r = inGame();
-            LayoutBox titleBox = r.one("product-title");
-            assertTrue(LayoutMetrics.isBold(titleBox.style), "商品名（600）は太字で測る");
-            String textId = titleBox.children.get(0).node.key();
+            PaintView titleBox = r.one("product-title");
+            assertTrue(LayoutMetrics.isBold(titleBox.style()), "商品名（600）は太字で測る");
+            String textId = titleBox.paintChildren().get(0).node.key();
             List<DisplayItem> words = r.texts().stream().filter(i -> i.id().startsWith(textId)).toList();
             assertFalse(words.isEmpty());
             for (DisplayItem word : words) {

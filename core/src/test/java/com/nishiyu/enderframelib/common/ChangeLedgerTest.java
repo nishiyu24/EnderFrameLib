@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.nishiyu.enderframelib.core.dom.ChangeReads;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
 import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
@@ -20,7 +19,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * K5b L0・L1（変更台帳。設計書 §3.6）: ①台帳の単体〔追記・凍結・世代・祖先を辿る {@code touches}・あふれ・節を絞れない変更〕
- * ②読み手 {@link ChangeReads}〔文字の節・描画だけの属性の節を台帳から導く〕③<b>台帳が文字・描画だけの属性の唯一の入口</b>:
+ * ②<b>台帳が文字・描画だけの属性の唯一の入口</b>（M2c-3 で読み手 {@code ChangeReads} を消し、ビューは凍結した台帳を直接読む）:
  * 乱数の操作列のどの手でも、結果は最初から作った結果と一致する。台帳の追記が取りこぼされる変異は、結果が古いままになって殺される。
  */
 public class ChangeLedgerTest {
@@ -78,25 +77,6 @@ public class ChangeLedgerTest {
         l.freeze();
         assertTrue(l.touches(n[1]));
         assertTrue(l.frozenOverflow());
-        assertNull(ChangeReads.texts(l), "あふれた世代は個々に頼らず全体を作り直す（読み手は null）");
-    }
-
-    @Test
-    void readsDeriveTextAndPaintAttrNodesFromTheFacts() {
-        HtmlElement[] n = new HtmlElement[3];
-        tree(n);
-        ChangeLedger l = new ChangeLedger();
-        l.append(n[0], ChangeKind.TEXT);
-        l.append(n[1], ChangeKind.TEXT);
-        l.append(n[0], ChangeKind.TEXT);
-        l.append(n[0], ChangeKind.ATTR, "value");
-        l.append(n[1], ChangeKind.ATTR, "class");
-        l.append(n[2], ChangeKind.CHILDREN);
-        l.freeze();
-        assertEquals(List.of(n[0], n[1]), ChangeReads.texts(l), "文字の節は重複なしで（追記の順）");
-        assertEquals(List.of(n[0]), ChangeReads.paintAttrs(l, (node, name) -> !name.equals("class")), "描画だけの属性は呼び出し側の分類で絞る");
-        l.freeze();
-        assertEquals(List.of(), ChangeReads.texts(l));
     }
 
     private static final String HTML = "<style>.hot{color:red} .row:hover{background:#eef} .big{font-size:20px}</style>"
@@ -127,7 +107,7 @@ public class ChangeLedgerTest {
     void randomChangesMatchAFreshBuildAtEveryStepWithTheLedgerAsTheOnlyInlet() {
         for (long seed = 1; seed <= 12; seed++) {
             Random rnd = new Random(seed);
-            try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK, EnginePath.V3); var be = new MutationScenario.NoDraw()) {
+            try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK); var be = new MutationScenario.NoDraw()) {
                 ResizeSettle.freezeClock(v); // 止めた時計: リサイズの間引きが実時間に依らない
                 v.frame(1000, be, true);
                 for (int step = 0; step < 40; step++) {
@@ -166,7 +146,7 @@ public class ChangeLedgerTest {
     @Test
     void theLedgerIsTheOnlyInletOfTheTextRelayout() {
         for (boolean drop : new boolean[]{false, true}) {
-            try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK, EnginePath.V3); var be = new MutationScenario.NoDraw()) {
+            try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK); var be = new MutationScenario.NoDraw()) {
                 ResizeSettle.freezeClock(v);
                 v.frame(1000, be, true);
                 HtmlText text = (HtmlText) v.root().getNodeById("tail").children.get(0);
@@ -190,7 +170,7 @@ public class ChangeLedgerTest {
 
     @Test
     void hoverAndResizeReachTheLedger() {
-        try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK, EnginePath.V3); var be = new MutationScenario.NoDraw()) {
+        try (StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK); var be = new MutationScenario.NoDraw()) {
             ChangeLedger l = v.ui().interactionState().changeLedger();
             v.frame(1000, be, true);
             assertEquals(0, l.pendingCount());

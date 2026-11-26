@@ -6,7 +6,7 @@ import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.VisualStyle;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.model.Position;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.box.Display;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.BlendMode;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
@@ -38,7 +38,7 @@ import static com.nishiyu.enderframelib.core.paint.PaintSupport.isInvisible;
  */
 final class TreeStacking {
     /** 切らない軸のクリップの端（旧経路と同じ値）。 */
-    static final float UNCLIPPED = PaintOrder.UNCLIPPED;
+    static final float UNCLIPPED = PaintFacts.UNCLIPPED;
     private static final RenderMeta MOVING_NODE_META = new RenderMeta(null, null, null, 12.0f, 0.5f, 0.5f, 1, false);
     private static final Corners SCROLLBAR_CORNERS = new Corners(2, 2, 2, 2);
     static final ScrollContentInfo[] NO_SCROLLS = new ScrollContentInfo[0];
@@ -152,7 +152,7 @@ final class TreeStacking {
     }
 
     static boolean isZIndexAuto(PaintView box) {
-        return PaintOrder.factsOf(box.style()).zAuto();
+        return PaintFacts.of(box.style()).zAuto();
     }
 
     static int zIndex(PaintView box) {
@@ -164,7 +164,7 @@ final class TreeStacking {
         PaintView p = box.paintParent();
         if (box.isAbsolute() || p == null || "#text".equals(box.node().tag)) return false;
         if (!box.style().typed().facts.floating) return false;
-        LayoutBox.Display d = p.display();
+        Display d = p.display();
         if (d == null) return true;
         return switch (d.inner()) {
             case FLEX, GRID, TABLE, TABLE_ROW_GROUP, TABLE_ROW -> false;
@@ -183,13 +183,13 @@ final class TreeStacking {
 
     /** その箱の {@code animation} が {@code opacity} を動かすか。 */
     boolean animatesOpacity(PaintView box) {
-        return PaintOrder.factsOf(box.style()).hasAnimation()
+        return PaintFacts.of(box.style()).hasAnimation()
                 && (anim.parseAnimationDef(box.style(), box.w(), box.h(), 0, 0).animatedChannels() & AnimationSpec.CH_OPACITY) != 0;
     }
 
     /** スタッキングコンテキストを作るか（旧 {@code PaintOrder.createsStackingContext}）。 */
     boolean createsStackingContext(PaintView box) {
-        PaintOrder.StyleFacts f = PaintOrder.factsOf(box.style());
+        PaintFacts f = PaintFacts.of(box.style());
         boolean zAuto = f.zAuto();
         if (isPositioned(box) && !zAuto) return true;
         if (isFixed(box) || isSticky(box)) return true;
@@ -201,7 +201,7 @@ final class TreeStacking {
 
     /** Top Layer の箱（旧 {@code PaintOrder.isTopLayer}）。 */
     static boolean isTopLayer(PaintView box) {
-        return isFixed(box) && zIndex(box) == PaintOrder.TOP_LAYER_Z && !isZIndexAuto(box);
+        return isFixed(box) && zIndex(box) == PaintFacts.TOP_LAYER_Z && !isZIndexAuto(box);
     }
 
     /** 包含ブロック（旧 {@code LayoutReads.findContainingBlockRaw}。null ならビューポート）。 */
@@ -209,7 +209,7 @@ final class TreeStacking {
         boolean fixed = isFixed(box);
         for (PaintView cur = box.paintParent(); cur != null; cur = cur.paintParent()) {
             VisualStyle v = cur.style().typed().visual;
-            boolean transformLike = !PaintOrder.isNone(v.transform) || !PaintOrder.isNone(v.filter)
+            boolean transformLike = !PaintFacts.isNone(v.transform) || !PaintFacts.isNone(v.filter)
                     || (cur.style().containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0;
             if (transformLike || (!fixed && isPositioned(cur))) {
                 return cur;
@@ -330,7 +330,7 @@ final class TreeStacking {
         String tag = box.node().tag;
         if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag) || "#text".equals(tag)) return parentClip;
         boolean panZoom = !box.node().attrs.isEmpty() && "true".equalsIgnoreCase(box.node().attrs.get("data-pan-zoom"));
-        PaintOrder.StyleFacts facts = PaintOrder.factsOf(box.axisStyle());
+        PaintFacts facts = PaintFacts.of(box.axisStyle());
         boolean clipX = panZoom || !"visible".equals(facts.overflowX());
         boolean clipY = panZoom || !"visible".equals(facts.overflowY());
         if (!clipX && !clipY) return parentClip;
@@ -384,7 +384,7 @@ final class TreeStacking {
         float[] padding = {lx + box.bL(), ly + box.bT(), Math.max(0, box.w() - box.bL() - box.bR()), Math.max(0, box.h() - box.bT() - box.bB())};
         float[] content = {padding[0] + box.pL(), padding[1] + box.pT(), Math.max(0, padding[2] - box.pL() - box.pR()), Math.max(0, padding[3] - box.pT() - box.pB())};
         ClipShape clip = ClipShape.parse(v.clipPath, ClipShape.Context.of(border, padding, content, rootW, rootH, fontPx, rootFontPx));
-        boolean masked = PaintOrder.factsOf(box.style()).hasMask();
+        boolean masked = PaintFacts.of(box.style()).hasMask();
         boolean luminance = masked && !BoxDecorations.maskModes(box.style()).isEmpty()
                 && "luminance".equals(BoxDecorations.maskModes(box.style()).getFirst());
         List<FilterOp> backdrop = FilterOp.parse(v.backdropFilter, new FilterOp.Context(rootW, rootH, fontPx, rootFontPx, fgColor));
@@ -424,7 +424,7 @@ final class TreeStacking {
     // ---- スクロールバー ----
 
     static boolean wantsScrollbars(PaintView box) {
-        return !"root".equals(box.node().tag) && box.w() > 0 && box.h() > 0 && PaintOrder.factsOf(box.style()).scrollbars() && !isInvisible(box);
+        return !"root".equals(box.node().tag) && box.w() > 0 && box.h() > 0 && PaintFacts.of(box.style()).scrollbars() && !isInvisible(box);
     }
 
     /** 子の項目をまとめて動かすための、見えない節（旧 {@code PaintOrder.addMovingNode}）。 */

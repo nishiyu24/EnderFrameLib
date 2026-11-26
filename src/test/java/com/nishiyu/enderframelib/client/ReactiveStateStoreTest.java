@@ -12,15 +12,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -143,9 +139,6 @@ public class ReactiveStateStoreTest {
      */
     @Test
     public void testBoundStyleChangesReachLayoutWithoutOtherInvalidation() {
-        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
-        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) ->
-                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox)));
         try {
             String html = "<style>#mover{position:absolute;width:10px;height:10px;background:red}"
                     + "#overlay{display:none;position:absolute;width:20px;height:20px;background:blue}"
@@ -165,7 +158,6 @@ public class ReactiveStateStoreTest {
             assertEquals(40, itemById("mover").width(), "data-class の変更が反映される");
             assertNotNull(itemById("overlay"), "スタイルシートで display:none の要素を data-show で表示できる");
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(prev));
         }
     }
 
@@ -175,9 +167,6 @@ public class ReactiveStateStoreTest {
      */
     @Test
     public void testNumericStyleBindingsReachLayoutThroughThePatchTable() {
-        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
-        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) ->
-                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox)));
         try {
             String html = "<style>#bar{position:absolute;left:0;top:0;height:10px;background:red}"
                     + "#pct{position:absolute;left:0;top:20px;height:10px;background:blue}</style>"
@@ -207,7 +196,6 @@ public class ReactiveStateStoreTest {
             store.syncToDom();
             assertEquals(80, itemById("bar").width());
         } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(prev));
         }
     }
 

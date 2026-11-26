@@ -1,10 +1,9 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -36,7 +35,7 @@ public class EnderPanel extends JPanel {
 
     private String htmlContent = "";
     private Document document;
-    private LayoutBox rootLayoutBox;
+    private PaintView rootLayoutBox;
     private List<DisplayItem> displayList = Collections.emptyList();
 
     private final ScrollState scrollState = new ScrollState();
@@ -118,10 +117,9 @@ public class EnderPanel extends JPanel {
         int h = Math.max(1, getHeight() > 0 ? getHeight() : getPreferredSize().height);
 
         this.document = compiler.parseDocument(htmlContent, "", w, h);
-        this.rootLayoutBox = compiler.layoutDocument(document, w, h, Map.of(), scrollState, fontResolver, interactionState);
-
-        DisplayListBuilder builder = new DisplayListBuilder(w, h, document.sheet.keyframes, scrollState);
-        this.displayList = builder.render(rootLayoutBox);
+        var frame = com.nishiyu.enderframelib.common.FrameRender.document(document, w, h, Map.of(), scrollState, fontResolver, interactionState);
+        this.rootLayoutBox = frame.root();
+        this.displayList = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(frame.items());
     }
 
     private DisplayItem findItemAt(int x, int y) {

@@ -1,10 +1,9 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -59,10 +58,8 @@ public class EnderFrameStandalone {
 
         ScrollState scrollState = new ScrollState();
         InteractionState interactionState = new InteractionState();
-        LayoutBox root = compiler.layoutDocument(doc, width, height, Map.of(), scrollState, fontResolver, interactionState);
-
-        DisplayListBuilder builder = new DisplayListBuilder(width, height, doc.sheet.keyframes, scrollState);
-        List<DisplayItem> items = builder.render(root);
+        List<DisplayItem> items = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(
+                com.nishiyu.enderframelib.common.FrameRender.document(doc, width, height, Map.of(), scrollState, fontResolver, interactionState).items());
 
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g2d = image.createGraphics();

@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -184,7 +183,7 @@ class ChildPatchTest {
 
     private void run(String sep, boolean structural, int seeds) {
         for (long seed = 1; seed <= seeds; seed++) {
-            try (StandaloneView v = new StandaloneView(html(sep, structural), 420, 520, FontResolver.FALLBACK, EnginePath.V3)) {
+            try (StandaloneView v = new StandaloneView(html(sep, structural), 420, 520, FontResolver.FALLBACK)) {
                 sameItems(freshList(v), flush(v), "seed " + seed + " 初回");
                 Random r = new Random(seed);
                 for (int step = 0; step < 50; step++) {

@@ -229,8 +229,8 @@ class IncrementalVsFullTest {
         try (StandaloneView v = new StandaloneView(TABLE_IN_ANON_CELL.replace("<table", "<div style=\"margin-left:11px\"><table"), 260, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
              var be = new MutationScenario.NoDraw()) {
             v.frame(1000, be, true);
-            com.nishiyu.enderframelib.core.layout.PaintBox[] innerTable = {null};
-            java.util.function.Consumer<com.nishiyu.enderframelib.core.layout.PaintBox>[] walk = new java.util.function.Consumer[1];
+            com.nishiyu.enderframelib.core.paint.tree.PaintBox[] innerTable = {null};
+            java.util.function.Consumer<com.nishiyu.enderframelib.core.paint.tree.PaintBox>[] walk = new java.util.function.Consumer[1];
             walk[0] = b -> {
                 if (b.isAnonymous && b.style() != null && "table".equals(b.style().typed().box.display)) innerTable[0] = b;
                 for (var c : b.paintChildren()) walk[0].accept(c);
@@ -288,7 +288,6 @@ class IncrementalVsFullTest {
             change.accept(v);
             v.frame(1016, be, true);
             incremental = sigs.apply(v);
-            com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
             v.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
             v.frame(1016, be, true);
             remeasured = sigs.apply(v);
@@ -399,25 +398,6 @@ class IncrementalVsFullTest {
                 v -> v.root().ownerDocument.getElementById("n4").parent.appendChild(newElement(v, "div", "z", null, "n43")));
     }
 
-    /**
-     * 外寸が変わらない子の変化を親で吸収する近道（cutoff）を切ったときも、増分の結果が全面と一致すること（A6b ②）。
-     */
-    @Test
-    void layoutsDocumentWithoutCutoffMatchesFullRelayout() {
-        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.set(false);
-        try {
-            assertEquals(List.of(), mismatches("layouts", 8, 1));
-        } finally {
-            com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.set(saved);
-        }
-    }
-
-    /**
-     * 祖先の高さが変わる（子パッチの後のリサイズなど）とき、上下の枠線の太さが負にならないこと（A6b ⑥）。
-     * 以前は枠線の RECT の高さに高さの変化量を足して、1px の線が -20 になった（nested・種 4 の手 40）。全面の結果と比べるだけでは
-     * 見えない（全面へ強いた時点で直る）ので、項目の大きさを直接調べる。
-     */
     @Test
     void borderLinesNeverGetNegativeSizeAfterAncestorResize() {
         List<String> bad = new ArrayList<>();
@@ -551,31 +531,6 @@ class IncrementalVsFullTest {
     void damageRepaintMatchesFullRepaintEveryStep() throws Exception {
         for (long seed : new long[] {6, 4, 8}) {
             assertEquals(pixelsWithDamage(false, seed), pixelsWithDamage(true, seed), "cards/" + seed + "（手ごとの画素の写し）");
-        }
-    }
-
-    /**
-     * 項目の座標が絶対のとき（親相対を切る。GL など）の局所パッチ（後続の箱の座標の反映）で、箱の高さ・幅が負にならず、
-     * 全面の結果と一致すること（A6b ⑤。以前は新しい高さを「下端 - 原点」と「上端」の二重引きで求め、枠線の高さが -150 になった）。
-     */
-    @Test
-    void absoluteCoordinatesPatchMatchesFullRelayoutAndNeverGoesNegative() {
-        // 親相対の切り替えは文脈の欄（-Denderframe.paint.noparentrelative は起動時に 1 回だけ読む。S1 の EngineFlags）
-        var ctx = com.nishiyu.enderframelib.core.EngineContext.current();
-        boolean saved = ctx.flags().parentRelativeDisplayItems();
-        ctx.updateFlags(f -> f.withParentRelativeDisplayItems(false));
-        try {
-            List<String> bad = new ArrayList<>();
-            for (long seed = 1; seed <= 8; seed++) {
-                final long sd = seed;
-                MutationScenario.STEP_HOOK = (step, view) -> {
-                    for (var it : view.items()) if (it.width() < 0 || it.height() < 0) bad.add("nested/" + sd + " 手 " + step + " " + it.id());
-                };
-                MutationScenario.run(MutationFuzz.NESTED, MutationFuzz.NESTED_CLASSES, MutationFuzz.NESTED_STYLES, 5 * seed + 1, 60, false);
-            }
-            assertEquals(List.of(), bad.size() > 8 ? bad.subList(0, 8) : bad);
-        } finally {
-            ctx.updateFlags(f -> f.withParentRelativeDisplayItems(saved));
         }
     }
 }

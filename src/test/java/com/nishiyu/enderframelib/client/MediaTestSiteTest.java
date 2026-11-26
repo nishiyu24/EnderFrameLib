@@ -1,10 +1,9 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -38,10 +37,10 @@ public class MediaTestSiteTest {
         assertNotNull(doc.root);
 
         ScrollState scrollState = new ScrollState();
-        LayoutBox rootBox = compiler.layoutDocument(doc, 854, 480, Map.of(), scrollState,
+        PaintView rootBox = compiler.layoutDocument(doc, 854, 480, Map.of(), scrollState,
                 FontResolver.FALLBACK, new InteractionState());
         assertNotNull(rootBox);
-        return new DisplayListBuilder(854, 480, doc.sheet.keyframes, scrollState).render(rootBox);
+        return com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), scrollState, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
     }
 
     private static List<DisplayItem> videos(List<DisplayItem> items) {

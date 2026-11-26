@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.ClipShape;
 import com.nishiyu.enderframelib.core.paint.model.FilterOp;
@@ -128,8 +127,6 @@ public class ClipMaskDisplayListTest {
                 <div id="c" style="height: 10px; mask-image: linear-gradient(#000, transparent);"></div>
                 """);
         // どれも層 8（位置指定と同じ層）に描かれるので、通常フローのブロックの背景より後
-        List<LayoutBox> order = r.renderer.paintOrder(r.root);
-        assertTrue(order.indexOf(find(r.root, "a")) >= 0);
         assertNotNull(layerOf(r, "a"));
         assertNotNull(layerOf(r, "b"));
         assertNotNull(layerOf(r, "c"));
@@ -137,15 +134,14 @@ public class ClipMaskDisplayListTest {
 
     // ==========================================
 
-    private record Rendered(DisplayListBuilder renderer, LayoutBox root, List<DisplayItem> elements) {}
+    private record Rendered(PaintView root, List<DisplayItem> elements) {}
 
     private static Rendered render(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(
                 "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", VIEWPORT_W, VIEWPORT_H);
-        LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-        DisplayListBuilder renderer = new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState());
-        return new Rendered(renderer, root, renderer.render(root));
+        PaintView root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+                return new Rendered(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
     }
 
     private static int indexOf(Rendered r, String id) {
@@ -158,10 +154,10 @@ public class ClipMaskDisplayListTest {
         return i < 0 ? null : r.elements.get(i).hints().layer();
     }
 
-    private static LayoutBox find(LayoutBox box, String id) {
+    private static PaintView find(PaintView box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (LayoutBox child : box.elementChildren) {
-            LayoutBox hit = find(child, id);
+        for (PaintView child : TestBoxes.elements(box)) {
+            PaintView hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

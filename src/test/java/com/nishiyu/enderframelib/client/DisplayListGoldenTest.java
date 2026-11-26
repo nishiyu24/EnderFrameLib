@@ -1,9 +1,8 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.GoldenFiles;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -15,15 +14,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -125,10 +120,8 @@ public class DisplayListGoldenTest {
     public static String dumpDisplayList(String html, int viewportW, int viewportH) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", viewportW, viewportH);
-        LayoutBox root = parser.layoutDocument(doc, viewportW, viewportH, Map.of(),
-                new ScrollState(), FontResolver.FALLBACK);
-        DisplayListBuilder renderer = new DisplayListBuilder(viewportW, viewportH, doc.sheet.keyframes, new ScrollState());
-        List<DisplayItem> elements = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(renderer.render(root));
+        List<DisplayItem> elements = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, viewportW, viewportH,
+                FontResolver.FALLBACK).items());
 
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < elements.size(); i++) {

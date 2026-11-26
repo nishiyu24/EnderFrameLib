@@ -18,8 +18,6 @@ class RelativeElementsTest {
 
     @Test
     void relativeElementsAreRelativeAndElementsAreTheAbsoluteOfThem() {
-        boolean prev = EngineContext.current().flags().parentRelativeDisplayItems();
-        EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(true));
         try (StandaloneView v = new StandaloneView(HTML, 400, 300, FontResolver.FALLBACK);
              SoftwareRenderBackend sw = new SoftwareRenderBackend(400, 300, 1f)) {
             v.frame(0, sw, true);
@@ -32,16 +30,12 @@ class RelativeElementsTest {
             DisplayItem relText = rel.stream().filter(i -> i.type() == ElementType.TEXT && "inner".equals(i.text().trim())).findFirst().orElseThrow();
             DisplayItem absText = abs.stream().filter(i -> i.id().equals(relText.id())).findFirst().orElseThrow();
             assertTrue(absText.x() > relText.x() && absText.y() > relText.y(), "絶対座標は相対より親の原点だけ大きい");
-        } finally {
-            EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(prev));
         }
     }
 
     /** 画面のスロット・レシピビューアは NODE だけを絶対位置で要る。一覧全体を直さずに、その NODE だけを解ける。 */
     @Test
     void singleItemsResolveWithoutConvertingTheWholeList() {
-        boolean prev = EngineContext.current().flags().parentRelativeDisplayItems();
-        EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(true));
         try (StandaloneView v = new StandaloneView(HTML, 400, 300, FontResolver.FALLBACK);
              SoftwareRenderBackend sw = new SoftwareRenderBackend(400, 300, 1f)) {
             v.frame(0, sw, true);
@@ -65,8 +59,6 @@ class RelativeElementsTest {
                 assertEquals(a.x(), v.ui().nodeItemAbsolute(it.id()).x(), it.id());
                 assertEquals(a.y(), v.ui().nodeItemAbsolute(it.id()).y(), it.id());
             }
-        } finally {
-            EngineContext.current().updateFlags(f -> f.withParentRelativeDisplayItems(prev));
         }
     }
 }

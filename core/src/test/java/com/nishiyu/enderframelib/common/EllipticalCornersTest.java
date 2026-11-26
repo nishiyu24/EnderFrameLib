@@ -2,10 +2,9 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.BorderDashPattern;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.BorderPath;
 import com.nishiyu.enderframelib.core.paint.BoxDecorations;
@@ -303,15 +302,14 @@ public class EllipticalCornersTest {
         return com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(raw, null, null);
     }
 
-    private record Rendered(DisplayListBuilder renderer, LayoutBox root, List<DisplayItem> elements) {}
+    private record Rendered(PaintView root, List<DisplayItem> elements) {}
 
     private static Rendered render(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(
                 "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", VIEWPORT_W, VIEWPORT_H);
-        LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-        DisplayListBuilder renderer = new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState());
-        return new Rendered(renderer, root, renderer.render(root));
+        PaintView root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+                return new Rendered(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
     }
 
     private static DisplayItem element(Rendered r, String id) {

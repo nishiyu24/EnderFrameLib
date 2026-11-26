@@ -180,7 +180,7 @@ class PackageCycleRatchetTest {
                 + "import com.nishiyu.enderframelib.core.event.*;\n"
                 + "import static com.nishiyu.enderframelib.core.kernel.Shortcut.on;\n"
                 + "import java.util.List;\n"
-                + "// import com.nishiyu.enderframelib.core.layout.LayoutBox;\n"
+                + "// import com.nishiyu.enderframelib.core.paint.tree.PaintView;\n"
                 + "class A { Object o = com.nishiyu.enderframelib.core.paint.model.DisplayItem.class; }";
         var e = packageRefs(src);
         assertEquals("core.css", e.getKey());

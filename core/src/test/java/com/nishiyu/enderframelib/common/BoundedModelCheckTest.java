@@ -140,7 +140,7 @@ class BoundedModelCheckTest {
     /** 列を新しい画面で先頭から実行する。手ごとに、記憶ありと記憶なしを比べる。 */
     private void check(List<Op> ops, List<Integer> seq) {
         sequences++;
-        StandaloneView view = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK, EnginePath.V3);
+        StandaloneView view = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK);
         try {
             String d = firstDifference(view); // 初回
             if (d != null) failures.add("初回: " + d);

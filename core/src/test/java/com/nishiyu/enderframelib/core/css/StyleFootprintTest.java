@@ -56,16 +56,27 @@ class StyleFootprintTest {
         return sb.append("</ul></body></html>").toString();
     }
 
-    private record Pair(ComputedStyle old, Style typed) {}
+    private record Pair(ComputedStyle old, Style typed, Style parent) {}
 
     private static void collect(HtmlNode n, InteractionState st, List<Pair> out, Style parent, boolean typed) {
         ComputedStyle cs = st.computedStyleOf(n);
         Style s = parent;
         if (cs != null) {
             s = typed ? Style.of(cs, parent) : null;
-            out.add(new Pair(cs, s));
+            out.add(new Pair(cs, s, parent));
         }
         for (HtmlNode c : n.children) collect(c, st, out, s, typed);
+    }
+
+    /** 親と値が同じなのに別の実体の継承群（共有の取りこぼし。組み立てが作った算出スタイルそのもので数える）。 */
+    private static int unsharedEqualInherited(List<Pair> pairs) {
+        int n = 0;
+        for (Pair p : pairs) {
+            if (p.parent() == null) continue;
+            var own = p.old().typed().inherited;
+            if (own != p.parent().inherited && own.equals(p.parent().inherited)) n++;
+        }
+        return n;
     }
 
     private static int identities(List<Pair> pairs, java.util.function.Function<Style, Object> group) {
@@ -96,7 +107,7 @@ class StyleFootprintTest {
         int inhIds = identities(pairs, s -> s.inherited), inhVals = distinctByValue(pairs, s -> s.inherited);
         // 継承群: 値が同じなら親子で同一インスタンス。li ごとに色とフォントが違い、b だけ太字で別（計 2n 個前後）。span と文字は親を共有する
         assertTrue(inhIds <= 2 * n + 64, "継承群のインスタンス数 " + inhIds + " / 要素 " + elements);
-        assertTrue(inhIds < elements / 2, "継承群が親子で共有されていない: " + inhIds + " / " + elements);
+        assertEquals(0, unsharedEqualInherited(pairs), "継承群が親子で共有されていない（値が同じなのに別の実体）");
         assertTrue(inhVals <= inhIds);
         // 宣言の無い群は DEFAULT 1 個に畳まれる（table-layout を宣言する要素は無い）
         assertEquals(1, identities(pairs, s -> s.table));

@@ -1,9 +1,9 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CustomProperties;
 import com.nishiyu.enderframelib.core.css.Style;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.HashMap;
@@ -17,7 +17,7 @@ import static com.nishiyu.enderframelib.core.paint.PaintSupport.putFontEvents;
 import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
 
 /**
- * {@link DisplayListBuilder} が 1 つの要素の部品群に共通して付ける情報。DOM 由来の属性（{@code onclick}・{@code data-*}・書体）と、
+ * {@code DisplayListBuilder} が 1 つの要素の部品群に共通して付ける情報。DOM 由来の属性（{@code onclick}・{@code data-*}・書体）と、
  * 型付きの描画の付帯情報（{@link RenderHints}）を分けて持つ。部品を出すときに前者は {@code DisplayItem.events}、後者は
  * {@code RenderMeta.hints} へ入る。
  */

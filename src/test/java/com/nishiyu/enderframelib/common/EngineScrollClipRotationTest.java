@@ -2,9 +2,8 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.BoxDecorations;
 import com.nishiyu.enderframelib.core.paint.Transforms;
@@ -57,8 +56,8 @@ public class EngineScrollClipRotationTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(src, "", 400, 300);
         ScrollState ss = new ScrollState();
-        LayoutBox root = compiler.layoutDocument(doc, 400, 300, Map.of(), ss, FontResolver.FALLBACK, new InteractionState());
-        List<DisplayItem> items = new DisplayListBuilder(400, 300, doc.sheet.keyframes, ss).render(root);
+        PaintView root = compiler.layoutDocument(doc, 400, 300, Map.of(), ss, FontResolver.FALLBACK, new InteractionState());
+        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), ss, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
         DisplayItem a = items.stream().filter(i -> i.animDef() != null && !i.animDef().isEmpty()).findFirst().orElseThrow();
         String session = "spin-winding-test";
         ClientWebManager.clearSession(session);
@@ -69,10 +68,10 @@ public class EngineScrollClipRotationTest {
         ClientWebManager.clearSession(session);
     }
 
-    private static LayoutBox findScroller(LayoutBox b) {
+    private static PaintView findScroller(PaintView b) {
         if (b.isScrollContainer() && b.scrollHeight() > 1500) return b;
-        for (LayoutBox c : b.children) {
-            LayoutBox r = findScroller(c);
+        for (PaintView c : b.paintChildren()) {
+            PaintView r = findScroller(c);
             if (r != null) return r;
         }
         return null;
@@ -88,14 +87,15 @@ public class EngineScrollClipRotationTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(src, "", 800, 600);
         ScrollState ss = new ScrollState();
-        LayoutBox root = compiler.layoutDocument(doc, 800, 600, Map.of(), ss, FontResolver.FALLBACK, new InteractionState());
-        LayoutBox sc = findScroller(root);
+        PaintView root = compiler.layoutDocument(doc, 800, 600, Map.of(), ss, FontResolver.FALLBACK, new InteractionState());
+        PaintView sc = findScroller(root);
         assertNotNull(sc);
         float expected = sc.scrollHeight();
         assertEquals(3040f, expected, 1f, "固定の高さの合計");
         for (int k = 1; k <= 6; k++) {
             ss.setScroll(sc.node, 0, 400f * k);
-            RenderPipeline.repositionLayout(root, 800, 600, ss, FontResolver.FALLBACK);
+            root = compiler.layoutDocument(doc, 800, 600, Map.of(), ss, FontResolver.FALLBACK, new InteractionState());
+            sc = findScroller(root);
             assertEquals(expected, sc.scrollHeight(), 0.5f, "スクロール " + (400 * k) + " でも範囲は同じ");
         }
     }
@@ -128,8 +128,8 @@ public class EngineScrollClipRotationTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(src, "", 400, 300);
         ScrollState ss = new ScrollState();
-        LayoutBox root = compiler.layoutDocument(doc, 400, 300, Map.of(), ss, FontResolver.FALLBACK, new InteractionState());
-        List<DisplayItem> items = new DisplayListBuilder(400, 300, doc.sheet.keyframes, ss).render(root);
+        PaintView root = compiler.layoutDocument(doc, 400, 300, Map.of(), ss, FontResolver.FALLBACK, new InteractionState());
+        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), ss, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
         DisplayItem g = items.stream().filter(i -> i.id().startsWith("o_bgl")).findFirst().orElseThrow();
         assertNotNull(g.meta().borderRadii(), "形は箱の角丸");
         assertEquals(100f, g.meta().borderRadii().topLeft(), 0.01f);

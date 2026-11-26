@@ -1,11 +1,11 @@
 package com.nishiyu.enderframelib.core.text;
 
+import com.nishiyu.enderframelib.core.box.Display;
+
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
 import com.nishiyu.enderframelib.core.text.model.*;
@@ -158,70 +158,5 @@ class TextShaperIntervalAndFontCacheTest {
                 }
             }
         }
-    }
-
-    @Test
-    void wrappedParagraphAndInlineLineBuilderMatchDirectBuildAcrossSizesAndWidths() {
-        Viewport vp = new Viewport(800, 600);
-        LayoutContext ctx = new LayoutContext(vp, src -> new int[]{32, 32}, new ScrollState(), FontResolver.FALLBACK);
-
-        float[] containerWidths = {120f, 150f, 151f, 220f, 480f};
-        String[] fontSizes = {"15px", "16px", "19px", "15px", "16px"};
-
-        for (int step = 0; step < fontSizes.length; step++) {
-            for (float w : containerWidths) {
-                String html = "<p>Row item #" + step + " alpha beta gamma delta epsilon <span>tag</span> <b>bold</b></p>";
-                HtmlNode root = HtmlParser.parse(html);
-                HtmlNode p = root.children.get(0);
-
-                LayoutBox box1 = buildBlockWithTextAndInlines(p, fontSizes[step], w);
-                LayoutBox box2 = buildBlockWithTextAndInlines(p, fontSizes[step], w);
-
-                box1.measure(800, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, false), ctx);
-                box1.layout(0, 0, 800, 600, ctx);
-
-                // 2 回目以降（WrapParagraph キャッシュ命中）で幅・高さ・全断片の座標とテキストが完全一致すること
-                box2.measure(800, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, false), ctx);
-                box2.layout(0, 0, 800, 600, ctx);
-
-                assertEquals(box1.w(), box2.w(), 0.0001f);
-                assertEquals(box1.h(), box2.h(), 0.0001f);
-                assertEquals(box1.children.size(), box2.children.size());
-                for (int i = 0; i < box1.children.size(); i++) {
-                    LayoutBox c1 = box1.children.get(i);
-                    LayoutBox c2 = box2.children.get(i);
-                    assertEquals(c1.inlineFragments.size(), c2.inlineFragments.size());
-                    for (int f = 0; f < c1.inlineFragments.size(); f++) {
-                        LayoutBox.InlineFragment f1 = c1.inlineFragments.get(f);
-                        LayoutBox.InlineFragment f2 = c2.inlineFragments.get(f);
-                        assertEquals(f1.text, f2.text);
-                        assertEquals(f1.x, f2.x, 0.0001f);
-                        assertEquals(f1.y, f2.y, 0.0001f);
-                        assertEquals(f1.w, f2.w, 0.0001f);
-                        assertEquals(f1.h, f2.h, 0.0001f);
-                    }
-                }
-            }
-        }
-    }
-
-    private static LayoutBox buildBlockWithTextAndInlines(HtmlNode p, String fontSize, float widthPx) {
-        LayoutBox pBox = new LayoutBox(p, style("display", "block", "width", widthPx + "px", "font-size", fontSize));
-        for (HtmlNode child : p.children) {
-            LayoutBox cb = new LayoutBox(child, style("display", "inline", "font-size", fontSize));
-            for (HtmlNode gc : child.children) {
-                cb.children.add(new LayoutBox(gc, style("display", "inline", "font-size", fontSize)));
-            }
-            pBox.children.add(cb);
-        }
-        return pBox;
-    }
-
-    private static ComputedStyle style(String... kv) {
-        Map<String, String> map = new LinkedHashMap<>();
-        for (int i = 0; i + 1 < kv.length; i += 2) {
-            map.put(kv[i], kv[i + 1]);
-        }
-        return new ComputedStyle(map);
     }
 }

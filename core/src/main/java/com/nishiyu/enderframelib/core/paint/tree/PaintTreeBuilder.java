@@ -10,7 +10,7 @@ import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.box.Display;
 import com.nishiyu.enderframelib.core.layout.fragment.BoxGeometry;
 import com.nishiyu.enderframelib.core.layout.fragment.FirstLine;
 import com.nishiyu.enderframelib.core.layout.fragment.InlineFlow;
@@ -156,7 +156,7 @@ public final class PaintTreeBuilder {
         d.frag = f;
         d.node = nodeOf(b);
         d.style = new ComputedStyle(lb.style);
-        d.display = LayoutBox.Display.of(d.node, d.style).blockified(d.style);
+        d.display = Display.of(d.node, d.style).blockified(d.style);
         d.anonymous = b.anonymousTableBox();
         d.verticalWrapper = b.orthogonalWrapper();
         d.renderedLegend = legend;
@@ -255,8 +255,15 @@ public final class PaintTreeBuilder {
         return true;
     }
 
-    private static boolean inlineFlow(LayoutBox.Display d) {
-        return d != null && d.outer() == LayoutBox.Display.Outer.INLINE && d.inner() == LayoutBox.Display.Inner.FLOW;
+    /** 流れの外に出る箱（{@code position: absolute / fixed}）か（包含ブロックの断片の {@code oof} から置く）。 */
+    private static boolean outOfFlow(BoxNode b) {
+        if (b.kind == BoxKind.NONE || b.kind == BoxKind.TEXT) return false;
+        Position p = b.style.box.position;
+        return p == Position.ABSOLUTE || p == Position.FIXED;
+    }
+
+    private static boolean inlineFlow(Display d) {
+        return d != null && d.outer() == Display.Outer.INLINE && d.inner() == Display.Inner.FLOW;
     }
 
     /**
@@ -288,6 +295,7 @@ public final class PaintTreeBuilder {
         for (int i = 0, n = owner.flow.size(); i < n; i++) {
             BoxNode c = owner.flow.get(i), lc = latestOwner.flow.get(i);
             if (c.kind == BoxKind.NONE || c.kind.atomicInline()) continue; // 原子は行の断片から写す
+            if (outOfFlow(c)) continue; // 流れの外の箱は包含ブロックが f.oof から置く（ここにも作ると、位置の無い 0×0 の写しが先に見つかる）
             if (c.kind == BoxKind.CONTENTS) { // 箱を作らない: 中身を同じ親の下へ
                 inlineChildren(c, lc, parent, boxes, cbw);
                 continue;
@@ -312,6 +320,7 @@ public final class PaintTreeBuilder {
             BoxNode n = path.get(i);
             cur = cur.flow.get(at.get(i));
             if (n.kind == BoxKind.CONTENTS) continue; // 箱を作らない
+            if (outOfFlow(n)) return; // 流れの外の箱の中身は、包含ブロックが置いたその箱の下にある
             Draft d = boxes.get(n);
             if (d == null) {
                 d = inlineDraft(n, cur, cbw);
@@ -342,7 +351,7 @@ public final class PaintTreeBuilder {
         d.box = lc;
         d.node = nodeOf(c);
         d.style = new ComputedStyle(lc.style);
-        d.display = LayoutBox.Display.of(d.node, d.style).blockified(d.style);
+        d.display = Display.of(d.node, d.style).blockified(d.style);
         d.text = c.kind == BoxKind.TEXT;
         d.interactive = !d.text && interactive(d.node, c);
         d.lineHeight = InlineFlow.lineHeight(c.style, session.face(c.style));
@@ -514,7 +523,7 @@ public final class PaintTreeBuilder {
         LayoutFragment frag;
         HtmlNode node;
         ComputedStyle style;
-        LayoutBox.Display display;
+        Display display;
         boolean anonymous, verticalWrapper, renderedLegend, text, placed;
         float x, y, w, h, mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
         float[] collapsedBorders;

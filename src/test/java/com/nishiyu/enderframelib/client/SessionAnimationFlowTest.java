@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -2,9 +2,7 @@ package com.nishiyu.enderframelib.core.paint.tree;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.Position;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
-import com.nishiyu.enderframelib.core.layout.PaintRun;
+import com.nishiyu.enderframelib.core.box.Display;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 import com.nishiyu.enderframelib.core.text.model.ShapedLine;
@@ -86,14 +84,14 @@ public final class PaintView extends PaintBox {
      * 流れ。置換要素でなく、親が flex / grid でない）は原点にならない。
      */
     boolean isOrigin() {
-        LayoutBox.Display d = n.display;
-        if (d == null || !d.isInlineLevel() || d.inner() != LayoutBox.Display.Inner.FLOW) return true;
+        Display d = n.display;
+        if (d == null || !d.isInlineLevel() || d.inner() != Display.Inner.FLOW) return true;
         if (parent != null && (parent.displayTraits() & FLEX_OR_GRID) != 0) return true;
         return ReplacedElements.isReplacedTag(n.node.tag);
     }
 
     /** {@code display} を外と中に分けたもの（旧経路の箱と同じ規則で、描画の木の節のスタイルから決めた値）。 */
-    public LayoutBox.Display display() { return n.display; }
+    public Display display() { return n.display; }
 
     @Override public ComputedStyle style() { return n.style; }
     @Override public ComputedStyle axisStyle() { return n.style; }
@@ -173,12 +171,12 @@ public final class PaintView extends PaintBox {
 
     @Override
     public int displayTraits() {
-        LayoutBox.Display d = n.display;
+        Display d = n.display;
         if (d == null) return 0;
-        LayoutBox.Display.Inner inner = d.inner();
-        return (inner == LayoutBox.Display.Inner.TABLE_CELL ? TABLE_CELL : 0) | (d.isNone() ? DISPLAY_NONE : 0)
-                | (d.isInlineLevel() && inner != LayoutBox.Display.Inner.FLOW ? ATOMIC_INLINE : 0)
-                | (inner == LayoutBox.Display.Inner.FLEX || inner == LayoutBox.Display.Inner.GRID ? FLEX_OR_GRID : 0);
+        Display.Inner inner = d.inner();
+        return (inner == Display.Inner.TABLE_CELL ? TABLE_CELL : 0) | (d.isNone() ? DISPLAY_NONE : 0)
+                | (d.isInlineLevel() && inner != Display.Inner.FLOW ? ATOMIC_INLINE : 0)
+                | (inner == Display.Inner.FLEX || inner == Display.Inner.GRID ? FLEX_OR_GRID : 0);
     }
 
     @Override

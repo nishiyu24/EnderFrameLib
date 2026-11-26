@@ -98,7 +98,7 @@ class CustomElementPainterTest {
     @Test
     void measurementPaintAndDispatchNoLongerNameHostTags() throws Exception {
         java.nio.file.Path core = java.nio.file.Path.of("core/src/main/java/com/nishiyu/enderframelib/core");
-        for (String f : List.of("layout/BoxMeasurer.java", "paint/ControlPainter.java", "paint/DisplayListBuilder.java")) {
+        for (String f : List.of("layout/fragment/ReplacedFlow.java", "paint/ControlPainter.java", "paint/TreePainter.java", "paint/tree/PaintTreeBuilder.java")) {
             String s = java.nio.file.Files.readString(core.resolve(f));
             for (String t : List.of("\"mc-scene\"", "\"mc-fluid\"", "\"mc-entity\"", "\"fluid:\"", "\"entity:\"")) {
                 assertFalse(s.contains(t), f + " が " + t + " を直書きしている（CustomElementPainter 経由にする）");

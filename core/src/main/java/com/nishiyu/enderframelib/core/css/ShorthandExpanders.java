@@ -91,7 +91,7 @@ final class ShorthandExpanders {
      * {@code flex: none | [<grow> <shrink>? || <basis>]}。grow と shrink は続けて書き、basis はその前後に置ける。
      *
      * 何が壊れていたか: この展開が無かったため {@code flex: 1} が
-     * {@code flex-grow} の読み手（{@link com.nishiyu.enderframelib.core.layout.FlexLayoutEngine}）に
+     * {@code flex-grow} の読み手（{@code FlexLayoutEngine}）に
      * 一切届かず、ua.css の {@code th, td { flex: 1 }} が no-op で表の列幅が決まらなかった。
      * その後も知らない語を basis に入れていた（全域キーワードの経路を通らない {@code flex: initial} が
      * {@code 1 1 initial}、{@code flex: foo} が {@code 1 1 foo}）。

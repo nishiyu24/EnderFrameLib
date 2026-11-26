@@ -73,9 +73,21 @@ public class ClientWebManager {
         return false;
     }
 
+    /**
+     * 書体の登録が変わった（{@code @font-face} の取得完了など）: 文字の幅が変わりうるので、全てのセッションで前回の木と記憶を捨てて
+     * 次のフレームで組み直す（台帳に載らない全体の変化）。
+     */
+    public static void fontsChanged() {
+        for (SessionContext ctx : SESSIONS.values()) {
+            if (ctx.document() != null) {
+                ctx.markInvalidation(com.nishiyu.enderframelib.common.UiView.InvalidationLevel.RELAYOUT);
+                ctx.requestRender();
+            }
+        }
+    }
+
     public static void recomputeAllLayouts() {
-        // 画像の読み込みなど箱の外の資源が変わったので、前回の measure の結果は使わずに測り直す
-        com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
+        // 画像の読み込みなど箱の外の資源が変わった: 同じ大きさでの作り直しは前回の木を使わずに全体を組み直す
         for (SessionContext ctx : SESSIONS.values()) {
             if (ctx.document() != null) {
                 ctx.recomputeLayout(ctx.rootW(), ctx.rootH());

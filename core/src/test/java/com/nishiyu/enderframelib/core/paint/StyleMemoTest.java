@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestBoxes;
+
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import org.junit.jupiter.api.Test;
@@ -30,8 +32,8 @@ class StyleMemoTest {
         var scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
         var root = compiler.layoutDocument(doc, 400, 300, java.util.Map.of(), scroll,
                 com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState());
-        List<DisplayItem> first = new DisplayListBuilder(400, 300, doc.sheet.keyframes, scroll).render(root);
-        List<DisplayItem> second = new DisplayListBuilder(400, 300, doc.sheet.keyframes, scroll).render(root); // メモを使う
+        List<DisplayItem> first = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        List<DisplayItem> second = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items(); // メモを使う
         assertFalse(first.isEmpty());
         assertEquals(first, second);
         assertTrue(first.stream().anyMatch(i -> !i.animDef().isEmpty()), "animation が項目に載る");
@@ -53,25 +55,25 @@ class StyleMemoTest {
         var root = compiler.layoutDocument(doc, 400, 300, java.util.Map.of(), scroll,
                 com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState());
         var b = find(root, "b");
-        var layers = BoxDecorations.layers(b.style);
+        var layers = BoxDecorations.layers(b.style());
         int size = layers.size();
         assertEquals(2, size);
         layers.clear();
-        assertEquals(size, BoxDecorations.layers(b.style).size(), "写しを返すので書き換えても覚えた値は変わらない");
+        assertEquals(size, BoxDecorations.layers(b.style()).size(), "写しを返すので書き換えても覚えた値は変わらない");
 
-        float[] radii = com.nishiyu.enderframelib.core.css.LengthResolver.cornerRadiiXY(b.style, 120, 60, 400, 300);
+        float[] radii = com.nishiyu.enderframelib.core.css.LengthResolver.cornerRadiiXY(b.style(), 120, 60, 400, 300);
         float first = radii[0];
         radii[0] = -99f;
-        assertEquals(first, com.nishiyu.enderframelib.core.css.LengthResolver.cornerRadiiXY(b.style, 120, 60, 400, 300)[0], 0f);
+        assertEquals(first, com.nishiyu.enderframelib.core.css.LengthResolver.cornerRadiiXY(b.style(), 120, 60, 400, 300)[0], 0f);
         // 大きさが変われば別の解（パーセント値）
-        float[] other = com.nishiyu.enderframelib.core.css.LengthResolver.cornerRadiiXY(find(root, "c").style, 50, 50, 400, 300);
-        float[] bigger = com.nishiyu.enderframelib.core.css.LengthResolver.cornerRadiiXY(find(root, "c").style, 100, 100, 400, 300);
+        float[] other = com.nishiyu.enderframelib.core.css.LengthResolver.cornerRadiiXY(find(root, "c").style(), 50, 50, 400, 300);
+        float[] bigger = com.nishiyu.enderframelib.core.css.LengthResolver.cornerRadiiXY(find(root, "c").style(), 100, 100, 400, 300);
         assertNotEquals(other[0], bigger[0], "50% は箱の大きさに追従する");
     }
 
-    private static com.nishiyu.enderframelib.core.layout.LayoutBox find(com.nishiyu.enderframelib.core.layout.LayoutBox box, String cls) {
+    private static com.nishiyu.enderframelib.core.paint.tree.PaintView find(com.nishiyu.enderframelib.core.paint.tree.PaintView box, String cls) {
         if (box.node != null && cls.equals(box.node.attrs.get("class"))) return box;
-        for (var child : box.elementChildren) {
+        for (var child : com.nishiyu.enderframelib.common.TestBoxes.elements(box)) {
             var hit = find(child, cls);
             if (hit != null) return hit;
         }

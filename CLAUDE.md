@@ -19,19 +19,20 @@
 - **時間の主張は交互 A/B だけ**: 絶対値はセッションで ±40% ずれる。旧版の worktree と現在を交互に 3 回ずつ・中央値で比べる（`powershell -File scripts/ab-gate.ps1`）、または `:core:memoryAndLatencyGate` の交互 A/B・ヒープ実測を使う。内部カウンタ（`memo*`）の固定で性能を主張しない。
 - **時刻は注入**: コアは `System.nanoTime`/`currentTimeMillis` を読まない（`core/kernel/Clock.java` だけ）。テストは `Clock.Manual`（`StandaloneView.clock(...)`・`ResizeSettle.freezeClock`）を使い、実時間を `sleep` で待たない。
 
-### 移行状態（M0・M1・M2a・M2b・M2c-1・M2c-2 完了、M2c-3 が次。詳細は計画書 §0・§3.2）
+### 移行状態（M0・M1・M2a・M2b・M2c 完了。経路は 1 本。次は新経路の穴 G1〜G9 と M3a。詳細は計画書 §0・§3.2）
 
-- **完了**: M0（新ゲート `ArchitectureHealthTest`・`:core:memoryAndLatencyGate`）・M1（型付きの不変 `Style`。群のクラスは `scripts/GenStyleGroups.java` の**生成物なので手で直さない**。`PropertyRegistry` を変えたら再実行し、`StyleGroupCoverageTest` が足し忘れを検出）・M2a（`core/box` の `BoxTreeCompiler`・`core/layout/fragment` の `LayoutFragment`/`LayoutCache`）・M2b（全エンジンを新経路へ移植。`WptV3BaselineTest` 170/260・旧経路だけ合格 0。増えたら `-Dwpt.v3.update=true`）。
-- **新経路の形**: 凍結した台帳 → `BoxNode`（レイアウトの入力の木と最新の木。`BoxNode.layout`）→ 断片木 → 描画用の木（`core.paint.tree`）→ `TreePainter` → `DisplayItem`。**既定は新経路（`V3`）**。ビューの構築時の引数 `EnginePath.LEGACY` を選ぶのは旧経路を相手にする物差しだけで、M2c-3 で型ごと消す。全体の作り直しは `markInvalidation(RELAYOUT)`（新経路は前回の木と記憶を捨てる。`requestRender()` はフレームの予約だけ）。描画用の木と `TreePainter` は M3b で `DisplayScene` に吸収して消す（新しい最適化を足さない）。
-- **M2c（改訂）の段**: M2c-1 保持ヒープの内訳と判定（完了。`:core:heapBreakdown`）→ M2c-2 既定を新経路へ切り替え（完了。ゴールデン・`costGate`・`memoryAndLatencyGate` の基準は新経路で取り直した。ヒープと latency 2 行の上限は M3b まで新経路の実測。計画書 §0）→ **M2c-3（次の一手）** `LayoutBox` ほか旧レイアウト経路・`EnginePath`・`FragmentProjection`・旧経路を相手にする物差し（`LegacyParityTest`・`GeometrySweepTest`・`GeometryDeviationsTest` ほか）を削除。multicol は一時的に失い M3c で戻す。
+- **完了**: M0（新ゲート `ArchitectureHealthTest`・`:core:memoryAndLatencyGate`）・M1（型付きの不変 `Style`。群のクラスは `scripts/GenStyleGroups.java` の**生成物なので手で直さない**。`PropertyRegistry` を変えたら再実行し、`StyleGroupCoverageTest` が足し忘れを検出）・M2a（`core/box` の `BoxTreeCompiler`・`core/layout/fragment` の `LayoutFragment`/`LayoutCache`）・M2b（全エンジンを新経路へ移植。`WptV3BaselineTest` 170/260。増えたら `-Dwpt.v3.update=true`）・M2c（既定を新経路へ切り替え、M2c-3 で旧レイアウト経路・`EnginePath`・`FragmentProjection`・旧描画の駆動・旧経路を相手にする物差しを削除。`:core` 本体 108,115 行）。
+- **新経路の形**: 凍結した台帳 → `BoxNode`（レイアウトの入力の木と最新の木。`BoxNode.layout`）→ 断片木 → 描画用の木（`core.paint.tree`）→ `TreePainter` → `DisplayItem`。経路はこれだけ（旧 `LayoutBox` の経路は M2c-3 で削除。型名の再登場は `ArchitectureHealthTest#legacyLayoutPathTypesStayGone` が落とす）。1 回だけのフレームは `FrameRender`（`UiDocumentCompiler.layoutDocument` / `renderDocument` もこれ）、テストで箱を引くのは `TestBoxes`。全体の作り直しは `markInvalidation(RELAYOUT)`（新経路は前回の木と記憶を捨てる。`requestRender()` はフレームの予約だけ）。描画用の木と `TreePainter` は M3b で `DisplayScene` に吸収して消す（新しい最適化を足さない）。
+- **新経路の穴（M2c-3 の移植で見えた。計画書 §3.2 の G1〜G9）**: インラインの中のブロック（G1。最優先）・subgrid・multicol（M3c）・`list-style-image`・`::backdrop`・`::first-line` の `text-transform`・入力欄の min-content・`position-try` の 2 点・ブラウザとの差 2 件。見つけたテストは `@Disabled("G<n> …")` で残してあり、直したら外す。ヒープと latency 2 行の上限は M3b まで新経路の実測（計画書 §0）。
 - **その後**: M3a（MOD の旧レンダラの撤去。並行して進めてよい）→ M3b（`DisplayScene`。親相対座標・`int nodeId`・記憶は `(断片 ==, 最新の箱 ==)` だけ・描画は DOM を読まない）→ M3c（multicol）→ M4 → M5 → M6。
 
 ## 検証の手順
 
 - 作業中は `.\gradlew.bat :core:quickTest`（または `--tests`）。項目の完了時に全件の `:core:test`（`ArchitectureHealthTest`・`MemoryAndLatencyGateTest` 等を含む）・直列の `:core:costGate`・`:core:memoryAndLatencyGate`。
-- **正しさの番人（外から見た出力）**: `WptV3BaselineTest`（新経路 170/260 以上。M2c-3 までは旧経路の `WptReftestRatchetTest` 160/260 も）・`GpuBaselineTest`・`VkBaselineTest`・`RealDocumentFramesTest`・`FrameOracle`（`-Dverify.oracle=true`）・`ApiBoundaryTest`。M1 以降は各フェーズの完了ゲート（計画書 §3）の数値も確認する。
+- **正しさの番人（外から見た出力）**: `WptV3BaselineTest`（170/260 以上。唯一の一覧。`WptReftestRatchetTest` は描画・判定の道具と単体）・`GpuBaselineTest`・`VkBaselineTest`・`RealDocumentFramesTest`・`FrameOracle`（`-Dverify.oracle=true`）・`ApiBoundaryTest`。M1 以降は各フェーズの完了ゲート（計画書 §3）の数値も確認する。
 - **push の前に** `powershell -File scripts/ci-linux.ps1 -Full`（WSL。Windows の緑は CI の緑ではない）。
 - 並列実行でだけ落ちるテストは、まず実時計に依る経路（リサイズの間引きなど）を疑う。`resize` の後は `ResizeSettle` で反映を待つ。
+- テストを回すシェルに `JAVA_TOOL_OPTIONS=-Duser.language=…` などのロケールの上書きを置かない（テストの JVM が受け継ぎ、行分割・ハイフネーションが変わって画素のゴールデンと WPT の一覧が落ちる）。
 
 ## コミット
 

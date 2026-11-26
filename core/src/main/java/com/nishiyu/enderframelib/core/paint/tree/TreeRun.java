@@ -1,8 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.tree;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
-import com.nishiyu.enderframelib.core.layout.PaintRun;
 
 /**
  * 描画用の木の、行に置かれた箱の断片 1 つ（M2c ②-2。文字の語、またはインライン要素の行ごとの箱）。不変。座標は持ち主の箱の

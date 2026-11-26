@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.ColorParser;
@@ -12,7 +13,6 @@ import com.nishiyu.enderframelib.core.css.model.KeyframeBlock;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.model.EasingFunction;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
 import com.nishiyu.enderframelib.core.css.AnimationParser;
 import com.nishiyu.enderframelib.core.css.AnimationTiming;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;

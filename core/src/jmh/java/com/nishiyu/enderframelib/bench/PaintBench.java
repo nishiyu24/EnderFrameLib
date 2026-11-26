@@ -2,9 +2,7 @@ package com.nishiyu.enderframelib.bench;
 
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -34,9 +32,8 @@ public class PaintBench {
     public void setUp() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         var document = parser.parseDocument(Workloads.html(doc), "", Workloads.VIEWPORT_W, Workloads.VIEWPORT_H);
-        LayoutBox root = parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
+        items = parser.renderDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
                 FontResolver.FALLBACK, new InteractionState());
-        items = new DisplayListBuilder(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, document.sheet.keyframes, new ScrollState()).render(root);
         cpu = new SoftwareRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, 1f);
     }
 

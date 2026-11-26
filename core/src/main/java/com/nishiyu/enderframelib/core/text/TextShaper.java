@@ -185,7 +185,7 @@ public final class TextShaper {
     }
 
     /**
-     * 幅区間情報ごと整形結果を返す（{@link com.nishiyu.enderframelib.core.layout.LayoutBox} の 2 枠メモ用）。
+     * 幅区間情報ごと整形結果を返す（{@code LayoutBox} の 2 枠メモ用）。
      */
     public static ShapedInterval shapeInterval(String text, FontFace face, TextStyle style, float availableWidth) {
         int hash = shapeKeyHash(text, face, style);
@@ -244,7 +244,7 @@ public final class TextShaper {
         }
     }
 
-    /** 段落の折り返し（幅区間キャッシュ済み）結果。{@link com.nishiyu.enderframelib.core.layout.BlockLayoutEngine} が使う。 */
+    /** 段落の折り返し（幅区間キャッシュ済み）結果。{@code BlockLayoutEngine} が使う。 */
     public record WrappedParagraph(
             ParagraphSegments prepared,
             int nonEmpty,

@@ -13,8 +13,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
 import com.nishiyu.enderframelib.core.dom.node.DefaultActionContext;
 import com.nishiyu.enderframelib.core.dom.node.StandardDefaultActions;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
@@ -61,8 +59,8 @@ public final class StandaloneView implements AutoCloseable {
 
     /** 窓のための {@link UiView}。フォントと、時計（フレームの時刻）と、画面外の箱を省く描画だけ差し込む。 */
     private final class Ui extends UiView {
-        Ui(EnginePath path) {
-            super("standalone", path);
+        Ui() {
+            super("standalone");
         }
 
         @Override
@@ -127,16 +125,11 @@ public final class StandaloneView implements AutoCloseable {
     }
 
     public StandaloneView(String html, int width, int height, FontResolver fonts) {
-        this(html, width, height, fonts, EnginePath.V3);
-    }
-
-    /** {@code path} はレイアウトと描画の経路（M2c ④）。 */
-    public StandaloneView(String html, int width, int height, FontResolver fonts, EnginePath path) {
         this.width = width;
         this.height = height;
         this.fonts = fonts;
         com.nishiyu.enderframelib.core.EngineContext.current().updateHost(h -> h.withPixelSizeFallback(com.nishiyu.enderframelib.core.paint.software.ImageSizes.STANDARD));
-        this.ui = new Ui(path);
+        this.ui = new Ui();
         this.ui.alphaMaskProvider(com.nishiyu.enderframelib.core.paint.software.AlphaMasks.from(com.nishiyu.enderframelib.core.paint.resource.ImageProvider.standard()));
         this.input = new UiInput(ui);
         this.interaction = ui.interactionState();
@@ -197,12 +190,11 @@ public final class StandaloneView implements AutoCloseable {
 
     private long lastFlushNs = -1;
     private int lastFlushItems;
-    private String lastFlushBreakdown;
 
     /** 直近の再レイアウトの内訳（調べる用）。 */
     public String lastTimings() {
         if (lastFlushNs >= 0) {
-            timings = "flush=" + (lastFlushNs / 1_000_000) + "ms items=" + lastFlushItems + " " + lastFlushBreakdown;
+            timings = "flush=" + (lastFlushNs / 1_000_000) + "ms items=" + lastFlushItems;
             lastFlushNs = -1;
         }
         return timings;
@@ -277,7 +269,6 @@ public final class StandaloneView implements AutoCloseable {
      * 描画スレッドから呼ぶ。
      */
     public void fontsChanged() {
-        com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
         ui.markInvalidation(UiView.InvalidationLevel.RELAYOUT);
         redraw = true;
     }
@@ -329,7 +320,6 @@ public final class StandaloneView implements AutoCloseable {
         if (rebuilt || offsetsChanged) {
             lastFlushNs = Clock.SYSTEM.nanos() - t0;
             lastFlushItems = items.size();
-            lastFlushBreakdown = ui.lastBreakdown();
         }
         long sceneSig = ui.scene3dChangeSignature();
         if (sceneSig != sceneSignature) { // 3D のノード・カメラ・ライトなどが変わった（DOM は変わらないので、ここで拾う）
@@ -588,7 +578,7 @@ public final class StandaloneView implements AutoCloseable {
             if (it.hints().scrollable()) scrollers.put(it.baseId(), it);
         }
         // 画面の外の項目は作っていないので、位置はレイアウトの箱から読む
-        com.nishiyu.enderframelib.core.layout.PaintBox targetBox = UiFocus.findBox(ui.boxRoot(), node);
+        com.nishiyu.enderframelib.core.paint.tree.PaintBox targetBox = UiFocus.findBox(ui.boxRoot(), node);
         if (targetBox == null) return false;
         for (HtmlNode p = node.parent; p != null; p = p.parent) {
             DisplayItem box = DisplayItem.resolveAbsolute(items, scrollers.get(p.key()));

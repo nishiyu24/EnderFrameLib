@@ -1,10 +1,10 @@
-package com.nishiyu.enderframelib.core.layout;
+package com.nishiyu.enderframelib.core.paint.tree;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 
 /**
  * 行に置かれた箱の断片 1 つ（文字の語、またはインライン要素の行ごとの箱。M2c ②）。{@link PaintBox#runs} が返す。座標は
- * {@link PaintBox#originParent} の左上が原点。移行の間だけの口で、M2b-6 で {@code core.paint} へ移す。
+ * {@link PaintBox#originParent} の左上が原点。実装は描画用の木の {@code TreeRun}。
  */
 public interface PaintRun {
     float x();

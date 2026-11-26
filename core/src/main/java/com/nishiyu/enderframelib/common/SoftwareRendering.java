@@ -2,9 +2,7 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -31,9 +29,7 @@ public final class SoftwareRendering {
         com.nishiyu.enderframelib.core.EngineContext.current().updateHost(h -> h.withPixelSizeFallback(com.nishiyu.enderframelib.core.paint.software.ImageSizes.STANDARD));
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", width, height);
-        ScrollState scroll = new ScrollState();
-        LayoutBox root = compiler.layoutDocument(doc, width, height, Map.of(), scroll, fonts, new InteractionState());
-        return new DisplayListBuilder(width, height, doc.sheet.keyframes, scroll).render(root);
+        return FrameRender.document(doc, width, height, Map.of(), new ScrollState(), fonts, new InteractionState()).items();
     }
 
     /** システムフォントで {@link #displayList(String, int, int, FontResolver)}。 */

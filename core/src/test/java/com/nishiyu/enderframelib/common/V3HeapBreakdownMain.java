@@ -33,19 +33,18 @@ public final class V3HeapBreakdownMain {
 
     public static void main(String[] args) throws Exception {
         String docs = System.getProperty("heap.doc", "varied-list-2000,large-list-2000");
-        EnginePath path = EnginePath.valueOf(System.getProperty("heap.path", "V3"));
         String scenario = System.getProperty("heap.scenario", "open");
-        try (StandaloneView warm = new StandaloneView(MemoryAndLatencyGateAccess.largeList(50), 800, 600, FontResolver.FALLBACK, path)) {
+        try (StandaloneView warm = new StandaloneView(MemoryAndLatencyGateAccess.largeList(50), 800, 600, FontResolver.FALLBACK)) {
             warm.frame(1000, new NullBackend(), true);
         }
-        for (String doc : docs.split(",")) run(doc.trim(), path, scenario);
+        for (String doc : docs.split(",")) run(doc.trim(), scenario);
     }
 
-    private static void run(String doc, EnginePath path, String scenario) throws Exception {
+    private static void run(String doc, String scenario) throws Exception {
         Map<String, Long> histBefore = histogram();
         long base = used();
         String html = MemoryAndLatencyGateAccess.loadHtml(doc);
-        StandaloneView view = new StandaloneView(html, 800, 600, FontResolver.FALLBACK, path);
+        StandaloneView view = new StandaloneView(html, 800, 600, FontResolver.FALLBACK);
         NullBackend backend = new NullBackend();
         long[] now = {1000};
         view.frame(now[0], backend, true);
@@ -75,7 +74,7 @@ public final class V3HeapBreakdownMain {
             set(query, "index", null);
         }
         prev = record(stages, "CSSOM の問い合わせが持つ箱の索引", prev);
-        if (path == EnginePath.V3) {
+        {
             V3Frame v3 = ui.v3;
             set(v3, "painter", null);
             prev = record(stages, "TreePainter の記憶（記憶が持つ表示リスト・Fragment を含む）", prev);
@@ -98,16 +97,13 @@ public final class V3HeapBreakdownMain {
             set(v3, "pipeline", null);
             set(v3, "tree", null);
             prev = record(stages, "新経路の残り（解き方・セッション）", prev);
-        } else {
-            set(ui, "layoutRoot", null);
-            prev = record(stages, "旧経路の LayoutBox の木（記憶・Fragment を含む）", prev);
         }
         view.close();
         view = null;
         ui = null;
         prev = record(stages, "DOM・ビュー・その他", prev);
 
-        System.out.printf(Locale.ROOT, "%n== %s:%s path=%s  保持ヒープ全体 %.2f MB ==%n", doc, scenario, path, mb(total - base));
+        System.out.printf(Locale.ROOT, "%n== %s:%s  保持ヒープ全体 %.2f MB ==%n", doc, scenario, mb(total - base));
         for (var e : stages.entrySet()) System.out.printf(Locale.ROOT, "  %-60s %8.2f MB%n", e.getKey(), mb(e.getValue()));
         System.out.printf(Locale.ROOT, "  %-60s %8.2f MB%n", "（測りきれない差: 共有・GC の揺れ）", mb(prev - base));
         System.out.println("  -- 生存オブジェクトの上位（構築前との差。クラス: MB / 個数） --");

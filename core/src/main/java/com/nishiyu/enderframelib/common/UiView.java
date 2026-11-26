@@ -10,7 +10,6 @@ import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
-import com.nishiyu.enderframelib.core.dom.ChangeReads;
 import com.nishiyu.enderframelib.core.dom.node.DomUtils;
 import com.nishiyu.enderframelib.core.dom.node.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
@@ -20,9 +19,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.Ownership;
-import com.nishiyu.enderframelib.core.css.CounterStyles;
-import com.nishiyu.enderframelib.core.layout.BoxTreeBuilder;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.TextSelection;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -35,12 +31,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.BoxLayoutQuery;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -54,18 +48,13 @@ import com.nishiyu.enderframelib.core.text.model.FontResolver;
  * {@code SessionContext} がその継承クラスで、スタンドアロンでは何も上書きせずにそのまま使える。</p>
  */
 public class UiView implements AutoCloseable {
-    /** LocalPatches（切り出した協力クラス）。 */
-    final InPlaceRelayout inPlace = new InPlaceRelayout(this);
-
     /**
-     * 画面更新の無効化段階（F3-2）。
+     * 画面更新の要求の段階（F3-2）。入口は変更台帳 1 本（M2c-3）で、段階はフレームを予約する強さだけを表す。
      * <ul>
      *   <li>{@link #NONE}: 再計算不要</li>
-     *   <li>{@link #REPAINT}: 既存の {@link LayoutBox} から描画要素リストのみ再生成（measure/layout を省略）</li>
-     *   <li>{@link #REPOSITION}: 寸法はそのままに位置だけ決め直す（スクロール・{@code top} / {@code left} の変化。measure を省略）</li>
-     *   <li>{@link #RESTYLE}: 状態変化した部分木のみ再スタイルし、レイアウト影響があれば {@link #RELAYOUT}、
-     *       位置だけなら {@link #REPOSITION}、無ければ {@link #REPAINT} に分岐</li>
-     *   <li>{@link #RELAYOUT}: スタイル解決・measure・layout・描画要素生成の全パスを実行</li>
+     *   <li>{@link #REPAINT}・{@link #RESTYLE}: 台帳に載った変化を増分で反映する</li>
+     *   <li>{@link #REPOSITION}: スクロール量だけの変化（中身の節を動かして済ませられるか先に試す）</li>
+     *   <li>{@link #RELAYOUT}: 前回の木と記憶を捨てて全体を作り直す（台帳に載らない全体の変化）</li>
      * </ul>
      */
     public enum InvalidationLevel {
@@ -75,11 +64,6 @@ public class UiView implements AutoCloseable {
         RESTYLE,
         RELAYOUT
     }
-
-    public static final java.util.concurrent.atomic.AtomicLong ATTR_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
-    /** 局所パッチが成功した回数 / 全体の再レイアウトへ退いた回数（調べる用）。 */
-    public static final java.util.concurrent.atomic.AtomicLong TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
-    public static final java.util.concurrent.atomic.AtomicLong TEXT_PATCH_FALLBACKS = new java.util.concurrent.atomic.AtomicLong();
 
     /**
      * 連続したリサイズ中は、直前のレイアウトにかかった時間のこの倍数だけ次のレイアウトを待つ。
@@ -97,9 +81,8 @@ public class UiView implements AutoCloseable {
     private final Map<Long, Raycaster3D> scene3dRaycasters = new ConcurrentHashMap<>();
     /** {@code <scene-3d>} の子要素（{@code <mesh-3d>} など）の属性を 3D ワールドへ写す（再スタイル・再レイアウトを伴うフレームで走る）。 */
     private Scene3DDomSync scene3dSync = new Scene3DDomSync(this::getOrCreateScene3dWorld);
-    LayoutBox layoutRoot;
-    /** 新経路（M2c ④）の 1 ビューのフレーム。旧経路なら null（構築時の引数 {@link EnginePath} で決まり、途中で変えない）。 */
-    final V3Frame v3;
+    /** このビューの 1 フレームの組み立て（箱の木 → 断片木 → 描画用の木 → 表示リスト。状態はこのビューに閉じる）。 */
+    final V3Frame v3 = new V3Frame();
     private boolean serverManaged = false;
     private boolean headlessState = false;
     private boolean requested = false;
@@ -131,11 +114,9 @@ public class UiView implements AutoCloseable {
 
     /** 診断: 位置の更新を、節の移動で済ませた回数・スクロールだけなのに作り直した回数・スクロール以外で作り直した回数。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_SCROLL_TRANSLATED = new java.util.concurrent.atomic.LongAdder(),
-            STAT_SCROLL_FALLBACK = new java.util.concurrent.atomic.LongAdder(), STAT_REPOSITION_OTHER = new java.util.concurrent.atomic.LongAdder();
-    /** 節の移動で済ませる範囲（px）。表示リストは画面の外 256px まで作ってあるので、それより内に収める。 */
-    /** 診断: 箱の位置を決め直したうえで節の移動で済ませた回数（箱は今のスクロール位置、表示リストは作ったときの位置になる）。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_TRANSLATE_AFTER_FRESH = new java.util.concurrent.atomic.LongAdder();
-    private static final float SCROLL_TRANSLATE_LIMIT = DisplayListBuilder.CULL_MARGIN - 64f;
+            STAT_SCROLL_FALLBACK = new java.util.concurrent.atomic.LongAdder();
+    /** 節の移動で済ませる範囲（px）。 */
+    private static final float SCROLL_TRANSLATE_LIMIT = com.nishiyu.enderframelib.core.kernel.EngineFlags.CULL_MARGIN - 64f;
     /** まだ反映していないビューポートの大きさ。無ければ -1。 */
     /**
      * GUI など、クライアントが画面の大きさを自分で決めているセッションか。そうでない（ブロック・アイテム・ホログラムの
@@ -185,26 +166,23 @@ public class UiView implements AutoCloseable {
     private final List<UiPubSub.VirtualListBinding> virtualListBindings = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public UiView(String sessionId) {
-        this(sessionId, EnginePath.V3);
-    }
-
-    /** {@code path} はレイアウトと描画の経路（M2c ④。構築時に決め、途中で変えない）。 */
-    public UiView(String sessionId, EnginePath path) {
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId must not be null");
         this.timers = new UiTimers(sessionId);
-        this.v3 = path == EnginePath.V3 ? new V3Frame() : null;
-        if (v3 != null) interactionState.bindStyleLookup(v3::styleOf); // CSSOM の算出スタイルは新経路の箱の木から
+        interactionState.bindStyleLookup(v3::styleOf); // CSSOM の算出スタイルは箱の木から
     }
 
-    /** レイアウトの結果の木の根（旧経路は箱の木、新経路は描画用の木の見え方。CSSOM・フォーカス・インスペクタが読む）。 */
-    public com.nishiyu.enderframelib.core.layout.PaintBox boxRoot() {
-        return v3 != null ? v3.root() : layoutRoot();
+    /** レイアウトの結果の木の根（描画用の木の見え方。CSSOM・フォーカス・インスペクタが読む。まだ無ければ null）。 */
+    public com.nishiyu.enderframelib.core.paint.tree.PaintView boxRoot() {
+        return v3.root();
     }
 
     /** 新経路の 1 フレーム（{@code full} なら台帳を読まずに全体を作り直す）。汚れた節の印は台帳に写してあるので片付ける。 */
     private void v3Frame(boolean full) {
         if (document == null || document.root == null) return;
         interactionState.bindStyleSheet(document.sheet); // DOM の変更を規則の範囲（兄弟・祖先）へ広げる無効化セットを引くシート
+        // 全体の作り直しは DOM を全て読むので、溜まっている変更（文書を入れたときの markAllDirty など）もこのフレームで消化する。
+        // 凍結しておかないと、次のフレームが同じ変更を読んで、もう一度全体を組み直す（静止フレームにならない）
+        if (full) interactionState.changeLedger().freeze();
         com.nishiyu.enderframelib.core.dom.node.ChangeLedger ledger = full ? null : interactionState.changeLedger();
         List<DisplayItem> elements = v3.frame(document, ledger, rootW, rootH, devicePixelRatio, env, interactionState, scrollState, fontResolver());
         interactionState.clearAllStyleDirty();
@@ -288,48 +266,6 @@ public class UiView implements AutoCloseable {
     protected long nowMs() {
         return clock.millis();
     }
-
-    /**
-     * 箱の木から表示リストを作る。{@code scrollOnly} は位置だけが変わった作り直し
-     * （画面の外の箱は項目を作らなくてよい）。既定は {@link com.nishiyu.enderframelib.core.EngineContext#boxRenderer}。
-     */
-    protected List<DisplayItem> paintBoxes(LayoutBox root, int width, int height, boolean scrollOnly) {
-        var renderer = com.nishiyu.enderframelib.core.EngineContext.current().host().boxRenderer();
-        if (renderer == null) return null;
-        var keyframes = document.sheet.keyframes;
-        if (renderer != com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer.DEFAULT) return renderer.render(root, width, height, keyframes, scrollState);
-        // 既定の描画は、ビルダーをこのビューで持ち回す: 前回と入力が同じ箱は、項目を作り直さず前回のものを使う
-        var builder = paintBuilder;
-        if (builder != null && (paintBuilderW != width || paintBuilderH != height)
-                && paintBuilderKeyframes == keyframes && paintBuilderScroll == scrollState) {
-            // リサイズ: ビルダーを作り直さず、箱ごとの記憶を残す（ビューポートに依らない箱は項目を使い回せる）
-            builder.setViewport(width, height);
-            paintBuilderW = width;
-            paintBuilderH = height;
-        }
-        if (builder == null || paintBuilderKeyframes != keyframes || paintBuilderScroll != scrollState) {
-            builder = paintBuilder = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(width, height, keyframes, scrollState);
-            paintBuilderW = width;
-            paintBuilderH = height;
-            paintBuilderKeyframes = keyframes;
-            paintBuilderScroll = scrollState;
-        } else if (paintBuilderW != width || paintBuilderH != height) {
-            builder.setViewport(width, height);
-            paintBuilderW = width;
-            paintBuilderH = height;
-        }
-        ImmutableItemList prev = this.renderCache instanceof ImmutableItemList il ? il : null;
-        return builder.renderImmutable(root, scrollOnly, prev);
-    }
-
-    /** 直近に表示リストを構築したビルダー。スライスパッチ判定やスクロール節情報参照に使用。 */
-    public final com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder() {
-        return paintBuilder;
-    }
-
-    com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder;
-    private int paintBuilderW, paintBuilderH;
-    private Object paintBuilderKeyframes, paintBuilderScroll;
 
     /** この画面の描画上の平行移動表の不変スナップショット（フレーム境界越え用、{@link DisplayItem} の外に持つ）。 */
     public PaintOffsets paintOffsets() {
@@ -462,10 +398,7 @@ public class UiView implements AutoCloseable {
         if (document == null || !(document.root instanceof HtmlDocument liveDocument)) return;
         liveDocument.setDefaultOwnership(serverManaged ? Ownership.SERVER : Ownership.CLIENT);
         liveDocument.setInteractionState(interactionState);
-        if (boxLayoutQuery == null) {
-            boxLayoutQuery = new BoxLayoutQuery(scrollState, this::requestReposition);
-            boxLayoutQuery.freshener(this::ensureLayoutFresh);
-        }
+        if (boxLayoutQuery == null) boxLayoutQuery = new BoxLayoutQuery(scrollState, this::requestReposition);
         liveDocument.setLayoutQuery(boxLayoutQuery);
         // DOM の操作（クライアントのスクリプト・サーバーの変異・バインディング）は、文書が汚れの印を付けて知らせてくる。
         // どの経路から変えても同じ無効化になるよう、属性なら対話状態（checked / open など）もここで合わせる。
@@ -502,62 +435,9 @@ public class UiView implements AutoCloseable {
         });
     }
 
-    public LayoutBox layoutRoot() {
-        ensureLayoutFresh();
-        return layoutRoot;
-    }
-
-    /**
-     * スクロールだけの更新で、箱の位置の決め直しを後回しにしているか。表示リストはスクロール量の差し替えだけで動くので、
-     * 箱の位置を読む側（描き直し・CSSOM・スクロールバーの操作）が現れるまで決め直さなくてよい。
-     */
-    boolean layoutStale;
-
-    /** 後回しにした位置の決め直しがあれば済ませる。箱の位置を読む前に呼ぶ。 */
-    void ensureLayoutFresh() {
-        if (!layoutStale) return;
-        layoutStale = false;
-        if (layoutRoot != null) {
-            RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
-                    rootW, rootH, scrollState, fontResolver(), true);
-        }
-    }
-
-    public void setLayoutRoot(LayoutBox layoutRoot) {
-        this.layoutRoot = layoutRoot;
-        layoutStale = false; // 渡された木は、位置が決まったもの（同じ木の再設定でも、後回しにした分は呼び出し側が済ませてから渡す）
-        nodeBoxIndex = null; // 箱の木を作り直したかもしれない。索引は次に要るときに作り直す
-        publishLayoutToDom();
-    }
-
-    /**
-     * DOM の節ごとの箱（匿名でない）の索引。文字の局所パッチが変わった節の箱を木全体から探さずに引く。
-     * 箱の木を作る経路（{@link #setLayoutRoot}）で捨てる。文字の局所パッチと、箱の木の形を変えない再レイアウトは捨てない。
-     * 表の中の箱は値が null（局所パッチの対象にしない印）。
-     */
-    Map<HtmlNode, LayoutBox> nodeBoxIndex;
-
-    Map<HtmlNode, LayoutBox> nodeBoxIndex() {
-        Map<HtmlNode, LayoutBox> index = nodeBoxIndex;
-        if (index == null) {
-            index = new IdentityHashMap<>();
-            indexBoxes(layoutRoot, index, false);
-            nodeBoxIndex = index;
-        }
-        return index;
-    }
-
-    static void indexBoxes(LayoutBox box, Map<HtmlNode, LayoutBox> out, boolean inTable) {
-        boolean table = inTable || LayoutBox.isTableBox(box);
-        for (LayoutBox child : box.children) {
-            if (child.node != null && !child.isAnonymous) out.put(child.node, table ? null : child);
-            indexBoxes(child, out, table);
-        }
-    }
-
     /** CSSOM View が読む箱の木を差し替え、ResizeObserver / IntersectionObserver へ知らせる。 */
     void publishLayoutToDom() {
-        com.nishiyu.enderframelib.core.layout.PaintBox root = v3 != null ? v3.root() : layoutRoot;
+        com.nishiyu.enderframelib.core.paint.tree.PaintBox root = v3.root();
         if (boxLayoutQuery == null || document == null || root == null) return;
         boxLayoutQuery.update(root, document.sheet, rootW, rootH);
         if (document.root instanceof HtmlDocument live) live.notifyLayoutObservers();
@@ -859,7 +739,7 @@ public class UiView implements AutoCloseable {
 
     /** DOM 変更やビューポート変更に伴う再レイアウトを要求する。 */
     public void requestRender() {
-        markInvalidation(v3 != null ? InvalidationLevel.RESTYLE : InvalidationLevel.RELAYOUT); // 新経路は DOM の変更を台帳から読む（RELAYOUT は全体の作り直し）
+        markInvalidation(InvalidationLevel.RESTYLE); // DOM の変更は台帳から読む（RELAYOUT は全体の作り直し）
         invalidated();
     }
 
@@ -967,20 +847,6 @@ public class UiView implements AutoCloseable {
         }
     }
 
-    /** レイアウト結果から描画要素リストだけを作り直す。 */
-    private void repaintFromLayout() {
-        repaintFromLayout(false);
-    }
-
-    private void repaintFromLayout(boolean scrollOnly) {
-        ensureLayoutFresh();
-        if (layoutRoot == null || document == null) return;
-        List<DisplayItem> elements = paintBoxes(layoutRoot, rootW, rootH, scrollOnly);
-        if (elements == null) return;
-        publishBuilt(elements);
-        applyOverrides();
-    }
-
     /**
      * 作り直した表示リストを公開する。前の表示リストのスクロールの移動量は新しい表示リストには当てはまらない
      * （新しい表示リストは今のスクロール量で作ってある）ので外し、新しい表示リストのスクロールコンテナを覚え直す。
@@ -1001,18 +867,15 @@ public class UiView implements AutoCloseable {
             for (int k = 0, sn = info.stickies().size(); k < sn; k++) clearPaintOffset(info.stickies().get(k).nodeId());
         }
         setRenderCache(elements);
-        setScrollBase(v3 != null || com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() ? builtScrollContents() : List.of()); // 新経路の描画は常に中身を節にまとめる
+        setScrollBase(builtScrollContents()); // 描画は常にスクロールコンテナの中身を節にまとめる
         scrollAtBuild = scrollState.snapshot();
         scrollWindowAt = scrollAtBuild;
-        if (v3 != null) tryScrollTranslate(); // 新経路の記憶は使い回した中身の節を記憶したときのスクロール量で出す。今との差を節の移動で足す
+        tryScrollTranslate(); // 描画の記憶は使い回した中身の節を記憶したときのスクロール量で出す。今との差を節の移動で足す
     }
 
-    /** 直近に作った表示リストの、中身を 1 つの節にまとめたスクロールコンテナ。既定の描画（{@link DisplayListBuilder}）が持つ。 */
+    /** 直近に作った表示リストの、中身を 1 つの節にまとめたスクロールコンテナ。既定の描画（{@code DisplayListBuilder}）が持つ。 */
     protected List<ScrollContentInfo> builtScrollContents() {
-        if (v3 != null) return v3.scrollContents();
-        var builder = paintBuilder;
-        return builder != null && com.nishiyu.enderframelib.core.EngineContext.current().host().boxRenderer() == com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer.DEFAULT
-                ? builder.scrollContents() : List.of();
+        return v3.scrollContents();
     }
 
     /**
@@ -1020,7 +883,7 @@ public class UiView implements AutoCloseable {
      * 動かせるのは、全てのコンテナの移動が範囲内のとき。動かせなければ false（作り直す）。
      */
     private boolean tryScrollTranslate() {
-        if (v3 == null && !com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() || scrollBase.isEmpty()) return false;
+        if (scrollBase.isEmpty()) return false;
         // 節にまとめていないコンテナ（sticky などを含む）のスクロール量が変わっていたら、その中身は作り直さないと動かない
         if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
         if (!withinWindow()) return false;
@@ -1041,37 +904,6 @@ public class UiView implements AutoCloseable {
     }
 
 
-    /** 寸法はそのままに位置だけを決め直し、描画要素リストを作り直す（measure と箱の木の作り直しを省く）。 */
-    private void repositionFromLayout(boolean scrollOnly) {
-        if (layoutRoot == null || document == null) return;
-        // スクロール量だけの更新で、観測者がいなければ、箱の位置の決め直しは後回しにする（箱の位置を読む側が現れたときに済ませる）
-        boolean observed = document.root instanceof HtmlDocument live && live.hasLayoutObservers();
-        if (scrollOnly && com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on() && !observed && tryScrollTranslate()) {
-            layoutStale = true;
-            STAT_SCROLL_TRANSLATED.increment();
-            return;
-        }
-        if (scrollOnly && com.nishiyu.enderframelib.core.kernel.Shortcut.DEFER_SCROLL_LAYOUT.on() && !observed && !layoutRoot.subtreeHasContentAuto() && rebuildWindowAtBoxFrame()) return;
-        layoutStale = false; // 後回しにした決め直しも、次の 1 回で済む（ensureLayoutFresh を呼ぶと同じ決め直しが 2 回走る）
-        RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
-                rootW, rootH, scrollState, fontResolver(), scrollOnly);
-        // スクロール量だけが変わったなら、表示リストは作り直さない（レイアウトは上で最新にしてある）
-        if (scrollOnly && tryScrollTranslate()) {
-            STAT_SCROLL_TRANSLATED.increment();
-            STAT_TRANSLATE_AFTER_FRESH.increment();
-        } else {
-            (scrollOnly ? STAT_SCROLL_FALLBACK : STAT_REPOSITION_OTHER).increment();
-            repaintFromLayout(scrollOnly);
-        }
-        if (document.root instanceof HtmlDocument live) live.notifyLayoutObservers();
-    }
-
-    /** {@link #tryScrollTranslate} が成り立つか（表示リストを変えずに確かめる）。 */
-    private boolean canTranslateAll() {
-        if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
-        return withinWindow();
-    }
-
     /** どのスクロールコンテナも、表示リストの窓を作った位置から余白の内に居るか（居なければ、窓を作り直さないと中身が足りない）。 */
     private boolean withinWindow() {
         for (ScrollContentInfo info : scrollBase) {
@@ -1081,157 +913,6 @@ public class UiView implements AutoCloseable {
                     || Math.abs(scrollState.getScrollY(info.node()) - wy) > SCROLL_TRANSLATE_LIMIT) return false;
         }
         return true;
-    }
-
-    /** 診断: 箱の位置を決め直さずに、窓だけを動かして表示リストを作り直した回数。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_WINDOW_REBUILD = new java.util.concurrent.atomic.LongAdder();
-
-    /**
-     * 窓の余白を超えてスクロールしたとき、箱の位置（前に決めたスクロール位置のまま）は決め直さずに、窓だけを今の位置へ動かして
-     * 表示リストを作り直す。箱も表示リストの座標もスクロール前の位置のままで、動いた分は節の移動で足す。
-     * 箱の位置を決め直す分（全箱の配置）が要らない。できなければ false（何も変えていない）。
-     */
-    private boolean rebuildWindowAtBoxFrame() {
-        if (!layoutStale || paintBuilder == null || !com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() || scrollBase.isEmpty()) return false;
-        if (layoutRoot == null || document == null) return false;
-        if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
-        Map<HtmlNode, float[]> now = scrollState.snapshot();
-        Map<HtmlNode, float[]> shift = new java.util.IdentityHashMap<>();
-        for (ScrollContentInfo info : scrollBase) {
-            float[] was = scrollAtBuild.get(info.node());
-            float wx = was != null ? was[0] : 0f, wy = was != null ? was[1] : 0f;
-            shift.put(info.node(), new float[]{scrollState.getScrollX(info.node()) - wx, scrollState.getScrollY(info.node()) - wy});
-        }
-        // 箱の位置を決めたときのスクロール位置へ一時的に戻して作る（つまみの位置・コンテナの基準が、箱と同じ座標になる）
-        java.util.Set<HtmlNode> keys = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        keys.addAll(now.keySet());
-        keys.addAll(scrollAtBuild.keySet());
-        for (HtmlNode k : keys) {
-            float[] f = scrollAtBuild.get(k);
-            scrollState.setScroll(k, f != null ? f[0] : 0f, f != null ? f[1] : 0f);
-        }
-        List<DisplayItem> elements;
-        try {
-            paintBuilder.setWindowShift(shift);
-            elements = paintBoxes(layoutRoot, rootW, rootH, true);
-        } finally {
-            paintBuilder.setWindowShift(null);
-            for (HtmlNode k : keys) {
-                float[] n = now.get(k);
-                scrollState.setScroll(k, n != null ? n[0] : 0f, n != null ? n[1] : 0f);
-            }
-        }
-        if (elements == null) return false;
-        List<ScrollContentInfo> built = com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.on() ? builtScrollContents() : List.of();
-        java.util.Set<String> keep = new java.util.HashSet<>();
-        for (ScrollContentInfo info : built) {
-            keep.add(info.contentId());
-            if (info.thumbVId() != null) keep.add(info.thumbVId());
-            if (info.thumbHId() != null) keep.add(info.thumbHId());
-            for (var st : info.stickies()) keep.add(st.nodeId());
-        }
-        for (ScrollContentInfo info : scrollBase) { // 窓から外れたコンテナの移動量は、残さない
-            if (!keep.contains(info.contentId())) clearPaintOffset(info.contentId());
-            if (info.thumbVId() != null && !keep.contains(info.thumbVId())) clearPaintOffset(info.thumbVId());
-            if (info.thumbHId() != null && !keep.contains(info.thumbHId())) clearPaintOffset(info.thumbHId());
-            for (var st : info.stickies()) if (!keep.contains(st.nodeId())) clearPaintOffset(st.nodeId());
-        }
-        setRenderCache(elements);
-        setScrollBase(built);
-        scrollWindowAt = now;
-        applyOverrides();
-        if (!tryScrollTranslate()) { // 作った窓の中なので通常は来ない。来たら位置を決め直して作り直す
-            layoutStale = false;
-            RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
-                    rootW, rootH, scrollState, fontResolver(), true);
-            repaintFromLayout(true);
-            return true;
-        }
-        STAT_WINDOW_REBUILD.increment();
-        return true;
-    }
-
-    /** 汚れた部分木を再スタイルし、結果に応じて必要な最小の段（全レイアウト / 位置だけ / 描き直しだけ）を走らせる。 */
-    private void restyleAndUpdate(boolean repositionRequested, boolean scrollOnly, List<HtmlNode> attrNodes, List<HtmlNode> texts) {
-        // 文字だけが変わった節の箱は、再スタイルが見つけた変わった箱と一緒に測り直す（条件に合わなければ全体を作り直す）
-        List<LayoutBox> textBoxes = List.of();
-        if (!texts.isEmpty()) {
-            ensureLayoutFresh();
-            List<LayoutBox> found = TextChanges.boxes(this, texts);
-            if (found == null) {
-                TEXT_PATCH_FALLBACKS.incrementAndGet();
-                recomputeLayout(rootW, rootH);
-                return;
-            }
-            textBoxes = found;
-            for (HtmlNode n : texts) interactionState.clearStyleDirty(n);
-            for (LayoutBox b : textBoxes) b.refreshStyle(b.style);
-        }
-        // 文字だけの更新（文字の節の印を消したあと、汚れた節が残っていない）は、再スタイルの走査をしない
-        RenderPipeline.RestyleResult res = !textBoxes.isEmpty() && !interactionState.mayHaveDirtyNodes()
-                ? RenderPipeline.RestyleResult.UNCHANGED
-                : new UiDocumentCompiler().restyleLayoutTree(layoutRoot, document, rootW, rootH, env, interactionState);
-        // 箱を作り替えるのは構造が変わる再スタイルだけ（疑似要素・生成された箱）。それ以外は箱を使い回して refreshStyle するだけなので、索引は残す
-        if (res.structural()) nodeBoxIndex = null;
-        if (res.layoutRequired() || !textBoxes.isEmpty()) {
-            ensureLayoutFresh();
-            boolean textOnly = !res.layoutRequired();
-            if (res.structural()) {
-                RESTYLE_STRUCTURAL.incrementAndGet();
-                recomputeLayout(rootW, rootH);
-                return;
-            }
-            if (!inPlace.tryRelayoutInPlace(textBoxes)) {
-                (textOnly ? TEXT_PATCH_FALLBACKS : RESTYLE_RELAYOUT_FULL).incrementAndGet();
-                recomputeLayout(rootW, rootH);
-                return;
-            }
-            if (!textBoxes.isEmpty()) TEXT_PATCH_HITS.incrementAndGet();
-            if (!textOnly) {
-                RESTYLE_RELAYOUT_INPLACE.incrementAndGet();
-                return;
-            }
-            // 文字だけが測り直された（表示リストも作り直した）。同じフレームに重なった位置の指定・属性の変更は、続けて下の分岐で済ませる
-        }
-        if (repositionRequested || res.repositionRequired()) {
-            // 再スタイルで見た目が変わった・位置の指定が変わったときは、スクロールだけの更新ではない
-            RESTYLE_REPOSITION.incrementAndGet();
-            repositionFromLayout(scrollOnly && !res.styleChanged() && !res.repositionRequired());
-        } else if (res.styleChanged() && textBoxes.isEmpty()) {
-            List<LayoutBox> changedBoxes = RenderPipeline.styleChangedBoxes();
-            // 空白だけのテキストの箱は描くものが無い（ブロックの間なら箱の木にも入らない）。継承の変更で混ざっても部分の描き直しを妨げない
-            if (!changedBoxes.isEmpty()) {
-                boolean anyBlank = false;
-                for (int i = 0, n = changedBoxes.size(); i < n && !anyBlank; i++) anyBlank = TextChanges.isBlankText(changedBoxes.get(i).node);
-                if (anyBlank) {
-                    List<LayoutBox> kept = new ArrayList<>(changedBoxes.size());
-                    for (LayoutBox b : changedBoxes) if (!TextChanges.isBlankText(b.node)) kept.add(b);
-                    changedBoxes = kept;
-                }
-            }
-            if (paintBuilder == null) SLICE_NO_BUILDER.incrementAndGet();
-            RESTYLE_REPAINT_FULL.incrementAndGet();
-            repaintFromLayout();
-        } else if (!attrNodes.isEmpty()) {
-            repaintAttrPatched(attrNodes);
-        }
-    }
-
-    /**
-     * 描画だけに効く属性が変わった節の箱に変更印を付け、印の付いていない箱の署名の比較を省いて表示リストを作り直す。
-     * レイアウトは走らない（箱の位置・大きさは属性に依らない）ので、印の付く箱は変わった節の箱だけ。
-     * 箱の木は触らないため、変更印で省いてよい条件（前回の作り直し以降、レイアウトが箱に触れていない）はここでも成り立つ。
-     */
-    private void repaintAttrPatched(List<HtmlNode> attrNodes) {
-        if (layoutRoot == null || document == null) return;
-        Set<HtmlNode> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
-        wanted.addAll(attrNodes);
-        Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
-        TextChanges.collectTextBoxes(layoutRoot, wanted, found, false);
-        boolean stamps = !found.containsValue(null);
-        for (LayoutBox box : found.values()) if (box != null) box.touchPaint();
-        repaintFromLayout();
-        if (stamps) ATTR_PATCH_HITS.incrementAndGet();
     }
 
     /**
@@ -1247,7 +928,7 @@ public class UiView implements AutoCloseable {
             return false;
         }
         long sinceLastLayout = clock.nanos() - lastLayoutFinishedNanos;
-        if ((v3 != null ? v3.root() != null : layoutRoot != null) && sinceLastLayout < lastLayoutCostNanos * RESIZE_THROTTLE_FACTOR) {
+        if (v3.root() != null && sinceLastLayout < lastLayoutCostNanos * RESIZE_THROTTLE_FACTOR) {
             invalidated();
             return false;
         }
@@ -1258,13 +939,22 @@ public class UiView implements AutoCloseable {
     static final java.util.concurrent.atomic.AtomicLong IDLE_FRAMES = new java.util.concurrent.atomic.AtomicLong();
 
     /**
-     * 静止フレームか。リサイズ・無効化・保留中の文字/属性・位置の決め直し・汚れた節・後回しの配置のどれも無く、
-     * 箱の木もある（初回の構築ではない）。このとき以降の処理はすべて何もしないので、省いても結果は変わらない。
+     * 静止フレームか。リサイズ・無効化・凍結した台帳の変化・位置の決め直し・汚れた節のどれも無く、箱の木もある（初回の構築では
+     * ない）。このとき以降の処理はすべて何もしないので、省いても結果は変わらない。
      */
-    private boolean isIdleFrame(boolean resize, InvalidationLevel level, List<HtmlNode> texts, List<HtmlNode> attrNodes) {
-        return !(resize || level != InvalidationLevel.NONE || (v3 != null ? v3.root() == null : layoutRoot == null) || layoutStale
+    private boolean isIdleFrame(boolean resize, InvalidationLevel level, com.nishiyu.enderframelib.core.dom.node.ChangeLedger ledger) {
+        return !(resize || level != InvalidationLevel.NONE || v3.root() == null
                 || repositionPending || nonScrollRepositionPending || interactionState.hasDirtyNodes()
-                || texts == null || !texts.isEmpty() || !attrNodes.isEmpty());
+                || ledger.frozenOverflow() || ledger.frozenSize() > 0);
+    }
+
+    /** 凍結した台帳がスクロール量の変化だけか（中身の節を動かして済ませられる候補）。 */
+    private static boolean onlyScroll(com.nishiyu.enderframelib.core.dom.node.ChangeLedger ledger) {
+        if (ledger.frozenOverflow()) return false;
+        for (int i = 0, n = ledger.frozenSize(); i < n; i++) {
+            if (!ledger.frozenIs(i, com.nishiyu.enderframelib.core.dom.node.ChangeKind.SCROLL)) return false;
+        }
+        return true;
     }
 
     /** 描画キューから呼ばれる、このセッション 1 回分の無効化処理。 */
@@ -1279,93 +969,27 @@ public class UiView implements AutoCloseable {
         // 動いているうちは毎フレーム再スタイルを要求する（終わった要素は進めた時点で再スタイルの対象になる）
         if (interactionState.advanceAnimations(nowMs())) requestRestyle();
         var ledger = interactionState.changeLedger();
-        if (v3 != null) V3Frame.beforeFreeze(interactionState, document.sheet);
-        ledger.freeze(); // 変更台帳を凍結（時間で動くスタイルの印も、この世代に入るよう進めたあとで）。文字・描画だけの属性の変更は台帳から導く（K5b L1）
-        List<HtmlNode> texts = ChangeReads.texts(ledger); // null＝あふれ・多すぎ（個々に頼らず全体を作り直す）
-        List<HtmlNode> attrNodes = ChangeReads.paintAttrs(ledger, (n, name) -> !isPresentationalAttribute(name) && isPaintOnlyAttribute(n, name));
+        V3Frame.beforeFreeze(interactionState, document.sheet);
+        ledger.freeze(); // 変更台帳を凍結（時間で動くスタイルの印も、この世代に入るよう進めたあとで）。変化は全て台帳から読む
 
         boolean resize = resizeDue();
         InvalidationLevel level = consumeInvalidationLevel();
-        if (isIdleFrame(resize, level, texts, attrNodes)) {
+        if (isIdleFrame(resize, level, ledger)) {
             IDLE_FRAMES.incrementAndGet();
             return;
         }
         scene3dSync.sync(document.root); // DOM（属性・束縛）が変わったかもしれないフレームだけ、3D の記述を世界へ写す
-        if (v3 != null) { // 新経路: 入口は台帳 1 本。スクロール量だけの変化は中身の節を動かし、それ以外は増分で組み直す
-            boolean scrollOnly = !nonScrollRepositionPending && level == InvalidationLevel.REPOSITION && !interactionState.hasDirtyNodes();
-            repositionPending = nonScrollRepositionPending = false;
-            if (level == InvalidationLevel.RELAYOUT) v3.rebuildKeepingHistory(); // 全体の作り直しの要求: 前回の木と記憶を捨てる（台帳に載らない書体の変化など）
-            if (resize) recomputeLayout(pendingResizeW, pendingResizeH);
-            else if (scrollOnly && texts != null && texts.isEmpty() && attrNodes.isEmpty() && tryScrollTranslate()) STAT_SCROLL_TRANSLATED.increment();
-            else {
-                if (scrollOnly) STAT_SCROLL_FALLBACK.increment();
-                v3Frame(false);
-            }
-            return;
-        }
-        // 文字の変更は再スタイルの経路で測り直す（RESTYLE・NONE のとき）。他の経路と重なったら全体を作り直すので、溜めた分は捨てる
-        boolean hadPendingText = texts == null || !texts.isEmpty();
-        if (hadPendingText && (texts == null || level != InvalidationLevel.RESTYLE && level != InvalidationLevel.NONE)) {
-            texts = List.of();
-            level = InvalidationLevel.RELAYOUT;
-        }
-        boolean repositionRequested = repositionPending;
-        repositionPending = false;
-        boolean scrollOnly = !nonScrollRepositionPending;
-        nonScrollRepositionPending = false;
-        if (layoutRoot == null) {
-            level = InvalidationLevel.RELAYOUT;
-            interactionState.markAllDirty();
-        }
-        // 後回しにした位置の決め直しは、スクロールだけの更新以外の経路に入る前に済ませる
-        // 汚れた節（:hover など）の再スタイルは、位置が古いままでも進められる（箱は表示リストを作ったときの位置のままで、表示リストと同じ座標）。
-        // 見た目だけの変化は箱のスライスの差し替えで済み、位置が要る経路に落ちるときだけ restyleAndUpdate が決め直す
-        if (layoutStale && (resize || level != InvalidationLevel.REPOSITION && level != InvalidationLevel.NONE && level != InvalidationLevel.RESTYLE
-                || !scrollOnly && level == InvalidationLevel.REPOSITION || !attrNodes.isEmpty())) {
-            ensureLayoutFresh();
-        }
-        if (resize) {
-            recomputeLayout(pendingResizeW, pendingResizeH);
-            return;
-        }
-
-        switch (level) {
-            case RELAYOUT -> recomputeLayout(rootW, rootH, true);
-            case RESTYLE -> restyleAndUpdate(repositionRequested, scrollOnly, attrNodes, texts);
-            case REPOSITION -> {
-                if (interactionState.hasDirtyNodes()) {
-                    restyleAndUpdate(true, scrollOnly, attrNodes, texts);
-                } else {
-                    repositionFromLayout(scrollOnly);
-                }
-            }
-            case REPAINT -> repaintFromLayout();
-            case NONE -> {
-                if (interactionState.hasDirtyNodes() || hadPendingText) restyleAndUpdate(repositionRequested, scrollOnly, attrNodes, texts);
-            }
+        // 入口は台帳 1 本。スクロール量だけの変化は中身の節を動かし、それ以外は増分で組み直す
+        boolean scrollOnly = !nonScrollRepositionPending && level == InvalidationLevel.REPOSITION && !interactionState.hasDirtyNodes();
+        repositionPending = nonScrollRepositionPending = false;
+        if (level == InvalidationLevel.RELAYOUT) v3.rebuildKeepingHistory(); // 全体の作り直しの要求: 前回の木と記憶を捨てる（台帳に載らない書体の変化など）
+        if (resize) recomputeLayout(pendingResizeW, pendingResizeH);
+        else if (scrollOnly && onlyScroll(ledger) && tryScrollTranslate()) STAT_SCROLL_TRANSLATED.increment();
+        else {
+            if (scrollOnly) STAT_SCROLL_FALLBACK.increment();
+            v3Frame(false);
         }
     }
-
-    /**
-     * 文字の変更だけを、箱の木を作り直さずに反映する。成功したら true。
-     * 条件に合わないとき（false）は何も変えないので、呼び出し側が全体の再レイアウトに退く。
-     *
-     * <p>条件: 文字以外の汚れが無い・コンテナクエリが無い・変わった文字の箱がすべて見つかる・文字の前後とも空白だけではない
-     * （空白だけの Text は箱の木に入るかどうかが変わる）・表や入力部品、{@code <style>} の中ではない。</p>
-     */
-
-    /** 再スタイル経路（{@code restyleAndUpdate}）の行き先の内訳（計測用）。 */
-    /** 表示リストのビルダーが無かった回数（計測用）。 */
-    public static final java.util.concurrent.atomic.AtomicLong SLICE_NO_BUILDER = new java.util.concurrent.atomic.AtomicLong();
-    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_STRUCTURAL = new java.util.concurrent.atomic.AtomicLong();
-    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_RELAYOUT_FULL = new java.util.concurrent.atomic.AtomicLong();
-    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_RELAYOUT_INPLACE = new java.util.concurrent.atomic.AtomicLong();
-    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_REPOSITION = new java.util.concurrent.atomic.AtomicLong();
-    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_REPAINT_PATCH = new java.util.concurrent.atomic.AtomicLong();
-    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_REPAINT_FULL = new java.util.concurrent.atomic.AtomicLong();
-
-    /** 再スタイルで寸法の入力だけが変わったとき、箱の木を作り直さずに測り直した回数（調べる・テスト用）。 */
-    public static final java.util.concurrent.atomic.AtomicLong INPLACE_RELAYOUT_HITS = new java.util.concurrent.atomic.AtomicLong();
 
     /** 診断表示用: ナノ秒の差をミリ秒（小数 3 桁）で。 */
     static String ms(long fromNanos, long toNanos) {
@@ -1508,7 +1132,6 @@ public class UiView implements AutoCloseable {
         setRootH(height);
         if (fromServer) setServerManaged(true);
 
-        UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = document;
         if (doc == null || !existingServerDoc) {
             doc = new Document(rootNode, null, authorCss);
@@ -1533,41 +1156,15 @@ public class UiView implements AutoCloseable {
         scene3dSync.sync(doc.root); // 初回の記述を世界へ（以後は再スタイル・再レイアウトを伴うフレームで差分だけ）
 
         interactionState.markAllDirty();
-        if (v3 != null) {
-            v3.reset();
-            v3Frame(true);
-            return;
-        }
-        // 再同期で同じ文書を差し替えたときは、使い回せる箱（クライアント所有の島など）を前回の木から拾う
-        LayoutBox rootBox = parser.layoutDocument(
-                doc, width, height, env, scrollState, fontResolver(), interactionState,
-                existingServerDoc ? layoutRoot : null);
-        setLayoutRoot(rootBox);
-        List<DisplayItem> elements = paintBoxes(rootBox, width, height, false);
-        if (elements == null) elements = new ArrayList<>();
-        publishBuilt(elements);
-
-        applyOverrides();
+        v3.reset();
+        v3Frame(true);
     }
 
-    /** 直近の更新の内訳（診断表示用）。毎フレームの文字列の組み立て（{@code String.format}）を避けるため、読まれたときに作る（B12）。 */
-    java.util.function.Supplier<String> lastBreakdown = () -> "";
-
-    /** 診断・テスト用: 直近の更新の段ごとの内訳。 */
-    public String lastBreakdownForTest() {
-        return lastBreakdown.get();
-    }
-
-    /** 直近の全レイアウトの内訳（調べる用）。 */
-    public String lastBreakdown() {
-        return lastBreakdown.get();
-    }
-
-    /** ビューポートを変更してレイアウト・描画要素を作り直す。 */
-    public void recomputeLayout(int newRootW, int newRootH) { recomputeLayout(newRootW, newRootH, false); }
-
-    /** {@code partialOk}: 変更台帳に触れられていない部分木は辿らない部分構築を試す（流れ込み・形の制限は {@link PartialBuild}）。 */
-    private void recomputeLayout(int newRootW, int newRootH, boolean partialOk) {
+    /**
+     * ビューポートを変更してレイアウト・描画要素を作り直す。大きさだけの変化は増分（{@link V3Frame}）、同じ大きさでの呼び出し
+     * （画像の到着など台帳の外の変化）は全体を組み直す。
+     */
+    public void recomputeLayout(int newRootW, int newRootH) {
         int oldRootW = rootW;
         int oldRootH = rootH;
         setRootW(newRootW);
@@ -1582,40 +1179,14 @@ public class UiView implements AutoCloseable {
         Document doc = document;
         if (doc != null && doc.root != null) {
             long startedAt = clock.nanos();
-            UiDocumentCompiler parser = new UiDocumentCompiler();
-
-            // @media はシートを読み直さず、新しいビューポートで条件だけ評価し直す
+            // @media はシートを読み直さず、新しいビューポートで条件だけ評価し直す（解き方の差し替えで全ての要素を解き直す）
             if (doc.sheet == null) {
                 doc.rebuildSheet(newRootW, newRootH, devicePixelRatio);
                 interactionState.markAllDirty();
             } else if (oldRootW != newRootW || oldRootH != newRootH) {
-                boolean mediaChanged = doc.sheet.updateMediaEnvironment(
-                        doc.sheet.mediaEnvironment().withSize(newRootW, newRootH));
-                if (mediaChanged && v3 == null) interactionState.markAllDirty(); // 新経路は解き方の差し替えで全ての要素を解き直す
+                doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withSize(newRootW, newRootH));
             }
-
-            if (v3 != null) { // 新経路: 大きさだけの変化は増分（V3Frame）、同じ大きさでの呼び出し（画像の到着など台帳の外の変化）は全体を組み直す
-                v3Frame(oldRootW == newRootW && oldRootH == newRootH);
-                lastLayoutFinishedNanos = clock.nanos();
-                lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
-                return;
-            }
-            // 前回の箱の木から差分レイアウトする（変わっていない部分木は measure を飛ばす）
-            LayoutBox rootBox = partialOk && oldRootW == newRootW && oldRootH == newRootH
-                    ? PartialBuild.tryRun(doc, newRootW, newRootH, env, scrollState, fontResolver(), interactionState, layoutRoot) : null;
-            if (rootBox == null) rootBox = parser.layoutDocument(
-                    doc, newRootW, newRootH, env, scrollState, fontResolver(), interactionState,
-                    layoutRoot);
-            setLayoutRoot(rootBox);
-            long layoutDone = clock.nanos();
-            long paintAlloc0 = com.nishiyu.enderframelib.core.EngineContext.current().flags().trackAllocations() ? RenderPipeline.threadAllocatedBytes() : 0;
-            List<DisplayItem> elements = paintBoxes(rootBox, newRootW, newRootH, false);
-            String breakdown = RenderPipeline.lastBuildStats()
-                    + (com.nishiyu.enderframelib.core.EngineContext.current().flags().trackAllocations() ? " paintAllocKB=" + (RenderPipeline.threadAllocatedBytes() - paintAlloc0) / 1024 : "") + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (clock.nanos() - layoutDone) / 1_000_000 + "ms";
-            lastBreakdown = () -> breakdown;
-            if (elements == null) elements = new ArrayList<>();
-            publishBuilt(elements);
-            applyOverrides();
+            v3Frame(oldRootW == newRootW && oldRootH == newRootH);
             lastLayoutFinishedNanos = clock.nanos();
             lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
         }
@@ -1698,7 +1269,7 @@ public class UiView implements AutoCloseable {
 
             ScrollState state = scrollState;
             // 何が壊れていたか: ここだけが描画 ID (foo_bg など) で読み書きしていた。
-            // 読み手 (LayoutBox / DisplayListBuilder) はベースノード ID を使うため、
+            // 読み手（描画・箱の木）はベースノード ID を使うため、
             // スクロール可能な部分要素が _bg だったコンテナはホイールが無反応だった。
             HtmlNode scrollNode = findNode(el.baseId());
             if (scrollNode == null || interactionState.isInert(scrollNode)) continue;
@@ -1738,10 +1309,8 @@ public class UiView implements AutoCloseable {
         boolean vertical = part.equals(SB_V_THUMB) || part.equals(SB_V_TRACK);
         if (!vertical && !part.equals(SB_H_THUMB) && !part.equals(SB_H_TRACK)) return false;
         // 軌道上の点につまみの中心が来るようにスクロールする
-        ensureLayoutFresh();
         HtmlNode scrollNode = findNode(nodeId);
-        com.nishiyu.enderframelib.core.layout.PaintBox box = scrollNode == null ? null : v3 != null ? v3.boxOf(scrollNode)
-                : layoutRoot == null ? null : layoutRoot.findByNode(scrollNode);
+        com.nishiyu.enderframelib.core.paint.tree.PaintBox box = scrollNode == null ? null : v3.boxOf(scrollNode);
         if (box == null) return false;
         if (vertical) {
             float trackY = box.y() + box.bT() + 2, trackH = box.h() - box.bT() - box.bB() - 4;
@@ -1849,9 +1418,7 @@ public class UiView implements AutoCloseable {
             liveDocument.setDomChangeListener(null);
         }
         document = null;
-        layoutRoot = null;
-        if (v3 != null) v3.reset();
-        nodeBoxIndex = null;
+        v3.reset();
         env.clear();
         interactionState.clear();
         invalidationLevel = InvalidationLevel.NONE;

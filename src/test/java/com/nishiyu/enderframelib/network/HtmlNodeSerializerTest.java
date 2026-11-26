@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.GoldenFiles;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -21,15 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -62,22 +58,22 @@ public class HtmlNodeSerializerTest {
         return node;
     }
 
-    private static void collectVisibleTextBoxes(LayoutBox box, List<LayoutBox> out) {
-        if ("none".equals(box.style.get("display"))) return;
+    private static void collectVisibleTextBoxes(PaintView box, List<PaintView> out) {
+        if ("none".equals(box.style().get("display"))) return;
         if ("select".equals(box.node.tag) || "option".equals(box.node.tag)) return;
-        if (box.node.nodeType == NodeType.TEXT && box.displayText() != null && !box.displayText().isBlank()) {
+        if (box.node.nodeType == NodeType.TEXT && runsText(box) != null && !runsText(box).isBlank()) {
             out.add(box);
         }
-        for (LayoutBox child : box.children) {
+        for (PaintView child : box.paintChildren()) {
             collectVisibleTextBoxes(child, out);
         }
     }
 
-    private static void collectSelectNodes(LayoutBox box, List<HtmlNode> out) {
+    private static void collectSelectNodes(PaintView box, List<HtmlNode> out) {
         if ("select".equals(box.node.tag)) {
             out.add(box.node);
         }
-        for (LayoutBox child : box.children) {
+        for (PaintView child : box.paintChildren()) {
             collectSelectNodes(child, out);
         }
     }
@@ -103,42 +99,23 @@ public class HtmlNodeSerializerTest {
         // サーバー → クライアントの dom_sync 経路と同様に全ノードを再構築する
         doc.root = simulateNetworkRoundTrip(doc.root, null);
 
-        AtomicReference<LayoutBox> capturedRootBox = new AtomicReference<>();
-        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prevRenderer = com.nishiyu.enderframelib.core.EngineContext.global().host().boxRenderer();
-        com.nishiyu.enderframelib.core.EngineContext.global().updateHost(hs -> hs.withBoxRenderer((rootBox, w, h, kf, ss) -> {
-            capturedRootBox.set(rootBox);
-            return List.<DisplayItem>of();
-        }));
-        try {
-            parser.renderDocument(
-                    doc,
-                    800,
-                    600,
-                    Map.of(),
-                    new ScrollState(),
-                    FontResolver.FALLBACK
-            );
-        } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().updateHost(h -> h.withBoxRenderer(prevRenderer));
-        }
-
-        LayoutBox rootBox = capturedRootBox.get();
+        PaintView rootBox = parser.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(), FontResolver.FALLBACK);
 
         assertNotNull(rootBox, "レイアウトツリーが構築されていること");
 
-        List<LayoutBox> textBoxes = new ArrayList<>();
+        List<PaintView> textBoxes = new ArrayList<>();
         collectVisibleTextBoxes(rootBox, textBoxes);
 
         assertFalse(textBoxes.isEmpty(), "showcase.html のネットワーク同期後にテキストボックスが 1 つも存在しない");
 
         // すべての可視テキストボックスが w > 0 かつ h > 0（または inlineFragments 非空）であること
         long renderableCount = textBoxes.stream()
-                .filter(b -> (b.w() > 0 && b.h() > 0) || !b.inlineFragments.isEmpty())
+                .filter(b -> (b.w() > 0 && b.h() > 0) || !b.runs().isEmpty())
                 .count();
         assertEquals(textBoxes.size(), renderableCount,
                 "すべての可視テキストボックスが描画可能なサイズまたは inlineFragments を持つこと");
 
-        assertTrue(textBoxes.stream().anyMatch(b -> b.displayText().contains("EnderFrame")),
+        assertTrue(textBoxes.stream().anyMatch(b -> runsText(b).contains("EnderFrame")),
                 "showcase.html のヘッダーテキストがレイアウトツリーに含まれていること");
 
         List<HtmlNode> selectNodes = new ArrayList<>();
@@ -148,5 +125,12 @@ public class HtmlNodeSerializerTest {
             assertTrue(select.children.stream().anyMatch(opt -> !opt.getTextContent().isBlank()),
                     "<select> 内の <option> の getTextContent() が空でないこと");
         }
+    }
+
+    /** 文字の箱の文字（行に置いた語をつないだもの）。 */
+    private static String runsText(com.nishiyu.enderframelib.core.paint.tree.PaintBox box) {
+        StringBuilder sb = new StringBuilder();
+        for (var run : box.runs()) if (run.text() != null) sb.append(run.text());
+        return sb.toString();
     }
 }

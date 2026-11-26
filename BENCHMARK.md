@@ -95,6 +95,11 @@ R1 の時点では対話状態とスクロール量をノードの参照をキ�
 
 ## 5. 差分レイアウト（measure の再利用）
 
+> **2026-11-26（M2c-3）**: この節は旧経路（`LayoutBox`）の記録。旧経路は削除し、差分は変更台帳 `ChangeLedger` → 箱の木
+> `BoxTreeCompiler` → 断片の記憶 `LayoutCache`（鍵は `(BoxNode ==, ConstraintSpace の値等価)`）の 1 本になった。今の数値は
+> `:core:memoryAndLatencyGate`（`ab-inc-vs-full:*`・`latency:*`）と計画書 §4。正しさは `IncrementalOracleTest`・`IncrementalVsFullTest`・
+> `ServerClientLayoutParityTest`。
+
 - **測定日**: 2026-10-23
 - **仕組み**: 再レイアウトのたびに箱の木を作り直さず、DOM の節ごとに前回の `LayoutBox` を使い回す。箱は前回の measure の
   入力（制約・親が決めた寸法・ビューポート・書体）と中身の署名（算出スタイル・表示する文字・属性・子の並び）を覚えていて、

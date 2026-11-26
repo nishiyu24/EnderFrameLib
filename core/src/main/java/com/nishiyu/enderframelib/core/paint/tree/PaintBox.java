@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.layout;
+package com.nishiyu.enderframelib.core.paint.tree;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -8,16 +8,11 @@ import java.util.List;
 
 /**
  * 箱 1 つを描画項目にするときに読む箱（M2c ②。計画書 §3.4.2-4）。箱の飾り・部品・文字を描く道具（{@code BoxItemPainter}・
- * {@code BoxDecorationPainter}・{@code ControlPainter} ほか）はこの口だけを読む。旧経路の {@link LayoutBox} と、新経路の断片木から
- * 作る描画用の木の節が継承する。
- *
- * <p><b>移行の間だけの口</b>: パッケージの循環を作らないよう、旧経路の {@link LayoutBox} が実装できるこのパッケージに置く。旧経路を
- * 消す M2b-6 で描画の側（{@code core.paint}）へ移す。</p>
+ * {@code BoxDecorationPainter}・{@code ControlPainter} ほか）はこの口だけを読む。実装は描画用の木の見え方 {@link PaintView} だけ
+ * （M2c-3 で旧経路の {@code LayoutBox} を消し、実装と同じこのパッケージへ移した。{@code core.paint} からの片方向の参照になる）。
+ * M3b で {@code DisplayScene} に吸収して消す。
  *
  * <p>座標は全て絶対（文書の左上が原点の px）。{@link #runs} の位置は {@link #originParent} の左上が原点。</p>
- *
- * <p>箱の素性の欄（節・算出スタイル・匿名か・状態の規則・疑似要素のスタイル）はここに持つ（旧経路の {@link LayoutBox} の欄を
- * 移した。旧経路のコードは今までどおり欄を読み書きする）。</p>
  */
 public abstract class PaintBox {
     /** 元の DOM の節（匿名の箱・生成内容では持ち主に紐づけた節）。 */

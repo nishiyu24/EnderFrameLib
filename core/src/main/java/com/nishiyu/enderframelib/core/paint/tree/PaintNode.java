@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.paint.tree;
 import com.nishiyu.enderframelib.core.box.BoxNode;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.box.Display;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
 
 /**
@@ -30,7 +30,7 @@ public final class PaintNode {
     public final HtmlNode node;
     /** 描画が読む算出スタイル（最新の木の箱のレイアウトのスタイル。縦書きの文脈では軸を入れ替えたもの）。 */
     public final ComputedStyle style;
-    final LayoutBox.Display display;
+    final Display display;
     final boolean anonymous, verticalWrapper, renderedLegend, text;
     final float w, h, mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
     final float[] collapsedBorders;

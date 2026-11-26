@@ -35,15 +35,6 @@ class StyleBuildAllocationTest {
             for (int i = 0; i < 60; i++) new StandaloneView(doc, 800, 600, FontResolver.FALLBACK);
             System.out.println("[style-build] cpu ms per build (mean of 60): " + (mx.getCurrentThreadCpuTime() - c0) / 60 / 1000 / 1000.0);
         }
-        com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withTrackAllocations(true));
-        try {
-            for (int i = 0; i < 3; i++) {
-                StandaloneView v = new StandaloneView(doc, 800, 600, FontResolver.FALLBACK);
-                if (i == 2) System.out.println("[style-build] phases: " + com.nishiyu.enderframelib.common.RenderPipeline.lastBuildStats() + " | " + v.ui().lastBreakdown());
-            }
-        } finally {
-            com.nishiyu.enderframelib.core.EngineContext.global().updateFlags(f -> f.withTrackAllocations(false));
-        }
         if (System.getenv("ALLOCPROFILE") != null) profile(doc);
         if (System.getenv("CPUPROFILE") != null) cpuProfile(doc);
     }

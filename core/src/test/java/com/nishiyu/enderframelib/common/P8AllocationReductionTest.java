@@ -46,7 +46,7 @@ public class P8AllocationReductionTest {
 
     @Test
     void wrappedParagraphsMatchFreshLayoutAcrossFontSizeAndWidthChanges() {
-        StandaloneView inc = new StandaloneView(html(24), 320, 400, FontResolver.FALLBACK, EnginePath.V3);
+        StandaloneView inc = new StandaloneView(html(24), 320, 400, FontResolver.FALLBACK);
         List<String> first = sigs(inc);
         assertEquals(sigs(V3Fresh.displayList(inc.ui())), first);
         assertTrue(first.size() > 24, "折り返しで行ごとの表示項目が出ていること");
@@ -61,7 +61,7 @@ public class P8AllocationReductionTest {
     @Test
     void fontSizeRelayoutAllocationStaysUnderCeiling() {
         int rows = 300;
-        StandaloneView v = new StandaloneView(html(rows), 320, 400, FontResolver.FALLBACK, EnginePath.V3);
+        StandaloneView v = new StandaloneView(html(rows), 320, 400, FontResolver.FALLBACK);
         com.sun.management.ThreadMXBean mx = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
         long tid = Thread.currentThread().getId();
         String[] sizes = {"12px", "14px"};

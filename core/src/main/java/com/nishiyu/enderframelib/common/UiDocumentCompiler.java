@@ -7,7 +7,7 @@ import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -20,7 +20,7 @@ import java.util.function.Function;
 
 /**
  * 下流 Mod および既存呼び出しのための委譲ファサード。
- * 実際の処理は {@link DocumentLoader} と {@link RenderPipeline} に分離されています。
+ * 実際の処理は {@link DocumentLoader}（読み込み）と {@link FrameRender}（1 回だけのフレーム）にある。
  */
 @ApiStatus.Internal
 public class UiDocumentCompiler {
@@ -53,54 +53,24 @@ public class UiDocumentCompiler {
         return DocumentLoader.parseDocument(html, externalCss, rootW, rootH);
     }
 
+    /** 文書を 1 度だけ組んで描いた表示リスト（{@link FrameRender#document}）。 */
     public List<DisplayItem> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env, ScrollState scrollState, FontResolver fonts) {
-        return RenderPipeline.renderDocument(doc, rootW, rootH, env, scrollState, fonts);
+        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, new InteractionState()).items();
     }
 
     public List<DisplayItem> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env,
                                           ScrollState scrollState, FontResolver fonts, InteractionState interactionState) {
-        return RenderPipeline.renderDocument(doc, rootW, rootH, env, scrollState, fonts, interactionState);
+        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, interactionState).items();
     }
 
-    public LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
+    /** 文書を 1 度だけ組んだ描画用の木の根（位置は絶対。{@link FrameRender#document}）。 */
+    public PaintView layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
                                     ScrollState scrollState, FontResolver fonts) {
-        return RenderPipeline.layoutDocument(doc, rootW, rootH, env, scrollState, fonts);
+        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, new InteractionState()).root();
     }
 
-    public LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
+    public PaintView layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
                                     ScrollState scrollState, FontResolver fonts, InteractionState interactionState) {
-        return RenderPipeline.layoutDocument(doc, rootW, rootH, env, scrollState, fonts, interactionState);
-    }
-
-    /** 前回の結果 {@code previousRoot} から差分レイアウトする（{@link RenderPipeline#layoutDocument} を参照）。 */
-    public LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
-                                    ScrollState scrollState, FontResolver fonts, InteractionState interactionState,
-                                    LayoutBox previousRoot) {
-        return RenderPipeline.layoutDocument(doc, rootW, rootH, env, scrollState, fonts, interactionState, previousRoot);
-    }
-
-    public void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
-        RenderPipeline.runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts);
-    }
-
-    public RenderPipeline.RestyleResult restyleLayoutTree(LayoutBox rootBox, Document doc, int rootW, int rootH,
-                                           Map<String, String> env, InteractionState interactionState) {
-        return RenderPipeline.restyleLayoutTree(rootBox, doc, rootW, rootH, env, interactionState);
-    }
-
-    public LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle, StyleSheet sheet, Map<String, String> env, boolean forceDirty) {
-        return RenderPipeline.buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty);
-    }
-
-    public LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle, StyleSheet sheet, Map<String, String> env, boolean forceDirty) {
-        return RenderPipeline.buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty);
-    }
-
-    public LayoutBox buildLayoutTree(HtmlNode node, Style inheritedStyle, StyleSheet sheet, Map<String, String> env, boolean forceDirty, InteractionState interactionState) {
-        return RenderPipeline.buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty, interactionState);
-    }
-
-    public LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle, StyleSheet sheet, Map<String, String> env, boolean forceDirty, InteractionState interactionState) {
-        return RenderPipeline.buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty, interactionState);
+        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, interactionState).root();
     }
 }

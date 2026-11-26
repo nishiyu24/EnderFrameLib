@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.layout.PaintBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+
 
 /**
  * 描画中の部分矩形（インライン断片の背景・{@code <fieldset>} の {@code <legend>} 補正）だけを一時的に差し替える

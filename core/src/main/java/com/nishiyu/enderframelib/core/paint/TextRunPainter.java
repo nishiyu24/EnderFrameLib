@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.tree.PaintRun;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.InheritedPaintStyle;
@@ -8,8 +10,6 @@ import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.WritingModes;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
-import com.nishiyu.enderframelib.core.layout.PaintRun;
 import com.nishiyu.enderframelib.core.paint.model.BlendMode;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;

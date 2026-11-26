@@ -15,29 +15,29 @@ class ShortcutTest {
 
     @Test
     void initialValuesComeFromEngineFlags() {
-        assertEquals(EngineFlags.CUTOFF, Shortcut.CUTOFF.initial());
+        assertEquals(EngineFlags.SOFT_DAMAGE, Shortcut.SOFT_DAMAGE.initial());
     }
 
     @Test
     void withAppliesOnlyInsideAndRestoresEvenOnException() {
-        boolean cutoff = Shortcut.CUTOFF.on(), reuse = Shortcut.SAME_PASS_REUSE.on();
-        String seen = Shortcut.with(Map.of(Shortcut.CUTOFF, !cutoff, Shortcut.SAME_PASS_REUSE, !reuse), () -> Shortcut.CUTOFF.on() + "/" + Shortcut.SAME_PASS_REUSE.on());
+        boolean cutoff = Shortcut.SOFT_DAMAGE.on(), reuse = Shortcut.CLIP_SHARE.on();
+        String seen = Shortcut.with(Map.of(Shortcut.SOFT_DAMAGE, !cutoff, Shortcut.CLIP_SHARE, !reuse), () -> Shortcut.SOFT_DAMAGE.on() + "/" + Shortcut.CLIP_SHARE.on());
         assertEquals(!cutoff + "/" + !reuse, seen);
-        assertEquals(cutoff, Shortcut.CUTOFF.on());
-        assertEquals(reuse, Shortcut.SAME_PASS_REUSE.on());
+        assertEquals(cutoff, Shortcut.SOFT_DAMAGE.on());
+        assertEquals(reuse, Shortcut.CLIP_SHARE.on());
 
-        assertThrows(IllegalStateException.class, () -> Shortcut.with(Map.of(Shortcut.CUTOFF, !cutoff), (Runnable) () -> {
+        assertThrows(IllegalStateException.class, () -> Shortcut.with(Map.of(Shortcut.SOFT_DAMAGE, !cutoff), (Runnable) () -> {
             throw new IllegalStateException();
         }));
-        assertEquals(cutoff, Shortcut.CUTOFF.on(), "例外でも戻る");
+        assertEquals(cutoff, Shortcut.SOFT_DAMAGE.on(), "例外でも戻る");
     }
 
     @Test
     void setChangesOneSwitchAndResetAllRestoresTheInitialValues() {
-        boolean other = Shortcut.FIT_REUSE.on();
+        boolean other = Shortcut.GL_REPLAY.on();
         Shortcut.SOFT_TILED.set(false);
         assertFalse(Shortcut.SOFT_TILED.on());
-        assertEquals(other, Shortcut.FIT_REUSE.on(), "ほかの切り替えは変わらない");
+        assertEquals(other, Shortcut.GL_REPLAY.on(), "ほかの切り替えは変わらない");
         Shortcut.resetAll();
         assertEquals(Shortcut.SOFT_TILED.initial(), Shortcut.SOFT_TILED.on());
     }

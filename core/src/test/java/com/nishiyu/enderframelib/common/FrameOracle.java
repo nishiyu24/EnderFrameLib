@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,9 +57,7 @@ public final class FrameOracle {
 
     /** {@code live} の DOM を構造のまま複製した、記憶の無い新しい面。 */
     static StandaloneView freshCopy(StandaloneView live) {
-        // 同じ経路で比べる（旧経路のビューの根は LayoutBox。M2b-6 で旧経路と一緒にこの分かれ道も消す）
-        EnginePath path = live.ui().boxRoot() instanceof com.nishiyu.enderframelib.core.layout.LayoutBox ? EnginePath.LEGACY : EnginePath.V3;
-        StandaloneView fresh = new StandaloneView("", live.width(), live.height(), FontResolver.FALLBACK, path);
+        StandaloneView fresh = new StandaloneView("", live.width(), live.height(), FontResolver.FALLBACK);
         fresh.clock(new Clock.Manual());
         if (!(live.root().cloneNode(true) instanceof HtmlDocument copy)) throw new IllegalStateException("root が文書でない");
         adopt(copy, copy);

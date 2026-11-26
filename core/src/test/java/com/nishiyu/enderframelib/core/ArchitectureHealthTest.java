@@ -39,20 +39,21 @@ import org.junit.jupiter.api.Test;
  *       （M2c。描画だけの変化はレイアウトの入力の木を変えないので、読むと古い値を読む。計画書 §3.4.2-3）。</li>
  *   <li>新経路（{@link #NEW_PATH_SOURCES}）は {@code Shortcut}・{@code EngineFlags}・文脈の切り替え・{@code static volatile}・
  *       {@code ThreadLocal} を読まない（計画書 §5-4。状態は 1 ビューに閉じ、旧経路の切り分けの切り替えは旧経路と一緒に消える）。</li>
+ *   <li>旧レイアウト経路の型（{@link #LEGACY_PATH_TYPES}）が全モジュールの本体・テストに戻らない（M2c-3 の完了ゲート）。</li>
  * </ol>
  */
 class ArchitectureHealthTest {
 
     static final int NEW_CLASS_MAX_LINES = 600;
-    static final int MAX_OVER_1000_CLASSES = 26;
-    static final int MAX_VOLATILE_STATIC = 49;
-    static final int MAX_THREAD_LOCAL_STATIC = 26;
-    static final int MAX_ATOMIC_STATIC = 50;
-    static final int MAX_EPOCH_STATIC = 5;
+    static final int MAX_OVER_1000_CLASSES = 20;
+    static final int MAX_VOLATILE_STATIC = 42;
+    static final int MAX_THREAD_LOCAL_STATIC = 15;
+    static final int MAX_ATOMIC_STATIC = 18;
+    static final int MAX_EPOCH_STATIC = 0;
     static final int MAX_CORE_SCC = 1;
     static final int MAX_MOD_SCC = 3;
-    static final int MAX_SHORTCUTS = 33;
-    static final int MAX_ENGINE_FLAGS = 43;
+    static final int MAX_SHORTCUTS = 16;
+    static final int MAX_ENGINE_FLAGS = 24;
 
     private static final String BASE = "com.nishiyu.enderframelib.";
     private static final String CEILINGS_TABLE = "architecture-health-ceilings.txt";
@@ -185,7 +186,7 @@ class ArchitectureHealthTest {
     void globalMutableStaticsAreBounded() throws IOException {
         Path coreMain = repoRoot().resolve("core/src/main/java/com/nishiyu/enderframelib");
         StaticCounts c = countGlobalMutableStatics(coreMain);
-        assertTrue(c.volatileFields() >= 40 && c.atomics() >= 40, "検出器が壊れている: " + c);
+        assertTrue(c.volatileFields() >= 20 && c.atomics() >= 10, "検出器が壊れている: " + c);
         assertTrue(c.volatileFields() <= MAX_VOLATILE_STATIC,
                 "static volatile が増加: " + c.volatileFields() + " > " + MAX_VOLATILE_STATIC);
         assertTrue(c.threadLocals() <= MAX_THREAD_LOCAL_STATIC,
@@ -477,5 +478,43 @@ class ArchitectureHealthTest {
                         + "  boolean b() { return DisplayListBuilder.parentRelativeSource.getAsBoolean(); }\n"
                         + "  boolean c() { return EngineContext.current().flags().parentRelativeDisplayItems(); }\n  int d() { return 1; }\n}"),
                 dir -> assertEquals(3, checkCodeLines(dir, PROCESS_SWITCH_READ).size(), "切り替えを読む行は 3 行"));
+    }
+    // ---- 8. 旧レイアウト経路の型が戻らない（M2c-3 の完了ゲート。計画書 §3.2） ----
+
+    /** M2c-3 で消した旧レイアウト経路の型。識別子として現れたら失敗（注釈と文字列は数えない）。 */
+    static final List<String> LEGACY_PATH_TYPES = List.of(
+            "LayoutBox", "MeasureMemo", "PlacementMemo", "PlacementDeps", "LayoutReads", "MeasureReads", "ReadKind",
+            "PaintStamps", "PartialBuild", "ChildWindow", "ChangeReads", "ReusableTable", "FragmentProjection", "EnginePath",
+            "RenderPipeline", "RenderTreeBuilder", "InPlaceRelayout", "RepositionPass", "TextChanges", "DisplayListBuilder",
+            "FragmentPaint", "PaintOrder", "InkBounds", "InkState", "PaintDescent", "ILayoutBoxRenderer", "BlockLayoutEngine",
+            "FlexLayoutEngine", "GridLayoutEngine", "TableLayoutEngine", "VerticalWritingEngine", "HorizontalReturnEngine",
+            "LayoutEngine", "LayoutContext", "BoxTreeBuilder", "BoxMeasurer", "LineBuilder", "FlowBuilder", "AnchorPositioning",
+            "ScrollExtentCalc", "MulticolLayout", "ContextFlags", "FenwickVirtualList");
+
+    static List<String> checkLegacyTypes(Path base) throws IOException {
+        Pattern p = Pattern.compile("\\b(" + String.join("|", LEGACY_PATH_TYPES) + ")\\b");
+        List<String> bad = new ArrayList<>();
+        if (!Files.isDirectory(base)) return bad;
+        for (Path f : RatchetSupport.javaFiles(base)) {
+            Matcher m = p.matcher(RatchetSupport.stripCommentsAndStrings(Files.readString(f, StandardCharsets.UTF_8), false));
+            if (m.find()) bad.add(base.relativize(f).toString().replace('\\', '/') + ": " + m.group(1));
+        }
+        return bad;
+    }
+
+    @Test
+    void legacyLayoutPathTypesStayGone() throws IOException {
+        List<String> bad = new ArrayList<>();
+        List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
+        roots.addAll(List.of("core/src/test/java", "core/src/jmh/java", "core/demo/java", "src/test/java"));
+        for (String root : roots) bad.addAll(checkLegacyTypes(repoRoot().resolve(root)));
+        assertEquals(List.of(), bad, "旧レイアウト経路の型が戻った（M2c-3 で消した。計画書 §3.2）");
+    }
+
+    @Test
+    void legacyTypeDetectorWorks() throws IOException {
+        RatchetSupport.withTempSources(Map.of("Old.java",
+                "class Old {\n  LayoutBox b;\n  /** LayoutBox は注釈なので数えない */\n  String s = \"MeasureMemo\";\n  int layoutBoxCount;\n}"),
+                dir -> assertEquals(1, checkLegacyTypes(dir).size(), "識別子の LayoutBox だけを数える"));
     }
 }

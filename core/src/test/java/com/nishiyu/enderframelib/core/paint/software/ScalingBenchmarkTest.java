@@ -75,8 +75,6 @@ class ScalingBenchmarkTest {
             System.out.println("SCALING-BREAKDOWN n=" + n + " text(element.setTextContent): " + view.lastTimings());
             // 要素の setTextContent は子を消して新しい Text を足す（構造変更）。Text 節そのものを書き換えると text-patch に乗る
             HtmlNode textNode = mid.children.get(0);
-            long hits0 = com.nishiyu.enderframelib.common.UiView.TEXT_PATCH_HITS.get();
-            long falls0 = com.nishiyu.enderframelib.common.UiView.TEXT_PATCH_FALLBACKS.get();
             long[] tn = new long[reps];
             for (int i = 0; i < reps + 3; i++) {
                 textNode.setTextContent("patched " + i);
@@ -84,8 +82,7 @@ class ScalingBenchmarkTest {
                 view.frame(now += 16, cpu, false);
                 if (i >= 3) tn[i - 3] = System.nanoTime() - s;
             }
-            System.out.println("SCALING-BREAKDOWN n=" + n + " text(Text node): hits=" + (com.nishiyu.enderframelib.common.UiView.TEXT_PATCH_HITS.get() - hits0)
-                    + " fallbacks=" + (com.nishiyu.enderframelib.common.UiView.TEXT_PATCH_FALLBACKS.get() - falls0) + " " + view.lastTimings());
+            System.out.println("SCALING-BREAKDOWN n=" + n + " text(Text node): " + view.lastTimings());
             textNodeUs = median(tn) / 1e3;
             long[] classFrame = new long[reps];
             long[] classMark = new long[reps];

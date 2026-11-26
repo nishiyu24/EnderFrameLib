@@ -16,55 +16,6 @@ public enum Shortcut {
     /** 解析済みのスタイルシートの雛形（UA + ユーザー + 作者の CSS とビューポートの大きさが同じなら同じ結果）。 画面を開き直すたびに UA シート（約 11 KB）と作者の CSS を解析し直さず、雛形の写しを渡す。 切り分け用: {@code -Denderframe.sheetcache.off=true} で無効。 （以前の {@code DocumentLoader.sheetTemplateCache}） */
     SHEET_CACHE(EngineFlags.SHEET_CACHE),
 
-    /** 切り分け用: 前回の箱が無い（新品の箱の）レイアウトでも、同じパスの中の同一入力の測定を使い回す。 （以前の {@code RenderPipeline.FRESH_LAYOUT_PASS_REUSE}） */
-    FRESH_LAYOUT_PASS_REUSE(EngineFlags.FRESH_LAYOUT_PASS_REUSE),
-
-    /** 切り分け用: {@code -Denderframe.layout.noresizeskip=true} で、幅変更でも毎回スタイルと箱の木を組み直す。 （以前の {@code RenderPipeline.RESIZE_SKIP_REBUILD}） */
-    RESIZE_SKIP_REBUILD(EngineFlags.RESIZE_SKIP_REBUILD),
-
-    /** スクロールだけの更新で箱の位置の決め直しを後回しにするか（切り分け用。見た目は変わらない）。 （以前の {@code UiView.deferScrollLayout}） */
-    DEFER_SCROLL_LAYOUT(true),
-
-    /** {@link #containsFloats} の結果を箱ごとにメモするか（既定は有効）。切り分け用: {@code -Denderframe.layout.nofloatmemo=true}。 無効にすると従来どおり毎回子孫を走査する（結果は同じ）。 （以前の {@code BlockLayoutEngine.floatMemoEnabled}） */
-    FLOAT_MEMO(EngineFlags.FLOAT_MEMO),
-
-    /** 切り分け用: false なら、幅が同じでも shrink-to-fit の項目を必ず測り直す（従来の動き）。 （以前の {@code FlexLayoutEngine.skipSameWidthRemeasure}） */
-    FLEX_SKIP_SAME_WIDTH(EngineFlags.FLEX_SKIP_SAME_WIDTH),
-
-    /** 切り分け用: false なら、高さの % の基準が違う制約は常に別の入力として扱う（従来の動き）。 （以前の {@code LayoutBox.blockPercentFreeEnabled}） */
-    BLOCK_PERCENT_FREE(EngineFlags.BLOCK_PERCENT_FREE),
-
-    /** 親が寸法を決めた葉の確定測定を別枠で使い回す（{@link TentativeKind#DEFINITE}）。切り分け: {@code -Denderframe.layout.nodefiniteleaf=true}。 （以前の {@code LayoutBox.definiteLeafReuse}） */
-    DEFINITE_LEAF_REUSE(EngineFlags.DEFINITE_LEAF_REUSE),
-
-    /** 切り分け用: false なら仮の測定を常に本当に測る。 （以前の {@code LayoutBox.tentativeReuse}） */
-    TENTATIVE_REUSE(EngineFlags.TENTATIVE_REUSE),
-
-    /** 切り分け用: false なら外寸が変わらない子の変化を親で吸収しない（従来の祖先まで無効にする動き）。 （以前の {@code LayoutBox.cutoffEnabled}） */
-    CUTOFF(EngineFlags.CUTOFF),
-
-    /** 切り分け用: false なら 2 回目の measure パスで、1 回目に測った箱も測り直す（従来の動き）。 （以前の {@code LayoutBox.samePassReuse}） */
-    SAME_PASS_REUSE(EngineFlags.SAME_PASS_REUSE),
-
-    /** 幅だけが変わった（親が渡す使える幅・ビューポートの幅）ときに、前回の測定を使い回してよいか。箱自身の横の寸法が確定した長さで （{@link com.nishiyu.enderframelib.core.css.StyleFacts#horizontalFixed}）、子孫に箱の外の寸法（ビューポート／コンテナ単位・絶対配置）を 読むものが無い（{@link #measuredWidthFree}）なら、測定の結果は幅に依らない。 切り分け用: {@code -Denderframe.layout.nowidthreuse=true} で無効。 （以前の {@code LayoutBox.widthIndependentReuse}） */
-    WIDTH_INDEPENDENT_REUSE(EngineFlags.WIDTH_INDEPENDENT_REUSE),
-
-    /** ビューポートが前回の測定と同じとみなせるか。部分木が箱の外の寸法（ビューポート単位・絶対配置）を読まない （{@link #measuredOutsideFree}）なら、ビューポートの幅は測定の結果に効かない（ウィンドウの幅変更で、制約が同じ箱を測り直さない）。 高さと解像度比は、パーセントの高さ・画像の候補選びに効くので比べる。 切り分け用: {@code -Denderframe.layout.noviewportwidthfree=true} で無効。 （以前の {@code LayoutBox.viewportWidthFreeReuse}） */
-    VIEWPORT_WIDTH_FREE_REUSE(EngineFlags.VIEWPORT_WIDTH_FREE_REUSE),
-
-    /** 内容で寸法が決まる箱（{@code width: auto} の shrink-to-fit と、折り返さない 1 行の文字）の fit 再利用。 親が渡す使える幅が {@link #measuredFitNeed} 以上なら、前回の幅が何であっても測定の結果は同じ （使える幅に届かず折り返す・縮められる箱だけが、使える幅に依る）。Blink の LayoutNG が fit-content の結果を 使い回すのと同じ考え方で、flex の項目・インラインブロック・span のように、幅が 1px 変わっても中身が収まっている箱を 測り直さない。切り分け用: {@code -Denderframe.layout.nofitreuse=true} で無効。 （以前の {@code LayoutBox.fitReuseEnabled}） */
-    FIT_REUSE(EngineFlags.FIT_REUSE),
-
-    /** {@code -Denderframe.layout.noparallel=true} で並列実行を無効化する切り替え。 （以前の {@code LayoutTaskPool.parallelEnabled}） */
-    LAYOUT_PARALLEL(EngineFlags.LAYOUT_PARALLEL),
-
-    /** 切り分け用: false なら、大きい文書でも窓付きの表示リストにしない（従来の動き）。 （以前の {@code DisplayListBuilder.WINDOWED_ENABLED}） */
-    WINDOWED(EngineFlags.WINDOWED),
-
-    /** スクロールコンテナの中身を 1 つの節にまとめるか。まとめると、スクロールだけの更新は表示リストを作り直さず、その節の 移動量を更新するだけで済む（{@code UiView} が行う）。false なら従来どおり、中身の項目はコンテナの節の直下に並び、 スクロールのたびに作り直す（疑うときの切り分け用。{@code -Denderframe.paint.noscrollnode=true} でも切れる）。結果は同じでなければならない。 （以前の {@code DisplayListBuilder.scrollContentNodes}） */
-    SCROLL_CONTENT_NODES(EngineFlags.SCROLL_CONTENT_NODES),
-
-
     /** 診断・切り分け用フラグ。 （以前の {@code GpuRenderBackend.rectTrees}） */
     GL_RECT_TREES(EngineFlags.GL_RECT_TREES),
 
@@ -81,9 +32,6 @@ public enum Shortcut {
 
     /** 再生を使うか（切り分け用: {@code -Denderframe.gl.noreplay=true} で無効）。 （以前の {@code RectStream.replayEnabled}） */
     GL_REPLAY(EngineFlags.GL_REPLAY),
-
-    /** 切り分け用（テストが切り替える）: false なら sticky を含むコンテナは従来どおり節にまとめない（作り直す）。 （以前の {@code PaintOrder.STICKY_IN_SCROLL_NODE}） */
-    STICKY_IN_SCROLL_NODE(true),
 
     /** 姿勢が動いていない項目の姿勢を、前のフレームのものから使い回すか。自分の変形・不透明度が恒等の葉の項目は、親の姿勢の実体を そのまま使う（値は親と同じ。動く節の下の全項目の作り直しを避ける。B12）。false なら毎フレーム項目ごとに作り直す （疑うときの切り分け用。絵は同じでなければならない）。 （以前の {@code PaintSceneDriver.reuseIdlePoses}） */
     REUSE_IDLE_POSES(true),

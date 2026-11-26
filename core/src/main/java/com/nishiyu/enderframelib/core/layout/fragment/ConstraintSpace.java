@@ -12,6 +12,8 @@ public final class ConstraintSpace {
     public static final int FORMATTING_ROOT = 1;
     /** 自分の {@code height} を掛けずに内容の高さで測る（column flex の内容基準の基準の大きさ・自動最小サイズ）。 */
     public static final int CONTENT_BLOCK_SIZE = 2;
+    /** 包含ブロックの {@code direction} が rtl（ブロックの箱の左右の余白が決まりすぎたとき、右の余白を残して右に寄せる。CSS 2.1 §10.3.3）。 */
+    public static final int CONTAINER_RTL = 4;
 
     /** 包含ブロックの幅（余白・パディング・幅の % の基準。auto の幅はここから余白を引いた値）。 */
     public final float availableWidth;
@@ -69,6 +71,8 @@ public final class ConstraintSpace {
     public TableBorders.Edges usedBorders() { return borders; }
 
     public boolean contentBlockSize() { return (flags & CONTENT_BLOCK_SIZE) != 0; }
+
+    public boolean containerRtl() { return (flags & CONTAINER_RTL) != 0; }
 
     @Override
     public boolean equals(Object o) {

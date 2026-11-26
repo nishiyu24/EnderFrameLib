@@ -120,15 +120,9 @@ def configureCoreTest = { Test t, List<String> includeTagList, List<String> excl
     }
     t.maxParallelForks = forks
     t.maxHeapSize = '3g' // 既定のヒープでは全件実行が OutOfMemoryError で落ちる
-    t.systemProperty 'enderframe.paint.verifystamps', 'true'
-    // 影モード: 全面の描画のたびに断片の木を組み直して旧経路の表示リストと比べる（C1 の F1。切るときは -Pverify.fragment=false）
-    t.systemProperty 'enderframe.verify.fragment', String.valueOf(findProperty('verify.fragment') ?: 'true')
-    // 全面の描画を断片の木で行う経路で全件を流す（C1 の F1b・B 案。既定は旧経路。-Pfragment.build=true）
-    if (findProperty('fragment.build') != null) t.systemProperty 'enderframe.paint.fragments', String.valueOf(findProperty('fragment.build'))
-    if (findProperty('fragment.strict') != null) t.systemProperty 'enderframe.paint.fragments.strict', String.valueOf(findProperty('fragment.strict'))
     t.workingDir = rootProject.projectDir
     t.testLogging { showStandardStreams = true }
-    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees', 'enderframe.paint.noparentrelative', 'gpu.baseline.exact', 'gpu.baseline.update', 'wpt.reftest.update', 'wpt.v3.update', 'wpt.v3.diag', 'geom.sweep.update', 'geom.sweep.diag', 'geom.sweep.diagMax', 'geom.sweep.all', 'geom.sweep.inject', 'wpt.reftest.diag', 'wpt.reftest.strict', 'wpt.reftest.dump', 'enderframe.parser.dropnewlinews', 'ratchet.update', 'oracle.seeds', 'verify.oracle'].each { key ->
+    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees', 'gpu.baseline.exact', 'gpu.baseline.update', 'wpt.v3.update', 'wpt.v3.diag', 'wpt.reftest.diag', 'wpt.reftest.strict', 'wpt.reftest.dump', 'enderframe.parser.dropnewlinews', 'ratchet.update', 'oracle.seeds', 'verify.oracle'].each { key ->
         def value = System.getProperty(key)
         if (value != null) t.systemProperty key, value
         t.inputs.property key, value ?: ''
@@ -274,7 +268,7 @@ tasks.register('runShowcase', JavaExec) {
     classpath = sourceSets.demo.output + sourceSets.demo.runtimeClasspath
     mainClass = 'com.nishiyu.enderframelib.demo.ShowcaseApp'
     if (System.getProperty('showcase.jfr') != null) jvmArgs "-XX:StartFlightRecording=filename=${System.getProperty('showcase.jfr')},settings=profile"
-    ['showcase.nogrid', 'showcase.inject', 'showcase.notimers', 'showcase.off', 'showcase.verbose', 'enderframe.paint.nomemo', 'showcase.gridms', 'enderframe.paint.noparentrelative', 'hover.nomove', 'hover.frames'].each { k -> if (System.getProperty(k) != null) systemProperty k, System.getProperty(k) }
+    ['showcase.nogrid', 'showcase.inject', 'showcase.notimers', 'showcase.off', 'showcase.verbose', 'showcase.gridms', 'hover.nomove', 'hover.frames'].each { k -> if (System.getProperty(k) != null) systemProperty k, System.getProperty(k) }
     workingDir = rootProject.projectDir
 }
 
@@ -333,7 +327,6 @@ tasks.register('profile', JavaExec) {
     classpath = sourceSets.jmh.output + sourceSets.jmh.runtimeClasspath
     mainClass = project.findProperty('profile.main') ?: 'com.nishiyu.enderframelib.bench.PipelineProfileMain'
     workingDir = rootProject.projectDir
-    systemProperty 'enderframe.kernel.stats', 'true' // K0 ②: 計測の子 JVM だけが計器 Kernel.stats を動かす（既定オフ）
     if (project.hasProperty('profile.sample')) systemProperty 'profile.sample', 'true'
     if (project.hasProperty('threads')) systemProperty 'enderframe.threads', project.property('threads').toString() // A3: ワーカー数ごとの計測
     if (project.hasProperty('profile.font')) systemProperty 'profile.font', project.property('profile.font').toString() // A2: 実書体での計測
@@ -506,21 +499,8 @@ tasks.register('memoryAndLatencyGate', JavaExec) {
     if (project.hasProperty('gate.base')) systemProperty 'gate.base', project.property('gate.base').toString()
 }
 
-// M2a: 縦割りスパイク（BoxTreeCompiler + FragmentLayout）の実測。旧経路との交互 A/B と保持ヒープの分解。
-//   ./gradlew :core:m2aSpike                       全部
-//   ./gradlew :core:m2aSpike "-Pm2a.only=heap"     latency / heap のどちらか
-tasks.register('m2aSpike', JavaExec) {
-    group = 'verification'
-    description = 'M2a 縦割りスパイクの Go/No-Go 実測（M2aSpikeMain）'
-    classpath = sourceSets.test.output + sourceSets.test.runtimeClasspath
-    mainClass = 'com.nishiyu.enderframelib.core.layout.fragment.M2aSpikeMain'
-    workingDir = rootProject.projectDir
-    jvmArgs '-Xmx2g'
-    if (project.hasProperty('m2a.only')) systemProperty 'm2a.only', project.property('m2a.only').toString()
-}
-
 // M2c-1: ビューの保持ヒープを段ごとに分ける診断（V3HeapBreakdownMain）。
-//   ./gradlew :core:heapBreakdown [-Pheap.doc=varied-list-2000] [-Pheap.path=V3|LEGACY] [-Pheap.scenario=open|hover]
+//   ./gradlew :core:heapBreakdown [-Pheap.doc=varied-list-2000] [-Pheap.scenario=open|hover]
 tasks.register('heapBreakdown', JavaExec) {
     group = 'verification'
     description = 'ビューの保持ヒープの段ごとの内訳（V3HeapBreakdownMain）'
@@ -528,7 +508,7 @@ tasks.register('heapBreakdown', JavaExec) {
     mainClass = 'com.nishiyu.enderframelib.common.V3HeapBreakdownMain'
     workingDir = rootProject.projectDir
     jvmArgs '-Xmx1g', '-Denderframe.threads=1'
-    ['heap.doc', 'heap.path', 'heap.scenario'].each { k -> if (project.hasProperty(k)) systemProperty k, project.property(k).toString() }
+    ['heap.doc', 'heap.scenario'].each { k -> if (project.hasProperty(k)) systemProperty k, project.property(k).toString() }
 }
 
 // A1: 時間に依らない量（1 フレームの確保量・近道の経路の回数）の回帰ゲート。シナリオごとに新しい JVM を立てるので check には
@@ -561,7 +541,6 @@ tasks.register('mutationFuzz', JavaExec) {
     workingDir = rootProject.projectDir
     ['fuzz.seeds', 'fuzz.start'].each { if (project.hasProperty(it)) systemProperty it, project.property(it).toString() }
     if (project.hasProperty('fuzz.record')) systemProperty 'fuzz.record', 'true'
-    systemProperty 'enderframe.verify.fragment', String.valueOf(findProperty('verify.fragment') ?: 'true')
     if (project.hasProperty('fuzz.jvmArgs')) jvmArgs project.property('fuzz.jvmArgs').toString().split(' ')
 }
 

@@ -51,7 +51,7 @@ abstract class FragSeq {
 
     /** 箱 {@code owner} が描いた項目（0 件でも「描いた」の記録になる）。 */
     static final class Owned extends Leaf {
-        /** 描いた箱（旧経路の {@code LayoutBox} か、描画用の木の節）。 */
+        /** 描いた箱（描画用の木の節）。 */
         final Object owner;
         Owned(Object owner, DisplayItem[] a) { super(a); this.owner = owner; }
         @Override boolean empty() { return false; }

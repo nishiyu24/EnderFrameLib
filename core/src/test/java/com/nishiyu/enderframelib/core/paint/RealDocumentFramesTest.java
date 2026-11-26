@@ -7,7 +7,7 @@ import com.nishiyu.enderframelib.common.UiView;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.dom.parser.MarkdownParser;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -72,14 +72,10 @@ class RealDocumentFramesTest {
     }
 
     /**
-     * テストだけが切り替える近道の印。false で毎フレーム全体の作り直しに近い経路になる。{@code scrollNodes} はスクロールする中身を
-     * 1 つの節にまとめる近道（sticky を含むものも）で、切ると表示リストの項目の構成（節の項目）が変わるので、項目を 1 対 1 で
-     * 比べる構成では入れたままにし、画素とヒットテストだけを比べる構成で切る。
+     * テストだけが切り替える近道の印（描画の損傷範囲）。全体の作り直しは呼び出し側が {@code full} で強いる。{@code scrollNodes} は
+     * 経路が 1 本になって（M2c-3）切り替えが無くなったので読まない（スクロールする中身は常に 1 つの節にまとめる）。
      */
     static void setShortcuts(boolean on, boolean scrollNodes) throws ReflectiveOperationException {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.SCROLL_CONTENT_NODES.set(scrollNodes);
-        com.nishiyu.enderframelib.core.kernel.Shortcut.STICKY_IN_SCROLL_NODE.set(scrollNodes);
-        com.nishiyu.enderframelib.core.kernel.Shortcut.CUTOFF.set(on);
         com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(on);
     }
 
@@ -91,15 +87,8 @@ class RealDocumentFramesTest {
      */
     static void script(String doc, com.nishiyu.enderframelib.core.paint.RenderBackend backend, boolean full, boolean keepPixels,
                        Consumer<Frame> sink) throws IOException {
-        script(doc, backend, full, keepPixels, sink, null);
-    }
-
-    /** {@code path} はビューの経路（null なら既定。旧経路との比べ合わせ。M2b-6 で引数ごと消す）。 */
-    static void script(String doc, com.nishiyu.enderframelib.core.paint.RenderBackend backend, boolean full, boolean keepPixels,
-                       Consumer<Frame> sink, com.nishiyu.enderframelib.common.EnginePath path) throws IOException {
         String html = html(doc);
-        try (StandaloneView v = path == null ? new StandaloneView(html, W, H, FontResolver.FALLBACK)
-                : new StandaloneView(html, W, H, FontResolver.FALLBACK, path)) {
+        try (StandaloneView v = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             long[] t = {T0};
             Recorder rec = new Recorder(v, backend, full, keepPixels, sink, doc);
             rec.frame("open", t[0]);

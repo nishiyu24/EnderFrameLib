@@ -100,7 +100,7 @@ class IndexCarryAcrossShiftTest {
         }
     }
 
-    private static double[] center(com.nishiyu.enderframelib.core.layout.PaintBox b, String id) {
+    private static double[] center(com.nishiyu.enderframelib.core.paint.tree.PaintBox b, String id) {
         if (b.node != null && !b.isAnonymous && id.equals(b.node.getId())) return new double[] {b.x() + b.w() / 2, b.y() + b.h() / 2};
         for (var c : b.paintChildren()) {
             double[] f = center(c, id);

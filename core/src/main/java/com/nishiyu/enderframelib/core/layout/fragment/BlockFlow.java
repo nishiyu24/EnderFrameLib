@@ -51,6 +51,7 @@ final class BlockFlow implements FormattingEngine {
             w = g.clampWidth(st, Float.isNaN(spec) ? Math.max(0, cbw - g.mL - g.mR) : spec, cbw, s);
             if (g.autoML && g.autoMR) ml = Math.max(0, (cbw - w) / 2f);
             else if (g.autoML) ml = Math.max(0, cbw - w - g.mR);
+            else if (!g.autoMR && space.containerRtl()) ml = Math.max(g.mL, cbw - w - g.mR); // 決まりすぎ: rtl では左の余白を捨てる（§10.3.3）
         }
         w = LayoutUnit.snap(w);
         ml = LayoutUnit.snap(ml);
@@ -92,8 +93,9 @@ final class BlockFlow implements FormattingEngine {
             a = new Assembled(r.height());
             for (OutOfFlow.Pending p : r.pending()) pend.add(p.shift(insetL, insetT));
         } else {
-            ConstraintSpace base = s.space(cw, Float.NaN, Float.NaN, Float.NaN, 0);
-            ConstraintSpace pct = Float.isNaN(childPct) ? base : s.space(cw, Float.NaN, Float.NaN, childPct, 0);
+            int dir = st.facts.rtl ? ConstraintSpace.CONTAINER_RTL : 0;
+            ConstraintSpace base = s.space(cw, Float.NaN, Float.NaN, Float.NaN, dir);
+            ConstraintSpace pct = Float.isNaN(childPct) ? base : s.space(cw, Float.NaN, Float.NaN, childPct, dir);
             ChunkedFlow priorFlow = prior != null ? prior.flow : null;
             float[] floatBottom = {0};
             Floats.Space[] excOut = {Floats.Space.EMPTY};

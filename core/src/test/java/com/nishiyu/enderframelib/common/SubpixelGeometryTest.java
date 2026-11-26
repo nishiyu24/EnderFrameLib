@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -13,15 +12,11 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -51,17 +46,17 @@ public class SubpixelGeometryTest {
 
     @Test
     public void testLayoutKeepsFractionalWidths() {
-        LayoutBox root = layout(THIRDS);
-        float third = 100f / 3f;
-        assertEquals(third, findById(root, "a").w(), 0.01f);
-        assertEquals(third, findById(root, "b").w(), 0.01f);
-        assertEquals(third, findById(root, "c").w(), 0.01f);
-        assertEquals(2 * third, findById(root, "c").x() - findById(root, "row").x(), 0.01f);
+        PaintView root = layout(THIRDS);
+        float third = 100f / 3f, unit = 1f / 64f; // 位置と寸法は LayoutUnit（1/64 px）の格子に丸める（Chrome の LayoutNG と同じ）
+        assertEquals(third, findById(root, "a").w(), unit);
+        assertEquals(third, findById(root, "b").w(), unit);
+        assertEquals(third, findById(root, "c").w(), unit);
+        assertEquals(2 * third, findById(root, "c").x() - findById(root, "row").x(), 2 * unit);
     }
 
     @Test
     public void testPercentLengthsAreNotTruncated() {
-        LayoutBox root = layout("""
+        PaintView root = layout("""
                 <style>body { margin: 0; }</style>
                 <div id="outer" style="width: 101px;"><div id="half" style="width: 50%; height: 1px;"></div></div>
                 """);
@@ -73,10 +68,9 @@ public class SubpixelGeometryTest {
     public void testRoundedElementsTileWithoutGaps() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(THIRDS, "", VIEWPORT_W, VIEWPORT_H);
-        LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
+        PaintView root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
                 new ScrollState(), FontResolver.FALLBACK);
-        List<DisplayItem> elements = new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState())
-                .render(root);
+        List<DisplayItem> elements = com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
 
         DisplayItem a = DisplayItem.resolveAbsolute(elements, findElement(elements, "a_bg"));
         DisplayItem b = DisplayItem.resolveAbsolute(elements, findElement(elements, "b_bg"));
@@ -87,19 +81,19 @@ public class SubpixelGeometryTest {
         assertEquals(100, c.x() + c.width() - a.x(), "並べた幅の合計が親の幅と一致しない");
     }
 
-    private static LayoutBox layout(String html) {
+    private static PaintView layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", VIEWPORT_W, VIEWPORT_H);
         return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 
-    private static LayoutBox findById(LayoutBox box, String id) {
+    private static PaintView findById(PaintView box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (LayoutBox child : box.children) {
-            LayoutBox hit = findById(child, id);
+        for (PaintView child : box.paintChildren()) {
+            PaintView hit = findById(child, id);
             if (hit != null) return hit;
         }
-        if (box.parent == null) throw new AssertionError(id + " が見つからない");
+        if (box.paintParent() == null) throw new AssertionError(id + " が見つからない");
         return null;
     }
 

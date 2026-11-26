@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.wpt;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -21,20 +20,17 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 /**
- * WPT の参照画像比較（reftest）の部分集合（flexbox・grid・text の 260 組。選び方は {@code select_reftests.py}）を
- * ソフトウェア描画に通し、合格した組をラチェットで固定する（ENGINE_REARCHITECTURE_PLAN B1⑤・§1.4 条件 d）。
+ * WPT の参照画像比較（reftest）の部分集合（flexbox・grid・text の 260 組。選び方は {@code select_reftests.py}）の道具: コーパスの読み込み・
+ * 描画・判定・診断と、判定の論理の単体。合格の一覧のラチェットは {@link WptV3BaselineTest}（M2c-3 で経路を 1 本にしたので一覧も 1 つ）。
  *
  * <ul>
- *   <li>合格の一覧 {@code reftest-passing.txt} に載っている組が落ちたら回帰（失敗）。</li>
- *   <li>載っていない組が通ったら、一覧を締める（失敗。{@code -Dwpt.reftest.update=true} で一覧を作り直す）。</li>
  *   <li>「空白どうしで一致」は合格にしない（何も描けていないのを見逃さない）。</li>
  * </ul>
- * 描画は固定フォント（{@link FontResolver#FALLBACK}）・800×600・等倍・透明な地。許容差は {@code <meta name=fuzzy>} に従う（無ければ完全一致）。
+ * 描画は OS の書体（{@link #FONTS}）・800×600・等倍・透明な地。許容差は {@code <meta name=fuzzy>} に従う（無ければ完全一致）。
  */
 class WptReftestRatchetTest {
     static final Path DIR = Path.of("src/test/resources/wpt/reftests");
     private static final Path MANIFEST = DIR.resolve("manifest.tsv");
-    static final Path PASSING = DIR.resolve("reftest-passing.txt");
     /** レイアウトが終わらない（エンジンの不具合）組。走らせない。直したら一覧から外す。 */
     static final Path HANGS = DIR.resolve("reftest-hangs.txt");
     static final int W = 800, H = 600;
@@ -57,9 +53,15 @@ class WptReftestRatchetTest {
         return rel.endsWith(".xht") || rel.endsWith(".xhtml") ? com.nishiyu.enderframelib.core.dom.parser.HtmlParser.xhtmlToHtml(s) : s;
     }
 
-    private static Pixmap render(String html) {
+    /** 文書を描く（箱の木 → 断片木 → 描画用の木 → 表示リスト → ソフトウェア描画。テストも参照も同じ経路）。 */
+    static Pixmap render(String html) {
+        com.nishiyu.enderframelib.core.EngineContext.current().updateHost(x -> x.withPixelSizeFallback(com.nishiyu.enderframelib.core.paint.software.ImageSizes.STANDARD));
+        com.nishiyu.enderframelib.common.Document doc = new com.nishiyu.enderframelib.common.UiDocumentCompiler().parseDocument(html, "", W, H);
+        com.nishiyu.enderframelib.core.dom.InteractionState state = new com.nishiyu.enderframelib.core.dom.InteractionState();
+        if (doc.root instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd) hd.setInteractionState(state);
         SoftwareRenderBackend b = new SoftwareRenderBackend(W, H, 1f);
-        b.render(SoftwareRendering.displayList(html, W, H, FONTS), T0);
+        b.render(com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(),
+                FONTS, state).items(), T0);
         return b.pixmap();
     }
 
@@ -153,61 +155,6 @@ class WptReftestRatchetTest {
         return id.split("/")[1];
     }
 
-    @Test
-    void passingSetIsLockedAndNeverRegresses() throws IOException {
-        Map<String, String> pairs = manifest();
-        assertTrue(pairs.size() >= 250, "コーパスが小さすぎる: " + pairs.size());
-        TreeSet<String> passing = new TreeSet<>();
-        Map<Verdict, Integer> tally = new TreeMap<>();
-        Map<String, int[]> bySpec = new TreeMap<>(); // {合格, 全体}
-        boolean update = Boolean.getBoolean("wpt.reftest.update");
-        TreeSet<String> knownHangs = readList(HANGS);
-        TreeSet<String> hangs = new TreeSet<>();
-        for (var e : pairs.entrySet()) {
-            Verdict v = !update && knownHangs.contains(e.getKey()) ? Verdict.HANG : update ? runWithTimeout(e.getKey(), e.getValue()) : run(e.getKey(), e.getValue());
-            if (v == Verdict.HANG) hangs.add(e.getKey());
-            tally.merge(v, 1, Integer::sum);
-            int[] c = bySpec.computeIfAbsent(spec(e.getKey()), k -> new int[2]);
-            c[1]++;
-            if (v == Verdict.PASS) {
-                passing.add(e.getKey());
-                c[0]++;
-            }
-        }
-        System.out.println("WPT-REFTEST " + passing.size() + "/" + pairs.size() + " " + tally + " bySpec(pass/total)="
-                + bySpec.entrySet().stream().map(x -> x.getKey() + " " + x.getValue()[0] + "/" + x.getValue()[1]).toList());
-
-        if (Boolean.getBoolean("wpt.reftest.update")) {
-            List<String> out = new ArrayList<>();
-            out.add("# 合格している reftest（WptReftestRatchetTest が固定。落ちたら回帰、増えたら -Dwpt.reftest.update=true で締める）");
-            out.addAll(passing);
-            Files.write(PASSING, out, StandardCharsets.UTF_8);
-            List<String> h = new ArrayList<>();
-            h.add("# レイアウトが終わらない reftest（エンジンの不具合。走らせない。直したら外す）");
-            h.addAll(hangs);
-            Files.write(HANGS, h, StandardCharsets.UTF_8);
-            System.out.println("WPT-REFTEST 一覧を更新: " + passing.size());
-            return;
-        }
-        TreeSet<String> locked = readList(PASSING);
-
-        TreeSet<String> regressed = new TreeSet<>(locked);
-        regressed.removeAll(passing);
-        TreeSet<String> gained = new TreeSet<>(passing);
-        gained.removeAll(locked);
-        assertTrue(locked.size() >= 1, "一覧が空");
-        // 合格の一覧は、この開発機（Windows）の書体・描画で固定している。reftest は文字の幅に左右されるので、他の OS では
-        // 通る・通らないが入れ替わる（CI の Linux で「新しく通った」「落ちた」が出て、毎回ビルドが赤くなっていた）。
-        // 一覧を判定に使うのは一覧を作った OS だけにして、他では差分を出力するだけにする（-Dwpt.reftest.strict=true で強制）
-        boolean enforce = Boolean.getBoolean("wpt.reftest.strict") || System.getProperty("os.name", "").toLowerCase().contains("win");
-        if (!enforce) {
-            System.out.println("WPT-REFTEST（" + System.getProperty("os.name") + " では一覧を判定しない）回帰候補=" + regressed + " 新規合格=" + gained);
-            return;
-        }
-        assertEquals(new TreeSet<String>(), regressed, "合格していた reftest が落ちた（回帰）");
-        assertEquals(new TreeSet<String>(), gained, "新しく通った reftest が一覧に無い（-Dwpt.reftest.update=true で一覧を締める）");
-    }
-
     /**
      * 不一致の原因分類のための診断（A11①）。{@code -Dwpt.reftest.diag=true} のときだけ走り、合格しなかった組ごとに
      * 差のある画素数・差の範囲・両者のインクの範囲を {@code build/wpt-diag/summary.tsv} へ、画像を {@code build/wpt-diag/png/} へ書く。
@@ -272,13 +219,13 @@ class WptReftestRatchetTest {
         }
     }
 
-    private static void dump(com.nishiyu.enderframelib.core.layout.LayoutBox b, int depth, StringBuilder sb) {
+    private static void dump(com.nishiyu.enderframelib.core.paint.tree.PaintBox b, int depth, StringBuilder sb) {
         sb.append("  ".repeat(depth)).append(b.isAnonymous ? "(anon)" : b.node == null ? "?" : b.node.tag)
                 .append(b.node != null && b.node.getAttribute("id") != null ? "#" + b.node.getAttribute("id") : "")
                 .append(String.format(" [%.1f,%.1f %.1fx%.1f] m=%.0f,%.0f,%.0f,%.0f", b.x(), b.y(), b.w(), b.h(), b.mT(), b.mR(), b.mB(), b.mL()));
-        for (var f : b.inlineFragments) sb.append(String.format(" {'%s' %.1f,%.1f %.1fx%.1f}", f.text == null ? "" : f.text.replace("\n", "\\n"), f.x, f.y, f.w, f.h));
+        sb.append(" runs=").append(b.runs().size());
         sb.append('\n');
-        for (var c : b.children) dump(c, depth + 1, sb);
+        for (var c : b.paintChildren()) dump(c, depth + 1, sb);
     }
 
     private static String box(int x0, int y0, int x1, int y1) {

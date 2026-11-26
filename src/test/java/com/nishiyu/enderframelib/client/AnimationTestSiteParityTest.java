@@ -6,7 +6,7 @@ import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.PaintBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;

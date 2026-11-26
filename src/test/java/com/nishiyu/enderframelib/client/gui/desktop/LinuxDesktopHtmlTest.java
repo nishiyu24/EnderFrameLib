@@ -9,11 +9,10 @@ import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.client.gui.desktop.LinuxDesktopScreen.DesktopLayout;
 import com.nishiyu.enderframelib.client.gui.desktop.LinuxDesktopScreen.DesktopWindowManager;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.Bindings;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import org.junit.jupiter.api.BeforeAll;
@@ -50,7 +49,7 @@ public class LinuxDesktopHtmlTest {
         assertNotNull(doc, "HTML がパースできること");
         assertNotNull(doc.root, "ルートノードが存在すること");
 
-        LayoutBox rootBox = compiler.layoutDocument(
+        PaintView rootBox = compiler.layoutDocument(
                 doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new InteractionState()
         );
         assertNotNull(rootBox, "レイアウトツリーが構築できること");
@@ -59,7 +58,7 @@ public class LinuxDesktopHtmlTest {
     }
 
     /** LinuxDesktopScreen#syncAllStates と同じ形の状態を DOM に適用してレイアウトした結果。 */
-    private record Laid(Document doc, LayoutBox root, List<DisplayItem> items) {}
+    private record Laid(Document doc, PaintView root, List<DisplayItem> items) {}
 
     private static Laid layoutWithState(String activeTab, boolean menuOpen) {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
@@ -89,33 +88,33 @@ public class LinuxDesktopHtmlTest {
         }
         new Bindings.ReactiveDomBinder().sync(doc.root, values, Map.of(), Set.of(Bindings.TemplateDeps.ALWAYS));
 
-        LayoutBox rootBox = compiler.layoutDocument(
+        PaintView rootBox = compiler.layoutDocument(
                 doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new InteractionState()
         );
-        List<DisplayItem> items = new DisplayListBuilder(854, 480, doc.sheet.keyframes, new ScrollState()).render(rootBox);
+        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
         return new Laid(doc, rootBox, items);
     }
 
-    private static void collect(LayoutBox box, Predicate<LayoutBox> filter, List<LayoutBox> out) {
+    private static void collect(PaintView box, Predicate<PaintView> filter, List<PaintView> out) {
         if (box == null) return;
         if (box.node != null && filter.test(box)) out.add(box);
-        for (LayoutBox child : box.children) collect(child, filter, out);
+        for (PaintView child : box.paintChildren()) collect(child, filter, out);
     }
 
-    private static List<LayoutBox> find(LayoutBox root, Predicate<LayoutBox> filter) {
-        List<LayoutBox> out = new ArrayList<>();
+    private static List<PaintView> find(PaintView root, Predicate<PaintView> filter) {
+        List<PaintView> out = new ArrayList<>();
         collect(root, filter, out);
         return out;
     }
 
-    private static LayoutBox byId(LayoutBox root, String id) {
-        List<LayoutBox> found = find(root, b -> id.equals(b.node.getId()));
+    private static PaintView byId(PaintView root, String id) {
+        List<PaintView> found = find(root, b -> id.equals(b.node.getId()));
         assertFalse(found.isEmpty(), "#" + id + " の箱があること");
         return found.get(0);
     }
 
-    private static LayoutBox byClass(LayoutBox root, String cls) {
-        List<LayoutBox> found = find(root, b -> b.node.hasClass(cls));
+    private static PaintView byClass(PaintView root, String cls) {
+        List<PaintView> found = find(root, b -> b.node.hasClass(cls));
         assertFalse(found.isEmpty(), "." + cls + " の箱があること");
         return found.get(0);
     }
@@ -124,17 +123,17 @@ public class LinuxDesktopHtmlTest {
     public void testEveryDocTabStacksContentVertically() {
         for (String tab : List.of("overview", "desktop", "terminal", "web", "commands")) {
             Laid laid = layoutWithState(tab, false);
-            List<LayoutBox> pages = find(laid.root(), b -> b.node.hasClass("docs-page") && b.w() > 0 && b.h() > 0);
+            List<PaintView> pages = find(laid.root(), b -> b.node.hasClass("docs-page") && b.w() > 0 && b.h() > 0);
             assertEquals(1, pages.size(), tab + ": 表示中のページは 1 つだけ");
-            LayoutBox page = pages.get(0);
-            LayoutBox content = byClass(laid.root(), "docs-content");
+            PaintView page = pages.get(0);
+            PaintView content = byClass(laid.root(), "docs-content");
 
-            List<LayoutBox> blocks = page.children.stream().filter(c -> c.node != null && c.node.tag != null
+            List<PaintView> blocks = page.paintChildren().stream().filter(c -> c.node != null && c.node.tag != null
                     && !c.node.tag.startsWith("#") && c.h() > 0).toList();
             assertTrue(blocks.size() >= 3, tab + ": 見出し・本文・カード/表が並ぶこと");
             for (int i = 1; i < blocks.size(); i++) {
-                LayoutBox prev = blocks.get(i - 1);
-                LayoutBox cur = blocks.get(i);
+                PaintView prev = blocks.get(i - 1);
+                PaintView cur = blocks.get(i);
                 assertTrue(cur.y() >= prev.y() + prev.h() - 0.5f,
                         tab + ": <" + cur.node.tag + "> は前の <" + prev.node.tag + "> の下に積まれること (縦並び)");
                 assertEquals(page.x(), cur.x(), 1.0f, tab + ": 子要素の左端がそろうこと");
@@ -147,11 +146,11 @@ public class LinuxDesktopHtmlTest {
     public void testClockAndDockAreHorizontallyCentered() {
         Laid laid = layoutWithState("overview", false);
 
-        LayoutBox clock = byClass(laid.root(), "top-center");
+        PaintView clock = byClass(laid.root(), "top-center");
         float[] clockTr = DisplayListBuilderAccess.translate(clock);
         assertEquals(427f, clock.x() + clockTr[0] + clock.w() / 2f, 1.5f, "時計がトップパネルの中央にあること");
 
-        LayoutBox dock = byId(laid.root(), "dock");
+        PaintView dock = byId(laid.root(), "dock");
         float[] dockTr = DisplayListBuilderAccess.translate(dock);
         assertEquals(427f, dock.x() + dockTr[0] + dock.w() / 2f, 1.5f, "ドックが画面下部の中央にあること");
 
@@ -163,15 +162,15 @@ public class LinuxDesktopHtmlTest {
     @Test
     public void testAppMenuBoundsCoverAllItems() {
         Laid laid = layoutWithState("overview", true);
-        LayoutBox menu = byId(laid.root(), "app-menu");
+        PaintView menu = byId(laid.root(), "app-menu");
         DisplayLayoutRect menuRect = DisplayLayoutRect.of(laid.items(), "app-menu");
         assertNotNull(menuRect.rect(), "開いたメニューの描画要素があること");
 
-        List<LayoutBox> menuItems = find(menu, b -> b.node.hasClass("menu-item"));
+        List<PaintView> menuItems = find(menu, b -> b.node.hasClass("menu-item"));
         assertEquals(4, menuItems.size());
-        LayoutBox last = menuItems.get(3);
+        PaintView last = menuItems.get(3);
         assertTrue(last.y() + last.h() > 260, "4 番目の項目は y=260 より下まで伸びる（旧判定ではメニュー外扱いだった）");
-        for (LayoutBox item : menuItems) {
+        for (PaintView item : menuItems) {
             double cx = item.x() + item.w() / 2.0;
             double cy = item.y() + item.h() / 2.0;
             assertFalse(DesktopLayout.shouldCloseAppMenu(cx, cy, menuRect.rect(), DisplayLayoutRect.of(laid.items(), "app-menu-btn").rect()),
@@ -189,9 +188,9 @@ public class LinuxDesktopHtmlTest {
     public void testOpenAppMenuItemsWinHitTestOverWindows() {
         Laid laid = layoutWithState("overview", true);
         HitTestIndex index = new HitTestIndex(laid.items());
-        List<LayoutBox> menuItems = find(byId(laid.root(), "app-menu"), b -> b.node.hasClass("menu-item"));
+        List<PaintView> menuItems = find(byId(laid.root(), "app-menu"), b -> b.node.hasClass("menu-item"));
         assertEquals(4, menuItems.size());
-        for (LayoutBox item : menuItems) {
+        for (PaintView item : menuItems) {
             double cx = item.x() + 40;
             double cy = item.y() + item.h() / 2.0;
             UIHitResult hit = index.hitTest("desktop_hit", cx, cy);
@@ -216,9 +215,9 @@ public class LinuxDesktopHtmlTest {
 
     /** 箱の transform の平行移動量（描画と同じ解釈）。 */
     private static final class DisplayListBuilderAccess {
-        static float[] translate(LayoutBox box) {
+        static float[] translate(PaintView box) {
             return com.nishiyu.enderframelib.core.paint.TransformParseTestBridge.translate(
-                    box.style.get(CssProperty.TRANSFORM), box.w(), box.h());
+                    box.style().get(CssProperty.TRANSFORM), box.w(), box.h());
         }
     }
 
@@ -244,12 +243,10 @@ public class LinuxDesktopHtmlTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         String html = "<input id=\"test-input\" placeholder=\"hello\">";
         Document doc = compiler.parseDocument(html, "", 854, 480);
-        LayoutBox rootBox = compiler.layoutDocument(
+        PaintView rootBox = compiler.layoutDocument(
                 doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver()
         );
-        List<DisplayItem> items = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(
-                854, 480, doc.sheet.keyframes, new ScrollState()
-        ).render(rootBox);
+        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
         DisplayItem phItem = items.stream()
                 .filter(i -> i.id().equals("test-input_ph"))
                 .findFirst()

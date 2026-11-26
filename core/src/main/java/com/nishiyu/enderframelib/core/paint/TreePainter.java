@@ -6,7 +6,7 @@ import com.nishiyu.enderframelib.core.dom.node.ChangeKind;
 import com.nishiyu.enderframelib.core.dom.node.ChangeLedger;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.box.Display;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -212,7 +212,7 @@ public final class TreePainter {
     /** 箱 1 つとその部分木（旧 {@code FragmentPaint.buildFresh} の手順）。描かない箱なら null。{@link #lastMemo} に記憶を残す。 */
     private Fragment build(PaintView box, ClipRect clip, String parentId, Memo prev) {
         lastMemo = null;
-        if (box.displayNone() || PaintOrder.factsOf(box.style()).displayNone() || ElementTraits.isOption(box.node().tag)) return null;
+        if (box.displayNone() || PaintFacts.of(box.style()).displayNone() || ElementTraits.isOption(box.node().tag)) return null;
         if (box.style().isContentVisibilityAuto() && !nearViewport(box)) return null; // 画面から遠い content-visibility: auto は描かない
         PaintView origin = TreeStacking.effectiveParentNodeBox(box, parentId);
         Context ctx = Context.of(box, clip, parentId, origin, box == canvasSource, stacking);
@@ -310,7 +310,7 @@ public final class TreePainter {
      * （スクロールバーのつまみ・中身の節の基準。それ以外は 0）。
      */
     record Context(ClipRect clip, String parentId, float x, float y, int originX, int originY, boolean canvas,
-                   LayoutBox.Display parentDisplay, float scrollX, float scrollY) {
+                   Display parentDisplay, float scrollX, float scrollY) {
         static Context of(PaintView box, ClipRect clip, String parentId, PaintView origin, boolean canvas, TreeStacking stacking) {
             PaintView parent = box.paintParent();
             boolean scrolls = box.isScrollContainer();

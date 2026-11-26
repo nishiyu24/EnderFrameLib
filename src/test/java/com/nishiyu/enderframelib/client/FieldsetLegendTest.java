@@ -1,9 +1,8 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -53,11 +52,11 @@ public class FieldsetLegendTest {
                 </fieldset></body></html>""";
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 400, 300);
-        LayoutBox root = compiler.layoutDocument(doc, 400, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-        List<DisplayItem> items = new DisplayListBuilder(400, 300, doc.sheet.keyframes, new ScrollState()).render(root);
+        PaintView root = compiler.layoutDocument(doc, 400, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
 
-        LayoutBox fs = find(root, "fs");
-        LayoutBox lg = find(root, "lg");
+        PaintView fs = find(root, "fs");
+        PaintView lg = find(root, "lg");
         assertEquals(0, fs.y(), 0.01f);
         assertEquals(0, lg.y(), 0.01f, "legend は fieldset の上端に揃う（枠線より高い）");
         assertEquals(12, lg.x(), 0.01f, "legend は内容ボックスの左端（枠線 2 + padding 10）");
@@ -78,10 +77,10 @@ public class FieldsetLegendTest {
         assertEquals(9, top.y(), "上の枠線は legend の中央の高さ");
     }
 
-    private static LayoutBox find(LayoutBox b, String id) {
+    private static PaintView find(PaintView b, String id) {
         if (b.node != null && !b.isAnonymous && id.equals(b.node.attrs.get("id"))) return b;
-        for (LayoutBox c : b.children) {
-            LayoutBox f = find(c, id);
+        for (PaintView c : b.paintChildren()) {
+            PaintView f = find(c, id);
             if (f != null) return f;
         }
         return null;

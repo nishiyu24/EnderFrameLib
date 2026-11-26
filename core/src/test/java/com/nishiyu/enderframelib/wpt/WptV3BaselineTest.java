@@ -1,18 +1,5 @@
 package com.nishiyu.enderframelib.wpt;
 
-import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.box.BoxNode;
-import com.nishiyu.enderframelib.core.box.BoxTreeCompiler;
-import com.nishiyu.enderframelib.core.box.StyleSource;
-import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.FragmentProjection;
-import com.nishiyu.enderframelib.core.layout.fragment.FragmentLayout;
-import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
-import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
-import com.nishiyu.enderframelib.core.layout.model.ScrollState;
-import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
-import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import org.junit.jupiter.api.Test;
 
@@ -30,33 +17,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * M2b の進捗の物差し（計画書 §3.4.1 M2b-0）: 同じ WPT の reftest を、新経路（{@code BoxTreeCompiler} → {@code FragmentLayout} →
- * 描画用の木 {@code PaintTreeBuilder} → 新しい描画 {@code TreePainter}。M2c ②-4 で一時アダプタ {@link FragmentProjection} と旧経路の
- * {@link DisplayListBuilder} から替えた）で描いて比べる。テスト側も参照側も新経路で描く。
+ * WPT の reftest の合格の一覧のラチェット（M2c-3 で経路を 1 本にしたので、これが唯一の一覧）。テストも参照も
+ * {@link WptReftestRatchetTest#render}（箱の木 → 断片木 → 描画用の木 → 表示リスト）で描いて比べる。
  *
  * <p>合格の一覧は {@code reftest-passing-v3.txt} にラチェットで固定する（落ちたら回帰、増えたら {@code -Dwpt.v3.update=true} で締める）。
- * 旧経路の一覧と同じく、判定するのは一覧を作った OS（Windows）だけ。M2b の各段で合格数を増やし、M2b-6 で旧経路の 160 以上に届かせる。</p>
+ * 判定するのは一覧を作った OS（Windows）だけ（reftest は文字の幅に左右され、他の OS では通る・通らないが入れ替わる）。</p>
  */
 class WptV3BaselineTest {
     private static final Path PASSING_V3 = WptReftestRatchetTest.DIR.resolve("reftest-passing-v3.txt");
 
-    /** 新経路で描く。 */
     static Pixmap render(String html) {
-        int w = WptReftestRatchetTest.W, h = WptReftestRatchetTest.H;
-        com.nishiyu.enderframelib.core.EngineContext.current().updateHost(x -> x.withPixelSizeFallback(com.nishiyu.enderframelib.core.paint.software.ImageSizes.STANDARD));
-        Document doc = new UiDocumentCompiler().parseDocument(html, "", w, h);
-        InteractionState state = new InteractionState();
-        if (doc.root instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd) hd.setInteractionState(state);
-        LayoutSession session = new LayoutSession(WptReftestRatchetTest.FONTS);
-        com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline pipeline =
-                new com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline(new StyleSource(doc.sheet, state, Map.of(), w, h), session);
-        LayoutFragment frag = pipeline.frame(doc.root, null, w, h);
-        com.nishiyu.enderframelib.core.paint.tree.PaintNode tree =
-                new com.nishiyu.enderframelib.core.paint.tree.PaintTreeBuilder(session).build(frag, pipeline.boxRoot());
-        SoftwareRenderBackend b = new SoftwareRenderBackend(w, h, 1f);
-        b.render(new com.nishiyu.enderframelib.core.paint.TreePainter(w, h, doc.sheet.keyframes, new ScrollState()).paint(tree),
-                WptReftestRatchetTest.T0);
-        return b.pixmap();
+        return WptReftestRatchetTest.render(html);
     }
 
     static WptReftestRatchetTest.Verdict run(String test, String ref) {
@@ -70,7 +41,7 @@ class WptV3BaselineTest {
     }
 
     /**
-     * 調べる用: {@code -Dwpt.v3.diag=<id>[,<id>...]} の組を、新経路のテスト・新経路の参照・旧経路のテストの 3 枚の PNG にして
+     * 調べる用: {@code -Dwpt.v3.diag=<id>[,<id>...]} の組を、テストと参照の 2 枚の PNG にして
      * {@code build/wpt-v3-diag/} へ書く。
      */
     @Test
@@ -85,9 +56,6 @@ class WptV3BaselineTest {
             String base = id.replaceAll("[^A-Za-z0-9.-]", "_");
             WptReftestRatchetTest.writePng(render(t), out.resolve(base + ".v3-test.png"));
             WptReftestRatchetTest.writePng(render(r), out.resolve(base + ".v3-ref.png"));
-            SoftwareRenderBackend b = new SoftwareRenderBackend(WptReftestRatchetTest.W, WptReftestRatchetTest.H, 1f);
-            b.render(com.nishiyu.enderframelib.common.SoftwareRendering.displayList(t, WptReftestRatchetTest.W, WptReftestRatchetTest.H, WptReftestRatchetTest.FONTS), WptReftestRatchetTest.T0);
-            WptReftestRatchetTest.writePng(b.pixmap(), out.resolve(base + ".legacy-test.png"));
         }
     }
 
@@ -95,32 +63,25 @@ class WptV3BaselineTest {
     void newPathPassingListDoesNotRegress() throws IOException {
         Map<String, String> pairs = WptReftestRatchetTest.manifest();
         TreeSet<String> hangs = WptReftestRatchetTest.readList(WptReftestRatchetTest.HANGS);
-        TreeSet<String> legacy = WptReftestRatchetTest.readList(WptReftestRatchetTest.PASSING);
         TreeSet<String> passing = new TreeSet<>();
         Map<WptReftestRatchetTest.Verdict, Integer> tally = new TreeMap<>();
         Map<String, int[]> bySpec = new TreeMap<>();
         for (var e : pairs.entrySet()) {
             WptReftestRatchetTest.Verdict v = hangs.contains(e.getKey()) ? WptReftestRatchetTest.Verdict.HANG : run(e.getKey(), e.getValue());
             tally.merge(v, 1, Integer::sum);
-            int[] c = bySpec.computeIfAbsent(WptReftestRatchetTest.spec(e.getKey()), k -> new int[3]);
-            c[2]++;
-            if (legacy.contains(e.getKey())) c[1]++;
+            int[] c = bySpec.computeIfAbsent(WptReftestRatchetTest.spec(e.getKey()), k -> new int[2]);
+            c[1]++;
             if (v == WptReftestRatchetTest.Verdict.PASS) {
                 passing.add(e.getKey());
                 c[0]++;
             }
         }
-        TreeSet<String> onlyLegacy = new TreeSet<>(legacy);
-        onlyLegacy.removeAll(passing);
-        TreeSet<String> onlyV3 = new TreeSet<>(passing);
-        onlyV3.removeAll(legacy);
-        System.out.println("WPT-V3 " + passing.size() + "/" + pairs.size() + " (旧経路 " + legacy.size() + ") " + tally
-                + " bySpec(v3/旧/全体)=" + bySpec.entrySet().stream().map(x -> x.getKey() + " " + x.getValue()[0] + "/" + x.getValue()[1] + "/" + x.getValue()[2]).toList());
-        System.out.println("WPT-V3 旧経路だけ合格=" + onlyLegacy.size() + " " + onlyLegacy + " 新経路だけ合格=" + onlyV3);
+        System.out.println("WPT-V3 " + passing.size() + "/" + pairs.size() + " " + tally
+                + " bySpec(合格/全体)=" + bySpec.entrySet().stream().map(x -> x.getKey() + " " + x.getValue()[0] + "/" + x.getValue()[1]).toList());
 
         if (Boolean.getBoolean("wpt.v3.update")) {
             List<String> out = new ArrayList<>();
-            out.add("# 新経路（BoxTreeCompiler → FragmentLayout → PaintTreeBuilder → TreePainter）で合格している reftest（WptV3BaselineTest が固定）");
+            out.add("# 合格している reftest（BoxTreeCompiler → FragmentLayout → PaintTreeBuilder → TreePainter。WptV3BaselineTest が固定）");
             out.addAll(passing);
             Files.write(PASSING_V3, out, StandardCharsets.UTF_8);
             System.out.println("WPT-V3 一覧を更新: " + passing.size());

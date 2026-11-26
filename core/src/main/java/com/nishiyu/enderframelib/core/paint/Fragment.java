@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
-import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import java.util.ArrayList;
@@ -447,14 +445,6 @@ final class Fragment {
         if (count == 0) return FragSeq.EMPTY;
         if (n < 64 && count == 1) return single;
         return FragSeq.Vec.ofLayer(kids, n, l);
-    }
-
-    static Kind kindOf(LayoutBox b, PaintOrder order) {
-        if (order.createsStackingContext(b)) return Kind.STACKING;
-        if (PaintOrder.isPositioned(b)) return Kind.POSITIONED;
-        if (BlockLayoutEngine.isFloating(b)) return Kind.FLOAT;
-        if (PaintSupport.isAtomicInline(b)) return Kind.ATOMIC;
-        return b.display().isInlineLevel() ? Kind.INLINE : Kind.BLOCK;
     }
 
     int size() { return emitted.items(); }
