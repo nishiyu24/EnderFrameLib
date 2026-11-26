@@ -436,7 +436,7 @@ final class TableFlow implements FormattingEngine {
         if (h == f.height && off == 0) return f;
         ConstraintSpace sp = f.space;
         ConstraintSpace fixed = new ConstraintSpace(sp.availableWidth, sp.fixedWidth, h, sp.percentHeightBase, sp.flags, Floats.Space.EMPTY,
-                sp.borders);
+                sp.extra);
         OutOfFlow.Pending[] pending = f.pending;
         if (pending != null && off != 0) {
             pending = new OutOfFlow.Pending[f.pending.length];

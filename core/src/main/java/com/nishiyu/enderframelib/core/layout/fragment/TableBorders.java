@@ -18,7 +18,7 @@ import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
  */
 public final class TableBorders {
     /** 使う枠線の幅（上・右・下・左。px）。値等価。 */
-    public record Edges(float top, float right, float bottom, float left) { }
+    public record Edges(float top, float right, float bottom, float left) implements ConstraintSpace.Extra { }
 
     private TableBorders() { }
 

@@ -30,10 +30,17 @@ public final class ConstraintSpace {
      */
     final Floats.Space exclusions;
     /**
-     * 枠線を重ねる表（{@code border-collapse: collapse}）のセルの使う枠線の幅（表が隣のセル・表の枠線と重ねて決めた半分ずつ。M2b-4）。
-     * それ以外は null（スタイルの枠線）。値等価で鍵に入る。旧経路の箱への書き込み（{@code collapsedBorders}）の代わり。
+     * 特定の整形だけが子へ渡す付加の入力（無ければ null）。値等価で鍵に入る。1 つの箱が受け取るのはどちらか 1 つ:
+     * <ul>
+     *   <li>{@link TableBorders.Edges}: 枠線を重ねる表（{@code border-collapse: collapse}）のセルの使う枠線の幅（表が隣のセル・表の枠線と
+     *       重ねて決めた半分ずつ。M2b-4。旧経路の箱への書き込み {@code collapsedBorders} の代わり）。</li>
+     *   <li>{@link GridSubgrid.Tracks}: 親グリッドがサブグリッドの項目へ渡す、共有する軸の線の名前と寸法（G2）。</li>
+     * </ul>
      */
-    final TableBorders.Edges borders;
+    final Extra extra;
+
+    /** {@link #extra} に載る値（値等価）。 */
+    sealed interface Extra permits TableBorders.Edges, GridSubgrid.Tracks { }
 
     public ConstraintSpace(float availableWidth, float fixedWidth, float fixedHeight, float percentHeightBase, int flags) {
         this(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, Floats.Space.EMPTY);
@@ -44,8 +51,8 @@ public final class ConstraintSpace {
     }
 
     ConstraintSpace(float availableWidth, float fixedWidth, float fixedHeight, float percentHeightBase, int flags, Floats.Space exclusions,
-                    TableBorders.Edges borders) {
-        this.borders = borders;
+                    Extra extra) {
+        this.extra = extra;
         this.availableWidth = availableWidth;
         this.fixedWidth = fixedWidth;
         this.fixedHeight = fixedHeight;
@@ -56,19 +63,31 @@ public final class ConstraintSpace {
 
     /** 除外領域だけを差し替えた制約（同じなら自分）。 */
     ConstraintSpace withExclusions(Floats.Space e) {
-        return e.equals(exclusions) ? this : new ConstraintSpace(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, e, borders);
+        return e.equals(exclusions) ? this : new ConstraintSpace(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, e, extra);
     }
 
     /** セルの使う枠線だけを差し替えた制約（同じなら自分）。 */
     ConstraintSpace withBorders(TableBorders.Edges b) {
-        return java.util.Objects.equals(b, borders) ? this
-                : new ConstraintSpace(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, exclusions, b);
+        return withExtra(b);
     }
+
+    /** サブグリッドの項目へ渡す共有の軸だけを差し替えた制約（同じなら自分。G2）。 */
+    ConstraintSpace withSubgrid(GridSubgrid.Tracks t) {
+        return withExtra(t);
+    }
+
+    private ConstraintSpace withExtra(Extra e) {
+        return java.util.Objects.equals(e, extra) ? this
+                : new ConstraintSpace(availableWidth, fixedWidth, fixedHeight, percentHeightBase, flags, exclusions, e);
+    }
+
+    /** 親グリッドから受け取ったサブグリッドの共有の軸（無ければ null）。 */
+    GridSubgrid.Tracks subgrid() { return extra instanceof GridSubgrid.Tracks t ? t : null; }
 
     public boolean formattingRoot() { return (flags & FORMATTING_ROOT) != 0; }
 
     /** 枠線を重ねる表のセルの使う枠線（無ければ null。描画の一時アダプタが読む）。 */
-    public TableBorders.Edges usedBorders() { return borders; }
+    public TableBorders.Edges usedBorders() { return extra instanceof TableBorders.Edges e ? e : null; }
 
     public boolean contentBlockSize() { return (flags & CONTENT_BLOCK_SIZE) != 0; }
 
@@ -84,7 +103,7 @@ public final class ConstraintSpace {
                 && Float.floatToIntBits(fixedHeight) == Float.floatToIntBits(s.fixedHeight)
                 && Float.floatToIntBits(percentHeightBase) == Float.floatToIntBits(s.percentHeightBase)
                 && (exclusions == s.exclusions || exclusions.equals(s.exclusions))
-                && java.util.Objects.equals(borders, s.borders);
+                && java.util.Objects.equals(extra, s.extra);
     }
 
     @Override
@@ -93,7 +112,7 @@ public final class ConstraintSpace {
         h = h * 31 + Float.floatToIntBits(fixedWidth);
         h = h * 31 + Float.floatToIntBits(fixedHeight);
         h = h * 31 + Float.floatToIntBits(percentHeightBase);
-        return ((h * 31 + flags) * 31 + exclusions.hashCode()) * 31 + java.util.Objects.hashCode(borders);
+        return ((h * 31 + flags) * 31 + exclusions.hashCode()) * 31 + java.util.Objects.hashCode(extra);
     }
 
     @Override

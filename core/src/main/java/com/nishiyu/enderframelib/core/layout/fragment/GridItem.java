@@ -11,6 +11,8 @@ final class GridItem {
     final BoxGeometry g;
     final LayoutCache.Slots slots;
     int colStart = -1, colSpan = 1, rowStart = -1, rowSpan = 1;
+    /** 列・行を親と共有するサブグリッドか（{@link GridSubgrid}。その軸の寄与は子が親へ回す）。 */
+    boolean colSub, rowSub;
     /** 列・行の min-content / max-content の寄与（余白を含む）。 */
     float colMin, colMax, rowMin, rowMax;
     LayoutFragment frag;

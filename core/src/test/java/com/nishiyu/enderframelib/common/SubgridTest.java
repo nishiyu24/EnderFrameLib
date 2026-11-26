@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -15,7 +14,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * サブグリッド（CSS Grid 2 §9: {@code grid-template-columns / -rows: subgrid}）。
  * サブグリッドの子は、親グリッドのトラック・線・gap を共有する。
  */
-@Disabled("G2 subgrid が新経路に無い。計画書 §3.2「新経路の穴（M2c-3 の移植で見えた）」")
 public class SubgridTest {
 
     private static final int VIEWPORT_W = 600;
@@ -244,6 +242,29 @@ public class SubgridTest {
         PaintView second = parser.layoutDocument(doc2, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         assertEquals(200, find(second, "a").w(), 0.01f);
         assertEquals(200, find(second, "b").w(), 0.01f);
+    }
+
+    /** 親のトラック・サブグリッドの子が変わったフレームの増分が、全体の作り直しと一致する（共有の軸は制約の値で鍵に入る）。 */
+    @Test
+    public void incrementalChangesMatchAFullRebuild() {
+        String html = """
+                <style>body{margin:0}</style>
+                <div id="g" style="display: grid; width: 300px; grid-template-columns: auto 1fr; align-items: start;">
+                  <div id="c1" style="display: grid; grid-column: 1 / span 2; grid-row: span 2; grid-template-columns: subgrid; grid-template-rows: subgrid;">
+                    <div id="h1" style="width: 40px; height: 20px;"></div><div id="b1" style="height: 30px;"></div>
+                  </div>
+                  <div id="c2" style="display: grid; grid-column: 1 / span 2; grid-row: span 2; grid-template-columns: subgrid; grid-template-rows: subgrid;">
+                    <div id="h2" style="height: 10px;"></div><div id="b2" style="height: 50px;"></div>
+                  </div>
+                </div>
+                """;
+        IncrementalVsFullTest.assertIncrementalMatchesFull(html, v -> { },
+                v -> v.root().ownerDocument.getElementById("h1").setAttribute("style", "width: 90px; height: 45px;"));
+        IncrementalVsFullTest.assertIncrementalMatchesFull(html, v -> { },
+                v -> v.root().ownerDocument.getElementById("g").setAttribute("style",
+                        "display: grid; width: 200px; grid-template-columns: 1fr 2fr; align-items: start;"));
+        IncrementalVsFullTest.assertIncrementalMatchesFull(html, v -> { },
+                v -> v.root().ownerDocument.getElementById("c2").setAttribute("style", "display: grid; grid-column: 1 / span 2;"));
     }
 
     private static PaintView layout(String html) {

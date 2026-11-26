@@ -39,7 +39,7 @@ public final class BoxGeometry {
         pR = Math.max(0, len(st, b.paddingRight, cbw, s));
         pB = Math.max(0, len(st, b.paddingBottom, cbw, s));
         pL = Math.max(0, len(st, b.paddingLeft, cbw, s));
-        TableBorders.Edges used = space != null ? space.borders : null;
+        TableBorders.Edges used = space != null ? space.usedBorders() : null;
         bT = used != null ? used.top() : Math.max(0, len(st, b.borderTopWidth, cbw, s));
         bR = used != null ? used.right() : Math.max(0, len(st, b.borderRightWidth, cbw, s));
         bB = used != null ? used.bottom() : Math.max(0, len(st, b.borderBottomWidth, cbw, s));

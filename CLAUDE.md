@@ -19,11 +19,11 @@
 - **時間の主張は交互 A/B だけ**: 絶対値はセッションで ±40% ずれる。旧版の worktree と現在を交互に 3 回ずつ・中央値で比べる（`powershell -File scripts/ab-gate.ps1`）、または `:core:memoryAndLatencyGate` の交互 A/B・ヒープ実測を使う。内部カウンタ（`memo*`）の固定で性能を主張しない。
 - **時刻は注入**: コアは `System.nanoTime`/`currentTimeMillis` を読まない（`core/kernel/Clock.java` だけ）。テストは `Clock.Manual`（`StandaloneView.clock(...)`・`ResizeSettle.freezeClock`）を使い、実時間を `sleep` で待たない。
 
-### 移行状態（M0・M1・M2a・M2b・M2c 完了。経路は 1 本。次は新経路の穴の残り G2・G8 と M3a。詳細は計画書 §0・§3.2）
+### 移行状態（M0・M1・M2a・M2b・M2c 完了。経路は 1 本。次は新経路の穴の残り G8 と M3a。詳細は計画書 §0・§3.2）
 
 - **完了**: M0（新ゲート `ArchitectureHealthTest`・`:core:memoryAndLatencyGate`）・M1（型付きの不変 `Style`。群のクラスは `scripts/GenStyleGroups.java` の**生成物なので手で直さない**。`PropertyRegistry` を変えたら再実行し、`StyleGroupCoverageTest` が足し忘れを検出）・M2a（`core/box` の `BoxTreeCompiler`・`core/layout/fragment` の `LayoutFragment`/`LayoutCache`）・M2b（全エンジンを新経路へ移植。`WptV3BaselineTest` 170/260。増えたら `-Dwpt.v3.update=true`）・M2c（既定を新経路へ切り替え、M2c-3 で旧レイアウト経路・`EnginePath`・`FragmentProjection`・旧描画の駆動・旧経路を相手にする物差しを削除。`:core` 本体 108,115 行）。
 - **新経路の形**: 凍結した台帳 → `BoxNode`（レイアウトの入力の木と最新の木。`BoxNode.layout`）→ 断片木 → 描画用の木（`core.paint.tree`）→ `TreePainter` → `DisplayItem`。経路はこれだけ（旧 `LayoutBox` の経路は M2c-3 で削除。型名の再登場は `ArchitectureHealthTest#legacyLayoutPathTypesStayGone` が落とす）。1 回だけのフレームは `FrameRender`（`UiDocumentCompiler.layoutDocument` / `renderDocument` もこれ）、テストで箱を引くのは `TestBoxes`。全体の作り直しは `markInvalidation(RELAYOUT)`（新経路は前回の木と記憶を捨てる。`requestRender()` はフレームの予約だけ）。描画用の木と `TreePainter` は M3b で `DisplayScene` に吸収して消す（新しい最適化を足さない）。
-- **新経路の穴（M2c-3 の移植で見えた。計画書 §3.2 の G1〜G9）**: G1（インラインの中のブロック）・G4〜G7・G8 の余白・G9 は直した。残りは subgrid（G2）・multicol（G3。M3c）・スクロールによる `position-try` の選び直し（G8。スクロール量をどの入力として扱うかの設計が先）。見つけたテストは `@Disabled("G<n> …")` で残してあり、直したら外す。ヒープと latency 2 行の上限は M3b まで新経路の実測（計画書 §0）。
+- **新経路の穴（M2c-3 の移植で見えた。計画書 §3.2 の G1〜G9）**: G1（インラインの中のブロック）・G2（subgrid）・G4〜G7・G8 の余白・G9 は直した。残りは multicol（G3。M3c）・スクロールによる `position-try` の選び直し（G8。スクロール量をどの入力として扱うかの設計が先）。見つけたテストは `@Disabled("G<n> …")` で残してあり、直したら外す。ヒープと latency 2 行の上限は M3b まで新経路の実測（計画書 §0）。
 - **その後**: M3a（MOD の旧レンダラの撤去。並行して進めてよい）→ M3b（`DisplayScene`。親相対座標・`int nodeId`・記憶は `(断片 ==, 最新の箱 ==)` だけ・描画は DOM を読まない）→ M3c（multicol）→ M4 → M5 → M6。
 
 ## 検証の手順

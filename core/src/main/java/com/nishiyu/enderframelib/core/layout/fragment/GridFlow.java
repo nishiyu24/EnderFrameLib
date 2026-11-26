@@ -23,8 +23,7 @@ import java.util.List;
  *   <li>{@code *-content} でトラックを寄せ、項目を領域の中で揃える（stretch は確定した大きさで測り直す・auto 余白・{@code *-self}）</li>
  * </ol>
  *
- * <p>範囲外: サブグリッド（{@code subgrid} は none と同じ）・ベースライン揃え・縦書き・明示的なグリッドより前の暗黙のトラック
- * （旧経路と同じ）。</p>
+ * <p>サブグリッドは {@link GridSubgrid}（G2）。範囲外: ベースライン揃え・縦書き・明示的なグリッドより前の暗黙のトラック（旧経路と同じ）。</p>
  */
 final class GridFlow implements FormattingEngine {
     static final GridFlow INSTANCE = new GridFlow();
@@ -32,11 +31,15 @@ final class GridFlow implements FormattingEngine {
     private GridFlow() { }
 
     /** 1 回の整形の作業域: 項目・トラックの定義・寸法。 */
-    private static final class Grid {
+    static final class Grid {
         final List<GridItem> items;
         final GridTracks.Template cols, rows;
         final List<GridTracks.Def> colDefs, rowDefs;
         final float colGap, rowGap;
+        /** 親と共有する軸（サブグリッドとして測られているとき。無ければ null）。 */
+        GridSubgrid.Tracks sub;
+        /** 決まったトラックの寸法（サブグリッドの項目へ渡す。決まる前は null）。 */
+        float[] colSizes, rowSizes;
 
         Grid(List<GridItem> items, GridTracks.Template cols, GridTracks.Template rows, List<GridTracks.Def> colDefs,
              List<GridTracks.Def> rowDefs, float colGap, float rowGap) {
@@ -74,18 +77,26 @@ final class GridFlow implements FormattingEngine {
         float ch = Float.isNaN(fixedH) ? Float.NaN : Math.max(0, fixedH - g.vdec() - spill);
 
         List<BoxNode> outOfFlow = new ArrayList<>();
-        Grid grid = build(node, cw, ch, prior, outOfFlow, s);
+        GridSubgrid.Tracks sub = space.subgrid();
+        Grid grid = build(node, cw, ch, prior, outOfFlow, s, sub);
         FlexGridStyle fg = st.flexGrid;
         LayoutCache cache = s.cache();
-        columnContributions(grid, s);
-        float[] colSizes = GridTracks.size(grid.colDefs, grid.items, true, cw, grid.colGap, fg.justifyContent, false);
+        boolean subCols = sub != null && sub.cols() != null && sub.cols().sizes() != null;
+        boolean subRows = sub != null && sub.rows() != null && sub.rows().sizes() != null;
+        float[] colSizes = subCols ? GridSubgrid.sizes(sub.cols(), grid.colGap)
+                : GridTracks.size(grid.colDefs, contributions(grid, true, s), true, cw, grid.colGap, fg.justifyContent, false);
+        grid.colSizes = colSizes;
+        // 共有する列の線は端の余白・枠線・padding の分だけ外へはみ出す（項目の領域は内容ボックスで切る）
+        float[] subColOff = subCols ? GridSubgrid.offsets(colSizes, grid.colGap, g.mL + g.bL + g.pL) : null;
         for (GridItem it : grid.items) { // 列の領域の幅で測る（高さは内容から。% の高さはグリッドの高さが確定していればそれ）
-            float areaW = span(colSizes, it.colStart, it.colSpan, grid.colGap);
-            it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, BoxGeometry.usesPercentHeight(it.box) ? ch : Float.NaN, s),
+            float areaW = subCols ? GridSubgrid.area(subColOff, colSizes, it.colStart, it.colSpan, cw)[1]
+                    : span(colSizes, it.colStart, it.colSpan, grid.colGap);
+            it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, BoxGeometry.usesPercentHeight(it.box) ? ch : Float.NaN, grid, s),
                     it.slots, s);
         }
         float[] rowSizes = sizeRows(grid, fg, ch, s);
         float contentH = GridTracks.sum(rowSizes) + grid.rowGap * Math.max(0, rowSizes.length - 1);
+        if (subRows) contentH = Math.max(0, contentH - (g.mT + g.bT + g.pT) - (g.mB + g.bB + g.pB)); // 端の線は外へはみ出す
         float h = Float.isNaN(fixedH) ? contentH + g.vdec() + spill : fixedH;
         if (Float.isNaN(space.fixedHeight) && !space.contentBlockSize()) h = g.clampHeight(st, h, space.percentHeightBase, s);
         h = LayoutUnit.snap(h);
@@ -93,15 +104,18 @@ final class GridFlow implements FormattingEngine {
         if (Float.isNaN(ch)) { // 高さが決まった: % の高さの項目をその高さで測り直し、行を確定し直す
             for (GridItem it : grid.items) {
                 if (!BoxGeometry.usesPercentHeight(it.box)) continue;
-                float areaW = span(colSizes, it.colStart, it.colSpan, grid.colGap);
-                it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, innerH, s), it.slots, s);
+                float areaW = subCols ? GridSubgrid.area(subColOff, colSizes, it.colStart, it.colSpan, cw)[1]
+                        : span(colSizes, it.colStart, it.colSpan, grid.colGap);
+                it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, innerH, grid, s), it.slots, s);
             }
             rowSizes = sizeRows(grid, fg, innerH, s);
         }
-        float[] colOff = GridTracks.offsets(colSizes, grid.colGap, cw, fg.justifyContent, fg.justifyContentSafe);
-        float[] rowOff = GridTracks.offsets(rowSizes, grid.rowGap, innerH, fg.alignContent, fg.alignContentSafe);
+        grid.rowSizes = rowSizes;
+        float[] colOff = subCols ? subColOff : GridTracks.offsets(colSizes, grid.colGap, cw, fg.justifyContent, fg.justifyContentSafe);
+        float[] rowOff = subRows ? GridSubgrid.offsets(rowSizes, grid.rowGap, g.mT + g.bT + g.pT)
+                : GridTracks.offsets(rowSizes, grid.rowGap, innerH, fg.alignContent, fg.alignContentSafe);
         boolean rtl = st.facts.rtl;
-        for (GridItem it : grid.items) align(it, st, colSizes, rowSizes, colOff, rowOff, grid, cw, rtl, s);
+        for (GridItem it : grid.items) align(it, st, colSizes, rowSizes, colOff, rowOff, grid, cw, innerH, rtl, s);
 
         float insetL = g.bL + g.pL, insetT = g.bT + g.pT + spill;
         int n = grid.items.size();
@@ -163,11 +177,17 @@ final class GridFlow implements FormattingEngine {
                 cf, null, up, oof, baseline(grid, insetT));
     }
 
-    /** 項目を集めて置き、トラックの定義を作る。{@code cw} / {@code ch} は % と {@code auto-fill} の基準（不定なら NaN）。 */
-    private static Grid build(BoxNode node, float cw, float ch, LayoutFragment prior, List<BoxNode> outOfFlow, LayoutSession s) {
+    /**
+     * 項目を集めて置き、トラックの定義を作る。{@code cw} / {@code ch} は % と {@code auto-fill} の基準（不定なら NaN）。{@code sub} は
+     * 親と共有する軸（サブグリッドとして測るとき。無ければ null）。
+     */
+    static Grid build(BoxNode node, float cw, float ch, LayoutFragment prior, List<BoxNode> outOfFlow, LayoutSession s,
+                      GridSubgrid.Tracks sub) {
         Style st = node.style;
         FlexGridStyle fg = st.flexGrid;
-        float colGap = FlexLines.gap(st, fg.columnGap, cw, s), rowGap = FlexLines.gap(st, fg.rowGap, ch, s);
+        GridSubgrid.Axis subC = sub != null ? sub.cols() : null, subR = sub != null ? sub.rows() : null;
+        float colGap = subC != null && GridSubgrid.normalGap(fg.columnGap) ? subC.parentGap() : FlexLines.gap(st, fg.columnGap, cw, s);
+        float rowGap = subR != null && GridSubgrid.normalGap(fg.rowGap) ? subR.parentGap() : FlexLines.gap(st, fg.rowGap, ch, s);
         FlowChunk pc = prior != null && prior.flow != null && prior.flow.chunks.length == 1 ? prior.flow.chunks[0] : null;
         List<BoxNode> kids = new ArrayList<>();
         BoxNode legend = FieldsetLegend.of(node);
@@ -186,10 +206,15 @@ final class GridFlow implements FormattingEngine {
             int j = pc == null ? -1 : indexOf(pc, k);
             LayoutCache.Slots slots = j < 0 ? new LayoutCache.Slots(null, null)
                     : new LayoutCache.Slots(pc.frags[j], pc.slots != null ? pc.slots[j] : null);
-            items.add(new GridItem(k, new BoxGeometry(k.style, Float.NaN, s), slots));
+            GridItem it = new GridItem(k, new BoxGeometry(k.style, Float.NaN, s), slots);
+            it.colSub = GridSubgrid.subgridded(k, true);
+            it.rowSub = GridSubgrid.subgridded(k, false);
+            items.add(it);
         }
-        GridTracks.Template cols = GridTracks.parse(fg.gridTemplateColumns, cw, colGap, st, s);
-        GridTracks.Template rows = GridTracks.parse(fg.gridTemplateRows, ch, rowGap, st, s);
+        GridTracks.Template cols = subC != null ? GridSubgrid.template(fg.gridTemplateColumns, subC)
+                : GridTracks.parse(fg.gridTemplateColumns, cw, colGap, st, s);
+        GridTracks.Template rows = subR != null ? GridSubgrid.template(fg.gridTemplateRows, subR)
+                : GridTracks.parse(fg.gridTemplateRows, ch, rowGap, st, s);
         List<GridTracks.Def> autoCols = GridTracks.parse(Style.or(fg.gridAutoColumns, "auto"), cw, 0, st, s).tracks;
         List<GridTracks.Def> autoRows = GridTracks.parse(Style.or(fg.gridAutoRows, "auto"), ch, 0, st, s).tracks;
         GridPlacement.Areas areas = GridPlacement.Areas.parse(fg.gridTemplateAreas);
@@ -198,7 +223,17 @@ final class GridFlow implements FormattingEngine {
                 Math.max(rows.tracks.size(), areas.rows().size()), fg.gridAutoFlow);
         int colCount = Math.max(1, count[0] - GridPlacement.collapseEmptyAutoFit(items, cols, true));
         int rowCount = Math.max(0, count[1] - GridPlacement.collapseEmptyAutoFit(items, rows, false));
-        return new Grid(items, cols, rows, defs(cols.tracks, autoCols, colCount), defs(rows.tracks, autoRows, rowCount), colGap, rowGap);
+        if (subC != null) { // 共有する軸はまたがる数だけ（暗黙のトラックを作らない）
+            GridSubgrid.clamp(items, true, subC.span());
+            colCount = subC.span();
+        }
+        if (subR != null) {
+            GridSubgrid.clamp(items, false, subR.span());
+            rowCount = subR.span();
+        }
+        Grid grid = new Grid(items, cols, rows, defs(cols.tracks, autoCols, colCount), defs(rows.tracks, autoRows, rowCount), colGap, rowGap);
+        grid.sub = sub;
+        return grid;
     }
 
     /** 明示的なトラックの後に、暗黙のトラックを {@code grid-auto-*} の繰り返しで足した並び。 */
@@ -216,27 +251,42 @@ final class GridFlow implements FormattingEngine {
         return -1;
     }
 
-    /** 列の寄与（余白を含む min-content / max-content。内在サイズの 1 層メモから）。 */
-    private static void columnContributions(Grid grid, LayoutSession s) {
-        for (GridItem it : grid.items) {
+    /**
+     * 軸 {@code columns} のトラックの寸法を決める項目と寄与（余白を含む min-content / max-content。列は内在サイズの 1 層メモから、行は
+     * 測った断片から）。その軸を共有するサブグリッドは自分の代わりに子の寄与を親のトラックの番号で入れる（{@link GridSubgrid#addProxies}）。
+     * サブグリッドが無ければ {@code grid.items} をそのまま返す（確保しない）。
+     */
+    static List<GridItem> contributions(Grid grid, boolean columns, LayoutSession s) {
+        List<GridItem> out = null;
+        for (int i = 0, n = grid.items.size(); i < n; i++) {
+            GridItem it = grid.items.get(i);
+            if (columns ? it.colSub : it.rowSub) {
+                if (out == null) out = new ArrayList<>(grid.items.subList(0, i));
+                GridSubgrid.addProxies(it, grid, columns, out, s);
+                continue;
+            }
             Style cst = it.box.style;
-            MinMaxSizes m = it.g.contribution(cst, s.cache().minMax(it.box, s), s);
-            float margins = BlockFlow.fixedMargin(cst, cst.box.marginLeft, s) + BlockFlow.fixedMargin(cst, cst.box.marginRight, s);
-            it.colMin = m.min + margins;
-            it.colMax = m.max + margins;
+            if (columns) {
+                MinMaxSizes m = it.g.contribution(cst, s.cache().minMax(it.box, s), s);
+                float margins = BlockFlow.fixedMargin(cst, cst.box.marginLeft, s) + BlockFlow.fixedMargin(cst, cst.box.marginRight, s);
+                it.colMin = m.min + margins;
+                it.colMax = m.max + margins;
+            } else {
+                float margins = BlockFlow.fixedMargin(cst, cst.box.marginTop, s) + BlockFlow.fixedMargin(cst, cst.box.marginBottom, s);
+                float h = it.frag.height;
+                it.rowMax = h + margins;
+                it.rowMin = rowMinContribution(it, h, s) + margins;
+            }
+            if (out != null) out.add(it);
         }
+        return out != null ? out : grid.items;
     }
 
-    /** 行の寄与を測った断片から求め、行の寸法を解く。 */
+    /** 行の寄与を測った断片から求め、行の寸法を解く（親と共有する行は親の寸法）。 */
     private static float[] sizeRows(Grid grid, FlexGridStyle fg, float innerH, LayoutSession s) {
-        for (GridItem it : grid.items) {
-            Style cst = it.box.style;
-            float margins = BlockFlow.fixedMargin(cst, cst.box.marginTop, s) + BlockFlow.fixedMargin(cst, cst.box.marginBottom, s);
-            float h = it.frag.height;
-            it.rowMax = h + margins;
-            it.rowMin = rowMinContribution(it, h, s) + margins;
-        }
-        return GridTracks.size(grid.rowDefs, grid.items, false, innerH, grid.rowGap, fg.alignContent, false);
+        GridSubgrid.Axis subR = grid.sub != null ? grid.sub.rows() : null;
+        if (subR != null && subR.sizes() != null) return GridSubgrid.sizes(subR, grid.rowGap);
+        return GridTracks.size(grid.rowDefs, contributions(grid, false, s), false, innerH, grid.rowGap, fg.alignContent, false);
     }
 
     /**
@@ -254,7 +304,7 @@ final class GridFlow implements FormattingEngine {
      * 項目を測る制約。領域の幅 {@code areaW} が包含ブロックの幅。{@code justify-self} が stretch なら領域いっぱい（余白を引いて
      * min/max で挟む）、それ以外で幅が auto なら内容に合わせて縮める。
      */
-    private static ConstraintSpace itemSpace(GridItem it, Style container, float areaW, float fixedH, float pct, LayoutSession s) {
+    private static ConstraintSpace itemSpace(GridItem it, Style container, float areaW, float fixedH, float pct, Grid grid, LayoutSession s) {
         Style cst = it.box.style;
         BoxGeometry ig = new BoxGeometry(cst, areaW, s);
         float avail = Math.max(0, areaW - ig.mL - ig.mR);
@@ -269,15 +319,26 @@ final class GridFlow implements FormattingEngine {
             }
             fw = LayoutUnit.snap(fw);
         }
-        return s.space(areaW, fw, fixedH, BoxGeometry.usesPercentHeight(it.box) ? pct : Float.NaN, ConstraintSpace.FORMATTING_ROOT);
+        ConstraintSpace sp = s.space(areaW, fw, fixedH, BoxGeometry.usesPercentHeight(it.box) ? pct : Float.NaN, ConstraintSpace.FORMATTING_ROOT);
+        return it.colSub || it.rowSub ? sp.withSubgrid(GridSubgrid.tracks(it, grid)) : sp; // サブグリッドへ共有の軸（線の名前と決まった寸法）
     }
 
     /** 行が確定してから、項目を領域の中で揃える（stretch・% の高さの測り直し・auto 余白・{@code *-self}）。 */
     private static void align(GridItem it, Style st, float[] colSizes, float[] rowSizes, float[] colOff, float[] rowOff, Grid grid,
-                              float cw, boolean rtl, LayoutSession s) {
+                              float cw, float innerH, boolean rtl, LayoutSession s) {
         float areaX = colOff[it.colStart], areaY = rowOff[it.rowStart];
         float areaW = colOff[it.colStart + it.colSpan] - areaX - gapAfter(colSizes, it.colStart + it.colSpan, colOff);
         float areaH = rowOff[it.rowStart + it.rowSpan] - areaY - gapAfter(rowSizes, it.rowStart + it.rowSpan, rowOff);
+        if (grid.sub != null && grid.sub.cols() != null && grid.sub.cols().sizes() != null) { // 共有する軸の領域は内容ボックスで切る
+            float[] a = GridSubgrid.area(colOff, colSizes, it.colStart, it.colSpan, cw);
+            areaX = a[0];
+            areaW = a[1];
+        }
+        if (grid.sub != null && grid.sub.rows() != null && grid.sub.rows().sizes() != null) {
+            float[] a = GridSubgrid.area(rowOff, rowSizes, it.rowStart, it.rowSpan, innerH);
+            areaY = a[0];
+            areaH = a[1];
+        }
         Style cst = it.box.style;
         BoxGeometry ig = new BoxGeometry(cst, areaW, s);
         Alignment alignSelf = selfAlignment(cst, st, false);
@@ -287,11 +348,12 @@ final class GridFlow implements FormattingEngine {
             float t = LayoutUnit.snap(ig.clampHeight(cst, Math.max(0, areaH - ig.mT - ig.mB), areaH, s));
             // 伸ばした高さは確定した高さ（§6.2: 子の % の高さ・相対位置の % の基準）。内容の高さと同じでも高さを確定して測り直す
             // （子のチャンクは % を使う子のほかは当たる）
-            if (t != it.frag.height || Float.isNaN(it.frag.space.fixedHeight) || it.frag.space.availableWidth != areaW) {
-                it.frag = cache.layout(it.box, itemSpace(it, st, areaW, t, areaH, s), it.slots, s);
+            if (t != it.frag.height || Float.isNaN(it.frag.space.fixedHeight) || it.frag.space.availableWidth != areaW || it.rowSub) {
+                it.frag = cache.layout(it.box, itemSpace(it, st, areaW, t, areaH, grid, s), it.slots, s);
             }
-        } else if (BoxGeometry.usesPercentHeight(it.box) && it.frag.space.percentHeightBase != areaH) {
-            it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, areaH, s), it.slots, s);
+        } else if (it.rowSub || BoxGeometry.usesPercentHeight(it.box) && it.frag.space.percentHeightBase != areaH) {
+            // 行を共有するサブグリッドは、決まった行の寸法を渡して測り直す
+            it.frag = cache.layout(it.box, itemSpace(it, st, areaW, Float.NaN, areaH, grid, s), it.slots, s);
         }
         Alignment justifySelf = selfAlignment(cst, st, true);
         if (rtl) justifySelf = justifySelf == Alignment.LEFT ? Alignment.RIGHT : justifySelf == Alignment.RIGHT ? Alignment.LEFT : justifySelf;
@@ -397,11 +459,11 @@ final class GridFlow implements FormattingEngine {
     public MinMaxSizes computeMinMaxSizes(BoxNode node, MinMaxContext ctx, LayoutSession s) {
         Style st = node.style;
         BoxGeometry g = new BoxGeometry(st, Float.NaN, s);
-        Grid grid = build(node, Float.NaN, Float.NaN, null, null, s);
-        columnContributions(grid, s);
+        Grid grid = build(node, Float.NaN, Float.NaN, null, null, s, null);
+        List<GridItem> items = contributions(grid, true, s);
         float gaps = grid.colGap * Math.max(0, grid.colDefs.size() - 1);
-        float max = GridTracks.sum(GridTracks.size(grid.colDefs, grid.items, true, Float.NaN, grid.colGap, null, false)) + gaps;
-        float min = GridTracks.sum(GridTracks.size(grid.colDefs, grid.items, true, Float.NaN, grid.colGap, null, true)) + gaps;
+        float max = GridTracks.sum(GridTracks.size(grid.colDefs, items, true, Float.NaN, grid.colGap, null, false)) + gaps;
+        float min = GridTracks.sum(GridTracks.size(grid.colDefs, items, true, Float.NaN, grid.colGap, null, true)) + gaps;
         return FieldsetLegend.withLegend(new MinMaxSizes(LayoutUnit.snap(min + g.hdec()), LayoutUnit.snap(max + g.hdec())), node, g, s);
     }
 }
