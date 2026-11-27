@@ -43,10 +43,12 @@ final class OpComposer {
 
     /**
      * 毎フレーム層の局所座標で集めた命令（{@link OpList#beginLocal}）を項目にする。命令は層の整数の原点からなので、
-     * 基準の位置はどちらも層の整数の原点。
+     * 基準の位置はどちらも層の整数の原点。{@code textBox} は祖先の文字色のアニメーションを解く文字の箱（無ければ null）。
      */
-    void composeLocal(OpList ops, SceneAdapterBox node, ClipRect frameClip, String anchorParentId, ItemSink out) {
-        begin(ops.originX, ops.originY, ops.originX, ops.originY, ops.originX, ops.originY, node, frameClip, anchorParentId, null, null);
+    void composeLocal(OpList ops, SceneAdapterBox node, ClipRect frameClip, String anchorParentId, SceneAdapterBox textBox,
+                      BoxAnimation animator, ItemSink out) {
+        begin(ops.originX, ops.originY, ops.originX, ops.originY, ops.originX, ops.originY, node, frameClip, anchorParentId,
+                textBox, animator);
         for (int i = 0, n = ops.size(); i < n; i++) out.add(compose(ops.get(i)));
         end();
     }
@@ -112,13 +114,35 @@ final class OpComposer {
         String parentId = (flags & DrawOp.ANCHOR) != 0 ? anchorParentId : null;
         DisplayItem item = toItem(op, bx, by, rx, ry, composeMeta(op.meta(), bx, by, rx, ry, parentId));
         if ((flags & DrawOp.INHERIT_TEXT_COLOR_ANIM) != 0 && textBox != null) {
-            if (textAnim == null) textAnim = textAnimator.textColorAnimation(textBox, AnimationSpec.NONE);
+            if (textAnim == null) textAnim = ancestorTextColorAnimation(textBox, textAnimator);
             if (textAnim != item.animDef()) {
                 item = new DisplayItem(item.id(), item.baseNodeId(), item.type(), item.text(), item.events(), item.transitionDuration(),
                         textAnim, item.fitMode(), item.meta(), item.key(), item.cell());
             }
         }
         return item;
+    }
+
+    /**
+     * 文字の色のアニメーションを祖先から継ぐ（M3b-4c-1a で {@code BoxAnimation} から移した。祖先を読むので組み立ての側）。
+     * {@code animation} は継承されないが、祖先の {@code color} を補間すると継承した文字の色も一緒に変わる（CSS Animations 1 §3: アニメーションした
+     * 値も算出値として継承される）。途中の要素が自分の色を持っていれば、そこから先には届かない。
+     */
+    static AnimationSpec ancestorTextColorAnimation(SceneAdapterBox text, BoxAnimation animator) {
+        int inherited = text.style().typed().inheritedPaint.color;
+        for (SceneAdapterBox a = text.paintParent(); a != null && a.style() != null; a = a.paintParent()) {
+            com.nishiyu.enderframelib.core.css.Style as = a.style().typed();
+            if (as.inheritedPaint.color != inherited) break;
+            if (as.visual.animation != null || as.visual.animationName != null) {
+                AnimationSpec anim = animator.parseAnimationDef(a.style(), a.w(), a.h(), as.inheritedPaint.color, 0)
+                        .withChannels(AnimationSpec.CH_COLOR);
+                if (!anim.isEmpty()) return anim;
+            }
+            // 祖先の要素が自分の色を宣言していれば、その上の祖先の色は継承されない
+            SceneAdapterBox p = a.paintParent();
+            if (p != null && p.style() != null && a.style().typed().inheritedPaint.color != p.style().typed().inheritedPaint.color) break;
+        }
+        return AnimationSpec.NONE;
     }
 
     private RenderMeta composeMeta(RenderMeta meta, float bx, float by, int rx, int ry, String parentId) {

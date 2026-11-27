@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CustomProperties;
 import com.nishiyu.enderframelib.core.css.Style;
@@ -398,8 +399,8 @@ final class ItemProps {
     private static final String[] NO_HANDLERS = new String[0];
 
     /** スタイルの {@code on*} の名前（小文字）と値を {@code [名前, 値, 名前, 値, …]} で。 */
-    private static String[] styleHandlersOf(SceneAdapterBox box) {
-        CustomProperties custom = box.style().typed().custom;
+    private static String[] styleHandlersOf(SceneLayer box) {
+        CustomProperties custom = box.style.typed().custom;
         if (custom == null) return NO_HANDLERS;
         java.util.List<String> out = null;
         for (Map.Entry<String, String> entry : custom.asMap().entrySet()) {
@@ -413,23 +414,23 @@ final class ItemProps {
         return out == null ? NO_HANDLERS : out.toArray(new String[0]);
     }
 
-    static ItemProps forParts(SceneAdapterBox box, String id, TransitionSpec transSpec) {
+    static ItemProps forParts(SceneLayer box, String id, TransitionSpec transSpec) {
         return populateForParts(new ItemProps(), box, id, transSpec);
     }
 
-    static ItemProps populateForParts(ItemProps partsEvents, SceneAdapterBox box, String id, TransitionSpec transSpec) {
+    static ItemProps populateForParts(ItemProps partsEvents, SceneLayer box, String id, TransitionSpec transSpec) {
         return populateForParts(partsEvents, box, id, transSpec, null);
     }
 
     /** @param prevAttrs 前に出した部品の属性（無ければ null）。同じ値なら属性の表を作り直さず使い回す。 */
-    static ItemProps populateForParts(ItemProps partsEvents, SceneAdapterBox box, String id, TransitionSpec transSpec,
+    static ItemProps populateForParts(ItemProps partsEvents, SceneLayer box, String id, TransitionSpec transSpec,
                                       Map<String, String> prevAttrs) {
         partsEvents.reset();
         partsEvents.reuseAttrs(prevAttrs);
-        long nodeKey = box.node() != null ? DisplayItem.nodeKeyOf(box.node().paintHandle()) : 0L;
+        long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.paintHandle()) : 0L;
         partsEvents.parentId(id, nodeKey);
         applyTransitionEvents(partsEvents, transSpec);
-        String fontFamily = box.style().typed().inherited.fontFamily;
+        String fontFamily = box.style.typed().inherited.fontFamily;
         if (fontFamily != null) partsEvents.fontFamily(fontFamily);
         putFontEvents(box, partsEvents);
         Map<String, String> nodeAttrs = box.values().attrs();
@@ -444,14 +445,14 @@ final class ItemProps {
             }
         }
 
-        ComputedStyle ax = box.axisStyle();
+        ComputedStyle ax = box.style;
         Overflow overflowX = ax.overflowX();
         Overflow overflowY = ax.overflowY();
         boolean isScrollable = overflowX == Overflow.SCROLL || overflowX == Overflow.AUTO
                 || overflowY == Overflow.SCROLL || overflowY == Overflow.AUTO
-                || "root".equals(box.node().tag) || "html".equals(box.node().tag) || "body".equals(box.node().tag);
+                || "root".equals(box.node.tag) || "html".equals(box.node.tag) || "body".equals(box.node.tag);
         if (isScrollable) {
-            partsEvents.scroll(box.scrollWidth(), box.scrollHeight());
+            partsEvents.scroll(box.scrollWidth, box.scrollHeight);
         }
 
         if (box.values().hasEventHandlers()) {
@@ -462,10 +463,10 @@ final class ItemProps {
             });
         }
         // スタイルの on* は算出スタイルだけで決まる。全プロパティを走査するので、スタイルごとに 1 回だけ集める
-        String[] styleHandlers = (String[]) box.style().paintMemo(STYLE_HANDLERS, k -> styleHandlersOf(box));
+        String[] styleHandlers = (String[]) box.style.paintMemo(STYLE_HANDLERS, k -> styleHandlersOf(box));
         for (int i = 0; i < styleHandlers.length; i += 2) partsEvents.put(styleHandlers[i], styleHandlers[i + 1]);
 
-        String tag = box.node().tag;
+        String tag = box.node.tag;
         if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isClickActivated(tag) && !partsEvents.containsKey("onclick")) {
             partsEvents.put("onclick", id);
         }

@@ -239,18 +239,33 @@ public final class SceneDisplayListAdapter {
         if (spec != null && out.size() > startIdx) {
             if (spec.wantsMask()) {
                 int contentSpan = out.size() - startIdx;
-                scratch.beginLocal(box);
+                scratch.beginLocal(box.x(), box.y());
                 fragIds.set(MASK_ID_BASE);
-                painter.drawMask(scratch, box, ownNode);
+                List<BoxItemPainter.MaskText> texts = BoxDecorations.clipsText(box.style()) ? maskTexts(box, new ArrayList<>()) : List.of();
+                painter.drawMask(scratch, box.layer, box.x(), box.y(), ownNode, texts);
                 if (!scratch.isEmpty()) {
                     spec = spec.withMaskFrom(contentSpan);
-                    composer.composeLocal(scratch, null, null, null, out);
+                    composer.composeLocal(scratch, null, null, null, null, null, out);
                 } else {
                     spec = spec.withMaskFrom(-1);
                 }
             }
             out.setLayer(startIdx, spec.withSpan(out.size() - startIdx));
         }
+    }
+
+    /** マスクの文字にする子孫の文字の層（描く順。表示しない子は飛ばす）と、その原点の節の左上。 */
+    private static List<BoxItemPainter.MaskText> maskTexts(SceneAdapterBox box, List<BoxItemPainter.MaskText> out) {
+        for (SceneAdapterBox child : box.paintChildren()) {
+            if (child.displayNone()) continue;
+            if ("#text".equals(child.node().tag)) {
+                SceneAdapterBox op = child.originParent();
+                out.add(new BoxItemPainter.MaskText(child.layer, op != null ? op.x() : 0f, op != null ? op.y() : 0f));
+            } else {
+                maskTexts(child, out);
+            }
+        }
+        return out;
     }
 
     private void emitPlain(SceneAdapterBox box, ClipRect clip, String parentId) {
@@ -275,9 +290,9 @@ public final class SceneDisplayListAdapter {
         entries.sort((a, b) -> Integer.compare(a.box.layer.zIndex, b.box.layer.zIndex));
         for (ZEntry e : entries) {
             if (e.hoist && e.box.backdrop() != null) {
-                scratch.beginLocal(e.box);
-                painter.drawBackdrop(scratch, e.box, e.box.backdrop(), SceneAdapterSupport.boxHasOwnNode(e.box));
-                composer.composeLocal(scratch, null, null, null, out);
+                scratch.beginLocal(e.box.x(), e.box.y());
+                painter.drawBackdrop(scratch, e.box.layer, e.box.backdrop(), SceneAdapterSupport.boxHasOwnNode(e.box));
+                composer.composeLocal(scratch, null, null, null, null, null, out);
             }
             emitStacking(e.box, e.clip, e.parentId);
         }
@@ -420,10 +435,12 @@ public final class SceneDisplayListAdapter {
             composer.composeLayer(ops, box, origin, clip, parentId, painter.anim, out);
         } else {
             // 祖先に依る箱（背景をキャンバスに譲った html / body・親の ::first-line を読む縦書きの包み箱）は毎フレーム作る
-            scratch.beginLocal(box);
+            scratch.beginLocal(box.x(), box.y());
             fragIds.set(0);
-            painter.drawBox(scratch, box, null, null, origin, ownNode, box == canvasSource);
-            composer.composeLocal(scratch, origin, clip, parentId, out);
+            SceneAdapterBox op = box.originParent(), parent = box.paintParent();
+            painter.drawBox(scratch, box.layer, box.x(), box.y(), op != null ? op.x() : 0f, op != null ? op.y() : 0f,
+                    parent != null ? parent.firstLine() : null, null, null, origin != null, ownNode, box == canvasSource);
+            composer.composeLocal(scratch, origin, clip, parentId, box, painter.anim, out);
         }
         ScrollContent content = scrollContentOf.get(box);
         if (content != null) {

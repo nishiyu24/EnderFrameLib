@@ -112,10 +112,13 @@ class SceneDamageTest {
 
     /** {@code html} を描き、{@code change} の後をもう 1 度描いて、変わった画素が範囲に入ることと範囲の割合を返す。 */
     private static double check(String html, BiConsumer<StandaloneView, String> change) {
+        return check(html, change, new SceneDamage());
+    }
+
+    private static double check(String html, BiConsumer<StandaloneView, String> change, SceneDamage damage) {
         int w = 400, h = 300;
         try (SoftwareRenderBackend backend = new SoftwareRenderBackend(w, h);
              StandaloneView v = new StandaloneView(html, w, h, FontResolver.FALLBACK)) {
-            SceneDamage damage = new SceneDamage();
             SceneWalker walker = new SceneWalker(backend.sessionId());
             v.frame(1000L, backend, true);
             assertTrue(SceneWalkAccess.damage(v, damage, walker, 1000L, NOOP).full(), "初回は全面");
@@ -142,6 +145,48 @@ class SceneDamageTest {
     void colourChangeOfOneRowDamagesOnlyThatRow() {
         double area = check(LIST, (v, s) -> v.root().getElementById("c").setAttribute("style", "background:#c33"));
         assertTrue(area < 0.15, "1 行の色の変化で範囲が広い: " + area);
+    }
+
+    /**
+     * M3b-4c-1a: 長いリストの 1 行の変化は、前と同じ位置の同じチャンク（{@code SceneEmitter} が使い回した 32 子単位）へ下りずに飛ばし、
+     * 変わった行のチャンクだけを対にする。範囲は変わった画素を覆う（飛ばしたチャンクに変化が無いことは画素で確かめる）。
+     */
+    @Test
+    void unchangedChunksOfALongListAreSkippedWithoutVisitingTheirRows() {
+        StringBuilder html = new StringBuilder("<style>body{margin:0;font:10px sans-serif}.r{height:3px;margin:0;background:#ddd}</style><div id=l>");
+        for (int i = 0; i < 320; i++) html.append("<div class=r id=r").append(i).append("></div>");
+        html.append("</div>");
+        SceneDamage damage = new SceneDamage();
+        double area = check(html.toString(), (v, s) -> v.root().getElementById("r40").setAttribute("style", "background:#c33"), damage);
+        assertTrue(area < 0.05, "1 行の色の変化で範囲が広い: " + area);
+        assertTrue(damage.skippedChunks() >= 8, "変わらないチャンクを飛ばしていない: " + damage.skippedChunks());
+        assertTrue(damage.visitedPairs() < 80, "変わらない行まで対にしてたどった: " + damage.visitedPairs());
+    }
+
+    /** 前の行が消えてチャンクの位置がずれたら、同じチャンクでも飛ばさない（後ろの行が上へ動いた範囲を覆う）。 */
+    @Test
+    void shiftedChunksAreNotSkipped() {
+        StringBuilder html = new StringBuilder("<style>body{margin:0;font:10px sans-serif}.r{height:3px;margin:0}</style><div id=l>");
+        for (int i = 0; i < 200; i++) html.append("<div class=r id=r").append(i).append(" style='background:#").append(i % 2 == 0 ? "c33" : "33c").append("'></div>");
+        html.append("</div>");
+        check(html.toString(), (v, s) -> v.root().getElementById("r3").remove());
+    }
+
+    /**
+     * 先頭に行を足すと、後ろのチャンクは同じ実体（{@code ==}）のまま下へずれて使い回される（{@code SceneEmitter} はチャンクの位置だけを
+     * 変える）。位置の変わったチャンクは飛ばさない（飛ばすと、下へずれた行の跡が描き直されない）。
+     */
+    @Test
+    void chunksMovedByAnInsertedRowAreNotSkipped() {
+        StringBuilder html = new StringBuilder("<style>body{margin:0;font:10px sans-serif}.r{height:3px;margin:0}</style><div id=l>");
+        for (int i = 0; i < 200; i++) html.append("<div class=r id=r").append(i).append(" style='background:#").append(i % 2 == 0 ? "c33" : "33c").append("'></div>");
+        html.append("</div>");
+        check(html.toString(), (v, s) -> {
+            var row = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+            row.setAttribute("class", "r");
+            row.setAttribute("style", "background:#3c3;height:5px");
+            v.root().getElementById("l").insertBefore(row, v.root().getElementById("r0"));
+        });
     }
 
     @Test

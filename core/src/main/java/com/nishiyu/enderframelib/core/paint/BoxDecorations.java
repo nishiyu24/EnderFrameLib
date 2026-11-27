@@ -322,12 +322,6 @@ public final class BoxDecorations {
     }
 
     /** {@code border-box} / {@code padding-box} / {@code content-box} の矩形。 */
-    static Rect boxArea(SceneAdapterBox box, String which) {
-        return boxArea(box.x(), box.y(), box.w(), box.h(), box.bL(), box.bT(), box.bR(), box.bB(),
-                box.pL(), box.pT(), box.pR(), box.pB(), which);
-    }
-
-    /** {@code border-box} / {@code padding-box} / {@code content-box} の矩形。 */
     public static Rect boxArea(float x, float y, float w, float h, float bL, float bT, float bR, float bB,
                                float pL, float pT, float pR, float pB, String which) {
         if ("padding-box".equals(which) || "content-box".equals(which)) { x += bL; y += bT; w -= bL + bR; h -= bT + bB; }
@@ -344,21 +338,14 @@ public final class BoxDecorations {
     private static final String[] REPEAT_Y_PAIR = {"no-repeat", "repeat"};
     private static final ConcurrentHashMap<String, String[]> REPEAT_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, ParsedPosition> POSITION_CACHE = new ConcurrentHashMap<>();
-    private static final ThreadLocal<float[]> SCRATCH_PAIR = ThreadLocal.withInitial(() -> new float[4]);
 
     private record ParsedPosition(String hEdge, String hOff, String vEdge, String vOff) {}
-
-    static List<Rect> tiles(BackgroundLayer layer, SceneAdapterBox box, int[] intrinsic, float rootW, float rootH,
-                                   float fontSize, float rootFontSize) {
-        return tiles(layer, boxArea(box, layer.origin()), boxArea(box, layer.clip()),
-                intrinsic, rootW, rootH, fontSize, rootFontSize);
-    }
 
     public static List<Rect> tiles(BackgroundLayer layer, Rect area, Rect paint, int[] intrinsic, float rootW, float rootH,
                                    float fontSize, float rootFontSize) {
         if (area.w() <= 0 || area.h() <= 0 || paint.w() <= 0 || paint.h() <= 0) return List.of();
 
-        float[] scratch = SCRATCH_PAIR.get();
+        float[] scratch = new float[4]; // スレッドごとの使い回しをやめた（新経路はスレッドに結んだ状態を持たない。M3b-4c-1a）
         tileSizeInto(layer.size(), area, intrinsic, rootW, rootH, fontSize, rootFontSize, scratch, 0);
         float tileW = scratch[0], tileH = scratch[1];
         if (tileW <= 0 || tileH <= 0) return List.of();

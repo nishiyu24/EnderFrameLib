@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.media.ImageChoice;
 import com.nishiyu.enderframelib.core.media.ImageSources;
@@ -33,15 +34,15 @@ final class ControlPainter {
         this.decor = decor;
     }
 
-    void drawSceneElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawSceneElement(OpList elements, SceneLayer box, String id, int color, int bgColor, int fallbackRadius,
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
-        float innerX = box.x() + border.bwLeft();
-        float innerY = box.y() + border.bwTop();
-        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
+        float innerX = decor.bounds.px() + border.bwLeft();
+        float innerY = decor.bounds.py() + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         ItemProps sceneEvents = partsEvents.copy();
         if (box.values().attrs().containsKey("data-blocks")) sceneEvents.put("data-blocks", box.values().attrs().get("data-blocks"));
@@ -49,34 +50,34 @@ final class ControlPainter {
         else if (box.values().attrs().containsKey("data-slice-y")) sceneEvents.put("data-slice-y", box.values().attrs().get("data-slice-y"));
         if (box.values().attrs().containsKey("auto-rotate")) sceneEvents.put("data-auto-rotate", box.values().attrs().get("auto-rotate"));
 
-        if (Scene3DTags.isScene(box.node().tag)) {
+        if (Scene3DTags.isScene(box.node.tag)) {
             // ビルトイン 3D ビューポート: バックエンドが Scene3DWorld を引くための識別（nodeId）と種類
             sceneEvents.put(Scene3DTags.KIND_ATTR, Scene3DTags.KIND_3D);
-            sceneEvents.put(Scene3DTags.WORLD_ATTR, Long.toString(box.node().nodeId()));
+            sceneEvents.put(Scene3DTags.WORLD_ATTR, Long.toString(box.node.nodeId()));
             String orbit = box.values().attrs().get("data-orbit");
             if (orbit != null && (orbit.isEmpty() || orbit.equalsIgnoreCase("true") || orbit.equals("1"))) {
                 sceneEvents.put(Scene3DTags.ORBIT_ATTR, "true");
             }
         }
-        long sceneKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_SCENE) : 0L;
+        long sceneKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_SCENE) : 0L;
         addElement(elements, id, id + "_scene", ElementType.SCENE, innerX, innerY, innerW, innerH, id, color, bgColor, sceneEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, sceneKey);
     }
 
-    void drawMediaElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawMediaElement(OpList elements, SceneLayer box, String id, int color, int bgColor, int fallbackRadius,
                                   Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
-        Style st = box.style().typed();
+        Style st = box.style.typed();
         // img は srcset / sizes から密度に合う候補を選ぶ（無ければ src）
-        ImageChoice chosen = ElementTraits.isImage(box.node().tag)
+        ImageChoice chosen = ElementTraits.isImage(box.node.tag)
                 ? ImageSources.forImg(box.values().attrs(), decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
         String src = Style.or(st.rare.src, chosen != null ? chosen.url() : box.values().attrs().getOrDefault("src", ""));
         com.nishiyu.enderframelib.core.dom.node.CustomElementPainter hostPainter =
-                com.nishiyu.enderframelib.core.replaced.ReplacedElements.painterOf(box.node().tag);
+                com.nishiyu.enderframelib.core.replaced.ReplacedElements.painterOf(box.node.tag);
         if (hostPainter != null) src = hostPainter.resolveSrc(box.values().attrs(), src);
 
-        String tag = box.node().tag;
+        String tag = box.node.tag;
         boolean gif = ElementTraits.isImage(tag) && isRemoteGif(src);
         ElementType type = ElementTraits.isMediaPlayer(tag) || gif ? ElementType.VIDEO : ElementType.IMAGE;
         ItemProps mediaEvents = partsEvents;
@@ -92,20 +93,20 @@ final class ControlPainter {
             int thickness = border.maxThickness();
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             CircleBorderSpec cbSpec = new CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
-            long cbKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_BORDER) : 0L;
-            addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x(), box.y(), box.w(), box.h(), bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
+            long cbKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_BORDER) : 0L;
+            addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, decor.bounds.px(), decor.bounds.py(), box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
                     new RenderMeta(normalizedClip, radii, cbSpec, fontHVal, ox, oy, 1, false), cbKey);
         } else {
             decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
 
-        float innerX = box.x() + border.bwLeft();
-        float innerY = box.y() + border.bwTop();
-        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
+        float innerX = decor.bounds.px() + border.bwLeft();
+        float innerY = decor.bounds.py() + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         // SVG は固有サイズ（viewBox）の縦横比で、描く大きさのビットマップにしてから置く。届くまでは何も描かない
-        if (ElementTraits.isImage(box.node().tag) && SvgImage.looksLikeSvg(src)) {
+        if (ElementTraits.isImage(box.node.tag) && SvgImage.looksLikeSvg(src)) {
             SvgImage svg = PaintServices.svg(src);
             src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color, decor.devicePixelRatio(), svg.sheet());
         }
@@ -116,12 +117,12 @@ final class ControlPainter {
             imageEvents.put("object-position", position);
         }
         String hitAlpha = box.values().attrs().get("data-hit-alpha");
-        if (hitAlpha != null && (ElementTraits.isImage(box.node().tag))) {
+        if (hitAlpha != null && (ElementTraits.isImage(box.node.tag))) {
             // 透明な部分のクリックを下へ通す（既定の閾値は半透明 = 128。値で 0〜255 を指定できる）
             if (imageEvents == mediaEvents) imageEvents = mediaEvents.copy();
             imageEvents.put("hit-alpha", hitAlpha.isBlank() ? "128" : hitAlpha.trim());
         }
-        long mediaKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_MEDIA) : 0L;
+        long mediaKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_MEDIA) : 0L;
         addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, imageEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, mediaKey);
     }
 
@@ -137,81 +138,81 @@ final class ControlPainter {
     }
 
     /** インライン {@code <svg>}。内容は SVG の木から描く画素にして、画像と同じ経路で置く。 */
-    void drawSvgElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawSvgElement(OpList elements, SceneLayer box, String id, int color, int bgColor, int fallbackRadius,
                         ItemProps partsEvents, ItemProps passiveBorderEvents,
                         BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                         int transDur, AnimationSpec colorBgAnim) {
         decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
-        float innerX = box.x() + border.bwLeft();
-        float innerY = box.y() + border.bwTop();
-        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
-        String src = RasterPainting.svgSrc(box.node(), innerW, innerH, ImageFitMode.FILL, innerW, innerH, color, decor.devicePixelRatio());
-        long svgKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_MEDIA) : 0L;
+        float innerX = decor.bounds.px() + border.bwLeft();
+        float innerY = decor.bounds.py() + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        String src = RasterPainting.svgSrc(box.node, innerW, innerH, ImageFitMode.FILL, innerW, innerH, color, decor.devicePixelRatio());
+        long svgKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_MEDIA) : 0L;
         addElement(elements, id, id + "_svg", ElementType.IMAGE, ImageFitMode.FILL, innerX, innerY, innerW, innerH, src, color, bgColor,
                 partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, svgKey);
     }
 
-    void drawCanvasElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawCanvasElement(OpList elements, SceneLayer box, String id, int color, int bgColor, int fallbackRadius,
                                    ItemProps partsEvents, ItemProps passiveBorderEvents,
                                    BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
         decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
-        float innerX = box.x() + border.bwLeft();
-        float innerY = box.y() + border.bwTop();
-        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
+        float innerX = decor.bounds.px() + border.bwLeft();
+        float innerY = decor.bounds.py() + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
         // canvas の画素の大きさは width / height 属性（既定 300×150）。内容ボックスへは object-fit で収める
         ItemProps canvasEvents = partsEvents.copy();
         canvasEvents.put("canvas-width", box.values().attrs().getOrDefault("width", ""));
         canvasEvents.put("canvas-height", box.values().attrs().getOrDefault("height", ""));
-        Style st = box.style().typed();
+        Style st = box.style.typed();
         String position = st.visual.objectPosition;
         if (position != null && !position.isBlank()) canvasEvents.put("object-position", position);
         ImageFitMode fitMode = ImageFitMode.fromString(Style.or(st.rare.objectFit, "fill"));
-        long canvasKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_CANVAS) : 0L;
+        long canvasKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_CANVAS) : 0L;
         addElement(elements, id, id + "_canvas", ElementType.CANVAS, fitMode, innerX, innerY, innerW, innerH, id, color, bgColor, canvasEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, canvasKey);
     }
 
-    void drawTextareaElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawTextareaElement(OpList elements, SceneLayer box, String id, int color, int bgColor, int fallbackRadius,
                                      ItemProps partsEvents, ItemProps passiveBorderEvents,
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim) {
         String val = box.values().attrs().getOrDefault("value", box.values().text());
-        float innerX = box.x() + border.bwLeft();
-        float innerY = box.y() + border.bwTop();
-        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
+        float innerX = decor.bounds.px() + border.bwLeft();
+        float innerY = decor.bounds.py() + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         ItemProps taEvents = partsEvents.copy();
         if (box.values().attrs().containsKey("data-syntax")) taEvents.put("data-syntax", box.values().attrs().get("data-syntax"));
         if (box.values().attrs().containsKey("data-line-numbers")) taEvents.put("data-line-numbers", box.values().attrs().get("data-line-numbers"));
 
-        long taKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_TEXTAREA) : 0L;
+        long taKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_TEXTAREA) : 0L;
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
             addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, innerX, innerY, innerW, innerH, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, taKey);
         } else {
-            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, box.x(), box.y(), box.w(), box.h(), val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, taKey);
+            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, decor.bounds.px(), decor.bounds.py(), box.w, box.h, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, taKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }
 
-    void drawSelectElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawSelectElement(OpList elements, SceneLayer box, String id, int color, int bgColor, int fallbackRadius,
                                    ItemProps partsEvents, ItemProps passiveBorderEvents,
                                    BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
         String currentVal = box.values().attrs().getOrDefault("value", "");
-        String displayLabel = DomUtils.resolveSelectDisplayLabel(box.node(), currentVal) + " \u25be";
-        float innerX = box.x() + border.bwLeft(), innerY = box.y() + border.bwTop();
-        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
+        String displayLabel = DomUtils.resolveSelectDisplayLabel(box.node, currentVal) + " \u25be";
+        float innerX = decor.bounds.px() + border.bwLeft(), innerY = decor.bounds.py() + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
-        long selKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_SELECT) : 0L;
+        long selKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_SELECT) : 0L;
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
             addElement(elements, id, id + "_select", ElementType.SELECT, innerX, innerY, innerW, innerH, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, selKey);
         } else {
-            addElement(elements, id, id + "_select", ElementType.SELECT, box.x(), box.y(), box.w(), box.h(), displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, selKey);
+            addElement(elements, id, id + "_select", ElementType.SELECT, decor.bounds.px(), decor.bounds.py(), box.w, box.h, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, selKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }
@@ -219,17 +220,17 @@ final class ControlPainter {
     /** {@code ::placeholder} に色の規則が無いときの文字色。 */
     static final int DEFAULT_PLACEHOLDER_COLOR = 0xFFAAAAAA;
 
-    void drawInputElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius, float fontHVal,
+    void drawInputElement(OpList elements, SceneLayer box, String id, int color, int bgColor, int fallbackRadius, float fontHVal,
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         String inputType = box.values().attrs().getOrDefault("type", "text");
         String val = resolveLiveInputValue(id, box.values().attrs().getOrDefault("value", ""));
 
-        float innerX = box.x() + border.bwLeft();
-        float innerY = box.y() + border.bwTop();
-        float innerW = Math.max(0, box.w() - border.bwLeft() - border.bwRight());
-        float innerH = Math.max(0, box.h() - border.bwTop() - border.bwBottom());
+        float innerX = decor.bounds.px() + border.bwLeft();
+        float innerY = decor.bounds.py() + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         ItemProps innerEvents = partsEvents.copy();
 
@@ -247,14 +248,13 @@ final class ControlPainter {
                     String placeholderText = val.isEmpty() ? box.values().attrs().get("placeholder") : "";
                     // 入力欄の内容領域をそのまま渡す。縦方向の中央寄せは書体の
                     // ascent / descent を知っている描画側が 1 箇所で行う
-                    float phX = box.x() + border.bwLeft() + 4;
+                    float phX = decor.bounds.px() + border.bwLeft() + 4;
                     ItemProps phEvents = passiveBorderEvents.copy();
                     phEvents.pointerEventsNone();
-                    // ::placeholder の color（UA の既定は #aaa）。規則が掛からなければ既定の色
-                    int placeholderColor = box.placeholder() != null && box.placeholder().typed().inheritedPaint.hasColor
-                            ? box.placeholder().typed().inheritedPaint.color
-                            : DEFAULT_PLACEHOLDER_COLOR;
-                    long phKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_PLACEHOLDER) : 0L;
+                    // UA の既定の色（#aaa）。LIMITATION(制約): ::placeholder の color は描画に届いていない（M2c で箱の木が
+                    // ::placeholder の算出スタイルを持たなくなってから既定の色だけ。4c-1a で読まない口を消した）
+                    int placeholderColor = DEFAULT_PLACEHOLDER_COLOR;
+                    long phKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_PLACEHOLDER) : 0L;
                     addElement(elements, id, PaintSupport.partId(box, id, 18, "_ph"), ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, placeholderColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, phKey);
                 }
             }
@@ -276,7 +276,7 @@ final class ControlPainter {
      *
      * 何が壊れていたか: 以前は選択の印を文字色（黒）の四角で描き、作者の枠線・背景がそのまま部品に効いていた。
      */
-    void drawNativeToggle(OpList elements, SceneAdapterBox box, String id, boolean radio, int color,
+    void drawNativeToggle(OpList elements, SceneLayer box, String id, boolean radio, int color,
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, int transDur, AnimationSpec colorBgAnim) {
         boolean mixed = !radio && box.values().attrs().containsKey("indeterminate");
@@ -287,8 +287,8 @@ final class ControlPainter {
         boolean darkAccent = accent != null && contrastRatio(accent, NATIVE_WHITE) < 3f;
         int strong = (checked || mixed) && accent != null ? shadeAccent(accent, stateColor, darkAccent) : stateColor;
 
-        float size = Math.min(box.w(), box.h());
-        float x = box.x() + (box.w() - size) / 2, y = box.y() + (box.h() - size) / 2;
+        float size = Math.min(box.w, box.h);
+        float x = decor.bounds.px() + (box.w - size) / 2, y = decor.bounds.py() + (box.h - size) / 2;
         int radius = radio ? Math.round(size / 2) : Math.min(NATIVE_CHECKBOX_RADIUS, Math.round(size / 2));
         Corners corners = Corners.all(radius);
         RenderMeta meta = new RenderMeta(baseMeta.clipRect(), corners, null,
@@ -301,7 +301,7 @@ final class ControlPainter {
         int mark = radio ? strong : dark && !mixed ? NATIVE_DARK : NATIVE_WHITE;
         int fill = filled ? strong : radio && dark ? NATIVE_DARK : NATIVE_WHITE;
         // 印の部品が背景を塗り、印（点・チェック）を中身として描く。輪はその上に重ねる
-        long toggleKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), radio ? DisplayItem.PART_RADIO : DisplayItem.PART_CHECKBOX) : 0L;
+        long toggleKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), radio ? DisplayItem.PART_RADIO : DisplayItem.PART_CHECKBOX) : 0L;
         addElement(elements, id, id + "_input", radio ? ElementType.RADIO : ElementType.CHECKBOX, x, y, size, size, state,
                 mark, fill, partsEvents, radius,
                 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, toggleKey);
@@ -310,7 +310,7 @@ final class ControlPainter {
         RoundedBorderSpec spec = new RoundedBorderSpec(1f, 1f, 1f, 1f, ring, ring, ring, ring);
         RenderMeta ringMeta = new RenderMeta(baseMeta.clipRect(), corners, null,
                 baseMeta.fontHeight(), 0f, 0f, baseMeta.originX(), baseMeta.originY(), 1, false, spec, passiveBorderEvents.hints());
-        long roundKey = box.node() != null ? BoxDecorationPainter.decorationKey(box, BoxDecorationPainter.FRAG_PART_BASE, 0) : 0L;
+        long roundKey = box.node != null ? BoxDecorationPainter.decorationKey(box, BoxDecorationPainter.FRAG_PART_BASE, 0) : 0L;
         addElement(elements, id, id + "_b_round", ElementType.ROUNDED_BORDER, x, y, size, size, "", 0, 0x00000000,
                 passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta, roundKey);
     }
@@ -381,7 +381,7 @@ final class ControlPainter {
      * 何が壊れていたか: 以前は溝の太さを箱の高さの 30%、つまみの直径を 80% にしていて、溝が細く、つまみの位置も
      * 端から半径の分だけ内側を動く Chrome とずれていた。作者の背景と枠線もそのまま描いていた。
      */
-    void drawNativeRange(OpList elements, SceneAdapterBox box, String id, String rangeData, int color, boolean track,
+    void drawNativeRange(OpList elements, SceneLayer box, String id, String rangeData, int color, boolean track,
                                  ItemProps partsEvents, BorderSpec border, RenderMeta baseMeta,
                                  int transDur, AnimationSpec colorBgAnim) {
         Integer accent = accentColor(box, color);
@@ -392,8 +392,8 @@ final class ControlPainter {
         RoundedBorderSpec trackBorder = track ? new RoundedBorderSpec(1f, 1f, 1f, 1f, edge, edge, edge, edge) : null;
         RenderMeta meta = new RenderMeta(baseMeta.clipRect(), null, null, baseMeta.fontHeight(), 0f, 0f,
                 baseMeta.originX(), baseMeta.originY(), 1, false, trackBorder);
-        long rangeKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_INPUT) : 0L;
-        addElement(elements, id, id + "_input", ElementType.RANGE, box.x(), box.y(), box.w(), box.h(), rangeData, strong, fill,
+        long rangeKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), DisplayItem.PART_INPUT) : 0L;
+        addElement(elements, id, id + "_input", ElementType.RANGE, decor.bounds.px(), decor.bounds.py(), box.w, box.h, rangeData, strong, fill,
                 partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, rangeKey);
     }
 
@@ -403,7 +403,7 @@ final class ControlPainter {
     static final int RANGE_TRACK_DARK = 0xFF3B3B3B, RANGE_TRACK_BORDER_DARK = 0x80CFCFCF;
 
     /** レンジの値の文字列（{@code 値:最小:最大}）。 */
-    static String rangeData(SceneAdapterBox box, String val) {
+    static String rangeData(SceneLayer box, String val) {
         String min = box.values().attrs().getOrDefault("min", "0");
         String max = box.values().attrs().getOrDefault("max", "100");
         if (val.isEmpty()) val = "50";
@@ -428,20 +428,20 @@ final class ControlPainter {
     }
 
     /** {@code appearance: none} のレンジ。 */
-    static boolean isPlainRange(SceneAdapterBox box) {
+    static boolean isPlainRange(SceneLayer box) {
         return "range".equalsIgnoreCase(box.values().attrs().getOrDefault("type", "").trim())
-                && !StyleResolver.isNativeRange(box.node(), box.style().typed());
+                && !StyleResolver.isNativeRange(box.node, box.style.typed());
     }
 
     /** {@code appearance: none} のチェックボックス・ラジオボタン。 */
-    static boolean isPlainToggle(SceneAdapterBox box) {
+    static boolean isPlainToggle(SceneLayer box) {
         String type = box.values().attrs().getOrDefault("type", "").trim().toLowerCase(Locale.ROOT);
-        return (type.equals("checkbox") || type.equals("radio")) && !StyleResolver.isNativeToggle(box.node(), box.style().typed());
+        return (type.equals("checkbox") || type.equals("radio")) && !StyleResolver.isNativeToggle(box.node, box.style.typed());
     }
 
     /** {@code accent-color}。auto（UA の既定）なら null。 */
-    static Integer accentColor(SceneAdapterBox box, int textColor) {
-        String v = box.style().typed().inheritedPaint.accentColor;
+    static Integer accentColor(SceneLayer box, int textColor) {
+        String v = box.style.typed().inheritedPaint.accentColor;
         if (v == null) return null;
         v = v.trim();
         if (v.isEmpty() || "auto".equalsIgnoreCase(v)) return null;
@@ -449,7 +449,7 @@ final class ControlPainter {
         return ColorParser.isColor(v) ? ColorParser.parseColor(v) : null;
     }
 
-    void drawBorderedControl(OpList elements, String id, String suffix, ElementType type, SceneAdapterBox box,
+    void drawBorderedControl(OpList elements, String id, String suffix, ElementType type, SceneLayer box,
                                      float innerX, float innerY, float innerW, float innerH, String text, int color, int bgColor, int fallbackRadius,
                                      ItemProps partsEvents, ItemProps innerEvents, ItemProps passiveBorderEvents,
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
@@ -457,13 +457,13 @@ final class ControlPainter {
         int partOrd = "_input".equals(suffix) ? DisplayItem.PART_INPUT :
                       "_textarea".equals(suffix) ? DisplayItem.PART_TEXTAREA :
                       "_select".equals(suffix) ? DisplayItem.PART_SELECT : DisplayItem.PART_INPUT;
-        long ctrlKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), partOrd) : 0L;
+        long ctrlKey = box.node != null ? DisplayItem.keyOf(box.node.paintHandle(), partOrd) : 0L;
         String ctrlId = PaintSupport.partId(box, id, 19, suffix);
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
             addElement(elements, id, ctrlId, type, innerX, innerY, innerW, innerH, text, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, ctrlKey);
         } else {
-            addElement(elements, id, ctrlId, type, box.x(), box.y(), box.w(), box.h(), text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, ctrlKey);
+            addElement(elements, id, ctrlId, type, decor.bounds.px(), decor.bounds.py(), box.w, box.h, text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, ctrlKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }
@@ -475,14 +475,14 @@ final class ControlPainter {
      * 下げた矩形で描くために、描く間だけ箱の y と高さを差し替える（背景・画像・内側の影・枠線の描き方は
      * どれも箱の矩形を読むので、普通の箱と同じ道を通す）。
      */
-    void drawFieldsetElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawFieldsetElement(OpList elements, SceneLayer box, String id, int color, int bgColor, int fallbackRadius,
                                      Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
                                      ItemProps partsEvents, ItemProps passiveBorderEvents,
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows) {
-        SceneAdapterBox legend = box.renderedLegend();
-        float shift = legend == null ? 0 : Math.max(0, (legend.h() - box.bT()) / 2);
-        decor.withBounds(box, box.x(), box.y() + shift, box.w(), Math.max(0, box.h() - shift), false,
+        SceneLayer legend = PaintSupport.renderedLegend(box, null);
+        float shift = legend == null ? 0 : Math.max(0, (legend.h - box.bT) / 2);
+        decor.withBounds(box, decor.bounds.px(), decor.bounds.py() + shift, box.w, Math.max(0, box.h - shift), false,
                 () -> decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy,
                         partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows));
     }

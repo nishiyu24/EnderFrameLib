@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -8,7 +9,6 @@ import com.nishiyu.enderframelib.core.css.InheritedStyle;
 import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.WritingModes;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.css.model.TextAlign;
 import com.nishiyu.enderframelib.core.paint.model.BlendMode;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -17,13 +17,11 @@ import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.RenderHints;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
-import com.nishiyu.enderframelib.core.text.model.ShapedLine;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
-import static com.nishiyu.enderframelib.core.paint.PaintSupport.alignOffset;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.putFontEvents;
 
 /**
@@ -42,7 +40,7 @@ final class TextRunPainter {
      * ぼかしのある影は、錨（NODE）に {@code blur} のレイヤーを載せ、その中に影の文字を置く（ぼかしの σ は半径の半分）。
      * 影はクリックを受けず、色のアニメーション・トランジションも受けない。
      */
-    private void addTextRun(OpList elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+    private void addTextRun(OpList elements, SceneLayer box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                             String id, float x, float y, float w, float h, String text, int color, int bgColor,
                             ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows) {
         if (effStyle != null && WritingModes.usesUpright(effStyle) && hasUprightChar(effStyle, text)) {
@@ -67,7 +65,7 @@ final class TextRunPainter {
      * 縦書きの根は内容ごと 90° 回って描かれるので、正立させる字は自分の中心まわりに -90° 回して回転を打ち消す。
      * 各塊の幅は書体の送り幅で測り、行の幅 {@code w} に合うよう等倍して配る。
      */
-    private void addVerticalTextRuns(OpList elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+    private void addVerticalTextRuns(OpList elements, SceneLayer box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                                      String id, float x, float y, float w, float h, String text,
                                      int color, int bgColor, ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim,
                                      List<BoxDecorations.Shadow> shadows) {
@@ -111,12 +109,12 @@ final class TextRunPainter {
         }
     }
 
-    private void emitTextRun(OpList elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+    private void emitTextRun(OpList elements, SceneLayer box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                              String id, float x, float y, float w, float h, String text, int color, int bgColor,
                              ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows, float rot) {
         // vertical-lr は転置で置くので、文字は上下反転で鏡映を打ち消す
         float flipY = effStyle != null && WritingModes.isTransposed(WritingModes.flowOf(effStyle)) ? -1f : 1f;
-        int nodeHandle = box.node() != null ? box.node().paintHandle() : 0;
+        int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
         for (int i = shadows.size() - 1; i >= 0; i--) {
             BoxDecorations.Shadow sh = shadows.get(i);
             if ((sh.color() >>> 24) == 0) continue;
@@ -152,12 +150,8 @@ final class TextRunPainter {
         addElement(elements, id, id + "_txt_" + mainPart, ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, flipY, rot, transDur, colorAnim, meta, mainKey);
     }
 
-    private ItemProps textPropsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps partsEvents, int resolvedColor, DisplayItem prevItem) {
+    private ItemProps textPropsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps partsEvents, int resolvedColor) {
         ItemProps props = partsEvents.copy();
-        if (prevItem != null) {
-            props.reuseAttrs(prevItem.events());
-            props.reuseCandidate(prevItem.hints());
-        }
         InheritedStyle inh = style.typed().inherited; InheritedPaintStyle paint = style.typed().inheritedPaint;
         props.put("font-weight", inh.fontWeight == 700 ? "bold"
                 : inh.fontWeight == 400 ? "normal" : Integer.toString(inh.fontWeight));
@@ -184,86 +178,46 @@ final class TextRunPainter {
         return list;
     }
 
-    private static DisplayItem prevTextItem(List<DisplayItem> prevItems, int idx) {
-        if (prevItems == null || idx >= prevItems.size()) return null;
-        DisplayItem cand = prevItems.get(idx);
-        return cand.type() == ElementType.TEXT ? cand : null;
-    }
-
-    private static RenderMeta reuseTextMeta(DisplayItem prevItem, ClipRect clipRect, float fontHeight, float baseline,
-                                            float lineHeight, float originX, float originY, RenderHints hints) {
-        RenderMeta prev = prevItem != null ? prevItem.meta() : null;
-        if (prev != null && prev.circleBorder() == null && prev.roundedBorder() == null && prev.borderRadii() == null
-                && prev.itemCount() == 1 && !prev.interactiveState()
-                && Float.compare(prev.fontHeight(), fontHeight) == 0 && Float.compare(prev.baseline(), baseline) == 0
-                && Float.compare(prev.lineHeight(), lineHeight) == 0 && Float.compare(prev.originX(), originX) == 0
-                && Float.compare(prev.originY(), originY) == 0
-                && java.util.Objects.equals(prev.clipRect(), clipRect) && java.util.Objects.equals(prev.hints(), hints)) {
-            return prev;
-        }
+    private static RenderMeta textMeta(ClipRect clipRect, float fontHeight, float baseline, float lineHeight, float originX, float originY,
+                                       RenderHints hints) {
         return new RenderMeta(clipRect, null, null, fontHeight, baseline, lineHeight, originX, originY, 1, false, null, hints);
     }
 
-    void drawTextNodeElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor,
-                                     ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
-                                     int transDur, AnimationSpec colorAnim, List<DisplayItem> prevItems) {
+    /**
+     * 文字の箱 {@code box} の断片（{@link SceneRun}）を文字の項目にする。断片の座標は原点の節からなので、原点の節の左上 {@code (opX, opY)} を
+     * 足す（層の記憶は 0。M3b-4a からその命令に {@link com.nishiyu.enderframelib.core.paint.scene.DrawOp#BASE_ORIGIN_PARENT} の印を付ける）。
+     */
+    void drawTextNodeElement(OpList elements, SceneLayer box, float opX, float opY, String id, int color, int bgColor,
+                             ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
+                             int transDur, AnimationSpec colorAnim) {
+        if (box.runs.length == 0) return;
         ItemProps baseTextEvents = null;
         List<BoxDecorations.Shadow> baseTextShadows = null;
-        int prevIdx = 1;
-
-        if (!box.runs().isEmpty()) {
-            SceneAdapterBox op = box.originParent(); float opX = op != null ? op.x() : 0f, opY = op != null ? op.y() : 0f;
-            long savedBase = elements.saveOrigin();
-            elements.baseOriginParent(); // 断片は原点の節の座標（M3b-4a）
-            try {
-            for (SceneRun frag : box.runs()) {
+        long savedBase = elements.saveOrigin();
+        elements.baseOriginParent(); // 断片は原点の節の座標（M3b-4a）
+        try {
+            for (SceneRun frag : box.runs) {
                 if (frag.text() == null || frag.text().isBlank()) continue;
                 com.nishiyu.enderframelib.core.css.ComputedStyle fl = frag.firstLineStyle();
-                DisplayItem prevItem = prevTextItem(prevItems, prevIdx);
-                int before = elements.size();
                 if (fl != null) {
                     InheritedStyle flInh = fl.typed().inherited;
                     int flColor = fl.typed().inheritedPaint.hasColor ? fl.typed().inheritedPaint.color : color;
                     float flFontH = Math.max(1.0f, flInh.fontSize);
-                    ItemProps flEvents = textPropsForStyle(fl, partsEvents, flColor, prevItem);
+                    ItemProps flEvents = textPropsForStyle(fl, partsEvents, flColor);
                     List<BoxDecorations.Shadow> flShadows = textShadowsForStyle(fl, flColor, flEvents);
-                    RenderMeta fragMeta = reuseTextMeta(prevItem, normalizedClip, flFontH, frag.baseline(), frag.h(), ox, oy, flEvents.hints());
+                    RenderMeta fragMeta = textMeta(normalizedClip, flFontH, frag.baseline(), frag.h(), ox, oy, flEvents.hints());
                     addTextRun(elements, box, fl, id, frag.x() + opX, frag.y() + opY, frag.w(), frag.h(), frag.text(), flColor, bgColor, flEvents, fragMeta, transDur, AnimationSpec.NONE, flShadows);
                 } else {
                     if (baseTextEvents == null) {
-                        baseTextEvents = textPropsForStyle(box.style(), partsEvents, color, prevItem);
-                        baseTextShadows = textShadowsForStyle(box.style(), color, baseTextEvents);
+                        baseTextEvents = textPropsForStyle(box.style, partsEvents, color);
+                        baseTextShadows = textShadowsForStyle(box.style, color, baseTextEvents);
                     }
-                    RenderMeta fragMeta = reuseTextMeta(prevItem, normalizedClip, fontHVal, frag.baseline(), frag.h(), ox, oy, baseTextEvents.hints());
-                    addTextRun(elements, box, box.style(), id, frag.x() + opX, frag.y() + opY, frag.w(), frag.h(), frag.text(), color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, baseTextShadows);
+                    RenderMeta fragMeta = textMeta(normalizedClip, fontHVal, frag.baseline(), frag.h(), ox, oy, baseTextEvents.hints());
+                    addTextRun(elements, box, box.style, id, frag.x() + opX, frag.y() + opY, frag.w(), frag.h(), frag.text(), color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, baseTextShadows);
                 }
-                prevIdx += elements.size() - before;
             }
-            } finally {
-                elements.restoreOrigin(savedBase);
-            }
-        } else if (box.shapedLines() != null && !box.shapedLines().isEmpty()) {
-            baseTextEvents = textPropsForStyle(box.style(), partsEvents, color, prevTextItem(prevItems, prevIdx));
-            baseTextShadows = textShadowsForStyle(box.style(), color, baseTextEvents);
-            Style stLine = box.style().typed();
-            TextAlign align = stLine.inherited.textAlign;
-            boolean rtl = stLine.facts.rtl;
-            float contentX = box.x() + box.pL() + box.bL();
-            float availableW = Math.max(0, box.w() - box.pL() - box.pR() - box.bL() - box.bR());
-            float lineY = box.y() + box.pT() + box.bT();
-
-            for (ShapedLine line : box.shapedLines()) {
-                if (!line.text().isBlank()) {
-                    DisplayItem prevItem = prevTextItem(prevItems, prevIdx);
-                    int before = elements.size();
-                    float lineW = line.width();
-                    float lineX = contentX + alignOffset(align, rtl, availableW, lineW);
-                    RenderMeta lineMeta = reuseTextMeta(prevItem, normalizedClip, fontHVal, line.baseline(), line.height(), ox, oy, baseTextEvents.hints());
-                    addTextRun(elements, box, box.style(), id, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, lineMeta, transDur, colorAnim, baseTextShadows);
-                    prevIdx += elements.size() - before;
-                }
-                lineY += line.height();
-            }
+        } finally {
+            elements.restoreOrigin(savedBase);
         }
     }
 }

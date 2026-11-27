@@ -10,6 +10,9 @@ import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.paint.scene.LayerEffects;
+import com.nishiyu.enderframelib.core.paint.scene.PlacedLayer;
+import com.nishiyu.enderframelib.core.paint.scene.SceneChildren;
+import com.nishiyu.enderframelib.core.paint.scene.SceneChunk;
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
 import com.nishiyu.enderframelib.core.paint.scene.Transform2D;
@@ -103,12 +106,12 @@ public final class SceneDamage {
         float[] e = new float[8 * 9];
         int n;
 
-        void pushTransform(SceneAdapterBox box, Transform2D t) {
+        void pushTransform(PlacedLayer box, Transform2D t) {
             ensure();
             int b = n++ * 9;
             e[b] = 0f;
-            e[b + 1] = box.x() + box.w() * t.originX();
-            e[b + 2] = box.y() + box.h() * t.originY();
+            e[b + 1] = box.x + box.layer.w * t.originX();
+            e[b + 2] = box.y + box.layer.h * t.originY();
             e[b + 3] = t.tx(); e[b + 4] = t.ty(); e[b + 5] = t.sx(); e[b + 6] = t.sy();
             e[b + 7] = t.rotate(); e[b + 8] = t.skew();
         }
@@ -131,9 +134,13 @@ public final class SceneDamage {
     /** スクロール量の変わったコンテナと、その祖先の層（前後のシーンの両方。使い回した層でも下りる道）。 */
     private final IdentityHashMap<SceneLayer, Boolean> onPath = new IdentityHashMap<>();
     private final Chain chain = new Chain();
+    /** たどっている間の前（{@code a} の側）と今（{@code b} の側）の動的な値。 */
+    private DynamicSceneState dynA, dynB;
     private int depth;
     /** 診断用: 下りた対の数（前のフレームの使い回しで飛ばした部分木は数えない）。 */
     private long visitedPairs;
+    /** 診断用: 前と同じ位置の同じチャンクで、中へ下りずに飛ばした数。 */
+    private long skippedChunks;
 
     /** 前のフレームを忘れる（次は全面）。 */
     public void reset() {
@@ -143,6 +150,8 @@ public final class SceneDamage {
     }
 
     public long visitedPairs() { return visitedPairs; }
+
+    public long skippedChunks() { return skippedChunks; }
 
     /**
      * 前に渡したフレームから、{@code scene} と {@code dyn} のフレームまでに描き直す範囲を返し、今のフレームを覚える。返す値は次の呼び出しまで有効。
@@ -175,13 +184,22 @@ public final class SceneDamage {
             markPaths(prevScene.root);
             markPaths(scene.root);
         }
-        SceneAdapterBox a = SceneAdapterBox.root(prevScene, prevDyn), b = SceneAdapterBox.root(scene, cur);
-        SceneAdapterBox pc = "root".equals(a.node().tag) ? SceneAdapterSupport.canvasBackgroundSource(a) : null;
-        SceneAdapterBox cc = "root".equals(b.node().tag) ? SceneAdapterSupport.canvasBackgroundSource(b) : null;
-        SceneLayer prevCanvas = pc != null ? pc.layer : null, curCanvas = cc != null ? cc.layer : null;
+        SceneLayer prevCanvas = isRoot(prevScene.root) ? PaintSupport.canvasBackgroundSource(prevScene.root) : null;
+        SceneLayer curCanvas = isRoot(scene.root) ? PaintSupport.canvasBackgroundSource(scene.root) : null;
         if ((prevCanvas == null) != (curCanvas == null)
                 || (prevCanvas != null && prevCanvas.style.typed().visual != curCanvas.style.typed().visual)) { out.setFull("canvas-background"); return; }
-        diff(a, b);
+        this.dynA = prevDyn;
+        this.dynB = cur;
+        try {
+            diff(PlacedLayer.root(prevScene.root), PlacedLayer.root(scene.root));
+        } finally {
+            this.dynA = null;
+            this.dynB = null;
+        }
+    }
+
+    private static boolean isRoot(SceneLayer l) {
+        return l.node != null && "root".equals(l.node.tag);
     }
 
     /**
@@ -224,15 +242,15 @@ public final class SceneDamage {
     // ---- 対にしてたどる ----
 
     /** 対にした箱 {@code a}（前）・{@code b}（今）の違いを足す。鎖は {@code b} の祖先のもの（同じ枠の対だけが下りるので前も同じ）。 */
-    private void diff(SceneAdapterBox a, SceneAdapterBox b) {
+    private void diff(PlacedLayer a, PlacedLayer b) {
         if (out.full) return;
         visitedPairs++;
         SceneLayer la = a.layer, lb = b.layer;
         // 使い回した層が同じ位置: 部分木ごと同じ（スクロール量の変わったコンテナを含む部分木だけは、そこまで下りる）
-        if (la == lb && a.x() == b.x() && a.y() == b.y() && !onPath.containsKey(lb)) return;
+        if (la == lb && a.x == b.x && a.y == b.y && !onPath.containsKey(lb)) return;
         if (!sameFrame(a, b)) {
-            subtree(a);
-            subtree(b);
+            subtree(a, dynA);
+            subtree(b, dynB);
             return;
         }
         int mark = chain.n;
@@ -242,8 +260,8 @@ public final class SceneDamage {
             if (scrolledHere) {
                 if ((lb.propagatedLayers & SceneLayer.LAYER_HOIST) != 0) { out.setFull("hoisted-in-scroller"); return; }
                 if (!(la.clipsX() && la.clipsY() && lb.clipsX() && lb.clipsY())) { // 片方の軸だけ切る: 中身が枠の外へはみ出す
-                    subtree(a);
-                    subtree(b);
+                    subtree(a, dynA);
+                    subtree(b, dynB);
                     return;
                 }
                 own(a);
@@ -261,40 +279,85 @@ public final class SceneDamage {
         }
     }
 
-    /** 子を対にする: 同じ層 → 同じレイアウトの箱 → 同じ節。対にならない子・描く順の入れ替わった子は部分木を足す。 */
-    private void children(SceneAdapterBox a, SceneAdapterBox b) {
-        List<SceneAdapterBox> ak = a.paintChildren(), bk = b.paintChildren();
-        int an = ak.size(), bn = bk.size();
-        IdentityHashMap<Object, Integer> byLayer = new IdentityHashMap<>(an * 2), byBox = new IdentityHashMap<>(an * 2),
-                byNode = new IdentityHashMap<>(an * 2);
-        for (int i = 0; i < an; i++) {
-            SceneLayer l = ak.get(i).layer;
-            byLayer.putIfAbsent(l, i);
-            if (l.frag != null && l.frag.box != null) byBox.putIfAbsent(l.frag.box, i);
-            if (l.node != null && !l.anonymous()) byNode.putIfAbsent(l.node, i);
-        }
+    /**
+     * 子を対にする: 同じ層 → 同じレイアウトの箱 → 同じ節。対にならない子・描く順の入れ替わった子は部分木を足す。
+     * 前と同じ位置の同じチャンク（{@code ==}。{@code SceneEmitter} が使い回したもの）は、中の層が全部自分と同じ位置で対になり違いが
+     * 無いので下りない（スクロール量の変わったコンテナへの道の層を含むチャンクは下りる）。親が同じ位置（{@link #sameFrame}）で、
+     * 原点の箱のスクロールが変わっていない（変わったコンテナは {@link #diff} が中へ下りない）ので、チャンクの中の子の位置も前と同じ。
+     * 子を対にする表は、違うチャンクがあるときだけ作る。
+     */
+    private void children(PlacedLayer a, PlacedLayer b) {
+        SceneChildren ac = a.layer.children, bc = b.layer.children;
+        int an = ac.size;
+        int[] aBase = new int[ac.chunks.length + 1];
+        for (int k = 0; k < ac.chunks.length; k++) aBase[k + 1] = aBase[k] + ac.chunks[k].layers.length;
         boolean[] used = new boolean[an];
+        IdentityHashMap<Object, Integer> byLayer = null, byBox = null, byNode = null;
         int lastMatched = -1;
-        for (int j = 0; j < bn && !out.full; j++) {
-            SceneAdapterBox nb = bk.get(j);
-            SceneLayer l = nb.layer;
-            int i = take(byLayer, l, used);
-            if (i < 0 && l.frag != null && l.frag.box != null) i = take(byBox, l.frag.box, used);
-            if (i < 0 && l.node != null && !l.anonymous()) i = take(byNode, l.node, used);
-            if (i < 0) {
-                subtree(nb);
+        for (int k = 0; k < bc.chunks.length && !out.full; k++) {
+            SceneChunk ck = bc.chunks[k];
+            if (k < ac.chunks.length && ac.chunks[k] == ck && ac.chunkX[k] == bc.chunkX[k] && ac.chunkY[k] == bc.chunkY[k]
+                    && aBase[k] > lastMatched && unusedRange(used, aBase[k], aBase[k + 1]) && !onPathIn(ck)) {
+                for (int i = aBase[k]; i < aBase[k + 1]; i++) used[i] = true;
+                if (aBase[k + 1] > aBase[k]) lastMatched = aBase[k + 1] - 1;
+                skippedChunks++;
                 continue;
             }
-            used[i] = true;
-            if (i < lastMatched) { // 描く順が入れ替わった（重なりの順が変わりうる）
-                subtree(ak.get(i));
-                subtree(nb);
-                continue;
+            if (byLayer == null) {
+                byLayer = new IdentityHashMap<>(an * 2);
+                byBox = new IdentityHashMap<>(an * 2);
+                byNode = new IdentityHashMap<>(an * 2);
+                int i = 0;
+                for (SceneChunk ak : ac.chunks) {
+                    for (SceneLayer l : ak.layers) {
+                        byLayer.putIfAbsent(l, i);
+                        if (l.frag != null && l.frag.box != null) byBox.putIfAbsent(l.frag.box, i);
+                        if (l.node != null && !l.anonymous()) byNode.putIfAbsent(l.node, i);
+                        i++;
+                    }
+                }
             }
-            lastMatched = i;
-            diff(ak.get(i), nb);
+            for (SceneLayer l : ck.layers) {
+                if (out.full) return;
+                PlacedLayer nb = b.child(l, bc.chunkX[k], bc.chunkY[k], dynB);
+                int i = take(byLayer, l, used);
+                if (i < 0 && l.frag != null && l.frag.box != null) i = take(byBox, l.frag.box, used);
+                if (i < 0 && l.node != null && !l.anonymous()) i = take(byNode, l.node, used);
+                if (i < 0) {
+                    subtree(nb, dynB);
+                    continue;
+                }
+                used[i] = true;
+                PlacedLayer na = childAt(a, aBase, i);
+                if (i < lastMatched) { // 描く順が入れ替わった（重なりの順が変わりうる）
+                    subtree(na, dynA);
+                    subtree(nb, dynB);
+                    continue;
+                }
+                lastMatched = i;
+                diff(na, nb);
+            }
         }
-        for (int i = 0; i < an && !out.full; i++) if (!used[i]) subtree(ak.get(i));
+        for (int i = 0; i < an && !out.full; i++) if (!used[i]) subtree(childAt(a, aBase, i), dynA);
+    }
+
+    private static boolean unusedRange(boolean[] used, int from, int to) {
+        for (int i = from; i < to; i++) if (used[i]) return false;
+        return true;
+    }
+
+    private boolean onPathIn(SceneChunk c) {
+        if (onPath.isEmpty()) return false;
+        for (SceneLayer l : c.layers) if (onPath.containsKey(l)) return true;
+        return false;
+    }
+
+    /** 前の側の {@code i} 番目の子の置き場所。 */
+    private PlacedLayer childAt(PlacedLayer a, int[] aBase, int i) {
+        SceneChildren ac = a.layer.children;
+        int k = 0;
+        while (aBase[k + 1] <= i) k++;
+        return a.child(ac.chunks[k].layers[i - aBase[k]], ac.chunkX[k], ac.chunkY[k], dynA);
     }
 
     private static int take(IdentityHashMap<Object, Integer> index, Object key, boolean[] used) {
@@ -306,9 +369,9 @@ public final class SceneDamage {
      * 子孫の写し方（位置・変形・効果・切り抜き・重なり）が同じか。大きさ・枠・余白は、それで子孫を切る・写す箱（はみ出しを切る・
      * スクロールする・変形・効果・切り抜きを持つ）でだけ比べる（それ以外の箱の大きさの違いは自分の描画命令に現れる）。
      */
-    private static boolean sameFrame(SceneAdapterBox a, SceneAdapterBox b) {
+    private static boolean sameFrame(PlacedLayer a, PlacedLayer b) {
         SceneLayer la = a.layer, lb = b.layer;
-        if (a.x() != b.x() || a.y() != b.y()) return false; // 動いた（祖先の移動・sticky）
+        if (a.x != b.x || a.y != b.y) return false; // 動いた（祖先の移動・sticky）
         if (la == lb) return true;
         boolean sizeMatters = framesChildren(la) || framesChildren(lb);
         if (sizeMatters && (la.w != lb.w || la.h != lb.h
@@ -372,19 +435,19 @@ public final class SceneDamage {
      * 箱の自分の描画の範囲: 描画命令と文字の断片の矩形。毎フレーム作る描画（命令を持たない層・スクロールバー・マスク・{@code ::backdrop}）は
      * 枠（border-box）。
      */
-    private void own(SceneAdapterBox box) {
+    private void own(PlacedLayer box) {
         if (out.full) return;
         SceneLayer l = box.layer;
         if (l.displayNone()) return;
         if (l.isTopLayer() && l.backdrop() != null) { out.setFull("backdrop-pseudo"); return; } // ::backdrop はビューポート全体を覆う
         DrawOp[] ops = l.ops();
         if ((ops.length == 0 && l.hasSelf()) || l.wantsScrollbars() || l.backdrop() != null || hasMask(l) || l.verticalWrapper()) box(box);
-        SceneAdapterBox op = box.originParent();
-        float ox = op != null ? op.x() : 0f, oy = op != null ? op.y() : 0f;
+        PlacedLayer op = box.originParent();
+        float ox = op != null ? op.x : 0f, oy = op != null ? op.y : 0f;
         for (DrawOp o : ops) {
             DrawOp.Item it = (DrawOp.Item) o;
             boolean fromOrigin = (it.flags() & DrawOp.BASE_ORIGIN_PARENT) != 0;
-            float bx = fromOrigin ? ox : box.x(), by = fromOrigin ? oy : box.y();
+            float bx = fromOrigin ? ox : box.x, by = fromOrigin ? oy : box.y;
             float pad = padOf(it.meta(), it.text(), it.h());
             add(bx + it.x() - pad, by + it.y() - pad, bx + it.x() + it.w() + pad, by + it.y() + it.h() + pad);
         }
@@ -395,8 +458,8 @@ public final class SceneDamage {
     }
 
     /** 箱の枠（border-box。スクロールバー・マスク・{@code ::backdrop} は枠の中）。 */
-    private void box(SceneAdapterBox box) {
-        add(box.x() - PAD, box.y() - PAD, box.x() + box.w() + PAD, box.y() + box.h() + PAD);
+    private void box(PlacedLayer box) {
+        add(box.x - PAD, box.y - PAD, box.x + box.layer.w + PAD, box.y + box.layer.h + PAD);
     }
 
     /** 描画命令の余白（影のぼかし・文字の大きさ。旧 {@code DamagePlanner#estimateBounds} から引き継いだ規則）。 */
@@ -412,7 +475,7 @@ public final class SceneDamage {
     }
 
     /** 部分木の範囲（自分・子孫。両方向を切る箱は子孫を枠で切るので下りない）。 */
-    private void subtree(SceneAdapterBox box) {
+    private void subtree(PlacedLayer box, DynamicSceneState dyn) {
         if (out.full || box.layer.displayNone()) return;
         if (++depth > 256) { out.setFull("depth"); return; }
         int mark = chain.n;
@@ -422,9 +485,12 @@ public final class SceneDamage {
             SceneLayer l = box.layer;
             boolean clipsAll = l.clipsX() && l.clipsY() && (l.propagatedLayers & SceneLayer.LAYER_HOIST) == 0;
             if (clipsAll || l.children.size == 0) return;
-            for (SceneAdapterBox c : box.paintChildren()) {
-                subtree(c);
-                if (out.full) return;
+            SceneChildren sc = l.children;
+            for (int k = 0; k < sc.chunks.length; k++) {
+                for (SceneLayer c : sc.chunks[k].layers) {
+                    subtree(box.child(c, sc.chunkX[k], sc.chunkY[k], dyn), dyn);
+                    if (out.full) return;
+                }
             }
         } finally {
             chain.n = mark;
@@ -433,7 +499,7 @@ public final class SceneDamage {
     }
 
     /** 箱の変形とフィルターの広がりを鎖に積む（自分の描画と子孫に掛かる）。 */
-    private void push(SceneAdapterBox box) {
+    private void push(PlacedLayer box) {
         SceneLayer l = box.layer;
         if (l.transform != null) chain.pushTransform(box, l.transform);
         if (l.effects != null && !l.effects.filters().isEmpty()) {

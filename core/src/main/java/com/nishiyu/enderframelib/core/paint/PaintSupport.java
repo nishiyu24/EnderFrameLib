@@ -1,7 +1,10 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
-import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
+import com.nishiyu.enderframelib.core.paint.scene.SceneChildren;
+import com.nishiyu.enderframelib.core.paint.scene.SceneChunk;
+import com.nishiyu.enderframelib.core.box.Display;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssLength;
@@ -22,48 +25,76 @@ import com.nishiyu.enderframelib.core.css.model.Visibility;
 
 /** {@code DisplayListBuilder} の部品群が共通で使う、状態を持たない道具（要素の追加・クリップ・属性の読み取りなど）。 */
 final class PaintSupport {
-    /** flex / grid アイテムは位置指定が無くても z-index でコンテキストを作る（CSS Flexbox §5.4 / Grid §9.5）。 */
-    static boolean isFlexOrGridItem(SceneAdapterBox box) {
-        if (box.paintParent() == null || box.isAbsolute()) return false;
-        return box.inFlexOrGrid();
-    }
-
-    /** 中身ごと 1 つの単位として描くインラインレベルの箱（inline-block / inline-flex など）と flex / grid アイテム。 */
-    static boolean isAtomicInline(SceneAdapterBox box) {
-        if (isFlexOrGridItem(box)) return true;
-        return box.atomicInline();
-    }
-
     /**
      * {@code visibility: hidden / collapse}。箱自身は描かずヒットテストにも出さないが、場所は取り、子孫は自分の値で描く。
      *
      * LIMITATION(制約): 表の行・列の {@code collapse} も hidden と同じで、場所を詰めない。README の "Not supported" に対応。
      */
-    static boolean isInvisible(SceneAdapterBox box) {
-        return box.style().typed().inherited.visibility != Visibility.VISIBLE;
+    static boolean isInvisible(SceneLayer box) {
+        return box.style.typed().inherited.visibility != Visibility.VISIBLE;
+    }
+
+    /** 中身ごと 1 つの単位として描くインラインレベルの箱（inline-block / inline-flex など。インラインの流れでないもの）。 */
+    static boolean atomicInline(SceneLayer box) {
+        Display d = box.display;
+        return d != null && d.isInlineLevel() && d.inner() != Display.Inner.FLOW;
+    }
+
+    /** 表のセルか。 */
+    static boolean tableCell(SceneLayer box) {
+        Display d = box.display;
+        return d != null && d.inner() == Display.Inner.TABLE_CELL;
     }
 
     /**
-     * {@code empty-cells: hide} で、枠線も背景も描かない空のセルか（CSS 2.2 §17.6.1.1）。
-     * {@code border-collapse: separate} の表のセルだけで、中身が空白だけ（子孫に要素も語も無い）のもの。
+     * 自分の錨（節）を出す箱か: 匿名でなく、大きさがあり、根・文字の節でないもの。子の座標の原点と親の錨はこの箱になる
+     * （錨を出さない箱は、親の錨と座標の原点を素通しにする）。
      */
-    static boolean hidesEmptyCell(SceneAdapterBox box) {
-        if (!box.tableCell() || box.collapsedBorders() != null) return false;
-        String ec = box.style().typed().inheritedPaint.emptyCells;
-        if (ec == null || !"hide".equalsIgnoreCase(ec.trim())) return false;
-        return hasNoContent(box);
+    static boolean hasOwnNode(SceneLayer b) {
+        return b != null && !b.anonymous() && b.w > 0f && b.h > 0f && b.node != null
+                && !"root".equals(b.node.tag) && !"#text".equals(b.node.tag);
     }
 
-    private static boolean hasNoContent(SceneAdapterBox box) {
-        for (SceneRun f : box.runs()) {
-            if (!f.isText() || !f.text().isBlank()) return false;
+    /** 背景をキャンバスに譲る要素（背景を持つ html、無ければ背景を持つ body）。根 {@code root} の層から探す。無ければ null。 */
+    static SceneLayer canvasBackgroundSource(SceneLayer root) {
+        SceneLayer html = childWithTag(root, "html");
+        if (html != null && hasBackground(html)) return html;
+        SceneLayer body = childWithTag(html != null ? html : root, "body");
+        return body != null && hasBackground(body) ? body : null;
+    }
+
+    private static SceneLayer childWithTag(SceneLayer parent, String tag) {
+        for (SceneChunk c : parent.children.chunks) {
+            for (SceneLayer child : c.layers) {
+                if (child.node != null && tag.equals(child.node.tag)) return child;
+            }
         }
-        for (SceneAdapterBox c : box.paintChildren()) {
-            if (c.displayNone()) continue;
-            if (c.node() != null && c.node().tag != null && !c.node().tag.isEmpty() && !c.node().tag.startsWith("#")) return false;
-            if (!hasNoContent(c)) return false;
+        return null;
+    }
+
+    private static boolean hasBackground(SceneLayer box) {
+        com.nishiyu.enderframelib.core.css.VisualStyle v = box.style.typed().visual;
+        return v.hasBackgroundColor || (v.backgroundImage != null && !"none".equals(v.backgroundImage));
+    }
+
+    /**
+     * 描画される {@code <legend>}（fieldset の子の層。{@code display: none} なら null）と、fieldset の左上からの位置
+     * （{@code out = {x, y}}。fieldset は原点の箱なので、子の座標はチャンクの位置と子の位置の和）。
+     */
+    static SceneLayer renderedLegend(SceneLayer fieldset, float[] out) {
+        SceneChildren sc = fieldset.children;
+        for (int k = 0; k < sc.chunks.length; k++) {
+            for (SceneLayer c : sc.chunks[k].layers) {
+                if (!c.renderedLegend()) continue;
+                if (c.display != null && c.display.isNone()) return null;
+                if (out != null) {
+                    out[0] = sc.chunkX[k] + c.x;
+                    out[1] = sc.chunkY[k] + c.y;
+                }
+                return c;
+            }
         }
-        return true;
+        return null;
     }
 
     /**
@@ -131,8 +162,8 @@ final class PaintSupport {
         return radius <= 0 ? 0 : Math.max(0, Math.round(radius + grow));
     }
 
-    static String partId(SceneAdapterBox box, String id, int slot, String suffix) {
-        return box != null && box.node() != null && id.equals(box.node().key()) ? box.node().partKey(slot, suffix) : id + suffix;
+    static String partId(SceneLayer box, String id, int slot, String suffix) {
+        return box != null && box.node != null && id.equals(box.node.key()) ? box.node.partKey(slot, suffix) : id + suffix;
     }
 
     private static final Object FONT_ATTRS_KEY = new Object();
@@ -141,8 +172,8 @@ final class PaintSupport {
      * 描画側が測定と同じ書体・字の位置を引けるように、書体の照合と字の送りに効く指定を載せる
      * （太さ・斜体・カーニング・字間）。算出スタイルだけで決まるため、不変マップをスタイルへメモ化する。
      */
-    static void putFontEvents(SceneAdapterBox box, ItemProps events) {
-        putFontEvents(box.style(), events);
+    static void putFontEvents(SceneLayer box, ItemProps events) {
+        putFontEvents(box.style, events);
     }
 
     /** 算出スタイルを直接渡す版（{@code ::first-line} の断片用）。 */

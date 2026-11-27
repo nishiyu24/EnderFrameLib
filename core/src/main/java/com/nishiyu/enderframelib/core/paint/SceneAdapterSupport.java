@@ -15,6 +15,7 @@ import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.model.StickyShift;
 import com.nishiyu.enderframelib.core.paint.scene.LayerEffects;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.core.paint.scene.StackingKind;
 
 import java.util.ArrayList;
@@ -30,8 +31,7 @@ final class SceneAdapterSupport {
     private SceneAdapterSupport() { }
 
     static boolean boxHasOwnNode(SceneAdapterBox b) {
-        return b != null && !b.anonymous() && b.w() > 0f && b.h() > 0f && b.node() != null
-                && !"root".equals(b.node().tag) && !"#text".equals(b.node().tag);
+        return b != null && PaintSupport.hasOwnNode(b.layer);
     }
 
     static boolean isPositioned(SceneAdapterBox box) {
@@ -197,22 +197,16 @@ final class SceneAdapterSupport {
                 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta, movingKey);
     }
 
+    /** 背景をキャンバスに譲る要素の箱（{@link PaintSupport#canvasBackgroundSource} の層の箱）。 */
     static SceneAdapterBox canvasBackgroundSource(SceneAdapterBox root) {
-        SceneAdapterBox html = childWithTag(root, "html");
-        if (html != null && hasBackground(html)) return html;
-        SceneAdapterBox body = childWithTag(html != null ? html : root, "body");
-        return body != null && hasBackground(body) ? body : null;
-    }
-
-    static SceneAdapterBox childWithTag(SceneAdapterBox parent, String tag) {
-        for (SceneAdapterBox child : parent.paintChildren()) {
-            if (tag.equals(child.node().tag)) return child;
+        SceneLayer source = PaintSupport.canvasBackgroundSource(root.layer);
+        if (source == null) return null;
+        for (SceneAdapterBox html : root.paintChildren()) {
+            if (html.layer == source) return html;
+            if (html.node() != null && "html".equals(html.node().tag)) {
+                for (SceneAdapterBox body : html.paintChildren()) if (body.layer == source) return body;
+            }
         }
         return null;
-    }
-
-    static boolean hasBackground(SceneAdapterBox box) {
-        VisualStyle v = box.style().typed().visual;
-        return v.hasBackgroundColor || (v.backgroundImage != null && !"none".equals(v.backgroundImage));
     }
 }

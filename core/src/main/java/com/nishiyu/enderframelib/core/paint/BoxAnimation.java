@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.kernel.EngineFlags;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -100,15 +100,15 @@ final class BoxAnimation {
     static final TransitionSpec NONE_TRANSITION = new TransitionSpec(0, 0, EasingFunction.DEFAULT_EASING, "all");
 
     /** 箱の算出値の {@code translate} / {@code rotate} / {@code scale} / {@code transform} を宣言順に合成して {@code {tx, ty, sx, sy, rot}} にする。 */
-    float[] transformOf(SceneAdapterBox box) {
-        Style st = box.style().typed();
+    float[] transformOf(SceneLayer box) {
+        Style st = box.style.typed();
         VisualStyle v = st.visual;
         String tr = v.translate, rot = v.rotate, sc = v.scale, tf = v.transform;
         if ((tr == null || tr.isEmpty()) && (rot == null || rot.isEmpty())
                 && (sc == null || sc.isEmpty()) && (tf == null || tf.isEmpty())) {
             return IDENTITY_TRS;
         }
-        Transforms.Context ctx = new Transforms.Context(box.w(), box.h(), rootW, rootH, st.inherited.fontSize, st.inherited.rootFontSizePx);
+        Transforms.Context ctx = new Transforms.Context(box.w, box.h, rootW, rootH, st.inherited.fontSize, st.inherited.rootFontSizePx);
         return Transforms.toTrs(Transforms.compose(tr, rot, sc, tf, ctx));
     }
 
@@ -341,37 +341,6 @@ final class BoxAnimation {
         events.transition(transSpec.delayMs() > 0 ? transSpec.delayMs() : 0,
                 EasingFunction.DEFAULT_EASING.equals(transSpec.easing()) ? null : transSpec.easing(),
                 "all".equals(transSpec.property()) ? null : transSpec.property());
-    }
-
-    /**
-     * 文字の色のアニメーション。{@code animation} は継承されないが、祖先の {@code color} を補間すると
-     * 継承した文字の色も一緒に変わる（CSS Animations 1 §3: アニメーションした値も算出値として継承される）。
-     * 途中の要素が自分の色を持っていれば、そこから先には届かない。
-     *
-     * 何が壊れていたか: 文字の DisplayItem には文字ノード自身のアニメーション（常に none）しか載せていなかったので、
-     * {@code <span style="animation: kfTextFlash ...">} の文字色が変わらなかった。
-     */
-    AnimationSpec textColorAnimation(SceneAdapterBox text, AnimationSpec own) {
-        AnimationSpec colorAnim = own.withChannels(AnimationSpec.CH_COLOR);
-        if (!colorAnim.isEmpty()) return colorAnim;
-        int inherited = text.style().typed().inheritedPaint.color;
-        for (SceneAdapterBox a = text.paintParent(); a != null && a.style() != null; a = a.paintParent()) {
-            Style as = a.style().typed();
-            if (as.inheritedPaint.color != inherited) break;
-            if (as.visual.animation != null || as.visual.animationName != null) {
-                AnimationSpec anim = parseAnimationDef(a.style(), a.w(), a.h(), as.inheritedPaint.color, 0).withChannels(AnimationSpec.CH_COLOR);
-                if (!anim.isEmpty()) return anim;
-            }
-            // 祖先の要素が自分の色を宣言していれば、その上の祖先の色は継承されない
-            if (declaresOwnColor(a)) break;
-        }
-        return AnimationSpec.NONE;
-    }
-
-    /** 親と違う色を持っている（= 自分で color を宣言した）か。 */
-    static boolean declaresOwnColor(SceneAdapterBox box) {
-        return box.paintParent() != null && box.paintParent().style() != null
-                && box.style().typed().inheritedPaint.color != box.paintParent().style().typed().inheritedPaint.color;
     }
 
     record TransitionSpec(int durationMs, int delayMs, String easing, String property) {}

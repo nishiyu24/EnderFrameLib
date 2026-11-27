@@ -419,7 +419,7 @@ class ArchitectureHealthTest {
      * 新経路のソース（新経路のパッケージと、旧経路と同じパッケージに置いた新経路のクラス。新しく足したクラスはその段のうちにここへ足す）。
      * 描画命令・走査器・描き直す範囲（M3b-4a〜4b）、問い合わせの文脈（M3b-3）、DOM の分割（M5-1〜M5-3a）のクラスは M3b-4c-0 の点検で
      * 入れた。{@code ParserText} は互換の切り替え（{@code EngineFlags.KEEP_NEWLINE_WHITESPACE}。結果を変える従来の挙動への切り替えで、
-     * 近道ではない）を読むので入れない。箱 1 つの描画の道具（{@code BoxItemPainter} ほか）は M3b-4c-1 で命令を型付きにするときに入れる。
+     * 近道ではない）を読むので入れない。箱 1 つの描画の道具（{@code BoxItemPainter} ほか）は、層の値だけを読むようにした M3b-4c-1a で入れた。
      */
     static final List<String> NEW_PATH_SOURCES = newPathSources();
 
@@ -429,7 +429,9 @@ class ArchitectureHealthTest {
                 main + "core/box", main + "core/layout/fragment", main + "core/paint/scene", main + "common/V3Frame.java",
                 main + "common/UiHitSupport.java"));
         for (String c : List.of("SceneAdapterBox", "SceneDisplayListAdapter", "SceneAdapterSupport", "LayerOps", "OpList", "OpComposer",
-                "SceneWalker", "AnimationStates", "ItemSink", "SceneDamage", "ScrollContentRanges", "SceneSource", "FrameDamage")) {
+                "SceneWalker", "AnimationStates", "ItemSink", "SceneDamage", "ScrollContentRanges", "SceneSource", "FrameDamage",
+                "BoxItemPainter", "BoxDecorationPainter", "BoxDecorations", "ControlPainter", "TextRunPainter", "PaintSupport", "ItemProps",
+                "PaintBounds", "BoxAnimation")) {
             out.add(main + "core/paint/" + c + ".java");
         }
         for (String c : List.of("DeclarativeBindings", "InteractionChains", "ReactiveDomBinder", "StateFlags", "StyleInvalidation", "TemplateDeps",
@@ -643,6 +645,27 @@ class ArchitectureHealthTest {
         roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
         for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M3B4B4B_DELETED_TYPES));
         assertEquals(List.of(), bad, "M3b-4b-4b で消した StaticFrameGate / ItemDiff / AbsoluteItems が戻った（静止の判定は描画器の needsRepaint。計画書 §3.4）");
+    }
+
+    /**
+     * M3b-4c-1a: 一時アダプタの箱 {@code SceneAdapterBox}（M3b-4c-2 でアダプタごと消す）を読むのは、アダプタ自身と、表示項目を組み立てる
+     * 側だけ。残す部品（項目の生成器・{@code LayerOps}・{@code SceneDamage}）は {@code SceneLayer} と明示した置き場所を読む（計画書 §1.4 の 4）。
+     */
+    static final Set<String> SCENE_ADAPTER_BOX_READERS = Set.of(
+            "SceneAdapterBox.java", "SceneAdapterSupport.java", "SceneDisplayListAdapter.java", "OpComposer.java");
+
+    @Test
+    void sceneAdapterBoxStaysInsideTheAdapter() throws IOException {
+        List<String> bad = new ArrayList<>();
+        List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
+        roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
+        for (String root : roots) {
+            for (String hit : checkTypeNames(repoRoot().resolve(root), List.of("SceneAdapterBox"))) {
+                String file = hit.substring(0, hit.indexOf(':'));
+                if (!SCENE_ADAPTER_BOX_READERS.contains(file.substring(file.lastIndexOf('/') + 1))) bad.add(root + "/" + hit);
+            }
+        }
+        assertEquals(List.of(), bad, "一時アダプタの SceneAdapterBox をアダプタの外が読んだ（生成器・LayerOps・SceneDamage は SceneLayer と置き場所を読む。計画書 §3.4 M3b-4c-1a）");
     }
 
     @Test

@@ -46,20 +46,20 @@ final class OpList extends ArrayList<DrawOp.Item> {
         super(initialCapacity);
     }
 
-    /** 箱 {@code layer} の描画を、その層の整数の原点からの局所座標で集め始める。 */
-    void beginLocal(SceneAdapterBox layer) {
+    /** 左上 {@code (x, y)} に置いた箱の描画を、その層の整数の原点からの局所座標で集め始める。 */
+    void beginLocal(float x, float y) {
         clear();
         local = true;
-        originX = Math.round(layer.x());
-        originY = Math.round(layer.y());
+        originX = Math.round(x);
+        originY = Math.round(y);
         originKind = DrawOp.ORIGIN_ABSOLUTE;
         base = 0;
         deferred = false;
     }
 
-    /** 層 {@code layer}（位置 0 に置いた箱）の描画を、祖先を組み立てまで残して集め始める。 */
-    void beginDeferred(SceneAdapterBox layer) {
-        beginLocal(layer);
+    /** 位置 0 に置いた層の描画を、祖先を組み立てまで残して集め始める。 */
+    void beginDeferred() {
+        beginLocal(0f, 0f);
         deferred = true;
     }
 
@@ -80,16 +80,14 @@ final class OpList extends ArrayList<DrawOp.Item> {
         this.originY = oy;
     }
 
-    /** 以後の項目を箱 {@code box} 自身の節からの相対にする。 */
-    void originSelf(SceneAdapterBox box) {
+    /** 以後の項目を描いている箱自身の節からの相対にする（局所座標で集めているときだけ。生成器は局所座標でしか描かない）。 */
+    void originSelf() {
         if (local) originKind = DrawOp.ORIGIN_SELF;
-        else setOrigin(Math.round(box.x()), Math.round(box.y()));
     }
 
-    /** 以後の項目を祖先の節 {@code node}（null なら絶対座標）からの相対にする。 */
-    void originNode(SceneAdapterBox node) {
-        if (local) originKind = node != null || deferred ? DrawOp.ORIGIN_NODE : DrawOp.ORIGIN_ABSOLUTE;
-        else setOrigin(node != null ? Math.round(node.x()) : 0, node != null ? Math.round(node.y()) : 0);
+    /** 以後の項目を祖先の節（{@code hasNode} が偽なら絶対座標）からの相対にする（局所座標で集めているときだけ）。 */
+    void originNode(boolean hasNode) {
+        if (local) originKind = hasNode || deferred ? DrawOp.ORIGIN_NODE : DrawOp.ORIGIN_ABSOLUTE;
     }
 
     /** 今の原点を覚える（{@link #restoreOrigin} で戻す）。確保しないよう 1 つの {@code long} に詰める。 */
