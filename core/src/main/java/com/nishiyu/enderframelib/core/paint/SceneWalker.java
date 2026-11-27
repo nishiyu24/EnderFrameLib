@@ -35,8 +35,9 @@ import java.util.Map;
  * 一時アダプタの表示項目の列と同じなので、描画側の呼び出し（{@link Painter}）は変えずに済む。</p>
  *
  * <p>M3b-4b-2 では影で動かし、{@code PaintSceneDriver} と描画側への呼び出し（描く項目・順・グループの鎖・不透明度・姿勢）が実文書の全フレームで
- * 一致することをテスト（{@code SceneWalkerShadowTest}）で確かめる。保持層・画面外のブロックの間引きは 4b-3、全バックエンドの切り替えは 4b-4。
- * スレッドセーフではない。</p>
+ * 一致することをテスト（{@code SceneWalkerShadowTest}）で確かめる。M3b-4b-3b で、保持層を中身の節に結び（{@link ScrollContentRanges}。中身の
+ * 同一性の印はコンテナの層の子の並び）、描き直す範囲に補間・外の事情で変わる項目を足す（{@link #addDynamicDamage}。シーンの違いは
+ * {@link SceneDamage}）。画面外のブロックの間引きは 4c、全バックエンドの切り替えは 4b-4。スレッドセーフではない。</p>
  */
 public final class SceneWalker implements ItemSink {
     private final String sessionId;
@@ -61,10 +62,14 @@ public final class SceneWalker implements ItemSink {
     private final List<Integer> activeAnchors = new ArrayList<>();
     private final List<Group> layeredScratch = new ArrayList<>();
     private int anchorNext;
+    /** 保持層にできるスクロールコンテナの中身の範囲（M3b-4b-3b。1 フレームの間だけ）。 */
+    private final ScrollContentRanges ranges = new ScrollContentRanges();
     private AnimationStates anims;
     private long now;
     private Matrix2D frame = Matrix2D.IDENTITY;
     private long posesBuilt;
+    /** 前の {@link #run} の時刻（補間がその時刻から今までに動いたかを見る。まだ無ければ -1）。 */
+    private long lastNow = -1L;
 
     public SceneWalker(String sessionId) {
         this.sessionId = java.util.Objects.requireNonNull(sessionId, "sessionId");
@@ -86,6 +91,18 @@ public final class SceneWalker implements ItemSink {
      */
     public void run(SceneDisplayListAdapter adapter, DisplayScene scene, DynamicSceneState dynamic, PaintOffsets userOffsets,
                     long nowMs, Matrix2D frame, Painter painter) {
+        run(adapter, scene, dynamic, userOffsets, nowMs, frame, painter, null);
+    }
+
+    /**
+     * {@link #run(SceneDisplayListAdapter, DisplayScene, DynamicSceneState, PaintOffsets, long, Matrix2D, Painter)} に、描き直す範囲
+     * {@code damage}（{@link SceneDamage} がシーンの違いから求めたもの。null なら求めない）へ、補間と外の事情で変わる項目の範囲を
+     * 走査の前に足す（{@link #addDynamicDamage}）。
+     */
+    public void run(SceneDisplayListAdapter adapter, DisplayScene scene, DynamicSceneState dynamic, PaintOffsets userOffsets,
+                    long nowMs, Matrix2D frame, Painter painter, SceneDamage.Rects damage) {
+        long prevNow = lastNow;
+        lastNow = nowMs;
         count = 0;
         fxCount = 0;
         try {
@@ -96,12 +113,15 @@ public final class SceneWalker implements ItemSink {
             this.frame = frame;
             this.anims = CssAnimator.states(sessionId, true);
             index(userOffsets != null ? userOffsets : PaintOffsets.EMPTY, contents, real);
+            if (damage != null) addDynamicDamage(damage, prevNow);
+            ranges.compute(items, count, parentIdx, indexOf, contents, scene);
             walk(painter);
         } finally {
             Arrays.fill(items, 0, count, null);
             Arrays.fill(res, 0, count, null);
             Arrays.fill(states, 0, count, null);
             Arrays.fill(chains, 0, count, null);
+            ranges.clear();
             indexOf.clear();
             activeAnchors.clear();
             layeredScratch.clear();
@@ -236,14 +256,90 @@ public final class SceneWalker implements ItemSink {
         }
     }
 
+    // ---- 描き直す範囲（M3b-4b-3b） ----
+
+    /**
+     * シーンの違いに現れない変化の範囲を {@code damage} へ足す: 前のフレームの時刻 {@code prevNow} か今の時刻に補間が動いている項目と、
+     * 外の事情・部品の状態で絵が変わる項目（画像・動画・キャンバス・3D・入力欄・ゲージ・スライダー）。補間が姿勢（変形・不透明度）を
+     * 動かすときは、子孫の位置と層が変わるので全面にする。範囲は項目の箱に影・文字の余白を足し、姿勢で写した CSS px の外接矩形。
+     */
+    void addDynamicDamage(SceneDamage.Rects damage, long prevNow) {
+        if (damage.full()) return;
+        for (int i = 0; i < count; i++) {
+            DisplayItem el = items[i];
+            CssAnimator.AnimState st = states[i];
+            if (st == null) st = states[i] = CssAnimator.stateFor(anims, el, now);
+            boolean activeNow = st.isActiveAt(now), activeBefore = prevNow >= 0L && st.isActiveAt(prevNow);
+            if (activeNow || activeBefore) {
+                int kind = Math.max(activeNow ? st.motionKindAt(now) : 0, activeBefore ? st.motionKindAt(prevNow) : 0);
+                if (kind >= PaintSceneDriver.ACT_GEOMETRY) { damage.setFull("animation-geometry"); return; }
+            } else if (!el.type().isVolatileForDamage()) {
+                continue;
+            }
+            if (el.type() == ElementType.NODE) continue; // 節は描かない（色の補間は部品の項目が持つ）
+            addItemBounds(damage, el, resolveAt(i).pose());
+            if (damage.full()) return;
+        }
+    }
+
+    /** 項目の箱（影・文字の余白つき）を姿勢で写し、フレームの変換（CSS px → デバイス画素）を戻した CSS px の外接矩形を足す。 */
+    private void addItemBounds(SceneDamage.Rects damage, DisplayItem el, Matrix2D pose) {
+        float pad = SceneDamage.padOf(el.meta(), el.text(), el.height());
+        double x0 = el.x() - pad, y0 = el.y() - pad, x1 = el.x() + el.width() + pad, y1 = el.y() + el.height() + pad;
+        double minX = Double.POSITIVE_INFINITY, minY = minX, maxX = Double.NEGATIVE_INFINITY, maxY = maxX;
+        for (int c = 0; c < 4; c++) {
+            double px = (c & 1) == 0 ? x0 : x1, py = (c & 2) == 0 ? y0 : y1;
+            double dx = pose.a() * px + pose.c() * py + pose.e(), dy = pose.b() * px + pose.d() * py + pose.f();
+            minX = Math.min(minX, dx); maxX = Math.max(maxX, dx); minY = Math.min(minY, dy); maxY = Math.max(maxY, dy);
+        }
+        double sx = frame.a() != 0.0 ? frame.a() : 1.0, sy = frame.d() != 0.0 ? frame.d() : 1.0;
+        damage.add((float) ((minX - frame.e()) / sx), (float) ((minY - frame.f()) / sy),
+                (float) ((maxX - frame.e()) / sx), (float) ((maxY - frame.f()) / sy));
+    }
+
+    // ---- 保持層（M3b-4b-3b） ----
+
+    /**
+     * 保持層の扱いを描画側に問う（{@link PaintSceneDriver} と同じ規則）: 中身の節の祖先にグループ（不透明度・フィルター）がある・フィルターの錨の
+     * 範囲に入っているときは問わない。外側が保持する範囲の中の入れ子は問わない。
+     */
+    private void planRetained(Painter painter) {
+        int coveredUntil = 0;
+        for (int k = 0; k < ranges.count; k++) {
+            int node = ranges.node[k];
+            ranges.plan[k] = RetainPlan.NONE;
+            if (ranges.from[k] < coveredUntil || insideFxAnchor(node)) continue;
+            Resolved r = resolveAt(node);
+            if (!r.groups().isEmpty() || r.opacity() < 0.999f) continue;
+            RetainPlan d = painter.planRetained(items[node], node, ranges.from[k], ranges.to[k], ranges.token[k]);
+            ranges.plan[k] = d != null ? d : RetainPlan.NONE;
+            if (ranges.plan[k] != RetainPlan.NONE) coveredUntil = ranges.to[k];
+        }
+    }
+
+    private boolean insideFxAnchor(int index) {
+        for (int k = 0; k < fxCount; k++) {
+            int a = fxAnchors[k];
+            if (a < index && index < a + items[a].hints().layer().span()) return true;
+        }
+        return false;
+    }
+
     // ---- 走査 ----
 
     private void walk(Painter painter) {
         int n = count;
         anchorNext = 0;
         activeAnchors.clear();
+        planRetained(painter);
         Map<String, Integer> extraMembers = null; // 錨が列に無いグループだけ
         for (int i = 0; i < n; i++) {
+            int skip = ranges.count > 0 ? ranges.at(i, RetainPlan.SKIP) : -1;
+            if (skip >= 0) { // 保持済みの層を重ねる範囲: 鎖も姿勢も要らない
+                Arrays.fill(chains, i, ranges.to[skip], null);
+                i = ranges.to[skip] - 1;
+                continue;
+            }
             DisplayItem el = items[i];
             if (el.type() == ElementType.NODE || painter.skipItem(i)) {
                 chains[i] = null;
@@ -265,29 +361,60 @@ public final class SceneWalker implements ItemSink {
             }
             chains[i] = chain;
         }
+        int[] open = ranges.count > 0 ? new int[ranges.count] : null; // 記録中の保持層の範囲の番号（入れ子の順）
+        int openN = 0;
         for (int i = 0; i < n; i++) {
+            if (ranges.count > 0) {
+                int skip = ranges.at(i, RetainPlan.SKIP);
+                if (skip >= 0) {
+                    painter.syncLayers(List.of());
+                    painter.drawRetained(items[ranges.node[skip]], ranges.node[skip], ranges.from[skip], ranges.to[skip]);
+                    i = ranges.to[skip] - 1;
+                    continue;
+                }
+                int rec = ranges.at(i, RetainPlan.RECORD);
+                if (rec >= 0) {
+                    painter.syncLayers(List.of());
+                    painter.beginRetained(items[ranges.node[rec]], ranges.node[rec], ranges.from[rec], ranges.to[rec]);
+                    open[openN++] = rec;
+                }
+            }
             List<Group> chain = chains[i];
-            if (chain == null) continue;
-            DisplayItem el = items[i];
-            if (chain.isEmpty()) {
+            if (chain != null) drawChained(painter, i, chain, extraMembers);
+            // 記録中の保持層の範囲の終わり: 層を保存して重ねる。保持できなければ、範囲をふつうに描き直す
+            while (openN > 0 && ranges.to[open[openN - 1]] == i + 1) {
+                int k = open[--openN];
                 painter.syncLayers(List.of());
-                painter.drawItem(el, i, 1f);
-                continue;
+                if (!painter.endRetained(items[ranges.node[k]], ranges.node[k])) {
+                    ranges.plan[k] = RetainPlan.NONE;
+                    i = ranges.from[k] - 1;
+                    openN = 0;
+                    break;
+                }
             }
-            List<Group> layered = layeredScratch;
-            layered.clear();
-            float flat = 1f;
-            for (int gi = 0, gn = chain.size(); gi < gn; gi++) {
-                Group g = chain.get(gi);
-                // フィルター・マスクのあるグループと、描く部品が 2 つ以上のグループだけ層にする（PaintSceneDriver と同じ規則）
-                int m = g.anchor() >= 0 ? members[g.anchor()] : (extraMembers != null ? extraMembers.getOrDefault(g.id(), 0) : 0);
-                if (g.spec() != null || g.maskOf() != null || m > 1) layered.add(g);
-                else flat *= g.opacity();
-            }
-            painter.syncLayers(layered);
-            painter.drawItem(el, i, flat);
         }
         painter.syncLayers(List.of());
+    }
+
+    private void drawChained(Painter painter, int i, List<Group> chain, Map<String, Integer> extraMembers) {
+        DisplayItem el = items[i];
+        if (chain.isEmpty()) {
+            painter.syncLayers(List.of());
+            painter.drawItem(el, i, 1f);
+            return;
+        }
+        List<Group> layered = layeredScratch;
+        layered.clear();
+        float flat = 1f;
+        for (int gi = 0, gn = chain.size(); gi < gn; gi++) {
+            Group g = chain.get(gi);
+            // フィルター・マスクのあるグループと、描く部品が 2 つ以上のグループだけ層にする（PaintSceneDriver と同じ規則）
+            int m = g.anchor() >= 0 ? members[g.anchor()] : (extraMembers != null ? extraMembers.getOrDefault(g.id(), 0) : 0);
+            if (g.spec() != null || g.maskOf() != null || m > 1) layered.add(g);
+            else flat *= g.opacity();
+        }
+        painter.syncLayers(layered);
+        painter.drawItem(el, i, flat);
     }
 
     /** 項目 {@code i} を含むグループの鎖（親子の鎖に、範囲に入るフィルター・マスクの錨を足し、マスクの項目にはマスクの層を挟む）。 */

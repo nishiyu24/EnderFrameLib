@@ -33,7 +33,7 @@ class PaintSceneDriverRetainTest {
 
         @Override public void syncLayers(List<PaintSceneDriver.Group> want) {}
         @Override public void drawItem(DisplayItem el, int index, float flat) { drawn.add(index); }
-        @Override public RetainPlan planRetained(DisplayItem node, int nodeIndex, int f, int t) {
+        @Override public RetainPlan planRetained(DisplayItem node, int nodeIndex, int f, int t, Object token) {
             planCalls++;
             from = f; to = t;
             log.add("plan:" + node.id());

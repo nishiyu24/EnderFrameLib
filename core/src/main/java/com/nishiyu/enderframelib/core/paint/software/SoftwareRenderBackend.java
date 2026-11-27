@@ -329,8 +329,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
 
         @Override
-        public RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) {
-            return SoftwareRenderBackend.this.planRetained(node, nodeIndex, from, to);
+        public RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to, Object token) {
+            return SoftwareRenderBackend.this.planRetained(node, nodeIndex, from, to, token);
         }
 
         @Override
@@ -404,11 +404,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return owner;
     }
 
-    private RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) {
+    private RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to, Object token) {
         if (route.current() == null || recordOwner != null) return RetainPlan.NONE;
-        Object token = driver.items();
-        if (eligibleToken != token) {
-            eligibleToken = token;
+        Object listToken = driver.items(); // 層に向くかの判定は列ごとに覚える。層の同一性は中身の印 token（Painter#planRetained）
+        if (eligibleToken != listToken) {
+            eligibleToken = listToken;
             java.util.Arrays.fill(retainEligible, (byte) 0);
             java.util.Arrays.fill(retainOwner, null);
         }

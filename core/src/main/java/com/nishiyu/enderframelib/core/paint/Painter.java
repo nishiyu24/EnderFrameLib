@@ -29,8 +29,12 @@ public interface Painter {
      * <p>呼ぶのは、節の祖先にグループ（不透明度・フィルター）が無いときだけ。{@link RetainPlan#SKIP} を返したら、描画側は
      * 保持済みの層を {@link #drawRetained} で重ねるので、ドライバは範囲の項目を走査しない。{@link RetainPlan#RECORD} なら、
      * 範囲の先頭で {@link #beginRetained}、末尾の後で {@link #endRetained} を呼ぶ（その間の項目は層へ描く）。</p>
+     *
+     * <p>{@code token} は中身の同一性の印（M3b-4b-3b）: 同じ印なら、節の移動量以外は前に描いたときと同じ中身。走査器
+     * （{@link SceneWalker}）はスクロールコンテナの層の子の並び（{@code SceneLayer#children}。中身が変わらない限り同じ参照）を、
+     * {@link PaintSceneDriver} は表示項目の列を渡す。</p>
      */
-    default RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) { return RetainPlan.NONE; }
+    default RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to, Object token) { return RetainPlan.NONE; }
 
     /** {@link RetainPlan#SKIP}: 保持済みの層を今の位置で重ねる。 */
     default void drawRetained(DisplayItem node, int nodeIndex, int from, int to) {}

@@ -426,7 +426,7 @@ public final class PaintSceneDriver {
             if (insideFxAnchor(items, c)) continue;
             Resolved r = resolveAt(c);
             if (!r.groups().isEmpty() || r.opacity() < 0.999f) continue;
-            RetainPlan decision = com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.on() ? painter.planRetained(items.get(c), c, from, to) : RetainPlan.NONE;
+            RetainPlan decision = com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.on() ? painter.planRetained(items.get(c), c, from, to, items) : RetainPlan.NONE;
             if (decision == RetainPlan.SKIP) {
                 if (plan == null) {
                     if (planBuf.length < items.size()) planBuf = new RetainPlan[Math.max(items.size(), planBuf.length * 2)];

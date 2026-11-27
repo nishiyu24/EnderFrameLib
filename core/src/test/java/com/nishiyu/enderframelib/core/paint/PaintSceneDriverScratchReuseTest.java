@@ -19,7 +19,7 @@ class PaintSceneDriverScratchReuseTest {
         RetainPlan decision = RetainPlan.NONE;
         @Override public void syncLayers(List<PaintSceneDriver.Group> want) { log.add("sync" + want.size()); }
         @Override public void drawItem(DisplayItem el, int index, float flat) { log.add("d" + index + "@" + flat); }
-        @Override public RetainPlan planRetained(DisplayItem n, int i, int f, int t) { return decision; }
+        @Override public RetainPlan planRetained(DisplayItem n, int i, int f, int t, Object token) { return decision; }
         @Override public void drawRetained(DisplayItem n, int i, int f, int t) { log.add("R" + f + "-" + t); }
         @Override public void beginRetained(DisplayItem n, int i, int f, int t) { log.add("B" + f); }
         @Override public boolean endRetained(DisplayItem n, int i) { log.add("E"); return true; }

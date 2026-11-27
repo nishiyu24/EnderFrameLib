@@ -56,7 +56,7 @@ class PaintSceneDriverRangeCullTest {
 
         @Override public void syncLayers(List<PaintSceneDriver.Group> want) {}
         @Override public void drawItem(DisplayItem el, int index, float flat) { drawn.add(index); }
-        @Override public RetainPlan planRetained(DisplayItem node, int nodeIndex, int f, int t) { from = f; to = t; return plan; }
+        @Override public RetainPlan planRetained(DisplayItem node, int nodeIndex, int f, int t, Object token) { from = f; to = t; return plan; }
         @Override public void beginRetained(DisplayItem node, int nodeIndex, int f, int t) { log.add("begin"); }
         @Override public boolean endRetained(DisplayItem node, int nodeIndex) { log.add("end"); return endOk; }
         @Override public double[] cullWindow(DisplayItem node, int nodeIndex) { return offerWindow ? new double[]{y0, y1, PAD} : null; }

@@ -188,8 +188,18 @@ final class V3Frame {
      */
     void walk(com.nishiyu.enderframelib.core.paint.SceneWalker walker, com.nishiyu.enderframelib.core.paint.model.PaintOffsets offsets,
               long nowMs, com.nishiyu.enderframelib.core.raster.Matrix2D frame, com.nishiyu.enderframelib.core.paint.Painter painter) {
+        walk(walker, offsets, nowMs, frame, painter, null);
+    }
+
+    /**
+     * {@link #walk} に、描き直す範囲を求める {@code damage}（直近のシーンと今のスクロール量から {@link com.nishiyu.enderframelib.core.paint.SceneDamage}
+     * が求めた範囲。null なら求めない）を渡す版（M3b-4b-3b。走査器が補間・外の事情で変わる項目の範囲を足す）。
+     */
+    void walk(com.nishiyu.enderframelib.core.paint.SceneWalker walker, com.nishiyu.enderframelib.core.paint.model.PaintOffsets offsets,
+              long nowMs, com.nishiyu.enderframelib.core.raster.Matrix2D frame, com.nishiyu.enderframelib.core.paint.Painter painter,
+              com.nishiyu.enderframelib.core.paint.SceneDamage.Rects damage) {
         if (scene == null || adapter == null) return;
-        walker.run(adapter, scene, DynamicSceneState.of(scroll, width, height), offsets, nowMs, frame, painter);
+        walker.run(adapter, scene, DynamicSceneState.of(scroll, width, height), offsets, nowMs, frame, painter, damage);
     }
 
     private static boolean onlyRestyleOrScroll(ChangeLedger ledger) {
