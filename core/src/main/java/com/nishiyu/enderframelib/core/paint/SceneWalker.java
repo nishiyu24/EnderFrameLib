@@ -9,11 +9,17 @@ import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
+import com.nishiyu.enderframelib.core.paint.scene.SceneAnchorFollow;
+import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,19 +79,23 @@ public final class SceneWalker implements ItemSink {
 
     /**
      * {@code scene} を時刻 {@code nowMs}・変換 {@code frame}（CSS px → デバイス画素）の見た目で描画順にたどり、{@code painter} へ渡す。
-     * {@code offsets} はビューの描画上の平行移動（スクロールの中身の節・つまみ・sticky・利用者の移動。M3b-4b-4 で動的な値から直接足す）。
+     *
+     * <p>スクロール量は項目に焼き込まない（M3b-4b-3）: 中身を 1 つの節にまとめるスクロールコンテナはスクロール 0 で組み、今のスクロール量
+     * （{@code dynamic}）を中身の節・つまみ・中の sticky の平行移動として足す。項目はそのコンテナのスクロールに依らない。
+     * {@code userOffsets} は利用者の描画上の平行移動（{@code UiView#setPaintOffset}）だけ。</p>
      */
-    public void run(SceneDisplayListAdapter adapter, DisplayScene scene, DynamicSceneState dynamic, PaintOffsets offsets,
+    public void run(SceneDisplayListAdapter adapter, DisplayScene scene, DynamicSceneState dynamic, PaintOffsets userOffsets,
                     long nowMs, Matrix2D frame, Painter painter) {
         count = 0;
         fxCount = 0;
         try {
-            adapter.emit(scene, dynamic, this);
+            DynamicSceneState real = dynamic != null ? dynamic : DynamicSceneState.of(null, scene.root.w, scene.root.h);
+            List<ScrollContentInfo> contents = emitUnscrolled(adapter, scene, real);
             if (count == 0) return;
             this.now = nowMs;
             this.frame = frame;
             this.anims = CssAnimator.states(sessionId, true);
-            index(offsets != null ? offsets : PaintOffsets.EMPTY);
+            index(userOffsets != null ? userOffsets : PaintOffsets.EMPTY, contents, real);
             walk(painter);
         } finally {
             Arrays.fill(items, 0, count, null);
@@ -96,6 +106,34 @@ public final class SceneWalker implements ItemSink {
             activeAnchors.clear();
             layeredScratch.clear();
             count = 0;
+        }
+    }
+
+    /**
+     * 今スクロールしているコンテナ（根・html・body・アンカーが追従するものを除く）をスクロール 0 で組む。組んだ結果、中身を 1 つの節に
+     * まとめられなかった（固定配置・外へ出る絶対配置・content-visibility の子孫を持つ）コンテナは、今のスクロール量で組み直す。
+     */
+    private List<ScrollContentInfo> emitUnscrolled(SceneDisplayListAdapter adapter, DisplayScene scene, DynamicSceneState real) {
+        Map<HtmlNode, float[]> scrolled = real.scroll.snapshot();
+        Set<HtmlNode> zero = Collections.newSetFromMap(new IdentityHashMap<>());
+        if (!scrolled.isEmpty()) {
+            Set<HtmlNode> followed = SceneAnchorFollow.followedScrollers(scene);
+            for (HtmlNode n : scrolled.keySet()) {
+                String t = n.tag;
+                if (!"root".equals(t) && !"html".equals(t) && !"body".equals(t) && !followed.contains(n)) zero.add(n);
+            }
+        }
+        for (int attempt = 0; ; attempt++) {
+            count = 0;
+            fxCount = 0;
+            adapter.emit(scene, real.unscrolled(zero), this);
+            List<ScrollContentInfo> contents = adapter.scrollContents();
+            if (zero.isEmpty()) return contents;
+            Set<HtmlNode> asOneNode = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (ScrollContentInfo c : contents) asOneNode.add(c.node());
+            if (asOneNode.containsAll(zero)) return contents;
+            if (attempt >= 2) zero.clear();
+            else zero.retainAll(asOneNode);
         }
     }
 
@@ -133,7 +171,7 @@ public final class SceneWalker implements ItemSink {
 
     // ---- 1 フレームの索引（鍵 → 位置・親・平行移動。フレームをまたいで持たない） ----
 
-    private void index(PaintOffsets offsets) {
+    private void index(PaintOffsets offsets, List<ScrollContentInfo> contents, DynamicSceneState real) {
         int n = count;
         for (int i = 0; i < n; i++) {
             DisplayItem it = items[i];
@@ -158,9 +196,32 @@ public final class SceneWalker implements ItemSink {
             members[i] = 0;
         }
         Arrays.sort(fxAnchors, 0, fxCount);
+        for (int c = 0, cn = contents.size(); c < cn; c++) scrollOffsets(contents.get(c), real);
         if (offsets.isEmpty()) return;
         if (offsets.isImmutable()) collectOffsets(offsets);
         else synchronized (offsets) { collectOffsets(offsets); }
+    }
+
+    /**
+     * スクロールコンテナ {@code c} の中身の節・つまみ・中の sticky の平行移動（{@code UiView} がスクロールだけの変化で表示項目の列を動かす式と同じ。
+     * 組んだときのスクロール量 {@code sx0}・{@code sy0} は、スクロール 0 で組んだコンテナでは 0）。
+     */
+    private void scrollOffsets(ScrollContentInfo c, DynamicSceneState real) {
+        float dx = real.scroll.getScrollX(c.node()) - c.sx0(), dy = real.scroll.getScrollY(c.node()) - c.sy0();
+        if (dx == 0f && dy == 0f) return;
+        setOffset(c.contentId(), -dx, -dy);
+        // つまみは組んだときと同じ整数の位置へ（小数のまま動かすと角の縁の画素が組み直しと違う）
+        if (c.thumbVId() != null) setOffset(c.thumbVId(), 0f, Math.round(c.fy0() + c.ky() * dy));
+        if (c.thumbHId() != null) setOffset(c.thumbHId(), Math.round(c.fx0() + c.kx() * dx), 0f);
+        for (int k = 0, sn = c.stickies().size(); k < sn; k++) setOffset(c.stickies().get(k).nodeId(), 0f, c.stickies().get(k).extraAt(dy));
+    }
+
+    private void setOffset(String id, float dx, float dy) {
+        int idx = indexOf.get(DisplayItem.keyOf(id));
+        if (idx >= 0 && items[idx].type() == ElementType.NODE && id.equals(items[idx].id())) {
+            offX[idx] = dx;
+            offY[idx] = dy;
+        }
     }
 
     private void collectOffsets(PaintOffsets eff) {

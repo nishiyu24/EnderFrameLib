@@ -16,7 +16,7 @@ showcase.html/scrollBack	f7c68d6 736 6e4ed39c
 showcase.html/textLong	56c00a29 745 fac7f23
 showcase.html/textShort	71c5ee11 736 6e4ed39c
 showcase.html/textBack	5246948f 736 6e4ed39c
-showcase.html/resize700	75c6367e 727 5e500c21
+showcase.html/resize700	a5a45af9 727 5e500c21
 voidwave.html/open	915870c9 2254 a2c2b058
 voidwave.html/hover0a	d8e03bfc 2254 a2c2b058
 voidwave.html/hover0b	d8e03bfc 2254 8fbdd48f

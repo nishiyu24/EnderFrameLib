@@ -40,6 +40,8 @@ class SceneWalkerShadowTest {
     private static final class Recorder implements Painter {
         final List<String> calls = new ArrayList<>();
         final List<DisplayItem> drawn = new ArrayList<>();
+        /** 描いた項目の姿勢の縦の移動（スクロールの中身の節の平行移動を見る）。 */
+        final List<Double> poseY = new ArrayList<>();
         /** 描いた項目の画面の上の形（姿勢で写した箱の 4 隅・不透明度・層の鎖の ID）。スクロールを焼き込む位置に依らない比べ方。 */
         final List<String> placed = new ArrayList<>();
         private String layers = "";
@@ -75,6 +77,7 @@ class SceneWalkerShadowTest {
                     + " anim=" + a.opacity() + "," + a.tx() + "," + a.ty() + "," + a.sx() + "," + a.sy() + "," + a.rot() + "," + a.skew()
                     + "," + Integer.toHexString(a.color()) + "," + Integer.toHexString(a.bgColor()));
             drawn.add(el);
+            poseY.add(r.pose().f());
             Matrix2D m = r.pose();
             double x0 = el.x(), y0 = el.y(), x1 = x0 + el.width(), y1 = y0 + el.height();
             placed.add(el.id() + " " + el.type() + " " + el.width() + "x" + el.height() + " text=" + el.text()
@@ -121,33 +124,39 @@ class SceneWalkerShadowTest {
         try (Remembering backend = new Remembering()) {
             PaintSceneDriver driver = new PaintSceneDriver(backend.sessionId());
             SceneWalker walker = new SceneWalker(backend.sessionId());
-            int[] frames = {0}, draws = {0}, exact = {0};
+            int[] frames = {0}, draws = {0}, exact = {0}, scrolledExact = {0};
             RealDocumentFramesTest.scriptWithView(doc, backend, false, false, (v, f) -> {
                 Recorder viaDriver = new Recorder(driver::resolveAt, driver::animAt);
                 driver.run(backend.items, backend.offsets, backend.now, Matrix2D.IDENTITY, viaDriver);
                 Recorder viaWalker = new Recorder(walker::resolveAt, walker::animAt);
-                if (backend.reused) {
-                    // 列の使い回し: 列は作った時点のスクロールを焼き込み、平行移動はそこからの差。走査器は今のスクロールで組むので、
-                    // 差を渡さず（利用者の平行移動は無い）、画面の上の形で比べる
-                    SceneWalkAccess.walk(v, walker, PaintOffsets.EMPTY, backend.now, Matrix2D.IDENTITY, viaWalker);
+                // 走査器は利用者の平行移動だけを受け（手順には無い）、スクロールは自分で足す（M3b-4b-3）
+                SceneWalkAccess.walk(v, walker, PaintOffsets.EMPTY, backend.now, Matrix2D.IDENTITY, viaWalker);
+                boolean scrolled = !v.ui().dynamicState().scroll.snapshot().isEmpty();
+                String calls = callMismatch(f.name(), viaDriver, viaWalker);
+                if (calls == null) {
+                    exact[0]++;
+                    if (scrolled) scrolledExact[0]++;
+                } else if (scrolled) {
+                    // 列はスクロール中に作り直すと、その時点のスクロールを焼き込む（走査器はスクロール 0 で組む）。位置だけが違い、
+                    // 画面の上の形と中身は一致する
                     comparePlaced(f.name(), viaDriver, viaWalker);
                 } else {
-                    SceneWalkAccess.walk(v, walker, backend.offsets, backend.now, Matrix2D.IDENTITY, viaWalker);
-                    compare(f.name(), viaDriver, viaWalker);
-                    exact[0]++;
+                    fail(calls); // スクロールしていなければ、列と走査器は呼び出しまで一致する
                 }
                 frames[0]++;
                 draws[0] += viaWalker.drawn.size();
             });
             assertTrue(frames[0] >= 10, doc + ": 記録したフレームが少ない（" + frames[0] + "）");
             assertTrue(exact[0] >= 4, doc + ": 呼び出しまで比べたフレームが少ない（" + exact[0] + "/" + frames[0] + "）");
+            System.out.println("[walker-shadow] " + doc + " frames=" + frames[0] + " exact=" + exact[0] + " scrolledExact=" + scrolledExact[0]);
             assertTrue(draws[0] > 0, doc + ": 何も描いていない");
         }
     }
 
     /**
-     * 高さ 0 の要素は節の錨を出さない（{@code boxHasOwnNode}）ので、その子の項目は親の鎖でフィルターの層に届かない。層の範囲
-     * （一時アダプタが層を描き終えた知らせ）だけが子を層に入れる。実文書には無い形なので、ここで固定する（範囲の知らせを無視する変異で落ちる）。
+     * 高さ 0 の要素は節の錨を出さない（{@code boxHasOwnNode}）。M3b-4b-2 ではその子の項目の親の鎖が途切れ、層の範囲（一時アダプタが層を
+     * 描き終えた知らせ）だけが子をフィルターの層に入れていた。M3b-4b-3 で錨を出さない箱を親の鎖と座標の原点から素通しにした
+     * （{@code ZeroSizeAncestorTest}）ので、親の鎖でも層に入る。走査器と {@link PaintSceneDriver} の一致と、子が層に入ることを固定する。
      */
     @Test
     void filterLayerCoversItemsWhoseAnchorIsNotDrawn() {
@@ -162,11 +171,49 @@ class SceneWalkerShadowTest {
             Recorder viaDriver = new Recorder(driver::resolveAt, driver::animAt);
             driver.run(backend.items, backend.offsets, backend.now, Matrix2D.IDENTITY, viaDriver);
             Recorder viaWalker = new Recorder(walker::resolveAt, walker::animAt);
-            SceneWalkAccess.walk(v, walker, backend.offsets, backend.now, Matrix2D.IDENTITY, viaWalker);
+            SceneWalkAccess.walk(v, walker, PaintOffsets.EMPTY, backend.now, Matrix2D.IDENTITY, viaWalker);
             compare("filter-zero-height", viaDriver, viaWalker);
             boolean childInLayer = false;
             for (String p : viaWalker.placed) childInLayer |= p.startsWith(childBg(backend.items)) && !p.contains(" [] ");
             assertTrue(childInLayer, "高さ 0 の要素の子の背景がフィルターの層に入っていない: " + viaWalker.placed);
+        }
+    }
+
+    /**
+     * 走査器はスクロール量を項目に焼き込まない（M3b-4b-3）: 中身を 1 つの節にまとめるスクロールコンテナをスクロールしても、走査器が組む項目は
+     * 同じで、中身の項目の姿勢だけがスクロール量だけ動く（つまみは縦に動く）。焼き込む・平行移動の向きを取り違える変異で落ちる。
+     */
+    @Test
+    void walkerItemsDoNotDependOnTheScrollOfOneNodeContainers() {
+        StringBuilder html = new StringBuilder("<style>body{margin:0}.r{height:40px}</style><div id=s style='overflow:auto;width:200px;height:100px'>");
+        for (int i = 0; i < 10; i++) html.append("<div class=r style='background:#").append(i % 2 == 0 ? "c33" : "3c3").append("'>").append(i).append("</div>");
+        html.append("</div>");
+        try (Remembering backend = new Remembering();
+             com.nishiyu.enderframelib.common.StandaloneView v = new com.nishiyu.enderframelib.common.StandaloneView(
+                     html.toString(), 300, 200, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK)) {
+            SceneWalker walker = new SceneWalker(backend.sessionId());
+            v.frame(1000L, backend, true);
+            Recorder top = new Recorder(walker::resolveAt, walker::animAt);
+            SceneWalkAccess.walk(v, walker, PaintOffsets.EMPTY, 1000L, Matrix2D.IDENTITY, top);
+            v.mouseMove(50, 50, backend.sessionId());
+            v.scroll(0, -2, backend.sessionId());
+            v.frame(1500L, backend, true);
+            float dy = v.ui().dynamicState().scroll.snapshot().values().stream().findFirst().map(xy -> xy[1]).orElse(0f);
+            assertTrue(dy > 0f, "前提: 中身がスクロールした");
+            Recorder scrolled = new Recorder(walker::resolveAt, walker::animAt);
+            SceneWalkAccess.walk(v, walker, PaintOffsets.EMPTY, 1500L, Matrix2D.IDENTITY, scrolled);
+            assertEquals(top.drawn.size(), scrolled.drawn.size());
+            int moved = 0;
+            for (int i = 0; i < top.drawn.size(); i++) {
+                DisplayItem a = top.drawn.get(i), b = scrolled.drawn.get(i);
+                assertEquals(canon(a), canon(b), "スクロールで走査器の項目が変わった（スクロール量を焼き込んだ）: " + a.id());
+                double d = scrolled.poseY.get(i) - top.poseY.get(i);
+                if (a.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.TEXT || a.bgColor() == 0xFFCC3333 || a.bgColor() == 0xFF33CC33) {
+                    assertEquals(-dy, d, 1e-3, "中身の項目がスクロール量だけ動かない: " + a.id());
+                    moved++;
+                }
+            }
+            assertTrue(moved >= 10, "中身の項目が少ない: " + moved);
         }
     }
 
@@ -180,28 +227,37 @@ class SceneWalkerShadowTest {
         int n = Math.min(want.placed.size(), got.placed.size());
         for (int i = 0; i < n; i++) {
             if (!want.placed.get(i).equals(got.placed.get(i))) {
-                fail(frame + "（列の使い回し）: 描いた項目 " + i + " の画面の上の形が違う\n  driver: " + want.placed.get(i)
+                fail(frame + "（スクロール中）: 描いた項目 " + i + " の画面の上の形が違う\n  driver: " + want.placed.get(i)
                         + "\n  walker: " + got.placed.get(i));
             }
         }
-        assertEquals(want.placed.size(), got.placed.size(), frame + "（列の使い回し）: 描いた項目の数が違う");
+        assertEquals(want.placed.size(), got.placed.size(), frame + "（スクロール中）: 描いた項目の数が違う");
     }
 
     private static void compare(String frame, Recorder want, Recorder got) {
+        String m = callMismatch(frame, want, got);
+        if (m != null) fail(m);
+    }
+
+    /** 呼び出し（と描いた項目の中身）が一致すれば null、違えば最初の違いの説明。 */
+    private static String callMismatch(String frame, Recorder want, Recorder got) {
         int n = Math.min(want.calls.size(), got.calls.size());
         for (int i = 0; i < n; i++) {
             if (!want.calls.get(i).equals(got.calls.get(i))) {
-                fail(frame + ": 呼び出し " + i + " が違う\n  driver: " + want.calls.get(i) + "\n  walker: " + got.calls.get(i));
+                return frame + ": 呼び出し " + i + " が違う\n  driver: " + want.calls.get(i) + "\n  walker: " + got.calls.get(i);
             }
         }
         if (want.calls.size() != got.calls.size()) {
-            fail(frame + ": 呼び出しの数が違う（driver " + want.calls.size() + " / walker " + got.calls.size() + "）"
-                    + (want.calls.size() > n ? "\n  driver の次: " + want.calls.get(n) : "\n  walker の次: " + got.calls.get(n)));
+            return frame + ": 呼び出しの数が違う（driver " + want.calls.size() + " / walker " + got.calls.size() + "）"
+                    + (want.calls.size() > n ? "\n  driver の次: " + want.calls.get(n) : "\n  walker の次: " + got.calls.get(n));
         }
         for (int i = 0; i < want.drawn.size(); i++) {
             DisplayItem a = want.drawn.get(i), b = got.drawn.get(i);
-            if (!a.equals(b)) assertEquals(canon(a), canon(b), frame + ": 描いた項目 " + i + " の中身が違う");
+            if (!a.equals(b) && !canon(a).equals(canon(b))) {
+                return frame + ": 描いた項目 " + i + " の中身が違う\n  driver: " + canon(a) + "\n  walker: " + canon(b);
+            }
         }
+        return null;
     }
 
     /** 値の比べられる文字列（記録の部品を辿り、配列は中身で書く。配列を持つ記録の {@code toString} は実体の番号になるため）。 */

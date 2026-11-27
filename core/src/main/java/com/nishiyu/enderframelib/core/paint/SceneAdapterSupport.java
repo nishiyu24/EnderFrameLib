@@ -52,10 +52,11 @@ final class SceneAdapterSupport {
 
     static SceneAdapterBox effectiveParentNodeBox(SceneAdapterBox box, String parentId) {
         if (parentId == null || box == null) return null;
+        // 自分の錨を出さない祖先（匿名・大きさ 0）は飛ばす。子の親の錨（SceneDisplayListAdapter#enterChildren）と同じ規則で、
+        // 以前は大きさ 0 の祖先で止まって絶対座標にし、親の錨は出していない節を指したので、祖先の変形・不透明度・スクロールから外れた
         for (SceneAdapterBox a = box.paintParent(); a != null; a = a.paintParent()) {
             if (a.node() != null && "root".equals(a.node().tag)) return null;
-            if (a.anonymous()) continue;
-            return boxHasOwnNode(a) ? a : null;
+            if (boxHasOwnNode(a)) return a;
         }
         return null;
     }

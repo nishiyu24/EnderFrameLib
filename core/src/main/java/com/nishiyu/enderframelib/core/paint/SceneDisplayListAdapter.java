@@ -413,11 +413,12 @@ public final class SceneDisplayListAdapter {
         String tag = box.node().tag;
         ClipRect childClip = SceneAdapterSupport.computeChildClipRect(box, clip, rootW, rootH);
         contentClips.put(box, childClip);
-        String childParent = "root".equals(tag) ? null : box.anonymous() ? parentId : box.node().key();
+        // 子の親の錨は、自分の錨を出す箱だけ（匿名・大きさ 0 の箱は錨を出さないので、親の錨を素通しする。座標の原点も同じ規則）
+        String childParent = "root".equals(tag) ? null : SceneAdapterSupport.boxHasOwnNode(box) ? box.node().key() : parentId;
         List<StickyShift> stickies = SceneAdapterSupport.scrollsAsOneNode(box, followedScrollers, rootW, rootH);
         if (stickies != null) {
             ScrollContent content = new ScrollContent(box, box.node().scrollContentKey(),
-                    dynamic.scroll.getScrollX(box.node()), dynamic.scroll.getScrollY(box.node()));
+                    dynamic.scrollX(box.layer), dynamic.scrollY(box.layer));
             content.stickies = stickies;
             scrollContentOf.put(box, content);
             scrollContentOrder.add(content);
@@ -445,7 +446,7 @@ public final class SceneDisplayListAdapter {
         if (SceneAdapterSupport.boxHasOwnNode(box)) scratch.setOrigin(Math.round(box.x()), Math.round(box.y()));
         try {
             float scrollW = box.scrollWidth(), scrollH = box.scrollHeight();
-            float curX = dynamic.scroll.getScrollX(box.node()), curY = dynamic.scroll.getScrollY(box.node());
+            float curX = dynamic.scrollX(box.layer), curY = dynamic.scrollY(box.layer);
             int nodeHandle = box.node() != null ? box.node().paintHandle() : 0;
             long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
             String ownerId = box.node().key();

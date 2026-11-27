@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.scene;
 
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 
 /**
@@ -12,23 +13,34 @@ public final class DynamicSceneState {
 
     public final ScrollState scroll;
     public final float viewportW, viewportH;
+    /** スクロール量を 0 として読むスクロールコンテナ（{@link #unscrolled}。走査器が中身を焼き込まずに組むとき）。 */
+    private final java.util.Set<HtmlNode> unscrolled;
 
-    private DynamicSceneState(ScrollState scroll, float viewportW, float viewportH) {
+    private DynamicSceneState(ScrollState scroll, float viewportW, float viewportH, java.util.Set<HtmlNode> unscrolled) {
         this.scroll = scroll != null ? scroll : new ScrollState();
         this.viewportW = viewportW;
         this.viewportH = viewportH;
+        this.unscrolled = unscrolled;
     }
 
     public static DynamicSceneState of(ScrollState scroll, float viewportW, float viewportH) {
-        return new DynamicSceneState(scroll, viewportW, viewportH);
+        return new DynamicSceneState(scroll, viewportW, viewportH, java.util.Set.of());
+    }
+
+    /**
+     * スクロールコンテナ {@code nodes} のスクロール量を 0 として読む同じ状態（M3b-4b-3）。走査器は中身を 1 つの節にまとめるコンテナを
+     * スクロール 0 で組み、スクロール量は中身の節の平行移動として自分で足す（スクロール量を項目に焼き込まない）。
+     */
+    public DynamicSceneState unscrolled(java.util.Set<HtmlNode> nodes) {
+        return nodes.isEmpty() ? this : new DynamicSceneState(scroll, viewportW, viewportH, nodes);
     }
 
     public float scrollX(SceneLayer scroller) {
-        return scroller != null && scroller.node != null ? scroll.getScrollX(scroller.node) : 0f;
+        return scroller != null && scroller.node != null && !unscrolled.contains(scroller.node) ? scroll.getScrollX(scroller.node) : 0f;
     }
 
     public float scrollY(SceneLayer scroller) {
-        return scroller != null && scroller.node != null ? scroll.getScrollY(scroller.node) : 0f;
+        return scroller != null && scroller.node != null && !unscrolled.contains(scroller.node) ? scroll.getScrollY(scroller.node) : 0f;
     }
 
     /** スクロール中のアンカーへの追従（G8）。追従しなければ {@code null}。 */

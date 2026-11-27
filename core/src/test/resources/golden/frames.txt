@@ -9,7 +9,7 @@ showcase/scroll1	eef3ed79 736
 showcase/scroll2	e46e30c3 736
 showcase/scrollBack	ee27529f 736
 showcase/resize760	1e7f8804 736
-showcase/resize700	6c52486c 727
+showcase/resize700	b38d3674 727
 showcase/resize800	2ab3d829 736
 showcase/invalidate	2ab3d829 736
 large-list/open	17702c56 1212
