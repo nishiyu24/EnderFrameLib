@@ -37,6 +37,12 @@ public final class ChunkedFlow {
         return collapseTop && c.frags[i].collapseThrough ? 0 : c.y[i];
     }
 
+    /** チャンク {@code k} が先頭の余白の相殺による補正を持たず、{@code chunkY[k] + chunks[k].y[i]} で一様に決まるか。 */
+    public boolean isUniformChunk(int k) {
+        FlowChunk c = chunks[k];
+        return c.source != null && (k > firstStarted || (k == firstStarted && c.leadCount == 0));
+    }
+
     /** 子の断片を順に訪ねる。{@code x}, {@code y} は親の内容ボックス基準の border-box の左上。 */
     public interface Visitor {
         void visit(LayoutFragment child, float x, float y);

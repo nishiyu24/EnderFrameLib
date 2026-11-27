@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -31,7 +31,7 @@ public class ToggleAppearanceTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument("<html><head><style>body { margin: 0; }</style></head><body>" + body + "</body></html>",
                 "", 200, 100);
-        PaintView root = compiler.layoutDocument(doc, 200, 100, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        PaintBox root = compiler.layoutDocument(doc, 200, 100, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         return com.nishiyu.enderframelib.common.FrameRender.document(doc, 200, 100, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
     }
 

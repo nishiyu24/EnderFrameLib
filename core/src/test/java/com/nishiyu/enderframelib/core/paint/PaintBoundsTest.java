@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * S7 ①: {@link PaintBounds} の復元・ネスト・例外安全、および {@code <fieldset><legend>}・
- * インライン断片の背景描画が箱（描画用の木の見え方 {@code PaintView}。M2c-3 までは旧 {@code LayoutBox}）の幾何を一切書き換えないことを検証する。
+ * インライン断片の背景描画が箱（描画用の木の見え方 {@code PaintBox}。M2c-3 までは旧 {@code LayoutBox}）の幾何を一切書き換えないことを検証する。
  */
 class PaintBoundsTest {
 
@@ -29,12 +29,12 @@ class PaintBoundsTest {
                 + "<div id=b></div><div id=o></div>";
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 400, 400);
-        PaintView root = compiler.layoutDocument(doc, 400, 400, Map.of(), new ScrollState(),
+        PaintBox root = compiler.layoutDocument(doc, 400, 400, Map.of(), new ScrollState(),
                 FontResolver.FALLBACK, new InteractionState());
-        List<PaintView> all = new ArrayList<>();
+        List<PaintBox> all = new ArrayList<>();
         collectBoxes(root, all);
-        PaintView box = all.stream().filter(b -> b.node != null && "b".equals(b.node.getId())).findFirst().orElseThrow();
-        PaintView other = all.stream().filter(b -> b.node != null && "o".equals(b.node.getId())).findFirst().orElseThrow();
+        PaintBox box = all.stream().filter(b -> b.node != null && "b".equals(b.node.getId())).findFirst().orElseThrow();
+        PaintBox other = all.stream().filter(b -> b.node != null && "o".equals(b.node.getId())).findFirst().orElseThrow();
 
         float bx0 = box.x(), by0 = box.y(), bw0 = box.w(), bh0 = box.h();
         float bpL0 = box.pL(), bbT0 = box.bT(), ox0 = other.x();
@@ -88,13 +88,13 @@ class PaintBoundsTest {
 
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 300, 300);
-        PaintView root = compiler.layoutDocument(doc, 300, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
+        PaintBox root = compiler.layoutDocument(doc, 300, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
 
-        List<PaintView> all = new ArrayList<>();
+        List<PaintBox> all = new ArrayList<>();
         collectBoxes(root, all);
         float[][] snapshot = new float[all.size()][];
         for (int i = 0; i < all.size(); i++) {
-            PaintView b = all.get(i);
+            PaintBox b = all.get(i);
             snapshot[i] = new float[]{b.x(), b.y(), b.w(), b.h(), b.pL(), b.pT(), b.pR(), b.pB(), b.bL(), b.bT(), b.bR(), b.bB()};
         }
 
@@ -103,14 +103,14 @@ class PaintBoundsTest {
         assertTrue(items.stream().anyMatch(it -> "sp".equals(it.baseId()) && it.id().contains("_bgl")));
 
         for (int i = 0; i < all.size(); i++) {
-            PaintView b = all.get(i);
+            PaintBox b = all.get(i);
             float[] now = {b.x(), b.y(), b.w(), b.h(), b.pL(), b.pT(), b.pR(), b.pB(), b.bL(), b.bT(), b.bR(), b.bB()};
             assertArrayEquals(snapshot[i], now, "描画後に箱の幾何が変わってはならない: " + b.node.tag);
         }
     }
 
-    private static void collectBoxes(PaintView b, List<PaintView> out) {
+    private static void collectBoxes(PaintBox b, List<PaintBox> out) {
         out.add(b);
-        for (PaintView c : b.paintChildren()) collectBoxes(c, out);
+        for (PaintBox c : b.paintChildren()) collectBoxes(c, out);
     }
 }

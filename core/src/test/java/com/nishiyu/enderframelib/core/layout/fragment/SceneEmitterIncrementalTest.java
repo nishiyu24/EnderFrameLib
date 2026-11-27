@@ -3,11 +3,17 @@ package com.nishiyu.enderframelib.core.layout.fragment;
 import com.nishiyu.enderframelib.core.box.StyleSource;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.paint.SceneDisplayListAdapter;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
+import com.nishiyu.enderframelib.core.paint.scene.SceneBox;
+import com.nishiyu.enderframelib.core.paint.scene.SceneChunk;
+import com.nishiyu.enderframelib.core.paint.scene.SceneEmitter;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.paint.tree.PaintRun;
-import com.nishiyu.enderframelib.core.paint.tree.PaintNode;
-import com.nishiyu.enderframelib.core.paint.tree.PaintTreeBuilder;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
@@ -22,43 +28,44 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 描画用の木の増分（M2c ②-2。{@link PaintTreeBuilder}）: 前回の節を使い回した木が、同じ断片から作り直した木・ゼロから組み直した
- * 文書の木と同じで（描画だけの変化の最新のスタイルを含む）、変わっていない部分木は前回の節のまま（{@code ==}）であること。
+ * 描画シーンの増分構築（M3b-2。{@link SceneEmitter}）: 前回の節とチャンクを使い回したシーンが、同じ断片から作り直したシーン・
+ * ゼロから組み直した文書のシーンと同じで（描画だけの変化の最新のスタイルを含む）、変わっていない部分木は {@code (LayoutFragment ==,
+ * BoxNode ==)}、チャンクは {@code FlowChunk ==} で前回のまま使い回されること。
  */
-class PaintTreeIncrementalTest {
+class SceneEmitterIncrementalTest {
 
     @Test
     void hoverRebuildsOnlyTheSpine() {
         SpikeView v = new SpikeView(SpikeView.variedList(200), 640, 480);
-        PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
-        b.build(v.frame(), v.boxRoot);
-        int total = count(b.root());
-        PaintNode before = b.root();
+        SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+        DisplayScene s0 = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        int total = count(s0.root);
         v.state.setHoveredNode(v.byId("item-50"));
-        b.build(v.frame(), v.boxRoot);
-        assertNotSame(before, b.root());
-        assertTrue(b.built() < 40, "作り直した節 " + b.built() + " / " + total);
-        assertTrue(b.reused() > 0);
-        PaintNode li = find(b.root(), v.byId("item-50"));
+        DisplayScene s1 = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        assertNotSame(s0.root, s1.root);
+        assertTrue(emitter.builtLayers() < 40, "作り直した節 " + emitter.builtLayers() + " / " + total);
+        assertTrue(emitter.reusedLayers() > 0 || emitter.reusedChunks() > 0);
+        SceneLayer li = find(s1.root, v.byId("item-50"));
         assertEquals(0xFFCC0000, li.style.typed().inheritedPaint.color, "最新の木の色");
-        assertSame(find(before, v.byId("item-120")), find(b.root(), v.byId("item-120")), "触れていない項目は前回の節");
-        assertSameDump(v, b);
+        assertSame(find(s0.root, v.byId("item-120")), find(s1.root, v.byId("item-120")), "触れていない項目は前回の節");
+        assertSameDump(v, s1);
     }
 
     @Test
-    void insertingAtTheTopReusesTheShiftedItems() {
+    void insertingAtTheTopReusesTheShiftedItemsAndChunks() {
         SpikeView v = new SpikeView(SpikeView.largeList(300), 640, 480);
-        PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
-        b.build(v.frame(), v.boxRoot);
-        int total = count(b.root());
-        PaintNode item200 = find(b.root(), v.byId("item-200"));
+        SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+        DisplayScene s0 = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        int total = count(s0.root);
+        SceneLayer item200 = find(s0.root, v.byId("item-200"));
         HtmlElement e = new HtmlElement("li");
         e.updateTextContent("new first row");
         v.byId("list").insertBefore(e, v.byId("item-1"));
-        b.build(v.frame(), v.boxRoot);
-        assertSame(item200, find(b.root(), v.byId("item-200")), "下へずれただけの項目は前回の節（位置は親が持つ）");
-        assertTrue(b.built() < total / 10, "作り直した節 " + b.built() + " / " + total);
-        assertSameDump(v, b);
+        DisplayScene s1 = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        assertSame(item200, find(s1.root, v.byId("item-200")), "下へずれただけの項目は前回の節（位置はチャンク・親が持つ）");
+        assertTrue(emitter.reusedChunks() >= 8, "FlowChunk == で使い回したチャンク数 " + emitter.reusedChunks());
+        assertTrue(emitter.builtLayers() < total / 10, "作り直した節 " + emitter.builtLayers() + " / " + total);
+        assertSameDump(v, s1);
     }
 
     @Test
@@ -74,8 +81,8 @@ class PaintTreeIncrementalTest {
                 default -> SpikeView.nestedFlex(4, 3, true);
             };
             SpikeView v = new SpikeView(html, 640, 480);
-            PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
-            b.build(v.frame(), v.boxRoot);
+            SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+            emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
             Random rnd = new Random(kind.hashCode() * 31L + 7);
             for (int step = 0; step < 60; step++) {
                 List<HtmlNode> elems = new ArrayList<>();
@@ -92,9 +99,9 @@ class PaintTreeIncrementalTest {
                 } else {
                     op = IncrementalOracleTest.mutate(v, rnd, step);
                 }
-                b.build(v.frame(), v.boxRoot);
+                DisplayScene scene = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
                 try {
-                    assertSameDump(v, b);
+                    assertSameDump(v, scene);
                 } catch (AssertionError err) {
                     throw new AssertionError(kind + " step " + step + " (" + op + " on " + target.tag + ")\n" + err.getMessage(), err);
                 }
@@ -102,9 +109,9 @@ class PaintTreeIncrementalTest {
         }
     }
 
-    /** 新しい描画の記憶（M2c ②-3）: 前回の結果を使った表示リスト = 新しく描いた表示リスト。描画だけ・寸法・属性だけの変化を混ぜる。 */
+    /** 増分シーンから出した表示リスト = ゼロから組んだシーンの表示リスト。描画だけ・寸法・属性だけの変化を混ぜる。 */
     @Test
-    void painterMemoMatchesAFreshPaint() {
+    void adapterOutputMatchesAFreshScene() {
         for (String kind : new String[]{"varied", "flex", "text"}) {
             String html = switch (kind) {
                 case "varied" -> SpikeView.variedList(80).replace("</style>", " .sc{height:60px;overflow:auto}</style>");
@@ -112,10 +119,10 @@ class PaintTreeIncrementalTest {
                 default -> SpikeView.nestedFlex(4, 3, true);
             };
             SpikeView v = new SpikeView(html, 640, 480);
-            PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
-            com.nishiyu.enderframelib.core.paint.TreePainter painter = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
-                    v.doc.sheet.keyframes, null);
-            painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
+            SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+            SceneDisplayListAdapter adapter = new SceneDisplayListAdapter(v.vw, v.vh, v.doc.sheet.keyframes);
+            DynamicSceneState dyn = DynamicSceneState.of(null, v.vw, v.vh);
+            adapter.emit(emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh), dyn);
             Random rnd = new Random(kind.hashCode() * 17L + 3);
             for (int step = 0; step < 60; step++) {
                 List<HtmlNode> elems = new ArrayList<>();
@@ -136,14 +143,15 @@ class PaintTreeIncrementalTest {
                 } else {
                     op = IncrementalOracleTest.mutate(v, rnd, step);
                 }
-                PaintNode tree = b.build(v.frame(), v.boxRoot);
-                List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> inc = painter.paint(tree, v.ledger());
-                List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> fresh = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw,
-                        v.vh, v.doc.sheet.keyframes, null).paint(tree);
+                DisplayScene scene = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+                List<DisplayItem> inc = adapter.emit(scene, dyn);
+                DisplayScene freshScene = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes)
+                        .emit(v.layout.root(), v.boxRoot, v.vw, v.vh);
+                List<DisplayItem> fresh = new SceneDisplayListAdapter(v.vw, v.vh, v.doc.sheet.keyframes).emit(freshScene, dyn);
                 for (int i = 0; i < Math.min(inc.size(), fresh.size()); i++) {
                     if (!inc.get(i).equals(fresh.get(i))) {
                         throw new AssertionError(kind + " step " + step + " (" + op + " on " + target.tag + ") #" + i
-                                + "\n  新しく: " + fresh.get(i) + "\n  記憶:   " + inc.get(i));
+                                + "\n  新しく: " + fresh.get(i) + "\n  増分:   " + inc.get(i));
                     }
                 }
                 assertEquals(fresh.size(), inc.size(), kind + " step " + step + " (" + op + ") 項目の数");
@@ -152,17 +160,16 @@ class PaintTreeIncrementalTest {
     }
 
     @Test
-    void hoverRepaintsOnlyTheHoveredItem() {
+    void hoverRebuildsOnlyTheHoveredBranch() {
         SpikeView v = new SpikeView(SpikeView.variedList(200), 640, 480);
-        PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
-        com.nishiyu.enderframelib.core.paint.TreePainter painter = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
-                v.doc.sheet.keyframes, null);
-        painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
-        int all = painter.built();
+        SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+        emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        int all = emitter.builtLayers();
         v.state.setHoveredNode(v.byId("item-50"));
-        painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
-        assertTrue(painter.built() < 30, "作り直した箱 " + painter.built() + " / " + all);
-        assertTrue(painter.reused() > 100, "使い回した部分木 " + painter.reused());
+        emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        assertTrue(emitter.builtLayers() < 15, "作り直した節 " + emitter.builtLayers() + " / " + all);
+        assertTrue(emitter.reusedLayers() + emitter.reusedChunks() > 5,
+                "使い回した節/チャンク " + emitter.reusedLayers() + " / " + emitter.reusedChunks());
     }
 
     private static final String CONTROLS_DOC = "<html><head><style>li:hover{color:#c00} .sc{height:60px;overflow:auto;border:1px solid #444}"
@@ -176,64 +183,60 @@ class PaintTreeIncrementalTest {
         return sb.toString();
     }
 
-    /**
-     * 表・フォームの部品・スクロールコンテナ（スクロールバーと中身の節）も記憶する（記憶してよい箱をタグ名で決める一覧は無い。描画が DOM を
-     * 読む所は台帳で、スクロールの位置は文脈で照合する）。hover で作り直すのは触れた箱と祖先だけで、使い回したスクロールコンテナの中身の節の
-     * 記録も残る。
-     */
+    /** 表・フォームの部品・スクロールコンテナもそのまま再利用され、表示リストがゼロからの組み立てと一致する。 */
     @Test
     void controlsTablesAndScrollContainersAreReused() {
         SpikeView v = new SpikeView(CONTROLS_DOC, 640, 480);
-        PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
-        com.nishiyu.enderframelib.core.layout.model.ScrollState scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
-        com.nishiyu.enderframelib.core.paint.TreePainter painter = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
-                v.doc.sheet.keyframes, scroll);
-        painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
-        int all = painter.built();
-        assertEquals(1, painter.scrollContents().size(), "中身を 1 つの節にまとめたスクロールコンテナ");
+        SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+        ScrollState scroll = new ScrollState();
+        SceneDisplayListAdapter adapter = new SceneDisplayListAdapter(v.vw, v.vh, v.doc.sheet.keyframes);
+        DynamicSceneState dyn = DynamicSceneState.of(scroll, v.vw, v.vh);
+        adapter.emit(emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh), dyn);
+        int all = emitter.builtLayers();
+        assertEquals(1, adapter.scrollContents().size(), "中身を 1 つの節にまとめたスクロールコンテナ");
         v.state.setHoveredNode(v.byId("li20"));
-        PaintNode tree = b.build(v.frame(), v.boxRoot);
-        List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> inc = painter.paint(tree, v.ledger());
-        assertTrue(painter.built() < 10, "作り直した箱 " + painter.built() + " / " + all);
-        assertEquals(new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh, v.doc.sheet.keyframes, scroll).paint(tree), inc);
-        assertEquals(1, painter.scrollContents().size(), "使い回したスクロールコンテナの中身の節の記録");
+        DisplayScene scene = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        List<DisplayItem> inc = adapter.emit(scene, dyn);
+        assertTrue(emitter.builtLayers() < 10, "作り直した節 " + emitter.builtLayers() + " / " + all);
+        assertEquals(new SceneDisplayListAdapter(v.vw, v.vh, v.doc.sheet.keyframes).emit(scene, dyn), inc);
+        assertEquals(1, adapter.scrollContents().size(), "使い回したスクロールコンテナの中身の節の記録");
     }
 
-    /** スクロールの位置は台帳を通らずに変わることがあるので、スクロールコンテナの記憶は自分のスクロールの位置を文脈として照合する。 */
+    /** スクロールの位置は {@link DynamicSceneState} で渡すので、{@link DisplayScene} 自体は一切作り直さない。 */
     @Test
-    void scrollContainerMemoFollowsTheScrollPosition() {
+    void scrollReusesEntireDisplaySceneWithoutRebuilding() {
         SpikeView v = new SpikeView(CONTROLS_DOC, 640, 480);
-        PaintTreeBuilder b = new PaintTreeBuilder(v.layout.session());
-        com.nishiyu.enderframelib.core.layout.model.ScrollState scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
-        com.nishiyu.enderframelib.core.paint.TreePainter painter = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
-                v.doc.sheet.keyframes, scroll);
-        painter.paint(b.build(v.frame(), v.boxRoot), v.ledger());
-        int step = 0;
+        SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+        ScrollState scroll = new ScrollState();
+        SceneDisplayListAdapter adapter = new SceneDisplayListAdapter(v.vw, v.vh, v.doc.sheet.keyframes);
+        DisplayScene initial = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
         for (float y : new float[]{20f, 45f, 45f, 0f}) {
             scroll.setScroll(v.byId("sc"), 0f, y);
-            v.state.setHoveredNode(v.byId("li" + (1 + step++ % 40))); // 台帳にはリストの hover だけが載る
-            PaintNode tree = b.build(v.frame(), v.boxRoot);
-            List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> inc = painter.paint(tree, v.ledger());
-            com.nishiyu.enderframelib.core.paint.TreePainter fresh = new com.nishiyu.enderframelib.core.paint.TreePainter(v.vw, v.vh,
-                    v.doc.sheet.keyframes, scroll);
-            assertEquals(fresh.paint(tree), inc, "scrollY=" + y);
-            assertEquals(fresh.scrollContents(), painter.scrollContents(), "scrollY=" + y + " の中身の節の記録");
+            DynamicSceneState dyn = DynamicSceneState.of(scroll, v.vw, v.vh);
+            List<DisplayItem> inc = adapter.emit(initial, dyn);
+            DisplayScene freshScene = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes)
+                    .emit(v.frame(), v.boxRoot, v.vw, v.vh);
+            SceneDisplayListAdapter fresh = new SceneDisplayListAdapter(v.vw, v.vh, v.doc.sheet.keyframes);
+            assertEquals(fresh.emit(freshScene, dyn), inc, "scrollY=" + y);
+            assertEquals(fresh.scrollContents(), adapter.scrollContents(), "scrollY=" + y + " の中身の節の記録");
         }
     }
 
     private static final String[] PAINT = {"color:#a00", "background:#0a0", "opacity:.4", "outline:2px solid red", "border-color:blue",
             "text-decoration:underline", "z-index:2", "box-shadow:1px 1px 2px #000", ""};
 
-    /** 増分の木 = 同じ断片から作り直した木 = ゼロから組み直した文書の木。 */
-    private static void assertSameDump(SpikeView v, PaintTreeBuilder inc) {
-        List<String> a = dump(inc.root());
-        List<String> same = dump(new PaintTreeBuilder(v.layout.session()).build(v.layout.root(), v.boxRoot));
+    private static void assertSameDump(SpikeView v, DisplayScene inc) {
+        List<String> a = dump(inc.root, v.vw, v.vh);
+        DisplayScene sameScene = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes).emit(v.layout.root(), v.boxRoot, v.vw, v.vh);
+        List<String> same = dump(sameScene.root, v.vw, v.vh);
         FragmentPipeline fresh = new FragmentPipeline(new StyleSource(v.doc.sheet, v.state, null, v.vw, v.vh),
                 new LayoutSession(FontResolver.FALLBACK));
         LayoutFragment f = fresh.frame(v.doc.root, null, v.vw, v.vh);
-        List<String> scratch = dump(new PaintTreeBuilder(fresh.layout().session()).build(f, fresh.boxRoot()));
-        firstDiff("同じ断片から作り直した木", same, a);
-        firstDiff("ゼロから組み直した文書の木", scratch, a);
+        DisplayScene scratchScene = new SceneEmitter(fresh.layout().session(), v.doc.sheet.keyframes)
+                .emit(f, fresh.boxRoot(), v.vw, v.vh);
+        List<String> scratch = dump(scratchScene.root, v.vw, v.vh);
+        firstDiff("同じ断片から作り直したシーン", same, a);
+        firstDiff("ゼロから組み直した文書のシーン", scratch, a);
     }
 
     private static void firstDiff(String what, List<String> want, List<String> got) {
@@ -245,9 +248,9 @@ class PaintTreeIncrementalTest {
         assertEquals(want.size(), got.size(), what + " と節の数が違う");
     }
 
-    private static List<String> dump(PaintNode root) {
+    private static List<String> dump(SceneLayer root, int vw, int vh) {
         List<String> out = new ArrayList<>();
-        dump(PaintView.root(root), 0, out);
+        dump(SceneBox.root(root, DynamicSceneState.of(null, vw, vh)), 0, out);
         return out;
     }
 
@@ -265,17 +268,21 @@ class PaintTreeIncrementalTest {
         return String.format(Locale.ROOT, "%.3f", v);
     }
 
-    private static int count(PaintNode n) {
+    private static int count(SceneLayer n) {
         int c = 1;
-        for (int i = 0; i < n.childCount(); i++) c += count(n.child(i));
+        for (SceneChunk ch : n.children.chunks) {
+            for (SceneLayer l : ch.layers) c += count(l);
+        }
         return c;
     }
 
-    private static PaintNode find(PaintNode n, HtmlNode node) {
+    private static SceneLayer find(SceneLayer n, HtmlNode node) {
         if (n.node == node) return n;
-        for (int i = 0; i < n.childCount(); i++) {
-            PaintNode r = find(n.child(i), node);
-            if (r != null) return r;
+        for (SceneChunk ch : n.children.chunks) {
+            for (SceneLayer l : ch.layers) {
+                SceneLayer r = find(l, node);
+                if (r != null) return r;
+            }
         }
         return null;
     }

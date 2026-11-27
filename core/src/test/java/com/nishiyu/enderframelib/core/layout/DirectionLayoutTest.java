@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.common.TestBoxes;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
@@ -28,28 +28,28 @@ public class DirectionLayoutTest {
 
     private static final int VIEWPORT = 400;
 
-    private static PaintView layout(String html, FontResolver fonts) {
+    private static PaintBox layout(String html, FontResolver fonts) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", VIEWPORT, VIEWPORT);
         return parser.layoutDocument(doc, VIEWPORT, VIEWPORT, Map.of(), new ScrollState(), fonts);
     }
 
-    private static PaintView find(PaintView box, String id) {
+    private static PaintBox find(PaintBox box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (PaintView child : TestBoxes.elements(box)) {
-            PaintView hit = find(child, id);
+        for (PaintBox child : TestBoxes.elements(box)) {
+            PaintBox hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;
     }
 
-    private static float firstTextX(PaintView box) {
+    private static float firstTextX(PaintBox box) {
         for (var f : box.runs()) {
             if (!f.isText() || f.text().isBlank()) continue;
-            PaintView o = box.originParent(); // 行の語の位置は原点の箱の左上から
+            PaintBox o = box.originParent(); // 行の語の位置は原点の箱の左上から
             return (o != null ? o.x() : 0) + f.x();
         }
-        for (PaintView c : box.paintChildren()) {
+        for (PaintBox c : box.paintChildren()) {
             float x = firstTextX(c);
             if (!Float.isNaN(x)) return x;
         }
@@ -66,7 +66,7 @@ public class DirectionLayoutTest {
 
     @Test
     void blockChildrenInRtlContainerSitAtTheRightEdge() {
-        PaintView root = layout(RTL_BLOCKS, FontResolver.FALLBACK);
+        PaintBox root = layout(RTL_BLOCKS, FontResolver.FALLBACK);
         float parentLeft = find(root, "p").x();
         // 幅 100 の子は、幅 300 の rtl の箱の右端（左に 200 のあき）
         assertEquals(parentLeft + 200, find(root, "a").x(), 0.01f);
@@ -85,7 +85,7 @@ public class DirectionLayoutTest {
 
     @Test
     void dirAttributeMapsToTheDirectionProperty() {
-        PaintView root = layout("<div id=\"p\" dir=\"rtl\"><div id=\"k\">x</div></div><div id=\"l\" dir=\"ltr\"></div>", FontResolver.FALLBACK);
+        PaintBox root = layout("<div id=\"p\" dir=\"rtl\"><div id=\"k\">x</div></div><div id=\"l\" dir=\"ltr\"></div>", FontResolver.FALLBACK);
         assertEquals("rtl", find(root, "p").style().get("direction"));
         assertEquals("rtl", find(root, "k").style().get("direction"), "direction は継承される");
         assertEquals("ltr", find(root, "l").style().get("direction"));
@@ -98,7 +98,7 @@ public class DirectionLayoutTest {
                 + "<div id=\"u\" style=\"width:200px;text-align:end\">x</div>"
                 + "<div id=\"v\" style=\"width:200px\">x</div>"
                 + "<div id=\"w\" style=\"width:200px;direction:rtl;text-align:left\">x</div>";
-        PaintView root = layout(html, FontResolver.FALLBACK);
+        PaintBox root = layout(html, FontResolver.FALLBACK);
         float left = find(root, "v").x();
         float xs = firstTextX(find(root, "s"));
         float xt = firstTextX(find(root, "t"));
@@ -128,8 +128,8 @@ public class DirectionLayoutTest {
         Assumptions.assumeTrue(system.hasFamily("Arial"), "Arial が無い環境");
         FontResolver fonts = system::resolve;
         // 行の高さ 10px。Arial 16px の内容領域（ascent + descent）は行より高いので、文字は行の外にはみ出す
-        PaintView root = layout("<div id=\"box\" style=\"width:200px;line-height:10px;font-family:Arial;font-size:16px\">a<br>b</div>", fonts);
-        PaintView box = find(root, "box");
+        PaintBox root = layout("<div id=\"box\" style=\"width:200px;line-height:10px;font-family:Arial;font-size:16px\">a<br>b</div>", fonts);
+        PaintBox box = find(root, "box");
         assertEquals(20f, box.h(), 0.01f);
         var face = fonts.resolve("Arial");
         var style = new com.nishiyu.enderframelib.core.text.model.FontStyle(16, false, false, 0);
@@ -148,8 +148,8 @@ public class DirectionLayoutTest {
         SystemFonts system = SystemFonts.system().withLocale(Locale.ENGLISH);
         Assumptions.assumeTrue(system.hasFamily("Arial"), "Arial が無い環境");
         FontResolver fonts = system::resolve;
-        PaintView root = layout("<div id=\"box\" style=\"width:200px;line-height:24px;font-family:Arial;font-size:16px\">a<br>b</div>", fonts);
-        PaintView box = find(root, "box");
+        PaintBox root = layout("<div id=\"box\" style=\"width:200px;line-height:24px;font-family:Arial;font-size:16px\">a<br>b</div>", fonts);
+        PaintBox box = find(root, "box");
         assertEquals(box.h(), box.scrollHeight(), 0.01f);
     }
 }

@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -22,7 +22,7 @@ import java.util.Map;
 class ArenaSlotsLeakTest {
 
     private static WeakReference<InteractionState> restyleWithThrowawayState(UiDocumentCompiler parser, Document doc,
-                                                                            PaintView root) {
+                                                                            PaintBox root) {
         InteractionState state = new InteractionState();
         parser.layoutDocument(doc, 800, 600, Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(),
                 com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, state);
@@ -35,7 +35,7 @@ class ArenaSlotsLeakTest {
                 + "<div class=a>x</div><div class=a>y</div></body></html>";
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", 800, 600);
-        PaintView root = parser.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(), FontResolver.FALLBACK,
+        PaintBox root = parser.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(), FontResolver.FALLBACK,
                 new InteractionState());
 
         WeakReference<InteractionState> first = restyleWithThrowawayState(parser, doc, root);

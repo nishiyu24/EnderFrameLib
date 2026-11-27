@@ -171,8 +171,8 @@ public class UiView implements AutoCloseable {
         interactionState.bindStyleLookup(v3::styleOf); // CSSOM の算出スタイルは箱の木から
     }
 
-    /** レイアウトの結果の木の根（描画用の木の見え方。CSSOM・フォーカス・インスペクタが読む。まだ無ければ null）。 */
-    public com.nishiyu.enderframelib.core.paint.tree.PaintView boxRoot() {
+    /** レイアウトの結果の木の根（CSSOM・フォーカス・インスペクタが読む。まだ無ければ null）。 */
+    public com.nishiyu.enderframelib.core.paint.tree.PaintBox boxRoot() {
         return v3.root();
     }
 
@@ -186,10 +186,10 @@ public class UiView implements AutoCloseable {
         com.nishiyu.enderframelib.core.dom.node.ChangeLedger ledger = full ? null : interactionState.changeLedger();
         List<DisplayItem> elements = v3.frame(document, ledger, rootW, rootH, devicePixelRatio, env, interactionState, scrollState, fontResolver());
         interactionState.clearAllStyleDirty();
-        if (elements == null) { // 描画用の木が前回のまま: スクロールが無ければ何もしない、あれば中身の節を動かす
-            if (!scrollState.hasUncheckedChange(scrollAtBuild, java.util.Set.of())) return;
+        if (elements == null) { // シーンが前回のまま: スクロールが無ければ何もしない、あれば中身の節を動かす
+            if (!v3.hasEffectiveScrollChange(scrollState, scrollAtBuild)) return;
             if (tryScrollTranslate()) { STAT_SCROLL_TRANSLATED.increment(); return; }
-            elements = v3.paint(ledger);
+            elements = v3.paint();
         }
         publishBuilt(elements);
         publishLayoutToDom();
@@ -969,7 +969,7 @@ public class UiView implements AutoCloseable {
         // 動いているうちは毎フレーム再スタイルを要求する（終わった要素は進めた時点で再スタイルの対象になる）
         if (interactionState.advanceAnimations(nowMs())) requestRestyle();
         var ledger = interactionState.changeLedger();
-        v3.beforeFreeze(interactionState, document.sheet, repositionPending ? scrollState : null, scrollAtBuild);
+        v3.beforeFreeze(interactionState, document.sheet);
         ledger.freeze(); // 変更台帳を凍結（時間で動くスタイルの印も、この世代に入るよう進めたあとで）。変化は全て台帳から読む
 
         boolean resize = resizeDue();

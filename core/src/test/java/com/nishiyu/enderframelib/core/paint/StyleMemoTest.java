@@ -71,7 +71,7 @@ class StyleMemoTest {
         assertNotEquals(other[0], bigger[0], "50% は箱の大きさに追従する");
     }
 
-    private static com.nishiyu.enderframelib.core.paint.tree.PaintView find(com.nishiyu.enderframelib.core.paint.tree.PaintView box, String cls) {
+    private static com.nishiyu.enderframelib.core.paint.tree.PaintBox find(com.nishiyu.enderframelib.core.paint.tree.PaintBox box, String cls) {
         if (box.node != null && cls.equals(box.node.attrs.get("class"))) return box;
         for (var child : com.nishiyu.enderframelib.common.TestBoxes.elements(box)) {
             var hit = find(child, cls);

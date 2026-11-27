@@ -1,24 +1,25 @@
-package com.nishiyu.enderframelib.core.paint.tree;
+package com.nishiyu.enderframelib.core.paint.scene;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+import com.nishiyu.enderframelib.core.paint.tree.PaintRun;
 
 /**
- * 描画用の木の、行に置かれた箱の断片 1 つ（M2c ②-2。文字の語、またはインライン要素の行ごとの箱）。不変。座標は持ち主の箱の
- * 原点の箱（{@link PaintBox#originParent}）の左上が原点。
+ * {@link SceneLayer} が持つ、行に置かれた断片 1 つ（文字の語、またはインライン要素の行ごとの箱。M3b-2）。
+ * 座標は持ち主の箱の原点の箱（{@link PaintBox#originParent}）の左上が原点。不変。
  */
-final class TreeRun implements PaintRun {
+public final class SceneRun implements PaintRun {
     private final float x, y, w, h, baseline;
     private final String text;
     private final boolean startEdge, endEdge;
-    /** 1 行目の語に効く {@code ::first-line} を掛けたスタイル（1 行目でない・規則が無ければ null）。 */
     private final ComputedStyle firstLine;
 
-    TreeRun(float x, float y, float w, float h, String text, float baseline, boolean startEdge, boolean endEdge) {
+    public SceneRun(float x, float y, float w, float h, String text, float baseline, boolean startEdge, boolean endEdge) {
         this(x, y, w, h, text, baseline, startEdge, endEdge, null);
     }
 
-    TreeRun(float x, float y, float w, float h, String text, float baseline, boolean startEdge, boolean endEdge, ComputedStyle firstLine) {
-        this.firstLine = firstLine;
+    public SceneRun(float x, float y, float w, float h, String text, float baseline, boolean startEdge, boolean endEdge,
+                    ComputedStyle firstLine) {
         this.x = x;
         this.y = y;
         this.w = w;
@@ -27,6 +28,7 @@ final class TreeRun implements PaintRun {
         this.baseline = baseline;
         this.startEdge = startEdge;
         this.endEdge = endEdge;
+        this.firstLine = firstLine;
     }
 
     @Override public float x() { return x; }

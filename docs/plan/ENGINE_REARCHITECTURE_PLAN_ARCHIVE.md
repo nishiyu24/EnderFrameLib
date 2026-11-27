@@ -456,6 +456,7 @@
 | **M3a: 画面に平行な面の画素の倍率は姿勢の倍率 × GUI の倍率**（GUI の倍率だけで描いて最近傍で縮めると、ビットマップ書体の細い列が落ちる）。Minecraft の頂点の置き場は描き方ごとに分ける（光沢で 2 つへ同時に積む） | 計画書 §3.3 | 実機の確かめ方（データパック＋`PrintWindow`）は計画書 §3.3 |
 | **P4-1: テストの補助を共有するときは、閉包を先にコンパイルで確かめる**（純コアに見えた `UiEventFixture` は同じパッケージの MOD のクラスを import なしで使っていた。uievents の WPT は MOD の入力の層を通るので `:mod` に残し、目録の検査は `:core` がソースの `@WptCase` を読む）。全テストの作業ディレクトリはリポジトリ直下に揃え、ゴールデンの置き場だけ `-Dgolden.dir` で分ける | 計画書 §3.9 P4-1 | uievents の WPT は M4（`InputController`）で `:core` へ戻す。コアのテストが MOD の同梱の文書を読む結合は P4-2 で解く |
 | **M3b-1: 描画が読む DOM の値は箱の木が写す**（属性・textarea の中身・状態の規則が掛かるか。`BoxNode.values`〔`DomValues`〕。値が前回と同じなら前回の参照、レイアウトの入力の照合には入れない。`class`・`id`・`style` は写さない〔描画は読まず、多くの要素が持つ〕）。これで描画の記憶は台帳の祖先を数えずに節の同一性で照合でき、残る台帳の読み取りはスクロールしたコンテナだけ。`hasHover` の印（状態の規則の照合）は粗く、規則の無い要素にも立つので、印の変化で不具合を再現するテストは作れなかった | 計画書 §3.4・`PaintDomValuesTest`・回帰カタログ M3b | M3b-2 の `SceneEmitter` は `BoxNode.values` だけを読む（`ArchitectureHealthTest#paintDoesNotReadDomValues`） |
+| **M3b-2: 親相対 `DisplayScene` ＋ `DynamicSceneState` で凍結例外 4 種と `SCROLL` 祖先照合を同時に根絶**（`SceneLayer` は `(LayoutFragment ==, 最新の BoxNode ==)`、`SceneChunk` は未分岐の `FlowChunk ==` のみで再利用し、スクロール・sticky・アンカー追従は `DynamicSceneState` へ分離。非スクロール要素の誤スクロールは `V3Frame.hasEffectiveScrollChange` が `byNodeId` で弾き `drawn=0` を保つ。`isolation: isolate` 単体では FBO 層にせず blending 子孫伝播だけで判定する） | 計画書 §3.4・`DisplaySceneTest`・`SceneEmitterIncrementalTest`・回帰カタログ M3b | `SceneDisplayListAdapter` は M3b-4 削除予定の一時アダプタのため無記憶（§2.3 ルール 3）。M3b-3 で `SceneBox`/`PaintBox`、`M3b-4` で `DisplayItem` を消す |
 
 ### 5.B 原文
 

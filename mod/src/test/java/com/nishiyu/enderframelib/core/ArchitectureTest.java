@@ -266,9 +266,10 @@ public class ArchitectureTest {
 
     @Test
     public void testR6DisplayListBuilderRegexDoesNotGrow() throws IOException {
-        // 表示リストを作る一群（TreePainter・重なりの規則 TreeStacking と、箱 1 つを描く部品）の合計（M2c-3 で旧 DisplayListBuilder・PaintOrder を消した）
+        // 表示リストを作る一群（SceneDisplayListAdapter・シーン生成と、箱 1 つを描く部品）の合計（M3b-2 で TreePainter・TreeStacking を消した）
         int count = 0;
-        for (String name : List.of("TreePainter", "TreeStacking", "PaintSupport", "BoxAnimation", "BoxDecorationPainter",
+        for (String name : List.of("SceneDisplayListAdapter", "scene/SceneEmitter", "scene/SceneLayerProps", "scene/SceneInlineBuilder",
+                "PaintSupport", "BoxAnimation", "BoxDecorationPainter",
                 "ControlPainter", "ItemProps", "BoxItemPainter", "TextRunPainter")) {
             count += countMatches(Files.readString(resolveMain("core/paint/" + name + ".java")), "Pattern\\.compile\\(");
         }

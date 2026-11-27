@@ -6,11 +6,12 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
-import com.nishiyu.enderframelib.core.paint.TreePainter;
+import com.nishiyu.enderframelib.core.paint.SceneDisplayListAdapter;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
+import com.nishiyu.enderframelib.core.paint.scene.SceneEmitter;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
-import com.nishiyu.enderframelib.core.paint.tree.PaintNode;
-import com.nishiyu.enderframelib.core.paint.tree.PaintTreeBuilder;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -314,8 +315,9 @@ class V3ViewTest {
         LayoutSession session = new LayoutSession(FontResolver.FALLBACK);
         FragmentPipeline p = new FragmentPipeline(new StyleSource(doc.sheet, ui.interactionState(), ui.env(), w, h), session);
         LayoutFragment f = p.frame(doc.root, null, w, h);
-        PaintNode tree = new PaintTreeBuilder(session).build(f, p.boxRoot());
-        List<DisplayItem> fresh = new TreePainter(w, h, doc.sheet.keyframes, ui.scrollState()).paint(tree);
+        DisplayScene scene = new SceneEmitter(session, doc.sheet.keyframes).emit(f, p.boxRoot(), w, h);
+        List<DisplayItem> fresh = new SceneDisplayListAdapter(w, h, doc.sheet.keyframes)
+                .emit(scene, DynamicSceneState.of(ui.scrollState(), w, h));
         SoftwareRenderBackend b = new SoftwareRenderBackend(W, H, 1f);
         b.render(fresh, 0);
         Pixmap a = live.pixmap(), z = b.pixmap();

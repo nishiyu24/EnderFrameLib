@@ -21,7 +21,7 @@ class IdInitOrderTest {
             "com.nishiyu.enderframelib.core.css.ShorthandPlan",
             "com.nishiyu.enderframelib.core.css.StyleTable",
             "com.nishiyu.enderframelib.core.paint.BoxDecorationPainter",
-            "com.nishiyu.enderframelib.core.paint.TreePainter");
+            "com.nishiyu.enderframelib.core.paint.SceneDisplayListAdapter");
 
     @Test
     void idTablesAreCorrectWhicheverClassIsTouchedFirst() throws Exception {

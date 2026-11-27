@@ -15,14 +15,19 @@ import org.junit.jupiter.api.Test;
 /**
  * 項目の再生（{@code spanReplay}）の検証モード（C0 ②。{@code VERIFY_MEMO}）。再生できる項目を再生せずに描き直し、前フレームの出力
  * （変形・効果・図形・クリップ・描画順）と同じか比べる。GPU を使わない {@link RecordingGpuDevice} で CI でも回る。
+ *
+ * <p>M3b-2 の一時アダプタ（{@code SceneDisplayListAdapter}）は記憶を持たないため、DOM 文字更新時は全 {@code DisplayItem} が作り直される。
+ * M3b-4 で {@code DisplayItem} を廃止するまで、本テストは同じ {@code DisplayItem} 列を再描画するアニメーションのフレーム間で項目再生を検証する。</p>
  */
 class SpanReplayVerificationTest {
     private static String html() {
-        StringBuilder sb = new StringBuilder("<body style=\"margin:0;background:#10141c\">");
+        StringBuilder sb = new StringBuilder("<head><style>@keyframes p{from{opacity:.4}to{opacity:1}}"
+                + "#t{animation:p 200ms infinite;color:#fff;font-size:12px}</style></head>"
+                + "<body style=\"margin:0;background:#10141c\">");
         for (int i = 0; i < 24; i++) {
             sb.append("<div style=\"width:60px;height:12px;margin:2px;border-radius:3px;background:rgb(").append(40 + i * 7).append(",90,160)\"></div>");
         }
-        return sb.append("<p id=\"t\" style=\"color:#fff;font-size:12px\">0</p></body>").toString();
+        return sb.append("<p id=\"t\">0</p></body>").toString();
     }
 
     private static GpuRenderBackend backend(RecordingGpuDevice rec, boolean verify) {
@@ -50,9 +55,7 @@ class SpanReplayVerificationTest {
             long verified0 = RectStream.STAT_VERIFIED_SPANS.sum();
             long now = 1000;
             view.frame(now, backend, true);
-            HtmlNode text = view.root().getNodeById("t");
             for (int i = 1; i <= 6; i++) {
-                text.updateTextContent("n" + i);
                 now += 16;
                 view.frame(now, backend, true);
             }
@@ -71,8 +74,6 @@ class SpanReplayVerificationTest {
             // 前フレームの出力（図形）が、入力の変化を取りこぼして古くなっている状態を作る
             PropertyTrees trees = rects(backend).store().trees;
             for (int s = 0; s < 200; s++) trees.primitives.putFloat(s, 4, 12345f);
-            HtmlNode text = view.root().getNodeById("t");
-            text.updateTextContent("changed");
             now += 16;
             long t = now;
             AssertionError e = assertThrows(AssertionError.class, () -> view.frame(t, backend, true));
@@ -89,8 +90,7 @@ class SpanReplayVerificationTest {
             long verified0 = RectStream.STAT_VERIFIED_SPANS.sum();
             long now = 1000;
             view.frame(now, backend, true);
-            HtmlNode text = view.root().getNodeById("t");
-            for (int i = 1; i <= 4; i++) { text.updateTextContent("n" + i); now += 16; view.frame(now, backend, true); }
+            for (int i = 1; i <= 4; i++) { now += 16; view.frame(now, backend, true); }
             assertEquals(0, RectStream.STAT_VERIFIED_SPANS.sum() - verified0);
             assertTrue(backend.rectTreeReplayedItems() > 0, "検証が無ければ再生される: " + backend.rectTreeReplayedItems());
         }

@@ -11,7 +11,7 @@ import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -130,7 +130,7 @@ public class CascadeInfrastructureTest {
 
     @Test
     public void testKeywordPropertiesAreReadAsEnumsWithRegisteredInitialValue() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <style>.f { position: relative; box-sizing: border-box; overflow-x: hidden; }</style>
                 <div class="f" id="a"></div><div id="b"></div>
                 """);
@@ -158,16 +158,16 @@ public class CascadeInfrastructureTest {
                 .get(CssProperty.COLOR);
     }
 
-    private static PaintView layout(String html) {
+    private static PaintBox layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", VIEWPORT, VIEWPORT);
         return parser.layoutDocument(doc, VIEWPORT, VIEWPORT, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 
-    private static PaintView find(PaintView box, String id) {
+    private static PaintBox find(PaintBox box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (PaintView child : TestBoxes.elements(box)) {
-            PaintView hit = find(child, id);
+        for (PaintBox child : TestBoxes.elements(box)) {
+            PaintBox hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

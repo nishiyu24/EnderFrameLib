@@ -14,7 +14,7 @@ public enum PipelineStage {
     LAYOUT_PLACE("layout.place"),
     /** 新経路の断片のレイアウト（{@code FragmentLayout}。測ると置くを分けない）。 */
     LAYOUT("layout"),
-    /** 新経路の描画用の木（{@code PaintTreeBuilder}）。 */
+    /** 新経路の描画シーンの生成（{@code SceneEmitter}）。 */
     PAINT_TREE("paint-tree"),
     /** measure を飛ばした位置決めだけ（スクロール・ドラッグ）。 */
     REPOSITION("reposition"),

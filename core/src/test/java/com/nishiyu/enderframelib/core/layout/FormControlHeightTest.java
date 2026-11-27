@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
@@ -35,10 +35,10 @@ public class FormControlHeightTest {
             {24, 0, 28, 29}, {24, 20, 28, 29},
     };
 
-    private static PaintView byId(PaintView b, String id) {
+    private static PaintBox byId(PaintBox b, String id) {
         if (b.node != null && id.equals(b.node.attrs.get("id"))) return b;
-        for (PaintView c : b.paintChildren()) {
-            PaintView found = byId(c, id);
+        for (PaintBox c : b.paintChildren()) {
+            PaintBox found = byId(c, id);
             if (found != null) return found;
         }
         return null;
@@ -57,12 +57,12 @@ public class FormControlHeightTest {
         }
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html.toString(), "", 800, 600);
-        PaintView root = compiler.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(),
+        PaintBox root = compiler.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(),
                 system.withLocale(Locale.JAPANESE), new InteractionState());
 
         List<String> failures = new ArrayList<>();
         for (int i = 0; i < CHROME.length; i++) {
-            PaintView in = byId(root, "in" + i), se = byId(root, "se" + i);
+            PaintBox in = byId(root, "in" + i), se = byId(root, "se" + i);
             if (Math.abs(in.h() - CHROME[i][2]) > 0.01f) failures.add("input " + CHROME[i][0] + "px lh=" + CHROME[i][1] + ": " + in.h() + " / chrome " + CHROME[i][2]);
             if (Math.abs(se.h() - CHROME[i][3]) > 0.01f) failures.add("select " + CHROME[i][0] + "px lh=" + CHROME[i][1] + ": " + se.h() + " / chrome " + CHROME[i][3]);
         }

@@ -5,22 +5,21 @@ import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * 記憶を持ち越さない 1 回だけのフレーム（M2c-3。旧 {@code RenderPipeline.layoutDocument} / {@code renderDocument} /
- * {@code layoutSubtree} の置き換え）。文書（または要素の部分木）から、箱の木 → 断片木 → 描画用の木 → 表示リストを 1 度だけ作る。
+ * 記憶を持ち越さない 1 回だけのフレーム（M3b-2）。文書（または要素の部分木）から、箱の木 → 断片木 → {@code DisplayScene} → 表示リストを 1 度だけ作る。
  * 状態は呼び出しの中に閉じ、前回の木も記憶も持たない（対話のある画面は {@link UiView} / {@link StandaloneView} を使う）。
  */
 public final class FrameRender {
     private FrameRender() { }
 
-    /** 1 回のフレームの結果: 描画用の木の根（位置は絶対）と表示リスト。 */
-    public record Frame(PaintView root, List<DisplayItem> items) { }
+    /** 1 回のフレームの結果: 箱の見え方（位置は絶対）と表示リスト。 */
+    public record Frame(PaintBox root, List<DisplayItem> items) { }
 
     /**
      * 文書 {@code doc} を大きさ {@code w}×{@code h} で組んで描く。{@code state} は対話の状態（:hover など。無ければ新しい空の状態）で、

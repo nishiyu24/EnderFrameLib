@@ -109,7 +109,8 @@ core/
 │             標準 JDK 21 のダイレクト ByteBuffer + VarHandle だけで作り、JVM フラグも追加依存も要らない
 ├── box/      箱の木（BoxTreeCompiler・BoxNode。変更台帳を入口に増分で作る）
 ├── layout/   fragment/（断片木の整形: Block / Inline / Flex / Grid / Table / 縦書き・LayoutCache）、model/、LayoutTaskPool
-├── paint/    描画モデル（DisplayItem・BoxDecorations・Gradients・AnimationSpec）
+├── paint/    描画シーン（scene/: DisplayScene・SceneEmitter・SceneLayer・SceneChunk・DynamicSceneState）、
+│             一時アダプタ（SceneDisplayListAdapter・SceneAdapterSupport）、描画モデル（DisplayItem・BoxDecorations・Gradients）
 └── text/     テキストの測定（TextShaper）、書体（model/FontFace・BitmapFontFace）、
               システム書体（font/: SystemFonts・FontScanner・FontCatalog・OutlineFontFace・LoadedFace・KerningTable）
 ```
@@ -175,7 +176,7 @@ GUI 画面（`AbstractEnderScreen` / `AbstractEnderContainerScreen`、共通部�
 ### 描画（`client/renderer`）
 MOD の面（GUI・コンテナ・HUD・ビルボード・ブロック・ホログラム・アイテム・地図）は、`SurfaceRenderer` を入口に
 `MinecraftHostSurface` だけが描く（M3a で旧レンダラ `DisplayItemDrawer`・`WebSdfShader`・`LayerCompositor` ほかを撤去した）。
-`TreePainter`（`:core`）が作った項目の一覧を、Minecraft の GL コンテキストとテクスチャを共有する見えないコンテキストの
+`SceneEmitter`（`:core`）が作った不変の `DisplayScene` から（M3b-4 まで記憶なしの一時アダプタ `SceneDisplayListAdapter` 経由で）得た項目を、Minecraft の GL コンテキストとテクスチャを共有する見えないコンテキストの
 `LwjglGlRenderBackend`（コアの GPU 描画。スタンドアロンと同じコード）で面のテクスチャへ描き、1 枚の板として貼る。
 角丸・グラデーション・影・フィルター・クリップ・文字はすべてコアが描く。
 
@@ -199,9 +200,9 @@ flowchart TD
     DOM["ライブ DOM (HtmlDocument)"] --> Ledger["変更台帳 (ChangeLedger。フレームの頭で凍結)"]
     Ledger --> BoxTree["箱の木 (BoxTreeCompiler → BoxNode。スタイルは StyleSource)"]
     BoxTree --> Layout["断片木 (FragmentLayout → LayoutFragment。記憶は LayoutCache)"]
-    Layout --> PaintTree["描画用の木 (PaintTreeBuilder → PaintNode / PaintView)"]
-    PaintTree --> DisplayList["ディスプレイリスト (TreePainter)"]
-    DisplayList --> Drawer["バックエンド (CPU / GL / Vulkan / Minecraft)"]
+    Layout --> Scene["描画シーン (SceneEmitter → DisplayScene。親相対・DynamicSceneState)"]
+    Scene --> Adapter["一時アダプタ (SceneDisplayListAdapter。M3b-4 で削除)"]
+    Adapter --> Drawer["バックエンド (CPU / GL / Vulkan / Minecraft)"]
 ```
 
 ### 増分
@@ -246,7 +247,7 @@ flowchart TD
 | **M1拡張** | シングルトンの static フィールドに持つ画面・セッション単位のコールバック | 0 |
 | **M1拡張** | コマンド定義クラス内のサーバー状態コレクション | 0 |
 | **DOM直書き** | `node/`・パーサ・直列化以外の `.attrs.put` / `.attrs.remove` 直接呼び出し | 0 |
-| **R6** | 表示リストを作る一群（`TreePainter` ほか）の `Pattern.compile` の数（型付き値と `CssSyntax` を使う） | 0 |
+| **R6** | シーン・表示リスト生成の一群（`SceneEmitter`・`BoxItemPainter` ほか）の `Pattern.compile` の数（型付き値と `CssSyntax` を使う） | 0 |
 
 指標の外にも、次を同じテストで検査している。
 

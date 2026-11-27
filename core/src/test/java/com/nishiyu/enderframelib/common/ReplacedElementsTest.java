@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.raster.RasterImageEntry;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -34,21 +34,21 @@ public class ReplacedElementsTest {
         RasterImageStore.clear();
     }
 
-    private record Rendered(PaintView root, List<DisplayItem> elements) {}
+    private record Rendered(PaintBox root, List<DisplayItem> elements) {}
 
     private static Rendered render(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(
                 "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", W, H);
         doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withResolution(dppx));
-        PaintView root = parser.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        PaintBox root = parser.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         return new Rendered(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
     }
 
-    private static PaintView find(PaintView box, String id) {
+    private static PaintBox find(PaintBox box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintView child : TestBoxes.elements(box)) {
-            PaintView hit = find(child, id);
+        for (PaintBox child : TestBoxes.elements(box)) {
+            PaintBox hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;
@@ -81,7 +81,7 @@ public class ReplacedElementsTest {
     public void inlineSvgGetsIntrinsicSizeFromAttributesAndRasterizesItsShapes() {
         Rendered r = render("<svg id=\"s\" width=\"40\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#ff0000\"/>"
                 + "<rect x=\"20\" width=\"20\" height=\"20\" fill=\"#0000ff\"/></svg>");
-        PaintView box = find(r.root, "s");
+        PaintBox box = find(r.root, "s");
         assertEquals(40, box.w(), 0.01);
         assertEquals(20, box.h(), 0.01);
         DisplayItem svg = item(r, "s_svg");
@@ -104,7 +104,7 @@ public class ReplacedElementsTest {
     public void svgWithoutSizeIs300By150AndViewBoxSetsTheRatio() {
         assertEquals(300, find(render("<svg id=\"s\"></svg>").root, "s").w(), 0.01);
         assertEquals(150, find(render("<svg id=\"s\"></svg>").root, "s").h(), 0.01);
-        PaintView vb = find(render("<svg id=\"s\" viewBox=\"0 0 80 20\"></svg>").root, "s");
+        PaintBox vb = find(render("<svg id=\"s\" viewBox=\"0 0 80 20\"></svg>").root, "s");
         assertEquals(80, vb.w(), 0.01);
         assertEquals(20, vb.h(), 0.01);
     }
@@ -150,7 +150,7 @@ public class ReplacedElementsTest {
     public void imgWithSvgDataUriUsesViewBoxSizeAndRasterizes() {
         String svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 30 10\"><rect width=\"15\" height=\"10\" fill=\"red\"/></svg>";
         Rendered r = render("<img id=\"i\" src=\"" + dataUri(svg) + "\">");
-        PaintView box = find(r.root, "i");
+        PaintBox box = find(r.root, "i");
         assertEquals(30, box.w(), 0.01);
         assertEquals(10, box.h(), 0.01);
         DisplayItem img = item(r, "i_img");
@@ -207,8 +207,8 @@ public class ReplacedElementsTest {
         high.sheet.updateMediaEnvironment(high.sheet.mediaEnvironment().withResolution(2f));
 
         for (int round = 0; round < 2; round++) {
-            PaintView lowRoot = parser.layoutDocument(low, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-            PaintView highRoot = parser.layoutDocument(high, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+            PaintBox lowRoot = parser.layoutDocument(low, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+            PaintBox highRoot = parser.layoutDocument(high, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
             List<DisplayItem> lowItems = com.nishiyu.enderframelib.common.FrameRender.document(low, W, H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
             List<DisplayItem> highItems = com.nishiyu.enderframelib.common.FrameRender.document(high, W, H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
 
@@ -263,7 +263,7 @@ public class ReplacedElementsTest {
     @Test
     public void canvasHasDefaultAndAttributeSizesAndCarriesThemToThePainter() {
         Rendered d = render("<canvas id=\"c\"></canvas>");
-        PaintView box = find(d.root, "c");
+        PaintBox box = find(d.root, "c");
         assertEquals(300, box.w(), 0.01);
         assertEquals(150, box.h(), 0.01);
         Rendered a = render("<canvas id=\"c\" width=\"64\" height=\"32\" style=\"object-fit: contain\"></canvas>");

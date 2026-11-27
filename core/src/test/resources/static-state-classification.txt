@@ -47,7 +47,6 @@ text/TextShaper.java#SHARED_SEGMENTS | RACY_CACHE | 1 スロットの記憶。�
 text/font/GlyphBitmap.java#DARK_TEXT | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 text/font/GlyphBitmap.java#LIGHT_TEXT | IMMUTABLE_TABLE | 静的初期化で作った後は読むだけの表・定数（書き換えない約束）
 text/font/LoadedFace.java#library | LOCKED | synchronized (LOCK) の中でだけ読み書き
-paint/Fragment.java#NO_KIDS | IMMUTABLE_TABLE | 子を持たない箱の寄与（全層が空）。静的初期化で作った後は読むだけ（withOwn は複製してから書く）
 css/DerivedStyles.java#ORTHO_KEYS | IMMUTABLE_TABLE | 直交ラッパーの memo 識別用センチネル配列（構築後は参照比較のみ）
 css/StyleProperties.java#VALS | IMMUTABLE_TABLE | Style.DEFAULT の初期文字列配列表（静的初期化後に読むだけ）
 css/StyleProperties.java#GROUP_BITS | IMMUTABLE_TABLE | プロパティ ID ごとのスタイル群ビット表（静的初期化後に読むだけ）

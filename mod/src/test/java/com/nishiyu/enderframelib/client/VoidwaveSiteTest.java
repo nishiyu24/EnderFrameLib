@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.client;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -36,7 +36,7 @@ public class VoidwaveSiteTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", width, height);
         ScrollState scrollState = new ScrollState();
-        PaintView root = compiler.layoutDocument(doc, width, height, Map.of(), scrollState, FontResolver.FALLBACK, new InteractionState());
+        PaintBox root = compiler.layoutDocument(doc, width, height, Map.of(), scrollState, FontResolver.FALLBACK, new InteractionState());
         assertNotNull(root);
         return com.nishiyu.enderframelib.common.FrameRender.document(doc, width, height, java.util.Map.of(), scrollState, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
     }
@@ -92,10 +92,10 @@ public class VoidwaveSiteTest {
         assertEquals(720, image.getHeight());
     }
 
-    private static PaintView findByClass(PaintView b, String cls) {
+    private static PaintBox findByClass(PaintBox b, String cls) {
         if (b.node != null && b.node.attrs != null && (" " + b.node.attrs.getOrDefault("class", "") + " ").contains(" " + cls + " ")) return b;
-        for (PaintView c : b.paintChildren()) {
-            PaintView r = findByClass(c, cls);
+        for (PaintBox c : b.paintChildren()) {
+            PaintBox r = findByClass(c, cls);
             if (r != null) return r;
         }
         return null;
@@ -120,16 +120,16 @@ public class VoidwaveSiteTest {
         String html = Files.readString(PAGE, StandardCharsets.UTF_8);
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 1920, 1080);
-        PaintView root = compiler.layoutDocument(doc, 1920, 1080, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
+        PaintBox root = compiler.layoutDocument(doc, 1920, 1080, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
         record Loop(String box, String keyframes, int period) {}
         // 周期は「同じ内容が現れるまでの個数」（リボンは 6 個、カルーセルは 6 枚）
         for (Loop loop : List.of(new Loop("track", "marquee", 6), new Loop("rail", "carousel", 6))) {
-            PaintView track = findByClass(root, loop.box());
+            PaintBox track = findByClass(root, loop.box());
             assertNotNull(track, loop.box());
             float distance = keyframeDistance(doc, loop.keyframes());
             float period = track.paintChildren().get(loop.period()).x() - track.paintChildren().get(0).x();
             assertEquals(period, distance, 0.5f, loop.keyframes() + ": 動く距離が 1 周期に等しい（ずれると、戻るときに飛ぶ）");
-            PaintView last = track.paintChildren().get(track.paintChildren().size() - 1);
+            PaintBox last = track.paintChildren().get(track.paintChildren().size() - 1);
             float contentRight = last.x() + last.w() - track.x();
             assertTrue(contentRight >= distance + 1920, loop.keyframes() + ": 周期 + 画面の幅 (1920) 以上の内容があること (right=" + contentRight + ")");
         }

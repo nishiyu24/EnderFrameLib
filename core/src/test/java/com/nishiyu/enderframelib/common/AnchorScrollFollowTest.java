@@ -5,11 +5,12 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
-import com.nishiyu.enderframelib.core.paint.TreePainter;
+import com.nishiyu.enderframelib.core.paint.SceneDisplayListAdapter;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
+import com.nishiyu.enderframelib.core.paint.scene.SceneEmitter;
 import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
-import com.nishiyu.enderframelib.core.paint.tree.PaintNode;
-import com.nishiyu.enderframelib.core.paint.tree.PaintTreeBuilder;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -145,8 +146,9 @@ class AnchorScrollFollowTest {
         FragmentPipeline p = new FragmentPipeline(new StyleSource(doc.sheet, ui.interactionState(), ui.env(), W, H), session);
         p.compiler().remembered(ui.v3.remembered());
         LayoutFragment f = p.frame(doc.root, null, W, H);
-        PaintNode tree = new PaintTreeBuilder(session).build(f, p.boxRoot());
-        List<DisplayItem> fresh = new TreePainter(W, H, doc.sheet.keyframes, ui.scrollState()).paint(tree);
+        DisplayScene scene = new SceneEmitter(session, doc.sheet.keyframes).emit(f, p.boxRoot(), W, H);
+        List<DisplayItem> fresh = new SceneDisplayListAdapter(W, H, doc.sheet.keyframes)
+                .emit(scene, DynamicSceneState.of(ui.scrollState(), W, H));
         SoftwareRenderBackend b = new SoftwareRenderBackend(W, H, 1f);
         b.render(fresh, 0);
         Pixmap a = live.pixmap(), z = b.pixmap();

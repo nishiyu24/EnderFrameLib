@@ -1,7 +1,8 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.Transforms.Affine;
-import com.nishiyu.enderframelib.core.paint.Transforms.Context;
+import com.nishiyu.enderframelib.core.paint.model.Transforms;
+import com.nishiyu.enderframelib.core.paint.model.Transforms.Affine;
+import com.nishiyu.enderframelib.core.paint.model.Transforms.Context;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

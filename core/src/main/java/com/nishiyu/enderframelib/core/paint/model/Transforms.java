@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint;
+package com.nishiyu.enderframelib.core.paint.model;
 
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.CssSyntax.ComponentValue;

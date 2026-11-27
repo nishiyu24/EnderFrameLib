@@ -6,7 +6,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +31,7 @@ class FrameRenderTest {
         FrameRender.Frame f = FrameRender.document(doc, 320, 200, FontResolver.FALLBACK);
         try (StandaloneView view = new StandaloneView(HTML, 320, 200, FontResolver.FALLBACK)) {
             for (String id : new String[]{"c", "b", "p"}) {
-                PaintView a = TestBoxes.find(f.root(), id), v = TestBoxes.find(view.ui().boxRoot(), id);
+                PaintBox a = TestBoxes.find(f.root(), id), v = TestBoxes.find(view.ui().boxRoot(), id);
                 assertNotNull(a, id);
                 assertEquals(v.x(), a.x(), 0f, id + " x");
                 assertEquals(v.y(), a.y(), 0f, id + " y");

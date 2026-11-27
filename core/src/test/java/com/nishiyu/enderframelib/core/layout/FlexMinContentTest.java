@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
@@ -36,17 +36,17 @@ public class FlexMinContentTest {
             </div>
             """;
 
-    private static PaintView layout(String body) {
+    private static PaintBox layout(String body) {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         String html = "<style>* { box-sizing: border-box; margin: 0; }</style>" + body;
         Document doc = compiler.parseDocument(html, "", 854, 480);
         return compiler.layoutDocument(doc, 854, 480, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
     }
 
-    private static PaintView byId(PaintView b, String id) {
+    private static PaintBox byId(PaintBox b, String id) {
         if (b.node != null && id.equals(b.node.attrs.get("id"))) return b;
-        for (PaintView c : b.paintChildren()) {
-            PaintView found = byId(c, id);
+        for (PaintBox c : b.paintChildren()) {
+            PaintBox found = byId(c, id);
             if (found != null) return found;
         }
         return null;
@@ -59,7 +59,7 @@ public class FlexMinContentTest {
     @Test
     void stretchedColumnItemIsNotNarrowerThanItsPaddingAndBorder() {
         for (String sizing : new String[] {"content-box", "border-box"}) {
-            PaintView root = layout("<div style=\"display:flex;flex-direction:column;width:4px\">"
+            PaintBox root = layout("<div style=\"display:flex;flex-direction:column;width:4px\">"
                     + "<div id=\"i\" style=\"box-sizing:" + sizing + ";padding:0 4px;border:1px solid #000;flex:1 1 0;min-width:0\"></div>"
                     + "<div id=\"j\" style=\"box-sizing:" + sizing + ";padding:0 4px;border:1px solid #000\">x</div></div>");
             assertEquals(10f, byId(root, "i").w(), 0.001f, sizing + ": 空の項目");
@@ -69,11 +69,11 @@ public class FlexMinContentTest {
 
     @Test
     void rowFlexItemDoesNotShrinkBelowTheSumOfItsItems() {
-        PaintView root = layout(SEARCH_BAR);
-        PaintView wrap = byId(root, "wrap");
-        PaintView sel = byId(root, "sel");
-        PaintView in = byId(root, "in");
-        PaintView btn = byId(root, "btn");
+        PaintBox root = layout(SEARCH_BAR);
+        PaintBox wrap = byId(root, "wrap");
+        PaintBox sel = byId(root, "sel");
+        PaintBox in = byId(root, "in");
+        PaintBox btn = byId(root, "btn");
 
         // 自動の最小寸法 = select(130) + gap + input の装飾(22) + gap + button の内容幅
         float expected = 130 + 6 + 22 + 6 + btn.w();
@@ -85,37 +85,37 @@ public class FlexMinContentTest {
 
     @Test
     void buttonMinContentIsItsLabel() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <div style="display:flex; width:10px;">
                   <button id="btn" style="padding:0 4px; border:0;">Go</button>
                 </div>
                 """);
-        PaintView btn = byId(root, "btn");
+        PaintBox btn = byId(root, "btn");
         assertTrue(btn.w() < 40, "button の最小幅はラベル（Go）と padding で、固定の 90px ではない: " + btn.w());
     }
 
     @Test
     void nowrapTextMinContentIsTheWholeLine() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <div style="display:flex; width:10px;">
                   <span id="pill" style="white-space:nowrap;">Cart (3) $419.97</span>
                   <span id="wrapping">Cart (3) $419.97</span>
                 </div>
                 """);
-        PaintView pill = byId(root, "pill");
-        PaintView wrapping = byId(root, "wrapping");
+        PaintBox pill = byId(root, "pill");
+        PaintBox wrapping = byId(root, "wrapping");
         assertTrue(pill.w() > wrapping.w() * 2, "nowrap のテキストは 1 行分の幅より縮まない: " + pill.w() + " vs " + wrapping.w());
     }
 
     @Test
     void selectFitsItsLongestOption() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <select id="sel" style="padding:0; border:0;">
                   <option>A</option>
                   <option>Computers &amp; Laptops</option>
                 </select>
                 """);
-        PaintView sel = byId(root, "sel");
+        PaintBox sel = byId(root, "sel");
         float longest = FontFace.FALLBACK.advance("Computers & Laptops ▾",
                 new FontStyle(sel.style().fontSizePx(), false, false, 0));
         assertEquals(longest, sel.w(), 0.5f, "閉じた select の幅は最も長い選択肢のラベル");

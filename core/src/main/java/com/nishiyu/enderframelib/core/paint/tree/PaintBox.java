@@ -7,10 +7,8 @@ import com.nishiyu.enderframelib.core.text.model.ShapedLine;
 import java.util.List;
 
 /**
- * 箱 1 つを描画項目にするときに読む箱（M2c ②。計画書 §3.4.2-4）。箱の飾り・部品・文字を描く道具（{@code BoxItemPainter}・
- * {@code BoxDecorationPainter}・{@code ControlPainter} ほか）はこの口だけを読む。実装は描画用の木の見え方 {@link PaintView} だけ
- * （M2c-3 で旧経路の {@code LayoutBox} を消し、実装と同じこのパッケージへ移した。{@code core.paint} からの片方向の参照になる）。
- * M3b で {@code DisplayScene} に吸収して消す。
+ * 箱 1 つを問い合わせ・描画項目にするときに読む箱の抽象（M2c ② → M3b-2 では一時アダプタ {@code SceneBox} が実装する。
+ * M3b-3 で問い合わせを断片木と {@code DisplayScene} へ移して消す）。
  *
  * <p>座標は全て絶対（文書の左上が原点の px）。{@link #runs} の位置は {@link #originParent} の左上が原点。</p>
  */
@@ -35,6 +33,9 @@ public abstract class PaintBox {
     public final boolean anonymous() {
         return isAnonymous;
     }
+
+    /** {@code display} を外と中に分けたもの（ボックスの算出スタイルから決めた値）。 */
+    public abstract com.nishiyu.enderframelib.core.box.Display display();
 
     /** 算出スタイル。 */
     public abstract ComputedStyle style();

@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.GoldenFiles;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -58,22 +58,22 @@ public class HtmlNodeSerializerTest {
         return node;
     }
 
-    private static void collectVisibleTextBoxes(PaintView box, List<PaintView> out) {
+    private static void collectVisibleTextBoxes(PaintBox box, List<PaintBox> out) {
         if ("none".equals(box.style().get("display"))) return;
         if ("select".equals(box.node.tag) || "option".equals(box.node.tag)) return;
         if (box.node.nodeType == NodeType.TEXT && runsText(box) != null && !runsText(box).isBlank()) {
             out.add(box);
         }
-        for (PaintView child : box.paintChildren()) {
+        for (PaintBox child : box.paintChildren()) {
             collectVisibleTextBoxes(child, out);
         }
     }
 
-    private static void collectSelectNodes(PaintView box, List<HtmlNode> out) {
+    private static void collectSelectNodes(PaintBox box, List<HtmlNode> out) {
         if ("select".equals(box.node.tag)) {
             out.add(box.node);
         }
-        for (PaintView child : box.paintChildren()) {
+        for (PaintBox child : box.paintChildren()) {
             collectSelectNodes(child, out);
         }
     }
@@ -99,11 +99,11 @@ public class HtmlNodeSerializerTest {
         // サーバー → クライアントの dom_sync 経路と同様に全ノードを再構築する
         doc.root = simulateNetworkRoundTrip(doc.root, null);
 
-        PaintView rootBox = parser.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        PaintBox rootBox = parser.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(), FontResolver.FALLBACK);
 
         assertNotNull(rootBox, "レイアウトツリーが構築されていること");
 
-        List<PaintView> textBoxes = new ArrayList<>();
+        List<PaintBox> textBoxes = new ArrayList<>();
         collectVisibleTextBoxes(rootBox, textBoxes);
 
         assertFalse(textBoxes.isEmpty(), "showcase.html のネットワーク同期後にテキストボックスが 1 つも存在しない");

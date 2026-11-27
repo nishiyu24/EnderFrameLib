@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -24,7 +24,7 @@ public class TablePercentColumnTest {
 
     @Test
     public void testPercentColumnsTakeShareOfDefiniteTableWidth() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <div id="t" style="%swidth: 300px;"><div style="display: table-row;">
                   <div id="a" style="%swidth: 25%%; height: 10px;"></div>
                   <div id="b" style="%swidth: 75%%; height: 10px;"></div>
@@ -37,7 +37,7 @@ public class TablePercentColumnTest {
 
     @Test
     public void testAutoColumnTakesTheRemainder() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <div id="t" style="%swidth: 300px;"><div style="display: table-row;">
                   <div id="a" style="%swidth: 40%%; height: 10px;"></div>
                   <div id="b" style="%sheight: 10px;"></div>
@@ -49,7 +49,7 @@ public class TablePercentColumnTest {
 
     @Test
     public void testPercentColumnNeverShrinksBelowItsMinContent() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <div id="t" style="%swidth: 200px;"><div style="display: table-row;">
                   <div id="a" style="%swidth: 10%%; height: 10px;"><div style="width: 60px; height: 5px;"></div></div>
                   <div id="b" style="%sheight: 10px;"></div>
@@ -62,7 +62,7 @@ public class TablePercentColumnTest {
 
     @Test
     public void testColumnElementPercent() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <table id="t" style="width: 200px; border: 0; border-spacing: 0;">
                   <col style="width: 30%"><col>
                   <tr><td id="a" style="padding: 0; height: 10px;"></td><td id="b" style="padding: 0; height: 10px;"></td></tr>
@@ -74,7 +74,7 @@ public class TablePercentColumnTest {
 
     @Test
     public void testPercentSumOverHundredIsScaledDown() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <div id="t" style="%swidth: 300px;"><div style="display: table-row;">
                   <div id="a" style="%swidth: 60%%; height: 10px;"></div>
                   <div id="b" style="%swidth: 60%%; height: 10px;"></div>
@@ -87,7 +87,7 @@ public class TablePercentColumnTest {
     @Test
     public void testAutoWidthTableGrowsToFitPercentColumnContent() {
         // 割合の列 (50%) の max-content が 100px なので、表は 200px 以上に広がる
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <div id="t" style="%s"><div style="display: table-row;">
                   <div id="a" style="%swidth: 50%%; height: 10px;"><div style="width: 100px; height: 5px;"></div></div>
                   <div id="b" style="%sheight: 10px;"><div style="width: 20px; height: 5px;"></div></div>
@@ -99,7 +99,7 @@ public class TablePercentColumnTest {
 
     @Test
     public void testFixedLayoutResolvesPercentAgainstTableWidth() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <div id="t" style="%swidth: 200px; table-layout: fixed;"><div style="display: table-row;">
                   <div id="a" style="%swidth: 25%%; height: 10px;"></div>
                   <div id="b" style="%sheight: 10px;"></div>
@@ -111,26 +111,26 @@ public class TablePercentColumnTest {
 
     @Test
     public void testCollapsedTableClientBoxKeepsFullSize() {
-        PaintView root = layout("""
+        PaintBox root = layout("""
                 <div id="t" style="display: table; border-collapse: collapse;"><div style="display: table-row;">
                   <div id="a" style="display: table-cell; width: 40px; height: 20px; border: 4px solid #000;"></div>
                 </div></div>
                 """);
-        PaintView t = find(root, "t");
+        PaintBox t = find(root, "t");
         assertTrue(t.isCollapsedTable());
         assertTrue(t.scrollWidth() <= t.w(), "scrollWidth=" + t.scrollWidth() + " w=" + t.w());
     }
 
-    private static PaintView layout(String html) {
+    private static PaintBox layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
         return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 
-    private static PaintView find(PaintView box, String id) {
+    private static PaintBox find(PaintBox box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintView child : TestBoxes.elements(box)) {
-            PaintView hit = find(child, id);
+        for (PaintBox child : TestBoxes.elements(box)) {
+            PaintBox hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

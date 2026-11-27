@@ -10,7 +10,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.lang.reflect.Field;
@@ -41,8 +41,8 @@ class InteractionStateOwnershipTest {
         InteractionState viewA = new InteractionState();
         InteractionState viewB = new InteractionState();
 
-        PaintView rootA = compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewA);
-        PaintView rootB = compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewB);
+        PaintBox rootA = compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewA);
+        PaintBox rootB = compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewB);
 
         viewA.setHoveredNode(b1);
         viewB.setActiveNode(b2);

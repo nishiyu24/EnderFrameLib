@@ -421,9 +421,9 @@ class ArchitectureHealthTest {
     static final List<String> NEW_PATH_SOURCES = List.of(
             "core/src/main/java/com/nishiyu/enderframelib/core/box",
             "core/src/main/java/com/nishiyu/enderframelib/core/layout/fragment",
-            "core/src/main/java/com/nishiyu/enderframelib/core/paint/tree",
-            "core/src/main/java/com/nishiyu/enderframelib/core/paint/TreePainter.java",
-            "core/src/main/java/com/nishiyu/enderframelib/core/paint/TreeStacking.java",
+            "core/src/main/java/com/nishiyu/enderframelib/core/paint/scene",
+            "core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneDisplayListAdapter.java",
+            "core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneAdapterSupport.java",
             "core/src/main/java/com/nishiyu/enderframelib/common/V3Frame.java");
 
     /** 近道・切り分けの切り替え（{@code Shortcut}・{@code EngineFlags}・文脈の {@code ContextFlags}）・{@code static volatile}・{@code ThreadLocal}。 */
@@ -555,6 +555,20 @@ class ArchitectureHealthTest {
             bad.addAll(checkTypeNames(repoRoot().resolve(root), LEGACY_MOD_RENDERER_TYPES));
         }
         assertEquals(List.of(), bad, "MOD の旧レンダラが戻った（M3a で消した。面はコアの描画だけが描く。計画書 §3.3）");
+    }
+
+    /** M3b-2 で消した描画用の木と平坦な層別断片の型。識別子として現れたら失敗（注釈と文字列は数えない）。 */
+    static final List<String> M3B2_DELETED_TYPES = List.of(
+            "PaintTreeBuilder", "PaintNode", "PaintView", "TreeRun", "StickyOffset", "AnchorFollow",
+            "TreePainter", "TreeStacking", "FragSeq");
+
+    @Test
+    void legacyPaintTreeTypesStayGone() throws IOException {
+        List<String> bad = new ArrayList<>();
+        List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
+        roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
+        for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M3B2_DELETED_TYPES));
+        assertEquals(List.of(), bad, "M3b-2 で消した描画用の木・TreePainter・FragSeq が戻った（計画書 §3.4）");
     }
 
     @Test

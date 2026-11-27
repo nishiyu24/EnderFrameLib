@@ -5,11 +5,12 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
-import com.nishiyu.enderframelib.core.paint.TreePainter;
+import com.nishiyu.enderframelib.core.paint.SceneDisplayListAdapter;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
+import com.nishiyu.enderframelib.core.paint.scene.SceneEmitter;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
-import com.nishiyu.enderframelib.core.paint.tree.PaintNode;
-import com.nishiyu.enderframelib.core.paint.tree.PaintTreeBuilder;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
@@ -72,9 +73,10 @@ class PaintDomValuesTest {
             sv.frame(now, live, true);
             ((HtmlElement) sv.ui().findNode("li60")).setAttribute("title", "tip");
             sv.frame(now + 16, live, false);
-            TreePainter painter = sv.ui().v3.painter();
-            assertTrue(painter.built() < 10, "作り直した箱 " + painter.built());
-            assertTrue(painter.reused() > 100, "使い回した部分木 " + painter.reused());
+            SceneEmitter emitter = sv.ui().v3.emitter();
+            assertTrue(emitter.builtLayers() < 10, "作り直した節 " + emitter.builtLayers());
+            assertTrue(emitter.reusedLayers() + emitter.reusedChunks() > 5,
+                    "使い回した節/チャンク " + emitter.reusedLayers() + " / " + emitter.reusedChunks());
             assertSameAsFresh("li60 title", sv);
         }
     }
@@ -87,8 +89,9 @@ class PaintDomValuesTest {
         LayoutSession session = new LayoutSession(FontResolver.FALLBACK);
         FragmentPipeline p = new FragmentPipeline(new StyleSource(doc.sheet, ui.interactionState(), ui.env(), w, h), session);
         LayoutFragment f = p.frame(doc.root, null, w, h);
-        PaintNode tree = new PaintTreeBuilder(session).build(f, p.boxRoot());
-        List<DisplayItem> fresh = new TreePainter(w, h, doc.sheet.keyframes, ui.scrollState()).paint(tree);
+        DisplayScene scene = new SceneEmitter(session, doc.sheet.keyframes).emit(f, p.boxRoot(), w, h);
+        List<DisplayItem> fresh = new SceneDisplayListAdapter(w, h, doc.sheet.keyframes)
+                .emit(scene, DynamicSceneState.of(ui.scrollState(), w, h));
         List<DisplayItem> inc = sv.items();
         for (int i = 0; i < Math.min(inc.size(), fresh.size()); i++) {
             if (!inc.get(i).equals(fresh.get(i)) || inc.get(i).hasHover() != fresh.get(i).hasHover()) {

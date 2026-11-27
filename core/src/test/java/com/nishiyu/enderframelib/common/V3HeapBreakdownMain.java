@@ -76,12 +76,12 @@ public final class V3HeapBreakdownMain {
         prev = record(stages, "CSSOM の問い合わせが持つ箱の索引", prev);
         {
             V3Frame v3 = ui.v3;
-            set(v3, "painter", null);
-            prev = record(stages, "TreePainter の記憶（記憶が持つ表示リスト・Fragment を含む）", prev);
-            set(v3, "root", null);
-            Object tree = get(v3, "tree");
-            set(tree, "root", null);
-            prev = record(stages, "描画用の木（PaintNode）", prev);
+            set(v3, "adapter", null);
+            prev = record(stages, "表示リストアダプタ（一時アダプタ・記憶なし）", prev);
+            set(v3, "scene", null);
+            Object emitter = get(v3, "emitter");
+            set(emitter, "prevScene", null);
+            prev = record(stages, "描画シーン（DisplayScene / SceneLayer / SceneChunk）", prev);
             Object pipeline = get(v3, "pipeline");
             Object layout = get(pipeline, "layout");
             for (Field f : layout.getClass().getDeclaredFields()) {
@@ -95,7 +95,7 @@ public final class V3HeapBreakdownMain {
             set(get(pipeline, "compiler"), "root", null);
             prev = record(stages, "箱の木（BoxNode・BoxChunk と Style）", prev);
             set(v3, "pipeline", null);
-            set(v3, "tree", null);
+            set(v3, "emitter", null);
             prev = record(stages, "新経路の残り（解き方・セッション）", prev);
         }
         view.close();

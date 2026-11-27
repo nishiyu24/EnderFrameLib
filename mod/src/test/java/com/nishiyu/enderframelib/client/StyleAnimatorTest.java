@@ -9,7 +9,7 @@ import com.nishiyu.enderframelib.core.css.ValueInterpolator;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -172,7 +172,7 @@ public class StyleAnimatorTest {
         InteractionState state = new InteractionState();
         ((HtmlDocument) doc.root).setInteractionState(state);
         ScrollState scroll = new ScrollState();
-        PaintView root = COMPILER.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK, state);
+        PaintBox root = COMPILER.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK, state);
         return project(com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), scroll, FontResolver.FALLBACK, state).items());
     }
 

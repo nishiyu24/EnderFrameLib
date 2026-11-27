@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.Map;
@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 /** S2: ネイティブ部品・埋め込みの固有寸法（{@code ElementSizing}）を、実際のレイアウト経由で固定する。 */
 class ElementSizingTest {
 
-    private static PaintView layout(String html) {
+    private static PaintBox layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(
                 "<html><head><style>body { margin: 0; } * { padding: 0; border: 0; }</style></head><body>" + html + "</body></html>",
@@ -21,24 +21,24 @@ class ElementSizingTest {
         return parser.layoutDocument(doc, 400, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 
-    private static PaintView find(PaintView box, String id) {
+    private static PaintBox find(PaintBox box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintView c : TestBoxes.elements(box)) {
-            PaintView hit = find(c, id);
+        for (PaintBox c : TestBoxes.elements(box)) {
+            PaintBox hit = find(c, id);
             if (hit != null) return hit;
         }
         return null;
     }
 
-    private static PaintView box(String html, String id) {
-        PaintView b = find(layout(html), id);
+    private static PaintBox box(String html, String id) {
+        PaintBox b = find(layout(html), id);
         assertNotNull(b, id);
         return b;
     }
 
     @Test
     void progressSizeComesFromUserAgentStyle() {
-        PaintView p = box("<progress id=p></progress>", "p");
+        PaintBox p = box("<progress id=p></progress>", "p");
         assertEquals(16f, p.h(), 0.01f, "UA スタイルの高さ（寸法の既定 12 + 装飾より優先）");
         assertEquals(160f, p.w(), 0.01f, "UA スタイルの幅");
     }
@@ -71,23 +71,23 @@ class ElementSizingTest {
 
     @Test
     void canvasUsesAttributesAndDefaults() {
-        PaintView def = box("<canvas id=c></canvas>", "c");
+        PaintBox def = box("<canvas id=c></canvas>", "c");
         assertEquals(300f, def.w(), 0.01f);
         assertEquals(150f, def.h(), 0.01f);
-        PaintView sized = box("<canvas id=c width=120 height=40></canvas>", "c");
+        PaintBox sized = box("<canvas id=c width=120 height=40></canvas>", "c");
         assertEquals(120f, sized.w(), 0.01f);
         assertEquals(40f, sized.h(), 0.01f);
-        PaintView bad = box("<canvas id=c width=99999 height=x></canvas>", "c");
+        PaintBox bad = box("<canvas id=c width=99999 height=x></canvas>", "c");
         assertEquals(300f, bad.w(), 0.01f, "範囲外・不正は既定値");
         assertEquals(150f, bad.h(), 0.01f);
     }
 
     @Test
     void inlineSvgUsesWidthHeightOrDefaults() {
-        PaintView s = box("<svg id=s width=80 height=60></svg>", "s");
+        PaintBox s = box("<svg id=s width=80 height=60></svg>", "s");
         assertEquals(80f, s.w(), 0.01f);
         assertEquals(60f, s.h(), 0.01f);
-        PaintView d = box("<svg id=s></svg>", "s");
+        PaintBox d = box("<svg id=s></svg>", "s");
         assertEquals(300f, d.w(), 0.01f);
         assertEquals(150f, d.h(), 0.01f);
     }

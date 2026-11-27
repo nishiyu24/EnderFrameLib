@@ -25,10 +25,10 @@ M2b | ReplacedTest#percentHeightOfAnAtomInALineUsesTheDefiniteContainerHeight, I
 M2b | ReplacedTest#nativeCheckboxSitsOnTheBaselineWithItsBorderBox, RealDocumentFramesTest#framesMatchGolden | v3 の置換要素（ReplacedFlow）が部品の見た目のチェックボックス・ラジオボタン・range のベースラインを下の余白の端にし、チェックボックスのある行が 3 px 高くなった（WebKit / Blink と旧経路は枠線の箱の下端。実文書 guidebook のタスクリスト）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 M2b | FlexFeaturesTest#columnBaselineFallsBackToSelfStart, WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の flex（FlexLines）が column の容器の align-items: baseline を flex 相対の揃えとして wrap-reverse で裏返し、縦書きの flex の項目が交差軸の逆の端に置かれた（交差軸にベースラインが無いので safe self-start。旧 FlexLayoutEngine と同じ。WPT flex-align-baseline-column-vert-rl-rtl-wrap-reverse）
 M2a | FlexFeaturesTest#intrinsicSizes, WptV3BaselineTest#newPathPassingListDoesNotRegress | v3 の内在サイズが自分の width を掛けて返し、flex の自動最小サイズが内容の min-content でなく指定の幅になった（width:80px の項目が縮まずにあふれた。内容と親への寄与を分けて直した）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
-§6-3 | PaintTreeIncrementalTest#insertingAtTheTopReusesTheShiftedItems | 平行移動が配置されなかった箱（br・断片のない空の span）を動かした（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
+§6-3 | SceneEmitterIncrementalTest#insertingAtTheTopReusesTheShiftedItemsAndChunks | 平行移動が配置されなかった箱（br・断片のない空の span）を動かした（M3b-2 で DisplayScene・SceneEmitter へ付け替えた）
 §6-5 | IncrementalOracleTest#flexFeatures | stretch 予定の項目を仮寸法で測り直して flex の確定の測定記録を壊した（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
 §6-11 | ViewportResizeTest#resizeRestylesIncrementallyAndMatchesAFreshBuild, IncrementalOracleTest#flexFeatures | fill 幅の fitNeed がインライン要素の間の空白を数えず、折り返した測定を誤って使い回した（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
-§6-12 | PaintTreeIncrementalTest#randomPaintAndLayoutMutationsMatchARebuild | em の余白の格子化漏れ・auto の margin の配置鍵・インラインの中の flex の子孫を shiftSubtree が誤って動かした（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
+§6-12 | SceneEmitterIncrementalTest#randomPaintAndLayoutMutationsMatchARebuild | em の余白の格子化漏れ・auto の margin の配置鍵・インラインの中の flex の子孫を shiftSubtree が誤って動かした（M3b-2 で DisplayScene・SceneEmitter へ付け替えた）
 §6-14 | IncrementalOracleTest#tables, TableLayoutTest#insertedRowReusesOtherCells | 表の箱を構造変更から外したら 1px ずれた（表のエンジンが箱へ直接書く欄）（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-18 | IncrementalOracleTest#tables | 再利用された動的な nodeId で別の節の箱を引いた・表の組みの遷移で箱を使い回した（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
 §6-20 | ViewportResizeTest#resizeRestylesIncrementallyAndMatchesAFreshBuild | 確定測定の葉の再利用が記録と同じ実体を持ち、古い幅の値を別の上書き幅の記録として残した（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
@@ -55,7 +55,7 @@ M2c | ViewportResizeTest#resizeRestylesIncrementallyAndMatchesAFreshBuild | 派�
 
 # --- 描画（表示リスト・差分パッチ・クリップ） ---
 M2b | BackendSessionReleaseTest#closingAnOwnedSessionDropsItsAnimationState, BackendSessionReleaseTest#closingABorrowedSessionKeepsTheOwnersState | 描画器（Software・GPU）が閉じても CssAnimator の既定の置き場に自分のセッションの補間状態（表示項目を握る）を残し、描画器を作るたびに溜まって、全テストを 1 本の JVM で流す CI（4 コア）がヒープ 3g を使い切って落ちた
-K4, §6-185 | PaintTreeIncrementalTest#painterMemoMatchesAFreshPaint | 親（親 id の無い枠）が平行移動しても、変わった子が無いと子の断片を全部再利用して古い位置の項目を出した（K3 で shiftSubtree が子の印を進めなくなった穴。窓付き＋位置指定の子孫の行で顕在）（旧経路の仕組みのテストは M2c ④ で旧経路と一緒に外し、同じ種類の不具合を新経路で守るテストへ付け替えた）
+K4, §6-185 | SceneEmitterIncrementalTest#adapterOutputMatchesAFreshScene | 親（親 id の無い枠）が平行移動しても、変わった子が無いと子の断片を全部再利用して古い位置の項目を出した（M3b-2 で親相対の SceneLayer と FlowChunk 再利用へ付け替えた）
 §6-27, R5 | ItemReplayPixelTest#replayDoesNotChangeAnyPixelAcrossTheSequence | 項目の再生が補間中の色・上書きされたクリップ slot・CPU 層との順序を見落とした
 §6-59, B3 | IncrementalOracleTest#pseudoElements, RealDocumentFramesTest#framesMatchGolden | 疑似要素の文字の節の nodeId で鍵を作り、2 つ目以降の文字が消えた（M2c-3: 旧経路の物差しを消し、同じ種類を新経路で守るテストへ付け替えた）
 §6-60, B3 | ChildPatchTest#randomInsertAndRemoveMatchesFullRelayout, ChildPatchTest#siblingRulesMakeThePatchStepBackAndStillMatch | 差分再生で使い回す箱の記憶が不変リストで UnsupportedOperationException・ノードのクリップが古いまま子へ伝わった
@@ -142,3 +142,4 @@ G8 | AnchorScrollFollowTest#fixedBoxFollowsItsScrolledAnchor, AnchorScrollFollow
 M2c | V3ViewTest#scrollContainerNotMovedAsOneNodeRepaintsUnderAReusedAncestor | 中身を 1 つの節にまとめないスクロールコンテナ（下の inset の sticky を含む）をスクロールすると、描画の記憶が文脈の変わらない祖先を使い回し、中身が古いスクロール量のまま描かれた。前回描いたときから位置が変わったコンテナを台帳に節つきの SCROLL で載せ、祖先を使い回さない（G8 の作業で発見）
 M3a | RelativeTextareaPaintTest#textareaTextIsPaintedFromParentRelativeItems | textarea の文字を箱で切る矩形を項目の座標（親相対）のまま根の姿勢で解き、原点から離れた textarea の文字が全部切り落とされた（MOD の面は親相対の項目を描くので、MOD をコアの描画だけにして実機で見つかった）。切る矩形を項目自身の姿勢で解く
 M3b | PaintDomValuesTest#attributeOnlyChangesReachThePaintedItems, PaintDomValuesTest#attributeChangeRepaintsOnlyTheChangedBranch | 描画が生きた DOM（属性・入力の値・textarea の中身・状態の規則の照合）を読むので、描画の記憶は台帳に載った節の祖先を使い回さないことで古い値を避けていた（凍結した例外）。M3b-1 で値を箱の木が BoxNode.values（DomValues）に写し、スタイルも寸法も変えない属性だけの変化も最新の箱の変化として描画へ届く（写しを前回のまま返す変異で 2 件とも落ちる）
+M3b | DisplaySceneTest#stickyDescendantsRecoveredOutsideVisibleChunks, DisplaySceneTest#flowChunkReusePreservesUnchangedChunksOnTopInsert, DisplaySceneTest#stackingOrderPassesPreserveCssAppendixE, SceneEmitterIncrementalTest#insertingAtTheTopReusesTheShiftedItemsAndChunks | 描画用の木（PaintNode / PaintView / TreePainter / Fragment / FragSeq）と凍結した例外 4 つ・SCROLL 祖先照合を廃止し、親相対・int nodeId の DisplayScene と SceneEmitter へ一本化（DynamicSceneState・stickyDescendants・伝播層・FlowChunk == 再利用）

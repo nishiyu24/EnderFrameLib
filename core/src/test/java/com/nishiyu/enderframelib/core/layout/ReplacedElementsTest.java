@@ -77,14 +77,15 @@ class ReplacedElementsTest {
 
     @Test
     void layoutAndPaintNoLongerHardcodeHostTags() throws IOException {
-        for (String f : List.of("paint/tree/PaintView.java", "layout/fragment/GridFlow.java", "layout/fragment/FlexFlow.java",
+        for (String f : List.of("paint/scene/SceneBox.java", "layout/fragment/GridFlow.java", "layout/fragment/FlexFlow.java",
                 "layout/fragment/BlockFlow.java", "layout/fragment/ReplacedFlow.java")) {
             String s = Files.readString(CORE.resolve(f));
             for (String t : List.of("\"mc-fluid\"", "\"mc-entity\"")) {
                 assertFalse(s.contains(t), f + " が " + t + " を直書きしている（ReplacedElements 経由にする）");
             }
         }
-        String painter = Files.readString(CORE.resolve("paint/TreePainter.java")) + Files.readString(CORE.resolve("paint/TreeStacking.java"));
+        String painter = Files.readString(CORE.resolve("paint/SceneDisplayListAdapter.java"))
+                + Files.readString(CORE.resolve("paint/scene/SceneEmitter.java"));
         assertFalse(painter.contains("\"mc-"), "描画にホスト固有タグを直書きしない");
     }
 }

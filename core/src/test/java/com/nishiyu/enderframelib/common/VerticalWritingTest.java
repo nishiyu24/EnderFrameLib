@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.css.WritingModes;
-import com.nishiyu.enderframelib.core.paint.tree.PaintView;
+import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -29,11 +29,11 @@ public class VerticalWritingTest {
             doc = compiler.parseDocument(CSS + html, "", W, H);
         }
 
-        PaintView layout() {
+        PaintBox layout() {
             return compiler.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         }
 
-        List<DisplayItem> render(PaintView root) {
+        List<DisplayItem> render(PaintBox root) {
             return FrameRender.document(doc, W, H, FontResolver.FALLBACK).items();
         }
 
@@ -42,10 +42,10 @@ public class VerticalWritingTest {
         }
     }
 
-    private static PaintView find(PaintView box, String id) {
+    private static PaintBox find(PaintBox box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintView c : box.paintChildren()) {
-            PaintView h = find(c, id);
+        for (PaintBox c : box.paintChildren()) {
+            PaintBox h = find(c, id);
             if (h != null) return h;
         }
         return null;
@@ -96,7 +96,7 @@ public class VerticalWritingTest {
         // 高さ 200px の縦書き。行の長さ 200px で折り返し、行（20px）を積んだ数が物理の幅になる
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px'>"
                 + "aaaa ".repeat(40) + "</div>");
-        PaintView v = find(c.layout(), "v");
+        PaintBox v = find(c.layout(), "v");
         assertNotNull(v);
         assertTrue(isVerticalRoot(v));
         assertEquals(200, v.h(), 0.01f, "物理の高さ = 行の長さ");
@@ -120,8 +120,8 @@ public class VerticalWritingTest {
     @Test
     public void wrapperIsPlacedInsideRootContentBox() {
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px;padding:5px'>aaaa aaaa aaaa</div>");
-        PaintView v = find(c.layout(), "v");
-        PaintView wrapper = v.paintChildren().get(0);
+        PaintBox v = find(c.layout(), "v");
+        PaintBox wrapper = v.paintChildren().get(0);
         assertTrue(wrapper.isVerticalWrapper());
         // 回転後の見た目は根の内容ボックスに収まる: 箱は右へ h だけずらして置く（90° 回転は左へ h 張り出す）
         assertEquals(v.x() + 5 + wrapper.h(), wrapper.x(), 0.01f);
@@ -133,8 +133,8 @@ public class VerticalWritingTest {
     @Test
     public void explicitWidthPutsLinesAtTheRightEdge() {
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:100px;width:300px'>abc</div>");
-        PaintView v = find(c.layout(), "v");
-        PaintView wrapper = v.paintChildren().get(0);
+        PaintBox v = find(c.layout(), "v");
+        PaintBox wrapper = v.paintChildren().get(0);
         assertEquals(300, v.w(), 0.01f);
         assertEquals(v.x() + 300, wrapper.x(), 0.01f, "最初の行は右端（block-start）");
     }
@@ -142,9 +142,9 @@ public class VerticalWritingTest {
     @Test
     public void sidewaysLrRotatesTheOtherWay() {
         Ctx c = new Ctx("<div id=v style='writing-mode:sideways-lr;height:100px;padding:3px'>abc def ghi jkl mno</div>");
-        PaintView root = c.layout();
-        PaintView v = find(root, "v");
-        PaintView wrapper = v.paintChildren().get(0);
+        PaintBox root = c.layout();
+        PaintBox v = find(root, "v");
+        PaintBox wrapper = v.paintChildren().get(0);
         assertEquals(v.x() + 3, wrapper.x(), 0.01f, "行は左端から積む");
         assertEquals(v.y() + 3 + wrapper.w(), wrapper.y(), 0.01f, "-90° 回転は上へ w だけ張り出す");
         DisplayItem n = item(c.render(root), wrapper.node.key());
@@ -155,8 +155,8 @@ public class VerticalWritingTest {
     @Test
     public void horizontalDocumentsAreUntouched() {
         Ctx c = new Ctx("<div id=h style='width:100px'>abc def</div>");
-        PaintView root = c.layout();
-        PaintView h = find(root, "h");
+        PaintBox root = c.layout();
+        PaintBox h = find(root, "h");
         assertFalse(isVerticalRoot(h));
         assertFalse(h.paintChildren().stream().anyMatch(b -> b.isVerticalWrapper()));
         assertTrue(texts(c.render(root)).stream().allMatch(t -> t.rotate() == 0f));
@@ -175,7 +175,7 @@ public class VerticalWritingTest {
     @Test
     public void nestedVerticalDoesNotRotateTwice() {
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:100px'><p id=p>abc def</p><p id=q>ghi</p></div>");
-        PaintView root = c.layout();
+        PaintBox root = c.layout();
         assertFalse(isVerticalRoot(find(root, "p")), "子は祖先の縦書きの内側（回転は根の 1 回だけ）");
         long wrappers = c.render(root).stream().filter(i -> i.id().endsWith("_vw")).count();
         assertEquals(1, wrappers);
@@ -185,8 +185,8 @@ public class VerticalWritingTest {
     public void blockChildrenStackAsColumns() {
         // 段落は論理の「下」へ積む＝物理の「左」へ並ぶ（右から左）
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:100px'><p id=a>aaa</p><p id=b>bbb</p></div>");
-        PaintView root = c.layout();
-        PaintView a = find(root, "a"), b = find(root, "b");
+        PaintBox root = c.layout();
+        PaintBox a = find(root, "a"), b = find(root, "b");
         assertEquals(20, b.y() - a.y(), 0.01f, "論理の座標では下へ積む（描画時に回転して左へ並ぶ）");
         assertEquals(40, find(root, "v").w(), 0.01f);
     }
@@ -196,8 +196,8 @@ public class VerticalWritingTest {
     @Test
     public void wrapperItemCarriesTheRotation() {
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:100px;width:50px'>abc def ghi</div>");
-        PaintView root = c.layout();
-        PaintView wrapper = find(root, "v").paintChildren().get(0);
+        PaintBox root = c.layout();
+        PaintBox wrapper = find(root, "v").paintChildren().get(0);
         DisplayItem n = item(c.render(root), wrapper.node.key());
         assertNotNull(n, "回転を持つ錨");
         assertEquals(90f, n.rotate(), 0.001f);
@@ -443,7 +443,7 @@ public class VerticalWritingTest {
     public void scrollExtentDoesNotGrowFromTheRotatedWrapper() {
         // 内容が収まる縦書きの overflow:auto 箱に、回転前の箱（右へ張り出して置く）が原因の横スクロールを作らない
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px;width:80px;overflow:auto'>abc def</div>");
-        PaintView v = find(c.layout(), "v");
+        PaintBox v = find(c.layout(), "v");
         assertTrue(v.scrollWidth() <= v.w() + 0.5f, "横の内容幅 " + v.scrollWidth() + " が箱の幅 " + v.w() + " を超えない");
     }
 
@@ -475,7 +475,7 @@ public class VerticalWritingTest {
         assertNotNull(left, "1 行目は左の列");
         assertNotNull(mid, "2 行目は 1 行目の右");
         Ctx c = new Ctx(html);
-        PaintView v = find(c.layout(), "v");
+        PaintBox v = find(c.layout(), "v");
         assertEquals(v.x(), v.paintChildren().get(0).x(), 0.01f, "転置は左上に置く（張り出さない）");
         assertEquals(60, v.w(), 0.01f);
     }
@@ -553,8 +553,8 @@ public class VerticalWritingTest {
         String html = "<div id=v style='position:absolute;left:100px;top:100px;writing-mode:vertical-rl;height:200px'>"
                 + "<div id=h style='writing-mode:horizontal-tb;width:180px;font:bold 20px/24px monospace'>WWWWWW</div></div>";
         Ctx c = new Ctx(html);
-        PaintView root = c.layout();
-        PaintView h = find(root, "h");
+        PaintBox root = c.layout();
+        PaintBox h = find(root, "h");
         assertNotNull(h);
         assertTrue(isHorizontalReturnRoot(h), "縦書き内の horizontal-tb は直交戻しの根になる");
 
@@ -574,8 +574,8 @@ public class VerticalWritingTest {
                     + ";height:240px;font:bold 20px/24px monospace'>"
                     + "WWWW<span id=t style='display:inline-block;writing-mode:horizontal-tb'>II</span>WWWW</div>";
             Ctx c = new Ctx(html);
-            PaintView root = c.layout();
-            PaintView t = find(root, "t");
+            PaintBox root = c.layout();
+            PaintBox t = find(root, "t");
             assertTrue(isHorizontalReturnRoot(t), mode + " の中の縦中横");
 
             int[] px = paint("<div style='position:absolute;left:100px;top:100px;writing-mode:" + mode
@@ -594,7 +594,7 @@ public class VerticalWritingTest {
                 + "<div id=h1 style='writing-mode:horizontal-tb;width:150px'>"
                 + "<div id=v2 style='writing-mode:vertical-rl;height:100px'>abc</div></div></div>";
         Ctx c = new Ctx(html);
-        PaintView root = c.layout();
+        PaintBox root = c.layout();
         assertTrue(isVerticalRoot(find(root, "v1")));
         assertTrue(isHorizontalReturnRoot(find(root, "h1")));
         assertTrue(isVerticalRoot(find(root, "v2")));
@@ -605,7 +605,7 @@ public class VerticalWritingTest {
         // 横幅 100px の horizontal-tb を縦書き内の overflow:auto 箱に入れたとき、scrollWidth/scrollHeight が逆回転前の座標で膨らまない
         Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px;width:150px;overflow:auto'>"
                 + "<div id=h style='writing-mode:horizontal-tb;width:100px;height:40px;overflow:auto'>abc</div></div>");
-        PaintView h = find(c.layout(), "h");
+        PaintBox h = find(c.layout(), "h");
         assertTrue(h.scrollWidth() <= h.w() + 0.5f, "scrollWidth=" + h.scrollWidth() + " <= h.w()=" + h.w());
         assertTrue(h.scrollHeight() <= h.h() + 0.5f, "scrollHeight=" + h.scrollHeight() + " <= h.h()=" + h.h());
     }
@@ -714,18 +714,18 @@ public class VerticalWritingTest {
     }
 
     /** 直交フローの根（中身を回転して包む生成箱を子に持つ箱）か。 */
-    private static boolean orthogonalRoot(PaintView b) {
-        return b != null && b.paintChildren().stream().anyMatch(PaintView::isVerticalWrapper);
+    private static boolean orthogonalRoot(PaintBox b) {
+        return b != null && b.paintChildren().stream().anyMatch(PaintBox::isVerticalWrapper);
     }
 
     /** 縦書きの根（自分が縦書きで、中身を回転して包む）か。 */
-    private static boolean isVerticalRoot(PaintView b) {
+    private static boolean isVerticalRoot(PaintBox b) {
         String wm = b == null ? null : b.style().get("writing-mode");
         return orthogonalRoot(b) && wm != null && !wm.startsWith("horizontal");
     }
 
     /** 縦書きの中の横書き（直交戻し）の根か。 */
-    private static boolean isHorizontalReturnRoot(PaintView b) {
+    private static boolean isHorizontalReturnRoot(PaintBox b) {
         String wm = b == null ? null : b.style().get("writing-mode");
         return orthogonalRoot(b) && (wm == null || wm.startsWith("horizontal"));
     }
