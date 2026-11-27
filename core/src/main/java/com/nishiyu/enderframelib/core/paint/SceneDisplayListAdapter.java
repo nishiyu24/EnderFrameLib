@@ -14,6 +14,7 @@ import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
 import com.nishiyu.enderframelib.core.paint.model.StickyShift;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.paint.scene.SceneAnchorFollow;
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
@@ -43,7 +44,8 @@ public final class SceneDisplayListAdapter {
 
     private final AtomicInteger fragIds = new AtomicInteger();
     private final BoxItemPainter painter;
-    private final PaintSupport.CaptureList scratch = new PaintSupport.CaptureList(64);
+    private final OpList scratch = new OpList(64);
+    private final OpComposer composer = new OpComposer();
     private int rootW, rootH;
     private float devicePixelRatio = 1f;
 
@@ -123,11 +125,12 @@ public final class SceneDisplayListAdapter {
                 }
                 if (canvasBg != 0x00000000) {
                     long key = source != null && source.node() != null ? DisplayItem.bgKeyOf(source.node().nodeId()) : 0L;
-                    PaintSupport.CaptureList bg = new PaintSupport.CaptureList(1);
+                    OpList bg = new OpList(1);
+                    bg.beginFinal();
                     PaintSupport.addElement(bg, "bg_root", "bg_root", ElementType.RECT, top.x(), top.y(),
                             Math.max(top.w(), rootW), Math.max(top.h(), rootH), "", 0, canvasBg, EMPTY_PROPS,
                             0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, RenderMeta.EMPTY, key);
-                    result.add(bg.get(0));
+                    composer.composeFinal(bg, result);
                 }
                 emitRootChildren(top);
             } else {
@@ -204,12 +207,12 @@ public final class SceneDisplayListAdapter {
         if (spec != null && out.size() > startIdx) {
             if (spec.wantsMask()) {
                 int contentSpan = out.size() - startIdx;
-                scratch.resetForBuild();
+                scratch.beginLocal(box);
                 fragIds.set(MASK_ID_BASE);
                 painter.drawMask(scratch, box, ownNode);
                 if (!scratch.isEmpty()) {
                     spec = spec.withMaskFrom(contentSpan);
-                    out.addAll(scratch);
+                    composer.composeLocal(scratch, null, null, null, out);
                 } else {
                     spec = spec.withMaskFrom(-1);
                 }
@@ -240,9 +243,9 @@ public final class SceneDisplayListAdapter {
         entries.sort((a, b) -> Integer.compare(a.box.layer.zIndex, b.box.layer.zIndex));
         for (ZEntry e : entries) {
             if (e.hoist && e.box.backdrop() != null) {
-                scratch.resetForBuild();
+                scratch.beginLocal(e.box);
                 painter.drawBackdrop(scratch, e.box, e.box.backdrop(), SceneAdapterSupport.boxHasOwnNode(e.box));
-                out.addAll(scratch);
+                composer.composeLocal(scratch, null, null, null, out);
             }
             emitStacking(e.box, e.clip, e.parentId);
         }
@@ -379,20 +382,24 @@ public final class SceneDisplayListAdapter {
     private void drawOwn(SceneAdapterBox box, ClipRect clip, String parentId) {
         boolean ownNode = SceneAdapterSupport.boxHasOwnNode(box);
         SceneAdapterBox origin = SceneAdapterSupport.effectiveParentNodeBox(box, parentId);
-        scratch.resetForBuild();
-        fragIds.set(0);
-        painter.drawBox(scratch, box, clip, parentId, null, origin, ownNode, box == canvasSource);
+        DrawOp[] ops = box.layer.ops();
+        if (ops.length > 0 && box != canvasSource && !box.isVerticalWrapper()) {
+            // 層に記憶した命令（M3b-4a）に、今の位置・クリップ・親の錨・祖先の文字色を足す
+            composer.composeLayer(ops, box, origin, clip, parentId, painter.anim, out);
+        } else {
+            // 祖先に依る箱（背景をキャンバスに譲った html / body・親の ::first-line を読む縦書きの包み箱）は毎フレーム作る
+            scratch.beginLocal(box);
+            fragIds.set(0);
+            painter.drawBox(scratch, box, null, null, origin, ownNode, box == canvasSource);
+            composer.composeLocal(scratch, origin, clip, parentId, out);
+        }
         ScrollContent content = scrollContentOf.get(box);
         if (content != null) {
-            int sox = scratch.originX, soy = scratch.originY;
+            scratch.beginFinal();
             if (ownNode) scratch.setOrigin(Math.round(box.x()), Math.round(box.y()));
-            try {
-                SceneAdapterSupport.addMovingNode(scratch, content.contentId, box, null, MOVING_NODE_META);
-            } finally {
-                scratch.setOrigin(sox, soy);
-            }
+            SceneAdapterSupport.addMovingNode(scratch, content.contentId, box, null, MOVING_NODE_META);
+            composer.composeFinal(scratch, out);
         }
-        out.addAll(scratch);
     }
 
     private ChildContext enterChildren(SceneAdapterBox box, ClipRect clip, String parentId) {
@@ -429,8 +436,7 @@ public final class SceneDisplayListAdapter {
 
     private void drawScrollbars(SceneAdapterBox box, ClipRect clipRect) {
         if (box.style().typed().box.scrollbarWidth == CssKeywords.ScrollbarWidth.NONE) return;
-        scratch.resetForBuild();
-        int prevOx = scratch.originX, prevOy = scratch.originY;
+        scratch.beginFinal();
         if (SceneAdapterSupport.boxHasOwnNode(box)) scratch.setOrigin(Math.round(box.x()), Math.round(box.y()));
         try {
             float scrollW = box.scrollWidth(), scrollH = box.scrollHeight();
@@ -491,9 +497,9 @@ public final class SceneDisplayListAdapter {
                         thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, thumbMeta,
                         nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_H) : 0L);
             }
-            out.addAll(scratch);
+            composer.composeFinal(scratch, out);
         } finally {
-            scratch.setOrigin(prevOx, prevOy);
+            scratch.beginFinal();
         }
     }
 }

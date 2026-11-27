@@ -1,7 +1,7 @@
 # EnderFrameLib 根本再設計プラン（Engine v3: 破壊的アーキテクチャ刷新）
 
-> **更新日**: 2026-11-27（M3b を 5 段に分け、**M3b-1**〔描画は DOM を読まない〕・**M3b-2**〔`DisplayScene` と `SceneEmitter` を導入し、描画用の木・`TreePainter`・`Fragment`/`FragSeq`・凍結例外 4 つを削除〕・**M3b-3**〔当たり判定・CSSOM・フォーカス・インスペクタを scene から答え、`HitTestIndex`・`PaintBox`・`SceneBox` を削除〕を完了した〔§3.4〕。同日 M3b と並行して DOM の側だけの **M5-1**〔番号の表の二重同期の解消・`SelectorIndex`・`HtmlNode` の分割〕・**M5-2**〔`HtmlParser`・`Bindings`・`HtmlElement`・`InteractionState` の分割〕を完了した〔§3.7〕。2026-11-26 の軌道修正以降は §1.3・§3.2・§3.3、独立トラック **P4-1** は §3.9）
-> **対象**: `:core`（606 ファイル・約 10.8 万行。`com.nishiyu.enderframelib.core.*` / `common.*` / `api.*`）と組み込みサンプル MOD（`:mod`。`mod/src/main/java/...`）の境界・描画・ホスト層を含む全体構造。
+> **更新日**: 2026-11-27（M3b を 5 段に分け、**M3b-1**〔描画は DOM を読まない〕・**M3b-2**〔`DisplayScene` と `SceneEmitter` を導入し、描画用の木・`TreePainter`・`Fragment`/`FragSeq`・凍結例外 4 つを削除〕・**M3b-3**〔当たり判定・CSSOM・フォーカス・インスペクタを scene から答え、`HitTestIndex`・`PaintBox`・`SceneBox` を削除〕・**M3b-4a**〔描画の項目の生成器を層の描画命令 `DrawOp` に変え、`SceneEmitter` が層とともに記憶する〕を完了した〔§3.4〕。同日 M3b と並行して DOM の側だけの **M5-1**〔番号の表の二重同期の解消・`SelectorIndex`・`HtmlNode` の分割〕・**M5-2**〔`HtmlParser`・`Bindings`・`HtmlElement`・`InteractionState` の分割〕を完了した〔§3.7〕。2026-11-26 の軌道修正以降は §1.3・§3.2・§3.3、独立トラック **P4-1** は §3.9）
+> **対象**: `:core`（609 ファイル・約 10.9 万行。`com.nishiyu.enderframelib.core.*` / `common.*` / `api.*`）と組み込みサンプル MOD（`:mod`。`mod/src/main/java/...`）の境界・描画・ホスト層を含む全体構造。
 > **旧計画の全面撤回宣言（2026-11-24）**: 従来の `C 系`・`K 系`・`K5b`・`L5 (W0〜W3)`・`K4h`・`B14` と `core/DESIGN_INCREMENTAL_KERNEL.md` の「既存キャッシュ温存＋増分カーネル延命」方針は撤回・凍結した（§1.2）。本計画は**破壊的変更を全面的に許可**し、データ表現・中間表現・描画契約・ホスト統合の土台を作り直す。
 > **この文書の書き方（運用ルール 8）**: 本書は**状態表であり作業ログではない**。段ごとの経緯・途中で分かった点・変異検証の記録はコミットの本文と [`ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md`](ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) に書く。2026-11-26 以前の本文（M1 の段の記録・M2a の設計とスパイクの実測・M2b〜M2c の作業記録）は、原文のまま ARCHIVE の索引から辿れる `archive/07` へ移した。
 
@@ -11,12 +11,12 @@
 
 | 項目 | 状態 |
 | :--- | :--- |
-| 完了 | M0・M1・M2a・M2b（WPT 170/260）・M2c（経路を 1 本化、§3.2）・**M3a**（MOD 旧レンダラ撤去、§3.3）・**M3b-1**（描画は DOM を読まない）・**M3b-2**（`DisplayScene` + `SceneEmitter` を導入し、描画用の木・`TreePainter`・`Fragment`/`FragSeq`・凍結例外 4 つ・`SCROLL` 祖先照合を削除）・**M3b-3**（当たり判定・CSSOM・フォーカス・インスペクタ・MOD の入力を `SceneHitTest`/`SceneQuery` で scene から直接答え、`HitTestIndex`・`UIHitResult`・`SceneBox`・`PaintBox`・`PaintRun` を削除。§3.4）・**M5-1**（DOM の番号の表〔旧 `DocumentArena`〕から木の形・タグ・Bloom の写しを除いて `NodeIds` にし、セレクタの足切りを `SelectorIndex`、前の兄弟を子の並びの位置にした。`HtmlNode` 1,398 → 739 行。§3.7）・**M5-2**（`HtmlParser` 1,214 → 165・`Bindings` 1,175 → 584・`HtmlElement` 980 → 634・`InteractionState` 1,039 → 602 行。`core.dom` に 1,000 行超のクラスは無い。§3.7）。独立トラック P1a・**P4-1**（§3.9） |
-| 進行中 | **M3b**（5 段。M3b-1・M3b-2・M3b-3 完了。§3.4 の段の表）・**M5**（DOM の側だけ M3b と並行。M5-1・M5-2 完了。§3.7 の段の表） |
-| 次の一手 | **M3b-4**（バックエンドが scene を直接描き、`DisplayItem`・`SceneDisplayListAdapter`・`SceneAdapterBox` を削除。§3.4）。残る穴は G3 multicol（M3c）。M5 の DOM の側は M5-3（完了ゲート。M3b・M4 の後）を残すのみ。分けたクラスの ≤ 500 行に届いていない `HtmlNode` 739・`HtmlElement` 634・`InteractionState` 602・`Bindings` 584・`TreeBuilder` 564 は M5-3 で詰める（§3.7） |
+| 完了 | M0・M1・M2a・M2b（WPT 170/260）・M2c（経路を 1 本化、§3.2）・**M3a**（MOD 旧レンダラ撤去、§3.3）・**M3b-1**（描画は DOM を読まない）・**M3b-2**（`DisplayScene` + `SceneEmitter` を導入し、描画用の木・`TreePainter`・`Fragment`/`FragSeq`・凍結例外 4 つ・`SCROLL` 祖先照合を削除）・**M3b-3**（当たり判定・CSSOM・フォーカス・インスペクタ・MOD の入力を `SceneHitTest`/`SceneQuery` で scene から直接答え、`HitTestIndex`・`UIHitResult`・`SceneBox`・`PaintBox`・`PaintRun` を削除。§3.4）・**M3b-4a**（項目の生成器を層の局所座標の描画命令 `DrawOp.Item` を作る形にし、`SceneEmitter` が層を作るときだけ作って層に記憶。一時アダプタは命令に位置・クリップ・親の錨を足して組み立てるだけ〔`OpComposer`〕。§3.4）・**M5-1**（DOM の番号の表〔旧 `DocumentArena`〕から木の形・タグ・Bloom の写しを除いて `NodeIds` にし、セレクタの足切りを `SelectorIndex`、前の兄弟を子の並びの位置にした。`HtmlNode` 1,398 → 739 行。§3.7）・**M5-2**（`HtmlParser` 1,214 → 165・`Bindings` 1,175 → 584・`HtmlElement` 980 → 634・`InteractionState` 1,039 → 602 行。`core.dom` に 1,000 行超のクラスは無い。§3.7）。独立トラック P1a・**P4-1**（§3.9） |
+| 進行中 | **M3b**（5 段。M3b-1〜M3b-3・M3b-4a 完了。§3.4 の段の表）・**M5**（DOM の側だけ M3b と並行。M5-1・M5-2 完了。§3.7 の段の表） |
+| 次の一手 | **M3b-4b**（走査器が scene を描画順にたどり、CPU の描画が `DrawOp` を直接塗る。`PaintSceneDriver`・表示項目の列・`OpComposer` を削除。§3.4）。残る穴は G3 multicol（M3c）。M5 の DOM の側は M5-3（完了ゲート。M3b・M4 の後）を残すのみ。分けたクラスの ≤ 500 行に届いていない `HtmlNode` 739・`HtmlElement` 634・`InteractionState` 602・`Bindings` 584・`TreeBuilder` 564 は M5-3 で詰める（§3.7） |
 | 止まっている条件 | なし |
-| 期限付きの緩和 | ヒープの上限（`varied-list-2000` 68.5 MB・`large-list-2000` 19.3 MB）と latency の 2 行（`varied-list-2000:fontsize` 157.7 ms・`large-list-8000:child` 57.9 ms）は M3b-4（`DisplayItem` 廃止）まで新経路の実測上限（M3b 完了時に 14.0 / 5.5 MB、46.6 / 16.5 ms へ戻す。§4.1）。`P8bRetentionTest` の天井は 30 MB |
-| 二重に持っているもの | 一時アダプタのみ: 記憶を持たない `SceneDisplayListAdapter` とそれが読むパッケージ内の `SceneAdapterBox`（`DisplayItem` とともに M3b-4 で削除）。問い合わせの旧経路（`HitTestIndex`・`SceneBox`・`PaintBox`）は M3b-3 で削除済み。他の一時アダプタ・旧経路は 0 |
+| 期限付きの緩和 | ヒープの上限（`varied-list-2000` 68.5 MB・`large-list-2000` 19.3 MB）と latency の 2 行（`varied-list-2000:fontsize` 157.7 ms・`large-list-8000:child` 57.9 ms）は M3b-4（`DisplayItem` 廃止）まで新経路の実測上限（M3b 完了時に 14.0 / 5.5 MB、46.6 / 16.5 ms へ戻す。§4.1）。`P8bRetentionTest` の天井は 30 MB。**M3b-4a の二重持ち**（層の描画命令と、それを毎フレーム組み立てた表示項目）の分として、ヒープの上限を `varied-list-2000` 74.0 MB・`large-list-2000` 20.5 MB、`P8AllocationReductionTest`（文字の大きさで全部を作り直す割り当て）を 52 KB/行に一時的に上げた（組み立てを消す M3b-4b で 68.5 / 19.3 MB・48 KB/行へ戻す） |
+| 二重に持っているもの | 一時アダプタのみ: 記憶を持たない `SceneDisplayListAdapter`（層の描画命令を表示項目に組み立てる `OpComposer` を含む）とそれが読むパッケージ内の `SceneAdapterBox`（`DisplayItem` とともに M3b-4b〜4c で削除）。問い合わせの旧経路（`HitTestIndex`・`SceneBox`・`PaintBox`）は M3b-3 で削除済み。他の一時アダプタ・旧経路は 0 |
 | 凍結中の例外 | **なし**（M2c で凍結した `TreePainter` の例外 4 つは全て M3b-2 で削除済み） |
 | 一時的に無い機能 | multicol（G3。M3c で戻す）。見つけたテストは `@Disabled` で理由に G 番号を書いて残す |
 
@@ -165,9 +165,9 @@ DOM の後、バックエンドの前に置く中間表現は次の 3 段だけ�
 | :--- | :--- | :--- | :--- |
 | L2 | `BoxNode`（レイアウトの入力の木と最新の木。節を共有する） | 凍結した `ChangeLedger` の `touches` と、親の継承群の `==` | 実装済み |
 | L3 | `LayoutFragment` / `ChunkedFlow` | `(BoxNode ==, ConstraintSpace の値等価)`・`FlowChunk.slots`（4）・`MinMaxSizes`（弱参照の表） | 実装済み |
-| L4a | `DisplayScene`（`SceneLayer` / `SceneChunk`） | `(LayoutFragment ==, 最新の BoxNode ==)`・`FlowChunk ==` | **実装済み（M3b-2）** |
+| L4a | `DisplayScene`（`SceneLayer` / `SceneChunk`。層は自分の描画命令 `DrawOp` を持つ） | `(LayoutFragment ==, 最新の BoxNode ==)`・`FlowChunk ==`（描画命令は層の値の一部で、層を作るときだけ作る。別の鍵を持たない） | **実装済み（M3b-2。描画命令は M3b-4a）** |
 
-**期限付きの例外**（この表の外にあるもの。消す段を決めてある）: `PaintNode`/`PaintView`/`TreePainter` の記憶と `Fragment`/`FragSeq` は **M3b-2 で削除済み**。問い合わせの口だった `SceneBox`/`PaintBox` は **M3b-3 で削除済み**（当たり判定・CSSOM は `SceneHitTest`/`SceneQuery` が scene を直接たどる。記憶は持たず、1 回の問い合わせの作業用の値 `HitScratch` をビューの文脈が使い回すだけ）。残る一時アダプタは、記憶を持たない `SceneDisplayListAdapter`（`SceneAdapterSupport`・`SceneAdapterBox` を含み、M3b-4 で `DisplayItem` とともに削除）の 1 つだけ。
+**期限付きの例外**（この表の外にあるもの。消す段を決めてある）: `PaintNode`/`PaintView`/`TreePainter` の記憶と `Fragment`/`FragSeq` は **M3b-2 で削除済み**。問い合わせの口だった `SceneBox`/`PaintBox` は **M3b-3 で削除済み**（当たり判定・CSSOM は `SceneHitTest`/`SceneQuery` が scene を直接たどる。記憶は持たず、1 回の問い合わせの作業用の値 `HitScratch` をビューの文脈が使い回すだけ）。残る一時アダプタは、記憶を持たない `SceneDisplayListAdapter`（`SceneAdapterSupport`・`SceneAdapterBox`・命令を組み立てる `OpComposer` を含み、M3b-4b〜4c で `DisplayItem` とともに削除）の 1 つだけ。描画命令は層の位置・祖先のクリップ・親の錨・祖先の文字色のアニメーションを持たず、それらは組み立てが毎フレーム足す（命令の座標は層自身か原点の節からの float）。
 **記憶ではない引き継ぎ**: 全体の作り直しの要求（`RELAYOUT`）は前回の木と記憶を捨てるが、作り直す前の要素の算出スタイルだけを、そのフレームのトランジションの始まりの入力として `StyleSource.history` に渡す（照合の鍵ではなく、フレームの後で捨てる）。アンカーの**覚えたスクロール量**（G8。§3.2）もビューの履歴で、アンカーの再計算点でだけ書き換え、台帳の `ANCHOR` で `BoxNode` へ入る（鍵は `BoxNode ==` のまま。`RELAYOUT` をまたいで渡し、文書の入れ替えで捨てる）。
 
 ---
@@ -184,7 +184,7 @@ DOM の後、バックエンドの前に置く中間表現は次の 3 段だけ�
 | 4 | **M2b** | 全エンジンのレイアウトを新経路へ移植 | Block・Inline・float・位置指定・Flex・Grid・Table・縦書き・双方向・`anchor()`・コンテナクエリ | 新経路の WPT 170/260（旧経路だけ合格 0） | **完了**（multicol は M3c） |
 | 5 | **M2c（改訂）** | **新経路への一本化と旧経路の削除**（旧 M2b-6 を吸収） | 既定を新経路へ切り替え、`LayoutBox` ほか旧レイアウト経路・`EnginePath`・旧経路を相手にする物差しを削除 | §3.2 の完了ゲート | **完了**（2026-11-26。移植で見えた新経路の穴 G1〜G9 は §3.2） |
 | 6 | **M3a** | `CoreGpuSurface` の品質検証と MOD の旧レンダラの撤去 | MOD `client/renderer` を撤去して `DisplayItem` の消費者を減らす（M2c と並行してよい。M3b の前提） | MOD の描画 ≤ 1,500 行・フォールバック 0 | **完了**（2026-11-26。§3.3） |
-| 7 | **M3b（改訂）** | **`DisplayScene` と描画の作り直し** | 平坦な `DisplayItem`・旧描画の層・描画用の木・`TreePainter` の記憶・`PaintSceneDriver`・`HitTestIndex`・`Shortcut` を全廃 | §3.4 の完了ゲート（中間表現 3 段・ヒープ ≤ 14.0 / 5.5 MB・`Shortcut` 0） | **進行中**（M3b-1・M3b-2・M3b-3 完了。§3.4） |
+| 7 | **M3b（改訂）** | **`DisplayScene` と描画の作り直し** | 平坦な `DisplayItem`・旧描画の層・描画用の木・`TreePainter` の記憶・`PaintSceneDriver`・`HitTestIndex`・`Shortcut` を全廃 | §3.4 の完了ゲート（中間表現 3 段・ヒープ ≤ 14.0 / 5.5 MB・`Shortcut` 0） | **進行中**（M3b-1〜M3b-3・M3b-4a 完了。§3.4） |
 | 8 | **M3c** | multicol（ブロックの断片化） | `LayoutFragment` の断片化と、列ごとの断片の scene | WPT の css-multicol を足し、新経路のラチェットで固定 | 未着手 |
 | 9 | **M4** | L5 ホスト層の純化と MOD の循環の解消 | `UiView`/`StandaloneView` → `EngineView` + `InputController` + `StandaloneHost` | L5 ≤ 1,200 行・MOD の循環 0 | 未着手 |
 | 10 | **M5** | DOM の整理と 1,000 行超のクラス 0 | `DocumentArena` の二重同期の解消・`HtmlNode` の分割・`SelectorIndex` の独立 | 1,000 行超 0・ヒープ ≤ 12.0 / 4.5 MB | **進行中**（M5-1・M5-2 完了。DOM の側は M3b と並行。§3.7） |
@@ -316,7 +316,7 @@ DOM の後、バックエンドの前に置く中間表現は次の 3 段だけ�
 
 ---
 
-### 3.4 Phase M3b（改訂）: `DisplayScene` と描画の作り直し〔進行中。M3b-1・M3b-2・M3b-3 完了〕
+### 3.4 Phase M3b（改訂）: `DisplayScene` と描画の作り直し〔進行中。M3b-1〜M3b-3・M3b-4a 完了〕
 
 平坦な `DisplayItem` に潰してから `PaintSceneDriver` で階層を復元する往復をやめる。同時に、M2c で凍結した描画の例外を全て消す。
 
@@ -327,7 +327,9 @@ DOM の後、バックエンドの前に置く中間表現は次の 3 段だけ�
 | **M3b-1** | **描画は DOM を読まない（決定 F）**: 描画が読む DOM の値（属性・textarea の中身・状態の擬似クラスの規則が掛かるか）を `BoxTreeCompiler` が `BoxNode.values`（`DomValues`）に写す。値が前回と同じなら前回の参照、レイアウトの入力の照合には入れない（属性だけの変化はレイアウトの入力の箱を変えない）。`class`・`id`・`style` は写さない | **完了**（2026-11-27）。`core.paint` の DOM の読み取り 0（`ArchitectureHealthTest#paintDoesNotReadDomValues`）。`TreePainter` は台帳に載った節の祖先を数えず、読むのはスクロールしたコンテナの祖先だけ（凍結した例外を縮めた）。`PaintTreeBuilder` はシートを受け取らない。`PaintDomValuesTest`（属性・入力の値・`checked`・textarea の中身の変化がゼロから組んだ表示リストと一致・変わった枝だけを作り直す）は写しを前回のまま返す変異で落ちる |
 | **M3b-2** | **`DisplayScene` と `SceneEmitter`**: `(断片, 最新の箱)` → 親相対・`int nodeId` の `SceneLayer` の木。記憶は `(断片 ==, 最新の箱 ==)`・`FlowChunk ==` だけ。描画用の木（`PaintTreeBuilder`・`PaintNode`・`PaintView`）・`TreePainter`・`TreeStacking`・`Fragment`/`FragSeq` を吸収して消し、凍結した例外を全て消す。スクロール・sticky・アンカーの追従は `DynamicSceneState` | **完了**（2026-11-27）。旧描画用の木・`TreePainter` 等 10 本を削除し、`core.paint.scene`・`SceneDisplayListAdapter` へ移行（`:core` −2,168 行・凍結例外 0・`legacyPaintTreeTypesStayGone`）。保持ヒープ `53.2→50.8 / 13.8→12.6 MB`、`DisplaySceneTest`・`SceneEmitterIncrementalTest` 追加・変異 2 種を確認 |
 | **M3b-3** | **問い合わせ**: 当たり判定・CSSOM・フォーカス・インスペクタを断片木と scene から答える。`HitTestIndex`・`PaintBox` を消し、MOD の消費者（イベント・フォーカス・入力欄）を移す | **完了**（2026-11-27）。`SceneHitTest`（付録 E の逆順・チャンクの包含矩形で `O(log(N/32))`・外に出た sticky の回収）・`SceneQuery`/`SceneLocation`（位置・寸法・索引）・`SceneHit` へ移し、`HitTestIndex`・`UIHitResult`・`SceneBox`・`PaintBox`・`PaintRun` を削除（`legacyQueryTypesStayGone`）。`SceneHitTestTest`・`SceneQueryTest` を追加。ホイールの確保は作業用の値をビューの文脈で使い回して `costGate` の基準内（`voidwave` scroll 1,049 B）。`realdocs` は当たりの列だけ更新（float の幾何と旧 `Math.round` の差。項目・画素は一致） |
-| **M3b-4** | **バックエンドが scene を直接描く**: `render(DisplayScene, DynamicSceneState, nowMs)`・`DrawOp`・チャンクのカリング。アニメーションの状態は `int nodeId` を鍵にする。`DisplayItem` ほか下の削除対象と一時アダプタを消す | 未着手 |
+| **M3b-4a** | **描画命令**: 項目の生成器（`BoxItemPainter` ほか）を、層の局所座標の `DrawOp.Item` を作る形にし、`SceneEmitter` が層を作るときだけ作って層に記憶する（`LayerOps`）。一時アダプタは命令に位置・クリップ・親の錨・祖先の文字色を足して表示項目に組み立てるだけ（`OpComposer`） | **完了**（2026-11-27）。実文書 9 本の全フレームの全項目が以前とメタ・クリップの連鎖まで一致（違いはグラデーションの係数の最後の桁だけ。`surface_test` を開いたフレームの 10 画素が 1/255）。差分のフレームの割り当て −6〜40%・ホバーの増分 1.01 → 0.58 ms。二重持ちの分だけ保持ヒープ +17.5 MB（§0 の期限付きの緩和）。`LayerOpsTest` 追加・変異 2 種を確認 |
+| **M3b-4b** | **走査器と CPU の描画**: scene を描画順にたどる走査器が `PaintSceneDriver` を置き換え、CPU の描画が `DrawOp` を直接塗る（表示項目の列・`OpComposer`・`ItemDiff`・`RetainRanges` ほかを消す）。部分の描き直しは層とチャンクの同一性で、アニメーションの状態は `int nodeId` を鍵にする | 未着手 |
+| **M3b-4c** | **GPU・ホスト・型付きの命令**: GL・Vulkan・MOD（`MinecraftHostSurface`・`HostTextures`）を走査器へ移し、`DisplayItem` ほか下の削除対象と一時アダプタを消す。命令を型付きの小さい形（背景・枠線・影・文字のグリフ列・画像）に詰め、チャンクのカリングを入れる | 未着手 |
 | **M3b-5** | **完了ゲート**: 下の完了ゲート（ヒープ・latency の上限を戻す・`Shortcut`/`EngineFlags` 0）と §4 | 未着手 |
 
 - **データモデル（`core/paint/scene`）**
@@ -458,43 +460,43 @@ M2c-3 で旧経路と一緒に一時的に失う multicol を、新経路で作�
 
 時間の主張は交互 A/B の中央値だけ（絶対値はセッションで ±40% ずれる）。「現在」の列は作業のたびに上書きする。
 
-| 軸 | 指標 / シナリオ | M0 着手前（2026-11-24） | 現在（2026-11-27。M3b-3 の後） | 目標（達成フェーズ） |
+| 軸 | 指標 / シナリオ | M0 着手前（2026-11-24） | 現在（2026-11-27。M3b-4a の後） | 目標（達成フェーズ） |
 | :--- | :--- | :---: | :---: | :---: |
-| **構造** | `:core` 本体の行数・ファイル数 | `113,195 行`・515 | **`108,218 行`・606**（M3b-3 で `HitTestIndex`・`SceneBox`・`PaintBox` ほか 5 本を削除し、`SceneHitTest`・`SceneHitGeometry`・`SceneQuery`・`SceneLocation`・`SceneHit`・`HitScratch`・`UiHitSupport`・一時の `SceneAdapterBox` を足して +604 行。M3b-2 は −2,168 行。M5-1 で +4 行・+6 ファイル〔`HtmlNode` と `DocumentArena` を役割ごとの 8 クラスへ分けた〕、M5-2 で +312 行・+12 ファイル〔4 クラスを 16 クラスへ。増えたのは型ごとの頭書き・import・入口の委譲〕） | `≤ 120,000 行`（M2c。**達成**）→ M3b 以降は各フェーズで減らす |
+| **構造** | `:core` 本体の行数・ファイル数 | `113,195 行`・515 | **`108,522 行`・609**（M3b-4a で描画命令 `LayerOps`・`OpList`・`OpComposer` を足し、生成器の使われない「前回の項目の使い回し」と `rebaseSubClip` を消して +304 行。M3b-3 で +604 行、M5 で +316 行） | `≤ 120,000 行`（M2c。**達成**）→ M3b 以降は各フェーズで減らす |
 | **構造** | 経路の数 | 1 | **1**（M2c-3 で `EnginePath` と旧経路を削除） | **1**（M2c。**達成**） |
-| **構造** | 中間表現の段数（DOM の後〜バックエンドの前） | 6〜7 | **3 段 + 一時アダプタ**（箱の木 → 断片木 → `DisplayScene`、M3b-4 まで一時 `SceneDisplayListAdapter` → `DisplayItem`。問い合わせは M3b-3 から scene を直接たどる） | **3**（M3b-4） |
-| **構造** | 増分・キャッシュ専用のコードの規模 | 42 ファイル・`6,360 行` 相当 | `ChangeLedger` 149 ＋ `BoxTreeCompiler` 560 ＋ `LayoutCache` 183 ＋ `SceneEmitter` 504 行（凍結例外 `TreePainter` の記憶は削除済み） | **`≤ 1,000 行`**（M3b） |
+| **構造** | 中間表現の段数（DOM の後〜バックエンドの前） | 6〜7 | **3 段 + 一時アダプタ**（箱の木 → 断片木 → `DisplayScene`〔層が描画命令を持つ〕、M3b-4b まで一時 `SceneDisplayListAdapter` が命令を `DisplayItem` に組み立てる。問い合わせは M3b-3 から scene を直接たどる） | **3**（M3b-4） |
+| **構造** | 増分・キャッシュ専用のコードの規模 | 42 ファイル・`6,360 行` 相当 | `ChangeLedger` 149 ＋ `BoxTreeCompiler` 560 ＋ `LayoutCache` 183 ＋ `SceneEmitter` 532 行（描画命令は層の値の一部。凍結例外 `TreePainter` の記憶は削除済み） | **`≤ 1,000 行`**（M3b） |
 | **構造** | `LayoutBox` / `ComputedStyle` / `UiView` の行数 | `1,785` / `2,095` / `2,005` | **削除** / `451` / `1,383`（M3b-3 で当たり判定の文脈を `UiHitSupport` へ出した） | 削除（M2c。**達成**）/ `≤ 450`（M5）/ 解体（M4） |
 | **構造** | 1,000 行超 / 600 行超のクラス（`:core` 本体） | `19` / `55` | **``8` / `35``**（`core/src/main/java` の各 `.java` の行数〔`wc -l`〕で数え直した値。同じ数え方で M3b-2 の後は 12 / 38、M3b-3 の後は 12 / 37。M5-1 で `HtmlNode` 1,398 → 739、M5-2 で `HtmlParser`・`Bindings`・`HtmlElement`・`InteractionState` が 1,000 行以下〔`HtmlParser`・`Bindings` は 600 行以下〕、M3b-3 で `HitTestIndex`（749）を削除。残る 1,000 行超は `UiView`・`SoftwareRenderBackend`・`ColorParser`・`GpuRenderBackend`・`CanvasRenderingContext2D`・`StyleResolver`・`TextShaper`・`ShaderSources`。`core.dom` には無い） | `0`（M5）/ `0`（M6） |
 | **構造** | `Shortcut` / `EngineFlags` | `35` / `45`（M0 で凍結） | `16` / `24`（レイアウト系 0。残りは GL・ソフトウェア描画・シートの雛形の切り替え） | レイアウト系 0（M2c。**達成**）→ `0` / `0`（M3b） |
 | **構造** | `static volatile` / `ThreadLocal` | 約 `50` / `27` | `40` / `14`（`Atomic`/`LongAdder` 18・共有エポック 0。当たり判定の作業用の値はビューの文脈が持つ） | グローバルな可変の static `0`（M6） |
 | **構造** | MOD の旧レンダラ（`client/renderer`） | `9,369 行` | **旧レンダラ 0**。面を描く経路は `1,277 行`（§3.3） | `≤ 1,500 行`（M3a。**達成**） |
 | **構造** | リポジトリの構成（`:core` 系だけのタスクで設定する NeoForge のプロジェクト） | ルートが NeoForge の MOD | **0**（P4-1。`mod/`〔`:mod`〕分離） | `0`（P4-1。**達成**）→ P4-2 |
-| **性能** | `large-list-8000 child`（1 件挿入） | `7.89 ms` | 描画を含む **`23.04 ms`**（M3b-3 後のゲート。M3b-4 の前の上限 57.85 ms） | 描画を含めて **`≤ 1.0 ms`**（M3b） |
-| **性能** | hover / 文字の変更の 1 フレーム（showcase） | — | `ab-inc-vs-full` は `0.292x` / `0.203x`（上限 `0.900x` / `0.980x`）。一時アダプタ無記憶のため M3b-4 まで毎回 `DisplayItem` を生成 | `ab-inc-vs-full` の上限内（M2c。**達成**）→ 締め直す（M3b） |
-| **性能** | `varied-list-2000 fontsize`（4 スレッド・実書体） | `10.76 ms` | ゲートの latency（1 スレッド・FALLBACK）は **`70.21 ms`**（M3b-3 後。上限 157.7 ms） | **`≤ 5.0 ms`**（M3b） |
-| **性能** | `showcase` 幅の変更（`resizeexact`・GL） | `0.427 ms`（表示リストが 66%） | ゲートの latency（FALLBACK）`1.70 ms`。GL の実測は未計測 | **`≤ 0.20 ms`**（M3b） |
-| **性能** | `voidwave.html open` | `9.15 ms` | ゲートの latency（FALLBACK）`16.41 ms`。`costGate` の確保量は `13.02 MB`（M3b-3 で不変） | **`≤ 5.5 ms`**（M3b〜M5 + P2） |
+| **性能** | `large-list-8000 child`（1 件挿入） | `7.89 ms` | 描画を含む **`19.13 ms`**（M3b-4a 後のゲート。M3b-3 後 23.04 ms。M3b-4 の前の上限 57.85 ms） | 描画を含めて **`≤ 1.0 ms`**（M3b） |
+| **性能** | hover / 文字の変更の 1 フレーム（showcase） | — | `ab-inc-vs-full` は `0.184x` / `0.115x`（M3b-3 後 `0.292x` / `0.203x`。上限 `0.900x` / `0.980x`）。M3b-4a で変わらない層は描画命令を使い回し、組み立てだけが毎回 `DisplayItem` を作る | `ab-inc-vs-full` の上限内（M2c。**達成**）→ 締め直す（M3b） |
+| **性能** | `varied-list-2000 fontsize`（4 スレッド・実書体） | `10.76 ms` | ゲートの latency（1 スレッド・FALLBACK）は **`80.80 ms`**（M3b-4a 後。全部の層の描画命令を作り直す分 +10 ms。上限 157.7 ms） | **`≤ 5.0 ms`**（M3b） |
+| **性能** | `showcase` 幅の変更（`resizeexact`・GL） | `0.427 ms`（表示リストが 66%） | ゲートの latency（FALLBACK）`1.76 ms`。GL の実測は未計測 | **`≤ 0.20 ms`**（M3b） |
+| **性能** | `voidwave.html open` | `9.15 ms` | ゲートの latency（FALLBACK）`15.61 ms`。`costGate` の確保量は `13.02 MB` | **`≤ 5.5 ms`**（M3b〜M5 + P2） |
 | **性能** | コールド起動（`showcase`） | `546 ms`（書体なし） | 書体の読み込み `243 → 24 ms`（P1a）・JDK 25 + AOT `540 → 228 ms`（P1b） | **`≤ 200 ms`**（P1b） |
-| **メモリ** | 保持ヒープ `varied-list-2000` / `large-list-2000` | `35.96` / `9.63 MB` | **`50.70` / `12.59 MB`**（M3b-3 後のゲート。M3b-2 の `50.75`/`12.57` と同等。内訳は §4.1） | **`≤ 14.0` / `≤ 5.5 MB`**（M3b）→ **`≤ 12.0` / `≤ 4.5 MB`**（M5） |
+| **メモリ** | 保持ヒープ `varied-list-2000` / `large-list-2000` | `35.96` / `9.63 MB` | **`68.18` / `16.22 MB`**（M3b-4a 後のゲート。層の描画命令〔`DrawOp$Item` 10.5 MB・メタ〕と組み立てた表示項目の二重持ちで +17.5 / +3.6 MB。M3b-4b で表示項目の列を消す。内訳は §4.1） | **`≤ 14.0` / `≤ 5.5 MB`**（M3b）→ **`≤ 12.0` / `≤ 4.5 MB`**（M5） |
 | **正しさ** | WPT 参照画像比較 | `160 / 260` | **`170 / 260`**（一覧は `reftest-passing-v3.txt` の 1 つ。旧経路の一覧は削除） | `≥ 170 / 260`（M2c 以降） |
-| **正しさ** | 3 者画素一致・`FrameOracle` | 緑 | 緑（2026-11-27 M3b-3 の後。`:core:test`〔2,811 件〕・`:core:timingTest`・`:mod:test`〔452 件〕・`memoryAndLatencyGate`・`costGate`〔56 本。全行で `drawn`/`elements`/`items` 一致、確保の減った `machine_ui` scroll 2 行だけ基準を更新〕・`heapBreakdown` OK。`realdocs` のゴールデンは当たりの列だけ更新。M5-1・M5-2 を合わせた後〔マージコミット〕は Windows の `:core:test` 2,816 件・スキップ 21・`:mod:test` 452 件・`costGate` 56 本・`memoryAndLatencyGate` OK〔保持ヒープ 51.18 / 12.67 MB〕・`runGameTestServer` 5 件） | 緑を保つ |
+| **正しさ** | 3 者画素一致・`FrameOracle` | 緑 | 緑（2026-11-27 M3b-4a の後。`:core:test`〔2,821 件〕・`:mod:test`〔452 件〕・`memoryAndLatencyGate`・`costGate`〔56 本。全行で `drawn`/`elements`/`items` 一致、差分のフレームの確保が −6〜40%、全部を作り直すフレームが +6〜19% の 37 行を更新〕・`heapBreakdown` OK。`realdocs` の画素は `surface_test` を開いたフレームだけ取り直し） | 緑を保つ |
 
-### 4.1 新経路の保持ヒープと時間の段ごとの内訳（M3b-3。2026-11-27）
+### 4.1 新経路の保持ヒープと時間の段ごとの内訳（M3b-4a。2026-11-27）
 
 ヒープは `:core:heapBreakdown`（`V3HeapBreakdownMain`。ゲートと同じ文書・フレームを回し、出力に近い段から参照を外して GC 後の減りを測る。共有分は先に外した段に入る）。時間は M2c-1/M2c-2 のシナリオ別内訳（`StageProfiler`・FALLBACK・1 スレッド）。
 
 | 文書 | 全体 | 表示リスト・一時アダプタ（M3b-4 で消える） | `DisplayScene`（`SceneLayer`/`SceneChunk`） | 断片木とレイアウトの記憶 | 箱の木と `Style` | 共有・GC 差 |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `varied-list-2000`（M3b-3） | **50.20 MB** | `24.53 + 0.25` | `12.13` | `1.35` | `3.94` | `8.00` |
-| `large-list-2000`（M3b-3） | **12.74 MB** | `5.31 + 0.13` | `3.01` | `0.49` | `2.03` | `1.78` |
+| `varied-list-2000`（M3b-4a） | **67.84 MB** | `18.84 + 0.25` | `35.29`（描画命令を含む。M3b-3 は 12.13） | `1.36` | `3.86` | `8.24` |
+| `large-list-2000`（M3b-4a） | **16.61 MB** | `3.88 + 0.13` | `8.20`（同 3.01） | `0.47` | `2.06` | `1.89` |
 
 | シナリオ（M2c-2 参考） | 1 フレーム | 箱の木 | レイアウト | 描画用の木 | 表示リスト | 表示項目の数（旧経路） |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | `varied-list-2000:fontsize` | 79 ms | 26.3 | 10.2 | 17.6 | 22.6 | 97,886（652） |
 | `large-list-8000:child` | 31 ms | 0.26 | 0.06 | 5.4 | 22.6 | 80,012（462） |
 
-M3b-2 で `TreePainter` の記憶と描画用の木を `DisplayScene` に置き換え、一時アダプタ（`SceneDisplayListAdapter`）は記憶を 0（0.25 MB）にした。M3b-3 の問い合わせは記憶を持たないので内訳は M3b-2 と同じ（CSSOM の索引は要求されたときだけ作る）。残る最大成分は M3b-4 で廃止する `DisplayItem` 列・`PaintCell`・`RenderMeta`（`varied-list-2000` 24.47 MB）で、M3b-4 の直接描画とチャンクカリングで目標 14.0 / 5.5 MB 以下へ落とす。
+M3b-2 で `TreePainter` の記憶と描画用の木を `DisplayScene` に置き換え、一時アダプタ（`SceneDisplayListAdapter`）は記憶を 0（0.25 MB）にした。M3b-4a で層が描画命令（`DrawOp$Item` 約 9.8 万個・10.5 MB とそのメタ）を持つようになり、表示リストの段にはそれを組み立てた項目とメタが残る（二重持ち。M3b-4b で表示リストの段が消える）。M3b-3 の問い合わせは記憶を持たないので内訳は M3b-2 と同じ（CSSOM の索引は要求されたときだけ作る）。残る最大成分は M3b-4 で廃止する `DisplayItem` 列・`PaintCell`・`RenderMeta`（`varied-list-2000` 24.47 MB）で、M3b-4 の直接描画とチャンクカリングで目標 14.0 / 5.5 MB 以下へ落とす。
 `fontsize` の箱の木（全要素の再スタイル 26 ms）は新経路の欠陥ではない: 旧経路も 1 スレッドで毎回違う font-size に変えると再スタイル 26.0 ms・測定 27.7 ms になる（ゲートの旧経路 21.8 ms は 16px / 15px の交互で旧経路の記憶が当たる値。旧経路の再スタイルを 4 スレッドで並列に解くのは P2 の範囲）。
 
 ---

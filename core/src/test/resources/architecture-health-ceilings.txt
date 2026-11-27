@@ -23,7 +23,7 @@ core/src/main/java/com/nishiyu/enderframelib/core/dom/node/HtmlNode.java | 739
 core/src/main/java/com/nishiyu/enderframelib/core/dom/parser/MarkdownParser.java | 604
 core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/shader/ShaderSources.java | 1001
 core/src/main/java/com/nishiyu/enderframelib/core/net/SafeHttpClient.java | 837
-core/src/main/java/com/nishiyu/enderframelib/core/paint/BoxDecorationPainter.java | 987
+core/src/main/java/com/nishiyu/enderframelib/core/paint/BoxDecorationPainter.java | 900
 core/src/main/java/com/nishiyu/enderframelib/core/paint/BoxDecorations.java | 987
 core/src/main/java/com/nishiyu/enderframelib/core/paint/CssAnimator.java | 629
 core/src/main/java/com/nishiyu/enderframelib/core/paint/Gradients.java | 878

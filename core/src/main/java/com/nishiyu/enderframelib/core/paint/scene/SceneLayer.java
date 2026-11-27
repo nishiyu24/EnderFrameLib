@@ -70,7 +70,8 @@ public final class SceneLayer {
     public final StickyConstraint sticky;
     /** スクロールコンテナ（および根）だけ: カリング範囲外でも回収すべき子孫の sticky 節。 */
     public final SceneLayer[] stickyDescendants;
-    public final DrawOp[] ops;
+    /** この層自身の描画命令（M3b-4a）。{@link SceneEmitter} が層を作った直後に 1 度だけ付ける（シーンを渡す前）。 */
+    private DrawOp[] ops;
     public final SceneChildren children;
 
     // ---- 入力・幾何・補助（問い合わせ・一時アダプタ・増分照合用） ----
@@ -223,6 +224,20 @@ public final class SceneLayer {
             return this;
         }
         return new SceneLayer(this, nx, ny);
+    }
+
+    /** この層自身の描画命令（M3b-4a。座標は層自身か原点の節から。自分を描かない層は空）。 */
+    public DrawOp[] ops() {
+        return ops;
+    }
+
+    /**
+     * 作った直後の層に描画命令を付ける（{@link SceneEmitter} だけが、層をシーンに入れる前に 1 度だけ呼ぶ。複製を作らないため）。
+     */
+    SceneLayer attachOps(DrawOp[] newOps) {
+        if (ops.length != 0) throw new IllegalStateException("描画命令は 1 度だけ付ける");
+        ops = newOps != null ? newOps : DrawOp.EMPTY;
+        return this;
     }
 
     /** 親のスクロールコンテナ（または根）へ汲み上げる sticky 要素の列。 */

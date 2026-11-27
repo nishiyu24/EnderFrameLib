@@ -2,10 +2,10 @@
 # 内部カウンタ（memo*）不使用。ヒープは MB、交互 A/B は inc/full 比または ms。
 heap:showcase:open | 1.630 | 4.038
 heap:voidwave.html:open | 4.178 | 7.223
-heap:large-list-2000:open | 13.844 | 19.305
-heap:varied-list-2000:open | 53.173 | 68.466
-heap:large-list-2000:child | 13.792 | 19.240
-heap:varied-list-2000:hover | 53.380 | 68.725
+heap:large-list-2000:open | 16.219 | 20.500
+heap:varied-list-2000:open | 68.183 | 74.000
+heap:large-list-2000:child | 16.263 | 20.500
+heap:varied-list-2000:hover | 68.270 | 74.000
 heap:showcase:text | 1.712 | 4.140
 ab-inc-vs-full:showcase:hover | 0.1386 | 0.9000
 ab-inc-vs-full:showcase:text | 0.0796 | 0.9800

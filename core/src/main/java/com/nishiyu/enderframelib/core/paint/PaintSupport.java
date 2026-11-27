@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
 import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -66,30 +67,20 @@ final class PaintSupport {
     }
 
     /**
-     * 描画要素を 1 つ足す。レイアウトの float 座標を整数に丸めるのはここ 1 箇所だけ（軸 3）。
-     *
-     * 幅と高さを個別に丸めず、左右（上下）の辺をそれぞれ丸めて差を取る。こうすると
-     * 隣り合う箱の辺が同じ整数に落ち、端数の幅が並んでも隙間や重なりが出ない。
-     * 以前はレイアウトの各段が int に切り捨てていたため、丸め誤差が入れ子の深さだけ溜まっていた。
+     * 描画要素を 1 つ命令として足す（M3b-4a）。座標は今の原点（{@link OpList#originX}）からの float のまま持ち、整数に丸めるのは
+     * 組み立て（{@link OpComposer}）の 1 箇所だけ（軸 3）。丸めは幅と高さを個別にせず左右（上下）の辺を丸めて差を取る
+     * （隣り合う箱の辺が同じ整数に落ち、端数の幅が並んでも隙間や重なりが出ない）。
      */
-    static void addElement(List<DisplayItem> elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,
+    static void addElement(OpList elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,
                             float x, float y, float w, float h, String text,
                             int color, int bgColor, ItemProps events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
                             RenderMeta meta, long key) {
-        int ox = 0, oy = 0;
-        if (elements instanceof CaptureList cap) {
-            ox = cap.originX;
-            oy = cap.originY;
-            if (ox != 0 || oy != 0) {
-                x -= ox;
-                y -= oy;
-            }
+        int ox = elements.originX, oy = elements.originY;
+        if (ox != 0 || oy != 0) {
+            x -= ox;
+            y -= oy;
         }
-        int left = Math.round(x);
-        int top = Math.round(y);
-        int width = Math.round(x + w) - left;
-        int height = Math.round(y + h) - top;
         RenderHints hints = events.hints();
         if ((ox != 0 || oy != 0) && hints != RenderHints.NONE) {
             if (hints.shadowShape() != null) hints = hints.withShadowShape(hints.shadowShape().offset(-ox, -oy));
@@ -99,34 +90,16 @@ final class PaintSupport {
         }
         RenderMeta finalMeta = meta == null && hints == RenderHints.NONE ? null : (meta != null ? meta : RenderMeta.EMPTY).withHints(hints);
         long itemKey = key == 0L ? DisplayItem.keyOf(id) : key;
-        // 差分パッチの再構築: 前の項目が塗り以外同じなら、作らずに塗りだけを書いて使い回す（B9 の M3b）。
-        elements.add(new DisplayItem(id, baseNodeId, type, left, top, width, height, text, color, bgColor, events.attrs(), radius, opacity, tx, ty, sx, sy, rot, trans, animDef, fitMode, finalMeta, itemKey));
+        int flags = elements.flags();
+        if (animDef == OpList.TEXT_COLOR_ANIM_FROM_ANCESTORS) {
+            animDef = AnimationSpec.NONE;
+            flags |= DrawOp.INHERIT_TEXT_COLOR_ANIM;
+        }
+        elements.add(new DrawOp.Item(type, id, baseNodeId, itemKey, x, y, w, h, text, color, bgColor, events.attrs(), radius, opacity,
+                tx, ty, sx, sy, rot, trans, animDef, fitMode, finalMeta, flags));
     }
 
-    /**
-     * 親相対座標のときの、現在の節の原点 {@code (originX, originY)} も保持する。
-     */
-    static final class CaptureList extends java.util.ArrayList<DisplayItem> {
-        int originX, originY;
-
-        CaptureList(int initialCapacity) {
-            super(initialCapacity);
-        }
-
-        void resetForBuild() {
-            clear();
-            originX = 0;
-            originY = 0;
-        }
-
-        void setOrigin(int ox, int oy) {
-            this.originX = ox;
-            this.originY = oy;
-        }
-
-    }
-
-    static void addElement(List<DisplayItem> elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,
+    static void addElement(OpList elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,
                             float x, float y, float w, float h, String text,
                             int color, int bgColor, ItemProps events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
@@ -134,7 +107,7 @@ final class PaintSupport {
         addElement(elements, baseNodeId, id, type, fitMode, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, meta, 0L);
     }
 
-    static void addElement(List<DisplayItem> elements, String baseNodeId, String id, ElementType type,
+    static void addElement(OpList elements, String baseNodeId, String id, ElementType type,
                             float x, float y, float w, float h, String text,
                             int color, int bgColor, ItemProps events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
@@ -142,7 +115,7 @@ final class PaintSupport {
         addElement(elements, baseNodeId, id, type, ImageFitMode.FILL, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, meta, key);
     }
 
-    static void addElement(List<DisplayItem> elements, String baseNodeId, String id, ElementType type,
+    static void addElement(OpList elements, String baseNodeId, String id, ElementType type,
                             float x, float y, float w, float h, String text,
                             int color, int bgColor, ItemProps events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
@@ -223,7 +196,7 @@ final class PaintSupport {
         return intersectClip(null, parent, area, r, ownerId);
     }
 
-    static ClipRect intersectClip(List<DisplayItem> elements, ClipRect parent, BoxDecorations.Rect area, Corners r, String ownerId) {
+    static ClipRect intersectClip(OpList elements, ClipRect parent, BoxDecorations.Rect area, Corners r, String ownerId) {
         float x0 = area.x(), y0 = area.y(), x1 = x0 + area.w(), y1 = y0 + area.h();
         float rx0 = 0f, rx1 = 0f, rx2 = 0f, rx3 = 0f, ry0 = 0f, ry1 = 0f, ry2 = 0f, ry3 = 0f;
         boolean ell = false;
@@ -234,57 +207,13 @@ final class PaintSupport {
                 ry0 = r.topLeftV(); ry1 = r.topRightV(); ry2 = r.bottomRightV(); ry3 = r.bottomLeftV();
             }
         }
-        int ox = 0, oy = 0;
-        if (elements instanceof CaptureList cap) {
-            ox = cap.originX;
-            oy = cap.originY;
-        }
+        int ox = elements != null ? elements.originX : 0, oy = elements != null ? elements.originY : 0;
         float[] chainOwn = ell
                 ? new float[]{x0 - ox, y0 - oy, x1 - ox, y1 - oy, rx0, rx1, rx2, rx3, ry0, ry1, ry2, ry3}
                 : new float[]{x0 - ox, y0 - oy, x1 - ox, y1 - oy, rx0, rx1, rx2, rx3};
         return BoxDecorations.intersectClipRect(
                 parent, x0, y0, x1, y1, rx0, rx1, rx2, rx3, ry0, ry1, ry2, ry3,
                 ell, ownerId, ClipRect.appendChain(parent, chainOwn, ownerId, ox, oy));
-    }
-
-    /**
-     * 箱の {@code m.clip} が新しい {@code newBoxClip} に変わったとき（連鎖は同じ・ページ AABB だけ変化）、
-     * 内側の部分クリップ（inset-shadow / 背景画像など）の連鎖を維持したままページ AABB だけを更新する。
-     */
-    static ClipRect rebaseSubClip(ClipRect partClip, ClipRect oldBoxClip, ClipRect newBoxClip, int curOx, int curOy) {
-        return rebaseSubClip(partClip, oldBoxClip, newBoxClip, curOx, curOy, 0f, 0f);
-    }
-
-    /**
-     * {@link #rebaseSubClip(ClipRect, ClipRect, ClipRect, int, int)} の拡張版。親のノードに対する相対位置が
-     * 動いた（箱自身が自分のノードを持たない）とき、末尾の自箱クリップ座標も {@code (shiftX, shiftY)} だけ進める。
-     */
-    static ClipRect rebaseSubClip(ClipRect partClip, ClipRect oldBoxClip, ClipRect newBoxClip,
-                                  int nextSubOx, int nextSubOy, float shiftX, float shiftY) {
-        if (partClip == null) return null;
-        if (oldBoxClip == partClip || (oldBoxClip != null && oldBoxClip.equals(partClip))) return newBoxClip;
-        int baseLen = oldBoxClip == null ? 0 : oldBoxClip.chain().size();
-        if (partClip.chain().size() == baseLen + 1) {
-            ClipChainPart last = partClip.chain().get(baseLen);
-            float[] r = last.rect();
-            float[] nr;
-            if (shiftX == 0f && shiftY == 0f) {
-                nr = r;
-            } else {
-                nr = r.clone();
-                nr[0] += shiftX;
-                nr[1] += shiftY;
-                nr[2] += shiftX;
-                nr[3] += shiftY;
-            }
-            boolean ell = nr.length >= 12;
-            return BoxDecorations.intersectClipRect(
-                    newBoxClip, nr[0] + nextSubOx, nr[1] + nextSubOy, nr[2] + nextSubOx, nr[3] + nextSubOy,
-                    nr[4], nr[5], nr[6], nr[7],
-                    ell ? nr[8] : 0f, ell ? nr[9] : 0f, ell ? nr[10] : 0f, ell ? nr[11] : 0f,
-                    ell, last.ownerId(), ClipRect.appendChain(newBoxClip, nr, last.ownerId(), nextSubOx, nextSubOy));
-        }
-        return partClip;
     }
 
     /** 角丸の半径は描画側の整数値（{@link Corners}）なので、解いた長さをここで丸める。 */

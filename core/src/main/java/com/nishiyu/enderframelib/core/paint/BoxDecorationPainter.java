@@ -189,7 +189,7 @@ public final class BoxDecorationPainter {
      * 何が壊れていたか: 以前は断片に背景色だけを塗って返していたので、{@code <code>} や {@code <kbd>} の枠線と
      * 角丸が描かれなかった。断片も語ごとにあり、背景が語の数だけ重なっていた。
      */
-    void drawInlineFragments(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int[] rawRadii,
+    void drawInlineFragments(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int[] rawRadii,
                                      ClipRect clip, float fontHVal, float ox, float oy, int itemCount, boolean interactive,
                                      ItemProps partsEvents, ItemProps passiveBorderEvents,
                                      int transDur, AnimationSpec colorBgAnim) {
@@ -198,6 +198,9 @@ public final class BoxDecorationPainter {
         int[] colors = {border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft()};
         SceneAdapterBox op = box.originParent();
         float opX = op != null ? op.x() : 0f, opY = op != null ? op.y() : 0f;
+        long savedBase = elements.saveOrigin();
+        elements.baseOriginParent(); // 断片は原点の節の座標（M3b-4a）
+        try {
         for (SceneRun frag : box.runs()) {
             if (frag.isText()) continue;
             float fx = frag.x() + opX, fy = frag.y() + opY;
@@ -226,6 +229,9 @@ public final class BoxDecorationPainter {
                         passiveBorderEvents, meta, transDur, true, box.node() != null ? box.node().paintHandle() : 0);
             }
         }
+        } finally {
+            elements.restoreOrigin(savedBase);
+        }
     }
 
     /**
@@ -233,13 +239,13 @@ public final class BoxDecorationPainter {
      * 背景のレイヤーを並べる（{@code box-decoration-break: clone} 相当。断片ごとに最初から並べ直す）。
      * 何が壊れていたか: インラインの箱は背景色の矩形と枠線しか出さず、{@code background-image} と {@code background-clip: text} が効かなかった。
      */
-    private void drawFragmentImages(List<DisplayItem> elements, SceneAdapterBox box, String id, float fx, float fy, float fw, float fh,
+    private void drawFragmentImages(OpList elements, SceneAdapterBox box, String id, float fx, float fy, float fw, float fh,
                                     ClipRect clip, Corners radii, BorderSpec border, ItemProps events, float fontHVal, float ox, float oy) {
         List<BoxDecorations.BackgroundLayer> layers = BoxDecorations.layers(box.style(), devicePixelRatio);
         boolean any = false;
         for (BoxDecorations.BackgroundLayer l : layers) any |= l.url() != null || l.isGradient();
         if (!any) return;
-        bounds.with(box, fx, fy, fw, fh, true, () -> drawImageLayers(elements, box, id, layers, "_f" + fragIds.getAndIncrement() + "_bgl", clip, radii, border, events, fontHVal, ox, oy, null));
+        bounds.with(box, fx, fy, fw, fh, true, () -> drawImageLayers(elements, box, id, layers, "_f" + fragIds.getAndIncrement() + "_bgl", clip, radii, border, events, fontHVal, ox, oy));
     }
 
     /**
@@ -249,7 +255,7 @@ public final class BoxDecorationPainter {
      * LIMITATION(制約): 輪郭線は角丸に沿わず、インラインボックスでは行ごとの断片に描かない。
      * README の "Not supported" に対応。
      */
-    void drawOutline(List<DisplayItem> elements, SceneAdapterBox box, String id, int color,
+    void drawOutline(OpList elements, SceneAdapterBox box, String id, int color,
                              ItemProps events, RenderMeta meta, int transDur) {
         Style st = box.style().typed();
         String lineStyle = st.visual.outlineStyle.cssName();
@@ -271,7 +277,7 @@ public final class BoxDecorationPainter {
      * 段組（multicol）の列の間の線（{@code column-rule}）。線の位置は {@link SceneAdapterBox#columnRules}
      * （レイアウトが列の間の中央に置いた矩形）で、箱の背景の上・文字の下に出る。
      */
-    void drawColumnRules(List<DisplayItem> elements, SceneAdapterBox box, String id, int color,
+    void drawColumnRules(OpList elements, SceneAdapterBox box, String id, int color,
                          ItemProps events, RenderMeta meta, int transDur) {
         float[][] rules = box.columnRules();
         if (rules == null) return;
@@ -289,7 +295,7 @@ public final class BoxDecorationPainter {
     }
 
     /** {@code ::first-line} の背景色（透明以外なら 1 行目の領域に矩形を敷く）。 */
-    void drawFirstLineBackground(List<DisplayItem> elements, SceneAdapterBox box, String id, int fallbackColor,
+    void drawFirstLineBackground(OpList elements, SceneAdapterBox box, String id, int fallbackColor,
                                  ItemProps events, RenderMeta meta, int transDur) {
         float[] rect = box.firstLineBgRect();
         if (rect == null || rect[2] <= 0 || rect[3] <= 0) return;
@@ -312,7 +318,7 @@ public final class BoxDecorationPainter {
      * LIMITATION(制約): ぼかしのない外側の影は箱の下全体に塗るので、背景が透明・半透明の箱では箱の内側にも影が見える
      * （ブラウザは影を枠線ボックスの外だけに描く）。ぼかした影は箱の形を穴として抜く。README の "Not supported" に対応。
      */
-    void drawOuterShadows(List<DisplayItem> elements, SceneAdapterBox box, String id, List<BoxDecorations.Shadow> shadows,
+    void drawOuterShadows(OpList elements, SceneAdapterBox box, String id, List<BoxDecorations.Shadow> shadows,
                                   Corners radii, ClipRect clip, float fontHVal, float ox, float oy) {
         if (shadows.isEmpty()) return;
         ItemProps events = ItemProps.parent(id);
@@ -362,7 +368,7 @@ public final class BoxDecorationPainter {
      * パディングボックスのうち穴の外を、穴の辺からの距離で減衰するガウス近似の 1 枚で塗る。パディングボックスの角丸で切る。
      * ぼかしが 0 でも同じ経路で、辺は 0.5px だけにじませてアンチエイリアスにする。
      */
-    void drawInsetShadows(List<DisplayItem> elements, SceneAdapterBox box, String id, List<BoxDecorations.Shadow> shadows,
+    void drawInsetShadows(OpList elements, SceneAdapterBox box, String id, List<BoxDecorations.Shadow> shadows,
                                   BorderSpec border, ClipRect clip, float fontHVal, float ox, float oy) {
         boolean hasInset = false;
         for (int i = 0, sn = shadows.size(); i < sn; i++) {
@@ -412,21 +418,11 @@ public final class BoxDecorationPainter {
         }
     }
 
-    void drawDefaultBlockElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawDefaultBlockElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
                                          Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
                                          ItemProps partsEvents, ItemProps passiveBorderEvents,
                                          BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                          int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows) {
-        drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy,
-                partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, null);
-    }
-
-    void drawDefaultBlockElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
-                                         Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
-                                         ItemProps partsEvents, ItemProps passiveBorderEvents,
-                                         BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
-                                         int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows,
-                                         List<DisplayItem> prevItems) {
         ElementType bgType = ElementType.RECT;
         if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isButton(box.node().tag)) {
             bgType = ElementType.BUTTON;
@@ -441,7 +437,7 @@ public final class BoxDecorationPainter {
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             CircleBorderSpec cbSpec = new CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
             addElement(elements, id, partId(box, id, 0, "_bg"), bgType, bounds.x(box), bounds.y(box), bounds.w(box), bounds.h(box), "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, bgKey);
-            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy, prevItems);
+            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
             drawInsetShadows(elements, box, id, shadows, border, normalizedClip, fontHVal, ox, oy);
             long cbKey = box.node() != null ? DisplayItem.keyOf(box.node().paintHandle(), DisplayItem.PART_BORDER) : 0L;
             addElement(elements, id, partId(box, id, 1, "_cb"), ElementType.CIRCLE_BORDER, bounds.x(box), bounds.y(box), bounds.w(box), bounds.h(box), bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
@@ -463,11 +459,11 @@ public final class BoxDecorationPainter {
             }
             // 角丸の箱でも背景は枠線ボックスいっぱい（枠線の下まで）に塗り、枠線をその上に重ねる（付録 E）
             addElement(elements, id, partId(box, id, 0, "_bg"), bgType, bounds.x(box), bounds.y(box), bounds.w(box), bounds.h(box), "", color, bgFill, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, bgKey);
-            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy, prevItems);
+            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
             drawInsetShadows(elements, box, id, shadows, border, normalizedClip, fontHVal, ox, oy);
             // border-image（9-slice）が描ければ、枠線の通常の描画に代わる（枠線の太さは配置にそのまま効く）
             if (!drawBorderImage(elements, box, id, normalizedClip, passiveBorderEvents, fontHVal, ox, oy)) {
-                drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur, prevItems);
+                drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
             }
         }
 
@@ -496,15 +492,9 @@ public final class BoxDecorationPainter {
      * LIMITATION(制約): {@code background-attachment} は常に scroll、インラインボックスの断片には画像を描かない。
      * README の "Not supported" に対応。
      */
-    void drawBackgroundImages(List<DisplayItem> elements, SceneAdapterBox box, String id, ClipRect clip, Corners radii,
+    void drawBackgroundImages(OpList elements, SceneAdapterBox box, String id, ClipRect clip, Corners radii,
                                       BorderSpec border, ItemProps events, float fontHVal, float ox, float oy) {
-        drawBackgroundImages(elements, box, id, clip, radii, border, events, fontHVal, ox, oy, null);
-    }
-
-    void drawBackgroundImages(List<DisplayItem> elements, SceneAdapterBox box, String id, ClipRect clip, Corners radii,
-                                      BorderSpec border, ItemProps events, float fontHVal, float ox, float oy,
-                                      List<DisplayItem> prevItems) {
-        drawImageLayers(elements, box, id, BoxDecorations.layersView(box.style(), devicePixelRatio), "_bgl", clip, radii, border, events, fontHVal, ox, oy, prevItems);
+        drawImageLayers(elements, box, id, BoxDecorations.layersView(box.style(), devicePixelRatio), "_bgl", clip, radii, border, events, fontHVal, ox, oy);
     }
 
     /**
@@ -515,11 +505,11 @@ public final class BoxDecorationPainter {
      * LIMITATION(制約): {@code mask-composite} は {@code add} だけ（複数のレイヤーは重ねる）。{@code mask-border} と
      * {@code mask-type} は読まない。README の "Not supported" に対応。
      */
-    void drawMaskLayers(List<DisplayItem> elements, SceneAdapterBox box, String id, ClipRect clip, Corners radii,
+    void drawMaskLayers(OpList elements, SceneAdapterBox box, String id, ClipRect clip, Corners radii,
                                 BorderSpec border, float fontHVal, float ox, float oy) {
         ItemProps events = ItemProps.parent(id);
         events.pointerEventsNone();
-        drawImageLayers(elements, box, id, BoxDecorations.maskLayersView(box.style(), devicePixelRatio), "_mask", clip, radii, border, events, fontHVal, ox, oy, null);
+        drawImageLayers(elements, box, id, BoxDecorations.maskLayersView(box.style(), devicePixelRatio), "_mask", clip, radii, border, events, fontHVal, ox, oy);
     }
 
     private static String cachedLayerSuffix(String idInfix, int layerIdx, int part) {
@@ -587,32 +577,7 @@ public final class BoxDecorationPainter {
         return res;
     }
 
-    private static DisplayItem findPrevLayerItem(List<DisplayItem> prevItems, long key, String id) {
-        if (prevItems == null) return null;
-        for (int i = 0, n = prevItems.size(); i < n; i++) {
-            DisplayItem it = prevItems.get(i);
-            if (key != 0L ? it.key() == key : id.equals(it.id())) return it;
-        }
-        return null;
-    }
-
-    private static RenderMeta reuseLayerMeta(RenderMeta prevMeta, ClipRect clip, Corners radii,
-                                             float fontHVal, float ox, float oy, RenderHints hints) {
-        if (prevMeta != null
-                && prevMeta.circleBorder() == null
-                && prevMeta.roundedBorder() == null
-                && Float.compare(prevMeta.fontHeight(), fontHVal) == 0
-                && prevMeta.baseline() == 0f
-                && prevMeta.lineHeight() == 0f
-                && Float.compare(prevMeta.originX(), ox) == 0
-                && Float.compare(prevMeta.originY(), oy) == 0
-                && prevMeta.itemCount() == 1
-                && !prevMeta.interactiveState()
-                && java.util.Objects.equals(prevMeta.clipRect(), clip)
-                && java.util.Objects.equals(prevMeta.borderRadii(), radii)
-                && java.util.Objects.equals(prevMeta.hints(), hints)) {
-            return prevMeta;
-        }
+    private static RenderMeta layerMeta(ClipRect clip, Corners radii, float fontHVal, float ox, float oy, RenderHints hints) {
         return new RenderMeta(clip, radii, null, fontHVal, 0f, 0f, ox, oy, 1, false, null, hints);
     }
 
@@ -621,9 +586,9 @@ public final class BoxDecorationPainter {
         return box.style().typed().inheritedPaint.color;
     }
 
-    private void drawImageLayers(List<DisplayItem> elements, SceneAdapterBox box, String id, List<BoxDecorations.BackgroundLayer> layers,
+    private void drawImageLayers(OpList elements, SceneAdapterBox box, String id, List<BoxDecorations.BackgroundLayer> layers,
                                  String idInfix, ClipRect clip, Corners radii, BorderSpec border, ItemProps events,
-                                 float fontHVal, float ox, float oy, List<DisplayItem> prevItems) {
+                                 float fontHVal, float ox, float oy) {
         for (int i = layers.size() - 1; i >= 0; i--) {
             BoxDecorations.BackgroundLayer layer = layers.get(i);
             String url = layer.url();
@@ -652,9 +617,8 @@ public final class BoxDecorationPainter {
             int nodeHandle = box.node() != null ? box.node().paintHandle() : 0;
             boolean bglCached = "_bgl".equals(idInfix) && i < 3;
             boolean maskCached = "_mask".equals(idInfix) && i == 0;
-            PaintSupport.CaptureList cap = elements instanceof PaintSupport.CaptureList c ? c : null;
-            float offX = cap != null ? -cap.originX : 0f;
-            float offY = cap != null ? -cap.originY : 0f;
+            float offX = -elements.originX;
+            float offY = -elements.originY;
             boolean localGradient = offX != 0f || offY != 0f;
             for (int ti = 0, tn = tiles.size(); ti < tn; ti++) {
                 BoxDecorations.Rect t = tiles.get(ti);
@@ -673,10 +637,8 @@ public final class BoxDecorationPainter {
                             ? partId(box, id, layerPartSlot(bglCached, i, part), cachedLayerSuffix(idInfix, i, part))
                             : id + idInfix + i + "_" + part;
                     part++;
-                    DisplayItem prevImg = findPrevLayerItem(prevItems, bglPartKey, pId);
-                    RenderMeta imgMeta = prevImg != null ? reuseLayerMeta(prevImg.meta(), imageMeta.clipRect(), null, fontHVal, ox, oy, events.hints()) : imageMeta;
                     addElement(elements, id, pId, ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), tileSrc,
-                            0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imgMeta, bglPartKey);
+                            0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta, bglPartKey);
                     continue;
                 }
                 // グラデーションはシェーダーが画素ごとに計算して描く（帯・格子の継ぎ目や段が出ない）。
@@ -699,23 +661,14 @@ public final class BoxDecorationPainter {
                             ? partId(box, id, layerPartSlot(bglCached, i, part), cachedLayerSuffix(idInfix, i, part))
                             : id + idInfix + i + "_" + part;
                     part++;
-                    DisplayItem prevGrad = findPrevLayerItem(prevItems, bglPartKey, pId);
-                    RenderMeta prevGradMeta = prevGrad != null ? prevGrad.meta() : null;
-                    RenderHints gHints = scratchGradientEvents.hintsReuse(prevGrad != null ? prevGrad.hints() : null);
+                    RenderHints gHints = scratchGradientEvents.hintsReuse(null);
                     RenderMeta gradientMeta;
                     if (coversPaint) {
-                        gradientMeta = reuseLayerMeta(prevGradMeta, clip, paintRadii, fontHVal, ox, oy, gHints);
+                        gradientMeta = layerMeta(clip, paintRadii, fontHVal, ox, oy, gHints);
                     } else {
-                        if (imageMeta == null) {
-                            ClipRect prevClip = prevGradMeta != null ? prevGradMeta.clipRect() : null;
-                            ClipRect layerClip = intersectClip(elements, clip, paint, paintRadii, id);
-                            if (prevClip != null && prevClip.equals(layerClip)) layerClip = prevClip;
-                            imageMeta = reuseLayerMeta(prevGradMeta, layerClip, null, fontHVal, ox, oy, gHints);
-                        } else if (prevGradMeta != null) {
-                            imageMeta = reuseLayerMeta(prevGradMeta, imageMeta.clipRect(), null, fontHVal, ox, oy, gHints);
-                        } else {
-                            imageMeta = imageMeta.withHints(gHints);
-                        }
+                        imageMeta = imageMeta == null
+                                ? layerMeta(intersectClip(elements, clip, paint, paintRadii, id), null, fontHVal, ox, oy, gHints)
+                                : imageMeta.withHints(gHints);
                         gradientMeta = imageMeta;
                     }
                     addElement(elements, id, pId, ElementType.RECT, gx0, gy0, gx1 - gx0, gy1 - gy0, "",
@@ -731,7 +684,7 @@ public final class BoxDecorationPainter {
      * 項目は {@code crop:} の src で元の画像の一部を指すので、どのバックエンドも画像の項目としてそのまま描ける。
      * {@code border-radius} は枠画像を切らない（仕様どおり）。
      */
-    private boolean drawBorderImage(List<DisplayItem> elements, SceneAdapterBox box, String id, ClipRect clip, ItemProps events,
+    private boolean drawBorderImage(OpList elements, SceneAdapterBox box, String id, ClipRect clip, ItemProps events,
                                     float fontHVal, float ox, float oy) {
         String url = BorderImage.sourceUrl(box.style());
         if (url == null || url.isEmpty() || SvgImage.looksLikeSvg(url)) return false;
@@ -753,19 +706,14 @@ public final class BoxDecorationPainter {
     }
 
     /** 角丸なら枠の領域だけを塗る 1 部品、そうでなければ辺ごとの帯。 */
-    void drawBorder(List<DisplayItem> elements, String id, SceneAdapterBox box, float rOff, ItemProps events,
+    void drawBorder(OpList elements, String id, SceneAdapterBox box, float rOff, ItemProps events,
                             BorderSpec border, RenderMeta meta, int transDur) {
-        drawBorder(elements, id, box, rOff, events, border, meta, transDur, null);
-    }
-
-    void drawBorder(List<DisplayItem> elements, String id, SceneAdapterBox box, float rOff, ItemProps events,
-                            BorderSpec border, RenderMeta meta, int transDur, List<DisplayItem> prevItems) {
         SceneAdapterBox legend = com.nishiyu.enderframelib.core.dom.node.ElementTraits.isFieldset(box.node().tag) ? box.renderedLegend() : null;
         if (legend != null && border.hasBorder()) {
             drawBorderAroundLegend(elements, id, box, legend, rOff, events, border, meta, transDur);
             return;
         }
-        if (border.useRoundedBorder()) drawRoundedBorder(elements, id, box, events, border, meta, transDur, prevItems);
+        if (border.useRoundedBorder()) drawRoundedBorder(elements, id, box, events, border, meta, transDur);
         else if (border.hasBorder()) drawStraightBorders(elements, id, box, rOff, events, border, meta, transDur);
     }
 
@@ -774,7 +722,7 @@ public final class BoxDecorationPainter {
      * legend の下マージンの端と枠線の下端の低い方まで（HTML §15.3.13）。描画は矩形の切り抜きを持たないので、
      * 空ける矩形の左・右・下の 3 つのクリップで同じ枠線を描く（クリップは重ならないので半透明の色も二重にならない）。
      */
-    void drawBorderAroundLegend(List<DisplayItem> elements, String id, SceneAdapterBox box, SceneAdapterBox legend, float rOff,
+    void drawBorderAroundLegend(OpList elements, String id, SceneAdapterBox box, SceneAdapterBox legend, float rOff,
                                         ItemProps events, BorderSpec b, RenderMeta meta, int transDur) {
         float left = legend.x(), right = legend.x() + legend.w();
         float bottom = Math.max(legend.y() + legend.h() + legend.mB(), bounds.y(box) + b.bwTop());
@@ -813,54 +761,20 @@ public final class BoxDecorationPainter {
      * 背景が透明な角丸の箱（{@code background: transparent; border: 1px solid; border-radius: 4px}）は
      * 中身ごと枠の色で塗りつぶされ、半透明の背景は枠の色と混ざっていた。
      */
-    void drawRoundedBorder(List<DisplayItem> elements, String id, SceneAdapterBox box, ItemProps events,
+    void drawRoundedBorder(OpList elements, String id, SceneAdapterBox box, ItemProps events,
                                    BorderSpec b, RenderMeta meta, int transDur) {
-        drawRoundedBorder(elements, id, box, events, b, meta, transDur, null);
-    }
-
-    void drawRoundedBorder(List<DisplayItem> elements, String id, SceneAdapterBox box, ItemProps events,
-                                   BorderSpec b, RenderMeta meta, int transDur, List<DisplayItem> prevItems) {
         int nodeHandle = box.node() != null ? box.node().paintHandle() : 0;
         long borderKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BORDER) : 0L;
         String borderId = partId(box, id, 3, "_b_round");
-        DisplayItem prevItem = findPrevLayerItem(prevItems, borderKey, borderId);
-        RenderMeta prevMeta = prevItem != null ? prevItem.meta() : null;
-        RoundedBorderSpec prevSpec = prevMeta != null ? prevMeta.roundedBorder() : null;
-        RoundedBorderSpec spec = (prevSpec != null
-                && Float.compare(prevSpec.widthTop(), b.bwTop()) == 0
-                && Float.compare(prevSpec.widthRight(), b.bwRight()) == 0
-                && Float.compare(prevSpec.widthBottom(), b.bwBottom()) == 0
-                && Float.compare(prevSpec.widthLeft(), b.bwLeft()) == 0
-                && prevSpec.colorTop() == b.bcTop()
-                && prevSpec.colorRight() == b.bcRight()
-                && prevSpec.colorBottom() == b.bcBottom()
-                && prevSpec.colorLeft() == b.bcLeft()
-                && prevSpec.dashKind() == b.dashKind())
-                ? prevSpec
-                : new RoundedBorderSpec(b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft(),
-                        b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft(), b.dashKind());
-        RenderHints bHints = events.hintsReuse(prevItem != null ? prevItem.hints() : null);
-        RenderMeta ringMeta = (prevMeta != null
-                && prevMeta.circleBorder() == null
-                && prevMeta.roundedBorder() == spec
-                && Float.compare(prevMeta.fontHeight(), meta.fontHeight()) == 0
-                && prevMeta.baseline() == 0f
-                && prevMeta.lineHeight() == 0f
-                && Float.compare(prevMeta.originX(), meta.originX()) == 0
-                && Float.compare(prevMeta.originY(), meta.originY()) == 0
-                && prevMeta.itemCount() == 1
-                && !prevMeta.interactiveState()
-                && java.util.Objects.equals(prevMeta.clipRect(), meta.clipRect())
-                && java.util.Objects.equals(prevMeta.borderRadii(), meta.borderRadii())
-                && java.util.Objects.equals(prevMeta.hints(), bHints))
-                ? prevMeta
-                : new RenderMeta(meta.clipRect(), meta.borderRadii(), null,
-                        meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec, bHints);
+        RoundedBorderSpec spec = new RoundedBorderSpec(b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft(),
+                b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft(), b.dashKind());
+        RenderMeta ringMeta = new RenderMeta(meta.clipRect(), meta.borderRadii(), null,
+                meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec, events.hintsReuse(null));
         addElement(elements, id, borderId, ElementType.ROUNDED_BORDER, bounds.x(box), bounds.y(box), bounds.w(box), bounds.h(box), "", 0, 0x00000000,
                 events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta, borderKey);
     }
 
-    void drawStraightBorders(List<DisplayItem> elements, String id, SceneAdapterBox box, float rOff, ItemProps partsEvents, BorderSpec b, RenderMeta meta, int transDur) {
+    void drawStraightBorders(OpList elements, String id, SceneAdapterBox box, float rOff, ItemProps partsEvents, BorderSpec b, RenderMeta meta, int transDur) {
         float[] widths = {b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft()};
         int[] colors = {b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft()};
         drawLines(elements, id, "_b_", bounds.x(box), bounds.y(box), bounds.w(box), bounds.h(box), widths, b.styles(), colors, rOff, partsEvents, meta, transDur, false, box.node() != null ? box.node().paintHandle() : 0);
@@ -880,20 +794,20 @@ public final class BoxDecorationPainter {
      * 片の id は {@code <id><prefix><辺>} と、2 つ目からは {@code _<番号>} を足したもの
      * （{@link DisplayItem#baseId()} がどちらも持ち主の id に戻す）。
      */
-    void drawLines(List<DisplayItem> elements, String id, String prefix, float x, float y, float w, float h,
+    void drawLines(OpList elements, String id, String prefix, float x, float y, float w, float h,
                            float[] widths, String[] styles, int[] colors, float rOff,
                            ItemProps events, RenderMeta meta, int transDur) {
         drawLines(elements, id, prefix, x, y, w, h, widths, styles, colors, rOff, events, meta, transDur, false, 0);
     }
 
-    void drawLines(List<DisplayItem> elements, String id, String prefix, float x, float y, float w, float h,
+    void drawLines(OpList elements, String id, String prefix, float x, float y, float w, float h,
                            float[] widths, String[] styles, int[] colors, float rOff,
                            ItemProps events, RenderMeta meta, int transDur, boolean numbered) {
         drawLines(elements, id, prefix, x, y, w, h, widths, styles, colors, rOff, events, meta, transDur, numbered, 0);
     }
 
     /** {@code numbered} なら片の id をすべて番号付きにする（1 つの箱が複数の矩形に線を描くインラインの断片）。 */
-    void drawLines(List<DisplayItem> elements, String id, String prefix, float x, float y, float w, float h,
+    void drawLines(OpList elements, String id, String prefix, float x, float y, float w, float h,
                            float[] widths, String[] styles, int[] colors, float rOff,
                            ItemProps events, RenderMeta meta, int transDur, boolean numbered, int nodeHandle) {
         float[][] bands = {

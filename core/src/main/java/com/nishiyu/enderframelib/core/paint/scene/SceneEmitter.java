@@ -39,7 +39,17 @@ import java.util.Set;
  * 描く文脈（絶対位置・クリップ・親 ID）・純粋性述語・台帳の祖先照合・部品除外一覧は持たない。</p>
  */
 public final class SceneEmitter {
+    /**
+     * 層の描画命令（{@link SceneLayer#ops}）を作る口（M3b-4a）。描画のパッケージが実装し、{@code V3Frame} が渡す
+     * （scene のパッケージは描画のパッケージに依存しない）。層を新しく作ったときだけ呼ぶので、命令は層とともに記憶される。
+     */
+    @FunctionalInterface
+    public interface OpsSource {
+        DrawOp[] ops(SceneLayer layer, int viewportW, int viewportH);
+    }
+
     private final LayoutSession session;
+    private OpsSource opsSource;
     private final Map<String, Keyframes> keyframes;
     private DisplayScene prevScene;
     private int prevVw = -1, prevVh = -1;
@@ -59,6 +69,24 @@ public final class SceneEmitter {
 
     public DisplayScene scene() {
         return prevScene;
+    }
+
+    /** 層の描画命令を作る口を渡す。前回のシーン（命令の無い層）は捨てる。 */
+    public void opsSource(OpsSource source) {
+        this.opsSource = source;
+        invalidate();
+    }
+
+    /** 前回のシーンを捨て、次の {@link #emit} で全部の層を作り直す（描画命令が装置の画素比などに依るとき）。 */
+    public void invalidate() {
+        prevScene = null;
+        prevVw = prevVh = -1;
+    }
+
+    /** 新しく作った層に描画命令を付ける（自分を描かない層には付けない）。 */
+    SceneLayer withOps(SceneLayer layer) {
+        if (opsSource == null || !layer.hasSelf()) return layer;
+        return layer.attachOps(opsSource.ops(layer, vw, vh));
     }
 
     public int builtLayers() { return builtLayers; }
@@ -238,11 +266,11 @@ public final class SceneEmitter {
                     SceneChildren.EMPTY, isRoot, vw, vh, keyframes);
             builtLayers++;
             int nid = b.generated() || node == null || node.isPseudoNode ? 0 : node.nodeId();
-            return new SceneLayer(nid, x, y, f.width, f.height, p.scrollClipW(), p.scrollClipH(), p.transform(), p.clip(),
+            return withOps(new SceneLayer(nid, x, y, f.width, f.height, p.scrollClipW(), p.scrollClipH(), p.transform(), p.clip(),
                     p.effects(), p.sticky(), DrawOp.EMPTY, SceneChildren.EMPTY, lb, f, node, style, display,
                     bT, bR, bB, bL, pT, pR, pB, pL, mT, mR, mB, mL, collapsedBorders, scrollWidth, scrollHeight, lineHeight,
                     d.firstLine, d.firstLineBgRect, d.runs.isEmpty() ? SceneLayer.NO_RUNS : d.runs.toArray(SceneLayer.NO_RUNS),
-                    null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers());
+                    null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers()));
         }
 
         SceneChildren sceneChildren;
@@ -310,10 +338,10 @@ public final class SceneEmitter {
                 sceneChildren, isRoot, vw, vh, keyframes);
         builtLayers++;
         int nid = b.generated() || node == null || node.isPseudoNode ? 0 : node.nodeId();
-        return new SceneLayer(nid, x, y, f.width, f.height, p.scrollClipW(), p.scrollClipH(), p.transform(), p.clip(),
+        return withOps(new SceneLayer(nid, x, y, f.width, f.height, p.scrollClipW(), p.scrollClipH(), p.transform(), p.clip(),
                 p.effects(), p.sticky(), DrawOp.EMPTY, sceneChildren, lb, f, node, style, display,
                 bT, bR, bB, bL, pT, pR, pB, pL, mT, mR, mB, mL, collapsedBorders, scrollWidth, scrollHeight, lineHeight,
-                firstLine, firstLineBgRect, SceneLayer.NO_RUNS, null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers());
+                firstLine, firstLineBgRect, SceneLayer.NO_RUNS, null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers()));
     }
 
     private static boolean matchesParentContext(SceneLayer old, boolean parentInFlexOrGrid, boolean parentBlocksFloat) {
@@ -409,7 +437,7 @@ public final class SceneEmitter {
         StickyConstraint sticky = StickyConstraint.of(placed.style.typed(), nmT, nmR, nmB, nmL);
         return new SceneLayer(placed.nodeId, placed.x, placed.y, placed.w, placed.h,
                 placed.scrollClipW, placed.scrollClipH, placed.transform, placed.clip, placed.effects, sticky,
-                placed.ops, placed.children, placed.box, placed.frag, placed.node, placed.style, placed.display,
+                placed.ops(), placed.children, placed.box, placed.frag, placed.node, placed.style, placed.display,
                 placed.bT, placed.bR, placed.bB, placed.bL, placed.pT, placed.pR, placed.pB, placed.pL,
                 nmT, nmR, nmB, nmL, placed.collapsedBorders, placed.scrollWidth, placed.scrollHeight, placed.lineHeight,
                 placed.firstLine, placed.firstLineBgRect, placed.runs, follow, placed.stackingKind, placed.zIndex,

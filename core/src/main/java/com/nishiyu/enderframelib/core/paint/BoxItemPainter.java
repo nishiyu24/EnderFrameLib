@@ -17,6 +17,7 @@ import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.RenderHints;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
+import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
 import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 
 import java.util.List;
@@ -55,8 +56,6 @@ final class BoxItemPainter {
     private final ItemProps scratchPartsProps = new ItemProps();
     private final ItemProps scratchPassiveProps = new ItemProps();
     private final int[] scratchRawRadii = new int[4];
-    /** 項目の座標を親の節からの相対にするか（呼び出し側が描く前に決める）。 */
-    boolean parentRelative = true;
 
     BoxItemPainter(int rootW, int rootH, Map<String, Keyframes> keyframes, AtomicInteger fragIds) {
         this.rootW = rootW;
@@ -98,10 +97,9 @@ final class BoxItemPainter {
      * 箱の {@code mask-image} のレイヤーを項目にして足す（背景画像と同じ手順。クリップは箱の外へは出さない）。{@code ownNode} は箱の項目が
      * 自分の節を原点にする（親相対）か。
      */
-    void drawMask(List<DisplayItem> elements, SceneAdapterBox box, boolean ownNode) {
-        PaintSupport.CaptureList cap = (ownNode && elements instanceof PaintSupport.CaptureList c) ? c : null;
-        int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
-        if (cap != null) cap.setOrigin(Math.round(box.x()), Math.round(box.y()));
+    void drawMask(OpList elements, SceneAdapterBox box, boolean ownNode) {
+        long savedOrigin = elements.saveOrigin();
+        if (ownNode) elements.originSelf(box);
         try {
             Corners radii = cornersShared(box.axisStyle(), box.w(), box.h(), rootW, rootH);
             int[] rawRadii;
@@ -130,7 +128,7 @@ final class BoxItemPainter {
                 }
             }
         } finally {
-            if (cap != null) cap.setOrigin(prevOx, prevOy);
+            elements.restoreOrigin(savedOrigin);
         }
     }
 
@@ -138,13 +136,12 @@ final class BoxItemPainter {
      * {@code ::backdrop}（旧 {@code PaintOrder.drawBackdrop} の移植）: 背景色の矩形をビューポート全面に置く（固定配置の箱と同じく
      * スクロールしない。クリップは掛けない）。色か不透明度が 0 なら何も出さない。
      */
-    void drawBackdrop(List<DisplayItem> elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.Style bd, boolean ownNode) {
+    void drawBackdrop(OpList elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.Style bd, boolean ownNode) {
         int color = bd.visual.backgroundColor;
         float opacity = com.nishiyu.enderframelib.core.css.Style.num(bd.visual.opacity, 1.0f);
         if ((color >>> 24) == 0 || opacity <= 0f) return;
-        PaintSupport.CaptureList cap = (ownNode && elements instanceof PaintSupport.CaptureList c) ? c : null;
-        int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
-        if (cap != null) cap.setOrigin(Math.round(box.x()), Math.round(box.y()));
+        long savedOrigin = elements.saveOrigin();
+        if (ownNode) elements.originSelf(box);
         try {
             String key = box.node().key();
             int handle = box.node().paintHandle();
@@ -152,7 +149,7 @@ final class BoxItemPainter {
             PaintSupport.addElement(elements, key, key + "_backdrop", ElementType.RECT, 0, 0, rootW, rootH, "", 0, color, props, 0,
                     opacity, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, null, 0L);
         } finally {
-            if (cap != null) cap.setOrigin(prevOx, prevOy);
+            elements.restoreOrigin(savedOrigin);
         }
     }
 
@@ -161,7 +158,7 @@ final class BoxItemPainter {
 
     boolean suppressTextShadow() { return suppressTextShadow; }
 
-    private void maskText(List<DisplayItem> elements, SceneAdapterBox box, String id, ItemProps events) {
+    private void maskText(OpList elements, SceneAdapterBox box, String id, ItemProps events) {
         for (SceneAdapterBox child : box.paintChildren()) {
             if (child.displayNone()) continue;
             if ("#text".equals(child.node().tag)) {
@@ -171,6 +168,12 @@ final class BoxItemPainter {
                 maskText(elements, child, id, events);
             }
         }
+    }
+
+    /** 錨の命令にレイヤーの指定を載せる。 */
+    static DrawOp.Item withLayer(DrawOp.Item anchor, LayerSpec spec) {
+        RenderMeta meta = anchor.meta() != null ? anchor.meta() : RenderMeta.EMPTY;
+        return anchor.withMeta(meta.withHints(meta.hints().withLayer(spec)));
     }
 
     /** 錨の項目にレイヤーの指定を載せる。 */
@@ -183,22 +186,8 @@ final class BoxItemPainter {
                 anchor.transitionDuration(), anchor.animDef(), anchor.fitMode(), withLayer, anchor.key());
     }
 
-    private static RenderMeta reuseMeta(RenderMeta prev, ClipRect clipRect, Corners borderRadii,
-                                        float fontHeight, float lineHeight, float originX, float originY,
-                                        int itemCount, boolean interactiveState, RenderHints hints) {
-        if (prev != null && prev.circleBorder() == null && prev.roundedBorder() == null
-                && prev.baseline() == 0f
-                && Float.compare(prev.fontHeight(), fontHeight) == 0
-                && Float.compare(prev.lineHeight(), lineHeight) == 0
-                && Float.compare(prev.originX(), originX) == 0
-                && Float.compare(prev.originY(), originY) == 0
-                && prev.itemCount() == itemCount
-                && prev.interactiveState() == interactiveState
-                && java.util.Objects.equals(prev.clipRect(), clipRect)
-                && java.util.Objects.equals(prev.borderRadii(), borderRadii)
-                && java.util.Objects.equals(prev.hints(), hints)) {
-            return prev;
-        }
+    private static RenderMeta meta(ClipRect clipRect, Corners borderRadii, float fontHeight, float lineHeight,
+                                   float originX, float originY, int itemCount, boolean interactiveState, RenderHints hints) {
         return new RenderMeta(clipRect, borderRadii, null, fontHeight, 0f, lineHeight, originX, originY,
                 itemCount, interactiveState, null, hints);
     }
@@ -206,12 +195,11 @@ final class BoxItemPainter {
     /**
      * 箱 1 つ自身の項目（節の錨・背景・枠線・部品・文字）を {@code elements} へ足す。
      *
-     * @param prevItems  この箱が前に出した項目（無ければ null）。メタ・ヒントを作り直さず使い回す候補
      * @param originBox  項目の座標の原点にする節の箱（親相対のとき。無ければ原点 0）
      * @param ownNode    箱の項目が自分の節を原点にする（親相対で、自分の節を持つ）か
      * @param canvasBackground 背景をキャンバスに譲った要素（html か body）か（自分の箱には背景色を描かない）
      */
-    void drawBox(List<DisplayItem> elements, SceneAdapterBox box, ClipRect clipRect, String parentId, List<DisplayItem> prevItems,
+    void drawBox(OpList elements, SceneAdapterBox box, ClipRect clipRect, String parentId,
                  SceneAdapterBox originBox, boolean ownNode, boolean canvasBackground) {
         Corners radii = cornersShared(box.axisStyle(), box.w(), box.h(), rootW, rootH);
         // 円しか持たない所（インラインの断片・円判定）には、横と縦の小さい方の円で近似した半径を渡す
@@ -275,59 +263,35 @@ final class BoxItemPainter {
 
         boolean useRel = ownNode;
         if (useRel) anchorEvents.relativeOrigin();
-        RenderMeta prevAnchorMeta = null, prevBaseMeta = null, prevInnerMeta = null;
-        RenderHints prevAnchorHints = null, prevPartsHints = null, prevPassiveHints = null;
-        Map<String, String> prevPartsAttrs = null;
-        if (prevItems != null && !prevItems.isEmpty()) {
-            DisplayItem m0 = prevItems.get(0);
-            if (m0.type() == ElementType.NODE) {
-                prevAnchorMeta = m0.meta();
-                prevAnchorHints = m0.hints();
-            }
-            for (int mi = 1, mn = Math.min(prevItems.size(), 8); mi < mn; mi++) {
-                DisplayItem item = prevItems.get(mi);
-                RenderHints h = item.hints();
-                if (h == null || h.shadowShape() != null || h.shadowBlur() != 0f || h.shaderGradient() != null) continue;
-                if (h.pointerEventsNone() && !pointerEventsNone) {
-                    if (prevPassiveHints == null) prevPassiveHints = h;
-                } else {
-                    if (prevBaseMeta == null) prevBaseMeta = item.meta();
-                    else if (prevInnerMeta == null && item.meta() != null && item.meta() != prevBaseMeta
-                            && item.meta().roundedBorder() == null && item.meta().circleBorder() == null
-                            && h == RenderHints.NONE) {
-                        prevInnerMeta = item.meta();
-                    }
-                    if (prevPartsHints == null) {
-                        prevPartsHints = h;
-                        prevPartsAttrs = item.events();
-                    }
-                }
-            }
-        }
-        anchorEvents.hintsReuse(prevAnchorHints);
+        anchorEvents.hintsReuse(null);
         ClipRect normalizedClip = clipRect;
-        RenderMeta anchorMeta = reuseMeta(prevAnchorMeta, normalizedClip, radii, fontHVal, box.lineHeightPx(), ox, oy,
+        RenderMeta anchorMeta = meta(normalizedClip, radii, fontHVal, box.lineHeightPx(), ox, oy,
                 itemCount, interactive, anchorEvents.hints());
         long nodeKey = box.node() != null ? DisplayItem.nodeKeyOf(box.node().paintHandle()) : 0L;
-        PaintSupport.CaptureList cap = (parentRelative && elements instanceof PaintSupport.CaptureList c) ? c : null;
-        int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
-        if (cap != null) {
-            cap.setOrigin(originBox != null ? Math.round(originBox.x()) : 0, originBox != null ? Math.round(originBox.y()) : 0);
-        }
+        long savedOrigin = elements.saveOrigin();
+        elements.originNode(originBox);
         try {
             addElement(elements, id, id, ElementType.NODE, box.x(), box.y(), box.w(), box.h(), "", color, bgColor, anchorEvents, 0, opacity, tx, ty, sx, sy, rot, transDur, animDef, anchorMeta, nodeKey);
+            elements.markAnchor();
 
             // visibility: hidden の箱は場所だけを取る。錨（NODE）は子孫の変形と不透明度の親として残す
             // 何が壊れていたか: 以前は visibility を読んでおらず、hidden の箱が描かれクリックも受けていた
             if (isInvisible(box) || PaintSupport.hidesEmptyCell(box)) return;
 
-            if (useRel && cap != null) cap.setOrigin(Math.round(box.x()), Math.round(box.y()));
+            if (useRel) elements.originSelf(box);
 
-            ItemProps partsEvents = ItemProps.populateForParts(scratchPartsProps, box, id, transSpec, prevPartsAttrs);
+            ItemProps partsEvents = ItemProps.populateForParts(scratchPartsProps, box, id, transSpec, null);
             if (pointerEventsNone) partsEvents.pointerEventsNone();
-            partsEvents.reuseCandidate(prevPartsHints);
+            partsEvents.reuseCandidate(null);
             if ("#text".equals(box.node().tag)) {
-                text.drawTextNodeElement(elements, box, id, color, bgColor, normalizedClip, fontHVal, ox, oy, partsEvents, transDur, anim.textColorAnimation(box, animDef), prevItems);
+                AnimationSpec textAnim;
+                if (elements.deferred) { // 祖先の文字色のアニメーションは組み立てで解く（M3b-4a）
+                    AnimationSpec own = animDef.withChannels(AnimationSpec.CH_COLOR);
+                    textAnim = own.isEmpty() ? OpList.TEXT_COLOR_ANIM_FROM_ANCESTORS : own;
+                } else {
+                    textAnim = anim.textColorAnimation(box, animDef);
+                }
+                text.drawTextNodeElement(elements, box, id, color, bgColor, normalizedClip, fontHVal, ox, oy, partsEvents, transDur, textAnim, null);
                 return;
             }
             ItemProps passiveBorderEvents = ItemProps.populateForPassiveBorder(scratchPassiveProps, id, nodeKey, transSpec);
@@ -336,7 +300,7 @@ final class BoxItemPainter {
             if (pointerEventsNone) {
                 passiveBorderEvents.pointerEventsNone();
             }
-            passiveBorderEvents.reuseCandidate(prevPassiveHints != null ? prevPassiveHints : prevPartsHints);
+            passiveBorderEvents.reuseCandidate(null);
 
             if (!box.runs().isEmpty() && !ElementTraits.isNonFragmented(box.node().tag) && !ReplacedElements.isHost(box.node().tag)
                 && !box.atomicInline() && !ReplacedElements.isReplacedTag(box.node().tag)) {
@@ -345,7 +309,7 @@ final class BoxItemPainter {
                 return;
             }
 
-            RenderMeta baseMeta = reuseMeta(prevBaseMeta, normalizedClip, radii, fontHVal, box.lineHeightPx(), ox, oy,
+            RenderMeta baseMeta = meta(normalizedClip, radii, fontHVal, box.lineHeightPx(), ox, oy,
                     itemCount, interactive, partsEvents.hints());
 
             List<BoxDecorations.Shadow> shadows = BoxDecorations.parseBoxShadows(st.visual.boxShadow, color,
@@ -355,7 +319,7 @@ final class BoxItemPainter {
             BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
             RenderMeta innerMeta = border.innerRadii().equals(radii)
                     ? baseMeta
-                    : reuseMeta(prevInnerMeta, normalizedClip, border.innerRadii(), fontHVal, box.lineHeightPx(), ox, oy,
+                    : meta(normalizedClip, border.innerRadii(), fontHVal, box.lineHeightPx(), ox, oy,
                             itemCount, interactive, RenderHints.NONE);
 
             switch (box.node().tag) {
@@ -377,12 +341,12 @@ final class BoxItemPainter {
                 case "input" -> {
                     if (isPlainRange(box)) {
                         // appearance: none のレンジは作者の CSS で描いた箱に、つまみ（::-webkit-slider-thumb は部品のまま）だけを重ねる
-                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevItems);
+                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
                         controls.drawNativeRange(elements, box, id, rangeData(box, resolveLiveInputValue(id, box.values().attrs().getOrDefault("value", ""))),
                                 color, false, partsEvents, border, baseMeta, transDur, colorBgAnim);
                     } else if (isPlainToggle(box)) {
                         // appearance: none のチェックボックス・ラジオボタンは普通の箱（作者の枠線・背景だけで描き、印は無い）
-                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevItems);
+                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
                     } else {
                         controls.drawInputElement(elements, box, id, color, bgColor, fallbackRadius, fontHVal, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
                     }
@@ -394,7 +358,7 @@ final class BoxItemPainter {
                     } else if (ReplacedElements.isHostImageLike(box.node().tag)) {
                         controls.drawMediaElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
                     } else {
-                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows, prevItems);
+                        decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
                     }
                 }
             }
@@ -402,7 +366,7 @@ final class BoxItemPainter {
             decor.drawColumnRules(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
             decor.drawOutline(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
         } finally {
-            if (cap != null) cap.setOrigin(prevOx, prevOy);
+            elements.restoreOrigin(savedOrigin);
         }
     }
 }

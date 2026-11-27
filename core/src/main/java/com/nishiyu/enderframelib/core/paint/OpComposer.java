@@ -1,0 +1,202 @@
+package com.nishiyu.enderframelib.core.paint;
+
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
+import com.nishiyu.enderframelib.core.paint.model.ClipRect;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.RenderHints;
+import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
+import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
+
+import java.util.List;
+
+/**
+ * 描画命令（{@link DrawOp.Item}）に毎フレームの文脈（基準の位置・原点・祖先のクリップ・親の錨・祖先の文字色）を足して
+ * 表示項目にする（M3b-4a。一時アダプタ {@link SceneDisplayListAdapter} とともに M3b-4 で消える）。
+ *
+ * <p>座標を整数に丸めるのはここ 1 箇所だけ。命令の座標は基準（層自身か原点の節）からなので、基準の絶対位置から項目の原点
+ * （自分の節・祖先の節・絶対）の整数の位置を引いた差を足してから、左右（上下）の辺を丸める。</p>
+ */
+final class OpComposer {
+    /** 1 つの箱の中で、同じメタ（同一性）と同じずれから作ったメタを使い回す（部品どうしでメタを共有していた形を保つ）。 */
+    private RenderMeta[] metaSrc = new RenderMeta[16];
+    private RenderMeta[] metaDst = new RenderMeta[16];
+    private long[] metaShift = new long[16];
+    private int metaCount;
+
+    // ---- 1 つの箱を組み立てる間だけ使う ----
+    private float layerX, layerY, originX, originY;
+    private int selfX, selfY, nodeX, nodeY;
+    private ClipRect frameClip;
+    private String anchorParentId;
+    private SceneAdapterBox textBox;
+    private BoxAnimation textAnimator;
+    private AnimationSpec textAnim;
+
+    /** 原点からの座標で集めた命令（{@link OpList#beginFinal}）を、そのまま丸めて項目にする。 */
+    void composeFinal(OpList ops, List<DisplayItem> out) {
+        for (int i = 0, n = ops.size(); i < n; i++) {
+            DrawOp.Item op = ops.get(i);
+            out.add(toItem(op, 0f, 0f, 0, 0, op.meta()));
+        }
+    }
+
+    /**
+     * 毎フレーム層の局所座標で集めた命令（{@link OpList#beginLocal}）を項目にする。命令は層の整数の原点からなので、
+     * 基準の位置はどちらも層の整数の原点。
+     */
+    void composeLocal(OpList ops, SceneAdapterBox node, ClipRect frameClip, String anchorParentId, List<DisplayItem> out) {
+        begin(ops.originX, ops.originY, ops.originX, ops.originY, ops.originX, ops.originY, node, frameClip, anchorParentId, null, null);
+        for (int i = 0, n = ops.size(); i < n; i++) out.add(compose(ops.get(i)));
+        end();
+    }
+
+    /**
+     * 層に記憶した命令（{@link OpList#beginDeferred}。祖先を組み立てまで残したもの）を、箱 {@code box} の今の位置で項目にする。
+     *
+     * @param node           {@link DrawOp#ORIGIN_NODE} の命令の原点にする祖先の節（無ければ絶対座標）
+     * @param frameClip      箱のクリップ（命令のメタのクリップが null なら、これを継ぐ。null 可）
+     * @param anchorParentId 箱の錨に入れる親の錨の ID（無ければ null）
+     * @param animator       祖先の文字色のアニメーションを解く道具
+     */
+    void composeLayer(DrawOp[] ops, SceneAdapterBox box, SceneAdapterBox node, ClipRect frameClip, String anchorParentId,
+                      BoxAnimation animator, List<DisplayItem> out) {
+        SceneAdapterBox op = box.originParent();
+        begin(box.x(), box.y(), op != null ? op.x() : 0f, op != null ? op.y() : 0f,
+                Math.round(box.x()), Math.round(box.y()), node, frameClip, anchorParentId, box, animator);
+        for (DrawOp o : ops) out.add(compose((DrawOp.Item) o));
+        end();
+    }
+
+    private void begin(float layerX, float layerY, float originX, float originY, int selfX, int selfY, SceneAdapterBox node,
+                       ClipRect frameClip, String anchorParentId, SceneAdapterBox textBox, BoxAnimation textAnimator) {
+        metaCount = 0;
+        this.layerX = layerX;
+        this.layerY = layerY;
+        this.originX = originX;
+        this.originY = originY;
+        this.selfX = selfX;
+        this.selfY = selfY;
+        this.nodeX = node != null ? Math.round(node.x()) : 0;
+        this.nodeY = node != null ? Math.round(node.y()) : 0;
+        this.frameClip = frameClip;
+        this.anchorParentId = anchorParentId;
+        this.textBox = textBox;
+        this.textAnimator = textAnimator;
+        this.textAnim = null;
+    }
+
+    private void end() {
+        frameClip = null;
+        anchorParentId = null;
+        textBox = null;
+        textAnimator = null;
+        textAnim = null;
+        for (int i = 0; i < metaCount; i++) {
+            metaSrc[i] = null;
+            metaDst[i] = null;
+        }
+        metaCount = 0;
+    }
+
+    private DisplayItem compose(DrawOp.Item op) {
+        int flags = op.flags();
+        int rx, ry;
+        switch (op.origin()) {
+            case DrawOp.ORIGIN_SELF -> { rx = selfX; ry = selfY; }
+            case DrawOp.ORIGIN_NODE -> { rx = nodeX; ry = nodeY; }
+            default -> { rx = 0; ry = 0; }
+        }
+        boolean fromOrigin = (flags & DrawOp.BASE_ORIGIN_PARENT) != 0;
+        float bx = fromOrigin ? originX : layerX, by = fromOrigin ? originY : layerY;
+        String parentId = (flags & DrawOp.ANCHOR) != 0 ? anchorParentId : null;
+        DisplayItem item = toItem(op, bx, by, rx, ry, composeMeta(op.meta(), bx, by, rx, ry, parentId));
+        if ((flags & DrawOp.INHERIT_TEXT_COLOR_ANIM) != 0 && textBox != null) {
+            if (textAnim == null) textAnim = textAnimator.textColorAnimation(textBox, AnimationSpec.NONE);
+            if (textAnim != item.animDef()) {
+                item = new DisplayItem(item.id(), item.baseNodeId(), item.type(), item.text(), item.events(), item.transitionDuration(),
+                        textAnim, item.fitMode(), item.meta(), item.key(), item.cell());
+            }
+        }
+        return item;
+    }
+
+    private RenderMeta composeMeta(RenderMeta meta, float bx, float by, int rx, int ry, String parentId) {
+        if (meta == null) return null;
+        float sx = bx - rx, sy = by - ry;
+        long shift = shift(sx, sy);
+        if (parentId == null) {
+            for (int i = 0; i < metaCount; i++) {
+                if (metaSrc[i] == meta && metaShift[i] == shift) return metaDst[i];
+            }
+        }
+        ClipRect c = meta.clipRect();
+        ClipRect nc = c == null ? frameClip : rebase(c, frameClip, bx, by, rx, ry);
+        RenderHints h = meta.hints();
+        RenderHints nh = h;
+        if ((sx != 0f || sy != 0f) && h != RenderHints.NONE) {
+            if (nh.shadowShape() != null) nh = nh.withShadowShape(nh.shadowShape().offset(sx, sy));
+            if (nh.shaderGradient() != null) nh = nh.withShaderGradient(nh.shaderGradient().offset(sx, sy));
+        }
+        if (parentId != null) nh = nh.withParentId(parentId);
+        RenderMeta res = nc == c && nh == h ? meta
+                : new RenderMeta(nc, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(), meta.baseline(), meta.lineHeight(),
+                        meta.originX(), meta.originY(), meta.itemCount(), meta.interactiveState(), meta.roundedBorder(), nh);
+        if (parentId == null) {
+            if (metaCount == metaSrc.length) {
+                metaSrc = java.util.Arrays.copyOf(metaSrc, metaCount * 2);
+                metaDst = java.util.Arrays.copyOf(metaDst, metaCount * 2);
+                metaShift = java.util.Arrays.copyOf(metaShift, metaCount * 2);
+            }
+            metaSrc[metaCount] = meta;
+            metaDst[metaCount] = res;
+            metaShift[metaCount] = shift;
+            metaCount++;
+        }
+        return res;
+    }
+
+    /**
+     * 部品が狭めたクリップを、箱のクリップ {@code frameClip} の上へ連鎖の 1 つずつ積み直す。連鎖の矩形は命令と同じ基準
+     * {@code (bx, by)} からなので、絶対座標に直してから項目の原点 {@code (rx, ry)} を引く（以前の {@code intersectClip} と同じ順序）。
+     */
+    private static ClipRect rebase(ClipRect c, ClipRect frameClip, float bx, float by, int rx, int ry) {
+        List<ClipChainPart> chain = c.chain();
+        ClipRect cur = frameClip;
+        for (int i = 0, n = chain.size(); i < n; i++) {
+            ClipChainPart p = chain.get(i);
+            float[] r = p.rect();
+            float x0 = r[0] + bx, y0 = r[1] + by, x1 = r[2] + bx, y1 = r[3] + by; // 絶対座標
+            r[0] = x0 - rx;
+            r[1] = y0 - ry;
+            r[2] = x1 - rx;
+            r[3] = y1 - ry;
+            boolean ell = r.length >= 12;
+            cur = BoxDecorations.intersectClipRect(cur, x0, y0, x1, y1,
+                    r[4], r[5], r[6], r[7],
+                    ell ? r[8] : 0f, ell ? r[9] : 0f, ell ? r[10] : 0f, ell ? r[11] : 0f,
+                    ell, p.ownerId(), ClipRect.appendChain(cur, r, p.ownerId(), rx, ry));
+        }
+        return cur;
+    }
+
+    private static long shift(float sx, float sy) {
+        return (((long) Float.floatToRawIntBits(sx)) << 32) | (Float.floatToRawIntBits(sy) & 0xFFFFFFFFL);
+    }
+
+    /** 命令の座標を絶対座標（基準 {@code (bx, by)} を足す）にしてから項目の原点 {@code (rx, ry)} を引き、辺を丸める。 */
+    private static DisplayItem toItem(DrawOp.Item op, float bx, float by, int rx, int ry, RenderMeta meta) {
+        float x = op.x(), y = op.y();
+        if (bx != 0f) x += bx;
+        if (by != 0f) y += by;
+        if (rx != 0) x -= rx;
+        if (ry != 0) y -= ry;
+        int left = Math.round(x);
+        int top = Math.round(y);
+        int width = Math.round(x + op.w()) - left;
+        int height = Math.round(y + op.h()) - top;
+        return new DisplayItem(op.id(), op.baseNodeId(), op.type(), left, top, width, height, op.text(), op.color(), op.bgColor(),
+                op.events(), op.radius(), op.opacity(), op.tx(), op.ty(), op.sx(), op.sy(), op.rot(),
+                op.transitionDuration(), op.animDef(), op.fitMode(), meta, op.key());
+    }
+}

@@ -84,6 +84,8 @@ public class P8AllocationReductionTest {
     /**
      * 新経路（M2c ④）の実測 約 41 KB/行（表示項目の署名を作る分を除く。文書の全要素の解き直し 32%・表示リスト 36%〔語ごとの項目〕・
      * 描画用の木 17%・レイアウト 9%）に余裕を足した上限。旧経路（可変の箱の上で段落を共有）は 16 KB/行だった。④-3 で下げる。
+     * <p>期限付きの緩和（M3b-4a。計画書 §0）: 全部の層を作り直すこの場面では、層に記憶する描画命令と、それを毎フレーム表示項目に
+     * 組み立てる分を二重に持つ（単独 47 KB・全件の中 49 KB/行）。表示項目への組み立てを消す M3b-4b で 48,000 へ戻す。</p>
      */
-    private static final long CEILING_BYTES_PER_ROW = 48_000;
+    private static final long CEILING_BYTES_PER_ROW = 52_000;
 }

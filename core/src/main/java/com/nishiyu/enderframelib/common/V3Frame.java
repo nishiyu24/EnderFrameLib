@@ -91,6 +91,9 @@ final class V3Frame {
             pipeline.compiler().remembered(remembered);
             Map<String, com.nishiyu.enderframelib.core.css.model.Keyframes> kf = doc.sheet != null ? doc.sheet.keyframes : Map.of();
             emitter = new SceneEmitter(session, kf);
+            com.nishiyu.enderframelib.core.paint.LayerOps layerOps = new com.nishiyu.enderframelib.core.paint.LayerOps(w, h, kf);
+            layerOps.setDevicePixelRatio(devicePixelRatio);
+            emitter.opsSource(layerOps);
             adapter = new SceneDisplayListAdapter(w, h, kf);
             adapter.setDevicePixelRatio(devicePixelRatio);
             ledger = null;
@@ -152,6 +155,7 @@ final class V3Frame {
         remembered.clear();
         Map<String, com.nishiyu.enderframelib.core.css.model.Keyframes> kf = sheet != null ? sheet.keyframes : Map.of();
         emitter = new SceneEmitter(session, kf);
+        emitter.opsSource(new com.nishiyu.enderframelib.core.paint.LayerOps(w, h, kf));
         adapter = new SceneDisplayListAdapter(w, h, kf);
         LayoutFragment frag = pipeline.frameSubtree(root, w, h);
         this.scene = emitter.emit(frag, pipeline.boxRoot(), w, h);

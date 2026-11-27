@@ -33,7 +33,7 @@ final class ControlPainter {
         this.decor = decor;
     }
 
-    void drawSceneElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawSceneElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
@@ -62,7 +62,7 @@ final class ControlPainter {
         addElement(elements, id, id + "_scene", ElementType.SCENE, innerX, innerY, innerW, innerH, id, color, bgColor, sceneEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, sceneKey);
     }
 
-    void drawMediaElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawMediaElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
                                   Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
@@ -137,7 +137,7 @@ final class ControlPainter {
     }
 
     /** インライン {@code <svg>}。内容は SVG の木から描く画素にして、画像と同じ経路で置く。 */
-    void drawSvgElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawSvgElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
                         ItemProps partsEvents, ItemProps passiveBorderEvents,
                         BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                         int transDur, AnimationSpec colorBgAnim) {
@@ -152,7 +152,7 @@ final class ControlPainter {
                 partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, svgKey);
     }
 
-    void drawCanvasElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawCanvasElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
                                    ItemProps partsEvents, ItemProps passiveBorderEvents,
                                    BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
@@ -173,7 +173,7 @@ final class ControlPainter {
         addElement(elements, id, id + "_canvas", ElementType.CANVAS, fitMode, innerX, innerY, innerW, innerH, id, color, bgColor, canvasEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, canvasKey);
     }
 
-    void drawTextareaElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawTextareaElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
                                      ItemProps partsEvents, ItemProps passiveBorderEvents,
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim) {
@@ -197,7 +197,7 @@ final class ControlPainter {
         }
     }
 
-    void drawSelectElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawSelectElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
                                    ItemProps partsEvents, ItemProps passiveBorderEvents,
                                    BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
@@ -219,7 +219,7 @@ final class ControlPainter {
     /** {@code ::placeholder} に色の規則が無いときの文字色。 */
     static final int DEFAULT_PLACEHOLDER_COLOR = 0xFFAAAAAA;
 
-    void drawInputElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius, float fontHVal,
+    void drawInputElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius, float fontHVal,
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
@@ -276,7 +276,7 @@ final class ControlPainter {
      *
      * 何が壊れていたか: 以前は選択の印を文字色（黒）の四角で描き、作者の枠線・背景がそのまま部品に効いていた。
      */
-    void drawNativeToggle(List<DisplayItem> elements, SceneAdapterBox box, String id, boolean radio, int color,
+    void drawNativeToggle(OpList elements, SceneAdapterBox box, String id, boolean radio, int color,
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, int transDur, AnimationSpec colorBgAnim) {
         boolean mixed = !radio && box.values().attrs().containsKey("indeterminate");
@@ -381,7 +381,7 @@ final class ControlPainter {
      * 何が壊れていたか: 以前は溝の太さを箱の高さの 30%、つまみの直径を 80% にしていて、溝が細く、つまみの位置も
      * 端から半径の分だけ内側を動く Chrome とずれていた。作者の背景と枠線もそのまま描いていた。
      */
-    void drawNativeRange(List<DisplayItem> elements, SceneAdapterBox box, String id, String rangeData, int color, boolean track,
+    void drawNativeRange(OpList elements, SceneAdapterBox box, String id, String rangeData, int color, boolean track,
                                  ItemProps partsEvents, BorderSpec border, RenderMeta baseMeta,
                                  int transDur, AnimationSpec colorBgAnim) {
         Integer accent = accentColor(box, color);
@@ -449,7 +449,7 @@ final class ControlPainter {
         return ColorParser.isColor(v) ? ColorParser.parseColor(v) : null;
     }
 
-    void drawBorderedControl(List<DisplayItem> elements, String id, String suffix, ElementType type, SceneAdapterBox box,
+    void drawBorderedControl(OpList elements, String id, String suffix, ElementType type, SceneAdapterBox box,
                                      float innerX, float innerY, float innerW, float innerH, String text, int color, int bgColor, int fallbackRadius,
                                      ItemProps partsEvents, ItemProps innerEvents, ItemProps passiveBorderEvents,
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
@@ -475,7 +475,7 @@ final class ControlPainter {
      * 下げた矩形で描くために、描く間だけ箱の y と高さを差し替える（背景・画像・内側の影・枠線の描き方は
      * どれも箱の矩形を読むので、普通の箱と同じ道を通す）。
      */
-    void drawFieldsetElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
+    void drawFieldsetElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor, int fallbackRadius,
                                      Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
                                      ItemProps partsEvents, ItemProps passiveBorderEvents,
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,

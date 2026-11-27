@@ -42,7 +42,7 @@ final class TextRunPainter {
      * ぼかしのある影は、錨（NODE）に {@code blur} のレイヤーを載せ、その中に影の文字を置く（ぼかしの σ は半径の半分）。
      * 影はクリックを受けず、色のアニメーション・トランジションも受けない。
      */
-    private void addTextRun(List<DisplayItem> elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+    private void addTextRun(OpList elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                             String id, float x, float y, float w, float h, String text, int color, int bgColor,
                             ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows) {
         if (effStyle != null && WritingModes.usesUpright(effStyle) && hasUprightChar(effStyle, text)) {
@@ -67,7 +67,7 @@ final class TextRunPainter {
      * 縦書きの根は内容ごと 90° 回って描かれるので、正立させる字は自分の中心まわりに -90° 回して回転を打ち消す。
      * 各塊の幅は書体の送り幅で測り、行の幅 {@code w} に合うよう等倍して配る。
      */
-    private void addVerticalTextRuns(List<DisplayItem> elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+    private void addVerticalTextRuns(OpList elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                                      String id, float x, float y, float w, float h, String text,
                                      int color, int bgColor, ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim,
                                      List<BoxDecorations.Shadow> shadows) {
@@ -111,7 +111,7 @@ final class TextRunPainter {
         }
     }
 
-    private void emitTextRun(List<DisplayItem> elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+    private void emitTextRun(OpList elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                              String id, float x, float y, float w, float h, String text, int color, int bgColor,
                              ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows, float rot) {
         // vertical-lr は転置で置くので、文字は上下反転で鏡映を打ち消す
@@ -204,7 +204,7 @@ final class TextRunPainter {
         return new RenderMeta(clipRect, null, null, fontHeight, baseline, lineHeight, originX, originY, 1, false, null, hints);
     }
 
-    void drawTextNodeElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor,
+    void drawTextNodeElement(OpList elements, SceneAdapterBox box, String id, int color, int bgColor,
                                      ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
                                      int transDur, AnimationSpec colorAnim, List<DisplayItem> prevItems) {
         ItemProps baseTextEvents = null;
@@ -213,6 +213,9 @@ final class TextRunPainter {
 
         if (!box.runs().isEmpty()) {
             SceneAdapterBox op = box.originParent(); float opX = op != null ? op.x() : 0f, opY = op != null ? op.y() : 0f;
+            long savedBase = elements.saveOrigin();
+            elements.baseOriginParent(); // 断片は原点の節の座標（M3b-4a）
+            try {
             for (SceneRun frag : box.runs()) {
                 if (frag.text() == null || frag.text().isBlank()) continue;
                 com.nishiyu.enderframelib.core.css.ComputedStyle fl = frag.firstLineStyle();
@@ -235,6 +238,9 @@ final class TextRunPainter {
                     addTextRun(elements, box, box.style(), id, frag.x() + opX, frag.y() + opY, frag.w(), frag.h(), frag.text(), color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, baseTextShadows);
                 }
                 prevIdx += elements.size() - before;
+            }
+            } finally {
+                elements.restoreOrigin(savedBase);
             }
         } else if (box.shapedLines() != null && !box.shapedLines().isEmpty()) {
             baseTextEvents = textPropsForStyle(box.style(), partsEvents, color, prevTextItem(prevItems, prevIdx));

@@ -34,7 +34,7 @@ voidwave.html/textLong	d851ebac
 voidwave.html/textShort	629d3244
 voidwave.html/textBack	ce275770
 voidwave.html/resize700	d160eabf
-surface_test.html/open	f447a12e
+surface_test.html/open	ad49b3cb
 surface_test.html/hover0a	e9792bc3
 surface_test.html/hover0b	55392d5b
 surface_test.html/hover1a	cc8eb89a

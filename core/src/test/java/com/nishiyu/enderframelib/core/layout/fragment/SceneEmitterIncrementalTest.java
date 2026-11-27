@@ -51,6 +51,21 @@ class SceneEmitterIncrementalTest {
     }
 
     @Test
+    void hoverKeepsTheOpsOfUntouchedLayers() {
+        SpikeView v = new SpikeView(SpikeView.variedList(60), 640, 480);
+        SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+        emitter.opsSource(new com.nishiyu.enderframelib.core.paint.LayerOps(v.vw, v.vh, v.doc.sheet.keyframes));
+        DisplayScene s0 = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        SceneLayer untouched = find(s0.root, v.byId("item-40"));
+        SceneLayer hovered = find(s0.root, v.byId("item-20"));
+        assertTrue(untouched.ops().length > 0 && hovered.ops().length > 0, "層は自分の描画命令を持つ（M3b-4a）");
+        v.state.setHoveredNode(v.byId("item-20"));
+        DisplayScene s1 = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        assertSame(untouched.ops(), find(s1.root, v.byId("item-40")).ops(), "作り直さなかった層は命令をそのまま持つ（記憶は層の鍵だけ）");
+        assertNotSame(hovered.ops(), find(s1.root, v.byId("item-20")).ops(), "作り直した層は命令も作り直す");
+    }
+
+    @Test
     void insertingAtTheTopReusesTheShiftedItemsAndChunks() {
         SpikeView v = new SpikeView(SpikeView.largeList(300), 640, 480);
         SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);

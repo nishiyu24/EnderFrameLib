@@ -180,7 +180,7 @@ final class SceneAdapterSupport {
                 fx.masked() ? LayerSpec.WANTS_MASK : -1, fx.luminanceMask(), backdrop, backdropShape);
     }
 
-    static void addMovingNode(List<DisplayItem> elements, String id, SceneAdapterBox box, RenderMeta meta, RenderMeta movingNodeMeta) {
+    static void addMovingNode(OpList elements, String id, SceneAdapterBox box, RenderMeta meta, RenderMeta movingNodeMeta) {
         ItemProps events = new ItemProps();
         int nodeHandle = box.node() != null ? box.node().paintHandle() : 0;
         long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
