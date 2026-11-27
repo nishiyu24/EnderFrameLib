@@ -105,7 +105,7 @@ core/
 ├── dom/      ライブ DOM（node/）、パーサ（parser/: HtmlParser・MarkdownParser）、
 │             Bindings、InteractionState、MutationObserverManager、フォーム（ConstraintValidator など）
 ├── event/    DOM のイベントディスパッチ（EventDispatcher / CoreEvent / StandardDefaultActions）
-├── kernel/   Off-Heap の土台: memory/（DocumentArena・AtomTable・OffHeapColumns）、style/（PackedCssValue）、gpu/（描画 API に依らないデバイス層 RHI）。
+├── kernel/   土台: memory/（AtomTable・バインディングの直接書き込みの OffHeapColumns）、style/（PackedCssValue）、gpu/（描画 API に依らないデバイス層 RHI）。
 │             標準 JDK 21 のダイレクト ByteBuffer + VarHandle だけで作り、JVM フラグも追加依存も要らない
 ├── box/      箱の木（BoxTreeCompiler・BoxNode。変更台帳を入口に増分で作る）
 ├── layout/   fragment/（断片木の整形: Block / Inline / Flex / Grid / Table / 縦書き・LayoutCache）、model/、LayoutTaskPool
@@ -118,15 +118,30 @@ core/
 ### ライブ DOM と単一所有権
 - **Single DOM**: 1 つの `HtmlDocument` を Java のクライアントコード・サーバーの変異・宣言的バインディングの全員が同じ API で変える。
 - **オブジェクト同一性**: 対話状態（`:hover` / `:focus` など、`InteractionState`）とスクロール量（`core/layout/model/ScrollState`）は
-  ノードのインスタンスがキー。`InteractionState` の実体は節が直接持ち（`WeakHashMap` は使わない）、列挙は `DocumentArena` の
-  ノード番号で引く。擬似状態と汚れの印はアリーナの `stateBits` / `dirtyBits` 列にも写る。
+  ノードのインスタンスがキー。`InteractionState` の実体はビューの表が持ち（`WeakHashMap` は使わない）、文書の節は番号の空間
+  （`NodeIds`）の番号で引く表（`NodeIds.NodeSlots`。番号が再利用されると世代で無効になる）、仮想の節は別の表に置く。
 - **ノードの鍵**: `getId()` は作者が書いた id だけ（パーサは `gen_N` / `txt_N` を属性へ振らない）。描画・ネットワークで節を指す
   文字列は `HtmlNode.key()`（明示 id、無ければアリーナ番号から導く `~N`、テキストは `~tN`）。`getNodeById` が両方を解決する。
   読み込み後の番号は文書順（行きがけ順）で固定され（静的領域）、シリアライズで番号ごとクライアントへ運ぶので鍵が揃う。
   読み込み後に増えた節の番号は動的領域で、外れると再利用される。
-- **`DocumentArena`**: 木ごとの SoA 列（親・最初/最後の子・前後の兄弟・部分木終端、タグ/id の atom、自身/子孫の Bloom、
-  状態/汚れビット）。子の並びの変更で自動的に写され、子の追加・削除の整合は `NodeArenaIdentityTest` が守る。
-  描画が作る仮想の節（疑似要素・匿名ボックス・マーカー）は親の `children` に載らないのでアリーナに数えない。
+- **木の形の正本は子の並び（`children`）と `parent` だけ**（M5-1）。子の並び（`ChildList`）は変更のたびに各子の位置
+  （`indexInParent()`）を保ち、前後の兄弟・挿入位置を O(1) で引ける。番号の空間 `NodeIds` は番号と世代だけを持ち、木の形を写さない
+  （以前の `DocumentArena` はオフヒープの列に木の形・タグ・Bloom を写して二重に同期していた）。描画が作る仮想の節（疑似要素・
+  匿名ボックス・マーカー）は親の `children` に載らないので番号を持たない。整合は `NodeIdentityTest`・`ChildListIndexTest` が守る。
+- **セレクタの足切り（`SelectorIndex`）**: 節ごとの class の atom・タグ / id / class の Bloom・子孫の Bloom（`:has()` 用の上位集合）。
+  属性の変化と子の並びへの追加でその場で保つので、番号の有無に依らず切り離された木・仮想の節でも効く。作り直した木との照合の
+  一致は `SelectorIndexOracleTest` が守る。
+- **`HtmlNode` の分け方**: 節の欄と DOM の API の入口だけを持ち、番号と鍵（`NodeNumbering`）・木の変更と文書順と複製（`TreeOps`）・
+  属性の書き込みと便利な操作（`NodeAttributes`）・文字の内容（`NodeText`）・イベント（`NodeEvents`）へ委ねる。
+  子の並びから外す子が既に別の親へ結ばれていれば（パーサの adoption agency は新しい親へ足してから古い並びを空にする）、
+  並びから抜くだけで、位置・id 索引・番号は新しい親の側のものとして残す。
+- **DOM の側の分け方（M5-2）**: `HtmlElement` は Element の API の入口で、`classList` は `HtmlDOMTokenList`、`style` は
+  `HtmlCSSStyleDeclaration`、dialog / popover は `TopLayerOps`。パーサ（`core/dom/parser`）は公開の入口 `HtmlParser`、
+  1 回の解析の状態と挿入モード `TreeBuilder`、書式要素の一覧と adoption agency `ActiveFormatting`、表の挿入モード
+  `TableModes`、字句の判定と文字の整え方 `ParserText`、要素名の集合 `TagSets`。宣言的バインディングは `Bindings`（置換・条件・
+  走査）・`ReactiveDomBinder`（状態の値の DOM への同期）・`TemplateDeps`（キー単位の依存）。対話状態は `InteractionState`
+  （節ごとの表・hover / active / focus の鎖・Top Layer）・`StateFlags`（節ごとの状態）・`StyleInvalidation`（再スタイルの印と
+  無効化）。
 - **`getElementById`** は id 索引だけで引く（線形探索のフォールバックは無い）。索引に載るのは明示 id だけ。
 
 ### CSS

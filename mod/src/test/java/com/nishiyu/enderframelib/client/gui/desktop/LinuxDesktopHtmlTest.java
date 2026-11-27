@@ -87,7 +87,7 @@ public class LinuxDesktopHtmlTest {
             values.put(win.id + "_z", String.valueOf(win.zIndex));
             values.put(win.id + "_dock_active", String.valueOf(win.isVisible()));
         }
-        new Bindings.ReactiveDomBinder().sync(doc.root, values, Map.of(), Set.of(Bindings.TemplateDeps.ALWAYS));
+        new com.nishiyu.enderframelib.core.dom.ReactiveDomBinder().sync(doc.root, values, Map.of(), Set.of(com.nishiyu.enderframelib.core.dom.TemplateDeps.ALWAYS));
 
         DisplayScene scene = compiler.layoutDocument(
                 doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new InteractionState()

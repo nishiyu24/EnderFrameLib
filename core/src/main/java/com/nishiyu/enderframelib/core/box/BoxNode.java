@@ -10,7 +10,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
  * 「入力が同じ」を判定できる。{@code equals} / {@code hashCode} は定義しない（同一性のまま。弱参照の表の鍵にもなる）。</p>
  *
  * <p>{@link #node} は DOM の節への参照。旧計画の {@code int nodeId} ではなく参照にしたのは、DOM の番号が節の削除で解放され
- * 再利用される（{@code DocumentArena}）ため、番号で「前回と同じ節か」を比べると別の節を取り違えるからである
+ * 再利用される（{@code NodeIds}）ため、番号で「前回と同じ節か」を比べると別の節を取り違えるからである
  * （§3.3 M2a の知見）。描画（M3b）が要る番号は {@code node.nodeId()} で引ける。</p>
  *
  * <p><b>2 つの木</b>（M2c。計画書 §3.4.2-3）: {@link BoxTreeCompiler} が返す木は<b>最新の全ての群</b>を持つ。レイアウトが読むのは

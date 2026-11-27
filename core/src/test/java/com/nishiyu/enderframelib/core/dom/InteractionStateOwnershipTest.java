@@ -11,7 +11,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
+import com.nishiyu.enderframelib.core.dom.node.NodeIds;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.lang.reflect.Field;
@@ -50,13 +50,13 @@ class InteractionStateOwnershipTest {
         compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewA);
         compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewB);
 
-        assertTrue(flag(viewA, b1, InteractionState.StateFlags::isHovered));
-        assertFalse(flag(viewA, b1, InteractionState.StateFlags::isActive));
-        assertFalse(flag(viewB, b1, InteractionState.StateFlags::isHovered));
-        assertFalse(flag(viewB, b1, InteractionState.StateFlags::isActive));
+        assertTrue(flag(viewA, b1, StateFlags::isHovered));
+        assertFalse(flag(viewA, b1, StateFlags::isActive));
+        assertFalse(flag(viewB, b1, StateFlags::isHovered));
+        assertFalse(flag(viewB, b1, StateFlags::isActive));
 
-        assertFalse(flag(viewA, b2, InteractionState.StateFlags::isActive));
-        assertTrue(flag(viewB, b2, InteractionState.StateFlags::isActive));
+        assertFalse(flag(viewA, b2, StateFlags::isActive));
+        assertTrue(flag(viewB, b2, StateFlags::isActive));
         assertNotEquals(viewA.computedStyleOf(b1).get("color"), viewB.computedStyleOf(b1).get("color"));
         assertNotEquals(viewA.computedStyleOf(b2).get("color"), viewB.computedStyleOf(b2).get("color"));
     }
@@ -64,7 +64,7 @@ class InteractionStateOwnershipTest {
     @Test
     void virtualNodesKeepIndependentStatesAcrossViewsWithoutArenaAllocation() {
         HtmlDocument doc = (HtmlDocument) HtmlParser.parseDocument("<div id='host'></div>");
-        DocumentArena arena = doc.arena();
+        NodeIds arena = doc.nodeIds();
         int liveBefore = arena.liveCount();
         HtmlNode virtual = new HtmlNode("span");
         virtual.parent = doc.getElementById("host");
@@ -180,10 +180,10 @@ class InteractionStateOwnershipTest {
     }
 
     @Test
-    void virtualNodeDescendantsKeepPerViewSlotsWithoutEvictingDocumentArena() {
+    void virtualNodeDescendantsKeepPerViewSlotsWithoutEvictingDocumentNumbers() {
         HtmlDocument doc = (HtmlDocument) HtmlParser.parseDocument("<div id='host'></div>");
         HtmlNode host = doc.getElementById("host");
-        DocumentArena arena = doc.arena();
+        NodeIds arena = doc.nodeIds();
         int liveBefore = arena.liveCount();
 
         InteractionState viewA = new InteractionState();
@@ -233,8 +233,8 @@ class InteractionStateOwnershipTest {
     }
 
     /** 状態の印（状態を持たない節は印なし。経路を 1 本にした M2c-3 以降、組み立ては触れていない節の状態を作らない）。 */
-    private static boolean flag(InteractionState view, HtmlNode node, java.util.function.Predicate<InteractionState.StateFlags> bit) {
-        InteractionState.StateFlags f = view.get(node);
+    private static boolean flag(InteractionState view, HtmlNode node, java.util.function.Predicate<StateFlags> bit) {
+        StateFlags f = view.get(node);
         return f != null && bit.test(f);
     }
 }

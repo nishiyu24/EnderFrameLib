@@ -82,7 +82,7 @@ class HostSyntaxTest {
     private static boolean hiddenAfterSync(String attrName, String expr, Map<String, String> values) {
         var root = com.nishiyu.enderframelib.core.dom.parser.HtmlParser.parse(
                 "<div><p id=\"t\" " + attrName + "=\"" + expr + "\">x</p></div>");
-        new Bindings.ReactiveDomBinder().sync(root, values, Map.of(), Set.of(Bindings.TemplateDeps.ALWAYS));
+        new ReactiveDomBinder().sync(root, values, Map.of(), Set.of(TemplateDeps.ALWAYS));
         var p = com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine.querySelectorAll(root, "#t").get(0);
         return p.attrs.containsKey("hidden");
     }
@@ -101,7 +101,7 @@ class HostSyntaxTest {
     @Test
     void aliasDependenciesAreIndexedLikeCanonicalOnes() {
         var root = com.nishiyu.enderframelib.core.dom.parser.HtmlParser.parse("<div><p mc-if=\"ready\">x</p><p mc-for=\"it in rows\">y</p></div>");
-        Set<String> deps = new Bindings.TemplateDeps().index(root);
+        Set<String> deps = new TemplateDeps().index(root);
         assertTrue(deps.contains("ready"), deps.toString());
         assertTrue(deps.contains("rows"), deps.toString());
     }

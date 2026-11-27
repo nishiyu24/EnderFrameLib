@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.dom.Bindings.TemplateDeps;
+import com.nishiyu.enderframelib.core.dom.TemplateDeps;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import org.junit.jupiter.api.Test;

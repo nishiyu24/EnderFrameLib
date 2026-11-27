@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Test;
  *   <li>旧レイアウト経路の型（{@link #LEGACY_PATH_TYPES}）が全モジュールの本体・テストに戻らない（M2c-3 の完了ゲート）。</li>
  *   <li>描画（{@code core/paint}）は DOM の節の属性・文字・状態の規則の照合を読まない（M3b-1・決定 F。描画が読む値は箱の木が
  *       {@code BoxNode.values} に写す）。</li>
+ *   <li>DOM の木の形を写した番号の表（{@link #LEGACY_DOM_ARENA_TYPES}）が戻らない（M5-1）。</li>
  * </ol>
  */
 class ArchitectureHealthTest {
@@ -574,6 +575,23 @@ class ArchitectureHealthTest {
         roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
         for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M3B2_DELETED_TYPES));
         assertEquals(List.of(), bad, "M3b-2 で消した描画用の木・TreePainter・FragSeq が戻った（計画書 §3.4）");
+    }
+
+    // ---- 10. DOM の木の形を写した番号の表が戻らない（M5-1。計画書 §3.7） ----
+
+    /**
+     * M5-1 で消した、DOM の木の形（親・子・兄弟）とタグ・id・Bloom をオフヒープの列に写して子の並びと二重に同期していた型。
+     * 番号は {@code NodeIds}（番号と世代だけ）、木の形の正本は子の並び、セレクタの足切りは {@code SelectorIndex}。
+     */
+    static final List<String> LEGACY_DOM_ARENA_TYPES = List.of("DocumentArena");
+
+    @Test
+    void domArenaCopyStaysGone() throws IOException {
+        List<String> bad = new ArrayList<>();
+        List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
+        roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
+        for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), LEGACY_DOM_ARENA_TYPES));
+        assertEquals(List.of(), bad, "DOM の木を写した番号の表が戻った（M5-1 で消した。計画書 §3.7）");
     }
 
     @Test

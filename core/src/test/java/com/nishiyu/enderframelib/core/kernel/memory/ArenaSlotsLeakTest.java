@@ -17,7 +17,7 @@ import java.util.Map;
 
 /**
  * 文書に対して作り捨てた {@link InteractionState} が、文書の寿命のあいだ残らないこと。
- * 以前は {@link DocumentArena} の持ち主表が持ち主を強参照しており、文書に対して再スタイルのたびに
+ * 以前は番号の空間（旧 {@code DocumentArena}、現 {@code NodeIds}）の持ち主表が持ち主を強参照しており、文書に対して再スタイルのたびに
  * {@code new InteractionState()} を渡すと、全節ぶんの状態（算出スタイル）が積み上がってヒープが尽き、再スタイルも遅くなっていた。
  */
 class ArenaSlotsLeakTest {

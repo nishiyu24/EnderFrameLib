@@ -95,6 +95,8 @@ eb1c9da | Scene3DRedrawTest#changeCountOnlyGrowsOnVisibleChanges, Scene3DRedrawT
 dcbad05 | WebControlInteractionTest#testClickingNonFocusableElementDoesNotFocusAndBlursPrevious | フォーカスできない要素のクリックで常にフォーカスが出た
 98454c4 | ServerOwnershipAndForwardingTest#resyncCarriesScrollFocusAndHoverByElementId | 再同期でスクロール・フォーカス・ホバーが失われた
 78839af | GpuModulesTest#autoFallsThroughToAnotherApiWhenGlIsUnavailable | GL が使えない環境で AUTO が別の API へ進まなかった
+M5 | SelectorIndexOracleTest#bulkAddedDescendantsReachHasSelectors, SelectorIndexOracleTest#randomMutationsKeepSiblingIndexesAndBloomsHonest | 子の並びへ直接まとめて足す経路（addAll。パーサ・バインディング）が番号を振って兄弟を結び直すだけで祖先の子孫 Bloom へ広げず、:has() が当たりを棄却した（M5-1 で Bloom を番号の表から節の欄の SelectorIndex へ移し、追加の全経路で祖先へ広げる）
+M5 | ChildListIndexTest#childrenMovedBeforeTheOldListIsClearedStayAttached, TreeBuilderFuzzTest#randomSoupKeepsTreeInvariants | 子を新しい親へ足してから古い子の並びを空にする順（パーサの adoption agency が furthest block の子を新しい書式要素へ移す）で、古い並びが移った子の位置を -1 にし、並びに載っていない印（仮想の節）を付け、id 索引から外して番号を手放した（:has() の Bloom が祖先へ届かない。M5-2 で別の親へ移った子は並びから抜くだけにした）
 
 # --- テストと CI の不安定さ（エンジンではなくテストの不具合） ---
 §6-105, A1 | TimingTagPolicyTest#wallClockAssertionsAreTaggedTiming, TimingTagPolicyTest#ciWorkflowsExcludeTimingTests | 実時間で合否を決めるテストが共有ランナーの CI で揺れた

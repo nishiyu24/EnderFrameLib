@@ -19,26 +19,11 @@ class OffHeapColumnsTest {
     }
 
     @Test
-    void intsAndLongsRoundTrip() {
-        OffHeapColumns.Ints a = new OffHeapColumns.Ints(33);
-        OffHeapColumns.Longs l = new OffHeapColumns.Longs(33);
-        assertTrue(a.isAligned());
-        assertTrue(l.isAligned());
-        for (int i = 0; i < 33; i++) { a.set(i, -i * 31); l.set(i, Long.MIN_VALUE + i * 0x1234567L); }
-        for (int i = 0; i < 33; i++) {
-            assertEquals(-i * 31, a.get(i));
-            assertEquals(Long.MIN_VALUE + i * 0x1234567L, l.get(i));
-        }
-        a.fill(-1);
-        assertEquals(-1, a.get(32));
-    }
-
-    @Test
     void neighbouringElementsDoNotBleed() {
-        OffHeapColumns.Ints a = new OffHeapColumns.Ints(4);
-        a.set(1, 0xFFFFFFFF);
-        assertEquals(0, a.get(0));
-        assertEquals(0, a.get(2));
+        OffHeapColumns.Floats f = new OffHeapColumns.Floats(4);
+        f.set(1, Float.intBitsToFloat(0xFFFFFFFF));
+        assertEquals(0f, f.get(0));
+        assertEquals(0f, f.get(2));
     }
 
     @Test
@@ -46,7 +31,7 @@ class OffHeapColumnsTest {
         OffHeapColumns.Floats f = new OffHeapColumns.Floats(4);
         assertThrows(IndexOutOfBoundsException.class, () -> f.get(4));
         assertThrows(IndexOutOfBoundsException.class, () -> f.set(-1, 1f));
-        assertThrows(IndexOutOfBoundsException.class, () -> new OffHeapColumns.Longs(2).get(2));
+        assertThrows(IndexOutOfBoundsException.class, () -> new OffHeapColumns.Floats(2).get(2));
     }
 
     @Test
@@ -64,6 +49,6 @@ class OffHeapColumnsTest {
     @Test
     void zeroLengthAndHugeSizeAreHandled() {
         assertEquals(0, new OffHeapColumns.Floats(0).length());
-        assertThrows(IllegalArgumentException.class, () -> new OffHeapColumns.Longs(Integer.MAX_VALUE));
+        assertThrows(IllegalArgumentException.class, () -> new OffHeapColumns.Floats(Integer.MAX_VALUE));
     }
 }

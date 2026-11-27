@@ -13,8 +13,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.node.ConstraintValidator;
-import com.nishiyu.enderframelib.core.kernel.memory.AtomTable;
-import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
+import com.nishiyu.enderframelib.core.dom.node.SelectorIndex;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -213,10 +212,10 @@ public final class SelectorMatcher {
 
         // 添字ループ: 拡張 for は項目のある一覧ごとに反復子を作る（照合は再スタイルのたびに大量に走る）
         int[] wantedClasses = token.classes.isEmpty() ? null : token.classAtoms();
-        if (wantedClasses != null && node.hasNodeId()) {
-            // 整数の比較だけで済ませる（節の classAtoms は属性が変わるたびに作り直されている）
+        if (wantedClasses != null) {
+            // 整数の比較だけで済ませる（節の class の atom は属性が変わるたびに SelectorIndex が作り直している）
             for (int atom : wantedClasses) {
-                if (!node.hasClassAtom(atom)) return false;
+                if (!SelectorIndex.hasClassAtom(node, atom)) return false;
             }
         } else {
             for (int i = 0, n = token.classes.size(); i < n; i++) {
@@ -276,13 +275,12 @@ public final class SelectorMatcher {
     private static void forEachCandidate(HtmlNode anchor, char combinator, java.util.function.Consumer<HtmlNode> action) {
         if (combinator == '+' || combinator == '~') {
             if (anchor.parent == null) return;
-            boolean after = false;
-            for (HtmlNode sibling : anchor.parent.children) {
-                if (sibling == anchor) {
-                    after = true;
-                } else if (after && isCountableElement(sibling)) {
-                    visitSubtree(sibling, action);
-                }
+            List<HtmlNode> siblings = anchor.parent.children;
+            int at = anchor.indexInParent();
+            if (at < 0) return;
+            for (int i = at + 1, n = siblings.size(); i < n; i++) {
+                HtmlNode sibling = siblings.get(i);
+                if (isCountableElement(sibling)) visitSubtree(sibling, action);
             }
             return;
         }
@@ -568,40 +566,27 @@ public final class SelectorMatcher {
         return false;
     }
 
-    /** タグ・id・class の Bloom で、確実に一致しない節を O(1) で棄却する（アリーナに番号がある節だけ）。 */
+    /** タグ・id・class の Bloom で、確実に一致しない節を O(1) で棄却する（{@link SelectorIndex}。番号の有無に依らない）。 */
     private static boolean bloomRejects(SelectorToken token, HtmlNode node) {
-        if (!node.hasNodeId()) return false;
-        long need = token.requiredBloom();
-        return need != 0L && !AtomTable.mayContain(node.arena().selfBloom(node.nodeId()), need);
+        return SelectorIndex.rejectsSelf(node, token.requiredBloom());
     }
 
     /** {@code :has(> .x)} / {@code :has(.x)}: 主語の Bloom が子孫 Bloom に含まれなければ、子孫に当たりはない。 */
     private static boolean descendantBloomRejects(RelativeSelector relative, HtmlNode anchor) {
         char c = relative.combinator();
-        if (c == '+' || c == '~' || !anchor.hasNodeId()) return false;
+        if (c == '+' || c == '~') return false;
         SelectorToken subject = relative.selector().subject();
         if (subject == null || !subject.hasSelectors.isEmpty()) return false;
-        long need = subject.requiredBloom();
-        return need != 0L && !AtomTable.mayContain(anchor.arena().subtreeBloom(anchor.nodeId()), need);
+        return SelectorIndex.rejectsDescendants(anchor, subject.requiredBloom());
     }
 
-    /** アリーナの兄弟リンクで O(1) に前の兄弟へ。番号の無い節（仮想の節・断片）は子の並びを走査する。 */
+    /** 前の兄弟の要素。子の並びの位置（{@link HtmlNode#indexInParent}）から O(1) で戻る。並びに載らない仮想の節は null。 */
     private static HtmlNode previousElementSibling(HtmlNode node) {
         if (node == null || node.parent == null) return null;
-        if (node.hasNodeId()) {
-            DocumentArena a = node.arena();
-            int p = a.parent(node.nodeId());
-            if (p != DocumentArena.NONE && a.owner(p) == node.parent) {
-                for (int s = a.prevSibling(node.nodeId()); s != DocumentArena.NONE; s = a.prevSibling(s)) {
-                    if (a.owner(s) instanceof HtmlNode sib && isCountableElement(sib)) return sib;
-                }
-                return null;
-            }
-        }
-        HtmlNode prev = null;
-        for (HtmlNode child : node.parent.children) {
-            if (child == node) return prev;
-            if (isCountableElement(child)) prev = child;
+        List<HtmlNode> siblings = node.parent.children;
+        for (int i = node.indexInParent() - 1; i >= 0; i--) {
+            HtmlNode sib = siblings.get(i);
+            if (isCountableElement(sib)) return sib;
         }
         return null;
     }

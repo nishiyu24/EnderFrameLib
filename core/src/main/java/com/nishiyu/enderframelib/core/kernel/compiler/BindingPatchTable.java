@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.kernel.compiler;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
+import com.nishiyu.enderframelib.core.dom.node.NodeIds;
 import com.nishiyu.enderframelib.core.kernel.memory.OffHeapColumns;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -12,7 +12,7 @@ import java.util.Map;
  * {@code style="width: {{hp_pct}}%"} のようなバインディングを、ロード時に
  * {@code キー → (nodeId, 欄)} の直接書き込み命令へコンパイルした表。
  *
- * <p>実行時に {@link #setFloat} を呼ぶと、DOM の属性も CSS のパースも通らず、アリーナと同じ添字（nodeId）の
+ * <p>実行時に {@link #setFloat} を呼ぶと、DOM の属性も CSS のパースも通らず、節の番号（nodeId）を添字にした
  * オフヒープ float 列に値が書かれ、その節に再スタイル／レイアウトの汚れが立つ。ホットパスは割り当てなし。</p>
  */
 public final class BindingPatchTable implements com.nishiyu.enderframelib.core.dom.node.InlineStyleOverlay {
@@ -25,7 +25,7 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
     private static final String[] FIELD_NAMES = {"width%", "width", "height%", "height", "opacity", "flex-grow",
             "font-size"};
 
-    private final DocumentArena arena;
+    private final NodeIds ids;
     private OffHeapColumns.Floats[] columns = new OffHeapColumns.Floats[FIELD_COUNT];
     private int columnLength;
     private final Map<String, int[]> patchesByKey = new HashMap<>();
@@ -33,9 +33,9 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
     private final java.util.Set<Long> registered = new java.util.HashSet<>();
     private int compiledLive = -1;
 
-    public BindingPatchTable(DocumentArena arena) {
-        this.arena = arena;
-        this.columnLength = Math.max(1, arena.capacity());
+    public BindingPatchTable(NodeIds ids) {
+        this.ids = ids;
+        this.columnLength = Math.max(1, ids.capacity());
         for (int f = 0; f < FIELD_COUNT; f++) {
             columns[f] = new OffHeapColumns.Floats(columnLength);
             columns[f].fill(Float.NaN);
@@ -43,7 +43,7 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
     }
 
     /** この表が {@code a} の添字で作られたものか。 */
-    public boolean isFor(DocumentArena a) { return arena == a; }
+    public boolean isFor(NodeIds a) { return ids == a; }
 
     /** 登録済みのパッチ数。 */
     public int patchCount() { return patchCount; }
@@ -79,7 +79,7 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
     public int compile(HtmlNode root, java.util.function.Function<HtmlNode, String> styleSource) {
         int before = patchCount;
         scan(root, styleSource);
-        compiledLive = arena.liveCount();
+        compiledLive = ids.liveCount();
         return patchCount - before;
     }
 
@@ -89,7 +89,7 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
      * @return 新しく登録したパッチ数
      */
     public int compileNewNodes(HtmlNode root, java.util.function.Function<HtmlNode, String> styleSource) {
-        if (arena.liveCount() == compiledLive) return 0;
+        if (ids.liveCount() == compiledLive) return 0;
         return compile(root, styleSource);
     }
 

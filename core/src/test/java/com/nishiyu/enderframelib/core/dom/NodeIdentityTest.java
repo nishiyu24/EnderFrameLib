@@ -5,18 +5,22 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeIds;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.SelectorIndex;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import com.nishiyu.enderframelib.core.kernel.memory.AtomTable;
-import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import com.nishiyu.enderframelib.core.css.model.ElementState;
 import org.junit.jupiter.api.Test;
 
-/** Milestone 1: 節の同一性（鍵）・トポロジー・擬似状態はアリーナの列に載り、文字列 id を属性へ振らない。 */
-class NodeArenaIdentityTest {
+/**
+ * 節の同一性（鍵は番号から導き、文字列 id を属性へ振らない）・子の並びの位置・セレクタの索引・擬似状態。
+ * M5-1 で番号の空間から木の形と Bloom の写しを除いたので、位置と索引は子の並びと属性からその場で保つ形を確かめる。
+ */
+class NodeIdentityTest {
 
     private static final String PAGE = "<html><head><title>t</title></head><body>"
             + "<div id=\"a\" class=\"card big\"><span>x</span> text <b id=\"bold\">y</b></div>"
@@ -84,7 +88,7 @@ class NodeArenaIdentityTest {
             assertEquals(i, n1.get(i).nodeId(), "行きがけ順の番号");
             assertEquals(n1.get(i).key(), n2.get(i).key(), "同じ文書なら鍵が揃う（サーバーとクライアントの対応付け）");
         }
-        DocumentArena arena = d1.arena();
+        NodeIds arena = d1.nodeIds();
         assertEquals(n1.size(), arena.staticCount());
         // 行きがけ順なら部分木は連続区間: 部分木の最大番号 + 1 = id + 部分木の大きさ
         for (HtmlNode n : n1) {
@@ -94,30 +98,41 @@ class NodeArenaIdentityTest {
     }
 
     @Test
-    void topologyColumnsMirrorTheTree() {
+    void siblingIndexAndSelectorIndexMirrorTheTree() {
         HtmlDocument d = doc(PAGE);
-        assertTopologyMatches(d);
+        assertTreeIndexesMatch(d);
     }
 
-    private static void assertTopologyMatches(HtmlNode root) {
-        DocumentArena a = root.arena();
+    /** 子の並びの位置と、セレクタの索引（自分の Bloom は属性どおり・子孫の Bloom は子孫の和を含む）が木と一致する。 */
+    static void assertTreeIndexesMatch(HtmlNode root) {
+        AtomTable atoms = AtomTable.shared();
         for (HtmlNode n : all(root)) {
-            int id = n.nodeId();
-            assertSame(n, a.owner(id));
-            int parentId = n == root ? DocumentArena.NONE : n.parent.nodeId();
-            assertEquals(parentId, a.parent(id), "parent of " + n.tag);
-            assertEquals(n.children.isEmpty() ? DocumentArena.NONE : n.children.get(0).nodeId(), a.firstChild(id));
-            assertEquals(n.children.isEmpty() ? DocumentArena.NONE : n.children.get(n.children.size() - 1).nodeId(), a.lastChild(id));
             for (int i = 0; i < n.children.size(); i++) {
-                int c = n.children.get(i).nodeId();
-                assertEquals(i == 0 ? DocumentArena.NONE : n.children.get(i - 1).nodeId(), a.prevSibling(c));
-                assertEquals(i == n.children.size() - 1 ? DocumentArena.NONE : n.children.get(i + 1).nodeId(), a.nextSibling(c));
+                HtmlNode c = n.children.get(i);
+                assertEquals(i, c.indexInParent(), "indexInParent of child " + i + " of " + n.tag);
+                assertSame(n, c.parent);
+                assertSame(i == 0 ? null : n.children.get(i - 1), c.getPreviousSibling());
+                assertSame(i == n.children.size() - 1 ? null : n.children.get(i + 1), c.getNextSibling());
             }
+            long expected = AtomTable.bloomBits(atoms.lookup(n.tag)) | AtomTable.bloomBits(atoms.lookup(n.getId()));
+            List<Integer> classAtoms = new ArrayList<>();
+            for (String c : n.getClasses()) {
+                int atom = atoms.lookup(c);
+                assertNotEquals(0, atom, "class の語は atom になっている: " + c);
+                classAtoms.add(atom);
+                expected |= AtomTable.bloomBits(atom);
+            }
+            assertArrayEquals(classAtoms.stream().mapToInt(Integer::intValue).toArray(), SelectorIndex.classAtoms(n),
+                    "class の atom は属性どおり: " + n.tag);
+            assertEquals(expected, SelectorIndex.selfBloom(n), "自分の Bloom は属性どおり: " + n.tag);
+            long union = 0L;
+            for (HtmlNode x : all(n)) union |= SelectorIndex.selfBloom(x);
+            assertTrue(AtomTable.mayContain(SelectorIndex.subtreeBloom(n), union), "子孫の Bloom は子孫の和を含む: " + n.tag);
         }
     }
 
     @Test
-    void mutationsKeepTopologyAndNeverLeakArenaSlots() {
+    void mutationsKeepIndexesAndNeverLeakNumbers() {
         HtmlDocument d = doc(PAGE);
         HtmlNode body = d.getElementById("a").parent;
         Random random = new Random(7);
@@ -126,7 +141,7 @@ class NodeArenaIdentityTest {
             HtmlNode target = nodes.get(random.nextInt(nodes.size()));
             if (target.nodeType == NodeType.TEXT || target == d) continue;
             try {
-            switch (random.nextInt(5)) {
+            switch (random.nextInt(9)) {
                 case 0 -> target.appendChild(new HtmlElement(random.nextBoolean() ? "div" : "span"));
                 case 1 -> {
                     if (!target.children.isEmpty() && target != d) {
@@ -141,6 +156,26 @@ class NodeArenaIdentityTest {
                     }
                 }
                 case 3 -> target.setTextContent("t" + step);
+                case 4 -> target.setAttribute("class", "m" + random.nextInt(5) + " k" + step);
+                case 5 -> { // 子の並びを直接触る経路（パーサ・バインディング。親は呼び出し側が先に結ぶ）: まとめて足す・条件で外す
+                    if (random.nextBoolean()) {
+                        HtmlElement em = new HtmlElement("em"), u = new HtmlElement("u");
+                        em.parent = target;
+                        u.parent = target;
+                        target.children.addAll(random.nextInt(target.children.size() + 1), List.of(em, u));
+                    } else {
+                        target.children.removeIf(c -> c.nodeType == NodeType.ELEMENT && random.nextInt(3) == 0);
+                    }
+                }
+                case 6 -> {
+                    if (!target.children.isEmpty()) {
+                        HtmlElement s = new HtmlElement("s");
+                        s.parent = target;
+                        HtmlNode old = target.children.set(random.nextInt(target.children.size()), s);
+                        old.parent = null;
+                    }
+                }
+                case 7 -> target.setInnerHTML("<b class=\"in" + step + "\">x</b><i>y</i>");
                 default -> {
                     if (!target.children.isEmpty()) {
                         HtmlNode ref = target.children.get(random.nextInt(target.children.size()));
@@ -151,11 +186,11 @@ class NodeArenaIdentityTest {
             } catch (RuntimeException ignoredIllegalHierarchyMove) {
                 // DOM が拒否した操作（循環など）。木は変わっていないので、そのまま検証へ進む
             }
-            assertTopologyMatches(d);
-            DocumentArena a = d.arena();
+            assertTreeIndexesMatch(d);
+            NodeIds a = d.nodeIds();
             int treeSize = all(d).size();
             // 静的領域から外れた節は欠番として予約されるので、生きている番号 = 木にいる節の数
-            assertEquals(treeSize, a.liveCount(), "step " + step + ": アリーナの生存数と木の節の数が一致する（漏れなし）");
+            assertEquals(treeSize, a.liveCount(), "step " + step + ": 生きている番号と木の節の数が一致する（漏れなし）");
         }
         assertNotNull(body);
     }
@@ -166,7 +201,7 @@ class NodeArenaIdentityTest {
         HtmlNode a = d.getElementById("a");
         HtmlNode span = a.children.get(0);
         String spanKey = span.key();
-        int staticCount = d.arena().staticCount();
+        int staticCount = d.nodeIds().staticCount();
 
         HtmlNode ul = d.querySelector("ul");
         ul.appendChild(span); // 移動
@@ -191,13 +226,14 @@ class NodeArenaIdentityTest {
         for (int i = 0; i < nodes.size(); i++) assertEquals(i, nodes.get(i).nodeId());
         HtmlNode p = frag.children.get(0);
         assertSame(p, frag.getNodeById(p.key()));
-        assertNotSame(nodes.get(0).arena(), doc(PAGE).arena());
+        assertNotSame(nodes.get(0).nodeIds(), doc(PAGE).nodeIds());
+        assertTreeIndexesMatch(frag);
     }
 
     @Test
     void virtualNodesDoNotOccupyDocumentSlots() {
         HtmlDocument d = doc(PAGE);
-        DocumentArena a = d.arena();
+        NodeIds a = d.nodeIds();
         int live = a.liveCount();
         HtmlNode owner = d.getElementById("a");
         HtmlNode pseudo = new HtmlNode("span"); // 描画が作る仮想の節: parent は持つが子の並びには載らない
@@ -208,38 +244,60 @@ class NodeArenaIdentityTest {
         InteractionState state = new InteractionState();
         state.setHovered(pseudo, true);
         assertTrue(state.get(pseudo).isHovered());
-        assertEquals(live, a.liveCount(), "仮想の節の状態でアリーナの番号を消費しない");
+        assertEquals(live, a.liveCount(), "仮想の節の状態で番号を消費しない");
         state.markAllDirty(); // 仮想の節も列挙に含まれる
         assertTrue(state.get(pseudo).isStyleDirty());
     }
 
     @Test
-    void classAndTagAreHashedIntoBloomColumns() {
+    void classAndTagAreHashedIntoTheSelectorIndex() {
         HtmlDocument d = doc(PAGE);
         HtmlNode a = d.getElementById("a");
-        DocumentArena arena = d.arena();
         AtomTable atoms = AtomTable.shared();
 
         int card = atoms.lookup("card"), big = atoms.lookup("big");
         assertNotEquals(0, card);
-        assertArrayEquals(new int[]{card, big}, a.classAtoms());
-        long self = arena.selfBloom(a.nodeId());
+        assertArrayEquals(new int[]{card, big}, SelectorIndex.classAtoms(a));
+        long self = SelectorIndex.selfBloom(a);
         assertTrue(AtomTable.mayContain(self, AtomTable.bloomBits(card)));
         assertTrue(AtomTable.mayContain(self, AtomTable.bloomBits(atoms.lookup("div"))));
-        assertEquals(atoms.lookup("a"), arena.idAtom(a.nodeId()));
-        assertEquals(atoms.lookup("div"), DocumentArena.tagAtomOf(arena.tagAndType(a.nodeId())));
+        assertTrue(AtomTable.mayContain(self, AtomTable.bloomBits(atoms.lookup("a"))), "id も入る");
 
-        // 子孫の class は祖先の subtreeBloom に入る（:has() の棄却用）
+        // 子孫の class は祖先の子孫 Bloom に入る（:has() の棄却用）
         HtmlNode li = d.querySelector("li.on");
         long on = AtomTable.bloomBits(atoms.lookup("on"));
-        assertTrue(AtomTable.mayContain(arena.subtreeBloom(li.parent.nodeId()), on));
-        assertTrue(AtomTable.mayContain(arena.subtreeBloom(d.nodeId()), on));
+        assertTrue(AtomTable.mayContain(SelectorIndex.subtreeBloom(li.parent), on));
+        assertTrue(AtomTable.mayContain(SelectorIndex.subtreeBloom(d), on));
 
-        // class を書き換えたら 1 回だけ作り直される
+        // class を書き換えたら作り直される
         a.attrs.put("class", "zzz-m1-new");
         int fresh = atoms.lookup("zzz-m1-new");
-        assertArrayEquals(new int[]{fresh}, a.classAtoms());
-        assertTrue(AtomTable.mayContain(arena.selfBloom(a.nodeId()), AtomTable.bloomBits(fresh)));
+        assertArrayEquals(new int[]{fresh}, SelectorIndex.classAtoms(a));
+        assertTrue(AtomTable.mayContain(SelectorIndex.selfBloom(a), AtomTable.bloomBits(fresh)));
+        assertTrue(AtomTable.mayContain(SelectorIndex.subtreeBloom(d), AtomTable.bloomBits(fresh)), "祖先へ広がる");
+    }
+
+    /** 番号の無い節（仮想の節・切り離された木）も索引を持つ（以前は番号を振った節だけが Bloom を持っていた）。 */
+    @Test
+    void selectorIndexDoesNotNeedNumbers() {
+        HtmlElement detached = new HtmlElement("section");
+        detached.setAttribute("class", "zzz-m5-detached");
+        HtmlElement kid = new HtmlElement("p");
+        kid.setAttribute("id", "zzz-m5-kid");
+        detached.appendChild(kid);
+        assertFalse(detached.hasNodeId(), "番号は問われるまで振らない");
+        AtomTable atoms = AtomTable.shared();
+        assertTrue(detached.hasClass("zzz-m5-detached"));
+        assertTrue(AtomTable.mayContain(SelectorIndex.subtreeBloom(detached), AtomTable.bloomBits(atoms.lookup("zzz-m5-kid"))));
+        assertFalse(detached.hasNodeId(), "索引を読んでも番号を振らない");
+
+        HtmlNode pseudo = new HtmlNode("span");
+        pseudo.parent = detached; // 子の並びに載らない仮想の節
+        pseudo.setAttribute("class", "zzz-m5-virtual");
+        assertTrue(pseudo.hasClass("zzz-m5-virtual"));
+        assertFalse(AtomTable.mayContain(SelectorIndex.subtreeBloom(detached), AtomTable.bloomBits(atoms.lookup("zzz-m5-virtual"))),
+                "仮想の節は親の子孫 Bloom に混ざらない");
+        assertEquals(-1, pseudo.indexInParent());
     }
 
     @Test
@@ -276,14 +334,14 @@ class NodeArenaIdentityTest {
         HtmlNode p = d.getElementById("p");
         HtmlNode c = d.getElementById("c");
         InteractionState state = new InteractionState();
-        InteractionState.StateFlags f = state.getOrCreate(p);
-        int all = InteractionState.StateFlags.DIRTY_STYLE | InteractionState.StateFlags.DIRTY_SUBTREE
-                | InteractionState.StateFlags.DIRTY_BELOW | InteractionState.StateFlags.DIRTY_UNSCOPED;
+        StateFlags f = state.getOrCreate(p);
+        int all = StateFlags.DIRTY_STYLE | StateFlags.DIRTY_SUBTREE
+                | StateFlags.DIRTY_BELOW | StateFlags.DIRTY_UNSCOPED;
         assertEquals(all, f.dirtyBits(), "作りたては安全側に 4 ビットすべて");
         assertTrue(state.hasDirtyNodes());
 
         f.clearSubtreeDirty();
-        assertEquals(all & ~InteractionState.StateFlags.DIRTY_SUBTREE, f.dirtyBits(), "他のビットは動かない");
+        assertEquals(all & ~StateFlags.DIRTY_SUBTREE, f.dirtyBits(), "他のビットは動かない");
         assertTrue(f.isStyleDirty() && f.dirtyBelow() && f.unscoped() && !f.subtreeDirty());
         f.markSubtreeDirty();
         assertEquals(all, f.dirtyBits());
@@ -300,7 +358,7 @@ class NodeArenaIdentityTest {
 
         // 子を汚すと、子は style/subtree/unscoped、親は below だけが立つ
         state.markDirty(c);
-        InteractionState.StateFlags pf = state.get(p);
+        StateFlags pf = state.get(p);
         assertTrue(state.get(c).isStyleDirty() && state.get(c).subtreeDirty() && state.get(c).unscoped());
         assertTrue(pf.dirtyBelow());
         assertFalse(pf.isStyleDirty());
@@ -355,7 +413,7 @@ class NodeArenaIdentityTest {
         HtmlNode b = d.getElementById("bold");
         InteractionState state = new InteractionState();
         state.setHovered(b, true);
-        InteractionState.StateFlags flags = state.get(b);
+        StateFlags flags = state.get(b);
 
         d.querySelector("ul").appendChild(b); // 移動（取り外し→取り付け）
         assertSame(flags, state.get(b), "移動しても状態は節に付いてくる");

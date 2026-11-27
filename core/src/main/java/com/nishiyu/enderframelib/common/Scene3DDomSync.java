@@ -59,16 +59,16 @@ public final class Scene3DDomSync {
     public void sync(HtmlNode root) {
         if (root == null) return;
         // シーンが無い文書は、節が新しく作られていないかぎり（同じ文書の同じ確保の通し番号）、文書全体を歩かない
-        com.nishiyu.enderframelib.core.kernel.memory.DocumentArena arena = scenes.isEmpty() ? root.arena() : null;
-        if (arena != null && arena == lastArena && arena.allocSerial() == lastAllocSerial && lastRoot == root) return;
+        com.nishiyu.enderframelib.core.dom.node.NodeIds ids = scenes.isEmpty() ? root.nodeIds() : null;
+        if (ids != null && ids == lastIds && ids.allocSerial() == lastAllocSerial && lastRoot == root) return;
         foundScratch.clear();
         find(root, foundScratch);
-        if (arena != null && foundScratch.isEmpty()) {
-            lastArena = arena;
-            lastAllocSerial = arena.allocSerial();
+        if (ids != null && foundScratch.isEmpty()) {
+            lastIds = ids;
+            lastAllocSerial = ids.allocSerial();
             lastRoot = root;
         } else {
-            lastArena = null;
+            lastIds = null;
         }
         if (foundScratch.isEmpty() && scenes.isEmpty()) return;
         java.util.Set<Long> alive = new java.util.HashSet<>();
@@ -83,7 +83,7 @@ public final class Scene3DDomSync {
         foundScratch.clear();
     }
 
-    private com.nishiyu.enderframelib.core.kernel.memory.DocumentArena lastArena;
+    private com.nishiyu.enderframelib.core.dom.node.NodeIds lastIds;
     private int lastAllocSerial;
     private HtmlNode lastRoot;
 
