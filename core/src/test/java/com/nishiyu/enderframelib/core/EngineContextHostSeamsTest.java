@@ -72,10 +72,10 @@ class EngineContextHostSeamsTest {
     void animationStateStoreIsPerContext() {
         List<String> seenA = new ArrayList<>(), seenB = new ArrayList<>();
         EngineContext a = new EngineContext(), b = new EngineContext();
-        a.updateHost(h -> h.withAnimationStateStore((id, create) -> { seenA.add(id); return new HashMap<>(); }));
+        a.updateHost(h -> h.withAnimationStateStore((id, create) -> { seenA.add(id); return new com.nishiyu.enderframelib.core.paint.AnimationStates(); }));
         b.updateHost(h -> h.withAnimationStateStore((id, create) -> { seenB.add(id); return null; }));
-        EngineContext.runWith(a, () -> CssAnimator.peekState("sess-a", "x"));
-        EngineContext.runWith(b, () -> CssAnimator.peekState("sess-b", "x"));
+        EngineContext.runWith(a, () -> CssAnimator.hasSessionState("sess-a"));
+        EngineContext.runWith(b, () -> CssAnimator.hasSessionState("sess-b"));
         assertEquals(List.of("sess-a"), seenA);
         assertEquals(List.of("sess-b"), seenB);
     }

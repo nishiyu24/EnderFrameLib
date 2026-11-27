@@ -22,7 +22,7 @@ class BackendSessionReleaseTest {
     /** 描いた項目のうち、{@code session} に補間状態が残っているものの数。 */
     private static int statesLeft(String session, List<DisplayItem> items) {
         int n = 0;
-        for (DisplayItem it : items) if (CssAnimator.peekState(session, it.id()) != null) n++;
+        for (DisplayItem it : items) if (CssAnimator.peekState(session, it) != null) n++;
         return n;
     }
 

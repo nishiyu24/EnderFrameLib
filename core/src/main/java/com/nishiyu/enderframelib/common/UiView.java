@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.core.scene3d.Raycaster3D;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
 
-import com.nishiyu.enderframelib.core.paint.CssAnimator;
+import com.nishiyu.enderframelib.core.paint.AnimationStates;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.api.event.Event;
@@ -158,7 +158,7 @@ public class UiView implements AutoCloseable {
 
     // --- セッションに属する入力・描画・バインディング状態（S1） ---
     private final InputSessionState inputState = new InputSessionState();
-    private final Map<String, CssAnimator.AnimState> cssAnimations = new ConcurrentHashMap<>();
+    private final AnimationStates cssAnimations = new AnimationStates(); // 補間の状態（節ごと。M3b-4b-2。ホストが置き場に差し込む）
     private final Map<String, Integer> inputScrollOffsets = new ConcurrentHashMap<>();
     private final Map<String, Integer> textareaCursorIndex = new ConcurrentHashMap<>();
     private final Map<String, Integer> textareaScrollRow = new ConcurrentHashMap<>();
@@ -565,7 +565,7 @@ public class UiView implements AutoCloseable {
         return inputState;
     }
 
-    public Map<String, CssAnimator.AnimState> cssAnimations() {
+    public AnimationStates cssAnimations() {
         return cssAnimations;
     }
 

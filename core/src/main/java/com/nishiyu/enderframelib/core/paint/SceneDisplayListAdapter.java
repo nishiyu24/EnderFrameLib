@@ -58,7 +58,7 @@ public final class SceneDisplayListAdapter {
     private final Map<SceneAdapterBox, ScrollContent> scrollContentOf = new IdentityHashMap<>();
     private final List<ScrollContent> scrollContentOrder = new ArrayList<>();
     private final List<ScrollContentInfo> scrollInfos = new ArrayList<>();
-    private List<DisplayItem> out;
+    private ItemSink out;
 
     private record ChildContext(ClipRect clip, String parentId) { }
 
@@ -101,6 +101,13 @@ public final class SceneDisplayListAdapter {
     }
 
     public List<DisplayItem> emit(DisplayScene scene, DynamicSceneState dynamicState) {
+        List<DisplayItem> result = new ArrayList<>();
+        emit(scene, dynamicState, ItemSink.toList(result));
+        return result;
+    }
+
+    /** {@link #emit(DisplayScene, DynamicSceneState)} の項目を、列に溜めずに受け手 {@code sink} へ描画順に渡す（M3b-4b-2。走査器が使う）。 */
+    void emit(DisplayScene scene, DynamicSceneState dynamicState, ItemSink sink) {
         this.dynamic = dynamicState != null ? dynamicState : DynamicSceneState.of(null, rootW, rootH);
         this.painter.decor.setDevicePixelRatio(devicePixelRatio);
         this.fragIds.set(0);
@@ -113,8 +120,7 @@ public final class SceneDisplayListAdapter {
         this.canvasSource = null;
 
         SceneAdapterBox top = SceneAdapterBox.root(scene, this.dynamic);
-        List<DisplayItem> result = new ArrayList<>();
-        this.out = result;
+        this.out = sink;
         try {
             if ("root".equals(top.node().tag)) {
                 int canvasBg = DEFAULT_CANVAS_COLOR;
@@ -130,7 +136,7 @@ public final class SceneDisplayListAdapter {
                     PaintSupport.addElement(bg, "bg_root", "bg_root", ElementType.RECT, top.x(), top.y(),
                             Math.max(top.w(), rootW), Math.max(top.h(), rootH), "", 0, canvasBg, EMPTY_PROPS,
                             0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, RenderMeta.EMPTY, key);
-                    composer.composeFinal(bg, result);
+                    composer.composeFinal(bg, sink);
                 }
                 emitRootChildren(top);
             } else {
@@ -140,7 +146,6 @@ public final class SceneDisplayListAdapter {
                 scrollInfos.add(new ScrollContentInfo(c.box.node(), c.contentId, c.thumbVId, c.thumbHId,
                         c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0, c.stickies));
             }
-            return result;
         } finally {
             this.out = null;
             this.dynamic = null;
@@ -217,7 +222,7 @@ public final class SceneDisplayListAdapter {
                     spec = spec.withMaskFrom(-1);
                 }
             }
-            out.set(startIdx, BoxItemPainter.withLayer(out.get(startIdx), spec.withSpan(out.size() - startIdx)));
+            out.setLayer(startIdx, spec.withSpan(out.size() - startIdx));
         }
     }
 

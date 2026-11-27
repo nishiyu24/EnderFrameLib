@@ -1,17 +1,14 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.AnimationTiming;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 /**
@@ -23,16 +20,16 @@ import com.nishiyu.enderframelib.core.paint.model.*;
  */
 public class CssAnimator {
 
-    /** セッション ID ごとの補間状態の置き場。 */
+    /** セッション ID ごとの補間状態の置き場（M3b-4b-2 から節ごとの {@link AnimationStates}）。 */
     public interface StateStore {
         /** {@code create} が false で無ければ null を返してよい。 */
-        Map<String, AnimState> mapFor(String sessionId, boolean create);
+        AnimationStates statesFor(String sessionId, boolean create);
     }
 
     /** 既定: プロセス内のレジストリ。Minecraft 側はセッション自身の保持先に差し替える。 */
-    private static final Map<String, Map<String, AnimState>> DEFAULT_STATES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, AnimationStates> DEFAULT_STATES = new java.util.concurrent.ConcurrentHashMap<>();
     private static final StateStore DEFAULT_STORE = (id, create) -> create
-            ? DEFAULT_STATES.computeIfAbsent(id, k -> new java.util.concurrent.ConcurrentHashMap<>())
+            ? DEFAULT_STATES.computeIfAbsent(id, k -> new AnimationStates())
             : DEFAULT_STATES.get(id);
 
     /** 文脈が差し込む置き場（A13。以前は static の差し込み口）。null なら既定のプロセス内レジストリ。 */
@@ -52,9 +49,18 @@ public class CssAnimator {
         return s != null ? s : DEFAULT_STORE;
     }
 
+    private static String safe(String sessionId) {
+        return (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
+    }
+
+    /** セッション {@code sessionId} の状態の表。{@code create} が false で無ければ null。 */
+    public static AnimationStates states(String sessionId, boolean create) {
+        return store().statesFor(safe(sessionId), create);
+    }
+
     /** 既定の置き場の指定セッションを捨てる。 */
     public static void clearSession(String sessionId) {
-        DEFAULT_STATES.remove(sessionId); LAST_CLEANUP.remove(sessionId);
+        DEFAULT_STATES.remove(sessionId);
     }
 
     /**
@@ -66,18 +72,6 @@ public class CssAnimator {
         def.frames.addAll(spec.frames());
         def.frames.sort(Comparator.comparingDouble(AnimationSpec.Keyframe::pct));
         return def;
-    }
-
-    public static AnimatedValues getValues(String sessionId, DisplayItem el) {
-        return getValuesAt(sessionId, el, Clock.SYSTEM.millis());
-    }
-
-    public static AnimatedValues getValues(String sessionId, DisplayItem el, boolean isHovered) {
-        return getValuesAt(sessionId, el, Clock.SYSTEM.millis());
-    }
-
-    public static AnimatedValues getValues(String sessionId, DisplayItem el, boolean isHovered, boolean isActive, boolean isFocused) {
-        return getValuesAt(sessionId, el, Clock.SYSTEM.millis());
     }
 
     /**
@@ -93,11 +87,12 @@ public class CssAnimator {
      * 動いていない項目の補間と姿勢の計算を飛ばす。
      */
     public static AnimState stateFor(String sessionId, DisplayItem el, long now) {
-        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, true);
-        AnimState state = sessionMap.get(el.id());
-        if (state == null) state = sessionMap.computeIfAbsent(el.id(), k -> new AnimState(el, now));
+        return stateFor(states(sessionId, true), el, now);
+    }
 
+    /** 表 {@code states} での {@link #stateFor(String, DisplayItem, long)}。 */
+    public static AnimState stateFor(AnimationStates states, DisplayItem el, long now) {
+        AnimState state = states.getOrCreate(el, now);
         // DisplayItem は不変。前回と同じインスタンスなら目標もテキストも変わっていないので、比較（AnimationSpec の
         // 深い equals を含む）を飛ばす。アニメーションだけが動くフレームは、ほぼ全項目がここを通る
         if (ItemDiff.changed(state.seenItem, el)) {
@@ -112,65 +107,27 @@ public class CssAnimator {
 
     /** セッションに補間状態が 1 つ以上登録されているか（未登録なら当たり判定時の状態参照を省略できる）。 */
     public static boolean hasSessionState(String sessionId) {
-        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
-        return sessionMap != null && !sessionMap.isEmpty();
+        AnimationStates s = states(sessionId, false);
+        return s != null && !s.isEmpty();
     }
 
-    /** 状態を作らずに引く。無ければ null。 */
-    public static AnimState peekState(String sessionId, String id) {
-        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
-        return sessionMap != null ? sessionMap.get(id) : null;
-    }
-    public static AnimatedValues getCurrentValues(String sessionId, DisplayItem el) {
-        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
-        AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
-        if (state != null) return state.getInterpolatedValues(Clock.SYSTEM.millis());
-        AnimatedValues def = new AnimatedValues();
-        def.set(el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.hints().skew(), el.color(), el.bgColor());
-        return def;
+    /** 項目 {@code el} の状態を作らずに引く。無ければ null。 */
+    public static AnimState peekState(String sessionId, DisplayItem el) {
+        AnimationStates s = states(sessionId, false);
+        return s != null ? s.peek(el) : null;
     }
 
-    /**
-     * {@link #getCurrentValues} と同じ値を、{@code scratch} へ書いて返す（状態が無い項目では確保しない）。ヒットテストが
-     * 候補ごとに呼ぶので、割り当てを避けるための版。状態があるときは補間の結果（新しい {@link AnimatedValues}）を返す。
-     */
-    public static AnimatedValues currentValuesInto(String sessionId, DisplayItem el, AnimatedValues scratch) {
-        return valuesAtInto(sessionId, el, scratch, Clock.SYSTEM.millis());
+    /** 節 {@code nodeHandle} の部品 {@code id}（節の錨なら節の鍵）の状態を作らずに引く。無ければ null。 */
+    public static AnimState peekNodeState(String sessionId, int nodeHandle, String id) {
+        AnimationStates s = states(sessionId, false);
+        return s != null ? s.peek(nodeHandle, id) : null;
     }
 
-    /**
-     * {@link #currentValuesInto} の時刻を明示する版。ヒットテストは、描いたフレームと同じ時刻で評価しないと、動いている要素の
-     * 見えている位置とクリックが当たる位置がずれる（ホストのフレームの時刻が壁時計と違うとき。T2 で発見）。
-     */
-    public static AnimatedValues valuesAtInto(String sessionId, DisplayItem el, AnimatedValues scratch, long now) {
-        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
-        AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
-        if (state != null) return state.getInterpolatedValues(now);
-        scratch.set(el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.hints().skew(), el.color(), el.bgColor());
-        return scratch;
-    }
-
-    private static final Map<String, Long> LAST_CLEANUP = new java.util.concurrent.ConcurrentHashMap<>();
-
-    public static void cleanup(String sessionId, List<DisplayItem> currentElements) {
+    /** 列 {@code items} にある節の状態だけを残す（列の構造が変わったとき。{@link AnimationStates#retainNodesOf}）。 */
+    public static void retainNodesOf(String sessionId, List<DisplayItem> items) {
         if (sessionId == null) return;
-        Map<String, AnimState> sessionMap = store().mapFor(sessionId, false);
-        if (sessionMap == null || sessionMap.isEmpty()) return;
-        // 毎フレームやると要素数分の集合を作り直すので、掃除は 1 秒に 1 回でよい（消えた要素の状態が少し残るだけ）
-        long now = Clock.SYSTEM.nanos();
-        Long last = LAST_CLEANUP.get(sessionId);
-        if (last != null && now - last < 1_000_000_000L) return;
-        LAST_CLEANUP.put(sessionId, now);
-
-        Set<String> activeIds = new HashSet<>(currentElements.size());
-        for (DisplayItem el : currentElements) {
-            activeIds.add(el.id());
-        }
-        sessionMap.keySet().retainAll(activeIds);
+        AnimationStates s = store().statesFor(sessionId, false);
+        if (s != null) s.retainNodesOf(items);
     }
 
     private static float parseFloatSafe(String s, float fallback) {
@@ -303,10 +260,6 @@ public class CssAnimator {
         public float[] radiusData = null;
         public float rangeVal = 50, rangeMin = 0, rangeMax = 100, circleThickness = 0;
         public int[] circleColors = null;
-
-        public AnimState(DisplayItem el) {
-            this(el, Clock.SYSTEM.millis());
-        }
 
         public AnimState(DisplayItem el, long now) {
             syncBaseTargets(el);

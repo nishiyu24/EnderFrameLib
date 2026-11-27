@@ -34,7 +34,7 @@ final class OpComposer {
     private AnimationSpec textAnim;
 
     /** 原点からの座標で集めた命令（{@link OpList#beginFinal}）を、そのまま丸めて項目にする。 */
-    void composeFinal(OpList ops, List<DisplayItem> out) {
+    void composeFinal(OpList ops, ItemSink out) {
         for (int i = 0, n = ops.size(); i < n; i++) {
             DrawOp.Item op = ops.get(i);
             out.add(toItem(op, 0f, 0f, 0, 0, op.meta()));
@@ -45,7 +45,7 @@ final class OpComposer {
      * 毎フレーム層の局所座標で集めた命令（{@link OpList#beginLocal}）を項目にする。命令は層の整数の原点からなので、
      * 基準の位置はどちらも層の整数の原点。
      */
-    void composeLocal(OpList ops, SceneAdapterBox node, ClipRect frameClip, String anchorParentId, List<DisplayItem> out) {
+    void composeLocal(OpList ops, SceneAdapterBox node, ClipRect frameClip, String anchorParentId, ItemSink out) {
         begin(ops.originX, ops.originY, ops.originX, ops.originY, ops.originX, ops.originY, node, frameClip, anchorParentId, null, null);
         for (int i = 0, n = ops.size(); i < n; i++) out.add(compose(ops.get(i)));
         end();
@@ -60,7 +60,7 @@ final class OpComposer {
      * @param animator       祖先の文字色のアニメーションを解く道具
      */
     void composeLayer(DrawOp[] ops, SceneAdapterBox box, SceneAdapterBox node, ClipRect frameClip, String anchorParentId,
-                      BoxAnimation animator, List<DisplayItem> out) {
+                      BoxAnimation animator, ItemSink out) {
         SceneAdapterBox op = box.originParent();
         begin(box.x(), box.y(), op != null ? op.x() : 0f, op != null ? op.y() : 0f,
                 Math.round(box.x()), Math.round(box.y()), node, frameClip, anchorParentId, box, animator);

@@ -70,7 +70,7 @@ final class UiHitSupport {
     private boolean resolveTransform(SceneLayer layer, float[] out6) {
         String key = layer.node != null ? layer.node.key() : null;
         if (key == null || key.isEmpty()) return false;
-        CssAnimator.AnimState st = CssAnimator.peekState(sessionId, key);
+        CssAnimator.AnimState st = CssAnimator.peekNodeState(sessionId, layer.node.paintHandle(), key); // 節の錨の状態（節ごとの表。M3b-4b-2）
         float udx = userPaintOffsets.dx(key);
         float udy = userPaintOffsets.dy(key);
         if (st == null && udx == 0f && udy == 0f) return false;

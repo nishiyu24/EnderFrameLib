@@ -87,6 +87,12 @@ class RealDocumentFramesTest {
      */
     static void script(String doc, com.nishiyu.enderframelib.core.paint.RenderBackend backend, boolean full, boolean keepPixels,
                        Consumer<Frame> sink) throws IOException {
+        scriptWithView(doc, backend, full, keepPixels, (v, f) -> sink.accept(f));
+    }
+
+    /** {@link #script} の、記録するフレームごとにビューも渡す版（走査器の影の確かめがビューのシーンを読む。M3b-4b-2）。 */
+    static void scriptWithView(String doc, com.nishiyu.enderframelib.core.paint.RenderBackend backend, boolean full, boolean keepPixels,
+                               java.util.function.BiConsumer<StandaloneView, Frame> sink) throws IOException {
         String html = html(doc);
         try (StandaloneView v = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             long[] t = {T0};
@@ -154,11 +160,11 @@ class RealDocumentFramesTest {
         final StandaloneView v;
         final com.nishiyu.enderframelib.core.paint.RenderBackend backend;
         final boolean full, keepPixels;
-        final Consumer<Frame> sink;
+        final java.util.function.BiConsumer<StandaloneView, Frame> sink;
         final String doc;
 
         Recorder(StandaloneView v, com.nishiyu.enderframelib.core.paint.RenderBackend backend, boolean full, boolean keepPixels,
-                 Consumer<Frame> sink, String doc) {
+                 java.util.function.BiConsumer<StandaloneView, Frame> sink, String doc) {
             this.v = v; this.backend = backend; this.full = full; this.keepPixels = keepPixels; this.sink = sink; this.doc = doc;
         }
 
@@ -176,7 +182,7 @@ class RealDocumentFramesTest {
             frameUnrecorded(now);
             int[] px = backend.pixmap().pixels().clone();
             List<DisplayItem> items = List.copyOf(v.ui().renderCache());
-            sink.accept(new Frame(doc + "/" + name, keepPixels ? px : new int[]{(int) pixelsHash(px)},
+            sink.accept(v, new Frame(doc + "/" + name, keepPixels ? px : new int[]{(int) pixelsHash(px)},
                     items, v.ui().paintOffsets().snapshot(), hits(v)));
         }
     }

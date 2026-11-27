@@ -70,7 +70,7 @@ public class SessionContextCleanupTest {
                 0, 0, 10, 10, null, 0, 0, Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0,
                 AnimationSpec.NONE, ImageFitMode.FILL, RenderMeta.EMPTY);
         session.setRenderCache(List.of(item));
-        session.cssAnimations().put("target", new CssAnimator.AnimState(item));
+        CssAnimator.stateFor(session.cssAnimations(), item, 0L);
         session.canvases().put("target", new Canvas2DContext());
         session.scenes().put("target", new WebSceneContext());
 

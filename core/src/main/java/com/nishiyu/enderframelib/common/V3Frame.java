@@ -182,6 +182,16 @@ final class V3Frame {
         }
     }
 
+    /**
+     * 直近のシーンを走査器 {@code walker} で描画順にたどり、{@code painter} へ渡す（M3b-4b-2 では影の確かめだけが呼ぶ。4b-4 で
+     * 全バックエンドの描画の経路になり、{@link #paint} の表示項目の列を置き換える）。シーンが無ければ何もしない。
+     */
+    void walk(com.nishiyu.enderframelib.core.paint.SceneWalker walker, com.nishiyu.enderframelib.core.paint.model.PaintOffsets offsets,
+              long nowMs, com.nishiyu.enderframelib.core.raster.Matrix2D frame, com.nishiyu.enderframelib.core.paint.Painter painter) {
+        if (scene == null || adapter == null) return;
+        walker.run(adapter, scene, DynamicSceneState.of(scroll, width, height), offsets, nowMs, frame, painter);
+    }
+
     private static boolean onlyRestyleOrScroll(ChangeLedger ledger) {
         if (ledger.frozenOverflow()) return false;
         for (int i = 0, n = ledger.frozenSize(); i < n; i++) {

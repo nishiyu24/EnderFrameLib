@@ -78,7 +78,7 @@ public final class PaintSceneDriver {
         if (el.type() == ElementType.NODE && ItemDiff.hasFx(el.hints().layer())) return false;
         if (el.type() == ElementType.SCENE) return false;
         if (i < stateVerified.length && !stateVerified[i]) {
-            CssAnimator.AnimState st = states[i] != null ? states[i] : CssAnimator.peekState(sessionId, el.id());
+            CssAnimator.AnimState st = states[i] != null ? states[i] : animStates().peek(el);
             if (st != null && !st.isNeutralGeometryAt(now)) {
                 stateBlocked = true; // 時間で変わる理由: 判定を覚えず、次のフレームでもう一度確かめる
                 return false;
@@ -176,6 +176,13 @@ public final class PaintSceneDriver {
     private static final Long2ObjectOpenHashMap<DisplayItem> EMPTY_BY_KEY = new Long2ObjectOpenHashMap<>(0);
 
     private final String sessionId;
+    /** このフレームのセッションの補間状態の表（{@link #prepare} で引く。置き場は文脈が差し替えうる）。 */
+    private AnimationStates anims;
+
+    private AnimationStates animStates() {
+        AnimationStates a = anims;
+        return a != null ? a : (anims = CssAnimator.states(sessionId, true));
+    }
 
     private Long2IntOpenHashMap indexOf = new Long2IntOpenHashMap();
     private final List<Integer> fxAnchors = new ArrayList<>();
@@ -230,8 +237,6 @@ public final class PaintSceneDriver {
     /** 項目 {@code i} の親（{@link ElementType#NODE} の項目）の位置。無ければ -1。 */
     public int parentIndex(int i) { return i >= 0 && i < parentIdx.length ? parentIdx[i] : -1; }
 
-    /** 項目 {@code el} に、時刻 {@code nowMs} でまだ動いている補間・キーフレームがあるか。静止判定用。 */
-    public static boolean itemActiveAt(String sessionId, DisplayItem el, long nowMs) { return CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs); }
     /** 走査中の、フレーム全体の変換（CSS px → デバイス画素）。 */
     public Matrix2D frame() { return frame; }
     /** 走査中の、ノードハンドルと部品番号から項目を引く。 */
@@ -255,7 +260,7 @@ public final class PaintSceneDriver {
         if (items == null || items.isEmpty()) return;
         this.now = nowMs;
         this.frame = frame;
-        CssAnimator.cleanup(sessionId, items);
+        this.anims = CssAnimator.states(sessionId, true);
         if ((items != indexedItems || !isImmutable(items)) && !reconcileIndex(items)) rebuildIndex(items);
         syncOffsets(items, offsets != null ? offsets : PaintOffsets.EMPTY);
         this.byId = indexedById;
@@ -694,6 +699,8 @@ public final class PaintSceneDriver {
         Arrays.fill(nextRes, null); Arrays.fill(nextParentRes, null); Arrays.fill(nextStates, null);
         prevIndexOf.clear();
         indexedItems = items;
+        // 列の構造が変わった: 列にある節の補間状態だけを残す（後片付けは実時間でなく、構造の変化の印。M3b-4b-2）
+        animStates().retainNodesOf(items);
 
         for (int i = 0; i < n; i++) {
             parentIdx[i] = resolveParentIndex(items.get(i));
@@ -792,16 +799,8 @@ public final class PaintSceneDriver {
     public boolean anyActiveAt(List<DisplayItem> items, long nowMs) { return anyActiveAt(sessionId, items, nowMs); }
     /** セッション {@code sessionId} の状態で、{@code items} に時刻 {@code nowMs} でまだ動いているアニメーションがあるか。 */
     public static boolean anyActiveAt(String sessionId, List<DisplayItem> items, long nowMs) {
-        for (DisplayItem el : items) if (CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs)) return true;
-        return false;
-    }
-    /** 直近に解決した項目の状態だけを走査し、時刻 {@code nowMs} で動いているものがあるか。 */
-    public boolean anyCachedActiveAt(long nowMs) {
-        int n = indexedItems != null ? indexedItems.size() : states.length;
-        for (int i = 0; i < n; i++) {
-            CssAnimator.AnimState st = states[i];
-            if (st != null && st.isActiveAt(nowMs)) return true;
-        }
+        AnimationStates states = CssAnimator.states(sessionId, true);
+        for (DisplayItem el : items) if (CssAnimator.stateFor(states, el, nowMs).isActiveAt(nowMs)) return true;
         return false;
     }
     /** 項目の動きの種類（{@link #fillActivity}・{@link #activityAt}）。 */
@@ -820,11 +819,9 @@ public final class PaintSceneDriver {
         return max;
     }
     /** 項目 {@code el} の時刻 {@code nowMs} の動き。 */
-    public byte activityAt(DisplayItem el, long nowMs) { return activityOf(CssAnimator.stateFor(sessionId, el, nowMs), nowMs); }
+    public byte activityAt(DisplayItem el, long nowMs) { return activityOf(CssAnimator.stateFor(animStates(), el, nowMs), nowMs); }
     /** 項目 {@code i} がいまのフレームで止まっているか。 */
     public boolean idleAt(int i) { return prevIdle[i]; }
-    /** 項目の直近の解決済み姿勢（呼び出しは {@link #resolveAt} の前後に限る）。 */
-    public Resolved peekPrevRes(int i) { return i >= 0 && i < prevRes.length ? prevRes[i] : null; }
 
     /** 項目 {@code i} の補間値（色など）。姿勢を親と共有する項目でも、その項目自身のもの。 */
     public AnimatedValues animAt(int i) {
@@ -850,7 +847,7 @@ public final class PaintSceneDriver {
             }
         }
         CssAnimator.AnimState st = states[i];
-        if (st == null) st = states[i] = CssAnimator.stateFor(sessionId, el, now);
+        if (st == null) st = states[i] = CssAnimator.stateFor(animStates(), el, now);
         boolean idle = !st.isActiveAt(now);
         // 姿勢と不透明度が動いていない（止まっている・色だけが補間される）なら、前回の姿勢をそのまま使う
         boolean geometryStatic = idle || st.motionKindAt(now) <= 1;
