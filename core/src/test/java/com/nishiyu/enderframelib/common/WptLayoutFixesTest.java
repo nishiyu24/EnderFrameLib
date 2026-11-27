@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.common;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.Map;
@@ -12,16 +11,16 @@ import org.junit.jupiter.api.Test;
 class WptLayoutFixesTest {
     private static final int W = 800, H = 600;
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler c = new UiDocumentCompiler();
         Document doc = c.parseDocument("<style>body{margin:0}</style>" + html, "", W, H);
-        return c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintBox c : box.paintChildren()) {
-            PaintBox h = find(c, id);
+        for (TestBoxes.Box c : box.paintChildren()) {
+            TestBoxes.Box h = find(c, id);
             if (h != null) return h;
         }
         return null;
@@ -29,7 +28,7 @@ class WptLayoutFixesTest {
 
     @Test
     void tableIsNeverNarrowerThanItsContent() {
-        PaintBox r = layout("<div id=t style='display:table;width:10px;max-width:10px;min-width:5px'><div style='width:100px;height:10px'></div></div>"
+        TestBoxes.Box r = layout("<div id=t style='display:table;width:10px;max-width:10px;min-width:5px'><div style='width:100px;height:10px'></div></div>"
                 + "<div style='display:flex;width:100px'><div id=f style='display:table;width:10px;max-width:10px'><div style='width:100px;height:10px'></div></div></div>"
                 + "<div style='display:flex;flex-direction:column;height:0'><div id=c style='display:table;min-height:0;width:10px'><div style='height:50px'></div></div></div>");
         assertEquals(100, find(r, "t").w(), 0.01f);
@@ -39,7 +38,7 @@ class WptLayoutFixesTest {
 
     @Test
     void alignmentIsUnsafeByDefaultAndSafeFallsBackToStart() {
-        PaintBox r = layout("<div style='display:flex;justify-content:center;width:100px'><div id=a style='flex:none;width:140px;height:5px'></div></div>"
+        TestBoxes.Box r = layout("<div style='display:flex;justify-content:center;width:100px'><div id=a style='flex:none;width:140px;height:5px'></div></div>"
                 + "<div style='display:flex;justify-content:safe center;width:100px'><div id=b style='flex:none;width:140px;height:5px'></div></div>");
         assertEquals(-20, find(r, "a").x(), 0.01f);
         assertEquals(0, find(r, "b").x(), 0.01f);
@@ -47,20 +46,20 @@ class WptLayoutFixesTest {
 
     @Test
     void emptyClearingBoxGetsClearance() {
-        PaintBox r = layout("<style>#d::after{content:'';clear:both;display:block}</style>"
+        TestBoxes.Box r = layout("<style>#d::after{content:'';clear:both;display:block}</style>"
                 + "<div id=d><span style='float:left;width:50px;height:30px'></span></div>");
         assertEquals(30, find(r, "d").h(), 0.01f);
     }
 
     @Test
     void leadingByteOrderMarkIsNotText() {
-        PaintBox r = layout("﻿<div id=a style='height:5px'></div>");
+        TestBoxes.Box r = layout("﻿<div id=a style='height:5px'></div>");
         assertEquals(0, find(r, "a").y(), 0.01f);
     }
 
     @Test
     void absoluteBoxUsesGridAreaAsContainingBlock() {
-        PaintBox r = layout("<div style='position:relative;display:grid;grid-template-columns:50px 50px;grid-template-rows:50px 50px;width:100px'>"
+        TestBoxes.Box r = layout("<div style='position:relative;display:grid;grid-template-columns:50px 50px;grid-template-rows:50px 50px;width:100px'>"
                 + "<div id=a style='position:absolute;grid-area:2/2/3/3;left:0;top:0;width:10px;height:10px'></div>"
                 + "<div id=b style='position:absolute;grid-area:2/2/3/3;align-self:center;justify-self:end;width:10px;height:10px'></div></div>");
         assertEquals(50, find(r, "a").x(), 0.01f);
@@ -71,20 +70,20 @@ class WptLayoutFixesTest {
 
     @Test
     void rtlGridPlacesColumnsFromTheRight() {
-        PaintBox r = layout("<div style='display:grid;direction:rtl;grid-template-columns:50px 50px;width:200px'><div id=a style='height:5px'></div></div>");
+        TestBoxes.Box r = layout("<div style='display:grid;direction:rtl;grid-template-columns:50px 50px;width:200px'><div id=a style='height:5px'></div></div>");
         assertEquals(150, find(r, "a").x(), 0.01f);
     }
 
     @Test
     void nestedAbsoluteBoxResolvesHeightFromInsets() {
-        PaintBox r = layout("<div style='position:relative;width:200px;height:200px'><div><div id=a style='position:absolute;top:0;bottom:100px;left:0;right:100px'></div></div></div>");
+        TestBoxes.Box r = layout("<div style='position:relative;width:200px;height:200px'><div><div id=a style='position:absolute;top:0;bottom:100px;left:0;right:100px'></div></div></div>");
         assertEquals(100, find(r, "a").w(), 0.01f);
         assertEquals(100, find(r, "a").h(), 0.01f);
     }
 
     @Test
     void percentageGapsResolveAgainstTheContainer() {
-        PaintBox r = layout("<div id=g style='display:grid;width:200px;height:220px;gap:10% 10%;grid-template-columns:50px 50px;grid-template-rows:30px 30px'>"
+        TestBoxes.Box r = layout("<div id=g style='display:grid;width:200px;height:220px;gap:10% 10%;grid-template-columns:50px 50px;grid-template-rows:30px 30px'>"
                 + "<div></div><div></div><div></div><div></div></div>");
         var items = TestBoxes.elementBoxes(find(r, "g"));
         assertEquals(20, items.get(1).x() - items.get(0).x() - 50, 0.01f, "列の間 = 幅 200px の 10%");
@@ -93,7 +92,7 @@ class WptLayoutFixesTest {
 
     @Test
     void logicalPropertiesMapToPhysicalSides() {
-        PaintBox r = layout("<div id=a style='inline-size:120px;block-size:30px;margin-inline-end:20px'></div>"
+        TestBoxes.Box r = layout("<div id=a style='inline-size:120px;block-size:30px;margin-inline-end:20px'></div>"
                 + "<div style='direction:rtl'><div id=b style='height:1px;margin-inline-end:20px'></div></div>");
         assertEquals(120, find(r, "a").w(), 0.01f);
         assertEquals(30, find(r, "a").h(), 0.01f);
@@ -104,7 +103,7 @@ class WptLayoutFixesTest {
 
     @Test
     void justifySpreadsWrappedLinesButNotTheLastOne() {
-        PaintBox r = layout("<div style='width:100px;text-align:justify'><span id=s>aa bb cc dd ee ff gg hh ii</span></div>");
+        TestBoxes.Box r = layout("<div style='width:100px;text-align:justify'><span id=s>aa bb cc dd ee ff gg hh ii</span></div>");
         var frags = find(r, "s").paintChildren().get(0).runs();
         // 1 行目の最後の語は右端に揃う。最終行は開始端から
         float firstLineY = frags.get(0).y();
@@ -116,27 +115,27 @@ class WptLayoutFixesTest {
 
     @Test
     void bidiControlsAreInvisibleAndZeroWidth() {
-        PaintBox a = layout("<span id=s>ab⁦c⁩d</span>");
-        PaintBox b = layout("<span id=s>abcd</span>");
+        TestBoxes.Box a = layout("<span id=s>ab⁦c⁩d</span>");
+        TestBoxes.Box b = layout("<span id=s>abcd</span>");
         assertEquals(find(b, "s").w(), find(a, "s").w(), 0.01f);
     }
 
     @Test
     void tableHeightExcludesCaption() {
-        PaintBox r = layout("<div id=t style='display:table;height:80px;width:100px'><div style='display:table-caption;height:20px'></div>"
+        TestBoxes.Box r = layout("<div id=t style='display:table;height:80px;width:100px'><div style='display:table-caption;height:20px'></div>"
                 + "<div style='display:table-cell'>x</div></div>");
         assertEquals(100, find(r, "t").h(), 0.01f);
     }
 
     @Test
     void percentBasisInIndefiniteColumnUsesContentSize() {
-        PaintBox r = layout("<div style='display:flex;flex-direction:column'><div id=i style='flex:0 0 0%;height:500px'><div style='height:100px'></div></div></div>");
+        TestBoxes.Box r = layout("<div style='display:flex;flex-direction:column'><div id=i style='flex:0 0 0%;height:500px'><div style='height:100px'></div></div></div>");
         assertEquals(100, find(r, "i").h(), 0.01f);
     }
 
     @Test
     void preWrapViaCssKeepsSpacesAndTabStops() {
-        PaintBox r = layout("<div style='white-space:pre;font-family:monospace;tab-size:4'><span id=s>\tX</span></div>"
+        TestBoxes.Box r = layout("<div style='white-space:pre;font-family:monospace;tab-size:4'><span id=s>\tX</span></div>"
                 + "<div style='white-space:pre-wrap'><span id=p>a   b</span></div>");
         var tab = find(r, "s").paintChildren().get(0).runs();
         var x = tab.get(tab.size() - 1);
@@ -148,7 +147,7 @@ class WptLayoutFixesTest {
 
     @Test
     void breakSpacesKeepsSpacesAtTheStartOfTheNextLine() {
-        PaintBox r = layout("<div style='white-space:break-spaces;width:60px;font-family:monospace'><span id=s>aaaa    b</span></div>");
+        TestBoxes.Box r = layout("<div style='white-space:break-spaces;width:60px;font-family:monospace'><span id=s>aaaa    b</span></div>");
         var frags = find(r, "s").paintChildren().get(0).runs();
         var b = frags.get(frags.size() - 1);
         assertEquals("b", b.text().strip());
@@ -158,41 +157,41 @@ class WptLayoutFixesTest {
 
     @Test
     void matchParentUsesTheParentsDirection() {
-        PaintBox r = layout("<div style='direction:rtl;text-align:start;width:200px'><div style='direction:ltr;text-align:match-parent'><span id=s>x</span></div></div>");
+        TestBoxes.Box r = layout("<div style='direction:rtl;text-align:start;width:200px'><div style='direction:ltr;text-align:match-parent'><span id=s>x</span></div></div>");
         assertTrue(find(r, "s").paintChildren().get(0).runs().get(0).x() > 150, "親の start（rtl）は右");
     }
 
     @Test
     void explicitZeroWidthWrapsAtEveryOpportunity() {
-        PaintBox r = layout("<div style='width:0'><span id=s>aa bb</span></div>");
+        TestBoxes.Box r = layout("<div style='width:0'><span id=s>aa bb</span></div>");
         var frags = find(r, "s").paintChildren().get(0).runs();
         assertNotEquals(frags.get(0).y(), frags.get(frags.size() - 1).y(), 0.01f);
     }
 
     @Test
     void letterSpacingIsNotAddedAfterTheLastCharacterOfAnElement() {
-        PaintBox a = layout("<div><span id=s style='letter-spacing:10px'>a</span><span id=t>a</span></div>");
-        PaintBox b = layout("<div><span id=s>a</span><span id=t>a</span></div>");
+        TestBoxes.Box a = layout("<div><span id=s style='letter-spacing:10px'>a</span><span id=t>a</span></div>");
+        TestBoxes.Box b = layout("<div><span id=s>a</span><span id=t>a</span></div>");
         assertEquals(find(b, "t").x(), find(a, "t").x(), 0.01f);
     }
 
     @Test
     void rtlFlexRowStartsAtTheRight() {
-        PaintBox r = layout("<div style='display:flex;direction:rtl;width:200px'><div id=a style='width:50px;height:5px'></div><div id=b style='width:50px;height:5px'></div></div>");
+        TestBoxes.Box r = layout("<div style='display:flex;direction:rtl;width:200px'><div id=a style='width:50px;height:5px'></div><div id=b style='width:50px;height:5px'></div></div>");
         assertEquals(150, find(r, "a").x(), 0.01f);
         assertEquals(100, find(r, "b").x(), 0.01f);
     }
 
     @Test
     void collapsedFlexItemTakesNoSpace() {
-        PaintBox r = layout("<div style='display:flex;gap:10px'><div style='width:50px;height:5px'></div>"
+        TestBoxes.Box r = layout("<div style='display:flex;gap:10px'><div style='width:50px;height:5px'></div>"
                 + "<div style='width:50px;height:5px;visibility:collapse'></div><div id=c style='width:50px;height:5px'></div></div>");
         assertEquals(60, find(r, "c").x(), 0.01f);
     }
 
     @Test
     void shrinkToFitBoxesHonourMinAndMaxWidth() {
-        PaintBox r = layout("<div id=a style='float:left;min-width:200px'>x</div>"
+        TestBoxes.Box r = layout("<div id=a style='float:left;min-width:200px'>x</div>"
                 + "<div id=b style='float:left;clear:both;max-width:60px'>aaa bbb ccc ddd eee</div>");
         assertEquals(200, find(r, "a").w(), 0.01f);
         assertEquals(60, find(r, "b").w(), 0.01f);
@@ -201,21 +200,21 @@ class WptLayoutFixesTest {
 
     @Test
     void spaceAtARunBoundaryCountsTowardsShrinkToFitWidth() {
-        PaintBox a = layout("<div id=a style='float:left'>aa <span>bb</span></div>");
-        PaintBox b = layout("<div id=a style='float:left'>aa bb</div>");
+        TestBoxes.Box a = layout("<div id=a style='float:left'>aa <span>bb</span></div>");
+        TestBoxes.Box b = layout("<div id=a style='float:left'>aa bb</div>");
         assertEquals(find(b, "a").w(), find(a, "a").w(), 0.5f);
         assertEquals(find(a, "a").h(), find(b, "a").h(), 0.01f);
     }
 
     @Test
     void wrapOpportunityBelongsToTheSpacesWhiteSpace() {
-        PaintBox r = layout("<div id=d style='white-space:nowrap;width:30px'><span style='white-space:normal'><span style='white-space:nowrap'>aaaa</span> </span>bbbb</div>");
+        TestBoxes.Box r = layout("<div id=d style='white-space:nowrap;width:30px'><span style='white-space:normal'><span style='white-space:nowrap'>aaaa</span> </span>bbbb</div>");
         assertTrue(find(r, "d").h() > 30, "normal の空白の後で、nowrap の文字でも折り返せる");
     }
 
     @Test
     void textWrapBalanceEvensOutLines() {
-        PaintBox r = layout("<div style='width:100px;text-wrap:balance'><span id=s>aaa bbb ccc ddd eee</span></div>");
+        TestBoxes.Box r = layout("<div style='width:100px;text-wrap:balance'><span id=s>aaa bbb ccc ddd eee</span></div>");
         var frags = find(r, "s").paintChildren().get(0).runs();
         float firstY = frags.get(0).y(), lastY = frags.get(frags.size() - 1).y();
         long firstLine = frags.stream().filter(f -> f.y() == firstY).count();
@@ -225,7 +224,7 @@ class WptLayoutFixesTest {
 
     @Test
     void textNodesDoNotMatchElementSelectors() {
-        PaintBox r = layout("<style>.c > * { width: 20px; height: 15px; float: left }</style>"
+        TestBoxes.Box r = layout("<style>.c > * { width: 20px; height: 15px; float: left }</style>"
                 + "<div class=c id=c style='width:40px'>\n  <div></div><div></div>\n  <div></div><div></div>\n</div>");
         assertEquals(30, find(r, "c").paintChildren().stream().filter(k -> k.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.ELEMENT)
                 .mapToDouble(k -> k.y() + k.h()).max().orElse(0), 0.01f);
@@ -233,14 +232,14 @@ class WptLayoutFixesTest {
 
     @Test
     void newlineBetweenInlineElementsIsASpace() {
-        PaintBox a = layout("<div><span id=x>a</span>\n<span id=y>b</span></div>");
-        PaintBox b = layout("<div><span id=x>a</span> <span id=y>b</span></div>");
+        TestBoxes.Box a = layout("<div><span id=x>a</span>\n<span id=y>b</span></div>");
+        TestBoxes.Box b = layout("<div><span id=x>a</span> <span id=y>b</span></div>");
         assertEquals(find(b, "y").x(), find(a, "y").x(), 0.01f);
     }
 
     @Test
     void leadingSpaceOfAWrappedRunDoesNotStartTheLine() {
-        PaintBox r = layout("<div style='width:60px'>aaaa <span>bbbbbbbb</span> cccc</div>");
+        TestBoxes.Box r = layout("<div style='width:60px'>aaaa <span>bbbbbbbb</span> cccc</div>");
         var f = lastRunContaining(r, "cccc");
         assertEquals("cccc", f.text().strip());
         assertFalse(f.text().startsWith(" "), "折り返した行の頭に空白が残らない: '" + f.text() + "'");
@@ -248,17 +247,17 @@ class WptLayoutFixesTest {
     }
 
     /** 文字の箱の文字（行に置いた語をつないだもの）。 */
-    private static String runsText(PaintBox box) {
+    private static String runsText(TestBoxes.Box box) {
         StringBuilder sb = new StringBuilder();
         for (var run : box.runs()) if (run.text() != null) sb.append(run.text());
         return sb.toString();
     }
 
     /** {@code word} を含む最後の行の断片（文書順）。 */
-    private static com.nishiyu.enderframelib.core.paint.tree.PaintRun lastRunContaining(PaintBox box, String word) {
-        com.nishiyu.enderframelib.core.paint.tree.PaintRun hit = null;
+    private static com.nishiyu.enderframelib.core.paint.scene.SceneRun lastRunContaining(TestBoxes.Box box, String word) {
+        com.nishiyu.enderframelib.core.paint.scene.SceneRun hit = null;
         for (var run : box.runs()) if (run.text() != null && run.text().contains(word)) hit = run;
-        for (PaintBox c : box.paintChildren()) {
+        for (TestBoxes.Box c : box.paintChildren()) {
             var h = lastRunContaining(c, word);
             if (h != null) hit = h;
         }

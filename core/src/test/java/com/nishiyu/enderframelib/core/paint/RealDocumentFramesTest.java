@@ -7,7 +7,7 @@ import com.nishiyu.enderframelib.common.UiView;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.dom.parser.MarkdownParser;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+import com.nishiyu.enderframelib.common.TestBoxes;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -187,7 +187,7 @@ class RealDocumentFramesTest {
         for (int y = 50; y < H; y += 100) {
             for (int x = 50; x < W; x += 100) {
                 var hit = v.ui().hitTest(x, y);
-                h.append(hit == null ? "-" : hit.element().baseId()).append(' ');
+                h.append(hit == null ? "-" : hit.baseId()).append(' ');
             }
         }
         return h.toString();
@@ -212,7 +212,7 @@ class RealDocumentFramesTest {
                 double cx = it.x() + it.width() / 2.0, cy = it.y() + it.height() / 2.0;
                 if (cx < 0 || cy < 0 || cx >= W || cy >= H) break;
                 var hit = v.ui().hitTest(cx, cy);
-                if (hit != null && within(items, hit.element(), key) && seen.add(key)) out.add(new double[]{cx, cy});
+                if (hit != null && within(hit.node(), key) && seen.add(key)) out.add(new double[]{cx, cy});
                 break;
             }
         }
@@ -226,7 +226,7 @@ class RealDocumentFramesTest {
             if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
             var hit = v.ui().hitTest(cx, cy);
             // 中心がその要素自身（か、その中の文字）に当たるものだけ（上に別の要素が重なっていない）
-            if (hit == null || !within(items, hit.element(), it0.baseId())) continue;
+            if (hit == null || !within(hit.node(), it0.baseId())) continue;
             if (!seen.add(it0.baseId())) continue;
             out.add(new double[]{cx, cy});
         }
@@ -239,31 +239,26 @@ class RealDocumentFramesTest {
         for (HtmlNode c : n.children) collectHoverables(c, out);
     }
 
-    /** {@code hit} が要素 {@code baseId} の項目か、その子孫の項目か（親の連鎖をたどる）。 */
-    private static boolean within(List<DisplayItem> items, DisplayItem hit, String baseId) {
-        Map<String, DisplayItem> byId = new java.util.HashMap<>();
-        for (DisplayItem it : items) byId.putIfAbsent(it.id(), it);
-        DisplayItem cur = hit;
-        for (int guard = 0; cur != null && guard < 64; guard++) {
-            if (baseId.equals(cur.baseId())) return true;
-            String pid = cur.hints().parentId();
-            cur = pid == null ? null : byId.get(pid);
+    /** {@code node} が要素 {@code baseId} 自身かその子孫か（DOM の親連鎖をたどる）。 */
+    private static boolean within(HtmlNode node, String baseId) {
+        for (HtmlNode cur = node; cur != null; cur = cur.parent) {
+            if (baseId.equals(cur.key())) return true;
         }
         return false;
     }
 
     /** 画面の中にある、文書の根でない最初のスクロールコンテナの中心。 */
     private static double[] firstScrollContainer(StandaloneView v) {
-        PaintBox root = v.ui().boxRoot();
+        TestBoxes.Box root = TestBoxes.root(v.ui());
         return root == null ? null : findScroll(root, root);
     }
 
-    private static double[] findScroll(PaintBox b, PaintBox root) {
+    private static double[] findScroll(TestBoxes.Box b, TestBoxes.Box root) {
         if (b != root && b.isScrollContainer() && b.w() > 20 && b.h() > 20 && b.x() >= 0 && b.y() >= 0 && b.x() + b.w() / 2 < W && b.y() + b.h() / 2 < H
                 && b.node != null && !b.isAnonymous && !"body".equals(b.node.tag) && !"html".equals(b.node.tag)) {
             return new double[]{b.x() + b.w() / 2.0, b.y() + b.h() / 2.0};
         }
-        for (PaintBox c : b.paintChildren()) {
+        for (TestBoxes.Box c : b.paintChildren()) {
             double[] r = findScroll(c, root);
             if (r != null) return r;
         }

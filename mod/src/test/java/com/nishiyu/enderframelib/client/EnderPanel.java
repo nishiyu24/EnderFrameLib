@@ -3,10 +3,10 @@ package com.nishiyu.enderframelib.client;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 
 import javax.swing.JPanel;
@@ -35,7 +35,7 @@ public class EnderPanel extends JPanel {
 
     private String htmlContent = "";
     private Document document;
-    private PaintBox rootLayoutBox;
+    private DisplayScene rootScene;
     private List<DisplayItem> displayList = Collections.emptyList();
 
     private final ScrollState scrollState = new ScrollState();
@@ -118,7 +118,7 @@ public class EnderPanel extends JPanel {
 
         this.document = compiler.parseDocument(htmlContent, "", w, h);
         var frame = com.nishiyu.enderframelib.common.FrameRender.document(document, w, h, Map.of(), scrollState, fontResolver, interactionState);
-        this.rootLayoutBox = frame.root();
+        this.rootScene = frame.scene();
         this.displayList = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(frame.items());
     }
 

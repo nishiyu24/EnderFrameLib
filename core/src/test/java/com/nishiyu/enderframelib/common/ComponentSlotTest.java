@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -116,23 +115,23 @@ public class ComponentSlotTest {
                 """;
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 400, 300);
-        PaintBox box = compiler.layoutDocument(doc, 400, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK);
-        PaintBox head = find(box, "head");
+        TestBoxes.Box box = TestBoxes.root(compiler.layoutDocument(doc, 400, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK));
+        TestBoxes.Box head = find(box, "head");
         assertNotNull(head);
         assertEquals("#123456", head.style().get(CssProperty.COLOR), "コンポーネントの中だけに @scope が当たる");
-        PaintBox other = find(box, "other");
+        TestBoxes.Box other = find(box, "other");
         assertNotNull(other);
         assertTrue(!"#123456".equals(other.style().get(CssProperty.COLOR)), "外の h3 は当たらない");
-        PaintBox em = find(box, "e");
+        TestBoxes.Box em = find(box, "e");
         assertNotNull(em);
         assertTrue(em.w() > 0 && em.h() > 0, "投影した要素にも寸法がある");
         assertNull(find(box, "missing"));
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = find(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

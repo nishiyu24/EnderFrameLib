@@ -35,7 +35,7 @@ class UiInputHostButtonTest {
             if (c.getName().equals("hostButton")) found = true;
         }
         assertTrue(found);
-        var r = new UiInput.PressResult(null, null, null, 1, false);
+        var r = new UiInput.PressResult(null, null, 1, false);
         assertEquals(1, r.hostButton());
     }
 

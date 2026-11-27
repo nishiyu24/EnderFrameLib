@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.kernel.EngineFlags;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.ColorParser;
@@ -101,7 +100,7 @@ final class BoxAnimation {
     static final TransitionSpec NONE_TRANSITION = new TransitionSpec(0, 0, EasingFunction.DEFAULT_EASING, "all");
 
     /** 箱の算出値の {@code translate} / {@code rotate} / {@code scale} / {@code transform} を宣言順に合成して {@code {tx, ty, sx, sy, rot}} にする。 */
-    float[] transformOf(PaintBox box) {
+    float[] transformOf(SceneAdapterBox box) {
         Style st = box.style().typed();
         VisualStyle v = st.visual;
         String tr = v.translate, rot = v.rotate, sc = v.scale, tf = v.transform;
@@ -352,11 +351,11 @@ final class BoxAnimation {
      * 何が壊れていたか: 文字の DisplayItem には文字ノード自身のアニメーション（常に none）しか載せていなかったので、
      * {@code <span style="animation: kfTextFlash ...">} の文字色が変わらなかった。
      */
-    AnimationSpec textColorAnimation(PaintBox text, AnimationSpec own) {
+    AnimationSpec textColorAnimation(SceneAdapterBox text, AnimationSpec own) {
         AnimationSpec colorAnim = own.withChannels(AnimationSpec.CH_COLOR);
         if (!colorAnim.isEmpty()) return colorAnim;
         int inherited = text.style().typed().inheritedPaint.color;
-        for (PaintBox a = text.paintParent(); a != null && a.style() != null; a = a.paintParent()) {
+        for (SceneAdapterBox a = text.paintParent(); a != null && a.style() != null; a = a.paintParent()) {
             Style as = a.style().typed();
             if (as.inheritedPaint.color != inherited) break;
             if (as.visual.animation != null || as.visual.animationName != null) {
@@ -370,7 +369,7 @@ final class BoxAnimation {
     }
 
     /** 親と違う色を持っている（= 自分で color を宣言した）か。 */
-    static boolean declaresOwnColor(PaintBox box) {
+    static boolean declaresOwnColor(SceneAdapterBox box) {
         return box.paintParent() != null && box.paintParent().style() != null
                 && box.style().typed().inheritedPaint.color != box.paintParent().style().typed().inheritedPaint.color;
     }

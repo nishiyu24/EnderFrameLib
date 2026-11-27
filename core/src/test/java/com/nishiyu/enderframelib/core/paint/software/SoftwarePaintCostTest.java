@@ -1,10 +1,11 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestBoxes;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -29,7 +30,7 @@ class SoftwarePaintCostTest {
     private static List<DisplayItem> items(String html, int w, int h) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         var document = parser.parseDocument(html, "", w, h);
-        PaintBox root = parser.layoutDocument(document, w, h, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(document, w, h, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState()));
         return com.nishiyu.enderframelib.common.FrameRender.document(document, w, h, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
     }
 

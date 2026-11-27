@@ -29,7 +29,6 @@ core/src/main/java/com/nishiyu/enderframelib/core/paint/BoxDecorationPainter.jav
 core/src/main/java/com/nishiyu/enderframelib/core/paint/BoxDecorations.java | 987
 core/src/main/java/com/nishiyu/enderframelib/core/paint/CssAnimator.java | 629
 core/src/main/java/com/nishiyu/enderframelib/core/paint/Gradients.java | 878
-core/src/main/java/com/nishiyu/enderframelib/core/paint/HitTestIndex.java | 749
 core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java | 925
 core/src/main/java/com/nishiyu/enderframelib/core/paint/gpu/GpuRenderBackend.java | 1164
 core/src/main/java/com/nishiyu/enderframelib/core/paint/model/ClipShape.java | 733

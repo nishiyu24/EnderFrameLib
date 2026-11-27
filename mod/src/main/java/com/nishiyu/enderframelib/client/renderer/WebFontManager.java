@@ -277,6 +277,17 @@ public class WebFontManager {
         return com.nishiyu.enderframelib.core.paint.DisplayItemFonts.fontStyleFor(el, fontSizePx);
     }
 
+    /** {@link com.nishiyu.enderframelib.core.paint.scene.SceneLayer} の文字をシステムの書体で描くならその書体。 */
+    public static OutlineFontFace outlineFaceFor(com.nishiyu.enderframelib.core.paint.scene.SceneLayer layer) {
+        String family = layer != null && layer.style != null ? layer.style.typed().inherited.fontFamily : null;
+        return McFontResolver.INSTANCE.resolve(family) instanceof OutlineFontFace outline ? outline : null;
+    }
+
+    public static FontStyle fontStyleFor(com.nishiyu.enderframelib.core.paint.scene.SceneLayer layer) {
+        if (layer == null || layer.style == null) return FontStyle.DEFAULT;
+        return layer.style.typed().facts.fontStyle;
+    }
+
     /**
      * {@code font-family} を測定用の書体にする。
      *

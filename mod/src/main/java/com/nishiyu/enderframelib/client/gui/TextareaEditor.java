@@ -4,14 +4,14 @@ import com.nishiyu.enderframelib.common.TextEditing;
 import com.nishiyu.enderframelib.common.TextFieldOverlay;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.screens.Screen;
@@ -40,11 +40,13 @@ public class TextareaEditor {
         return activeBaseId;
     }
 
-    public void focus(Font font, DisplayItem taEl, double localX, double localY) {
+    public void focus(Font font, SceneHit hit, double localX, double localY) {
+        if (hit == null) return;
         this.isEditing = true;
-        this.activeBaseId = taEl.baseId();
-        String renderTaId = taEl.isPart("_textarea") ? taEl.id() : this.activeBaseId + "_textarea";
-        ClientWebManager.getOrCreateSession(sessionId).activateInput(renderTaId, activeBaseId);
+        this.activeBaseId = hit.baseId();
+        String renderTaId = this.activeBaseId + "_textarea";
+        SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+        session.activateInput(renderTaId, activeBaseId);
 
         String fullText = getValue(activeBaseId);
         if (localX < 0 || localY < 0) {
@@ -53,9 +55,11 @@ public class TextareaEditor {
         }
 
         // 位置は描画（コアの textarea の描き方）と同じ計算で決める（スタンドアロンのビューと共有する TextFieldOverlay）
-        OutlineFontFace face = TextFieldOverlay.face(WebFontManager.fonts(), taEl);
+        SceneLocation loc = hit.node() != null ? session.locate(hit.node())
+                : SceneQuery.locateById(session.scene(), session.dynamicState(), activeBaseId);
+        OutlineFontFace face = loc != null ? TextFieldOverlay.face(WebFontManager.fonts(), loc) : null;
         int index = face == null ? fullText.length()
-                : TextFieldOverlay.caretAt(taEl, face, fullText, true, taEl.x() + localX, taEl.y() + localY);
+                : TextFieldOverlay.caretAt(loc, face, fullText, true, loc.x() + localX, loc.y() + localY);
         TextEditState.setTextareaCursor(sessionId, renderTaId, index);
     }
 

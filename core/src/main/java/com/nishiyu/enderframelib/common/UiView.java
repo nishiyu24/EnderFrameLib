@@ -33,6 +33,14 @@ import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.BoxLayoutQuery;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHitTest;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
+import com.nishiyu.enderframelib.core.paint.scene.Transform2D;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
@@ -75,6 +83,8 @@ public class UiView implements AutoCloseable {
     private volatile List<DisplayItem> renderCache = Collections.emptyList();
     /** 描画の上だけの平行移動（スクロール・ドラッグ）の外部表（C6）。 */
     private final PaintOffsets paintOffsets = new PaintOffsets();
+    /** ユーザー操作（ドラッグ等）による描画平行移動。スクロールや sticky は {@link DynamicSceneState} が解くため分離する。 */
+    private final PaintOffsets userPaintOffsets = new PaintOffsets();
     Document document;
     private final Map<Long, Scene3DWorld> scene3dWorlds = new ConcurrentHashMap<>();
     /** ワールドごとのレイキャスト（BVH を持つので使い回す）。 */
@@ -145,9 +155,6 @@ public class UiView implements AutoCloseable {
     /** {@link #activeInputId} の持ち主の節の ID。描画 ID の綴りから逆算せず、入力欄を開いた時点の項目から取る。 */
     private String activeInputBaseId = "";
     private final TextSelection textSelection = new TextSelection();
-    private volatile HitTestIndex hitTestIndex;
-    /** {@link #hitTestIndex} を作った描画要素リスト（同じ物を指す間だけ使い回す）。 */
-    private volatile List<DisplayItem> hitTestIndexSource;
 
     // --- セッションに属する入力・描画・バインディング状態（S1） ---
     private final InputSessionState inputState = new InputSessionState();
@@ -171,9 +178,33 @@ public class UiView implements AutoCloseable {
         interactionState.bindStyleLookup(v3::styleOf); // CSSOM の算出スタイルは箱の木から
     }
 
-    /** レイアウトの結果の木の根（CSSOM・フォーカス・インスペクタが読む。まだ無ければ null）。 */
-    public com.nishiyu.enderframelib.core.paint.tree.PaintBox boxRoot() {
-        return v3.root();
+    private DynamicSceneState cachedDynState;
+    private SceneLayer cachedDynRoot;
+    private int cachedDynW = -1, cachedDynH = -1;
+    private UiHitSupport hitSupport;
+
+    /** 直近のフレームの不変描画シーン（まだ無ければ null）。 */
+    public DisplayScene scene() {
+        return v3.scene();
+    }
+
+    /** 直近のフレームの動的状態（スクロール位置・ビューポート寸法。シーンが無ければ null）。 */
+    public DynamicSceneState dynamicState() {
+        DisplayScene s = v3.scene();
+        if (s == null) return null;
+        if (cachedDynState != null && cachedDynRoot == s.root && cachedDynW == rootW && cachedDynH == rootH) {
+            return cachedDynState;
+        }
+        cachedDynRoot = s.root;
+        cachedDynW = rootW;
+        cachedDynH = rootH;
+        cachedDynState = DynamicSceneState.of(scrollState, rootW, rootH);
+        return cachedDynState;
+    }
+
+    /** シーン内の要素 {@code node} の解決済み位置・大きさ（無ければ null）。 */
+    public com.nishiyu.enderframelib.core.paint.scene.SceneLocation locate(HtmlNode node) {
+        return SceneQuery.locate(v3.scene(), dynamicState(), node);
     }
 
     /** 新経路の 1 フレーム（{@code full} なら台帳を読まずに全体を作り直す）。汚れた節の印は台帳に写してあるので片付ける。 */
@@ -293,88 +324,33 @@ public class UiView implements AutoCloseable {
      */
     public void setPaintOffset(String elementId, float dx, float dy) {
         paintOffsets.set(elementId, dx, dy);
+        userPaintOffsets.set(elementId, dx, dy);
     }
 
     public void clearPaintOffset(String elementId) {
         paintOffsets.clear(elementId);
+        userPaintOffsets.clear(elementId);
     }
-
-    /**
-     * 描画の上だけで動きうる節の id: いま移動量を持つ節に加えて、スクロールコンテナの中身・つまみの節
-     * （基底を作った時点で分かっている。まだ動いていなくても、次のスクロールで動くので最初から動きうる節として扱う）。
-     */
-    private java.util.Set<String> dynamicNodeIds() {
-        int version = paintOffsets.keysVersion();
-        java.util.Set<String> cached = dynamicIdsCache;
-        List<ScrollContentInfo> base = scrollBase;
-        if (cached != null && dynamicIdsVersion == version && dynamicIdsBase == base) return cached;
-        java.util.Set<String> ids = new java.util.HashSet<>();
-        paintOffsets.copyKeysInto(ids);
-        for (ScrollContentInfo info : base) {
-            ids.add(info.contentId());
-            if (info.thumbVId() != null) ids.add(info.thumbVId());
-            if (info.thumbHId() != null) ids.add(info.thumbHId());
-            for (var st : info.stickies()) ids.add(st.nodeId());
-        }
-        cached = java.util.Set.copyOf(ids);
-        dynamicIdsCache = cached;
-        dynamicIdsVersion = version;
-        dynamicIdsBase = base;
-        return cached;
-    }
-
-    private java.util.Set<String> dynamicIdsCache;
-    private int dynamicIdsVersion = -1;
-    private List<ScrollContentInfo> dynamicIdsBase;
 
     /** 画像の透過ヒットテスト（{@code <img data-hit-alpha>}）が不透明度を引く先。ホストが画像の読み方を差し込む。 */
     private volatile com.nishiyu.enderframelib.core.paint.AlphaMaskProvider alphaMaskProvider;
 
     public void alphaMaskProvider(com.nishiyu.enderframelib.core.paint.AlphaMaskProvider provider) {
         this.alphaMaskProvider = provider;
-        HitTestIndex idx = this.hitTestIndex;
-        if (idx != null) idx.alphaMaskProvider(provider);
-    }
-
-    private final java.util.function.Predicate<DisplayItem> nonInertHitFilter = el -> !isItemInert(el);
-
-    private boolean hasInertOrModal() {
-        return interactionState.hasActiveModal()
-                || (rootNode() instanceof HtmlDocument doc && doc.hasInertAttributes());
-    }
-
-    private boolean isItemInert(DisplayItem el) {
-        if (el == null) return false;
-        String baseId = el.baseId();
-        if (baseId == null || baseId.isEmpty()) return false;
-        HtmlNode node = resolveInteractiveNode(baseId);
-        return node != null && interactionState.isInert(node);
     }
 
     /** 点が対話要素の上にあるか（ゲーム側が、クリックを UI に渡すか自分で処理するかを決めるのに使う）。 */
     public boolean isPointerOverUi(double pixelX, double pixelY) {
-        if (!hasInertOrModal()) return hitTestIndex().isPointerOverUi(sessionId, pixelX, pixelY);
-        return hitTestIndex().isPointerOverUi(sessionId, pixelX, pixelY, nonInertHitFilter);
+        return SceneHitTest.isPointerOverUi(scene(), hitTestContext(), pixelX, pixelY);
     }
 
-    public HitTestIndex hitTestIndex() {
-        List<DisplayItem> current = this.renderCache;
-        HitTestIndex idx = this.hitTestIndex;
-        java.util.Set<String> dynamic = dynamicNodeIds();
-        if (idx != null && hitTestIndexSource == current
-                && (idx.dynamicIds() == dynamic || idx.dynamicIds().containsAll(dynamic))) {
-            return idx;
-        }
-        idx = new HitTestIndex(current, dynamic, paintOffsets);
-        idx.alphaMaskProvider(alphaMaskProvider);
-        idx.animationClock(interactionState::animationTimeMs); // 描いたフレームと同じ時刻の姿勢で当てる（T2）
-        this.hitTestIndexSource = current;
-        return this.hitTestIndex = idx;
+    /** 直近のフレームの不変描画シーンと動的状態から {@link SceneHitTest.Context} を組み立てる。 */
+    public SceneHitTest.Context hitTestContext() {
+        if (hitSupport == null) hitSupport = new UiHitSupport(sessionId, interactionState, userPaintOffsets);
+        return hitSupport.context(dynamicState(), alphaMaskProvider, document);
     }
 
-    public Document document() {
-        return document;
-    }
+    public Document document() { return document; }
 
     public void setDocument(Document document) {
         this.document = document;
@@ -382,15 +358,11 @@ public class UiView implements AutoCloseable {
     }
 
     /** 文書のルート。文書が無ければ null。 */
-    public HtmlNode rootNode() {
-        return document != null ? document.root : null;
-    }
+    public HtmlNode rootNode() { return document != null ? document.root : null; }
 
     /** 公開面の {@link com.nishiyu.enderframelib.api.dom.Document}。文書が無い・実装でないときは null。 */
     public com.nishiyu.enderframelib.api.dom.Document domDocument() {
-        return document != null && document.root instanceof com.nishiyu.enderframelib.api.dom.Document doc
-                ? doc
-                : null;
+        return document != null && document.root instanceof com.nishiyu.enderframelib.api.dom.Document doc ? doc : null;
     }
 
     /** 文書の外へ出ていくイベントの送り先と、所有者の既定をこのセッションに結ぶ。 */
@@ -435,11 +407,11 @@ public class UiView implements AutoCloseable {
         });
     }
 
-    /** CSSOM View が読む箱の木を差し替え、ResizeObserver / IntersectionObserver へ知らせる。 */
+    /** CSSOM View が読むシーンを差し替え、ResizeObserver / IntersectionObserver へ知らせる。 */
     void publishLayoutToDom() {
-        com.nishiyu.enderframelib.core.paint.tree.PaintBox root = v3.root();
-        if (boxLayoutQuery == null || document == null || root == null) return;
-        boxLayoutQuery.update(root, document.sheet, rootW, rootH);
+        DisplayScene scene = v3.scene();
+        if (boxLayoutQuery == null || document == null || scene == null) return;
+        boxLayoutQuery.update(scene, document.sheet, rootW, rootH);
         if (document.root instanceof HtmlDocument live) live.notifyLayoutObservers();
     }
 
@@ -861,10 +833,10 @@ public class UiView implements AutoCloseable {
         List<ScrollContentInfo> oldScrollBase = scrollBase;
         for (int i = 0, n = oldScrollBase.size(); i < n; i++) {
             ScrollContentInfo info = oldScrollBase.get(i);
-            clearPaintOffset(info.contentId());
-            if (info.thumbVId() != null) clearPaintOffset(info.thumbVId());
-            if (info.thumbHId() != null) clearPaintOffset(info.thumbHId());
-            for (int k = 0, sn = info.stickies().size(); k < sn; k++) clearPaintOffset(info.stickies().get(k).nodeId());
+            paintOffsets.clear(info.contentId());
+            if (info.thumbVId() != null) paintOffsets.clear(info.thumbVId());
+            if (info.thumbHId() != null) paintOffsets.clear(info.thumbHId());
+            for (int k = 0, sn = info.stickies().size(); k < sn; k++) paintOffsets.clear(info.stickies().get(k).nodeId());
         }
         setRenderCache(elements);
         setScrollBase(builtScrollContents()); // 描画は常にスクロールコンテナの中身を節にまとめる
@@ -900,6 +872,7 @@ public class UiView implements AutoCloseable {
                 paintOffsets.setIfActive(st.nodeId(), 0f, st.extraAt(dy));
             }
         }
+        if (boxLayoutQuery != null) boxLayoutQuery.invalidateDynamic();
         return true;
     }
 
@@ -928,7 +901,7 @@ public class UiView implements AutoCloseable {
             return false;
         }
         long sinceLastLayout = clock.nanos() - lastLayoutFinishedNanos;
-        if (v3.root() != null && sinceLastLayout < lastLayoutCostNanos * RESIZE_THROTTLE_FACTOR) {
+        if (v3.hasScene() && sinceLastLayout < lastLayoutCostNanos * RESIZE_THROTTLE_FACTOR) {
             invalidated();
             return false;
         }
@@ -943,7 +916,7 @@ public class UiView implements AutoCloseable {
      * ない）。このとき以降の処理はすべて何もしないので、省いても結果は変わらない。
      */
     private boolean isIdleFrame(boolean resize, InvalidationLevel level, com.nishiyu.enderframelib.core.dom.node.ChangeLedger ledger) {
-        return !(resize || level != InvalidationLevel.NONE || v3.root() == null
+        return !(resize || level != InvalidationLevel.NONE || !v3.hasScene()
                 || repositionPending || nonScrollRepositionPending || interactionState.hasDirtyNodes()
                 || ledger.frozenOverflow() || ledger.frozenSize() > 0);
     }
@@ -1077,26 +1050,23 @@ public class UiView implements AutoCloseable {
      * @return 当たりが無い（3D 以外・外れ）なら null。結果の {@link Scene3DPick#hit} はこの呼び出しごとの新しいオブジェクト
      */
     public Scene3DPick pickScene3d(double pixelX, double pixelY) {
-        UIHitResult r = hitTest(pixelX, pixelY);
-        if (r == null || r.element() == null || r.element().events() == null) return null;
-        java.util.Map<String, String> ev = r.element().events();
-        if (!Scene3DTags.KIND_3D.equals(ev.get(Scene3DTags.KIND_ATTR))) return null;
-        String id = ev.get(Scene3DTags.WORLD_ATTR);
-        if (id == null) return null;
-        long worldId;
-        try {
-            worldId = Long.parseLong(id);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        SceneHit r = hitTest(pixelX, pixelY);
+        if (r == null || r.node() == null || !Scene3DTags.isScene(r.node().tag)) return null;
+        long worldId = r.node().nodeId();
         Scene3DWorld world = scene3dWorlds.get(worldId);
-        if (world == null || r.element().width() <= 0 || r.element().height() <= 0) return null;
+        SceneLayer l = r.layer();
+        float iw = Math.max(0f, l.w - l.bL - l.bR);
+        float ih = Math.max(0f, l.h - l.bT - l.bB);
+        if (world == null || iw <= 0f || ih <= 0f) return null;
+        float lx = (float) (r.localX() - l.bL);
+        float ly = (float) (r.localY() - l.bT);
+        if (lx < 0f || lx > iw || ly < 0f || ly > ih) return null;
         Raycaster3D.Hit hit = new Raycaster3D.Hit();
         Raycaster3D rc = scene3dRaycasters.computeIfAbsent(worldId, k -> new Raycaster3D());
         synchronized (rc) {
-            if (!rc.pickScreen(world, (float) r.localX(), (float) r.localY(), r.element().width(), r.element().height(), hit)) return null;
+            if (!rc.pickScreen(world, lx, ly, Math.round(iw), Math.round(ih), hit)) return null;
         }
-        return new Scene3DPick(worldId, r.element().id(), hit);
+        return new Scene3DPick(worldId, r.baseId() + "_scene", hit);
     }
 
     /** {@link #pickScene3d} の結果: どの {@code <scene-3d>}（世界の nodeId・表示項目の id）の、どのメッシュに当たったか。 */
@@ -1258,25 +1228,27 @@ public class UiView implements AutoCloseable {
         requestRestyle();
     }
 
+    /** 点の下にあるスクロール可能なコンテナを手前から順に返す。 */
+    public List<SceneHit> scrollContainersAt(double pixelX, double pixelY) {
+        return SceneHitTest.scrollContainersAt(scene(), hitTestContext(), pixelX, pixelY);
+    }
+
     public boolean handleScrollLocally(double pixelX, double pixelY, double scrollX, double scrollY) {
         float sens = EnderFrameBuiltInConfig.scrollSensitivity;
 
         // 手前のスクロールする箱から。祖先の変換（回転・拡縮・平行移動）の逆行列とクリップを通した点で当たりを取る
-        List<UIHitResult> hits = hitTestIndex().scrollContainersAt(sessionId, pixelX, pixelY);
+        List<SceneHit> hits = scrollContainersAt(pixelX, pixelY);
         for (int i = 0, hn = hits.size(); i < hn; i++) {
-            DisplayItem el = hits.get(i).element();
-            float maxW = el.hints().scrollWidth(), maxH = el.hints().scrollHeight();
+            SceneHit h = hits.get(i);
+            float maxW = h.layer().scrollWidth, maxH = h.layer().scrollHeight;
 
             ScrollState state = scrollState;
-            // 何が壊れていたか: ここだけが描画 ID (foo_bg など) で読み書きしていた。
-            // 読み手（描画・箱の木）はベースノード ID を使うため、
-            // スクロール可能な部分要素が _bg だったコンテナはホイールが無反応だった。
-            HtmlNode scrollNode = findNode(el.baseId());
+            HtmlNode scrollNode = h.node() != null ? h.node() : findNode(h.baseId());
             if (scrollNode == null || interactionState.isInert(scrollNode)) continue;
             float curX = state.getScrollX(scrollNode);
             float curY = state.getScrollY(scrollNode);
 
-            float limitX = Math.max(0, maxW - el.width()), limitY = Math.max(0, maxH - el.height());
+            float limitX = Math.max(0, maxW - h.width()), limitY = Math.max(0, maxH - h.height());
             if (limitX > 0 || limitY > 0) {
                 float nextX = Math.clamp(curX - (float) scrollX * sens, 0, limitX);
                 float nextY = Math.clamp(curY - (float) scrollY * sens, 0, limitY);
@@ -1291,10 +1263,11 @@ public class UiView implements AutoCloseable {
         return false;
     }
 
-    public boolean handleScrollbarClick(DisplayItem clickedEl, double pixelX, double pixelY) {
-        if (clickedEl == null || clickedEl.id() == null) return false;
-        boolean isVTrack = clickedEl.isPart(SB_V_TRACK), isHTrack = clickedEl.isPart(SB_H_TRACK);
-        return (isVTrack || isHTrack) && handleScrollbarDrag(clickedEl.baseId(), isVTrack ? SB_V_TRACK : SB_H_TRACK, pixelX, pixelY);
+    public boolean handleScrollbarClick(SceneHit hit, double pixelX, double pixelY) {
+        if (hit == null || !hit.isScrollbar()) return false;
+        String part = hit.scrollbarPart();
+        boolean isVTrack = SB_V_TRACK.equals(part), isHTrack = SB_H_TRACK.equals(part);
+        return (isVTrack || isHTrack) && handleScrollbarDrag(hit.baseId(), part, pixelX, pixelY);
     }
 
     /** スクロールバーの部品の描画 ID 接尾辞（持ち主の節の ID に続く部分）。 */
@@ -1310,7 +1283,7 @@ public class UiView implements AutoCloseable {
         if (!vertical && !part.equals(SB_H_THUMB) && !part.equals(SB_H_TRACK)) return false;
         // 軌道上の点につまみの中心が来るようにスクロールする
         HtmlNode scrollNode = findNode(nodeId);
-        com.nishiyu.enderframelib.core.paint.tree.PaintBox box = scrollNode == null ? null : v3.boxOf(scrollNode);
+        SceneLocation box = scrollNode == null ? null : locate(scrollNode);
         if (box == null) return false;
         if (vertical) {
             float trackY = box.y() + box.bT() + 2, trackH = box.h() - box.bT() - box.bB() - 4;
@@ -1327,22 +1300,19 @@ public class UiView implements AutoCloseable {
         return true;
     }
 
-    public UIHitResult hitTest(double pixelX, double pixelY) {
-        if (!hasInertOrModal()) return hitTestIndex().hitTest(sessionId, pixelX, pixelY);
-        return hitTestIndex().hitTest(sessionId, pixelX, pixelY, nonInertHitFilter);
+    public SceneHit hitTest(double pixelX, double pixelY) {
+        return SceneHitTest.hitTest(scene(), hitTestContext(), pixelX, pixelY);
     }
 
-    /** {@link #hitTest} の結果の項目を絶対座標にしたもの（絶対座標を前提にする MOD 側の消費者用）。 */
-    public UIHitResult hitTestAbsolute(double pixelX, double pixelY) {
-        UIHitResult r = hitTest(pixelX, pixelY);
-        if (r == null || r.element() == null) return r;
-        return new UIHitResult(DisplayItem.resolveAbsolute(itemsById(), r.element()), r.localX(), r.localY());
+    /** {@link #hitTest} の別名（シーン当たり判定は最初から絶対座標を返す）。 */
+    public SceneHit hitTestAbsolute(double pixelX, double pixelY) {
+        return hitTest(pixelX, pixelY);
     }
 
-    public UIHitResult localCoords(String elementId, double pixelX, double pixelY) {
-        DisplayItem el = elementByIdRaw(elementId);
-        if (el == null) return null;
-        return hitTestIndex().getLocalCoords(sessionId, el, pixelX, pixelY);
+    public SceneHit localCoords(String elementId, double pixelX, double pixelY) {
+        HtmlNode target = findNode(elementId);
+        if (target == null) return null;
+        return SceneHitTest.localCoords(scene(), hitTestContext(), target, pixelX, pixelY);
     }
 
     public void updateElementTextLocally(String elementId, String newText) {
@@ -1412,8 +1382,7 @@ public class UiView implements AutoCloseable {
     public void close() {
         renderCache = Collections.emptyList();
         paintOffsets.clearAll();
-        hitTestIndex = null;
-        hitTestIndexSource = null;
+        userPaintOffsets.clearAll();
         if (document != null && document.root instanceof HtmlDocument liveDocument) {
             liveDocument.setDomChangeListener(null);
         }
@@ -1463,8 +1432,8 @@ public class UiView implements AutoCloseable {
         public long lastEventTime = 0;
         public double hoverX = -1, hoverY = -1;
         public int pressedButton = 0;
-        /** 押下時にヒットした描画要素。click のアクション名を GUI へ返すときに使う。 */
-        public DisplayItem pressedElement = null;
+        /** 押下時にヒットした描画層の結果。click のアクション名を GUI へ返すときに使う。 */
+        public SceneHit pressedHit = null;
         public String lastSubmittedId = "";
         public String lastSubmittedText = "";
         public long lastSubmitTime = 0;
@@ -1476,24 +1445,14 @@ public class UiView implements AutoCloseable {
         public long lastClickTime = 0;
 
         public void clear() {
-            draggingId = "";
-            draggingScrollbarPart = "";
-            lastRatio = -1.0f;
-            lastRangeText = "";
-            lastSentX = -1;
-            lastSentY = -1;
-            lastEventTime = 0;
-            hoverX = -1;
-            hoverY = -1;
-            pressedButton = 0;
-            pressedElement = null;
-            lastSubmittedId = "";
-            lastSubmittedText = "";
-            lastSubmitTime = 0;
-            localInputCache.clear();
-            lastCommittedValues.clear();
-            lastClickNode = null;
-            lastClickTime = 0;
+            draggingId = ""; draggingScrollbarPart = "";
+            lastRatio = -1.0f; lastRangeText = "";
+            lastSentX = -1; lastSentY = -1; lastEventTime = 0;
+            hoverX = -1; hoverY = -1;
+            pressedButton = 0; pressedHit = null;
+            lastSubmittedId = ""; lastSubmittedText = ""; lastSubmitTime = 0;
+            localInputCache.clear(); lastCommittedValues.clear();
+            lastClickNode = null; lastClickTime = 0;
         }
     }
 }

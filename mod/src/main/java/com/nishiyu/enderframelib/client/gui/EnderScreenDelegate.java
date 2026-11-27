@@ -1,12 +1,15 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.common.ElementInspector;
 import com.nishiyu.enderframelib.common.SelectPopup;
-import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.client.ClientDomEventDispatcher;
@@ -21,9 +24,8 @@ import com.nishiyu.enderframelib.client.gui.TextareaEditor.TextEditState;
 import com.nishiyu.enderframelib.client.ReactiveStateStore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.text.model.TextSelection;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -113,12 +115,12 @@ public class EnderScreenDelegate implements SessionInput.Host {
     public void sendServerAction(String actionName, Object value) { router.sendServerAction(actionName, value); }
     public boolean dispatchRoutedAction(String action) { return router.dispatch(action); }
 
-    public void renderDevToolsInspector(GuiGraphics guiGraphics, Font font, List<DisplayItem> elements, int webX, int webY, int virtualWidth, int virtualHeight) {
-        WebDevTools.renderInspector(guiGraphics, font, elements, webX, webY, virtualWidth, virtualHeight, sessionId);
+    public void renderDevToolsInspector(GuiGraphics guiGraphics, Font font, int webX, int webY, int virtualWidth, int virtualHeight) {
+        WebDevTools.renderInspector(guiGraphics, font, webX, webY, virtualWidth, virtualHeight, sessionId);
     }
 
-    public void focusWebTextarea(Font font, DisplayItem taEl, double localX, double localY) {
-        textareaEditor.focus(font, taEl, localX, localY);
+    public void focusWebTextarea(Font font, SceneHit hit, double localX, double localY) {
+        textareaEditor.focus(font, hit, localX, localY);
     }
 
     public void updateViewport(int screenW, int screenH, int currentVirtualW, int currentVirtualH, boolean fullscreenResponsive, float marginRatio) {
@@ -195,7 +197,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         focusNavigator.setFocused(safeNext, focusVisible);
     }
 
-    public void renderOverlays(GuiGraphics guiGraphics, Font font, List<DisplayItem> elements,
+    public void renderOverlays(GuiGraphics guiGraphics, Font font,
                                int webX, int webY, int virtualWidth, int virtualHeight, boolean devToolsEnabled) {
         RenderSystem.disableDepthTest();
         try {
@@ -203,7 +205,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
             selectWidget.renderOverlay(guiGraphics, font, webX, webY, session != null ? session.rootNode() : null);
             dragDropController.renderGhost(guiGraphics, font, webX, webY);
             if (devToolsEnabled) {
-                WebDevTools.renderInspector(guiGraphics, font, elements, webX, webY, virtualWidth, virtualHeight, sessionId);
+                WebDevTools.renderInspector(guiGraphics, font, webX, webY, virtualWidth, virtualHeight, sessionId);
             }
         } finally {
             RenderSystem.enableDepthTest();
@@ -226,8 +228,8 @@ public class EnderScreenDelegate implements SessionInput.Host {
                 }
             } else {
                 SessionContext session = ClientWebManager.getSession(sessionId);
-                UIHitResult hit = session != null ? session.hitTestAbsolute(webX, webY) : null;
-                String hitBaseId = hit != null && hit.element() != null ? hit.element().baseId() : "";
+                SceneHit hit = session != null ? session.hitTest(webX, webY) : null;
+                String hitBaseId = hit != null ? hit.baseId() : "";
                 if (selectWidget.openSelectBaseId().equals(hitBaseId)) {
                     selectWidget.close();
                     this.suppressNextRelease = true;
@@ -258,9 +260,21 @@ public class EnderScreenDelegate implements SessionInput.Host {
      * クリック合成を解放時に移した後もこの境界を保つ。
      */
     private static boolean shouldConsumePress(SessionInput.PressResult result) {
-        if (result == null || result.element() == null) return false;
+        if (result == null || result.hit() == null) return false;
         if (result.consumed()) return true;
-        return result.element().type().capturesPress() || hasActionFor(result.pressedNode(), result.hostButton());
+        return capturesPress(result.hit()) || hasActionFor(result.pressedNode(), result.hostButton());
+    }
+
+    private static boolean capturesPress(SceneHit hit) {
+        HtmlNode n = hit != null ? hit.node() : null;
+        if (n == null) return false;
+        String tag = n.tag;
+        if (Scene3DTags.isScene(tag) || ElementTraits.isTextarea(tag) || ElementTraits.isSelect(tag)) return true;
+        if ("input".equalsIgnoreCase(tag)) {
+            String type = hit.layer().values().attr("type", "text").trim();
+            return !"checkbox".equalsIgnoreCase(type) && !"radio".equalsIgnoreCase(type);
+        }
+        return false;
     }
 
     private static boolean hasActionFor(HtmlNode node, int hostButton) {
@@ -279,18 +293,19 @@ public class EnderScreenDelegate implements SessionInput.Host {
 
     @Override
     public void pressed(SessionInput.PressResult result) {
-        if (result == null || result.consumed() || result.element() == null) return;
+        if (result == null || result.consumed() || result.hit() == null) return;
 
         SessionContext session = ClientWebManager.getSession(sessionId);
-        if (session == null || result.hit() == null) return;
+        SceneHit hit = result.hit();
+        if (session == null) return;
 
-        DisplayItem clicked = result.element();
-        UIHitResult hit = result.hit();
         int button = result.hostButton();
+        String baseId = hit.baseId();
+        HtmlNode hitNode = hit.node();
+        String tag = hitNode != null ? hitNode.tag : "";
 
-        if (clicked.type() == ElementType.SCENE) {
+        if (Scene3DTags.isScene(tag)) {
             unfocusWebInput();
-            String baseId = clicked.baseId();
             if (button == 2) {
                 WebSceneContext.getOrCreate(sessionId, baseId).resetCamera();
             } else {
@@ -300,74 +315,71 @@ public class EnderScreenDelegate implements SessionInput.Host {
             return;
         }
 
-        if (clicked.type() == ElementType.TEXTAREA && button == 0) {
+        if (ElementTraits.isTextarea(tag) && button == 0) {
             unfocusWebInput();
-            String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
             session.setFocusedElement(baseId, false);
-            textareaEditor.focus(gestureFont, clicked, hit.localX(), hit.localY());
+            textareaEditor.focus(gestureFont, hit, hit.localX(), hit.localY());
             return;
         }
 
-        boolean isInputOrPlaceholder = clicked.type() == ElementType.INPUT
-                || (clicked.type() == ElementType.TEXT && clicked.isPart("_ph"));
-        if (isInputOrPlaceholder && button == 0) {
-            String baseId = clicked.baseId();
+        boolean isTextInput = "input".equalsIgnoreCase(tag) && ElementTraits.isTextControl(hitNode);
+        if (isTextInput && button == 0) {
             focusNavigator.setFocused(baseId);
             session.setFocusedElement(baseId, false);
             String curVal = getInputValue(baseId);
-            if (curVal.isEmpty() && clicked.text() != null && !clicked.isPart("_ph")) curVal = clicked.text();
+            if (curVal.isEmpty()) curVal = hit.layer().values().attr("value", "");
             focusWebInput(gestureScreen, baseId, curVal);
             return;
         }
 
         unfocusWebInput();
 
-        if (clicked.type() == ElementType.TEXT && button == 0) {
+        if (hit.layer().isText() && hit.text() != null && button == 0) {
             TextSelection sel = session.textSelection();
-            if (sel != null && clicked.text() != null) {
-                int charOffset = estimateCharOffset(clicked, gestureFont, hit.localX());
-                sel.startSelection(clicked.baseId(), charOffset);
+            if (sel != null) {
+                int charOffset = estimateCharOffset(hit, gestureFont, hit.localX());
+                sel.startSelection(baseId, charOffset);
             }
         }
 
-        String baseId = clicked.baseId();
         HtmlNode domNode = session.findInteractiveNode(baseId);
         HtmlNode focusTarget = focusNavigator.findFocusableTarget(domNode);
         setFocusedDomElement(focusTarget != null ? focusTarget.key() : "", false);
-        boolean isSelectElement = clicked.type() == ElementType.SELECT || (domNode != null && "select".equalsIgnoreCase(domNode.tag));
+        boolean isSelectElement = ElementTraits.isSelect(tag) || (domNode != null && ElementTraits.isSelect(domNode.tag));
         if (isSelectElement && button == 0) {
-            selectWidget.open(baseId, clicked, session.rootNode());
+            SceneLocation selectLoc = hitNode != null ? session.locate(hitNode)
+                    : SceneQuery.locateById(session.scene(), session.dynamicState(), baseId);
+            selectWidget.open(baseId, selectLoc, session.rootNode());
             return;
         }
 
-        if (clicked.type() == ElementType.RANGE && button == 0) {
-            // 値の確定は SessionInput が押下・ドラッグ・解放で行う。ここでは GUI の購読者へ
-            // 押下直後の値を知らせるだけにして、ワールド内と同じイベント順を保つ。
-            DisplayItem updated = session.elementById(baseId);
-            if (updated != null && updated.text() != null) {
-                String val = updated.text().split(":")[0];
+        if ("input".equalsIgnoreCase(tag) && "range".equalsIgnoreCase(hit.layer().values().attr("type", "")) && button == 0) {
+            HtmlNode updated = session.findNode(baseId);
+            if (updated != null && updated.attrs.containsKey("value")) {
+                String val = updated.attrs.get("value");
                 if (this.state != null) this.state.notifyElementModelChanged(baseId, val);
                 if (gestureInputChanged != null) gestureInputChanged.accept(baseId, val);
             }
             return;
         }
 
-        if (button == 0 && clicked.events() != null && "true".equalsIgnoreCase(clicked.events().get("draggable"))) {
+        if (button == 0 && "true".equalsIgnoreCase(hit.layer().values().attr("draggable"))) {
             String label = (domNode != null && !domNode.getTextContent().isEmpty()) ? domNode.getTextContent().trim() : baseId;
             dragDropController.startDrag(baseId, label);
         }
     }
 
     @Override
-    public boolean scrollHandled(UIHitResult hit, double scrollY) {
-        if (hit == null || hit.element() == null) return false;
-        if (hit.element().type() == ElementType.SCENE) {
-            WebSceneContext.getOrCreate(sessionId, hit.element().baseId()).addZoom((float) (scrollY * 0.12));
+    public boolean scrollHandled(SceneHit hit, double scrollY) {
+        if (hit == null || hit.node() == null) return false;
+        String tag = hit.node().tag;
+        if (Scene3DTags.isScene(tag)) {
+            WebSceneContext.getOrCreate(sessionId, hit.baseId()).addZoom((float) (scrollY * 0.12));
             return true;
         }
-        if (hit.element().type() == ElementType.TEXTAREA) {
-            String taId = hit.element().id();
+        if (ElementTraits.isTextarea(tag)) {
+            String taId = hit.baseId() + "_textarea";
             int curScroll = TextEditState.getTextareaScrollRow(sessionId, taId);
             int nextScroll = Math.max(0, curScroll - (int) Math.signum(scrollY) * 3);
             TextEditState.setTextareaScrollRow(sessionId, taId, nextScroll);
@@ -389,7 +401,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
 
         @Override
-        public void action(String action, DisplayItem clicked, int button) {
+        public void action(String action, SceneHit clicked, int button) {
             invoked = true;
             if (onWebAction != null) onWebAction.onAction(action, clicked, button);
         }
@@ -402,8 +414,9 @@ public class EnderScreenDelegate implements SessionInput.Host {
         @Override
         public void clickDelegate(com.nishiyu.enderframelib.common.UiInput input, HtmlNode target, double x, double y, int hostButton) {
             SessionContext session = ClientWebManager.getSession(sessionId);
-            DisplayItem targetItem = session != null ? session.elementById(target.key()) : null;
-            input.dispatchClick(target, x, y, hostButton, targetItem, this);
+            SceneLocation loc = session != null && target != null ? session.locate(target) : null;
+            SceneHit targetHit = loc != null ? new SceneHit(loc.layer(), 0, 0, null, loc.x(), loc.y(), null) : null;
+            input.dispatchClick(target, x, y, hostButton, targetHit, this);
         }
 
         private boolean invoked() {
@@ -423,12 +436,12 @@ public class EnderScreenDelegate implements SessionInput.Host {
      * 要素の書体で測った、{@code localX}（要素の左端からの CSS px）に最も近い字の境目。
      * システムの書体なら描画と同じ字の位置（詰めを含む）で決める。
      */
-    public static int estimateCharOffset(DisplayItem el, Font fallback, double localX) {
-        String text = el.text();
-        OutlineFontFace face = WebFontManager.outlineFaceFor(el);
+    public static int estimateCharOffset(SceneHit hit, Font fallback, double localX) {
+        if (hit == null) return 0;
+        String text = hit.text();
+        OutlineFontFace face = WebFontManager.outlineFaceFor(hit.layer());
         if (face == null || text == null) return estimateCharOffset(fallback, text, localX);
-        float fontH = el.meta() != null ? el.meta().fontHeight() : el.height();
-        return OutlineFontFace.nearestBoundary(text, face.positions(text, WebFontManager.fontStyleFor(el, fontH)), localX);
+        return OutlineFontFace.nearestBoundary(text, face.positions(text, WebFontManager.fontStyleFor(hit.layer())), localX);
     }
 
     public static int estimateCharOffset(Font font, String text, double localX) {
@@ -461,9 +474,11 @@ public class EnderScreenDelegate implements SessionInput.Host {
             SessionContext session = ClientWebManager.getSession(sessionId);
             if (session != null && !session.activePressedId().isEmpty()) {
                 String baseId = session.activePressedId();
-                DisplayItem updated = session.elementById(baseId);
-                if (updated != null && updated.type() == ElementType.RANGE && updated.text() != null) {
-                    String val = updated.text().split(":")[0];
+                HtmlNode updated = session.findNode(baseId);
+                if (updated != null && "input".equalsIgnoreCase(updated.tag)
+                        && "range".equalsIgnoreCase(updated.attrs.getOrDefault("type", ""))
+                        && updated.attrs.containsKey("value")) {
+                    String val = updated.attrs.get("value");
                     if (this.state != null) this.state.notifyElementModelChanged(baseId, val);
                     if (onInputChanged != null) onInputChanged.accept(baseId, val);
                 }
@@ -474,12 +489,12 @@ public class EnderScreenDelegate implements SessionInput.Host {
         SessionContext session = ClientWebManager.getSession(sessionId);
         TextSelection sel = session != null ? session.textSelection() : null;
         if (sel != null && !sel.anchorNodeId().isEmpty()) {
-            UIHitResult dragHit = session.hitTestAbsolute(webX, webY);
-            if (dragHit != null && dragHit.element() != null && dragHit.element().text() != null) {
-                if (sel.anchorNodeId().equals(dragHit.element().baseId())) {
+            SceneHit dragHit = session.hitTest(webX, webY);
+            if (dragHit != null && dragHit.text() != null) {
+                if (sel.anchorNodeId().equals(dragHit.baseId())) {
                     Font font = Minecraft.getInstance().font;
-                    int offset = estimateCharOffset(dragHit.element(), font, dragHit.localX());
-                    sel.updateWithinNode(sel.anchorNodeId(), offset, dragHit.element().text());
+                    int offset = estimateCharOffset(dragHit, font, dragHit.localX());
+                    sel.updateWithinNode(sel.anchorNodeId(), offset, dragHit.text());
                     return true;
                 }
             }
@@ -737,12 +752,13 @@ public class EnderScreenDelegate implements SessionInput.Host {
                                            BiConsumer<String, String> onInputChanged,
                                            ClientDomEventDispatcher.TriActionCallback onWebAction) {
         SessionContext session = ClientWebManager.getSession(sessionId);
-        DisplayItem el = session != null ? session.elementById(node.key()) : null;
-        if (el != null) {
-            ClientScreenInteractionManager.playElementSound(el);
+        SceneLocation loc = session != null && node != null ? session.locate(node) : null;
+        SceneHit hit = loc != null ? new SceneHit(loc.layer(), 0, 0, null, loc.x(), loc.y(), null) : null;
+        if (hit != null) {
+            ClientScreenInteractionManager.playElementSound(hit);
         }
         GuiClickSink sink = new GuiClickSink(onInputChanged, onWebAction);
-        ClientWebManager.getOrCreateSession(sessionId).input().dispatchClick(node, 0, 0, 0, el, sink);
+        ClientWebManager.getOrCreateSession(sessionId).input().dispatchClick(node, 0, 0, 0, hit, sink);
         return sink.invoked();
     }
 
@@ -882,11 +898,12 @@ public class EnderScreenDelegate implements SessionInput.Host {
 
     public static class WebDevTools {
         public static void renderInspector(
-                GuiGraphics guiGraphics, Font font, List<DisplayItem> elements,
+                GuiGraphics guiGraphics, Font font,
                 int webX, int webY, int virtualWidth, int virtualHeight,
                 String sessionId
         ) {
-            if (elements == null) return;
+            SessionContext session = ClientWebManager.getSession(sessionId);
+            if (session == null || session.scene() == null) return;
             PoseStack pose = guiGraphics.pose();
             pose.pushPose();
             pose.translate(0, 0, 350f); // 面の上の飾りの奥行き: 選択欄 300 < ドラッグ 320 < DevTools 350
@@ -896,47 +913,38 @@ public class EnderScreenDelegate implements SessionInput.Host {
             guiGraphics.fill(0, 0, font.width(banner) + 8, 13, 0xDD11111B);
             guiGraphics.drawString(font, banner, 4, 2, 0xFFA6E3A1, false);
 
-            DisplayItem targetAnchor = null;
-            for (int i = elements.size() - 1; i >= 0; i--) {
-                DisplayItem el = elements.get(i);
-                if (el.type() == ElementType.NODE && !"html_root".equals(el.id()) && el.width() > 0 && el.height() > 0) {
-                    if (webX >= el.x() && webX <= el.x() + el.width() && webY >= el.y() && webY <= el.y() + el.height()) {
-                        targetAnchor = el;
-                        break;
-                    }
-                }
-            }
+            HtmlNode domNode = ElementInspector.pick(session, webX, webY);
+            if (domNode != null && "html".equalsIgnoreCase(domNode.tag)) domNode = null;
+            ElementInspector.Info info = domNode != null ? ElementInspector.inspect(session, domNode) : null;
 
-            if (targetAnchor != null) {
-                SessionContext session = ClientWebManager.getSession(sessionId);
-                HtmlNode domNode = session != null ? session.findNode(targetAnchor.id()) : null;
-                int x = targetAnchor.x(), y = targetAnchor.y(), w = targetAnchor.width(), h = targetAnchor.height();
+            if (info != null) {
+                int x = Math.round(info.x()), y = Math.round(info.y());
+                int w = Math.round(info.w()), h = Math.round(info.h());
+                if (w > 0 && h > 0) {
+                    guiGraphics.renderOutline(x, y, w, h, 0xFF89B4FA);
 
-                guiGraphics.renderOutline(x, y, w, h, 0xFF89B4FA);
-
-                List<String> infoLines = new ArrayList<>();
-                String tagLabel = domNode != null ? "<" + domNode.tag + ">" : "<node>";
-                String idLabel = (domNode != null && !domNode.key().isEmpty()) ? "#" + domNode.key() : "#" + targetAnchor.id();
-                String clsLabel = (domNode != null && !domNode.getClasses().isEmpty()) ? "." + String.join(".", domNode.getClasses()) : "";
-                infoLines.add("§b" + tagLabel + " §e" + idLabel + "§a" + clsLabel);
-                infoLines.add("§7Rect: §f" + w + "x" + h + " §7at (" + x + ", " + y + ")");
-                if (domNode != null) {
+                    List<String> infoLines = new ArrayList<>();
+                    String tagLabel = "<" + domNode.tag + ">";
+                    String idLabel = !domNode.key().isEmpty() ? "#" + domNode.key() : "";
+                    String clsLabel = !domNode.getClasses().isEmpty() ? "." + String.join(".", domNode.getClasses()) : "";
+                    infoLines.add("§b" + tagLabel + " §e" + idLabel + "§a" + clsLabel);
+                    infoLines.add("§7Rect: §f" + w + "x" + h + " §7at (" + x + ", " + y + ")");
                     if (domNode.attrs.containsKey("data-model")) infoLines.add("§ddata-model: §f" + domNode.attrs.get("data-model"));
                     if (domNode.attrs.containsKey("data-bind")) infoLines.add("§ddata-bind: §f" + domNode.attrs.get("data-bind"));
                     if (domNode.attrs.containsKey("data-slot")) infoLines.add("§6data-slot: §f#" + domNode.attrs.get("data-slot"));
                     if (domNode.attrs.containsKey("onclick")) infoLines.add("§conclick: §f" + domNode.attrs.get("onclick"));
-                }
 
-                int cardW = 0;
-                for (String line : infoLines) cardW = Math.max(cardW, font.width(line) + 10);
-                int cardH = infoLines.size() * 11 + 6;
-                int cardX = Math.clamp(x, 4, Math.max(4, virtualWidth - cardW - 4));
-                int cardY = (y - cardH - 4 >= 16) ? (y - cardH - 4) : Math.min(virtualHeight - cardH - 4, y + h + 4);
+                    int cardW = 0;
+                    for (String line : infoLines) cardW = Math.max(cardW, font.width(line) + 10);
+                    int cardH = infoLines.size() * 11 + 6;
+                    int cardX = Math.clamp(x, 4, Math.max(4, virtualWidth - cardW - 4));
+                    int cardY = (y - cardH - 4 >= 16) ? (y - cardH - 4) : Math.min(virtualHeight - cardH - 4, y + h + 4);
 
-                guiGraphics.fill(cardX - 1, cardY - 1, cardX + cardW + 1, cardY + cardH + 1, 0xFF89B4FA);
-                guiGraphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xEE181825);
-                for (int i = 0; i < infoLines.size(); i++) {
-                    guiGraphics.drawString(font, infoLines.get(i), cardX + 5, cardY + 4 + i * 11, 0xFFFFFFFF, false);
+                    guiGraphics.fill(cardX - 1, cardY - 1, cardX + cardW + 1, cardY + cardH + 1, 0xFF89B4FA);
+                    guiGraphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xEE181825);
+                    for (int i = 0; i < infoLines.size(); i++) {
+                        guiGraphics.drawString(font, infoLines.get(i), cardX + 5, cardY + 4 + i * 11, 0xFFFFFFFF, false);
+                    }
                 }
             }
 
@@ -1213,10 +1221,10 @@ public class EnderScreenDelegate implements SessionInput.Host {
         public void handleRelease(String sessionId, double webX, double webY, DropCallback onWebDrop) {
             if (!isDragging()) return;
             SessionContext session = ClientWebManager.getSession(sessionId);
-            UIHitResult hit = session != null ? session.hitTestAbsolute(webX, webY) : null;
-            if (hit != null && hit.element() != null) {
-                String targetBaseId = hit.element().baseId();
-                String dropAction = hit.element().events() != null ? hit.element().events().getOrDefault("ondrop", "") : "";
+            SceneHit hit = session != null ? session.hitTest(webX, webY) : null;
+            if (hit != null) {
+                String targetBaseId = hit.baseId();
+                String dropAction = hit.layer().values().attr("ondrop", "");
                 if (!targetBaseId.equals(draggingElementId) && onWebDrop != null) {
                     onWebDrop.onDrop(draggingElementId, targetBaseId, dropAction);
                 }
@@ -1259,20 +1267,14 @@ public class EnderScreenDelegate implements SessionInput.Host {
             return popup.contains(webX, webY);
         }
 
-        public void open(String baseId, DisplayItem selectEl, HtmlNode virtualRoot) {
-            if (baseId.equals(openSelectBaseId())) {
-                close();
-                return;
-            }
+        public void open(String baseId, SceneLocation selectLoc, HtmlNode virtualRoot) {
+            if (baseId.equals(openSelectBaseId())) { close(); return; }
             HtmlNode selectNode = virtualRoot != null ? virtualRoot.getNodeById(baseId) : null;
             if (selectNode == null) return;
-            // 画面の高さの見込みが無いので、従来どおり常に下へ開く
-            popup.open(selectNode, selectEl, Integer.MAX_VALUE);
+            popup.open(selectNode, selectLoc, Integer.MAX_VALUE);
         }
 
-        public void close() {
-            popup.close();
-        }
+        public void close() { popup.close(); }
 
         public boolean handleClick(double webX, double webY, BiConsumer<String, String> onSelected) {
             if (!popup.isOpen()) return false;
@@ -1280,18 +1282,13 @@ public class EnderScreenDelegate implements SessionInput.Host {
             String chosenVal = popup.valueAt(webX, webY);
             String baseId = popup.select().key();
             close();
-            if (chosenVal != null) {
-                if (onSelected != null) onSelected.accept(baseId, chosenVal);
-                return true;
-            }
-            return withinBounds; // 枠や無効な項目は閉じて、クリックは使ったことにする
+            if (chosenVal != null) { if (onSelected != null) onSelected.accept(baseId, chosenVal); return true; }
+            return withinBounds;
         }
 
         public void renderOverlay(GuiGraphics guiGraphics, Font font, int webX, int webY, HtmlNode virtualRoot) {
             if (!popup.isOpen()) return;
-            PoseStack pose = guiGraphics.pose();
-            pose.pushPose();
-            pose.translate(0, 0, 300f); // 面（z 0）とフォーカスの枠より手前
+            PoseStack pose = guiGraphics.pose(); pose.pushPose(); pose.translate(0, 0, 300f);
 
             int popupX = popup.x(), popupY = popup.y(), popupW = popup.width();
             int itemH = SelectPopup.ROW_HEIGHT;

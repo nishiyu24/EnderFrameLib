@@ -23,10 +23,12 @@ public final class SceneChunk {
     public final boolean propagatesBlend;
     public final SceneLayer[] stickyDescendants;
     public final int anonChain;
+    /** 自身または子孫に変形・アニメーション・sticky・アンカー追従・Top Layer が含まれるか（カリング除外判定）。 */
+    public final boolean hasDynamicBounds;
 
     private SceneChunk(FlowChunk source, SceneLayer[] layers, float minX, float minY, float maxX, float maxY,
                        int propagatedLayers, boolean anchoredBelow, boolean propagatesBlend,
-                       SceneLayer[] stickyDescendants, int anonChain) {
+                       SceneLayer[] stickyDescendants, int anonChain, boolean hasDynamicBounds) {
         this.source = source;
         this.layers = layers;
         this.minX = minX;
@@ -38,16 +40,17 @@ public final class SceneChunk {
         this.propagatesBlend = propagatesBlend;
         this.stickyDescendants = stickyDescendants;
         this.anonChain = anonChain;
+        this.hasDynamicBounds = hasDynamicBounds;
     }
 
     public static SceneChunk of(FlowChunk source, SceneLayer[] layers) {
         if (layers == null || layers.length == 0) {
-            return new SceneChunk(source, SceneLayer.NO_LAYERS, 0f, 0f, 0f, 0f, 0, false, false, SceneLayer.NO_LAYERS, 0);
+            return new SceneChunk(source, SceneLayer.NO_LAYERS, 0f, 0f, 0f, 0f, 0, false, false, SceneLayer.NO_LAYERS, 0, false);
         }
         float minX = Float.POSITIVE_INFINITY, minY = Float.POSITIVE_INFINITY;
         float maxX = Float.NEGATIVE_INFINITY, maxY = Float.NEGATIVE_INFINITY;
         int prop = 0, anon = 0;
-        boolean anch = false, blend = false;
+        boolean anch = false, blend = false, dyn = false;
         SceneLayer[] singleStickies = null;
         List<SceneLayer> multiStickies = null;
         for (SceneLayer l : layers) {
@@ -58,6 +61,7 @@ public final class SceneChunk {
             prop |= l.propagatedLayers;
             anch |= l.anchoredBelow();
             blend |= l.propagatesBlend();
+            dyn |= l.hasDynamicBounds();
             anon += l.anonChain;
             SceneLayer[] st = l.bubbledStickies();
             if (st.length > 0) {
@@ -75,7 +79,7 @@ public final class SceneChunk {
         if (minX > maxX) { minX = minY = maxX = maxY = 0f; }
         SceneLayer[] stickies = multiStickies != null ? multiStickies.toArray(SceneLayer.NO_LAYERS)
                 : singleStickies != null ? singleStickies : SceneLayer.NO_LAYERS;
-        return new SceneChunk(source, layers, minX, minY, maxX, maxY, prop, anch, blend, stickies, anon);
+        return new SceneChunk(source, layers, minX, minY, maxX, maxY, prop, anch, blend, stickies, anon, dyn);
     }
 
     public int size() {

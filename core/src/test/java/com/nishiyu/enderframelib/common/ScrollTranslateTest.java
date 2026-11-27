@@ -2,10 +2,10 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -111,8 +111,8 @@ public class ScrollTranslateTest {
         }
         List<String> hits = new ArrayList<>();
         for (int[] p : probes) {
-            UIHitResult top = view.ui().hitTest(p[0], p[1]);
-            hits.add(top == null ? "-" : top.element().id());
+            SceneHit top = view.ui().hitTest(p[0], p[1]);
+            hits.add(top == null ? "-" : (top.isScrollbar() ? top.baseId() + top.scrollbarPart() : top.baseId()));
         }
         return new Frame(pos, body, byId, hits, probes, missing);
     }

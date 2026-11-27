@@ -1,8 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.UIHitResult;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -34,7 +33,7 @@ class UiViewTest {
     void loadsDocumentAndBuildsDisplayList() {
         try (UiView view = load()) {
             assertNotNull(view.document());
-            assertNotNull(view.boxRoot());
+            assertNotNull(view.scene());
             assertEquals(320, view.rootW());
             assertEquals(240, view.rootH());
             assertFalse(view.elements().isEmpty());
@@ -59,9 +58,9 @@ class UiViewTest {
     @Test
     void hitTestFindsTheElementUnderThePoint() {
         try (UiView view = load()) {
-            UIHitResult hit = view.hitTest(20, 20);
+            SceneHit hit = view.hitTest(20, 20);
             assertNotNull(hit);
-            assertEquals("a", hit.element().baseId());
+            assertEquals("a", hit.baseId());
         }
     }
 
@@ -126,7 +125,7 @@ class UiViewTest {
         view.inputScrollOffsets().put("x", 1);
         view.close();
         assertNull(view.document());
-        assertNull(view.boxRoot());
+        assertNull(view.scene());
         assertTrue(view.renderCache().isEmpty());
         assertTrue(view.inputScrollOffsets().isEmpty());
     }

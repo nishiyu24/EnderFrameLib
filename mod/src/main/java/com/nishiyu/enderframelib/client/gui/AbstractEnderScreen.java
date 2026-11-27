@@ -229,7 +229,7 @@ public class AbstractEnderScreen extends Screen implements EnderScreenHost {
     }
 
     protected void onInputChanged(String elementId, String newText) {}
-    protected void onWebAction(String action, DisplayItem clickedElement, int mouseButton) {}
+    protected void onWebAction(String action, com.nishiyu.enderframelib.core.paint.scene.SceneHit clickedElement, int mouseButton) {}
     protected void onWebInputChanged(String elementId, String newText) {}
     protected void onWebInputSubmitted(String elementId, String text) {}
     protected void onWebDrop(String draggedId, String dropTargetId, String dropAction) {}
@@ -288,14 +288,14 @@ public class AbstractEnderScreen extends Screen implements EnderScreenHost {
                     SurfaceStyle.gui(true).withHovered(hoveredId), poseStack, bufferSource);
             bufferSource.endBatch();
 
-            this.uiSupport.renderOverlays(guiGraphics, this.font, devToolsEnabled ? uiSession.elements() : elements, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);
+            this.uiSupport.renderOverlays(guiGraphics, this.font, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);
 
             poseStack.popPose();
         }
     }
 
-    protected void renderDevToolsInspector(GuiGraphics guiGraphics, List<DisplayItem> elements, int webX, int webY) {
-        this.uiSupport.renderDevToolsInspector(guiGraphics, this.font, elements, webX, webY, virtualWidth, virtualHeight);
+    protected void renderDevToolsInspector(GuiGraphics guiGraphics, int webX, int webY) {
+        this.uiSupport.renderDevToolsInspector(guiGraphics, this.font, webX, webY, virtualWidth, virtualHeight);
     }
 
     @Override

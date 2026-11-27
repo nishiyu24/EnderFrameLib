@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.BoxDecorations;
 import com.nishiyu.enderframelib.core.paint.Gradients;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -54,7 +53,7 @@ public class PaintModelTest {
                 <div id="a" style="height: 20px; font-size: 0;"><span id="s" style="display: inline-block; width: 10px; height: 10px; background: green;"></span></div>
                 <div id="b" style="height: 20px; margin-top: -20px; background-color: red;"></div>
                 """);
-        List<PaintBox> order = paintOrder(r.root, r.elements);
+        List<TestBoxes.Box> order = paintOrder(r.root, r.elements);
         int b = order.indexOf(find(r.root, "b"));
         int s = order.indexOf(find(r.root, "s"));
         assertTrue(b >= 0 && s > b, "後のブロックの背景がインラインブロックを覆っている: b=" + b + " s=" + s);
@@ -116,7 +115,7 @@ public class PaintModelTest {
             assertEquals(RED, d.bgColor());
         }
         // 両端が線で終わる
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         assertEquals(Math.round(a.x()), dashes.getFirst().x());
         DisplayItem last = dashes.getLast();
         assertEquals(Math.round(a.x() + a.w()), last.x() + last.width());
@@ -133,7 +132,7 @@ public class PaintModelTest {
         Rendered r = render("<div id=\"a\" style=\"width: 60px; height: 30px; border: 6px double rgb(255, 0, 0);\"></div>");
         List<DisplayItem> lines = parts(r, "a_b_top");
         assertEquals(2, lines.size());
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         assertEquals(2, lines.get(0).height());
         assertEquals(Math.round(a.y()), lines.get(0).y());
         assertEquals(Math.round(a.y() + 4), lines.get(1).y());
@@ -144,7 +143,7 @@ public class PaintModelTest {
     @Test
     public void testOutlineIsDrawnOutsideTheBorderBoxWithoutAffectingLayout() {
         Rendered r = render("<div id=\"a\" style=\"margin: 10px; width: 50px; height: 20px; outline: 2px solid rgb(255, 0, 0); outline-offset: 3px;\"></div>");
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         assertEquals(50, a.w(), 0.01f);
         DisplayItem top = DisplayItem.resolveAbsolute(r.elements, element(r, "a_o_top"));
         assertNotNull(top);
@@ -177,7 +176,7 @@ public class PaintModelTest {
                 """);
         List<DisplayItem> tiles = parts(r, "a_bgl0");
         assertEquals(4, tiles.size());
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         for (int i = 0; i < 4; i++) {
             DisplayItem absTile = DisplayItem.resolveAbsolute(r.elements, tiles.get(i));
             assertEquals(Math.round(a.x() + i * 10), absTile.x());
@@ -189,7 +188,7 @@ public class PaintModelTest {
 
         List<DisplayItem> centered = parts(r, "b_bgl0");
         assertEquals(1, centered.size());
-        PaintBox b = find(r.root, "b");
+        TestBoxes.Box b = find(r.root, "b");
         DisplayItem absCentered = DisplayItem.resolveAbsolute(r.elements, centered.getFirst());
         assertEquals(Math.round(b.x() + 15), absCentered.x());
         assertEquals(Math.round(b.y() + 15), absCentered.y());
@@ -199,7 +198,7 @@ public class PaintModelTest {
     @Test
     public void testBackgroundClipPaddingBoxKeepsColorOffTheBorder() {
         Rendered r = render("<div id=\"a\" style=\"width: 20px; height: 20px; border: 5px solid rgba(0, 0, 0, 0.5); background-color: rgb(255, 0, 0); background-clip: padding-box;\"></div>");
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         DisplayItem bg = element(r, "a_bg");
         assertNotNull(bg, "ヒットテストの受け口の _bg が消えている");
         assertEquals(0, bg.bgColor());
@@ -217,7 +216,7 @@ public class PaintModelTest {
     @Test
     public void testTransparentRoundedBorderPaintsOnlyTheBorderArea() {
         Rendered r = render("<div id=\"a\" style=\"width: 40px; height: 20px; border: 2px solid rgb(255, 0, 0); border-radius: 6px; background: transparent;\"></div>");
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         // 以前は箱全体を枠の色で塗った下地（_bbg）が出て、透明な背景の箱が赤く塗りつぶされていた
         assertTrue(r.elements.stream().noneMatch(e -> e.id().startsWith("a_") && e.bgColor() == RED),
                 "枠の色で塗りつぶす部品が残っている");
@@ -251,7 +250,7 @@ public class PaintModelTest {
     @Test
     public void testRoundedBorderDrawsBackgroundUnderTheWholeBorderBox() {
         Rendered r = render("<div id=\"a\" style=\"width: 40px; height: 20px; border: 2px solid rgb(255, 0, 0); border-radius: 6px; background-color: rgba(0, 255, 0, 0.5);\"></div>");
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         DisplayItem bg = element(r, "a_bg");
         assertNotNull(bg);
         assertEquals(0x8000FF00, bg.bgColor());
@@ -267,18 +266,18 @@ public class PaintModelTest {
                 <div id="b" style="height: 20px; overflow: hidden;"><div id="d" style="height: 50px; background-color: rgb(0, 255, 0);"></div></div>
                 <div id="e" style="width: 30px; height: 20px; overflow-x: clip;"><div id="f" style="width: 80px; height: 50px; background-color: rgb(0, 255, 0);"></div></div>
                 """);
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         ClipRect c = element(r, "c_bg").meta().clipRect();
         assertNotNull(c, "overflow-y: auto の中身が切られていない");
         assertEquals(a.y() + a.h(), c.maxY(), 0.01f);
 
-        PaintBox b = find(r.root, "b");
+        TestBoxes.Box b = find(r.root, "b");
         ClipRect d = element(r, "d_bg").meta().clipRect();
         assertNotNull(d, "overflow: hidden の中身が切られていない");
         assertEquals(b.y() + b.h(), d.maxY(), 0.01f);
 
         // overflow-x: clip（もう片方は visible）は横だけを切る
-        PaintBox e = find(r.root, "e");
+        TestBoxes.Box e = find(r.root, "e");
         ClipRect f = element(r, "f_bg").meta().clipRect();
         assertNotNull(f);
         assertEquals(e.x() + e.w(), f.maxX(), 0.01f);
@@ -306,7 +305,7 @@ public class PaintModelTest {
         assertEquals(null, element(r, "abs_bg").meta().clipRect(), "包含ブロックでない overflow が絶対配置を切っている");
         assertEquals(null, element(r, "fix_bg").meta().clipRect(), "固定配置が祖先の overflow で切られている");
         // 包含ブロック自身の overflow は切る
-        PaintBox o2 = find(r.root, "o2");
+        TestBoxes.Box o2 = find(r.root, "o2");
         ClipRect inner = element(r, "inner_bg").meta().clipRect();
         assertNotNull(inner);
         assertEquals(o2.y() + o2.h(), inner.maxY(), 0.01f);
@@ -376,7 +375,7 @@ public class PaintModelTest {
         assertTrue(BoxDecorations.parseBoxShadows("2px rgb(0, 0, 0)", 0, 320, 200, 16, 16).isEmpty(), "長さが 1 つの影は無効");
 
         Rendered r = render("<div id=\"a\" style=\"margin: 20px; width: 40px; height: 20px; background-color: rgb(255, 255, 255); box-shadow: 5px 6px 0 2px rgb(0, 0, 0);\"></div>");
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         List<DisplayItem> parts = parts(r, "a_shadow");
         assertEquals(1, parts.size(), "ぼかしの無い影は 1 枚");
         DisplayItem shadow = parts.getFirst();
@@ -402,7 +401,7 @@ public class PaintModelTest {
     @Test
     public void testInsetShadowPaintsInsideThePaddingBoxAboveTheBackground() {
         Rendered r = render("<div id=\"a\" style=\"width: 40px; height: 20px; border: 2px solid rgb(0, 0, 255); border-radius: 6px; background-color: rgb(255, 255, 255); box-shadow: inset 1px 2px 4px 3px rgb(255, 0, 0);\"></div>");
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         List<DisplayItem> shadows = r.elements.stream().filter(e -> e.id().startsWith("a_shadow_in")).toList();
         assertEquals(1, shadows.size(), "内側の影は 1 枚（穴の外をシェーダーが減衰させて塗る）");
         DisplayItem shadow = shadows.getFirst();
@@ -428,7 +427,7 @@ public class PaintModelTest {
     @Test
     public void testBlurredOuterShadowCarriesTheBoxAsAHole() {
         Rendered r = render("<div id=\"a\" style=\"margin: 20px; width: 40px; height: 20px; border-radius: 5px; box-shadow: 0 0 8px rgb(0, 0, 0);\"></div>");
-        PaintBox a = find(r.root, "a");
+        TestBoxes.Box a = find(r.root, "a");
         ShadowShape hole = parts(r, "a_shadow").getFirst().hints().shadowShape();
         assertNotNull(hole, "ぼかした外側の影は箱の形を穴として持つ（透明な箱の内側に影が透けない）");
         assertEquals(false, hole.inset());
@@ -584,7 +583,7 @@ public class PaintModelTest {
     @Test
     public void testInlineBoxPaintsOneBackgroundPerLineAndSlicesItsBorders() {
         Rendered r = render("<div style=\"width: 60px;\"><span id=\"s\" style=\"border: 2px solid rgb(255, 0, 0); background-color: rgb(0, 255, 0); padding: 0 3px;\">alpha beta gamma delta</span></div>");
-        List<? extends com.nishiyu.enderframelib.core.paint.tree.PaintRun> frags = find(r.root, "s").runs();
+        List<? extends com.nishiyu.enderframelib.core.paint.scene.SceneRun> frags = find(r.root, "s").runs();
         assertTrue(frags.size() > 1, "折り返しが起きていない");
         // 以前は語ごとに背景の部品があり、枠線は描かれなかった
         assertEquals(frags.size(), numbered(r, "s_frag_").size());
@@ -635,13 +634,13 @@ public class PaintModelTest {
         return r.elements.stream().filter(e -> e.id().startsWith(prefix) && e.id().substring(prefix.length()).matches("\\d+")).toList();
     }
 
-    private record Rendered(PaintBox root, List<DisplayItem> elements) {}
+    private record Rendered(TestBoxes.Box root, List<DisplayItem> elements) {}
 
     private static Rendered render(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(
                 "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", VIEWPORT_W, VIEWPORT_H);
-        PaintBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
                 return new Rendered(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
     }
 
@@ -654,10 +653,10 @@ public class PaintModelTest {
         return r.elements.stream().filter(e -> e.id().equals(prefix) || e.id().startsWith(prefix + "_")).toList();
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = find(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;
@@ -667,18 +666,18 @@ public class PaintModelTest {
      * 箱を描いた順（箱の節の最初の表示項目の順。項目を持たない箱は含まない）。旧経路の {@code DisplayListBuilder.paintOrder} の代わりに、
      * 描いた結果（表示リスト）から読む。
      */
-    private static List<PaintBox> paintOrder(PaintBox root, List<DisplayItem> items) {
+    private static List<TestBoxes.Box> paintOrder(TestBoxes.Box root, List<DisplayItem> items) {
         java.util.Map<String, Integer> first = new java.util.HashMap<>();
         for (int i = 0; i < items.size(); i++) first.putIfAbsent(items.get(i).baseId(), i);
-        List<PaintBox> all = new java.util.ArrayList<>();
+        List<TestBoxes.Box> all = new java.util.ArrayList<>();
         collectAll(root, all);
         all.removeIf(b -> b.isAnonymous || b.node == null || !first.containsKey(b.node.getId()));
         all.sort(java.util.Comparator.comparingInt(b -> first.get(b.node.getId())));
         return all;
     }
 
-    private static void collectAll(PaintBox b, List<PaintBox> out) {
+    private static void collectAll(TestBoxes.Box b, List<TestBoxes.Box> out) {
         out.add(b);
-        for (PaintBox c : b.paintChildren()) collectAll(c, out);
+        for (TestBoxes.Box c : b.paintChildren()) collectAll(c, out);
     }
 }

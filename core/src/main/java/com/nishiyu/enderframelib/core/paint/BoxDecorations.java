@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
@@ -323,7 +322,7 @@ public final class BoxDecorations {
     }
 
     /** {@code border-box} / {@code padding-box} / {@code content-box} の矩形。 */
-    public static Rect boxArea(PaintBox box, String which) {
+    static Rect boxArea(SceneAdapterBox box, String which) {
         return boxArea(box.x(), box.y(), box.w(), box.h(), box.bL(), box.bT(), box.bR(), box.bB(),
                 box.pL(), box.pT(), box.pR(), box.pB(), which);
     }
@@ -349,7 +348,7 @@ public final class BoxDecorations {
 
     private record ParsedPosition(String hEdge, String hOff, String vEdge, String vOff) {}
 
-    public static List<Rect> tiles(BackgroundLayer layer, PaintBox box, int[] intrinsic, float rootW, float rootH,
+    static List<Rect> tiles(BackgroundLayer layer, SceneAdapterBox box, int[] intrinsic, float rootW, float rootH,
                                    float fontSize, float rootFontSize) {
         return tiles(layer, boxArea(box, layer.origin()), boxArea(box, layer.clip()),
                 intrinsic, rootW, rootH, fontSize, rootFontSize);

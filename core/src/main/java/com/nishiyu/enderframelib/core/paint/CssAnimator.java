@@ -3,10 +3,6 @@ package com.nishiyu.enderframelib.core.paint;
 import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.AnimationTiming;
-import com.nishiyu.enderframelib.core.css.model.EasingFunction;
-import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -114,20 +110,24 @@ public class CssAnimator {
         return state;
     }
 
+    /** セッションに補間状態が 1 つ以上登録されているか（未登録なら当たり判定時の状態参照を省略できる）。 */
+    public static boolean hasSessionState(String sessionId) {
+        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
+        Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
+        return sessionMap != null && !sessionMap.isEmpty();
+    }
+
     /** 状態を作らずに引く。無ければ null。 */
     public static AnimState peekState(String sessionId, String id) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
         return sessionMap != null ? sessionMap.get(id) : null;
     }
-
     public static AnimatedValues getCurrentValues(String sessionId, DisplayItem el) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         Map<String, AnimState> sessionMap = store().mapFor(safeSessionId, false);
         AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
-        if (state != null) {
-            return state.getInterpolatedValues(Clock.SYSTEM.millis());
-        }
+        if (state != null) return state.getInterpolatedValues(Clock.SYSTEM.millis());
         AnimatedValues def = new AnimatedValues();
         def.set(el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.hints().skew(), el.color(), el.bgColor());
         return def;

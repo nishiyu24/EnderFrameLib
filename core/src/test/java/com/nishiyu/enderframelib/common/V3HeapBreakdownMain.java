@@ -63,14 +63,20 @@ public final class V3HeapBreakdownMain {
         // 1. 表示リストとその索引（ビューと窓が持つ出力）
         set(view, "items", List.of());
         set(view, "lastFrame", null);
-        for (String f : new String[]{"renderCache", "hitTestIndex", "hitTestIndexSource", "byIdSource", "byIdIndex", "absoluteSource",
-                "absoluteResult", "scrollBase", "dynamicIdsBase", "dynamicIdsCache"}) {
+        for (String f : new String[]{"renderCache", "byIdSource", "byIdIndex", "absoluteSource",
+                "absoluteResult", "scrollBase", "cachedDynState"}) {
             set(ui, f, defaultFor(ui, f));
+        }
+        Object hits = get(ui, "hitSupport"); // 当たり判定の文脈（M3b-3）が前回の動的状態を持つ
+        if (hits != null) {
+            set(hits, "lastDyn", null);
+            set(hits, "cachedCtx", null);
         }
         prev = record(stages, "表示リストと索引（ビュー・窓が持つ分）", prev);
         Object query = get(ui, "boxLayoutQuery");
         if (query != null) {
-            set(query, "root", null);
+            set(query, "scene", null);
+            set(query, "dynamic", null);
             set(query, "index", null);
         }
         prev = record(stages, "CSSOM の問い合わせが持つ箱の索引", prev);

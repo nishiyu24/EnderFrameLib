@@ -5,7 +5,6 @@ import com.nishiyu.enderframelib.common.TestBoxes;
 import com.nishiyu.enderframelib.core.css.model.*;
 
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -37,7 +36,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testUnlayeredRulesBeatLayeredRulesRegardlessOfSpecificity() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   @layer base { #a { color: #111111; } }
                   .a { color: #222222; }
@@ -49,7 +48,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testLaterLayerBeatsEarlierLayerAndOrderIsFixedByFirstMention() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   @layer reset, theme;
                   @layer theme { div { color: #333333; } }
@@ -62,7 +61,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testImportantInLayersReversesTheLayerOrder() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   @layer first, second;
                   @layer first { div { color: #aaaaaa !important; } }
@@ -77,7 +76,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testNestedAndAnonymousLayers() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   @layer outer { @layer inner { div { color: #010101; } } div { color: #020202; } }
                   @layer { span { color: #030303; } }
@@ -92,7 +91,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testRevertLayerFallsBackToThePreviousLayer() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   @layer a, b;
                   @layer a { div { color: #123456; } }
@@ -107,7 +106,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testNestingWithAmpersandAndImplicitDescendant() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   .card { color: #101010;
                     & .title { color: #202020; }
@@ -127,7 +126,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testNestedAtRulesAndSelectorListSpecificity() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   .a, #b { width: 10px;
                     @media (min-width: 300px) { width: 20px; }
@@ -144,7 +143,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testContainerQueryUsesTheNearestContainerSize() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   .wrap { container-type: inline-size; width: 300px; }
                   .item { color: #111111; }
@@ -158,7 +157,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testNamedContainerAndContainerUnits() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   .outer { container: side / inline-size; width: 200px; }
                   .inner { container-type: inline-size; width: 100px; }
@@ -174,7 +173,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testRegisteredPropertyInitialValueAndInheritance() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   @property --gap { syntax: '<length>'; inherits: false; initial-value: 8px; }
                   .box { margin-left: var(--gap); }
@@ -188,7 +187,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testRegisteredLengthPropertyIsComputedToAbsolute() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   @property --size { syntax: '<length>'; inherits: true; initial-value: 0px; }
                   div { font-size: 10px; --size: 2em; width: var(--size); }
@@ -202,7 +201,7 @@ public class ModernCascadeTest {
 
     @Test
     public void testHasMatchesByDescendantChildAndSiblingRelativeSelectors() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   div:has(> p.hit) { color: #111111; }
                   div:has(span) { background-color: #222222; }
@@ -221,23 +220,23 @@ public class ModernCascadeTest {
 
     // ---- helpers
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-        return parser.layoutDocument(doc, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, Map.of(), new ScrollState(),
-                FontResolver.FALLBACK);
+        return TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, Map.of(), new ScrollState(),
+                FontResolver.FALLBACK));
     }
 
-    private static ComputedStyle style(PaintBox root, String id) {
-        PaintBox box = find(root, id);
+    private static ComputedStyle style(TestBoxes.Box root, String id) {
+        TestBoxes.Box box = find(root, id);
         assertNotNull(box, "id=" + id + " のボックスが無い");
         return box.style();
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = find(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

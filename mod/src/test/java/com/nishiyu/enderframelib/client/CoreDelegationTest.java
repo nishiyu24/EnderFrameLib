@@ -77,9 +77,10 @@ public class CoreDelegationTest {
                     + "<textarea id=\"ta\" style=\"width:200px;height:100px\">foo bar</textarea></div>");
             TextareaEditor editor = new TextareaEditor(sessionId);
             var session = ClientWebManager.getSession(sessionId);
-            var item = session.elementById("ta");
-            assertNotNull(item);
-            editor.focus(null, item, -1, -1); // 末尾にキャレット
+            var hit = session.hitTest(50, 50);
+            assertNotNull(hit);
+            assertEquals("ta", hit.baseId());
+            editor.focus(null, hit, -1, -1); // 末尾にキャレット
             List<String> changes = new ArrayList<>();
 
             assertTrue(editor.handleKeyPressed(GLFW.GLFW_KEY_BACKSPACE, GLFW.GLFW_MOD_CONTROL, (id, v) -> changes.add(v), null));

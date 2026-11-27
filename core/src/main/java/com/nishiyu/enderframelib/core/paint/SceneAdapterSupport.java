@@ -15,7 +15,6 @@ import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.model.StickyShift;
 import com.nishiyu.enderframelib.core.paint.scene.LayerEffects;
-import com.nishiyu.enderframelib.core.paint.scene.SceneBox;
 import com.nishiyu.enderframelib.core.paint.scene.StackingKind;
 
 import java.util.ArrayList;
@@ -30,19 +29,19 @@ import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
 final class SceneAdapterSupport {
     private SceneAdapterSupport() { }
 
-    static boolean boxHasOwnNode(SceneBox b) {
+    static boolean boxHasOwnNode(SceneAdapterBox b) {
         return b != null && !b.anonymous() && b.w() > 0f && b.h() > 0f && b.node() != null
                 && !"root".equals(b.node().tag) && !"#text".equals(b.node().tag);
     }
 
-    static boolean isPositioned(SceneBox box) {
+    static boolean isPositioned(SceneAdapterBox box) {
         return box.layer.stackingKind == StackingKind.POSITIONED
                 || box.style().typed().box.position != com.nishiyu.enderframelib.core.css.model.Position.STATIC;
     }
 
-    static SceneBox containingBlock(SceneBox box) {
+    static SceneAdapterBox containingBlock(SceneAdapterBox box) {
         boolean fixed = box.layer.isFixed();
-        for (SceneBox cur = box.paintParent(); cur != null; cur = cur.paintParent()) {
+        for (SceneAdapterBox cur = box.paintParent(); cur != null; cur = cur.paintParent()) {
             VisualStyle v = cur.style().typed().visual;
             boolean transformLike = !PaintFacts.isNone(v.transform) || !PaintFacts.isNone(v.filter)
                     || (cur.style().containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0;
@@ -51,9 +50,9 @@ final class SceneAdapterSupport {
         return null;
     }
 
-    static SceneBox effectiveParentNodeBox(SceneBox box, String parentId) {
+    static SceneAdapterBox effectiveParentNodeBox(SceneAdapterBox box, String parentId) {
         if (parentId == null || box == null) return null;
-        for (SceneBox a = box.paintParent(); a != null; a = a.paintParent()) {
+        for (SceneAdapterBox a = box.paintParent(); a != null; a = a.paintParent()) {
             if (a.node() != null && "root".equals(a.node().tag)) return null;
             if (a.anonymous()) continue;
             return boxHasOwnNode(a) ? a : null;
@@ -61,16 +60,16 @@ final class SceneAdapterSupport {
         return null;
     }
 
-    static List<StickyShift> scrollsAsOneNode(SceneBox box, Set<HtmlNode> followedScrollers, int rootW, int rootH) {
+    static List<StickyShift> scrollsAsOneNode(SceneAdapterBox box, Set<HtmlNode> followedScrollers, int rootW, int rootH) {
         if (box.anonymous() || box.w() <= 0 || box.h() <= 0 || !box.isScrollContainer()) return null;
         String tag = box.node().tag;
         if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) return null;
         if (followedScrollers.contains(box.node())) return null;
-        List<SceneBox> stickies = new ArrayList<>(0);
+        List<SceneAdapterBox> stickies = new ArrayList<>(0);
         if (hasUnscrollableDescendant(box, box, false, stickies, rootW, rootH)) return null;
         if (stickies.isEmpty()) return List.of();
         List<StickyShift> shifts = new ArrayList<>(stickies.size());
-        for (SceneBox s : stickies) {
+        for (SceneAdapterBox s : stickies) {
             float[] p = boxHasOwnNode(s) ? stickyScrollParams(s, box, rootW, rootH) : null;
             if (p == null) return null;
             StickyShift shift = new StickyShift(s.node().key(), p[0], p[1], p[2], p[3], p[4], p[5] != 0f, s.stickyDy());
@@ -80,10 +79,10 @@ final class SceneAdapterSupport {
         return shifts;
     }
 
-    static float[] stickyScrollParams(SceneBox box, SceneBox port, int rootW, int rootH) {
-        SceneBox parent = box.paintParent();
+    static float[] stickyScrollParams(SceneAdapterBox box, SceneAdapterBox port, int rootW, int rootH) {
+        SceneAdapterBox parent = box.paintParent();
         if (box.layer.sticky == null || parent == null) return null;
-        SceneBox near = parent;
+        SceneAdapterBox near = parent;
         while (near != null && !near.isScrollContainer()) near = near.paintParent();
         if (near != port) return null;
         if (!box.layer.sticky.isTopOnly()) return null;
@@ -94,9 +93,9 @@ final class SceneAdapterSupport {
         return new float[]{limit, cbBottom, box.y() - box.stickyDy(), box.h(), box.mB(), parent != port ? 1f : 0f};
     }
 
-    static boolean hasUnscrollableDescendant(SceneBox container, SceneBox box, boolean underSticky,
-                                             List<SceneBox> stickies, int rootW, int rootH) {
-        for (SceneBox child : box.paintChildren()) {
+    static boolean hasUnscrollableDescendant(SceneAdapterBox container, SceneAdapterBox box, boolean underSticky,
+                                             List<SceneAdapterBox> stickies, int rootW, int rootH) {
+        for (SceneAdapterBox child : box.paintChildren()) {
             if (child.displayNone()) continue;
             if (child.layer.isFixed() || child.layer.contentVisibilityAuto()) return true;
             if (child.layer.sticky != null) {
@@ -106,10 +105,10 @@ final class SceneAdapterSupport {
                 continue;
             }
             if (child.isAbsolute()) {
-                SceneBox cb = containingBlock(child);
+                SceneAdapterBox cb = containingBlock(child);
                 if (cb == null) return true;
                 boolean inside = false;
-                for (SceneBox a = cb; a != null; a = a.paintParent()) {
+                for (SceneAdapterBox a = cb; a != null; a = a.paintParent()) {
                     if (a == container) { inside = true; break; }
                 }
                 if (!inside) return true;
@@ -119,7 +118,7 @@ final class SceneAdapterSupport {
         return false;
     }
 
-    static ClipRect computeChildClipRect(SceneBox box, ClipRect parentClip, int rootW, int rootH) {
+    static ClipRect computeChildClipRect(SceneAdapterBox box, ClipRect parentClip, int rootW, int rootH) {
         String tag = box.node().tag;
         if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag) || "#text".equals(tag)) return parentClip;
         boolean clipX = box.layer.clipsX(), clipY = box.layer.clipsY();
@@ -154,7 +153,7 @@ final class SceneAdapterSupport {
                 elliptical, null, ClipRect.appendChain(parentClip, chainOwn, box.node().key(), ox, oy));
     }
 
-    static LayerSpec layerSpecFor(SceneBox box, int rootW, int rootH) {
+    static LayerSpec layerSpecFor(SceneAdapterBox box, int rootW, int rootH) {
         LayerEffects fx = box.layer.effects;
         if (fx == null) return null;
         boolean rel = boxHasOwnNode(box);
@@ -181,7 +180,7 @@ final class SceneAdapterSupport {
                 fx.masked() ? LayerSpec.WANTS_MASK : -1, fx.luminanceMask(), backdrop, backdropShape);
     }
 
-    static void addMovingNode(List<DisplayItem> elements, String id, SceneBox box, RenderMeta meta, RenderMeta movingNodeMeta) {
+    static void addMovingNode(List<DisplayItem> elements, String id, SceneAdapterBox box, RenderMeta meta, RenderMeta movingNodeMeta) {
         ItemProps events = new ItemProps();
         int nodeHandle = box.node() != null ? box.node().paintHandle() : 0;
         long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
@@ -197,21 +196,21 @@ final class SceneAdapterSupport {
                 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta, movingKey);
     }
 
-    static SceneBox canvasBackgroundSource(SceneBox root) {
-        SceneBox html = childWithTag(root, "html");
+    static SceneAdapterBox canvasBackgroundSource(SceneAdapterBox root) {
+        SceneAdapterBox html = childWithTag(root, "html");
         if (html != null && hasBackground(html)) return html;
-        SceneBox body = childWithTag(html != null ? html : root, "body");
+        SceneAdapterBox body = childWithTag(html != null ? html : root, "body");
         return body != null && hasBackground(body) ? body : null;
     }
 
-    static SceneBox childWithTag(SceneBox parent, String tag) {
-        for (SceneBox child : parent.paintChildren()) {
+    static SceneAdapterBox childWithTag(SceneAdapterBox parent, String tag) {
+        for (SceneAdapterBox child : parent.paintChildren()) {
             if (tag.equals(child.node().tag)) return child;
         }
         return null;
     }
 
-    static boolean hasBackground(SceneBox box) {
+    static boolean hasBackground(SceneAdapterBox box) {
         VisualStyle v = box.style().typed().visual;
         return v.hasBackgroundColor || (v.backgroundImage != null && !"none".equals(v.backgroundImage));
     }

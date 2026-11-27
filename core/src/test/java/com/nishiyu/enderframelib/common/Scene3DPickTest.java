@@ -7,7 +7,7 @@ import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
-/** X3-3: 2D のヒットテスト（UIHitResult）を通して、画面の点から {@code <scene-3d>} 内のメッシュを選ぶ。 */
+/** X3-3: 2D のヒットテスト（SceneHit）を通して、画面の点から {@code <scene-3d>} 内のメッシュを選ぶ。 */
 class Scene3DPickTest {
     private static final String HTML = "<html><body style='margin:0'>"
             + "<scene-3d id='s' style='position:absolute;left:100px;top:50px;width:200px;height:100px'></scene-3d>"

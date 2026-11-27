@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.io.IOException;
@@ -55,11 +54,11 @@ class TextNodeStyleEquivalenceTest {
             UiDocumentCompiler c = new UiDocumentCompiler();
             Document doc = c.parseDocument(html, "", W, H);
             com.nishiyu.enderframelib.core.dom.InteractionState state = new com.nishiyu.enderframelib.core.dom.InteractionState();
-            PaintBox root = c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-            List<PaintBox> textBoxes = new ArrayList<>();
+            TestBoxes.Box root = TestBoxes.root(c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
+            List<TestBoxes.Box> textBoxes = new ArrayList<>();
             collect(root, textBoxes);
             for (int i = 0; i < textBoxes.size(); i++) {
-                PaintBox b = textBoxes.get(i);
+                TestBoxes.Box b = textBoxes.get(i);
                 boolean generated = b.paintParent() != null && b.paintParent().node != null && b.paintParent().node.isPseudoNode;
                 ComputedStyle domParent = !generated && b.node != null && b.node.parent != null ? state.computedStyleOf(b.node.parent) : null;
                 ComputedStyle parentStyle = domParent != null ? domParent : (b.paintParent() != null ? b.paintParent().style() : null);
@@ -82,8 +81,8 @@ class TextNodeStyleEquivalenceTest {
                 + String.join("\n", mismatches.subList(0, Math.min(3, mismatches.size()))));
     }
 
-    private static void collect(PaintBox box, List<PaintBox> out) {
+    private static void collect(TestBoxes.Box box, List<TestBoxes.Box> out) {
         if (box.node != null && box.node.nodeType == NodeType.TEXT && !box.isAnonymous) out.add(box);
-        for (PaintBox c : box.paintChildren()) collect(c, out);
+        for (TestBoxes.Box c : box.paintChildren()) collect(c, out);
     }
 }

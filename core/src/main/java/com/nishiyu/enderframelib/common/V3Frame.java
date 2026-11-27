@@ -20,10 +20,8 @@ import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.paint.scene.SceneAnchorFollow;
-import com.nishiyu.enderframelib.core.paint.scene.SceneBox;
 import com.nishiyu.enderframelib.core.paint.scene.SceneEmitter;
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 
 import java.util.List;
@@ -211,9 +209,14 @@ final class V3Frame {
         return scene;
     }
 
-    /** 直近のフレームの箱の見え方（スクロールの位置を含む。問い合わせが読む。まだ無ければ null）。 */
-    PaintBox root() {
-        return scene != null ? SceneBox.root(scene, DynamicSceneState.of(scroll, width, height)) : null;
+    /** 直近のシーンがあるか。 */
+    boolean hasScene() {
+        return scene != null;
+    }
+
+    /** 直近のフレームに対する動的状態（スクロール位置・ビューポート寸法。シーンが無ければ null）。 */
+    DynamicSceneState dynamicState(ScrollState currentScroll) {
+        return scene != null ? DynamicSceneState.of(currentScroll != null ? currentScroll : scroll, width, height) : null;
     }
 
     /** シーン生成器（テストが再利用数を読む。まだ無ければ null）。 */
@@ -224,12 +227,6 @@ final class V3Frame {
     /** 直近のフレームで中身を 1 つの節にまとめたスクロールコンテナ（スクロールだけの更新で節を動かす）。 */
     List<ScrollContentInfo> scrollContents() {
         return adapter != null ? adapter.scrollContents() : List.of();
-    }
-
-    /** 直近のフレームで {@code node} の箱（無ければ null）。 */
-    PaintBox boxOf(HtmlNode node) {
-        PaintBox r = root();
-        return r != null ? UiFocus.findBox(r, node) : null;
     }
 
     /** 要素 {@code node} の算出スタイル（CSSOM の {@code getComputedStyle}）。 */

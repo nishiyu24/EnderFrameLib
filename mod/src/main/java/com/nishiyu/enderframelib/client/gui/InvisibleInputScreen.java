@@ -3,17 +3,16 @@ package com.nishiyu.enderframelib.client.gui;
 import com.nishiyu.enderframelib.client.Hologram;
 import com.nishiyu.enderframelib.client.SurfaceHit;
 import com.nishiyu.enderframelib.client.renderer.HologramRenderer;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.api.event.UIEvents;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SurfaceHitResolver;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.SessionInput;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -32,7 +31,9 @@ public class InvisibleInputScreen extends Screen {
     private static final double MAX_INTERACTION_DIST_SQR = MAX_INTERACTION_DISTANCE_BLOCKS * MAX_INTERACTION_DISTANCE_BLOCKS;
 
     private final String sessionId;
-    private final DisplayItem targetElement;
+    private final SceneHit targetHit;
+    private final String baseId;
+    private final boolean multiline;
     /** 入力欄のある面のブロック（master）。ブロックの無いホログラムでは {@code null}。 */
     private final BlockPos blockPos;
     private WebTextInputHost inputHost;
@@ -40,18 +41,19 @@ public class InvisibleInputScreen extends Screen {
     /** 入力欄の外を押した。ボタンのクリックなどが解放まで届くよう、閉じるのは離したとき。 */
     private boolean closeOnRelease = false;
 
-    public InvisibleInputScreen(String sessionId, DisplayItem targetElement, BlockPos blockPos) {
+    public InvisibleInputScreen(String sessionId, SceneHit targetHit, BlockPos blockPos) {
         super(Component.empty());
         this.sessionId = sessionId;
-        this.targetElement = targetElement;
+        this.targetHit = targetHit;
+        this.baseId = targetHit != null ? targetHit.baseId() : "";
+        this.multiline = targetHit != null && targetHit.node() != null && ElementTraits.isTextarea(targetHit.node().tag);
         this.blockPos = blockPos;
     }
 
     @Override
     protected void init() {
         super.init();
-        String baseId = targetElement.baseId();
-        String initialVal = targetElement.text() != null ? targetElement.text() : "";
+        String initialVal = targetHit != null ? targetHit.layer().values().attr("value", "") : "";
         SessionContext session = ClientWebManager.getSession(sessionId);
         HtmlNode vNode = session != null ? session.findNode(baseId) : null;
         if (vNode != null && vNode.attrs.containsKey("value")) {
@@ -59,7 +61,7 @@ public class InvisibleInputScreen extends Screen {
         }
 
         this.inputHost = new WebTextInputHost(sessionId, this.font, newText ->
-                input().updateInputLocally(targetElement.baseId(), newText)
+                input().updateInputLocally(baseId, newText)
         );
         this.inputHost.setValue(initialVal);
         this.addWidget(this.inputHost.editBox());
@@ -138,11 +140,12 @@ public class InvisibleInputScreen extends Screen {
         closeOnRelease = true;
         if (hit == null) return true;
 
-        DisplayItem clicked = ClientScreenInteractionManager.handleClick(sessionId, hit.pixelX(), hit.pixelY(), button);
+        SceneHit clicked = ClientScreenInteractionManager.handleClick(sessionId, hit.pixelX(), hit.pixelY(), button);
         if (clicked == null) return true;
 
-        boolean isInput = clicked.type() == ElementType.INPUT || clicked.type() == ElementType.TEXTAREA;
-        if (isInput && clicked.id().equals(targetElement.id())) {
+        HtmlNode n = clicked.node();
+        boolean isInput = n != null && ElementTraits.isTextControl(n);
+        if (isInput && clicked.baseId().equals(baseId)) {
             closeOnRelease = false;
         } else if (isInput) {
             switchTo(clicked);
@@ -175,13 +178,16 @@ public class InvisibleInputScreen extends Screen {
     }
 
     /** 別の入力欄がクリックされたとき。いまの値を確定して、そちらの入力画面へ移る。 */
-    private void switchTo(DisplayItem next) {
+    private void switchTo(SceneHit next) {
         if (!submitted && this.inputHost != null) {
             submitted = true;
-            input().submitInput(targetElement.baseId(), this.inputHost.getValue());
+            input().submitInput(baseId, this.inputHost.getValue());
             this.inputHost.deactivate();
         }
-        ClientWebManager.getOrCreateSession(sessionId).activateInput(next.id(), next.baseId());
+        String nextBase = next.baseId();
+        boolean nextMultiline = next.node() != null && ElementTraits.isTextarea(next.node().tag);
+        String renderId = nextMultiline ? nextBase + "_textarea" : nextBase + "_input";
+        ClientWebManager.getOrCreateSession(sessionId).activateInput(renderId, nextBase);
         ClientScreenInteractionManager.openInputScreen(sessionId, next, blockPos);
     }
 
@@ -199,12 +205,12 @@ public class InvisibleInputScreen extends Screen {
         }
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             // textarea の場合は Enter で画面を閉じず、改行を挿入する
-            if (targetElement.type() == ElementType.TEXTAREA) {
+            if (multiline) {
                 String data = "\n";
-                if (!input.beginTextEdit(targetElement.baseId(), data, "insertLineBreak")) return true;
+                if (!input.beginTextEdit(baseId, data, "insertLineBreak")) return true;
                 if (this.inputHost != null) {
                     this.inputHost.editBox().insertText(data);
-                    input.commitTextEdit(targetElement.baseId(), this.inputHost.getValue(), data, "insertLineBreak");
+                    input.commitTextEdit(baseId, this.inputHost.getValue(), data, "insertLineBreak");
                 }
                 return true;
             } else {
@@ -213,11 +219,11 @@ public class InvisibleInputScreen extends Screen {
             }
         }
 
-        String inputType = SessionInput.editingInputType(keyCode, modifiers, targetElement.type() == ElementType.TEXTAREA);
-        if (inputType != null && !input.beginTextEdit(targetElement.baseId(), null, inputType)) return true;
+        String inputType = SessionInput.editingInputType(keyCode, modifiers, multiline);
+        if (inputType != null && !input.beginTextEdit(baseId, null, inputType)) return true;
         if (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) {
             if (inputType != null) {
-                input.commitTextEdit(targetElement.baseId(), this.inputHost.getValue(), null, inputType);
+                input.commitTextEdit(baseId, this.inputHost.getValue(), null, inputType);
             }
             return true;
         }
@@ -237,9 +243,9 @@ public class InvisibleInputScreen extends Screen {
     public boolean charTyped(char codePoint, int modifiers) {
         SessionInput input = input();
         String data = String.valueOf(codePoint);
-        if (!input.beginTextEdit(targetElement.baseId(), data, "insertText")) return true;
+        if (!input.beginTextEdit(baseId, data, "insertText")) return true;
         if (this.inputHost != null && this.inputHost.charTyped(codePoint, modifiers)) {
-            input.commitTextEdit(targetElement.baseId(), this.inputHost.getValue(), data, "insertText");
+            input.commitTextEdit(baseId, this.inputHost.getValue(), data, "insertText");
             return true;
         }
         return super.charTyped(codePoint, modifiers);
@@ -251,7 +257,6 @@ public class InvisibleInputScreen extends Screen {
 
     private UIEvents.Keyboard dispatchKeyEvent(String type, int keyCode, int modifiers) {
         SessionContext session = ClientWebManager.getSession(sessionId);
-        String baseId = targetElement.baseId();
         HtmlNode target = session != null ? session.findNode(baseId) : null;
         if (target == null && session != null) target = session.rootNode();
         boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
@@ -264,7 +269,7 @@ public class InvisibleInputScreen extends Screen {
     private void commitAndClose() {
         if (!submitted && this.inputHost != null) {
             submitted = true;
-            input().submitInput(targetElement.baseId(), this.inputHost.getValue());
+            input().submitInput(baseId, this.inputHost.getValue());
         }
         this.onClose();
     }
@@ -273,7 +278,7 @@ public class InvisibleInputScreen extends Screen {
     public void onClose() {
         if (!submitted && this.inputHost != null) {
             submitted = true;
-            input().submitInput(targetElement.baseId(), this.inputHost.getValue());
+            input().submitInput(baseId, this.inputHost.getValue());
         }
         if (this.inputHost != null) {
             this.inputHost.deactivate();

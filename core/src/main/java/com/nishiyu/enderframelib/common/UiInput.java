@@ -10,15 +10,13 @@ import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
 import com.nishiyu.enderframelib.core.dom.node.CoreUIEvent;
 import com.nishiyu.enderframelib.core.dom.node.DefaultActionContext;
 import com.nishiyu.enderframelib.core.dom.node.StandardDefaultActions;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import com.nishiyu.enderframelib.core.paint.*;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 /**
  * 1 セッション分の入力処理。ホスト（GUI 画面・ワールド内ブロック・アイテム・HUD）は
@@ -39,7 +37,7 @@ public class UiInput {
 
     /** クリックの配送中だけ有効な、GUI 側のアクション受け皿。 */
     private ClickSink activeClickSink = ClickSink.NONE;
-    private DisplayItem activeClickedItem = null;
+    private SceneHit activeClickedHit = null;
     private int activeClickButton = 0;
 
     public UiInput(UiView session) {
@@ -51,7 +49,7 @@ public class UiInput {
     // ------------------------------------------------------------------
 
     /** 要素を押したときの効果音。 */
-    protected void playElementSound(DisplayItem clicked) {
+    protected void playElementSound(SceneHit clicked) {
     }
 
     /** ホバー中の要素へ {@code hover} 属性を書き込む設定か。 */
@@ -89,7 +87,7 @@ public class UiInput {
         default void pressed(PressResult result) {}
 
         /** ホイールを DOM に送った後、ホスト固有のスクロール（シーン・テキストエリア）を処理する。 */
-        default boolean scrollHandled(UIHitResult hit, double scrollY) {
+        default boolean scrollHandled(SceneHit hit, double scrollY) {
             return false;
         }
     }
@@ -102,7 +100,7 @@ public class UiInput {
         ClickSink NONE = new ClickSink() {};
 
         /** {@code on*} 属性のアクション名。GUI の {@code onWebAction} へ渡す。 */
-        default void action(String action, DisplayItem clicked, int button) {}
+        default void action(String action, SceneHit clicked, int button) {}
 
         /** チェックボックス・ラジオの値変化。GUI の {@code onInputChanged} へ渡す。 */
         default void inputChanged(String elementId, String value) {}
@@ -114,15 +112,7 @@ public class UiInput {
     }
 
     /** 押下の結果。{@code consumed} はスクロールバーなど、ホスト側の追加処理が不要な操作。 */
-    public record PressResult(DisplayItem element, UIHitResult hit, HtmlNode pressedNode,
-                              int hostButton, boolean consumed) {
-    }
-
-    /** ホストへ渡す押下の結果。項目は絶対座標へ解く（ホスト側は親相対を知らない）。 */
-    private PressResult absolutePress(DisplayItem element, UIHitResult hit, HtmlNode pressed, int hostButton, boolean consumed) {
-        DisplayItem abs = session.toAbsolute(element);
-        UIHitResult absHit = hit == null ? null : new UIHitResult(abs, hit.localX(), hit.localY());
-        return new PressResult(abs, absHit, pressed, hostButton, consumed);
+    public record PressResult(SceneHit hit, HtmlNode pressedNode, int hostButton, boolean consumed) {
     }
 
     private UiView.InputSessionState state() {
@@ -135,16 +125,16 @@ public class UiInput {
 
     public String hover(double pixelX, double pixelY) {
         UiView.InputSessionState state = state();
-        UIHitResult hit = session.hitTest(pixelX, pixelY);
+        SceneHit hit = session.hitTest(pixelX, pixelY);
         state.hoverX = pixelX;
         state.hoverY = pixelY;
 
-        String currentHitId = hit != null ? baseIdOf(hit.element()) : "";
+        String currentHitId = baseIdOf(hit);
         double localX = hit != null ? hit.localX() : 0;
         double localY = hit != null ? hit.localY() : 0;
 
         HtmlNode previous = session.interactionState().hoveredNode();
-        HtmlNode next = hit != null ? session.findInteractiveNode(currentHitId) : null;
+        HtmlNode next = !currentHitId.isEmpty() ? session.findInteractiveNode(currentHitId) : null;
         if (next != null && session.interactionState().isInert(next)) {
             next = null;
             currentHitId = "";
@@ -173,56 +163,52 @@ public class UiInput {
     }
 
     public PressResult press(double pixelX, double pixelY, int hostButton, Host host) {
-        UIHitResult hit = session.hitTest(pixelX, pixelY);
+        SceneHit hit = session.hitTest(pixelX, pixelY);
         if (hit == null) {
             session.setActivePressedId("");
             return null;
         }
 
         UiView.InputSessionState state = state();
-        DisplayItem clickedEl = hit.element();
 
-        if (clickedEl.isPart(UiView.SB_V_TRACK) || clickedEl.isPart(UiView.SB_H_TRACK)) {
-            HtmlNode sbOwner = session.findNode(clickedEl.baseId());
+        if (hit.isScrollbar()) {
+            String sbPart = hit.scrollbarPart();
+            HtmlNode sbOwner = hit.node() != null ? hit.node() : session.findNode(hit.baseId());
             if (sbOwner != null && session.interactionState().isInert(sbOwner)) {
                 session.setActivePressedId("");
                 return null;
             }
-            session.handleScrollbarClick(clickedEl, pixelX, pixelY);
-            PressResult result = absolutePress(clickedEl, hit, null, hostButton, true);
-            if (host != null) host.pressed(result);
-            return result;
-        } else if (clickedEl.isPart(UiView.SB_V_THUMB) || clickedEl.isPart(UiView.SB_H_THUMB)) {
-            HtmlNode sbOwner = session.findNode(clickedEl.baseId());
-            if (sbOwner != null && session.interactionState().isInert(sbOwner)) {
-                session.setActivePressedId("");
-                return null;
+            if (UiView.SB_V_TRACK.equals(sbPart) || UiView.SB_H_TRACK.equals(sbPart)) {
+                session.handleScrollbarClick(hit, pixelX, pixelY);
+                PressResult result = new PressResult(hit, null, hostButton, true);
+                if (host != null) host.pressed(result);
+                return result;
             }
-            state.draggingId = clickedEl.baseId();
-            state.draggingScrollbarPart = clickedEl.partSuffix();
+            state.draggingId = hit.baseId();
+            state.draggingScrollbarPart = sbPart;
             state.lastSentX = hit.localX();
             state.lastSentY = hit.localY();
-            PressResult result = absolutePress(clickedEl, hit, null, hostButton, true);
+            PressResult result = new PressResult(hit, null, hostButton, true);
             if (host != null) host.pressed(result);
             return result;
         }
 
-        String baseId = baseIdOf(clickedEl);
+        String baseId = baseIdOf(hit);
         HtmlNode pressed = session.findInteractiveNode(baseId);
         if (pressed != null && session.interactionState().isInert(pressed)) {
             session.setActivePressedId("");
             return null;
         }
         session.setActivePressedId(baseId);
-        state.pressedElement = clickedEl;
-        playElementSound(clickedEl);
+        state.pressedHit = hit;
+        playElementSound(hit);
 
         if (pressed != null) {
             dispatchPress(pressed, hit.localX(), hit.localY(), hostButton);
         }
 
         startDragInteraction(session, hit, pressed);
-        PressResult result = absolutePress(clickedEl, hit, pressed, hostButton, false);
+        PressResult result = new PressResult(hit, pressed, hostButton, false);
         if (host != null) host.pressed(result);
         return result;
     }
@@ -233,19 +219,18 @@ public class UiInput {
         if (session.handleScrollbarDrag(state.draggingId, state.draggingScrollbarPart, pixelX, pixelY)) {
             return true;
         }
-        UIHitResult dragHit = session.localCoords(state.draggingId, pixelX, pixelY);
+        SceneHit dragHit = session.localCoords(state.draggingId, pixelX, pixelY);
         long now = Clock.SYSTEM.millis();
 
         if (dragHit != null) {
-            DisplayItem draggedEl = dragHit.element();
             state.lastSentX = dragHit.localX();
             state.lastSentY = dragHit.localY();
 
-            if (draggedEl.type() == ElementType.RANGE) {
-                float ratio = rangeRatio(dragHit.localX(), draggedEl.width());
+            if (isRangeNode(dragHit.node(), dragHit.layer())) {
+                float ratio = rangeRatio(dragHit.localX(), dragHit.width());
                 if (Math.abs(state.lastRatio - ratio) > 0.002f) {
                     state.lastRatio = ratio;
-                    state.lastRangeText = generateRangeText(draggedEl.text(), ratio);
+                    state.lastRangeText = generateRangeText(rangeMinMaxText(dragHit.node(), dragHit.layer()), ratio);
                     updateInputLocally(state.draggingId, state.lastRangeText);
                     if (now - state.lastEventTime > DRAG_EVENT_INTERVAL_MS) {
                         dispatchRangeInput(session, state.draggingId, rangeValue(state.lastRangeText));
@@ -271,12 +256,12 @@ public class UiInput {
         UiView.InputSessionState state = state();
         // 押下中の節は InteractionState が持つ。解除する前に読み、クリック合成に使う。
         HtmlNode pressed = session.interactionState().activeNode();
-        DisplayItem pressedElement = state.pressedElement;
+        SceneHit pressedHit = state.pressedHit;
         session.setActivePressedId("");
 
-        UIHitResult hit = session.hitTest(pixelX, pixelY);
+        SceneHit hit = session.hitTest(pixelX, pixelY);
         HtmlNode released = hit != null
-                ? session.findInteractiveNode(baseIdOf(hit.element()))
+                ? session.findInteractiveNode(baseIdOf(hit))
                 : null;
         if (released != null && session.interactionState().isInert(released)) released = null;
         int button = domButton(hostButton);
@@ -290,10 +275,10 @@ public class UiInput {
         if (synthesizeClick && pressed != null && released != null) {
             HtmlNode target = nearestCommonAncestor(pressed, released);
             if (target != null) {
-                dispatchClick(target, hit.localX(), hit.localY(), hostButton, pressedElement, clickSink);
+                dispatchClick(target, hit.localX(), hit.localY(), hostButton, pressedHit, clickSink);
             }
         }
-        state.pressedElement = null;
+        state.pressedHit = null;
     }
 
     public void dispatchPress(HtmlNode target, double x, double y, int hostButton) {
@@ -310,21 +295,21 @@ public class UiInput {
      * {@code onWebAction} にも同じアクション名を届ける。
      */
     public void dispatchClick(HtmlNode target, double x, double y, int hostButton,
-                              DisplayItem clickedItem, ClickSink clickSink) {
+                              SceneHit clickedHit, ClickSink clickSink) {
         if (target == null) return;
 
         ClickSink previousSink = activeClickSink;
-        DisplayItem previousItem = activeClickedItem;
+        SceneHit previousHit = activeClickedHit;
         int previousButton = activeClickButton;
         activeClickSink = clickSink != null ? clickSink : ClickSink.NONE;
-        activeClickedItem = clickedItem;
+        activeClickedHit = clickedHit;
         activeClickButton = hostButton;
         try {
             int button = domButton(hostButton);
             if (button == 0) {
                 UIEvents.Mouse click = CoreEvent.click(x, y, 0);
                 target.dispatchEvent(click, event -> StandardDefaultActions.execute(
-                        event, createClickDefaults(x, y, clickedItem, hostButton, activeClickSink)));
+                        event, createClickDefaults(x, y, clickedHit, hostButton, activeClickSink)));
                 dispatchDoubleClickIfRepeated(target, x, y);
                 return;
             }
@@ -334,16 +319,16 @@ public class UiInput {
             target.dispatchEvent(CoreEvent.mouse("auxclick", x, y, button, 0, false, false, false, false, null));
         } finally {
             activeClickSink = previousSink;
-            activeClickedItem = previousItem;
+            activeClickedHit = previousHit;
             activeClickButton = previousButton;
         }
     }
 
     public boolean scroll(double pixelX, double pixelY, double deltaX, double deltaY,
                           boolean ctrl, boolean shift, boolean alt, Host host) {
-        UIHitResult hit = session.hitTest(pixelX, pixelY);
+        SceneHit hit = session.hitTest(pixelX, pixelY);
         if (hit != null) {
-            String baseId = baseIdOf(hit.element());
+            String baseId = baseIdOf(hit);
             HtmlNode domNode = session.findInteractiveNode(baseId);
             if (domNode != null && !session.interactionState().isInert(domNode)) {
                 var wheelEv = CoreEvent.wheel(hit.localX(), hit.localY(), deltaX, deltaY, ctrl, shift, alt, false);
@@ -442,15 +427,15 @@ public class UiInput {
     }
 
     public void beginDrag(double pixelX, double pixelY) {
-        UIHitResult hit = session.hitTest(pixelX, pixelY);
+        SceneHit hit = session.hitTest(pixelX, pixelY);
         if (hit == null) return;
-        HtmlNode pressed = session.findInteractiveNode(baseIdOf(hit.element()));
+        HtmlNode pressed = session.findInteractiveNode(baseIdOf(hit));
         startDragInteraction(session, hit, pressed);
     }
 
-    /** 描画部品の基底ノード ID。テキスト片のような合成 ID でも正しい節へ戻れる。 */
-    private static String baseIdOf(DisplayItem element) {
-        return element == null ? "" : element.baseId();
+    /** ヒットした描画層の基底ノード ID。テキスト片やパーツでも持ち主の節へ戻れる。 */
+    private static String baseIdOf(SceneHit hit) {
+        return hit == null ? "" : hit.baseId();
     }
 
     // ------------------------------------------------------------------
@@ -460,7 +445,7 @@ public class UiInput {
     public void runInlineAction(HtmlNode node, Event event, String action) {
         ClickSink sink = activeClickSink;
         if (sink != null && sink != ClickSink.NONE) {
-            sink.action(action, activeClickedItem, activeClickButton);
+            sink.action(action, activeClickedHit, activeClickButton);
         }
         if (action == null || action.isEmpty()) return;
         triggerLocalEvent(node != null ? node.key() : "",
@@ -585,8 +570,8 @@ public class UiInput {
         }
     }
 
-    private DefaultActionContext createClickDefaults(double x, double y, DisplayItem clickedItem,
-                                                                int button, ClickSink clickSink) {
+    private DefaultActionContext createClickDefaults(double x, double y, SceneHit clickedHit,
+                                                     int button, ClickSink clickSink) {
         return new DefaultActionContext() {
             @Override
             public void onAttributeChanged(HtmlNode node, String attrName, String attrValue) {
@@ -607,13 +592,13 @@ public class UiInput {
 
             @Override
             public void navigateTo(String href) {
-                if (clickSink != null) clickSink.action(href, clickedItem, button);
+                if (clickSink != null) clickSink.action(href, clickedHit, button);
             }
 
             @Override
             public void executeFormAction(HtmlNode form, String actionType) {
                 String act = form.attrs.get(actionType);
-                if (act != null && clickSink != null) clickSink.action(act, clickedItem, button);
+                if (act != null && clickSink != null) clickSink.action(act, clickedHit, button);
             }
         };
     }
@@ -622,25 +607,46 @@ public class UiInput {
     // レンジ・ドラッグ
     // ------------------------------------------------------------------
 
-    private void startDragInteraction(UiView session, UIHitResult hit, HtmlNode pressed) {
-        DisplayItem element = hit.element();
-        Map<String, String> events = element.events() != null ? element.events() : Map.of();
-        if (!hasEvent(events, "ondrag") && element.type() != ElementType.RANGE) return;
+    private void startDragInteraction(UiView session, SceneHit hit, HtmlNode pressed) {
+        boolean isRange = isRangeNode(hit.node(), hit.layer());
+        if (!isRange && !hasDragHandler(hit.layer(), pressed)) return;
 
         UiView.InputSessionState state = state();
-        state.draggingId = element.baseId();
+        state.draggingId = hit.baseId();
         state.draggingScrollbarPart = "";
         state.lastSentX = hit.localX();
         state.lastSentY = hit.localY();
 
-        if (element.type() == ElementType.RANGE) {
-            state.lastRatio = rangeRatio(hit.localX(), element.width());
-            state.lastRangeText = generateRangeText(element.text(), state.lastRatio);
+        if (isRange) {
+            state.lastRatio = rangeRatio(hit.localX(), hit.width());
+            state.lastRangeText = generateRangeText(rangeMinMaxText(hit.node(), hit.layer()), state.lastRatio);
             updateInputLocally(state.draggingId, state.lastRangeText);
             dispatchRangeInput(session, state.draggingId, rangeValue(state.lastRangeText));
         } else if (pressed != null) {
             pressed.dispatchEvent(CoreEvent.mouse("dragstart", hit.localX(), hit.localY(), 0, 1, false, false, false, false, null));
         }
+    }
+
+    private static boolean isRangeNode(HtmlNode node, SceneLayer layer) {
+        if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isRangeInput(node)) return true;
+        return layer != null && layer.node != null
+                && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isInputTag(layer.node.tag)
+                && "range".equalsIgnoreCase(layer.values().attr("type", "").trim());
+    }
+
+    private static String rangeMinMaxText(HtmlNode node, SceneLayer layer) {
+        String min = layer != null ? layer.values().attr("min", "") : "";
+        if (min.isEmpty() && node != null) min = node.attrs.getOrDefault("min", "0");
+        String max = layer != null ? layer.values().attr("max", "") : "";
+        if (max.isEmpty() && node != null) max = node.attrs.getOrDefault("max", "100");
+        return "0:" + (min.isEmpty() ? "0" : min) + ":" + (max.isEmpty() ? "100" : max);
+    }
+
+    private static boolean hasDragHandler(SceneLayer layer, HtmlNode pressed) {
+        if (layer != null && layer.values().hasEventHandlers() && hasEvent(layer.values().attrs(), "ondrag")) return true;
+        if (pressed != null && hasEvent(pressed.attrs, "ondrag")) return true;
+        var custom = layer != null && layer.style != null ? layer.style.typed().custom : null;
+        return custom != null && hasEvent(custom.asMap(), "ondrag");
     }
 
     private static boolean hasEvent(Map<String, String> events, String eventName) {
@@ -750,38 +756,24 @@ public class UiInput {
             case Keys.BACKSPACE -> "Backspace";
             case Keys.TAB -> "Tab";
             case Keys.SPACE -> " ";
-            case Keys.UP -> "ArrowUp";
-            case Keys.DOWN -> "ArrowDown";
-            case Keys.LEFT -> "ArrowLeft";
-            case Keys.RIGHT -> "ArrowRight";
-            case Keys.PAGE_UP -> "PageUp";
-            case Keys.PAGE_DOWN -> "PageDown";
-            case Keys.HOME -> "Home";
-            case Keys.END -> "End";
+            case Keys.UP -> "ArrowUp"; case Keys.DOWN -> "ArrowDown";
+            case Keys.LEFT -> "ArrowLeft"; case Keys.RIGHT -> "ArrowRight";
+            case Keys.PAGE_UP -> "PageUp"; case Keys.PAGE_DOWN -> "PageDown";
+            case Keys.HOME -> "Home"; case Keys.END -> "End";
             case Keys.DELETE -> "Delete";
-            default -> {
-                String name = Keys.nameOf(keyCode);
-                yield (name != null && !name.isEmpty()) ? name : "Unidentified";
-            }
+            default -> { String name = Keys.nameOf(keyCode); yield (name != null && !name.isEmpty()) ? name : "Unidentified"; }
         };
     }
 
     public static String glfwKeyToDomCode(int keyCode) {
         return switch (keyCode) {
-            case Keys.ENTER -> "Enter";
-            case Keys.KP_ENTER -> "NumpadEnter";
-            case Keys.ESCAPE -> "Escape";
-            case Keys.BACKSPACE -> "Backspace";
-            case Keys.TAB -> "Tab";
-            case Keys.SPACE -> "Space";
-            case Keys.UP -> "ArrowUp";
-            case Keys.DOWN -> "ArrowDown";
-            case Keys.LEFT -> "ArrowLeft";
-            case Keys.RIGHT -> "ArrowRight";
-            case Keys.PAGE_UP -> "PageUp";
-            case Keys.PAGE_DOWN -> "PageDown";
-            case Keys.HOME -> "Home";
-            case Keys.END -> "End";
+            case Keys.ENTER -> "Enter"; case Keys.KP_ENTER -> "NumpadEnter";
+            case Keys.ESCAPE -> "Escape"; case Keys.BACKSPACE -> "Backspace";
+            case Keys.TAB -> "Tab"; case Keys.SPACE -> "Space";
+            case Keys.UP -> "ArrowUp"; case Keys.DOWN -> "ArrowDown";
+            case Keys.LEFT -> "ArrowLeft"; case Keys.RIGHT -> "ArrowRight";
+            case Keys.PAGE_UP -> "PageUp"; case Keys.PAGE_DOWN -> "PageDown";
+            case Keys.HOME -> "Home"; case Keys.END -> "End";
             case Keys.DELETE -> "Delete";
             default -> "Key" + keyCode;
         };

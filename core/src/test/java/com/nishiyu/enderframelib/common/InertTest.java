@@ -103,7 +103,7 @@ public class InertTest {
             // ボタンの右下の隅を撃つ。中央付近は文字（"Under"）の項目に当たりうる位置で、書体の幅（OS ごとに違う）で結果が変わる
             var hit = v.ui().hitTest(86, 36);
             assertNotNull(hit);
-            assertEquals("under", hit.element().baseId());
+            assertEquals("under", hit.baseId());
             clickAt(v, cpu.sessionId(), 86, 36);
             assertEquals(1, underClicks.get());
         }

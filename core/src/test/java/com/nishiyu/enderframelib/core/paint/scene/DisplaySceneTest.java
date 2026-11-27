@@ -124,10 +124,9 @@ class DisplaySceneTest {
         // チャンクカリングで先頭チャンクを外した y=2000 でも stickyDescendants から sticky 要素を取り出せる
         ScrollState scroll = new ScrollState();
         scroll.setScroll(sc.node, 0f, 2000f);
-        SceneBox rootBox = SceneBox.root(scene, DynamicSceneState.of(scroll, W, H));
-        SceneBox stickyBox = (SceneBox) com.nishiyu.enderframelib.common.TestBoxes.find(rootBox, "st");
-        assertNotNull(stickyBox);
-        assertEquals(0f, stickyBox.y(), 0.01f, "スクロール量 2000 でもビューポート上端に張り付く");
+        SceneLocation stickyLoc = SceneQuery.locateById(scene, DynamicSceneState.of(scroll, W, H), "st");
+        assertNotNull(stickyLoc);
+        assertEquals(0f, stickyLoc.y(), 0.01f, "スクロール量 2000 でもビューポート上端に張り付く");
     }
 
     @Test

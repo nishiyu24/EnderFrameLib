@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 
@@ -77,21 +76,21 @@ final class FidelityDumper {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(caseHtml(caseName), "", VIEWPORT_W, VIEWPORT_H);
         com.nishiyu.enderframelib.core.dom.InteractionState state = new com.nishiyu.enderframelib.core.dom.InteractionState();
-        PaintBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
-                new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
+                new ScrollState(), FontResolver.FALLBACK, state));
 
         // 描画順は本番の描画と同じ並べ替えから取る（W5 で描画モデルを替えてもこの経路のまま）
-        List<PaintBox> painted = paintOrder(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
+        List<TestBoxes.Box> painted = paintOrder(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
 
         // ルート箱はパーサが作る合成ノード（html_root）なので、著者が書いた要素だけを拾う。
         // 辿るのは要素ツリー: display: contents の要素は箱を作らないが、ブラウザ側も
         // getBoundingClientRect の 0 矩形として出すので、ダンプからは落とさない
         Set<String> authored = authoredIds(caseHtml(caseName));
-        Map<String, PaintBox> boxes = new LinkedHashMap<>();
-        for (PaintBox child : TestBoxes.elements(root)) collect(child, authored, boxes);
+        Map<String, TestBoxes.Box> boxes = new LinkedHashMap<>();
+        for (TestBoxes.Box child : TestBoxes.elements(root)) collect(child, authored, boxes);
 
-        List<PaintBox> paintedWithId = new ArrayList<>();
-        for (PaintBox box : painted) {
+        List<TestBoxes.Box> paintedWithId = new ArrayList<>();
+        for (TestBoxes.Box box : painted) {
             if (boxes.containsValue(box)) paintedWithId.add(box);
         }
 
@@ -115,7 +114,7 @@ final class FidelityDumper {
         return snapshots;
     }
 
-    private static Snapshot createSnapshot(PaintBox box, List<PaintBox> paintedWithId, List<String> caseProps) {
+    private static Snapshot createSnapshot(TestBoxes.Box box, List<TestBoxes.Box> paintedWithId, List<String> caseProps) {
         float x = box.x();
         float y = box.y();
         float w = box.w();
@@ -157,7 +156,7 @@ final class FidelityDumper {
         return new Snapshot(x, y, w, h, z, sw, sh, cw, ch, computed);
     }
 
-    private static String computeDisplay(PaintBox box) {
+    private static String computeDisplay(TestBoxes.Box box) {
         String disp = box.style().get(CssProperty.DISPLAY);
         if (disp != null) return disp.trim().toLowerCase(java.util.Locale.ROOT);
         if (box.display() != null) {
@@ -167,7 +166,7 @@ final class FidelityDumper {
         return "block";
     }
 
-    private static String computeOverflow(PaintBox box) {
+    private static String computeOverflow(TestBoxes.Box box) {
         String ox = box.style().get(CssProperty.OVERFLOW_X);
         String oy = box.style().get(CssProperty.OVERFLOW_Y);
         String o = box.style().get(CssProperty.OVERFLOW);
@@ -180,10 +179,10 @@ final class FidelityDumper {
         return "visible";
     }
 
-    private static void collect(PaintBox box, Set<String> authored, Map<String, PaintBox> out) {
+    private static void collect(TestBoxes.Box box, Set<String> authored, Map<String, TestBoxes.Box> out) {
         String id = box.node.attrs.get("id");
         if (id != null && authored.contains(id)) out.putIfAbsent(id, box);
-        for (PaintBox child : TestBoxes.elements(box)) collect(child, authored, out);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) collect(child, authored, out);
     }
 
     /**
@@ -231,7 +230,7 @@ final class FidelityDumper {
             "data-fidelity-properties\\s*=\\s*[\"']([^\"']+)[\"']");
 
     /** 中心点で自分より後に描かれる（= 上に重なる）id 付き要素の数。当たらなければ -1。 */
-    private static int stackDepthAtCenter(PaintBox box, List<PaintBox> paintOrder) {
+    private static int stackDepthAtCenter(TestBoxes.Box box, List<TestBoxes.Box> paintOrder) {
         int index = paintOrder.indexOf(box);
         float cx = box.x() + box.w() / 2f;
         float cy = box.y() + box.h() / 2f;
@@ -247,17 +246,17 @@ final class FidelityDumper {
      * 矩形が点を含み、かつビューポート内で、祖先の overflow クリップで切られていないこと。
      * 行に分かれたインラインボックスは断片で当たる（断片の間の隙間には当たらない。ブラウザと同じ）。
      */
-    private static boolean hits(PaintBox box, float px, float py) {
+    private static boolean hits(TestBoxes.Box box, float px, float py) {
         if (px < 0 || py < 0 || px >= VIEWPORT_W || py >= VIEWPORT_H) return false;
         if (!contains(box.x(), box.y(), box.w(), box.h(), px, py)) return false;
         if (!box.runs().isEmpty()) {
-            PaintBox op = box.originParent();
+            TestBoxes.Box op = box.originParent();
             float opX = op != null ? op.x() : 0f, opY = op != null ? op.y() : 0f;
             if (box.runs().stream().noneMatch(f -> contains(f.x() + opX, f.y() + opY, f.w(), f.h(), px, py))) {
                 return false;
             }
         }
-        for (PaintBox a = box.paintParent(); a != null; a = a.paintParent()) {
+        for (TestBoxes.Box a = box.paintParent(); a != null; a = a.paintParent()) {
             String tag = a.node.tag;
             if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) continue;
             if (a.style().overflowX() == com.nishiyu.enderframelib.core.css.model.Overflow.VISIBLE
@@ -435,18 +434,18 @@ final class FidelityDumper {
      * 箱を描いた順（箱の節の最初の表示項目の順。項目を持たない箱は含まない）。旧経路の {@code DisplayListBuilder.paintOrder} の代わりに、
      * 描いた結果（表示リスト）から読む。
      */
-    private static List<PaintBox> paintOrder(PaintBox root, List<DisplayItem> items) {
+    private static List<TestBoxes.Box> paintOrder(TestBoxes.Box root, List<DisplayItem> items) {
         java.util.Map<String, Integer> first = new java.util.HashMap<>();
         for (int i = 0; i < items.size(); i++) first.putIfAbsent(items.get(i).baseId(), i);
-        List<PaintBox> all = new java.util.ArrayList<>();
+        List<TestBoxes.Box> all = new java.util.ArrayList<>();
         collectAll(root, all);
         all.removeIf(b -> b.isAnonymous || b.node == null || !first.containsKey(b.node.getId()));
         all.sort(java.util.Comparator.comparingInt(b -> first.get(b.node.getId())));
         return all;
     }
 
-    private static void collectAll(PaintBox b, List<PaintBox> out) {
+    private static void collectAll(TestBoxes.Box b, List<TestBoxes.Box> out) {
         out.add(b);
-        for (PaintBox c : b.paintChildren()) collectAll(c, out);
+        for (TestBoxes.Box c : b.paintChildren()) collectAll(c, out);
     }
 }

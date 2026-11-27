@@ -120,8 +120,8 @@ class UiInputTest {
         UiView v = view();
         UiInput in = new UiInput(v);
         in.press(20, 20, 0, UiInput.Host.NONE);
-        assertNotNull(v.inputState().pressedElement);
+        assertNotNull(v.inputState().pressedHit);
         v.close();
-        assertNull(v.inputState().pressedElement);
+        assertNull(v.inputState().pressedHit);
     }
 }

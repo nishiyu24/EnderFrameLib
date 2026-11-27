@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -18,16 +17,16 @@ public class AnchorPositioningTest {
     private static final String CSS = "<style>body{margin:0} #a{position:absolute;left:100px;top:50px;width:80px;height:30px;anchor-name:--a}"
             + " #t{position:absolute;width:40px;height:20px}</style>";
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler c = new UiDocumentCompiler();
         Document doc = c.parseDocument(CSS + html, "", W, H);
-        return c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintBox c : TestBoxes.elements(box)) {
-            PaintBox h = find(c, id);
+        for (TestBoxes.Box c : TestBoxes.elements(box)) {
+            TestBoxes.Box h = find(c, id);
             if (h != null) return h;
         }
         return null;
@@ -35,16 +34,16 @@ public class AnchorPositioningTest {
 
     @Test
     public void belowAnchorWithPositionAnchor() {
-        PaintBox root = layout("<div id=a></div><div id=t style='position-anchor:--a;top:anchor(bottom);left:anchor(left)'></div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box root = layout("<div id=a></div><div id=t style='position-anchor:--a;top:anchor(bottom);left:anchor(left)'></div>");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(100, t.x(), 0.5f);
         assertEquals(80, t.y(), 0.5f);
     }
 
     @Test
     public void explicitNameRightOfAnchorAndCentered() {
-        PaintBox root = layout("<div id=a></div><div id=t style='top:anchor(--a center);left:anchor(--a right)'></div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box root = layout("<div id=a></div><div id=t style='top:anchor(--a center);left:anchor(--a right)'></div>");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(180, t.x(), 0.5f);
         assertEquals(65, t.y(), 0.5f);
     }
@@ -52,8 +51,8 @@ public class AnchorPositioningTest {
     @Test
     public void rightAndBottomInsetsAlignEdgesToTheAnchor() {
         // right: anchor(right) は右端をアンカーの右端へ、bottom: anchor(top) は下端をアンカーの上端へ
-        PaintBox root = layout("<div id=a></div><div id=t style='position-anchor:--a;bottom:anchor(top);right:anchor(right)'></div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box root = layout("<div id=a></div><div id=t style='position-anchor:--a;bottom:anchor(top);right:anchor(right)'></div>");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(180 - 40, t.x(), 0.5f);
         assertEquals(50 - 20, t.y(), 0.5f);
     }
@@ -65,17 +64,17 @@ public class AnchorPositioningTest {
                 + "<button id=b popovertarget=t style='position:absolute;left:10px;top:200px;width:60px;height:24px'>b</button>"
                 + "<div id=t popover style='top:anchor(bottom);left:anchor(left);margin:0;width:40px;height:20px'></div>", "", W, H);
         ((HtmlElement) doc.dom().getElementById("t")).showPopover();
-        PaintBox r = c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK,
-                (com.nishiyu.enderframelib.core.dom.InteractionState) ((HtmlDocument) doc.root).interactionState());
-        PaintBox t = find(r, "t");
+        TestBoxes.Box r = TestBoxes.root(c.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK,
+                (com.nishiyu.enderframelib.core.dom.InteractionState) ((HtmlDocument) doc.root).interactionState()));
+        TestBoxes.Box t = find(r, "t");
         assertEquals(10, t.x(), 0.5f);
         assertEquals(224, t.y(), 0.5f);
     }
 
     @Test
     public void anchorSizeMatchesTheAnchorWidth() {
-        PaintBox root = layout("<div id=a></div><div id=t style='position-anchor:--a;top:anchor(bottom);left:anchor(left);width:anchor-size(width);height:anchor-size(--a height)'><div id=c style='height:100%'></div></div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box root = layout("<div id=a></div><div id=t style='position-anchor:--a;top:anchor(bottom);left:anchor(left);width:anchor-size(width);height:anchor-size(--a height)'><div id=c style='height:100%'></div></div>");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(80, t.w(), 0.5f);
         assertEquals(30, t.h(), 0.5f);
         assertEquals(80, find(root, "c").w(), 0.5f);
@@ -84,41 +83,41 @@ public class AnchorPositioningTest {
 
     @Test
     public void positionAreaPlacesBesideTheAnchor() {
-        PaintBox root = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:bottom center'></div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box root = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:bottom center'></div>");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(120, t.x(), 0.5f);
         assertEquals(80, t.y(), 0.5f);
-        PaintBox r2 = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:left'></div>");
-        PaintBox t2 = find(r2, "t");
+        TestBoxes.Box r2 = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:left'></div>");
+        TestBoxes.Box t2 = find(r2, "t");
         assertEquals(60, t2.x(), 0.5f);
         assertEquals(55, t2.y(), 0.5f);
     }
 
     @Test
     public void positionAreaSpanAndExplicitInsetPrecedence() {
-        PaintBox span = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:bottom span-right'></div>");
-        PaintBox ts = find(span, "t");
+        TestBoxes.Box span = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:bottom span-right'></div>");
+        TestBoxes.Box ts = find(span, "t");
         assertEquals(100, ts.x(), 0.5f);
         assertEquals(80, ts.y(), 0.5f);
 
-        PaintBox spanLeft = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:top span-left'></div>");
-        PaintBox tl = find(spanLeft, "t");
+        TestBoxes.Box spanLeft = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:top span-left'></div>");
+        TestBoxes.Box tl = find(spanLeft, "t");
         assertEquals(140, tl.x(), 0.5f);
         assertEquals(30, tl.y(), 0.5f);
 
-        PaintBox explicit = layout("<div id=a></div><div id=t style='position-anchor:--a;left:10px;position-area:bottom right'></div>");
-        PaintBox te = find(explicit, "t");
+        TestBoxes.Box explicit = layout("<div id=a></div><div id=t style='position-anchor:--a;left:10px;position-area:bottom right'></div>");
+        TestBoxes.Box te = find(explicit, "t");
         assertEquals(10, te.x(), 0.5f);
         assertEquals(80, te.y(), 0.5f);
     }
 
     @Test
     public void positionTryFlipBlockAvoidsBottomOverflow() {
-        PaintBox root = layout(
+        TestBoxes.Box root = layout(
                 "<style>#a{left:100px;top:265px;width:80px;height:25px}</style>"
                 + "<div id=a></div>"
                 + "<div id=t style='position-anchor:--a;height:30px;margin-top:4px;top:anchor(bottom);left:anchor(left);position-try-fallbacks:flip-block'></div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(100, t.x(), 0.5f);
         assertEquals(265 - 4 - 30, t.y(), 0.5f);
         assertEquals(0, t.mT(), 0.5f);
@@ -138,7 +137,7 @@ public class AnchorPositioningTest {
             for (int i = 0; i < tops.length; i++) {
                 a.setAttribute("style", "top:" + tops[i]);
                 v.ui().flushInvalidation();
-                PaintBox t = find(v.ui().boxRoot(), "t");
+                TestBoxes.Box t = find(TestBoxes.root(v.ui()), "t");
                 assertEquals(expect[i][0], t.mT(), 0.5f, "frame " + i + " margin-top");
                 assertEquals(expect[i][1], t.mB(), 0.5f, "frame " + i + " margin-bottom");
             }
@@ -147,12 +146,12 @@ public class AnchorPositioningTest {
 
     @Test
     public void positionTryFlipInlineAndCombinedTactics() {
-        PaintBox root = layout(
+        TestBoxes.Box root = layout(
                 "<style>#a{left:360px;top:270px;width:30px;height:20px}</style>"
                 + "<div id=a></div>"
                 + "<div id=t style='position-anchor:--a;width:60px;height:30px;top:anchor(bottom);left:anchor(right);"
                 + "position-try-fallbacks:flip-block, flip-inline, flip-block flip-inline'></div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(360 - 60, t.x(), 0.5f);
         assertEquals(270 - 30, t.y(), 0.5f);
     }
@@ -160,28 +159,28 @@ public class AnchorPositioningTest {
     @Test
     public void positionTryAreaFallbacksAndFlipStart() {
         // position-area の直接列挙: left が収まれば left を選び、左端にも収まらなければ次の top を選ぶ
-        PaintBox areaLeft = layout(
+        TestBoxes.Box areaLeft = layout(
                 "<style>#a{left:100px;top:265px;width:80px;height:25px}</style>"
                 + "<div id=a></div>"
                 + "<div id=t style='position-anchor:--a;position-area:bottom;position-try-fallbacks:left, top'></div>");
-        PaintBox tl = find(areaLeft, "t");
+        TestBoxes.Box tl = find(areaLeft, "t");
         assertEquals(100 - 40, tl.x(), 0.5f);
         assertEquals(267.5f, tl.y(), 0.5f);
 
-        PaintBox areaTop = layout(
+        TestBoxes.Box areaTop = layout(
                 "<style>#a{left:20px;top:265px;width:80px;height:25px}</style>"
                 + "<div id=a></div>"
                 + "<div id=t style='position-anchor:--a;position-area:bottom;position-try-fallbacks:left, top'></div>");
-        PaintBox ta = find(areaTop, "t");
+        TestBoxes.Box ta = find(areaTop, "t");
         assertEquals(20 + (80 - 40) / 2f, ta.x(), 0.5f);
         assertEquals(265 - 20, ta.y(), 0.5f);
 
         // flip-start: bottom left (60x20) -> top right (20x60)
-        PaintBox flipStart = layout(
+        TestBoxes.Box flipStart = layout(
                 "<style>#a{left:10px;top:270px;width:80px;height:25px}</style>"
                 + "<div id=a></div>"
                 + "<div id=t style='position-anchor:--a;width:60px;height:20px;position-area:bottom left;position-try-fallbacks:flip-start'></div>");
-        PaintBox ts = find(flipStart, "t");
+        TestBoxes.Box ts = find(flipStart, "t");
         assertEquals(90, ts.x(), 0.5f);
         assertEquals(270 - 60, ts.y(), 0.5f);
         assertEquals(20, ts.w(), 0.5f);
@@ -190,7 +189,7 @@ public class AnchorPositioningTest {
 
     @Test
     public void atPositionTryRuleWithShorthandAndInvalidFallbackSkipped() {
-        PaintBox root = layout(
+        TestBoxes.Box root = layout(
                 "<style>"
                 + "@position-try --bad { top: 290px; left: 0; }"
                 + "@position-try --good { inset: auto; bottom: anchor(top); right: anchor(right); width: 70px; margin-bottom: 5px; width: 70px !important; background-color: red; }"
@@ -200,7 +199,7 @@ public class AnchorPositioningTest {
                 + "<div id=t style='position-anchor:--a;top:anchor(bottom);left:anchor(left);position-try-fallbacks:--undefined, --bad, --good'>"
                 + "<div id=c style='width:100%;height:10px'></div>"
                 + "</div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(180 - 70, t.x(), 0.5f);
         assertEquals(265 - 20 - 5, t.y(), 0.5f);
         assertEquals(70, t.w(), 0.5f);
@@ -212,38 +211,38 @@ public class AnchorPositioningTest {
     public void positionTryOrderMostHeightAndShorthand() {
         String html = "<style>#a{left:100px;top:200px;width:80px;height:20px}</style><div id=a></div>";
         // normal は基本位置（下: 空き 80px）が収まるのでそのまま
-        PaintBox normal = layout(html
+        TestBoxes.Box normal = layout(html
                 + "<div id=t style='position-anchor:--a;height:40px;top:anchor(bottom);left:anchor(left);position-try:normal flip-block'></div>");
         assertEquals(220, find(normal, "t").y(), 0.5f);
 
         // most-height は両方収まっても空きが大きい上（200px > 80px）を選ぶ
-        PaintBox mostH = layout(html
+        TestBoxes.Box mostH = layout(html
                 + "<div id=t style='position-anchor:--a;height:40px;top:anchor(bottom);left:anchor(left);position-try:most-height flip-block'></div>");
         assertEquals(200 - 40, find(mostH, "t").y(), 0.5f);
 
         // most-block-size も横書きでは同じ
-        PaintBox mostB = layout(html
+        TestBoxes.Box mostB = layout(html
                 + "<div id=t style='position-anchor:--a;height:40px;top:anchor(bottom);left:anchor(left);position-try:most-block-size flip-block'></div>");
         assertEquals(200 - 40, find(mostB, "t").y(), 0.5f);
     }
 
     @Test
     public void positionTryRevertsToBaseWhenNoneFit() {
-        PaintBox root = layout(
+        TestBoxes.Box root = layout(
                 "<style>#a{left:100px;top:140px;width:80px;height:20px}</style>"
                 + "<div id=a></div>"
                 + "<div id=t style='position-anchor:--a;height:200px;top:anchor(bottom);left:anchor(left);position-try-fallbacks:flip-block'></div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(160, t.y(), 0.5f);
     }
 
     @Test
     public void bothAnchorInsetsStretchAutoSize() {
-        PaintBox root = layout(
+        TestBoxes.Box root = layout(
                 "<div id=a></div>"
                 + "<div id=t style='position:absolute;left:anchor(--a left);right:anchor(--a right);top:anchor(--a bottom);height:20px;width:auto'>"
                 + "<div id=c style='width:100%;height:100%'></div></div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box t = find(root, "t");
         assertEquals(100, t.x(), 0.5f);
         assertEquals(80, t.y(), 0.5f);
         assertEquals(80, t.w(), 0.5f);
@@ -263,7 +262,7 @@ public class AnchorPositioningTest {
                 + "<div id=sc><div id=spacer></div><div id=a></div><div style='height:300px'></div></div>"
                 + "<div id=t></div>", "", W, H);
         ScrollState scroll = new ScrollState();
-        PaintBox root = c.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK);
+        TestBoxes.Box root = TestBoxes.root(c.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK), scroll, W, H);
         // スクロール前: #a は y=150..180、#t は下 (y=180..220) で 300px 以内に収まる
         assertEquals(180, find(root, "t").y(), 0.5f);
 
@@ -278,18 +277,18 @@ public class AnchorPositioningTest {
                 + "<div id=sc><div id=spacer></div><div id=a></div><div style='height:300px'></div></div>"
                 + "<div id=t></div>", "", W, H);
         ScrollState scroll2 = new ScrollState();
-        PaintBox root2 = c.layoutDocument(doc2, W, H, Map.of(), scroll2, FontResolver.FALLBACK);
+        TestBoxes.Box root2 = TestBoxes.root(c.layoutDocument(doc2, W, H, Map.of(), scroll2, FontResolver.FALLBACK), scroll2, W, H);
         // 初期: #a は y=250..280 → 下 (280..320) ははみ出すため上 (250 - 40 = 210) に反転
         assertEquals(210, find(root2, "t").y(), 0.5f);
         // スクロール後: #a は y=150..180 → 下 (180..220) が収まるので下へ戻る
         scroll2.setScroll(find(root2, "sc").node, 0, 100);
-        root2 = c.layoutDocument(doc2, W, H, Map.of(), scroll2, FontResolver.FALLBACK);
+        root2 = TestBoxes.root(c.layoutDocument(doc2, W, H, Map.of(), scroll2, FontResolver.FALLBACK), scroll2, W, H);
         assertEquals(180, find(root2, "t").y(), 0.5f);
     }
 
     @Test
     public void atPositionTryCombinedWithTryTacticAndMostWidthOrder() {
-        PaintBox combined = layout(
+        TestBoxes.Box combined = layout(
                 "<style>"
                 + "@position-try --left-edge { left: anchor(right); top: anchor(top); }"
                 + "#a{left:340px;top:50px;width:40px;height:30px}"
@@ -297,29 +296,29 @@ public class AnchorPositioningTest {
                 + "<div id=a></div>"
                 + "<div id=t style='position-anchor:--a;width:60px;height:20px;top:anchor(bottom);left:anchor(right);"
                 + "position-try-fallbacks:--left-edge flip-inline'></div>");
-        PaintBox tc = find(combined, "t");
+        TestBoxes.Box tc = find(combined, "t");
         // --left-edge は left: anchor(right) (380) で右にはみ出すが、flip-inline 併用で right: anchor(left) → 340 - 60 = 280
         assertEquals(280, tc.x(), 0.5f);
         assertEquals(50, tc.y(), 0.5f);
 
         // most-width + position-area: left (100px) vs right (220px) → 両方収まっても広い right を選ぶ
-        PaintBox mostW = layout(
+        TestBoxes.Box mostW = layout(
                 "<style>#a{left:100px;top:50px;width:80px;height:30px}</style>"
                 + "<div id=a></div>"
                 + "<div id=t style='position-anchor:--a;position-area:left;position-try:most-width left, right'></div>");
-        PaintBox tm = find(mostW, "t");
+        TestBoxes.Box tm = find(mostW, "t");
         assertEquals(180, tm.x(), 0.5f);
     }
 
     @Test
     public void flipStartSwapsAutoAndDefiniteDimensionsAndRespectsRelativeContainer() {
-        PaintBox root = layout(
+        TestBoxes.Box root = layout(
                 "<div style='position:relative;left:50px;top:40px;width:200px;height:150px'>"
                 + "  <div id=a style='position:absolute;left:10px;top:100px;width:60px;height:20px;anchor-name:--rel'></div>"
                 + "  <div id=t style='position:absolute;position-anchor:--rel;width:25px;height:auto;"
                 + "    top:anchor(bottom);left:anchor(left);position-try-fallbacks:flip-start'><div style='height:40px'>x</div></div>"
                 + "</div>");
-        PaintBox t = find(root, "t");
+        TestBoxes.Box t = find(root, "t");
         // 相対コンテナ (50, 40, 200x150) 内で、元は top: anchor(bottom) が下 (120 + 40 > 150) にはみ出す
         // flip-start で left: anchor(right) (70 → 50+70=120), top: anchor(top) (100 → 40+100=140), height: 25px, width: auto (< 25)
         assertEquals(50 + 70, t.x(), 0.5f);

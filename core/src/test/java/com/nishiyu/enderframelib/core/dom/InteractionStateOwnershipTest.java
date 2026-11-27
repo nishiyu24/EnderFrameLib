@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.common.TestBoxes;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.Document;
@@ -10,7 +12,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.lang.reflect.Field;
@@ -41,8 +42,8 @@ class InteractionStateOwnershipTest {
         InteractionState viewA = new InteractionState();
         InteractionState viewB = new InteractionState();
 
-        PaintBox rootA = compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewA);
-        PaintBox rootB = compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewB);
+        TestBoxes.Box rootA = TestBoxes.root(compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewA));
+        TestBoxes.Box rootB = TestBoxes.root(compiler.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, viewB));
 
         viewA.setHoveredNode(b1);
         viewB.setActiveNode(b2);

@@ -7,6 +7,8 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,16 +74,34 @@ public final class SelectPopup {
      * @return 開いたか
      */
     public boolean open(HtmlNode node, DisplayItem box, int viewportHeight) {
+        if (box == null) {
+            close();
+            return false;
+        }
+        return open(node, box.x(), box.y(), box.width(), box.height(), viewportHeight);
+    }
+
+    /** {@link SceneLocation}（select のシーン上の箱）の直下に開く。 */
+    public boolean open(HtmlNode node, SceneLocation box, int viewportHeight) {
+        if (box == null) {
+            close();
+            return false;
+        }
+        int bx = Math.round(box.x()), by = Math.round(box.y());
+        return open(node, bx, by, Math.round(box.w()), Math.round(box.h()), viewportHeight);
+    }
+
+    private boolean open(HtmlNode node, int boxX, int boxY, int boxW, int boxH, int viewportHeight) {
         close();
-        if (node == null || box == null || node.attrs.containsKey("disabled")) return false;
+        if (node == null || node.attrs.containsKey("disabled")) return false;
         collect(node, options);
         if (options.isEmpty()) return false;
         select = node;
-        width = Math.max(box.width(), MIN_WIDTH);
-        x = box.x();
+        width = Math.max(boxW, MIN_WIDTH);
+        x = boxX;
         int total = totalHeight();
-        int below = box.y() + box.height() + 2;
-        y = below + total > viewportHeight && box.y() - 2 - total >= 0 ? box.y() - 2 - total : below;
+        int below = boxY + boxH + 2;
+        y = below + total > viewportHeight && boxY - 2 - total >= 0 ? boxY - 2 - total : below;
         String current = node.attrs.getOrDefault("value", "");
         highlighted = indexOfValue(current);
         if (highlighted < 0) highlighted = firstEnabled();

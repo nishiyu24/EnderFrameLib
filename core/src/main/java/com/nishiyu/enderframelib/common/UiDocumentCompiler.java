@@ -7,7 +7,7 @@ import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -63,14 +63,14 @@ public class UiDocumentCompiler {
         return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, interactionState).items();
     }
 
-    /** 文書を 1 度だけ組んだ箱の見え方の根（位置は絶対。{@link FrameRender#document}）。 */
-    public PaintBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
-                                    ScrollState scrollState, FontResolver fonts) {
-        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, new InteractionState()).root();
+    /** 文書を 1 度だけ組んだ不変の描画シーン（{@link FrameRender#document}）。 */
+    public DisplayScene layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
+                                       ScrollState scrollState, FontResolver fonts) {
+        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, new InteractionState()).scene();
     }
 
-    public PaintBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
-                                    ScrollState scrollState, FontResolver fonts, InteractionState interactionState) {
-        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, interactionState).root();
+    public DisplayScene layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
+                                       ScrollState scrollState, FontResolver fonts, InteractionState interactionState) {
+        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, interactionState).scene();
     }
 }

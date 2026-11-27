@@ -1,16 +1,16 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.model.*;
-
 import net.neoforged.neoforge.client.event.InputEvent;
 import java.util.concurrent.atomic.AtomicInteger;
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
 import com.nishiyu.enderframelib.api.event.Event;
+import com.nishiyu.enderframelib.core.box.DomValues;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.node.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import com.nishiyu.enderframelib.client.renderer.HologramRenderer;
@@ -212,11 +212,14 @@ public class ClientScreenInteractionManager {
             lastHoveredSession = sessionId;
 
             if (isMouseJustPressed) {
-                DisplayItem clickedEl = handleClick(sessionId, hit.pixelX(), hit.pixelY(), pressedButton);
-                if (clickedEl != null && (clickedEl.type() == ElementType.INPUT || clickedEl.type() == ElementType.TEXTAREA)) {
+                SceneHit clickedHit = handleClick(sessionId, hit.pixelX(), hit.pixelY(), pressedButton);
+                HtmlNode clickedNode = clickedHit != null ? clickedHit.node() : null;
+                if (clickedNode != null && ElementTraits.isTextControl(clickedNode)) {
                     SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
-                    session.activateInput(clickedEl.id(), clickedEl.baseId());
-                    openInputScreen(sessionId, clickedEl, hit.masterPos());
+                    String baseId = clickedHit.baseId();
+                    String renderId = ElementTraits.isTextarea(clickedNode.tag) ? baseId + "_textarea" : baseId + "_input";
+                    session.activateInput(renderId, baseId);
+                    openInputScreen(sessionId, clickedHit, hit.masterPos());
                 } else {
                     SessionContext session = ClientWebManager.getSession(sessionId);
                     if (session != null) session.setActiveInputId("");
@@ -234,21 +237,22 @@ public class ClientScreenInteractionManager {
         }
     }
 
-    public static void openInputScreen(String sessionId, DisplayItem clickedElement, BlockPos pos) {
-        if (clickedElement != null && (clickedElement.type() == ElementType.INPUT || clickedElement.type() == ElementType.TEXTAREA)) {
-            Minecraft.getInstance().setScreen(new InvisibleInputScreen(sessionId, clickedElement, pos));
+    public static void openInputScreen(String sessionId, SceneHit clickedHit, BlockPos pos) {
+        if (clickedHit != null && clickedHit.node() != null && ElementTraits.isTextControl(clickedHit.node())) {
+            Minecraft.getInstance().setScreen(new InvisibleInputScreen(sessionId, clickedHit, pos));
         }
     }
 
-    public static void playElementSound(DisplayItem el) {
-        if (el == null) return;
-        Map<String, String> events = el.events();
-        String soundId = events != null ? events.get("data-sound") : null;
+    public static void playElementSound(SceneHit hit) {
+        if (hit == null || hit.layer() == null) return;
+        DomValues values = hit.layer().values();
+        String soundId = values.attr("data-sound");
         if ("none".equalsIgnoreCase(soundId)) return;
 
         float pitch = 1.0f;
-        if (events != null && events.containsKey("data-sound-pitch")) {
-            try { pitch = Float.parseFloat(events.get("data-sound-pitch")); } catch (NumberFormatException ignored) {}
+        String pitchStr = values.attr("data-sound-pitch");
+        if (pitchStr != null && !pitchStr.isEmpty()) {
+            try { pitch = Float.parseFloat(pitchStr); } catch (NumberFormatException ignored) {}
         }
 
         if (soundId != null && !soundId.isEmpty()) {
@@ -262,8 +266,10 @@ public class ClientScreenInteractionManager {
         }
 
         if (enableDefaultUiSounds) {
-            boolean isInteractive = el.type() == ElementType.BUTTON || el.type() == ElementType.TOGGLE || el.type() == ElementType.SELECT ||
-                    (events != null && events.containsKey("onclick"));
+            HtmlNode n = hit.node();
+            String tag = n != null ? n.tag : "";
+            boolean isToggle = "input".equalsIgnoreCase(tag) && ("checkbox".equalsIgnoreCase(values.attr("type")) || "radio".equalsIgnoreCase(values.attr("type")));
+            boolean isInteractive = ElementTraits.isButton(tag) || isToggle || ElementTraits.isSelect(tag) || values.has("onclick");
             if (isInteractive) {
                 Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, pitch));
             }
@@ -374,7 +380,7 @@ public class ClientScreenInteractionManager {
         if (updated != null) updated.updateNodeAttributeLocally(baseId, "value", nextVal, false);
     }
 
-    public static DisplayItem handleClick(String sessionId, double pixelX, double pixelY) {
+    public static SceneHit handleClick(String sessionId, double pixelX, double pixelY) {
         return handleClick(sessionId, pixelX, pixelY, 0);
     }
 
@@ -382,15 +388,16 @@ public class ClientScreenInteractionManager {
         ClientWebManager.getOrCreateSession(sessionId).input().dispatchPress(target, x, y, hostButton);
     }
 
-    public static DisplayItem handleClick(String sessionId, double pixelX, double pixelY, int button) {
+    public static SceneHit handleClick(String sessionId, double pixelX, double pixelY, int button) {
         SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
         SessionInput.PressResult result = session.input().press(pixelX, pixelY, button, SessionInput.Host.NONE);
         if (result == null) return null;
-        if (!result.consumed() && result.element() != null && result.element().type() == ElementType.SELECT
+        if (!result.consumed() && result.hit() != null && result.hit().node() != null
+                && ElementTraits.isSelect(result.hit().node().tag)
                 && Minecraft.getInstance().screen == null) {
-            cycleSelectOption(sessionId, result.element().baseId());
+            cycleSelectOption(sessionId, result.hit().baseId());
         }
-        return result.element();
+        return result.hit();
     }
 
     public static void beginDrag(String sessionId, double pixelX, double pixelY) {

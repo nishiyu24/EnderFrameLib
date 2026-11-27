@@ -4,11 +4,13 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -46,7 +48,7 @@ public final class ElementInspector {
     /** 要素の検査結果。要素でない・レイアウトされていない（{@code display: none} など）なら null。 */
     public static Info inspect(UiView ui, HtmlNode node) {
         if (ui == null || node == null || node.nodeType != NodeType.ELEMENT) return null;
-        PaintBox box = UiFocus.findBox(ui.boxRoot(), node);
+        SceneLocation box = ui.locate(node);
         if (box == null || box.displayNone()) return null;
         Map<String, String> shown = new LinkedHashMap<>();
         ComputedStyle computed = box.style();
@@ -79,11 +81,9 @@ public final class ElementInspector {
 
     /** ポインタ {@code (x, y)} の下の要素（ホバーと同じヒットテスト）。無ければ null。 */
     public static HtmlNode pick(UiView ui, double x, double y) {
-        var hit = ui.hitTest(x, y);
-        if (hit == null || hit.element() == null) return null;
-        String id = hit.element().baseId();
-        HtmlNode node = id == null ? null : ui.findNode(id);
-        while (node != null && node.nodeType != NodeType.ELEMENT) node = node.parent;
+        SceneHit hit = ui != null ? ui.hitTest(x, y) : null;
+        HtmlNode node = hit != null ? hit.node() : null;
+        while (node != null && (node.nodeType != NodeType.ELEMENT || node.isPseudoNode)) node = node.parent;
         return node;
     }
 

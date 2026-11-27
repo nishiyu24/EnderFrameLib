@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -21,7 +20,7 @@ public class R9MiscLayoutTest {
     public void testIntrinsicKeywordsAsHeightBehaveAsAuto() {
         // block-size の min-content / max-content / fit-content は auto と同じ（CSS Sizing 3 §5.1）
         for (String keyword : new String[]{"min-content", "max-content", "fit-content", "fit-content(100px)"}) {
-            PaintBox root = layout("<div id=a style='height:" + keyword + ";width:100px'><div style='height:30px'></div></div>");
+            TestBoxes.Box root = layout("<div id=a style='height:" + keyword + ";width:100px'><div style='height:30px'></div></div>");
             assertEquals(30, find(root, "a").h(), 0.01f, keyword);
         }
     }
@@ -29,7 +28,7 @@ public class R9MiscLayoutTest {
     @Test
     public void testColumnFlexAutoMinHeightUsesContentWhenSpecifiedHeightIsLarger() {
         // 指定 200px より内容 30px が低いので、自動の最小寸法は 30px（Flexbox §4.5）。加重縮小は 200:20 で配る
-        PaintBox root = layout("<div style='display:flex;flex-direction:column;height:100px;width:100px'>"
+        TestBoxes.Box root = layout("<div style='display:flex;flex-direction:column;height:100px;width:100px'>"
                 + "<div id=a style='height:200px'><div style='height:30px'></div></div>"
                 + "<div id=b style='height:20px'></div></div>");
         assertEquals(100f * 200 / 220, find(root, "a").h(), 0.05f);
@@ -39,18 +38,18 @@ public class R9MiscLayoutTest {
     @Test
     public void testColumnFlexAutoMinHeightStopsAtContent() {
         // 縮小の結果が内容の高さ 80px を下回るなら 80px で止まる
-        PaintBox root = layout("<div style='display:flex;flex-direction:column;height:100px;width:100px'>"
+        TestBoxes.Box root = layout("<div style='display:flex;flex-direction:column;height:100px;width:100px'>"
                 + "<div id=a style='height:200px'><div style='height:80px'></div></div>"
                 + "<div id=b style='height:20px'></div></div>");
         assertEquals(90.91f, find(root, "a").h(), 0.05f);
-        PaintBox tight = layout("<div style='display:flex;flex-direction:column;height:60px;width:100px'>"
+        TestBoxes.Box tight = layout("<div style='display:flex;flex-direction:column;height:60px;width:100px'>"
                 + "<div id=a style='height:200px'><div style='height:80px'></div></div></div>");
         assertEquals(80, find(tight, "a").h(), 0.01f);
     }
 
     @Test
     public void testCollapsedRowTakesNoSpace() {
-        PaintBox root = layout("<table id=t style='border-spacing:0;border-collapse:separate'>"
+        TestBoxes.Box root = layout("<table id=t style='border-spacing:0;border-collapse:separate'>"
                 + "<tr id=r1><td id=a style='padding:0;height:20px;width:30px'></td></tr>"
                 + "<tr id=r2 style='visibility:collapse'><td id=b style='padding:0;height:40px;width:30px'></td></tr>"
                 + "<tr id=r3><td id=c style='padding:0;height:20px;width:30px'></td></tr></table>");
@@ -61,7 +60,7 @@ public class R9MiscLayoutTest {
 
     @Test
     public void testCollapsedColumnTakesNoWidth() {
-        PaintBox root = layout("<table id=t style='border-spacing:0'>"
+        TestBoxes.Box root = layout("<table id=t style='border-spacing:0'>"
                 + "<col><col style='visibility:collapse'><col>"
                 + "<tr><td id=a style='padding:0;height:10px;width:30px'></td>"
                 + "<td id=b style='padding:0;height:10px;width:50px'></td>"
@@ -74,23 +73,23 @@ public class R9MiscLayoutTest {
     public void testHiddenBorderWinsOverWiderNeighbor() {
         String cells = "<td id=a style='padding:0;width:30px;height:10px;border:4px solid'></td>"
                 + "<td id=b style='padding:0;width:30px;height:10px;border:2px %s'></td>";
-        PaintBox plain = layout("<table style='border-collapse:collapse'><tr>" + cells.formatted("solid") + "</tr></table>");
+        TestBoxes.Box plain = layout("<table style='border-collapse:collapse'><tr>" + cells.formatted("solid") + "</tr></table>");
         assertEquals(2, find(plain, "a").bR(), 0.01f);
-        PaintBox hidden = layout("<table style='border-collapse:collapse'><tr>" + cells.formatted("hidden") + "</tr></table>");
+        TestBoxes.Box hidden = layout("<table style='border-collapse:collapse'><tr>" + cells.formatted("hidden") + "</tr></table>");
         assertEquals(0, find(hidden, "a").bR(), 0.01f);
         assertEquals(0, find(hidden, "b").bL(), 0.01f);
     }
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<style>body{margin:0}</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
-        return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = find(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

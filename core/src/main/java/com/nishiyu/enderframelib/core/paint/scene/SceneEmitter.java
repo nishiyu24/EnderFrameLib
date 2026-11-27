@@ -81,6 +81,9 @@ public final class SceneEmitter {
                 index(prevScene.root, prev);
             }
             SceneLayer root = buildBlock(rootFrag, 0f, 0f, prev, false, false, false, true);
+            if (prevScene != null && root == prevScene.root && prevVw == viewportW && prevVh == viewportH) {
+                return prevScene;
+            }
             prevScene = new DisplayScene(root);
             prevVw = viewportW;
             prevVh = viewportH;

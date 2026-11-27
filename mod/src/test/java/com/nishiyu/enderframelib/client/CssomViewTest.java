@@ -10,7 +10,7 @@ import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -40,7 +40,7 @@ public class CssomViewTest {
         final InteractionState state = new InteractionState();
         final ScrollState scroll = new ScrollState();
         final BoxLayoutQuery query;
-        PaintBox root;
+        DisplayScene root;
 
         Page(String html) {
             doc = compiler.parseDocument(html, "", W, H);

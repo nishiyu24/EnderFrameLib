@@ -1,12 +1,10 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.UIHitResult;
-import com.nishiyu.enderframelib.core.paint.model.*;
-
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.client.gui.AbstractEnderContainerScreen;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -67,13 +65,12 @@ public class WebRecipeViewerBridge {
             return zones;
         }
 
-        for (DisplayItem relEl : session.relativeElements()) {
-            if (relEl.type() != ElementType.NODE) continue;
-            DisplayItem el = session.toAbsolute(relEl); // 親相対の一覧を絶対化せず、NODE だけ解く
-            if (el.type() == ElementType.NODE && explicitExcludeIds.contains(el.id()) && el.width() > 0 && el.height() > 0) {
-                zones.add(screen.toScreenRect(el.x(), el.y(), el.width(), el.height()));
+        SceneQuery.forEachElement(session.scene(), session.dynamicState(), loc -> {
+            if (!loc.anonymous() && !loc.displayNone() && loc.node() != null
+                    && explicitExcludeIds.contains(loc.node().getId()) && loc.w() > 0 && loc.h() > 0) {
+                zones.add(screen.toScreenRect(Math.round(loc.x()), Math.round(loc.y()), Math.round(loc.w()), Math.round(loc.h())));
             }
-        }
+        });
 
         if (zones.isEmpty()) {
             zones.add(screen.getWebViewportBounds());
@@ -107,25 +104,21 @@ public class WebRecipeViewerBridge {
 
         String sessionId = screen.getWebSessionId();
         SessionContext session = ClientWebManager.getSession(sessionId);
-        HtmlNode vRoot = session != null ? session.rootNode() : null;
-        if (vRoot == null) return targets;
+        if (session == null || session.rootNode() == null) return targets;
 
-        for (DisplayItem relEl : session.relativeElements()) {
-            if (relEl.type() != ElementType.NODE) continue;
-            DisplayItem el = session.toAbsolute(relEl); // 親相対の一覧を絶対化せず、NODE だけ解く
-            if (el.type() != ElementType.NODE || el.width() <= 0 || el.height() <= 0) continue;
-            HtmlNode domNode = vRoot.getNodeById(el.id());
-            if (domNode == null) continue;
+        SceneQuery.forEachElement(session.scene(), session.dynamicState(), loc -> {
+            HtmlNode domNode = loc.node();
+            if (loc.anonymous() || loc.displayNone() || domNode == null || loc.w() <= 0 || loc.h() <= 0) return;
 
             boolean isGhostTarget = "true".equalsIgnoreCase(domNode.attrs.get("data-ghost-slot"))
                     || domNode.attrs.containsKey("data-dropzone")
                     || domNode.attrs.containsKey("data-ghost-item");
 
             if (isGhostTarget) {
-                Rect2i bounds = screen.toScreenRect(el.x(), el.y(), el.width(), el.height());
-                targets.add(new GhostDropTarget(el.id(), bounds, screen::acceptGhostIngredientDrop));
+                Rect2i bounds = screen.toScreenRect(Math.round(loc.x()), Math.round(loc.y()), Math.round(loc.w()), Math.round(loc.h()));
+                targets.add(new GhostDropTarget(domNode.key(), bounds, screen::acceptGhostIngredientDrop));
             }
-        }
+        });
         return targets;
     }
 
@@ -136,40 +129,36 @@ public class WebRecipeViewerBridge {
     public static Object resolveIngredientAt(String sessionId, double webX, double webY) {
         SessionContext session = ClientWebManager.getSession(sessionId);
         if (session == null) return null;
-        UIHitResult hit = session.hitTestAbsolute(webX, webY);
-        if (hit == null || hit.element() == null) return null;
+        SceneHit hit = session.hitTest(webX, webY);
+        if (hit == null) return null;
 
-        DisplayItem el = hit.element();
-        String text = el.text();
-        if (text != null) {
-            if (text.startsWith("item:")) {
-                ItemStack stack = parseItemSpec(text.substring(5));
+        HtmlNode hitNode = hit.node();
+        if (hitNode != null && ElementTraits.isImage(hitNode.tag)) {
+            String src = hit.layer().values().attr("src", "");
+            if (src.startsWith("item:")) {
+                ItemStack stack = parseItemSpec(src.substring(5));
                 if (!stack.isEmpty()) return stack;
-            } else if (text.startsWith("fluid:")) {
-                FluidStack fluid = parseFluidSpec(text.substring(6));
+            } else if (src.startsWith("fluid:")) {
+                FluidStack fluid = parseFluidSpec(src.substring(6));
                 if (!fluid.isEmpty()) return fluid;
             }
         }
 
-        HtmlNode vRoot = session.rootNode();
-        if (vRoot != null) {
-            String baseId = el.baseId();
-            HtmlNode domNode = vRoot.getNodeById(baseId);
-            while (domNode != null) {
-                if (domNode.attrs.containsKey("data-item")) {
-                    ItemStack stack = parseItemSpec(domNode.attrs.get("data-item"));
-                    if (!stack.isEmpty()) return stack;
-                }
-                if (domNode.attrs.containsKey("data-ghost-item")) {
-                    ItemStack stack = parseItemSpec(domNode.attrs.get("data-ghost-item"));
-                    if (!stack.isEmpty()) return stack;
-                }
-                if (domNode.attrs.containsKey("data-fluid")) {
-                    FluidStack fluid = parseFluidSpec(domNode.attrs.get("data-fluid"));
-                    if (!fluid.isEmpty()) return fluid;
-                }
-                domNode = domNode.parent;
+        HtmlNode domNode = hitNode != null ? hitNode : session.findNode(hit.baseId());
+        while (domNode != null) {
+            if (domNode.attrs.containsKey("data-item")) {
+                ItemStack stack = parseItemSpec(domNode.attrs.get("data-item"));
+                if (!stack.isEmpty()) return stack;
             }
+            if (domNode.attrs.containsKey("data-ghost-item")) {
+                ItemStack stack = parseItemSpec(domNode.attrs.get("data-ghost-item"));
+                if (!stack.isEmpty()) return stack;
+            }
+            if (domNode.attrs.containsKey("data-fluid")) {
+                FluidStack fluid = parseFluidSpec(domNode.attrs.get("data-fluid"));
+                if (!fluid.isEmpty()) return fluid;
+            }
+            domNode = domNode.parent;
         }
         return null;
     }

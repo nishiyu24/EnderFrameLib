@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -20,7 +19,7 @@ public class GridAutoFitTest {
 
     @Test
     public void testAutoFillKeepsEmptyTracks() {
-        PaintBox root = layout(grid("auto-fill", "0"));
+        TestBoxes.Box root = layout(grid("auto-fill", "0"));
         assertEquals(50, find(root, "a").w(), 0.01f);
         assertEquals(50, find(root, "b").w(), 0.01f);
         assertEquals(50, find(root, "b").x() - find(root, "a").x(), 0.01f);
@@ -28,7 +27,7 @@ public class GridAutoFitTest {
 
     @Test
     public void testAutoFitCollapsesEmptyTracksSoItemsStretch() {
-        PaintBox root = layout(grid("auto-fit", "0"));
+        TestBoxes.Box root = layout(grid("auto-fit", "0"));
         assertEquals(150, find(root, "a").w(), 0.01f);
         assertEquals(150, find(root, "b").w(), 0.01f);
         assertEquals(150, find(root, "b").x() - find(root, "a").x(), 0.01f);
@@ -37,7 +36,7 @@ public class GridAutoFitTest {
     @Test
     public void testAutoFitGapsCollapseWithTheTracks() {
         // 幅 300・gap 10 → 5 本入る（5*50 + 4*10 = 290）。2 つ入ると残りは潰れ、gap は 1 本だけ
-        PaintBox root = layout(grid("auto-fit", "10px"));
+        TestBoxes.Box root = layout(grid("auto-fit", "10px"));
         assertEquals(145, find(root, "a").w(), 0.01f);
         assertEquals(145, find(root, "b").w(), 0.01f);
         assertEquals(155, find(root, "b").x() - find(root, "a").x(), 0.01f);
@@ -45,7 +44,7 @@ public class GridAutoFitTest {
 
     @Test
     public void testAutoFitKeepsTracksThatItemsSpan() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 300px; grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));">
                   <div id="a" style="grid-column: 1 / span 2; height: 10px;"></div>
                   <div id="b" style="grid-column: 4; height: 10px;"></div>
@@ -66,16 +65,16 @@ public class GridAutoFitTest {
                 """.formatted(gap, mode);
     }
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
-        return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = find(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

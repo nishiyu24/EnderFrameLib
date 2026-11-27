@@ -160,7 +160,7 @@ public class LinuxDesktopScreen extends AbstractEnderScreen {
     }
 
     @Override
-    protected void onWebAction(String action, DisplayItem clickedElement, int mouseButton) {
+    protected void onWebAction(String action, com.nishiyu.enderframelib.core.paint.scene.SceneHit clickedElement, int mouseButton) {
         super.onWebAction(action, clickedElement, mouseButton);
     }
 

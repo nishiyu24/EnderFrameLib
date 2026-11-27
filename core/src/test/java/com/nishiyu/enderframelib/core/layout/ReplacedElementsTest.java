@@ -77,7 +77,8 @@ class ReplacedElementsTest {
 
     @Test
     void layoutAndPaintNoLongerHardcodeHostTags() throws IOException {
-        for (String f : List.of("paint/scene/SceneBox.java", "layout/fragment/GridFlow.java", "layout/fragment/FlexFlow.java",
+        for (String f : List.of("paint/scene/SceneHitTest.java", "paint/scene/SceneQuery.java", "paint/SceneAdapterBox.java",
+                "layout/fragment/GridFlow.java", "layout/fragment/FlexFlow.java",
                 "layout/fragment/BlockFlow.java", "layout/fragment/ReplacedFlow.java")) {
             String s = Files.readString(CORE.resolve(f));
             for (String t : List.of("\"mc-fluid\"", "\"mc-entity\"")) {

@@ -66,7 +66,7 @@ class StickyScrollNodeTest {
                 StringBuilder h = new StringBuilder();
                 for (int[] p : probes) {
                     var hit = v.ui().hitTest(p[0], p[1]);
-                    h.append(hit == null ? "-" : hit.element().baseId()).append(' ');
+                    h.append(hit == null ? "-" : hit.baseId()).append(' ');
                 }
                 hits.add(h.toString());
             }

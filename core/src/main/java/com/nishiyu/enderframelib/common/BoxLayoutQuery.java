@@ -5,26 +5,29 @@ import com.nishiyu.enderframelib.core.css.AtRuleProcessor;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.LayoutQuery;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.IdentityHashMap;
 import java.util.Map;
 
 /**
- * 直近のレイアウト結果（描画用の木の見え方 {@code PaintView}）から {@link LayoutQuery} を答える。レイアウトのたびに
- * {@link #update} で木を差し替える。節 → 箱の索引は最初の問い合わせで作り、更新で捨てる。
+ * 直近の描画シーン（{@link DisplayScene}）と {@link DynamicSceneState} から {@link LayoutQuery} を答える。
+ * スクロールだけの更新では {@link #invalidateDynamic} で動的状態と位置索引だけを捨て、シーン自体は作り直さない。
  */
 public final class BoxLayoutQuery implements LayoutQuery {
 
     private final ScrollState scrollState;
     private final Runnable onScrollChanged;
-    private PaintBox root;
+    private DisplayScene scene;
+    private DynamicSceneState dynamic;
     private StyleSheet sheet;
     private int viewportW;
     private int viewportH;
-    private Map<HtmlNode, PaintBox> index;
+    private Map<HtmlNode, SceneLocation> index;
 
     /**
      * @param onScrollChanged スクロール位置を変えたときに呼ぶ（位置の決め直しと描き直しを求める）
@@ -34,34 +37,32 @@ public final class BoxLayoutQuery implements LayoutQuery {
         this.onScrollChanged = onScrollChanged;
     }
 
-    /**
-     * 直近のレイアウトの結果に差し替える。{@code root} は描画用の木の根の見え方（{@code PaintView}。スクロールの位置を含めて
-     * 作ったもの）。
-     */
-    public void update(PaintBox root, StyleSheet sheet, int viewportW, int viewportH) {
-        this.root = root;
+    /** 直近のフレームの結果（シーン・シート・ビューポート寸法）に差し替える。 */
+    public void update(DisplayScene scene, StyleSheet sheet, int viewportW, int viewportH) {
+        this.scene = scene;
         this.sheet = sheet;
         this.viewportW = viewportW;
         this.viewportH = viewportH;
+        this.dynamic = scene != null ? DynamicSceneState.of(scrollState, viewportW, viewportH) : null;
         this.index = null;
     }
 
-    private PaintBox boxOf(HtmlNode node) {
-        if (root == null || node == null) return null;
+    /** スクロール量だけが変わったときに呼ぶ。シーンはそのまま使い回し、位置索引だけを次回の問い合わせで組み直す。 */
+    public void invalidateDynamic() {
+        if (this.dynamic == null && scene != null) this.dynamic = DynamicSceneState.of(scrollState, viewportW, viewportH);
+        this.index = null;
+    }
+
+    private SceneLocation locatedOf(HtmlNode node) {
+        if (scene == null || node == null) return null;
         if (index == null) {
-            Map<HtmlNode, PaintBox> built = new IdentityHashMap<>();
-            collect(root, built);
-            index = built;
+            DynamicSceneState dyn = dynamic != null ? dynamic : DynamicSceneState.of(scrollState, viewportW, viewportH);
+            index = SceneQuery.indexElements(scene, dyn);
         }
         return index.get(node);
     }
 
-    private static void collect(PaintBox box, Map<HtmlNode, PaintBox> out) {
-        if (box.node != null && !box.node.isPseudoNode) out.putIfAbsent(box.node, box);
-        for (PaintBox child : box.paintChildren()) collect(child, out);
-    }
-
-    private static boolean positioned(PaintBox box) {
+    private static boolean positioned(SceneLocation box) {
         com.nishiyu.enderframelib.core.css.model.Position p = box.style() != null ? box.style().typed().box.position : null;
         return p != null && p != com.nishiyu.enderframelib.core.css.model.Position.STATIC;
     }
@@ -69,11 +70,11 @@ public final class BoxLayoutQuery implements LayoutQuery {
     @Nullable
     @Override
     public BoxMetrics metrics(HtmlNode node) {
-        PaintBox box = boxOf(node);
+        SceneLocation box = locatedOf(node);
         if (box == null || box.displayNone()) return null;
         HtmlNode offsetParent = null;
         for (HtmlNode a = node.parent; a != null; a = a.parent) {
-            PaintBox ab = boxOf(a);
+            SceneLocation ab = locatedOf(a);
             if (ab != null && positioned(ab)) {
                 offsetParent = a;
                 break;
@@ -87,7 +88,7 @@ public final class BoxLayoutQuery implements LayoutQuery {
                 box.style() != null && box.style().facts().borderBox, box.isScrollContainer(), clips(box), box.isCollapsedTable(), offsetParent);
     }
 
-    private static boolean clips(PaintBox box) {
+    private static boolean clips(SceneLocation box) {
         return box.style() != null && (box.style().overflowX().clips() || box.style().overflowY().clips());
     }
 
@@ -109,19 +110,20 @@ public final class BoxLayoutQuery implements LayoutQuery {
         float ny = Math.clamp(Float.isNaN(y) ? 0 : y, 0, m.maxScrollY());
         if (nx == scrollState.getScrollX(node) && ny == scrollState.getScrollY(node)) return;
         scrollState.setScroll(node, nx, ny);
+        invalidateDynamic();
         onScrollChanged.run();
     }
 
     @Override
     public void scrollIntoView(HtmlNode node) {
-        PaintBox target = boxOf(node);
+        SceneLocation target = locatedOf(node);
         if (target == null) return;
         float ex = target.x();
         float ey = target.y();
         float ew = target.w();
         boolean changed = false;
         for (HtmlNode a = node.parent; a != null; a = a.parent) {
-            PaintBox ab = boxOf(a);
+            SceneLocation ab = locatedOf(a);
             BoxMetrics m = ab != null ? metrics(a) : null;
             if (m == null || !m.scrolls()) continue;
             float curX = scrollState.getScrollX(a);
@@ -141,7 +143,10 @@ public final class BoxLayoutQuery implements LayoutQuery {
             ex -= nextX - curX;
             ey -= nextY - curY;
         }
-        if (changed) onScrollChanged.run();
+        if (changed) {
+            invalidateDynamic();
+            onScrollChanged.run();
+        }
     }
 
     @Override

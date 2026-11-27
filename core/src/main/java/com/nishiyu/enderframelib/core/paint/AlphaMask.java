@@ -73,11 +73,19 @@ public final class AlphaMask {
      * 画像の範囲の外（余白）は透明扱い。{@code cssW / cssH} は画像の固有の大きさ（CSS px）。
      */
     public boolean hitsItem(DisplayItem el, double localX, double localY, float cssW, float cssH) {
-        float iw = cssW > 0 ? cssW : width, ih = cssH > 0 ? cssH : height;
         String position = el.events() != null ? el.events().get("object-position") : null;
         float fontPx = el.meta() != null && el.meta().fontHeight() > 0 ? el.meta().fontHeight() : 16f;
         ImageFitMode fit = el.fitMode() != null ? el.fitMode() : ImageFitMode.FILL;
-        ImagePlacement pl = ObjectFit.place(fit, position, iw, ih, el.width(), el.height(), fontPx);
+        return hitsRect(localX, localY, el.width(), el.height(), cssW, cssH, fit, position, fontPx);
+    }
+
+    /** 画像の矩形内の局所座標が画像の不透明な画素の上かを {@code object-fit} / {@code object-position} を考慮して判定する。 */
+    public boolean hitsRect(double localX, double localY, float boxW, float boxH,
+                            float cssW, float cssH, ImageFitMode fit, String objectPosition, float fontPx) {
+        float iw = cssW > 0 ? cssW : width, ih = cssH > 0 ? cssH : height;
+        ImageFitMode effectiveFit = fit != null ? fit : ImageFitMode.FILL;
+        float effFontPx = fontPx > 0 ? fontPx : 16f;
+        ImagePlacement pl = ObjectFit.place(effectiveFit, objectPosition, iw, ih, boxW, boxH, effFontPx);
         if (!(pl.w() > 0) || !(pl.h() > 0)) return false;
         double u = (localX - pl.x()) * width / pl.w(), v = (localY - pl.y()) * height / pl.h();
         if (u < 0 || v < 0 || u >= width || v >= height) return false;

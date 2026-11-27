@@ -2,10 +2,13 @@ package com.nishiyu.enderframelib.core.paint.scene;
 
 import com.nishiyu.enderframelib.core.box.BoxNode;
 import com.nishiyu.enderframelib.core.box.Display;
+import com.nishiyu.enderframelib.core.box.DomValues;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.fragment.AnchorScroll;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
+import com.nishiyu.enderframelib.core.layout.fragment.TableBorders;
 import com.nishiyu.enderframelib.core.paint.model.ClipShape;
 
 /**
@@ -51,6 +54,8 @@ public final class SceneLayer {
     public static final int FLAG_Z_AUTO = 1 << 17;
     public static final int FLAG_DISPLAY_NONE = 1 << 18;
     public static final int FLAG_HAS_SELF = 1 << 19;
+    public static final int FLAG_DYNAMIC_BOUNDS = 1 << 20;
+    public static final int FLAG_COLLAPSED_TABLE = 1 << 21;
 
     // ---- 計画書 §3.4 データモデル ----
     /** 文書内の DOM 要素の数値 ID（生成節・疑似要素は 0）。 */
@@ -130,7 +135,11 @@ public final class SceneLayer {
         this.stackingKind = stackingKind;
         this.zIndex = zIndex;
         boolean anchored = follow != null || this.children.anchoredBelow;
-        this.flags = anchored ? (flags | FLAG_ANCHORED_BELOW) : flags;
+        boolean dynamic = follow != null || sticky != null || this.children.hasDynamicBounds;
+        int resolvedFlags = (anchored ? (flags | FLAG_ANCHORED_BELOW) : flags)
+                | (dynamic ? FLAG_DYNAMIC_BOUNDS : 0)
+                | (box != null && TableBorders.collapses(box) ? FLAG_COLLAPSED_TABLE : 0);
+        this.flags = resolvedFlags;
         this.propagatedLayers = propagatedLayers;
         int chain = 0;
         if ((flags & FLAG_ANONYMOUS) != 0) {
@@ -141,6 +150,12 @@ public final class SceneLayer {
                 ? this.children.collectStickies() : NO_LAYERS;
 
         float minX = 0f, minY = 0f, maxX = Math.max(0f, w), maxY = Math.max(0f, h);
+        for (SceneRun r : this.runs) {
+            minX = Math.min(minX, r.x() - x);
+            minY = Math.min(minY, r.y() - y);
+            maxX = Math.max(maxX, r.x() + r.w() - x);
+            maxY = Math.max(maxY, r.y() + r.h() - y);
+        }
         boolean clippedOwn = (flags & FLAG_CLIPS_X) != 0 && (flags & FLAG_CLIPS_Y) != 0 && (propagatedLayers & LAYER_HOIST) == 0;
         if (!clippedOwn && this.children.chunks.length > 0) {
             for (int k = 0; k < this.children.chunks.length; k++) {
@@ -243,6 +258,40 @@ public final class SceneLayer {
     public boolean isZAuto() { return (flags & FLAG_Z_AUTO) != 0; }
     public boolean displayNone() { return (flags & FLAG_DISPLAY_NONE) != 0; }
     public boolean hasSelf() { return (flags & FLAG_HAS_SELF) != 0; }
+    public boolean hasDynamicBounds() { return (flags & FLAG_DYNAMIC_BOUNDS) != 0; }
+    public boolean isCollapsedTable() { return (flags & FLAG_COLLAPSED_TABLE) != 0; }
+
+    public DomValues values() {
+        return box != null ? box.values : DomValues.NONE;
+    }
+
+    public Style backdrop() {
+        return box != null ? box.backdrop : null;
+    }
+
+    /** {@code empty-cells: hide} により背景・枠線・当たり判定を隠す空の表セルか。 */
+    public boolean isEmptyCellHidden() {
+        if (display == null || display.inner() != Display.Inner.TABLE_CELL || collapsedBorders != null) return false;
+        String ec = style != null ? style.typed().inheritedPaint.emptyCells : null;
+        if (ec == null || !"hide".equalsIgnoreCase(ec.trim())) return false;
+        return hasNoCellContent(this);
+    }
+
+    private static boolean hasNoCellContent(SceneLayer layer) {
+        for (SceneRun r : layer.runs) {
+            if (!r.isText() || !r.text().isBlank()) return false;
+        }
+        for (SceneChunk c : layer.children.chunks) {
+            for (SceneLayer child : c.layers) {
+                if (child.displayNone()) continue;
+                if (child.node != null && child.node.tag != null && !child.node.tag.isEmpty() && !child.node.tag.startsWith("#")) {
+                    return false;
+                }
+                if (!hasNoCellContent(child)) return false;
+            }
+        }
+        return true;
+    }
 
     @Override
     public String toString() {

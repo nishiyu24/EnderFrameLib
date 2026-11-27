@@ -1,9 +1,7 @@
 package com.nishiyu.enderframelib.client.gui.desktop;
 
-import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.client.EnderFrameStandalone;
-import com.nishiyu.enderframelib.core.paint.HitTestIndex;
-import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.common.TestBoxes;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
@@ -12,7 +10,10 @@ import com.nishiyu.enderframelib.client.gui.desktop.LinuxDesktopScreen.DesktopWi
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.Bindings;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHitTest;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import org.junit.jupiter.api.BeforeAll;
@@ -49,16 +50,16 @@ public class LinuxDesktopHtmlTest {
         assertNotNull(doc, "HTML がパースできること");
         assertNotNull(doc.root, "ルートノードが存在すること");
 
-        PaintBox rootBox = compiler.layoutDocument(
+        TestBoxes.Box rootBox = TestBoxes.root(compiler.layoutDocument(
                 doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new InteractionState()
-        );
+        ));
         assertNotNull(rootBox, "レイアウトツリーが構築できること");
         assertEquals(854, (int) rootBox.w());
         assertEquals(480, (int) rootBox.h());
     }
 
     /** LinuxDesktopScreen#syncAllStates と同じ形の状態を DOM に適用してレイアウトした結果。 */
-    private record Laid(Document doc, PaintBox root, List<DisplayItem> items) {}
+    private record Laid(Document doc, DisplayScene scene, TestBoxes.Box root, List<DisplayItem> items) {}
 
     private static Laid layoutWithState(String activeTab, boolean menuOpen) {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
@@ -88,33 +89,33 @@ public class LinuxDesktopHtmlTest {
         }
         new Bindings.ReactiveDomBinder().sync(doc.root, values, Map.of(), Set.of(Bindings.TemplateDeps.ALWAYS));
 
-        PaintBox rootBox = compiler.layoutDocument(
+        DisplayScene scene = compiler.layoutDocument(
                 doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new InteractionState()
         );
         List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
-        return new Laid(doc, rootBox, items);
+        return new Laid(doc, scene, TestBoxes.root(scene), items);
     }
 
-    private static void collect(PaintBox box, Predicate<PaintBox> filter, List<PaintBox> out) {
+    private static void collect(TestBoxes.Box box, Predicate<TestBoxes.Box> filter, List<TestBoxes.Box> out) {
         if (box == null) return;
         if (box.node != null && filter.test(box)) out.add(box);
-        for (PaintBox child : box.paintChildren()) collect(child, filter, out);
+        for (TestBoxes.Box child : box.paintChildren()) collect(child, filter, out);
     }
 
-    private static List<PaintBox> find(PaintBox root, Predicate<PaintBox> filter) {
-        List<PaintBox> out = new ArrayList<>();
+    private static List<TestBoxes.Box> find(TestBoxes.Box root, Predicate<TestBoxes.Box> filter) {
+        List<TestBoxes.Box> out = new ArrayList<>();
         collect(root, filter, out);
         return out;
     }
 
-    private static PaintBox byId(PaintBox root, String id) {
-        List<PaintBox> found = find(root, b -> id.equals(b.node.getId()));
+    private static TestBoxes.Box byId(TestBoxes.Box root, String id) {
+        List<TestBoxes.Box> found = find(root, b -> id.equals(b.node.getId()));
         assertFalse(found.isEmpty(), "#" + id + " の箱があること");
         return found.get(0);
     }
 
-    private static PaintBox byClass(PaintBox root, String cls) {
-        List<PaintBox> found = find(root, b -> b.node.hasClass(cls));
+    private static TestBoxes.Box byClass(TestBoxes.Box root, String cls) {
+        List<TestBoxes.Box> found = find(root, b -> b.node.hasClass(cls));
         assertFalse(found.isEmpty(), "." + cls + " の箱があること");
         return found.get(0);
     }
@@ -123,17 +124,17 @@ public class LinuxDesktopHtmlTest {
     public void testEveryDocTabStacksContentVertically() {
         for (String tab : List.of("overview", "desktop", "terminal", "web", "commands")) {
             Laid laid = layoutWithState(tab, false);
-            List<PaintBox> pages = find(laid.root(), b -> b.node.hasClass("docs-page") && b.w() > 0 && b.h() > 0);
+            List<TestBoxes.Box> pages = find(laid.root(), b -> b.node.hasClass("docs-page") && b.w() > 0 && b.h() > 0);
             assertEquals(1, pages.size(), tab + ": 表示中のページは 1 つだけ");
-            PaintBox page = pages.get(0);
-            PaintBox content = byClass(laid.root(), "docs-content");
+            TestBoxes.Box page = pages.get(0);
+            TestBoxes.Box content = byClass(laid.root(), "docs-content");
 
-            List<? extends PaintBox> blocks = page.paintChildren().stream().filter(c -> c.node != null && c.node.tag != null
+            List<TestBoxes.Box> blocks = page.paintChildren().stream().filter(c -> c.node != null && c.node.tag != null
                     && !c.node.tag.startsWith("#") && c.h() > 0).toList();
             assertTrue(blocks.size() >= 3, tab + ": 見出し・本文・カード/表が並ぶこと");
             for (int i = 1; i < blocks.size(); i++) {
-                PaintBox prev = blocks.get(i - 1);
-                PaintBox cur = blocks.get(i);
+                TestBoxes.Box prev = blocks.get(i - 1);
+                TestBoxes.Box cur = blocks.get(i);
                 assertTrue(cur.y() >= prev.y() + prev.h() - 0.5f,
                         tab + ": <" + cur.node.tag + "> は前の <" + prev.node.tag + "> の下に積まれること (縦並び)");
                 assertEquals(page.x(), cur.x(), 1.0f, tab + ": 子要素の左端がそろうこと");
@@ -146,11 +147,11 @@ public class LinuxDesktopHtmlTest {
     public void testClockAndDockAreHorizontallyCentered() {
         Laid laid = layoutWithState("overview", false);
 
-        PaintBox clock = byClass(laid.root(), "top-center");
+        TestBoxes.Box clock = byClass(laid.root(), "top-center");
         float[] clockTr = DisplayListBuilderAccess.translate(clock);
         assertEquals(427f, clock.x() + clockTr[0] + clock.w() / 2f, 1.5f, "時計がトップパネルの中央にあること");
 
-        PaintBox dock = byId(laid.root(), "dock");
+        TestBoxes.Box dock = byId(laid.root(), "dock");
         float[] dockTr = DisplayListBuilderAccess.translate(dock);
         assertEquals(427f, dock.x() + dockTr[0] + dock.w() / 2f, 1.5f, "ドックが画面下部の中央にあること");
 
@@ -162,15 +163,15 @@ public class LinuxDesktopHtmlTest {
     @Test
     public void testAppMenuBoundsCoverAllItems() {
         Laid laid = layoutWithState("overview", true);
-        PaintBox menu = byId(laid.root(), "app-menu");
+        TestBoxes.Box menu = byId(laid.root(), "app-menu");
         DisplayLayoutRect menuRect = DisplayLayoutRect.of(laid.items(), "app-menu");
         assertNotNull(menuRect.rect(), "開いたメニューの描画要素があること");
 
-        List<PaintBox> menuItems = find(menu, b -> b.node.hasClass("menu-item"));
+        List<TestBoxes.Box> menuItems = find(menu, b -> b.node.hasClass("menu-item"));
         assertEquals(4, menuItems.size());
-        PaintBox last = menuItems.get(3);
+        TestBoxes.Box last = menuItems.get(3);
         assertTrue(last.y() + last.h() > 260, "4 番目の項目は y=260 より下まで伸びる（旧判定ではメニュー外扱いだった）");
-        for (PaintBox item : menuItems) {
+        for (TestBoxes.Box item : menuItems) {
             double cx = item.x() + item.w() / 2.0;
             double cy = item.y() + item.h() / 2.0;
             assertFalse(DesktopLayout.shouldCloseAppMenu(cx, cy, menuRect.rect(), DisplayLayoutRect.of(laid.items(), "app-menu-btn").rect()),
@@ -187,21 +188,21 @@ public class LinuxDesktopHtmlTest {
     @Test
     public void testOpenAppMenuItemsWinHitTestOverWindows() {
         Laid laid = layoutWithState("overview", true);
-        HitTestIndex index = new HitTestIndex(laid.items());
-        List<PaintBox> menuItems = find(byId(laid.root(), "app-menu"), b -> b.node.hasClass("menu-item"));
+        SceneHitTest.Context ctx = SceneHitTest.Context.of(DynamicSceneState.of(null, 854, 480));
+        List<TestBoxes.Box> menuItems = find(byId(laid.root(), "app-menu"), b -> b.node.hasClass("menu-item"));
         assertEquals(4, menuItems.size());
-        for (PaintBox item : menuItems) {
+        for (TestBoxes.Box item : menuItems) {
             double cx = item.x() + 40;
             double cy = item.y() + item.h() / 2.0;
-            UIHitResult hit = index.hitTest("desktop_hit", cx, cy);
+            SceneHit hit = SceneHitTest.hitTest(laid.scene(), ctx, cx, cy);
             assertNotNull(hit, "メニュー項目の上で何かに当たること");
-            HtmlNode node = laid.doc().root.getNodeById(hit.element().baseId());
+            HtmlNode node = laid.doc().root.getNodeById(hit.baseId());
             boolean inMenuItem = false;
             for (HtmlNode n = node; n != null; n = n.parent) {
                 if (n.hasClass("menu-item")) { inMenuItem = true; break; }
             }
             assertTrue(inMenuItem, "z-index: 1005 のメニュー項目が背面のウィンドウより優先して当たること: ("
-                    + cx + "," + cy + ") -> " + hit.element().id());
+                    + cx + "," + cy + ") -> " + hit.baseId());
         }
     }
 
@@ -215,7 +216,7 @@ public class LinuxDesktopHtmlTest {
 
     /** 箱の transform の平行移動量（描画と同じ解釈）。 */
     private static final class DisplayListBuilderAccess {
-        static float[] translate(PaintBox box) {
+        static float[] translate(TestBoxes.Box box) {
             return com.nishiyu.enderframelib.core.paint.TransformParseTestBridge.translate(
                     box.style().get(CssProperty.TRANSFORM), box.w(), box.h());
         }
@@ -243,9 +244,6 @@ public class LinuxDesktopHtmlTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         String html = "<input id=\"test-input\" placeholder=\"hello\">";
         Document doc = compiler.parseDocument(html, "", 854, 480);
-        PaintBox rootBox = compiler.layoutDocument(
-                doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver()
-        );
         List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
         DisplayItem phItem = items.stream()
                 .filter(i -> i.id().equals("test-input_ph"))

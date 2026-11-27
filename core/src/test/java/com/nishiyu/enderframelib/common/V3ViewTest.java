@@ -120,8 +120,8 @@ class V3ViewTest {
                 sv.ui().requestScrollReposition();
                 now += 16;
                 sv.frame(now, live, true);
-                assertEquals(c[1], box(sv.ui().boxRoot(), "h1").y(), 0.01f, "scroll " + c[0] + " の 1 つ目の見出し");
-                assertEquals(c[2], box(sv.ui().boxRoot(), "h2").y(), 0.01f, "scroll " + c[0] + " の 2 つ目の見出し");
+                assertEquals(c[1], box(sv, "h1").y(), 0.01f, "scroll " + c[0] + " の 1 つ目の見出し");
+                assertEquals(c[2], box(sv, "h2").y(), 0.01f, "scroll " + c[0] + " の 2 つ目の見出し");
                 assertSame("scroll " + c[0], sv, live);
             }
         }
@@ -256,7 +256,7 @@ class V3ViewTest {
                 sv.frame(1016, live, true);
                 if (run == 1) sv.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
                 sv.frame(1516, live, true);
-                widths[run] = box(sv.ui().boxRoot(), "b").w();
+                widths[run] = box(sv, "b").w();
             }
         }
         assertTrue(widths[0] > 150f && widths[0] < 250f, "増分は遷移の途中: " + widths[0]);
@@ -272,10 +272,10 @@ class V3ViewTest {
             sv.ui().findNode("b").attrs.put("style", "width:50px;height:10px"); // 通知しない書き換え（台帳に載らない）
             sv.ui().markInvalidation(UiView.InvalidationLevel.RESTYLE);
             sv.frame(1016, live, true);
-            assertEquals(100f, box(sv.ui().boxRoot(), "b").w(), 0.01f, "増分は台帳に載った変化だけを読む");
+            assertEquals(100f, box(sv, "b").w(), 0.01f, "増分は台帳に載った変化だけを読む");
             sv.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
             sv.frame(1032, live, true);
-            assertEquals(50f, box(sv.ui().boxRoot(), "b").w(), 0.01f, "全体の作り直しは DOM をそのまま読む");
+            assertEquals(50f, box(sv, "b").w(), 0.01f, "全体の作り直しは DOM をそのまま読む");
         }
     }
 
@@ -298,13 +298,9 @@ class V3ViewTest {
         }
     }
 
-    private static com.nishiyu.enderframelib.core.paint.tree.PaintBox box(com.nishiyu.enderframelib.core.paint.tree.PaintBox b, String id) {
-        if (b.node != null && !b.isAnonymous && id.equals(b.node.getId())) return b;
-        for (var c : b.paintChildren()) {
-            var f = box(c, id);
-            if (f != null) return f;
-        }
-        return null;
+    private static com.nishiyu.enderframelib.core.paint.scene.SceneLocation box(StandaloneView sv, String id) {
+        HtmlNode n = sv.ui().findNode(id);
+        return n == null ? null : sv.ui().locate(n);
     }
 
     /** ビューの面（{@code live}）が、同じ状態からゼロから新経路で描いた面と画素で一致すること。 */

@@ -2,18 +2,18 @@ package com.nishiyu.enderframelib.common;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.core.paint.HitTestIndex;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
 /**
- * 動きうる節の id 集合のキャッシュ: 描画上の移動量の鍵が増減したときだけ集合と索引を作り直し、値の更新だけなら索引を使い回す（patch）。
- * 古い集合を返さない（鍵の追加・解除が必ず索引の動きうる節に反映される）。
+ * {@link UiView#setPaintOffset} / {@link UiView#clearPaintOffset} の更新が {@link DisplayScene} や表示リストを
+ * 作り直さずに直接の当たり判定へ反映されることを検証する（M3b-3）。
  */
 class PaintOffsetHitTestCacheTest {
 
     @Test
-    void dynamicSetTracksPaintOffsetKeysAndIsReusedForValueOnlyUpdates() {
+    void paintOffsetUpdatesHitPositionDirectlyWithoutRebuildingScene() {
         String html = "<style>body{margin:0}#b{position:absolute;left:10px;top:10px;width:50px;height:50px}"
                 + "#c{position:absolute;left:10px;top:200px;width:40px;height:40px}</style>"
                 + "<div id=\"b\"><div id=\"kb\" style=\"width:50px;height:50px;background:#c33\" onclick=\"x()\"></div></div>"
@@ -22,37 +22,30 @@ class PaintOffsetHitTestCacheTest {
         try (var backend = new MutationScenario.NoDraw()) {
             long now = 1000;
             view.frame(now, backend, true);
-            HitTestIndex i0 = view.ui().hitTestIndex();
-            assertFalse(i0.dynamicIds().contains("b"));
+            DisplayScene scene0 = view.ui().scene();
+            assertEquals("kb", view.ui().hitTest(20, 20).baseId());
 
-            view.ui().setPaintOffset("b", 100, 0);                       // 鍵が増える
-            HitTestIndex i1 = view.ui().hitTestIndex();
-            assertTrue(i1.dynamicIds().contains("b"), "追加した鍵が動きうる節に入る");
-            assertNotSame(i0, i1);
+            view.ui().setPaintOffset("b", 100, 0);
+            assertSame(scene0, view.ui().scene(), "平行移動だけではシーンを作り直さない");
 
-            for (int i = 1; i <= 5; i++) {                               // 値だけの更新
+            for (int i = 1; i <= 5; i++) {
                 view.ui().setPaintOffset("b", 100 + i * 10, i * 5);
-                HitTestIndex idx = view.ui().hitTestIndex();
-                assertSame(i1, idx, "値だけの更新では索引を作り直さない: " + i);
-                assertTrue(idx.dynamicIds().contains("b"));
                 float expectX = 100 + i * 10;
                 float expectY = i * 5;
                 assertEquals(expectX, view.ui().paintOffsets().dx("b"), "外部表が最新の移動量を持つ");
-                assertEquals("kb", idx.hitTest(view.ui().sessionId(), 10 + expectX + 10, 10 + expectY + 10).element().baseId(),
-                        "再利用した索引でも外部表の最新位置で当たる");
+                assertEquals("kb", view.ui().hitTest(10 + expectX + 10, 10 + expectY + 10).baseId(),
+                        "最新の移動量位置で直接ヒットする");
+                assertNull(view.ui().hitTest(20, 20), "元の位置は移動後に外れる");
             }
 
-            view.ui().setPaintOffset("c", 0, -150);                      // 2 つ目の鍵
-            HitTestIndex i2 = view.ui().hitTestIndex();
-            assertTrue(i2.dynamicIds().containsAll(java.util.Set.of("b", "c")));
+            view.ui().setPaintOffset("c", 0, -150);
+            assertEquals("kc", view.ui().hitTest(20, 60).baseId());
 
-            view.ui().clearPaintOffset("b");                             // 鍵が減る: 古い集合を返さない
-            HitTestIndex i3 = view.ui().hitTestIndex();
-            assertTrue(i3.dynamicIds().contains("c"));
+            view.ui().clearPaintOffset("b");
+            assertEquals("kb", view.ui().hitTest(20, 20).baseId(), "解除後は元の位置で当たる");
             view.ui().clearPaintOffset("c");
-            HitTestIndex i4 = view.ui().hitTestIndex();
-            assertTrue(i4.dynamicIds().containsAll(java.util.Set.of("b", "c")), "動きうる節の集合は上位集合のままでよい（索引は使い回せる）");
             assertEquals(0f, view.ui().paintOffsets().dx("b"));
+            assertEquals("kc", view.ui().hitTest(20, 210).baseId());
         } finally {
             view.close();
         }

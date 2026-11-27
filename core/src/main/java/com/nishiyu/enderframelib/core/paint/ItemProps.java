@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CustomProperties;
 import com.nishiyu.enderframelib.core.css.Style;
@@ -399,7 +398,7 @@ final class ItemProps {
     private static final String[] NO_HANDLERS = new String[0];
 
     /** スタイルの {@code on*} の名前（小文字）と値を {@code [名前, 値, 名前, 値, …]} で。 */
-    private static String[] styleHandlersOf(PaintBox box) {
+    private static String[] styleHandlersOf(SceneAdapterBox box) {
         CustomProperties custom = box.style().typed().custom;
         if (custom == null) return NO_HANDLERS;
         java.util.List<String> out = null;
@@ -414,16 +413,16 @@ final class ItemProps {
         return out == null ? NO_HANDLERS : out.toArray(new String[0]);
     }
 
-    static ItemProps forParts(PaintBox box, String id, TransitionSpec transSpec) {
+    static ItemProps forParts(SceneAdapterBox box, String id, TransitionSpec transSpec) {
         return populateForParts(new ItemProps(), box, id, transSpec);
     }
 
-    static ItemProps populateForParts(ItemProps partsEvents, PaintBox box, String id, TransitionSpec transSpec) {
+    static ItemProps populateForParts(ItemProps partsEvents, SceneAdapterBox box, String id, TransitionSpec transSpec) {
         return populateForParts(partsEvents, box, id, transSpec, null);
     }
 
     /** @param prevAttrs 前に出した部品の属性（無ければ null）。同じ値なら属性の表を作り直さず使い回す。 */
-    static ItemProps populateForParts(ItemProps partsEvents, PaintBox box, String id, TransitionSpec transSpec,
+    static ItemProps populateForParts(ItemProps partsEvents, SceneAdapterBox box, String id, TransitionSpec transSpec,
                                       Map<String, String> prevAttrs) {
         partsEvents.reset();
         partsEvents.reuseAttrs(prevAttrs);

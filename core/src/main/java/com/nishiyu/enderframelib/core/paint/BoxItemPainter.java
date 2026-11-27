@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
@@ -38,7 +37,7 @@ import static com.nishiyu.enderframelib.core.paint.PaintSupport.resolveLiveInput
 
 /**
  * 箱 1 つ自身の描画項目（節の錨・背景・枠線・影・部品・文字の行）を作る（M2c ②。旧 {@code DisplayListBuilder} の箱ごとの描画を
- * 取り出したもの）。読むのは {@link PaintBox}（描画用の木の見え方）だけで、描く順・クリップ・記憶は呼び出し側（{@code TreePainter}）が
+ * 取り出したもの）。読むのは {@link SceneAdapterBox}（描画用の木の見え方）だけで、描く順・クリップ・記憶は呼び出し側（{@code TreePainter}）が
  * 決める。
  *
  * <p>部品の ID の通し番号 {@link #fragIds} は呼び出し側が箱ごとに 0 にする（他の箱の増減に左右されない）。</p>
@@ -99,7 +98,7 @@ final class BoxItemPainter {
      * 箱の {@code mask-image} のレイヤーを項目にして足す（背景画像と同じ手順。クリップは箱の外へは出さない）。{@code ownNode} は箱の項目が
      * 自分の節を原点にする（親相対）か。
      */
-    void drawMask(List<DisplayItem> elements, PaintBox box, boolean ownNode) {
+    void drawMask(List<DisplayItem> elements, SceneAdapterBox box, boolean ownNode) {
         PaintSupport.CaptureList cap = (ownNode && elements instanceof PaintSupport.CaptureList c) ? c : null;
         int prevOx = cap != null ? cap.originX : 0, prevOy = cap != null ? cap.originY : 0;
         if (cap != null) cap.setOrigin(Math.round(box.x()), Math.round(box.y()));
@@ -139,7 +138,7 @@ final class BoxItemPainter {
      * {@code ::backdrop}（旧 {@code PaintOrder.drawBackdrop} の移植）: 背景色の矩形をビューポート全面に置く（固定配置の箱と同じく
      * スクロールしない。クリップは掛けない）。色か不透明度が 0 なら何も出さない。
      */
-    void drawBackdrop(List<DisplayItem> elements, PaintBox box, com.nishiyu.enderframelib.core.css.Style bd, boolean ownNode) {
+    void drawBackdrop(List<DisplayItem> elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.Style bd, boolean ownNode) {
         int color = bd.visual.backgroundColor;
         float opacity = com.nishiyu.enderframelib.core.css.Style.num(bd.visual.opacity, 1.0f);
         if ((color >>> 24) == 0 || opacity <= 0f) return;
@@ -162,8 +161,8 @@ final class BoxItemPainter {
 
     boolean suppressTextShadow() { return suppressTextShadow; }
 
-    private void maskText(List<DisplayItem> elements, PaintBox box, String id, ItemProps events) {
-        for (PaintBox child : box.paintChildren()) {
+    private void maskText(List<DisplayItem> elements, SceneAdapterBox box, String id, ItemProps events) {
+        for (SceneAdapterBox child : box.paintChildren()) {
             if (child.displayNone()) continue;
             if ("#text".equals(child.node().tag)) {
                 float fontH = Math.max(1f, child.style().fontSizePx());
@@ -212,8 +211,8 @@ final class BoxItemPainter {
      * @param ownNode    箱の項目が自分の節を原点にする（親相対で、自分の節を持つ）か
      * @param canvasBackground 背景をキャンバスに譲った要素（html か body）か（自分の箱には背景色を描かない）
      */
-    void drawBox(List<DisplayItem> elements, PaintBox box, ClipRect clipRect, String parentId, List<DisplayItem> prevItems,
-                 PaintBox originBox, boolean ownNode, boolean canvasBackground) {
+    void drawBox(List<DisplayItem> elements, SceneAdapterBox box, ClipRect clipRect, String parentId, List<DisplayItem> prevItems,
+                 SceneAdapterBox originBox, boolean ownNode, boolean canvasBackground) {
         Corners radii = cornersShared(box.axisStyle(), box.w(), box.h(), rootW, rootH);
         // 円しか持たない所（インラインの断片・円判定）には、横と縦の小さい方の円で近似した半径を渡す
         int[] rawRadii;

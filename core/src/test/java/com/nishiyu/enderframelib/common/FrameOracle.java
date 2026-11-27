@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.core.kernel.Clock;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+import com.nishiyu.enderframelib.common.TestBoxes.Box;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,8 +45,8 @@ public final class FrameOracle {
         boolean scroll = scope == Scope.GEOMETRY_AND_SCROLL_EXTENTS;
         try (StandaloneView fresh = freshCopy(live); var be = new MutationScenario.NoDraw()) {
             fresh.frame(nowOf(live), be, true);
-            List<String> a = boxes(live.ui().boxRoot(), scroll);
-            List<String> b = boxes(fresh.ui().boxRoot(), scroll);
+            List<String> a = boxes(TestBoxes.root(live.ui()), scroll);
+            List<String> b = boxes(TestBoxes.root(fresh.ui()), scroll);
             for (int i = 0; i < Math.min(a.size(), b.size()); i++) {
                 if (!a.get(i).equals(b.get(i))) return new Difference("箱 " + i, a.get(i), b.get(i));
             }
@@ -81,30 +81,30 @@ public final class FrameOracle {
     }
 
     /** 箱の木を行きがけ順に 1 行ずつ（種類・位置・大きさ・子の数。任意でスクロール範囲）。 */
-    static List<String> boxes(PaintBox root, boolean scrollExtents) {
+    static List<String> boxes(Box root, boolean scrollExtents) {
         List<String> out = new ArrayList<>();
         walk(root, scrollExtents, out);
         return out;
     }
 
-    private static void walk(PaintBox b, boolean scrollExtents, List<String> out) {
+    private static void walk(Box b, boolean scrollExtents, List<String> out) {
         // display:none の部分木は描かれず、位置・大きさは観測できない（今の面は隠す前の古い値を持ち、最初から作った面は置かない）。種類だけ比べて降りない
         if (b.style() != null && "none".equals(b.style().typed().box.display)) {
             out.add((b.node == null ? "(anon)" : b.node.tag) + " display:none");
             return;
         }
         int kids = 0;
-        for (PaintBox c : b.paintChildren()) if (!invisibleText(c)) kids++;
+        for (Box c : b.paintChildren()) if (!invisibleText(c)) kids++;
         out.add((b.node == null ? "(anon)" : b.node.tag) + "@" + b.x() + "," + b.y() + " " + b.w() + "x" + b.h()
                 + (scrollExtents ? " scroll " + b.scrollWidth() + "x" + b.scrollHeight() : "") + " kids " + kids);
-        for (PaintBox c : b.paintChildren()) if (!invisibleText(c)) walk(c, scrollExtents, out);
+        for (Box c : b.paintChildren()) if (!invisibleText(c)) walk(c, scrollExtents, out);
     }
 
     /**
      * 畳まれた空白だけの文字の箱（断片なし・幅 0）。何も描かず、スクロール範囲にも入らない。最初から作った面は子が空白だけの
      * ブロックにこの箱を残し、増分で最後のブロックを消した面は残さない（箱の木の作り方の差で、観測できる差ではない）ので数えない。
      */
-    private static boolean invisibleText(PaintBox c) {
+    private static boolean invisibleText(Box c) {
         return c.node != null && c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
                 && c.runs().isEmpty() && c.w() == 0 && (c.node.text == null || c.node.text.isBlank());
     }

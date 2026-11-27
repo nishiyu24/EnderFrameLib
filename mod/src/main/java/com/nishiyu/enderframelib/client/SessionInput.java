@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.nishiyu.enderframelib.common.UiInput;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
 import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import net.minecraft.nbt.CompoundTag;
@@ -25,7 +25,7 @@ public final class SessionInput extends UiInput {
     }
 
     @Override
-    protected void playElementSound(DisplayItem clicked) {
+    protected void playElementSound(SceneHit clicked) {
         ClientScreenInteractionManager.playElementSound(clicked);
     }
 

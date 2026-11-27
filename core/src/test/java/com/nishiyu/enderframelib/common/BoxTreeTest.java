@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.box.Display;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -45,10 +44,10 @@ public class BoxTreeTest {
     public void testInlineRunsNextToBlocksAreWrappedInAnonymousBlocks() {
         // 匿名ブロックの効き目は位置に出る: ブロックの前後のインラインはそれぞれ自分の行に置かれ、ブロックをまたいで同じ行に並ばない。
         // 描画用の木は匿名ブロックを節にしない（経路を 1 本にした M2c-3 以降。匿名の箱の組み方は BoxTreeCompilerTest が見る）
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div id="parent" style="line-height: 20px"><span id="a">x</span><div id="block" style="height: 10px"></div><span id="b">y</span></div>
                 """);
-        PaintBox a = findElement(root, "a"), block = findElement(root, "block"), b = findElement(root, "b");
+        TestBoxes.Box a = findElement(root, "a"), block = findElement(root, "block"), b = findElement(root, "b");
         assertTrue(a.y() + a.h() <= block.y() + 0.01f, "前のインラインはブロックより上の行");
         assertTrue(b.y() >= block.y() + block.h() - 0.01f, "後のインラインはブロックより下の行");
         assertEquals(20f, block.y() - findElement(root, "parent").y(), 0.01f, "前の行（行の高さ 20px）の下にブロック");
@@ -56,27 +55,27 @@ public class BoxTreeTest {
 
     @Test
     public void testWhitespaceOnlyRunsDoNotCreateAnonymousBlocks() {
-        PaintBox root = layout("<div id=\"parent\"><div id=\"a\"></div> <div id=\"b\"></div></div>");
-        PaintBox parent = findElement(root, "parent");
+        TestBoxes.Box root = layout("<div id=\"parent\"><div id=\"a\"></div> <div id=\"b\"></div></div>");
+        TestBoxes.Box parent = findElement(root, "parent");
         assertEquals(2, parent.paintChildren().size());
         assertFalse(parent.paintChildren().stream().anyMatch(c -> c.isAnonymous));
     }
 
     @Test
     public void testInlineOnlyContentIsNotWrapped() {
-        PaintBox root = layout("<p id=\"p\">a <b>b</b> c</p>");
-        PaintBox p = findElement(root, "p");
+        TestBoxes.Box root = layout("<p id=\"p\">a <b>b</b> c</p>");
+        TestBoxes.Box p = findElement(root, "p");
         assertFalse(p.paintChildren().stream().anyMatch(c -> c.isAnonymous));
     }
 
     @Test
     public void testDisplayContentsPromotesChildrenAndHasNoBox() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div id="row" style="display: flex;">
                   <div id="contents" style="display: contents;"><div id="b"></div><div id="c"></div></div>
                 </div>
                 """);
-        PaintBox row = findElement(root, "row");
+        TestBoxes.Box row = findElement(root, "row");
         assertNull(findElement(root, "contents"), "display: contents の要素は箱を作らない（子が親の子に繰り上がる）");
         assertSame(findElement(root, "b"), row.paintChildren().get(0));
         assertSame(findElement(root, "c"), row.paintChildren().get(1));
@@ -85,15 +84,15 @@ public class BoxTreeTest {
 
     @Test
     public void testStrayTableCellsGetAnonymousTableAndRow() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div id="wrap"><div id="a" style="display: table-cell;"></div><div id="b" style="display: table-cell;"></div></div>
                 """);
-        PaintBox wrap = findElement(root, "wrap");
+        TestBoxes.Box wrap = findElement(root, "wrap");
         assertEquals(1, wrap.paintChildren().size());
-        PaintBox table = wrap.paintChildren().getFirst();
+        TestBoxes.Box table = wrap.paintChildren().getFirst();
         assertTrue(table.isAnonymous);
         assertEquals(Display.Inner.TABLE, table.display().inner());
-        PaintBox row = table.paintChildren().getFirst();
+        TestBoxes.Box row = table.paintChildren().getFirst();
         assertTrue(row.isAnonymous);
         assertEquals(Display.Inner.TABLE_ROW, row.display().inner());
         assertEquals(List.of(findElement(root, "a"), findElement(root, "b")), row.paintChildren());
@@ -111,7 +110,7 @@ public class BoxTreeTest {
 
     @Test
     public void testListItemsGetMarkersFromListStyleType() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <ul><li id="u1">a</li><li id="u2">b</li></ul>
                 <ol><li id="o1">a</li><li id="o2">b</li></ol>
                 <ul style="list-style-type: none;"><li id="none">a</li></ul>
@@ -126,7 +125,7 @@ public class BoxTreeTest {
 
     @Test
     public void testOlStartAndLiValue() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <ol start="3"><li id="a">a</li><li id="b">b</li><li id="c" value="10">c</li><li id="d">d</li></ol>
                 <ol style="list-style-type: lower-roman;"><li>a</li><li>b</li><li>c</li><li id="roman">d</li></ol>
                 """);
@@ -139,7 +138,7 @@ public class BoxTreeTest {
 
     @Test
     public void testCounterStyleDrivesMarkersAndCounterFunction() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   @counter-style parens { system: cyclic; symbols: "x" "y"; prefix: "("; suffix: ")"; }
                   @counter-style Foo { system: cyclic; symbols: "Z"; }
@@ -164,7 +163,7 @@ public class BoxTreeTest {
 
     @Test
     public void testOlReversedCountsDown() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <ol reversed><li id="a">a</li><li id="b">b</li><li id="c">c</li></ol>
                 <ol reversed start="5"><li id="d">d</li><li id="e">e</li><li id="f" value="9">f</li><li id="g">g</li></ol>
                 <ol reversed><li id="outer">x<ol><li id="inner">y</li></ol></li><li id="outer2">z</li></ol>
@@ -185,12 +184,12 @@ public class BoxTreeTest {
     @Test
     public void testListStyleImageReplacesTheMarkerText() {
         String svg = "data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2712%27%20height%3D%2710%27%2F%3E";
-        PaintBox root = layout("<ul style=\"list-style-image: url(" + svg + ");\"><li id=\"a\">a</li></ul>"
+        TestBoxes.Box root = layout("<ul style=\"list-style-image: url(" + svg + ");\"><li id=\"a\">a</li></ul>"
                 + "<ul style=\"list-style-image: url(" + svg + "); list-style-type: square\"><li id=\"b\" style=\"list-style-image: none\">b</li></ul>");
-        PaintBox marker = marker(findElement(root, "a"));
+        TestBoxes.Box marker = marker(findElement(root, "a"));
         assertNotNull(marker);
         // 描画用の木は行の原子を行の文字の後ろに足す（並びは描く順に効かない）ので、画像の子を引いて確かめる
-        PaintBox image = marker.paintChildren().stream().filter(c -> "img".equals(c.node.tag)).findFirst().orElse(null);
+        TestBoxes.Box image = marker.paintChildren().stream().filter(c -> "img".equals(c.node.tag)).findFirst().orElse(null);
         assertNotNull(image, "マーカーの中の画像");
         assertTrue(marker.paintChildren().stream().noneMatch(c -> c.node.text != null && !c.node.text.isBlank()), "記号の文字は無い");
         assertEquals(svg, image.node.attrs.get("src"));
@@ -217,11 +216,11 @@ public class BoxTreeTest {
 
     @Test
     public void testOutsideMarkerSitsLeftOfTheItemWithoutTakingSpace() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <ul style="margin: 0; padding-left: 40px;"><li id="li" style="margin: 0; line-height: 20px;">text</li></ul>
                 """);
-        PaintBox li = findElement(root, "li");
-        PaintBox marker = marker(li);
+        TestBoxes.Box li = findElement(root, "li");
+        TestBoxes.Box marker = marker(li);
         assertNotNull(marker);
         assertEquals(li.x(), marker.x() + marker.w(), 0.01f, "マーカーの右端はリスト項目の左端");
         assertEquals(20f, li.h(), 0.01f, "外側のマーカーは高さに寄与しない");
@@ -229,18 +228,18 @@ public class BoxTreeTest {
 
     @Test
     public void testInsideMarkerIsInlineContent() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <ul style="list-style-position: inside;"><li id="li">text</li></ul>
                 """);
-        PaintBox li = findElement(root, "li");
-        PaintBox marker = marker(li);
+        TestBoxes.Box li = findElement(root, "li");
+        TestBoxes.Box marker = marker(li);
         assertNotNull(marker);
         assertTrue(marker.x() >= li.x(), "内側のマーカーはリスト項目の中の行に置かれる");
     }
 
     @Test
     public void testGeneratedContentConcatenatesStringsAttrAndCounters() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   .t::before { content: "(" attr(title) ")"; }
                   ol.n { counter-reset: s; list-style-type: none; }
@@ -267,13 +266,13 @@ public class BoxTreeTest {
                 </style>
                 <ul><li id="li">text<div id="d">block</div></li></ul>
                 """, VIEWPORT_W, VIEWPORT_H, FontResolver.FALLBACK)) {
-            PaintBox li = findElement(view.ui().boxRoot(), "li");
+            TestBoxes.Box li = findElement(TestBoxes.root(view.ui()), "li");
             assertEquals("#111111", marker(li).paintChildren().getFirst().style().get(CssProperty.COLOR));
             assertEquals("#111111", textChild(li).style().get(CssProperty.COLOR));
 
             view.ui().setHoveredElement("li");
             view.ui().flushInvalidation();
-            li = findElement(view.ui().boxRoot(), "li");
+            li = findElement(TestBoxes.root(view.ui()), "li");
             assertEquals("#222222", marker(li).paintChildren().getFirst().style().get(CssProperty.COLOR));
             assertEquals("#222222", textChild(li).style().get(CssProperty.COLOR));
             assertEquals("#222222", findElement(li, "d").style().get(CssProperty.COLOR));
@@ -284,9 +283,9 @@ public class BoxTreeTest {
     public void testFragmentDocumentGetsImpliedBodyWithUaMargin() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<div id=\"a\" style=\"height: 10px;\"></div>", "", VIEWPORT_W, VIEWPORT_H);
-        PaintBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
         // W7 まではパーサが body を補わず、断片だけの文書では ua.css の body { margin: 8px } が効かなかった
-        PaintBox a = findElement(root, "a");
+        TestBoxes.Box a = findElement(root, "a");
         assertEquals("body", a.paintParent().node.tag);
         assertEquals(8, a.x(), 0.01f);
         assertEquals(8, a.y(), 0.01f);
@@ -295,7 +294,7 @@ public class BoxTreeTest {
 
     @Test
     public void testPseudoElementGoesThroughTheCascade() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   #t::before { content: "id"; color: #111111 !important; }
                   .t::before { content: "class"; color: #222222; }
@@ -305,14 +304,14 @@ public class BoxTreeTest {
                 </style>
                 <div class="t" id="t">x</div><div class="u" id="u">y</div>
                 """);
-        PaintBox t = findElement(root, "t");
+        TestBoxes.Box t = findElement(root, "t");
         // 以前は宣言を詳細度を見ずに重ねて style 属性に焼き込み、合成した span に span のルールも当たっていた
         assertEquals("id", beforeText(t));
-        PaintBox before = TestBoxes.elements(t).getFirst();
+        TestBoxes.Box before = TestBoxes.elements(t).getFirst();
         assertEquals("#111111", before.style().get(CssProperty.COLOR));
         assertEquals(1f, before.pL(), 0.01f, "後に書いたショートハンドが前のロングハンドに勝つ");
 
-        PaintBox u = findElement(root, "u");
+        TestBoxes.Box u = findElement(root, "u");
         assertEquals("type", beforeText(u));
         assertNotEquals("#333333", TestBoxes.elements(u).getFirst().style().get(CssProperty.COLOR),
                 "span のルールは擬似要素に当たらない");
@@ -320,7 +319,7 @@ public class BoxTreeTest {
 
     @Test
     public void testNoPseudoBoxWithoutContentOrWhenDisplayNone() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   #a::before { color: red; }
                   #b::before { content: none; }
@@ -332,7 +331,7 @@ public class BoxTreeTest {
         for (String id : new String[]{"a", "b", "c"}) {
             assertTrue(TestBoxes.elements(findElement(root, id)).stream().noneMatch(c -> c.node.isPseudoNode), id);
         }
-        PaintBox d = findElement(root, "d");
+        TestBoxes.Box d = findElement(root, "d");
         assertEquals("d_after", TestBoxes.elements(d).getLast().node.getId(), "空文字列の content は箱を作る");
         assertEquals(3f, d.h(), 0.01f);
     }
@@ -351,7 +350,7 @@ public class BoxTreeTest {
         assertFalse(doc.authorCss.contains("px"), doc.authorCss);
         assertEquals("<style>#a { height: 60px; }</style>", doc.root.getElementById("ta").getTextContent());
         assertTrue(doc.root.getElementById("pre").getTextContent().contains("<style>"));
-        PaintBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
         assertEquals(10f, findElement(root, "a").h(), 0.01f);
     }
 
@@ -373,55 +372,55 @@ public class BoxTreeTest {
 
     // ==========================================
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
-        return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
     /** 要素ツリーから id で探す（display: contents の要素も見つかる）。 */
-    private static PaintBox findElement(PaintBox box, String id) {
+    private static TestBoxes.Box findElement(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = findElement(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = findElement(child, id);
             if (hit != null) return hit;
         }
         return null;
     }
 
-    private static String markerText(PaintBox listItem) {
-        PaintBox m = marker(listItem);
+    private static String markerText(TestBoxes.Box listItem) {
+        TestBoxes.Box m = marker(listItem);
         return m == null || m.paintChildren().isEmpty() ? null : text(m.paintChildren().getFirst());
     }
 
-    private static String beforeText(PaintBox element) {
-        List<PaintBox> pseudo = new ArrayList<>();
-        for (PaintBox child : TestBoxes.elements(element)) {
+    private static String beforeText(TestBoxes.Box element) {
+        List<TestBoxes.Box> pseudo = new ArrayList<>();
+        for (TestBoxes.Box child : TestBoxes.elements(element)) {
             if (child.node.isPseudoNode && child.node.getId().endsWith("_before")) pseudo.add(child);
         }
         assertEquals(1, pseudo.size());
-        PaintBox content = pseudo.getFirst();
+        TestBoxes.Box content = pseudo.getFirst();
         return content.paintChildren().isEmpty() ? text(content) : text(content.paintChildren().getFirst());
     }
 
     /** 文字の箱の文字（行に置いた語をつないだもの）。 */
-    private static String text(PaintBox box) {
+    private static String text(TestBoxes.Box box) {
         StringBuilder sb = new StringBuilder();
         for (var run : box.runs()) if (run.text() != null) sb.append(run.text());
         return sb.toString();
     }
 
     /** リスト項目の {@code ::marker} の箱（無ければ null。描画用の木では項目の中身の後ろに置かれる）。 */
-    private static PaintBox marker(PaintBox listItem) {
-        for (PaintBox c : listItem.paintChildren()) {
+    private static TestBoxes.Box marker(TestBoxes.Box listItem) {
+        for (TestBoxes.Box c : listItem.paintChildren()) {
             if (c.node != null && c.node.getId() != null && c.node.getId().endsWith("_marker")) return c;
         }
         return null;
     }
 
     /** 最初の文字の子の箱。 */
-    private static PaintBox textChild(PaintBox box) {
-        for (PaintBox c : box.paintChildren()) {
+    private static TestBoxes.Box textChild(TestBoxes.Box box) {
+        for (TestBoxes.Box c : box.paintChildren()) {
             if (c.node != null && c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT) return c;
         }
         return null;

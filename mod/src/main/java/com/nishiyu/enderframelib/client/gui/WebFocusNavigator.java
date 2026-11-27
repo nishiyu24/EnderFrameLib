@@ -4,7 +4,8 @@ import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.common.UiFocus;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 import net.minecraft.client.gui.screens.Screen;
 
 import java.util.ArrayList;
@@ -20,7 +21,7 @@ import java.util.function.Consumer;
  */
 public class WebFocusNavigator {
 
-    public record FocusCandidate(HtmlNode node, DisplayItem element, int tabIndex, int domOrder) {}
+    public record FocusCandidate(HtmlNode node, SceneLocation located, int tabIndex, int domOrder) {}
 
     private final String sessionId;
 
@@ -62,7 +63,7 @@ public class WebFocusNavigator {
         if (session == null || session.rootNode() == null) return Collections.emptyList();
         List<FocusCandidate> out = new ArrayList<>();
         for (UiFocus.Candidate c : UiFocus.tabOrder(session)) {
-            out.add(new FocusCandidate(c.node(), c.item(), c.tabIndex(), c.order()));
+            out.add(new FocusCandidate(c.node(), c.located(), c.tabIndex(), c.order()));
         }
         return out;
     }

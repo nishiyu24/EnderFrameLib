@@ -9,7 +9,8 @@ import java.util.List;
  */
 public final class SceneChildren {
     private static final float[] NO_POS = new float[0];
-    public static final SceneChildren EMPTY = new SceneChildren(SceneChunk.NO_CHUNKS, NO_POS, NO_POS, true, 0, 0, false, false, 0);
+    private static final int[] NO_INTS = new int[0];
+    public static final SceneChildren EMPTY = new SceneChildren(SceneChunk.NO_CHUNKS, NO_POS, NO_POS, true, 0, 0, false, false, 0, false, NO_INTS);
 
     public final SceneChunk[] chunks;
     /** 各チャンクの原点（親の border-box 左上基準）。 */
@@ -21,9 +22,13 @@ public final class SceneChildren {
     public final boolean anchoredBelow;
     public final boolean propagatesBlend;
     public final int anonChain;
+    public final boolean hasDynamicBounds;
+    /** 動的境界を持つ（範囲カリングをバイパスすべき）チャンク添字の昇順配列。 */
+    public final int[] unculledChunks;
 
     private SceneChildren(SceneChunk[] chunks, float[] chunkX, float[] chunkY, boolean monotonicY, int size,
-                          int propagatedLayers, boolean anchoredBelow, boolean propagatesBlend, int anonChain) {
+                          int propagatedLayers, boolean anchoredBelow, boolean propagatesBlend, int anonChain,
+                          boolean hasDynamicBounds, int[] unculledChunks) {
         this.chunks = chunks;
         this.chunkX = chunkX;
         this.chunkY = chunkY;
@@ -33,11 +38,13 @@ public final class SceneChildren {
         this.anchoredBelow = anchoredBelow;
         this.propagatesBlend = propagatesBlend;
         this.anonChain = anonChain;
+        this.hasDynamicBounds = hasDynamicBounds;
+        this.unculledChunks = unculledChunks;
     }
 
     public static SceneChildren of(SceneChunk[] chunks, float[] chunkX, float[] chunkY) {
         if (chunks == null || chunks.length == 0) return EMPTY;
-        int total = 0, prop = 0, anon = 0;
+        int total = 0, prop = 0, anon = 0, dynCount = 0;
         boolean anch = false, blend = false, mono = true;
         float prevMinY = Float.NEGATIVE_INFINITY, prevMaxY = Float.NEGATIVE_INFINITY;
         for (int k = 0; k < chunks.length; k++) {
@@ -47,6 +54,7 @@ public final class SceneChildren {
             anch |= c.anchoredBelow;
             blend |= c.propagatesBlend;
             anon += c.anonChain;
+            if (c.hasDynamicBounds) dynCount++;
             if (mono && c.layers.length > 0) {
                 float cMinY = chunkY[k] + c.minY;
                 float cMaxY = chunkY[k] + c.maxY;
@@ -56,7 +64,15 @@ public final class SceneChildren {
             }
         }
         if (total == 0) return EMPTY;
-        return new SceneChildren(chunks, chunkX, chunkY, mono, total, prop, anch, blend, anon);
+        int[] unculled = NO_INTS;
+        if (dynCount > 0) {
+            unculled = new int[dynCount];
+            int idx = 0;
+            for (int k = 0; k < chunks.length; k++) {
+                if (chunks[k].hasDynamicBounds) unculled[idx++] = k;
+            }
+        }
+        return new SceneChildren(chunks, chunkX, chunkY, mono, total, prop, anch, blend, anon, dynCount > 0, unculled);
     }
 
     /** 親へ汲み上げる子孫の sticky 要素を集める（通常は 0 確保）。 */
@@ -93,6 +109,22 @@ public final class SceneChildren {
             else hi = mid;
         }
         return lo;
+    }
+
+    /**
+     * {@link #monotonicY} が真のとき、上端が {@code viewMaxY} 以下の最後のチャンク番号を二分探索（{@code O(log N)}）で返す。
+     * 単調でなければ末尾の添字。
+     */
+    public int lastVisibleChunk(float viewMaxY) {
+        if (!monotonicY || chunks.length == 0) return chunks.length - 1;
+        int lo = 0, hi = chunks.length;
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            float minY = chunkY[mid] + chunks[mid].minY;
+            if (minY <= viewMaxY) lo = mid + 1;
+            else hi = mid;
+        }
+        return lo - 1;
     }
 
     @FunctionalInterface

@@ -289,8 +289,10 @@ public class UiEventPipelineTest {
 
         double[] point = center("vol");
         ClientScreenInteractionManager.handleHover(SESSION, point[0], point[1]);
-        DisplayItem pressed = ClientScreenInteractionManager.handleClick(SESSION, point[0], point[1], MC_LEFT);
-        assertEquals(ElementType.RANGE, pressed.type());
+        var pressed = ClientScreenInteractionManager.handleClick(SESSION, point[0], point[1], MC_LEFT);
+        assertNotNull(pressed);
+        assertEquals("vol", pressed.baseId());
+        assertEquals("range", pressed.node().attrs.get("type"));
         ClientScreenInteractionManager.handleRelease(SESSION, point[0], point[1], MC_LEFT, true);
 
         assertEquals(List.of("vol:input", "vol:input", "vol:change"), log.stream().filter(e -> e.startsWith("vol:")).toList());

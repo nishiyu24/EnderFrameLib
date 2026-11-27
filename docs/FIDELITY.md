@@ -239,7 +239,7 @@ TTF / OTF 以外の `@font-face` で登録した書体）だけの話。シス�
   ブロック → float → インライン → z-index: auto / 0 の位置指定 → 正の z-index）に平らにした。
   コンテキストを作るのは z-index を持つ位置指定要素と flex / grid アイテム、`opacity < 1`、`transform`、
   `filter`、`isolation: isolate`、`mix-blend-mode`、fixed / sticky。描画とヒットテスト
-  （`HitTestIndex` は描画順の逆を引く）が同じ順序を使う。
+  （`SceneHitTest` は `DisplayScene` を描画順の逆に引く）が同じ順序を使う。
 - **W4（161 行 + W5 の 1 行）**: block（`float-*` / `margin-collapse-empty` / `z-float-over-block`）、
   inline（`inline-block-margin` / `inline-text-indent` / `vertical-align-*` / `line-height-strut` /
   `inline-nowrap-overflow`）、position（`position-*`）、flex（`flex-*`）、grid（`grid-*`）、

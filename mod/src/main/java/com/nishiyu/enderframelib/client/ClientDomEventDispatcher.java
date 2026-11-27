@@ -1,8 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.model.*;
-
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
 
 /**
  * 後方互換のための型だけを残した窓口。
@@ -18,6 +16,6 @@ public class ClientDomEventDispatcher {
 
     /** GUI の {@code onWebAction} フック。 */
     public interface TriActionCallback {
-        void onAction(String action, DisplayItem clickedElement, int mouseButton);
+        void onAction(String action, SceneHit clickedElement, int mouseButton);
     }
 }

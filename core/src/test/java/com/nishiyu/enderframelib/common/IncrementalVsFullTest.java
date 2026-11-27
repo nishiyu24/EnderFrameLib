@@ -229,13 +229,13 @@ class IncrementalVsFullTest {
         try (StandaloneView v = new StandaloneView(TABLE_IN_ANON_CELL.replace("<table", "<div style=\"margin-left:11px\"><table"), 260, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
              var be = new MutationScenario.NoDraw()) {
             v.frame(1000, be, true);
-            com.nishiyu.enderframelib.core.paint.tree.PaintBox[] innerTable = {null};
-            java.util.function.Consumer<com.nishiyu.enderframelib.core.paint.tree.PaintBox>[] walk = new java.util.function.Consumer[1];
+            TestBoxes.Box[] innerTable = {null};
+            java.util.function.Consumer<TestBoxes.Box>[] walk = new java.util.function.Consumer[1];
             walk[0] = b -> {
                 if (b.isAnonymous && b.style() != null && "table".equals(b.style().typed().box.display)) innerTable[0] = b;
                 for (var c : b.paintChildren()) walk[0].accept(c);
             };
-            walk[0].accept(v.ui().boxRoot());
+            walk[0].accept(TestBoxes.root(v.ui()));
             assertNotNull(innerTable[0], "tr{display:block} の中の td は匿名の表に包まれる");
             var cell = innerTable[0].paintParent().paintParent(); // 匿名の表 → tr（block）→ 匿名のセル
             assertTrue(cell.w() + 0.01f >= innerTable[0].w(), "匿名のセル " + cell.w() + " が中の表 " + innerTable[0].w() + " より狭い");

@@ -49,7 +49,7 @@ class ArchitectureHealthTest {
     static final int NEW_CLASS_MAX_LINES = 600;
     static final int MAX_OVER_1000_CLASSES = 20;
     static final int MAX_VOLATILE_STATIC = 40;
-    static final int MAX_THREAD_LOCAL_STATIC = 15;
+    static final int MAX_THREAD_LOCAL_STATIC = 14;
     static final int MAX_ATOMIC_STATIC = 18;
     static final int MAX_EPOCH_STATIC = 0;
     static final int MAX_CORE_SCC = 1;
@@ -422,6 +422,7 @@ class ArchitectureHealthTest {
             "core/src/main/java/com/nishiyu/enderframelib/core/box",
             "core/src/main/java/com/nishiyu/enderframelib/core/layout/fragment",
             "core/src/main/java/com/nishiyu/enderframelib/core/paint/scene",
+            "core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneAdapterBox.java",
             "core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneDisplayListAdapter.java",
             "core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneAdapterSupport.java",
             "core/src/main/java/com/nishiyu/enderframelib/common/V3Frame.java");
@@ -562,6 +563,10 @@ class ArchitectureHealthTest {
             "PaintTreeBuilder", "PaintNode", "PaintView", "TreeRun", "StickyOffset", "AnchorFollow",
             "TreePainter", "TreeStacking", "FragSeq");
 
+    /** M3b-3 で消した旧問い合わせ型（当たり判定・互換アダプタ・旧抽象木）。識別子として現れたら失敗（注釈と文字列は数えない）。 */
+    static final List<String> M3B3_DELETED_TYPES = List.of(
+            "HitTestIndex", "PaintBox", "PaintRun", "SceneBox", "UIHitResult");
+
     @Test
     void legacyPaintTreeTypesStayGone() throws IOException {
         List<String> bad = new ArrayList<>();
@@ -569,6 +574,15 @@ class ArchitectureHealthTest {
         roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
         for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M3B2_DELETED_TYPES));
         assertEquals(List.of(), bad, "M3b-2 で消した描画用の木・TreePainter・FragSeq が戻った（計画書 §3.4）");
+    }
+
+    @Test
+    void legacyQueryTypesStayGone() throws IOException {
+        List<String> bad = new ArrayList<>();
+        List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
+        roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
+        for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M3B3_DELETED_TYPES));
+        assertEquals(List.of(), bad, "M3b-3 で消した HitTestIndex / PaintBox / PaintRun / SceneBox / UIHitResult が戻った（計画書 §3.4）");
     }
 
     @Test

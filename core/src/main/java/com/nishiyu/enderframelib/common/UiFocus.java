@@ -4,12 +4,10 @@ import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,8 +19,8 @@ import java.util.Map;
 public final class UiFocus {
     private UiFocus() {}
 
-    /** フォーカス移動の候補。{@code item} は位置の取れた表示項目（画面外で項目が無ければ null）。 */
-    public record Candidate(HtmlNode node, DisplayItem item, int tabIndex, int order) {}
+    /** フォーカス移動の候補。{@code located} は描画シーン上の解決済み位置・大きさ。 */
+    public record Candidate(HtmlNode node, SceneLocation located, int tabIndex, int order) {}
 
     /** 節が不活性（{@code inert} 属性の配下、またはモーダル {@code <dialog>} の外側）か。 */
     public static boolean isInert(HtmlNode node) {
@@ -68,9 +66,9 @@ public final class UiFocus {
 
     /** {@code Tab} で巡る順の候補。箱の無い（{@code display:none}）要素・無効・{@code hidden}・負の {@code tabindex} は含めない。 */
     public static List<Candidate> tabOrder(UiView ui) {
-        Map<String, DisplayItem> items = itemsByNode(ui.renderCache());
+        Map<HtmlNode, SceneLocation> boxes = SceneQuery.indexElements(ui.scene(), ui.dynamicState());
         List<Candidate> out = new ArrayList<>();
-        collect(ui, ui.boxRoot(), ui.rootNode(), items, out, new int[]{0});
+        collect(ui, boxes, ui.rootNode(), out, new int[]{0});
         out.sort((a, b) -> {
             boolean aPos = a.tabIndex() > 0, bPos = b.tabIndex() > 0;
             if (aPos && bPos) {
@@ -84,22 +82,22 @@ public final class UiFocus {
         return out;
     }
 
-    private static void collect(UiView ui, PaintBox layout, HtmlNode node, Map<String, DisplayItem> items,
+    private static void collect(UiView ui, Map<HtmlNode, SceneLocation> boxes, HtmlNode node,
                                 List<Candidate> out, int[] order) {
         if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("inert")) return;
-        PaintBox box = findBox(layout, node);
+        SceneLocation loc = boxes.get(node);
         // display:none の部分木は箱があっても描かれない。ここから先へは降りない
-        if (box != null && box.style() != null && box.style().typed().facts.displayNone) return;
+        if (loc != null && loc.displayNone()) return;
         Integer tab = explicitTabIndex(node);
         boolean focusable = !node.attrs.containsKey("disabled") && !ui.interactionState().isInert(node)
                 && (tab != null || isNaturallyFocusable(node));
-        if (box != null && focusable && (tab == null || tab >= 0) && !node.key().isEmpty()) {
-            out.add(new Candidate(node, items.get(node.key()), tab != null ? tab : 0, order[0]++));
+        if (loc != null && focusable && (tab == null || tab >= 0) && !node.key().isEmpty()) {
+            out.add(new Candidate(node, loc, tab != null ? tab : 0, order[0]++));
         }
         boolean open = node.attrs.containsKey("open");
         for (HtmlNode child : node.children) {
             if (com.nishiyu.enderframelib.core.dom.node.ElementTraits.isHiddenByClosedDetails(node, open, child)) continue;
-            collect(ui, layout, child, items, out, order);
+            collect(ui, boxes, child, out, order);
         }
     }
 
@@ -125,19 +123,21 @@ public final class UiFocus {
     public static HtmlNode spatial(UiView ui, HtmlNode current, int key) {
         List<Candidate> all = tabOrder(ui);
         List<Candidate> cands = new ArrayList<>();
-        for (Candidate c : all) if (c.item() != null) cands.add(c);
+        for (Candidate c : all) {
+            if (c.located() != null && c.located().w() > 0f && c.located().h() > 0f) cands.add(c);
+        }
         if (cands.isEmpty()) return null;
         Candidate cur = null;
         for (Candidate c : cands) if (c.node() == current) cur = c;
         if (cur == null) return cands.get(0).node();
 
-        double cx = centerX(cur.item()), cy = centerY(cur.item());
+        double cx = centerX(cur.located()), cy = centerY(cur.located());
         boolean vertical = key == Keys.UP || key == Keys.DOWN;
         Candidate best = null;
         double bestScore = Double.MAX_VALUE;
         for (Candidate c : cands) {
             if (c == cur) continue;
-            double dx = centerX(c.item()) - cx, dy = centerY(c.item()) - cy;
+            double dx = centerX(c.located()) - cx, dy = centerY(c.located()) - cy;
             boolean ahead = switch (key) {
                 case Keys.UP -> dy < -2;
                 case Keys.DOWN -> dy > 2;
@@ -155,37 +155,11 @@ public final class UiFocus {
         return best != null ? best.node() : null;
     }
 
-    private static double centerX(DisplayItem it) {
-        return it.x() + it.width() / 2.0;
+    private static double centerX(SceneLocation loc) {
+        return loc.x() + loc.w() / 2.0;
     }
 
-    private static double centerY(DisplayItem it) {
-        return it.y() + it.height() / 2.0;
-    }
-
-    /** 節ごとに位置を代表する項目（節自身の箱があればそれ、無ければ最初の部品）。絶対位置に解決して返す。 */
-    private static Map<String, DisplayItem> itemsByNode(List<DisplayItem> items) {
-        Map<String, DisplayItem> byId = new HashMap<>();
-        Map<String, DisplayItem> map = new HashMap<>();
-        if (items == null) return map;
-        for (DisplayItem it : items) byId.put(it.id(), it);
-        for (DisplayItem it : items) {
-            if (it.width() <= 0 || it.height() <= 0) continue;
-            if (it.type() == ElementType.NODE && it.id().equals(it.baseId())) map.put(it.baseId(), it);
-            else map.putIfAbsent(it.baseId(), it);
-        }
-        map.replaceAll((k, v) -> DisplayItem.resolveAbsolute(byId, v));
-        return map;
-    }
-
-    /** レイアウトの結果の木（旧経路の箱の木か、新経路の描画用の木の見え方）から節の箱を探す（無名の箱は除く）。 */
-    public static PaintBox findBox(PaintBox from, HtmlNode node) {
-        if (from == null) return null;
-        if (from.node == node && !from.isAnonymous) return from;
-        for (PaintBox child : from.paintChildren()) {
-            PaintBox hit = findBox(child, node);
-            if (hit != null) return hit;
-        }
-        return null;
+    private static double centerY(SceneLocation loc) {
+        return loc.y() + loc.h() / 2.0;
     }
 }

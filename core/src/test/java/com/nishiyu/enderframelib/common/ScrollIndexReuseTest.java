@@ -2,20 +2,21 @@ package com.nishiyu.enderframelib.common;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.core.paint.HitTestIndex;
 import com.nishiyu.enderframelib.core.paint.ImmutableItemList;
-import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHitTest;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
- * スクロールのたびに表示項目を作り直さず（移動量は外部表 {@link PaintOffsets} だけに持つ）、ヒットテストの索引も作り直さず使い回すことが、
- * 「その時点で新しく作った索引」と同じ結果を返し、かつ実際に使い回されていることを確かめる。
+ * スクロールのたびに {@link DisplayScene} と表示リストを作り直さず（移動量は外部表 {@link PaintOffsets} だけに持つ）、
+ * {@link SceneHitTest} が同一不変シーンのまま線形走査と全点で一致することを確かめる。
  */
 class ScrollIndexReuseTest {
     private static final int W = 320, H = 240;
@@ -32,37 +33,33 @@ class ScrollIndexReuseTest {
     }
 
     @Test
-    void reusedIndexGivesTheSameAnswersAsAFreshOneAndIsReallyReused() {
+    void sceneRemainsImmutableAndCulledHitTestMatchesLinearAcrossScrolls() {
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try (var backend = new MutationScenario.NoDraw()) {
             long now = 1000;
             view.frame(now, backend, true);
+            DisplayScene initialScene = view.ui().scene();
             String sid = backend.sessionId();
             Random rnd = new Random(5);
-            HitTestIndex previous = null;
-            int reused = 0, steps = 120;
-            for (int step = 0; step < steps; step++) {
+            for (int step = 0; step < 120; step++) {
                 view.mouseMove(rnd.nextBoolean() ? 60 : 250, rnd.nextInt(H), sid);
                 view.scroll(0, rnd.nextInt(7) - 3, sid);
                 now += 16;
                 view.frame(now, backend, true);
-                HitTestIndex idx = view.ui().hitTestIndex();
-                if (step > 10 && idx == previous) reused++; // 直前のステップと同じ索引（基底の作り直しがあれば、そのステップだけ新しくなる）
-                previous = idx;
-                List<DisplayItem> items = view.ui().renderCache();
-                // 同じ時点で新しく作った索引（動きうる節は同じ集合で扱う）と、全点で同じ答えになる
-                HitTestIndex fresh = new HitTestIndex(items, idx.dynamicIds(), view.ui().paintOffsets());
+                assertSame(initialScene, view.ui().scene(), "スクロール中に DisplayScene を作り直さない step " + step);
+                SceneHitTest.Context ctx = view.ui().hitTestContext();
                 for (int i = 0; i < 160; i++) {
                     double x = rnd.nextDouble() * W, y = rnd.nextDouble() * H;
-                    UIHitResult a = idx.hitTest(sid, x, y), b = fresh.hitTest(sid, x, y);
-                    assertEquals(b == null ? "-" : b.element().id(), a == null ? "-" : a.element().id(), "step " + step + " 点(" + x + "," + y + ")");
+                    SceneHit a = SceneHitTest.hitTest(initialScene, ctx, x, y);
+                    SceneHit b = SceneHitTest.hitTestLinear(initialScene, ctx, x, y);
+                    assertEquals(b == null ? "-" : b.baseId(), a == null ? "-" : a.baseId(), "step " + step + " 点(" + x + "," + y + ")");
+                    assertEquals(b == null ? null : b.scrollbarPart(), a == null ? null : a.scrollbarPart());
                     if (a != null) {
                         assertEquals(b.localX(), a.localX(), 1e-6);
                         assertEquals(b.localY(), a.localY(), 1e-6);
                     }
                 }
             }
-            assertTrue(reused > (steps - 11) * 0.8, "索引が使い回されていない: " + reused + "/" + (steps - 11));
             assertTrue(view.ui().renderCache() instanceof ImmutableItemList, "スクロール中の表示リストは移動量だけを載せたスナップショット");
         } finally {
             view.close();

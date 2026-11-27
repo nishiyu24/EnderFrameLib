@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.paint.HitTestIndex;
+import com.nishiyu.enderframelib.common.TestBoxes;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -8,10 +8,14 @@ import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.core.dom.node.EventDispatcher;
-import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHitTest;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import com.nishiyu.enderframelib.core.text.model.TextSelection;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import org.junit.jupiter.api.DisplayName;
@@ -23,15 +27,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
-import com.nishiyu.enderframelib.core.text.*;
-import com.nishiyu.enderframelib.core.text.model.*;
-import com.nishiyu.enderframelib.core.layout.model.Viewport;
-import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
-import com.nishiyu.enderframelib.core.css.model.Overflow;
-import com.nishiyu.enderframelib.core.css.model.TextAlign;
-import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * フェーズ F5（入力・イベント・スクロール・フォーカス・テキスト選択）のパイプライン検証テスト。
@@ -65,59 +61,32 @@ public class InteractionPipelineTest {
     @Test
     @DisplayName("F5-2: 不透明な前面要素がヒットテストで背後要素を遮蔽し貫通しない")
     void testOpaqueElementOccludesUnderlyingButton() {
-        // 背後にあるボタン (z=1, x=10, y=10, w=100, h=50)
-        DisplayItem button = new DisplayItem(
-                "btn", "btn", ElementType.BUTTON,
-                10, 10, 100, 50,
-                "Button", 0, 0xFF444444, Map.of("onclick", "btnAction"),
-                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL, RenderMeta.EMPTY
-        );
-
-        // 前面にある不透明なモーダル背景 (z=2, x=0, y=0, w=200, h=100, 不透明色 0xFFFFFFFF)
-        DisplayItem modal = new DisplayItem(
-                "modal", "modal", ElementType.RECT,
-                0, 0, 200, 100,
-                "", 0, 0xFFFFFFFF, Map.of(),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL, RenderMeta.EMPTY
-        );
-
-        HitTestIndex index = new HitTestIndex(List.of(button, modal));
-
-        // (50, 25) は button と modal の両方が重なっている座標
-        UIHitResult hit = index.hitTest("testSession", 50, 25);
+        UiDocumentCompiler compiler = new UiDocumentCompiler();
+        Document doc = compiler.parseDocument(
+                "<html><body style=\"margin:0\">"
+                        + "<button id=\"btn\" onclick=\"btnAction\" style=\"position:absolute;left:10px;top:10px;width:100px;height:50px\"></button>"
+                        + "<div id=\"modal\" style=\"position:absolute;left:0;top:0;width:200px;height:100px;background:#ffffff\"></div>"
+                        + "</body></html>", "", 200, 100);
+        DisplayScene scene = compiler.layoutDocument(doc, 200, 100, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        SceneHit hit = SceneHitTest.hitTest(scene, SceneHitTest.Context.of(DynamicSceneState.of(null, 200, 100)), 50, 25);
         assertNotNull(hit, "ヒット結果が存在すること");
-
-        // 背後のボタンではなく、前面の不透明な modal がヒットして遮蔽すること
-        assertEquals("modal", hit.element().baseId(), "前面の不透明要素が背後ボタンを遮蔽すること");
-        assertNotEquals("btn", hit.element().baseId(), "背後のボタンには貫通しないこと");
+        assertEquals("modal", hit.baseId(), "前面の不透明要素が背後ボタンを遮蔽すること");
+        assertNotEquals("btn", hit.baseId(), "背後のボタンには貫通しないこと");
     }
 
     @Test
     @DisplayName("F5-2: pointer-events: none が指定された前面要素はヒットテストを透過して背後要素に届く")
     void testPointerEventsNoneAllowsPassThrough() {
-        // 背後にあるボタン
-        DisplayItem button = new DisplayItem(
-                "btn", "btn", ElementType.BUTTON,
-                10, 10, 100, 50,
-                "Button", 0, 0xFF444444, Map.of("onclick", "btnAction"),
-                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL, RenderMeta.EMPTY
-        );
-
-        // 前面にあるが pointer-events: none のオーバーレイ
-        DisplayItem overlay = new DisplayItem(
-                "overlay", "overlay", ElementType.RECT,
-                0, 0, 200, 100,
-                "", 0, 0xFFFFFFFF, Map.of(),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL,
-                RenderMeta.EMPTY.withHints(com.nishiyu.enderframelib.core.paint.model.RenderHints.NONE.withPointerEventsNone(true))
-        );
-
-        HitTestIndex index = new HitTestIndex(List.of(button, overlay));
-
-        // (50, 25) で前面の overlay は pointer-events: none なので透過して背後の btn に届く
-        UIHitResult hit = index.hitTest("testSession", 50, 25);
+        UiDocumentCompiler compiler = new UiDocumentCompiler();
+        Document doc = compiler.parseDocument(
+                "<html><body style=\"margin:0\">"
+                        + "<button id=\"btn\" onclick=\"btnAction\" style=\"position:absolute;left:10px;top:10px;width:100px;height:50px\"></button>"
+                        + "<div id=\"overlay\" style=\"position:absolute;left:0;top:0;width:200px;height:100px;background:#ffffff;pointer-events:none\"></div>"
+                        + "</body></html>", "", 200, 100);
+        DisplayScene scene = compiler.layoutDocument(doc, 200, 100, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        SceneHit hit = SceneHitTest.hitTest(scene, SceneHitTest.Context.of(DynamicSceneState.of(null, 200, 100)), 50, 25);
         assertNotNull(hit, "ヒット結果が存在すること");
-        assertEquals("btn", hit.element().baseId(), "pointer-events: none により前面を透過してボタンにヒットすること");
+        assertEquals("btn", hit.baseId(), "pointer-events: none により前面を透過してボタンにヒットすること");
     }
 
     @Test
@@ -162,20 +131,18 @@ public class InteractionPipelineTest {
         session.flushInvalidation();
         HtmlNode containerNode = session.document().root.getElementById("scrollBox");
 
-        com.nishiyu.enderframelib.core.paint.tree.PaintBox box = com.nishiyu.enderframelib.common.UiFocus.findBox(session.boxRoot(), containerNode);
+        TestBoxes.Box box = TestBoxes.byNode(TestBoxes.root(session), containerNode);
+        assertNotNull(box);
         assertEquals(100f, box.w(), 0.01f);
         assertEquals(100f, box.h(), 0.01f);
         assertEquals(300f, box.scrollHeight(), 0.01f);
 
-        DisplayItem trackEl = new DisplayItem(
-                "scrollBox_sb_vt", "scrollBox", ElementType.RECT,
-                94, 2, 4, 96,
-                "", 0, 0x33000000, Map.of(),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL, RenderMeta.EMPTY
-        );
+        SceneHit trackHit = session.hitTest(95, 50);
+        assertNotNull(trackHit);
+        assertEquals("_sb_vt", trackHit.scrollbarPart());
 
         // トラックの中央 (y = 50) をクリック -> 約 50% のスクロール位置 (約 100px) にジャンプ
-        boolean clickHandled = session.handleScrollbarClick(trackEl, 94, 50);
+        boolean clickHandled = session.handleScrollbarClick(trackHit, 95, 50);
         assertTrue(clickHandled, "トラッククリックが処理されること");
 
         float scrollY = session.scrollState().getScrollY(containerNode);
@@ -262,7 +229,7 @@ public class InteractionPipelineTest {
         assertNotNull(doc.root);
 
         var frame = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
-        assertNotNull(frame.root());
+        assertNotNull(frame.scene());
         List<DisplayItem> elements = frame.items();
         assertNotNull(elements);
 

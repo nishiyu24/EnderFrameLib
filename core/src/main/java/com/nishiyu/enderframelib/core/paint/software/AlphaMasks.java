@@ -9,8 +9,9 @@ public final class AlphaMasks {
     private AlphaMasks() {}
 
     public static AlphaMaskProvider from(ImageProvider images) {
-        return (item, threshold) -> {
-            ImageProvider.Image img = images.load(item, 0, 0);
+        return (src, boxW, boxH, threshold) -> {
+            if (src == null || src.isEmpty()) return null;
+            ImageProvider.Image img = images.load(src, boxW, boxH);
             if (img == null || img.pixmap().width() <= 0 || img.pixmap().height() <= 0) return null;
             return new AlphaMask.Source(AlphaMask.of(img.pixmap(), threshold), img.cssW(), img.cssH());
         };

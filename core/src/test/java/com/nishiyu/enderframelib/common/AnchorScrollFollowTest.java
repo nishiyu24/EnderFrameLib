@@ -10,7 +10,6 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.paint.scene.SceneEmitter;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -124,18 +123,9 @@ class AnchorScrollFollowTest {
     }
 
     private static float y(StandaloneView sv, String id) {
-        PaintBox b = find(sv.ui().boxRoot(), id);
+        TestBoxes.Box b = TestBoxes.find(TestBoxes.root(sv.ui()), id);
         if (b == null) throw new AssertionError(id + " が無い");
         return b.y();
-    }
-
-    private static PaintBox find(PaintBox b, String id) {
-        if (b.node() != null && id.equals(b.node().getId())) return b;
-        for (PaintBox c : b.paintChildren()) {
-            PaintBox f = find(c, id);
-            if (f != null) return f;
-        }
-        return null;
     }
 
     /** ビューの面が、同じスクロール量・同じ覚えたスクロール量からゼロから組んで描いた面と画素で一致すること。 */

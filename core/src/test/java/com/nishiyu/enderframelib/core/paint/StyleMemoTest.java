@@ -30,8 +30,8 @@ class StyleMemoTest {
         var compiler = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
         var doc = compiler.parseDocument(HTML, "", 400, 300);
         var scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
-        var root = compiler.layoutDocument(doc, 400, 300, java.util.Map.of(), scroll,
-                com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState());
+        var root = TestBoxes.root(compiler.layoutDocument(doc, 400, 300, java.util.Map.of(), scroll,
+                com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()));
         List<DisplayItem> first = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
         List<DisplayItem> second = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items(); // メモを使う
         assertFalse(first.isEmpty());
@@ -52,8 +52,8 @@ class StyleMemoTest {
         var compiler = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
         var doc = compiler.parseDocument(HTML, "", 400, 300);
         var scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
-        var root = compiler.layoutDocument(doc, 400, 300, java.util.Map.of(), scroll,
-                com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState());
+        var root = TestBoxes.root(compiler.layoutDocument(doc, 400, 300, java.util.Map.of(), scroll,
+                com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()));
         var b = find(root, "b");
         var layers = BoxDecorations.layers(b.style());
         int size = layers.size();
@@ -71,7 +71,7 @@ class StyleMemoTest {
         assertNotEquals(other[0], bigger[0], "50% は箱の大きさに追従する");
     }
 
-    private static com.nishiyu.enderframelib.core.paint.tree.PaintBox find(com.nishiyu.enderframelib.core.paint.tree.PaintBox box, String cls) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String cls) {
         if (box.node != null && cls.equals(box.node.attrs.get("class"))) return box;
         for (var child : com.nishiyu.enderframelib.common.TestBoxes.elements(box)) {
             var hit = find(child, cls);

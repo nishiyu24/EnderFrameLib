@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Disabled;
@@ -29,7 +28,7 @@ public class MulticolTest {
 
     @Test
     public void testBalancedColumnsFillTopToBottom() {
-        PaintBox root = layout("<div id=m style='columns:3;column-gap:0;width:300px'>" + blocks("a", "b", "c", "d", "e", "f") + "</div>");
+        TestBoxes.Box root = layout("<div id=m style='columns:3;column-gap:0;width:300px'>" + blocks("a", "b", "c", "d", "e", "f") + "</div>");
         assertRect(root, "a", 0, 0, 100, 20);
         assertRect(root, "b", 0, 20, 100, 20);
         assertRect(root, "c", 100, 0, 100, 20);
@@ -41,7 +40,7 @@ public class MulticolTest {
 
     @Test
     public void testDefaultGapIsOneEm() {
-        PaintBox root = layout("<div id=m style='column-count:3;width:300px'>" + blocks("a", "b", "c") + "</div>");
+        TestBoxes.Box root = layout("<div id=m style='column-count:3;width:300px'>" + blocks("a", "b", "c") + "</div>");
         assertRect(root, "a", 0, 0, 89.33f, 20);
         assertRect(root, "b", 105.33f, 0, 89.33f, 20);
         assertRect(root, "c", 210.67f, 0, 89.33f, 20);
@@ -49,7 +48,7 @@ public class MulticolTest {
 
     @Test
     public void testColumnWidthDecidesTheCount() {
-        PaintBox root = layout("<div id=m style='column-width:100px;column-gap:0;width:350px'>" + blocks("a", "b", "c") + "</div>");
+        TestBoxes.Box root = layout("<div id=m style='column-width:100px;column-gap:0;width:350px'>" + blocks("a", "b", "c") + "</div>");
         assertRect(root, "a", 0, 0, 116.67f, 20);
         assertRect(root, "b", 116.67f, 0, 116.67f, 20);
         assertRect(root, "c", 233.33f, 0, 116.67f, 20);
@@ -58,14 +57,14 @@ public class MulticolTest {
     @Test
     public void testColumnCountIsCappedByColumnWidth() {
         // 幅 250 に 100px の列は 2 本しか入らない（count: 5 でも 2 列）
-        PaintBox root = layout("<div id=m style='columns:5 100px;column-gap:0;width:250px'>" + blocks("a", "b") + "</div>");
+        TestBoxes.Box root = layout("<div id=m style='columns:5 100px;column-gap:0;width:250px'>" + blocks("a", "b") + "</div>");
         assertRect(root, "a", 0, 0, 125, 20);
         assertRect(root, "b", 125, 0, 125, 20);
     }
 
     @Test
     public void testColumnFillAutoFillsToTheHeight() {
-        PaintBox root = layout("<div id=m style='column-count:2;column-gap:0;column-fill:auto;height:60px;width:200px'>"
+        TestBoxes.Box root = layout("<div id=m style='column-count:2;column-gap:0;column-fill:auto;height:60px;width:200px'>"
                 + blocks("a", "b", "c", "d", "e") + "</div>");
         assertRect(root, "c", 0, 40, 100, 20);
         assertRect(root, "d", 100, 0, 100, 20);
@@ -75,7 +74,7 @@ public class MulticolTest {
 
     @Test
     public void testColumnSpanAllBreaksTheColumns() {
-        PaintBox root = layout("<div id=m style='column-count:2;column-gap:0;width:200px'>" + blocks("a", "b")
+        TestBoxes.Box root = layout("<div id=m style='column-count:2;column-gap:0;width:200px'>" + blocks("a", "b")
                 + "<div id=s style='column-span:all;height:30px'></div>" + blocks("c", "d") + "</div>");
         assertRect(root, "a", 0, 0, 100, 20);
         assertRect(root, "b", 100, 0, 100, 20);
@@ -87,7 +86,7 @@ public class MulticolTest {
 
     @Test
     public void testOwnInlineContentBreaksBetweenLines() {
-        PaintBox root = layout("<div id=m style='column-count:2;column-gap:0;width:200px'><span id=t>l1<br>l2<br>l3<br>l4<br>l5<br>l6<br>l7</span></div>");
+        TestBoxes.Box root = layout("<div id=m style='column-count:2;column-gap:0;width:200px'><span id=t>l1<br>l2<br>l3<br>l4<br>l5<br>l6<br>l7</span></div>");
         List<float[]> lines = lineOrigins(find(root, "t"));
         assertEquals(7, lines.size());
         // 4 行 + 3 行。2 列目は 1 列目の先頭と同じ高さから始まる
@@ -100,7 +99,7 @@ public class MulticolTest {
 
     @Test
     public void testBlockChildrenGoToSeparateColumns() {
-        PaintBox root = layout("<div id=m style='column-count:2;column-gap:0;width:200px'>"
+        TestBoxes.Box root = layout("<div id=m style='column-count:2;column-gap:0;width:200px'>"
                 + "<p id=p1>a1<br>a2<br>a3<br>a4</p><p id=p2>b1<br>b2<br>b3<br>b4</p></div>");
         assertEquals(80, find(root, "m").h(), 0.01f);
         for (float[] o : lineOrigins(find(root, "p2"))) assertEquals(100, o[0], 0.01f);
@@ -109,7 +108,7 @@ public class MulticolTest {
 
     @Test
     public void testParagraphIsSplitAcrossColumns() {
-        PaintBox root = layout("<div id=m style='column-count:2;column-gap:10px;width:210px'>"
+        TestBoxes.Box root = layout("<div id=m style='column-count:2;column-gap:10px;width:210px'>"
                 + "<p id=p1>a1<br>a2<br>a3<br>a4<br>a5</p></div>");
         List<float[]> lines = lineOrigins(find(root, "p1"));
         assertEquals(5, lines.size());
@@ -122,7 +121,7 @@ public class MulticolTest {
     @Test
     public void testContainerContentBoxIsTheOrigin() {
         // 段組の前後にブロックがあっても、列はコンテナの内容ボックスから
-        PaintBox root = layout("<div style='height:7px'></div><div id=m style='columns:2;column-gap:0;width:200px;padding:5px'>"
+        TestBoxes.Box root = layout("<div style='height:7px'></div><div id=m style='columns:2;column-gap:0;width:200px;padding:5px'>"
                 + blocks("a", "b") + "</div><div id=after style='height:10px'></div>");
         assertRect(root, "a", 0, 0, 100, 20);
         assertRect(root, "b", 100, 0, 100, 20);
@@ -131,9 +130,9 @@ public class MulticolTest {
 
     @Test
     public void testColumnRuleSitsInTheMiddleOfTheGap() {
-        PaintBox root = layout("<div id=m style='columns:2;column-gap:10px;column-rule:2px solid red;width:210px'>"
+        TestBoxes.Box root = layout("<div id=m style='columns:2;column-gap:10px;column-rule:2px solid red;width:210px'>"
                 + blocks("a", "b") + "</div>");
-        PaintBox m = find(root, "m");
+        TestBoxes.Box m = find(root, "m");
         assertNotNull(m.columnRules());
         assertEquals(1, m.columnRules().length);
         float[] rule = m.columnRules()[0];
@@ -144,20 +143,20 @@ public class MulticolTest {
 
     @Test
     public void testNoRuleWithoutStyle() {
-        PaintBox root = layout("<div id=m style='columns:2;column-gap:10px;column-rule-width:2px;width:210px'>" + blocks("a", "b") + "</div>");
+        TestBoxes.Box root = layout("<div id=m style='columns:2;column-gap:10px;column-rule-width:2px;width:210px'>" + blocks("a", "b") + "</div>");
         assertNull(find(root, "m").columnRules());
     }
 
     @Test
     public void testPlainBlockHasNoColumns() {
-        PaintBox root = layout("<div id=m style='width:300px'>" + blocks("a", "b") + "</div>");
+        TestBoxes.Box root = layout("<div id=m style='width:300px'>" + blocks("a", "b") + "</div>");
         assertRect(root, "b", 0, 20, 300, 20);
     }
 
     @Test
     public void testDecoratedBlockIsNotSplit() {
         // 背景を持つブロックは 1 つの単位。2 つ目は次の列へ
-        PaintBox root = layout("<div id=m style='column-count:2;column-gap:0;width:200px'>"
+        TestBoxes.Box root = layout("<div id=m style='column-count:2;column-gap:0;width:200px'>"
                 + "<div id=x style='background:#ccc'><div class=b></div><div class=b></div></div>"
                 + "<div id=y style='background:#ccc'><div class=b></div><div class=b></div></div></div>");
         assertRect(root, "x", 0, 0, 100, 40);
@@ -174,10 +173,10 @@ public class MulticolTest {
     }
 
     /** {@code m}（段組コンテナ）の内容ボックスの左上を原点とした位置と大きさで比べる。 */
-    private static void assertRect(PaintBox root, String id, float x, float y, float w, float h) {
-        PaintBox b = find(root, id);
+    private static void assertRect(TestBoxes.Box root, String id, float x, float y, float w, float h) {
+        TestBoxes.Box b = find(root, id);
         assertNotNull(b, id);
-        PaintBox m = find(root, "m");
+        TestBoxes.Box m = find(root, "m");
         float ox = m.x() + m.bL() + m.pL(), oy = m.y() + m.bT() + m.pT();
         assertEquals(x, b.x() - ox, 0.02f, id + ".x");
         assertEquals(y, b.y() - oy, 0.02f, id + ".y");
@@ -186,31 +185,31 @@ public class MulticolTest {
     }
 
     /** 要素の下のテキスト断片（行ごと）の左上。{@code m} の内容ボックスが原点。文書順。 */
-    private static List<float[]> lineOrigins(PaintBox box) {
+    private static List<float[]> lineOrigins(TestBoxes.Box box) {
         List<float[]> out = new ArrayList<>();
-        PaintBox m = box;
+        TestBoxes.Box m = box;
         while (m.paintParent() != null && !"m".equals(m.node.attrs.get("id"))) m = m.paintParent();
         collectFragments(box, m.x() + m.bL() + m.pL(), m.y() + m.bT() + m.pT(), out);
         return out;
     }
 
-    private static void collectFragments(PaintBox box, float ox, float oy, List<float[]> out) {
+    private static void collectFragments(TestBoxes.Box box, float ox, float oy, List<float[]> out) {
         for (var f : box.runs()) {
             if (f.isText() && !f.text().isBlank()) out.add(new float[]{f.x() - ox, f.y() - oy});
         }
-        for (PaintBox child : TestBoxes.elements(box)) collectFragments(child, ox, oy, out);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) collectFragments(child, ox, oy, out);
     }
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(CSS + html, "", VIEWPORT_W, VIEWPORT_H);
-        return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = find(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

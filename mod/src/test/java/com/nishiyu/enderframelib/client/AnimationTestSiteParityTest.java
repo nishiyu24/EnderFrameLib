@@ -1,12 +1,13 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestBoxes;
+
 import com.nishiyu.enderframelib.core.paint.AnimatedValues;
 
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -41,9 +42,9 @@ public class AnimationTestSiteParityTest {
 
     private static String html;
     private static Document doc;
-    private static PaintBox rootBox;
+    private static TestBoxes.Box rootBox;
     private static List<DisplayItem> displayItems;
-    private static List<PaintBox> allBoxes;
+    private static List<TestBoxes.Box> allBoxes;
 
     @BeforeAll
     static void setUp() throws Exception {
@@ -55,7 +56,7 @@ public class AnimationTestSiteParityTest {
         StandaloneView view = new StandaloneView(html, VIEWPORT_W, VIEWPORT_H, EnderFrameStandalone.defaultFontResolver());
         doc = view.ui().document();
         assertNotNull(doc);
-        rootBox = view.ui().boxRoot();
+        rootBox = TestBoxes.root(view.ui());
         assertNotNull(rootBox);
         displayItems = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(view.items());
         assertNotNull(displayItems);
@@ -64,16 +65,16 @@ public class AnimationTestSiteParityTest {
         collectBoxes(rootBox, allBoxes);
     }
 
-    private static void collectBoxes(PaintBox b, List<PaintBox> out) {
+    private static void collectBoxes(TestBoxes.Box b, List<TestBoxes.Box> out) {
         out.add(b);
-        for (PaintBox c : b.paintChildren()) {
+        for (TestBoxes.Box c : b.paintChildren()) {
             collectBoxes(c, out);
         }
     }
 
-    private static List<PaintBox> findBoxesByClass(String clsName) {
-        List<PaintBox> result = new ArrayList<>();
-        for (PaintBox b : allBoxes) {
+    private static List<TestBoxes.Box> findBoxesByClass(String clsName) {
+        List<TestBoxes.Box> result = new ArrayList<>();
+        for (TestBoxes.Box b : allBoxes) {
             if (b.node != null && b.node.attrs != null) {
                 String c = b.node.attrs.get("class");
                 if (c != null && List.of(c.trim().split("\\s+")).contains(clsName)) {
@@ -84,9 +85,9 @@ public class AnimationTestSiteParityTest {
         return result;
     }
 
-    private static PaintBox findBoxByClass(String clsName) {
-        List<PaintBox> found = findBoxesByClass(clsName);
-        assertFalse(found.isEmpty(), "クラス ." + clsName + " を持つ PaintBox が存在すること");
+    private static TestBoxes.Box findBoxByClass(String clsName) {
+        List<TestBoxes.Box> found = findBoxesByClass(clsName);
+        assertFalse(found.isEmpty(), "クラス ." + clsName + " を持つ TestBoxes.Box が存在すること");
         return found.get(0);
     }
 
@@ -158,7 +159,7 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("2-1. .trans-button がパディング（10px）を保持し、Chrome 同等（約 34px）の高さを持つこと")
         void testTransButtonHeight() {
-            PaintBox btn = findBoxByClass("trans-button");
+            TestBoxes.Box btn = findBoxByClass("trans-button");
             // Webサイト上: Chrome 実測値 height = 34.0px (padding: 10px 0 + font-size + border)
             // CSS が脱落した未適用状態: height = 17.0px (padding: 0)
             assertEquals(34.0f, btn.h(), 4.0f,
@@ -169,8 +170,8 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("2-2. .mc-item-card が横並び Flexbox（高さ約 66px）として描画され、アイコン枠が 36x36px の正方形を維持すること")
         void testMcItemCardFlexLayout() {
-            PaintBox card = findBoxByClass("mc-item-card");
-            PaintBox itemBox = findBoxByClass("mc-item-box");
+            TestBoxes.Box card = findBoxByClass("mc-item-card");
+            TestBoxes.Box itemBox = findBoxByClass("mc-item-box");
 
             // Webサイト上: Chrome 実測値 card height = 66.5px, mc-item-box = 36.0 x 36.0px (横並び)
             // CSS 脱落状態: card height = 36.4px, mc-item-box width = 384.7px (親幅いっぱい、縦積み崩壊)
@@ -185,7 +186,7 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("2-3. .toast-pill が横並び Flexbox（高さ約 30px）としてレイアウトされること")
         void testToastPillFlexLayout() {
-            PaintBox toast = findBoxByClass("toast-pill");
+            TestBoxes.Box toast = findBoxByClass("toast-pill");
             // Webサイト上: Chrome 実測値 height = 30.4px (padding: 6px 12px)
             // CSS 脱落状態: height = 18.2px (padding: 0)
             assertEquals(30.4f, toast.h(), 4.0f,
@@ -195,8 +196,8 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("2-4. ヘッダー (.lab-header) の高さが Web（56px）と一致し、テキストの予期せぬ 2 行折り返しが発生しないこと")
         void testHeaderHeightAndNoWrapping() {
-            PaintBox header = findBoxByClass("lab-header");
-            PaintBox brandName = findBoxByClass("brand-name");
+            TestBoxes.Box header = findBoxByClass("lab-header");
+            TestBoxes.Box brandName = findBoxByClass("brand-name");
 
             // Webサイト上: Chrome 実測値 header height = 56.0px, brand-name height = 20.9px (1行)
             // エンジン現状: brand-name が "EnderFrame " と "Lab" に 2 行折り返し、header height = 90.1px に肥大化
@@ -217,7 +218,7 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("3-1. .lab-grid の 3 カラム (.lab-col) が均等に分割されていること")
         void testGridColumnsEqual() {
-            List<PaintBox> cols = findBoxesByClass("lab-col");
+            List<TestBoxes.Box> cols = findBoxesByClass("lab-col");
             assertEquals(3, cols.size(), ".lab-col が 3 列存在すること");
             float w0 = cols.get(0).w();
             for (int i = 1; i < cols.size(); i++) {
@@ -229,9 +230,9 @@ public class AnimationTestSiteParityTest {
         @Test
         @DisplayName("3-2. .lab-col がグリッドの行（ビューポートから決まる高さ）に制約され、フッターが画面外に押し出されないこと")
         void testColHeightBoundedByViewport() {
-            PaintBox col0 = findBoxesByClass("lab-col").get(0);
-            PaintBox grid = findBoxByClass("lab-grid");
-            PaintBox footer = findBoxByClass("lab-footer");
+            TestBoxes.Box col0 = findBoxesByClass("lab-col").get(0);
+            TestBoxes.Box grid = findBoxByClass("lab-grid");
+            TestBoxes.Box footer = findBoxByClass("lab-footer");
 
             // 800px のビューポートでは 800 - 12*2(padding) - 56(header) - 12*2(gap) - 36.4(footer) = 659.6px。
             // flex: 1; min-height: 0 のグリッドの auto 行は確定した高さに収まり、
@@ -252,18 +253,18 @@ public class AnimationTestSiteParityTest {
             // レビューの Chrome 実測値 (col 564.6px / footer y 656.6px) は 656.6 + 36.4 + 12 = 705px の
             // ビューポートでの値。同じ高さでレイアウトして一致を確かめる
             int chromeH = 705;
-            List<PaintBox> boxes = new ArrayList<>();
+            List<TestBoxes.Box> boxes = new ArrayList<>();
             try (StandaloneView v = new StandaloneView(html, VIEWPORT_W, chromeH, EnderFrameStandalone.defaultFontResolver())) {
-                collectBoxes(v.ui().boxRoot(), boxes);
+                collectBoxes(TestBoxes.root(v.ui()), boxes);
             }
-            PaintBox col0 = boxes.stream().filter(b -> hasClass(b, "lab-col")).findFirst().orElseThrow();
-            PaintBox footer = boxes.stream().filter(b -> hasClass(b, "lab-footer")).findFirst().orElseThrow();
+            TestBoxes.Box col0 = boxes.stream().filter(b -> hasClass(b, "lab-col")).findFirst().orElseThrow();
+            TestBoxes.Box footer = boxes.stream().filter(b -> hasClass(b, "lab-footer")).findFirst().orElseThrow();
 
             assertEquals(564.6f, col0.h(), 1.0f, String.format(".lab-col の高さ (実際: %.1fpx)", col0.h()));
             assertEquals(656.6f, footer.y(), 1.0f, String.format(".lab-footer の y (実際: %.1fpx)", footer.y()));
         }
 
-        private static boolean hasClass(PaintBox b, String clsName) {
+        private static boolean hasClass(TestBoxes.Box b, String clsName) {
             String c = b.node == null || b.node.attrs == null ? null : b.node.attrs.get("class");
             return c != null && List.of(c.trim().split(" +")).contains(clsName);
         }
@@ -352,8 +353,8 @@ public class AnimationTestSiteParityTest {
         void testEasingLaneRunnersMove() {
             String[] lanes = {"lane-linear", "lane-ease", "lane-ease-in", "lane-ease-out", "lane-ease-in-out", "lane-cubic"};
             for (String lane : lanes) {
-                PaintBox runner = findBoxByClass(lane);
-                PaintBox laneBox = findBoxByClass("track-lane");
+                TestBoxes.Box runner = findBoxByClass(lane);
+                TestBoxes.Box laneBox = findBoxByClass("track-lane");
                 assertTrue(runner.w() > 0 && runner.h() > 0, lane + " のランナーに大きさがあること");
 
                 DisplayItem item = displayItems.stream()
@@ -385,7 +386,7 @@ public class AnimationTestSiteParityTest {
         @DisplayName("4-6. ランナーのグラデーション層は、角丸の形をランナー自身の箱で持ち、祖先のクリップとは別に切ること（動いても切り口が元の位置に留まらない）")
         void testRunnerGradientClipFollowsRunner() {
             for (String lane : new String[]{"lane-linear", "lane-ease", "lane-ease-in", "lane-ease-out", "lane-ease-in-out", "lane-cubic"}) {
-                PaintBox runner = findBoxByClass(lane);
+                TestBoxes.Box runner = findBoxByClass(lane);
                 DisplayItem runnerItem = displayItems.stream()
                         .filter(i -> i.animDef() != null && i.animDef().durationMs() == 2000
                                 && Math.abs(i.x() - runner.x()) < 1 && Math.abs(i.y() - runner.y()) < 1)

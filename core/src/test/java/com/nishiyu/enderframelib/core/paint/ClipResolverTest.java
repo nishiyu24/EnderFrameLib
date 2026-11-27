@@ -3,9 +3,6 @@ package com.nishiyu.enderframelib.core.paint;
 import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
 
 import com.nishiyu.enderframelib.common.Document;
-import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -125,10 +122,9 @@ public class ClipResolverTest {
     // ---- 描画項目へ連鎖が載る ----
 
     private static List<DisplayItem> render(String html) {
-        UiDocumentCompiler compiler = new UiDocumentCompiler();
+        var compiler = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 500, 400);
         ScrollState ss = new ScrollState();
-        PaintBox root = compiler.layoutDocument(doc, 500, 400, Map.of(), ss, FontResolver.FALLBACK, new InteractionState());
         return com.nishiyu.enderframelib.common.FrameRender.document(doc, 500, 400, java.util.Map.of(), ss, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
     }
 

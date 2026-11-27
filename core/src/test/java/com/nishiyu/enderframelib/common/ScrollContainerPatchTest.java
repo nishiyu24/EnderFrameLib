@@ -2,14 +2,15 @@ package com.nishiyu.enderframelib.common;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.core.paint.HitTestIndex;
-import com.nishiyu.enderframelib.core.paint.UIHitResult;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHitTest;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
-/** 入れ子のスクロール箱でも、patch した索引の {@code scrollContainersAt} / {@code hitTest} が新しく作った索引と一致する。 */
+/** 入れ子のスクロール箱でも、不変 {@link DisplayScene} への {@code scrollContainersAt} / {@code hitTest} が線形走査と一致する。 */
 class ScrollContainerPatchTest {
     private static final int W = 320, H = 240;
 
@@ -23,40 +24,39 @@ class ScrollContainerPatchTest {
                 + "#nested{height:100px;overflow-y:auto;border:1px solid #333}</style><div id=\"outer\">" + outer + "</div>";
     }
 
-    private static String ids(List<UIHitResult> l) {
+    private static String ids(List<SceneHit> l) {
         StringBuilder sb = new StringBuilder();
-        for (UIHitResult r : l) sb.append(r.element().id()).append('@').append(Math.round(r.localX() * 100)).append(',').append(Math.round(r.localY() * 100)).append(';');
+        for (SceneHit r : l) sb.append(r.baseId()).append('@').append(Math.round(r.localX() * 100)).append(',').append(Math.round(r.localY() * 100)).append(';');
         return sb.toString();
     }
 
     @Test
-    void patchedIndexMatchesAFreshOneForNestedScrollContainers() {
+    void nestedScrollContainersMatchLinearAndPreserveScene() {
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try (var backend = new MutationScenario.NoDraw()) {
             long now = 1000;
             view.frame(now, backend, true);
+            DisplayScene scene0 = view.ui().scene();
             String sid = backend.sessionId();
             Random rnd = new Random(8);
-            HitTestIndex previous = null;
-            int reused = 0;
             for (int step = 0; step < 100; step++) {
                 double mx = 20 + rnd.nextInt(200), my = 40 + rnd.nextInt(150);
                 view.mouseMove(mx, my, sid);
                 view.scroll(0, rnd.nextInt(9) - 4, sid);
                 now += 16;
                 view.frame(now, backend, true);
-                HitTestIndex idx = view.ui().hitTestIndex();
-                if (step > 5 && idx == previous) reused++;
-                previous = idx;
-                HitTestIndex fresh = new HitTestIndex(view.ui().renderCache(), idx.dynamicIds(), view.ui().paintOffsets());
+                assertSame(scene0, view.ui().scene(), "入れ子スクロールでも DisplayScene を作り直さない step " + step);
+                SceneHitTest.Context ctx = view.ui().hitTestContext();
+                List<SceneHit> sc1 = SceneHitTest.scrollContainersAt(scene0, ctx, mx, my);
+                List<SceneHit> sc2 = SceneHitTest.scrollContainersAt(scene0, ctx, mx, my);
+                assertEquals(ids(sc1), ids(sc2));
                 for (int i = 0; i < 60; i++) {
                     double x = rnd.nextDouble() * W, y = rnd.nextDouble() * H;
-                    assertEquals(ids(fresh.scrollContainersAt(sid, x, y)), ids(idx.scrollContainersAt(sid, x, y)), "step " + step + " (" + x + "," + y + ")");
-                    UIHitResult a = idx.hitTest(sid, x, y), b = fresh.hitTest(sid, x, y);
-                    assertEquals(b == null ? "-" : b.element().id(), a == null ? "-" : a.element().id());
+                    SceneHit a = SceneHitTest.hitTest(scene0, ctx, x, y);
+                    SceneHit b = SceneHitTest.hitTestLinear(scene0, ctx, x, y);
+                    assertEquals(b == null ? "-" : b.baseId(), a == null ? "-" : a.baseId());
                 }
             }
-            assertTrue(reused > 50, "索引が使い回されている: " + reused);
         } finally {
             view.close();
         }

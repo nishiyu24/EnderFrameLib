@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.core.box.Display;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -26,9 +25,9 @@ public class TopLayerTest {
             doc = compiler.parseDocument(CSS + html, "", W, H);
         }
 
-        PaintBox layout() {
-            return compiler.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK,
-                    (com.nishiyu.enderframelib.core.dom.InteractionState) ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) doc.root).interactionState());
+        TestBoxes.Box layout() {
+            return TestBoxes.root(compiler.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK,
+                    (com.nishiyu.enderframelib.core.dom.InteractionState) ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) doc.root).interactionState()));
         }
 
         HtmlElement el(String id) {
@@ -37,12 +36,12 @@ public class TopLayerTest {
     }
 
     /** 描かれる箱（{@code display: none} の箱は無いものとして扱う）。 */
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) {
             return box.display() != null && box.display().outer() == Display.Outer.NONE ? null : box;
         }
-        for (PaintBox c : TestBoxes.elements(box)) {
-            PaintBox h = find(c, id);
+        for (TestBoxes.Box c : TestBoxes.elements(box)) {
+            TestBoxes.Box h = find(c, id);
             if (h != null) return h;
         }
         return null;
@@ -58,7 +57,7 @@ public class TopLayerTest {
     public void showModalCentersInViewportAndCloseHides() {
         Ctx c = new Ctx("<div style='height:1000px'></div><dialog id=d>x</dialog>");
         c.el("d").showModal();
-        PaintBox d = find(c.layout(), "d");
+        TestBoxes.Box d = find(c.layout(), "d");
         assertNotNull(d);
         assertEquals((W - 100) / 2f, d.x(), 0.5f);
         assertEquals((H - 40) / 2f, d.y(), 0.5f);
@@ -71,7 +70,7 @@ public class TopLayerTest {
         Ctx c = new Ctx("<div id=p popover>hi</div>");
         assertNull(find(c.layout(), "p"));
         c.el("p").showPopover();
-        PaintBox p = find(c.layout(), "p");
+        TestBoxes.Box p = find(c.layout(), "p");
         assertNotNull(p);
         assertEquals((W - 100) / 2f, p.x(), 0.5f);
         assertTrue(c.el("p").togglePopover() == false);
@@ -84,7 +83,7 @@ public class TopLayerTest {
         Ctx c = new Ctx("<div style='position:relative;z-index:1'><div id=p popover style='background:#f00'>hi</div></div>"
                 + "<div id=s style='position:absolute;left:0;top:0;width:50px;height:50px;z-index:5;background:#00f'></div>");
         c.el("p").showPopover();
-        PaintBox root = c.layout();
+        TestBoxes.Box root = c.layout();
         var items = com.nishiyu.enderframelib.common.FrameRender.document(c.doc, W, H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, (com.nishiyu.enderframelib.core.dom.InteractionState) ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) c.doc.root).interactionState()).items();
         int ip = -1, is = -1;
         for (int i = 0; i < items.size(); i++) {
@@ -97,7 +96,7 @@ public class TopLayerTest {
     }
 
     private java.util.List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> render(Ctx c) {
-        PaintBox root = c.layout();
+        TestBoxes.Box root = c.layout();
         return com.nishiyu.enderframelib.common.FrameRender.document(c.doc, W, H, java.util.Map.of(), new ScrollState(), com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, (com.nishiyu.enderframelib.core.dom.InteractionState) ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) c.doc.root).interactionState()).items();
     }
 

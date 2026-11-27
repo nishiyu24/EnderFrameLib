@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -22,7 +21,6 @@ public class FirstLinePseudoElementTest {
     private static List<DisplayItem> displayItems(String html) {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", W, H);
-        PaintBox root = compiler.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         return com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
     }
 

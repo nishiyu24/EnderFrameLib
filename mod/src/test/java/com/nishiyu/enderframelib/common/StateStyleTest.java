@@ -12,7 +12,6 @@ import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -70,11 +69,11 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
 
-        PaintBox root = relayout(doc, state);
-        PaintBox button = findById(root, "b");
+        TestBoxes.Box root = relayout(doc, state);
+        TestBoxes.Box button = findById(root, "b");
         assertNotNull(button);
         assertEquals("#111111", button.style().get(CssProperty.BACKGROUND_COLOR));
-        assertTrue(button.interactiveRules(), "対話疑似クラスを持つ要素は hasInteractiveRules が true");
+        assertTrue(button.layer.interactive(), "対話疑似クラスを持つ要素は hasInteractiveRules が true");
 
         state.setHoveredNode(doc.root.getElementById("b"));
         root = relayout(doc, state);
@@ -98,8 +97,8 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
         state.setHoveredNode(doc.root.getElementById("btn"));
 
-        PaintBox root = relayout(doc, state);
-        PaintBox btn = findById(root, "btn");
+        TestBoxes.Box root = relayout(doc, state);
+        TestBoxes.Box btn = findById(root, "btn");
         assertNotNull(btn);
         assertEquals("#112233", btn.style().get(CssProperty.BACKGROUND_COLOR),
                 "ID セレクタ (1,0,0) は クラス+疑似クラス (0,2,0) より常に優先される");
@@ -134,9 +133,9 @@ public class StateStyleTest {
 
         // 1. マウスクリック由来のフォーカス（focusVisible = false）
         state.setFocusedNode(doc.root.getElementById("inp"), false);
-        PaintBox root = relayout(doc, state);
-        PaintBox wrap = findById(root, "wrap");
-        PaintBox inp = findById(root, "inp");
+        TestBoxes.Box root = relayout(doc, state);
+        TestBoxes.Box wrap = findById(root, "wrap");
+        TestBoxes.Box inp = findById(root, "inp");
         assertEquals("#204060", wrap.style().get(CssProperty.BACKGROUND_COLOR), "子孫がフォーカスを持てば親の :focus-within が当たる");
         assertEquals("#888888", inp.style().get("border-top-color"), "マウスフォーカスでは :focus のみが当たり :focus-visible は当たらない");
 
@@ -168,10 +167,10 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
 
-        PaintBox root = relayout(doc, state);
-        PaintBox cb = findById(root, "cb");
-        PaintBox btn = findById(root, "btn");
-        PaintBox det = findById(root, "det");
+        TestBoxes.Box root = relayout(doc, state);
+        TestBoxes.Box cb = findById(root, "cb");
+        TestBoxes.Box btn = findById(root, "btn");
+        TestBoxes.Box det = findById(root, "det");
 
         assertEquals(0.4f, cb.style().typed().visual.opacity, 1e-4f);
 
@@ -211,8 +210,8 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
 
-        PaintBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        PaintBox box = findById(root, "box");
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
+        TestBoxes.Box box = findById(root, "box");
         assertNotNull(box);
         assertEquals(4, box.pL());
         float initialHeight = box.h();
@@ -221,8 +220,8 @@ public class StateStyleTest {
         root = relayout(doc, state);
         box = findById(root, "box");
 
-        PaintBox relaidRoot = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        PaintBox relaidBox = findById(relaidRoot, "box");
+        TestBoxes.Box relaidRoot = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
+        TestBoxes.Box relaidBox = findById(relaidRoot, "box");
         assertEquals(20, relaidBox.pL());
         assertTrue(relaidBox.h() > initialHeight, ":hover の padding 増加によりボックスの高さが増える");
     }
@@ -239,9 +238,9 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
 
-        PaintBox root = relayout(doc, state);
-        PaintBox parent = findById(root, "parent");
-        PaintBox child = findById(root, "child");
+        TestBoxes.Box root = relayout(doc, state);
+        TestBoxes.Box parent = findById(root, "parent");
+        TestBoxes.Box child = findById(root, "child");
         assertNotNull(parent);
         assertNotNull(child);
         assertEquals("#111111", parent.style().get(CssProperty.COLOR));
@@ -273,10 +272,10 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
 
-        PaintBox root = relayout(doc, state);
-        PaintBox defBtn = findById(root, "default-btn");
-        PaintBox customBtn = findById(root, "custom-btn");
-        PaintBox styledHover = findById(root, "styled-hover");
+        TestBoxes.Box root = relayout(doc, state);
+        TestBoxes.Box defBtn = findById(root, "default-btn");
+        TestBoxes.Box customBtn = findById(root, "custom-btn");
+        TestBoxes.Box styledHover = findById(root, "styled-hover");
 
         assertEquals("#efefef", defBtn.style().get(CssProperty.BACKGROUND_COLOR), "UA の button 初期背景色");
         assertEquals("#123456", customBtn.style().get(CssProperty.BACKGROUND_COLOR), "Author の通常宣言による背景色");
@@ -350,7 +349,7 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
 
-        PaintBox root1 = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root1 = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         List<DisplayItem> els1 = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
         DisplayItem node1 = findElementById(els1, "card");
         assertNotNull(node1);
@@ -362,7 +361,7 @@ public class StateStyleTest {
 
         // ホバー状態へ遷移
         state.setHoveredNode(doc.root.getElementById("card"));
-        PaintBox root2 = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root2 = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         List<DisplayItem> els2 = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
         DisplayItem node2 = findElementById(els2, "card");
         assertNotNull(node2);
@@ -404,7 +403,7 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
 
-        PaintBox root1 = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root1 = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         List<DisplayItem> els1 = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
         DisplayItem actor1 = findElementById(els1, "actor");
         assertNotNull(actor1);
@@ -414,7 +413,7 @@ public class StateStyleTest {
 
         // ホバーを発生させ、opacity のトランジションと @keyframes slideX が同時に走る状態にする
         state.setHoveredNode(doc.root.getElementById("actor"));
-        PaintBox root2 = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root2 = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         List<DisplayItem> els2 = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
         DisplayItem actor2 = findElementById(els2, "actor");
         assertNotNull(actor2);
@@ -458,7 +457,7 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
 
-        PaintBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         List<DisplayItem> els = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
         DisplayItem bgEl = findElementById(els, "panel_bg");
         assertNotNull(bgEl, "背景アニメーションがある場合は背景要素が出力される");
@@ -507,7 +506,7 @@ public class StateStyleTest {
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
 
-        PaintBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         List<DisplayItem> els = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
         DisplayItem elBackwards = findElementById(els, "delayedBackwards");
         DisplayItem elNone = findElementById(els, "delayedNone");
@@ -555,7 +554,7 @@ public class StateStyleTest {
                 <div><input id="cb" type="checkbox"><label id="near">a</label><label id="far">b</label></div>
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
-        PaintBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         assertEquals("#111111", findById(root, "near").style().get(CssProperty.COLOR));
 
         // 汚れるのは input だけ。以前は兄弟の label に再スタイルが届かなかった
@@ -580,7 +579,7 @@ public class StateStyleTest {
                 <div><div class="a" id="a"></div><input id="in"><p id="mid"></p><div class="b" id="b"><span id="s">x</span></div></div>
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
-        PaintBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
 
         state.setHoveredNode(doc.root.getElementById("a"));
         root = relayout(doc, state);
@@ -599,17 +598,17 @@ public class StateStyleTest {
                 <div class="btn" id="b">go</div>
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
-        PaintBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         assertNull(findById(root, "b_before"));
 
         state.setHoveredNode(doc.root.getElementById("b"));
         root = relayout(doc, state);
-        PaintBox b = findById(root, "b");
+        TestBoxes.Box b = findById(root, "b");
         assertEquals("b_before", TestBoxes.elements(b).getFirst().node.getId(), "::before は先頭の子");
 
         // 呼び出し側（ClientWebManager）と同じく、再レイアウトは木を組み直す
-        root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        PaintBox before = findById(root, "b_before");
+        root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
+        TestBoxes.Box before = findById(root, "b_before");
         assertNotNull(before);
         assertEquals("#123456", before.style().get(CssProperty.COLOR));
         assertEquals("→", contentText(before));
@@ -632,8 +631,8 @@ public class StateStyleTest {
                 <div><input id="cb" type="checkbox"><label id="l">a</label></div>
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
-        PaintBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        PaintBox after = findById(root, "l_after");
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
+        TestBoxes.Box after = findById(root, "l_after");
         assertEquals("#111111", after.style().get(CssProperty.COLOR));
 
         state.setChecked(doc.root.getElementById("cb"), true);
@@ -655,12 +654,12 @@ public class StateStyleTest {
                 <button id="t">x</button>
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
-        PaintBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         assertEquals("off", contentText(findById(root, "t_after")));
 
         state.setFocusedNode(doc.root.getElementById("t"), false);
         root = relayout(doc, state);
-        root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         assertEquals("on", contentText(findById(root, "t_after")));
     }
 
@@ -701,12 +700,12 @@ public class StateStyleTest {
         assertFalse(StyleResolver.hasInteractiveRules(doc.root.getElementById("c"), sheet));
     }
 
-    private static PaintBox findById(PaintBox box, String id) {
+    private static TestBoxes.Box findById(TestBoxes.Box box, String id) {
         if (box == null) return null;
         if (box.node != null && id.equals(box.node.getId())) return box;
         // 要素の子の箱をたどる（匿名の箱は中へ降りる）
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = findById(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = findById(child, id);
             if (hit != null) return hit;
         }
         return null;
@@ -723,19 +722,19 @@ public class StateStyleTest {
      * 文書を {@code state} の今の状態で組み直した根（M2c-3: 旧経路の箱の木をその場で再スタイルする代わりに、同じ文書と状態から
      * 1 回だけのフレームを作り直す。読む箱は呼び出しのたびに引き直す）。
      */
-    private static PaintBox relayout(Document doc, InteractionState state) {
-        return new UiDocumentCompiler().layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+    private static TestBoxes.Box relayout(Document doc, InteractionState state) {
+        return TestBoxes.root(new UiDocumentCompiler().layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
     }
 
     /** 文字の箱の文字（行に置いた語をつないだもの）。 */
-    private static String runsText(com.nishiyu.enderframelib.core.paint.tree.PaintBox box) {
+    private static String runsText(TestBoxes.Box box) {
         StringBuilder sb = new StringBuilder();
         for (var run : box.runs()) if (run.text() != null) sb.append(run.text());
         return sb.toString();
     }
 
     /** 生成内容の箱の文字（中身の文字の箱か、自分の行の語）。 */
-    private static String contentText(PaintBox pseudo) {
+    private static String contentText(TestBoxes.Box pseudo) {
         return pseudo.paintChildren().isEmpty() ? runsText(pseudo) : runsText(pseudo.paintChildren().getFirst());
     }
 }

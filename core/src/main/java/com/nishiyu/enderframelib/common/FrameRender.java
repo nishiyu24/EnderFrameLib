@@ -5,7 +5,8 @@ import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
+import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 
 import java.util.List;
@@ -18,8 +19,8 @@ import java.util.Map;
 public final class FrameRender {
     private FrameRender() { }
 
-    /** 1 回のフレームの結果: 箱の見え方（位置は絶対）と表示リスト。 */
-    public record Frame(PaintBox root, List<DisplayItem> items) { }
+    /** 1 回のフレームの結果: 不変の描画シーン・動的状態（スクロール等）と表示リスト。 */
+    public record Frame(DisplayScene scene, DynamicSceneState dynamic, List<DisplayItem> items) { }
 
     /**
      * 文書 {@code doc} を大きさ {@code w}×{@code h} で組んで描く。{@code state} は対話の状態（:hover など。無ければ新しい空の状態）で、
@@ -31,8 +32,9 @@ public final class FrameRender {
         InteractionState st = state != null ? state : new InteractionState();
         st.bindStyleLookup(frame::styleOf); // 算出スタイル（CSSOM の getComputedStyle と同じ口）はこのフレームの箱の木から読む
         float dpr = doc.sheet != null ? doc.sheet.mediaEnvironment().resolution() : 1f;
-        List<DisplayItem> items = frame.frame(doc, null, w, h, dpr, env, st, scroll != null ? scroll : new ScrollState(), fonts);
-        return new Frame(frame.root(), items);
+        ScrollState effectiveScroll = scroll != null ? scroll : new ScrollState();
+        List<DisplayItem> items = frame.frame(doc, null, w, h, dpr, env, st, effectiveScroll, fonts);
+        return new Frame(frame.scene(), frame.dynamicState(effectiveScroll), items);
     }
 
     /** {@link #document} の、空の対話の状態・空のスクロールの状態の形。 */
@@ -46,7 +48,8 @@ public final class FrameRender {
      */
     public static Frame subtree(HtmlNode root, StyleSheet sheet, int w, int h, ScrollState scroll, FontResolver fonts) {
         V3Frame frame = new V3Frame();
-        List<DisplayItem> items = frame.subtree(root, sheet, w, h, scroll != null ? scroll : new ScrollState(), fonts);
-        return new Frame(frame.root(), items);
+        ScrollState effectiveScroll = scroll != null ? scroll : new ScrollState();
+        List<DisplayItem> items = frame.subtree(root, sheet, w, h, effectiveScroll, fonts);
+        return new Frame(frame.scene(), frame.dynamicState(effectiveScroll), items);
     }
 }

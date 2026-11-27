@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout.fragment;
 
+import com.nishiyu.enderframelib.common.TestBoxes;
 import com.nishiyu.enderframelib.core.box.StyleSource;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -8,12 +9,10 @@ import com.nishiyu.enderframelib.core.paint.SceneDisplayListAdapter;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
-import com.nishiyu.enderframelib.core.paint.scene.SceneBox;
 import com.nishiyu.enderframelib.core.paint.scene.SceneChunk;
 import com.nishiyu.enderframelib.core.paint.scene.SceneEmitter;
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
-import com.nishiyu.enderframelib.core.paint.tree.PaintRun;
+import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
@@ -250,18 +249,18 @@ class SceneEmitterIncrementalTest {
 
     private static List<String> dump(SceneLayer root, int vw, int vh) {
         List<String> out = new ArrayList<>();
-        dump(SceneBox.root(root, DynamicSceneState.of(null, vw, vh)), 0, out);
+        dump(TestBoxes.root(root, DynamicSceneState.of(null, vw, vh)), 0, out);
         return out;
     }
 
-    private static void dump(PaintBox b, int depth, List<String> out) {
+    private static void dump(TestBoxes.Box b, int depth, List<String> out) {
         out.add("  ".repeat(depth) + b.node().key() + " @" + f(b.x()) + "," + f(b.y()) + " " + f(b.w()) + "x" + f(b.h())
                 + " b" + f(b.bT()) + "/" + f(b.bL()) + " p" + f(b.pT()) + "/" + f(b.pL()) + " sc" + f(b.scrollWidth()) + "x" + f(b.scrollHeight())
                 + " t" + b.displayTraits() + " style=" + b.style().typed().hashCode() + " eq=" + b.style().typed().toCssMap());
-        for (PaintRun r : b.runs()) {
+        for (SceneRun r : b.runs()) {
             out.add("  ".repeat(depth + 1) + "| " + f(r.x()) + "," + f(r.y()) + " " + f(r.w()) + "x" + f(r.h()) + (r.text() == null ? "" : " " + r.text()));
         }
-        for (PaintBox c : b.paintChildren()) dump(c, depth + 1, out);
+        for (TestBoxes.Box c : b.paintChildren()) dump(c, depth + 1, out);
     }
 
     private static String f(float v) {

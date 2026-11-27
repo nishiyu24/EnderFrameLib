@@ -193,29 +193,13 @@ class DisplayItemKeyTest {
             assertTrue(foundChk, "chk_input item found");
             assertTrue(foundSel, "sel_select item found");
 
-            // PaintSceneDriver & HitTestIndex lookup test
-            HitTestIndex hitIdx = view.ui().hitTestIndex();
+            // PaintSceneDriver lookup test
             com.nishiyu.enderframelib.core.dom.node.HtmlNode cardNode = view.root().getNodeById("card");
             assertNotNull(cardNode);
             int cardHandle = cardNode.nodeId();
-
-            // Lookup by handle & part
-            DisplayItem cardByHandle = hitIdx.getElementByHandle(cardHandle, DisplayItem.PART_NODE);
-            assertNotNull(cardByHandle, "HitTestIndex getElementByHandle finds card NODE");
-            assertEquals("card", cardByHandle.id());
-
-            DisplayItem cardBgByHandle = hitIdx.getElementByHandle(cardHandle, DisplayItem.PART_BG);
-            assertNotNull(cardBgByHandle, "HitTestIndex getElementByHandle finds card_bg");
-            assertEquals("card_bg", cardBgByHandle.id());
-
-            // Lookup by string ID (backward compatibility)
-            DisplayItem cardById = hitIdx.getElementById("card");
-            assertNotNull(cardById, "HitTestIndex getElementById finds card NODE");
-            assertSame(cardByHandle, cardById);
-
-            DisplayItem cardBgById = hitIdx.getElementById("card_bg");
-            assertNotNull(cardBgById, "HitTestIndex getElementById finds card_bg");
-            assertSame(cardBgByHandle, cardBgById);
+            var cardLoc = view.ui().locate(cardNode);
+            assertNotNull(cardLoc, "SceneQuery locates card node");
+            assertEquals(cardHandle, cardLoc.nodeId());
 
             // PaintSceneDriver direct test
             PaintSceneDriver driver = new PaintSceneDriver("test_session");

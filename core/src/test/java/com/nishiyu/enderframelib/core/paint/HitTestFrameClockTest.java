@@ -24,7 +24,7 @@ class HitTestFrameClockTest {
 
     private static String hitId(StandaloneView v, double x, double y) {
         var hit = v.ui().hitTest(x, y);
-        return hit == null ? null : hit.element().baseId();
+        return hit == null ? null : hit.baseId();
     }
 
     @Test

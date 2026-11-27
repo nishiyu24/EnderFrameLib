@@ -3,9 +3,9 @@ package com.nishiyu.enderframelib.core.paint;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.TestBoxes;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * S7 ①: {@link PaintBounds} の復元・ネスト・例外安全、および {@code <fieldset><legend>}・
- * インライン断片の背景描画が箱（描画用の木の見え方 {@code PaintBox}。M2c-3 までは旧 {@code LayoutBox}）の幾何を一切書き換えないことを検証する。
+ * インライン断片の背景描画が箱（M3b-3 以降は {@link TestBoxes.Box}）の幾何を一切書き換えないことを検証する。
  */
 class PaintBoundsTest {
 
@@ -29,51 +29,52 @@ class PaintBoundsTest {
                 + "<div id=b></div><div id=o></div>";
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 400, 400);
-        PaintBox root = compiler.layoutDocument(doc, 400, 400, Map.of(), new ScrollState(),
+        var scene = compiler.layoutDocument(doc, 400, 400, Map.of(), new ScrollState(),
                 FontResolver.FALLBACK, new InteractionState());
-        List<PaintBox> all = new ArrayList<>();
-        collectBoxes(root, all);
-        PaintBox box = all.stream().filter(b -> b.node != null && "b".equals(b.node.getId())).findFirst().orElseThrow();
-        PaintBox other = all.stream().filter(b -> b.node != null && "o".equals(b.node.getId())).findFirst().orElseThrow();
+        SceneAdapterBox adapterRoot = SceneAdapterBox.root(scene, null);
+        SceneAdapterBox sb = findAdapter(adapterRoot, "b");
+        SceneAdapterBox so = findAdapter(adapterRoot, "o");
+        assertNotNull(sb);
+        assertNotNull(so);
 
-        float bx0 = box.x(), by0 = box.y(), bw0 = box.w(), bh0 = box.h();
-        float bpL0 = box.pL(), bbT0 = box.bT(), ox0 = other.x();
+        float bx0 = sb.x(), by0 = sb.y(), bw0 = sb.w(), bh0 = sb.h();
+        float bpL0 = sb.pL(), bbT0 = sb.bT(), ox0 = so.x();
         assertEquals(4f, bpL0);
         assertEquals(2f, bbT0);
         assertNotEquals(1f, bx0);
         assertNotEquals(1f, ox0);
 
         PaintBounds bounds = new PaintBounds();
-        bounds.with(box, 1f, 2f, 30f, 40f, true, () -> {
-            assertEquals(1f, bounds.x(box));
-            assertEquals(2f, bounds.y(box));
-            assertEquals(30f, bounds.w(box));
-            assertEquals(40f, bounds.h(box));
-            assertEquals(0f, bounds.pL(box));
-            assertEquals(0f, bounds.bT(box));
+        bounds.with(sb, 1f, 2f, 30f, 40f, true, () -> {
+            assertEquals(1f, bounds.x(sb));
+            assertEquals(2f, bounds.y(sb));
+            assertEquals(30f, bounds.w(sb));
+            assertEquals(40f, bounds.h(sb));
+            assertEquals(0f, bounds.pL(sb));
+            assertEquals(0f, bounds.bT(sb));
             // 対象外の箱は元の値のまま
-            assertEquals(ox0, bounds.x(other));
+            assertEquals(ox0, bounds.x(so));
             // 箱自身は書き換わっていない
-            assertEquals(bx0, box.x());
-            assertEquals(bpL0, box.pL());
+            assertEquals(bx0, sb.x());
+            assertEquals(bpL0, sb.pL());
 
-            assertThrows(IllegalStateException.class, () -> bounds.with(box, 5f, 25f, 80f, 30f, false, () -> {
-                assertEquals(5f, bounds.x(box));
-                assertEquals(bpL0, bounds.pL(box));
-                assertEquals(bbT0, bounds.bT(box));
+            assertThrows(IllegalStateException.class, () -> bounds.with(sb, 5f, 25f, 80f, 30f, false, () -> {
+                assertEquals(5f, bounds.x(sb));
+                assertEquals(bpL0, bounds.pL(sb));
+                assertEquals(bbT0, bounds.bT(sb));
                 throw new IllegalStateException("simulated failure");
             }));
 
-            assertEquals(1f, bounds.x(box));
-            assertEquals(0f, bounds.pL(box));
+            assertEquals(1f, bounds.x(sb));
+            assertEquals(0f, bounds.pL(sb));
         });
 
-        assertEquals(bx0, bounds.x(box));
-        assertEquals(by0, bounds.y(box));
-        assertEquals(bw0, bounds.w(box));
-        assertEquals(bh0, bounds.h(box));
-        assertEquals(bpL0, bounds.pL(box));
-        assertEquals(bbT0, bounds.bT(box));
+        assertEquals(bx0, bounds.x(sb));
+        assertEquals(by0, bounds.y(sb));
+        assertEquals(bw0, bounds.w(sb));
+        assertEquals(bh0, bounds.h(sb));
+        assertEquals(bpL0, bounds.pL(sb));
+        assertEquals(bbT0, bounds.bT(sb));
     }
 
     @Test
@@ -88,13 +89,13 @@ class PaintBoundsTest {
 
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 300, 300);
-        PaintBox root = compiler.layoutDocument(doc, 300, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
+        TestBoxes.Box root = TestBoxes.root(compiler.layoutDocument(doc, 300, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState()));
 
-        List<PaintBox> all = new ArrayList<>();
+        List<TestBoxes.Box> all = new ArrayList<>();
         collectBoxes(root, all);
         float[][] snapshot = new float[all.size()][];
         for (int i = 0; i < all.size(); i++) {
-            PaintBox b = all.get(i);
+            TestBoxes.Box b = all.get(i);
             snapshot[i] = new float[]{b.x(), b.y(), b.w(), b.h(), b.pL(), b.pT(), b.pR(), b.pB(), b.bL(), b.bT(), b.bR(), b.bB()};
         }
 
@@ -103,14 +104,23 @@ class PaintBoundsTest {
         assertTrue(items.stream().anyMatch(it -> "sp".equals(it.baseId()) && it.id().contains("_bgl")));
 
         for (int i = 0; i < all.size(); i++) {
-            PaintBox b = all.get(i);
+            TestBoxes.Box b = all.get(i);
             float[] now = {b.x(), b.y(), b.w(), b.h(), b.pL(), b.pT(), b.pR(), b.pB(), b.bL(), b.bT(), b.bR(), b.bB()};
             assertArrayEquals(snapshot[i], now, "描画後に箱の幾何が変わってはならない: " + b.node.tag);
         }
     }
 
-    private static void collectBoxes(PaintBox b, List<PaintBox> out) {
+    private static SceneAdapterBox findAdapter(SceneAdapterBox b, String id) {
+        if (b.node != null && id.equals(b.node.getId())) return b;
+        for (SceneAdapterBox c : b.paintChildren()) {
+            SceneAdapterBox f = findAdapter(c, id);
+            if (f != null) return f;
+        }
+        return null;
+    }
+
+    private static void collectBoxes(TestBoxes.Box b, List<TestBoxes.Box> out) {
         out.add(b);
-        for (PaintBox c : b.paintChildren()) collectBoxes(c, out);
+        for (TestBoxes.Box c : b.paintChildren()) collectBoxes(c, out);
     }
 }

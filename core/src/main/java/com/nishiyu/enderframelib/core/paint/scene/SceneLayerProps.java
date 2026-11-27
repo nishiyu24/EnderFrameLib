@@ -141,6 +141,9 @@ final class SceneLayerProps {
 
         Transform2D transform = isText ? null : Transform2D.parse(st, values, w, h, vw, vh);
         StickyConstraint sticky = isText ? null : StickyConstraint.of(st, mT, mR, mB, mL);
+        if (transform != null || sticky != null || topLayer || hasAnimationOrTransition(v) || children.hasDynamicBounds) {
+            flags |= SceneLayer.FLAG_DYNAMIC_BOUNDS;
+        }
 
         ClipShape clip = null;
         LayerEffects effects = null;
@@ -256,5 +259,13 @@ final class SceneLayerProps {
 
     static boolean isNone(String value) {
         return value == null || "none".equals(value) || value.isBlank() || "none".equalsIgnoreCase(value.trim());
+    }
+
+    private static boolean hasAnimationOrTransition(VisualStyle v) {
+        return (v.animation != null && !v.animation.isBlank() && !"none".equalsIgnoreCase(v.animation.trim()))
+                || (v.animationName != null && !v.animationName.isBlank() && !"none".equalsIgnoreCase(v.animationName.trim()))
+                || (v.transition != null && !v.transition.isBlank() && !"none".equalsIgnoreCase(v.transition.trim()))
+                || (v.transitionDuration != null && !v.transitionDuration.isBlank()
+                && !"0s".equalsIgnoreCase(v.transitionDuration.trim()) && !"0ms".equalsIgnoreCase(v.transitionDuration.trim()));
     }
 }

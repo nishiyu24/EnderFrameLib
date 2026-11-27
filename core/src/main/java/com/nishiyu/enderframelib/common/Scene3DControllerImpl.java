@@ -2,14 +2,12 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.api.scene3d.Hit3DResult;
 import com.nishiyu.enderframelib.api.scene3d.Scene3DController;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 import com.nishiyu.enderframelib.core.scene3d.CameraOrbit;
 import com.nishiyu.enderframelib.core.scene3d.GltfBinaryLoader;
 import com.nishiyu.enderframelib.core.scene3d.MeshHandle;
 import com.nishiyu.enderframelib.core.scene3d.Raycaster3D;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DArena;
-import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
 import java.util.Optional;
 
@@ -34,10 +32,14 @@ final class Scene3DControllerImpl implements Scene3DController {
 
     @Override
     public Optional<Hit3DResult> raycast(double localX, double localY) {
-        DisplayItem item = sceneItem();
-        if (item == null || item.width() <= 0 || item.height() <= 0) return Optional.empty();
+        com.nishiyu.enderframelib.core.paint.scene.SceneLocation loc =
+                com.nishiyu.enderframelib.core.paint.scene.SceneQuery.locateByNodeId(ui.scene(), ui.dynamicState(), (int) worldId);
+        if (loc == null) return Optional.empty();
+        float iw = Math.max(0f, loc.w() - loc.bL() - loc.bR());
+        float ih = Math.max(0f, loc.h() - loc.bT() - loc.bB());
+        if (iw <= 0f || ih <= 0f) return Optional.empty();
         Raycaster3D.Hit hit = new Raycaster3D.Hit();
-        if (!caster.pickScreen(world, (float) localX, (float) localY, item.width(), item.height(), hit)) return Optional.empty();
+        if (!caster.pickScreen(world, (float) localX, (float) localY, Math.round(iw), Math.round(ih), hit)) return Optional.empty();
         return Optional.of(result(hit));
     }
 
@@ -50,16 +52,6 @@ final class Scene3DControllerImpl implements Scene3DController {
 
     private static Hit3DResult result(Raycaster3D.Hit h) {
         return new Hit3DResult(h.node, h.entityTag, h.t, h.x, h.y, h.z, h.u, h.v);
-    }
-
-    /** 表示リストの中の、この世界の {@code SCENE} 項目（大きさの出どころ）。 */
-    private DisplayItem sceneItem() {
-        String key = Long.toString(worldId);
-        for (DisplayItem it : ui.renderCache()) {
-            if (it.type() != ElementType.SCENE || it.events() == null) continue;
-            if (key.equals(it.events().get(Scene3DTags.WORLD_ATTR))) return it;
-        }
-        return null;
     }
 
     // ---------------------------------------------------------------- 組み立て

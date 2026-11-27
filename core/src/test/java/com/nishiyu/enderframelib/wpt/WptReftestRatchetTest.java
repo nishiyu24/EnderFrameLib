@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.wpt;
 
+import com.nishiyu.enderframelib.common.TestBoxes;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -210,8 +212,8 @@ class WptReftestRatchetTest {
             for (String rel : e.getKey().equals(e.getValue()) ? List.of(e.getKey()) : List.of(e.getKey(), e.getValue())) {
                 var compiler = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
                 var doc = compiler.parseDocument(read(rel), "", W, H);
-                var root = compiler.layoutDocument(doc, W, H, Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(),
-                        FONTS, new com.nishiyu.enderframelib.core.dom.InteractionState());
+                var root = TestBoxes.root(compiler.layoutDocument(doc, W, H, Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(),
+                        FONTS, new com.nishiyu.enderframelib.core.dom.InteractionState()));
                 StringBuilder sb = new StringBuilder("WPT-DUMP " + rel + "\n");
                 dump(root, 0, sb);
                 System.out.println(sb);
@@ -219,7 +221,7 @@ class WptReftestRatchetTest {
         }
     }
 
-    private static void dump(com.nishiyu.enderframelib.core.paint.tree.PaintBox b, int depth, StringBuilder sb) {
+    private static void dump(TestBoxes.Box b, int depth, StringBuilder sb) {
         sb.append("  ".repeat(depth)).append(b.isAnonymous ? "(anon)" : b.node == null ? "?" : b.node.tag)
                 .append(b.node != null && b.node.getAttribute("id") != null ? "#" + b.node.getAttribute("id") : "")
                 .append(String.format(" [%.1f,%.1f %.1fx%.1f] m=%.0f,%.0f,%.0f,%.0f", b.x(), b.y(), b.w(), b.h(), b.mT(), b.mR(), b.mB(), b.mL()));

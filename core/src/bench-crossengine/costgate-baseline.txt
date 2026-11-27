@@ -35,7 +35,7 @@ animation_test.html text | allocBytes=526070 drawn=600 elements=229 items=1085
 media_test.html text | allocBytes=971185 drawn=600 elements=332 items=2388 allocTol=25
 hud_test.html text | allocBytes=64947 drawn=600 elements=22 items=68
 item_block_test.html text | allocBytes=1374182 drawn=600 elements=506 items=3380
-machine_ui.html scroll | allocBytes=1812 drawn=0 elements=22 items=68
+machine_ui.html scroll | allocBytes=1316 drawn=0 elements=22 items=68
 machine_ui.html text | allocBytes=65157 drawn=600 elements=22 items=72 allocTol=8
 guidebook text | allocBytes=389708 drawn=600 elements=119 items=878 allocTol=20
 voidwave.html open | allocBytes=13017503 drawn=600 elements=503 items=2254
@@ -55,6 +55,6 @@ animation_test.html text cpu | allocBytes=711449 drawn=600 elements=229 items=10
 media_test.html text cpu | allocBytes=1162025 drawn=600 elements=332 items=2388
 hud_test.html text cpu | allocBytes=84658 drawn=600 elements=22 items=68
 item_block_test.html text cpu | allocBytes=1556609 drawn=600 elements=506 items=3380
-machine_ui.html scroll cpu | allocBytes=1812 drawn=0 elements=22 items=68 allocTol=12
+machine_ui.html scroll cpu | allocBytes=1316 drawn=0 elements=22 items=68 allocTol=12
 machine_ui.html text cpu | allocBytes=74429 drawn=600 elements=22 items=72
 guidebook text cpu | allocBytes=452257 drawn=600 elements=119 items=878 allocTol=25

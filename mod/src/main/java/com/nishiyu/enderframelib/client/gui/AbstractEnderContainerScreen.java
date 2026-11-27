@@ -292,7 +292,7 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
     }
 
     protected void onInputChanged(String elementId, String newText) {}
-    protected void onWebAction(String action, DisplayItem clickedElement, int mouseButton) {}
+    protected void onWebAction(String action, com.nishiyu.enderframelib.core.paint.scene.SceneHit clickedElement, int mouseButton) {}
     protected void onWebInputChanged(String elementId, String newText) {}
     protected void notifyInputChanged(String elementId, String newText) {
         onInputChanged(elementId, newText);
@@ -327,11 +327,11 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
 
             Slot slot = this.menu.slots.get(slotIdx);
             HtmlNode node = entry.getValue();
-            DisplayItem anchor = session.nodeItemAbsolute(node.key()); // 親相対の一覧を絶対化せず、この節だけ解く
+            com.nishiyu.enderframelib.core.paint.scene.SceneLocation anchor = session.locate(node);
 
-            if (anchor != null && anchor.width() > 0 && anchor.height() > 0 && isNodeVisibleInDom(node)) {
-                int targetX = Math.round(anchor.x() + (anchor.width() - 16.0f) / 2.0f);
-                int targetY = Math.round(anchor.y() + (anchor.height() - 16.0f) / 2.0f);
+            if (anchor != null && anchor.w() > 0 && anchor.h() > 0 && isNodeVisibleInDom(node)) {
+                int targetX = Math.round(anchor.x() + (anchor.w() - 16.0f) / 2.0f);
+                int targetY = Math.round(anchor.y() + (anchor.h() - 16.0f) / 2.0f);
                 setSlotPosition(slot, targetX, targetY);
             } else {
                 setSlotPosition(slot, -10000, -10000);
@@ -432,14 +432,14 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
                     SurfaceStyle.gui(false).withHovered(hoveredId), poseStack, bufferSource);
             bufferSource.endBatch();
 
-            this.uiSupport.renderOverlays(guiGraphics, this.font, devToolsEnabled ? uiSession.elements() : elements, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);
+            this.uiSupport.renderOverlays(guiGraphics, this.font, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);
 
             poseStack.popPose();
         }
     }
 
-    protected void renderDevToolsInspector(GuiGraphics guiGraphics, List<DisplayItem> elements, int webX, int webY) {
-        this.uiSupport.renderDevToolsInspector(guiGraphics, this.font, elements, webX, webY, virtualWidth, virtualHeight);
+    protected void renderDevToolsInspector(GuiGraphics guiGraphics, int webX, int webY) {
+        this.uiSupport.renderDevToolsInspector(guiGraphics, this.font, webX, webY, virtualWidth, virtualHeight);
     }
 
     @Override

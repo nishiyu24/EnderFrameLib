@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
  * 動かす経路（節の移動量で表す）と、全体を作り直す経路（位置に焼き込む）で結果が違った。
  * <ol>
  *   <li>ヒットテスト: 動いた外側のスクロールの中の、入れ子のスクロールコンテナ（{@code overflow} の箱）の中身は、合成済みの
- *       クリップの矩形が作ったときの位置のままだったので、見えている位置で文字ではなく親の箱に当たった（{@code HitTestIndex} は、
+ *       クリップの矩形が作ったときの位置のままだったので、見えている位置で文字ではなく親の箱に当たった（シーンは、
  *       祖先が動くときクリップを連鎖の部品ごとに持ち主の今の姿勢で当てる）。</li>
  *   <li>描画: 凡例つきの fieldset の枠線は、凡例を避ける 3 つのクリップを連鎖の無い矩形（フレームの空間に固定）で作っていたので、
  *       fieldset を含むスクロールの中身が動くと、上の枠線が元の位置のクリップで切り落とされて消えた
@@ -58,7 +58,7 @@ class ScrollNodeClipRegressionTest {
                     for (int y = 12; y < 210; y += 6) {
                         for (int x = 12; x < 290; x += 8) {
                             var hit = v.ui().hitTest(x, y);
-                            h.append(hit == null ? "-" : hit.element().baseId()).append(' ');
+                            h.append(hit == null ? "-" : hit.baseId()).append(' ');
                         }
                     }
                     hits.add(h.toString());
@@ -95,7 +95,7 @@ class ScrollNodeClipRegressionTest {
             // スクロールした分だけ上に描かれている文字の点に当たる（親の span ではなく、同じ文字の項目）
             var after = v.ui().hitTest(30, 82 - sy);
             assertNotNull(after);
-            assertEquals(before.element().baseId(), after.element().baseId(), "見えている位置の文字に当たる");
+            assertEquals(before.baseId(), after.baseId(), "見えている位置の文字に当たる");
         }
     }
 }

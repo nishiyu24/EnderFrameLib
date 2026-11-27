@@ -397,8 +397,8 @@ public class WebHudRenderer {
         com.nishiyu.enderframelib.common.FrameRender.Frame frame = com.nishiyu.enderframelib.common.FrameRender.subtree(
                 instanceNode, doc.sheet, 1000, 1000, null, WebFontManager.McFontResolver.INSTANCE);
 
-        cache.width = Math.round(frame.root().w());
-        cache.height = Math.round(frame.root().h());
+        cache.width = Math.round(frame.scene().root.w);
+        cache.height = Math.round(frame.scene().root.h);
         cache.elements = frame.items();
     }
 

@@ -14,7 +14,10 @@ import com.nishiyu.enderframelib.core.dom.node.CoreEvent;
 import com.nishiyu.enderframelib.core.dom.node.DefaultActionContext;
 import com.nishiyu.enderframelib.core.dom.node.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
-import com.nishiyu.enderframelib.core.paint.UIHitResult;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -386,18 +389,12 @@ public final class StandaloneView implements AutoCloseable {
         }
     }
 
-    /** ヒットした項目が {@code data-orbit} の {@code <scene-3d>} なら、その 3D ワールド。 */
-    private Scene3DWorld orbitWorldAt(UIHitResult hit) {
-        if (hit == null || hit.element() == null || hit.element().events() == null) return null;
-        var ev = hit.element().events();
-        if (!Scene3DTags.KIND_3D.equals(ev.get(Scene3DTags.KIND_ATTR))) return null;
-        try {
-            Scene3DWorld w = ui.scene3dWorld(Long.parseLong(ev.get(Scene3DTags.WORLD_ATTR)));
-            // data-orbit 属性、または Java から世界に指定した orbitControls
-            return w != null && ("true".equals(ev.get(Scene3DTags.ORBIT_ATTR)) || w.orbitControls()) ? w : null;
-        } catch (NumberFormatException e) {
-            return null;
-        }
+    /** ヒットした層が {@code data-orbit} の {@code <scene-3d>} なら、その 3D ワールド。 */
+    private Scene3DWorld orbitWorldAt(SceneHit hit) {
+        if (hit == null || hit.node() == null || !Scene3DTags.isScene(hit.node().tag)) return null;
+        Scene3DWorld w = ui.scene3dWorld(hit.node().nodeId());
+        String orbit = hit.layer().values().attr("data-orbit");
+        return w != null && ("true".equalsIgnoreCase(orbit) || "1".equals(orbit) || w.orbitControls()) ? w : null;
     }
 
     /** ウィンドウ外へ出た。 */
@@ -556,7 +553,7 @@ public final class StandaloneView implements AutoCloseable {
     /** リンクの遷移先の振り分け: {@code #id} は同じページ内のスクロール、それ以外はホストへ。 */
     private final UiInput.ClickSink linkSink = new UiInput.ClickSink() {
         @Override
-        public void action(String action, DisplayItem clicked, int button) {
+        public void action(String action, SceneHit clicked, int button) {
             if (action == null) return;
             if (action.startsWith("#")) scrollToAnchor(action.substring(1));
             else navigation.accept(action);
@@ -566,20 +563,13 @@ public final class StandaloneView implements AutoCloseable {
     /** {@code #id} へ、その要素を囲むスクロール箱を動かして寄せる。 */
     public boolean scrollToAnchor(String id) {
         HtmlNode node = id == null || id.isEmpty() ? null : ui.rootNode().getElementById(id);
-        if (node == null) return false;
-        // 1 つの節が複数の部品（背景・本体）に分かれるので、節の id で束ねる。スクロールする部品を使う
-        Map<String, DisplayItem> scrollers = new HashMap<>();
-        for (DisplayItem it : items) {
-            if (it.hints().scrollable()) scrollers.put(it.baseId(), it);
-        }
-        // 画面の外の項目は作っていないので、位置はレイアウトの箱から読む
-        com.nishiyu.enderframelib.core.paint.tree.PaintBox targetBox = UiFocus.findBox(ui.boxRoot(), node);
+        SceneLocation targetBox = node != null ? ui.locate(node) : null;
         if (targetBox == null) return false;
         for (HtmlNode p = node.parent; p != null; p = p.parent) {
-            DisplayItem box = DisplayItem.resolveAbsolute(items, scrollers.get(p.key()));
-            if (box == null) continue;
-            float limit = Math.max(0, box.hints().scrollHeight() - box.height());
-            if (limit <= 0) continue;
+            SceneLocation box = ui.locate(p);
+            if (box == null || !box.isScrollContainer()) continue;
+            float limit = Math.max(0f, box.scrollHeight() - box.h());
+            if (limit <= 0f) continue;
             float cur = ui.scrollState().getScrollY(p);
             float next = snapTarget(clamp(cur + (targetBox.y() - box.y()), limit), limit);
             scrollTargets.put(p, new float[]{ui.scrollState().getScrollX(p), next});
@@ -591,9 +581,9 @@ public final class StandaloneView implements AutoCloseable {
     /** ホイール（上に回すと正）。{@code wheel} イベントを送り、止められなければカーソルの下のスクロールできる箱を動かす。 */
     public boolean scroll(double notchesX, double notchesY, String sessionId) {
         ui.adoptSessionId(sessionId);
-        UIHitResult top = ui.hitTest(mouseX, mouseY);
+        SceneHit top = ui.hitTest(mouseX, mouseY);
         if (top != null) {
-            HtmlNode node = ui.findInteractiveNode(top.element().baseId());
+            HtmlNode node = ui.findInteractiveNode(top.baseId());
             if (node != null && !ui.interactionState().isInert(node)) {
                 var wheel = CoreEvent.wheel(top.localX(), top.localY(), notchesX, notchesY, false, false, false, false);
                 node.dispatchEvent(wheel);
@@ -605,13 +595,13 @@ public final class StandaloneView implements AutoCloseable {
                 return true;
             }
         }
-        List<UIHitResult> hits = ui.hitTestIndex().scrollContainersAt(ui.sessionId(), mouseX, mouseY);
+        List<SceneHit> hits = ui.scrollContainersAt(mouseX, mouseY);
         for (int i = 0, hn = hits.size(); i < hn; i++) {
-            DisplayItem el = hits.get(i).element();
-            HtmlNode node = ui.findNode(el.baseId());
+            SceneHit h = hits.get(i);
+            HtmlNode node = h.node() != null ? h.node() : ui.findNode(h.baseId());
             if (node == null || ui.interactionState().isInert(node)) continue;
-            float limitX = Math.max(0, el.hints().scrollWidth() - el.width());
-            float limitY = Math.max(0, el.hints().scrollHeight() - el.height());
+            float limitX = Math.max(0f, h.layer().scrollWidth - h.width());
+            float limitY = Math.max(0f, h.layer().scrollHeight - h.height());
             if (limitX <= 0 && limitY <= 0) continue;
             // 連続して回したときは、いまの現在地ではなく前回のスクロール先から積む
             float[] base = scrollTargets.get(node);
@@ -785,9 +775,9 @@ public final class StandaloneView implements AutoCloseable {
                 return new float[]{it.x(), it.y(), it.width(), it.height()};
             }
         }
-        DisplayItem el = fieldItem(field);
-        if (el != null) {
-            return new float[]{el.x() + 4f, el.y() + 4f, 1f, el.height() - 8f};
+        SceneLocation loc = ui.locate(field);
+        if (loc != null) {
+            return new float[]{loc.x() + loc.bL() + 4f, loc.y() + loc.bT() + 4f, 1f, Math.max(1f, loc.h() - loc.bT() - loc.bB() - 8f)};
         }
         return null;
     }
@@ -836,21 +826,12 @@ public final class StandaloneView implements AutoCloseable {
     // ------------------------------------------------------------------
 
     private void openSelect(HtmlNode select) {
-        DisplayItem box = null;
-        for (DisplayItem it : items) {
-            if (!it.baseId().equals(select.key()) || it.width() <= 0) continue;
-            if (it.type() == ElementType.SELECT) {
-                box = it;
-                break;
-            }
-            if (box == null) box = it;
-        }
-        if (popup.open(select, DisplayItem.resolveAbsolute(items, box), height)) redraw = true;
+        if (popup.open(select, ui.locate(select), height)) redraw = true;
     }
 
     private boolean ownerUnderPointer(HtmlNode owner) {
-        UIHitResult hit = ui.hitTest(mouseX, mouseY);
-        return owner != null && hit != null && hit.element().baseId().equals(owner.key());
+        SceneHit hit = ui.hitTest(mouseX, mouseY);
+        return owner != null && hit != null && owner.key().equals(hit.baseId());
     }
 
     /** ポップアップが開いている間のキー。使ったら true（{@code Tab} は閉じるだけで続けてフォーカスを移す）。 */
@@ -916,32 +897,22 @@ public final class StandaloneView implements AutoCloseable {
         return all;
     }
 
-    /** テキスト欄の表示項目（{@code _input} / {@code _textarea}）。 */
-    private DisplayItem fieldItem(HtmlNode field) {
-        String id = field.key();
-        String part = ElementTraits.isTextarea(field.tag) ? "_textarea" : "_input";
-        for (DisplayItem it : items) {
-            if (it.baseId().equals(id) && it.isPart(part)) return DisplayItem.resolveAbsolute(items, it);
-        }
-        return null;
-    }
-
-    /** 点（文書座標）の下の文字位置。欄の項目が無ければ -1。 */
+    /** 点（文書座標）の下の文字位置。欄の要素がシーンに無ければ -1。 */
     private int caretAt(HtmlNode field, double px, double py) {
-        DisplayItem el = fieldItem(field);
-        OutlineFontFace face = el != null ? TextFieldOverlay.face(fonts, el) : null;
+        SceneLocation loc = ui.locate(field);
+        OutlineFontFace face = loc != null ? TextFieldOverlay.face(fonts, loc) : null;
         if (face == null) return -1;
-        return TextFieldOverlay.caretAt(el, face, valueOf(field), ElementTraits.isTextarea(field.tag), px, py);
+        return TextFieldOverlay.caretAt(loc, face, valueOf(field), ElementTraits.isTextarea(field.tag), px, py);
     }
 
     /** フォーカス中のテキスト欄の選択範囲（行ごとの矩形）とキャレット。 */
     private List<DisplayItem> textOverlay() {
         HtmlNode field = interaction.focusedNode();
         if (field == null || popup.isOpen() || !isTextControl(field)) return List.of();
-        DisplayItem el = fieldItem(field);
-        OutlineFontFace face = el != null ? TextFieldOverlay.face(fonts, el) : null;
+        SceneLocation loc = ui.locate(field);
+        OutlineFontFace face = loc != null ? TextFieldOverlay.face(fonts, loc) : null;
         if (face == null) return List.of();
-        return TextFieldOverlay.build(field.key(), el, face, valueOf(field), ElementTraits.isTextarea(field.tag), editState(field));
+        return TextFieldOverlay.build(field.key(), loc, face, valueOf(field), ElementTraits.isTextarea(field.tag), editState(field));
     }
 
     private boolean replaceValue(HtmlNode field, String next, String data, String inputType) {

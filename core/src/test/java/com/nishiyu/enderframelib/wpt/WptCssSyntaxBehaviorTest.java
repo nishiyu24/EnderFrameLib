@@ -12,7 +12,6 @@ import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import com.nishiyu.enderframelib.wpt.WptHarness.WptCase;
@@ -163,7 +162,7 @@ public class WptCssSyntaxBehaviorTest extends WptBehaviorTest {
     @WptCase(path = "css/css-syntax/ident-three-code-points.html",
             description = "Whether a hash token is an id selector depends on the first three code points")
     public void testIdentStartIsDecidedByTheFirstThreeCodePoints() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>
                   main div { background-color:red; }
                   div[name=one], div[name=two] { background: green; }
@@ -263,20 +262,20 @@ public class WptCssSyntaxBehaviorTest extends WptBehaviorTest {
         return rule.properties.get("--foo");
     }
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", VIEWPORT, VIEWPORT);
-        return parser.layoutDocument(doc, VIEWPORT, VIEWPORT, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(parser.layoutDocument(doc, VIEWPORT, VIEWPORT, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
     private static ComputedStyle styleOf(String html, String id) {
         return find(layout(html), id).style();
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = find(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

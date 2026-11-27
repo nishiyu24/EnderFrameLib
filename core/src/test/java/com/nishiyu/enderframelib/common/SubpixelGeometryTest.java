@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -46,7 +45,7 @@ public class SubpixelGeometryTest {
 
     @Test
     public void testLayoutKeepsFractionalWidths() {
-        PaintBox root = layout(THIRDS);
+        TestBoxes.Box root = layout(THIRDS);
         float third = 100f / 3f, unit = 1f / 64f; // 位置と寸法は LayoutUnit（1/64 px）の格子に丸める（Chrome の LayoutNG と同じ）
         assertEquals(third, findById(root, "a").w(), unit);
         assertEquals(third, findById(root, "b").w(), unit);
@@ -56,7 +55,7 @@ public class SubpixelGeometryTest {
 
     @Test
     public void testPercentLengthsAreNotTruncated() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <style>body { margin: 0; }</style>
                 <div id="outer" style="width: 101px;"><div id="half" style="width: 50%; height: 1px;"></div></div>
                 """);
@@ -68,8 +67,8 @@ public class SubpixelGeometryTest {
     public void testRoundedElementsTileWithoutGaps() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(THIRDS, "", VIEWPORT_W, VIEWPORT_H);
-        PaintBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
-                new ScrollState(), FontResolver.FALLBACK);
+        TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
+                new ScrollState(), FontResolver.FALLBACK));
         List<DisplayItem> elements = com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
 
         DisplayItem a = DisplayItem.resolveAbsolute(elements, findElement(elements, "a_bg"));
@@ -81,16 +80,16 @@ public class SubpixelGeometryTest {
         assertEquals(100, c.x() + c.width() - a.x(), "並べた幅の合計が親の幅と一致しない");
     }
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", VIEWPORT_W, VIEWPORT_H);
-        return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
-    private static PaintBox findById(PaintBox box, String id) {
+    private static TestBoxes.Box findById(TestBoxes.Box box, String id) {
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (PaintBox child : box.paintChildren()) {
-            PaintBox hit = findById(child, id);
+        for (TestBoxes.Box child : box.paintChildren()) {
+            TestBoxes.Box hit = findById(child, id);
             if (hit != null) return hit;
         }
         if (box.paintParent() == null) throw new AssertionError(id + " が見つからない");

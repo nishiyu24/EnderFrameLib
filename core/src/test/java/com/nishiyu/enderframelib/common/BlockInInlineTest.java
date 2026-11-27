@@ -2,9 +2,8 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
-import com.nishiyu.enderframelib.core.paint.tree.PaintRun;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
@@ -24,31 +23,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BlockInInlineTest {
     private static final String BASE = "<style>body{margin:0}</style>";
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         return TestBoxes.layout(BASE + html, 320, 240);
     }
 
-    private static PaintBox find(PaintBox root, String id) {
-        PaintBox b = TestBoxes.find(root, id);
+    private static TestBoxes.Box find(TestBoxes.Box root, String id) {
+        TestBoxes.Box b = TestBoxes.find(root, id);
         assertNotNull(b, id);
         return b;
     }
 
-    private static void assertSameRect(PaintBox expected, PaintBox actual, String what) {
+    private static void assertSameRect(TestBoxes.Box expected, TestBoxes.Box actual, String what) {
         assertEquals(expected.x(), actual.x(), 0.01f, what + " x");
         assertEquals(expected.y(), actual.y(), 0.01f, what + " y");
         assertEquals(expected.w(), actual.w(), 0.01f, what + " w");
         assertEquals(expected.h(), actual.h(), 0.01f, what + " h");
     }
 
-    private static List<PaintRun> boxRuns(PaintBox b) {
-        return b.runs().stream().filter(r -> !r.isText()).map(r -> (PaintRun) r).toList();
+    private static List<SceneRun> boxRuns(TestBoxes.Box b) {
+        return b.runs().stream().filter(r -> !r.isText()).toList();
     }
 
     @Test
     void blockSplitsTheInlineAndTakesTheFullWidthBetweenItsHalves() {
-        PaintBox root = layout("<div id=c>x <span id=s>a<div id=d>b</div>c</span> y</div>");
-        PaintBox ref = layout("<div id=c><div>x a</div><div id=d>b</div><div>c y</div></div>");
+        TestBoxes.Box root = layout("<div id=c>x <span id=s>a<div id=d>b</div>c</span> y</div>");
+        TestBoxes.Box ref = layout("<div id=c><div>x a</div><div id=d>b</div><div>c y</div></div>");
         assertSameRect(find(ref, "d"), find(root, "d"), "ブロックは匿名のブロックの間に並ぶ");
         assertSameRect(find(ref, "c"), find(root, "c"), "容器の高さは 3 行分");
         assertEquals(320f, find(root, "d").w(), 0.01f, "ブロックは容器の幅いっぱい");
@@ -56,16 +55,16 @@ class BlockInInlineTest {
 
     @Test
     void splitInlineHasAStartEdgeOnlyBeforeAndAnEndEdgeOnlyAfterTheBlock() {
-        PaintBox root = layout("<div><span id=s style='border:2px solid #000;padding:0 4px'>a<div id=d>b</div>c</span></div>");
-        PaintBox d = find(root, "d");
-        List<PaintRun> runs = boxRuns(find(root, "s"));
+        TestBoxes.Box root = layout("<div><span id=s style='border:2px solid #000;padding:0 4px'>a<div id=d>b</div>c</span></div>");
+        TestBoxes.Box d = find(root, "d");
+        List<SceneRun> runs = boxRuns(find(root, "s"));
         assertEquals(2, runs.size(), "割れたインラインは前後の 2 つの断片");
         assertTrue(runs.get(0).startEdge() && !runs.get(0).endEdge(), "前の断片は開始端だけ");
         assertTrue(!runs.get(1).startEdge() && runs.get(1).endEdge(), "後ろの断片は終了端だけ");
         assertTrue(runs.get(0).y() + runs.get(0).h() <= d.y() + 2.01f, "前の断片はブロックの上");
         assertTrue(runs.get(1).y() >= d.y() + d.h() - 2.01f, "後ろの断片はブロックの下");
         // 開始端の padding・border は前の断片にだけ: 後ろの断片の文字は行の左端から
-        PaintBox c = TestBoxes.elements(find(root, "s")).getLast();
+        TestBoxes.Box c = TestBoxes.elements(find(root, "s")).getLast();
         assertEquals(0f, c.runs().getFirst().x(), 0.01f);
     }
 
@@ -75,8 +74,8 @@ class BlockInInlineTest {
         // 容器が混在の流れになる場合（WPT aspect-ratio-intrinsic-size-010・flexbox-paint-ordering-001 で見つけた）
         for (String display : new String[]{"inline-block", "inline-flex"}) {
             String atom = "<span id=ib style='display:" + display + "'>%s</span>";
-            PaintBox root = layout("<div id=c>x " + atom.formatted("<div id=d>b</div>") + " y<p id=p>after</p></div>");
-            PaintBox ref = layout("<div id=c>x " + atom.formatted("b") + " y<p id=p>after</p></div>");
+            TestBoxes.Box root = layout("<div id=c>x " + atom.formatted("<div id=d>b</div>") + " y<p id=p>after</p></div>");
+            TestBoxes.Box ref = layout("<div id=c>x " + atom.formatted("b") + " y<p id=p>after</p></div>");
             assertSameRect(find(ref, "ib"), find(root, "ib"), display + ": 原子");
             assertSameRect(find(ref, "p"), find(root, "p"), display + ": 後ろのブロック");
             assertEquals(find(root, "ib").x(), find(root, "d").x(), 0.01f, display + ": ブロックは原子の中");
@@ -85,8 +84,8 @@ class BlockInInlineTest {
 
     @Test
     void blockMarginsBehaveAsInTheBlockFlow() {
-        PaintBox root = layout("<div id=c><span>a<div id=d style='margin:10px 20px;padding:3px'>b</div>c</span></div>");
-        PaintBox ref = layout("<div id=c><div>a</div><div id=d style='margin:10px 20px;padding:3px'>b</div><div>c</div></div>");
+        TestBoxes.Box root = layout("<div id=c><span>a<div id=d style='margin:10px 20px;padding:3px'>b</div>c</span></div>");
+        TestBoxes.Box ref = layout("<div id=c><div>a</div><div id=d style='margin:10px 20px;padding:3px'>b</div><div>c</div></div>");
         assertSameRect(find(ref, "d"), find(root, "d"), "左右の余白と上下の余白");
         assertSameRect(find(ref, "c"), find(root, "c"), "容器");
     }
@@ -94,8 +93,8 @@ class BlockInInlineTest {
     @Test
     void whitespaceAroundTheBlockMakesNoLinesAndMarginsCollapseThrough() {
         String body = "<span id=h>\n  <div id=d><h3 id=t>title</h3><p id=p>text</p></div>\n</span><h3 id=o>other</h3>";
-        PaintBox root = layout(body);
-        PaintBox ref = layout("<style>#h{display:block}</style>" + body);
+        TestBoxes.Box root = layout(body);
+        TestBoxes.Box ref = layout("<style>#h{display:block}</style>" + body);
         for (String id : new String[]{"d", "t", "p", "o"}) assertSameRect(find(ref, id), find(root, id), id);
         assertSameRect(find(root, "d"), find(root, "h"), "インラインの矩形は中のブロックを囲む");
     }
@@ -109,14 +108,14 @@ class BlockInInlineTest {
         long red = items.stream().filter(i -> i.type() == ElementType.RECT && (i.bgColor() & 0xFFFFFF) == 0xFF0000).count();
         assertEquals(2, red, "インラインの背景は前後の断片の 2 つだけ");
         // 画素: ブロックの行は青で、その中に文字の墨がある。インラインの赤はブロックの行に無い
-        PaintBox d = find(TestBoxes.layout(html, 320, 240), "d");
+        TestBoxes.Box d = find(TestBoxes.layout(html, 320, 240), "d");
         try (var cpu = new SoftwareRenderBackend(320, 240, 1f).fonts(FontResolver.FALLBACK)) {
             cpu.render(items, 10_000L);
             assertBlockRowsAreBlueWithInk(cpu.pixmap(), d);
         }
     }
 
-    private static void assertBlockRowsAreBlueWithInk(com.nishiyu.enderframelib.core.raster.Pixmap px, PaintBox d) {
+    private static void assertBlockRowsAreBlueWithInk(com.nishiyu.enderframelib.core.raster.Pixmap px, TestBoxes.Box d) {
         int y0 = (int) Math.ceil(d.y()) + 1, y1 = (int) Math.floor(d.y() + d.h()) - 1;
         boolean ink = false;
         for (int y = y0; y <= y1; y++) {
@@ -132,11 +131,11 @@ class BlockInInlineTest {
 
     @Test
     void paintTreeKeepsTheBlockUnderItsInlineAncestorInDocumentOrder() {
-        PaintBox root = layout("<div><b id=o>x<i id=i>y<div id=d>z</div>w</i>v</b></div>");
-        List<PaintBox> kids = TestBoxes.elements(find(root, "i"));
+        TestBoxes.Box root = layout("<div><b id=o>x<i id=i>y<div id=d>z</div>w</i>v</b></div>");
+        List<TestBoxes.Box> kids = TestBoxes.elements(find(root, "i"));
         assertEquals(3, kids.size(), "文字 y・ブロック・文字 w");
         assertEquals("d", kids.get(1).node.getId());
-        List<PaintRun> outer = boxRuns(find(root, "o")), inner = boxRuns(find(root, "i"));
+        List<SceneRun> outer = boxRuns(find(root, "o")), inner = boxRuns(find(root, "i"));
         assertEquals(2, outer.size(), "外側のインラインも割れる");
         assertEquals(2, inner.size());
         assertFalse(outer.get(0).endEdge() || inner.get(0).endEdge());
@@ -145,10 +144,10 @@ class BlockInInlineTest {
 
     @Test
     void blockInsideAnInlineCountsInTheIntrinsicSizes() {
-        PaintBox min = layout("<div id=w style='width:min-content'><span>aa bb<div style='width:200px;height:4px'></div>cc</span></div>");
+        TestBoxes.Box min = layout("<div id=w style='width:min-content'><span>aa bb<div style='width:200px;height:4px'></div>cc</span></div>");
         assertEquals(200f, find(min, "w").w(), 0.01f, "min-content はブロックの幅を含む");
-        PaintBox max = layout("<div id=w style='float:left'><span>aaaa bbbb<div>c</div>dd</span></div>");
-        PaintBox ref = layout("<div id=w style='float:left'>aaaa bbbb</div>");
+        TestBoxes.Box max = layout("<div id=w style='float:left'><span>aaaa bbbb<div>c</div>dd</span></div>");
+        TestBoxes.Box ref = layout("<div id=w style='float:left'>aaaa bbbb</div>");
         assertEquals(find(ref, "w").w(), find(max, "w").w(), 0.01f, "max-content: ブロックの前後で行が割れる");
     }
 

@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintRun;
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
+import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.InheritedPaintStyle;
@@ -43,7 +42,7 @@ final class TextRunPainter {
      * ぼかしのある影は、錨（NODE）に {@code blur} のレイヤーを載せ、その中に影の文字を置く（ぼかしの σ は半径の半分）。
      * 影はクリックを受けず、色のアニメーション・トランジションも受けない。
      */
-    private void addTextRun(List<DisplayItem> elements, PaintBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+    private void addTextRun(List<DisplayItem> elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                             String id, float x, float y, float w, float h, String text, int color, int bgColor,
                             ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows) {
         if (effStyle != null && WritingModes.usesUpright(effStyle) && hasUprightChar(effStyle, text)) {
@@ -68,7 +67,7 @@ final class TextRunPainter {
      * 縦書きの根は内容ごと 90° 回って描かれるので、正立させる字は自分の中心まわりに -90° 回して回転を打ち消す。
      * 各塊の幅は書体の送り幅で測り、行の幅 {@code w} に合うよう等倍して配る。
      */
-    private void addVerticalTextRuns(List<DisplayItem> elements, PaintBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+    private void addVerticalTextRuns(List<DisplayItem> elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                                      String id, float x, float y, float w, float h, String text,
                                      int color, int bgColor, ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim,
                                      List<BoxDecorations.Shadow> shadows) {
@@ -112,7 +111,7 @@ final class TextRunPainter {
         }
     }
 
-    private void emitTextRun(List<DisplayItem> elements, PaintBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+    private void emitTextRun(List<DisplayItem> elements, SceneAdapterBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                              String id, float x, float y, float w, float h, String text, int color, int bgColor,
                              ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows, float rot) {
         // vertical-lr は転置で置くので、文字は上下反転で鏡映を打ち消す
@@ -205,7 +204,7 @@ final class TextRunPainter {
         return new RenderMeta(clipRect, null, null, fontHeight, baseline, lineHeight, originX, originY, 1, false, null, hints);
     }
 
-    void drawTextNodeElement(List<DisplayItem> elements, PaintBox box, String id, int color, int bgColor,
+    void drawTextNodeElement(List<DisplayItem> elements, SceneAdapterBox box, String id, int color, int bgColor,
                                      ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
                                      int transDur, AnimationSpec colorAnim, List<DisplayItem> prevItems) {
         ItemProps baseTextEvents = null;
@@ -213,10 +212,10 @@ final class TextRunPainter {
         int prevIdx = 1;
 
         if (!box.runs().isEmpty()) {
-            PaintBox op = box.originParent(); float opX = op != null ? op.x() : 0f, opY = op != null ? op.y() : 0f;
-            for (PaintRun frag : box.runs()) {
+            SceneAdapterBox op = box.originParent(); float opX = op != null ? op.x() : 0f, opY = op != null ? op.y() : 0f;
+            for (SceneRun frag : box.runs()) {
                 if (frag.text() == null || frag.text().isBlank()) continue;
-                com.nishiyu.enderframelib.core.css.ComputedStyle fl = frag.firstLineStyleFor(box);
+                com.nishiyu.enderframelib.core.css.ComputedStyle fl = frag.firstLineStyle();
                 DisplayItem prevItem = prevTextItem(prevItems, prevIdx);
                 int before = elements.size();
                 if (fl != null) {

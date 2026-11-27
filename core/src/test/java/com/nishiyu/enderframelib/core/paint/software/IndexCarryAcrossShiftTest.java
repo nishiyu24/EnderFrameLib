@@ -42,7 +42,7 @@ class IndexCarryAcrossShiftTest {
         try (SoftwareRenderBackend backend = new SoftwareRenderBackend(W, H, 1f);
              StandaloneView v = new StandaloneView(doc(), W, H, FontResolver.FALLBACK)) {
             v.frame(1000, backend, true);
-            double[] p = center(v.ui().boxRoot(), id);
+            double[] p = center(v, id);
             v.mouseMove(p[0], p[1], backend.sessionId());
             v.frame(1016, backend, true);
             return v.ui().renderCache();
@@ -100,12 +100,8 @@ class IndexCarryAcrossShiftTest {
         }
     }
 
-    private static double[] center(com.nishiyu.enderframelib.core.paint.tree.PaintBox b, String id) {
-        if (b.node != null && !b.isAnonymous && id.equals(b.node.getId())) return new double[] {b.x() + b.w() / 2, b.y() + b.h() / 2};
-        for (var c : b.paintChildren()) {
-            double[] f = center(c, id);
-            if (f != null) return f;
-        }
-        return null;
+    private static double[] center(StandaloneView v, String id) {
+        var loc = com.nishiyu.enderframelib.core.paint.scene.SceneQuery.locateById(v.ui().scene(), v.ui().dynamicState(), id);
+        return loc != null ? new double[] {loc.x() + loc.w() / 2.0, loc.y() + loc.h() / 2.0} : null;
     }
 }

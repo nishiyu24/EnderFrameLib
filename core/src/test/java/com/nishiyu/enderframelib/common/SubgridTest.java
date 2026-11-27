@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
@@ -22,7 +21,7 @@ public class SubgridTest {
     @Test
     public void testColumnsSubgridSharesParentTracks() {
         // 親は 100 / 200 / 100。2 列目から 2 本にまたがるサブグリッドの子は 200 / 100 に並ぶ
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 400px; grid-template-columns: 100px 200px 100px;">
                   <div id="s" style="display: grid; grid-column: 2 / span 2; grid-template-columns: subgrid;">
                     <div id="a" style="height: 10px;"></div>
@@ -40,7 +39,7 @@ public class SubgridTest {
     @Test
     public void testSubgridItemsContributeToParentIntrinsicTracks() {
         // 親の列は auto。サブグリッド内の幅 80px / 50px の子が、それぞれ親の列の寸法を決める
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 400px; justify-content: start; grid-template-columns: auto auto;">
                   <div id="s" style="display: grid; grid-column: 1 / span 2; grid-template-columns: subgrid;">
                     <div id="a" style="width: 80px; height: 10px;"></div>
@@ -62,7 +61,7 @@ public class SubgridTest {
     @Test
     public void testRowsSubgridAlignsAcrossSiblings() {
         // 各カードは 3 行にまたがるサブグリッド。見出し・本文・フッタの高さが、カードをまたいで揃う
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 300px; grid-template-columns: 1fr 1fr; align-items: start;">
                   <div id="c1" style="display: grid; grid-row: span 3; grid-template-rows: subgrid;">
                     <div id="h1" style="height: 20px;"></div>
@@ -89,7 +88,7 @@ public class SubgridTest {
     @Test
     public void testSubgridGapDiffersFromParent() {
         // 親 gap 20px・サブグリッド gap 0 でも、線の位置は親と同じ（隣り合うトラックが半分ずつ受け持つ）
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 220px; column-gap: 20px; grid-template-columns: 100px 100px;">
                   <div id="s" style="display: grid; grid-column: 1 / span 2; column-gap: 0; grid-template-columns: subgrid;">
                     <div id="a" style="height: 10px;"></div>
@@ -104,7 +103,7 @@ public class SubgridTest {
 
     @Test
     public void testNormalGapInheritsParentGap() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 220px; column-gap: 20px; grid-template-columns: 100px 100px;">
                   <div id="s" style="display: grid; grid-column: 1 / span 2; grid-template-columns: subgrid;">
                     <div id="a" style="height: 10px;"></div>
@@ -119,7 +118,7 @@ public class SubgridTest {
     @Test
     public void testSubgridPaddingActsAsEdgeMargin() {
         // サブグリッドの padding は端の項目の外側余白として働く。線の位置（= 隣の項目との揃え）は親のまま
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 300px; grid-template-columns: 100px 200px;">
                   <div id="s" style="display: grid; grid-column: 1 / span 2; grid-template-columns: subgrid; padding: 0 10px;">
                     <div id="a" style="height: 10px;"></div>
@@ -138,7 +137,7 @@ public class SubgridTest {
     @Test
     public void testSubgridPaddingContributesToParentTrack() {
         // 端の子の寄与にサブグリッドの padding が足される（親の auto 列が広がる）
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; justify-content: start; grid-template-columns: auto auto;">
                   <div id="s" style="display: grid; grid-column: 1 / span 2; grid-template-columns: subgrid; padding: 0 10px;">
                     <div id="a" style="width: 50px; height: 10px;"></div>
@@ -153,7 +152,7 @@ public class SubgridTest {
 
     @Test
     public void testLineNamesAreInheritedFromParent() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 300px; grid-template-columns: [a] 100px [b] 200px [c];">
                   <div id="s" style="display: grid; grid-column: a / c; grid-template-columns: subgrid;">
                     <div id="x" style="grid-column: b / c; height: 10px;"></div>
@@ -166,7 +165,7 @@ public class SubgridTest {
 
     @Test
     public void testOwnLineNamesOnSubgrid() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 300px; grid-template-columns: 100px 200px;">
                   <div id="s" style="display: grid; grid-column: 1 / span 2; grid-template-columns: subgrid [l] [m] [r];">
                     <div id="x" style="grid-column: m / r; height: 10px;"></div>
@@ -179,7 +178,7 @@ public class SubgridTest {
     @Test
     public void testSubgridOutsideGridBehavesAsNone() {
         // グリッドの項目でなければ subgrid は none と同じ（1 本の暗黙の列）
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: block; width: 300px;">
                   <div id="s" style="display: grid; grid-template-columns: subgrid;">
                     <div id="a" style="height: 10px;"></div>
@@ -191,7 +190,7 @@ public class SubgridTest {
 
     @Test
     public void testItemsBeyondSubgridAreClampedToLastTrack() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 300px; grid-template-columns: 100px 200px;">
                   <div id="s" style="display: grid; grid-column: 1 / span 2; grid-template-columns: subgrid;">
                     <div id="a" style="height: 10px;"></div>
@@ -208,7 +207,7 @@ public class SubgridTest {
     @Test
     public void testBothAxesAndNesting() {
         // 2 段の入れ子: 孫も親の列を共有する
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: grid; width: 300px; grid-template-columns: 100px 200px;">
                   <div id="s" style="display: grid; grid-column: 1 / span 2; grid-template-columns: subgrid;">
                     <div id="t" style="display: grid; grid-column: 2; grid-template-columns: subgrid;">
@@ -236,10 +235,10 @@ public class SubgridTest {
                 """;
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html.formatted(200), "", VIEWPORT_W, VIEWPORT_H);
-        PaintBox first = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        TestBoxes.Box first = TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
         assertEquals(100, find(first, "a").w(), 0.01f);
         Document doc2 = parser.parseDocument("<style>body { margin: 0; }</style>" + html.formatted(400), "", VIEWPORT_W, VIEWPORT_H);
-        PaintBox second = parser.layoutDocument(doc2, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        TestBoxes.Box second = TestBoxes.root(parser.layoutDocument(doc2, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
         assertEquals(200, find(second, "a").w(), 0.01f);
         assertEquals(200, find(second, "b").w(), 0.01f);
     }
@@ -267,16 +266,16 @@ public class SubgridTest {
                 v -> v.root().ownerDocument.getElementById("c2").setAttribute("style", "display: grid; grid-column: 1 / span 2;"));
     }
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
-        return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = find(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

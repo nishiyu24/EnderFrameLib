@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.box.Display;
 
-import com.nishiyu.enderframelib.core.paint.tree.PaintBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -37,16 +36,16 @@ public class FormattingContextTest {
 
     @Test
     public void testHtmlTableUsesTableLayoutWithColspan() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <table id="t" style="width: auto; border: 0; margin: 0;">
                   <tr><td id="a" style="padding: 0; width: 30px; height: 10px;"></td><td id="b" style="padding: 0; width: 20px; height: 10px;"></td></tr>
                   <tr><td id="c" colspan="2" style="padding: 0; height: 10px;"></td></tr>
                 </table>
                 """);
-        PaintBox table = find(root, "t");
+        TestBoxes.Box table = find(root, "t");
         // 以前は ua.css が flex の行として組んでいた
         assertEquals(Display.Inner.TABLE, table.display().inner());
-        PaintBox a = find(root, "a"), b = find(root, "b"), c = find(root, "c");
+        TestBoxes.Box a = find(root, "a"), b = find(root, "b"), c = find(root, "c");
         // ua.css の border-spacing: 2px（HTML 標準の既定値）がセルの間に入る
         assertEquals(a.x() + 30 + 2, b.x(), 0.01f);
         assertEquals(30 + 2 + 20, c.w(), 0.01f);
@@ -56,27 +55,27 @@ public class FormattingContextTest {
 
     @Test
     public void testCellVerticalAlignMiddleShiftsContent() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: table;"><div style="display: table-row;">
                   <div style="display: table-cell; width: 10px; height: 40px;"></div>
                   <div id="m" style="display: table-cell; width: 10px; vertical-align: middle;"><div id="inner" style="height: 10px;"></div></div>
                 </div></div>
                 """);
-        PaintBox m = find(root, "m");
+        TestBoxes.Box m = find(root, "m");
         assertEquals(40, m.h(), 0.01f);
         assertEquals(m.y() + 15, find(root, "inner").y(), 0.01f);
     }
 
     @Test
     public void testLinesFlowBesideFloat() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="width: 100px; font-size: 0; line-height: 0;">
                   <div style="float: left; width: 40px; height: 30px;"></div>
                   <span id="a" style="display: inline-block; width: 50px; height: 10px;"></span>
                   <span id="b" style="display: inline-block; width: 50px; height: 10px;"></span>
                 </div>
                 """);
-        PaintBox a = find(root, "a"), b = find(root, "b");
+        TestBoxes.Box a = find(root, "a"), b = find(root, "b");
         // 行は float の右の 60px に入り、2 つ目は次の行（まだ float の横）へ折り返す
         assertEquals(40, a.x(), 0.01f);
         assertEquals(40, b.x(), 0.01f);
@@ -85,12 +84,12 @@ public class FormattingContextTest {
 
     @Test
     public void testAbsoluteInsideInlineBoxIsPositioned() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="position: relative; width: 100px; height: 50px;">
                   <span>x<span id="abs" style="position: absolute; left: 7px; top: 5px; width: 3px; height: 3px;"></span></span>
                 </div>
                 """);
-        PaintBox abs = find(root, "abs");
+        TestBoxes.Box abs = find(root, "abs");
         // 以前は絶対配置の span がインラインの祖先として平坦化され、位置が決まらなかった
         assertEquals(7, abs.x(), 0.01f);
         assertEquals(5, abs.y(), 0.01f);
@@ -103,7 +102,7 @@ public class FormattingContextTest {
 
     @Test
     public void testPercentHeightInsideStretchedBorderBoxItemUsesItsContentBox() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="display: flex; height: 100px;">
                   <div id="item" style="box-sizing: border-box; padding: 10px 0; border-top: 5px solid;"><div id="c" style="height: 50%;"></div></div>
                 </div>
@@ -116,7 +115,7 @@ public class FormattingContextTest {
     @Test
     public void testPercentHeightUnderIndefiniteBlockStaysUnresolved() {
         // 高さが auto のブロックの中の % は基準を持たない（以前と同じ。stretch や inset だけが基準を足す）
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="height: 100px;"><div><div id="c" style="height: 50%;"></div></div></div>
                 """);
         assertEquals(0, find(root, "c").h(), 0.01f);
@@ -124,7 +123,7 @@ public class FormattingContextTest {
 
     @Test
     public void testShrinkToFitWidthBreaksAtLineBreaksInText() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div style="font-size: 16px;">
                   <span id="br" style="display: inline-block;">aaaaaaaa<br>bb</span>
                   <pre id="pre" style="display: inline-block; margin: 0;">bb
@@ -139,13 +138,13 @@ public class FormattingContextTest {
 
     @Test
     public void testColumnWrapBreaksInOrderAndSumsColumnWidths() {
-        PaintBox root = layout("""
+        TestBoxes.Box root = layout("""
                 <div id="c" style="display: inline-flex; flex-direction: column; flex-wrap: wrap; height: 30px;">
                   <div id="a" style="width: 10px; height: 20px; order: 2;"></div>
                   <div id="b" style="width: 15px; height: 20px; order: 1;"></div>
                 </div>
                 """);
-        PaintBox c = find(root, "c"), a = find(root, "a"), b = find(root, "b");
+        TestBoxes.Box c = find(root, "c"), a = find(root, "a"), b = find(root, "b");
         assertEquals(25, c.w(), 0.01f);
         // order の順に列を作る: b が 1 列目、a が 2 列目
         assertEquals(c.x(), b.x(), 0.01f);
@@ -153,16 +152,16 @@ public class FormattingContextTest {
         assertEquals(c.y(), a.y(), 0.01f);
     }
 
-    private static PaintBox layout(String html) {
+    private static TestBoxes.Box layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
-        return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
     }
 
-    private static PaintBox find(PaintBox box, String id) {
+    private static TestBoxes.Box find(TestBoxes.Box box, String id) {
         if (id.equals(box.node.attrs.get("id"))) return box;
-        for (PaintBox child : TestBoxes.elements(box)) {
-            PaintBox hit = find(child, id);
+        for (TestBoxes.Box child : TestBoxes.elements(box)) {
+            TestBoxes.Box hit = find(child, id);
             if (hit != null) return hit;
         }
         return null;

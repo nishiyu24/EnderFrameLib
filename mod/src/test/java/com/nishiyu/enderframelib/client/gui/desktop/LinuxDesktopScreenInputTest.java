@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client.gui.desktop;
 
-import com.nishiyu.enderframelib.core.paint.UIHitResult;
+import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
@@ -217,9 +217,9 @@ public class LinuxDesktopScreenInputTest {
         assertEquals(50f, session.paintOffsets().translateY(shown), 0.01f);
 
         // ヒットテストも描画上の位置に付いてくる（移動後の見出しの上で同じウィンドウに当たる）
-        UIHitResult hit = session.hitTest(pressX + 200, pressY + 50);
+        SceneHit hit = session.hitTest(pressX + 200, pressY + 50);
         assertNotNull(hit);
-        assertTrue(isInside(hit.element().baseId(), "win-docs"), "動かしたウィンドウに当たること: " + hit.element().id());
+        assertTrue(isInside(hit.baseId(), "win-docs"), "動かしたウィンドウに当たること: " + hit.baseId());
 
         release(pressX + 200, pressY + 50);
         assertEquals((startX + 200) + "px", screen.state.get("docs_x"), "離したら DOM に位置を確定する");
