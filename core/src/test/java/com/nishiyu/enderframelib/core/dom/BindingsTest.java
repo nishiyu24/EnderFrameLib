@@ -136,7 +136,7 @@ public class BindingsTest {
         HtmlNode root = HtmlParser.parse(html);
         List<String> events = new ArrayList<>();
 
-        Bindings.scanDeclarativeBindings(root, new Bindings.DeclarativeBindingHandler() {
+        DeclarativeBindings.scan(root, new DeclarativeBindings.Handler() {
             @Override
             public void bindData(String targetId, String channel, String path, String targetAttr) {
                 events.add("data:" + targetId + ":" + channel + ":" + path + ":" + targetAttr);

@@ -16,8 +16,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * WHATWG HTML のツリー構築（§13.2.6）の 1 回分の状態と、文書の先頭・本文の挿入モード・開いている要素のスタック・挿入。
- * 書式要素の一覧は {@link ActiveFormatting}、表の挿入モードは {@link TableModes} が持つ（どちらもスタックを共有する）。
+ * WHATWG HTML のツリー構築（§13.2.6）の 1 回分の状態と、文書の先頭の挿入モード・開いている要素のスタック・挿入。
+ * 書式要素の一覧は {@link ActiveFormatting}、本文の挿入モードは {@link BodyMode}、表の挿入モードは {@link TableModes} が持つ
+ * （どれもスタックを共有する）。
  */
 final class TreeBuilder {
 
@@ -44,9 +45,10 @@ final class TreeBuilder {
     final ActiveFormatting fmt = new ActiveFormatting(this);
     /** 表の挿入モード。 */
     final TableModes tables = new TableModes(this);
+    /** 本文の挿入モード（in body）。 */
+    final BodyMode body = new BodyMode(this);
 
     final ParseLimits limits;
-    boolean depthWarned;
 
     TreeBuilder(boolean fragment, String context, ParseLimits limits) {
         this.limits = limits;
@@ -117,7 +119,7 @@ final class TreeBuilder {
             case BEFORE_HEAD -> beforeHead(token);
             case IN_HEAD -> inHead(token);
             case AFTER_HEAD -> afterHead(token);
-            case IN_BODY -> inBody(token);
+            case IN_BODY -> body.inBody(token);
             case IN_TABLE -> tables.inTable(token);
             case IN_CAPTION -> tables.inCaption(token);
             case IN_COLUMN_GROUP -> tables.inColumnGroup(token);
@@ -195,222 +197,14 @@ final class TreeBuilder {
         bodyEl = insertElement("body", Map.of(), false);
     }
 
-    // ---------- in body ----------
-
-    void inBody(HtmlTokenizer.Token t) {
-        switch (t.type) {
-            case TEXT -> {
-                if (!isWhitespace(t.text) && !t.isRawText) fmt.reconstructFormatting();
-                insertText(t);
-            }
-            case START_TAG -> inBodyStart(t);
-            case END_TAG -> inBodyEnd(t);
-        }
-    }
-
     /** 開いている要素に {@code svg} / {@code math} があるか（外来要素の中か）。 */
-    private boolean inForeignContent() {
+    boolean inForeignContent() {
         for (int i = stack.size() - 1; i >= 0; i--) {
             String tag = stack.get(i).tag;
             if (tag.equals("svg") || tag.equals("math")) return true;
         }
         return false;
     }
-
-    void inBodyStart(HtmlTokenizer.Token t) {
-        String tag = t.name;
-        if (stack.size() > limits.maxDepth() && !VoidElements.isVoid(tag)) {
-            String msg = "HTML Parser: nesting depth limit (" + limits.maxDepth() + ") exceeded at <" + tag + ">.";
-            if (limits.strict()) throw new ParseLimits.HtmlLimitExceededException(msg);
-            if (!depthWarned) {
-                depthWarned = true;
-                HtmlParser.LOGGER.warn("{} Dropping deeper elements.", msg);
-            }
-            return;
-        }
-
-        // SVG / MathML の外来要素は、HTML の暗黙終了や要素名の読み替えを受けず、自己終了タグ（{@code <rect/>}）で閉じる
-        if (tag.equals("svg") || tag.equals("math") || inForeignContent()) {
-            if (!inForeignContent()) fmt.reconstructFormatting();
-            insertElement(tag, t.attrs, t.isSelfClosing);
-            return;
-        }
-
-        switch (tag) {
-            case "html" -> { if (!fragment) mergeAttributes(htmlEl, t.attrs); }
-            case "body" -> { if (!fragment && bodyEl != null) mergeAttributes(bodyEl, t.attrs); }
-            case "head", "caption", "col", "colgroup", "frame", "tbody", "td", "tfoot", "th", "thead", "tr" -> {
-                // 表の外の表の部品は捨てる（中身は親に入る）
-            }
-            case "li" -> {
-                closeListItems(Set.of("li"));
-                insertElement(tag, t.attrs, false);
-            }
-            case "dd", "dt" -> {
-                closeListItems(Set.of("dd", "dt"));
-                insertElement(tag, t.attrs, false);
-            }
-            case "h1", "h2", "h3", "h4", "h5", "h6" -> {
-                closePIfInButtonScope();
-                if (HEADINGS.contains(currentNode().tag)) stack.removeLast();
-                insertElement(tag, t.attrs, false);
-            }
-            case "form" -> {
-                if (hasOpen("form")) return;
-                closePIfInButtonScope();
-                insertElement(tag, t.attrs, false);
-            }
-            case "button" -> {
-                if (inScope("button", Scope.DEFAULT)) {
-                    generateImpliedEndTags(null);
-                    popUntil("button");
-                }
-                fmt.reconstructFormatting();
-                insertElement(tag, t.attrs, false);
-            }
-            case "a" -> {
-                // 一覧に開きかけの a があれば adoption agency で閉じる（a は入れ子にならない）
-                ActiveFormatting.FormatEntry open = fmt.lastFormatting("a");
-                if (open != null) {
-                    fmt.adoptionAgency("a");
-                    fmt.formatting.remove(open);
-                    stack.remove(open.node);
-                }
-                fmt.reconstructFormatting();
-                fmt.pushFormatting(insertElement(tag, t.attrs, false), t.attrs);
-            }
-            case "b", "big", "code", "em", "font", "i", "s", "small", "strike", "strong", "tt", "u" -> {
-                fmt.reconstructFormatting();
-                fmt.pushFormatting(insertElement(tag, t.attrs, false), t.attrs);
-            }
-            case "nobr" -> {
-                fmt.reconstructFormatting();
-                if (inScope("nobr", Scope.DEFAULT)) {
-                    fmt.adoptionAgency("nobr");
-                    fmt.reconstructFormatting();
-                }
-                fmt.pushFormatting(insertElement(tag, t.attrs, false), t.attrs);
-            }
-            case "option" -> {
-                if (currentNode().tag.equals("option")) stack.removeLast();
-                fmt.reconstructFormatting();
-                insertElement(tag, t.attrs, false);
-            }
-            case "optgroup" -> {
-                if (currentNode().tag.equals("option")) stack.removeLast();
-                if (currentNode().tag.equals("optgroup") && hasOpen("select")) stack.removeLast();
-                fmt.reconstructFormatting();
-                insertElement(tag, t.attrs, false);
-            }
-            case "rb", "rtc" -> {
-                if (inScope("ruby", Scope.DEFAULT)) generateImpliedEndTags(null);
-                insertElement(tag, t.attrs, false);
-            }
-            case "rp", "rt" -> {
-                if (inScope("ruby", Scope.DEFAULT)) generateImpliedEndTags("rtc");
-                insertElement(tag, t.attrs, false);
-            }
-            case "image" -> {
-                fmt.reconstructFormatting();
-                insertElement("img", t.attrs, true);
-            }
-            default -> {
-                if (CLOSES_P.contains(tag)) closePIfInButtonScope();
-                else fmt.reconstructFormatting();
-                insertElement(tag, t.attrs, VoidElements.isVoid(tag));
-            }
-        }
-    }
-
-    void inBodyEnd(HtmlTokenizer.Token t) {
-        String tag = t.name;
-        switch (tag) {
-            case "body", "html", "head" -> {
-                // </body> の後に書かれた内容も body に入る（after body が in body に戻すのと同じ）
-            }
-            case "template" -> {
-                // template の中身は content にあり、要素の子ではない。開いている子をまとめて閉じる
-                if (!inScope("template", Scope.DEFAULT)) return;
-                generateImpliedEndTags(null);
-                popUntil("template");
-            }
-            case "p" -> {
-                if (!inScope("p", Scope.BUTTON)) {
-                    // 開いていない </p> は空の段落になる
-                    insertElement("p", Map.of(), false);
-                }
-                closeP();
-            }
-            case "li" -> {
-                if (!inScope("li", Scope.LIST_ITEM)) return;
-                generateImpliedEndTags("li");
-                popUntil("li");
-            }
-            case "dd", "dt" -> {
-                if (!inScope(tag, Scope.DEFAULT)) return;
-                generateImpliedEndTags(tag);
-                popUntil(tag);
-            }
-            case "h1", "h2", "h3", "h4", "h5", "h6" -> {
-                if (HEADINGS.stream().noneMatch(h -> inScope(h, Scope.DEFAULT))) return;
-                generateImpliedEndTags(null);
-                while (stack.size() > 1 && !HEADINGS.contains(stack.removeLast().tag)) { }
-            }
-            case "br" -> {
-                fmt.reconstructFormatting();
-                insertElement("br", Map.of(), true);
-            }
-            case "a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small", "strike", "strong", "tt", "u" ->
-                    fmt.adoptionAgency(tag);
-            default -> {
-                if (BLOCK_END_TAGS.contains(tag)) {
-                    if (!inScope(tag, Scope.DEFAULT)) return;
-                    generateImpliedEndTags(null);
-                    popUntil(tag);
-                    return;
-                }
-                anyOtherEndTag(tag);
-            }
-        }
-    }
-
-
-    /** 終了タグの一般規則: 同名の要素まで閉じる。途中に特殊な要素があれば無視する。 */
-    void anyOtherEndTag(String tag) {
-        for (int i = stack.size() - 1; i > 0; i--) {
-            HtmlNode node = stack.get(i);
-            if (node.tag.equals(tag)) {
-                generateImpliedEndTags(tag);
-                while (stack.size() > i) stack.removeLast();
-                return;
-            }
-            if (SPECIAL.contains(node.tag)) return;
-        }
-    }
-
-    /** {@code li} / {@code dd} / {@code dt} の開始で、開いている同類の項目を閉じる。 */
-    void closeListItems(Set<String> siblings) {
-        for (int i = stack.size() - 1; i > 0; i--) {
-            HtmlNode node = stack.get(i);
-            if (siblings.contains(node.tag)) {
-                generateImpliedEndTags(node.tag);
-                while (stack.size() > i) stack.removeLast();
-                break;
-            }
-            if (SPECIAL.contains(node.tag) && !Set.of("address", "div", "p").contains(node.tag)) break;
-        }
-        closePIfInButtonScope();
-    }
-
-    void closePIfInButtonScope() {
-        if (inScope("p", Scope.BUTTON)) closeP();
-    }
-
-    void closeP() {
-        generateImpliedEndTags("p");
-        popUntil("p");
-    }
-
 
     // ---------- スタックの操作（スタックの底は文書では html、断片では文脈を表すルートで、どちらも閉じない） ----------
 

@@ -3,7 +3,8 @@
 api/config/EnderConfigManager.java | 2
 common/LocalEnvironment.java | 2
 common/UiPubSub.java | 1
-core/dom/Bindings.java | 8
+core/dom/Bindings.java | 4
+core/dom/DeclarativeBindings.java | 4
 core/dom/node/EventDispatcher.java | 1
 core/media/NativeVideoApi.java | 1
 core/text/font/FontFaceRules.java | 2

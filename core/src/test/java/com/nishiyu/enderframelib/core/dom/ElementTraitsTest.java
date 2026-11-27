@@ -166,7 +166,10 @@ class ElementTraitsTest {
         assertEquals(List.of(), offenders, "置換要素の分類は ElementTraits を使う");
     }
 
-    /** 部品のタグ名を文字列で比べるファイルの数の上限（S2 のラチェット）。残りは構文解析（HtmlParser。表の外）だけ。 */
+    /**
+     * 部品のタグ名を文字列で比べるファイルの数の上限（S2 のラチェット）。残りは構文解析（HTML のツリー構築は仕様がタグ名で書かれている）だけ。
+     * 構文解析はパッケージ {@code core/dom/parser} を 1 つと数える（M5-3a で本文の挿入モードを {@code BodyMode} へ分けた）。
+     */
     private static final int MAX_FILES_COMPARING_TAG_NAMES = 1;
 
     @Test
@@ -180,6 +183,7 @@ class ElementTraitsTest {
             for (Path p : (Iterable<Path>) s.filter(f -> f.toString().endsWith(".java"))::iterator) {
                 String fn = p.getFileName().toString();
                 if (fn.equals("ElementTraits.java") || fn.equals("ElementSizing.java") || fn.equals("ReplacedElements.java")) continue;
+                if (p.getParent().endsWith(Path.of("dom", "parser"))) fn = "dom/parser";
                 for (String l : Files.readAllLines(p)) {
                     if (!l.contains(".equals") || !(l.contains("tag") || l.contains("Tag"))) continue;
                     for (String t : tags) {

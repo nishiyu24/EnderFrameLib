@@ -112,7 +112,7 @@ final class ActiveFormatting {
         for (int outer = 0; outer < 8; outer++) {
             FormatEntry fe = lastFormatting(subject);
             if (fe == null) {
-                b.anyOtherEndTag(subject);
+                b.body.anyOtherEndTag(subject);
                 return;
             }
             int feIdx = stack.indexOf(fe.node);

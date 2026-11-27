@@ -59,10 +59,12 @@ public class ArchitectureTest {
     private static final int M4_MAX_BINDING_INTERPRETERS = 1;
     /**
      * 解釈の 1 か所（core/dom のバインディング）を成すファイル。M5-2 で {@code Bindings}（1,175 行）から状態の値の DOM への同期
-     * （{@code ReactiveDomBinder}）とキー単位の依存（{@code TemplateDeps}）を分けたので、3 つで 1 か所と数える。
+     * （{@code ReactiveDomBinder}）とキー単位の依存（{@code TemplateDeps}）を、M5-3a で宣言的バインディングの走査
+     * （{@code DeclarativeBindings}）を分けたので、4 つで 1 か所と数える。
      */
     private static final Set<String> CORE_BINDING_UNIT = Set.of(
-            "core/dom/Bindings.java", "core/dom/ReactiveDomBinder.java", "core/dom/TemplateDeps.java");
+            "core/dom/Bindings.java", "core/dom/ReactiveDomBinder.java", "core/dom/TemplateDeps.java",
+            "core/dom/DeclarativeBindings.java");
     /** M5: スタイル→ボックス→レイアウト→ディスプレイリストを組む場所（2026-10-20 時点: 2）。 */
     private static final int M5_MAX_PIPELINE_BUILDERS = 1;
     /** M6: 入力をイベントに変える経路（2026-10-21 時点: 1。SessionInput のみ）。 */
@@ -315,7 +317,7 @@ public class ArchitectureTest {
                     || content.contains("data-container-width")
                     || content.contains("data-visible-rows");
             if (hasTemplate || hasI18n || hasVirtualList || bindingAttributeCount(content) >= 2) {
-                String unit = CORE_BINDING_UNIT.contains(rel) ? "core/dom/{Bindings,ReactiveDomBinder,TemplateDeps}.java" : rel;
+                String unit = CORE_BINDING_UNIT.contains(rel) ? "core/dom/{Bindings,ReactiveDomBinder,TemplateDeps,DeclarativeBindings}.java" : rel;
                 if (!interpreters.contains(unit)) interpreters.add(unit);
             }
         }

@@ -23,7 +23,7 @@ import java.util.function.BiConsumer;
  * ノードへ解決してから渡す（解決は {@link HtmlNode#getNodeById} の索引が担う）。
  * 状態の実体は各ビューの表に保持し（文書上の節は {@link NodeIds.NodeSlots}、仮想の節は
  * {@link VirtualNodeSlots}）、{@link HtmlNode} 自体は書き換えない。節ごとの状態は {@link StateFlags}、再スタイルの印と無効化は
- * {@link StyleInvalidation} が持つ。擬似状態は {@link StateFlags#state} の 1 本の整数
+ * {@link StyleInvalidation}、節の鎖（hover・active・focus-within）と Top Layer・不活性は {@link InteractionChains} が持つ。擬似状態は {@link StateFlags#state} の 1 本の整数
  * （{@link ElementState} のビット）が唯一の記憶で、番号の表の列へ写し書きはしない
  * （写しは誰にも読まれず、書くだけの二重コストだった）。</p>
  */
@@ -101,32 +101,17 @@ public class InteractionState implements StyledDocumentState {
 
     InvalidationSets invalidationSets() { return sheet != null ? sheet.invalidationSets() : null; }
 
-    /** 現在 {@code :hover} な節（ポインタの下の節とその祖先）。 */
-    private ArrayList<HtmlNode> hoveredChain = new ArrayList<>(16);
-    /** 現在 {@code :active} な節（押下中の節とその祖先）。 */
-    private ArrayList<HtmlNode> activeChain = new ArrayList<>(16);
-    /** 現在 {@code :focus-within} な節（フォーカス中の節とその祖先）。 */
-    private ArrayList<HtmlNode> focusWithinChain = new ArrayList<>(16);
-    /** 鎖更新時の作業用リスト（フレームごとの確保を避ける）。 */
-    private ArrayList<HtmlNode> scratchChain = new ArrayList<>(16);
-
-    /** ポインタの下の節（{@link #hoveredChain} の末端）。 */
-    private HtmlNode hoveredNode = null;
-    /** 押下中の節（{@link #activeChain} の末端）。 */
-    private HtmlNode activeNode = null;
-    /** フォーカス中の節。 */
-    private HtmlNode focusedNode = null;
+    /** 節の鎖（hover・active・focus-within）と Top Layer の積み順・不活性。 */
+    private final InteractionChains chains = new InteractionChains(this);
 
     /** ポインタの下の節。無ければ null。 */
-    public HtmlNode hoveredNode() { return hoveredNode; } // 押下中・フォーカス中の節も同じく読むだけ
+    public HtmlNode hoveredNode() { return chains.hoveredNode; } // 押下中・フォーカス中の節も同じく読むだけ
 
     /** 押下中の節。無ければ null。 */
-    public HtmlNode activeNode() { return activeNode; }
+    public HtmlNode activeNode() { return chains.activeNode; }
 
     /** フォーカス中の節。無ければ null。 */
-    public HtmlNode focusedNode() { return focusedNode; }
-
-
+    public HtmlNode focusedNode() { return chains.focusedNode; }
 
     /** ルート以外の要素のビューポート依存が変わるたびに進む世代。{@code RenderPipeline} の「依存する要素は無い」の記憶の鍵。 */
     public final java.util.concurrent.atomic.AtomicInteger viewportDependenceEpoch =
@@ -245,24 +230,7 @@ public class InteractionState implements StyledDocumentState {
     }
 
     /** ポインタの下の節を更新する。{@code target} とその祖先が {@code :hover}、それ以外は外れる。null で全解除。 */
-    public boolean setHoveredNode(HtmlNode target) {
-        ArrayList<HtmlNode> nextChain = fillAncestorsAndSelf(target, scratchChain);
-        hoveredNode = target;
-        if (sameChain(hoveredChain, nextChain)) return false;
-
-        boolean changed = false;
-        for (int i = 0, n = hoveredChain.size(); i < n; i++) {
-            HtmlNode left = hoveredChain.get(i);
-            if (!containsRef(nextChain, left)) changed |= setHovered(left, false);
-        }
-        for (int i = 0, n = nextChain.size(); i < n; i++) {
-            HtmlNode entered = nextChain.get(i);
-            if (!containsRef(hoveredChain, entered)) changed |= setHovered(entered, true);
-        }
-        scratchChain = hoveredChain;
-        hoveredChain = nextChain;
-        return changed;
-    }
+    public boolean setHoveredNode(HtmlNode target) { return chains.setHoveredNode(target); }
 
     public boolean setActive(HtmlNode node, boolean active) {
         if (node == null) return false;
@@ -273,24 +241,7 @@ public class InteractionState implements StyledDocumentState {
     }
 
     /** 押下中の節を更新する。{@code target} とその祖先が {@code :active}、それ以外は外れる。null で全解除。 */
-    public boolean setActiveNode(HtmlNode target) {
-        ArrayList<HtmlNode> nextChain = fillAncestorsAndSelf(target, scratchChain);
-        activeNode = target;
-        if (sameChain(activeChain, nextChain)) return false;
-
-        boolean changed = false;
-        for (int i = 0, n = activeChain.size(); i < n; i++) {
-            HtmlNode released = activeChain.get(i);
-            if (!containsRef(nextChain, released)) changed |= setActive(released, false);
-        }
-        for (int i = 0, n = nextChain.size(); i < n; i++) {
-            HtmlNode pressed = nextChain.get(i);
-            if (!containsRef(activeChain, pressed)) changed |= setActive(pressed, true);
-        }
-        scratchChain = activeChain;
-        activeChain = nextChain;
-        return changed;
-    }
+    public boolean setActiveNode(HtmlNode target) { return chains.setActiveNode(target); }
 
     public boolean setFocused(HtmlNode node, boolean focused, boolean focusVisible) {
         if (node == null) return false;
@@ -309,46 +260,7 @@ public class InteractionState implements StyledDocumentState {
      * フォーカス中の節を更新する。{@code target} が {@code :focus}、{@code target} とその祖先が
      * {@code :focus-within}、前にフォーカスされていた節は外れる。null でフォーカスを外す。
      */
-    public boolean setFocusedNode(HtmlNode target, boolean focusVisible) {
-        boolean changed = false;
-
-        if (focusedNode != target) {
-            if (focusedNode != null) {
-                StateFlags oldFlags = getOrCreate(focusedNode);
-                if (oldFlags.setBit(ElementState.FOCUS | ElementState.FOCUS_VISIBLE, false)) {
-                    invalidateState(focusedNode, ElementState.FOCUS | ElementState.FOCUS_VISIBLE);
-                    changed = true;
-                }
-            }
-            focusedNode = target;
-        }
-
-        if (target != null) {
-            changed |= setFocused(target, true, focusVisible);
-        }
-
-        ArrayList<HtmlNode> nextChain = fillAncestorsAndSelf(target, scratchChain);
-        for (int i = 0, n = focusWithinChain.size(); i < n; i++) {
-            HtmlNode left = focusWithinChain.get(i);
-            if (containsRef(nextChain, left)) continue;
-            StateFlags flags = getOrCreate(left);
-            if (flags.setBit(ElementState.FOCUS_WITHIN, false)) {
-                invalidateState(left, ElementState.FOCUS_WITHIN);
-                changed = true;
-            }
-        }
-        for (int i = 0, n = nextChain.size(); i < n; i++) {
-            HtmlNode entered = nextChain.get(i);
-            StateFlags flags = getOrCreate(entered);
-            if (flags.setBit(ElementState.FOCUS_WITHIN, true)) {
-                invalidateState(entered, ElementState.FOCUS_WITHIN);
-                changed = true;
-            }
-        }
-        scratchChain = focusWithinChain;
-        focusWithinChain = nextChain;
-        return changed;
-    }
+    public boolean setFocusedNode(HtmlNode target, boolean focusVisible) { return chains.setFocusedNode(target, focusVisible); }
 
     public boolean setChecked(HtmlNode node, Boolean checked) {
         if (node == null) return false;
@@ -375,14 +287,11 @@ public class InteractionState implements StyledDocumentState {
     }
 
     /** {@code :modal}（{@code dialog.showModal()} 中）。Top Layer の所属と表示順を決める。 */
-    private final ArrayList<HtmlNode> topLayerOrder = new ArrayList<>(4);
-
     public boolean setModal(HtmlNode node, boolean modal) {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
         if (!flags.setBit(ElementState.MODAL, modal)) return false;
-        removeIdentity(topLayerOrder, node);
-        if (modal) topLayerOrder.add(node);
+        chains.stackTopLayer(node, modal);
         invalidateState(node, ElementState.MODAL);
         return true;
     }
@@ -392,20 +301,13 @@ public class InteractionState implements StyledDocumentState {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
         if (!flags.setBit(ElementState.POPOVER_OPEN, open)) return false;
-        removeIdentity(topLayerOrder, node);
-        if (open) topLayerOrder.add(node);
+        chains.stackTopLayer(node, open);
         invalidateState(node, ElementState.POPOVER_OPEN);
         return true;
     }
 
     /** 最前面で開いているモーダル {@code <dialog>}。無ければ null。 */
-    public HtmlNode activeModalDialog() {
-        for (int i = topLayerOrder.size() - 1; i >= 0; i--) {
-            HtmlNode n = topLayerOrder.get(i);
-            if (stateOf(n).modal() && rootOf(n) instanceof HtmlDocument) return n;
-        }
-        return null;
-    }
+    public HtmlNode activeModalDialog() { return chains.activeModalDialog(); }
 
     /** モーダル {@code <dialog>} が 1 つ以上開いているか。 */
     public boolean hasActiveModal() { return activeModalDialog() != null; }
@@ -414,58 +316,10 @@ public class InteractionState implements StyledDocumentState {
      * 節が不活性（{@code inert} 属性の配下、または最前面モーダル {@code <dialog>} の外側）か。
      * モーダルより後に Top Layer へ積まれた popover 配下は不活性にしない。
      */
-    public boolean isInert(HtmlNode node) {
-        if (node == null) return false;
-        HtmlNode topModal = activeModalDialog();
-        HtmlNode cur = node;
-        HtmlNode root = null;
-        while (cur != null) {
-            if (cur.attrs != null && cur.attrs.containsKey("inert")) return true;
-            if (cur == topModal) return false;
-            root = cur;
-            cur = cur.parent;
-        }
-        if (topModal == null) return false;
-        if (root != rootOf(topModal)) return false;
-        int modalIdx = indexOfIdentity(topLayerOrder, topModal);
-        for (int i = modalIdx + 1, n = topLayerOrder.size(); i < n; i++) {
-            HtmlNode upper = topLayerOrder.get(i);
-            if (stateOf(upper).popoverOpen() && isDescendantOrSelf(node, upper)) return false;
-        }
-        return true;
-    }
+    public boolean isInert(HtmlNode node) { return chains.isInert(node); }
 
     /** 不活性になった節からホバー／押下状態を外す（フォーカス解除は焦点イベントを伴うため呼び出し側で行う）。 */
-    public void clearInertPointerStates() {
-        if (hoveredNode != null && isInert(hoveredNode)) setHoveredNode(null);
-        if (activeNode != null && isInert(activeNode)) setActiveNode(null);
-    }
-
-    private static HtmlNode rootOf(HtmlNode n) {
-        HtmlNode cur = n;
-        while (cur != null && cur.parent != null) cur = cur.parent;
-        return cur;
-    }
-
-    private static boolean isDescendantOrSelf(HtmlNode node, HtmlNode ancestor) {
-        for (HtmlNode cur = node; cur != null; cur = cur.parent) {
-            if (cur == ancestor) return true;
-        }
-        return false;
-    }
-
-    private static void removeIdentity(ArrayList<HtmlNode> list, HtmlNode target) {
-        for (int i = list.size() - 1; i >= 0; i--) {
-            if (list.get(i) == target) list.remove(i);
-        }
-    }
-
-    private static int indexOfIdentity(ArrayList<HtmlNode> list, HtmlNode target) {
-        for (int i = 0, n = list.size(); i < n; i++) {
-            if (list.get(i) == target) return i;
-        }
-        return -1;
-    }
+    public void clearInertPointerStates() { chains.clearInertPointerStates(); }
 
     public boolean setOpen(HtmlNode node, Boolean open) {
         if (node == null) return false;
@@ -566,37 +420,6 @@ public class InteractionState implements StyledDocumentState {
         invalidation.dirtyCount.set(0);
         invalidation.unscopedLog.clear();
         if (animator != null) animator.clear();
-        hoveredChain.clear();
-        activeChain.clear();
-        focusWithinChain.clear();
-        scratchChain.clear();
-        hoveredNode = null;
-        activeNode = null;
-        focusedNode = null;
-        topLayerOrder.clear();
-    }
-
-    private static ArrayList<HtmlNode> fillAncestorsAndSelf(HtmlNode node, ArrayList<HtmlNode> out) {
-        out.clear();
-        for (HtmlNode cur = node; cur != null; cur = cur.parent) {
-            out.add(cur);
-        }
-        return out;
-    }
-
-    private static boolean sameChain(ArrayList<HtmlNode> a, ArrayList<HtmlNode> b) {
-        int n = a.size();
-        if (n != b.size()) return false;
-        for (int i = 0; i < n; i++) {
-            if (a.get(i) != b.get(i)) return false;
-        }
-        return true;
-    }
-
-    private static boolean containsRef(ArrayList<HtmlNode> list, HtmlNode target) {
-        for (int i = 0, n = list.size(); i < n; i++) {
-            if (list.get(i) == target) return true;
-        }
-        return false;
+        chains.clear();
     }
 }

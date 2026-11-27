@@ -17,7 +17,7 @@ import java.util.Set;
 
 /**
  * 表の挿入モード（in table / in caption / in column group / in table body / in row / in cell、§13.2.6.4.9〜15）と
- * template の中身（§13.2.6.4.18）。表に直接入らない「その他」は {@link TreeBuilder#inBody} の規則へ回し、
+ * template の中身（§13.2.6.4.18）。表に直接入らない「その他」は {@link BodyMode#inBody} の規則へ回し、
  * 挿入先が表なら表の前へ出す（foster parenting）。
  */
 final class TableModes {
@@ -99,7 +99,7 @@ final class TableModes {
         // 表の中の「その他」は本文の規則で処理し、挿入先が表なら表の前へ出す
         boolean previous = b.fosterParenting;
         b.fosterParenting = true;
-        b.inBody(t);
+        b.body.inBody(t);
         b.fosterParenting = previous;
     }
 
@@ -114,7 +114,7 @@ final class TableModes {
             return;
         }
         if (t.type == HtmlTokenizer.Token.Type.END_TAG && Set.of("body", "col", "colgroup", "html", "tbody", "td", "tfoot", "th", "thead", "tr").contains(t.name)) return;
-        b.inBody(t);
+        b.body.inBody(t);
     }
 
     void inColumnGroup(HtmlTokenizer.Token t) {
@@ -125,7 +125,7 @@ final class TableModes {
             if (b.currentNode().tag.equals("colgroup")) stack.removeLast();
             return;
         }
-        if (isStart(t, "template") || isEnd(t, "template")) { b.inBody(t); return; }
+        if (isStart(t, "template") || isEnd(t, "template")) { b.body.inBody(t); return; }
         if (!b.currentNode().tag.equals("colgroup")) return;
         stack.removeLast();
         b.dispatch(t, b.mode());
@@ -209,7 +209,7 @@ final class TableModes {
             return;
         }
         if (t.type == HtmlTokenizer.Token.Type.END_TAG && Set.of("body", "caption", "col", "colgroup", "html", "table", "tbody", "tfoot", "thead", "tr").contains(tag)) return;
-        b.inBody(t);
+        b.body.inBody(t);
     }
 
     /** template の中身は最上位に表の部品を置ける（§13.2.6.4.18）。 */
@@ -227,7 +227,7 @@ final class TableModes {
                 default -> { }
             }
         }
-        b.inBody(t);
+        b.body.inBody(t);
     }
 
     void popSection() {

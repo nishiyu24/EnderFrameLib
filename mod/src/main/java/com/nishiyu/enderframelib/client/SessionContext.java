@@ -7,7 +7,7 @@ import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.common.UiView;
-import com.nishiyu.enderframelib.core.dom.Bindings;
+import com.nishiyu.enderframelib.core.dom.DeclarativeBindings;
 import com.nishiyu.enderframelib.core.dom.node.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.Ownership;
@@ -97,7 +97,7 @@ public class SessionContext extends UiView {
     public void initializeBindings(HtmlNode target) {
         if (target == null) return;
         final String sessionId = sessionId();
-        Bindings.scanDeclarativeBindings(target, new Bindings.DeclarativeBindingHandler() {
+        DeclarativeBindings.scan(target, new DeclarativeBindings.Handler() {
             @Override
             public void bindData(String targetId, String channel, String path, String targetAttr) {
                 ClientPubSubManager.registerDataBinding(sessionId, targetId, channel, path, targetAttr);
