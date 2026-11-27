@@ -509,7 +509,7 @@ tasks.register('memoryAndLatencyGate', JavaExec) {
 }
 
 // M2c-1: ビューの保持ヒープを段ごとに分ける診断（V3HeapBreakdownMain）。
-//   ./gradlew :core:heapBreakdown [-Pheap.doc=varied-list-2000] [-Pheap.scenario=open|hover]
+//   ./gradlew :core:heapBreakdown [-Pheap.doc=varied-list-2000] [-Pheap.scenario=open|hover] [-Pheap.detail=true]
 tasks.register('heapBreakdown', JavaExec) {
     group = 'verification'
     description = 'ビューの保持ヒープの段ごとの内訳（V3HeapBreakdownMain）'
@@ -517,7 +517,7 @@ tasks.register('heapBreakdown', JavaExec) {
     mainClass = 'com.nishiyu.enderframelib.common.V3HeapBreakdownMain'
     workingDir = rootProject.projectDir
     jvmArgs '-Xmx1g', '-Denderframe.threads=1'
-    ['heap.doc', 'heap.scenario'].each { k -> if (project.hasProperty(k)) systemProperty k, project.property(k).toString() }
+    ['heap.doc', 'heap.scenario', 'heap.detail'].each { k -> if (project.hasProperty(k)) systemProperty k, project.property(k).toString() }
 }
 
 // A1: 時間に依らない量（1 フレームの確保量・近道の経路の回数）の回帰ゲート。シナリオごとに新しい JVM を立てるので check には

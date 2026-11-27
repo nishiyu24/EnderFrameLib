@@ -55,8 +55,8 @@ class ArchitectureHealthTest {
     static final int MAX_EPOCH_STATIC = 0;
     static final int MAX_CORE_SCC = 1;
     static final int MAX_MOD_SCC = 3;
-    static final int MAX_SHORTCUTS = 16;
-    static final int MAX_ENGINE_FLAGS = 24;
+    static final int MAX_SHORTCUTS = 10;
+    static final int MAX_ENGINE_FLAGS = 18;
 
     private static final String BASE = "com.nishiyu.enderframelib.";
     private static final String CEILINGS_TABLE = "architecture-health-ceilings.txt";
@@ -75,7 +75,7 @@ class ArchitectureHealthTest {
             "FIT_REUSE", "LAYOUT_PARALLEL", "WINDOWED", "SCROLL_CONTENT_NODES",
             "GL_RECT_TREES", "GL_BOUNDED_LAYERS", "GL_DOWNSAMPLED_BLUR", "GL_RETAINED_SCROLL",
             "STICKY_IN_SCROLL_NODE", "CULL_RECORDED_RANGES",
-            "RETAIN_SCROLL_LAYERS", "SOFT_DAMAGE", "CLIP_SHARE", "SOFT_CULL_OFFSCREEN",
+            "CLIP_SHARE", "SOFT_CULL_OFFSCREEN",
             "SOFT_FAST_SOLID", "TEXT_SETUP_REUSE", "SOFT_TILED");
 
     private static final Set<String> FROZEN_ENGINE_FLAGS = Set.of(
@@ -84,7 +84,7 @@ class ArchitectureHealthTest {
             "LAZY_THROUGH_INELIGIBLE", "LAYOUT_PARALLEL", "RESIZE_SKIP_REBUILD", "SAME_PASS_REUSE",
             "TENTATIVE_REUSE", "VIEWPORT_WIDTH_FREE_REUSE", "WIDTH_INDEPENDENT_REUSE",
             "PARENT_RELATIVE", "SCROLL_CONTENT_NODES",
-            "TEXT_SETUP_REUSE", "WINDOWED", "SHEET_CACHE", "SOFT_CULL_OFFSCREEN", "SOFT_DAMAGE",
+            "TEXT_SETUP_REUSE", "WINDOWED", "SHEET_CACHE", "SOFT_CULL_OFFSCREEN",
             "SOFT_FAST_SOLID", "SOFT_TILED", "KEEP_NEWLINE_WHITESPACE",
             "WINDOW_MIN_OWNERS", "RASTER_PARALLEL", "SPLIT_PER_PARTICIPANT",
             "TEXT_CACHE", "THREADS", "LAYOUT_PROBE",
@@ -416,21 +416,37 @@ class ArchitectureHealthTest {
     // ---- 7. 新経路はプロセス共有の切り替え・可変状態を読まない（M2c） ----
 
     /**
-     * 新経路のソース（新経路のパッケージと、旧経路と同じパッケージに置いた新経路のクラス）。旧経路と共有する箱 1 つの描画の道具
-     * （{@code BoxItemPainter} ほか）は旧経路の削除（M2b-6）まで対象外。
+     * 新経路のソース（新経路のパッケージと、旧経路と同じパッケージに置いた新経路のクラス。新しく足したクラスはその段のうちにここへ足す）。
+     * 描画命令・走査器・描き直す範囲（M3b-4a〜4b）、問い合わせの文脈（M3b-3）、DOM の分割（M5-1〜M5-3a）のクラスは M3b-4c-0 の点検で
+     * 入れた。{@code ParserText} は互換の切り替え（{@code EngineFlags.KEEP_NEWLINE_WHITESPACE}。結果を変える従来の挙動への切り替えで、
+     * 近道ではない）を読むので入れない。箱 1 つの描画の道具（{@code BoxItemPainter} ほか）は M3b-4c-1 で命令を型付きにするときに入れる。
      */
-    static final List<String> NEW_PATH_SOURCES = List.of(
-            "core/src/main/java/com/nishiyu/enderframelib/core/box",
-            "core/src/main/java/com/nishiyu/enderframelib/core/layout/fragment",
-            "core/src/main/java/com/nishiyu/enderframelib/core/paint/scene",
-            "core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneAdapterBox.java",
-            "core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneDisplayListAdapter.java",
-            "core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneAdapterSupport.java",
-            "core/src/main/java/com/nishiyu/enderframelib/common/V3Frame.java");
+    static final List<String> NEW_PATH_SOURCES = newPathSources();
 
-    /** 近道・切り分けの切り替え（{@code Shortcut}・{@code EngineFlags}・文脈の {@code ContextFlags}）・{@code static volatile}・{@code ThreadLocal}。 */
+    private static List<String> newPathSources() {
+        String main = "core/src/main/java/com/nishiyu/enderframelib/";
+        List<String> out = new ArrayList<>(List.of(
+                main + "core/box", main + "core/layout/fragment", main + "core/paint/scene", main + "common/V3Frame.java",
+                main + "common/UiHitSupport.java"));
+        for (String c : List.of("SceneAdapterBox", "SceneDisplayListAdapter", "SceneAdapterSupport", "LayerOps", "OpList", "OpComposer",
+                "SceneWalker", "AnimationStates", "ItemSink", "SceneDamage", "ScrollContentRanges", "SceneSource", "FrameDamage")) {
+            out.add(main + "core/paint/" + c + ".java");
+        }
+        for (String c : List.of("DeclarativeBindings", "InteractionChains", "ReactiveDomBinder", "StateFlags", "StyleInvalidation", "TemplateDeps",
+                "node/ElementCssomView", "node/HtmlCSSStyleDeclaration", "node/HtmlDOMTokenList", "node/NodeAttributes", "node/NodeEvents",
+                "node/NodeIds", "node/NodeNumbering", "node/NodeState", "node/NodeText", "node/SelectorIndex", "node/TopLayerOps", "node/TreeOps",
+                "parser/ActiveFormatting", "parser/BodyMode", "parser/TableModes", "parser/TagSets", "parser/TreeBuilder")) {
+            out.add(main + "core/dom/" + c + ".java");
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * 近道・切り分けの切り替え（{@code Shortcut}・{@code EngineFlags}・文脈の {@code ContextFlags} とその読み口 {@code ctx.flags()}・{@code EngineContext.current().flags()}）・
+     * {@code static volatile}・{@code ThreadLocal}。描画命令の {@code flags()}（座標の基準の印）は切り替えではないので数えない。
+     */
     private static final Pattern PROCESS_SWITCH_READ = Pattern.compile(
-            "\\b(Shortcut|EngineFlags|ContextFlags|ThreadLocal)\\b|\\bstatic\\s+volatile\\b|parentRelativeSource|\\.flags\\(\\)");
+            "\\b(Shortcut|EngineFlags|ContextFlags|ThreadLocal)\\b|\\bstatic\\s+volatile\\b|parentRelativeSource|\\b(ctx|context|current\\(\\))\\.flags\\(\\)");
 
     @Test
     void newPathDoesNotReadProcessSwitches() throws IOException {
@@ -496,8 +512,9 @@ class ArchitectureHealthTest {
         RatchetSupport.withTempSources(Map.of("Painter.java",
                 "class Painter {\n  boolean a() { return Shortcut.SCROLL_CONTENT_NODES.on(); }\n  /** Shortcut は読まない */\n"
                         + "  boolean b() { return DisplayListBuilder.parentRelativeSource.getAsBoolean(); }\n"
-                        + "  boolean c() { return EngineContext.current().flags().parentRelativeDisplayItems(); }\n  int d() { return 1; }\n}"),
-                dir -> assertEquals(3, checkCodeLines(dir, PROCESS_SWITCH_READ).size(), "切り替えを読む行は 3 行"));
+                        + "  boolean c() { return EngineContext.current().flags().parentRelativeDisplayItems(); }\n  int d() { return 1; }\n"
+                        + "  int e(DrawOp.Item it) { return it.flags() & DrawOp.BASE_ORIGIN_PARENT; }\n}"),
+                dir -> assertEquals(3, checkCodeLines(dir, PROCESS_SWITCH_READ).size(), "切り替えを読む行は 3 行（描画命令の flags() は数えない）"));
 
         RatchetSupport.withTempSources(Map.of("Paint.java",
                 "class Paint {\n  String a(PaintBox b) { return b.node().attrs.get(\"title\"); }\n  /** node.attrs は注釈 */\n"

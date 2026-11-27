@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * 1 つの描画先で、前に描いたフレームから描き直す範囲のうちシーンから決まる分（M3b-4b-4b）。シーンの違い（{@link SceneDamage}）に、
- * 塗りの色・利用者の平行移動（{@link SceneSource#userOffsetsVersion}）の変化と差分描画の無効化（{@code SOFT_DAMAGE}）を全面として足す。
+ * 塗りの色・利用者の平行移動（{@link SceneSource#userOffsetsVersion}）の変化と、描画器が差分描画を切ったこと（{@link #partialRepaint}）を全面として足す。
  * 補間・外の事情で変わる項目と重ね描きの分は走査器が足す（{@link SceneWalker}）。
  *
  * <p>描く前の判定（{@link #plan}。{@code RenderBackend#needsRepaint}）で求めた範囲は、同じ入力の次の {@link #take} がそのまま使う。
@@ -20,6 +20,10 @@ public final class FrameDamage {
     private SceneDamage.Rects planned;
     private SceneSource plannedSource;
     private List<DisplayItem> plannedItems;
+    private boolean partial = true;
+
+    /** 差分描画を切り替える（描画器ごと。切ると毎フレーム全面。比較の基準・切り分け用。絵は同じでなければならない）。 */
+    public void partialRepaint(boolean on) { partial = on; }
 
     /** 描く前に範囲を求める（描くなら続けて同じ入力で {@link #take} を呼ぶ。描かないなら {@link #dropPlan}）。 */
     public SceneDamage.Rects plan(List<DisplayItem> items, SceneSource source, int clearColor) {
@@ -64,7 +68,7 @@ public final class FrameDamage {
     private SceneDamage.Rects compute(SceneSource source, int clearColor) {
         SceneDamage.Rects rects = scene.next(source.scene(), source.dynamic());
         if (clearColor != prevClear) rects.setFull("clear-color");
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on()) rects.setFull("damage-off");
+        if (!partial) rects.setFull("partial-off");
         if (source.userOffsetsVersion() != prevUserOffsets) rects.setFull("user-offsets");
         prevClear = clearColor;
         prevUserOffsets = source.userOffsetsVersion();

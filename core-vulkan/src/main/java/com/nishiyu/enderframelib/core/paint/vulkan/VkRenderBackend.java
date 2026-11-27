@@ -107,7 +107,7 @@ public final class VkRenderBackend implements RenderBackend, GpuSink {
     public long drawCallCount() { return gpu.drawCallCount(); }
     public long cpuOverlayFlushCount() { return gpu.cpuOverlayFlushCount(); }
     public long readbackCount() { return gpu.readbackCount(); }
-    public int retainedLayerCount() { return gpu.retainedLayerCount(); }
+    public VkRenderBackend retainScrollLayers(boolean on) { gpu.retainScrollLayers(on); return this; }
     public long scrollLayersSkipped() { return gpu.scrollLayersSkipped(); }
     public long scrollLayersRecorded() { return gpu.scrollLayersRecorded(); }
     public GpuRenderBackend gpuBackend() { return gpu; }

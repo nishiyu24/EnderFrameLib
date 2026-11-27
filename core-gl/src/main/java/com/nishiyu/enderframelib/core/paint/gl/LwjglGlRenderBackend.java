@@ -102,7 +102,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     public long drawCallCount() { return gpu.drawCallCount(); }
     public long cpuOverlayFlushCount() { return gpu.cpuOverlayFlushCount(); }
     public long readbackCount() { return gpu.readbackCount(); }
-    public int retainedLayerCount() { return gpu.retainedLayerCount(); }
+    public LwjglGlRenderBackend retainScrollLayers(boolean on) { gpu.retainScrollLayers(on); return this; }
     public long scrollLayersSkipped() { return gpu.scrollLayersSkipped(); }
     public long scrollLayersRecorded() { return gpu.scrollLayersRecorded(); }
     int atlasSize() { return gpu.atlasSize(); }

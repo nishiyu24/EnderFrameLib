@@ -86,6 +86,12 @@ final class MutationScenario {
     /** {@code fullEachFrame = true} は、毎手のフレームの前に前回の木と記憶を捨てて全体を作り直す（増分と比べる参照）。 */
     static List<List<String>> run(String html, String[] classes, String[] styles, long seed, int steps, boolean draw, boolean scroll,
                                   boolean fullEachFrame) {
+        return run(html, classes, styles, seed, steps, draw, scroll, fullEachFrame, true);
+    }
+
+    /** {@code partialRepaint = false} は、描画器が毎フレーム全面で描く（差分描画の画素と比べる基準）。 */
+    static List<List<String>> run(String html, String[] classes, String[] styles, long seed, int steps, boolean draw, boolean scroll,
+                                  boolean fullEachFrame, boolean partialRepaint) {
         Random rnd = new Random(seed);
         LOG.clear();
         PIXELS.clear();
@@ -94,7 +100,7 @@ final class MutationScenario {
         final boolean ORACLE = Boolean.getBoolean("verify.oracle") && !scroll && !html.contains("transition") && !html.contains("animation");
         StandaloneView view = new StandaloneView(html, 320, 240, FontResolver.FALLBACK);
         ResizeSettle.freezeClock(view); // 止めた時計: リサイズの間引きは起きず、手順は実時間に依らず決定的（K0 ①）
-        try (com.nishiyu.enderframelib.core.paint.RenderBackend backend = draw ? new SoftwareRenderBackend(400, 300, 1f) : new NoDraw()) {
+        try (com.nishiyu.enderframelib.core.paint.RenderBackend backend = draw ? new SoftwareRenderBackend(400, 300, 1f).partialRepaint(partialRepaint) : new NoDraw()) {
             List<List<String>> out = new ArrayList<>();
             long now = 1000;
             view.frame(now, backend, true);

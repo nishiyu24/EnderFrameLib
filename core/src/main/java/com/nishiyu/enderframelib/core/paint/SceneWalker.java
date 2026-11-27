@@ -306,7 +306,6 @@ public final class SceneWalker {
      * 外側が保持する範囲の中の入れ子は問わない。
      */
     private void planRetained(Painter painter) {
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.on()) return;
         int coveredUntil = 0;
         for (int k = 0; k < ranges.count; k++) {
             int node = ranges.node[k];

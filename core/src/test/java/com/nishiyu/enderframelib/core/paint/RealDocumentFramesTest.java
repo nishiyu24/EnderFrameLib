@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.zip.CRC32;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -56,27 +55,10 @@ class RealDocumentFramesTest {
         return name.endsWith(".md") ? MarkdownParser.toHtml(text) : text;
     }
 
-    @AfterEach
-    void restoreShortcuts() throws ReflectiveOperationException {
-        setShortcuts(true);
-    }
-
     /** 1 フレームの記録。画素は比べるときだけ持つ（ゴールデンはハッシュだけ）。 */
     record Frame(String name, int[] pixels, List<DisplayItem> items, PaintOffsets offsets, String hits) {
         String itemsKey() { return Long.toHexString(itemsHash(items, offsets)) + " " + items.size() + " " + Long.toHexString(crc(hits)); }
         String pixelsKey() { return Long.toHexString(pixelsHash(pixels)); }
-    }
-
-    static void setShortcuts(boolean on) throws ReflectiveOperationException {
-        setShortcuts(on, on);
-    }
-
-    /**
-     * テストだけが切り替える近道の印（描画の損傷範囲）。全体の作り直しは呼び出し側が {@code full} で強いる。{@code scrollNodes} は
-     * 経路が 1 本になって（M2c-3）切り替えが無くなったので読まない（スクロールする中身は常に 1 つの節にまとめる）。
-     */
-    static void setShortcuts(boolean on, boolean scrollNodes) throws ReflectiveOperationException {
-        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(on);
     }
 
     // ---- 操作の手順 --------------------------------------------------------------------------------------
@@ -453,15 +435,12 @@ class RealDocumentFramesTest {
         List<String> bad = new ArrayList<>();
         for (String doc : DOCS) {
             List<Frame> incremental = new ArrayList<>(), full = new ArrayList<>();
-            setShortcuts(true);
             try (SoftwareRenderBackend sw = new SoftwareRenderBackend(W, H, 1f)) {
                 script(doc, sw, false, true, incremental::add);
             }
-            setShortcuts(false, withItems);
-            try (SoftwareRenderBackend sw = new SoftwareRenderBackend(W, H, 1f)) {
+            try (SoftwareRenderBackend sw = new SoftwareRenderBackend(W, H, 1f).partialRepaint(false)) {
                 script(doc, sw, true, true, full::add);
             }
-            setShortcuts(true);
             assertEquals(full.size(), incremental.size(), doc + " のフレーム数");
             for (int f = 0; f < full.size(); f++) {
                 Frame e = full.get(f), a = incremental.get(f);

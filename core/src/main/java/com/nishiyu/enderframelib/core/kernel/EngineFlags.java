@@ -25,9 +25,6 @@ public final class EngineFlags {
     /** {@code enderframe.soft.nocull}: SoftwareRenderBackend.cullOffscreen（使う所: {@code SoftwareRenderBackend}） */
     public static final boolean SOFT_CULL_OFFSCREEN = !Boolean.getBoolean("enderframe.soft.nocull");
 
-    /** {@code enderframe.soft.nodamage}: SoftwareRenderBackend.damageEnabled（使う所: {@code SoftwareRenderBackend}） */
-    public static final boolean SOFT_DAMAGE = !Boolean.getBoolean("enderframe.soft.nodamage");
-
     /** {@code enderframe.soft.nofastsolid}: SoftwareRenderBackend.fastSolid（使う所: {@code SoftwareRenderBackend}） */
     public static final boolean SOFT_FAST_SOLID = !Boolean.getBoolean("enderframe.soft.nofastsolid");
 

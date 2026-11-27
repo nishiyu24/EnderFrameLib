@@ -14,7 +14,6 @@ enderframe.profile.alloc | DIAGNOSTIC | core/kernel/EngineFlags.java | StageProf
 enderframe.raster.serial | TUNING | core/kernel/EngineFlags.java | Rows.PARALLEL を切り、行の塗りを直列にする
 enderframe.sheetcache.off | SHORTCUT | core/kernel/EngineFlags.java | DocumentLoader.sheetTemplateCache
 enderframe.soft.nocull | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.cullOffscreen
-enderframe.soft.nodamage | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.damageEnabled
 enderframe.soft.nofastsolid | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.fastSolid
 enderframe.soft.notiled | SHORTCUT | core/kernel/EngineFlags.java | TileQueue.tiled（タイル並列ラスタ）
 enderframe.split | TUNING | core/kernel/EngineFlags.java | LayoutTaskPool.SPLIT_PER_PARTICIPANT（並列区間の分割数。既定 4）

@@ -245,7 +245,7 @@ final class V3Frame {
         for (HtmlNode cur = node; cur != null && cur != b.node; cur = cur.parent) path.push(cur);
         HtmlNode parent = b.node;
         for (HtmlNode cur : path) {
-            int i = parent == null ? -1 : parent.children.indexOf(cur);
+            int i = parent == null ? -1 : cur.indexInParent(); // cur.parent == parent。子の並びが保つ位置（O(1)）
             if (i < 0 || i >= b.children.size()) return null;
             b = b.children.get(i);
             parent = cur;

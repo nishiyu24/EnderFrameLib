@@ -28,15 +28,6 @@ public enum Shortcut {
     /** （以前の {@code GpuRenderBackend.retainedScroll}） */
     GL_RETAINED_SCROLL(EngineFlags.GL_RETAINED_SCROLL),
 
-    /** 損傷範囲による部分描画を使うか（{@code -Denderframe.gpu.nodamage=true} で無効）。 （以前の {@code GpuRenderBackend.damageEnabled}） */
-
-
-    /** 変更のあった項目の範囲だけを塗り直すか（{@code -Denderframe.soft.nodamage=true} で無効）。 無効にすると毎フレーム全面をクリアして描く（疑うときの切り分け用。絵は同じでなければならない）。 （以前の {@code SoftwareRenderBackend.damageEnabled}） */
-    SOFT_DAMAGE(EngineFlags.SOFT_DAMAGE),
-
-    /** スクロール層の保持を描画側へ問い合わせるか。false なら問い合わせず、毎フレーム全部走査する（疑うときの切り分け用。絵は同じでなければならない）。 （{@code SceneWalker}） */
-    RETAIN_SCROLL_LAYERS(true),
-
     /** （以前の {@code SoftwareRenderBackend.CLIP_SHARE}） */
     CLIP_SHARE(true),
 

@@ -41,10 +41,8 @@ class CpuScrollBlitPixelTest {
     private record RunResult(List<int[]> frames, long partial, long full, long untouched) {}
 
     private static RunResult runScroll(boolean damage, int rowCount, int scrollSteps) {
-        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(damage);
         StandaloneView view = new StandaloneView(scrollListHtml(rowCount), W, H, FontResolver.FALLBACK);
-        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
+        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f).partialRepaint(damage)) {
             List<int[]> frames = new ArrayList<>();
             long now = 1000;
             view.frame(now, cpu, true);
@@ -63,7 +61,6 @@ class CpuScrollBlitPixelTest {
             return new RunResult(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.untouchedPixels());
         } finally {
             view.close();
-            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
         }
     }
 
@@ -101,10 +98,8 @@ class CpuScrollBlitPixelTest {
     }
 
     private static RunResult runChildMutations(boolean damage) {
-        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(damage);
         StandaloneView view = new StandaloneView(scrollListHtml(20), W, H, FontResolver.FALLBACK);
-        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
+        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f).partialRepaint(damage)) {
             List<int[]> frames = new ArrayList<>();
             long now = 1000;
             view.frame(now, cpu, true);
@@ -138,7 +133,6 @@ class CpuScrollBlitPixelTest {
             return new RunResult(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.untouchedPixels());
         } finally {
             view.close();
-            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
         }
     }
 

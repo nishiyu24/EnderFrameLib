@@ -39,10 +39,8 @@ class VolatileItemPartialRepaintTest {
     }
 
     private static Run run(boolean damage, long seed, int steps) {
-        boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on();
-        com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(damage);
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
-        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
+        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f).partialRepaint(damage)) {
             List<int[]> frames = new ArrayList<>();
             Random rnd = new Random(seed);
             long now = 1000;
@@ -72,7 +70,6 @@ class VolatileItemPartialRepaintTest {
             return new Run(frames, cpu.partialFrames(), cpu.fullFrames());
         } finally {
             view.close();
-            com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
         }
     }
 

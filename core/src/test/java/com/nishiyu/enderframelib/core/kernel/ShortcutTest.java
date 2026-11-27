@@ -15,21 +15,21 @@ class ShortcutTest {
 
     @Test
     void initialValuesComeFromEngineFlags() {
-        assertEquals(EngineFlags.SOFT_DAMAGE, Shortcut.SOFT_DAMAGE.initial());
+        assertEquals(EngineFlags.SOFT_CULL_OFFSCREEN, Shortcut.SOFT_CULL_OFFSCREEN.initial());
     }
 
     @Test
     void withAppliesOnlyInsideAndRestoresEvenOnException() {
-        boolean cutoff = Shortcut.SOFT_DAMAGE.on(), reuse = Shortcut.CLIP_SHARE.on();
-        String seen = Shortcut.with(Map.of(Shortcut.SOFT_DAMAGE, !cutoff, Shortcut.CLIP_SHARE, !reuse), () -> Shortcut.SOFT_DAMAGE.on() + "/" + Shortcut.CLIP_SHARE.on());
+        boolean cutoff = Shortcut.SOFT_CULL_OFFSCREEN.on(), reuse = Shortcut.CLIP_SHARE.on();
+        String seen = Shortcut.with(Map.of(Shortcut.SOFT_CULL_OFFSCREEN, !cutoff, Shortcut.CLIP_SHARE, !reuse), () -> Shortcut.SOFT_CULL_OFFSCREEN.on() + "/" + Shortcut.CLIP_SHARE.on());
         assertEquals(!cutoff + "/" + !reuse, seen);
-        assertEquals(cutoff, Shortcut.SOFT_DAMAGE.on());
+        assertEquals(cutoff, Shortcut.SOFT_CULL_OFFSCREEN.on());
         assertEquals(reuse, Shortcut.CLIP_SHARE.on());
 
-        assertThrows(IllegalStateException.class, () -> Shortcut.with(Map.of(Shortcut.SOFT_DAMAGE, !cutoff), (Runnable) () -> {
+        assertThrows(IllegalStateException.class, () -> Shortcut.with(Map.of(Shortcut.SOFT_CULL_OFFSCREEN, !cutoff), (Runnable) () -> {
             throw new IllegalStateException();
         }));
-        assertEquals(cutoff, Shortcut.SOFT_DAMAGE.on(), "例外でも戻る");
+        assertEquals(cutoff, Shortcut.SOFT_CULL_OFFSCREEN.on(), "例外でも戻る");
     }
 
     @Test

@@ -106,6 +106,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private long scrollLayersSkipped, scrollLayersRecorded;
     private long seenOverflows;
     private boolean retainOverflow;
+    private boolean retainScrollLayers = true; // スクロール層を保持するか（描画器ごと。切ると毎フレーム全部を描く。絵は同じでなければならない）
 
     private long frameLayerOps;
     private boolean frameHadImg;
@@ -282,7 +283,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     public long drawCallCount() { return rects != null ? rects.drawCalls() : 0; }
     public long cpuOverlayFlushCount() { return overlayFlushes; }
     public long readbackCount() { return readbacks; }
-    public int retainedLayerCount() { return retained.size(); }
+    public void retainScrollLayers(boolean on) { retainScrollLayers = on; } // 切り分け・比較の基準用（既定は保持する）
     public long scrollLayersSkipped() { return scrollLayersSkipped; }
     public long scrollLayersRecorded() { return scrollLayersRecorded; }
     public int atlasSize() { return atlas.size(); }
@@ -988,7 +989,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     @Override
     public RetainPlan planScrollLayerBounds(String key, Object token, Matrix2D pose, int x0, int y0, int x1, int y1) {
         RetainPlan NONE = RetainPlan.NONE;
-        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on() || retainOverflow || rects == null || closed || !layerStack.isEmpty()) return NONE;
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on() || !retainScrollLayers || retainOverflow || rects == null || closed || !layerStack.isEmpty()) return NONE;
         if ((long) (x1 - x0) * (y1 - y0) * 8L < (long) width * height) return NONE;
         Retained r = retained.get(key);
         if (r == null) {

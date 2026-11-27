@@ -517,10 +517,8 @@ class IncrementalVsFullTest {
     }
 
     private static List<Integer> pixelsWithDamage(boolean damage, long seed) {
-        return com.nishiyu.enderframelib.core.kernel.Shortcut.with(java.util.Map.of(com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE, damage), () -> {
-            MutationScenario.run(MutationFuzz.CARDS, MutationFuzz.CARD_CLASSES, MutationFuzz.CARD_STYLES, seed, 45, true);
-            return new ArrayList<>(MutationScenario.PIXELS);
-        });
+        MutationScenario.run(MutationFuzz.CARDS, MutationFuzz.CARD_CLASSES, MutationFuzz.CARD_STYLES, seed, 45, true, false, false, damage);
+        return new ArrayList<>(MutationScenario.PIXELS);
     }
 
     /**

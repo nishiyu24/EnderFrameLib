@@ -136,6 +136,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     public boolean isRootAllocated() { return raster.isRootAllocated(); }
     public SoftwareRenderBackend fonts(FontResolver resolver) { resources.fonts(resolver); return this; }
     public SoftwareRenderBackend images(ImageProvider provider) { resources.images(provider); return this; }
+    /** 差分描画を切り替える（既定は入。切ると毎フレーム全面で描く。比較の基準・切り分け用で、絵は同じでなければならない）。 */
+    public SoftwareRenderBackend partialRepaint(boolean on) { frameDamage.partialRepaint(on); return this; }
     public SoftwareRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) { resources.scene3dWorlds(provider); return this; }
     public Scene3DWorld scene3dWorld(long worldId) { return resources.scene3dWorld(worldId); }
     /** フレームの最初に塗る色（非乗算の ARGB。既定は透明）。 */
