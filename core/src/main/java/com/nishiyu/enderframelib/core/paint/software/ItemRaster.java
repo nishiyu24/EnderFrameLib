@@ -16,7 +16,7 @@ import com.nishiyu.enderframelib.core.paint.model.ShadowShape;
 import com.nishiyu.enderframelib.core.paint.model.TextureRef;
 import com.nishiyu.enderframelib.core.paint.BorderPath;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Resolved;
+import com.nishiyu.enderframelib.core.paint.SceneWalker.Resolved;
 import com.nishiyu.enderframelib.core.paint.ShaderGradientEmulator;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -178,7 +178,6 @@ final class ItemRaster {
             }
         }
         op.spLo = lo; op.spHi = hi;
-        backend.cpuOps++;
         backend.queue.submit(op, true); // 行は互いに独立（書き込む画素も別）。タイルごとに並列で塗る
     }
 

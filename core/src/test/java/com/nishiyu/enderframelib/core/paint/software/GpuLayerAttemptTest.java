@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.BlendMode;
 import com.nishiyu.enderframelib.core.paint.model.FilterOp;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
+import com.nishiyu.enderframelib.core.paint.SceneWalker.Group;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
 import com.nishiyu.enderframelib.core.paint.port.GpuClip;
 import com.nishiyu.enderframelib.core.paint.port.GpuScrollLayer;

@@ -129,10 +129,14 @@ class PaintOffsetsTest {
                     Map.of(), 0, 1f, 0f, 0f, 1f, 1f, 0f, 0, null, null, null,
                     DisplayItem.keyOf(7, DisplayItem.PART_SCROLL_CONTENT));
             o.set("s_scrollc", 0f, -10.3f);
-            PaintSceneDriver driver = new PaintSceneDriver("snap-test");
-            driver.setScrollSnapDpr(2f);
-            driver.prepare(List.of(scrollNode), o, 1000, Matrix2D.IDENTITY);
-            assertEquals(-10.5f, driver.resolveAt(0).pose().f(), 1e-4f);
+            SceneWalker walker = new SceneWalker("snap-test");
+            walker.setScrollSnapDpr(2f);
+            float[] f = {Float.NaN};
+            walker.run(List.of(scrollNode), o.snapshot(), null, 1000, Matrix2D.IDENTITY, new Painter() {
+                @Override public void syncLayers(List<SceneWalker.Group> want) { f[0] = (float) walker.resolveAt(0).pose().f(); }
+                @Override public void drawItem(DisplayItem el, int index, float flat) { }
+            }, null);
+            assertEquals(-10.5f, f[0], 1e-4f);
             assertEquals(-10.3f, o.dy("s_scrollc"), "元の PaintOffsets は丸めで上書きしない");
             assertEquals(0f, scrollNode.translateY(), "項目も不変");
         } finally {

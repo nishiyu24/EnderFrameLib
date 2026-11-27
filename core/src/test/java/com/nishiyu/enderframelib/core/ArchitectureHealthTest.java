@@ -74,22 +74,22 @@ class ArchitectureHealthTest {
             "CUTOFF", "SAME_PASS_REUSE", "WIDTH_INDEPENDENT_REUSE", "VIEWPORT_WIDTH_FREE_REUSE",
             "FIT_REUSE", "LAYOUT_PARALLEL", "WINDOWED", "SCROLL_CONTENT_NODES",
             "GL_RECT_TREES", "GL_BOUNDED_LAYERS", "GL_DOWNSAMPLED_BLUR", "GL_RETAINED_SCROLL",
-            "GL_REPLAY", "STICKY_IN_SCROLL_NODE", "REUSE_IDLE_POSES", "CULL_RECORDED_RANGES",
+            "STICKY_IN_SCROLL_NODE", "CULL_RECORDED_RANGES",
             "RETAIN_SCROLL_LAYERS", "SOFT_DAMAGE", "CLIP_SHARE", "SOFT_CULL_OFFSCREEN",
-            "SOFT_GL_REPLAY", "SOFT_FAST_SOLID", "TEXT_SETUP_REUSE", "SOFT_TILED");
+            "SOFT_FAST_SOLID", "TEXT_SETUP_REUSE", "SOFT_TILED");
 
     private static final Set<String> FROZEN_ENGINE_FLAGS = Set.of(
             "BLOCK_PERCENT_FREE", "KERNEL_STATS", "CUTOFF", "DEFINITE_LEAF_REUSE",
             "FIT_REUSE", "FLEX_SKIP_SAME_WIDTH", "FLOAT_MEMO", "FRESH_LAYOUT_PASS_REUSE",
             "LAZY_THROUGH_INELIGIBLE", "LAYOUT_PARALLEL", "RESIZE_SKIP_REBUILD", "SAME_PASS_REUSE",
             "TENTATIVE_REUSE", "VIEWPORT_WIDTH_FREE_REUSE", "WIDTH_INDEPENDENT_REUSE",
-            "CULL_RECORDED_RANGES", "PARENT_RELATIVE", "SOFT_GL_REPLAY", "SCROLL_CONTENT_NODES",
+            "PARENT_RELATIVE", "SCROLL_CONTENT_NODES",
             "TEXT_SETUP_REUSE", "WINDOWED", "SHEET_CACHE", "SOFT_CULL_OFFSCREEN", "SOFT_DAMAGE",
             "SOFT_FAST_SOLID", "SOFT_TILED", "KEEP_NEWLINE_WHITESPACE",
-            "CULL_MARGIN", "WINDOW_MIN_OWNERS", "RASTER_PARALLEL", "SPLIT_PER_PARTICIPANT",
+            "WINDOW_MIN_OWNERS", "RASTER_PARALLEL", "SPLIT_PER_PARTICIPANT",
             "TEXT_CACHE", "THREADS", "LAYOUT_PROBE",
-            "PROFILE", "PROFILE_ALLOC", "SOFT_DAMAGE_DEBUG", "GL_DOWNSAMPLED_BLUR",
-            "GL_BOUNDED_LAYERS", "GL_REPLAY", "GL_RECT_CAPACITY", "GL_RECT_TREES",
+            "PROFILE", "PROFILE_ALLOC", "GL_DOWNSAMPLED_BLUR",
+            "GL_BOUNDED_LAYERS", "GL_RECT_CAPACITY", "GL_RECT_TREES",
             "GL_RETAINED_SCROLL");
 
     private static final List<Set<String>> FROZEN_CORE_SCCS = List.of(Set.of("api.dom", "api.event"));
@@ -568,6 +568,10 @@ class ArchitectureHealthTest {
     static final List<String> M3B3_DELETED_TYPES = List.of(
             "HitTestIndex", "PaintBox", "PaintRun", "SceneBox", "UIHitResult");
 
+    /** M3b-4b-4a で走査器（{@code SceneWalker}）と {@code SceneDamage} に置き換えて消した描画の駆動・差分の型。 */
+    static final List<String> M3B4B4A_DELETED_TYPES = List.of(
+            "PaintSceneDriver", "RetainRanges", "RangeBounds", "DamagePlanner", "ReplayKeys");
+
     @Test
     void legacyPaintTreeTypesStayGone() throws IOException {
         List<String> bad = new ArrayList<>();
@@ -601,6 +605,15 @@ class ArchitectureHealthTest {
         roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
         for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M3B3_DELETED_TYPES));
         assertEquals(List.of(), bad, "M3b-3 で消した HitTestIndex / PaintBox / PaintRun / SceneBox / UIHitResult が戻った（計画書 §3.4）");
+    }
+
+    @Test
+    void legacyPaintDriverTypesStayGone() throws IOException {
+        List<String> bad = new ArrayList<>();
+        List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
+        roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
+        for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M3B4B4A_DELETED_TYPES));
+        assertEquals(List.of(), bad, "M3b-4b-4a で消した PaintSceneDriver / RetainRanges / RangeBounds / DamagePlanner / ReplayKeys が戻った（計画書 §3.4）");
     }
 
     @Test

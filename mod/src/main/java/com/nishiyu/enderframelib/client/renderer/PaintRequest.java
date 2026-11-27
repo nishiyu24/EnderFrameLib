@@ -13,12 +13,14 @@ import java.util.List;
  * ホストは {@link SurfaceStyle} を通して設定する。
  *
  * @param elements     描く項目（親相対のまま）
+ * @param sceneSource  項目を組んだシーン（保持層の判定に使う。無ければ null）
  * @param screenWidth  面の幅（ブロック数。テクスチャは {@code × RESOLUTION} の CSS px）
  * @param hoveredId    ツールチップを出す要素（無ければ空）
  */
 record PaintRequest(
         List<DisplayItem> elements,
         PaintOffsets paintOffsets,
+        com.nishiyu.enderframelib.core.paint.SceneSource sceneSource,
         int screenWidth,
         int screenHeight,
         PoseStack poseStack,

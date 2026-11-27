@@ -1,27 +1,13 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Resolved;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 
 /**
  * 項目の姿勢（親の行列に自分の平行移動・変形を掛けた行列）の算術と、前回の姿勢を使い回してよいかの判定（K4e）。
- * 状態は掛け算の作業用の配列だけで、{@link PaintSceneDriver} の 1 インスタンスが 1 つ持つ。
+ * 状態は掛け算の作業用の配列だけで、{@link SceneWalker} の 1 インスタンスが 1 つ持つ。
  */
 final class PoseMath {
     private final double[] m = new double[6];
-
-    /**
-     * 項目の前回の姿勢 {@code prev} が、今の親 {@code parent} から作り直しても同じ値になるか。親の参照が変わっても、親から受け継ぐ値
-     * （姿勢・不透明度・残りの不透明度・グループの鎖）が同じなら、子は前回の姿勢のままでよい。補間値だけが毎回新しい親でも、子孫の姿勢の作り直しが
-     * 連鎖しない。親の姿勢をそのまま共有した項目（{@code prev == prevParent}）は親の補間値も持つので、参照が同じときだけ。
-     */
-    static boolean sameParentFor(Resolved prev, Resolved prevParent, Resolved parent) {
-        if (prevParent == parent) return true;
-        if (prev == prevParent || prevParent == null || parent == null) return false;
-        return prevParent.opacity() == parent.opacity() && prevParent.residual() == parent.residual()
-                && (prevParent.groups() == parent.groups() || (prevParent.groups().isEmpty() && parent.groups().isEmpty()))
-                && prevParent.pose().equals(parent.pose());
-    }
 
     /** {@code base} に平行移動 {@code (tx, ty)} だけを掛けた姿勢。 */
     static Matrix2D translated(Matrix2D prev, Matrix2D base, float tx, float ty) {

@@ -13,16 +13,8 @@ public final class EngineFlags {
 
     // ---- 近道（既定オン。キーを立てると切る）。:core:shortcutMatrix が 1 つずつ・2 つずつ切って、結果が変わらないことを確かめる ----
 
-
     /** {@code enderframe.layout.noparallel}: LayoutTaskPool.parallelEnabled（B2 の並列化）（使う所: {@code LayoutTaskPool}） */
     public static final boolean LAYOUT_PARALLEL = !Boolean.getBoolean("enderframe.layout.noparallel");
-
-    /** {@code enderframe.paint.nocullrange}: PaintSceneDriver.cullRecordedRanges（使う所: {@code PaintSceneDriver}） */
-    public static final boolean CULL_RECORDED_RANGES = !Boolean.getBoolean("enderframe.paint.nocullrange");
-
-
-    /** {@code enderframe.paint.noreplay}: SoftwareRenderBackend.glReplay（使う所: {@code SoftwareRenderBackend}） */
-    public static final boolean SOFT_GL_REPLAY = !Boolean.getBoolean("enderframe.paint.noreplay");
 
     /** {@code enderframe.paint.notextsetup}: SoftwareRenderBackend.textSetupReuse（P9b）（使う所: {@code SoftwareRenderBackend}） */
     public static final boolean TEXT_SETUP_REUSE = !Boolean.getBoolean("enderframe.paint.notextsetup");
@@ -49,9 +41,6 @@ public final class EngineFlags {
 
     // ---- 数値の調整（スレッド数・キャッシュの大きさ・閾値） ----
 
-    /** {@code enderframe.paint.cullmargin}: スクロールの中身の節を動かして済ませる範囲の余白（px。既定 640）（使う所: {@code UiView}） */
-    public static final float CULL_MARGIN = Float.parseFloat(System.getProperty("enderframe.paint.cullmargin", "640"));
-
     /** {@code enderframe.raster.serial}: Rows.PARALLEL を切り、行の塗りを直列にする（使う所: {@code Rows}） */
     public static final boolean RASTER_PARALLEL = System.getProperty("enderframe.raster.serial") == null;
 
@@ -72,9 +61,6 @@ public final class EngineFlags {
     /** {@code enderframe.profile.alloc}: StageProfiler の段別の確保量（使う所: {@code StageProfiler}） */
     public static final boolean PROFILE_ALLOC = Boolean.getBoolean("enderframe.profile.alloc");
 
-    /** {@code enderframe.soft.damagedebug}: 損傷範囲の決定の理由を出力（使う所: {@code SoftwareRenderBackend}） */
-    public static final boolean SOFT_DAMAGE_DEBUG = Boolean.getBoolean("enderframe.soft.damagedebug");
-
     // ---- GPU の面の切り替え・調整（GPU が無い環境では効かない） ----
 
     /** {@code enderframe.gl.fullresblur}: GpuRenderBackend.downsampledBlur（縮小してぼかす）を切る（使う所: {@code GpuRenderBackend}） */
@@ -82,9 +68,6 @@ public final class EngineFlags {
 
     /** {@code enderframe.gl.fullscreenlayers}: GpuRenderBackend.boundedLayers（層を外接矩形に限る）を切る（使う所: {@code GpuRenderBackend}） */
     public static final boolean GL_BOUNDED_LAYERS = !Boolean.getBoolean("enderframe.gl.fullscreenlayers");
-
-    /** {@code enderframe.gl.noreplay}: RectStream.replayEnabled（項目単位の保持記録の再生）（使う所: {@code RectStream}） */
-    public static final boolean GL_REPLAY = !Boolean.getBoolean("enderframe.gl.noreplay");
 
     /** {@code enderframe.gl.rectcapacity}: RectStream の初期容量（図形数。既定 16384）（使う所: {@code GpuRenderBackend}） */
     public static final int GL_RECT_CAPACITY = Integer.getInteger("enderframe.gl.rectcapacity", 16384);

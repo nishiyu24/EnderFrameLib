@@ -13,7 +13,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * CPU バックエンドにおけるスクロール Blit 再利用（{@link CpuRaster#scrollBlit}）および
+ * CPU バックエンドにおける内側のスクロール（M3b-4b-4a からコンテナの枠を描き直す。以前の画素のずらしは削除）および
  * 子要素増減時の差分描画ピクセル等価性・スキップ効率検証。
  */
 class CpuScrollBlitPixelTest {
@@ -38,7 +38,7 @@ class CpuScrollBlitPixelTest {
                 + "<div id=\"container\">" + rows + "</div>";
     }
 
-    private record RunResult(List<int[]> frames, long partial, long full, long aborts, long skipped) {}
+    private record RunResult(List<int[]> frames, long partial, long full, long untouched) {}
 
     private static RunResult runScroll(boolean damage, int rowCount, int scrollSteps) {
         boolean saved = com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on();
@@ -60,7 +60,7 @@ class CpuScrollBlitPixelTest {
                 frames.add(cpu.pixmap().pixels().clone());
             }
 
-            return new RunResult(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
+            return new RunResult(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.untouchedPixels());
         } finally {
             view.close();
             com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
@@ -68,7 +68,7 @@ class CpuScrollBlitPixelTest {
     }
 
     @Test
-    void continuousScrollingMatchesFullRepaintAndSkipsUnexposedItems() {
+    void continuousScrollingMatchesFullRepaint() {
         int rows = 60;
         int steps = 40;
         RunResult expected = runScroll(false, rows, steps);
@@ -96,10 +96,8 @@ class CpuScrollBlitPixelTest {
 
         // 差分描画が有効に動作していること
         assertTrue(actual.partial() > 0, "差分描画フレームが存在すること");
-        assertEquals(0, actual.aborts(), "見積もり外れ abort が 0 であること");
 
-        // scrollBlit により、露出帯以外の多数の項目がスキップされたことを検証
-        assertTrue(actual.skipped() > 100, "多数の項目がスキップされていること (skipped=" + actual.skipped() + ")");
+        // 内側のコンテナのスクロールは、コンテナの枠だけを描き直す（この配置ではタイルに広げると画面全体に届くので、塗らない画素の数は見ない）
     }
 
     private static RunResult runChildMutations(boolean damage) {
@@ -137,7 +135,7 @@ class CpuScrollBlitPixelTest {
                 frames.add(cpu.pixmap().pixels().clone());
             }
 
-            return new RunResult(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
+            return new RunResult(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.untouchedPixels());
         } finally {
             view.close();
             com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
@@ -156,6 +154,5 @@ class CpuScrollBlitPixelTest {
 
         // 要素の挿入・削除でも差分描画（Tile Dirty Bitset）が動作していること
         assertTrue(actual.partial() > 0, "要素増減で差分描画が成立していること (partial=" + actual.partial() + ")");
-        assertEquals(0, actual.aborts(), "見積もり外れ abort が 0 であること");
     }
 }

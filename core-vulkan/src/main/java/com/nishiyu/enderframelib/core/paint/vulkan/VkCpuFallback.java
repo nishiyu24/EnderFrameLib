@@ -19,14 +19,11 @@ final class VkCpuFallback implements CpuFallback {
         this.raster = new SoftwareRenderBackend(cssW, cssH, dpr, sessionId, resources);
     }
 
+    /** 表示リストを走査し、GPU が受け取らなかった図形だけを CPU の層へ描く（受け取れたものは {@code sink} へ送る）。 */
     @Override
-    public void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink) {
-        raster.renderOnto(items, PaintOffsets.EMPTY, nowMs, sink);
-    }
-
-    @Override
-    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, long nowMs, GpuSink sink) {
-        raster.renderOnto(items, offsets, nowMs, sink);
+    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs,
+                           GpuSink sink) {
+        raster.renderOnto(items, offsets, source, nowMs, sink);
     }
 
     @Override

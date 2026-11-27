@@ -211,6 +211,27 @@ public record DisplayItem(
         return it == null || items == null ? it : resolveAbsolute(items, null, it);
     }
 
+    /**
+     * {@link #resolveAbsolute(java.util.List, DisplayItem)} に、描画上の平行移動 {@code offsets}（スクロールの中身の節の移動など。走査器が節の姿勢に
+     * 足す量）を自分と祖先の節の分だけ足した位置（M3b-4b-4a: 表示項目の列はスクロールコンテナをスクロール 0 で組むので、画面の上の位置には
+     * 平行移動が要る）。
+     */
+    public static DisplayItem resolveAbsolute(java.util.List<DisplayItem> items, DisplayItem it, PaintOffsets offsets) {
+        DisplayItem abs = resolveAbsolute(items, it);
+        if (abs == null || offsets == null || offsets.isEmpty()) return abs;
+        float dx = 0f, dy = 0f;
+        DisplayItem cur = it;
+        for (int guard = 0; cur != null && guard < 64; guard++) {
+            if (cur.type() == ElementType.NODE) { dx += offsets.dx(cur.id()); dy += offsets.dy(cur.id()); }
+            String pid = cur.hints().parentId();
+            if (pid == null || pid.isEmpty()) break;
+            DisplayItem anc = null;
+            for (int i = 0, n = items.size(); i < n && anc == null; i++) if (pid.equals(items.get(i).id())) anc = items.get(i);
+            cur = anc;
+        }
+        return dx == 0f && dy == 0f ? abs : abs.withPosition(Math.round(abs.x() + dx), Math.round(abs.y() + dy));
+    }
+
     /** {@link #resolveAbsolute(java.util.List, DisplayItem)} の {@link java.util.Map} 版（{@code id -> DisplayItem}）。 */
     public static DisplayItem resolveAbsolute(java.util.Map<String, DisplayItem> byId, DisplayItem it) {
         return it == null || byId == null ? it : resolveAbsolute(null, byId, it);

@@ -150,7 +150,7 @@ public final class MinecraftHostSurface {
             host = MinecraftHostTextures.INSTANCE.prepare(items, session, dpr, !pass.screenSpaceText());
             if (host.fence() != 0L) backend.waitForHost(host.fence());
             long now = net.minecraft.Util.getMillis();
-            backend.render(items, pass.paintOffsets(), now);
+            backend.render(items, pass.paintOffsets(), pass.sceneSource(), now);
             gate.painted(items, pass.paintOffsets(), fontGen, host.animating() || backend.hasActiveAnimation(items, now));
         } finally {
             if (host.fence() != 0L) GL32.glDeleteSync(host.fence());
@@ -175,7 +175,7 @@ public final class MinecraftHostSurface {
         if (target == null || text.isEmpty()) return;
         net.minecraft.client.gui.Font font = WebFontManager.getDefaultFont();
         if (font == null) font = Minecraft.getInstance().font;
-        target = DisplayItem.resolveAbsolute(items, target); // 項目は親相対のことがある
+        target = DisplayItem.resolveAbsolute(items, target, pass.paintOffsets()); // 項目は親相対・スクロール 0 で組んだ位置
         SurfaceTooltip.draw(pass.poseStack(), pass.buffer(), font, target, text, w, h, 0.2f, pass.packedLight());
         flushPending(pass.buffer());
     }

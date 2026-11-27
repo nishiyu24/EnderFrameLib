@@ -14,7 +14,7 @@ import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;
 import com.nishiyu.enderframelib.core.paint.AnimatedValues;
 
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Resolved;
+import com.nishiyu.enderframelib.core.paint.SceneWalker.Resolved;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
@@ -77,7 +77,7 @@ final class TextRaster {
     boolean skipPlaceholder(DisplayItem el) {
         if (!el.isPart("_ph")) return false;
         String nodeId = el.id().substring(0, el.id().length() - 3);
-        DisplayItem input = backend.driver.itemById(nodeId + "_input");
+        DisplayItem input = backend.walker.itemById(nodeId + "_input");
         return input != null && input.text() != null && !input.text().isEmpty();
     }
 
@@ -459,7 +459,6 @@ final class TextRaster {
         op.w = backend.raster.targetWidth();
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
         op.g = g; op.bx = bx; op.by = by; op.lut = covLut; op.clip = clip; op.clipped = !clip.parts().isEmpty(); op.opacity = opacity;
-        backend.cpuOps++;
         backend.queue.submit(op, true);
     }
 

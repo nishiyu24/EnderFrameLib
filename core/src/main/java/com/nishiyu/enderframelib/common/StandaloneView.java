@@ -332,7 +332,7 @@ public final class StandaloneView implements AutoCloseable {
             return false; // 窓を抜けた最初の1枚は最終値のために描く
         }
         lastOffsetsVersion = offsetsVer;
-        backend.render(withOverlays(items), offsets, nowMs);
+        backend.render(withOverlays(items), offsets, ui.paintSource(), nowMs);
         // 描画自身が世界を更新することがある（初回にビューポートの縦横比をカメラへ入れる）。それは描いた絵に含まれるので、
         // 次のフレームで「3D が変わった」と数えて一度余計に描かないよう、ここで署名を取り直す
         sceneSignature = ui.scene3dChangeSignature();

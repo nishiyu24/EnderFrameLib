@@ -106,7 +106,34 @@ public final class SceneDisplayListAdapter {
         return result;
     }
 
-    /** {@link #emit(DisplayScene, DynamicSceneState)} の項目を、列に溜めずに受け手 {@code sink} へ描画順に渡す（M3b-4b-2。走査器が使う）。 */
+    /**
+     * スクロール量を焼き込まない列（M3b-4b-3a・4b-4a。ビューの表示項目の列）: 今スクロールしているコンテナ（根・html・body・アンカーが追従する
+     * ものを除く）をスクロール 0 で組む。スクロール量は中身の節・つまみ・中の sticky の平行移動として、描くときに足す（{@code UiView} の平行移動の表）。
+     * 組んだ結果、中身を 1 つの節にまとめられなかった（固定配置・外へ出る絶対配置・content-visibility の子孫を持つ）コンテナは、
+     * 今のスクロール量で組み直す（そのコンテナのスクロールは列の作り直しで届く）。中身の印（{@link #scrollContents} の {@code sx0}）は組んだ量。
+     */
+    public List<DisplayItem> emitUnscrolled(DisplayScene scene, DynamicSceneState real) {
+        Map<HtmlNode, float[]> scrolled = real.scroll.snapshot();
+        Set<HtmlNode> zero = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        if (!scrolled.isEmpty()) {
+            Set<HtmlNode> followed = SceneAnchorFollow.followedScrollers(scene);
+            for (HtmlNode n : scrolled.keySet()) {
+                String t = n.tag;
+                if (!"root".equals(t) && !"html".equals(t) && !"body".equals(t) && !followed.contains(n)) zero.add(n);
+            }
+        }
+        for (int attempt = 0; ; attempt++) {
+            List<DisplayItem> result = emit(scene, real.unscrolled(zero));
+            if (zero.isEmpty()) return result;
+            Set<HtmlNode> asOneNode = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+            for (ScrollContentInfo c : scrollInfos) asOneNode.add(c.node());
+            if (asOneNode.containsAll(zero)) return result;
+            if (attempt >= 2) zero.clear();
+            else zero.retainAll(asOneNode);
+        }
+    }
+
+    /** {@link #emit(DisplayScene, DynamicSceneState)} の項目を、受け手 {@code sink} へ描画順に渡す。 */
     void emit(DisplayScene scene, DynamicSceneState dynamicState, ItemSink sink) {
         this.dynamic = dynamicState != null ? dynamicState : DynamicSceneState.of(null, rootW, rootH);
         this.painter.decor.setDevicePixelRatio(devicePixelRatio);

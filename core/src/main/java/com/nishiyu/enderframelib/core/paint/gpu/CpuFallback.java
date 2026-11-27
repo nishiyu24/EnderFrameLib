@@ -16,11 +16,9 @@ public interface CpuFallback {
         CpuFallback create(int cssW, int cssH, float dpr, String sessionId, PaintResources resources);
     }
 
-    void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink);
-
-    default void renderOnto(List<DisplayItem> items, PaintOffsets offsets, long nowMs, GpuSink sink) {
-        renderOnto(items, nowMs, sink);
-    }
+    /** {@code items} を描画先を塗り直さずに重ねる。{@code source}（null 可）は列を組んだシーン（保持層の判定に使う）。 */
+    void renderOnto(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs,
+                    GpuSink sink);
 
     int[] dirtyBounds();
 

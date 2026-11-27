@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.SceneWalkAccess;
 import com.nishiyu.enderframelib.common.StandaloneView;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
+import com.nishiyu.enderframelib.core.paint.SceneWalker.Group;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;

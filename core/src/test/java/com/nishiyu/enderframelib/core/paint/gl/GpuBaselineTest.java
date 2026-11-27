@@ -114,7 +114,7 @@ class GpuBaselineTest {
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(W, H, 1f)) {
             SoftwareRendering.renderHtml(html, W, H, T0, g);
             gl = g.pixmap().copy();
-            coverage = GpuCoverage.coverage(g.rectTreeReplayedShapes());
+            coverage = GpuCoverage.coverage();
         } finally {
             GpuCoverage.enable(prev);
         }
@@ -185,7 +185,7 @@ class GpuBaselineTest {
             SoftwareRendering.renderHtml(html, 300, 100, T0, g);
             assertTrue(GpuCoverage.totalDeclined() >= 1, "せん断の図形は断られる: " + GpuCoverage.declinedHistogram());
             assertTrue(GpuCoverage.totalAccepted() >= 1, "平行な図形は受理される");
-            double c = GpuCoverage.coverage(g.rectTreeReplayedShapes());
+            double c = GpuCoverage.coverage();
             assertTrue(c > 0.0 && c < 1.0, "被覆率 " + c);
             assertNotEquals("(none)", GpuCoverage.declinedHistogram());
             assertTrue(g.cpuOverlayFlushCount() >= 1, "CPU 層へ落ちた図形があれば重ね転送が起きる");
@@ -211,8 +211,7 @@ class GpuBaselineTest {
             assertFalse(GpuCoverage.note(GpuCoverage.Kind.GLYPH, false));
             assertEquals(1, GpuCoverage.accepted(GpuCoverage.Kind.FILL));
             assertEquals(2, GpuCoverage.declined(GpuCoverage.Kind.IMAGE));
-            assertEquals(0.25, GpuCoverage.coverage(0), 1e-9);
-            assertEquals(0.4, GpuCoverage.coverage(1), 1e-9); // 受理 1 + 再生 1 = 2、断り 3
+            assertEquals(0.25, GpuCoverage.coverage(), 1e-9);
             assertEquals("IMAGE=2 GLYPH=1", GpuCoverage.declinedHistogram());
         } finally {
             GpuCoverage.reset();

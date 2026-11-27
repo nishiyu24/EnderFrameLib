@@ -146,13 +146,12 @@ public final class FineProfileMain {
                 case com.nishiyu.enderframelib.core.paint.vulkan.VkRenderBackend v0 -> v0.gpuBackend();
                 default -> null;
             };
-            long replayed0 = 0, flushes0 = 0, draws0 = 0;
+            long flushes0 = 0, draws0 = 0;
             for (int i = -warmup; i < frames; i++) {
                 if (i == 0) {
                     if (gpuBackend != null) { // G0/G3: 計測区間（ウォームアップ後）の GPU 被覆率
                         com.nishiyu.enderframelib.core.paint.port.GpuCoverage.reset();
                         com.nishiyu.enderframelib.core.paint.port.GpuCoverage.enable(true);
-                        replayed0 = gpuBackend.rectTreeReplayedShapes();
                         flushes0 = gpuBackend.cpuOverlayFlushCount();
                         draws0 = gpuBackend.drawCallCount();
                     }
@@ -181,11 +180,10 @@ public final class FineProfileMain {
             StageProfiler.enable(false);
             if (gpuBackend != null) {
                 com.nishiyu.enderframelib.core.paint.port.GpuCoverage.enable(false);
-                long replayed = gpuBackend.rectTreeReplayedShapes() - replayed0;
-                // GPU 被覆率 = (受理 + 再生で再利用した図形) ÷ 全図形。CPU 層へ落ちた図形は種別ヒストグラムで多い順に出す
-                System.out.printf("GPUCOVERAGE %.4f accepted=%d replayed=%d declined=%d declinedByKind: %s%n",
-                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.coverage(replayed),
-                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.totalAccepted(), replayed,
+                // GPU 被覆率 = 受理 ÷ 全図形。CPU 層へ落ちた図形は種別ヒストグラムで多い順に出す
+                System.out.printf("GPUCOVERAGE %.4f accepted=%d declined=%d declinedByKind: %s%n",
+                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.coverage(),
+                        com.nishiyu.enderframelib.core.paint.port.GpuCoverage.totalAccepted(),
                         com.nishiyu.enderframelib.core.paint.port.GpuCoverage.totalDeclined(),
                         com.nishiyu.enderframelib.core.paint.port.GpuCoverage.declinedHistogram());
                 System.out.printf("GPUFRAME backend=%s per-frame drawCalls=%.2f cpuOverlayFlushes=%.2f%n",
@@ -222,21 +220,13 @@ public final class FineProfileMain {
                     + " elements=" + countElements(view[0].root())
                     + " items=" + view[0].ui().renderCache().size());
             System.out.println("ITEMS " + view[0].ui().renderCache().size());
-            if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
-            System.out.println("RANGECULL planned=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_PLANNED.get()
-                    + " ineligible=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_INELIGIBLE.get()
-                    + " culledItems=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_CULLED_TOTAL.get());
+            if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             if (raw instanceof SoftwareRenderBackend sw) {
                 try {
-                    java.lang.reflect.Method p = SoftwareRenderBackend.class.getDeclaredMethod("partialFrames");
                     java.lang.reflect.Method f = SoftwareRenderBackend.class.getDeclaredMethod("fullFrames");
-                    java.lang.reflect.Method a = SoftwareRenderBackend.class.getDeclaredMethod("damageAborts");
-                    java.lang.reflect.Method s = SoftwareRenderBackend.class.getDeclaredMethod("skippedItems");
-                    p.setAccessible(true); f.setAccessible(true); a.setAccessible(true); s.setAccessible(true);
-                    java.lang.reflect.Method w = SoftwareRenderBackend.class.getDeclaredMethod("fullReasons");
-                    w.setAccessible(true);
-                    System.out.println("DAMAGE-WHY " + java.util.Arrays.toString((long[]) w.invoke(sw)));
-                    System.out.println("DAMAGE partial=" + p.invoke(sw) + " full=" + f.invoke(sw) + " aborts=" + a.invoke(sw) + " skipped=" + s.invoke(sw));
+                    java.lang.reflect.Method u = SoftwareRenderBackend.class.getDeclaredMethod("untouchedPixels");
+                    f.setAccessible(true); u.setAccessible(true);
+                    System.out.println("DAMAGE partial=" + sw.partialFrames() + " full=" + f.invoke(sw) + " untouchedPixels=" + u.invoke(sw));
                 } catch (ReflectiveOperationException e) {
                     throw new IllegalStateException(e);
                 }

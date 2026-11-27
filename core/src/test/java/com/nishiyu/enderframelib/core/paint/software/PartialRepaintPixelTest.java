@@ -18,14 +18,14 @@ import org.junit.jupiter.api.Test;
  * 全画素で同じ絵になること。文字・スタイル・ホバー・スクロール（描画上の平行移動）・クリップ・子の増減を混ぜた列と、
  * アニメーション（補間の途中は全面へ戻す）の列を比べる。
  *
- * <p>差分描画の見積もりが外れた場合は全面でやり直すので絵は同じになるが、見積もりの漏れを検出するため
- * 標準の列では {@code damageAborts() == 0} も確かめる。</p>
+ * <p>描き直す範囲はシーンの違いと動的な値から描く前に決める（M3b-4b-4a。{@code SceneDamage}）。範囲の漏れは、全面で描いた画素との
+ * 違いとして直接現れる。</p>
  */
 class PartialRepaintPixelTest {
     private static final int W = 360, H = 300;
 
     /** 1 回の実行の、フレームごとの画素と診断値。 */
-    private record Run(List<int[]> frames, long partial, long full, long aborts, long skipped) {}
+    private record Run(List<int[]> frames, long partial, long full, long untouched) {}
 
     private static String html() {
         StringBuilder rows = new StringBuilder();
@@ -119,7 +119,7 @@ class PartialRepaintPixelTest {
                 view.frame(now, cpu, true);
                 frames.add(cpu.pixmap().pixels().clone());
             }
-            return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
+            return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.untouchedPixels());
         } finally {
             view.close();
             com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
@@ -136,9 +136,8 @@ class PartialRepaintPixelTest {
                 assertArrayEquals(expected.frames().get(i), actual.frames().get(i), "seed " + seed + " フレーム " + i);
             }
             assertTrue(actual.partial() > 0, "seed " + seed + ": 差分描画のフレームが無い");
-            assertTrue(actual.skipped() > 0, "seed " + seed + ": 描かない項目が無い");
+            assertTrue(actual.untouched() > 0, "seed " + seed + ": 差分描画で塗り直さなかった画素が無い");
             assertTrue(actual.full() > 0, "seed " + seed + ": 全面へ戻る場面（不透明度の層・子の増減）が無い");
-            assertEquals(0, actual.aborts(), "seed " + seed + ": 見積もりが外れて全面でやり直した");
         }
     }
 
@@ -165,7 +164,7 @@ class PartialRepaintPixelTest {
                 view.frame(now, cpu, true);
                 frames.add(cpu.pixmap().pixels().clone());
             }
-            return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
+            return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.untouchedPixels());
         } finally {
             view.close();
             com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
@@ -181,7 +180,6 @@ class PartialRepaintPixelTest {
         }
         // 色だけの遷移は、遷移中も項目単位の差分描画。全面は初回と遷移の開始（項目の差し替え）だけ
         assertTrue(actual.partial() >= 38, "遷移中のフレームが全面描画になっている: partial=" + actual.partial() + " full=" + actual.full());
-        assertEquals(0, actual.aborts(), "補間の前後で見積もりが外れた");
     }
 
     /** {@code #a} へ hover を当て、{@code frames} フレーム進めたあと外す（外す遷移も含む）。 */
@@ -205,7 +203,7 @@ class PartialRepaintPixelTest {
                 view.frame(now, cpu, true);
                 out.add(cpu.pixmap().pixels().clone());
             }
-            return new Run(out, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
+            return new Run(out, cpu.partialFrames(), cpu.fullFrames(), cpu.untouchedPixels());
         } finally {
             view.close();
             com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
@@ -217,12 +215,11 @@ class PartialRepaintPixelTest {
         for (int i = 0; i < expected.frames().size(); i++) {
             assertArrayEquals(expected.frames().get(i), actual.frames().get(i), what + " フレーム " + i);
         }
-        assertEquals(0, actual.aborts(), what + ": 見積もりが外れて全面でやり直した");
     }
 
     @Test
-    void transformTransitionFramesArePaintedPartiallyAndMatch() {
-        // 変形の遷移: 動いた節の子孫が旧範囲と新範囲で塗り直される。子（文字つき）・影・クリップ内の子も混ぜる
+    void transformTransitionFramesMatchAndReturnToPartialAfterwards() {
+        // 変形の遷移: 姿勢を動かす補間は全面を塗り直す（M3b-4b-4a。走査器は動く姿勢の子孫の範囲を求めない）。子（文字つき）・影・クリップ内の子も混ぜる
         String html = "<style>body{margin:0;background:#123;font-size:13px}"
                 + "#a{position:absolute;left:30px;top:30px;width:120px;height:80px;background:#345;color:#fff;border-radius:10px;"
                 + "box-shadow:0 3px 8px #0008;transition:transform 300ms linear}"
@@ -235,7 +232,8 @@ class PartialRepaintPixelTest {
         Run expected = hoverRun(html, false, 25);
         Run actual = hoverRun(html, true, 25);
         assertSamePixels(expected, actual, "変形の遷移");
-        assertTrue(actual.partial() >= 40, "変形の遷移中が全面描画になっている: partial=" + actual.partial() + " full=" + actual.full());
+        assertTrue(actual.full() >= 10, "変形の遷移中に全面描画へ戻っていない: full=" + actual.full());
+        assertTrue(actual.partial() > 0, "遷移が終わった後に差分描画へ戻っていない: partial=" + actual.partial());
     }
 
     @Test
@@ -284,7 +282,7 @@ class PartialRepaintPixelTest {
                 view.frame(now, cpu, true);
                 frames.add(cpu.pixmap().pixels().clone());
             }
-            return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
+            return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.untouchedPixels());
         } finally {
             view.close();
             com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
@@ -300,6 +298,5 @@ class PartialRepaintPixelTest {
         }
         assertTrue(actual.full() > 0, "キーフレームの途中で全面描画へ戻っていない");
         assertTrue(actual.partial() > 0, "キーフレームが終わった後に差分描画へ戻っていない");
-        assertEquals(0, actual.aborts(), "キーフレームの前後で見積もりが外れた");
     }
 }

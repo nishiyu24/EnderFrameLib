@@ -98,7 +98,7 @@ class VkBaselineTest {
         try (VkRenderBackend v = vkBackend) {
             SoftwareRendering.renderHtml(html, W, H, T0, v);
             vk = v.pixmap().copy();
-            coverage = GpuCoverage.coverage(v.rectTreeReplayedShapes());
+            coverage = GpuCoverage.coverage();
             valErrs = v.validationErrorCount();
             valMsgs = v.validationMessages();
             System.out.printf("G3 Vulkan %s: GPU coverage=%.4f accepted=%d declined=%d declinedByKind=%s valErrs=%d%n",

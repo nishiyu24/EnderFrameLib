@@ -4,9 +4,9 @@
 # ここに無い新規・刷新クラスはすべて 600 行以下でなければならない（M6 で全クラス 600 行以下へ統一）。
 core/src/main/java/com/nishiyu/enderframelib/api/config/EnderConfigManager.java | 616
 core/src/main/java/com/nishiyu/enderframelib/api/ui/UI.java | 876
-core/src/main/java/com/nishiyu/enderframelib/common/StandaloneView.java | 978
+core/src/main/java/com/nishiyu/enderframelib/common/StandaloneView.java | 949
 core/src/main/java/com/nishiyu/enderframelib/common/UiInput.java | 799
-core/src/main/java/com/nishiyu/enderframelib/common/UiView.java | 1499
+core/src/main/java/com/nishiyu/enderframelib/common/UiView.java | 1456
 core/src/main/java/com/nishiyu/enderframelib/core/css/ColorParser.java | 1272
 core/src/main/java/com/nishiyu/enderframelib/core/css/CssParser.java | 842
 core/src/main/java/com/nishiyu/enderframelib/core/css/CssSyntax.java | 964
@@ -27,11 +27,9 @@ core/src/main/java/com/nishiyu/enderframelib/core/paint/BoxDecorationPainter.jav
 core/src/main/java/com/nishiyu/enderframelib/core/paint/BoxDecorations.java | 987
 core/src/main/java/com/nishiyu/enderframelib/core/paint/CssAnimator.java | 629
 core/src/main/java/com/nishiyu/enderframelib/core/paint/Gradients.java | 878
-core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java | 925
-core/src/main/java/com/nishiyu/enderframelib/core/paint/gpu/GpuRenderBackend.java | 1164
+core/src/main/java/com/nishiyu/enderframelib/core/paint/gpu/GpuRenderBackend.java | 1138
 core/src/main/java/com/nishiyu/enderframelib/core/paint/model/ClipShape.java | 733
-core/src/main/java/com/nishiyu/enderframelib/core/paint/software/DamagePlanner.java | 628
-core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java | 1328
+core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java | 1178
 core/src/main/java/com/nishiyu/enderframelib/core/raster/canvas/CanvasRenderingContext2D.java | 1144
 core/src/main/java/com/nishiyu/enderframelib/core/raster/svg/SvgRenderer.java | 779
 core/src/main/java/com/nishiyu/enderframelib/core/scene3d/GltfBinaryLoader.java | 761

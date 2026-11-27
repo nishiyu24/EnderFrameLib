@@ -17,10 +17,12 @@ import com.nishiyu.enderframelib.core.paint.port.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.ItemDiff;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Resolved;
+import com.nishiyu.enderframelib.core.paint.SceneDamage;
+import com.nishiyu.enderframelib.core.paint.SceneSource;
+import com.nishiyu.enderframelib.core.paint.SceneWalker;
+import com.nishiyu.enderframelib.core.paint.SceneWalker.Group;
+import com.nishiyu.enderframelib.core.paint.SceneWalker.Resolved;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.ShaderGradientEmulator;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
@@ -68,8 +70,6 @@ import com.nishiyu.enderframelib.core.paint.Painter;
  * スレッドセーフではない。
  */
 public final class SoftwareRenderBackend implements RenderBackend {
-    /** DamagePlanner（切り出した協力クラス）。 */
-    private final DamagePlanner damagePlanner = new DamagePlanner(this);
     /** TextRaster（切り出した協力クラス）。 */
     private final TextRaster textRaster = new TextRaster(this);
     /** 項目の種類ごとの塗り（{@link ItemRaster}）。 */
@@ -94,58 +94,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 差分描画（Tile Dirty Bitset）
 
-    /** 診断: 損傷範囲の決定の理由を出力する（フレームごとに読む。{@code -Denderframe.soft.damagedebug=true}）。 */
-    static boolean damageDebug() {
-        return com.nishiyu.enderframelib.core.kernel.EngineFlags.SOFT_DAMAGE_DEBUG;
-    }
-
     /** このフレームで塗り直す範囲（タイル境界まで広げた外接矩形）。 */
     final DamageRegion damage = new DamageRegion();
-    /** 前のフレームの表示リスト（項目の同一性の比較と、旧範囲の持ち主）。 */
-    List<DisplayItem> prevItems;
-    boolean prevValid;
-    /** 前のフレームの描画がアニメーションの途中だった（次のフレームは全面を描き直す）。 */
-    boolean prevHadActive;
-    /** 前のフレームで、不透明度が動く項目があった（あれば次は全面。色・変形の遷移は項目単位で塗り直す）。 */
-    boolean prevHadGeometryActive;
-    /** 項目ごとの動き（{@link PaintSceneDriver#ACT_IDLE} など）。今のフレームと前のフレーム。 */
-    byte[] activity = new byte[0], prevActivity = new byte[0];
-    int prevClearColor;
-    boolean prevCullOffscreen = true;
-    /** 直近に描いたスクロール節の姿勢平行移動成分 (key -> [tx, ty])。 */
-    final java.util.HashMap<Long, double[]> prevScrollPoses = new java.util.HashMap<>();
-
-    /** 項目ごとの、実際に塗った範囲（{@code x0,y0,x1,y1}。空なら x1 <= x0）。前のフレームと今のフレームで入れ替える。 */
-    int[] prevExtent = new int[0], curExtent = new int[0];
-    /** 項目ごとの、描いたときのクリップの外接（{@code x0,y0,x1,y1}）。新しい範囲の見積もりをクリップに収めるのに使う。 */
-    int[] prevClip = new int[0], curClip = new int[0];
-    /** このフレームで描かない（前のフレームの画素をそのまま残す）項目。 */
-    boolean[] skipBuf = new boolean[0];
-    /** このフレームで描き直す項目（項目自身が変わったか、動いた節の子孫）。 */
-    boolean[] dirtyBuf = new boolean[0];
-    /** 動いた節の子孫（姿勢が親から変わる）か。 */
-    boolean[] movedBuf = new boolean[0];
-    /** このフレームの差分描画が有効（{@link Painter#skipItem} を効かせる）。 */
+    /** 描き直す範囲を前後のシーンの違いから求める（M3b-4b-4a。前のフレームのシーンとスクロール量を比べる相手として持つ）。 */
+    private final SceneDamage sceneDamage = new SceneDamage();
+    /** 前のフレームの塗りの色・利用者の平行移動の版（変われば全面）。 */
+    private int prevClearColor;
+    private int prevUserOffsets = -1;
+    /** このフレームの差分描画が有効（塗りを {@link #damage} に収める）。 */
     private boolean partialActive;
-    /** 変更項目の塗りがダメージ範囲の外へ出た（全面描画へ切り替える）。 */
-    private boolean damageAbort;
-    /** このフレームの描画がアニメーションの途中か（次のフレームの判定に使う）。 */
-    boolean frameHadActive;
-    boolean frameHadGeometryActive;
-    /** 実際に塗った範囲を記録するか（{@link #renderOnto} では要らない）。 */
-    private boolean recordExtents;
-    /** いま描いている項目の添字（{@link #paintRange} が範囲を記録する）。 */
-    private int currentItem = -1;
-    /** いま描いている項目が描き直しの対象か（塗りがダメージの外へ出たら全面へ切り替える）。 */
-    private boolean currentItemDirty;
-    /** 見積もりの作業用。 */
-    final int[] estimateScratch = new int[4];
-    final int[] planClipScratch = new int[4];
 
-    /** 診断用: 差分描画したフレーム・全面描画したフレーム・見積もり外れで全面へ切り替えたフレーム・省いた項目の累計。 */
-    long partialFrames, fullFrames, abortedFrames, skippedItems;
-    /** 差分描画を諦めた理由の件数（1=前フレームが動作中 2=無効 3=初回 4=背景/カリング変化 5=不安定な項目列 6=動作中の項目 7=項目の増減・種類変化 8=volatile 9=グループ）。 */
-    final long[] fullWhy = new long[11];
+    /** 診断用: 差分描画したフレーム・全面描画したフレームの累計と、差分描画で塗り直さなかった画素の累計。 */
+    long partialFrames, fullFrames, untouchedPixels;
 
     /** CSS px の大きさ {@code cssW × cssH}・等倍の描画先を作る。 */
     public SoftwareRenderBackend(int cssW, int cssH) { this(cssW, cssH, 1f); }
@@ -166,7 +126,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio, String sessionId, PaintResources resources) {
         this.resources = java.util.Objects.requireNonNull(resources, "resources");
         this.sessionId = java.util.Objects.requireNonNull(sessionId, "sessionId");
-        this.driver = new PaintSceneDriver(sessionId);
+        this.walker = new SceneWalker(sessionId);
         if (!(devicePixelRatio > 0f)) throw new IllegalArgumentException("devicePixelRatio must be > 0");
         this.dpr = devicePixelRatio;
         this.dprFrame = Matrix2D.scale(devicePixelRatio, devicePixelRatio);
@@ -187,80 +147,89 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 自分のセッションの補間状態（表示項目を握る）を捨てる。捨てないと描画器を作るたびに溜まる（CI の単一 JVM が OOM）。 */
     @Override public void close() { if (ownsSession) CssAnimator.clearSession(sessionId); }
 
-    /**
-     * 描画先を {@link #clearColor} で塗り直し、{@code items} を時刻 {@code nowMs}（ミリ秒）の見た目で描く。
-     *
-     * <p>前のフレームと同じ表示リスト（変更のあった項目だけが差し替わったもの）なら、変更項目の旧範囲と新範囲が掛かる
-     * 64×64 タイルだけをクリアし、その外接矩形にクリップして描き直す。描き直す必要のない項目は
-     * {@link Painter#skipItem} で走査から外す。見積もりが外れた（変更項目がダメージの外へ塗った）ときは
-     * 全面を描き直すので、絵は常に全面描画と同じになる。</p>
-     */
-    @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, nowMs); }
+    /** 描画先を {@link #clearColor} で塗り直し、{@code items} を時刻 {@code nowMs}（ミリ秒）の見た目で描く（シーンが無いので全面）。 */
+    @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, null, nowMs); }
 
     @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
+    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { render(items, offsets, null, nowMs); }
+
+    /**
+     * 描画先を塗り直し、{@code items} を時刻 {@code nowMs} の見た目で描く。列を組んだシーン {@code source} があれば、前のフレームとの
+     * シーンの違い（{@link SceneDamage}）と、補間・外の事情で変わる項目・重ね描きの前後の範囲（走査器）だけを 64×64 タイルで塗り直し、
+     * 塗りをその外接矩形に収める（M3b-4b-4a）。初回・塗りの色や利用者の平行移動が変わったフレーム・シーンの無いフレームは全面。
+     */
+    @Override
+    public void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
         if (items == null || items.isEmpty()) {
             raster.clearAll(clearColor);
-            prevValid = false;
-            prevItems = null;
+            sceneDamage.reset();
             return;
         }
         PaintOffsets eff = offsets != null ? offsets : PaintOffsets.EMPTY;
+        SceneDamage.Rects rects = null;
+        if (source != null) {
+            rects = sceneDamage.next(source.scene(), source.dynamic());
+            if (clearColor != prevClearColor) rects.setFull("clear-color");
+            if (!com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on()) rects.setFull("damage-off");
+            if (source.userOffsetsVersion() != prevUserOffsets) rects.setFull("user-offsets");
+            prevUserOffsets = source.userOffsetsVersion();
+        } else {
+            sceneDamage.reset();
+            prevUserOffsets = -1;
+        }
+        prevClearColor = clearColor;
         route.begin(null);
-        driver.setScrollSnapDpr(0f);
+        walker.setScrollSnapDpr(0f);
         raster.beginFrame();
         beginFrame(items);
-        boolean partial = false;
-        recordExtents = true;
+        boolean done = false;
         try {
-            driver.prepare(items, eff, nowMs, frame);
-            partial = damagePlanner.planDamage(items, eff, nowMs);
-            if (partial) raster.clearTiles(damage, clearColor);
-            else raster.clearAll(clearColor);
-            partialActive = partial;
-            damageAbort = false;
-            driver.run(items, eff, nowMs, frame, painter);
+            if (rects == null) beginWalk(null);
+            walker.run(items, eff, source, nowMs, frame, painter, rects);
             queue.flush();
-            if (partial && damageAbort) { // 見積もりより外へ塗った: 全面でやり直す（絵は同じ）
-                abortedFrames++;
-                partial = false;
-                partialActive = false;
-                damageAbort = false;
-                raster.clearAll(clearColor);
-                damagePlanner.resetCurExtents(items.size());
-                driver.run(items, eff, nowMs, frame, painter);
-                queue.flush();
-            }
+            done = true;
         } finally {
             queue.discard(); // 例外のときは捨てる（描画先は不定）
+            if (!done) sceneDamage.reset(); // 例外のとき: 次は全面
             raster.endFrame();
             route.end();
             partialActive = false;
-            recordExtents = false;
-            currentItem = -1;
         }
-        // 描く前の見積もり（planDamage の冒頭）は、項目が差し替わって補間の状態が新しくなる前の古い状態を見ている（項目の増減のフレームなど）。
-        // 描いて状態が更新された今の値で取り直す。そうしないと、遷移中の項目が「止まっている」と記録され、次のフレームで遷移の
-        // 続き・終わり（最終色）を塗り直さず、途中の色が残る（A6b ③④）
-        byte m = driver.fillActivity(activity, items.size(), nowMs);
-        frameHadActive = m != PaintSceneDriver.ACT_IDLE;
-        frameHadGeometryActive = m == PaintSceneDriver.ACT_OPACITY;
-        damagePlanner.commitFrame(items, eff, partial);
     }
 
-    /** 描画先を塗り直さずに {@code items} を重ねる（平行移動なし版）。 */
-    public void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink) { renderOnto(items, PaintOffsets.EMPTY, nowMs, sink); }
+    /** 走査器が描き直す範囲を決めた（描く前）: 全面なら全面を、そうでなければ範囲のタイルを塗り直す。範囲が空なら何も描かない。 */
+    private boolean beginWalk(SceneDamage.Rects rects) {
+        if (rects == null || rects.full()) {
+            raster.clearAll(clearColor);
+            partialActive = false;
+            fullFrames++;
+            return true;
+        }
+        damage.reset(raster.targetWidth(), raster.targetHeight());
+        for (int k = 0, n = rects.size(); k < n; k++) { // CSS px → デバイス画素（縁のアンチエイリアスに 1 画素）
+            damage.add((int) Math.floor(rects.x0(k) * dpr) - 1, (int) Math.floor(rects.y0(k) * dpr) - 1,
+                    (int) Math.ceil(rects.x1(k) * dpr) + 1, (int) Math.ceil(rects.y1(k) * dpr) + 1);
+        }
+        damage.seal();
+        partialFrames++;
+        untouchedPixels += (long) raster.targetWidth() * raster.targetHeight()
+                - (damage.isEmpty() ? 0L : (long) (damage.x1() - damage.x0()) * (damage.y1() - damage.y0()));
+        partialActive = true;
+        if (damage.isEmpty()) return false;
+        raster.clearTiles(damage, clearColor);
+        return true;
+    }
+
+    /** 描画先を塗り直さずに {@code items} を重ねる（平行移動・シーンなし版）。 */
+    public void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink) { renderOnto(items, PaintOffsets.EMPTY, null, nowMs, sink); }
 
     /**
      * 描画先を塗り直さずに {@code items} を重ねる。{@code sink} があれば、単色の角丸矩形と角丸の枠線はそちらへ渡す
      * （受け取られなかったものだけ CPU が描く）。GPU 版が文字・画像などの CPU 描画を重ねるのに使う。
      */
-    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, long nowMs, GpuSink sink) {
-        // 全面を塗っていない・別の描画先かもしれないので、差分描画の前提を捨てる
-        prevValid = false;
-        prevItems = null;
-        cpuOpsOrdered = cpuOps - 1; // フレームの頭は必ず順序づけを確かめる
-        drawFrame(items, offsets != null ? offsets : PaintOffsets.EMPTY, nowMs, sink);
+    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs, GpuSink sink) {
+        sceneDamage.reset(); // 全面を塗っていない・別の描画先かもしれないので、差分描画の前提を捨てる
+        drawFrame(items, offsets != null ? offsets : PaintOffsets.EMPTY, source, nowMs, sink);
     }
 
     /** CPU が描いた範囲 {@code {x0, y0, x1, y1}}（x1・y1 は含まない）。何も描いていなければ {@code null}。 */
@@ -278,44 +247,40 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private void beginFrame(List<DisplayItem> items) {
         this.frame = dprFrame;
         this.frameSize = items.size();
+        this.partialActive = false;
         this.retainInfo.clear();
         this.recordOwner = null;
         if (!frameClips.isEmpty()) frameClips.clear();
         if (!frameParts.isEmpty()) frameParts.clear();
     }
 
-    private void drawFrame(List<DisplayItem> items, PaintOffsets offsets, long nowMs, GpuSink gpu) {
+    private void drawFrame(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs, GpuSink gpu) {
         if (items == null || items.isEmpty()) return;
-        partialActive = false;
-        recordExtents = false;
         route.begin(gpu);
-        driver.setScrollSnapDpr(gpu != null && gpu.snapsScrollOffsets() ? dpr : 0f);
+        walker.setScrollSnapDpr(gpu != null && gpu.snapsScrollOffsets() ? dpr : 0f);
         raster.beginFrame();
         beginFrame(items);
         try {
-            // 走査（アニメーション補間・親子の変形・グループの鎖）は PaintSceneDriver が受け持ち、ここは画素を塗るだけ
-            driver.run(items, offsets, nowMs, frame, painter);
+            // 走査（アニメーション補間・親子の変形・グループの鎖）は走査器が受け持ち、ここは画素を塗るだけ
+            walker.run(items, offsets, source, nowMs, frame, painter, null);
             queue.flush(); // 開いたままの層の中身も、層を捨てる前に書き切る
         } finally {
             queue.discard(); // 例外のときは捨てる（描画先は不定）
             raster.endFrame();
             route.end();
-            currentItem = -1;
         }
     }
 
-    final PaintSceneDriver driver;
+    final SceneWalker walker;
 
     /** 直近に描いた {@code items} に、時刻 {@code nowMs} でまだ動いているアニメーションがあるか。 */
     public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) {
-        return driver.anyActiveAt(items, nowMs);
+        return SceneWalker.anyActiveAt(sessionId, items, nowMs);
     }
     private final Painter painter = new Painter() {
         @Override
-        public boolean skipItem(int index) {
-            if (!partialActive || index < 0 || index >= skipBuf.length || !skipBuf[index]) return false;
-            skippedItems++;
-            return true;
+        public boolean beginWalk(SceneDamage.Rects damage) {
+            return SoftwareRenderBackend.this.beginWalk(damage);
         }
 
         @Override
@@ -344,16 +309,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
 
         @Override
-        public double[] cullWindow(DisplayItem node, int nodeIndex) {
-            // 記録中も通常描画でも、項目のクリップは描画先 [0, 高さ] に収まる。その外へ CULL_PAD + 項目の高さ以上離れた項目は塗られない（outsideBox と同じ式）
-            if (!com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on()) return null;
-            scratchCullWindow[0] = 0;
-            scratchCullWindow[1] = raster.targetHeight();
-            scratchCullWindow[2] = CULL_PAD;
-            return scratchCullWindow;
-        }
-
-        @Override
         public boolean endRetained(DisplayItem node, int nodeIndex) {
             recordOwner = null;
             return GpuLayerAttempt.endScroll(route.current(), retainInfo.get(nodeIndex));
@@ -371,12 +326,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private byte[] retainEligible = new byte[0];
     private String[] retainOwner = new String[0];
     private final double[] scratchBounds4 = new double[4];
-    private final double[] scratchCullWindow = new double[3];
 
     private static String ownerKeyOf(DisplayItem node) {
         String id = node.id();
-        int suffixLen = PaintSceneDriver.SCROLL_CONTENT_SUFFIX.length();
-        if (id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX)) {
+        int suffixLen = SceneWalker.SCROLL_CONTENT_SUFFIX.length();
+        if (id.endsWith(SceneWalker.SCROLL_CONTENT_SUFFIX)) {
             String pid = node.hints().parentId();
             if (pid != null && pid.length() == id.length() - suffixLen) return pid;
             return id.substring(0, id.length() - suffixLen);
@@ -385,7 +339,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private String cachedOwnerKeyOf(DisplayItem node, int nodeIndex) {
-        Object token = driver.items();
+        Object token = walker.items();
         if (eligibleToken != token) {
             eligibleToken = token;
             java.util.Arrays.fill(retainEligible, (byte) 0);
@@ -406,7 +360,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to, Object token) {
         if (route.current() == null || recordOwner != null) return RetainPlan.NONE;
-        Object listToken = driver.items(); // 層に向くかの判定は列ごとに覚える。層の同一性は中身の印 token（Painter#planRetained）
+        Object listToken = walker.items(); // 層に向くかの判定は列ごとに覚える。層の同一性は中身の印 token（Painter#planRetained）
         if (eligibleToken != listToken) {
             eligibleToken = listToken;
             java.util.Arrays.fill(retainEligible, (byte) 0);
@@ -419,7 +373,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         byte verdict = retainEligible[nodeIndex];
         if (verdict == 0) {
-            verdict = rangeIsRetainable(driver.items(), from, to) ? (byte) 2 : (byte) 1;
+            verdict = rangeIsRetainable(walker.items(), from, to) ? (byte) 2 : (byte) 1;
             retainEligible[nodeIndex] = verdict;
         }
         if (verdict != 2) return RetainPlan.NONE;
@@ -429,7 +383,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             owner = ownerKeyOf(node);
             retainOwner[nodeIndex] = owner;
         }
-        List<DisplayItem> items = driver.items();
+        List<DisplayItem> items = walker.items();
         int x0 = 0, y0 = 0, x1 = raster.targetWidth(), y1 = raster.targetHeight();
         int partCount = 0;
         for (int i = from; i < to && partCount == 0; i++) {
@@ -441,8 +395,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 for (int k = 0, cn = chain.size(); k < cn; k++) {
                     ClipChainPart p = chain.get(k);
                     if (owner.equals(p.ownerId()) && p.rectLength() >= 4) {
-                        int ix = driver.indexOf(p.ownerId());
-                        Matrix2D pose = ix >= 0 ? driver.resolveAt(ix).pose() : frame;
+                        int ix = walker.indexOf(p.ownerId());
+                        Matrix2D pose = ix >= 0 ? walker.resolveAt(ix).pose() : frame;
                         double[] b = deviceBounds(pose, p.rectAt(0), p.rectAt(1), p.rectAt(2), p.rectAt(3), scratchBounds4);
                         x0 = Math.max(x0, (int) Math.floor(b[0]));
                         y0 = Math.max(y0, (int) Math.floor(b[1]));
@@ -452,8 +406,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     }
                 }
             } else if (owner.equals(cr.ownerId())) {
-                int ix = driver.indexOf(cr.ownerId());
-                Matrix2D pose = ix >= 0 ? driver.resolveAt(ix).pose() : frame;
+                int ix = walker.indexOf(cr.ownerId());
+                Matrix2D pose = ix >= 0 ? walker.resolveAt(ix).pose() : frame;
                 double[] b = deviceBounds(pose, cr.minX(), cr.minY(), cr.maxX(), cr.maxY(), scratchBounds4);
                 x0 = Math.max(x0, (int) Math.floor(b[0]));
                 y0 = Math.max(y0, (int) Math.floor(b[1]));
@@ -465,7 +419,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (partCount == 0 || partCount > com.nishiyu.enderframelib.core.paint.port.GpuSink.MAX_CLIPS || x1 <= x0 || y1 <= y0) {
             return RetainPlan.NONE;
         }
-        Matrix2D nodePose = driver.resolveAt(nodeIndex).pose();
+        Matrix2D nodePose = walker.resolveAt(nodeIndex).pose();
         RetainPlan fast = GpuLayerAttempt.planScrollBounds(route.current(), node.id(), token, nodePose, x0, y0, x1, y1);
         if (fast == RetainPlan.NONE) return RetainPlan.NONE;
         if (fast == RetainPlan.SKIP) {
@@ -505,7 +459,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 層の情報。コンテナの切り取りは、中身の項目の切り取りの鎖のうち、持ち主がコンテナのもの。 */
     private GpuScrollLayer scrollLayerInfo(DisplayItem node, int nodeIndex, int from, int to, Object token) {
         String owner = cachedOwnerKeyOf(node, nodeIndex);
-        List<DisplayItem> items = driver.items();
+        List<DisplayItem> items = walker.items();
         List<ClipPart> parts = new ArrayList<>(1);
         for (int i = from; i < to && parts.isEmpty(); i++) {
             RenderMeta meta = items.get(i).meta();
@@ -524,12 +478,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
         Clip c = finishClip(parts);
         GpuClip[] gc = GpuAttempt.gpuClips(c);
         if (gc == null || c.x1() <= c.x0() || c.y1() <= c.y0()) return null;
-        return new GpuScrollLayer(node.id(), token, driver.resolveAt(nodeIndex).pose(), gc, new int[]{c.x0(), c.y0(), c.x1(), c.y1()});
+        return new GpuScrollLayer(node.id(), token, walker.resolveAt(nodeIndex).pose(), gc, new int[]{c.x0(), c.y0(), c.x1(), c.y1()});
     }
 
     /** 今のフレームの項目数。 */
     private int frameSize;
-    /** 項目ごとのクリップ。項目の索引が作り直された（{@link PaintSceneDriver#generation}）ら捨てる。 */
+    /** 項目ごとのクリップ。入力の列が別の実体になった（{@link SceneWalker#generation}）ら捨てる。 */
     private ClipEntry[] clipCache = new ClipEntry[0];
     private long clipGeneration = -1;
     private boolean sawUnresolvedOwner;
@@ -600,18 +554,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     long culledItems() { return culledItems; }
 
-    /** ドライバ段で画面外ブロックとして走査から外した数（累計。診断・テスト用）。 */
-    public long rangeCulledItems() { return driver.rangeCulledItems(); }
-
-    /** 診断用: 差分描画したフレーム数・全面描画したフレーム数・見積もり外れで全面へ切り替えた回数・省いた項目の延べ数。 */
-    long[] fullReasons() { return fullWhy.clone(); }
-    long partialFrames() { return partialFrames; }
+    /** 診断用: 差分描画したフレーム数・全面描画したフレーム数。 */
+    public long partialFrames() { return partialFrames; }
 
     long fullFrames() { return fullFrames; }
 
-    long damageAborts() { return abortedFrames; }
-
-    long skippedItems() { return skippedItems; }
+    long untouchedPixels() { return untouchedPixels; }
 
     /** 文字・影の広がり（箱の外へはみ出す分）の余白（デバイス画素）。 */
     private static final float CULL_PAD = 128f;
@@ -649,30 +597,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private void drawItem(DisplayItem el, int index, float flat) {
         syncClipGeneration();
-        currentItem = recordExtents && index >= 0 && curExtent.length >= (index + 1) * 4 ? index : -1;
-        currentItemDirty = partialActive && index >= 0 && index < dirtyBuf.length && dirtyBuf[index];
-        Resolved res = driver.resolveAt(index);
+        Resolved res = walker.resolveAt(index);
         if (res.opacity() <= 0.005f) return;
         float opacity = res.residual() * flat;
         if (opacity <= 0.005f) return;
-        AnimatedValues anim = driver.animAt(index);
-        boolean canFastStatic = index >= 0 && !recordExtents && !partialActive && recordOwner == null && driver.idleAt(index);
-        GpuSink spanSink = null;
-        if (canFastStatic && replay.sameItemAndPose(index, el, res)) {
-            if (replay.culled(index)) {
-                if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && fastClipUnchanged(index, el, replay.clip(index))) {
-                    culledItems++;
-                    return;
-                }
-            } else if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_GL_REPLAY.on() && replayableType(el.type()) && replay.flat(index) == flat
-                    && fastClipUnchanged(index, el, replay.clip(index))) {
-                spanSink = route.current();
-                if (spanSink != null && spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
-                    cpuOpsOrdered = cpuOps;
-                    return;
-                }
-            }
-        }
+        AnimatedValues anim = walker.animAt(index);
         // 保持層への記録中の判定は層の実体の範囲だけで決まりクリップを要さない。記録中の buildClip は使い回しの覚えが無く
         // 毎回作り直す（確保が出る）ので、画面外項目はその前に捨てる
         if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && recordOwner != null && outsideClip(el, res.pose(), null)) {
@@ -680,74 +609,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
         Clip clip = buildClip(index, el, anim);
-        if (currentItem >= 0) {
-            int b = currentItem * 4;
-            curClip[b] = clip.x0();
-            curClip[b + 1] = clip.y0();
-            curClip[b + 2] = clip.x1();
-            curClip[b + 3] = clip.y1();
-        }
         if (clip.empty()) return;
         if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && outsideClip(el, res.pose(), clip)) {
-            if (canFastStatic) {
-                replay.remember(index, el, res, clip, 1f, true);
-            }
             culledItems++;
             return;
         }
-
-        // 項目単位の再生（GL）: 止まっている項目が、前フレームと同じ入力（項目・解決結果・クリップ・不透明度）なら、GPU 側の出力を
-        // 計算せずに前進させる。前提は GpuSink.spanReplay。CPU 描画がそのフレームでまだ無いことも条件（描画順の整合のため）
-        if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_GL_REPLAY.on() && index >= 0 && replayableType(el.type()) && !recordExtents && !partialActive && recordOwner == null) {
-            boolean idle = driver.idleAt(index);
-            if (spanSink == null) spanSink = route.current();
-            if (spanSink != null) {
-                if (idle && replay.replayable(index, el, res, clip, flat)) {
-                    if (spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
-                        cpuOpsOrdered = cpuOps;
-                        return;
-                    }
-                }
-                if (!spanSink.spanBegin(index)) spanSink = null;
-            }
-        } else {
-            replay.forget(index);
-        }
-        long cpuBefore = cpuOps;
         drawItemBody(el, anim, res, clip, opacity);
-        if (spanSink != null) {
-            boolean ok = cpuOps == cpuBefore;
-            spanSink.spanEnd(index, ok);
-            // 動いている最中の出力は、次のフレームの止まった出力と同じとは限らない（色の補間の終わりの 1 フレームなど）ので、止まっている項目だけ覚える
-            if (ok && driver.idleAt(index)) replay.remember(index, el, res, clip, flat, false);
-            else replay.forget(index);
-        }
-    }
-
-    /** CPU の図形描画を行った回数（項目単位の再生が、項目の描画に CPU 描画が混じったかを知るため）。 */
-    long cpuOps;
-    /** 再生の直前に、CPU の層を重ねる順序づけを済ませた時点の {@link #cpuOps}（それ以降に CPU 描画があれば、再生の前に順序づけが要る）。 */
-    private long cpuOpsOrdered;
-    /** 項目ごとの再生の鍵（{@link ReplayKeys}）。 */
-    private final ReplayKeys replay = new ReplayKeys();
-
-    private boolean fastClipUnchanged(int index, DisplayItem el, Clip cachedClip) {
-        if (cachedClip == null || index >= clipCache.length) return false;
-        ClipEntry ce = clipCache[index];
-        if (ce == null || ce.clip != cachedClip || ce.w != raster.targetWidth() || ce.h != raster.targetHeight()
-                || ce.generation != clipGeneration || !ItemDiff.unchanged(ce.item, el)) {
-            return false;
-        }
-        for (int k = 0; k < ce.owner.length; k++) {
-            int ow = ce.owner[k];
-            if ((ow < 0 ? null : driver.resolveAt(ow)) != ce.ownerRes[k]) return false;
-        }
-        return true;
-    }
-
-    /** 再生してよい項目の種類（出力が GPU の図形・字形だけで、画像・入力・時間に依らないもの）。 */
-    private static boolean replayableType(ElementType t) {
-        return t == ElementType.RECT || t == ElementType.TEXT || t == ElementType.ROUNDED_BORDER || t == ElementType.BUTTON;
     }
 
     private final float[] scratchRx = new float[4], scratchRy = new float[4];
@@ -840,9 +707,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     void syncClipGeneration() {
-        if (clipGeneration != driver.generation()) {
+        if (clipGeneration != walker.generation()) {
             if (clipCache.length != frameSize) clipCache = java.util.Arrays.copyOf(clipCache, frameSize);
-            clipGeneration = driver.generation();
+            clipGeneration = walker.generation();
         }
     }
 
@@ -858,7 +725,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                         || (source != null && ce.source == source && !ce.unresolvedOwner))) {
             boolean same = true;
             for (int k = 0; k < ce.owner.length && same; k++) {
-                same = (ce.owner[k] < 0 ? null : driver.resolveAt(ce.owner[k])) == ce.ownerRes[k];
+                same = (ce.owner[k] < 0 ? null : walker.resolveAt(ce.owner[k])) == ce.ownerRes[k];
             }
             if (same) return ce.clip;
         }
@@ -923,7 +790,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** クリップを組んだときの持ち主の姿勢（{@link Resolved} の同一実体）が今も同じか。 */
     private boolean ownersUnchanged(int[] owner, Resolved[] ownerRes) {
         for (int k = 0; k < owner.length; k++) {
-            if ((owner[k] < 0 ? null : driver.resolveAt(owner[k])) != ownerRes[k]) return false;
+            if ((owner[k] < 0 ? null : walker.resolveAt(owner[k])) != ownerRes[k]) return false;
         }
         return true;
     }
@@ -993,8 +860,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
         int tw = raster.targetWidth(), th = raster.targetHeight();
-        int ix = p.ownerId() == null ? -1 : driver.indexOf(p.ownerId());
-        Resolved owner = ix >= 0 ? driver.resolveAt(ix) : null;
+        int ix = p.ownerId() == null ? -1 : walker.indexOf(p.ownerId());
+        Resolved owner = ix >= 0 ? walker.resolveAt(ix) : null;
         PartMemo memo = frameParts.get(p);
         if (memo != null && memo.ownerIndex() == ix && memo.owner() == owner && memo.w() == tw && memo.h() == th
                 && (ix >= 0 || p.ownerId() == null)) {
@@ -1036,10 +903,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int ownerIndex = -1;
         Resolved owner = null;
         if (ownerId != null) {
-            int ix = driver.indexOf(ownerId);
+            int ix = walker.indexOf(ownerId);
             if (ix >= 0) {
                 ownerIndex = ix;
-                owner = driver.resolveAt(ix);
+                owner = walker.resolveAt(ix);
                 pose = owner.pose();
             } else {
                 sawUnresolvedOwner = true;
@@ -1162,7 +1029,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
         System.arraycopy(fastDx0, 0, op.dx0, 0, nr); System.arraycopy(fastDx1, 0, op.dx1, 0, nr);
         System.arraycopy(fastDy0, 0, op.dy0, 0, nr); System.arraycopy(fastDy1, 0, op.dy1, 0, nr);
         System.arraycopy(fastCol, 0, op.col, 0, nr);
-        cpuOps++;
         queue.submit(op, fast != null);
     }
 
@@ -1192,7 +1058,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /**
      * 局所の矩形を姿勢で写してクリップと交わらせた画素の範囲 {@code {x0, y0, x1, y1}}（空なら null）。汚れた範囲も広げる。
      * 差分描画のフレームでは、実際に塗る範囲をダメージの外接矩形に収める（外の画素は前のフレームのまま残す）。
-     * 描き直す項目の自然な範囲がダメージの外へ出たら、見積もりが外れた印を付ける（呼び出し側が全面でやり直す）。
      */
     int[] paintRange(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip) {
         double[] b = deviceBounds(pose, bx0, by0, bx1, by1, boundsScratch);
@@ -1200,7 +1065,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int x1 = Math.min(clip.x1(), (int) Math.ceil(b[2])), y1 = Math.min(clip.y1(), (int) Math.ceil(b[3]));
         if (x1 <= x0 || y1 <= y0) return null;
         if (partialActive) {
-            if (currentItemDirty && !damage.covers(x0, y0, x1, y1)) damageAbort = true;
             x0 = Math.max(x0, damage.x0());
             y0 = Math.max(y0, damage.y0());
             x1 = Math.min(x1, damage.x1());
@@ -1208,20 +1072,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
             if (x1 <= x0 || y1 <= y0) return null;
         }
         raster.dirty().add(x0, y0, x1, y1);
-        if (recordExtents && currentItem >= 0) {
-            int e = currentItem * 4;
-            if (curExtent[e + 2] <= curExtent[e] || curExtent[e + 3] <= curExtent[e + 1]) {
-                curExtent[e] = x0;
-                curExtent[e + 1] = y0;
-                curExtent[e + 2] = x1;
-                curExtent[e + 3] = y1;
-            } else {
-                if (x0 < curExtent[e]) curExtent[e] = x0;
-                if (y0 < curExtent[e + 1]) curExtent[e + 1] = y0;
-                if (x1 > curExtent[e + 2]) curExtent[e + 2] = x1;
-                if (y1 > curExtent[e + 3]) curExtent[e + 3] = y1;
-            }
-        }
         return new int[]{x0, y0, x1, y1};
     }
 

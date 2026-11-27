@@ -1,27 +1,31 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.Painter;
+import com.nishiyu.enderframelib.core.paint.SceneDamage;
 import com.nishiyu.enderframelib.core.paint.SceneWalker;
-import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 
-/** 他のパッケージのテスト（{@code SceneWalkerShadowTest}）が、ビューの直近のシーンを走査器でたどる口（M3b-4b-2）。 */
+/**
+ * 他のパッケージのテストが、ビューの直近の表示項目の列を、描画器と同じ入力（列・平行移動の表・列を組んだシーン）で走査器にたどらせる口
+ * （M3b-4b-4a。描画の経路と同じ呼び出し）。
+ */
 public final class SceneWalkAccess {
     private SceneWalkAccess() { }
 
-    /** ビュー {@code v} の直近のシーンを {@code walker} でたどる（{@code V3Frame#walk}）。 */
-    public static void walk(StandaloneView v, SceneWalker walker, PaintOffsets offsets, long nowMs, Matrix2D frame, Painter painter) {
-        v.ui().v3.walk(walker, offsets, nowMs, frame, painter);
+    /** ビュー {@code v} の直近の列を {@code walker} でたどる（描き直す範囲は求めない）。 */
+    public static void walk(StandaloneView v, SceneWalker walker, long nowMs, Matrix2D frame, Painter painter) {
+        UiView ui = v.ui();
+        walker.run(ui.renderCache(), ui.paintOffsets(), ui.paintSource(), nowMs, frame, painter, null);
     }
 
     /**
-     * ビュー {@code v} の直近のフレームの描き直す範囲（M3b-4b-3b）: {@code damage} に直近のシーンと今のスクロール量を渡してシーンの違いを求め、
-     * 走査器でたどって補間・外の事情で変わる項目の範囲を足す。
+     * ビュー {@code v} の直近のフレームの描き直す範囲（描画器と同じ求め方）: {@code damage} に直近のシーンと今のスクロール量を渡してシーンの違いを
+     * 求め、走査器でたどって補間・外の事情で変わる項目・重ね描きの範囲を足す。
      */
-    public static com.nishiyu.enderframelib.core.paint.SceneDamage.Rects damage(StandaloneView v, com.nishiyu.enderframelib.core.paint.SceneDamage damage,
-                                                                              SceneWalker walker, long nowMs, Painter painter) {
-        com.nishiyu.enderframelib.core.paint.SceneDamage.Rects r = damage.next(v.ui().v3.scene(), v.ui().dynamicState());
-        v.ui().v3.walk(walker, PaintOffsets.EMPTY, nowMs, Matrix2D.IDENTITY, painter, r);
+    public static SceneDamage.Rects damage(StandaloneView v, SceneDamage damage, SceneWalker walker, long nowMs, Painter painter) {
+        UiView ui = v.ui();
+        SceneDamage.Rects r = damage.next(ui.scene(), ui.dynamicState());
+        walker.run(ui.renderCache(), ui.paintOffsets(), ui.paintSource(), nowMs, Matrix2D.IDENTITY, painter, r);
         return r;
     }
 }

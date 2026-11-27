@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.SceneWalkAccess;
 import com.nishiyu.enderframelib.common.StandaloneView;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
+import com.nishiyu.enderframelib.core.paint.SceneWalker.Group;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -92,7 +92,7 @@ class SceneWalkerRetainTest {
 
     private static Rec walk(StandaloneView v, SceneWalker walker, long now, BiFunction<Object, int[], RetainPlan> answer) {
         Rec r = new Rec(walker, answer);
-        SceneWalkAccess.walk(v, walker, PaintOffsets.EMPTY, now, Matrix2D.IDENTITY, r);
+        SceneWalkAccess.walk(v, walker, now, Matrix2D.IDENTITY, r);
         return r;
     }
 
@@ -151,7 +151,7 @@ class SceneWalkerRetainTest {
             assertEquals(plain.drawn, recorded.drawn, "記録しても描く項目は同じ");
             Rec failing = new Rec(walker, (t, r) -> RetainPlan.RECORD);
             failing.endResult = false;
-            SceneWalkAccess.walk(v, walker, PaintOffsets.EMPTY, 1000L, Matrix2D.IDENTITY, failing);
+            SceneWalkAccess.walk(v, walker, 1000L, Matrix2D.IDENTITY, failing);
             // 記録に失敗したら範囲をふつうに描き直す: 範囲の項目は 2 回（層へ・描き直し）、それ以外は 1 回
             List<String> expected = new ArrayList<>();
             int from = failing.from, to = failing.to;

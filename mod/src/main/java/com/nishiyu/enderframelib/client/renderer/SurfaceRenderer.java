@@ -64,7 +64,9 @@ public final class SurfaceRenderer {
         if (elements == null || elements.isEmpty()) return false;
         String hovered = style.hovered() != null ? style.hovered() : ClientScreenInteractionManager.getHoveredId(sessionId);
         SurfaceStyle.Audio audio = style.audio();
-        PaintRequest request = new PaintRequest(elements, paintOffsets, widthBlocks, heightBlocks, poseStack, buffer,
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        PaintRequest request = new PaintRequest(elements, paintOffsets, session != null ? session.paintSource() : null,
+                widthBlocks, heightBlocks, poseStack, buffer,
                 style.light(), hovered != null ? hovered : "", sessionId, audio.play(), audio.twoD(), audio.pos(),
                 style.screenSpaceText());
         long tSurface = StageProfiler.begin(PipelineStage.SURFACE);

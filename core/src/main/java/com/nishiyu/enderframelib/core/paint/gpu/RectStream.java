@@ -29,8 +29,7 @@ public final class RectStream implements AutoCloseable {
 
     private final float[] clipKeys;
     private final int[] clipTable;
-    private final int[] clipSlotVersion;
-    private int clipVerNext = 1, clipHighWater;
+    private int clipHighWater;
     private int clipCount;
 
     private int slots;
@@ -42,21 +41,6 @@ public final class RectStream implements AutoCloseable {
     public final long[] rejects = new long[4];
     public long clipRejects;
     public long overflows;
-
-    // 項目単位の保持（再生）
-    private long frameNo;
-    private int[] spSlot0 = new int[0], spSlot1, spCount0, spCount1, spClip0, spClip1, spAtlas;
-    private long[] spFrame;
-    private int[] spGlyphs;
-    private int[][] spRefs;
-    private int[][] spRefVers;
-    private boolean spanOn, spanUnclean;
-    private int spanIndex, spanSlot0, spanCount0, spanClip0, spanAtlas;
-    private long spanOverflows;
-    private int[] spanRefs = new int[16];
-    private int spanRefCount;
-    public long replayedShapes, replayedItems;
-    public int replayedGlyphs;
 
     // 差分インプレース上書き
     private int prevFrameSlots, prevFrameCount, prevFrameClipCount;
@@ -76,7 +60,6 @@ public final class RectStream implements AutoCloseable {
         this.store = new GpuTreeStore(device, capacity, clipCapacity, capacity, capacity);
         this.clipKeys = new float[clipCapacity * KEY];
         this.clipTable = new int[Integer.highestOneBit(clipCapacity * 2 - 1) << 1];
-        this.clipSlotVersion = new int[clipCapacity];
         this.trees = store.trees;
         this.renderer = new RectRenderer(device);
 
@@ -98,162 +81,7 @@ public final class RectStream implements AutoCloseable {
     public int frameCount() { return count; }
     public GpuTreeStore store() { return store; }
 
-    private void ensureSpan(int index) {
-        if (index < spSlot0.length) return;
-        int n = Math.max(index + 1, spSlot0.length * 2 + 64);
-        spSlot0 = Arrays.copyOf(spSlot0, n);
-        spSlot1 = spSlot1 == null ? new int[n] : Arrays.copyOf(spSlot1, n);
-        spCount0 = spCount0 == null ? new int[n] : Arrays.copyOf(spCount0, n);
-        spCount1 = spCount1 == null ? new int[n] : Arrays.copyOf(spCount1, n);
-        spClip0 = spClip0 == null ? new int[n] : Arrays.copyOf(spClip0, n);
-        spClip1 = spClip1 == null ? new int[n] : Arrays.copyOf(spClip1, n);
-        spAtlas = spAtlas == null ? new int[n] : Arrays.copyOf(spAtlas, n);
-        spFrame = spFrame == null ? new long[n] : Arrays.copyOf(spFrame, n);
-        spGlyphs = spGlyphs == null ? new int[n] : Arrays.copyOf(spGlyphs, n);
-        spRefs = spRefs == null ? new int[n][] : Arrays.copyOf(spRefs, n);
-        spRefVers = spRefVers == null ? new int[n][] : Arrays.copyOf(spRefVers, n);
-    }
-
-    public void spanBegin(int index, int atlasResets) {
-        spanOn = true;
-        spanUnclean = false;
-        spanIndex = index;
-        spanSlot0 = slots;
-        spanCount0 = count;
-        spanClip0 = clipCount;
-        spanAtlas = atlasResets;
-        spanOverflows = overflows;
-        spanRefCount = 0;
-        lastClips = null;
-    }
-
-    private void spanRef(int id) {
-        for (int i = 0; i < spanRefCount; i++) if (spanRefs[i] == id) return;
-        if (spanRefCount == spanRefs.length) spanRefs = Arrays.copyOf(spanRefs, spanRefCount * 2);
-        spanRefs[spanRefCount++] = id;
-    }
-
-    public void spanEnd(boolean ok, int atlasResets, int glyphs) {
-        if (!spanOn) return;
-        spanOn = false;
-        int index = spanIndex;
-        ensureSpan(index);
-        if (verifyIndex == index) spanVerifyCheck(index, ok && !spanUnclean && overflows == spanOverflows && atlasResets == spanAtlas); // 記録を書き換える前に、前フレームの出力と比べる
-        if (!ok || spanUnclean || overflows != spanOverflows || atlasResets != spanAtlas || slots - spanSlot0 > 64) {
-            spFrame[index] = -1;
-            return;
-        }
-        spSlot0[index] = spanSlot0; spSlot1[index] = slots;
-        spCount0[index] = spanCount0; spCount1[index] = count;
-        spClip0[index] = spanClip0; spClip1[index] = clipCount;
-        spAtlas[index] = atlasResets;
-        spGlyphs[index] = glyphs;
-        int[] refs = spRefs[index];
-        int[] vers = spRefVers[index];
-        if (refs == null || refs.length != spanRefCount) {
-            refs = new int[spanRefCount];
-            vers = new int[spanRefCount];
-            spRefs[index] = refs;
-            spRefVers[index] = vers;
-        }
-        System.arraycopy(spanRefs, 0, refs, 0, spanRefCount);
-        for (int i = 0; i < spanRefCount; i++) vers[i] = clipSlotVersion[refs[i]];
-        spFrame[index] = frameNo;
-    }
-
-    // 検証（VERIFY_MEMO）: 再生できる項目を再生せずに描き直させ、描き直した出力が前フレームに残っている出力と同じか比べる
-    /** 検証で照合した項目の数（診断・テスト用）。 */
-    public static final java.util.concurrent.atomic.LongAdder STAT_VERIFIED_SPANS = new java.util.concurrent.atomic.LongAdder();
-    private int verifyIndex = -1;
-    private byte[] vTransforms, vEffects, vPrimitives, vClips;
-    private int[] vOrder;
-
-    /**
-     * 検証モード: 項目 {@code index} が再生できるときに、前フレームの出力（影）を写して true を返す。呼び出し側は再生せず、
-     * 通常どおり描き直す。{@link #spanEnd} が描き直した出力と比べる。再生できないなら false。
-     */
-    public boolean spanVerifyArm(int index, int atlasResets) {
-        if (!spanCanReplay(index, atlasResets)) return false;
-        int s0 = spSlot0[index], s1 = spSlot1[index], c0 = spCount0[index], c1 = spCount1[index];
-        vTransforms = trees.transforms.copyShadow(s0, s1);
-        vEffects = trees.effects.copyShadow(s0, s1);
-        vPrimitives = trees.primitives.copyShadow(s0, s1);
-        vClips = trees.clips.copyShadow(spClip0[index], spClip1[index]);
-        vOrder = new int[c1 - c0];
-        for (int i = 0; i < vOrder.length; i++) vOrder[i] = trees.order.getInt(c0 + i, 0);
-        verifyIndex = index;
-        return true;
-    }
-
-    private void spanVerifyCheck(int index, boolean ok) {
-        if (verifyIndex != index) return;
-        verifyIndex = -1;
-        int s0 = spSlot0[index], s1 = spSlot1[index], c0 = spCount0[index], c1 = spCount1[index];
-        String why = null;
-        if (!ok) why = "描き直した出力が記録できなかった（再生は記録できる前提だった）";
-        else if (s0 != spanSlot0 || slots != s1 || count != c1 || clipCount != spClip1[index]) why = "描き直した出力の長さが違う（slot " + (slots - spanSlot0) + " ≠ " + (s1 - s0) + "）";
-        else {
-            int d;
-            if ((d = trees.transforms.firstShadowDifference(s0, vTransforms)) >= 0) why = "変形の slot " + d;
-            else if ((d = trees.effects.firstShadowDifference(s0, vEffects)) >= 0) why = "効果の slot " + d;
-            else if ((d = trees.primitives.firstShadowDifference(s0, vPrimitives)) >= 0) why = "図形の slot " + d;
-            else if ((d = trees.clips.firstShadowDifference(spClip0[index], vClips)) >= 0) why = "クリップの slot " + d;
-            else for (int i = 0; i < vOrder.length && why == null; i++) if (trees.order.getInt(c0 + i, 0) != vOrder[i]) why = "描画順 " + (c0 + i);
-        }
-        if (why != null) throw new AssertionError("項目の再生が古い: 項目 " + index + " " + why);
-        STAT_VERIFIED_SPANS.increment();
-    }
-
-    public void spanDrop(int index) {
-        spanOn = false;
-        if (verifyIndex == index) verifyIndex = -1;
-        if (index < spFrame.length) spFrame[index] = -1;
-    }
-
-    public boolean spanCanReplay(int index, int atlasResets) {
-        if (index >= spSlot0.length || spFrame[index] != frameNo - 1) return false;
-        if (slots != spSlot0[index] || count != spCount0[index] || clipCount != spClip0[index] || atlasResets != spAtlas[index]) return false;
-        int[] refs = spRefs[index];
-        int[] vers = spRefVers[index];
-        int c0 = spClip0[index], c1 = spClip1[index];
-        for (int i = 0; i < refs.length; i++) {
-            int r = refs[i];
-            if (r >= clipCapacity || clipSlotVersion[r] != vers[i]) return false;
-            if (r >= clipCount && (r < c0 || r >= c1)) return false;
-        }
-        return true;
-    }
-
-    public void spanApply(int index) {
-        int c0 = spClip0[index], c1 = spClip1[index];
-        for (int slot = c0; slot < c1; slot++) insertClipSlot(slot);
-        clipCount = c1;
-        replayedShapes += spCount1[index] - spCount0[index];
-        accepted += spCount1[index] - spCount0[index];
-        replayedItems++;
-        replayedGlyphs = spGlyphs[index];
-        slots = spSlot1[index];
-        count = spCount1[index];
-        spFrame[index] = frameNo;
-        lastClips = null;
-    }
-
-    private void insertClipSlot(int slot) {
-        float[] key = clipKeys;
-        int o = slot * KEY;
-        int h = 17;
-        h = h * 31 + Float.floatToIntBits(key[o]); h = h * 31 + Float.floatToIntBits(key[o + 1]); h = h * 31 + Float.floatToIntBits(key[o + 2]);
-        h = h * 31 + Float.floatToIntBits(key[o + 3]); h = h * 31 + Float.floatToIntBits(key[o + 4]); h = h * 31 + Float.floatToIntBits(key[o + 5]);
-        h = h * 31 + Float.floatToIntBits(key[o + 7]) + 7 * Float.floatToIntBits(key[o + 8]) + 13 * Float.floatToIntBits(key[o + 9]) + 29 * Float.floatToIntBits(key[o + 10]);
-        h ^= h >>> 15;
-        int mask = clipTable.length - 1;
-        int i = h & mask;
-        while (clipTable[i] >= 0) i = (i + 1) & mask;
-        clipTable[i] = slot;
-    }
-
     public void begin() {
-        verifyIndex = -1; // 検証の武装は 1 フレーム限り（描き直さずに終わった項目の写しを次のフレームへ持ち越さない）
         prevFrameSlots = slots;
         prevFrameCount = count;
         prevFrameClipCount = clipCount;
@@ -263,7 +91,6 @@ public final class RectStream implements AutoCloseable {
         runStart = 0;
         clipCount = 0;
         lastClips = null;
-        frameNo++;
         Arrays.fill(clipTable, -1);
     }
 
@@ -377,7 +204,6 @@ public final class RectStream implements AutoCloseable {
     public void pushImage(Matrix2D pose, float bx0, float by0, float bx1, float by1, float px0, float py0, float sx, float sy,
                           float x0, float y0, float x1, float y1, float[] rx, float[] ry, int imgW, int imgH,
                           int taps, float stepX, float stepY, GpuClip[] clips, float opacity) {
-        spanUnclean = true;
         open(pose, PropertyTrees.OP_IMAGE, bx0, by0, bx1, by1, 0, clips, opacity, 0f);
         int ext = nextExtSlot();
         trees.setExtFloat(ext, 0, x0);
@@ -478,7 +304,6 @@ public final class RectStream implements AutoCloseable {
             switch (i) { case 0 -> a = id; case 1 -> b = id; case 2 -> c = id; default -> d = id; }
         }
         if (n > 0) { lastClips = clips; lastA = a; lastB = b; lastC = c; lastD = d; }
-        if (spanOn) { if (n > 0) spanRef(a); if (n > 1) spanRef(b); if (n > 2) spanRef(c); if (n > 3) spanRef(d); }
         trees.setPrimitiveClips(k, n, a, b, c, d);
     }
 
@@ -514,7 +339,6 @@ public final class RectStream implements AutoCloseable {
                     || !same(key, o + 11, c.rx()) || !same(key, o + 15, c.ry());
         }
         if (changed) {
-            clipSlotVersion[slot] = clipVerNext++;
             key[o] = f0; key[o + 1] = f1; key[o + 2] = f2; key[o + 3] = f3; key[o + 4] = f4; key[o + 5] = f5;
             key[o + 6] = c.scale(); key[o + 7] = c.x0(); key[o + 8] = c.y0(); key[o + 9] = c.x1(); key[o + 10] = c.y1();
             for (int j = 0; j < 4; j++) { key[o + 11 + j] = c.rx()[j]; key[o + 15 + j] = c.ry()[j]; }

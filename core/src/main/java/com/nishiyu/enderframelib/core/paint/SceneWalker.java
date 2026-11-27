@@ -1,50 +1,54 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Resolved;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
-import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
-import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
-import com.nishiyu.enderframelib.core.paint.scene.SceneAnchorFollow;
-import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
-import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Set;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 走査器（M3b-4b。計画書 §3.4「M3b-4b の設計」）: {@link DisplayScene} を描画順（付録 E）にたどり、層の描画命令を組み立てた項目を
- * 描画側（{@link Painter}）へ渡す。項目の姿勢（親から引き継ぐ変形）・祖先の不透明度・グループ（不透明度・フィルター・マスクの層）の鎖を
- * 解くのはここ 1 か所。
+ * 走査器（M3b-4b。計画書 §3.4「M3b-4b の設計」）: 全バックエンド（CPU・GPU・Vulkan・MOD の面）の描画の経路。ビューが
+ * {@link SceneDisplayListAdapter} で組んだ表示項目の列（スクロールコンテナは中身を 1 つの節にまとめてスクロール 0 で組む）を
+ * 描画順にたどり、描画側（{@link Painter}）へ渡す。項目の姿勢（親から引き継ぐ変形）・祖先の不透明度・グループ（不透明度・フィルター・
+ * マスクの層）の鎖を解くのはここ 1 か所。
  *
- * <p>{@link PaintSceneDriver} との違い: 表示項目の列をフレームをまたいで持たない（索引の作り直し・差分の照合・項目の位置で引く記憶が無い）。
- * 層の範囲（フィルター・マスクの錨が覆う項目）は、項目に書いた範囲を数え直すのでなく、一時アダプタが層を描き終えた知らせ
- * （{@link ItemSink#setLayer}）から取る。補間の状態は節ごとの表（{@link AnimationStates}）から引く。項目の並びと位置の番号は
- * 一時アダプタの表示項目の列と同じなので、描画側の呼び出し（{@link Painter}）は変えずに済む。</p>
+ * <p>フレームをまたいで何も持たない（M3b-4b-4a で {@code PaintSceneDriver} を置き換えた）: 索引・親の位置・姿勢は毎フレーム作り直し、
+ * 前のフレームの姿勢・索引の差分・画面外のブロックの覚えを持たない。持つのは補間の状態（節ごとの表 {@link AnimationStates}。
+ * {@link CssAnimator} がセッションごとに持つ。列が別の実体になったら列にある節の分だけ残す）と、前のフレームの時刻・列の同一性
+ * （{@link #generation}）だけ。スクロールの移動量と利用者の
+ * 移動は、ビューの平行移動の表（{@link PaintOffsets}）で節に足す。</p>
  *
- * <p>M3b-4b-2 では影で動かし、{@code PaintSceneDriver} と描画側への呼び出し（描く項目・順・グループの鎖・不透明度・姿勢）が実文書の全フレームで
- * 一致することをテスト（{@code SceneWalkerShadowTest}）で確かめる。M3b-4b-3b で、保持層を中身の節に結び（{@link ScrollContentRanges}。中身の
- * 同一性の印はコンテナの層の子の並び）、描き直す範囲に補間・外の事情で変わる項目を足す（{@link #addDynamicDamage}。シーンの違いは
- * {@link SceneDamage}）。画面外のブロックの間引きは 4c、全バックエンドの切り替えは 4b-4。スレッドセーフではない。</p>
+ * <p>シーン（{@link SceneSource}）を渡すと、保持層にできるスクロールコンテナの中身の範囲を求め（{@link ScrollContentRanges}。中身の同一性の
+ * 印はコンテナの層の子の並び）、描き直す範囲（{@link SceneDamage} がシーンの違いから求めたもの）に、補間・外の事情で変わる項目を足す
+ * （{@link #addDynamicDamage}）と、シーンの外から足した重ね描きの前後の範囲（{@link #addOverlayDamage}）。画面外のブロックの間引きは M3b-4c（チャンクのカリング）。スレッドセーフではない。</p>
  */
-public final class SceneWalker implements ItemSink {
+public final class SceneWalker {
+    /** 項目の姿勢（親から引き継いだ変形）と、祖先の不透明度の積。{@code anim} は親の実体を共有する項目では親のもの（項目の値は {@link #animAt}）。 */
+    public record Resolved(Matrix2D pose, float opacity, float residual, List<Group> groups, AnimatedValues anim) {}
+
+    /** 不透明度を持つ祖先（グループ）。層にまとめて描き、{@code opacity} を掛けて重ねる。 */
+    public record Group(String id, float opacity, int anchor, LayerSpec spec, double[] map, String maskOf, Matrix2D pose) {}
+
+    /** 項目の動きの種類（{@link CssAnimator.AnimState#motionKindAt} と同じ値）。 */
+    public static final byte ACT_IDLE = 0, ACT_PAINT_ONLY = 1, ACT_GEOMETRY = 2, ACT_OPACITY = 3;
+
+    /** スクロール節（{@code _scrollc}）の id の接尾辞。 */
+    public static final String SCROLL_CONTENT_SUFFIX = "_scrollc";
+
     private final String sessionId;
     private final PoseMath poseMath = new PoseMath();
     private float scrollSnapDpr;
 
     // ---- 1 フレームの間だけ使う（終わったら項目の参照を捨てる） ----
+    private List<DisplayItem> list;
     private DisplayItem[] items = new DisplayItem[64];
     private int count;
     private int[] parentIdx = new int[64];
@@ -55,7 +59,7 @@ public final class SceneWalker implements ItemSink {
     @SuppressWarnings("unchecked")
     private List<Group>[] chains = new List[64];
     private int[] members = new int[64];
-    /** フィルター・マスクの錨の位置（{@link #setLayer} の知らせの順＝内側が先。走査の前に並べ替える）。 */
+    /** フィルター・マスクの錨の位置（昇順）。 */
     private int[] fxAnchors = new int[8];
     private int fxCount;
     private final Long2IntOpenHashMap indexOf = new Long2IntOpenHashMap();
@@ -68,53 +72,66 @@ public final class SceneWalker implements ItemSink {
     private long now;
     private Matrix2D frame = Matrix2D.IDENTITY;
     private long posesBuilt;
+
+    // ---- フレームをまたぐもの（覚えではなく、比べる相手と印） ----
     /** 前の {@link #run} の時刻（補間がその時刻から今までに動いたかを見る。まだ無ければ -1）。 */
     private long lastNow = -1L;
+    /** 前の {@link #run} の列（同一性だけを見る。{@link #generation} を進めるため）。 */
+    private List<DisplayItem> lastList;
+    private long generation;
+    /** 前のフレームの重ね描きの範囲（CSS px。{@link #addOverlayDamage}）。 */
+    private final SceneDamage.Rects prevOverlay = new SceneDamage.Rects();
 
     public SceneWalker(String sessionId) {
         this.sessionId = java.util.Objects.requireNonNull(sessionId, "sessionId");
         indexOf.defaultReturnValue(-1);
     }
 
-    /** スクロールの中身の節の移動量を丸める先のデバイス画素比（{@link PaintSceneDriver#setScrollSnapDpr} と同じ）。 */
+    /**
+     * スクロールの中身の節（{@link #SCROLL_CONTENT_SUFFIX}）の見える移動量を、デバイス画素の整数倍へ丸める（{@code dpr} が 0 以下なら丸めない）。
+     * 保持した層をずらして使うとき、小数の位置だと層の境で 1 画素ずれるため。姿勢だけに適用する。
+     */
     public void setScrollSnapDpr(float dpr) { this.scrollSnapDpr = dpr; }
 
     /** 作った姿勢の数の累計（親との共有は数えない）。 */
     public long posesBuilt() { return posesBuilt; }
 
-    /**
-     * {@code scene} を時刻 {@code nowMs}・変換 {@code frame}（CSS px → デバイス画素）の見た目で描画順にたどり、{@code painter} へ渡す。
-     *
-     * <p>スクロール量は項目に焼き込まない（M3b-4b-3）: 中身を 1 つの節にまとめるスクロールコンテナはスクロール 0 で組み、今のスクロール量
-     * （{@code dynamic}）を中身の節・つまみ・中の sticky の平行移動として足す。項目はそのコンテナのスクロールに依らない。
-     * {@code userOffsets} は利用者の描画上の平行移動（{@code UiView#setPaintOffset}）だけ。</p>
-     */
-    public void run(SceneDisplayListAdapter adapter, DisplayScene scene, DynamicSceneState dynamic, PaintOffsets userOffsets,
-                    long nowMs, Matrix2D frame, Painter painter) {
-        run(adapter, scene, dynamic, userOffsets, nowMs, frame, painter, null);
-    }
+    /** 入力の列が前の {@link #run} と別の実体になるたびに進む。項目の位置で引く描画側の覚え（クリップ）の無効化に使う。 */
+    public long generation() { return generation; }
 
     /**
-     * {@link #run(SceneDisplayListAdapter, DisplayScene, DynamicSceneState, PaintOffsets, long, Matrix2D, Painter)} に、描き直す範囲
-     * {@code damage}（{@link SceneDamage} がシーンの違いから求めたもの。null なら求めない）へ、補間と外の事情で変わる項目の範囲を
-     * 走査の前に足す（{@link #addDynamicDamage}）。
+     * 表示項目の列 {@code list} を時刻 {@code nowMs}・変換 {@code frame}（CSS px → デバイス画素）の見た目で描画順にたどり、{@code painter} へ渡す。
+     *
+     * @param offsets 節ごとの描画上の平行移動（スクロールの中身の節・つまみ・中の sticky の移動と利用者の移動。{@code UiView#paintOffsets}）
+     * @param source  列を組んだシーン（null なら保持層の範囲を求めない）
+     * @param damage  描き直す範囲（{@link SceneDamage} がシーンの違いから求めたもの）。null でなければ、補間・外の事情で変わる項目の範囲を足す
      */
-    public void run(SceneDisplayListAdapter adapter, DisplayScene scene, DynamicSceneState dynamic, PaintOffsets userOffsets,
-                    long nowMs, Matrix2D frame, Painter painter, SceneDamage.Rects damage) {
+    public void run(List<DisplayItem> list, PaintOffsets offsets, SceneSource source, long nowMs, Matrix2D frame, Painter painter,
+                    SceneDamage.Rects damage) {
         long prevNow = lastNow;
         lastNow = nowMs;
+        boolean newList = list != lastList;
+        if (newList) {
+            generation++;
+            lastList = list;
+        }
         count = 0;
         fxCount = 0;
+        if (list == null || list.isEmpty()) return;
         try {
-            DynamicSceneState real = dynamic != null ? dynamic : DynamicSceneState.of(null, scene.root.w, scene.root.h);
-            List<ScrollContentInfo> contents = emitUnscrolled(adapter, scene, real);
-            if (count == 0) return;
+            load(list);
             this.now = nowMs;
             this.frame = frame;
             this.anims = CssAnimator.states(sessionId, true);
-            index(userOffsets != null ? userOffsets : PaintOffsets.EMPTY, contents, real);
-            if (damage != null) addDynamicDamage(damage, prevNow);
-            ranges.compute(items, count, parentIdx, indexOf, contents, scene);
+            // 列が変わった: 列にある節の補間状態だけを残す（後片付けは実時間でなく、構造の変化の印。M3b-4b-2）
+            if (newList) anims.retainNodesOf(list);
+            index(offsets != null ? offsets : PaintOffsets.EMPTY);
+            if (damage != null) {
+                addDynamicDamage(damage, prevNow);
+                addOverlayDamage(damage, source != null ? source.baseSizeIn(list) : 0, source != null && !source.items().isEmpty());
+                if (!painter.beginWalk(damage)) return;
+            }
+            if (source != null && source.scene() != null) ranges.compute(items, count, parentIdx, indexOf, source.contents(), source.scene());
             walk(painter);
         } finally {
             Arrays.fill(items, 0, count, null);
@@ -126,55 +143,28 @@ public final class SceneWalker implements ItemSink {
             activeAnchors.clear();
             layeredScratch.clear();
             count = 0;
+            this.list = null;
         }
     }
 
-    /**
-     * 今スクロールしているコンテナ（根・html・body・アンカーが追従するものを除く）をスクロール 0 で組む。組んだ結果、中身を 1 つの節に
-     * まとめられなかった（固定配置・外へ出る絶対配置・content-visibility の子孫を持つ）コンテナは、今のスクロール量で組み直す。
-     */
-    private List<ScrollContentInfo> emitUnscrolled(SceneDisplayListAdapter adapter, DisplayScene scene, DynamicSceneState real) {
-        Map<HtmlNode, float[]> scrolled = real.scroll.snapshot();
-        Set<HtmlNode> zero = Collections.newSetFromMap(new IdentityHashMap<>());
-        if (!scrolled.isEmpty()) {
-            Set<HtmlNode> followed = SceneAnchorFollow.followedScrollers(scene);
-            for (HtmlNode n : scrolled.keySet()) {
-                String t = n.tag;
-                if (!"root".equals(t) && !"html".equals(t) && !"body".equals(t) && !followed.contains(n)) zero.add(n);
+    /** {@link #run} の、シーンも描き直す範囲も渡さない版。 */
+    public void run(List<DisplayItem> list, long nowMs, Matrix2D frame, Painter painter) {
+        run(list, PaintOffsets.EMPTY, null, nowMs, frame, painter, null);
+    }
+
+    private void load(List<DisplayItem> src) {
+        int n = src.size();
+        if (items.length < n) grow(Math.max(n, items.length * 2));
+        this.list = src;
+        for (int i = 0; i < n; i++) {
+            DisplayItem it = src.get(i);
+            items[i] = it;
+            if (it.type() == ElementType.NODE && ItemDiff.hasFx(it.hints().layer())) {
+                if (fxCount == fxAnchors.length) fxAnchors = Arrays.copyOf(fxAnchors, fxCount * 2);
+                fxAnchors[fxCount++] = i;
             }
         }
-        for (int attempt = 0; ; attempt++) {
-            count = 0;
-            fxCount = 0;
-            adapter.emit(scene, real.unscrolled(zero), this);
-            List<ScrollContentInfo> contents = adapter.scrollContents();
-            if (zero.isEmpty()) return contents;
-            Set<HtmlNode> asOneNode = Collections.newSetFromMap(new IdentityHashMap<>());
-            for (ScrollContentInfo c : contents) asOneNode.add(c.node());
-            if (asOneNode.containsAll(zero)) return contents;
-            if (attempt >= 2) zero.clear();
-            else zero.retainAll(asOneNode);
-        }
-    }
-
-    // ---- ItemSink: 一時アダプタが描画順に渡す項目 ----
-
-    @Override
-    public void add(DisplayItem item) {
-        if (count == items.length) grow(count * 2);
-        items[count++] = item;
-    }
-
-    @Override
-    public int size() { return count; }
-
-    @Override
-    public void setLayer(int anchor, LayerSpec spec) {
-        items[anchor] = BoxItemPainter.withLayer(items[anchor], spec);
-        if (ItemDiff.hasFx(spec)) {
-            if (fxCount == fxAnchors.length) fxAnchors = Arrays.copyOf(fxAnchors, fxCount * 2);
-            fxAnchors[fxCount++] = anchor;
-        }
+        count = n;
     }
 
     private void grow(int cap) {
@@ -191,7 +181,7 @@ public final class SceneWalker implements ItemSink {
 
     // ---- 1 フレームの索引（鍵 → 位置・親・平行移動。フレームをまたいで持たない） ----
 
-    private void index(PaintOffsets offsets, List<ScrollContentInfo> contents, DynamicSceneState real) {
+    private void index(PaintOffsets offsets) {
         int n = count;
         for (int i = 0; i < n; i++) {
             DisplayItem it = items[i];
@@ -215,33 +205,9 @@ public final class SceneWalker implements ItemSink {
             visiting[i] = false;
             members[i] = 0;
         }
-        Arrays.sort(fxAnchors, 0, fxCount);
-        for (int c = 0, cn = contents.size(); c < cn; c++) scrollOffsets(contents.get(c), real);
         if (offsets.isEmpty()) return;
         if (offsets.isImmutable()) collectOffsets(offsets);
         else synchronized (offsets) { collectOffsets(offsets); }
-    }
-
-    /**
-     * スクロールコンテナ {@code c} の中身の節・つまみ・中の sticky の平行移動（{@code UiView} がスクロールだけの変化で表示項目の列を動かす式と同じ。
-     * 組んだときのスクロール量 {@code sx0}・{@code sy0} は、スクロール 0 で組んだコンテナでは 0）。
-     */
-    private void scrollOffsets(ScrollContentInfo c, DynamicSceneState real) {
-        float dx = real.scroll.getScrollX(c.node()) - c.sx0(), dy = real.scroll.getScrollY(c.node()) - c.sy0();
-        if (dx == 0f && dy == 0f) return;
-        setOffset(c.contentId(), -dx, -dy);
-        // つまみは組んだときと同じ整数の位置へ（小数のまま動かすと角の縁の画素が組み直しと違う）
-        if (c.thumbVId() != null) setOffset(c.thumbVId(), 0f, Math.round(c.fy0() + c.ky() * dy));
-        if (c.thumbHId() != null) setOffset(c.thumbHId(), Math.round(c.fx0() + c.kx() * dx), 0f);
-        for (int k = 0, sn = c.stickies().size(); k < sn; k++) setOffset(c.stickies().get(k).nodeId(), 0f, c.stickies().get(k).extraAt(dy));
-    }
-
-    private void setOffset(String id, float dx, float dy) {
-        int idx = indexOf.get(DisplayItem.keyOf(id));
-        if (idx >= 0 && items[idx].type() == ElementType.NODE && id.equals(items[idx].id())) {
-            offX[idx] = dx;
-            offY[idx] = dy;
-        }
     }
 
     private void collectOffsets(PaintOffsets eff) {
@@ -267,18 +233,34 @@ public final class SceneWalker implements ItemSink {
         if (damage.full()) return;
         for (int i = 0; i < count; i++) {
             DisplayItem el = items[i];
-            CssAnimator.AnimState st = states[i];
-            if (st == null) st = states[i] = CssAnimator.stateFor(anims, el, now);
+            CssAnimator.AnimState st = stateAt(i);
             boolean activeNow = st.isActiveAt(now), activeBefore = prevNow >= 0L && st.isActiveAt(prevNow);
             if (activeNow || activeBefore) {
                 int kind = Math.max(activeNow ? st.motionKindAt(now) : 0, activeBefore ? st.motionKindAt(prevNow) : 0);
-                if (kind >= PaintSceneDriver.ACT_GEOMETRY) { damage.setFull("animation-geometry"); return; }
+                if (kind >= ACT_GEOMETRY) { damage.setFull("animation-geometry"); return; }
             } else if (!el.type().isVolatileForDamage()) {
                 continue;
             }
             if (el.type() == ElementType.NODE) continue; // 節は描かない（色の補間は部品の項目が持つ）
             addItemBounds(damage, el, resolveAt(i).pose());
             if (damage.full()) return;
+        }
+    }
+
+    /**
+     * シーンの外から足した重ね描き（キャレット・選択の一覧・インスペクタ。列の位置 {@code from} から後ろ）の、前のフレームと今の範囲を足す。
+     * 描く列がシーンの列で始まらない（{@code from} が 0 なのにシーンの列がある）なら全面にする。
+     */
+    private void addOverlayDamage(SceneDamage.Rects damage, int from, boolean sceneHasItems) {
+        if (from == 0 && sceneHasItems) damage.setFull("list-not-from-scene");
+        for (int i = 0, n = prevOverlay.size(); i < n; i++) {
+            damage.add(prevOverlay.x0(i), prevOverlay.y0(i), prevOverlay.x1(i), prevOverlay.y1(i));
+        }
+        prevOverlay.clear();
+        for (int i = from; i < count; i++) {
+            if (items[i].type() == ElementType.NODE) continue;
+            addItemBounds(prevOverlay, items[i], resolveAt(i).pose());
+            addItemBounds(damage, items[i], resolveAt(i).pose());
         }
     }
 
@@ -300,10 +282,11 @@ public final class SceneWalker implements ItemSink {
     // ---- 保持層（M3b-4b-3b） ----
 
     /**
-     * 保持層の扱いを描画側に問う（{@link PaintSceneDriver} と同じ規則）: 中身の節の祖先にグループ（不透明度・フィルター）がある・フィルターの錨の
-     * 範囲に入っているときは問わない。外側が保持する範囲の中の入れ子は問わない。
+     * 保持層の扱いを描画側に問う: 中身の節の祖先にグループ（不透明度・フィルター）がある・フィルターの錨の範囲に入っているときは問わない。
+     * 外側が保持する範囲の中の入れ子は問わない。
      */
     private void planRetained(Painter painter) {
+        if (!com.nishiyu.enderframelib.core.kernel.Shortcut.RETAIN_SCROLL_LAYERS.on()) return;
         int coveredUntil = 0;
         for (int k = 0; k < ranges.count; k++) {
             int node = ranges.node[k];
@@ -341,7 +324,7 @@ public final class SceneWalker implements ItemSink {
                 continue;
             }
             DisplayItem el = items[i];
-            if (el.type() == ElementType.NODE || painter.skipItem(i)) {
+            if (el.type() == ElementType.NODE) {
                 chains[i] = null;
                 continue;
             }
@@ -408,7 +391,8 @@ public final class SceneWalker implements ItemSink {
         float flat = 1f;
         for (int gi = 0, gn = chain.size(); gi < gn; gi++) {
             Group g = chain.get(gi);
-            // フィルター・マスクのあるグループと、描く部品が 2 つ以上のグループだけ層にする（PaintSceneDriver と同じ規則）
+            // フィルター・マスクのあるグループと、描く部品が 2 つ以上のグループだけ層にする
+            // （部品が 1 つなら、部品ごとに不透明度を掛けても同じ。GPU の経路も保てる）
             int m = g.anchor() >= 0 ? members[g.anchor()] : (extraMembers != null ? extraMembers.getOrDefault(g.id(), 0) : 0);
             if (g.spec() != null || g.maskOf() != null || m > 1) layered.add(g);
             else flat *= g.opacity();
@@ -459,6 +443,18 @@ public final class SceneWalker implements ItemSink {
 
     // ---- 描画側が drawItem の間に引く値 ----
 
+    /** 走査中の表示項目の列（描画側が範囲の項目を読む。走査の外では null）。 */
+    public List<DisplayItem> items() { return list; }
+
+    /** 走査中の、id の項目の位置。無ければ -1。 */
+    public int indexOf(String id) { return id == null ? -1 : indexOf.get(DisplayItem.keyOf(id)); }
+
+    /** 走査中の、id の項目。無ければ null。 */
+    public DisplayItem itemById(String id) {
+        int i = indexOf(id);
+        return i >= 0 && i < count ? items[i] : null;
+    }
+
     /** 項目 {@code i} の姿勢（このフレームで 1 回だけ作る。姿勢の変わらない部品は親のものを共有する）。 */
     public Resolved resolveAt(int i) {
         Resolved r = res[i];
@@ -473,9 +469,7 @@ public final class SceneWalker implements ItemSink {
                 visiting[i] = false;
             }
         }
-        CssAnimator.AnimState st = states[i];
-        if (st == null) st = states[i] = CssAnimator.stateFor(anims, el, now);
-        AnimatedValues av = st.getInterpolatedValues(now);
+        AnimatedValues av = stateAt(i).getInterpolatedValues(now);
         r = parent != null && el.type() != ElementType.NODE && isIdentityGeometry(av) ? parent : build(el, i, parent, av);
         res[i] = r;
         return r;
@@ -494,16 +488,29 @@ public final class SceneWalker implements ItemSink {
     /** 走査中の、フレーム全体の変換（CSS px → デバイス画素）。 */
     public Matrix2D frame() { return frame; }
 
+    private CssAnimator.AnimState stateAt(int i) {
+        CssAnimator.AnimState st = states[i];
+        if (st == null) st = states[i] = CssAnimator.stateFor(anims, items[i], now);
+        return st;
+    }
+
+    /** セッション {@code sessionId} の補間の状態で、{@code items} に時刻 {@code nowMs} でまだ動いているアニメーションがあるか。 */
+    public static boolean anyActiveAt(String sessionId, List<DisplayItem> items, long nowMs) {
+        AnimationStates states = CssAnimator.states(sessionId, true);
+        for (DisplayItem el : items) if (CssAnimator.stateFor(states, el, nowMs).isActiveAt(nowMs)) return true;
+        return false;
+    }
+
     private static boolean isIdentityGeometry(AnimatedValues a) {
         return a.opacity() == 1f && a.tx() == 0f && a.ty() == 0f && a.sx() == 1f && a.sy() == 1f && a.rot() == 0f && a.skew() == 0f;
     }
 
     private static boolean isScrollContent(DisplayItem it) {
         return DisplayItem.partOrdinalOf(it.key()) == DisplayItem.PART_SCROLL_CONTENT
-                || (it.id() != null && it.id().endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX));
+                || (it.id() != null && it.id().endsWith(SCROLL_CONTENT_SUFFIX));
     }
 
-    /** 姿勢を作る（{@link PaintSceneDriver} の姿勢と同じ式・同じ順。前のフレームの姿勢は使い回さない）。 */
+    /** 姿勢を作る（前のフレームの姿勢は使い回さない）。 */
     private Resolved build(DisplayItem el, int index, Resolved parent, AnimatedValues anim) {
         posesBuilt++;
         Matrix2D base = parent != null ? parent.pose() : frame;

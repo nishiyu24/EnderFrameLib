@@ -30,31 +30,18 @@ public enum Shortcut {
 
     /** 損傷範囲による部分描画を使うか（{@code -Denderframe.gpu.nodamage=true} で無効）。 （以前の {@code GpuRenderBackend.damageEnabled}） */
 
-    /** 再生を使うか（切り分け用: {@code -Denderframe.gl.noreplay=true} で無効）。 （以前の {@code RectStream.replayEnabled}） */
-    GL_REPLAY(EngineFlags.GL_REPLAY),
-
-    /** 姿勢が動いていない項目の姿勢を、前のフレームのものから使い回すか。自分の変形・不透明度が恒等の葉の項目は、親の姿勢の実体を そのまま使う（値は親と同じ。動く節の下の全項目の作り直しを避ける。B12）。false なら毎フレーム項目ごとに作り直す （疑うときの切り分け用。絵は同じでなければならない）。 （以前の {@code PaintSceneDriver.reuseIdlePoses}） */
-    REUSE_IDLE_POSES(true),
-
-    /** 記録する保持層の範囲のうち、描かれないと確実に言える先頭・末尾の区間を走査から外すか。false なら全項目を走査する （疑うときの切り分け用。絵は同じでなければならない）。 （以前の {@code PaintSceneDriver.cullRecordedRanges}） */
-    CULL_RECORDED_RANGES(EngineFlags.CULL_RECORDED_RANGES),
-
-    /** スクロール層の保持を描画側へ問い合わせるか。false なら問い合わせず、毎フレーム全部走査する（疑うときの切り分け用。絵は同じでなければならない）。 （以前の {@code PaintSceneDriver.retainScrollLayers}） */
-    RETAIN_SCROLL_LAYERS(true),
-
-    /** 切り分け用: false なら、一般のリストの変化は常に索引の作り直しにする（従来の動き）。 （以前の {@code PaintSceneDriver.patchDiffIndex}） */
 
     /** 変更のあった項目の範囲だけを塗り直すか（{@code -Denderframe.soft.nodamage=true} で無効）。 無効にすると毎フレーム全面をクリアして描く（疑うときの切り分け用。絵は同じでなければならない）。 （以前の {@code SoftwareRenderBackend.damageEnabled}） */
     SOFT_DAMAGE(EngineFlags.SOFT_DAMAGE),
+
+    /** スクロール層の保持を描画側へ問い合わせるか。false なら問い合わせず、毎フレーム全部走査する（疑うときの切り分け用。絵は同じでなければならない）。 （{@code SceneWalker}） */
+    RETAIN_SCROLL_LAYERS(true),
 
     /** （以前の {@code SoftwareRenderBackend.CLIP_SHARE}） */
     CLIP_SHARE(true),
 
     /** 照合・切り分け用: false なら、クリップの外にある項目も塗りの経路へ渡す（結果の画素は同じはず）。 （以前の {@code SoftwareRenderBackend.cullOffscreen}） */
     SOFT_CULL_OFFSCREEN(EngineFlags.SOFT_CULL_OFFSCREEN),
-
-    /** 項目単位の再生を使うか（切り分け用: {@code -Denderframe.paint.noreplay=true} で無効）。 （以前の {@code SoftwareRenderBackend.glReplay}） */
-    SOFT_GL_REPLAY(EngineFlags.SOFT_GL_REPLAY),
 
     /** 照合・切り分け用: false なら {@link #paint} の行ごとの塗りを使わず、全画素を評価する。 （以前の {@code SoftwareRenderBackend.fastSolid}） */
     SOFT_FAST_SOLID(EngineFlags.SOFT_FAST_SOLID),

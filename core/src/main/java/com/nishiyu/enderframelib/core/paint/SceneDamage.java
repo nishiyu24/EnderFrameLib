@@ -399,7 +399,7 @@ public final class SceneDamage {
         add(box.x() - PAD, box.y() - PAD, box.x() + box.w() + PAD, box.y() + box.h() + PAD);
     }
 
-    /** 描画命令の余白（影のぼかし・文字の大きさ。{@code DamagePlanner#estimateBounds} と同じ規則）。 */
+    /** 描画命令の余白（影のぼかし・文字の大きさ。旧 {@code DamagePlanner#estimateBounds} から引き継いだ規則）。 */
     static float padOf(RenderMeta meta, String text, float h) {
         float pad = PAD;
         RenderHints hints = meta != null ? meta.hints() : null;

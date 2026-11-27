@@ -7,6 +7,7 @@ import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -206,7 +207,7 @@ class DisplayItemKeyTest {
             assertTrue(foundChk, "chk_input item found");
             assertTrue(foundSel, "sel_select item found");
 
-            // PaintSceneDriver lookup test
+            // SceneQuery lookup test
             com.nishiyu.enderframelib.core.dom.node.HtmlNode cardNode = view.root().getNodeById("card");
             assertNotNull(cardNode);
             int cardHandle = cardNode.nodeId();
@@ -214,22 +215,22 @@ class DisplayItemKeyTest {
             assertNotNull(cardLoc, "SceneQuery locates card node");
             assertEquals(cardHandle, cardLoc.nodeId());
 
-            // PaintSceneDriver direct test
-            PaintSceneDriver driver = new PaintSceneDriver("test_session");
-            driver.prepare(items, 1000, com.nishiyu.enderframelib.core.raster.Matrix2D.IDENTITY);
-
-            DisplayItem driverItemByHandle = driver.item(cardHandle, DisplayItem.PART_BG);
-            assertNotNull(driverItemByHandle, "PaintSceneDriver.item(handle, part) finds card_bg");
-            assertEquals("card_bg", driverItemByHandle.id());
-
-            DisplayItem driverItemById = driver.itemById("card_bg");
-            assertNotNull(driverItemById, "PaintSceneDriver.itemById('card_bg') finds card_bg");
-            assertSame(driverItemByHandle, driverItemById);
-
-            int indexByHandle = driver.indexOf(cardHandle, DisplayItem.PART_BG);
-            int indexById = driver.indexOf("card_bg");
-            assertTrue(indexByHandle >= 0, "indexOf(handle, part) >= 0");
-            assertEquals(indexByHandle, indexById, "index by handle and string ID match");
+            // 走査器（SceneWalker）は走査の間だけ id から項目と位置を引ける
+            List<DisplayItem> list = items;
+            SceneWalker walker = new SceneWalker("test_session");
+            DisplayItem[] byId = new DisplayItem[1];
+            int[] index = {-2};
+            walker.run(list, 1000, com.nishiyu.enderframelib.core.raster.Matrix2D.IDENTITY, new Painter() {
+                @Override public void syncLayers(List<SceneWalker.Group> want) { }
+                @Override public void drawItem(DisplayItem el, int i, float flat) {
+                    byId[0] = walker.itemById("card_bg");
+                    index[0] = walker.indexOf("card_bg");
+                }
+            });
+            assertNotNull(byId[0], "SceneWalker.itemById('card_bg') finds card_bg");
+            assertEquals(cardHandle, DisplayItem.nodeHandleOf(byId[0].key()));
+            assertEquals(DisplayItem.PART_BG, DisplayItem.partOrdinalOf(byId[0].key()));
+            assertSame(list.get(index[0]), byId[0], "index and item match");
         } finally {
             view.close();
         }

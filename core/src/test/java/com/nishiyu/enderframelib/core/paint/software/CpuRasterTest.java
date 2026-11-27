@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.paint.software;
 import com.nishiyu.enderframelib.core.paint.emit.SoftShapes;
 
 import com.nishiyu.enderframelib.core.paint.model.BlendMode;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
+import com.nishiyu.enderframelib.core.paint.SceneWalker.Group;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import org.junit.jupiter.api.Test;

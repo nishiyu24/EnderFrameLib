@@ -28,6 +28,14 @@ public interface RenderBackend extends AutoCloseable {
         render(items, nowMs);
     }
 
+    /**
+     * {@code items} を組んだシーン {@code source}（{@code UiView#paintSource}。null 可）を添えて描く（M3b-4b-4a）。シーンがあれば、
+     * 描画器は前のフレームとのシーンの違いから描き直す範囲を求め、スクロールコンテナの中身を保持層にできる。既定はシーンを使わない。
+     */
+    default void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
+        render(items, offsets, nowMs);
+    }
+
     /** 不変フレーム PDU（{@link PaintFrame}）を時刻 {@code nowMs} で描く（S7 ③ / B7 フレーム境界入口）。 */
     default void render(PaintFrame frame, long nowMs) {
         PaintFrame eff = frame != null ? frame : PaintFrame.EMPTY;

@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.emit;
 
 import com.nishiyu.enderframelib.core.paint.model.BlendMode;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
+import com.nishiyu.enderframelib.core.paint.SceneWalker.Group;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
 import com.nishiyu.enderframelib.core.paint.port.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.port.GpuSink;

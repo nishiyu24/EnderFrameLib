@@ -172,34 +172,18 @@ final class V3Frame {
         else state.discardUnscopedLog();
     }
 
-    /** 直近のシーンから表示リストを作る（{@link #frame} が null を返したあと、スクロールの移動で済ませられないとき）。 */
+    /**
+     * 直近のシーンから表示リストを作る（{@link #frame} が null を返したあと、スクロールの移動で済ませられないとき）。中身を 1 つの節に
+     * まとめるスクロールコンテナはスクロール 0 で組む（{@link SceneDisplayListAdapter#emitUnscrolled}。M3b-4b-4a）: スクロール量はビューの
+     * 平行移動の表で中身の節に足すので、スクロールだけの変化で列を組み直さない。
+     */
     List<DisplayItem> paint() {
         long t0 = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
         try {
-            return adapter.emit(scene, DynamicSceneState.of(scroll, width, height));
+            return adapter.emitUnscrolled(scene, DynamicSceneState.of(scroll, width, height));
         } finally {
             StageProfiler.end(PipelineStage.DISPLAY_LIST, t0);
         }
-    }
-
-    /**
-     * 直近のシーンを走査器 {@code walker} で描画順にたどり、{@code painter} へ渡す（M3b-4b-2 では影の確かめだけが呼ぶ。4b-4 で
-     * 全バックエンドの描画の経路になり、{@link #paint} の表示項目の列を置き換える）。シーンが無ければ何もしない。
-     */
-    void walk(com.nishiyu.enderframelib.core.paint.SceneWalker walker, com.nishiyu.enderframelib.core.paint.model.PaintOffsets offsets,
-              long nowMs, com.nishiyu.enderframelib.core.raster.Matrix2D frame, com.nishiyu.enderframelib.core.paint.Painter painter) {
-        walk(walker, offsets, nowMs, frame, painter, null);
-    }
-
-    /**
-     * {@link #walk} に、描き直す範囲を求める {@code damage}（直近のシーンと今のスクロール量から {@link com.nishiyu.enderframelib.core.paint.SceneDamage}
-     * が求めた範囲。null なら求めない）を渡す版（M3b-4b-3b。走査器が補間・外の事情で変わる項目の範囲を足す）。
-     */
-    void walk(com.nishiyu.enderframelib.core.paint.SceneWalker walker, com.nishiyu.enderframelib.core.paint.model.PaintOffsets offsets,
-              long nowMs, com.nishiyu.enderframelib.core.raster.Matrix2D frame, com.nishiyu.enderframelib.core.paint.Painter painter,
-              com.nishiyu.enderframelib.core.paint.SceneDamage.Rects damage) {
-        if (scene == null || adapter == null) return;
-        walker.run(adapter, scene, DynamicSceneState.of(scroll, width, height), offsets, nowMs, frame, painter, damage);
     }
 
     private static boolean onlyRestyleOrScroll(ChangeLedger ledger) {

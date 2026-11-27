@@ -41,7 +41,7 @@ final class SurfaceEditOverlay {
             }
         }
         if (field == null || (field.type() != ElementType.INPUT && field.type() != ElementType.TEXTAREA)) return List.of();
-        field = DisplayItem.resolveAbsolute(items, field);
+        field = DisplayItem.resolveAbsolute(items, field, session.paintOffsets()); // 列はスクロール 0 で組む。画面の上の位置へ
         OutlineFontFace face = TextFieldOverlay.face(WebFontManager.McFontResolver.INSTANCE, field);
         if (face == null) return List.of();
         boolean multiline = field.type() == ElementType.TEXTAREA;

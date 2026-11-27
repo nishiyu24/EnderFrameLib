@@ -190,7 +190,7 @@ final class SceneAdapterSupport {
         boolean isV = id.endsWith("_scrollv"), isH = !isV && id.endsWith("_scrollh");
         long movingKey = nodeHandle > 0 ? (isV ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_V)
                 : isH ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_H)
-                : id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX) ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLL_CONTENT)
+                : id.endsWith(SceneWalker.SCROLL_CONTENT_SUFFIX) ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLL_CONTENT)
                 : DisplayItem.nodeKeyOf(nodeHandle)) : 0L;
         RenderMeta baseMeta = (meta == null ? RenderMeta.EMPTY : movingNodeMeta).withHints(events.hints());
         addElement(elements, id, id, ElementType.NODE, box.x(), box.y(), box.w(), box.h(), "", 0, 0, events,

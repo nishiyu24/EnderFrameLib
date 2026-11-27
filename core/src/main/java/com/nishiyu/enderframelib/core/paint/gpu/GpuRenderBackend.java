@@ -12,7 +12,7 @@ import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuPass;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuPipeline;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuTexture;
 import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
+import com.nishiyu.enderframelib.core.paint.SceneWalker;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
@@ -106,7 +106,6 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private int[] mainScissor;
 
     private long gpuGlyphs, gpuImages, overlayFlushes, readbacks;
-    private long spanGlyph0;
     private long scrollLayersSkipped, scrollLayersRecorded;
     private long seenOverflows;
     private boolean retainOverflow;
@@ -265,12 +264,10 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     public Scene3DRenderer scene3dRenderer() { return scene3dRenderer; }
     @Override public String sessionId() { return sessionId; }
     @Override public float devicePixelRatio() { return dpr; }
-    public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) { return PaintSceneDriver.anyActiveAt(sessionId, items, nowMs); }
+    public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) { return SceneWalker.anyActiveAt(sessionId, items, nowMs); }
     public long gpuShapeCount() { return rects != null ? rects.accepted() - gpuGlyphs - gpuImages : 0; }
     public long rectTreeDrawCalls() { return rects != null ? rects.drawCalls() : 0; }
     public long rectTreeChangedWrites() { return rects != null ? rects.changedWrites() : 0; }
-    public long rectTreeReplayedItems() { return rects != null ? rects.replayedItems : 0; }
-    public long rectTreeReplayedShapes() { return rects != null ? rects.replayedShapes : 0; }
     public long rectTreeShapes() { return rects != null ? rects.accepted() : 0; }
 
     public long[] rectTreeRejects() {
@@ -327,7 +324,11 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, nowMs); }
 
     @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
+    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { render(items, offsets, null, nowMs); }
+
+    /** {@code source} はスクロールコンテナの中身を保持層にするのに使う（{@link com.nishiyu.enderframelib.core.paint.SceneWalker}）。 */
+    @Override
+    public void render(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
         if (closed) throw new IllegalStateException("closed");
         host.enter();
         try {
@@ -351,7 +352,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
                 try {
                     activePass = activeFrame.beginPass(mainTarget, LoadOp.CLEAR, clearPremul, null);
                     activeMainCleared = true;
-                    cpu.renderOnto(items, offsets, nowMs, this);
+                    cpu.renderOnto(items, offsets, source, nowMs, this);
                     while (!layerStack.isEmpty()) endGroup();
                     flushAll();
                     endPass();
@@ -665,36 +666,9 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         return 1f / Math.max((float) pose.meanScale(), 0.01f);
     }
 
-    private boolean spanOk() {
-        return rects != null && com.nishiyu.enderframelib.core.kernel.Shortcut.GL_REPLAY.on() && layerStack.isEmpty();
-    }
     @Override
     public boolean snapsScrollOffsets() {
         return com.nishiyu.enderframelib.core.kernel.Shortcut.GL_RETAINED_SCROLL.on();
-    }
-    private boolean verifySpanReplay;
-    @Override
-    public boolean spanReplay(int index, boolean cpuPending) {
-        if (!spanOk() || !rects.spanCanReplay(index, atlas.resets()) || (verifySpanReplay && rects.spanVerifyArm(index, atlas.resets()))) return false; // 検証: 再生せず描き直して比べる
-        if (cpuPending && (rects.pending() == 0 || cpu.dirtyBounds() != null)) flushOverlay();
-        rects.spanApply(index);
-        gpuGlyphs += rects.replayedGlyphs;
-        return true;
-    }
-
-    @Override
-    public boolean spanBegin(int index) {
-        if (!spanOk()) return false;
-        rects.spanBegin(index, atlas.resets());
-        spanGlyph0 = gpuGlyphs;
-        return true;
-    }
-
-    @Override
-    public void spanEnd(int index, boolean ok) {
-        if (rects == null) return;
-        if (ok && !layerStack.isEmpty()) ok = false;
-        rects.spanEnd(ok, atlas.resets(), (int) (gpuGlyphs - spanGlyph0));
     }
 
     @Override

@@ -6,7 +6,6 @@ import java.util.concurrent.atomic.LongAdder;
  * GPU 被覆率の計測（ENGINE_REARCHITECTURE_PLAN G0）。図形を種別ごとに「GPU が受け取った」か「断って CPU が描いた」かを数える。
  * 既定は無効（フラグ 1 つの読み取りだけで済む）。{@code FineProfileMain} とテストが有効にする。
  * 計数するのは GPU シンクが存在する経路だけ（{@code SOFTWARE} 単独の描画は数えない）。
- * 項目の再生（{@code spanReplay}）で過去の受理を再利用した図形はここを通らない（バックエンド側の再生数で補う）。
  */
 public final class GpuCoverage {
     /** 試行の種別。 */
@@ -70,11 +69,10 @@ public final class GpuCoverage {
     }
 
     /**
-     * 被覆率 = (受理 + {@code replayed}) ÷ (受理 + {@code replayed} + 断り)。{@code replayed} は項目の再生で再利用した図形数
-     * （試行を通らないが GPU が描いた図形）。何も数えていなければ 1.0。
+     * 被覆率 = 受理 ÷ (受理 + 断り)。何も数えていなければ 1.0。
      */
-    public static double coverage(long replayed) {
-        long acc = totalAccepted() + Math.max(0, replayed), dec = totalDeclined();
+    public static double coverage() {
+        long acc = totalAccepted(), dec = totalDeclined();
         long all = acc + dec;
         return all == 0 ? 1.0 : acc / (double) all;
     }

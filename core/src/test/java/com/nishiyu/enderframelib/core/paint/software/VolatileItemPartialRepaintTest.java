@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 class VolatileItemPartialRepaintTest {
     private static final int W = 360, H = 300;
 
-    private record Run(List<int[]> frames, long partial, long full, long aborts) {}
+    private record Run(List<int[]> frames, long partial, long full) {}
 
     private static String html() {
         StringBuilder rows = new StringBuilder();
@@ -69,7 +69,7 @@ class VolatileItemPartialRepaintTest {
                 view.frame(now, cpu, true);
                 frames.add(cpu.pixmap().pixels().clone());
             }
-            return new Run(frames, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts());
+            return new Run(frames, cpu.partialFrames(), cpu.fullFrames());
         } finally {
             view.close();
             com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.set(saved);
@@ -87,7 +87,6 @@ class VolatileItemPartialRepaintTest {
             }
             assertTrue(actual.partial() > actual.full(),
                     "seed " + seed + ": volatile を含んでも差分描画が主になる（partial=" + actual.partial() + " full=" + actual.full() + "）");
-            assertEquals(0, actual.aborts(), "seed " + seed + ": 見積もりが外れて全面でやり直した");
         }
     }
 }

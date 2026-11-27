@@ -119,14 +119,10 @@ public class UiView implements AutoCloseable {
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     /** {@link #scrollBase} の表示リストを作ったときの、全ての節のスクロール位置（0 でないもの）。 */
     Map<HtmlNode, float[]> scrollAtBuild = Map.of();
-    /** 表示リストの窓（画面と余白の範囲に作った項目）を作ったときのスクロール位置。節の移動で済ませてよい範囲はこれを基準にする（箱の位置の基準は {@link #scrollAtBuild}）。 */
-    private Map<HtmlNode, float[]> scrollWindowAt = Map.of();
 
     /** 診断: 位置の更新を、節の移動で済ませた回数・スクロールだけなのに作り直した回数・スクロール以外で作り直した回数。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_SCROLL_TRANSLATED = new java.util.concurrent.atomic.LongAdder(),
             STAT_SCROLL_FALLBACK = new java.util.concurrent.atomic.LongAdder();
-    /** 節の移動で済ませる範囲（px）。 */
-    private static final float SCROLL_TRANSLATE_LIMIT = com.nishiyu.enderframelib.core.kernel.EngineFlags.CULL_MARGIN - 64f;
     /** まだ反映していないビューポートの大きさ。無ければ -1。 */
     /**
      * GUI など、クライアントが画面の大きさを自分で決めているセッションか。そうでない（ブロック・アイテム・ホログラムの
@@ -200,6 +196,20 @@ public class UiView implements AutoCloseable {
         cachedDynH = rootH;
         cachedDynState = DynamicSceneState.of(scrollState, rootW, rootH);
         return cachedDynState;
+    }
+
+    private com.nishiyu.enderframelib.core.paint.SceneSource cachedSource;
+
+    /** 直近の列（{@link #renderCache}）を組んだシーンと今の動的な値（M3b-4b-4a。描画器が描き直す範囲と保持層を求める）。無ければ null。 */
+    public com.nishiyu.enderframelib.core.paint.SceneSource paintSource() {
+        DisplayScene s = v3.scene();
+        if (s == null) return null;
+        com.nishiyu.enderframelib.core.paint.SceneSource c = cachedSource;
+        if (c == null || c.scene() != s || c.dynamic() != dynamicState() || c.contents() != scrollBase || c.items() != renderCache
+                || c.userOffsetsVersion() != userPaintOffsets.version()) {
+            c = cachedSource = new com.nishiyu.enderframelib.core.paint.SceneSource(s, dynamicState(), scrollBase, renderCache, userPaintOffsets.version());
+        }
+        return c;
     }
 
     /** シーン内の要素 {@code node} の解決済み位置・大きさ（無ければ null）。 */
@@ -841,7 +851,6 @@ public class UiView implements AutoCloseable {
         setRenderCache(elements);
         setScrollBase(builtScrollContents()); // 描画は常にスクロールコンテナの中身を節にまとめる
         scrollAtBuild = scrollState.snapshot();
-        scrollWindowAt = scrollAtBuild;
         tryScrollTranslate(); // 描画の記憶は使い回した中身の節を記憶したときのスクロール量で出す。今との差を節の移動で足す
     }
 
@@ -858,7 +867,6 @@ public class UiView implements AutoCloseable {
         if (scrollBase.isEmpty()) return false;
         // 節にまとめていないコンテナ（sticky などを含む）のスクロール量が変わっていたら、その中身は作り直さないと動かない
         if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
-        if (!withinWindow()) return false;
         for (ScrollContentInfo info : scrollBase) {
             float dx = scrollState.getScrollX(info.node()) - info.sx0();
             float dy = scrollState.getScrollY(info.node()) - info.sy0();
@@ -876,17 +884,6 @@ public class UiView implements AutoCloseable {
         return true;
     }
 
-
-    /** どのスクロールコンテナも、表示リストの窓を作った位置から余白の内に居るか（居なければ、窓を作り直さないと中身が足りない）。 */
-    private boolean withinWindow() {
-        for (ScrollContentInfo info : scrollBase) {
-            float[] w = scrollWindowAt.get(info.node());
-            float wx = w != null ? w[0] : 0f, wy = w != null ? w[1] : 0f;
-            if (Math.abs(scrollState.getScrollX(info.node()) - wx) > SCROLL_TRANSLATE_LIMIT
-                    || Math.abs(scrollState.getScrollY(info.node()) - wy) > SCROLL_TRANSLATE_LIMIT) return false;
-        }
-        return true;
-    }
 
     /**
      * 予約されたリサイズを今のフレームで反映するか。連続したリサイズ中は、直前のレイアウトにかかった時間の
@@ -1388,6 +1385,7 @@ public class UiView implements AutoCloseable {
         }
         document = null;
         v3.reset();
+        cachedSource = null;
         env.clear();
         interactionState.clear();
         invalidationLevel = InvalidationLevel.NONE;

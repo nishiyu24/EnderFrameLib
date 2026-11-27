@@ -34,10 +34,10 @@ class ShortcutTest {
 
     @Test
     void setChangesOneSwitchAndResetAllRestoresTheInitialValues() {
-        boolean other = Shortcut.GL_REPLAY.on();
+        boolean other = Shortcut.GL_RETAINED_SCROLL.on();
         Shortcut.SOFT_TILED.set(false);
         assertFalse(Shortcut.SOFT_TILED.on());
-        assertEquals(other, Shortcut.GL_REPLAY.on(), "ほかの切り替えは変わらない");
+        assertEquals(other, Shortcut.GL_RETAINED_SCROLL.on(), "ほかの切り替えは変わらない");
         Shortcut.resetAll();
         assertEquals(Shortcut.SOFT_TILED.initial(), Shortcut.SOFT_TILED.on());
     }

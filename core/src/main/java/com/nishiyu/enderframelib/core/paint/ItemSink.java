@@ -6,9 +6,8 @@ import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import java.util.List;
 
 /**
- * 一時アダプタ（{@link SceneDisplayListAdapter}）が描画順に組み立てた項目の受け手（M3b-4b-2）。表示項目の列
- * （{@link #toList}）と、列を残さず 1 フレームの間だけ受け取る走査器（{@link SceneWalker}）の 2 つがある。
- * 一時アダプタとともに M3b-4c で消える。
+ * 一時アダプタ（{@link SceneDisplayListAdapter}）が描画順に組み立てた項目の受け手（M3b-4b-2）。今は表示項目の列（{@link #toList}）だけ
+ * （走査器は M3b-4b-4a からビューの列を入力にする）。一時アダプタとともに M3b-4c で消える。
  */
 interface ItemSink {
     /** 項目を描画順の末尾に足す。 */

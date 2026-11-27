@@ -83,14 +83,14 @@ class AnimationStatesTest {
         assertTrue(states.isEmpty());
     }
 
-    /** 描く側（{@link PaintSceneDriver}）は列の構造が変わったその場で掃除する。以前は実時間で 1 秒に 1 回で、消えた節の状態が残った。 */
+    /** 描く側（{@link SceneWalker}）は列が変わったその場で掃除する。以前は実時間で 1 秒に 1 回で、消えた節の状態が残った。 */
     @Test
     void driverSweepsOnStructureChangeWithoutWallClock() {
         String session = "anim-states-" + System.identityHashCode(this);
         try {
-            PaintSceneDriver driver = new PaintSceneDriver(session);
+            SceneWalker driver = new SceneWalker(session);
             Painter none = new Painter() {
-                @Override public void syncLayers(List<PaintSceneDriver.Group> want) { }
+                @Override public void syncLayers(List<SceneWalker.Group> want) { }
                 @Override public void drawItem(DisplayItem el, int index, float flat) { }
             };
             DisplayItem a = item("n7", DisplayItem.nodeKeyOf(BODY), ElementType.NODE, 0, 1f, 0);

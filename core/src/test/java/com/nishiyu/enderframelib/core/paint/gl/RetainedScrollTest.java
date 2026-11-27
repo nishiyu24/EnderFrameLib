@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.core.paint.gl;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
-import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
 import java.util.List;

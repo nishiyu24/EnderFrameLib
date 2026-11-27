@@ -3,21 +3,16 @@
 # 新しいキーを足すときは S1（EngineFlags への一元化）の後なら EngineFlags だけで読む。
 enderframe.gl.fullresblur | GPU | core/kernel/EngineFlags.java | GpuRenderBackend.downsampledBlur（縮小してぼかす）を切る
 enderframe.gl.fullscreenlayers | GPU | core/kernel/EngineFlags.java | GpuRenderBackend.boundedLayers（層を外接矩形に限る）を切る
-enderframe.gl.noreplay | GPU | core/kernel/EngineFlags.java | RectStream.replayEnabled（項目単位の保持記録の再生）
 enderframe.gl.rectcapacity | GPU | core/kernel/EngineFlags.java | RectStream の初期容量（図形数。既定 16384）
 enderframe.gl.recttrees | GPU | core/kernel/EngineFlags.java | GpuRenderBackend.rectTrees（"false" で切る）
 enderframe.gl.retainscroll | GPU | core/kernel/EngineFlags.java | GpuRenderBackend.retainedScroll（"false" で切る）
 enderframe.layout.noparallel | SHORTCUT | core/kernel/EngineFlags.java | LayoutTaskPool の並列実行（ソフトウェア描画のタイル・3D のラスタ）を直列にする（起動時に決まる）
-enderframe.paint.cullmargin | TUNING | core/kernel/EngineFlags.java | スクロールの中身の節を動かして済ませる範囲の余白（px。既定 640。UiView）
-enderframe.paint.nocullrange | SHORTCUT | core/kernel/EngineFlags.java | PaintSceneDriver.cullRecordedRanges
-enderframe.paint.noreplay | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.glReplay
 enderframe.paint.notextsetup | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.textSetupReuse（P9b）
 enderframe.parser.dropnewlinews | COMPAT | core/kernel/EngineFlags.java | HtmlParser の要素の間の改行入りの空白を捨てる（A11 第 4 段より前の挙動）
 enderframe.profile | DIAGNOSTIC | core/kernel/EngineFlags.java | StageProfiler の段別計測
 enderframe.profile.alloc | DIAGNOSTIC | core/kernel/EngineFlags.java | StageProfiler の段別の確保量
 enderframe.raster.serial | TUNING | core/kernel/EngineFlags.java | Rows.PARALLEL を切り、行の塗りを直列にする
 enderframe.sheetcache.off | SHORTCUT | core/kernel/EngineFlags.java | DocumentLoader.sheetTemplateCache
-enderframe.soft.damagedebug | DIAGNOSTIC | core/kernel/EngineFlags.java | 損傷範囲の決定の理由を出力
 enderframe.soft.nocull | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.cullOffscreen
 enderframe.soft.nodamage | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.damageEnabled
 enderframe.soft.nofastsolid | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.fastSolid

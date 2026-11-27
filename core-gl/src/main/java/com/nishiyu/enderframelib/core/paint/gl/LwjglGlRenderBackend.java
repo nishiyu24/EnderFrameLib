@@ -95,8 +95,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     public long gpuShapeCount() { return gpu.gpuShapeCount(); }
     public long rectTreeDrawCalls() { return gpu.rectTreeDrawCalls(); }
     public long rectTreeChangedWrites() { return gpu.rectTreeChangedWrites(); }
-    public long rectTreeReplayedItems() { return gpu.rectTreeReplayedItems(); }
-    public long rectTreeReplayedShapes() { return gpu.rectTreeReplayedShapes(); }
     public long rectTreeShapes() { return gpu.rectTreeShapes(); }
     public long[] rectTreeRejects() { return gpu.rectTreeRejects(); }
     public long gpuGlyphCount() { return gpu.gpuGlyphCount(); }
@@ -127,6 +125,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         gpu.render(items, offsets, nowMs);
     }
 
+    @Override
+    public void render(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
+        syncFlags();
+        gpu.render(items, offsets, source, nowMs);
+    }
+
     @Override public Pixmap pixmap() { return gpu.pixmap(); }
     @Override public void close() { gpu.close(); }
 
@@ -148,9 +152,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     @Override public void endMask() { gpu.endMask(); }
     @Override public void endGroup() { gpu.endGroup(); }
     @Override public boolean snapsScrollOffsets() { return gpu.snapsScrollOffsets(); }
-    @Override public boolean spanReplay(int index, boolean cpuPending) { return gpu.spanReplay(index, cpuPending); }
-    @Override public boolean spanBegin(int index) { return gpu.spanBegin(index); }
-    @Override public void spanEnd(int index, boolean ok) { gpu.spanEnd(index, ok); }
 
     @Override public boolean fillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                            int argb, GpuClip[] clips, float opacity) {
