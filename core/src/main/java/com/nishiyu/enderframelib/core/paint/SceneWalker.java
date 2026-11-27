@@ -159,7 +159,7 @@ public final class SceneWalker {
         for (int i = 0; i < n; i++) {
             DisplayItem it = src.get(i);
             items[i] = it;
-            if (it.type() == ElementType.NODE && ItemDiff.hasFx(it.hints().layer())) {
+            if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) {
                 if (fxCount == fxAnchors.length) fxAnchors = Arrays.copyOf(fxAnchors, fxCount * 2);
                 fxAnchors[fxCount++] = i;
             }
@@ -226,7 +226,7 @@ public final class SceneWalker {
 
     /**
      * シーンの違いに現れない変化の範囲を {@code damage} へ足す: 前のフレームの時刻 {@code prevNow} か今の時刻に補間が動いている項目と、
-     * 外の事情・部品の状態で絵が変わる項目（画像・動画・キャンバス・3D・入力欄・ゲージ・スライダー）。補間が姿勢（変形・不透明度）を
+     * 外の事情で絵が変わる項目（画像・動画・キャンバス・3D。部品の値・欄の中身は DOM の写しでシーンに入る）。補間が姿勢（変形・不透明度）を
      * 動かすときは、子孫の位置と層が変わるので全面にする。範囲は項目の箱に影・文字の余白を足し、姿勢で写した CSS px の外接矩形。
      */
     void addDynamicDamage(SceneDamage.Rects damage, long prevNow) {
@@ -238,13 +238,33 @@ public final class SceneWalker {
             if (activeNow || activeBefore) {
                 int kind = Math.max(activeNow ? st.motionKindAt(now) : 0, activeBefore ? st.motionKindAt(prevNow) : 0);
                 if (kind >= ACT_GEOMETRY) { damage.setFull("animation-geometry"); return; }
-            } else if (!el.type().isVolatileForDamage()) {
+            } else if (!el.type().isExternallyDriven()) {
                 continue;
             }
             if (el.type() == ElementType.NODE) continue; // 節は描かない（色の補間は部品の項目が持つ）
             addItemBounds(damage, el, resolveAt(i).pose());
             if (damage.full()) return;
         }
+    }
+
+    /**
+     * {@link #addDynamicDamage}・{@link #addOverlayDamage} が前の {@link #run} から時刻 {@code nowMs} までに範囲を足すか（M3b-4b-4b。描く前の判定用で、
+     * 索引・姿勢を作らない）: 列がシーンの列で始まらない・重ね描きが今か前のフレームにある・外の事情で変わる項目がある・前の時刻か今に補間が
+     * 動いている項目がある。補間は節の項目も数える（節の補間は部品の項目にも現れるので、多めに答えるだけ）。
+     */
+    public boolean changesOutsideScene(List<DisplayItem> list, SceneSource source, long nowMs) {
+        int n = list.size(), from = source.baseSizeIn(list);
+        if ((from == 0 && !source.items().isEmpty()) || prevOverlay.size() > 0) return true;
+        for (int i = from; i < n; i++) if (list.get(i).type() != ElementType.NODE) return true;
+        AnimationStates table = CssAnimator.states(sessionId, true);
+        long prevNow = lastNow;
+        for (int i = 0; i < n; i++) {
+            DisplayItem el = list.get(i);
+            if (el.type().isExternallyDriven()) return true;
+            CssAnimator.AnimState st = CssAnimator.stateFor(table, el, nowMs);
+            if (st.isActiveAt(nowMs) || (prevNow >= 0L && st.isActiveAt(prevNow))) return true;
+        }
+        return false;
     }
 
     /**
@@ -436,7 +456,7 @@ public final class SceneWalker {
     }
 
     private static Group groupFor(DisplayItem node, int index, Resolved nr) {
-        LayerSpec spec = ItemDiff.hasFx(node.hints().layer()) ? node.hints().layer() : null;
+        LayerSpec spec = hasFx(node.hints().layer()) ? node.hints().layer() : null;
         Matrix2D m = nr.pose();
         return new Group(node.id(), Math.max(0f, nr.anim().opacity()), index, spec, new double[]{m.a(), m.b(), m.c(), m.d()}, null, m);
     }
@@ -501,6 +521,8 @@ public final class SceneWalker {
         return false;
     }
 
+    private static boolean hasFx(LayerSpec spec) { return spec != null && spec.hasEffects(); }
+
     private static boolean isIdentityGeometry(AnimatedValues a) {
         return a.opacity() == 1f && a.tx() == 0f && a.ty() == 0f && a.sx() == 1f && a.sy() == 1f && a.rot() == 0f && a.skew() == 0f;
     }
@@ -538,7 +560,7 @@ public final class SceneWalker {
             double py = relOrigin ? el.y() : 0.0;
             pose = poseMath.transformed(null, base, anim, lx, ly, px + lx + atx, py + ly + aty);
         }
-        boolean fx = node && ItemDiff.hasFx(el.hints().layer());
+        boolean fx = node && hasFx(el.hints().layer());
         boolean group = node && (anim.opacity() < 0.999f || fx);
         List<Group> groups = parentGroups;
         if (group) {

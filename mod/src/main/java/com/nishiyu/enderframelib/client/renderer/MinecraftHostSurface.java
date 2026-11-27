@@ -12,7 +12,6 @@ import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry;
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
-import com.nishiyu.enderframelib.core.paint.StaticFrameGate;
 import com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
@@ -66,13 +65,13 @@ public final class MinecraftHostSurface {
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     /**
-     * バックエンドごとの「直前に描いた内容」の判定（core の {@link StaticFrameGate}。項目は不変で、変わるときは別の
-     * インスタンスになるので、同じ項目が並んでいてアニメーションも動いていなければ描き直しても同じ絵になる）。
+     * 面の再描画を飛ばせるか。既定は有効（描き直す範囲が空ならテクスチャを使い回す。判定はコアの描画器の
+     * {@link LwjglGlRenderBackend#needsRepaint}: 前のフレームとのシーンの違い・補間・外の事情・重ね描き。M3b-4b-4b）。
+     * 切り分け用に {@code -Denderframe.core.noskip=true} で止められる。
      */
-    private static final Map<LwjglGlRenderBackend, StaticFrameGate> PAINTED = new java.util.IdentityHashMap<>();
-
-    /** 面の再描画を飛ばせるか。既定は有効。切り分け用に {@code -Denderframe.core.noskip=true} で止められる。 */
     private static final boolean SKIP_STATIC = !Boolean.getBoolean("enderframe.core.noskip");
+    /** 面を最後に描いたときの書体の登録の世代。変わったら全部の面を描き直す（字形はシーンに現れない）。 */
+    private static int paintedFontGeneration = Integer.MIN_VALUE;
 
     private MinecraftHostSurface() {}
 
@@ -102,14 +101,14 @@ public final class MinecraftHostSurface {
             // 計測が有効なら GPU のタイマークエリも張る（面ごとに 1 度。無効の間は GL を呼ばない）
             if (StageProfiler.enabled() && GPU_TIMED.add(backend)) backend.enableGpuTiming();
             List<DisplayItem> items = SurfaceEditOverlay.withCaret(ClientWebManager.getSession(session), session, base);
-            StaticFrameGate gate = PAINTED.computeIfAbsent(backend, b -> new StaticFrameGate(SKIP_STATIC));
-            int fontGen = WebFontManager.McFontResolver.generation();
+            syncFontGeneration();
             flushPending(pass.buffer());
-            if (gate.canSkip(items, pass.paintOffsets(), fontGen)) {
-                // 変化もアニメも無い: 前回描いたテクスチャをそのまま貼る（GPU の描画も CPU 側の組み立ても無し）
+            long now = net.minecraft.Util.getMillis();
+            if (SKIP_STATIC && !backend.needsRepaint(items, pass.paintOffsets(), pass.sceneSource(), now)) {
+                // 描き直す範囲が空: 前回描いたテクスチャをそのまま貼る（Minecraft が描く中身の用意も GPU の描画も無し）
                 StageProfiler.end(PipelineStage.SURFACE_CORE_SKIPPED, StageProfiler.begin(PipelineStage.SURFACE_CORE_SKIPPED));
             } else {
-                render(backend, gate, items, pass, session, dpr, fontGen);
+                render(backend, items, pass, session, dpr, now);
             }
             long tBlit = StageProfiler.begin(PipelineStage.SURFACE_CORE_BLIT);
             try {
@@ -141,19 +140,27 @@ public final class MinecraftHostSurface {
         return (float) (scale * Minecraft.getInstance().getWindow().getGuiScale());
     }
 
-    /** Minecraft が描く中身を用意してから、コアで描く。 */
-    private static void render(LwjglGlRenderBackend backend, StaticFrameGate gate, List<DisplayItem> items, PaintRequest pass,
-                               String session, float dpr, int fontGen) {
+    /** 書体の登録が変わったら、全部の面の前の画素を捨てる（字形の違いはシーンの違いに現れない）。 */
+    private static void syncFontGeneration() {
+        int gen = WebFontManager.McFontResolver.generation();
+        if (gen == paintedFontGeneration) return;
+        paintedFontGeneration = gen;
+        for (LwjglGlRenderBackend b : BACKENDS.values()) b.invalidate();
+    }
+
+    /**
+     * Minecraft が描く中身を用意してから、コアで描く（{@link LwjglGlRenderBackend#needsRepaint} と同じ入力）。動く中身（エンティティ・
+     * {@code <mc-scene>}）は画像・場面の項目で、描画器が外の事情で変わる項目として毎フレーム描き直す。
+     */
+    private static void render(LwjglGlRenderBackend backend, List<DisplayItem> items, PaintRequest pass, String session, float dpr, long now) {
         long tRender = StageProfiler.begin(PipelineStage.SURFACE_CORE_RENDER);
-        MinecraftHostTextures.Prepared host = MinecraftHostTextures.Prepared.NONE;
+        long fence = 0L;
         try {
-            host = MinecraftHostTextures.INSTANCE.prepare(items, session, dpr, !pass.screenSpaceText());
-            if (host.fence() != 0L) backend.waitForHost(host.fence());
-            long now = net.minecraft.Util.getMillis();
+            fence = MinecraftHostTextures.INSTANCE.prepare(items, session, dpr, !pass.screenSpaceText());
+            if (fence != 0L) backend.waitForHost(fence);
             backend.render(items, pass.paintOffsets(), pass.sceneSource(), now);
-            gate.painted(items, pass.paintOffsets(), fontGen, host.animating() || backend.hasActiveAnimation(items, now));
         } finally {
-            if (host.fence() != 0L) GL32.glDeleteSync(host.fence());
+            if (fence != 0L) GL32.glDeleteSync(fence);
             StageProfiler.end(PipelineStage.SURFACE_CORE_RENDER, tRender);
         }
     }
@@ -198,7 +205,6 @@ public final class MinecraftHostSurface {
             LAST_USED.remove(old);
             if (gone == null) continue;
             GPU_TIMED.remove(gone);
-            PAINTED.remove(gone);
             closeQuietly(gone);
         }
         return b;
@@ -235,7 +241,6 @@ public final class MinecraftHostSurface {
                 it.remove();
                 LAST_USED.remove(e.getKey());
                 GPU_TIMED.remove(e.getValue());
-                PAINTED.remove(e.getValue());
                 closeQuietly(e.getValue());
             }
         }
@@ -254,7 +259,6 @@ public final class MinecraftHostSurface {
         BACKENDS.clear();
         LAST_USED.clear();
         GPU_TIMED.clear();
-        PAINTED.clear();
         REPORTED.clear();
         MinecraftMediaBridge.INSTANCE.clear();
         if (RenderSystem.isOnRenderThread()) MinecraftHostTextures.INSTANCE.clear();

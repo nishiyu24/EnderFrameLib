@@ -264,25 +264,22 @@ public class WebHudRenderer {
         session.requestRender();
     }
 
+    private static boolean mountedToEntity(DisplayItem el) { return el.events() != null && el.events().containsKey("data-mount-entity"); }
+
     private static void renderHudElements(PoseStack poseStack, Minecraft mc, String screenKey) {
         SessionContext session = ClientWebManager.getSession(screenKey);
         List<DisplayItem> elements = session != null ? session.relativeElements() : List.of();
         if (elements.isEmpty()) return;
 
-        List<DisplayItem> hudElements = new ArrayList<>(elements.size());
+        // data-mount-entity の要素は HUD に描かない。省くのは自分を塗る項目だけで、節（子の親相対の原点・層）は残す。
+        // 省くものが無ければ列そのものを渡す（シーンの列なので、静止したフレームは描画器が前の画素を使い回せる。M3b-4b-4b）
+        List<DisplayItem> hudElements = elements;
         for (DisplayItem el : elements) {
-            if (el.events() != null && el.events().containsKey("data-mount-entity")) continue;
-            hudElements.add(el);
-        }
-        if (hudElements.size() != elements.size()) {
-            // 省いた項目の子は親相対の原点を失うので、省くときは絶対座標の一覧から作り直す
+            if (!mountedToEntity(el)) continue;
             hudElements = new ArrayList<>(elements.size());
-            for (DisplayItem el : session.elements()) {
-                if (el.events() != null && el.events().containsKey("data-mount-entity")) continue;
-                hudElements.add(el);
-            }
+            for (DisplayItem it : elements) if (it.type() == ElementType.NODE || !mountedToEntity(it)) hudElements.add(it);
+            break;
         }
-        if (hudElements.isEmpty()) return;
 
         poseStack.pushPose();
         int screenHeight = mc.getWindow().getGuiScaledHeight();
@@ -400,6 +397,8 @@ public class WebHudRenderer {
         cache.width = Math.round(frame.scene().root.w);
         cache.height = Math.round(frame.scene().root.h);
         cache.elements = frame.items();
+        // 板ごとの 1 回の組み立て: その列を組んだシーンを添える（静止した板は描画器が前の画素を使い回せる）
+        cache.source = new com.nishiyu.enderframelib.core.paint.SceneSource(frame.scene(), frame.dynamic(), List.of(), frame.items(), 0);
     }
 
     private static boolean renderTrackerBillboard(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey, TrackerCache cache, TrackerTemplateConfig config) {
@@ -423,7 +422,7 @@ public class WebHudRenderer {
         poseStack.scale(-scale, -scale, scale);
         poseStack.translate(-cache.width / 2.0f, -cache.height, 0);
 
-        SurfaceRenderer.draw(screenKey, cache.elements, cache.width, cache.height, SurfaceStyle.billboard(), poseStack, bufferSource);
+        SurfaceRenderer.draw(screenKey, cache.elements, cache.source, cache.width, cache.height, SurfaceStyle.billboard(), poseStack, bufferSource);
         poseStack.popPose();
         return true;
     }
@@ -613,6 +612,7 @@ public class WebHudRenderer {
     private static class TrackerCache {
         final Map<String, String> data = new HashMap<>();
         List<DisplayItem> elements;
+        com.nishiyu.enderframelib.core.paint.SceneSource source;
         int width, height;
         public boolean isChanged(Map<String, String> newData) { return !data.equals(newData); }
     }

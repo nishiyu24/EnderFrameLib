@@ -516,7 +516,7 @@ final class GpuEffects {
 
         GpuPass pass = gpu.activeFrame.beginPass(dst, LoadOp.LOAD, 0, scissor);
         pass.bind(blend ? gpu.fxBlendPipeline : gpu.fxCopyPipeline,
-                new GpuBindings(GpuRenderBackend.EMPTY_RECORDS_HOLDER.empty, fxSamplers, fxUniforms));
+                new GpuBindings(GpuRenderBackend.NO_BUFFERS, fxSamplers, fxUniforms));
         pass.drawInstanced(4, 1, 0);
         pass.end();
     }

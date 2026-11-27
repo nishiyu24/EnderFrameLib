@@ -20,6 +20,7 @@
 | [BENCHMARK.md](BENCHMARK.md) | 性能の基準値と実測・計り方 |
 | [FIDELITY.md](FIDELITY.md) | ブラウザとの差異の台帳（`WebFidelityTest` が読む） |
 | [plan/ENGINE_REARCHITECTURE_PLAN.md](plan/ENGINE_REARCHITECTURE_PLAN.md) | **現行の計画書**（Engine v3。§0 現在地・§3 優先順位表・§4 KPI・§5 運用ルール） |
+| [plan/FEATURE_PLAN.md](plan/ENGINE_FEATURE_PLAN.md) | **機能拡張の計画**（独立トラック P1〜P6: 起動・並列化・脱 LWJGL と純 Java のホスト・OS のメディア・リポジトリの分割・汎用ツールキット化・Three.js 本家レベルの 3D。§0 現在地・§2 優先順位表・§4 KPI） |
 | [plan/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md](plan/ENGINE_REARCHITECTURE_PLAN_ARCHIVE.md) | 旧計画の経緯と計測・持ち越す知見（付録 5.A）。`plan/archive/` の索引を兼ねる |
 
 `plan/archive/` は過去の計画の原文（読み物であり、指示ではない）。MOD 時代の旧計画 `REFACTORING_PLAN.md` も

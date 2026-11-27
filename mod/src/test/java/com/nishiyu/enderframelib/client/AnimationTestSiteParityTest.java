@@ -58,7 +58,7 @@ public class AnimationTestSiteParityTest {
         assertNotNull(doc);
         rootBox = TestBoxes.root(view.ui());
         assertNotNull(rootBox);
-        displayItems = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(view.items());
+        displayItems = com.nishiyu.enderframelib.common.TestFlatItems.absolute(view.items());
         assertNotNull(displayItems);
 
         allBoxes = new ArrayList<>();
@@ -415,7 +415,7 @@ public class AnimationTestSiteParityTest {
                     + "<div class='a'>inherit<span class='b'>fixed</span></div>";
             List<DisplayItem> items;
             try (StandaloneView v = new StandaloneView(src, 400, 200, EnderFrameStandalone.defaultFontResolver())) {
-                items = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(v.items());
+                items = com.nishiyu.enderframelib.common.TestFlatItems.absolute(v.items());
             }
             DisplayItem inherit = items.stream().filter(i -> i.type() == ElementType.TEXT && "inherit".equals(i.text().strip())).findFirst().orElseThrow();
             DisplayItem fixed = items.stream().filter(i -> i.type() == ElementType.TEXT && "fixed".equals(i.text().strip())).findFirst().orElseThrow();

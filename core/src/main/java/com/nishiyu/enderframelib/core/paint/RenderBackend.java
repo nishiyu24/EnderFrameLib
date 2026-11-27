@@ -36,6 +36,16 @@ public interface RenderBackend extends AutoCloseable {
         render(items, offsets, nowMs);
     }
 
+    /**
+     * 前に描いたフレームの画素が、この入力（{@link #render(List, PaintOffsets, SceneSource, long)} と同じ引数）でも変わらないと描く前に分かるなら
+     * false（M3b-4b-4b）。描き直す範囲を、前のフレームとのシーンの違いと、シーンの外で変わるもの（補間・画像などの外の事情・重ね描き）から求め、
+     * それが空かを答える。true なら続けて同じ入力で描くこと（求めた範囲を描画がそのまま使う）。前の画素を持ち続ける描画先（GPU の面）の
+     * ホストが、描かないフレームに前の画素を使い回すために使う。既定（判定を持たない描画器・シーンが無い入力）は常に true。
+     */
+    default boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
+        return true;
+    }
+
     /** 不変フレーム PDU（{@link PaintFrame}）を時刻 {@code nowMs} で描く（S7 ③ / B7 フレーム境界入口）。 */
     default void render(PaintFrame frame, long nowMs) {
         PaintFrame eff = frame != null ? frame : PaintFrame.EMPTY;

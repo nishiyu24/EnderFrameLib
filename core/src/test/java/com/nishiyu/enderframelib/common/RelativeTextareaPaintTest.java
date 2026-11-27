@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.AbsoluteItems;
+
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
@@ -44,7 +44,7 @@ class RelativeTextareaPaintTest {
             List<DisplayItem> rel = v.ui().relativeElements();
             assertTrue(rel.stream().anyMatch(i -> i.type() == ElementType.TEXTAREA), "textarea の項目がある");
             Pixmap fromRelative = paint(rel, 300, 160);
-            Pixmap fromAbsolute = paint(AbsoluteItems.of(rel), 300, 160);
+            Pixmap fromAbsolute = paint(TestFlatItems.absolute(rel), 300, 160);
             int lit = 0;
             for (int y = 0; y < 160; y++) {
                 for (int x = 0; x < 300; x++) {

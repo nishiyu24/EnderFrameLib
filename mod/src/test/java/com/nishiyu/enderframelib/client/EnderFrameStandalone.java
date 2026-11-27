@@ -57,7 +57,7 @@ public class EnderFrameStandalone {
 
         ScrollState scrollState = new ScrollState();
         InteractionState interactionState = new InteractionState();
-        List<DisplayItem> items = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(
+        List<DisplayItem> items = com.nishiyu.enderframelib.common.TestFlatItems.absolute(
                 com.nishiyu.enderframelib.common.FrameRender.document(doc, width, height, Map.of(), scrollState, fontResolver, interactionState).items());
 
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);

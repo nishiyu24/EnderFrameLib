@@ -119,7 +119,7 @@ public class EnderPanel extends JPanel {
         this.document = compiler.parseDocument(htmlContent, "", w, h);
         var frame = com.nishiyu.enderframelib.common.FrameRender.document(document, w, h, Map.of(), scrollState, fontResolver, interactionState);
         this.rootScene = frame.scene();
-        this.displayList = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(frame.items());
+        this.displayList = com.nishiyu.enderframelib.common.TestFlatItems.absolute(frame.items());
     }
 
     private DisplayItem findItemAt(int x, int y) {

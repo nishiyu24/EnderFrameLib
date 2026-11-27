@@ -29,6 +29,11 @@ public final class CpuLayerFallback implements CpuFallback {
         raster.renderOnto(items, offsets, source, nowMs, sink);
     }
 
+    @Override
+    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
+        return raster.needsRepaint(items, offsets, source, nowMs);
+    }
+
     /** CPU が塗った範囲の外接矩形 {x0,y0,x1,y1}。何も塗っていなければ null。 */
     @Override
     public int[] dirtyBounds() {

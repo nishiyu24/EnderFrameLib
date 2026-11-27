@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint;
+package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -10,21 +10,21 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 親相対の表示リスト（{@code relativeOrigin} を持つ NODE の下の項目は、その NODE の位置からの相対座標）を、
- * 従来の絶対座標の表示リストへ直す。絶対座標を前提にした消費者（MOD 側のレンダラー・ヒットテスト）との境界で使う。
+ * テストの補助: 親相対の表示リスト（{@code relativeOrigin} を持つ NODE の下の項目は、その NODE の位置からの相対座標）を、
+ * 平坦な絶対座標の表示リストへ直す。項目を 1 つずつ絶対座標で読む・描くテストの道具（AWT の描画器・項目の要約）だけが使う。
+ *
+ * <p>本番の経路は親相対のまま描き・問い合わせる（M3b-4b-4b で本番の {@code AbsoluteItems} とビューの絶対座標の列を削除した。
+ * 位置は {@code SceneQuery}・{@code UiView#toAbsolute}）。{@code DisplayItem} とともに M3b-4c で消す。
  *
  * <p>直す項目は、位置 {@code (x, y)}・影の形・シェーダーグラデーション（作るときに原点を引いたものを足し戻す）と、
  * NODE の {@code relativeOrigin} の印。相対の NODE が 1 つも無いリストは、そのまま返す。
  */
-public final class AbsoluteItems {
-    /** 診断: 絶対座標へ直した回数（相対の NODE があって実際に新しいリストを作った回数）。通常の描画経路では増えない。 */
-    public static final java.util.concurrent.atomic.LongAdder CONVERSIONS = new java.util.concurrent.atomic.LongAdder();
-
-    private AbsoluteItems() {
+public final class TestFlatItems {
+    private TestFlatItems() {
     }
 
     /** {@code items} が絶対座標なら同じリスト、親相対なら絶対座標へ直した新しいリスト（元のリストは変えない）。 */
-    public static List<DisplayItem> of(List<DisplayItem> items) {
+    public static List<DisplayItem> absolute(List<DisplayItem> items) {
         int n = items.size();
         boolean any = false;
         for (int i = 0; i < n; i++) {
@@ -35,7 +35,6 @@ public final class AbsoluteItems {
             }
         }
         if (!any) return items;
-        CONVERSIONS.increment();
 
         Map<Long, Integer> indexOf = new HashMap<>(n * 2);
         for (int i = 0; i < n; i++) {

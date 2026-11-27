@@ -624,17 +624,9 @@ public class UiView implements AutoCloseable {
     // ------------------------------------------------------------------
 
     /**
-     * 描画要素のキャッシュ（絶対座標）。必要なら先に環境変数と描画キューを更新する。
-     * 親相対の表示リストは、絶対座標を前提にする消費者（MOD 側）のために、公開のたびに 1 回だけ直して持つ。
-     */
-    public List<DisplayItem> elements() {
-        beforeElements();
-        return absolute(renderCache);
-    }
-
-    /**
-     * 描画要素のキャッシュを、親相対のまま返す（{@link #elements()} の前処理つき）。親相対を読める描画経路（GPU バックエンド）用で、
-     * 絶対座標へ直す費用を払わない。読めない消費者は {@link #elements()} を使う。
+     * 描画要素のキャッシュ（親相対。スクロールコンテナはスクロール 0 で組む）。必要なら先に環境変数と描画キューを更新する。
+     * 項目の画面の上の位置は {@link #toAbsolute}・{@link #nodeItemAbsolute}（と平行移動 {@link #paintOffsets}）、要素の位置は {@link #locate}
+     * （M3b-4b-4b で列全体を絶対座標へ直す {@code elements()} を削除した）。
      */
     public List<DisplayItem> relativeElements() {
         beforeElements();
@@ -665,21 +657,6 @@ public class UiView implements AutoCloseable {
     public DisplayItem nodeItemAbsolute(String id) {
         DisplayItem it = itemsById().get(id);
         return it != null && it.type() == ElementType.NODE ? DisplayItem.resolveAbsolute(itemsById(), it) : null;
-    }
-
-    /** {@link #elements()} と同じ絶対座標のリストを、前処理なしで返す。 */
-    public List<DisplayItem> absoluteRenderCache() {
-        return absolute(renderCache);
-    }
-
-    private List<DisplayItem> absoluteSource, absoluteResult;
-
-    private synchronized List<DisplayItem> absolute(List<DisplayItem> source) {
-        if (source != absoluteSource) {
-            absoluteResult = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(source);
-            absoluteSource = source;
-        }
-        return absoluteResult;
     }
 
     /** 状態変化に伴う部分木の再スタイル（必要に応じて再レイアウトまたは再描画へ分岐）を要求する。 */

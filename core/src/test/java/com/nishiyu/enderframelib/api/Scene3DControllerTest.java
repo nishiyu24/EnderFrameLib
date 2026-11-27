@@ -140,7 +140,7 @@ class Scene3DControllerTest {
         try (WebViewSurface s = surface()) {
             Scene3DController c = s.scene3d("view").orElseThrow();
             assertTrue(s.frame(0, false));
-            assertFalse(s.frame(16, false), "静止した 3D は描き直さない（StaticFrameGate）");
+            assertFalse(s.frame(16, false), "静止した 3D は描き直さない（面の静止判定）");
             assertFalse(s.needsFrame());
             int box = c.addBox(1, 1, 1, 0xFFFFFFFF);
             assertTrue(s.needsFrame(), "API でノードを足したら次のフレームが要る");

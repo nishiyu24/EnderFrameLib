@@ -48,6 +48,11 @@ public record LayerSpec(int span, float opacity, List<FilterOp> filters, BlendMo
         return new LayerSpec(span, opacity, filters, blend, isolate, clip, newMaskFrom, maskLuminance, backdrop, backdropShape);
     }
 
+    /** 層を要する効果（フィルター・マスク・混合・分離・{@code clip-path}・{@code backdrop-filter}）が 1 つでもあるか。不透明度は数えない。 */
+    public boolean hasEffects() {
+        return !filters.isEmpty() || masked() || blend != BlendMode.NORMAL || isolate || clip != null || hasBackdrop();
+    }
+
     /** マスク画像を持つか（{@link #maskFrom} が決まったあと。決まる前は {@code maskLuminance} とは別に {@link #wantsMask}）。 */
     public boolean masked() {
         return maskFrom >= 0;

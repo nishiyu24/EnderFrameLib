@@ -87,4 +87,22 @@ class PipelineProfilingTest {
             assertSame(cpu.pixmap(), wrapped.pixmap());
         }
     }
+
+    /**
+     * 包みはシーン（{@code SceneSource}）と描かないフレームの判定をそのまま渡す（M3b-4b-4b まで包みがシーンを捨てていて、costGate の
+     * cpu の行は部分の描き直しでなく毎フレームの全面描画を測っていた）。
+     */
+    @Test
+    void wrapperForwardsTheSceneAndTheRepaintDecision() {
+        StandaloneView view = new StandaloneView(HTML, 160, 120);
+        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(160, 120, 1f);
+             ProfilingRenderBackend wrapped = new ProfilingRenderBackend(cpu)) {
+            view.frame(1000, wrapped, true);
+            view.frame(1016, wrapped, true);
+            assertTrue(cpu.partialFrames() > 0, "シーンが届けば 2 枚目は部分の描き直し");
+            var ui = view.ui();
+            assertFalse(wrapped.needsRepaint(ui.renderCache(), ui.paintOffsets(), ui.paintSource(), 1032),
+                    "何も変わらなければ包み越しでも描かないと答える");
+        }
+    }
 }

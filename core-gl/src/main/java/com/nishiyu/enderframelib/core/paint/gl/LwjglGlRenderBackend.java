@@ -91,7 +91,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     public LwjglGlRenderBackend clearColor(int argb) { gpu.clearColor(argb); return this; }
 
     public Scene3DRenderer scene3dRenderer() { return gpu.scene3dRenderer(); }
-    public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) { return gpu.hasActiveAnimation(items, nowMs); }
+    public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) { return com.nishiyu.enderframelib.core.paint.SceneWalker.anyActiveAt(gpu.sessionId(), items, nowMs); }
     public long gpuShapeCount() { return gpu.gpuShapeCount(); }
     public long rectTreeDrawCalls() { return gpu.rectTreeDrawCalls(); }
     public long rectTreeChangedWrites() { return gpu.rectTreeChangedWrites(); }
@@ -130,6 +130,14 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         syncFlags();
         gpu.render(items, offsets, source, nowMs);
     }
+
+    @Override
+    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
+        return gpu.needsRepaint(items, offsets, source, nowMs);
+    }
+
+    /** 次の {@link #needsRepaint} を true にする（{@link GpuRenderBackend#invalidate}）。 */
+    public void invalidate() { gpu.invalidate(); }
 
     @Override public Pixmap pixmap() { return gpu.pixmap(); }
     @Override public void close() { gpu.close(); }

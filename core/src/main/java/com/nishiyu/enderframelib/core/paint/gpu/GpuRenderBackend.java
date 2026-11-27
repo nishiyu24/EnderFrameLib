@@ -4,7 +4,6 @@ import com.nishiyu.enderframelib.core.paint.port.*;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.LoadOp;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.PipelineDesc;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureDesc;
-
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBindings;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuDevice;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuFrame;
@@ -15,6 +14,7 @@ import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms;
 import com.nishiyu.enderframelib.core.paint.SceneWalker;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
+import com.nishiyu.enderframelib.core.paint.SceneSource;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
@@ -40,12 +40,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private static final AtomicInteger SESSIONS = new AtomicInteger();
-    static final GpuBufferDummy EMPTY_RECORDS_HOLDER = new GpuBufferDummy();
-
-    static final class GpuBufferDummy {
-        final com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer[] empty =
-                new com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer[0];
-    }
+    static final com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer[] NO_BUFFERS = new com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer[0];
 
     public static volatile int maxLayerDepth = 32;
 
@@ -97,6 +92,8 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private int clearPremul = 0;
     private boolean readbackValid;
     private boolean closed;
+    /** 描き終えた前のフレームの塗りの色（符号なし）。描き終えていなければ -1（{@link #needsRepaint}。M3b-4b-4b）。 */
+    private long paintedClear = -1L;
 
     GpuFrame activeFrame;
     private GpuPass activePass;
@@ -264,21 +261,22 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     public Scene3DRenderer scene3dRenderer() { return scene3dRenderer; }
     @Override public String sessionId() { return sessionId; }
     @Override public float devicePixelRatio() { return dpr; }
-    public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) { return SceneWalker.anyActiveAt(sessionId, items, nowMs); }
+    /** 前に描き終えた画素を今の入力でも使えるなら false（{@code RenderBackend#needsRepaint}。範囲は CPU の保険の描画器が求め、描くときは全面）。 */
+    @Override
+    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
+        return closed || cpu.needsRepaint(items, offsets, source, nowMs) || paintedClear != Integer.toUnsignedLong(clearPremul);
+    }
+    /** 次の {@link #needsRepaint} を true にする（書体の登録など、描画器の外の事情で絵が変わるとホストが知ったとき）。 */
+    public void invalidate() { paintedClear = -1L; }
     public long gpuShapeCount() { return rects != null ? rects.accepted() - gpuGlyphs - gpuImages : 0; }
     public long rectTreeDrawCalls() { return rects != null ? rects.drawCalls() : 0; }
     public long rectTreeChangedWrites() { return rects != null ? rects.changedWrites() : 0; }
     public long rectTreeShapes() { return rects != null ? rects.accepted() : 0; }
-
     public long[] rectTreeRejects() {
         long[] r = new long[5];
-        if (rects != null) {
-            System.arraycopy(rects.rejects, 0, r, 0, 4);
-            r[4] = rects.clipRejects;
-        }
+        if (rects != null) { System.arraycopy(rects.rejects, 0, r, 0, 4); r[4] = rects.clipRejects; }
         return r;
     }
-
     public long gpuGlyphCount() { return gpuGlyphs; }
     public long gpuImageCount() { return gpuImages; }
     public long drawCallCount() { return rects != null ? rects.drawCalls() : 0; }
@@ -301,6 +299,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
             this.width = nextW;
             this.height = nextH;
             this.cpu = cpuFactory.create(cssW, cssH, dpr, sessionId, resources);
+            this.paintedClear = -1L;
             this.readback = new Pixmap(width, height);
             this.snapshotPm = null;
             releaseRetained();
@@ -322,19 +321,18 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     // ------------------------------------------------------------------ フレーム実行
 
     @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, nowMs); }
+    @Override public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { render(items, offsets, null, nowMs); }
 
+    /** {@code source} は描き直す範囲（{@link #needsRepaint}）と、スクロールコンテナの中身を保持層にするのに使う（{@link SceneWalker}）。 */
     @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { render(items, offsets, null, nowMs); }
-
-    /** {@code source} はスクロールコンテナの中身を保持層にするのに使う（{@link com.nishiyu.enderframelib.core.paint.SceneWalker}）。 */
-    @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
+    public void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
         if (closed) throw new IllegalStateException("closed");
         host.enter();
         try {
             host.beginTiming();
             try {
                 readbackValid = false;
+                paintedClear = -1L; // 描き終えるまでは前の画素を信じない
                 cpu.clearDirty();
                 for (Entry left : layerStack) releaseEntry(left);
                 layerStack.clear();
@@ -372,6 +370,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
                     }
                 }
                 host.publishFrame();
+                paintedClear = Integer.toUnsignedLong(clearPremul);
             } finally {
                 host.endTiming();
             }
@@ -509,7 +508,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         texUniforms.flip();
         texSampler[0] = overlayTex;
         pass.bind(overwrite ? texCopyPipeline : texBlendPipeline,
-                new GpuBindings(EMPTY_RECORDS_HOLDER.empty, texSampler, texUniforms));
+                new GpuBindings(NO_BUFFERS, texSampler, texUniforms));
         pass.drawInstanced(4, 1, 0);
     }
 

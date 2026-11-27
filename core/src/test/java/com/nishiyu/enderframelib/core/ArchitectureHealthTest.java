@@ -616,6 +616,18 @@ class ArchitectureHealthTest {
         assertEquals(List.of(), bad, "M3b-4b-4a で消した PaintSceneDriver / RetainRanges / RangeBounds / DamagePlanner / ReplayKeys が戻った（計画書 §3.4）");
     }
 
+    /** M3b-4b-4b で消した、項目の同一性で静止フレーム・変化を見る型と、列全体を絶対座標へ直す本番の型。 */
+    static final List<String> M3B4B4B_DELETED_TYPES = List.of("StaticFrameGate", "ItemDiff", "AbsoluteItems");
+
+    @Test
+    void legacyStaticFrameTypesStayGone() throws IOException {
+        List<String> bad = new ArrayList<>();
+        List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
+        roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
+        for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M3B4B4B_DELETED_TYPES));
+        assertEquals(List.of(), bad, "M3b-4b-4b で消した StaticFrameGate / ItemDiff / AbsoluteItems が戻った（静止の判定は描画器の needsRepaint。計画書 §3.4）");
+    }
+
     @Test
     void legacyTypeDetectorWorks() throws IOException {
         RatchetSupport.withTempSources(Map.of("Old.java",

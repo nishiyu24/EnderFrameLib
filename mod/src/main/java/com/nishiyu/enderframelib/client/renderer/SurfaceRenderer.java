@@ -8,6 +8,7 @@ import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry;
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
+import com.nishiyu.enderframelib.core.paint.SceneSource;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -44,7 +45,8 @@ public final class SurfaceRenderer {
         SessionContext session = ClientWebManager.getSession(sessionId);
         List<DisplayItem> elements = session != null ? session.relativeElements() : List.of();
         PaintOffsets offsets = session != null ? session.paintOffsets() : PaintOffsets.EMPTY;
-        return paint(sessionId, elements, offsets, geometry.paintBlocksW(), geometry.paintBlocksH(), style, poseStack, buffer);
+        return paint(sessionId, elements, sourceOf(session, elements), offsets, geometry.paintBlocksW(), geometry.paintBlocksH(), style,
+                poseStack, buffer);
     }
 
     /**
@@ -55,17 +57,34 @@ public final class SurfaceRenderer {
                                SurfaceStyle style, PoseStack poseStack, MultiBufferSource buffer) {
         SessionContext session = ClientWebManager.getSession(sessionId);
         PaintOffsets offsets = session != null ? session.paintOffsets() : PaintOffsets.EMPTY;
-        return paint(sessionId, elements, offsets, widthBlocks, heightBlocks, style, poseStack, buffer);
+        return paint(sessionId, elements, sourceOf(session, elements), offsets, widthBlocks, heightBlocks, style, poseStack, buffer);
     }
 
-    private static boolean paint(String sessionId, List<DisplayItem> elements, PaintOffsets paintOffsets, int widthBlocks, int heightBlocks,
-                                 SurfaceStyle style, PoseStack poseStack, MultiBufferSource buffer) {
+    /**
+     * セッションの外で組んだ列（{@code source} はその列を組んだシーン。{@link SceneSource#items} が {@code elements}）を描く。
+     * エンティティの上の板のように、1 回だけ組んだ文書の一部を描く面が使う。
+     */
+    public static boolean draw(String sessionId, List<DisplayItem> elements, SceneSource source, int widthBlocks, int heightBlocks,
+                               SurfaceStyle style, PoseStack poseStack, MultiBufferSource buffer) {
+        return paint(sessionId, elements, source, PaintOffsets.EMPTY, widthBlocks, heightBlocks, style, poseStack, buffer);
+    }
+
+    /**
+     * 列 {@code elements} を組んだシーン。セッションの直近の列（で始まる列）でなければ null（呼び出し側で絞り込んだ一覧には、前のフレームと
+     * シーンの違いで比べられるシーンが無い。描画器は毎回全部を描く）。
+     */
+    private static SceneSource sourceOf(SessionContext session, List<DisplayItem> elements) {
+        SceneSource source = session != null ? session.paintSource() : null;
+        return source != null && source.baseSizeIn(elements) > 0 ? source : null;
+    }
+
+    private static boolean paint(String sessionId, List<DisplayItem> elements, SceneSource source, PaintOffsets paintOffsets,
+                                 int widthBlocks, int heightBlocks, SurfaceStyle style, PoseStack poseStack, MultiBufferSource buffer) {
         if (style.lodActive()) return drawLod(style.lodColor(), widthBlocks, heightBlocks, poseStack, buffer);
         if (elements == null || elements.isEmpty()) return false;
         String hovered = style.hovered() != null ? style.hovered() : ClientScreenInteractionManager.getHoveredId(sessionId);
         SurfaceStyle.Audio audio = style.audio();
-        SessionContext session = ClientWebManager.getSession(sessionId);
-        PaintRequest request = new PaintRequest(elements, paintOffsets, session != null ? session.paintSource() : null,
+        PaintRequest request = new PaintRequest(elements, paintOffsets, source,
                 widthBlocks, heightBlocks, poseStack, buffer,
                 style.light(), hovered != null ? hovered : "", sessionId, audio.play(), audio.twoD(), audio.pos(),
                 style.screenSpaceText());

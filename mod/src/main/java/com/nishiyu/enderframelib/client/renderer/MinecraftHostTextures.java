@@ -88,11 +88,6 @@ final class MinecraftHostTextures implements HostTextures {
         return frame.get(item);
     }
 
-    /** 1 回の {@link #prepare} の結果。{@code fence} は 0 なら待つものなし。{@code animating} なら次のフレームも描き直す。 */
-    record Prepared(long fence, boolean animating) {
-        static final Prepared NONE = new Prepared(0L, false);
-    }
-
     /** 中身の種類。Minecraft が描くものでなければ null。 */
     static String kindOf(DisplayItem el) {
         ElementType t = el.type();
@@ -123,13 +118,13 @@ final class MinecraftHostTextures implements HostTextures {
     }
 
     /**
-     * 面の項目のうち Minecraft が描く中身をテクスチャへ描く。描画スレッドで、コアの描画の前に呼ぶ。
-     * 呼ぶ側の描きかけの頂点は先に吐き出しておくこと（ここで描画先を切り替える）。
+     * 面の項目のうち Minecraft が描く中身をテクスチャへ描く。描画スレッドで、コアが描くと決めたフレームの描画の前に呼ぶ
+     * （描かないフレームは呼ばない。テクスチャは中身の鍵で引くので、前のフレームの項目を覚えない）。
+     * 呼ぶ側の描きかけの頂点は先に吐き出しておくこと（ここで描画先を切り替える）。戻り値はコアの共有コンテキストに待たせるフェンス（0 なら無し）。
      */
-    Prepared prepare(List<DisplayItem> items, String sessionId, float dpr, boolean worldLighting) {
+    long prepare(List<DisplayItem> items, String sessionId, float dpr, boolean worldLighting) {
         frame.clear();
         prepares++;
-        boolean animating = false;
         List<DisplayItem> todo = null;
         for (DisplayItem el : items) {
             if (el.width() <= 0 || el.height() <= 0 || kindOf(el) == null) continue;
@@ -138,14 +133,13 @@ final class MinecraftHostTextures implements HostTextures {
         }
         if (todo == null) {
             evictIdle();
-            return Prepared.NONE;
+            return 0L;
         }
         GlState saved = GlState.save();
         try {
             for (DisplayItem el : todo) {
                 String kind = kindOf(el);
                 boolean dynamic = kind.equals("entity") || kind.equals("scene");
-                animating |= dynamic;
                 // 書体の字形は 1 画素より細い画素で描かれうる（最近傍で縮めると列・行が落ちる）ので、文字は 2 倍で描いて線形で縮める
                 boolean text = kind.equals("text");
                 float scale = text ? dpr * TEXT_SUPERSAMPLE : dpr;
@@ -171,7 +165,7 @@ final class MinecraftHostTextures implements HostTextures {
         evictIdle();
         long fence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         GL11.glFlush();
-        return new Prepared(fence, animating);
+        return fence;
     }
 
     private static String textSpec(DisplayItem el) {

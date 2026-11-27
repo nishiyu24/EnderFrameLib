@@ -54,7 +54,7 @@ public class LinuxDesktopScreenInputTest {
     /** 状態を DOM へ流し、描画キューを処理してヒットテストを最新にする。 */
     private void refresh() {
         screen.state.syncToDom();
-        session.elements();
+        com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements());
     }
 
     private void click(double x, double y) {
@@ -70,7 +70,7 @@ public class LinuxDesktopScreenInputTest {
 
     /** id がそのまま一致する描画要素（要素本体）。 */
     private DisplayItem node(String id) {
-        return session.elements().stream().filter(i -> id.equals(i.id())).findFirst().orElse(null);
+        return com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements()).stream().filter(i -> id.equals(i.id())).findFirst().orElse(null);
     }
 
     private double[] center(String id) {
@@ -113,7 +113,7 @@ public class LinuxDesktopScreenInputTest {
         assertTrue(menuOpen());
 
         // メニューの外、ドック上の Notes を押す。閉じるだけで、エディタは起動しないこと
-        DisplayItem notes = session.elements().stream()
+        DisplayItem notes = com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements()).stream()
                 .filter(i -> i.events() != null && "win:toggle:editor".equals(i.events().get("onclick")))
                 .findFirst().orElse(null);
         assertNotNull(notes, "ドックの Notes が描画されていること");
@@ -384,7 +384,7 @@ public class LinuxDesktopScreenInputTest {
         refresh();
 
         java.util.Map<String, DisplayItem> byId = new java.util.HashMap<>();
-        for (DisplayItem i : session.elements()) {
+        for (DisplayItem i : com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements())) {
             assertFalse(i.id().isEmpty() || i.id().startsWith("_"), "描画要素の id が空の節から作られていないこと: " + i.id());
             byId.put(i.id(), i);
         }
@@ -393,7 +393,7 @@ public class LinuxDesktopScreenInputTest {
         refresh();
         int memory = 0;
         int terminal = 0;
-        for (DisplayItem i : session.elements()) {
+        for (DisplayItem i : com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements())) {
             if (i.type() != com.nishiyu.enderframelib.core.paint.model.ElementType.TEXT) continue;
             String bound = boundTextKey(i.baseId());
             if (bound == null) continue;

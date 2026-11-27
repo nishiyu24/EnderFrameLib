@@ -39,8 +39,6 @@ class ElementTypeClassificationTest {
         for (ElementType t : ElementType.values()) {
             assertEquals(external.contains(t), t.isExternallyDriven(), "isExternallyDriven " + t);
             assertEquals(live.contains(t), t.hasLiveWidgetState(), "hasLiveWidgetState " + t);
-            boolean volatileExpected = external.contains(t) || live.contains(t) || t == ElementType.RANGE;
-            assertEquals(volatileExpected, t.isVolatileForDamage(), "isVolatileForDamage " + t);
         }
         Set<ElementType> buffer = EnumSet.of(ElementType.CANVAS, ElementType.SCENE, ElementType.TEXTAREA, ElementType.IMAGE,
                 ElementType.VIDEO, ElementType.INPUT, ElementType.SELECT, ElementType.RANGE, ElementType.PROGRESS,

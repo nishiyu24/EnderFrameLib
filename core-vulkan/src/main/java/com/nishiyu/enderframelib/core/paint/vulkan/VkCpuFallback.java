@@ -27,6 +27,11 @@ final class VkCpuFallback implements CpuFallback {
     }
 
     @Override
+    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
+        return raster.needsRepaint(items, offsets, source, nowMs);
+    }
+
+    @Override
     public int[] dirtyBounds() {
         return raster.dirtyBounds();
     }

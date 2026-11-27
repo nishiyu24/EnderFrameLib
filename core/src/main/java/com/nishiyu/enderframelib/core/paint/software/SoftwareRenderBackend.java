@@ -16,7 +16,7 @@ import com.nishiyu.enderframelib.core.paint.port.GpuClip;
 import com.nishiyu.enderframelib.core.paint.port.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.port.GpuSink;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
-import com.nishiyu.enderframelib.core.paint.ItemDiff;
+import com.nishiyu.enderframelib.core.paint.FrameDamage;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
 import com.nishiyu.enderframelib.core.paint.SceneDamage;
 import com.nishiyu.enderframelib.core.paint.SceneSource;
@@ -96,13 +96,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** このフレームで塗り直す範囲（タイル境界まで広げた外接矩形）。 */
     final DamageRegion damage = new DamageRegion();
-    /** 描き直す範囲を前後のシーンの違いから求める（M3b-4b-4a。前のフレームのシーンとスクロール量を比べる相手として持つ）。 */
-    private final SceneDamage sceneDamage = new SceneDamage();
-    /** 前のフレームの塗りの色・利用者の平行移動の版（変われば全面）。 */
-    private int prevClearColor;
-    private int prevUserOffsets = -1;
+    /** 描き直す範囲のうちシーンから決まる分（前のフレームのシーン・スクロール量・塗りの色・利用者の平行移動を比べる相手として持つ）。 */
+    private final FrameDamage frameDamage = new FrameDamage();
     /** このフレームの差分描画が有効（塗りを {@link #damage} に収める）。 */
     private boolean partialActive;
+    /** GPU の描画器へ重ねている（{@link #renderOnto}）。 */
+    private boolean onto;
 
     /** 診断用: 差分描画したフレーム・全面描画したフレームの累計と、差分描画で塗り直さなかった画素の累計。 */
     long partialFrames, fullFrames, untouchedPixels;
@@ -162,22 +161,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
     public void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
         if (items == null || items.isEmpty()) {
             raster.clearAll(clearColor);
-            sceneDamage.reset();
+            frameDamage.reset();
             return;
         }
         PaintOffsets eff = offsets != null ? offsets : PaintOffsets.EMPTY;
-        SceneDamage.Rects rects = null;
-        if (source != null) {
-            rects = sceneDamage.next(source.scene(), source.dynamic());
-            if (clearColor != prevClearColor) rects.setFull("clear-color");
-            if (!com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_DAMAGE.on()) rects.setFull("damage-off");
-            if (source.userOffsetsVersion() != prevUserOffsets) rects.setFull("user-offsets");
-            prevUserOffsets = source.userOffsetsVersion();
-        } else {
-            sceneDamage.reset();
-            prevUserOffsets = -1;
-        }
-        prevClearColor = clearColor;
+        SceneDamage.Rects rects = frameDamage.take(items, source, clearColor);
         route.begin(null);
         walker.setScrollSnapDpr(0f);
         raster.beginFrame();
@@ -190,15 +178,25 @@ public final class SoftwareRenderBackend implements RenderBackend {
             done = true;
         } finally {
             queue.discard(); // 例外のときは捨てる（描画先は不定）
-            if (!done) sceneDamage.reset(); // 例外のとき: 次は全面
+            if (!done) frameDamage.reset(); // 例外のとき: 次は全面
             raster.endFrame();
             route.end();
             partialActive = false;
         }
     }
 
+    /** 描き直す範囲（{@link FrameDamage}・{@link SceneWalker#changesOutsideScene}）が空でないか。true なら同じ入力で描くこと（M3b-4b-4b）。 */
+    @Override
+    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
+        if (source == null || items == null || items.isEmpty()) return true;
+        if (!frameDamage.plan(items, source, clearColor).isEmpty() || walker.changesOutsideScene(items, source, nowMs)) return true;
+        frameDamage.dropPlan();
+        return false;
+    }
+
     /** 走査器が描き直す範囲を決めた（描く前）: 全面なら全面を、そうでなければ範囲のタイルを塗り直す。範囲が空なら何も描かない。 */
     private boolean beginWalk(SceneDamage.Rects rects) {
+        if (onto) return true; // GPU の描画器へ重ねる: 描くと決めたら GPU が全面を描く
         if (rects == null || rects.full()) {
             raster.clearAll(clearColor);
             partialActive = false;
@@ -227,9 +225,28 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * 描画先を塗り直さずに {@code items} を重ねる。{@code sink} があれば、単色の角丸矩形と角丸の枠線はそちらへ渡す
      * （受け取られなかったものだけ CPU が描く）。GPU 版が文字・画像などの CPU 描画を重ねるのに使う。
      */
-    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs, GpuSink sink) {
-        sceneDamage.reset(); // 全面を塗っていない・別の描画先かもしれないので、差分描画の前提を捨てる
-        drawFrame(items, offsets != null ? offsets : PaintOffsets.EMPTY, source, nowMs, sink);
+    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs, GpuSink gpu) {
+        if (items == null || items.isEmpty()) { frameDamage.reset(); return; }
+        // 範囲は GPU の描画器が描くかを決めるのに使う（needsRepaint）。描くときは GPU が全面を描くので、塗りは範囲で絞らない
+        SceneDamage.Rects rects = frameDamage.take(items, source, clearColor);
+        route.begin(gpu);
+        walker.setScrollSnapDpr(gpu != null && gpu.snapsScrollOffsets() ? dpr : 0f);
+        raster.beginFrame();
+        beginFrame(items);
+        onto = true;
+        boolean done = false;
+        try {
+            // 走査（アニメーション補間・親子の変形・グループの鎖）は走査器が受け持ち、ここは画素を塗るだけ
+            walker.run(items, offsets != null ? offsets : PaintOffsets.EMPTY, source, nowMs, frame, painter, rects);
+            queue.flush(); // 開いたままの層の中身も、層を捨てる前に書き切る
+            done = true;
+        } finally {
+            queue.discard(); // 例外のときは捨てる（描画先は不定。次は全面）
+            if (!done) frameDamage.reset();
+            onto = false;
+            raster.endFrame();
+            route.end();
+        }
     }
 
     /** CPU が描いた範囲 {@code {x0, y0, x1, y1}}（x1・y1 は含まない）。何も描いていなければ {@code null}。 */
@@ -254,29 +271,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (!frameParts.isEmpty()) frameParts.clear();
     }
 
-    private void drawFrame(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs, GpuSink gpu) {
-        if (items == null || items.isEmpty()) return;
-        route.begin(gpu);
-        walker.setScrollSnapDpr(gpu != null && gpu.snapsScrollOffsets() ? dpr : 0f);
-        raster.beginFrame();
-        beginFrame(items);
-        try {
-            // 走査（アニメーション補間・親子の変形・グループの鎖）は走査器が受け持ち、ここは画素を塗るだけ
-            walker.run(items, offsets, source, nowMs, frame, painter, null);
-            queue.flush(); // 開いたままの層の中身も、層を捨てる前に書き切る
-        } finally {
-            queue.discard(); // 例外のときは捨てる（描画先は不定）
-            raster.endFrame();
-            route.end();
-        }
-    }
-
     final SceneWalker walker;
 
     /** 直近に描いた {@code items} に、時刻 {@code nowMs} でまだ動いているアニメーションがあるか。 */
-    public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) {
-        return SceneWalker.anyActiveAt(sessionId, items, nowMs);
-    }
+    public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) { return SceneWalker.anyActiveAt(sessionId, items, nowMs); }
     private final Painter painter = new Painter() {
         @Override
         public boolean beginWalk(SceneDamage.Rects damage) {
@@ -721,7 +719,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         // 項目の並びが変わった世代をまたぐときは、元の ClipRect（または無クリップ番兵）が同じものだけ使い回す
         boolean recording = recordOwner != null; // 保持する層へ記録中は、コンテナの切り取りを外すので使い回しの覚えを使わない
         if (!recording && ce != null && ce.w == raster.targetWidth() && ce.h == raster.targetHeight()
-                && ((ce.generation == clipGeneration && ItemDiff.unchanged(ce.item, el))
+                && ((ce.generation == clipGeneration && ce.item == el)
                         || (source != null && ce.source == source && !ce.unresolvedOwner))) {
             boolean same = true;
             for (int k = 0; k < ce.owner.length && same; k++) {

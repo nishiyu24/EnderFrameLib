@@ -371,11 +371,8 @@ public class LinuxDesktopScreen extends AbstractEnderScreen {
     private DesktopLayout.Rect elementRect(String elementId) {
         SessionContext session = ClientWebManager.getSession(this.sessionId);
         if (session == null) return null;
-        PaintOffsets offsets = session.paintOffsets();
-        for (DisplayItem item : session.absoluteRenderCache()) {
-            if (elementId.equals(item.id())) return DesktopLayout.Rect.of(item, offsets);
-        }
-        return null;
+        DisplayItem item = session.nodeItemAbsolute(elementId); // 親相対の列で、要素本体の節を絶対位置に解く
+        return item != null ? DesktopLayout.Rect.of(item, session.paintOffsets()) : null;
     }
 
     @Override

@@ -119,7 +119,7 @@ public class DisplayListGoldenTest {
     public static String dumpDisplayList(String html, int viewportW, int viewportH) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", viewportW, viewportH);
-        List<DisplayItem> elements = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, viewportW, viewportH,
+        List<DisplayItem> elements = com.nishiyu.enderframelib.common.TestFlatItems.absolute(com.nishiyu.enderframelib.common.FrameRender.document(doc, viewportW, viewportH,
                 FontResolver.FALLBACK).items());
 
         StringBuilder sb = new StringBuilder();

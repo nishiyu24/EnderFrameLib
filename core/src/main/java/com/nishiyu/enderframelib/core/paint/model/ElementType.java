@@ -77,15 +77,6 @@ public enum ElementType {
         };
     }
 
-    /** 損傷範囲の計画で、前のフレームの絵を使い回さず毎回描き直す種類（外の事情・部品の状態・スライダー）。 */
-    public boolean isVolatileForDamage() {
-        return switch (this) {
-            case RANGE -> true;
-            case IMAGE, VIDEO, CANVAS, SCENE, INPUT, TEXTAREA, SELECT, PROGRESS -> true;
-            case NODE, RECT, TEXT, TOGGLE, CHECKBOX, RADIO, CIRCLE_BORDER, ROUNDED_BORDER, BUTTON, A -> false;
-        };
-    }
-
     /** 文字・画像・3D など、四角形の描画ではなくバッファ（部品固有の描き方）へ出す種類。 */
     public boolean drawsToBuffer() {
         return switch (this) {

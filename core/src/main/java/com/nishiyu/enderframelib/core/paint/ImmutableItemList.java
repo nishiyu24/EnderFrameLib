@@ -74,7 +74,7 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
             DisplayItem[] nb = null;
             for (int j = 0; j < len; j++) {
                 DisplayItem cur = src[base + j];
-                if (ItemDiff.changed(ob[j], cur)) {
+                if (ob[j] != cur) {
                     if (nb == null) nb = Arrays.copyOf(ob, len);
                     nb[j] = cur;
                 }
@@ -99,7 +99,7 @@ public final class ImmutableItemList extends AbstractList<DisplayItem> implement
             DisplayItem[] nb = null;
             for (int j = 0; j < len; j++) {
                 DisplayItem cur = src.get(base + j);
-                if (ItemDiff.changed(ob[j], cur)) {
+                if (ob[j] != cur) {
                     if (nb == null) nb = Arrays.copyOf(ob, len);
                     nb[j] = cur;
                 }

@@ -36,7 +36,7 @@ class UiViewTest {
             assertNotNull(view.scene());
             assertEquals(320, view.rootW());
             assertEquals(240, view.rootH());
-            assertFalse(view.elements().isEmpty());
+            assertFalse(view.relativeElements().isEmpty());
             assertNotNull(view.elementById("a"));
             assertNotNull(view.findNode("a"));
         }
@@ -114,7 +114,7 @@ class UiViewTest {
             view.flushInvalidation();
             assertEquals(150f, view.elementById("a").width(), 0.5f);
 
-            view.elements();
+            view.relativeElements();
             assertTrue(calls.contains("beforeElements"));
         }
     }

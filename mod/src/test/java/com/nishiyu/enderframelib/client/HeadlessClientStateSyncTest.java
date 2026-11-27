@@ -186,6 +186,6 @@ public class HeadlessClientStateSyncTest {
     }
 
     private static DisplayItem item(SessionContext session, String id) {
-        return session.elements().stream().filter(i -> id.equals(i.id())).findFirst().orElseThrow();
+        return com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements()).stream().filter(i -> id.equals(i.id())).findFirst().orElseThrow();
     }
 }

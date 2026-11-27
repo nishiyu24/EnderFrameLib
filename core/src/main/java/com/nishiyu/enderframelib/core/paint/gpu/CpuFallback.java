@@ -20,6 +20,9 @@ public interface CpuFallback {
     void renderOnto(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs,
                     GpuSink sink);
 
+    /** 前に描いたフレームから描き直す範囲が空でないか（{@code RenderBackend#needsRepaint}）。true なら続けて同じ入力で {@link #renderOnto}。 */
+    boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs);
+
     int[] dirtyBounds();
 
     int[] pixels();

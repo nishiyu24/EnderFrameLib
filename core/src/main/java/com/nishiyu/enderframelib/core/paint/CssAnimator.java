@@ -95,7 +95,7 @@ public class CssAnimator {
         AnimState state = states.getOrCreate(el, now);
         // DisplayItem は不変。前回と同じインスタンスなら目標もテキストも変わっていないので、比較（AnimationSpec の
         // 深い equals を含む）を飛ばす。アニメーションだけが動くフレームは、ほぼ全項目がここを通る
-        if (ItemDiff.changed(state.seenItem, el)) {
+        if (state.seenItem != el) {
             if (state.hasTargetChanged(el)) {
                 state.updateTarget(el, now);
             }

@@ -108,7 +108,6 @@ class FrameBoundarySnapshotTest {
              SoftwareRenderBackend sw = new SoftwareRenderBackend(100, 100, 1f)) {
             view.frame(1000, noDraw, true);
             AtomicReference<PaintFrame> bus = new AtomicReference<>(view.frameSnapshot());
-            StaticFrameGate gate = new StaticFrameGate(true);
             CountDownLatch start = new CountDownLatch(1);
             ExecutorService pool = Executors.newFixedThreadPool(2);
             try {
@@ -129,10 +128,7 @@ class FrameBoundarySnapshotTest {
                         float dx = f.offsets().dx("box");
                         float dy = f.offsets().dy("box");
                         assertEquals(dx * 2f, dy, 0.001f, "dx/dy が別フレームの値と混ざらない");
-                        if (!gate.canSkip(f, 0)) {
-                            sw.render(f, 1000L + i);
-                            gate.painted(f, 0, false);
-                        }
+                        sw.render(f, 1000L + i);
                     }
                     return null;
                 });
