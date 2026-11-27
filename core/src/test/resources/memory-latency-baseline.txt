@@ -1,12 +1,12 @@
 # MemoryAndLatencyGate 基準値（キー | 基準値 | 上限）。./gradlew :core:memoryAndLatencyGate -Pgate.update で更新。
 # 内部カウンタ（memo*）不使用。ヒープは MB、交互 A/B は inc/full 比または ms。
-heap:showcase:open | 1.630 | 4.038
-heap:voidwave.html:open | 4.178 | 7.223
-heap:large-list-2000:open | 16.219 | 20.500
-heap:varied-list-2000:open | 68.183 | 74.000
-heap:large-list-2000:child | 16.263 | 20.500
-heap:varied-list-2000:hover | 68.270 | 74.000
-heap:showcase:text | 1.712 | 4.140
+heap:showcase:open | 1.716 | 4.038
+heap:voidwave.html:open | 4.323 | 7.223
+heap:large-list-2000:open | 14.134 | 19.300
+heap:varied-list-2000:open | 48.868 | 68.500
+heap:large-list-2000:child | 14.076 | 19.300
+heap:varied-list-2000:hover | 49.052 | 68.500
+heap:showcase:text | 1.772 | 4.140
 ab-inc-vs-full:showcase:hover | 0.1386 | 0.9000
 ab-inc-vs-full:showcase:text | 0.0796 | 0.9800
 ab-inc-vs-full:large-list-2000:child | 0.2705 | 1.0500

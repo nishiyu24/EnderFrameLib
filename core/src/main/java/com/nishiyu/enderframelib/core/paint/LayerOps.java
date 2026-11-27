@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
-import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
+import com.nishiyu.enderframelib.core.paint.scene.DrawOps;
 import com.nishiyu.enderframelib.core.paint.scene.SceneEmitter;
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 
@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class LayerOps implements SceneEmitter.OpsSource {
     private final AtomicInteger fragIds = new AtomicInteger();
     private final BoxItemPainter painter;
-    private final OpList ops = new OpList(32);
+    private final OpList ops = new OpList();
     private int viewportW, viewportH;
 
     public LayerOps(int viewportW, int viewportH, Map<String, Keyframes> keyframes) {
@@ -33,16 +33,16 @@ public final class LayerOps implements SceneEmitter.OpsSource {
     }
 
     @Override
-    public DrawOp[] ops(SceneLayer layer, int vw, int vh) {
+    public DrawOps ops(SceneLayer layer, int vw, int vh) {
         if (vw != viewportW || vh != viewportH) {
             viewportW = vw;
             viewportH = vh;
             painter.setViewport(vw, vh);
         }
-        ops.beginDeferred();
+        ops.beginDeferred(layer.ops());
         fragIds.set(0);
         painter.drawBox(ops, layer, 0f, 0f, 0f, 0f, null, null, null, false, PaintSupport.hasOwnNode(layer), false);
-        DrawOp[] out = ops.toArray(DrawOp.EMPTY);
+        DrawOps out = ops.freeze();
         ops.clear();
         return out;
     }

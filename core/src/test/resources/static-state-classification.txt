@@ -50,3 +50,5 @@ text/font/LoadedFace.java#library | LOCKED | synchronized (LOCK) の中でだけ
 css/DerivedStyles.java#ORTHO_KEYS | IMMUTABLE_TABLE | 直交ラッパーの memo 識別用センチネル配列（構築後は参照比較のみ）
 css/StyleProperties.java#VALS | IMMUTABLE_TABLE | Style.DEFAULT の初期文字列配列表（静的初期化後に読むだけ）
 css/StyleProperties.java#GROUP_BITS | IMMUTABLE_TABLE | プロパティ ID ごとのスタイル群ビット表（静的初期化後に読むだけ）
+paint/scene/DrawOps.java#FITS | IMMUTABLE_TABLE | 列挙の values() の写し。静的初期化で作った後は読むだけ（命令の頭の語の番号から列挙へ戻す）
+paint/scene/DrawOps.java#TYPES | IMMUTABLE_TABLE | 列挙の values() の写し。静的初期化で作った後は読むだけ（命令の頭の語の番号から列挙へ戻す）

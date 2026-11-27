@@ -14,7 +14,7 @@ import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
 import com.nishiyu.enderframelib.core.paint.model.StickyShift;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
-import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
+import com.nishiyu.enderframelib.core.paint.scene.DrawOps;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.paint.scene.SceneAnchorFollow;
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
@@ -44,7 +44,7 @@ public final class SceneDisplayListAdapter {
 
     private final AtomicInteger fragIds = new AtomicInteger();
     private final BoxItemPainter painter;
-    private final OpList scratch = new OpList(64);
+    private final OpList scratch = new OpList();
     private final OpComposer composer = new OpComposer();
     private int rootW, rootH;
     private float devicePixelRatio = 1f;
@@ -158,7 +158,7 @@ public final class SceneDisplayListAdapter {
                 }
                 if (canvasBg != 0x00000000) {
                     long key = source != null && source.node() != null ? DisplayItem.bgKeyOf(source.node().nodeId()) : 0L;
-                    OpList bg = new OpList(1);
+                    OpList bg = new OpList();
                     bg.beginFinal();
                     PaintSupport.addElement(bg, "bg_root", "bg_root", ElementType.RECT, top.x(), top.y(),
                             Math.max(top.w(), rootW), Math.max(top.h(), rootH), "", 0, canvasBg, EMPTY_PROPS,
@@ -429,8 +429,8 @@ public final class SceneDisplayListAdapter {
     private void drawOwn(SceneAdapterBox box, ClipRect clip, String parentId) {
         boolean ownNode = SceneAdapterSupport.boxHasOwnNode(box);
         SceneAdapterBox origin = SceneAdapterSupport.effectiveParentNodeBox(box, parentId);
-        DrawOp[] ops = box.layer.ops();
-        if (ops.length > 0 && box != canvasSource && !box.isVerticalWrapper()) {
+        DrawOps ops = box.layer.ops();
+        if (!ops.isEmpty() && box != canvasSource && !box.isVerticalWrapper()) {
             // 層に記憶した命令（M3b-4a）に、今の位置・クリップ・親の錨・祖先の文字色を足す
             composer.composeLayer(ops, box, origin, clip, parentId, painter.anim, out);
         } else {

@@ -7,14 +7,13 @@ import com.nishiyu.enderframelib.core.paint.model.FilterOp;
 import com.nishiyu.enderframelib.core.paint.model.RenderHints;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
-import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
+import com.nishiyu.enderframelib.core.paint.scene.DrawOps;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.paint.scene.LayerEffects;
 import com.nishiyu.enderframelib.core.paint.scene.PlacedLayer;
 import com.nishiyu.enderframelib.core.paint.scene.SceneChildren;
 import com.nishiyu.enderframelib.core.paint.scene.SceneChunk;
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
-import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
 import com.nishiyu.enderframelib.core.paint.scene.Transform2D;
 
 import java.util.Arrays;
@@ -134,6 +133,8 @@ public final class SceneDamage {
     /** スクロール量の変わったコンテナと、その祖先の層（前後のシーンの両方。使い回した層でも下りる道）。 */
     private final IdentityHashMap<SceneLayer, Boolean> onPath = new IdentityHashMap<>();
     private final Chain chain = new Chain();
+    /** 層の命令を読むカーソル（使い回す）。 */
+    private final DrawOps.Cursor cursor = new DrawOps.Cursor();
     /** たどっている間の前（{@code a} の側）と今（{@code b} の側）の動的な値。 */
     private DynamicSceneState dynA, dynB;
     private int depth;
@@ -418,9 +419,9 @@ public final class SceneDamage {
      * 描画が読む入力（スタイル・属性の写し・文字の断片）で比べる。キャンバスへ譲った背景（html / body）は {@link #compute} が先に比べる。
      */
     private boolean ownDiffers(SceneLayer la, SceneLayer lb) {
-        if (!Arrays.equals(la.ops(), lb.ops())) return true;
-        if (la.ops().length == 0 && la.hasSelf()) {
-            return la.style.typed() != lb.style.typed() || la.values() != lb.values() || !Arrays.equals(la.runs, lb.runs);
+        if (!la.ops().sameAs(lb.ops())) return true;
+        if (la.ops().isEmpty() && la.hasSelf()) {
+            return la.style.typed() != lb.style.typed() || la.values() != lb.values(); // 断片は上の命令の列と一緒に比べた
         }
         return la.style.typed() != lb.style.typed() && (la.wantsScrollbars() || la.backdrop() != null || hasMask(la));
     }
@@ -440,20 +441,21 @@ public final class SceneDamage {
         SceneLayer l = box.layer;
         if (l.displayNone()) return;
         if (l.isTopLayer() && l.backdrop() != null) { out.setFull("backdrop-pseudo"); return; } // ::backdrop はビューポート全体を覆う
-        DrawOp[] ops = l.ops();
-        if ((ops.length == 0 && l.hasSelf()) || l.wantsScrollbars() || l.backdrop() != null || hasMask(l) || l.verticalWrapper()) box(box);
+        DrawOps ops = l.ops();
+        if ((ops.isEmpty() && l.hasSelf()) || l.wantsScrollbars() || l.backdrop() != null || hasMask(l) || l.verticalWrapper()) box(box);
         PlacedLayer op = box.originParent();
         float ox = op != null ? op.x : 0f, oy = op != null ? op.y : 0f;
-        for (DrawOp o : ops) {
-            DrawOp.Item it = (DrawOp.Item) o;
-            boolean fromOrigin = (it.flags() & DrawOp.BASE_ORIGIN_PARENT) != 0;
+        DrawOps.Cursor it = cursor.reset(ops);
+        while (it.next()) {
+            boolean fromOrigin = (it.flags() & DrawOps.BASE_ORIGIN_PARENT) != 0;
             float bx = fromOrigin ? ox : box.x, by = fromOrigin ? oy : box.y;
             float pad = padOf(it.meta(), it.text(), it.h());
             add(bx + it.x() - pad, by + it.y() - pad, bx + it.x() + it.w() + pad, by + it.y() + it.h() + pad);
         }
-        for (SceneRun r : l.runs) {
-            float pad = Math.max(PAD, r.h() + 1f);
-            add(ox + r.x() - pad, oy + r.y() - pad, ox + r.x() + r.w() + pad, oy + r.y() + r.h() + pad);
+        for (int i = 0, n = ops.runCount(); i < n; i++) {
+            float rx = ops.runX(i), ry = ops.runY(i), rw = ops.runW(i), rh = ops.runH(i);
+            float pad = Math.max(PAD, rh + 1f);
+            add(ox + rx - pad, oy + ry - pad, ox + rx + rw + pad, oy + ry + rh + pad);
         }
     }
 

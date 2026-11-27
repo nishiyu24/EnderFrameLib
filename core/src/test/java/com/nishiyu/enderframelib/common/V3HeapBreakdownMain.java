@@ -172,54 +172,44 @@ public final class V3HeapBreakdownMain {
     }
 
     /**
-     * 層の描画命令の中身の調べ（M3b-4c-0。型付きの小さい命令にしたときの見込みの根拠）: 命令の種類ごとの数と、命令が持つ欄のうち型付きの命令で
-     * 要らなくなるもの（文字列 ID・{@code events}・{@code RenderMeta}・{@code RenderHints}・祖先のクリップ）と、残るもの（枠線・角丸・影・
-     * グラデーション）の数。
+     * 層の描画命令の中身の調べ（M3b-4c-0 に足し、M3b-4c-1b で詰めた命令〔{@code DrawOps}〕の形に直した）: 命令の種類ごとの数、詰めた語の数、
+     * 参照の表の欄の数と種類ごとの数（同じ参照・同じ値の文字列は層の中で 1 欄を共有する）、行の値を命令に持つ文字の命令の数。
      */
     private static void opCensus(com.nishiyu.enderframelib.core.paint.scene.DisplayScene scene) {
         if (scene == null) return;
-        Map<String, int[]> byType = new java.util.TreeMap<>();
-        java.util.IdentityHashMap<Object, Boolean> metas = new java.util.IdentityHashMap<>(), hints = new java.util.IdentityHashMap<>(),
-                clips = new java.util.IdentityHashMap<>(), ids = new java.util.IdentityHashMap<>(), texts = new java.util.IdentityHashMap<>();
-        int ops = 0, withEvents = 0, withAnim = 0, withRadii = 0, withBorder = 0, withShadow = 0, withGradient = 0, withLayer = 0, layers = 0;
-        long idChars = 0;
+        Map<String, int[]> byType = new java.util.TreeMap<>(), refKinds = new java.util.TreeMap<>();
+        int ops = 0, layers = 0, withOps = 0, lines = 0;
+        long words = 0, refs = 0;
+        var c = new com.nishiyu.enderframelib.core.paint.scene.DrawOps.Cursor();
         ArrayDeque<com.nishiyu.enderframelib.core.paint.scene.SceneLayer> stack = new ArrayDeque<>();
         stack.push(scene.root);
         while (!stack.isEmpty()) {
             var l = stack.pop();
             layers++;
-            for (var op : l.ops()) {
-                if (!(op instanceof com.nishiyu.enderframelib.core.paint.scene.DrawOp.Item it)) continue;
-                ops++;
-                byType.computeIfAbsent(String.valueOf(it.type()), k -> new int[1])[0]++;
-                if (it.events() != null && !it.events().isEmpty()) withEvents++;
-                if (it.animDef() != null) withAnim++;
-                for (String s : new String[]{it.id(), it.baseNodeId()}) {
-                    if (s != null && ids.put(s, Boolean.TRUE) == null) idChars += s.length();
-                }
-                if (it.text() != null) texts.put(it.text(), Boolean.TRUE);
-                var m = it.meta();
-                if (m == null) continue;
-                metas.put(m, Boolean.TRUE);
-                if (m.clipRect() != null) clips.put(m.clipRect(), Boolean.TRUE);
-                if (m.borderRadii() != null) withRadii++;
-                if (m.roundedBorder() != null || m.circleBorder() != null) withBorder++;
-                var h = m.hints();
-                if (h != null && h != com.nishiyu.enderframelib.core.paint.model.RenderHints.NONE) {
-                    hints.put(h, Boolean.TRUE);
-                    if (h.shadowShape() != null || h.shadowBlur() != 0f) withShadow++;
-                    if (h.shaderGradient() != null) withGradient++;
-                    if (h.layer() != null) withLayer++;
+            var o = l.ops();
+            if (!o.isEmpty()) {
+                withOps++;
+                words += o.words();
+                refs += o.refCount();
+                for (int i = 0; i < o.refCount(); i++) {
+                    Object r = o.ref(i);
+                    refKinds.computeIfAbsent(r == null ? "null" : r.getClass().getSimpleName(), k -> new int[1])[0]++;
                 }
             }
-            for (var c : l.children.chunks) for (var k : c.layers) stack.push(k);
+            c.reset(o);
+            while (c.next()) {
+                ops++;
+                byType.computeIfAbsent(String.valueOf(c.type()), k -> new int[1])[0]++;
+                if (c.hasLine()) lines++;
+            }
+            for (var ch : l.children.chunks) for (var k : ch.layers) stack.push(k);
         }
-        System.out.printf(Locale.ROOT, "%n  -- 層の描画命令の調べ: 層 %d・命令 %d（種類ごと %s）%n", layers, ops,
+        System.out.printf(Locale.ROOT, "%n  -- 層の描画命令の調べ: 層 %d（命令を持つ層 %d）・命令 %d（種類ごと %s）%n", layers, withOps, ops,
                 byType.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()[0]).collect(java.util.stream.Collectors.joining(", ")));
-        System.out.printf(Locale.ROOT, "     型付きで要らない: 文字列 ID %d 個（%d 字）・events %d・animDef %d・RenderMeta %d 個・RenderHints %d 個・ClipRect %d 個%n",
-                ids.size(), idChars, withEvents, withAnim, metas.size(), hints.size(), clips.size());
-        System.out.printf(Locale.ROOT, "     型付きでも残す: 角丸 %d・枠線の形 %d・影 %d・グラデーション %d・層の指定 %d・文字列の中身 %d 個%n",
-                withRadii, withBorder, withShadow, withGradient, withLayer, texts.size());
+        System.out.printf(Locale.ROOT, "     詰めた語 %d（命令あたり %.1f 語）・参照の表の欄 %d（%s）・行の値を持つ文字の命令 %d%n",
+                words, ops == 0 ? 0.0 : (double) words / ops, refs,
+                refKinds.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()[0]).collect(java.util.stream.Collectors.joining(", ")),
+                lines);
     }
 
     /** {@code -Pheap.detail=true}: 段ごとに減ったクラスの上位も出す（段の中身を分ける。M3b-4c-0 で命令を型付きにする見込みを出すのに使った）。 */

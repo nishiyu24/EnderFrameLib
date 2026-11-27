@@ -71,7 +71,7 @@ public final class SceneLayer {
     /** スクロールコンテナ（および根）だけ: カリング範囲外でも回収すべき子孫の sticky 節。 */
     public final SceneLayer[] stickyDescendants;
     /** この層自身の描画命令（M3b-4a）。{@link SceneEmitter} が層を作った直後に 1 度だけ付ける（シーンを渡す前）。 */
-    private DrawOp[] ops;
+    private DrawOps ops;
     public final SceneChildren children;
 
     // ---- 入力・幾何・補助（問い合わせ・一時アダプタ・増分照合用） ----
@@ -85,7 +85,6 @@ public final class SceneLayer {
     public final float scrollWidth, scrollHeight, lineHeight;
     public final ComputedStyle firstLine;
     public final float[] firstLineBgRect;
-    public final SceneRun[] runs;
     public final AnchorScroll follow;
     public final StackingKind stackingKind;
     public final int zIndex;
@@ -97,7 +96,7 @@ public final class SceneLayer {
 
     SceneLayer(int nodeId, float x, float y, float w, float h, float scrollClipW, float scrollClipH,
                Transform2D transform, ClipShape clip, LayerEffects effects, StickyConstraint sticky,
-               DrawOp[] ops, SceneChildren children, BoxNode box, LayoutFragment frag, HtmlNode node,
+               DrawOps ops, SceneChildren children, BoxNode box, LayoutFragment frag, HtmlNode node,
                ComputedStyle style, Display display,
                float bT, float bR, float bB, float bL, float pT, float pR, float pB, float pL,
                float mT, float mR, float mB, float mL, float[] collapsedBorders,
@@ -115,7 +114,8 @@ public final class SceneLayer {
         this.clip = clip;
         this.effects = effects;
         this.sticky = sticky;
-        this.ops = ops != null ? ops : DrawOp.EMPTY;
+        // 行に置かれた断片は描画の中身の列の先頭に詰める（M3b-4c-1b）。断片を渡すのは新しく作る層だけ（命令はまだ無い）
+        this.ops = runs != null && runs.length > 0 ? DrawOps.ofRuns(runs) : ops != null ? ops : DrawOps.EMPTY;
         this.children = children != null ? children : SceneChildren.EMPTY;
         this.box = box;
         this.frag = frag;
@@ -131,7 +131,6 @@ public final class SceneLayer {
         this.lineHeight = lineHeight;
         this.firstLine = firstLine;
         this.firstLineBgRect = firstLineBgRect;
-        this.runs = runs != null ? runs : NO_RUNS;
         this.follow = follow;
         this.stackingKind = stackingKind;
         this.zIndex = zIndex;
@@ -151,11 +150,12 @@ public final class SceneLayer {
                 ? this.children.collectStickies() : NO_LAYERS;
 
         float minX = 0f, minY = 0f, maxX = Math.max(0f, w), maxY = Math.max(0f, h);
-        for (SceneRun r : this.runs) {
-            minX = Math.min(minX, r.x() - x);
-            minY = Math.min(minY, r.y() - y);
-            maxX = Math.max(maxX, r.x() + r.w() - x);
-            maxY = Math.max(maxY, r.y() + r.h() - y);
+        for (int i = 0, n = this.ops.runCount(); i < n; i++) {
+            float rx = this.ops.runX(i), ry = this.ops.runY(i);
+            minX = Math.min(minX, rx - x);
+            minY = Math.min(minY, ry - y);
+            maxX = Math.max(maxX, rx + this.ops.runW(i) - x);
+            maxY = Math.max(maxY, ry + this.ops.runH(i) - y);
         }
         boolean clippedOwn = (flags & FLAG_CLIPS_X) != 0 && (flags & FLAG_CLIPS_Y) != 0 && (propagatedLayers & LAYER_HOIST) == 0;
         if (!clippedOwn && this.children.chunks.length > 0) {
@@ -204,7 +204,6 @@ public final class SceneLayer {
         this.lineHeight = src.lineHeight;
         this.firstLine = src.firstLine;
         this.firstLineBgRect = src.firstLineBgRect;
-        this.runs = src.runs;
         this.follow = src.follow;
         this.stackingKind = src.stackingKind;
         this.zIndex = src.zIndex;
@@ -227,16 +226,17 @@ public final class SceneLayer {
     }
 
     /** この層自身の描画命令（M3b-4a。座標は層自身か原点の節から。自分を描かない層は空）。 */
-    public DrawOp[] ops() {
+    public DrawOps ops() {
         return ops;
     }
 
     /**
      * 作った直後の層に描画命令を付ける（{@link SceneEmitter} だけが、層をシーンに入れる前に 1 度だけ呼ぶ。複製を作らないため）。
      */
-    SceneLayer attachOps(DrawOp[] newOps) {
-        if (ops.length != 0) throw new IllegalStateException("描画命令は 1 度だけ付ける");
-        ops = newOps != null ? newOps : DrawOp.EMPTY;
+    SceneLayer attachOps(DrawOps newOps) {
+        if (!ops.isEmpty()) throw new IllegalStateException("描画命令は 1 度だけ付ける");
+        if (newOps != null && newOps.runCount() != ops.runCount()) throw new IllegalStateException("命令は層の断片を写して作る");
+        ops = newOps != null ? newOps : DrawOps.EMPTY;
         return this;
     }
 
@@ -293,8 +293,9 @@ public final class SceneLayer {
     }
 
     private static boolean hasNoCellContent(SceneLayer layer) {
-        for (SceneRun r : layer.runs) {
-            if (!r.isText() || !r.text().isBlank()) return false;
+        DrawOps runs = layer.ops();
+        for (int i = 0, n = runs.runCount(); i < n; i++) {
+            if (!runs.runIsText(i) || !runs.runText(i).isBlank()) return false;
         }
         for (SceneChunk c : layer.children.chunks) {
             for (SceneLayer child : c.layers) {

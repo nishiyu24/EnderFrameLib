@@ -18,7 +18,6 @@ import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.RenderHints;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
-import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
 import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 
 import java.util.List;
@@ -168,12 +167,6 @@ final class BoxItemPainter {
 
     boolean suppressTextShadow() { return suppressTextShadow; }
 
-    /** 錨の命令にレイヤーの指定を載せる。 */
-    static DrawOp.Item withLayer(DrawOp.Item anchor, LayerSpec spec) {
-        RenderMeta meta = anchor.meta() != null ? anchor.meta() : RenderMeta.EMPTY;
-        return anchor.withMeta(meta.withHints(meta.hints().withLayer(spec)));
-    }
-
     /** 錨の項目にレイヤーの指定を載せる。 */
     static DisplayItem withLayer(DisplayItem anchor, LayerSpec spec) {
         RenderMeta meta = anchor.meta() != null ? anchor.meta() : RenderMeta.EMPTY;
@@ -313,7 +306,7 @@ final class BoxItemPainter {
             }
             passiveBorderEvents.reuseCandidate(null);
 
-            if (box.runs.length > 0 && !ElementTraits.isNonFragmented(box.node.tag) && !ReplacedElements.isHost(box.node.tag)
+            if (box.ops().runCount() > 0 && !ElementTraits.isNonFragmented(box.node.tag) && !ReplacedElements.isHost(box.node.tag)
                 && !PaintSupport.atomicInline(box) && !ReplacedElements.isReplacedTag(box.node.tag)) {
                 decor.drawInlineFragments(elements, box, id, color, bgColor, rawRadii, normalizedClip, fontHVal, ox, oy, itemCount, interactive,
                         partsEvents, passiveBorderEvents, transDur, colorBgAnim);

@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
-import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.BoxGeomStyle;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -186,7 +185,7 @@ public final class BoxDecorationPainter {
 
     /**
      * インラインボックスを行ごとの断片で描く。各断片は背景と上下の枠線を持ち、左の枠線と角丸は箱の最初の断片
-     * （{@link SceneRun#startEdge}）、右は最後の断片（{@code endEdge}）だけが持つ
+     * （{@link com.nishiyu.enderframelib.core.paint.scene.DrawOps#runStartEdge}）、右は最後の断片（{@code endEdge}）だけが持つ
      * （{@code box-decoration-break: slice}）。背景の部品 {@code <id>_frag_<n>} がヒットテストを受ける。
      *
      * 何が壊れていたか: 以前は断片に背景色だけを塗って返していたので、{@code <code>} や {@code <kbd>} の枠線と
@@ -203,31 +202,33 @@ public final class BoxDecorationPainter {
         long savedBase = elements.saveOrigin();
         elements.baseOriginParent(); // 断片は原点の節の座標（M3b-4a）
         try {
-        for (SceneRun frag : box.runs) {
-            if (frag.isText()) continue;
-            float fx = frag.x() + opX, fy = frag.y() + opY;
+        com.nishiyu.enderframelib.core.paint.scene.DrawOps runs = box.ops();
+        for (int ri = 0, rn = runs.runCount(); ri < rn; ri++) {
+            if (runs.runIsText(ri)) continue;
+            float fx = runs.runX(ri) + opX, fy = runs.runY(ri) + opY, fw = runs.runW(ri), fh = runs.runH(ri);
+            boolean startEdge = runs.runStartEdge(ri), endEdge = runs.runEndEdge(ri);
             int[] r = {
-                    frag.startEdge() ? rawRadii[0] : 0, frag.endEdge() ? rawRadii[1] : 0,
-                    frag.endEdge() ? rawRadii[2] : 0, frag.startEdge() ? rawRadii[3] : 0
+                    startEdge ? rawRadii[0] : 0, endEdge ? rawRadii[1] : 0,
+                    endEdge ? rawRadii[2] : 0, startEdge ? rawRadii[3] : 0
             };
             Corners radii = Corners.fromArray(r);
             RenderMeta meta = new RenderMeta(clip, radii, null, fontHVal, 0f, box.lineHeight, ox, oy, itemCount, interactive);
             int fragPart = fragIds.getAndIncrement();
-            addElement(elements, id, id + "_frag_" + fragPart, ElementType.RECT, fx, fy, frag.w(), frag.h(),
+            addElement(elements, id, id + "_frag_" + fragPart, ElementType.RECT, fx, fy, fw, fh,
                     "", color, bgColor, partsEvents, r[0], 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, decorationKey(box, FRAG_PART_BASE, fragPart));
-            drawFragmentImages(elements, box, id, fx, fy, frag.w(), frag.h(), clip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
+            drawFragmentImages(elements, box, id, fx, fy, fw, fh, clip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
 
-            float[] widths = {box.bT, frag.endEdge() ? box.bR : 0, box.bB, frag.startEdge() ? box.bL : 0};
+            float[] widths = {box.bT, endEdge ? box.bR : 0, box.bB, startEdge ? box.bL : 0};
             if (widths[0] <= 0 && widths[1] <= 0 && widths[2] <= 0 && widths[3] <= 0) continue;
             if (r[0] > 0 || r[1] > 0 || r[2] > 0 || r[3] > 0) {
                 RoundedBorderSpec spec = new RoundedBorderSpec(widths[0], widths[1], widths[2], widths[3], colors[0], colors[1], colors[2], colors[3]);
                 RenderMeta ringMeta = new RenderMeta(clip, radii, null, fontHVal, 0f, 0f, ox, oy, 1, false, spec);
                 int ringPart = fragIds.getAndIncrement();
-                addElement(elements, id, id + "_b_round_" + ringPart, ElementType.ROUNDED_BORDER, fx, fy, frag.w(), frag.h(),
+                addElement(elements, id, id + "_b_round_" + ringPart, ElementType.ROUNDED_BORDER, fx, fy, fw, fh,
                         "", 0, 0x00000000, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta,
                         decorationKey(box, FRAG_PART_BASE, ringPart));
             } else {
-                drawLines(elements, id, "_b_", fx, fy, frag.w(), frag.h(), widths, styles, colors, 0,
+                drawLines(elements, id, "_b_", fx, fy, fw, fh, widths, styles, colors, 0,
                         passiveBorderEvents, meta, transDur, true, box.node != null ? box.node.paintHandle() : 0);
             }
         }

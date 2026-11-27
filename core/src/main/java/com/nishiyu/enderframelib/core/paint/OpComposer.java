@@ -6,23 +6,31 @@ import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.RenderHints;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
-import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
+import com.nishiyu.enderframelib.core.paint.scene.DrawOps;
 
 import java.util.List;
 
 /**
- * 描画命令（{@link DrawOp.Item}）に毎フレームの文脈（基準の位置・原点・祖先のクリップ・親の錨・祖先の文字色）を足して
+ * 描画命令（{@link DrawOps}。M3b-4c-1b から詰めた列を使い回すカーソルで読む）に毎フレームの文脈（基準の位置・原点・祖先のクリップ・親の錨・祖先の文字色）を足して
  * 表示項目にする（M3b-4a。一時アダプタ {@link SceneDisplayListAdapter} とともに M3b-4 で消える）。
  *
  * <p>座標を整数に丸めるのはここ 1 箇所だけ。命令の座標は基準（層自身か原点の節）からなので、基準の絶対位置から項目の原点
  * （自分の節・祖先の節・絶対）の整数の位置を引いた差を足してから、左右（上下）の辺を丸める。</p>
  */
 final class OpComposer {
+    /** 命令を読むカーソル（使い回す。組み立ては入れ子にならない）。 */
+    private final DrawOps.Cursor cursor = new DrawOps.Cursor();
     /** 1 つの箱の中で、同じメタ（同一性）と同じずれから作ったメタを使い回す（部品どうしでメタを共有していた形を保つ）。 */
     private RenderMeta[] metaSrc = new RenderMeta[16];
     private RenderMeta[] metaDst = new RenderMeta[16];
     private long[] metaShift = new long[16];
     private int metaCount;
+    /**
+     * 直前に行の値を入れたメタ（同じ行の語は同じメタ・ベースライン・行の高さなので、1 回の組み立ての中で続けて使い回す。
+     * フレームをまたいで持たない）。
+     */
+    private RenderMeta lineSrc, lineOut;
+    private int lineBase, lineH;
 
     // ---- 1 つの箱を組み立てる間だけ使う ----
     private float layerX, layerY, originX, originY;
@@ -35,10 +43,22 @@ final class OpComposer {
 
     /** 原点からの座標で集めた命令（{@link OpList#beginFinal}）を、そのまま丸めて項目にする。 */
     void composeFinal(OpList ops, ItemSink out) {
-        for (int i = 0, n = ops.size(); i < n; i++) {
-            DrawOp.Item op = ops.get(i);
-            out.add(toItem(op, 0f, 0f, 0, 0, op.meta()));
-        }
+        DrawOps.Cursor c = cursor.reset(ops.ops);
+        while (c.next()) out.add(toItem(c, 0f, 0f, 0, 0, lineMeta(c, c.meta())));
+        lineSrc = null;
+        lineOut = null;
+    }
+
+    /** 命令の行の値を入れたメタ（{@link DrawOps.Cursor#lineMeta}。直前と同じ元・同じ値なら直前の結果を使う）。 */
+    private RenderMeta lineMeta(DrawOps.Cursor op, RenderMeta m) {
+        if (m == null || !op.hasLine()) return m;
+        int b = Float.floatToRawIntBits(op.baseline()), h = Float.floatToRawIntBits(op.lineHeight());
+        if (m == lineSrc && b == lineBase && h == lineH) return lineOut;
+        lineSrc = m;
+        lineBase = b;
+        lineH = h;
+        lineOut = op.lineMeta(m);
+        return lineOut;
     }
 
     /**
@@ -49,24 +69,26 @@ final class OpComposer {
                       BoxAnimation animator, ItemSink out) {
         begin(ops.originX, ops.originY, ops.originX, ops.originY, ops.originX, ops.originY, node, frameClip, anchorParentId,
                 textBox, animator);
-        for (int i = 0, n = ops.size(); i < n; i++) out.add(compose(ops.get(i)));
+        DrawOps.Cursor c = cursor.reset(ops.ops);
+        while (c.next()) out.add(compose(c));
         end();
     }
 
     /**
      * 層に記憶した命令（{@link OpList#beginDeferred}。祖先を組み立てまで残したもの）を、箱 {@code box} の今の位置で項目にする。
      *
-     * @param node           {@link DrawOp#ORIGIN_NODE} の命令の原点にする祖先の節（無ければ絶対座標）
+     * @param node           {@link DrawOps#ORIGIN_NODE} の命令の原点にする祖先の節（無ければ絶対座標）
      * @param frameClip      箱のクリップ（命令のメタのクリップが null なら、これを継ぐ。null 可）
      * @param anchorParentId 箱の錨に入れる親の錨の ID（無ければ null）
      * @param animator       祖先の文字色のアニメーションを解く道具
      */
-    void composeLayer(DrawOp[] ops, SceneAdapterBox box, SceneAdapterBox node, ClipRect frameClip, String anchorParentId,
+    void composeLayer(DrawOps ops, SceneAdapterBox box, SceneAdapterBox node, ClipRect frameClip, String anchorParentId,
                       BoxAnimation animator, ItemSink out) {
         SceneAdapterBox op = box.originParent();
         begin(box.x(), box.y(), op != null ? op.x() : 0f, op != null ? op.y() : 0f,
                 Math.round(box.x()), Math.round(box.y()), node, frameClip, anchorParentId, box, animator);
-        for (DrawOp o : ops) out.add(compose((DrawOp.Item) o));
+        DrawOps.Cursor c = cursor.reset(ops);
+        while (c.next()) out.add(compose(c));
         end();
     }
 
@@ -89,6 +111,8 @@ final class OpComposer {
     }
 
     private void end() {
+        lineSrc = null;
+        lineOut = null;
         frameClip = null;
         anchorParentId = null;
         textBox = null;
@@ -101,19 +125,19 @@ final class OpComposer {
         metaCount = 0;
     }
 
-    private DisplayItem compose(DrawOp.Item op) {
+    private DisplayItem compose(DrawOps.Cursor op) {
         int flags = op.flags();
         int rx, ry;
         switch (op.origin()) {
-            case DrawOp.ORIGIN_SELF -> { rx = selfX; ry = selfY; }
-            case DrawOp.ORIGIN_NODE -> { rx = nodeX; ry = nodeY; }
+            case DrawOps.ORIGIN_SELF -> { rx = selfX; ry = selfY; }
+            case DrawOps.ORIGIN_NODE -> { rx = nodeX; ry = nodeY; }
             default -> { rx = 0; ry = 0; }
         }
-        boolean fromOrigin = (flags & DrawOp.BASE_ORIGIN_PARENT) != 0;
+        boolean fromOrigin = (flags & DrawOps.BASE_ORIGIN_PARENT) != 0;
         float bx = fromOrigin ? originX : layerX, by = fromOrigin ? originY : layerY;
-        String parentId = (flags & DrawOp.ANCHOR) != 0 ? anchorParentId : null;
-        DisplayItem item = toItem(op, bx, by, rx, ry, composeMeta(op.meta(), bx, by, rx, ry, parentId));
-        if ((flags & DrawOp.INHERIT_TEXT_COLOR_ANIM) != 0 && textBox != null) {
+        String parentId = (flags & DrawOps.ANCHOR) != 0 ? anchorParentId : null;
+        DisplayItem item = toItem(op, bx, by, rx, ry, lineMeta(op, composeMeta(op.meta(), bx, by, rx, ry, parentId)));
+        if ((flags & DrawOps.INHERIT_TEXT_COLOR_ANIM) != 0 && textBox != null) {
             if (textAnim == null) textAnim = ancestorTextColorAnimation(textBox, textAnimator);
             if (textAnim != item.animDef()) {
                 item = new DisplayItem(item.id(), item.baseNodeId(), item.type(), item.text(), item.events(), item.transitionDuration(),
@@ -209,7 +233,7 @@ final class OpComposer {
     }
 
     /** 命令の座標を絶対座標（基準 {@code (bx, by)} を足す）にしてから項目の原点 {@code (rx, ry)} を引き、辺を丸める。 */
-    private static DisplayItem toItem(DrawOp.Item op, float bx, float by, int rx, int ry, RenderMeta meta) {
+    private static DisplayItem toItem(DrawOps.Cursor op, float bx, float by, int rx, int ry, RenderMeta meta) {
         float x = op.x(), y = op.y();
         if (bx != 0f) x += bx;
         if (by != 0f) y += by;

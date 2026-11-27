@@ -10,11 +10,9 @@ import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.paint.scene.SceneChunk;
 import com.nishiyu.enderframelib.core.paint.scene.SceneChildren;
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
-import com.nishiyu.enderframelib.core.paint.scene.SceneRun;
 import com.nishiyu.enderframelib.core.text.model.ShapedLine;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -112,7 +110,6 @@ final class SceneAdapterBox {
         return kids;
     }
 
-    List<SceneRun> runs() { return Arrays.asList(layer.runs); }
 
     SceneAdapterBox originParent() {
         SceneAdapterBox p = parent;

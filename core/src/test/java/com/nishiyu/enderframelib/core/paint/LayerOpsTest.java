@@ -10,7 +10,7 @@ import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
-import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
+import com.nishiyu.enderframelib.core.paint.scene.DrawOps;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.paint.scene.SceneEmitter;
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
@@ -60,10 +60,10 @@ class LayerOpsTest {
     }
 
     /** 命令の中身から、ID・鍵（箱ごとに違う）を除いた要約。 */
-    private static List<String> shape(DrawOp[] ops) {
+    private static List<String> shape(DrawOps ops) {
         List<String> out = new ArrayList<>();
-        for (DrawOp o : ops) {
-            DrawOp.Item it = (DrawOp.Item) o;
+        DrawOps.Cursor it = new DrawOps.Cursor().reset(ops);
+        while (it.next()) {
             StringBuilder sb = new StringBuilder().append(it.type()).append(' ')
                     .append(it.x()).append(',').append(it.y()).append(',').append(it.w()).append(',').append(it.h())
                     .append(" c=").append(it.color()).append(" bg=").append(it.bgColor()).append(" r=").append(it.radius())
@@ -83,8 +83,8 @@ class LayerOpsTest {
                 + "box-shadow:2px 3px 4px #000;outline:1px dashed #0f0;overflow:hidden";
         Built b = build("<div id='a' style='" + box + ";left:10.25px;top:5.5px'><i style='background:#0a0'>x</i></div>"
                 + "<div id='b' style='" + box + ";left:123.75px;top:77.3px'><i style='background:#0a0'>x</i></div>", true);
-        DrawOp[] a = layer(b, "a").ops(), c = layer(b, "b").ops();
-        assertTrue(a.length > 3, "背景・枠線・影・輪郭の命令がある");
+        DrawOps a = layer(b, "a").ops(), c = layer(b, "b").ops();
+        assertTrue(a.count() > 3, "背景・枠線・影・輪郭の命令がある");
         assertEquals(shape(a), shape(c), "位置だけ違う同じ箱は同じ命令になる（命令は層の位置に依らない）");
     }
 
@@ -113,8 +113,9 @@ class LayerOpsTest {
         Built memoScene = build(html, true);
         boolean flagged = false;
         for (SceneLayer l : allLayers(memoScene.scene.root, new ArrayList<>())) {
-            for (DrawOp o : l.ops()) {
-                if ((((DrawOp.Item) o).flags() & DrawOp.INHERIT_TEXT_COLOR_ANIM) != 0) flagged = true;
+            DrawOps.Cursor o = new DrawOps.Cursor().reset(l.ops());
+            while (o.next()) {
+                if ((o.flags() & DrawOps.INHERIT_TEXT_COLOR_ANIM) != 0) flagged = true;
             }
         }
         assertTrue(flagged, "文字の命令は祖先の文字色のアニメーションを持たず、印だけを持つ");
@@ -123,6 +124,41 @@ class LayerOpsTest {
         DisplayItem text = memo.stream().filter(i -> "blink".equals(i.text())).findFirst().orElseThrow();
         assertFalse(text.animDef().isEmpty(), "組み立てで祖先の文字色のアニメーションが入る");
         assertEquals(perFrame, memo);
+    }
+
+    /**
+     * 層の命令は詰めた列で、命令ごとのオブジェクトを持たない（M3b-4c-1b）: 文字の命令は層の断片を番号で指し、箱の文字のメタは 1 つを共有し、
+     * 参照の表に描画 ID の文字列は無い。組み立てた項目は毎フレーム生成器を走らせた項目と一致する。
+     */
+    @Test
+    void textOpsPointAtTheLayerRunsAndShareOneMetaPerBox() {
+        StringBuilder words = new StringBuilder();
+        for (int i = 0; i < 120; i++) words.append("w").append(i % 7).append(' ');
+        String html = "<p id='p' style='width:200px;margin:0'>" + words + "</p>";
+        Built b = build(html, true);
+        SceneLayer text = null;
+        for (SceneLayer l : allLayers(b.scene.root, new ArrayList<>())) {
+            if (l.ops().runCount() > 100) text = l;
+        }
+        assertNotNull(text, "120 語の文字の層");
+        DrawOps ops = text.ops();
+        int textOps = 0, metas = 0;
+        DrawOps.Cursor c = new DrawOps.Cursor().reset(ops);
+        while (c.next()) {
+            if (c.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.TEXT) textOps++;
+        }
+        for (int i = 0; i < ops.refCount(); i++) {
+            Object r = ops.ref(i);
+            if (r instanceof com.nishiyu.enderframelib.core.paint.model.RenderMeta) metas++;
+            assertFalse(r instanceof String s && s.contains("_txt_") && s.length() > "_txt_".length(), "描画 ID の文字列を持たない: " + r);
+        }
+        assertEquals(ops.runCount(), textOps, "語ごとに 1 つの文字の命令");
+        assertEquals(2, metas, "メタは錨の 1 つと、文字の命令が共有する 1 つだけ（行の値は命令の語）");
+        assertTrue(ops.refCount() < 20, "参照の表は持ち主・接尾辞・属性・メタ・7 種の語だけ: " + ops.refCount());
+        int runWords = ops.runCount() * 7;
+        // 文字の命令は 頭 2・断片の番号 1・鍵 2・色 1・属性 1・メタ 1・持ち主 1・接尾辞と番号 2 の 11 語（座標・中身・行の値は断片の語）
+        assertTrue(ops.words() - runWords <= textOps * 11 + 24, "断片を指す文字の命令は 11 語以下: " + (ops.words() - runWords) + " / " + textOps);
+        assertEquals(items(build(html, false)), items(b));
     }
 
     private static List<SceneLayer> allLayers(SceneLayer l, List<SceneLayer> out) {

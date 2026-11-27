@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
-import com.nishiyu.enderframelib.core.paint.scene.DrawOp;
+import com.nishiyu.enderframelib.core.paint.scene.DrawOps;
 import com.nishiyu.enderframelib.core.paint.scene.SceneChildren;
 import com.nishiyu.enderframelib.core.paint.scene.SceneChunk;
 import com.nishiyu.enderframelib.core.box.Display;
@@ -107,6 +107,29 @@ final class PaintSupport {
                             int color, int bgColor, ItemProps events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
                             RenderMeta meta, long key) {
+        add(elements, baseNodeId, id, type, fitMode, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot,
+                trans, animDef, meta, key, false, 0f, 0f, -1);
+    }
+
+    /**
+     * 文字の命令を足す（M3b-4c-1b）。{@code textMeta} は箱で共有する文字のメタ（行の値は 0）で、行ごとのベースライン {@code baseline}・
+     * 行の高さ {@code lineHeight} は命令の語に持つ（組み立てた項目のメタは、行ごとにメタを作っていた以前と同じ値）。{@code run} は命令を
+     * 作った層の断片の番号（無ければ -1）で、座標・中身・行の値が断片と同じなら命令は断片を指すだけになる。
+     */
+    static void addLineElement(OpList elements, String baseNodeId, String id, ElementType type,
+                               float x, float y, float w, float h, String text,
+                               int color, int bgColor, ItemProps events, int radius, float opacity,
+                               float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
+                               RenderMeta textMeta, float baseline, float lineHeight, long key, int run) {
+        add(elements, baseNodeId, id, type, ImageFitMode.FILL, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy,
+                rot, trans, animDef, textMeta, key, true, baseline, lineHeight, run);
+    }
+
+    private static void add(OpList elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,
+                            float x, float y, float w, float h, String text,
+                            int color, int bgColor, ItemProps events, int radius, float opacity,
+                            float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
+                            RenderMeta meta, long key, boolean line, float baseline, float lineHeight, int run) {
         int ox = elements.originX, oy = elements.originY;
         if (ox != 0 || oy != 0) {
             x -= ox;
@@ -124,10 +147,10 @@ final class PaintSupport {
         int flags = elements.flags();
         if (animDef == OpList.TEXT_COLOR_ANIM_FROM_ANCESTORS) {
             animDef = AnimationSpec.NONE;
-            flags |= DrawOp.INHERIT_TEXT_COLOR_ANIM;
+            flags |= DrawOps.INHERIT_TEXT_COLOR_ANIM;
         }
-        elements.add(new DrawOp.Item(type, id, baseNodeId, itemKey, x, y, w, h, text, color, bgColor, events.attrs(), radius, opacity,
-                tx, ty, sx, sy, rot, trans, animDef, fitMode, finalMeta, flags));
+        elements.add(type, flags, fitMode, baseNodeId, id, itemKey, x, y, w, h, text, color, bgColor, events.attrs(), radius, opacity,
+                tx, ty, sx, sy, rot, trans, animDef, finalMeta, line, baseline, lineHeight, run);
     }
 
     static void addElement(OpList elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,

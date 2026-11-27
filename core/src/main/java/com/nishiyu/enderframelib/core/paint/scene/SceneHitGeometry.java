@@ -70,29 +70,30 @@ final class SceneHitGeometry {
         }
         if (l.isEmptyCellHidden()) return null;
         if (l.isText()) {
-            for (int i = l.runs.length - 1; i >= 0; i--) {
-                SceneRun r = l.runs[i];
-                if (r.text() == null || r.text().isBlank()) continue;
-                float rx = originX + r.x(), ry = originY + r.y();
+            DrawOps runs = l.ops();
+            for (int i = runs.runCount() - 1; i >= 0; i--) {
+                String t = runs.runText(i);
+                if (t == null || t.isBlank()) continue;
+                float rx = originX + runs.runX(i), ry = originY + runs.runY(i);
                 double rxLoc = px - rx, ryLoc = py - ry;
-                if (rxLoc >= 0 && rxLoc <= r.w() && ryLoc >= 0 && ryLoc <= r.h()) {
+                if (rxLoc >= 0 && rxLoc <= runs.runW(i) && ryLoc >= 0 && ryLoc <= runs.runH(i)) {
                     if (s.ctx.accept() != null && !s.ctx.accept().test(l)) return null;
-                    return new SceneHit(l, rxLoc, ryLoc, null, rx, ry, r);
+                    return new SceneHit(l, rxLoc, ryLoc, null, rx, ry, runs.run(i));
                 }
             }
             return null;
         }
-        if (l.runs.length > 0 && !ElementTraits.isNonFragmented(tag) && !ReplacedElements.isHost(tag)
+        if (l.ops().runCount() > 0 && !ElementTraits.isNonFragmented(tag) && !ReplacedElements.isHost(tag)
                 && l.stackingKind != StackingKind.ATOMIC && !ReplacedElements.isReplacedTag(tag)) {
             if (!isInteractiveOrOpaque(l, st)) return null;
-            for (int i = l.runs.length - 1; i >= 0; i--) {
-                SceneRun r = l.runs[i];
-                if (r.isText()) continue;
-                float rx = originX + r.x(), ry = originY + r.y();
+            DrawOps runs = l.ops();
+            for (int i = runs.runCount() - 1; i >= 0; i--) {
+                if (runs.runIsText(i)) continue;
+                float rx = originX + runs.runX(i), ry = originY + runs.runY(i);
                 double rxLoc = px - rx, ryLoc = py - ry;
-                if (rxLoc >= 0 && rxLoc <= r.w() && ryLoc >= 0 && ryLoc <= r.h()) {
+                if (rxLoc >= 0 && rxLoc <= runs.runW(i) && ryLoc >= 0 && ryLoc <= runs.runH(i)) {
                     if (s.ctx.accept() != null && !s.ctx.accept().test(l)) return null;
-                    return new SceneHit(l, rxLoc, ryLoc, null, rx, ry, r);
+                    return new SceneHit(l, rxLoc, ryLoc, null, rx, ry, runs.run(i));
                 }
             }
             return null;

@@ -515,7 +515,7 @@ class ArchitectureHealthTest {
                 "class Painter {\n  boolean a() { return Shortcut.SCROLL_CONTENT_NODES.on(); }\n  /** Shortcut は読まない */\n"
                         + "  boolean b() { return DisplayListBuilder.parentRelativeSource.getAsBoolean(); }\n"
                         + "  boolean c() { return EngineContext.current().flags().parentRelativeDisplayItems(); }\n  int d() { return 1; }\n"
-                        + "  int e(DrawOp.Item it) { return it.flags() & DrawOp.BASE_ORIGIN_PARENT; }\n}"),
+                        + "  int e(DrawOps.Cursor it) { return it.flags() & DrawOps.BASE_ORIGIN_PARENT; }\n}"),
                 dir -> assertEquals(3, checkCodeLines(dir, PROCESS_SWITCH_READ).size(), "切り替えを読む行は 3 行（描画命令の flags() は数えない）"));
 
         RatchetSupport.withTempSources(Map.of("Paint.java",

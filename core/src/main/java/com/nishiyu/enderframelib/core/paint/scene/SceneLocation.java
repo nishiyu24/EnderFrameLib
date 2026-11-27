@@ -42,6 +42,5 @@ public record SceneLocation(
     public boolean isScrollContainer() { return layer.isScrollContainer(); }
     public boolean isCollapsedTable() { return layer.isCollapsedTable(); }
     public boolean displayNone() { return layer.displayNone(); }
-    public SceneRun[] runs() { return layer.runs; }
     public DomValues values() { return layer.values(); }
 }

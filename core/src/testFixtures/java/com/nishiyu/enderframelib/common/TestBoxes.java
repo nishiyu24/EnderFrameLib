@@ -99,7 +99,7 @@ public final class TestBoxes {
             }
             return kids;
         }
-        public List<SceneRun> runs() { return Arrays.asList(layer.runs); }
+        public List<SceneRun> runs() { return layer.ops().runList(); }
         public float x() { return x; }
         public float y() { return y; }
         public float w() { return layer.w; }

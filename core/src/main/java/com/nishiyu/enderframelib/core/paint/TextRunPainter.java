@@ -21,7 +21,7 @@ import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.addLineElement;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.putFontEvents;
 
 /**
@@ -42,12 +42,15 @@ final class TextRunPainter {
      */
     private void addTextRun(OpList elements, SceneLayer box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                             String id, float x, float y, float w, float h, String text, int color, int bgColor,
-                            ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows) {
+                            ItemProps events, RenderMeta meta, float baseline, float lineH, int transDur, AnimationSpec colorAnim,
+                            List<BoxDecorations.Shadow> shadows, int run) {
         if (effStyle != null && WritingModes.usesUpright(effStyle) && hasUprightChar(effStyle, text)) {
-            addVerticalTextRuns(elements, box, effStyle, id, x, y, w, h, text, color, bgColor, events, meta, transDur, colorAnim, shadows);
+            addVerticalTextRuns(elements, box, effStyle, id, x, y, w, h, text, color, bgColor, events, meta, baseline, lineH, transDur,
+                    colorAnim, shadows);
             return;
         }
-        emitTextRun(elements, box, effStyle, id, x, y, w, h, text, color, bgColor, events, meta, transDur, colorAnim, shadows, 0f);
+        emitTextRun(elements, box, effStyle, id, x, y, w, h, text, color, bgColor, events, meta, baseline, lineH, transDur, colorAnim,
+                shadows, 0f, run);
     }
 
     private static boolean hasUprightChar(ComputedStyle style, String text) {
@@ -67,8 +70,8 @@ final class TextRunPainter {
      */
     private void addVerticalTextRuns(OpList elements, SceneLayer box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                                      String id, float x, float y, float w, float h, String text,
-                                     int color, int bgColor, ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim,
-                                     List<BoxDecorations.Shadow> shadows) {
+                                     int color, int bgColor, ItemProps events, RenderMeta meta, float baseline, float lineH,
+                                     int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows) {
         WritingModes.Orientation o = WritingModes.orientationOf(effStyle);
         List<String> runs = new ArrayList<>();
         List<Boolean> upright = new ArrayList<>();
@@ -103,15 +106,17 @@ final class TextRunPainter {
         float cx = x;
         for (int i = 0; i < adv.length; i++) {
             float rw = adv[i] * scale;
-            emitTextRun(elements, box, effStyle, id, cx, y, rw, h, runs.get(i), color, bgColor, events, meta, transDur, colorAnim, shadows,
-                    upright.get(i) ? (WritingModes.isTransposed(WritingModes.flowOf(effStyle)) ? 90f : -90f) : 0f);
+            emitTextRun(elements, box, effStyle, id, cx, y, rw, h, runs.get(i), color, bgColor, events, meta, baseline, lineH, transDur,
+                    colorAnim, shadows,
+                    upright.get(i) ? (WritingModes.isTransposed(WritingModes.flowOf(effStyle)) ? 90f : -90f) : 0f, -1);
             cx += rw;
         }
     }
 
     private void emitTextRun(OpList elements, SceneLayer box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
                              String id, float x, float y, float w, float h, String text, int color, int bgColor,
-                             ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows, float rot) {
+                             ItemProps events, RenderMeta meta, float baseline, float lineH, int transDur, AnimationSpec colorAnim,
+                             List<BoxDecorations.Shadow> shadows, float rot, int run) {
         // vertical-lr は転置で置くので、文字は上下反転で鏡映を打ち消す
         float flipY = effStyle != null && WritingModes.isTransposed(WritingModes.flowOf(effStyle)) ? -1f : 1f;
         int nodeHandle = box.node != null ? box.node.paintHandle() : 0;
@@ -129,25 +134,27 @@ final class TextRunPainter {
                 String ownerId = events.hints().parentId();
                 if (ownerId != null) anchorEvents.parentId(ownerId);
                 anchorEvents.pointerEventsNone();
-                addElement(elements, id, anchorId, ElementType.NODE, x, y, w, h, "", 0, 0, anchorEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta, anchorKey);
+                addLineElement(elements, id, anchorId, ElementType.NODE, x, y, w, h, "", 0, 0, anchorEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0,
+                        AnimationSpec.NONE, meta, baseline, lineH, anchorKey, -1);
                 int at = elements.size() - 1;
                 shadowEvents.parentId(anchorId);
                 int shadowPart = owner.fragIds.getAndIncrement();
                 long shadowKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, shadowPart) : 0L;
-                addElement(elements, id, id + "_txt_" + shadowPart, ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
-                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, flipY, rot, 0, AnimationSpec.NONE, meta, shadowKey);
+                addLineElement(elements, id, id + "_txt_" + shadowPart, ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
+                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, flipY, rot, 0, AnimationSpec.NONE, meta, baseline, lineH, shadowKey, -1);
                 LayerSpec spec = new LayerSpec(elements.size() - at, 1f, List.of(FilterOp.blur(sh.blur() / 2f)), BlendMode.NORMAL, false);
-                elements.set(at, BoxItemPainter.withLayer(elements.get(at), spec));
+                elements.withLayer(at, spec);
             } else {
                 int shadowPart = owner.fragIds.getAndIncrement();
                 long shadowKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, shadowPart) : 0L;
-                addElement(elements, id, id + "_txt_" + shadowPart, ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
-                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, flipY, rot, 0, AnimationSpec.NONE, meta, shadowKey);
+                addLineElement(elements, id, id + "_txt_" + shadowPart, ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
+                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, flipY, rot, 0, AnimationSpec.NONE, meta, baseline, lineH, shadowKey, -1);
             }
         }
         int mainPart = owner.fragIds.getAndIncrement();
         long mainKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, mainPart) : 0L;
-        addElement(elements, id, id + "_txt_" + mainPart, ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, flipY, rot, transDur, colorAnim, meta, mainKey);
+        addLineElement(elements, id, id + "_txt_" + mainPart, ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f,
+                flipY, rot, transDur, colorAnim, meta, baseline, lineH, mainKey, run);
     }
 
     private ItemProps textPropsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps partsEvents, int resolvedColor) {
@@ -185,35 +192,41 @@ final class TextRunPainter {
 
     /**
      * 文字の箱 {@code box} の断片（{@link SceneRun}）を文字の項目にする。断片の座標は原点の節からなので、原点の節の左上 {@code (opX, opY)} を
-     * 足す（層の記憶は 0。M3b-4a からその命令に {@link com.nishiyu.enderframelib.core.paint.scene.DrawOp#BASE_ORIGIN_PARENT} の印を付ける）。
+     * 足す（層の記憶は 0。M3b-4a からその命令に {@link com.nishiyu.enderframelib.core.paint.scene.DrawOps#BASE_ORIGIN_PARENT} の印を付ける）。
      */
     void drawTextNodeElement(OpList elements, SceneLayer box, float opX, float opY, String id, int color, int bgColor,
                              ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
                              int transDur, AnimationSpec colorAnim) {
-        if (box.runs.length == 0) return;
+        com.nishiyu.enderframelib.core.paint.scene.DrawOps runs = box.ops();
+        if (runs.runCount() == 0) return;
         ItemProps baseTextEvents = null;
         List<BoxDecorations.Shadow> baseTextShadows = null;
+        RenderMeta baseTextMeta = null; // 箱の文字で共有するメタ（行の値は命令ごと。M3b-4c-1b）
         long savedBase = elements.saveOrigin();
         elements.baseOriginParent(); // 断片は原点の節の座標（M3b-4a）
         try {
-            for (SceneRun frag : box.runs) {
-                if (frag.text() == null || frag.text().isBlank()) continue;
-                com.nishiyu.enderframelib.core.css.ComputedStyle fl = frag.firstLineStyle();
+            for (int ri = 0, rn = runs.runCount(); ri < rn; ri++) {
+                String runText = runs.runText(ri);
+                if (runText == null || runText.isBlank()) continue;
+                float rx = runs.runX(ri), ry = runs.runY(ri), rw = runs.runW(ri), rh = runs.runH(ri), rb = runs.runBaseline(ri);
+                com.nishiyu.enderframelib.core.css.ComputedStyle fl = runs.runFirstLine(ri);
                 if (fl != null) {
                     InheritedStyle flInh = fl.typed().inherited;
                     int flColor = fl.typed().inheritedPaint.hasColor ? fl.typed().inheritedPaint.color : color;
                     float flFontH = Math.max(1.0f, flInh.fontSize);
                     ItemProps flEvents = textPropsForStyle(fl, partsEvents, flColor);
                     List<BoxDecorations.Shadow> flShadows = textShadowsForStyle(fl, flColor, flEvents);
-                    RenderMeta fragMeta = textMeta(normalizedClip, flFontH, frag.baseline(), frag.h(), ox, oy, flEvents.hints());
-                    addTextRun(elements, box, fl, id, frag.x() + opX, frag.y() + opY, frag.w(), frag.h(), frag.text(), flColor, bgColor, flEvents, fragMeta, transDur, AnimationSpec.NONE, flShadows);
+                    RenderMeta flMeta = textMeta(normalizedClip, flFontH, 0f, 0f, ox, oy, flEvents.hints());
+                    addTextRun(elements, box, fl, id, rx + opX, ry + opY, rw, rh, runText, flColor, bgColor,
+                            flEvents, flMeta, rb, rh, transDur, AnimationSpec.NONE, flShadows, ri);
                 } else {
                     if (baseTextEvents == null) {
                         baseTextEvents = textPropsForStyle(box.style, partsEvents, color);
                         baseTextShadows = textShadowsForStyle(box.style, color, baseTextEvents);
+                        baseTextMeta = textMeta(normalizedClip, fontHVal, 0f, 0f, ox, oy, baseTextEvents.hints());
                     }
-                    RenderMeta fragMeta = textMeta(normalizedClip, fontHVal, frag.baseline(), frag.h(), ox, oy, baseTextEvents.hints());
-                    addTextRun(elements, box, box.style, id, frag.x() + opX, frag.y() + opY, frag.w(), frag.h(), frag.text(), color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, baseTextShadows);
+                    addTextRun(elements, box, box.style, id, rx + opX, ry + opY, rw, rh, runText, color, bgColor,
+                            baseTextEvents, baseTextMeta, rb, rh, transDur, colorAnim, baseTextShadows, ri);
                 }
             }
         } finally {

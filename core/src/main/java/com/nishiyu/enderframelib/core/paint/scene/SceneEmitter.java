@@ -45,7 +45,7 @@ public final class SceneEmitter {
      */
     @FunctionalInterface
     public interface OpsSource {
-        DrawOp[] ops(SceneLayer layer, int viewportW, int viewportH);
+        DrawOps ops(SceneLayer layer, int viewportW, int viewportH);
     }
 
     private final LayoutSession session;
@@ -267,7 +267,7 @@ public final class SceneEmitter {
             builtLayers++;
             int nid = b.generated() || node == null || node.isPseudoNode ? 0 : node.nodeId();
             return withOps(new SceneLayer(nid, x, y, f.width, f.height, p.scrollClipW(), p.scrollClipH(), p.transform(), p.clip(),
-                    p.effects(), p.sticky(), DrawOp.EMPTY, SceneChildren.EMPTY, lb, f, node, style, display,
+                    p.effects(), p.sticky(), DrawOps.EMPTY, SceneChildren.EMPTY, lb, f, node, style, display,
                     bT, bR, bB, bL, pT, pR, pB, pL, mT, mR, mB, mL, collapsedBorders, scrollWidth, scrollHeight, lineHeight,
                     d.firstLine, d.firstLineBgRect, d.runs.isEmpty() ? SceneLayer.NO_RUNS : d.runs.toArray(SceneLayer.NO_RUNS),
                     null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers()));
@@ -339,7 +339,7 @@ public final class SceneEmitter {
         builtLayers++;
         int nid = b.generated() || node == null || node.isPseudoNode ? 0 : node.nodeId();
         return withOps(new SceneLayer(nid, x, y, f.width, f.height, p.scrollClipW(), p.scrollClipH(), p.transform(), p.clip(),
-                p.effects(), p.sticky(), DrawOp.EMPTY, sceneChildren, lb, f, node, style, display,
+                p.effects(), p.sticky(), DrawOps.EMPTY, sceneChildren, lb, f, node, style, display,
                 bT, bR, bB, bL, pT, pR, pB, pL, mT, mR, mB, mL, collapsedBorders, scrollWidth, scrollHeight, lineHeight,
                 firstLine, firstLineBgRect, SceneLayer.NO_RUNS, null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers()));
     }
@@ -440,7 +440,7 @@ public final class SceneEmitter {
                 placed.ops(), placed.children, placed.box, placed.frag, placed.node, placed.style, placed.display,
                 placed.bT, placed.bR, placed.bB, placed.bL, placed.pT, placed.pR, placed.pB, placed.pL,
                 nmT, nmR, nmB, nmL, placed.collapsedBorders, placed.scrollWidth, placed.scrollHeight, placed.lineHeight,
-                placed.firstLine, placed.firstLineBgRect, placed.runs, follow, placed.stackingKind, placed.zIndex,
+                placed.firstLine, placed.firstLineBgRect, null, follow, placed.stackingKind, placed.zIndex,
                 placed.flags, placed.propagatedLayers);
     }
 
