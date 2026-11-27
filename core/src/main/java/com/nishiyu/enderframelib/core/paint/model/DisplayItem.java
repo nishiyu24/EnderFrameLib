@@ -62,12 +62,19 @@ public record DisplayItem(
     public float rotate() { return cell.rotate; }
 
     /**
+     * 文字列から作る鍵の印（M3b-4b-1）。節の番号と部品から作る鍵（{@code nodeHandle << 16 | part}、最大でも 2^47 未満）と値の範囲を
+     * 分ける。以前は文字列の番号をそのまま鍵にしていたので、番号が 65,536 を超えると節の鍵と衝突し得た。
+     */
+    public static final long STRING_KEY_BIT = 1L << 62;
+
+    /**
      * 描画 ID を密な {@code long} の鍵へ写す（索引・アニメ状態・ヒットテストが文字列のハッシュ／比較をせずに済むように）。
      * 実体はカーネルの {@link AtomTable}（プロセス共有の文字列 → 整数 ID の辞書）。同じ文字列は常に同じ鍵、異なる文字列は異なる鍵。
      * {@code null} と空文字列は 0（未割り当て）。
      */
     public static long keyOf(String id) {
-        return AtomTable.shared().intern(id);
+        int atom = AtomTable.shared().intern(id);
+        return atom == AtomTable.NONE ? 0L : STRING_KEY_BIT | atom;
     }
 
     /**

@@ -60,6 +60,19 @@ class DisplayItemKeyTest {
     }
 
     @Test
+    void stringKeysNeverCollideWithNodePartKeys() {
+        // 文字列の番号が 65,536 を超えても、節の番号と部品の鍵（nodeHandle << 16 | part）と値が重ならない（M3b-4b-1）
+        long s = DisplayItem.keyOf("string_key_range_probe");
+        assertNotEquals(0L, s & DisplayItem.STRING_KEY_BIT, "文字列の鍵は専用の範囲にある");
+        long maxNodeKey = DisplayItem.keyOf(Integer.MAX_VALUE, 0xFFFF);
+        assertEquals(0L, maxNodeKey & DisplayItem.STRING_KEY_BIT, "節の鍵は文字列の鍵の範囲に入らない");
+        int atom = (int) (s & ~DisplayItem.STRING_KEY_BIT);
+        assertNotEquals(DisplayItem.keyOf(atom >>> 16, atom & 0xFFFF), s, "同じ下位ビットでも節の鍵とは別の値");
+        assertEquals(0L, DisplayItem.keyOf((String) null));
+        assertEquals(0L, DisplayItem.keyOf(""));
+    }
+
+    @Test
     void keysDoNotCollideAcrossDifferentNodesAndParts() {
         long k1 = DisplayItem.keyOf(10, 1);
         long k2 = DisplayItem.keyOf(10, 2);
