@@ -31,15 +31,15 @@ public class ReactiveStateStore extends UiStateStore {
     }
 
     public static final class TemplateDeps {
-        public static final String ALWAYS = Bindings.TemplateDeps.ALWAYS;
-        private final Bindings.TemplateDeps delegate = new Bindings.TemplateDeps();
+        public static final String ALWAYS = com.nishiyu.enderframelib.core.dom.TemplateDeps.ALWAYS;
+        private final com.nishiyu.enderframelib.core.dom.TemplateDeps delegate = new com.nishiyu.enderframelib.core.dom.TemplateDeps();
 
         public Set<String> index(HtmlNode root) { return delegate.index(root); }
         public Set<String> lookup(HtmlNode node) { return delegate.lookup(node); }
         public void clear() { delegate.clear(); }
 
         public static boolean canSkip(Set<String> deps, Set<String> changedKeys) {
-            return Bindings.TemplateDeps.canSkip(deps, changedKeys);
+            return com.nishiyu.enderframelib.core.dom.TemplateDeps.canSkip(deps, changedKeys);
         }
     }
 }

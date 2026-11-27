@@ -14,6 +14,9 @@ import java.util.function.UnaryOperator;
  * <p>子の並びが木の形の唯一の正本で、各子の位置（{@link HtmlNode#siblingIndex}）も変更のたびにここで保つ
  * （M5-1。前後の兄弟・{@link #indexOf} が O(1) になる）。変更は {@link CompactList} の基本の操作へ直接降ろし、
  * 自分の上書きを二重に通らないようにする（以前は {@code remove(Object)}・{@code removeIf} が節を 2 回外していた）。</p>
+ *
+ * <p>外す子が既に別の親へ結ばれていれば（パーサの adoption agency は子を新しい親へ足してから古い並びを空にする）、
+ * この並びから抜くだけにする。位置・並びに載っている印・id 索引・番号は新しい親の側のもの（M5-2）。</p>
  */
 final class ChildList extends CompactList<HtmlNode> {
 
@@ -22,6 +25,18 @@ final class ChildList extends CompactList<HtmlNode> {
 
     ChildList(HtmlNode owner) {
         this.owner = owner;
+    }
+
+    /** 外す子がまだこの並びの持ち主の子か（別の親へ移った子は抜くだけで、外れた扱いにしない）。 */
+    private boolean stillOurs(HtmlNode n) {
+        return n.parent == null || n.parent == owner;
+    }
+
+    /** 並びから抜いた子を外れた扱いにする（別の親へ移っていなければ）。 */
+    private void detach(HtmlNode n) {
+        if (!stillOurs(n)) return;
+        n.siblingIndex = -1;
+        owner.childDetached(n);
     }
 
     /** {@code from} 以降の子の位置を付け直す。 */
@@ -80,9 +95,11 @@ final class ChildList extends CompactList<HtmlNode> {
         HtmlNode replaced = super.set(index, node);
         if (replaced == node) return replaced;
         // 並べ替え（listIterator の set）で先に別の位置へ置かれた子の位置は消さない
-        if (replaced.siblingIndex == index) replaced.siblingIndex = -1;
         node.siblingIndex = index;
-        owner.childDetached(replaced);
+        if (stillOurs(replaced)) {
+            if (replaced.siblingIndex == index) replaced.siblingIndex = -1;
+            owner.childDetached(replaced);
+        }
         owner.childAttached(node);
         return replaced;
     }
@@ -90,9 +107,8 @@ final class ChildList extends CompactList<HtmlNode> {
     @Override
     public HtmlNode remove(int index) {
         HtmlNode removed = super.remove(index);
-        removed.siblingIndex = -1;
         reindexFrom(index);
-        owner.childDetached(removed);
+        detach(removed);
         return removed;
     }
 
@@ -112,13 +128,12 @@ final class ChildList extends CompactList<HtmlNode> {
             HtmlNode n = get(i);
             if (!filter.test(n)) continue;
             super.remove(i);
-            n.siblingIndex = -1;
             removed.add(n);
             first = i;
         }
         if (removed.isEmpty()) return false;
         reindexFrom(first);
-        for (int i = removed.size() - 1; i >= 0; i--) owner.childDetached(removed.get(i)); // 文書順に外す
+        for (int i = removed.size() - 1; i >= 0; i--) detach(removed.get(i)); // 文書順に外す
         return true;
     }
 
@@ -136,17 +151,15 @@ final class ChildList extends CompactList<HtmlNode> {
     public void clear() {
         List<HtmlNode> removed = new ArrayList<>(this);
         super.clear();
-        for (HtmlNode n : removed) n.siblingIndex = -1;
-        removed.forEach(owner::childDetached);
+        removed.forEach(this::detach);
     }
 
     @Override
     protected void removeRange(int fromIndex, int toIndex) {
         List<HtmlNode> removed = new ArrayList<>(subList(fromIndex, toIndex));
         super.removeRange(fromIndex, toIndex);
-        for (HtmlNode n : removed) n.siblingIndex = -1;
         reindexFrom(fromIndex);
-        removed.forEach(owner::childDetached);
+        removed.forEach(this::detach);
     }
 
     @Override

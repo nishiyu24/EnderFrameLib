@@ -334,14 +334,14 @@ class NodeIdentityTest {
         HtmlNode p = d.getElementById("p");
         HtmlNode c = d.getElementById("c");
         InteractionState state = new InteractionState();
-        InteractionState.StateFlags f = state.getOrCreate(p);
-        int all = InteractionState.StateFlags.DIRTY_STYLE | InteractionState.StateFlags.DIRTY_SUBTREE
-                | InteractionState.StateFlags.DIRTY_BELOW | InteractionState.StateFlags.DIRTY_UNSCOPED;
+        StateFlags f = state.getOrCreate(p);
+        int all = StateFlags.DIRTY_STYLE | StateFlags.DIRTY_SUBTREE
+                | StateFlags.DIRTY_BELOW | StateFlags.DIRTY_UNSCOPED;
         assertEquals(all, f.dirtyBits(), "作りたては安全側に 4 ビットすべて");
         assertTrue(state.hasDirtyNodes());
 
         f.clearSubtreeDirty();
-        assertEquals(all & ~InteractionState.StateFlags.DIRTY_SUBTREE, f.dirtyBits(), "他のビットは動かない");
+        assertEquals(all & ~StateFlags.DIRTY_SUBTREE, f.dirtyBits(), "他のビットは動かない");
         assertTrue(f.isStyleDirty() && f.dirtyBelow() && f.unscoped() && !f.subtreeDirty());
         f.markSubtreeDirty();
         assertEquals(all, f.dirtyBits());
@@ -358,7 +358,7 @@ class NodeIdentityTest {
 
         // 子を汚すと、子は style/subtree/unscoped、親は below だけが立つ
         state.markDirty(c);
-        InteractionState.StateFlags pf = state.get(p);
+        StateFlags pf = state.get(p);
         assertTrue(state.get(c).isStyleDirty() && state.get(c).subtreeDirty() && state.get(c).unscoped());
         assertTrue(pf.dirtyBelow());
         assertFalse(pf.isStyleDirty());
@@ -413,7 +413,7 @@ class NodeIdentityTest {
         HtmlNode b = d.getElementById("bold");
         InteractionState state = new InteractionState();
         state.setHovered(b, true);
-        InteractionState.StateFlags flags = state.get(b);
+        StateFlags flags = state.get(b);
 
         d.querySelector("ul").appendChild(b); // 移動（取り外し→取り付け）
         assertSame(flags, state.get(b), "移動しても状態は節に付いてくる");

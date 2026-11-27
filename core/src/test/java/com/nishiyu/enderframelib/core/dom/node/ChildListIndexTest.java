@@ -2,6 +2,9 @@ package com.nishiyu.enderframelib.core.dom.node;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.nishiyu.enderframelib.api.dom.Element;
+import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
+import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -86,5 +89,68 @@ class ChildListIndexTest {
             }
             assertExact(p, gone);
         }
+    }
+
+    /**
+     * 子を新しい親へ結んで足してから古い並びを空にする順（パーサの adoption agency が furthest block の子を新しい書式要素へ
+     * 移す手順）でも、移った子は新しい親の子のままでいる。以前は古い並びの {@code clear} が移った子の位置を -1 にし、
+     * 子の並びに載っていない印（仮想の節）を付け、id 索引から外して番号を手放していた（id で引けず、{@code :has()} が落ちる）。
+     */
+    @Test
+    void childrenMovedBeforeTheOldListIsClearedStayAttached() {
+        HtmlDocument doc = (HtmlDocument) HtmlParser.parseDocument("<b><p><span id=\"z\" class=\"k\">1</span>2</b>3");
+        HtmlNode z = doc.getElementById("z");
+        assertNotNull(z, "移った節も id で引ける");
+        assertEquals("b", z.parent.tag, "furthest block の子は新しい書式要素の子になる");
+        assertEquals("p", z.parent.parent.tag);
+        assertFalse(z.isVirtualNode(), "移った節は仮想の節にならない");
+        assertTrue(z.hasNodeId(), "番号を持ったまま");
+        assertEquals(0, z.siblingIndex);
+        assertEquals(1, z.parent.children.get(1).siblingIndex);
+        assertEquals(List.of(z.parent.parent), SelectorEngine.querySelectorAll(doc, "p:has(.k)"), "祖先の子孫 Bloom に入る");
+
+        // 子の並びを直接触る呼び出しの同じ順
+        HtmlDocument d2 = (HtmlDocument) HtmlParser.parseDocument("<div id=\"a\"><i id=\"x\"></i><i id=\"y\"></i></div><div id=\"b\"><u></u></div>");
+        HtmlNode a = d2.getElementById("a"), b = d2.getElementById("b");
+        List<HtmlNode> moving = new ArrayList<>(a.children);
+        for (HtmlNode c : moving) c.parent = b;
+        b.children.addAll(moving);
+        a.children.clear();
+        assertTrue(a.children.isEmpty());
+        assertExact(b, List.of());
+        for (HtmlNode c : moving) {
+            assertSame(c, d2.getElementById(c.getId()), "移った節も id で引ける");
+            assertFalse(c.isVirtualNode());
+            assertTrue(c.hasNodeId());
+        }
+        assertEquals(2, SelectorEngine.querySelectorAll(d2, "#b > u ~ i").size());
+    }
+
+    /** 前後の要素の兄弟（{@code previousElementSibling} / {@code nextElementSibling}）は子の並びの位置から引き、文字の節を飛ばす。 */
+    @Test
+    void elementSiblingsFollowTheChildIndex() {
+        HtmlElement p = new HtmlElement("div");
+        Random random = new Random(7);
+        for (int step = 0; step < 800; step++) {
+            int n = p.children.size();
+            switch (random.nextInt(5)) {
+                case 0 -> p.insertBefore(new HtmlElement("i"), n == 0 ? null : p.children.get(random.nextInt(n)));
+                case 1 -> p.insertBefore(new HtmlText("t"), n == 0 ? null : p.children.get(random.nextInt(n)));
+                case 2 -> { if (n > 0) p.removeChild(p.children.get(random.nextInt(n))); }
+                case 3 -> { if (n > 1) p.insertBefore(p.children.get(random.nextInt(n)), p.children.get(random.nextInt(n))); }
+                default -> p.children.add(random.nextInt(n + 1), child(p, "b"));
+            }
+            for (int i = 0; i < p.children.size(); i++) {
+                if (!(p.children.get(i) instanceof HtmlElement e)) continue;
+                Element prev = null, next = null;
+                for (int k = i - 1; k >= 0 && prev == null; k--) if (p.children.get(k) instanceof HtmlElement el) prev = el;
+                for (int k = i + 1; k < p.children.size() && next == null; k++) if (p.children.get(k) instanceof HtmlElement el) next = el;
+                assertSame(prev, e.getPreviousElementSibling(), "step " + step + " / " + i);
+                assertSame(next, e.getNextElementSibling(), "step " + step + " / " + i);
+            }
+        }
+        HtmlElement detached = new HtmlElement("i");
+        assertNull(detached.getPreviousElementSibling());
+        assertNull(detached.getNextElementSibling());
     }
 }

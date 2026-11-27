@@ -81,7 +81,7 @@ class BindingPatchTableTest {
     }
 
     private static final java.util.Set<String> ALL =
-            java.util.Set.of(com.nishiyu.enderframelib.core.dom.Bindings.TemplateDeps.ALWAYS);
+            java.util.Set.of(com.nishiyu.enderframelib.core.dom.TemplateDeps.ALWAYS);
 
     private static String inlineOf(HtmlNode n) {
         java.util.Map<String, String> m = new java.util.TreeMap<>();
@@ -95,7 +95,7 @@ class BindingPatchTableTest {
     @Test
     void numericBindingsGoToTheTableAndNeverRewriteTheStyleAttribute() {
         HtmlDocument d = doc();
-        var binder = new com.nishiyu.enderframelib.core.dom.Bindings.ReactiveDomBinder();
+        var binder = new com.nishiyu.enderframelib.core.dom.ReactiveDomBinder();
         java.util.Map<String, String> values = new java.util.HashMap<>();
         values.put("hp_pct", "30");
         values.put("alpha", "0.75");
@@ -129,7 +129,7 @@ class BindingPatchTableTest {
     @Test
     void changedPatchedNodesAreReportedAndBumpTheAttributeVersion() {
         HtmlDocument d = doc();
-        var binder = new com.nishiyu.enderframelib.core.dom.Bindings.ReactiveDomBinder();
+        var binder = new com.nishiyu.enderframelib.core.dom.ReactiveDomBinder();
         java.util.Map<String, String> values = new java.util.HashMap<>(java.util.Map.of("hp_pct", "30", "alpha", "1",
                 "fs", "10", "grow", "1", "a", "1"));
         binder.sync(d, values, java.util.Map.of(), ALL);
@@ -152,7 +152,7 @@ class BindingPatchTableTest {
     @Test
     void nonNumericValueFallsBackToTheAttributePathAndBack() {
         HtmlDocument d = doc();
-        var binder = new com.nishiyu.enderframelib.core.dom.Bindings.ReactiveDomBinder();
+        var binder = new com.nishiyu.enderframelib.core.dom.ReactiveDomBinder();
         java.util.Map<String, String> values = new java.util.HashMap<>(java.util.Map.of("hp_pct", "30", "alpha", "1",
                 "fs", "10", "grow", "1", "a", "1"));
         binder.sync(d, values, java.util.Map.of(), ALL);
@@ -174,7 +174,7 @@ class BindingPatchTableTest {
     void duplicatedPropertyInOneStyleStaysOnTheAttributePath() {
         HtmlDocument d = (HtmlDocument) HtmlParser.parseDocument(
                 "<div id=\"x\" style=\"width: {{k}}px; width: 5px\"></div>");
-        var binder = new com.nishiyu.enderframelib.core.dom.Bindings.ReactiveDomBinder();
+        var binder = new com.nishiyu.enderframelib.core.dom.ReactiveDomBinder();
         binder.sync(d, new java.util.HashMap<>(java.util.Map.of("k", "9")), java.util.Map.of(), ALL);
         HtmlNode x = d.getElementById("x");
         assertNull(x.inlineOverlay, "後ろの width が勝つ宣言順を壊さない");

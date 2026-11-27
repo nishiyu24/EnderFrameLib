@@ -133,6 +133,15 @@ core/
   一致は `SelectorIndexOracleTest` が守る。
 - **`HtmlNode` の分け方**: 節の欄と DOM の API の入口だけを持ち、番号と鍵（`NodeNumbering`）・木の変更と文書順と複製（`TreeOps`）・
   属性の書き込みと便利な操作（`NodeAttributes`）・文字の内容（`NodeText`）・イベント（`NodeEvents`）へ委ねる。
+  子の並びから外す子が既に別の親へ結ばれていれば（パーサの adoption agency は新しい親へ足してから古い並びを空にする）、
+  並びから抜くだけで、位置・id 索引・番号は新しい親の側のものとして残す。
+- **DOM の側の分け方（M5-2）**: `HtmlElement` は Element の API の入口で、`classList` は `HtmlDOMTokenList`、`style` は
+  `HtmlCSSStyleDeclaration`、dialog / popover は `TopLayerOps`。パーサ（`core/dom/parser`）は公開の入口 `HtmlParser`、
+  1 回の解析の状態と挿入モード `TreeBuilder`、書式要素の一覧と adoption agency `ActiveFormatting`、表の挿入モード
+  `TableModes`、字句の判定と文字の整え方 `ParserText`、要素名の集合 `TagSets`。宣言的バインディングは `Bindings`（置換・条件・
+  走査）・`ReactiveDomBinder`（状態の値の DOM への同期）・`TemplateDeps`（キー単位の依存）。対話状態は `InteractionState`
+  （節ごとの表・hover / active / focus の鎖・Top Layer）・`StateFlags`（節ごとの状態）・`StyleInvalidation`（再スタイルの印と
+  無効化）。
 - **`getElementById`** は id 索引だけで引く（線形探索のフォールバックは無い）。索引に載るのは明示 id だけ。
 
 ### CSS

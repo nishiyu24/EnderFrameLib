@@ -15,16 +15,12 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * WHATWG DOM Standard の {@link Element} インターフェースを実装したクラス。
+ *
+ * <p>{@code classList} は {@link HtmlDOMTokenList}、{@code style} は {@link HtmlCSSStyleDeclaration}、dialog / popover の
+ * Top Layer の操作は {@link TopLayerOps}、制約の検証とフォームは {@link ConstraintValidator} / {@link FormController} にある。</p>
  */
 public class HtmlElement extends HtmlNode implements Element {
 
@@ -203,7 +199,7 @@ public class HtmlElement extends HtmlNode implements Element {
     @Override
     public Element getPreviousElementSibling() {
         if (parent == null) return null;
-        int idx = parent.children.indexOf(this);
+        int idx = indexInParent();
         for (int i = idx - 1; i >= 0; i--) {
             HtmlNode node = parent.children.get(i);
             if (node instanceof Element el) return el;
@@ -215,7 +211,8 @@ public class HtmlElement extends HtmlNode implements Element {
     @Override
     public Element getNextElementSibling() {
         if (parent == null) return null;
-        int idx = parent.children.indexOf(this);
+        int idx = indexInParent();
+        if (idx < 0) return null;
         for (int i = idx + 1; i < parent.children.size(); i++) {
             HtmlNode node = parent.children.get(i);
             if (node instanceof Element el) return el;
@@ -497,107 +494,51 @@ public class HtmlElement extends HtmlNode implements Element {
     }
 
     // ==========================================
-    // Top Layer（HTML §4.11 dialog / §6.12 popover）
+    // Top Layer（HTML §4.11 dialog / §6.12 popover。中身は TopLayerOps）
     // ==========================================
-
-    private HtmlDocument topLayerDocument() {
-        HtmlNode root = this;
-        while (root.parent != null) root = root.parent;
-        return root instanceof HtmlDocument doc ? doc : null;
-    }
-
-    private DocumentState topLayerState() {
-        HtmlDocument doc = topLayerDocument();
-        return doc != null ? doc.interactionState() : null;
-    }
 
     /** {@code dialog.show()}: モードレスで開く（{@code open} 属性だけ）。 */
     public void show() {
-        if (!"dialog".equalsIgnoreCase(tag)) return;
-        if (!hasAttribute("open")) setAttribute("open", "");
+        TopLayerOps.show(this);
     }
 
     /** {@code dialog.showModal()}: Top Layer に載せて開く（{@code :modal}）。すでに開いていれば何もしない。 */
     public void showModal() {
-        if (!"dialog".equalsIgnoreCase(tag) || hasAttribute("open")) return;
-        HtmlDocument doc = topLayerDocument();
-        DocumentState st = doc != null ? doc.interactionState() : null;
-        setAttribute("open", "");
-        if (st != null) st.setModal(this, true);
-        if (doc != null) {
-            doc.clearInertFocusAndPointer();
-            HtmlElement af = findAutofocus(this, st);
-            if (af != null) af.focus();
-        }
-    }
-
-    private static HtmlElement findAutofocus(HtmlNode node, DocumentState st) {
-        for (HtmlNode child : node.children) {
-            if (child instanceof HtmlElement el) {
-                if (el.hasAttribute("autofocus") && !el.hasAttribute("disabled") && !el.hasAttribute("hidden")
-                        && (st == null || !st.isInert(el))) {
-                    return el;
-                }
-                HtmlElement nested = findAutofocus(el, st);
-                if (nested != null) return nested;
-            }
-        }
-        return null;
+        TopLayerOps.showModal(this);
     }
 
     /** この要素が不活性（{@code inert} 属性の配下、またはモーダル {@code <dialog>} の外側）か。 */
     public boolean isInert() {
-        DocumentState st = topLayerState();
-        if (st != null) return st.isInert(this);
-        for (HtmlNode cur = this; cur != null; cur = cur.parent) {
-            if (cur.attrs != null && cur.attrs.containsKey("inert")) return true;
-        }
-        return false;
+        return TopLayerOps.isInert(this);
     }
 
     /** {@code dialog.close()}。閉じたら {@code close} イベントを送る。 */
     public void close() {
-        if (!"dialog".equalsIgnoreCase(tag) || !hasAttribute("open")) return;
-        DocumentState st = topLayerState();
-        removeAttribute("open");
-        if (st != null) st.setModal(this, false);
-        dispatchEvent(new com.nishiyu.enderframelib.core.dom.node.CoreEvent("close", false, false));
+        TopLayerOps.close(this);
     }
 
     /** {@code showModal()} で開いていて、まだ閉じていないか（{@code :modal}）。 */
     public boolean isModalOpen() {
-        DocumentState st = topLayerState();
-        return st != null && st.isModal(this);
+        return TopLayerOps.isModalOpen(this);
     }
 
     /** {@code popover} 属性を持ち、表示中か（{@code :popover-open}）。 */
     public boolean isPopoverOpen() {
-        if (!hasAttribute("popover")) return false;
-        DocumentState st = topLayerState();
-        return st != null && st.isPopoverOpen(this);
+        return TopLayerOps.isPopoverOpen(this);
     }
 
     /** {@code popover} 属性を持つ要素を表示する（Top Layer に載る）。 */
     public void showPopover() {
-        if (!hasAttribute("popover")) return;
-        DocumentState st = topLayerState();
-        if (st != null) st.setPopoverOpen(this, true);
+        TopLayerOps.setPopoverOpen(this, true);
     }
 
     public void hidePopover() {
-        if (!hasAttribute("popover")) return;
-        DocumentState st = topLayerState();
-        if (st != null) st.setPopoverOpen(this, false);
+        TopLayerOps.setPopoverOpen(this, false);
     }
 
     /** @return 呼び出し後に表示中か */
     public boolean togglePopover() {
-        if (!hasAttribute("popover")) return false;
-        DocumentState st = topLayerState();
-        if (st == null) return false;
-        boolean open = !st.isPopoverOpen(this);
-        st.setPopoverOpen(this, open);
-        return open;
+        return TopLayerOps.togglePopover(this);
     }
 
     @Override
@@ -689,292 +630,5 @@ public class HtmlElement extends HtmlNode implements Element {
     @Override
     public void reset() {
         FormController.resetForm(this);
-    }
-
-    /**
-     * Concrete implementation of {@link DOMTokenList} backed by an {@link HtmlElement}'s class attribute.
-     */
-    public static class HtmlDOMTokenList implements DOMTokenList {
-
-        private static final Pattern WHITESPACE_SPLIT = Pattern.compile("\\s+");
-        private final HtmlElement element;
-        private final String attributeName;
-
-        public HtmlDOMTokenList(HtmlElement element, String attributeName) {
-            this.element = element;
-            this.attributeName = attributeName;
-        }
-
-        private List<String> parseTokens() {
-            String val = element.getAttribute(attributeName);
-            if (val == null || val.trim().isEmpty()) {
-                return new ArrayList<>();
-            }
-            String[] parts = WHITESPACE_SPLIT.split(val.trim());
-            Set<String> unique = new LinkedHashSet<>();
-            for (String p : parts) {
-                if (!p.isEmpty()) unique.add(p);
-            }
-            return new ArrayList<>(unique);
-        }
-
-        private void syncTokens(List<String> tokens) {
-            if (tokens.isEmpty()) {
-                element.removeAttribute(attributeName);
-            } else {
-                element.setAttribute(attributeName, String.join(" ", tokens));
-            }
-        }
-
-        private static void validateToken(String token) {
-            if (token == null || token.isEmpty()) {
-                throw new DOMException("The token provided must not be empty.", "SyntaxError");
-            }
-            for (int i = 0; i < token.length(); i++) {
-                if (Character.isWhitespace(token.charAt(i))) {
-                    throw new DOMException("The token provided contains whitespace characters.", "InvalidCharacterError");
-                }
-            }
-        }
-
-        @Override
-        public int getLength() {
-            return parseTokens().size();
-        }
-
-        @Nullable
-        @Override
-        public String item(int index) {
-            List<String> tokens = parseTokens();
-            if (index < 0 || index >= tokens.size()) return null;
-            return tokens.get(index);
-        }
-
-        @Override
-        public boolean contains(String token) {
-            validateToken(token);
-            return parseTokens().contains(token);
-        }
-
-        @Override
-        public void add(String... tokens) {
-            if (tokens == null || tokens.length == 0) return;
-            for (String t : tokens) {
-                validateToken(t);
-            }
-            List<String> current = parseTokens();
-            boolean changed = false;
-            for (String t : tokens) {
-                if (!current.contains(t)) {
-                    current.add(t);
-                    changed = true;
-                }
-            }
-            if (changed) syncTokens(current);
-        }
-
-        @Override
-        public void remove(String... tokens) {
-            if (tokens == null || tokens.length == 0) return;
-            for (String t : tokens) {
-                validateToken(t);
-            }
-            List<String> current = parseTokens();
-            boolean changed = false;
-            for (String t : tokens) {
-                if (current.remove(t)) {
-                    changed = true;
-                }
-            }
-            if (changed) syncTokens(current);
-        }
-
-        @Override
-        public boolean toggle(String token) {
-            validateToken(token);
-            List<String> current = parseTokens();
-            if (current.contains(token)) {
-                current.remove(token);
-                syncTokens(current);
-                return false;
-            } else {
-                current.add(token);
-                syncTokens(current);
-                return true;
-            }
-        }
-
-        @Override
-        public boolean toggle(String token, boolean force) {
-            validateToken(token);
-            List<String> current = parseTokens();
-            if (force) {
-                if (!current.contains(token)) {
-                    current.add(token);
-                    syncTokens(current);
-                }
-                return true;
-            } else {
-                if (current.remove(token)) {
-                    syncTokens(current);
-                }
-                return false;
-            }
-        }
-
-        @Override
-        public boolean replace(String oldToken, String newToken) {
-            validateToken(oldToken);
-            validateToken(newToken);
-            List<String> current = parseTokens();
-            int idx = current.indexOf(oldToken);
-            if (idx < 0) return false;
-            current.set(idx, newToken);
-            syncTokens(current);
-            return true;
-        }
-
-        @Override
-        public String getValue() {
-            String val = element.getAttribute(attributeName);
-            return val != null ? val : "";
-        }
-
-        @Override
-        public void setValue(String value) {
-            if (value == null || value.isEmpty()) {
-                element.removeAttribute(attributeName);
-            } else {
-                element.setAttribute(attributeName, value);
-            }
-        }
-
-        @Override
-        public Iterator<String> iterator() {
-            return parseTokens().iterator();
-        }
-    }
-
-    /**
-     * Concrete implementation of {@link CSSStyleDeclaration} backed by an {@link HtmlElement}'s style attribute.
-     */
-    public static class HtmlCSSStyleDeclaration implements CSSStyleDeclaration {
-
-        private record PropertyEntry(String value, String priority) {}
-
-        private final HtmlElement element;
-        private final Map<String, PropertyEntry> properties = new LinkedHashMap<>();
-        private boolean isSyncing = false;
-
-        public HtmlCSSStyleDeclaration(HtmlElement element) {
-            this.element = element;
-            syncFromAttribute(element.getAttribute("style"));
-        }
-
-        public void syncFromAttribute(@Nullable String styleText) {
-            if (isSyncing) return;
-            properties.clear();
-            if (styleText == null || styleText.trim().isEmpty()) return;
-
-            for (String decl : styleText.split(";")) {
-                int colon = decl.indexOf(':');
-                if (colon <= 0) continue;
-                String prop = decl.substring(0, colon).trim().toLowerCase();
-                String val = decl.substring(colon + 1).trim();
-                if (prop.isEmpty()) continue;
-
-                String priority = "";
-                if (val.toLowerCase().endsWith("!important")) {
-                    priority = "important";
-                    val = val.substring(0, val.length() - 10).trim();
-                }
-                properties.put(prop, new PropertyEntry(val, priority));
-            }
-        }
-
-        private void syncToAttribute() {
-            if (isSyncing) return;
-            isSyncing = true;
-            try {
-                if (properties.isEmpty()) {
-                    element.removeAttribute("style");
-                } else {
-                    StringBuilder sb = new StringBuilder();
-                    for (Map.Entry<String, PropertyEntry> entry : properties.entrySet()) {
-                        sb.append(entry.getKey()).append(": ").append(entry.getValue().value());
-                        if ("important".equalsIgnoreCase(entry.getValue().priority())) {
-                            sb.append(" !important");
-                        }
-                        sb.append("; ");
-                    }
-                    element.setAttribute("style", sb.toString().trim());
-                }
-            } finally {
-                isSyncing = false;
-            }
-        }
-
-        @Override
-        public String getCssText() {
-            String attr = element.getAttribute("style");
-            return attr != null ? attr : "";
-        }
-
-        @Override
-        public void setCssText(String cssText) {
-            syncFromAttribute(cssText);
-            syncToAttribute();
-        }
-
-        @Override
-        public int getLength() {
-            return properties.size();
-        }
-
-        @Nullable
-        @Override
-        public String item(int index) {
-            if (index < 0 || index >= properties.size()) return null;
-            return new ArrayList<>(properties.keySet()).get(index);
-        }
-
-        @Override
-        public String getPropertyValue(String property) {
-            if (property == null) return "";
-            PropertyEntry entry = properties.get(property.trim().toLowerCase());
-            return entry != null ? entry.value() : "";
-        }
-
-        @Override
-        public String getPropertyPriority(String property) {
-            if (property == null) return "";
-            PropertyEntry entry = properties.get(property.trim().toLowerCase());
-            return entry != null ? entry.priority() : "";
-        }
-
-        @Override
-        public void setProperty(String property, @Nullable String value, @Nullable String priority) {
-            if (property == null || property.trim().isEmpty()) return;
-            String name = property.trim().toLowerCase();
-            if (value == null || value.trim().isEmpty()) {
-                removeProperty(name);
-                return;
-            }
-            String pri = priority != null && "important".equalsIgnoreCase(priority.trim()) ? "important" : "";
-            properties.put(name, new PropertyEntry(value.trim(), pri));
-            syncToAttribute();
-        }
-
-        @Override
-        public String removeProperty(String property) {
-            if (property == null) return "";
-            String name = property.trim().toLowerCase();
-            PropertyEntry removed = properties.remove(name);
-            if (removed != null) {
-                syncToAttribute();
-                return removed.value();
-            }
-            return "";
-        }
     }
 }

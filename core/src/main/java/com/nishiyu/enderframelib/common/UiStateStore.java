@@ -1,6 +1,8 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.Bindings;
+import com.nishiyu.enderframelib.core.dom.ReactiveDomBinder;
+import com.nishiyu.enderframelib.core.dom.TemplateDeps;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 
 import org.slf4j.Logger;
@@ -20,7 +22,7 @@ import java.util.function.Supplier;
 public class UiStateStore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UiStateStore.class);
-    private static final String DEP_ALWAYS = Bindings.DEP_ALWAYS;
+    private static final String DEP_ALWAYS = TemplateDeps.ALWAYS;
 
     private final String sessionId;
     private final Supplier<? extends UiView> viewSupplier;
@@ -35,7 +37,7 @@ public class UiStateStore {
     private final Set<String> dirtyKeys = ConcurrentHashMap.newKeySet();
     private boolean dirty = false;
 
-    private final Bindings.ReactiveDomBinder binder = new Bindings.ReactiveDomBinder();
+    private final ReactiveDomBinder binder = new ReactiveDomBinder();
     private final Set<String> loggedCallbackFailures = ConcurrentHashMap.newKeySet();
 
     /** @param viewSupplier このストアが書き換える文書を持つビューを引く口（ビューが無ければ null を返す）。 */
