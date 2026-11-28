@@ -429,7 +429,7 @@ class ArchitectureHealthTest {
                 main + "core/box", main + "core/layout/fragment", main + "core/paint/scene", main + "common/V3Frame.java",
                 main + "common/UiHitSupport.java"));
         for (String c : List.of("SceneAdapterBox", "SceneDisplayListAdapter", "SceneAdapterSupport", "LayerOps", "OpList", "OpComposer",
-                "SceneWalker", "AnimationStates", "ItemSink", "SceneDamage", "ScrollContentRanges", "SceneSource", "FrameDamage",
+                "SceneWalker", "AnimationStates", "ItemSink", "SceneDamage", "FrameStructure", "SceneSource", "FrameDamage",
                 "BoxItemPainter", "BoxDecorationPainter", "BoxDecorations", "ControlPainter", "TextRunPainter", "PaintSupport", "ItemProps",
                 "PaintBounds", "BoxAnimation", "RenderFrame", "PreparedFrame", "ExcludedNodes", "FrameComposer", "ScrollTranslation")) {
             out.add(main + "core/paint/" + c + ".java");
@@ -633,6 +633,21 @@ class ArchitectureHealthTest {
         roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
         for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M3B4B4A_DELETED_TYPES));
         assertEquals(List.of(), bad, "M3b-4b-4a で消した PaintSceneDriver / RetainRanges / RangeBounds / DamagePlanner / ReplayKeys が戻った（計画書 §3.4）");
+    }
+
+    /**
+     * M3b-4c-2b-3b-1: 走査器は項目の親・保持層の範囲を、列を組む側がシーンの層をたどって書いた列の階層（{@code FrameStructure}）から読む。
+     * 列から鍵・ID で引き直す索引（{@code ScrollContentRanges}・走査器の鍵の表・文字列の鍵 {@code DisplayItem.keyOf}）を戻さない。
+     */
+    @Test
+    void walkerReadsTheFrameStructureNotKeyIndexes() throws IOException {
+        List<String> bad = new ArrayList<>();
+        List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
+        roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
+        for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), List.of("ScrollContentRanges")));
+        Path walker = repoRoot().resolve("core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneWalker.java");
+        bad.addAll(checkCodeLines(walker, Pattern.compile("\\bkeyOf\\(|Long2IntOpenHashMap|\\.parentKey\\(\\)|\\.parentId\\(\\)")));
+        assertEquals(List.of(), bad, "走査器が列から鍵・ID で親・保持層を引き直している（列の階層 FrameStructure を読む。計画書 §3.4 M3b-4c-2b-3b-1）");
     }
 
     /** M3b-4b-4b で消した、項目の同一性で静止フレーム・変化を見る型と、列全体を絶対座標へ直す本番の型。 */

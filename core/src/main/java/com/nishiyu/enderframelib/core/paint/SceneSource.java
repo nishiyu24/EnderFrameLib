@@ -9,7 +9,7 @@ import java.util.Map;
 /**
  * フレームのシーンと、その時の動的な値・組み方の入力（M3b-4b-4a。M3b-4c-2a からフレームの値 {@link RenderFrame} の一部）。描画器はこれから
  * 表示項目の列を組み（{@link FrameComposer}。M3b-4c-2b-2b からビューは列を持たない）、描き直す範囲（{@link SceneDamage}）と保持層にできる
- * スクロールコンテナの中身（{@link ScrollContentRanges}）を求める。
+ * スクロールコンテナの中身（列の階層 {@link FrameStructure}）を求める。
  *
  * @param scene              シーン
  * @param dynamic            今のスクロール量とビューポート

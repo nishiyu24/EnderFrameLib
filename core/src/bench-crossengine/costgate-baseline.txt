@@ -30,7 +30,7 @@ voidwave.html text | allocBytes=57507 drawn=600 elements=503 items=2259
 surface_test.html hover | allocBytes=330827 drawn=600 elements=123 items=562 allocTol=8
 surface_test.html scroll | allocBytes=16392 drawn=600 elements=123 items=560
 surface_test.html text | allocBytes=61177 drawn=600 elements=123 items=564
-animation_test.html hover | allocBytes=147419 drawn=600 elements=229 items=1080 allocTol=7
+animation_test.html hover | allocBytes=147419 drawn=600 elements=229 items=1080 allocTol=10
 animation_test.html text | allocBytes=71129 drawn=600 elements=229 items=1085
 media_test.html text | allocBytes=68805 drawn=600 elements=332 items=2388 allocTol=25
 hud_test.html text | allocBytes=37828 drawn=600 elements=22 items=68

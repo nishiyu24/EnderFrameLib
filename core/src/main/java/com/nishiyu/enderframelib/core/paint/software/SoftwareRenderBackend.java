@@ -387,7 +387,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 for (int k = 0, cn = chain.size(); k < cn; k++) {
                     ClipChainPart p = chain.get(k);
                     if (owner.equals(p.ownerId()) && p.rectLength() >= 4) {
-                        int ix = walker.indexOf(p.ownerId());
+                        int ix = walker.ancestorById(nodeIndex, p.ownerId());
                         Matrix2D pose = ix >= 0 ? walker.resolveAt(ix).pose() : frame;
                         double[] b = deviceBounds(pose, p.rectAt(0), p.rectAt(1), p.rectAt(2), p.rectAt(3), scratchBounds4);
                         x0 = Math.max(x0, (int) Math.floor(b[0]));
@@ -398,7 +398,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     }
                 }
             } else if (owner.equals(cr.ownerId())) {
-                int ix = walker.indexOf(cr.ownerId());
+                int ix = walker.ancestorById(nodeIndex, cr.ownerId());
                 Matrix2D pose = ix >= 0 ? walker.resolveAt(ix).pose() : frame;
                 double[] b = deviceBounds(pose, cr.minX(), cr.minY(), cr.maxX(), cr.maxY(), scratchBounds4);
                 x0 = Math.max(x0, (int) Math.floor(b[0]));
@@ -453,6 +453,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         String owner = cachedOwnerKeyOf(node, nodeIndex);
         List<DisplayItem> items = walker.items();
         List<ClipPart> parts = new ArrayList<>(1);
+        clipItem = nodeIndex; // 持ち主（コンテナ）は中身の節の祖先
         for (int i = from; i < to && parts.isEmpty(); i++) {
             RenderMeta meta = items.get(i).meta();
             ClipRect cr = meta != null ? meta.clipRect() : null;
@@ -473,8 +474,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return new GpuScrollLayer(node.id(), token, walker.resolveAt(nodeIndex).pose(), gc, new int[]{c.x0(), c.y0(), c.x1(), c.y1()});
     }
 
-    /** 今のフレームの項目数。 */
+    /** 今のフレームの項目数と、クリップを組む項目の位置（クリップの持ち主は、その項目から列の階層の親をたどって引く）。 */
     private int frameSize;
+    private int clipItem = -1;
     /** 項目ごとのクリップ。入力の列が別の実体になった（{@link SceneWalker#generation}）ら捨てる。 */
     private ClipEntry[] clipCache = new ClipEntry[0];
     private long clipGeneration = -1;
@@ -706,6 +708,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     Clip buildClip(int index, DisplayItem el, AnimatedValues anim) {
+        clipItem = index;
         ClipEntry ce = clipCache[index];
         RenderMeta m0 = el.meta();
         ClipRect cr0 = m0 != null ? m0.clipRect() : null;
@@ -852,7 +855,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
         int tw = raster.targetWidth(), th = raster.targetHeight();
-        int ix = p.ownerId() == null ? -1 : walker.indexOf(p.ownerId());
+        int ix = p.ownerId() == null ? -1 : walker.ancestorById(clipItem, p.ownerId());
         Resolved owner = ix >= 0 ? walker.resolveAt(ix) : null;
         PartMemo memo = frameParts.get(p);
         if (memo != null && memo.ownerIndex() == ix && memo.owner() == owner && memo.w() == tw && memo.h() == th
@@ -895,7 +898,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int ownerIndex = -1;
         Resolved owner = null;
         if (ownerId != null) {
-            int ix = walker.indexOf(ownerId);
+            int ix = walker.ancestorById(clipItem, ownerId);
             if (ix >= 0) {
                 ownerIndex = ix;
                 owner = walker.resolveAt(ix);

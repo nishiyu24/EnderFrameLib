@@ -33,7 +33,7 @@ public final class PreparedFrame {
     public PreparedFrame(RenderFrame frame, FrameComposer.Composed composed, SceneDamage.Rects damage, boolean repaint, PreparedFrame inner) {
         this.frame = frame;
         this.composed = composed != null ? composed : inner != null ? inner.composed
-                : new FrameComposer.Composed(frame.items(), frame.offsets(), List.of());
+                : new FrameComposer.Composed(frame.items(), frame.offsets(), List.of(), null);
         this.damage = damage;
         this.repaint = repaint;
         this.inner = inner;
@@ -69,9 +69,18 @@ public final class PreparedFrame {
         return composed.offsets();
     }
 
-    /** 中身を 1 つの節にまとめたスクロールコンテナ（保持層の範囲。シーンが無ければ空）。 */
+    /** 中身を 1 つの節にまとめたスクロールコンテナ（シーンが無ければ空）。 */
     public List<ScrollContentInfo> contents() {
         return composed.contents();
+    }
+
+    /**
+     * 描く列の階層（M3b-4c-2b-3b-1）: シーンのフレームは列を組んだ側がシーンの層をたどって書いたもの（後ろの重ね描きは親を持たない）。
+     * シーンの無いフレーム（列だけのフレーム。M3b-4c-3 で消す）は項目の鍵から作る（呼ぶたびに作る）。
+     */
+    public FrameStructure structure() {
+        FrameStructure s = composed.structure();
+        return s != null ? s : FrameStructure.fromKeys(drawList());
     }
 
     /** 描き直しが要るか（偽なら前に描いた画素がこのフレームの絵）。 */

@@ -114,6 +114,45 @@ public class SceneWalkerTest {
         assertNotEquals(gen, w.generation(), "別の列なら世代が進む");
     }
 
+    /**
+     * シーンのフレームの項目の親は列の階層（{@link FrameStructure}）から読み、項目の親の鍵・ID から引き直さない（M3b-4c-2b-3b-1）: 同じ列で
+     * 階層だけを変えると、変形する箱の部品の姿勢が変わる。
+     */
+    @Test
+    public void parentsComeFromTheFrameStructureNotTheItemKeys() throws Exception {
+        try (StandaloneView v = new StandaloneView("<html><body style='margin:0'><div id=a style='margin:20px;transform:rotate(30deg);"
+                + "width:40px;height:40px;background:#f00'></div></body></html>", 200, 100, FontResolver.FALLBACK)) {
+            v.frame(1000L, new SoftwareRenderBackend(200, 100, 1f), true);
+            RenderFrame f = v.ui().renderFrame(List.of(), null, 1000L);
+            FrameComposer.Composed c = new FrameComposer().compose(f);
+            List<DisplayItem> items = c.items();
+            int bg = -1;
+            for (int i = 0; i < items.size(); i++) if ("a_bg".equals(items.get(i).id())) bg = i;
+            assertTrue(bg >= 0 && c.structure().parent(bg) >= 0, "背景は箱の錨の下");
+            FrameStructure.Builder b = new FrameStructure.Builder();
+            b.reset();
+            for (int i = 0; i < items.size(); i++) b.add(i == bg ? -1 : c.structure().parent(i)); // 背景だけ親を外す
+            FrameComposer.Composed detached = new FrameComposer.Composed(items, c.offsets(), c.contents(), b.build());
+            Recorder linked = walk(new PreparedFrame(f, c, null, true, null));
+            Recorder unlinked = walk(new PreparedFrame(f, detached, null, true, null));
+            Matrix2D withParent = poseOf(linked, "a_bg"), without = poseOf(unlinked, "a_bg");
+            assertNotEquals(0.0, withParent.b(), 1e-6, "親の錨の回転を受ける");
+            assertEquals(0.0, without.b(), 1e-9, "階層で親を外すと、項目の親の鍵があっても回転を受けない");
+        }
+    }
+
+    private static Recorder walk(PreparedFrame p) {
+        SceneWalker w = new SceneWalker("w-structure");
+        Recorder rec = new Recorder();
+        rec.walker = w;
+        w.run(p, Matrix2D.IDENTITY, rec, null);
+        return rec;
+    }
+
+    private static Matrix2D poseOf(Recorder rec, String id) {
+        return rec.visits.stream().filter(x -> x.id().equals(id)).findFirst().orElseThrow().pose();
+    }
+
     @Test
     public void userOffsetsTranslateTheNodeAndItsParts() {
         List<DisplayItem> items = items("<div id='box' style='width:50px;height:20px;background:#f00'></div>");

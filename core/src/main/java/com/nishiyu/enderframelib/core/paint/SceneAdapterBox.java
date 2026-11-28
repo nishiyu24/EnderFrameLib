@@ -19,7 +19,7 @@ import java.util.List;
  * {@link SceneLayer} を親・絶対位置・{@link DynamicSceneState} に結び付け、旧 {@link SceneDisplayListAdapter} が
  * 読む形に揃えるパッケージプライベート一時アダプタ（M3b-3。M3b-4 でアダプタごと削除する）。
  */
-final class SceneAdapterBox {
+final class SceneAdapterBox implements ItemSink.AnchorRef {
     static final int TABLE_CELL = 1, DISPLAY_NONE = 2, ATOMIC_INLINE = 4, FLEX_OR_GRID = 8;
 
     public final SceneLayer layer;
@@ -38,6 +38,8 @@ final class SceneAdapterBox {
     /** 飛ばさずに並べた子（{@link #allChildren}。カリングでチャンクを飛ばしたときだけ別に作る）。 */
     private List<SceneAdapterBox> allKids;
     private boolean culledAny;
+    /** この箱の錨（{@code DrawOps#ANCHOR} の項目）の、組んだ列の中の位置（まだ足していない・出さないなら -1。M3b-4c-2b-3b-1）。 */
+    int anchorPos = -1;
 
     private SceneAdapterBox(SceneLayer layer, SceneAdapterBox parent, float x, float y,
                             DynamicSceneState dynamic, float stickyDy, float[] cull) {
@@ -120,6 +122,9 @@ final class SceneAdapterBox {
         if (stick == null) return new SceneAdapterBox(c, this, cx, cy, dynamic, 0f, cc);
         return new SceneAdapterBox(c, this, cx + stick[0], cy + stick[1], dynamic, stick[1], cc);
     }
+
+    @Override
+    public int anchorPos() { return anchorPos; }
 
     HtmlNode node() { return node; }
     boolean anonymous() { return isAnonymous; }

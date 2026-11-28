@@ -33,8 +33,11 @@ import java.util.Set;
  * <p>組み方の入力（キーフレーム・装置の画素比・ビューポート）はシーンの添え物 {@link SceneSource} から読む。描画器が 1 つ持つ。スレッドセーフではない。</p>
  */
 public final class FrameComposer {
-    /** 組んだ列と、そのフレームの平行移動（利用者の分にスクロールの中身の移動を足した不変の表）・中身をまとめたスクロールコンテナ。 */
-    public record Composed(List<DisplayItem> items, PaintOffsets offsets, List<ScrollContentInfo> contents) {}
+    /**
+     * 組んだ列と、そのフレームの平行移動（利用者の分にスクロールの中身の移動を足した不変の表）・中身をまとめたスクロールコンテナ・列の階層
+     * （項目ごとの親の錨の位置と保持層の範囲。シーンの無いフレームは null で、描く側が項目の鍵から作る）。
+     */
+    public record Composed(List<DisplayItem> items, PaintOffsets offsets, List<ScrollContentInfo> contents, FrameStructure structure) {}
 
     private SceneDisplayListAdapter adapter;
     private Map<String, Keyframes> keyframes;
@@ -44,6 +47,7 @@ public final class FrameComposer {
     private com.nishiyu.enderframelib.core.paint.scene.SceneLayer lastRoot;
     private List<DisplayItem> lastItems = List.of();
     private List<ScrollContentInfo> lastContents = List.of();
+    private FrameStructure lastStructure = FrameStructure.EMPTY;
     private Map<HtmlNode, float[]> scrollAtBuild = Map.of();
     private final Set<HtmlNode> handled = Collections.newSetFromMap(new IdentityHashMap<>());
     /** 前に組んだ列がカリングしたか。 */
@@ -53,7 +57,7 @@ public final class FrameComposer {
     /** シーンの無いフレームはその列のまま、シーンのあるフレームはシーンから組んだ列。 */
     public Composed compose(RenderFrame f) {
         SceneSource s = f.scene();
-        if (s == null) return new Composed(f.items(), f.offsets(), List.of());
+        if (s == null) return new Composed(f.items(), f.offsets(), List.of(), null);
         DynamicSceneState dyn = s.dynamic();
         int w = Math.round(dyn.viewportW), h = Math.round(dyn.viewportH);
         if (adapter == null || s.keyframes() != keyframes || Float.compare(s.devicePixelRatio(), dpr) != 0) {
@@ -82,6 +86,7 @@ public final class FrameComposer {
                 com.nishiyu.enderframelib.core.diag.StageProfiler.end(com.nishiyu.enderframelib.core.diag.PipelineStage.DISPLAY_LIST, t0);
             }
             lastContents = adapter.scrollContents();
+            lastStructure = adapter.structure();
             handled.clear();
             for (int i = 0, n = lastContents.size(); i < n; i++) handled.add(lastContents.get(i).node());
             scrollAtBuild = scroll.snapshot();
@@ -89,7 +94,7 @@ public final class FrameComposer {
             lastCulled = cull;
             builds++;
         }
-        return new Composed(lastItems, ScrollTranslation.apply(f.offsets(), lastContents, scroll), lastContents);
+        return new Composed(lastItems, ScrollTranslation.apply(f.offsets(), lastContents, scroll), lastContents, lastStructure);
     }
 
     /** 列を組んだ回数の累計（使い回しの確かめ用）。 */
@@ -100,6 +105,7 @@ public final class FrameComposer {
         lastRoot = null;
         lastItems = List.of();
         lastContents = List.of();
+        lastStructure = FrameStructure.EMPTY;
         scrollAtBuild = Map.of();
         handled.clear();
     }

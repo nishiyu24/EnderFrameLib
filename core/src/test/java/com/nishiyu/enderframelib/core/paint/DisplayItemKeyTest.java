@@ -215,22 +215,25 @@ class DisplayItemKeyTest {
             assertNotNull(cardLoc, "SceneQuery locates card node");
             assertEquals(cardHandle, cardLoc.nodeId());
 
-            // 走査器（SceneWalker）は走査の間だけ id から項目と位置を引ける
+            // 走査器（SceneWalker）は走査の間だけ、描く項目から列の階層をたどって祖先（クリップの持ち主）を引ける（M3b-4c-2b-3b-1）
             List<DisplayItem> list = items;
             SceneWalker walker = new SceneWalker("test_session");
-            DisplayItem[] byId = new DisplayItem[1];
-            int[] index = {-2};
+            DisplayItem[] bg = new DisplayItem[1];
+            int[] owner = {-2};
             walker.run(list, 1000, com.nishiyu.enderframelib.core.raster.Matrix2D.IDENTITY, new Painter() {
                 @Override public void syncLayers(List<SceneWalker.Group> want) { }
                 @Override public void drawItem(DisplayItem el, int i, float flat) {
-                    byId[0] = walker.itemById("card_bg");
-                    index[0] = walker.indexOf("card_bg");
+                    if (!"card_bg".equals(el.id())) return;
+                    bg[0] = el;
+                    owner[0] = walker.ancestorById(i, "card");
                 }
             });
-            assertNotNull(byId[0], "SceneWalker.itemById('card_bg') finds card_bg");
-            assertEquals(cardHandle, DisplayItem.nodeHandleOf(byId[0].key()));
-            assertEquals(DisplayItem.PART_BG, DisplayItem.partOrdinalOf(byId[0].key()));
-            assertSame(list.get(index[0]), byId[0], "index and item match");
+            assertNotNull(bg[0], "card_bg is drawn");
+            assertEquals(cardHandle, DisplayItem.nodeHandleOf(bg[0].key()));
+            assertEquals(DisplayItem.PART_BG, DisplayItem.partOrdinalOf(bg[0].key()));
+            assertTrue(owner[0] >= 0, "the card anchor is an ancestor of card_bg");
+            assertEquals(ElementType.NODE, list.get(owner[0]).type());
+            assertEquals("card", list.get(owner[0]).id());
         } finally {
             view.close();
         }

@@ -4,6 +4,7 @@ import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.RenderHints;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.scene.DrawOps;
@@ -16,6 +17,10 @@ import java.util.List;
  *
  * <p>座標を整数に丸めるのはここ 1 箇所だけ。命令の座標は基準（層自身か原点の節）からなので、基準の絶対位置から項目の原点
  * （自分の節・祖先の節・絶対）の整数の位置を引いた差を足してから、左右（上下）の辺を丸める。</p>
+ *
+ * <p>項目の親の錨の位置もここで決める（M3b-4c-2b-3b-1。列の階層 {@link FrameStructure}）: 箱の錨（{@link DrawOps#ANCHOR}）の親は、組んでいる
+ * 箱の子の親の錨（自分の錨を出す祖先の箱か、スクロールの中身の節）。それ以外の項目の親は、同じ箱の組み立ての中で先に足した同じ ID の節
+ * （文字の影の層の錨・つまみの節）か、組んでいる箱の錨。鍵・ID で列全体から引き直さない。</p>
  */
 final class OpComposer {
     /** 命令を読むカーソル（使い回す。組み立ては入れ子にならない）。 */
@@ -40,13 +45,65 @@ final class OpComposer {
     private SceneAdapterBox textBox;
     private BoxAnimation textAnimator;
     private AnimationSpec textAnim;
+    /** 組んでいる箱（無ければ null）と、箱の錨の親（無ければ null）。 */
+    private SceneAdapterBox self;
+    private String selfKey;
+    private ItemSink.AnchorRef anchorParent;
+    /** この組み立てで足した節の項目の ID と位置（同じ組み立ての中の項目の親を引く。数個）。 */
+    private String[] nodeIds = new String[8];
+    private int[] nodePos = new int[8];
+    private int nodeCount;
 
-    /** 原点からの座標で集めた命令（{@link OpList#beginFinal}）を、そのまま丸めて項目にする。 */
-    void composeFinal(OpList ops, ItemSink out) {
+    /** 原点からの座標で集めた命令（{@link OpList#beginFinal}）を、そのまま丸めて項目にする。{@code self} は組んでいる箱（無ければ null）。 */
+    void composeFinal(OpList ops, SceneAdapterBox self, ItemSink out) {
+        setSelf(self);
+        this.anchorParent = null;
         DrawOps.Cursor c = cursor.reset(ops.ops);
-        while (c.next()) out.add(toItem(c, 0f, 0f, 0, 0, lineMeta(c, c.meta())));
+        while (c.next()) emit(toItem(c, 0f, 0f, 0, 0, lineMeta(c, c.meta())), c.flags(), out);
         lineSrc = null;
         lineOut = null;
+        setSelf(null);
+        clearNodes();
+    }
+
+    private void setSelf(SceneAdapterBox box) {
+        self = box;
+        selfKey = box != null && box.node() != null ? box.node().key() : null;
+    }
+
+    /** 項目を親の錨の位置と一緒に足す（クラスの説明の規則）。 */
+    private void emit(DisplayItem item, int flags, ItemSink out) {
+        int pos = out.size();
+        if ((flags & DrawOps.ANCHOR) != 0) {
+            int p = anchorParent != null ? anchorParent.anchorPos() : -1;
+            out.add(item, p, p < 0 ? anchorParent : null);
+            if (self != null && self.anchorPos < 0) self.anchorPos = pos;
+        } else {
+            String pid = item.hints().parentId();
+            int p = -1;
+            ItemSink.AnchorRef later = null;
+            if (pid != null) {
+                for (int k = nodeCount - 1; k >= 0 && p < 0; k--) if (pid.equals(nodeIds[k])) p = nodePos[k];
+                if (p < 0 && pid.equals(selfKey)) {
+                    p = self.anchorPos;
+                    if (p < 0) later = self;
+                }
+            }
+            out.add(item, p, later);
+        }
+        if (item.type() == ElementType.NODE) {
+            if (nodeCount == nodeIds.length) {
+                nodeIds = java.util.Arrays.copyOf(nodeIds, nodeCount * 2);
+                nodePos = java.util.Arrays.copyOf(nodePos, nodeCount * 2);
+            }
+            nodeIds[nodeCount] = item.id();
+            nodePos[nodeCount++] = pos;
+        }
+    }
+
+    private void clearNodes() {
+        for (int i = 0; i < nodeCount; i++) nodeIds[i] = null;
+        nodeCount = 0;
     }
 
     /** 命令の行の値を入れたメタ（{@link DrawOps.Cursor#lineMeta}。直前と同じ元・同じ値なら直前の結果を使う）。 */
@@ -64,13 +121,14 @@ final class OpComposer {
     /**
      * 毎フレーム層の局所座標で集めた命令（{@link OpList#beginLocal}）を項目にする。命令は層の整数の原点からなので、
      * 基準の位置はどちらも層の整数の原点。{@code textBox} は祖先の文字色のアニメーションを解く文字の箱（無ければ null）。
+     * {@code self} は組んでいる箱、{@code anchorParent} は箱の錨の親（どちらも無ければ null）。
      */
-    void composeLocal(OpList ops, SceneAdapterBox node, ClipRect frameClip, String anchorParentId, SceneAdapterBox textBox,
-                      BoxAnimation animator, ItemSink out) {
+    void composeLocal(OpList ops, SceneAdapterBox node, ClipRect frameClip, String anchorParentId, ItemSink.AnchorRef anchorParent,
+                      SceneAdapterBox self, SceneAdapterBox textBox, BoxAnimation animator, ItemSink out) {
         begin(ops.originX, ops.originY, ops.originX, ops.originY, ops.originX, ops.originY, node, frameClip, anchorParentId,
-                textBox, animator);
+                anchorParent, self, textBox, animator);
         DrawOps.Cursor c = cursor.reset(ops.ops);
-        while (c.next()) out.add(compose(c));
+        while (c.next()) emit(compose(c), c.flags(), out);
         end();
     }
 
@@ -80,21 +138,25 @@ final class OpComposer {
      * @param node           {@link DrawOps#ORIGIN_NODE} の命令の原点にする祖先の節（無ければ絶対座標）
      * @param frameClip      箱のクリップ（命令のメタのクリップが null なら、これを継ぐ。null 可）
      * @param anchorParentId 箱の錨に入れる親の錨の ID（無ければ null）
+     * @param anchorParent   箱の錨の親（列の中の位置を引く。無ければ null）
      * @param animator       祖先の文字色のアニメーションを解く道具
      */
     void composeLayer(DrawOps ops, SceneAdapterBox box, SceneAdapterBox node, ClipRect frameClip, String anchorParentId,
-                      BoxAnimation animator, ItemSink out) {
+                      ItemSink.AnchorRef anchorParent, BoxAnimation animator, ItemSink out) {
         SceneAdapterBox op = box.originParent();
         begin(box.x(), box.y(), op != null ? op.x() : 0f, op != null ? op.y() : 0f,
-                Math.round(box.x()), Math.round(box.y()), node, frameClip, anchorParentId, box, animator);
+                Math.round(box.x()), Math.round(box.y()), node, frameClip, anchorParentId, anchorParent, box, box, animator);
         DrawOps.Cursor c = cursor.reset(ops);
-        while (c.next()) out.add(compose(c));
+        while (c.next()) emit(compose(c), c.flags(), out);
         end();
     }
 
     private void begin(float layerX, float layerY, float originX, float originY, int selfX, int selfY, SceneAdapterBox node,
-                       ClipRect frameClip, String anchorParentId, SceneAdapterBox textBox, BoxAnimation textAnimator) {
+                       ClipRect frameClip, String anchorParentId, ItemSink.AnchorRef anchorParent, SceneAdapterBox self,
+                       SceneAdapterBox textBox, BoxAnimation textAnimator) {
         metaCount = 0;
+        this.anchorParent = anchorParent;
+        setSelf(self);
         this.layerX = layerX;
         this.layerY = layerY;
         this.originX = originX;
@@ -118,6 +180,9 @@ final class OpComposer {
         textBox = null;
         textAnimator = null;
         textAnim = null;
+        setSelf(null);
+        anchorParent = null;
+        clearNodes();
         for (int i = 0; i < metaCount; i++) {
             metaSrc[i] = null;
             metaDst[i] = null;

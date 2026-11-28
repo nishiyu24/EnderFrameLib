@@ -59,20 +59,29 @@ public final class SceneDisplayListAdapter {
     private final List<ScrollContent> scrollContentOrder = new ArrayList<>();
     private final List<ScrollContentInfo> scrollInfos = new ArrayList<>();
     private ItemSink out;
+    /** 列の受け手（組むたびに使い回す）と、直近に組んだ列の階層（{@link #structure} で初めて作る。M3b-4c-2b-3b-1）。 */
+    private final ItemSink.ToList listSink = new ItemSink.ToList();
+    private FrameStructure structure = FrameStructure.EMPTY;
     /** 描く範囲（ビューポートの座標。null なら全部を組む。{@link #emitUnscrolled(DisplayScene, DynamicSceneState, float[])}）。 */
     private float[] cull;
 
-    private record ChildContext(ClipRect clip, String parentId) { }
+    /** 子のクリップと親の錨（ID と、列の中の位置を引く錨 {@code parentRef}。根なら null）。 */
+    private record ChildContext(ClipRect clip, String parentId, ItemSink.AnchorRef parentRef) { }
 
-    private record ZEntry(SceneAdapterBox box, ClipRect clip, String parentId, boolean hoist) { }
+    private record ZEntry(SceneAdapterBox box, ClipRect clip, String parentId, ItemSink.AnchorRef parentRef, boolean hoist) { }
 
-    private static final class ScrollContent {
+    private static final class ScrollContent implements ItemSink.AnchorRef {
         final SceneAdapterBox box;
         final String contentId;
         final float sx0, sy0;
         String thumbVId, thumbHId;
         float kx, ky, fx0, fy0;
         List<StickyShift> stickies = List.of();
+        /** 中身の節の項目の、組んだ列の中の位置（まだ足していなければ -1）。 */
+        int pos = -1;
+
+        @Override
+        public int anchorPos() { return pos; }
 
         ScrollContent(SceneAdapterBox box, String contentId, float sx0, float sy0) {
             this.box = box;
@@ -102,9 +111,19 @@ public final class SceneDisplayListAdapter {
         return new ArrayList<>(scrollInfos);
     }
 
+    /** 直近に組んだ列の階層（項目ごとの親の錨の位置と保持層の範囲。M3b-4c-2b-3b-1）。 */
+    public FrameStructure structure() {
+        if (structure == null) structure = listSink.structure();
+        return structure;
+    }
+
     public List<DisplayItem> emit(DisplayScene scene, DynamicSceneState dynamicState) {
         List<DisplayItem> result = new ArrayList<>();
-        emit(scene, dynamicState, ItemSink.toList(result));
+        ItemSink.ToList sink = listSink.begin(result);
+        structure = FrameStructure.EMPTY;
+        emit(scene, dynamicState, sink);
+        sink.finish();
+        structure = null;
         return result;
     }
 
@@ -183,7 +202,7 @@ public final class SceneDisplayListAdapter {
                     PaintSupport.addElement(bg, "bg_root", "bg_root", ElementType.RECT, top.x(), top.y(),
                             Math.max(top.w(), rootW), Math.max(top.h(), rootH), "", 0, canvasBg, EMPTY_PROPS,
                             0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, RenderMeta.EMPTY, key);
-                    composer.composeFinal(bg, sink);
+                    composer.composeFinal(bg, null, sink);
                 }
                 emitRootChildren(top);
             } else {
@@ -191,7 +210,7 @@ public final class SceneDisplayListAdapter {
             }
             for (ScrollContent c : scrollContentOrder) {
                 scrollInfos.add(new ScrollContentInfo(c.box.node(), c.contentId, c.thumbVId, c.thumbHId,
-                        c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0, c.stickies, c.box.layer.children));
+                        c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0, c.stickies));
             }
         } finally {
             this.out = null;
@@ -206,54 +225,54 @@ public final class SceneDisplayListAdapter {
     }
 
     private void emitRootChildren(SceneAdapterBox top) {
-        ChildContext cc = enterChildren(top, null, null);
-        emitZPass(top, cc.clip, cc.parentId, SceneLayer.LAYER_NEG);
-        emitBlocksPass(top, cc.clip, cc.parentId);
-        emitFloatsPass(top, cc.clip, cc.parentId);
-        emitInlinesPass(top, cc.clip, cc.parentId);
-        emitPos0Pass(top, cc.clip, cc.parentId);
-        emitZPass(top, cc.clip, cc.parentId, SceneLayer.LAYER_POSZ | SceneLayer.LAYER_HOIST);
-        emitAfterPass(top, cc.clip, cc.parentId);
+        ChildContext cc = enterChildren(top, null, null, null);
+        emitZPass(top, cc.clip, cc.parentId, cc.parentRef, SceneLayer.LAYER_NEG);
+        emitBlocksPass(top, cc.clip, cc.parentId, cc.parentRef);
+        emitFloatsPass(top, cc.clip, cc.parentId, cc.parentRef);
+        emitInlinesPass(top, cc.clip, cc.parentId, cc.parentRef);
+        emitPos0Pass(top, cc.clip, cc.parentId, cc.parentRef);
+        emitZPass(top, cc.clip, cc.parentId, cc.parentRef, SceneLayer.LAYER_POSZ | SceneLayer.LAYER_HOIST);
+        emitAfterPass(top, cc.clip, cc.parentId, cc.parentRef);
     }
 
     private void emitSubtreeRoot(SceneAdapterBox top) {
         if (!isVisible(top)) return;
         boolean valueControl = ElementTraits.isValueControl(top.node().tag);
-        ChildContext cc = valueControl ? null : enterChildren(top, null, null);
+        ChildContext cc = valueControl ? null : enterChildren(top, null, null, null);
         if (top.layer.hasSelf()) {
-            drawOwn(top, null, null);
+            drawOwn(top, null, null, null);
         }
         finishScrollContent(top);
         if (!valueControl) {
-            emitZPass(top, cc.clip, cc.parentId, SceneLayer.LAYER_NEG);
-            emitBlocksPass(top, cc.clip, cc.parentId);
-            emitFloatsPass(top, cc.clip, cc.parentId);
-            emitInlinesPass(top, cc.clip, cc.parentId);
-            emitPos0Pass(top, cc.clip, cc.parentId);
-            emitZPass(top, cc.clip, cc.parentId, SceneLayer.LAYER_POSZ | SceneLayer.LAYER_HOIST);
-            emitAfterPass(top, cc.clip, cc.parentId);
+            emitZPass(top, cc.clip, cc.parentId, cc.parentRef, SceneLayer.LAYER_NEG);
+            emitBlocksPass(top, cc.clip, cc.parentId, cc.parentRef);
+            emitFloatsPass(top, cc.clip, cc.parentId, cc.parentRef);
+            emitInlinesPass(top, cc.clip, cc.parentId, cc.parentRef);
+            emitPos0Pass(top, cc.clip, cc.parentId, cc.parentRef);
+            emitZPass(top, cc.clip, cc.parentId, cc.parentRef, SceneLayer.LAYER_POSZ | SceneLayer.LAYER_HOIST);
+            emitAfterPass(top, cc.clip, cc.parentId, cc.parentRef);
             if (top.layer.wantsScrollbars()) drawScrollbars(top, null);
         }
     }
 
-    private void emitStacking(SceneAdapterBox box, ClipRect clip, String parentId) {
+    private void emitStacking(SceneAdapterBox box, ClipRect clip, String parentId, ItemSink.AnchorRef pref) {
         boolean hasSelf = box.layer.hasSelf();
         LayerSpec spec = hasSelf ? SceneAdapterSupport.layerSpecFor(box, rootW, rootH) : null;
         boolean ownNode = SceneAdapterSupport.boxHasOwnNode(box);
         boolean valueControl = ElementTraits.isValueControl(box.node().tag);
         int startIdx = out.size();
-        ChildContext cc = valueControl ? null : enterChildren(box, clip, parentId);
-        if (hasSelf) drawOwn(box, clip, parentId);
+        ChildContext cc = valueControl ? null : enterChildren(box, clip, parentId, pref);
+        if (hasSelf) drawOwn(box, clip, parentId, pref);
         finishScrollContent(box);
         if (!valueControl) {
             int kidsLayers = box.layer.children.propagatedLayers;
-            if ((kidsLayers & SceneLayer.LAYER_NEG) != 0) emitZPass(box, cc.clip, cc.parentId, SceneLayer.LAYER_NEG);
-            if ((kidsLayers & SceneLayer.LAYER_BLOCK) != 0) emitBlocksPass(box, cc.clip, cc.parentId);
-            if ((kidsLayers & SceneLayer.LAYER_FLOAT) != 0) emitFloatsPass(box, cc.clip, cc.parentId);
-            if ((kidsLayers & SceneLayer.LAYER_INLINE) != 0) emitInlinesPass(box, cc.clip, cc.parentId);
-            if ((kidsLayers & SceneLayer.LAYER_POS0) != 0) emitPos0Pass(box, cc.clip, cc.parentId);
-            if ((kidsLayers & SceneLayer.LAYER_POSZ) != 0) emitZPass(box, cc.clip, cc.parentId, SceneLayer.LAYER_POSZ);
-            if ((kidsLayers & SceneLayer.LAYER_AFTER) != 0) emitAfterPass(box, cc.clip, cc.parentId);
+            if ((kidsLayers & SceneLayer.LAYER_NEG) != 0) emitZPass(box, cc.clip, cc.parentId, cc.parentRef, SceneLayer.LAYER_NEG);
+            if ((kidsLayers & SceneLayer.LAYER_BLOCK) != 0) emitBlocksPass(box, cc.clip, cc.parentId, cc.parentRef);
+            if ((kidsLayers & SceneLayer.LAYER_FLOAT) != 0) emitFloatsPass(box, cc.clip, cc.parentId, cc.parentRef);
+            if ((kidsLayers & SceneLayer.LAYER_INLINE) != 0) emitInlinesPass(box, cc.clip, cc.parentId, cc.parentRef);
+            if ((kidsLayers & SceneLayer.LAYER_POS0) != 0) emitPos0Pass(box, cc.clip, cc.parentId, cc.parentRef);
+            if ((kidsLayers & SceneLayer.LAYER_POSZ) != 0) emitZPass(box, cc.clip, cc.parentId, cc.parentRef, SceneLayer.LAYER_POSZ);
+            if ((kidsLayers & SceneLayer.LAYER_AFTER) != 0) emitAfterPass(box, cc.clip, cc.parentId, cc.parentRef);
             if (box.layer.wantsScrollbars()) drawScrollbars(box, clip);
         }
         if (spec != null && out.size() > startIdx) {
@@ -265,7 +284,7 @@ public final class SceneDisplayListAdapter {
                 painter.drawMask(scratch, box.layer, box.x(), box.y(), ownNode, texts);
                 if (!scratch.isEmpty()) {
                     spec = spec.withMaskFrom(contentSpan);
-                    composer.composeLocal(scratch, null, null, null, null, null, out);
+                    composer.composeLocal(scratch, null, null, null, null, box, null, null, out);
                 } else {
                     spec = spec.withMaskFrom(-1);
                 }
@@ -288,37 +307,38 @@ public final class SceneDisplayListAdapter {
         return out;
     }
 
-    private void emitPlain(SceneAdapterBox box, ClipRect clip, String parentId) {
+    private void emitPlain(SceneAdapterBox box, ClipRect clip, String parentId, ItemSink.AnchorRef pref) {
         boolean valueControl = ElementTraits.isValueControl(box.node().tag);
-        ChildContext cc = valueControl ? null : enterChildren(box, clip, parentId);
-        if (box.layer.hasSelf()) drawOwn(box, clip, parentId);
+        ChildContext cc = valueControl ? null : enterChildren(box, clip, parentId, pref);
+        if (box.layer.hasSelf()) drawOwn(box, clip, parentId, pref);
         finishScrollContent(box);
         if (!valueControl) {
             int kidsLayers = box.layer.children.propagatedLayers;
-            if ((kidsLayers & SceneLayer.LAYER_BLOCK) != 0) emitBlocksPass(box, cc.clip, cc.parentId);
-            if ((kidsLayers & SceneLayer.LAYER_FLOAT) != 0) emitFloatsPass(box, cc.clip, cc.parentId);
-            if ((kidsLayers & SceneLayer.LAYER_INLINE) != 0) emitInlinesPass(box, cc.clip, cc.parentId);
-            if ((kidsLayers & SceneLayer.LAYER_AFTER) != 0) emitAfterPass(box, cc.clip, cc.parentId);
+            if ((kidsLayers & SceneLayer.LAYER_BLOCK) != 0) emitBlocksPass(box, cc.clip, cc.parentId, cc.parentRef);
+            if ((kidsLayers & SceneLayer.LAYER_FLOAT) != 0) emitFloatsPass(box, cc.clip, cc.parentId, cc.parentRef);
+            if ((kidsLayers & SceneLayer.LAYER_INLINE) != 0) emitInlinesPass(box, cc.clip, cc.parentId, cc.parentRef);
+            if ((kidsLayers & SceneLayer.LAYER_AFTER) != 0) emitAfterPass(box, cc.clip, cc.parentId, cc.parentRef);
             if (box.layer.wantsScrollbars()) drawScrollbars(box, clip);
         }
     }
 
-    private void emitZPass(SceneAdapterBox rootBox, ClipRect clip, String parentId, int mask) {
+    private void emitZPass(SceneAdapterBox rootBox, ClipRect clip, String parentId, ItemSink.AnchorRef pref, int mask) {
         List<ZEntry> entries = new ArrayList<>();
-        collectZPass(rootBox, clip, parentId, mask, entries);
+        collectZPass(rootBox, clip, parentId, pref, mask, entries);
         if (entries.isEmpty()) return;
         entries.sort((a, b) -> Integer.compare(a.box.layer.zIndex, b.box.layer.zIndex));
         for (ZEntry e : entries) {
             if (e.hoist && e.box.backdrop() != null) {
                 scratch.beginLocal(e.box.x(), e.box.y());
                 painter.drawBackdrop(scratch, e.box.layer, e.box.backdrop(), SceneAdapterSupport.boxHasOwnNode(e.box));
-                composer.composeLocal(scratch, null, null, null, null, null, out);
+                composer.composeLocal(scratch, null, null, null, null, e.box, null, null, out);
             }
-            emitStacking(e.box, e.clip, e.parentId);
+            emitStacking(e.box, e.clip, e.parentId, e.parentRef);
         }
     }
 
-    private void collectZPass(SceneAdapterBox container, ClipRect clip, String parentId, int mask, List<ZEntry> outEntries) {
+    private void collectZPass(SceneAdapterBox container, ClipRect clip, String parentId, ItemSink.AnchorRef pref, int mask,
+                              List<ZEntry> outEntries) {
         for (SceneAdapterBox child : container.paintChildren()) {
             int prop = child.layer.propagatedLayers;
             if ((prop & mask) == 0 || !isVisible(child)) continue;
@@ -329,109 +349,109 @@ public final class SceneDisplayListAdapter {
                 boolean matches = topLayer ? (mask & SceneLayer.LAYER_HOIST) != 0
                         : z < 0 ? (mask & SceneLayer.LAYER_NEG) != 0
                         : z > 0 && (mask & SceneLayer.LAYER_POSZ) != 0;
-                if (matches) outEntries.add(new ZEntry(child, cClip, parentId, topLayer));
+                if (matches) outEntries.add(new ZEntry(child, cClip, parentId, pref, topLayer));
                 if ((mask & SceneLayer.LAYER_HOIST) != 0
                         && !ElementTraits.isValueControl(child.node().tag)
                         && (child.layer.children.propagatedLayers & SceneLayer.LAYER_HOIST) != 0) {
-                    ChildContext cc = enterChildren(child, cClip, parentId);
-                    collectZPass(child, cc.clip, cc.parentId, SceneLayer.LAYER_HOIST, outEntries);
+                    ChildContext cc = enterChildren(child, cClip, parentId, pref);
+                    collectZPass(child, cc.clip, cc.parentId, cc.parentRef, SceneLayer.LAYER_HOIST, outEntries);
                 }
             } else if (!ElementTraits.isValueControl(child.node().tag)) {
-                ChildContext cc = enterChildren(child, cClip, parentId);
-                collectZPass(child, cc.clip, cc.parentId, mask, outEntries);
+                ChildContext cc = enterChildren(child, cClip, parentId, pref);
+                collectZPass(child, cc.clip, cc.parentId, cc.parentRef, mask, outEntries);
             }
         }
     }
 
-    private void emitBlocksPass(SceneAdapterBox container, ClipRect clip, String parentId) {
+    private void emitBlocksPass(SceneAdapterBox container, ClipRect clip, String parentId, ItemSink.AnchorRef pref) {
         for (SceneAdapterBox child : container.paintChildren()) {
             if ((child.layer.propagatedLayers & SceneLayer.LAYER_BLOCK) == 0 || !isVisible(child)) continue;
             ClipRect cClip = clipForChild(child, clip);
             StackingKind k = child.layer.stackingKind;
             if (k == StackingKind.BLOCK) {
                 boolean valueControl = ElementTraits.isValueControl(child.node().tag);
-                ChildContext cc = valueControl ? null : enterChildren(child, cClip, parentId);
-                if (child.layer.hasSelf()) drawOwn(child, cClip, parentId);
+                ChildContext cc = valueControl ? null : enterChildren(child, cClip, parentId, pref);
+                if (child.layer.hasSelf()) drawOwn(child, cClip, parentId, pref);
                 finishScrollContent(child);
                 if (!valueControl && (child.layer.children.propagatedLayers & SceneLayer.LAYER_BLOCK) != 0) {
-                    emitBlocksPass(child, cc.clip, cc.parentId);
+                    emitBlocksPass(child, cc.clip, cc.parentId, cc.parentRef);
                 }
             } else if (k == StackingKind.INLINE && !ElementTraits.isValueControl(child.node().tag)
                     && (child.layer.children.propagatedLayers & SceneLayer.LAYER_BLOCK) != 0) {
-                ChildContext cc = enterChildren(child, cClip, parentId);
-                emitBlocksPass(child, cc.clip, cc.parentId);
+                ChildContext cc = enterChildren(child, cClip, parentId, pref);
+                emitBlocksPass(child, cc.clip, cc.parentId, cc.parentRef);
             }
         }
     }
 
-    private void emitFloatsPass(SceneAdapterBox container, ClipRect clip, String parentId) {
+    private void emitFloatsPass(SceneAdapterBox container, ClipRect clip, String parentId, ItemSink.AnchorRef pref) {
         for (SceneAdapterBox child : container.paintChildren()) {
             if ((child.layer.propagatedLayers & SceneLayer.LAYER_FLOAT) == 0 || !isVisible(child)) continue;
             ClipRect cClip = clipForChild(child, clip);
             StackingKind k = child.layer.stackingKind;
             if (k == StackingKind.FLOAT) {
-                emitPlain(child, cClip, parentId);
+                emitPlain(child, cClip, parentId, pref);
             } else if ((k == StackingKind.BLOCK || k == StackingKind.INLINE)
                     && !ElementTraits.isValueControl(child.node().tag)) {
-                ChildContext cc = enterChildren(child, cClip, parentId);
-                emitFloatsPass(child, cc.clip, cc.parentId);
+                ChildContext cc = enterChildren(child, cClip, parentId, pref);
+                emitFloatsPass(child, cc.clip, cc.parentId, cc.parentRef);
             }
         }
     }
 
-    private void emitInlinesPass(SceneAdapterBox container, ClipRect clip, String parentId) {
+    private void emitInlinesPass(SceneAdapterBox container, ClipRect clip, String parentId, ItemSink.AnchorRef pref) {
         for (SceneAdapterBox child : container.paintChildren()) {
             if ((child.layer.propagatedLayers & SceneLayer.LAYER_INLINE) == 0 || !isVisible(child)) continue;
             ClipRect cClip = clipForChild(child, clip);
             StackingKind k = child.layer.stackingKind;
             if (k == StackingKind.ATOMIC) {
-                emitPlain(child, cClip, parentId);
+                emitPlain(child, cClip, parentId, pref);
             } else if (k == StackingKind.INLINE) {
                 boolean valueControl = ElementTraits.isValueControl(child.node().tag);
-                ChildContext cc = valueControl ? null : enterChildren(child, cClip, parentId);
-                if (child.layer.hasSelf()) drawOwn(child, cClip, parentId);
+                ChildContext cc = valueControl ? null : enterChildren(child, cClip, parentId, pref);
+                if (child.layer.hasSelf()) drawOwn(child, cClip, parentId, pref);
                 finishScrollContent(child);
                 if (!valueControl && (child.layer.children.propagatedLayers & SceneLayer.LAYER_INLINE) != 0) {
-                    emitInlinesPass(child, cc.clip, cc.parentId);
+                    emitInlinesPass(child, cc.clip, cc.parentId, cc.parentRef);
                 }
             } else if (k == StackingKind.BLOCK && !ElementTraits.isValueControl(child.node().tag)) {
-                ChildContext cc = enterChildren(child, cClip, parentId);
-                emitInlinesPass(child, cc.clip, cc.parentId);
+                ChildContext cc = enterChildren(child, cClip, parentId, pref);
+                emitInlinesPass(child, cc.clip, cc.parentId, cc.parentRef);
             }
         }
     }
 
-    private void emitPos0Pass(SceneAdapterBox container, ClipRect clip, String parentId) {
+    private void emitPos0Pass(SceneAdapterBox container, ClipRect clip, String parentId, ItemSink.AnchorRef pref) {
         for (SceneAdapterBox child : container.paintChildren()) {
             if ((child.layer.propagatedLayers & SceneLayer.LAYER_POS0) == 0 || !isVisible(child)) continue;
             ClipRect cClip = clipForChild(child, clip);
             StackingKind k = child.layer.stackingKind;
             if (k == StackingKind.STACKING) {
-                if (!child.layer.isTopLayer() && child.layer.zIndex == 0) emitStacking(child, cClip, parentId);
+                if (!child.layer.isTopLayer() && child.layer.zIndex == 0) emitStacking(child, cClip, parentId, pref);
             } else if (k == StackingKind.POSITIONED) {
-                emitPlain(child, cClip, parentId);
+                emitPlain(child, cClip, parentId, pref);
                 if (!ElementTraits.isValueControl(child.node().tag)
                         && (child.layer.children.propagatedLayers & SceneLayer.LAYER_POS0) != 0) {
-                    ChildContext cc = enterChildren(child, cClip, parentId);
-                    emitPos0Pass(child, cc.clip, cc.parentId);
+                    ChildContext cc = enterChildren(child, cClip, parentId, pref);
+                    emitPos0Pass(child, cc.clip, cc.parentId, cc.parentRef);
                 }
             } else if (!ElementTraits.isValueControl(child.node().tag)) {
-                ChildContext cc = enterChildren(child, cClip, parentId);
-                emitPos0Pass(child, cc.clip, cc.parentId);
+                ChildContext cc = enterChildren(child, cClip, parentId, pref);
+                emitPos0Pass(child, cc.clip, cc.parentId, cc.parentRef);
             }
         }
     }
 
-    private void emitAfterPass(SceneAdapterBox container, ClipRect clip, String parentId) {
+    private void emitAfterPass(SceneAdapterBox container, ClipRect clip, String parentId, ItemSink.AnchorRef pref) {
         for (SceneAdapterBox child : container.paintChildren()) {
             if ((child.layer.propagatedLayers & SceneLayer.LAYER_AFTER) == 0 || !isVisible(child)) continue;
             ClipRect cClip = clipForChild(child, clip);
             StackingKind k = child.layer.stackingKind;
             if ((k == StackingKind.BLOCK || k == StackingKind.INLINE)
                     && !ElementTraits.isValueControl(child.node().tag)) {
-                ChildContext cc = enterChildren(child, cClip, parentId);
+                ChildContext cc = enterChildren(child, cClip, parentId, pref);
                 if ((child.layer.children.propagatedLayers & SceneLayer.LAYER_AFTER) != 0) {
-                    emitAfterPass(child, cc.clip, cc.parentId);
+                    emitAfterPass(child, cc.clip, cc.parentId, cc.parentRef);
                 }
                 if (child.layer.wantsScrollbars()) {
                     drawScrollbars(child, cClip);
@@ -446,13 +466,13 @@ public final class SceneDisplayListAdapter {
         return !l.contentVisibilityAuto() || dynamic.nearViewport(box.x(), box.y(), box.w(), box.h());
     }
 
-    private void drawOwn(SceneAdapterBox box, ClipRect clip, String parentId) {
+    private void drawOwn(SceneAdapterBox box, ClipRect clip, String parentId, ItemSink.AnchorRef pref) {
         boolean ownNode = SceneAdapterSupport.boxHasOwnNode(box);
         SceneAdapterBox origin = SceneAdapterSupport.effectiveParentNodeBox(box, parentId);
         DrawOps ops = box.layer.ops();
         if (!ops.isEmpty() && box != canvasSource && !box.isVerticalWrapper()) {
             // 層に記憶した命令（M3b-4a）に、今の位置・クリップ・親の錨・祖先の文字色を足す
-            composer.composeLayer(ops, box, origin, clip, parentId, painter.anim, out);
+            composer.composeLayer(ops, box, origin, clip, parentId, pref, painter.anim, out);
         } else {
             // 祖先に依る箱（背景をキャンバスに譲った html / body・親の ::first-line を読む縦書きの包み箱）は毎フレーム作る
             scratch.beginLocal(box.x(), box.y());
@@ -460,25 +480,29 @@ public final class SceneDisplayListAdapter {
             SceneAdapterBox op = box.originParent(), parent = box.paintParent();
             painter.drawBox(scratch, box.layer, box.x(), box.y(), op != null ? op.x() : 0f, op != null ? op.y() : 0f,
                     parent != null ? parent.firstLine() : null, null, null, origin != null, ownNode, box == canvasSource);
-            composer.composeLocal(scratch, origin, clip, parentId, box, painter.anim, out);
+            composer.composeLocal(scratch, origin, clip, parentId, pref, box, box, painter.anim, out);
         }
         ScrollContent content = scrollContentOf.get(box);
         if (content != null) {
             scratch.beginFinal();
             if (ownNode) scratch.setOrigin(Math.round(box.x()), Math.round(box.y()));
             SceneAdapterSupport.addMovingNode(scratch, content.contentId, box, null, MOVING_NODE_META);
-            composer.composeFinal(scratch, out);
+            content.pos = out.size();
+            composer.composeFinal(scratch, box, out);
+            out.markContent(content.pos, box.layer.children); // 保持層の印は中身の層の子の並び（中身が変わらない限り同じ参照）
         }
     }
 
-    private ChildContext enterChildren(SceneAdapterBox box, ClipRect clip, String parentId) {
+    private ChildContext enterChildren(SceneAdapterBox box, ClipRect clip, String parentId, ItemSink.AnchorRef pref) {
         ChildContext cached = childContexts.get(box);
         if (cached != null) return cached;
         String tag = box.node().tag;
         ClipRect childClip = SceneAdapterSupport.computeChildClipRect(box, clip, rootW, rootH);
         contentClips.put(box, childClip);
         // 子の親の錨は、自分の錨を出す箱だけ（匿名・大きさ 0 の箱は錨を出さないので、親の錨を素通しする。座標の原点も同じ規則）
-        String childParent = "root".equals(tag) ? null : SceneAdapterSupport.boxHasOwnNode(box) ? box.node().key() : parentId;
+        boolean root = "root".equals(tag), own = SceneAdapterSupport.boxHasOwnNode(box);
+        String childParent = root ? null : own ? box.node().key() : parentId;
+        ItemSink.AnchorRef childRef = root ? null : own ? box : pref;
         List<StickyShift> stickies = SceneAdapterSupport.scrollsAsOneNode(box, followedScrollers, rootW, rootH);
         if (stickies != null) {
             ScrollContent content = new ScrollContent(box, box.node().scrollContentKey(),
@@ -487,8 +511,9 @@ public final class SceneDisplayListAdapter {
             scrollContentOf.put(box, content);
             scrollContentOrder.add(content);
             childParent = content.contentId;
+            childRef = content;
         }
-        ChildContext cc = new ChildContext(childClip, childParent);
+        ChildContext cc = new ChildContext(childClip, childParent, childRef);
         childContexts.put(box, cc);
         return cc;
     }
@@ -567,7 +592,7 @@ public final class SceneDisplayListAdapter {
                         thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, thumbMeta,
                         nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_H) : 0L);
             }
-            composer.composeFinal(scratch, out);
+            composer.composeFinal(scratch, box, out);
         } finally {
             scratch.beginFinal();
         }

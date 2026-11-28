@@ -6,7 +6,6 @@ import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
-import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -18,7 +17,8 @@ import java.util.Map;
  * 走査器（M3b-4b。計画書 §3.4「M3b-4b の設計」）: 全バックエンド（CPU・GPU・Vulkan・MOD の面）の描画の経路。ビューが
  * {@link SceneDisplayListAdapter} で組んだ表示項目の列（スクロールコンテナは中身を 1 つの節にまとめてスクロール 0 で組む）を
  * 描画順にたどり、描画側（{@link Painter}）へ渡す。項目の姿勢（親から引き継ぐ変形）・祖先の不透明度・グループ（不透明度・フィルター・
- * マスクの層）の鎖を解くのはここ 1 か所。
+ * マスクの層）の鎖を解くのはここ 1 か所。項目の親と保持層の範囲は、列を組んだ側がシーンの層をたどって書いた列の階層
+ * （{@link FrameStructure}。M3b-4c-2b-3b-1）から読み、項目の鍵・ID から引き直さない。
  *
  * <p>フレームをまたいで何も持たない（M3b-4b-4a で {@code PaintSceneDriver} を置き換えた）: 索引・親の位置・姿勢は毎フレーム作り直し、
  * 前のフレームの姿勢・索引の差分・画面外のブロックの覚えを持たない。持つのは補間の状態（節ごとの表 {@link AnimationStates}。
@@ -26,8 +26,8 @@ import java.util.Map;
  * （{@link #generation}）だけ。スクロールの移動量と利用者の
  * 移動は、ビューの平行移動の表（{@link PaintOffsets}）で節に足す。</p>
  *
- * <p>シーン（{@link SceneSource}）を渡すと、保持層にできるスクロールコンテナの中身の範囲を求め（{@link ScrollContentRanges}。中身の同一性の
- * 印はコンテナの層の子の並び）、描き直す範囲（{@link SceneDamage} がシーンの違いから求めたもの）に、補間・外の事情で変わる項目を足す
+ * <p>シーン（{@link SceneSource}）のフレームは、保持層にできるスクロールコンテナの中身の範囲（列の階層の {@link FrameStructure#retainCount}。
+ * 中身の同一性の印はコンテナの層の子の並び）を描画側に問い、描き直す範囲（{@link SceneDamage} がシーンの違いから求めたもの）に、補間・外の事情で変わる項目を足す
  * （{@link #addDynamicDamage}）と、シーンの外から足した重ね描きの前後の範囲（{@link #addOverlayDamage}）。画面外のブロックの間引きは M3b-4c（チャンクのカリング）。スレッドセーフではない。</p>
  */
 public final class SceneWalker {
@@ -62,12 +62,16 @@ public final class SceneWalker {
     /** フィルター・マスクの錨の位置（昇順）。 */
     private int[] fxAnchors = new int[8];
     private int fxCount;
-    private final Long2IntOpenHashMap indexOf = new Long2IntOpenHashMap();
     private final List<Integer> activeAnchors = new ArrayList<>();
     private final List<Group> layeredScratch = new ArrayList<>();
     private int anchorNext;
-    /** 保持層にできるスクロールコンテナの中身の範囲（M3b-4b-3b。1 フレームの間だけ）。 */
-    private final ScrollContentRanges ranges = new ScrollContentRanges();
+    /** このフレームの列の階層（項目の親・保持層の範囲。1 フレームの間だけ）。 */
+    private FrameStructure structure = FrameStructure.EMPTY;
+    /** 保持層の範囲ごとの描画側の答え（{@link FrameStructure#retainCount} の数。1 フレームの間だけ）。 */
+    private RetainPlan[] plan = new RetainPlan[4];
+    private int retainCount;
+    /** 平行移動の表の ID → 番号（1 フレームの間だけ。節の項目に移動量を足す）。 */
+    private final Map<String, Integer> offsetOf = new HashMap<>();
     private AnimationStates anims;
     /** このフレームで描かない項目（{@link RenderFrame#excluded}。無ければ null）。 */
     private java.util.function.Predicate<DisplayItem> exclude;
@@ -86,7 +90,6 @@ public final class SceneWalker {
 
     public SceneWalker(String sessionId) {
         this.sessionId = java.util.Objects.requireNonNull(sessionId, "sessionId");
-        indexOf.defaultReturnValue(-1);
     }
 
     /**
@@ -131,21 +134,25 @@ public final class SceneWalker {
             this.anims = CssAnimator.states(sessionId, true);
             // 列が変わった: 列にある節の補間状態だけを残す（後片付けは実時間でなく、構造の変化の印。M3b-4b-2）
             if (newList) anims.retainNodesOf(list);
+            this.structure = p.structure();
             index(offsets != null ? offsets : PaintOffsets.EMPTY);
             if (damage != null) {
                 addDynamicDamage(damage, prevNow);
                 addOverlayDamage(damage, p.sceneItemCount());
                 if (!painter.beginWalk(damage)) return;
             }
-            if (source != null && source.scene() != null) ranges.compute(items, count, parentIdx, indexOf, p.contents());
+            retainCount = source != null && source.scene() != null ? structure.retainCount() : 0;
+            if (plan.length < retainCount) plan = new RetainPlan[Math.max(retainCount, plan.length * 2)];
             walk(painter);
         } finally {
             Arrays.fill(items, 0, count, null);
             Arrays.fill(res, 0, count, null);
             Arrays.fill(states, 0, count, null);
             Arrays.fill(chains, 0, count, null);
-            ranges.clear();
-            indexOf.clear();
+            Arrays.fill(plan, 0, retainCount, null);
+            retainCount = 0;
+            structure = FrameStructure.EMPTY;
+            offsetOf.clear();
             activeAnchors.clear();
             layeredScratch.clear();
             count = 0;
@@ -186,27 +193,13 @@ public final class SceneWalker {
         members = Arrays.copyOf(members, cap);
     }
 
-    // ---- 1 フレームの索引（鍵 → 位置・親・平行移動。フレームをまたいで持たない） ----
+    // ---- 1 フレームの親・平行移動（列の階層から。フレームをまたいで持たない） ----
 
     private void index(PaintOffsets offsets) {
         int n = count;
         for (int i = 0; i < n; i++) {
-            DisplayItem it = items[i];
-            indexOf.put(it.key(), i);
-            if (it.id() != null && !it.id().isEmpty()) {
-                long strKey = DisplayItem.keyOf(it.id());
-                if (strKey != it.key()) indexOf.putIfAbsent(strKey, i);
-            }
-        }
-        for (int i = 0; i < n; i++) {
-            DisplayItem it = items[i];
-            long pKey = it.hints().parentKey();
-            int p = pKey != 0L ? indexOf.get(pKey) : -1;
-            if (p < 0) {
-                String pid = it.hints().parentId();
-                if (pid != null) p = indexOf.get(DisplayItem.keyOf(pid));
-            }
-            parentIdx[i] = p;
+            int p = structure.parent(i);
+            parentIdx[i] = p < n ? p : -1;
             offX[i] = 0f;
             offY[i] = 0f;
             visiting[i] = false;
@@ -217,15 +210,16 @@ public final class SceneWalker {
         else synchronized (offsets) { collectOffsets(offsets); }
     }
 
+    /** 平行移動の表の移動量を、同じ ID の最初の節の項目に足す。 */
     private void collectOffsets(PaintOffsets eff) {
-        for (int k = 0, esz = eff.size(); k < esz; k++) {
-            int idx = indexOf.get(eff.keyAt(k));
-            if (idx < 0) continue;
-            DisplayItem it = items[idx];
-            if (it.type() == ElementType.NODE && eff.idAt(k).equals(it.id())) {
-                offX[idx] = eff.dxAt(k);
-                offY[idx] = eff.dyAt(k);
-            }
+        for (int k = 0, esz = eff.size(); k < esz; k++) offsetOf.putIfAbsent(eff.idAt(k), k);
+        for (int i = 0; i < count && !offsetOf.isEmpty(); i++) {
+            DisplayItem it = items[i];
+            if (it.type() != ElementType.NODE || it.id() == null) continue;
+            Integer k = offsetOf.remove(it.id());
+            if (k == null) continue;
+            offX[i] = eff.dxAt(k);
+            offY[i] = eff.dyAt(k);
         }
     }
 
@@ -316,16 +310,23 @@ public final class SceneWalker {
      */
     private void planRetained(Painter painter) {
         int coveredUntil = 0;
-        for (int k = 0; k < ranges.count; k++) {
-            int node = ranges.node[k];
-            ranges.plan[k] = RetainPlan.NONE;
-            if (ranges.from[k] < coveredUntil || insideFxAnchor(node)) continue;
+        FrameStructure s = structure;
+        for (int k = 0; k < retainCount; k++) {
+            int node = s.retainNode(k);
+            plan[k] = RetainPlan.NONE;
+            if (s.retainFrom(k) < coveredUntil || insideFxAnchor(node)) continue;
             Resolved r = resolveAt(node);
             if (!r.groups().isEmpty() || r.opacity() < 0.999f) continue;
-            RetainPlan d = painter.planRetained(items[node], node, ranges.from[k], ranges.to[k], ranges.token[k]);
-            ranges.plan[k] = d != null ? d : RetainPlan.NONE;
-            if (ranges.plan[k] != RetainPlan.NONE) coveredUntil = ranges.to[k];
+            RetainPlan d = painter.planRetained(items[node], node, s.retainFrom(k), s.retainTo(k), s.retainToken(k));
+            plan[k] = d != null ? d : RetainPlan.NONE;
+            if (plan[k] != RetainPlan.NONE) coveredUntil = s.retainTo(k);
         }
+    }
+
+    /** 位置 {@code i} から始まる、描画側が {@code answer} と答えた保持層の範囲の番号（無ければ -1）。 */
+    private int retainAt(int i, RetainPlan answer) {
+        for (int k = 0; k < retainCount; k++) if (structure.retainFrom(k) == i && plan[k] == answer) return k;
+        return -1;
     }
 
     private boolean insideFxAnchor(int index) {
@@ -344,11 +345,12 @@ public final class SceneWalker {
         activeAnchors.clear();
         planRetained(painter);
         Map<String, Integer> extraMembers = null; // 錨が列に無いグループだけ
+        FrameStructure s = structure;
         for (int i = 0; i < n; i++) {
-            int skip = ranges.count > 0 ? ranges.at(i, RetainPlan.SKIP) : -1;
+            int skip = retainCount > 0 ? retainAt(i, RetainPlan.SKIP) : -1;
             if (skip >= 0) { // 保持済みの層を重ねる範囲: 鎖も姿勢も要らない
-                Arrays.fill(chains, i, ranges.to[skip], null);
-                i = ranges.to[skip] - 1;
+                Arrays.fill(chains, i, s.retainTo(skip), null);
+                i = s.retainTo(skip) - 1;
                 continue;
             }
             DisplayItem el = items[i];
@@ -372,33 +374,36 @@ public final class SceneWalker {
             }
             chains[i] = chain;
         }
-        int[] open = ranges.count > 0 ? new int[ranges.count] : null; // 記録中の保持層の範囲の番号（入れ子の順）
+        int[] open = retainCount > 0 ? new int[retainCount] : null; // 記録中の保持層の範囲の番号（入れ子の順）
         int openN = 0;
         for (int i = 0; i < n; i++) {
-            if (ranges.count > 0) {
-                int skip = ranges.at(i, RetainPlan.SKIP);
+            if (retainCount > 0) {
+                int skip = retainAt(i, RetainPlan.SKIP);
                 if (skip >= 0) {
+                    int node = s.retainNode(skip);
                     painter.syncLayers(List.of());
-                    painter.drawRetained(items[ranges.node[skip]], ranges.node[skip], ranges.from[skip], ranges.to[skip]);
-                    i = ranges.to[skip] - 1;
+                    painter.drawRetained(items[node], node, s.retainFrom(skip), s.retainTo(skip));
+                    i = s.retainTo(skip) - 1;
                     continue;
                 }
-                int rec = ranges.at(i, RetainPlan.RECORD);
+                int rec = retainAt(i, RetainPlan.RECORD);
                 if (rec >= 0) {
+                    int node = s.retainNode(rec);
                     painter.syncLayers(List.of());
-                    painter.beginRetained(items[ranges.node[rec]], ranges.node[rec], ranges.from[rec], ranges.to[rec]);
+                    painter.beginRetained(items[node], node, s.retainFrom(rec), s.retainTo(rec));
                     open[openN++] = rec;
                 }
             }
             List<Group> chain = chains[i];
             if (chain != null) drawChained(painter, i, chain, extraMembers);
             // 記録中の保持層の範囲の終わり: 層を保存して重ねる。保持できなければ、範囲をふつうに描き直す
-            while (openN > 0 && ranges.to[open[openN - 1]] == i + 1) {
+            while (openN > 0 && s.retainTo(open[openN - 1]) == i + 1) {
                 int k = open[--openN];
+                int node = s.retainNode(k);
                 painter.syncLayers(List.of());
-                if (!painter.endRetained(items[ranges.node[k]], ranges.node[k])) {
-                    ranges.plan[k] = RetainPlan.NONE;
-                    i = ranges.from[k] - 1;
+                if (!painter.endRetained(items[node], node)) {
+                    plan[k] = RetainPlan.NONE;
+                    i = s.retainFrom(k) - 1;
                     openN = 0;
                     break;
                 }
@@ -474,13 +479,17 @@ public final class SceneWalker {
     /** 走査中の表示項目の列（描画側が範囲の項目を読む。走査の外では null）。 */
     public List<DisplayItem> items() { return list; }
 
-    /** 走査中の、id の項目の位置。無ければ -1。 */
-    public int indexOf(String id) { return id == null ? -1 : indexOf.get(DisplayItem.keyOf(id)); }
-
-    /** 走査中の、id の項目。無ければ null。 */
-    public DisplayItem itemById(String id) {
-        int i = indexOf(id);
-        return i >= 0 && i < count ? items[i] : null;
+    /**
+     * 走査中の項目 {@code i} 自身か祖先（列の階層の親をたどる）のうち、ID が {@code id} の項目の位置（無ければ -1）。クリップの持ち主は
+     * 項目の祖先の箱なので、列全体から引かずに親をたどる。
+     */
+    public int ancestorById(int i, String id) {
+        if (id == null) return -1;
+        for (int guard = 0; i >= 0 && i < count && guard < 1024; guard++) {
+            if (id.equals(items[i].id())) return i;
+            i = parentIdx[i];
+        }
+        return -1;
     }
 
     /** 項目 {@code i} の姿勢（このフレームで 1 回だけ作る。姿勢の変わらない部品は親のものを共有する）。 */

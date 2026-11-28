@@ -74,13 +74,6 @@ final class TextRaster {
         return new FontStyle(fontPx, weight >= 600, italic, letterSpacing, weight, kerning);
     }
 
-    boolean skipPlaceholder(DisplayItem el) {
-        if (!el.isPart("_ph")) return false;
-        String nodeId = el.id().substring(0, el.id().length() - 3);
-        DisplayItem input = backend.walker.itemById(nodeId + "_input");
-        return input != null && input.text() != null && !input.text().isEmpty();
-    }
-
     /**
      * 文字項目の「項目だけで決まる」下ごしらえ（書体・スタイル・見た目の順の文字列・送り位置・基線・縁取り・影・下線）。
      * 毎フレームの再描画で、変わらない項目のスタイル解釈（{@code events} の引き・数値の解析）と BiDi 並べ替えを繰り返さないよう、
@@ -132,7 +125,6 @@ final class TextRaster {
     }
 
     void drawText(DisplayItem el, AnimatedValues anim, Resolved res, Clip clip, float opacity) {
-        if (skipPlaceholder(el)) return;
         boolean field = el.type() == ElementType.INPUT || el.type() == ElementType.SELECT;
         OutlineFontFace face = faceFor(el);
         if (face == null) return;
