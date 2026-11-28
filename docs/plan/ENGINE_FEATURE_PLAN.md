@@ -56,8 +56,8 @@
 
 | 順 | 中身 | トラック | 前提 |
 | :---: | :--- | :--- | :--- |
-| 1 | 物差し: 新経路で他エンジンと測り直す・RSS と p99 と GC の停止を測る・WPT の段を決める | P7 | なし（今すぐ。本番の比の値は M3b-4c-2 の後） |
-| 2 | 出力を詰める（詰めた描画命令・表示項目の列の削除） | 本流 M3b-4c | 進行中 |
+| 1 | 物差し: 新経路で他エンジンと測り直す・RSS と p99 と GC の停止を測る・WPT の段を決める | P7 | なし（今すぐ。本番の比の値は M3b-4.24 の後） |
+| 2 | 出力を詰める（詰めた描画命令・表示項目の列の削除） | 本流 M3b-4.8〜4.30 | 進行中 |
 | 3 | property tree と合成の口・論理と描画のスレッドの境界 | 本流 M3d・M4 | M3b 完了 |
 | 4 | 並列の再スタイルとレイアウト・合成スレッドでの実行 | P2 | 本流 M3d・M4 |
 | 3 | メモリ（DOM・断片・行の詰めた表現・JVM の既定・書体の二重持ち） | 本流 M5-4・P1d | M5-4 の ①② と P1d は今から、M5-4 の ③④ は M3b の後 |
@@ -107,7 +107,7 @@
 | **C. 汎用ツールキット化** | **P5** | JavaFX と並ぶ汎用 UI 基盤へ（P5a〜P5f） | P5f の測定基盤: なし／P5c-0: M3b・M3c 完了／他: M6 完了（P5d と、P5a の OS へ出す部分は P3d〜P3g も） | 業務アプリ相当の見本がスクリーンリーダーで操作可能・JavaFX / Compose との交互 A/B の比較表を公開 | 未着手 |
 | **C. 汎用ツールキット化** | **P8** | 開発体験と信頼（P8a〜P8e） | P8a: M4 完了／他: M6 完了 | ホットリロード・文書のサイトと移行ガイド・互換性の方針・見本アプリ 3 本を文書の手順だけで作れる | 未着手（2026-11-28 新設） |
 | **D. 空間 UI（3D）** | **P6** | Three.js 本家レベルの 3D と HTML の融合（P6a〜P6h） | P6a: M4 完了／P6b2: P6b・M3b／P6h: P3b-3 | Three.js 公式 example の参照画像との一致数のラチェット・3D の中核の集合が CPU / GL / Vulkan（P3h の後は Metal も）で許容差内に一致・`<ui-panel-3d>` で 3D の中の HTML を操作できる | 未着手（2026-11-28 新設） |
-| **E. 物差し** | **P7** | 他エンジンとの比較と WPT の拡張・ファズと変成テスト（P7a〜P7f） | なし（P7a の本番の値は M3b-4c-2 の後）。**Track P の中で最優先**（§1.4 の 6） | 他エンジンとの比の行列が 3 回の中央値で ±15% 以内に再現・WPT の段 1 の合格率 `≥ 90%`（Chrome と Firefox がどちらも合格するテストのうち）・段 2 `≥ 70%`・合格の一覧を Linux の CI でも判定 | 未着手（2026-11-28 新設） |
+| **E. 物差し** | **P7** | 他エンジンとの比較と WPT の拡張・ファズと変成テスト（P7a〜P7f） | なし（P7a の本番の値は M3b-4.24 の後）。**Track P の中で最優先**（§1.4 の 6） | 他エンジンとの比の行列が 3 回の中央値で ±15% 以内に再現・WPT の段 1 の合格率 `≥ 90%`（Chrome と Firefox がどちらも合格するテストのうち）・段 2 `≥ 70%`・合格の一覧を Linux の CI でも判定 | 未着手（2026-11-28 新設） |
 
 ---
 
@@ -274,7 +274,7 @@ UI ライブラリが選ばれる理由の多くはエンジンの外にある�
 
 | 段 | 内容 | 前提 | 状態 |
 | :--- | :--- | :--- | :--- |
-| **P7a** | **他エンジンとの比較の行列**: `run-matrix.sh` を新経路で回し直す。相手: Chrome・Firefox・JavaFX・Compose Desktop（P5f と共有）・JxBrowser / JCEF / JavaFX の WebView（HTML を Java で描く分野。JxBrowser は評価版の使用条件を確かめてから）・imgui-java（埋め込み UI）・メモリの参考に Ultralight / Sciter。条件（Arial・800×600・同じ変更）を揃え、1 フレームの CPU 時間の p50 / p99・開く時間・コールド起動・保持ヒープ・プロセスのメモリ（RSS・NMT。Chrome は全プロセスの合計）・GC の停止を測る。Chrome のヒープの測り方を `:core` と揃え直す。結果は §4 に記録するだけ | なし（本番の値は M3b-4c-2 の後） | 未着手 |
+| **P7a** | **他エンジンとの比較の行列**: `run-matrix.sh` を新経路で回し直す。相手: Chrome・Firefox・JavaFX・Compose Desktop（P5f と共有）・JxBrowser / JCEF / JavaFX の WebView（HTML を Java で描く分野。JxBrowser は評価版の使用条件を確かめてから）・imgui-java（埋め込み UI）・メモリの参考に Ultralight / Sciter。条件（Arial・800×600・同じ変更）を揃え、1 フレームの CPU 時間の p50 / p99・開く時間・コールド起動・保持ヒープ・プロセスのメモリ（RSS・NMT。Chrome は全プロセスの合計）・GC の停止を測る。Chrome のヒープの測り方を `:core` と揃え直す。結果は §4 に記録するだけ | なし（本番の値は M3b-4.24 の後） | 未着手 |
 | **P7b** | **WPT の段と道具の拡張**: 段 1（UI の中核: CSS 2.1 の箱と整形・display・flexbox・grid・sizing・position・overflow・backgrounds・color・values・cascade・selectors・variables・text・fonts・inline・transforms・writing-modes・conditional〔コンテナクエリを含む〕・images・masking・filter と合成・pseudo・lists・tables・ui）、段 2（multicol・ruby・text-decor・anchor-position・scroll-snap・logical・contain・nesting・scrollbars・shapes）、入れない（印刷・regions・exclusions・grid-lanes〔2026-11-18 決定〕・speech・`-webkit-` の互換）。分母は同じ版で Chrome と Firefox がどちらも合格するテスト（wpt.fyi）。順位は Interop の重点分野を目安にする。道具: WPT の木を基準のディレクトリにして `url()`・`@font-face`・画像を読む・Ahem を同梱する（ライセンスを確かめてから）・`<meta name=fuzzy>` に対応する。Ahem で書体の差が消えるので、合格の一覧を Linux の CI でも判定する。一覧は `reftest-passing-v3.txt` の 1 つのまま、作業中の速い組（今の 260 組）は同じ一覧の部分集合として回す | なし | 未着手 |
 | **P7c** | **構文と算出値のテストの抜き出し**: WPT の `css/*/parsing/*.html` の `test_valid_value`・`test_invalid_value`・`test_computed_value` を表に抜き出し、Java のパーサとスタイルの解決に直接かける（JS なし）。抜き出しは `scripts/` の生成物で、手で直さない。合格数をラチェットで固定する。**レイアウトの検査も同じ形で足す**（2026-11-28。§1.4 の 6）: `check-layout-th.js` を使うテストは、要素の `data-expected-width`・`-height`・`data-offset-x`・`-y` ほかの属性と幾何を比べるだけなので、スクリプトで DOM を組まないものを選び、`SceneQuery` の答えと直接比べる（JS なし。flexbox・grid の母集団が大きく増える） | なし | 未着手 |
 | **P7d** | **（任意）スクリプトで DOM を組む reftest**: ヘッドレスの Chrome でスクリプトを実行して書き出した DOM を、静的な HTML として読ませる。Chrome は前処理にだけ使い、画素の参照には使わない | P7b | 未着手 |

@@ -216,7 +216,7 @@ flowchart TD
     Ledger --> BoxTree["箱の木 (BoxTreeCompiler → BoxNode。スタイルは StyleSource)"]
     BoxTree --> Layout["断片木 (FragmentLayout → LayoutFragment。記憶は LayoutCache)"]
     Layout --> Scene["描画シーン (SceneEmitter → DisplayScene。親相対・DynamicSceneState)"]
-    Scene --> Adapter["一時アダプタ (SceneDisplayListAdapter。層の描画命令 DrawOps〔詰めた列〕を表示項目に組み立てる。M3b-4c-2 で削除)"]
+    Scene --> Adapter["一時アダプタ (SceneDisplayListAdapter。層の描画命令 DrawOps〔詰めた列〕を表示項目に組み立てる。M3b-4.24 で削除)"]
     Adapter --> Drawer["バックエンド (CPU / GL / Vulkan / Minecraft)"]
 ```
 

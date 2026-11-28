@@ -35,7 +35,7 @@
 ## リポジトリの構成
 
 ```text
-README.md  CONTRIBUTING.md  CLAUDE.md  LICENSE  NOTICE   入口・規約・ライセンス
+README.md  CONTRIBUTING.md  LICENSE  NOTICE   入口・規約・ライセンス
 core/         (:core)        エンジン本体（Minecraft・OpenGL・Vulkan に依存しない）
 core-gl/      (:core-gl)     OpenGL 3.2 バックエンド
 core-vulkan/  (:core-vulkan) Vulkan 1.1 バックエンド

@@ -77,6 +77,10 @@ public final class MemoryAndLatencyGate {
             // 1 段 30px ずつ下へ、32 行のチャンクの境目を何度もまたぐ。中央値と p99 を出す（旧版の子 JVM はこの場面を知らないので -Pgate.base の比較から外す）
             {"large-list-8000", "scroll", "40", "200"},
             {"page-list-8000", "scroll", "40", "200"},
+            // 補間と切り抜きを持つカードの格子（2026-11-28。デモの CatalogApp の形）: 全てのカードが transition と overflow: hidden を持つ。
+            // 宣言だけの補間でカリングが止まり、切り抜きのたびに保持層の範囲ができる場面を固定する（計画書 §1.4 の 13・§3.4 の M3b-4.25・4.26）。
+            // 1 フレームが数百 ms あるうちはフレームを少なくし、直したら large-list と同じ数に戻す
+            {"card-grid-3000", "scroll", "10", "40"},
     };
 
     /** 旧版の子 JVM が知らない場面（{@code -Pgate.base} の交互 A/B から外す）。 */
@@ -102,6 +106,7 @@ public final class MemoryAndLatencyGate {
                 if (doc.startsWith("large-list-")) yield largeList(Integer.parseInt(doc.substring("large-list-".length())));
                 if (doc.startsWith("varied-list-")) yield variedList(Integer.parseInt(doc.substring("varied-list-".length())));
                 if (doc.startsWith("page-list-")) yield pageList(Integer.parseInt(doc.substring("page-list-".length())));
+                if (doc.startsWith("card-grid-")) yield cardGrid(Integer.parseInt(doc.substring("card-grid-".length())));
                 throw new IllegalArgumentException("未知の文書: " + doc);
             }
         };
@@ -131,6 +136,34 @@ public final class MemoryAndLatencyGate {
             sb.append("<li id=\"item-").append(i).append("\">Row item #").append(i).append(" with description text</li>");
         }
         return sb.append("</ul></body></html>").toString();
+    }
+
+    /**
+     * 内側のスクロールコンテナに、flex-wrap でカードを並べた文書（デモの CatalogApp の形）。どのカードも {@code transition} と
+     * {@code overflow: hidden}（カードと説明文の 2 つ）と影を持つ。ホバーの規則はあるが、この場面ではポインタを動かさない。
+     */
+    static String cardGrid(int count) {
+        StringBuilder sb = new StringBuilder(count * 300 + 1024);
+        sb.append("<html><head><style>* { box-sizing: border-box; } body { margin: 0; font-family: sans-serif; background: #f3f4f6; }"
+                + " #scroller { height: 600px; overflow-y: auto; overflow-x: hidden; }"
+                + " #list { display: flex; flex-wrap: wrap; gap: 14px; padding: 20px 24px; }"
+                + " .card { width: 200px; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.15);"
+                + " transition: transform .15s, box-shadow .15s; }"
+                + " .card:hover { transform: translateY(-3px); box-shadow: 0 6px 14px rgba(0,0,0,.25); }"
+                + " .thumb { height: 90px; } .body { padding: 10px 12px; } .name { font-weight: bold; font-size: 14px; margin-bottom: 4px; }"
+                + " .desc { font-size: 12px; color: #6b7280; line-height: 1.4; height: 50px; overflow: hidden; }"
+                + " .row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }"
+                + " .price { font-size: 16px; font-weight: bold; color: #047857; }"
+                + " .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; }"
+                + "</style></head><body><div id=\"scroller\"><div id=\"list\">");
+        for (int i = 1; i <= count; i++) {
+            sb.append("<div class=\"card\" id=\"item-").append(i).append("\"><div class=\"thumb\" style=\"background:")
+                    .append(PALETTE[i % PALETTE.length]).append("\"></div><div class=\"body\"><div class=\"name\">Item #").append(1000 + i)
+                    .append("</div><div class=\"desc\">Item ").append(i).append(": a sturdy tool crafted for long expeditions, with enough text here to wrap across several lines.</div>")
+                    .append("<div class=\"row\"><span class=\"price\">$").append(5 + (i * 37) % 995).append("</span><span class=\"badge\">stock ")
+                    .append((i * 13) % 50).append("</span></div></div></div>");
+        }
+        return sb.append("</div></div></body></html>").toString();
     }
 
     private static final String[] PALETTE = {"#fff", "#eef", "#fee", "#efe", "#ffe", "#eff", "#fef", "#dde", "#edd", "#ded", "#eed"};

@@ -1,7 +1,8 @@
 # MemoryAndLatencyGate 基準値（キー | 基準値 | 上限）。./gradlew :core:memoryAndLatencyGate -Pgate.update で更新。
 # 内部カウンタ（memo*）不使用。ヒープは MB、交互 A/B は inc/full 比または ms。
-# 交互 A/B と latency は M3b-4c-2b-2a から CPU の描画器で描くところまでを測る（それまでは表示項目の列まで）。
-# M3b-4c-2b-2c から描くフレームは見えるチャンクだけを組む。latency の scroll は連続スクロール（内側のコンテナ・文書全体）。上限は実測の 2 倍＋3 ms。
+# 交互 A/B と latency は M3b-4.14 から CPU の描画器で描くところまでを測る（それまでは表示項目の列まで）。
+# M3b-4.16 から描くフレームは見えるチャンクだけを組む。latency の scroll は連続スクロール（内側のコンテナ・文書全体）。上限は実測の 2 倍＋3 ms。
+# card-grid-3000:scroll（2026-11-28 に追加）は直す前の記録（宣言だけの補間でカリングが止まり、保持層の照合が項目 × 範囲になる）。M3b-4.25・4.26 で置き直す。
 heap:showcase:open | 1.623 | 4.038
 heap:voidwave.html:open | 3.730 | 7.223
 heap:large-list-2000:open | 8.803 | 19.300
@@ -20,3 +21,4 @@ latency:varied-list-2000:fontsize | 72.5440 | 148.0880
 latency:large-list-8000:child | 6.6055 | 16.2110
 latency:large-list-8000:scroll | 1.4121 | 5.8242
 latency:page-list-8000:scroll | 1.2226 | 5.4452
+latency:card-grid-3000:scroll | 575.8704 | 1154.7408
