@@ -21,7 +21,6 @@ import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.Bindings;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.network.SubscribeC2SPacket;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -264,22 +263,11 @@ public class WebHudRenderer {
         session.requestRender();
     }
 
-    private static boolean mountedToEntity(DisplayItem el) { return el.events() != null && el.events().containsKey("data-mount-entity"); }
-
     private static void renderHudElements(PoseStack poseStack, Minecraft mc, String screenKey) {
         SessionContext session = ClientWebManager.getSession(screenKey);
-        List<DisplayItem> elements = session != null ? session.relativeElements() : List.of();
-        if (elements.isEmpty()) return;
-
-        // data-mount-entity の要素は HUD に描かない。省くのは自分を塗る項目だけで、節（子の親相対の原点・層）は残す。
-        // 省くものが無ければ列そのものを渡す（シーンの列なので、静止したフレームは描画器が前の画素を使い回せる。M3b-4b-4b）
-        List<DisplayItem> hudElements = elements;
-        for (DisplayItem el : elements) {
-            if (!mountedToEntity(el)) continue;
-            hudElements = new ArrayList<>(elements.size());
-            for (DisplayItem it : elements) if (it.type() == ElementType.NODE || !mountedToEntity(it)) hudElements.add(it);
-            break;
-        }
+        if (session == null || !session.hasFrame()) return;
+        // data-mount-entity の要素は HUD に描かない（SurfaceStyle#hud の除く節。省くのは自分を塗る部品だけで、節〔子の原点・層〕は残す。
+        // 列を絞らずフレームの値で省くので、静止したフレームは描画器が前の画素を使い回せる。M3b-4c-2b-1）
 
         poseStack.pushPose();
         int screenHeight = mc.getWindow().getGuiScaledHeight();
@@ -290,7 +278,7 @@ public class WebHudRenderer {
         int logicWidth = (int) Math.ceil((float) lastSentWidth / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
         int logicHeight = (int) Math.ceil((float) lastSentHeight / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
 
-        SurfaceRenderer.draw(screenKey, hudElements, logicWidth, logicHeight, SurfaceStyle.hud(), poseStack, bufferSource);
+        SurfaceRenderer.draw(screenKey, logicWidth, logicHeight, SurfaceStyle.hud(), poseStack, bufferSource);
 
         bufferSource.endBatch();
         poseStack.popPose();
@@ -396,13 +384,12 @@ public class WebHudRenderer {
 
         cache.width = Math.round(frame.scene().root.w);
         cache.height = Math.round(frame.scene().root.h);
-        cache.elements = frame.items();
-        // 板ごとの 1 回の組み立て: その列を組んだシーンを添える（静止した板は描画器が前の画素を使い回せる）
-        cache.source = new com.nishiyu.enderframelib.core.paint.SceneSource(frame.scene(), frame.dynamic(), List.of(), 0);
+        // 板ごとの 1 回の組み立て: シーンを持つフレームの値（静止した板は描画器が前の画素を使い回せる。描く時刻は描くときに入れる）
+        cache.frame = frame.renderFrame();
     }
 
     private static boolean renderTrackerBillboard(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey, TrackerCache cache, TrackerTemplateConfig config) {
-        if (cache.elements == null || cache.elements.isEmpty()) return false;
+        if (cache.frame == null || cache.frame.isEmpty()) return false;
 
         double x = le.getX();
         double y = le.getY() + le.getBbHeight() + config.yOffset;
@@ -422,7 +409,7 @@ public class WebHudRenderer {
         poseStack.scale(-scale, -scale, scale);
         poseStack.translate(-cache.width / 2.0f, -cache.height, 0);
 
-        SurfaceRenderer.draw(screenKey, cache.elements, cache.source, cache.width, cache.height, SurfaceStyle.billboard(), poseStack, bufferSource);
+        SurfaceRenderer.draw(screenKey, cache.frame, cache.width, cache.height, SurfaceStyle.billboard(), poseStack, bufferSource);
         poseStack.popPose();
         return true;
     }
@@ -611,8 +598,8 @@ public class WebHudRenderer {
 
     private static class TrackerCache {
         final Map<String, String> data = new HashMap<>();
-        List<DisplayItem> elements;
-        com.nishiyu.enderframelib.core.paint.SceneSource source;
+        /** 1 回だけ組んだ板のフレームの値（シーンつき。描く時刻は描くときに入れる）。 */
+        com.nishiyu.enderframelib.core.paint.RenderFrame frame;
         int width, height;
         public boolean isChanged(Map<String, String> newData) { return !data.equals(newData); }
     }

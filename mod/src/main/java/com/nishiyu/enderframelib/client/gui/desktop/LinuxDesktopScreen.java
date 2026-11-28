@@ -3,8 +3,9 @@ package com.nishiyu.enderframelib.client.gui.desktop;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.gui.AbstractEnderScreen;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLocation;
+import com.nishiyu.enderframelib.core.paint.scene.Transform2D;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -365,14 +366,12 @@ public class LinuxDesktopScreen extends AbstractEnderScreen {
     }
 
     /**
-     * 描画済みの要素の外形。未描画・非表示なら null。
-     * transform は要素本体（id がそのまま一致する NODE）だけが持つので、背景などの部品ではなくそれを使う。
+     * 描画済みの要素の外形（シーンの上の位置に、変形の平行移動と描画上の平行移動を足す）。未描画・非表示なら null。
+     * 位置はシーンから引く（M3b-4c-2b-1 で表示項目の列から引く {@code nodeItemAbsolute} を削除した）。
      */
     private DesktopLayout.Rect elementRect(String elementId) {
         SessionContext session = ClientWebManager.getSession(this.sessionId);
-        if (session == null) return null;
-        DisplayItem item = session.nodeItemAbsolute(elementId); // 親相対の列で、要素本体の節を絶対位置に解く
-        return item != null ? DesktopLayout.Rect.of(item, session.paintOffsets()) : null;
+        return session != null ? DesktopLayout.Rect.of(session.locate(elementId), session.paintOffsets(), elementId) : null;
     }
 
     @Override
@@ -829,16 +828,16 @@ public class LinuxDesktopScreen extends AbstractEnderScreen {
                 return x < o.right() && o.x < right() && y < o.bottom() && o.y < bottom();
             }
 
-            /** 描画要素の外形。transform の平行移動を含める（拡大・回転は扱わない）。 */
-            public static @Nullable Rect of(@Nullable DisplayItem item) {
-                return of(item, PaintOffsets.EMPTY);
-            }
-
-            /** 描画上の平行移動表 {@code offsets} を含めた描画要素の外形。 */
-            public static @Nullable Rect of(@Nullable DisplayItem item, PaintOffsets offsets) {
-                if (item == null) return null;
+            /**
+             * シーンの上の要素 {@code loc} の外形。変形の平行移動と、描画上の平行移動表 {@code offsets} の {@code id} の分を含める
+             * （拡大・回転は扱わない）。
+             */
+            public static @Nullable Rect of(@Nullable SceneLocation loc, PaintOffsets offsets, String id) {
+                if (loc == null) return null;
+                Transform2D t = loc.layer().transform;
                 PaintOffsets eff = offsets != null ? offsets : PaintOffsets.EMPTY;
-                return new Rect(item.x() + eff.translateX(item), item.y() + eff.translateY(item), item.width(), item.height());
+                float tx = t != null ? t.tx() : 0f, ty = t != null ? t.ty() : 0f;
+                return new Rect(loc.x() + tx + eff.dx(id), loc.y() + ty + eff.dy(id), loc.w(), loc.h());
             }
 
             public static Rect of(DesktopWindowManager.WindowState win) {

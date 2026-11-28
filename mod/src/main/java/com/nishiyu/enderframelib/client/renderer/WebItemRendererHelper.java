@@ -9,7 +9,6 @@ import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.renderer.surface.ItemSurfaceSpec;
 import com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.util.Mth;
@@ -95,7 +94,7 @@ public class WebItemRendererHelper {
         // レイアウトの画面サイズはセッションを読み込んだときの解像度。渡された解像度は、セッションがまだ無いときだけ使う
         int layoutW = session != null ? session.rootW() : virtualWidth;
         int layoutH = session != null ? session.rootH() : virtualHeight;
-        if (session == null || session.relativeElements().isEmpty()) return;
+        if (session == null || !session.hasFrame()) return;
 
         poseStack.pushPose();
         poseStack.translate(screenOriginX, screenOriginY, screenOriginZ);
@@ -150,8 +149,7 @@ public class WebItemRendererHelper {
 
         SessionContext session = SurfaceRenderer.open(sessionId);
         if (session == null || session.rootW() <= 0 || session.rootH() <= 0) return;
-        List<DisplayItem> elements = session.relativeElements();
-        if (elements == null || elements.isEmpty()) return;
+        if (!session.hasFrame()) return;
 
         int layoutW = session.rootW();
         int layoutH = session.rootH();

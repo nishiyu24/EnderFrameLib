@@ -66,7 +66,7 @@ class GpuFrameSequencePixelTest {
                     v.frame(t += 40, g, true);
                     int[] got = g.pixmap().pixels().clone();
                     try (LwjglGlRenderBackend fresh = new LwjglGlRenderBackend(W, H)) {
-                        fresh.render(new com.nishiyu.enderframelib.core.paint.RenderFrame(v.ui().renderCache(), java.util.List.of(), v.ui().paintOffsets(), v.ui().paintSource(), t));
+                        fresh.render(v.ui().renderFrame(java.util.List.of(), null, t));
                         assertArrayEquals(fresh.pixmap().pixels(), got, "フレーム " + frames + " の画素が新しい描画器と違う");
                     }
                     frames++;

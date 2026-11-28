@@ -164,7 +164,7 @@ public class LinuxDesktopHtmlTest {
     public void testAppMenuBoundsCoverAllItems() {
         Laid laid = layoutWithState("overview", true);
         TestBoxes.Box menu = byId(laid.root(), "app-menu");
-        DisplayLayoutRect menuRect = DisplayLayoutRect.of(laid.items(), "app-menu");
+        DisplayLayoutRect menuRect = DisplayLayoutRect.of(laid.scene(), "app-menu");
         assertNotNull(menuRect.rect(), "開いたメニューの描画要素があること");
 
         List<TestBoxes.Box> menuItems = find(menu, b -> b.node.hasClass("menu-item"));
@@ -174,11 +174,11 @@ public class LinuxDesktopHtmlTest {
         for (TestBoxes.Box item : menuItems) {
             double cx = item.x() + item.w() / 2.0;
             double cy = item.y() + item.h() / 2.0;
-            assertFalse(DesktopLayout.shouldCloseAppMenu(cx, cy, menuRect.rect(), DisplayLayoutRect.of(laid.items(), "app-menu-btn").rect()),
+            assertFalse(DesktopLayout.shouldCloseAppMenu(cx, cy, menuRect.rect(), DisplayLayoutRect.of(laid.scene(), "app-menu-btn").rect()),
                     "メニュー項目の上の押下でメニューを閉じないこと: y=" + cy);
         }
 
-        DesktopLayout.Rect button = DisplayLayoutRect.of(laid.items(), "app-menu-btn").rect();
+        DesktopLayout.Rect button = DisplayLayoutRect.of(laid.scene(), "app-menu-btn").rect();
         assertNotNull(button, "Applications ボタンの描画要素があること");
         assertFalse(DesktopLayout.shouldCloseAppMenu(button.x() + button.width() / 2, button.y() + button.height() / 2, menuRect.rect(), button),
                 "Applications ボタンの押下では閉じず、onclick でトグルさせること");
@@ -206,11 +206,12 @@ public class LinuxDesktopHtmlTest {
         }
     }
 
-    /** 描画要素の id から外形を引く（LinuxDesktopScreen#elementRect と同じく id が一致する要素本体）。 */
+    /** 要素の id から外形を引く（LinuxDesktopScreen#elementRect と同じくシーンの位置に変形の平行移動を足す）。 */
     private record DisplayLayoutRect(DesktopLayout.Rect rect) {
-        static DisplayLayoutRect of(List<DisplayItem> items, String id) {
+        static DisplayLayoutRect of(DisplayScene scene, String id) {
             return new DisplayLayoutRect(DesktopLayout.Rect.of(
-                    items.stream().filter(i -> id.equals(i.id())).findFirst().orElse(null)));
+                    com.nishiyu.enderframelib.core.paint.scene.SceneQuery.locateById(scene, DynamicSceneState.of(null, 854, 480), id),
+                    com.nishiyu.enderframelib.core.paint.model.PaintOffsets.EMPTY, id));
         }
     }
 

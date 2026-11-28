@@ -4,7 +4,7 @@
 #   setters   = public static void setXxx(...)（static な配線）
 #   pubStatic = public static で final でない欄（グローバルな切り替え・状態）
 # 増やさない。減ったら下げる（-Dratchet.update=true で現在値へ書き直す）。
-common/UiView.java | 16 | 140 | 0 | 0
+common/UiView.java | 16 | 134 | 0 | 0
 api/ui/UI.java | 0 | 132 | 1 | 0
 core/raster/canvas/CanvasRenderingContext2D.java | 0 | 128 | 0 | 0
 core/paint/gpu/GpuRenderBackend.java | 0 | 0 | 0 | 1

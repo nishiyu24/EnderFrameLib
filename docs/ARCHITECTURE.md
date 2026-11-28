@@ -278,6 +278,7 @@ flowchart TD
 
 セッションを面に描くホスト（画面・コンテナ画面・HUD・ビルボード・ブロック・ホログラム・アイテム・地図）は、
 姿勢（`PoseStack`）だけを作って `SurfaceRenderer.draw` を呼ぶ。同期の確認・空の判定・ホバーの取得・描画パスの
-組み立ては `SurfaceRenderer` の 1 か所にあり、`PaintRequest` はその内部の値になった。描き方（ライト・描く部品・
-奥行き・音・遠距離の塗り）は `SurfaceStyle` に集まり、場所ごとの既定（`gui` / `hud` / `billboard` / `world` / `item` / `overlay`）
+組み立ては `SurfaceRenderer` の 1 か所にあり、`PaintRequest` はその内部の値になった。描くのはセッションのフレームの値
+（`UiView#renderFrame`。シーン・平行移動・重ね描き・除く節）で、ホストは表示項目の列を渡さない。描き方（ライト・描く部品・
+除く節〔HUD は `data-mount-entity` の要素を描かない〕・奥行き・音・遠距離の塗り）は `SurfaceStyle` に集まり、場所ごとの既定（`gui` / `hud` / `billboard` / `world` / `item` / `overlay`）
 から `with*` で 1 項目ずつ変える。世界に出す登録口は `client/Surfaces`（`block` / `item` / `map` / `hologram`）の 1 つ。

@@ -37,7 +37,8 @@ class UiViewTest {
             assertEquals(320, view.rootW());
             assertEquals(240, view.rootH());
             assertFalse(view.relativeElements().isEmpty());
-            assertNotNull(view.elementById("a"));
+            assertNotNull(view.locate("a"));
+            assertTrue(view.hasFrame());
             assertNotNull(view.findNode("a"));
         }
     }
@@ -112,7 +113,7 @@ class UiViewTest {
             view.updateNodeStyleLocally("a", "width", "150px");
             assertTrue(calls.contains("invalidated"));
             view.flushInvalidation();
-            assertEquals(150f, view.elementById("a").width(), 0.5f);
+            assertEquals(150f, view.locate("a").w(), 0.5f);
 
             view.relativeElements();
             assertTrue(calls.contains("beforeElements"));
@@ -127,6 +128,7 @@ class UiViewTest {
         assertNull(view.document());
         assertNull(view.scene());
         assertTrue(view.renderCache().isEmpty());
+        assertFalse(view.hasFrame(), "閉じたビューには描くフレームが無い");
         assertTrue(view.inputScrollOffsets().isEmpty());
     }
 }

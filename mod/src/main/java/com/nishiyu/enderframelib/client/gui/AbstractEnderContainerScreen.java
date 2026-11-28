@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.client.gui;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
@@ -14,7 +13,6 @@ import com.nishiyu.enderframelib.client.renderer.SurfaceRenderer;
 import com.nishiyu.enderframelib.client.renderer.SurfaceStyle;
 import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
@@ -417,9 +415,8 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
         }
 
         var uiSession = ClientWebManager.getSession(sessionId);
-        // 描画は親相対のまま。絶対座標の一覧は、開発者ツールの検査が要るときだけ作る
-        List<DisplayItem> elements = uiSession != null ? uiSession.relativeElements() : java.util.Collections.emptyList();
-        if (elements != null && !elements.isEmpty()) {
+        // 描くのはビューのフレームの値（SurfaceRenderer が組む。M3b-4c-2b-1）
+        if (uiSession != null && uiSession.hasFrame()) {
             PoseStack poseStack = guiGraphics.pose();
             poseStack.pushPose();
             poseStack.translate(this.leftPos, this.topPos, 0);
@@ -428,7 +425,7 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
             int logicW = (int) Math.ceil(virtualWidth / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
             int logicH = (int) Math.ceil(virtualHeight / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
 
-            SurfaceRenderer.draw(sessionId, elements, logicW, logicH,
+            SurfaceRenderer.draw(sessionId, logicW, logicH,
                     SurfaceStyle.gui(false).withHovered(hoveredId), poseStack, bufferSource);
             bufferSource.endBatch();
 

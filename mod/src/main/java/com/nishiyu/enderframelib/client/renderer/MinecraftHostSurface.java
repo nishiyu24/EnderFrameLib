@@ -86,8 +86,8 @@ public final class MinecraftHostSurface {
     static boolean draw(PaintRequest pass) {
         if (!RenderSystem.isOnRenderThread()) return false;
         String session = pass.sessionId() == null ? "" : pass.sessionId();
-        List<DisplayItem> base = pass.elements();
-        if (base == null || base.isEmpty()) return false;
+        RenderFrame base = pass.frame();
+        if (base.items().isEmpty()) return false;
         // 面の大きさはブロック数。項目の座標は RESOLUTION 倍の px
         int w = Math.round(pass.screenWidth() * SurfaceGeometry.RESOLUTION);
         int h = Math.round(pass.screenHeight() * SurfaceGeometry.RESOLUTION);
@@ -102,11 +102,11 @@ public final class MinecraftHostSurface {
             backend.hostTextures(MinecraftHostTextures.INSTANCE);
             // 計測が有効なら GPU のタイマークエリも張る（面ごとに 1 度。無効の間は GL を呼ばない）
             if (StageProfiler.enabled() && GPU_TIMED.add(backend)) backend.enableGpuTiming();
-            List<DisplayItem> caret = SurfaceEditOverlay.caretItems(ClientWebManager.getSession(session), session, base);
+            // キャレットはシーンの外の重ね描き。編集中の欄の位置は M3b-4c-3 まで、フレームの値の列から読む
+            List<DisplayItem> caret = SurfaceEditOverlay.caretItems(ClientWebManager.getSession(session), session, base.items());
             syncFontGeneration();
             flushPending(pass.buffer());
-            long now = net.minecraft.Util.getMillis();
-            RenderFrame frame = new RenderFrame(base, caret, pass.paintOffsets(), pass.sceneSource(), now);
+            RenderFrame frame = base.withOverlays(caret);
             List<DisplayItem> items = frame.drawList();
             PreparedFrame prepared = backend.prepare(frame);
             if (SKIP_STATIC && !prepared.needsRepaint()) {
@@ -121,7 +121,7 @@ public final class MinecraftHostSurface {
             } finally {
                 StageProfiler.end(PipelineStage.SURFACE_CORE_BLIT, tBlit);
             }
-            drawTooltip(pass, items, w, h);
+            drawTooltip(pass, frame, items, w, h);
             REPORTED.remove(session);
             return true;
         } catch (Throwable t) {
@@ -161,7 +161,7 @@ public final class MinecraftHostSurface {
         long tRender = StageProfiler.begin(PipelineStage.SURFACE_CORE_RENDER);
         long fence = 0L;
         try {
-            fence = MinecraftHostTextures.INSTANCE.prepare(prepared.frame().drawList(), session, dpr, !pass.screenSpaceText());
+            fence = MinecraftHostTextures.INSTANCE.prepare(prepared.frame(), session, dpr, !pass.screenSpaceText());
             if (fence != 0L) backend.waitForHost(fence);
             backend.render(prepared);
         } finally {
@@ -171,13 +171,14 @@ public final class MinecraftHostSurface {
     }
 
     /** ホバー中の要素の {@code title} をツールチップとして板の上に重ねる（ホストの飾り。コアは描かない）。 */
-    private static void drawTooltip(PaintRequest pass, List<DisplayItem> items, int w, int h) {
+    private static void drawTooltip(PaintRequest pass, RenderFrame frame, List<DisplayItem> items, int w, int h) {
         String hovered = pass.hoveredId();
         if (hovered == null || hovered.isEmpty()) return;
         DisplayItem target = null;
         String text = null;
+        java.util.function.Predicate<DisplayItem> skip = frame.excluded();
         for (DisplayItem it : items) {
-            if (!hovered.equals(it.baseId())) continue;
+            if (!hovered.equals(it.baseId()) || (skip != null && skip.test(it))) continue;
             text = SurfaceTooltip.textOf(it);
             if (text != null) {
                 target = it;
@@ -187,7 +188,7 @@ public final class MinecraftHostSurface {
         if (target == null || text.isEmpty()) return;
         net.minecraft.client.gui.Font font = WebFontManager.getDefaultFont();
         if (font == null) font = Minecraft.getInstance().font;
-        target = DisplayItem.resolveAbsolute(items, target, pass.paintOffsets()); // 項目は親相対・スクロール 0 で組んだ位置
+        target = DisplayItem.resolveAbsolute(items, target, frame.offsets()); // 項目は親相対・スクロール 0 で組んだ位置（M3b-4c-3 まで列から読む）
         SurfaceTooltip.draw(pass.poseStack(), pass.buffer(), font, target, text, w, h, 0.2f, pass.packedLight());
         flushPending(pass.buffer());
     }

@@ -52,7 +52,7 @@ public class WebBlockRenderer<T extends BlockEntity & WebScreenBlockEntity> impl
         SurfaceFit fit = SurfaceGeometry.fit(session, be.getScreenWidth(), be.getScreenHeight());
         SurfaceGeometry geometry = fit.content();
         int lodColor = be.getLodColor();
-        if ((session == null || session.relativeElements().isEmpty()) && lodColor == 0x00000000) return;
+        if ((session == null || !session.hasFrame()) && lodColor == 0x00000000) return;
 
         Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
         double distSqr = Vec3.atCenterOf(be.getBlockPos()).distanceToSqr(camera.getPosition());

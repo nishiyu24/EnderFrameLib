@@ -69,6 +69,8 @@ public final class SceneWalker {
     /** 保持層にできるスクロールコンテナの中身の範囲（M3b-4b-3b。1 フレームの間だけ）。 */
     private final ScrollContentRanges ranges = new ScrollContentRanges();
     private AnimationStates anims;
+    /** このフレームで描かない項目（{@link RenderFrame#excluded}。無ければ null）。 */
+    private java.util.function.Predicate<DisplayItem> exclude;
     private long now;
     private Matrix2D frame = Matrix2D.IDENTITY;
     private long posesBuilt;
@@ -123,6 +125,7 @@ public final class SceneWalker {
         try {
             load(list);
             this.now = nowMs;
+            this.exclude = f.excluded();
             this.frame = frame;
             this.anims = CssAnimator.states(sessionId, true);
             // 列が変わった: 列にある節の補間状態だけを残す（後片付けは実時間でなく、構造の変化の印。M3b-4b-2）
@@ -146,6 +149,7 @@ public final class SceneWalker {
             layeredScratch.clear();
             count = 0;
             this.list = null;
+            this.exclude = null;
         }
     }
 
@@ -235,6 +239,7 @@ public final class SceneWalker {
         if (damage.full()) return;
         for (int i = 0; i < count; i++) {
             DisplayItem el = items[i];
+            if (exclude != null && exclude.test(el)) continue; // 描かない節の部品は、動いても絵を変えない
             CssAnimator.AnimState st = stateAt(i);
             boolean activeNow = st.isActiveAt(now), activeBefore = prevNow >= 0L && st.isActiveAt(prevNow);
             if (activeNow || activeBefore) {
@@ -262,8 +267,10 @@ public final class SceneWalker {
         for (int i = from; i < n; i++) if (list.get(i).type() != ElementType.NODE) return true;
         AnimationStates table = CssAnimator.states(sessionId, true);
         long prevNow = lastNow;
+        java.util.function.Predicate<DisplayItem> skip = f.excluded();
         for (int i = 0; i < n; i++) {
             DisplayItem el = list.get(i);
+            if (skip != null && skip.test(el)) continue;
             if (el.type().isExternallyDriven()) return true;
             CssAnimator.AnimState st = CssAnimator.stateFor(table, el, nowMs);
             if (st.isActiveAt(nowMs) || (prevNow >= 0L && st.isActiveAt(prevNow))) return true;
@@ -343,7 +350,7 @@ public final class SceneWalker {
                 continue;
             }
             DisplayItem el = items[i];
-            if (el.type() == ElementType.NODE) {
+            if (el.type() == ElementType.NODE || (exclude != null && exclude.test(el))) { // 節の錨と、描かない節の部品は描かない
                 chains[i] = null;
                 continue;
             }

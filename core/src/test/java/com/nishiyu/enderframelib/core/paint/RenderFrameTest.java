@@ -31,7 +31,7 @@ class RenderFrameTest {
             + "background:#33a}</style><div id='a'></div><div id='b'></div><p>text</p>";
 
     private static RenderFrame frameOf(UiView ui, List<DisplayItem> overlays, long now) {
-        return new RenderFrame(ui.renderCache(), overlays, ui.paintOffsets(), ui.paintSource(), now);
+        return ui.renderFrame(overlays, null, now);
     }
 
     private static int[] fullPixels(SoftwareRenderBackend b, RenderFrame f) {
@@ -50,7 +50,7 @@ class RenderFrameTest {
         RenderFrame plain = RenderFrame.of(List.of(a), 0L);
         assertSame(plain.items(), plain.drawList(), "重ね描きが無ければ列そのもの");
         assertEquals(0, plain.sceneItemCount(), "シーンが無ければシーンの部分は 0");
-        RenderFrame with = new RenderFrame(List.of(a), List.of(o), null, null, 5L);
+        RenderFrame with = new RenderFrame(List.of(a), List.of(o), null, null, null, 5L);
         assertEquals(List.of(a, o), with.drawList());
         assertFalse(with.isEmpty());
         assertTrue(RenderFrame.of(List.of(), 0L).isEmpty());

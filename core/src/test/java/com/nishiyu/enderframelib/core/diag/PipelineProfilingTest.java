@@ -101,7 +101,7 @@ class PipelineProfilingTest {
             view.frame(1016, wrapped, true);
             assertTrue(cpu.partialFrames() > 0, "シーンが届けば 2 枚目は部分の描き直し");
             var ui = view.ui();
-            assertFalse(wrapped.prepare(new com.nishiyu.enderframelib.core.paint.RenderFrame(ui.renderCache(), java.util.List.of(), ui.paintOffsets(), ui.paintSource(), 1032)).needsRepaint(),
+            assertFalse(wrapped.prepare(ui.renderFrame(java.util.List.of(), null, 1032)).needsRepaint(),
                     "何も変わらなければ包み越しでも描かないと答える");
         }
     }

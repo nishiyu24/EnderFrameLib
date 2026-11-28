@@ -20,7 +20,14 @@ public final class FrameRender {
     private FrameRender() { }
 
     /** 1 回のフレームの結果: 不変の描画シーン・動的状態（スクロール等）と表示リスト。 */
-    public record Frame(DisplayScene scene, DynamicSceneState dynamic, List<DisplayItem> items) { }
+    public record Frame(DisplayScene scene, DynamicSceneState dynamic, List<DisplayItem> items) {
+        /** 描画器へ渡すフレームの値（シーンつき・時刻 0。描くホストが {@link com.nishiyu.enderframelib.core.paint.RenderFrame#at} で時刻を入れる）。 */
+        public com.nishiyu.enderframelib.core.paint.RenderFrame renderFrame() {
+            com.nishiyu.enderframelib.core.paint.SceneSource source = scene == null ? null
+                    : new com.nishiyu.enderframelib.core.paint.SceneSource(scene, dynamic, List.of(), 0);
+            return new com.nishiyu.enderframelib.core.paint.RenderFrame(items, List.of(), null, source, null, 0L);
+        }
+    }
 
     /**
      * 文書 {@code doc} を大きさ {@code w}×{@code h} で組んで描く。{@code state} は対話の状態（:hover など。無ければ新しい空の状態）で、

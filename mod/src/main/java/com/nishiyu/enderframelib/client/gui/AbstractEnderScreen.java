@@ -10,7 +10,6 @@ import com.nishiyu.enderframelib.client.ReactiveStateStore;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.renderer.SurfaceRenderer;
 import com.nishiyu.enderframelib.client.renderer.SurfaceStyle;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
@@ -23,7 +22,6 @@ import org.lwjgl.glfw.GLFW;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -272,9 +270,8 @@ public class AbstractEnderScreen extends Screen implements EnderScreenHost {
         }
 
         var uiSession = ClientWebManager.getSession(sessionId);
-        // 描画は親相対のまま。絶対座標の一覧は、開発者ツールの検査が要るときだけ作る
-        List<DisplayItem> elements = uiSession != null ? uiSession.relativeElements() : java.util.Collections.emptyList();
-        if (elements != null && !elements.isEmpty()) {
+        // 描くのはビューのフレームの値（SurfaceRenderer が組む。M3b-4c-2b-1）
+        if (uiSession != null && uiSession.hasFrame()) {
             PoseStack poseStack = guiGraphics.pose();
             poseStack.pushPose();
             poseStack.translate(offsetX, offsetY, 0);
@@ -284,7 +281,7 @@ public class AbstractEnderScreen extends Screen implements EnderScreenHost {
             int logicW = (int) Math.ceil(virtualWidth / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
             int logicH = (int) Math.ceil(virtualHeight / com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry.RESOLUTION);
 
-            SurfaceRenderer.draw(sessionId, elements, logicW, logicH,
+            SurfaceRenderer.draw(sessionId, logicW, logicH,
                     SurfaceStyle.gui(true).withHovered(hoveredId), poseStack, bufferSource);
             bufferSource.endBatch();
 

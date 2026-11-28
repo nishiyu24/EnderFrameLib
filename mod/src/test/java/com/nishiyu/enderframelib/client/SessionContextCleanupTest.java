@@ -69,7 +69,8 @@ public class SessionContextCleanupTest {
         DisplayItem item = new DisplayItem("target", "target", ElementType.NODE,
                 0, 0, 10, 10, null, 0, 0, Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0,
                 AnimationSpec.NONE, ImageFitMode.FILL, RenderMeta.EMPTY);
-        session.setRenderCache(List.of(item));
+        session.loadLocalHtml("<div id='target' style='width:10px;height:10px'></div>", 64, 64);
+        assertTrue(session.hasFrame() && !session.renderCache().isEmpty(), "文書を組んだシーンと列がある");
         CssAnimator.stateFor(session.cssAnimations(), item, 0L);
         session.canvases().put("target", new Canvas2DContext());
         session.scenes().put("target", new WebSceneContext());
@@ -125,6 +126,7 @@ public class SessionContextCleanupTest {
         assertEquals(0L, session.inputState().lastClickTime);
 
         assertTrue(session.renderCache().isEmpty());
+        assertTrue(!session.hasFrame(), "閉じたセッションには描くフレームが無い");
         assertEquals(SessionContext.InvalidationLevel.NONE, session.invalidationLevel());
         assertTrue(session.cssAnimations().isEmpty());
         assertTrue(session.canvases().isEmpty());

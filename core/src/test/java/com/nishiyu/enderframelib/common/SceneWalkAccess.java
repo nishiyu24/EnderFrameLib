@@ -15,7 +15,7 @@ public final class SceneWalkAccess {
     /** ビュー {@code v} の直近の列を {@code walker} でたどる（描き直す範囲は求めない）。 */
     public static void walk(StandaloneView v, SceneWalker walker, long nowMs, Matrix2D frame, Painter painter) {
         UiView ui = v.ui();
-        walker.run(new com.nishiyu.enderframelib.core.paint.RenderFrame(ui.renderCache(), java.util.List.of(), ui.paintOffsets(), ui.paintSource(), nowMs), frame, painter, null);
+        walker.run(ui.renderFrame(java.util.List.of(), null, nowMs), frame, painter, null);
     }
 
     /**
@@ -25,7 +25,7 @@ public final class SceneWalkAccess {
     public static SceneDamage.Rects damage(StandaloneView v, SceneDamage damage, SceneWalker walker, long nowMs, Painter painter) {
         UiView ui = v.ui();
         SceneDamage.Rects r = damage.next(ui.scene(), ui.dynamicState());
-        walker.run(new com.nishiyu.enderframelib.core.paint.RenderFrame(ui.renderCache(), java.util.List.of(), ui.paintOffsets(), ui.paintSource(), nowMs), Matrix2D.IDENTITY, painter, r);
+        walker.run(ui.renderFrame(java.util.List.of(), null, nowMs), Matrix2D.IDENTITY, painter, r);
         return r;
     }
 }

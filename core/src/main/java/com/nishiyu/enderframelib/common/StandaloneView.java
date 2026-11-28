@@ -211,12 +211,11 @@ public final class StandaloneView implements AutoCloseable {
         return items;
     }
 
-    /** 直近のフレームの、別のスレッドへ渡せる不変の写し（列と平行移動。{@link RenderFrame#snapshot}）。 */
+    /** 直近のフレームの、別のスレッドへ渡せる不変の写し（ビューのフレームの値。{@link RenderFrame#snapshot}）。 */
     public RenderFrame frameSnapshot() {
-        PaintOffsets off = ui.paintOffsets();
-        RenderFrame f = lastFrame; // 列は不変の列・平行移動は不変の写しなので、写しは同じ実体を持つ
-        if (f != null && f.items() == items && f.offsets() == off) return f;
-        return lastFrame = RenderFrame.of(items, off, lastNow).snapshot();
+        RenderFrame f = lastFrame, now = ui.renderFrame(List.of(), null, lastNow); // 列・平行移動・シーンは不変なので、写しは同じ実体を持つ
+        if (f != null && f.items() == now.items() && f.offsets() == now.offsets() && f.scene() == now.scene()) return f;
+        return lastFrame = now.snapshot();
     }
 
     /** {@code requestAnimationFrame} / {@code setTimeout} の登録簿。 */
@@ -332,7 +331,7 @@ public final class StandaloneView implements AutoCloseable {
             return false; // 窓を抜けた最初の1枚は最終値のために描く
         }
         lastOffsetsVersion = offsetsVer;
-        backend.render(new RenderFrame(items, overlays(), offsets, ui.paintSource(), nowMs));
+        backend.render(ui.renderFrame(overlays(), null, nowMs));
         // 描画自身が世界を更新することがある（初回にビューポートの縦横比をカメラへ入れる）。それは描いた絵に含まれるので、
         // 次のフレームで「3D が変わった」と数えて一度余計に描かないよう、ここで署名を取り直す
         sceneSignature = ui.scene3dChangeSignature();
@@ -770,7 +769,7 @@ public final class StandaloneView implements AutoCloseable {
     public float[] imeCursorRect() {
         HtmlNode field = interaction.focusedNode();
         if (field == null || !isTextControl(field)) return null;
-        for (DisplayItem it : RenderFrame.of(items, 0L).withOverlays(overlays())) {
+        for (DisplayItem it : RenderFrame.of(items, 0L).withOverlays(overlays()).drawList()) {
             if (it.baseId().equals(field.key()) && (it.isPart("_caret") || it.id().endsWith("_caret"))) {
                 return new float[]{it.x(), it.y(), it.width(), it.height()};
             }

@@ -4,7 +4,8 @@ package com.nishiyu.enderframelib.core.paint;
 
 /**
  * 1 つの描画先で、前に描いたフレームから描き直す範囲のうちシーンから決まる分（M3b-4b-4b）。シーンの違い（{@link SceneDamage}）に、
- * 塗りの色・利用者の平行移動（{@link SceneSource#userOffsetsVersion}）の変化と、描画器が差分描画を切ったこと（{@link #partialRepaint}）を全面として足す。
+ * 塗りの色・利用者の平行移動（{@link SceneSource#userOffsetsVersion}）・描かない節（{@link RenderFrame#exclude}）の変化と、描画器が差分描画を
+ * 切ったこと（{@link #partialRepaint}）を全面として足す。
  * 補間・外の事情で変わる項目と重ね描きの分は走査器が足す（{@link SceneWalker}）。
  *
  * <p>描画器の準備（{@link RenderBackend#prepare}）が 1 フレームに 1 度だけ {@link #next} で比べる相手を進め、範囲を準備した値
@@ -14,6 +15,8 @@ public final class FrameDamage {
     private final SceneDamage scene = new SceneDamage();
     private int prevClear;
     private int prevUserOffsets = -1;
+    /** 前のフレームの描かない節（{@link RenderFrame#exclude}。違えば全面）。 */
+    private ExcludedNodes prevExclude;
     private boolean partial = true;
     /** 最後に準備したフレーム（{@link #take} がこれでなければ全面。1 度使ったら捨てる）。 */
     private PreparedFrame last;
@@ -34,8 +37,10 @@ public final class FrameDamage {
         if (clearColor != prevClear) rects.setFull("clear-color");
         if (!partial) rects.setFull("partial-off");
         if (source.userOffsetsVersion() != prevUserOffsets) rects.setFull("user-offsets");
+        if (!java.util.Objects.equals(frame.exclude(), prevExclude)) rects.setFull("exclude");
         prevClear = clearColor;
         prevUserOffsets = source.userOffsetsVersion();
+        prevExclude = frame.exclude();
         return rects;
     }
 

@@ -16,9 +16,11 @@ import java.util.RandomAccess;
  * @param overlays シーンの外の重ね描き（キャレット・選択の一覧・インスペクタ。列の後ろに描く。前のフレームと今の範囲を描き直す）
  * @param offsets  節ごとの描画上の平行移動（スクロールの中身・つまみ・sticky と利用者の移動。{@code UiView#paintOffsets}）
  * @param scene    列を組んだシーンと動的な値（無ければ null。描き直す範囲を求めず全面を描く）
+ * @param exclude  描かない節（無ければ null。M3b-4c-2b-1。ホストは列を絞らずにこれで省く。前のフレームと違えば全面を描く）
  * @param nowMs    描く時刻（ミリ秒。補間の時刻）
  */
-public record RenderFrame(List<DisplayItem> items, List<DisplayItem> overlays, PaintOffsets offsets, SceneSource scene, long nowMs) {
+public record RenderFrame(List<DisplayItem> items, List<DisplayItem> overlays, PaintOffsets offsets, SceneSource scene,
+                          ExcludedNodes exclude, long nowMs) {
     public RenderFrame {
         items = items != null ? items : List.of();
         overlays = overlays != null ? overlays : List.of();
@@ -27,12 +29,12 @@ public record RenderFrame(List<DisplayItem> items, List<DisplayItem> overlays, P
 
     /** シーンも重ね描きも無い、列だけのフレーム（全面を描く）。 */
     public static RenderFrame of(List<DisplayItem> items, long nowMs) {
-        return new RenderFrame(items, List.of(), PaintOffsets.EMPTY, null, nowMs);
+        return new RenderFrame(items, List.of(), PaintOffsets.EMPTY, null, null, nowMs);
     }
 
     /** シーンも重ね描きも無い、平行移動つきの列だけのフレーム（全面を描く）。 */
     public static RenderFrame of(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
-        return new RenderFrame(items, List.of(), offsets, null, nowMs);
+        return new RenderFrame(items, List.of(), offsets, null, null, nowMs);
     }
 
     /** 描く列（シーンの列の後ろに重ね描き）。重ね描きがあれば 2 つの列をつないだ見え方を作る（写さない）。 */
@@ -40,9 +42,22 @@ public record RenderFrame(List<DisplayItem> items, List<DisplayItem> overlays, P
         return overlays.isEmpty() ? items : new Joined(items, overlays);
     }
 
-    /** 列 {@link #items} の後ろに {@code more} をつないだ見え方（写さない）。 */
-    public List<DisplayItem> withOverlays(List<DisplayItem> more) {
-        return more == null || more.isEmpty() ? items : new Joined(items, more);
+    /** 重ね描きを {@code more} に替えたフレーム（ホストがシーンの外の重ね描き〔キャレット〕を足す）。 */
+    public RenderFrame withOverlays(List<DisplayItem> more) {
+        return new RenderFrame(items, more, offsets, scene, exclude, nowMs);
+    }
+
+    /** 描く時刻を {@code ms} に替えたフレーム（1 回だけ組んだフレームを毎フレーム描くホスト用）。 */
+    public RenderFrame at(long ms) {
+        return ms == nowMs ? this : new RenderFrame(items, overlays, offsets, scene, exclude, ms);
+    }
+
+    /**
+     * このフレームで描かない項目の述語（{@link #exclude} の要素が自分で塗る部品。除くものが無い・シーンが無ければ null）。フレームごとに 1 度
+     * 作り、項目ごとに引く。
+     */
+    public java.util.function.Predicate<DisplayItem> excluded() {
+        return exclude == null || scene == null ? null : exclude.itemsIn(scene.scene());
     }
 
     /** 描く列のうちシーンから組んだ部分の長さ（シーンが無ければ 0。後ろは重ね描き）。 */
@@ -63,7 +78,7 @@ public record RenderFrame(List<DisplayItem> items, List<DisplayItem> overlays, P
         List<DisplayItem> ov = overlays.isEmpty() ? List.of() : List.copyOf(overlays);
         PaintOffsets off = offsets.snapshot();
         if (it == items && ov == overlays && off == offsets) return this;
-        return new RenderFrame(it, ov, off, scene, nowMs);
+        return new RenderFrame(it, ov, off, scene, exclude, nowMs);
     }
 
     /** 2 つの列をつないだ読み取りだけの見え方。 */

@@ -431,7 +431,7 @@ class ArchitectureHealthTest {
         for (String c : List.of("SceneAdapterBox", "SceneDisplayListAdapter", "SceneAdapterSupport", "LayerOps", "OpList", "OpComposer",
                 "SceneWalker", "AnimationStates", "ItemSink", "SceneDamage", "ScrollContentRanges", "SceneSource", "FrameDamage",
                 "BoxItemPainter", "BoxDecorationPainter", "BoxDecorations", "ControlPainter", "TextRunPainter", "PaintSupport", "ItemProps",
-                "PaintBounds", "BoxAnimation")) {
+                "PaintBounds", "BoxAnimation", "RenderFrame", "PreparedFrame", "ExcludedNodes")) {
             out.add(main + "core/paint/" + c + ".java");
         }
         for (String c : List.of("DeclarativeBindings", "InteractionChains", "ReactiveDomBinder", "StateFlags", "StyleInvalidation", "TemplateDeps",
@@ -666,6 +666,26 @@ class ArchitectureHealthTest {
             }
         }
         assertEquals(List.of(), bad, "一時アダプタの SceneAdapterBox をアダプタの外が読んだ（生成器・LayerOps・SceneDamage は SceneLayer と置き場所を読む。計画書 §3.4 M3b-4c-1a）");
+    }
+
+    /**
+     * M3b-4c-2b-1: ホストは表示項目の列でなくビューのフレームの値（{@code UiView#renderFrame}。シーン・除く節・重ね描き）を描画器へ渡し、
+     * 要素の位置はシーンから引く（{@code UiView#locate}）。本体でビューの列を読むのは、ビュー自身・スタンドアロンのビューの {@code items()}
+     * （M3b-4c-2b-2 で列ごと消す）・MOD のメディア（種類と文字を読む。M3b-4c-3 で消す）だけ。
+     */
+    static final Set<String> VIEW_LIST_READERS = Set.of("UiView.java", "StandaloneView.java", "WebMediaManager.java");
+    private static final Pattern VIEW_LIST_READ = Pattern.compile("\\.(renderCache|relativeElements)\\(\\)");
+
+    @Test
+    void hostsDrawTheViewFrameNotTheViewList() throws IOException {
+        List<String> bad = new ArrayList<>();
+        for (String root : ALL_MODULE_MAIN_ROOTS) {
+            for (String hit : checkCodeLines(repoRoot().resolve(root), VIEW_LIST_READ)) {
+                String file = hit.substring(0, hit.indexOf(':')).replace('\\', '/');
+                if (!VIEW_LIST_READERS.contains(file.substring(file.lastIndexOf('/') + 1))) bad.add(root + "/" + hit);
+            }
+        }
+        assertEquals(List.of(), bad, "ホストがビューの表示項目の列を読んだ（描くのは UiView#renderFrame、位置は UiView#locate。計画書 §3.4 M3b-4c-2b-1）");
     }
 
     @Test

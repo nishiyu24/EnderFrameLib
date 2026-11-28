@@ -127,7 +127,7 @@ class FrameBoundarySnapshotTest {
                         float dx = f.offsets().dx("box");
                         float dy = f.offsets().dy("box");
                         assertEquals(dx * 2f, dy, 0.001f, "dx/dy が別フレームの値と混ざらない");
-                        sw.render(new RenderFrame(f.items(), f.overlays(), f.offsets(), f.scene(), 1000L + i));
+                        sw.render(f.at(1000L + i));
                     }
                     return null;
                 });

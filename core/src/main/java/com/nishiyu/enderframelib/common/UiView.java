@@ -24,7 +24,6 @@ import com.nishiyu.enderframelib.core.text.model.TextSelection;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -317,7 +316,7 @@ public class UiView implements AutoCloseable {
         return renderCache;
     }
 
-    public void setRenderCache(List<DisplayItem> renderCache) {
+    private void setRenderCache(List<DisplayItem> renderCache) {
         if (renderCache == null || renderCache.isEmpty()) {
             this.renderCache = Collections.emptyList();
         } else if (renderCache instanceof ImmutableItemList) {
@@ -625,38 +624,30 @@ public class UiView implements AutoCloseable {
 
     /**
      * 描画要素のキャッシュ（親相対。スクロールコンテナはスクロール 0 で組む）。必要なら先に環境変数と描画キューを更新する。
-     * 項目の画面の上の位置は {@link #toAbsolute}・{@link #nodeItemAbsolute}（と平行移動 {@link #paintOffsets}）、要素の位置は {@link #locate}
-     * （M3b-4b-4b で列全体を絶対座標へ直す {@code elements()} を削除した）。
+     * 描画には使わない（ホストは {@link #renderFrame} を描画器へ渡す）。読むのは MOD の補助（メディアの種類と文字）とテストだけで、M3b-4c-3 で消す。
+     * 要素の位置は {@link #locate}（M3b-4b-4b で列全体を絶対座標へ直す {@code elements()}、M3b-4c-2b-1 で列から ID を引く
+     * {@code elementById}・{@code toAbsolute}・{@code nodeItemAbsolute} を削除した）。
      */
     public List<DisplayItem> relativeElements() {
         beforeElements();
         return renderCache;
     }
 
-    private List<DisplayItem> byIdSource;
-    private Map<String, DisplayItem> byIdIndex;
-
-    private synchronized Map<String, DisplayItem> itemsById() {
-        List<DisplayItem> src = renderCache;
-        if (src != byIdSource) {
-            Map<String, DisplayItem> m = new java.util.HashMap<>(src.size() * 2);
-            for (DisplayItem it : src) m.put(it.id(), it);
-            byIdIndex = m;
-            byIdSource = src;
-        }
-        return byIdIndex;
+    /**
+     * ビューのフレームの値（M3b-4c-2b-1。計画書 §3.4）: 直近のシーンと動的な値・描画上の平行移動・ホストの重ね描き {@code overlays}・描かない節
+     * {@code exclude}（無ければ null）を、時刻 {@code nowMs} の 1 フレームにまとめる。ホストは列を読まずにこれを描画器へ渡す（列は M3b-4c-2b-2 で
+     * 走査器がシーンから組むまでの仮で、フレームの値の中にだけある）。必要なら先に環境変数と描画キューを更新する。
+     */
+    public com.nishiyu.enderframelib.core.paint.RenderFrame renderFrame(List<DisplayItem> overlays,
+                                                                       com.nishiyu.enderframelib.core.paint.ExcludedNodes exclude, long nowMs) {
+        beforeElements();
+        return new com.nishiyu.enderframelib.core.paint.RenderFrame(renderCache, overlays, paintOffsets(), paintSource(), exclude, nowMs);
     }
 
-    /** 親相対の項目 {@code item}（{@link #relativeElements()} の要素）の絶対位置を解いた項目。公開ごとの索引を使うので、全体を直さずに済む。 */
-    public DisplayItem toAbsolute(DisplayItem item) {
-        if (item == null) return null;
-        return DisplayItem.resolveAbsolute(itemsById(), item);
-    }
-
-    /** 描画 ID が {@code id} の NODE 項目（絶対位置）。無ければ null。 */
-    public DisplayItem nodeItemAbsolute(String id) {
-        DisplayItem it = itemsById().get(id);
-        return it != null && it.type() == ElementType.NODE ? DisplayItem.resolveAbsolute(itemsById(), it) : null;
+    /** 描くフレームがあるか（文書を組んだシーンがある。ホストの空の判定。M3b-4c-2b-1）。必要なら先に環境変数と描画キューを更新する。 */
+    public boolean hasFrame() {
+        beforeElements();
+        return v3.scene() != null;
     }
 
     /** 状態変化に伴う部分木の再スタイル（必要に応じて再レイアウトまたは再描画へ分岐）を要求する。 */
@@ -1136,36 +1127,9 @@ public class UiView implements AutoCloseable {
         }
     }
 
-    /** 描画 ID または節の ID が指す表示要素（位置は絶対座標）。無ければ null。 */
-    public DisplayItem elementById(String id) {
-        DisplayItem raw = elementByIdRaw(id);
-        return raw == null ? null : DisplayItem.resolveAbsolute(itemsById(), raw);
-    }
-
-    /** {@link #elementById} の、親相対のままの項目（ヒットテスト索引など、相対を解く側へ渡す用）。 */
-    private DisplayItem elementByIdRaw(String id) {
-        if (id == null) return null;
-        DisplayItem fallback = null;
-        List<DisplayItem> elements = renderCache();
-        for (DisplayItem el : elements) {
-            if (el.id().equals(id) && el.type() != ElementType.NODE) {
-                return el;
-            }
-            if (id.equals(el.baseId())) {
-                if (el.type() == ElementType.NODE || isDecorationPart(el.partSuffix())) {
-                    if (fallback == null) fallback = el;
-                    continue;
-                }
-                return el;
-            }
-        }
-        return fallback;
-    }
-
-    /** 背景・枠線・影・プレースホルダなど、操作の相手ではなく飾りの部品か。 */
-    private static boolean isDecorationPart(String suffix) {
-        return suffix.equals("_ph") || suffix.startsWith("_shadow") || suffix.startsWith("_b_")
-                || suffix.startsWith("_o_") || suffix.startsWith("_bgl");
+    /** DOM の {@code id} 属性（または節の鍵）が {@code id} の要素の、シーンの上の解決済みの位置・大きさ（無ければ null。M3b-4c-2b-1）。 */
+    public com.nishiyu.enderframelib.core.paint.scene.SceneLocation locate(String id) {
+        return SceneQuery.locateById(v3.scene(), dynamicState(), id);
     }
 
     public void updateNodeAttributeLocally(String elementId, String attrName, String attrValue, boolean remove) {
@@ -1295,52 +1259,19 @@ public class UiView implements AutoCloseable {
 
         HtmlNode target = findNode(baseId);
         boolean isRange = target != null && "range".equalsIgnoreCase(target.attrs.getOrDefault("type", ""));
-        boolean isSelect = target != null && com.nishiyu.enderframelib.core.dom.node.ElementTraits.isSelect(target.tag);
 
         String domValue = safeText;
         if (isRange && safeText.contains(":")) {
             domValue = safeText.split(":")[0];
         }
 
+        // 値は DOM へだけ書く。描画は DOM の写し（{@code DomValues}）からシーンで作り直す（M3b-4c-2b-1 で表示項目の列への書き戻し〔出力のその場
+        // 書き換え〕を削除した。欄・range・select の表示の文字とプレースホルダは描画が値から決める）
         if (target != null && !Objects.equals(target.attrs.get("value"), domValue)) {
             DomUtils.updateAttribute(target, "value", domValue, false);
-        }
-        // 書き戻し先の不変リスト（平行移動は外部の PaintOffsets にある）
-        List<DisplayItem> elements = renderCache;
-        if (elements != null && !elements.isEmpty()) {
-            String phId = baseId + "_ph";
-            String inputRenderId = baseId + "_input";
-            String textareaRenderId = baseId + "_textarea";
-            String selectRenderId = baseId + "_select";
-            String placeholderOrig = target != null ? target.attrs.getOrDefault("placeholder", "") : "";
-
-            List<DisplayItem> updated = null;
-            for (int i = 0; i < elements.size(); i++) {
-                DisplayItem el = elements.get(i);
-                if (el.id().equals(elementId) || el.id().equals(inputRenderId) || el.id().equals(textareaRenderId) || el.id().equals(selectRenderId)) {
-                    String renderText = safeText;
-                    if ((el.type() == ElementType.RANGE || el.type() == ElementType.PROGRESS) && !safeText.contains(":")) {
-                        String min = target != null ? target.attrs.getOrDefault("min", "0") : "0";
-                        String max = target != null ? target.attrs.getOrDefault("max", "100") : "100";
-                        renderText = safeText + ":" + min + ":" + max;
-                    } else if (el.type() == ElementType.SELECT || isSelect) {
-                        renderText = DomUtils.resolveSelectDisplayLabel(target, domValue) + " \u25be";
-                    }
-                    if (!Objects.equals(el.text(), renderText)) {
-                        if (updated == null) updated = new ArrayList<>(elements);
-                        updated.set(i, el.withText(renderText));
-                    }
-                } else if (el.id().equals(phId)) {
-                    String nextPh = domValue.isEmpty() ? placeholderOrig : "";
-                    if (!Objects.equals(el.text(), nextPh)) {
-                        if (updated == null) updated = new ArrayList<>(elements);
-                        updated.set(i, el.withText(nextPh));
-                    }
-                }
-            }
-            if (updated != null) {
-                setRenderCache(updated);
-            }
+            interactionState.markDirty(target);
+            if (isPaintOnlyAttribute(target, "value")) requestRestyle();
+            else requestRender();
         }
     }
 

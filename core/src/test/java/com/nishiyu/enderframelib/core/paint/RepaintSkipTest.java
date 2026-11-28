@@ -180,7 +180,7 @@ class RepaintSkipTest {
 
         /** ビューの今の列に重ね描き {@code overlays} を添えたフレームを描く。描いたら true。 */
         boolean stepOverlays(StandaloneView v, List<DisplayItem> overlays, long now) {
-            return paint(new com.nishiyu.enderframelib.core.paint.RenderFrame(v.ui().renderCache(), overlays, v.ui().paintOffsets(), v.ui().paintSource(), now));
+            return paint(v.ui().renderFrame(overlays, null, now));
         }
 
         void clearColor(int argb) {

@@ -155,7 +155,7 @@ public final class HologramRenderer {
         SessionContext session = SurfaceRenderer.open(sessionId);
         // レイアウトの画面サイズはセッションを読み込んだときの解像度。幅 × 高さは、それを収める面の大きさ
         SurfaceGeometry geometry = SurfaceGeometry.fit(session, spec.widthBlocks(), spec.heightBlocks()).content();
-        if (session == null || session.relativeElements().isEmpty()) return false;
+        if (session == null || !session.hasFrame()) return false;
 
         poseStack.pushPose();
         poseStack.translate(offset.x, offset.y, offset.z);

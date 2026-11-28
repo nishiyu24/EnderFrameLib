@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.paint.ExcludedNodes;
 import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.Nullable;
 
@@ -17,9 +18,14 @@ import org.jetbrains.annotations.Nullable;
  * @param screenSpaceText 画面に平行に描く面か（GUI・HUD。文字の解像度を画面の倍率に合わせ、GUI の照明に戻す）
  * @param lodColor        遠距離の塗りの色（ARGB。アルファ 0 なら遠距離では何も描かない）
  * @param lodActive       遠距離の塗りだけで描くか
+ * @param exclude         描かない節（無ければ null。HUD は {@code data-mount-entity} の要素をエンティティの上に描くので HUD に描かない。
+ *                        列を絞らずにフレームの値で省くので、静止したフレームは描画器が前の画素を使い回せる。M3b-4c-2b-1）
  */
 public record SurfaceStyle(int light, Audio audio, @Nullable String hovered, boolean screenSpaceText,
-                           int lodColor, boolean lodActive) {
+                           int lodColor, boolean lodActive, @Nullable ExcludedNodes exclude) {
+
+    /** エンティティの上に描く要素（{@code data-mount-entity}）。HUD には描かない。 */
+    public static final ExcludedNodes MOUNTED_TO_ENTITY = new ExcludedNodes("data-mount-entity");
 
     private static final int FULL_BRIGHT = 0xF000F0;
 
@@ -34,24 +40,24 @@ public record SurfaceStyle(int light, Audio audio, @Nullable String hovered, boo
     // ------------------------------------------------------------------ 場所ごとの既定
 
     public static SurfaceStyle gui(boolean playAudio) {
-        return new SurfaceStyle(FULL_BRIGHT, new Audio(playAudio, true, null), null, true, 0, false);
+        return new SurfaceStyle(FULL_BRIGHT, new Audio(playAudio, true, null), null, true, 0, false, null);
     }
 
     public static SurfaceStyle hud() {
-        return new SurfaceStyle(FULL_BRIGHT, Audio.NONE, null, true, 0, false);
+        return new SurfaceStyle(FULL_BRIGHT, Audio.NONE, null, true, 0, false, MOUNTED_TO_ENTITY);
     }
 
     public static SurfaceStyle billboard() {
-        return new SurfaceStyle(FULL_BRIGHT, Audio.NONE, null, true, 0, false);
+        return new SurfaceStyle(FULL_BRIGHT, Audio.NONE, null, true, 0, false, null);
     }
 
     /** ワールドに置いた面（ブロック・ホログラム）。 */
     public static SurfaceStyle world(int light) {
-        return new SurfaceStyle(light, Audio.NONE, null, false, 0, false);
+        return new SurfaceStyle(light, Audio.NONE, null, false, 0, false, null);
     }
 
     public static SurfaceStyle item(int light) {
-        return new SurfaceStyle(light, Audio.NONE, null, false, 0, false);
+        return new SurfaceStyle(light, Audio.NONE, null, false, 0, false, null);
     }
 
     public static SurfaceStyle overlay(int light) {
@@ -61,16 +67,16 @@ public record SurfaceStyle(int light, Audio audio, @Nullable String hovered, boo
     // ------------------------------------------------------------------ 1 項目ずつ変える
 
     public SurfaceStyle withAudio(Audio audio) {
-        return new SurfaceStyle(light, audio, hovered, screenSpaceText, lodColor, lodActive);
+        return new SurfaceStyle(light, audio, hovered, screenSpaceText, lodColor, lodActive, exclude);
     }
 
     /** ホバー中の要素 ID を固定する。空文字ならホバー無し。 */
     public SurfaceStyle withHovered(String hovered) {
-        return new SurfaceStyle(light, audio, hovered == null ? "" : hovered, screenSpaceText, lodColor, lodActive);
+        return new SurfaceStyle(light, audio, hovered == null ? "" : hovered, screenSpaceText, lodColor, lodActive, exclude);
     }
 
     /** 遠距離（64 ブロック超）では {@code color} で全体を塗る。 */
     public SurfaceStyle withLod(int color, double distSqr) {
-        return new SurfaceStyle(light, audio, hovered, screenSpaceText, color, distSqr > 4096.0);
+        return new SurfaceStyle(light, audio, hovered, screenSpaceText, color, distSqr > 4096.0, exclude);
     }
 }
