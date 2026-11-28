@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.diag;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.paint.ProfilingRenderBackend;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -51,9 +52,9 @@ class PipelineProfilingTest {
     @Test
     void profilingDoesNotChangeDisplayList() {
         StageProfiler.enable(false);
-        List<DisplayItem> off = new StandaloneView(HTML, 160, 120).ui().relativeElements();
+        List<DisplayItem> off = TestItems.of(new StandaloneView(HTML, 160, 120).ui());
         StageProfiler.enable(true);
-        List<DisplayItem> on = new StandaloneView(HTML, 160, 120).ui().relativeElements();
+        List<DisplayItem> on = TestItems.of(new StandaloneView(HTML, 160, 120).ui());
         assertEquals(off, on);
     }
 

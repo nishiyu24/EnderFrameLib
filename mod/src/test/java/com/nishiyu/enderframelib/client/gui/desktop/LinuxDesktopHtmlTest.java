@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.gui.desktop;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.client.EnderFrameStandalone;
 import com.nishiyu.enderframelib.common.TestBoxes;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -92,7 +93,7 @@ public class LinuxDesktopHtmlTest {
         DisplayScene scene = compiler.layoutDocument(
                 doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new InteractionState()
         );
-        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        List<DisplayItem> items = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new com.nishiyu.enderframelib.core.dom.InteractionState()));
         return new Laid(doc, scene, TestBoxes.root(scene), items);
     }
 
@@ -245,7 +246,7 @@ public class LinuxDesktopHtmlTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         String html = "<input id=\"test-input\" placeholder=\"hello\">";
         Document doc = compiler.parseDocument(html, "", 854, 480);
-        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        List<DisplayItem> items = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver(), new com.nishiyu.enderframelib.core.dom.InteractionState()));
         DisplayItem phItem = items.stream()
                 .filter(i -> i.id().equals("test-input_ph"))
                 .findFirst()

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 
 import com.nishiyu.enderframelib.common.Document;
@@ -33,7 +34,7 @@ public class ToggleAppearanceTest {
         Document doc = compiler.parseDocument("<html><head><style>body { margin: 0; }</style></head><body>" + body + "</body></html>",
                 "", 200, 100);
         TestBoxes.Box root = TestBoxes.root(compiler.layoutDocument(doc, 200, 100, Map.of(), new ScrollState(), FontResolver.FALLBACK));
-        return com.nishiyu.enderframelib.common.FrameRender.document(doc, 200, 100, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        return TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 200, 100, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
     }
 
     private static DisplayItem part(List<DisplayItem> items, String id) {

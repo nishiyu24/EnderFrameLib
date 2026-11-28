@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.emit.GpuRoute;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -51,7 +52,7 @@ class GpuRouteTest {
     void renderingWithAndWithoutSinkGivesSamePixelsWhenSinkRefusesEverything() {
         String html = "<html><body style='margin:0'><div style='width:40px;height:20px;background:#36c;border-radius:6px;opacity:.6'>"
                 + "<div style='width:20px;height:10px;background:#c33'></div></div></body></html>";
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 80, 60);
+        List<DisplayItem> items = TestItems.displayList(html, 80, 60);
         int[] a, b;
         try (SoftwareRenderBackend s = new SoftwareRenderBackend(80, 60, 1f)) {
             s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0));

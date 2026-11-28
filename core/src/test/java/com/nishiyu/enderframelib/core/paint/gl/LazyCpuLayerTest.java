@@ -1,4 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.gl;
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 
 import com.nishiyu.enderframelib.common.SoftwareRendering;
@@ -103,9 +104,9 @@ class LazyCpuLayerTest {
         LwjglGlRenderBackend moving = render("<style>@keyframes s{from{opacity:0}to{opacity:1}}</style>"
                 + "<div style='width:10px;height:10px;background:#f00;animation:s 1s linear infinite'></div>");
         try {
-            var itemsStill = SoftwareRendering.displayList(HEAD + "<div style='width:10px;height:10px;background:#f00'></div></body></html>", 64, 64);
+            var itemsStill = TestItems.displayList(HEAD + "<div style='width:10px;height:10px;background:#f00'></div></body></html>", 64, 64);
             assertFalse(still.hasActiveAnimation(itemsStill, 10_000L));
-            var itemsMoving = SoftwareRendering.displayList(HEAD + "<style>@keyframes s{from{opacity:0}to{opacity:1}}</style>"
+            var itemsMoving = TestItems.displayList(HEAD + "<style>@keyframes s{from{opacity:0}to{opacity:1}}</style>"
                     + "<div style='width:10px;height:10px;background:#f00;animation:s 1s linear infinite'></div></body></html>", 64, 64);
             // 描いたあとの同じバックエンドで、動いている項目を動いていると答える
             moving.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(itemsMoving, 10_000L));

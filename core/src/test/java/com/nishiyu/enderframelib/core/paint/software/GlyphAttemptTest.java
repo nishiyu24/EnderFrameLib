@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.emit.Clip;
 import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
 import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
@@ -126,7 +127,7 @@ class GlyphAttemptTest {
     }
 
     private static int[] cpu(String html, GpuSink sink) {
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 140, 90);
+        List<DisplayItem> items = TestItems.displayList(html, 140, 90);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(140, 90, 1f)) {
             if (sink == null) b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0)); else b.renderOnto(items, 0, sink);
             return b.pixmap().pixels().clone();
@@ -139,7 +140,7 @@ class GlyphAttemptTest {
     void textReachesTheMatchingGpuPathAndIsNotPaintedByTheCpuWhenAccepted() {
         Assumptions.assumeTrue(SystemFonts.system().resolve(null) instanceof OutlineFontFace, "no system fonts");
         GlyphSink plain = new GlyphSink(true);
-        List<DisplayItem> items = SoftwareRendering.displayList(html(STYLES[0]), 140, 90);
+        List<DisplayItem> items = TestItems.displayList(html(STYLES[0]), 140, 90);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(140, 90, 1f)) {
             b.renderOnto(items, 0, plain);
             assertNull(b.dirtyBounds());

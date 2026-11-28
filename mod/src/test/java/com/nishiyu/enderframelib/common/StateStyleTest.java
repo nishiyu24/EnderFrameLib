@@ -350,7 +350,7 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
 
         TestBoxes.Box root1 = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
-        List<DisplayItem> els1 = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
+        List<DisplayItem> els1 = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         DisplayItem node1 = findElementById(els1, "card");
         assertNotNull(node1);
 
@@ -362,7 +362,7 @@ public class StateStyleTest {
         // ホバー状態へ遷移
         state.setHoveredNode(doc.root.getElementById("card"));
         TestBoxes.Box root2 = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
-        List<DisplayItem> els2 = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
+        List<DisplayItem> els2 = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         DisplayItem node2 = findElementById(els2, "card");
         assertNotNull(node2);
 
@@ -404,7 +404,7 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
 
         TestBoxes.Box root1 = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
-        List<DisplayItem> els1 = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
+        List<DisplayItem> els1 = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         DisplayItem actor1 = findElementById(els1, "actor");
         assertNotNull(actor1);
 
@@ -414,7 +414,7 @@ public class StateStyleTest {
         // ホバーを発生させ、opacity のトランジションと @keyframes slideX が同時に走る状態にする
         state.setHoveredNode(doc.root.getElementById("actor"));
         TestBoxes.Box root2 = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
-        List<DisplayItem> els2 = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
+        List<DisplayItem> els2 = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         DisplayItem actor2 = findElementById(els2, "actor");
         assertNotNull(actor2);
 
@@ -458,7 +458,7 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
 
         TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
-        List<DisplayItem> els = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
+        List<DisplayItem> els = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         DisplayItem bgEl = findElementById(els, "panel_bg");
         assertNotNull(bgEl, "背景アニメーションがある場合は背景要素が出力される");
 
@@ -507,7 +507,7 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
 
         TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
-        List<DisplayItem> els = com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state).items();
+        List<DisplayItem> els = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 320, 200, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, state));
         DisplayItem elBackwards = findElementById(els, "delayedBackwards");
         DisplayItem elNone = findElementById(els, "delayedNone");
         assertNotNull(elBackwards);

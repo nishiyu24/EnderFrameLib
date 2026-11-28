@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gl;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -150,7 +151,7 @@ class HostTexturesGlTest {
     void hostTextureReplacesTextAndSurvivesARepeatedFrame() {
         requireGl();
         String html = page("<div style='font:24px sans-serif;color:#000;width:80px'>HOST</div>");
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 80, 40);
+        List<DisplayItem> items = TestItems.displayList(html, 80, 40);
         DisplayItem text = items.stream().filter(it -> "HOST".equals(it.text())).findFirst().orElseThrow();
         int cx = Math.round(text.x() + text.width() / 2f), cy = Math.round(text.y() + text.height() / 2f);
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(80, 40, 1f)) {

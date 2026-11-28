@@ -26,7 +26,7 @@ class UiViewTest {
     }
 
     private static int[] colors(UiView view) {
-        return view.relativeElements().stream().mapToInt(i -> i.bgColor() ^ i.color()).toArray();
+        return TestItems.of(view).stream().mapToInt(i -> i.bgColor() ^ i.color()).toArray();
     }
 
     @Test
@@ -36,7 +36,7 @@ class UiViewTest {
             assertNotNull(view.scene());
             assertEquals(320, view.rootW());
             assertEquals(240, view.rootH());
-            assertFalse(view.relativeElements().isEmpty());
+            assertFalse(TestItems.of(view).isEmpty());
             assertNotNull(view.locate("a"));
             assertTrue(view.hasFrame());
             assertNotNull(view.findNode("a"));
@@ -115,7 +115,7 @@ class UiViewTest {
             view.flushInvalidation();
             assertEquals(150f, view.locate("a").w(), 0.5f);
 
-            view.relativeElements();
+            TestItems.of(view);
             assertTrue(calls.contains("beforeElements"));
         }
     }
@@ -127,7 +127,7 @@ class UiViewTest {
         view.close();
         assertNull(view.document());
         assertNull(view.scene());
-        assertTrue(view.relativeElements().isEmpty());
+        assertTrue(TestItems.of(view).isEmpty());
         assertFalse(view.hasFrame(), "閉じたビューには描くフレームが無い");
         assertTrue(view.inputScrollOffsets().isEmpty());
     }

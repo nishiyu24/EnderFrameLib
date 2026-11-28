@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.emit.Clip;
 import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
 import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
@@ -116,7 +117,7 @@ class ImageAttemptTest {
     }
 
     private static int[] cpu(String html, GpuSink sink) {
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 60, 40);
+        List<DisplayItem> items = TestItems.displayList(html, 60, 40);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(60, 40, 1f)) {
             if (sink == null) b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0)); else b.renderOnto(items, 0, sink);
             return b.pixmap().pixels().clone();
@@ -127,7 +128,7 @@ class ImageAttemptTest {
     void decodedImageReachesTheGpuAndRefusalFallsBackToIdenticalPixels() throws Exception {
         String uri = pngDataUri(4, 4, 0xFF336699);
         ImageSink acc = new ImageSink(true);
-        List<DisplayItem> items = SoftwareRendering.displayList(html(uri), 60, 40);
+        List<DisplayItem> items = TestItems.displayList(html(uri), 60, 40);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(60, 40, 1f)) {
             b.renderOnto(items, 0, acc);
             assertNull(b.dirtyBounds(), "GPU が受け取った画像は CPU が塗らない");
@@ -145,7 +146,7 @@ class ImageAttemptTest {
     void externalTextureMapsRegionAndFlipIntoTheDrawTextureCall() {
         ImageSink s = new ImageSink(true);
         TextureRef plain = new TextureRef(7, 16, 16, 0.5f, 0f, 1f, 1f, false);
-        List<DisplayItem> items = SoftwareRendering.displayList(html(plain.src()), 60, 40);
+        List<DisplayItem> items = TestItems.displayList(html(plain.src()), 60, 40);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(60, 40, 1f)) {
             b.renderOnto(items, 0, s);
             assertNull(b.dirtyBounds());
@@ -160,7 +161,7 @@ class ImageAttemptTest {
         ImageSink f = new ImageSink(true);
         TextureRef flipped = new TextureRef(7, 16, 16, 0f, 0f, 1f, 1f, true);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(60, 40, 1f)) {
-            b.renderOnto(SoftwareRendering.displayList(html(flipped.src()), 60, 40), 0, f);
+            b.renderOnto(TestItems.displayList(html(flipped.src()), 60, 40), 0, f);
         }
         assertTrue(f.tSy < 0f, "上下反転は sy が負");
         assertEquals(16f / f.tSy * -1f, f.tPy0 - 0f, 1e-3f, "反転では上端を行 height から数える");
@@ -169,7 +170,7 @@ class ImageAttemptTest {
     @Test
     void refusedTextureFallsBackToTheImageResolution() {
         ImageSink s = new ImageSink(false);
-        List<DisplayItem> items = SoftwareRendering.displayList(html(new TextureRef(9, 8, 8).src()), 60, 40);
+        List<DisplayItem> items = TestItems.displayList(html(new TextureRef(9, 8, 8).src()), 60, 40);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(60, 40, 1f)) {
             b.renderOnto(items, 0, s);
         }

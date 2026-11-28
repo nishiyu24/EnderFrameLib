@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -34,7 +35,7 @@ public class BorderImageTest {
     @Test
     void expandsToNineImageItemsWithCropSources() throws Exception {
         String url = nineColorPngDataUrl();
-        List<DisplayItem> items = SoftwareRendering.displayList(
+        List<DisplayItem> items = TestItems.displayList(
                 "<html><body style='margin:0'>" + html(url, "4 fill / 1 / 0 stretch") + "</body></html>", 60, 60);
         long images = items.stream().filter(i -> i.type() == ElementType.IMAGE && i.id().contains("_bi")).count();
         assertEquals(9, images, "枠 8 + fill の中央 1");
@@ -45,14 +46,14 @@ public class BorderImageTest {
 
     @Test
     void withoutFillTheMiddleIsEmpty() throws Exception {
-        List<DisplayItem> items = SoftwareRendering.displayList(
+        List<DisplayItem> items = TestItems.displayList(
                 "<html><body style='margin:0'>" + html(nineColorPngDataUrl(), "4 / 1") + "</body></html>", 60, 60);
         assertEquals(8, items.stream().filter(i -> i.id().contains("_bi")).count());
     }
 
     @Test
     void cpuPaintsEachCellFromItsSlice() throws Exception {
-        List<DisplayItem> items = SoftwareRendering.displayList(
+        List<DisplayItem> items = TestItems.displayList(
                 "<html><body style='margin:0'>" + html(nineColorPngDataUrl(), "4 fill / 1 / 0 stretch") + "</body></html>", 60, 60);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(60, 60, 1f)) {
             b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0));
@@ -84,7 +85,7 @@ public class BorderImageTest {
 
     @Test
     void unreadableSourceFallsBackToTheNormalBorder() {
-        List<DisplayItem> items = SoftwareRendering.displayList(
+        List<DisplayItem> items = TestItems.displayList(
                 "<html><body style='margin:0'>" + html("data:image/png;base64,AAAA", "4") + "</body></html>", 60, 60);
         assertTrue(items.stream().noneMatch(i -> i.id().contains("_bi")));
         assertTrue(items.stream().anyMatch(i -> i.partSuffix().startsWith("_b")), "通常の枠線が描かれる");

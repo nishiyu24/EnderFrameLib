@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -75,7 +76,7 @@ public final class UiEventFixture implements AutoCloseable {
         session.loadLocalHtml(html, WIDTH, HEIGHT);
         session.flushInvalidation();
         document = session.document();
-        elements = com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements()); // 座標を測る用（親相対を絶対へ）
+        elements = com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(session)); // 座標を測る用（親相対を絶対へ）
     }
 
     public HtmlNode node(String id) {

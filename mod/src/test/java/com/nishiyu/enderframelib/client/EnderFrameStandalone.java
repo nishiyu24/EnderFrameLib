@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
@@ -58,7 +59,7 @@ public class EnderFrameStandalone {
         ScrollState scrollState = new ScrollState();
         InteractionState interactionState = new InteractionState();
         List<DisplayItem> items = com.nishiyu.enderframelib.common.TestFlatItems.absolute(
-                com.nishiyu.enderframelib.common.FrameRender.document(doc, width, height, Map.of(), scrollState, fontResolver, interactionState).items());
+                TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, width, height, Map.of(), scrollState, fontResolver, interactionState)));
 
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g2d = image.createGraphics();

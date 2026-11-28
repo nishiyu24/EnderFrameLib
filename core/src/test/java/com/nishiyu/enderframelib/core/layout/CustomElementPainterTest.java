@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.replaced.ReplacedElements;
 import com.nishiyu.enderframelib.core.dom.node.ReplacedKind;
 import com.nishiyu.enderframelib.core.dom.node.CustomElementPainter;
@@ -36,7 +37,7 @@ class CustomElementPainterTest {
     private static List<DisplayItem> render(String html) {
         StandaloneView view = new StandaloneView(html, 320, 240, FontResolver.FALLBACK);
         view.ui().flushInvalidation();
-        return view.ui().relativeElements();
+        return TestItems.of(view.ui());
     }
 
     private static DisplayItem first(List<DisplayItem> items, ElementType t) {

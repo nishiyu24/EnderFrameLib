@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 
 import com.nishiyu.enderframelib.common.Document;
@@ -56,7 +57,7 @@ public class ShowcaseWebComparisonTest {
     private static RenderResult renderAt(int width, int height, FontResolver fonts) {
         Document doc = compiler.parseDocument(showcaseHtml, "", width, height);
         var frame = com.nishiyu.enderframelib.common.FrameRender.document(doc, width, height, Map.of(), new ScrollState(), fonts, new InteractionState());
-        return new RenderResult(TestBoxes.root(frame), frame.items());
+        return new RenderResult(TestBoxes.root(frame), TestItems.of(frame));
     }
 
     private static RenderResult inGame() {

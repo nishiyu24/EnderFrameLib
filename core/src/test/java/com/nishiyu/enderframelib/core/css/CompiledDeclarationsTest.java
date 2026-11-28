@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.css.ValueComputer.CssWideKeyword;
@@ -71,6 +72,6 @@ class CompiledDeclarationsTest {
                 "<style>" + css + "</style><div id=a><p id=b>x</p></div>", 300, 200,
                 com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
         v.ui().flushInvalidation();
-        assertFalse(v.ui().relativeElements().isEmpty());
+        assertFalse(TestItems.of(v.ui()).isEmpty());
     }
 }

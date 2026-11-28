@@ -21,7 +21,7 @@ public class FirstLinePseudoElementTest {
     private static List<DisplayItem> displayItems(String html) {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", W, H);
-        return com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        return TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
     }
 
     private static int[] paint(String html) {

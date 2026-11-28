@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
@@ -9,11 +8,9 @@ import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.jetbrains.annotations.ApiStatus;
 
-import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -51,16 +48,6 @@ public class UiDocumentCompiler {
 
     public Document parseDocument(String html, String externalCss, int rootW, int rootH) {
         return DocumentLoader.parseDocument(html, externalCss, rootW, rootH);
-    }
-
-    /** 文書を 1 度だけ組んで描いた表示リスト（{@link FrameRender#document}）。 */
-    public List<DisplayItem> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env, ScrollState scrollState, FontResolver fonts) {
-        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, new InteractionState()).items();
-    }
-
-    public List<DisplayItem> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env,
-                                          ScrollState scrollState, FontResolver fonts, InteractionState interactionState) {
-        return FrameRender.document(doc, rootW, rootH, env, scrollState, fonts, interactionState).items();
     }
 
     /** 文書を 1 度だけ組んだ不変の描画シーン（{@link FrameRender#document}）。 */

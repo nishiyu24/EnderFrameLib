@@ -73,8 +73,8 @@ public class ScrollTranslateTest {
 
     private static Frame snapshot(StandaloneView view, int[][] probes) {
         Map<String, DisplayItem> byId = new HashMap<>();
-        List<DisplayItem> current = view.ui().relativeElements(); // ヒットテストが読むのと同じリスト
-        PaintOffsets offsets = view.ui().paintOffsets();
+        List<DisplayItem> current = TestItems.of(view.ui()); // ヒットテストが読むのと同じリスト
+        PaintOffsets offsets = TestItems.offsets(view.ui());
         for (DisplayItem it : current) byId.put(it.id(), it);
         Map<String, float[]> pos = new HashMap<>();
         Map<String, String> body = new HashMap<>();
@@ -247,7 +247,7 @@ public class ScrollTranslateTest {
         StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
         try {
             List<String> ids = new ArrayList<>();
-            for (DisplayItem it : view.ui().relativeElements()) if (synthetic(it.id())) ids.add(it.id());
+            for (DisplayItem it : TestItems.of(view.ui())) if (synthetic(it.id())) ids.add(it.id());
             assertTrue(ids.contains("outer_scrollc"), "通常のコンテナは節にまとめる: " + ids);
             assertTrue(ids.contains("stick_scrollc"), "上の inset だけの sticky を含むコンテナも節にまとめる: " + ids);
         } finally {
@@ -258,7 +258,7 @@ public class ScrollTranslateTest {
         try {
             List<String> ids = new ArrayList<>();
             DisplayItem hdr = null;
-            for (DisplayItem it : fx.ui().relativeElements()) {
+            for (DisplayItem it : TestItems.of(fx.ui())) {
                 if (synthetic(it.id())) ids.add(it.id());
                 if ("hdr".equals(it.id())) hdr = it;
             }
@@ -272,7 +272,7 @@ public class ScrollTranslateTest {
             StandaloneView v2 = new StandaloneView(html().replace(".hdr{position:sticky;top:0;background:#fc6}", hdr), W, H, FontResolver.FALLBACK);
             try {
                 List<String> ids = new ArrayList<>();
-                for (DisplayItem it : v2.ui().relativeElements()) if (synthetic(it.id())) ids.add(it.id());
+                for (DisplayItem it : TestItems.of(v2.ui())) if (synthetic(it.id())) ids.add(it.id());
                 assertTrue(!ids.contains("stick_scrollc"), "式を持たない箱を含むコンテナは節にまとめない（" + hdr + "）: " + ids);
             } finally {
                 v2.close();

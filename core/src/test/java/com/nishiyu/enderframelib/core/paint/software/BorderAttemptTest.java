@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.emit.Clip;
 import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
 import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
@@ -98,7 +99,7 @@ class BorderAttemptTest {
             + "border:5px solid #393;border-radius:50%'></div></body></html>";
 
     private static int[] cpu(String html, GpuSink sink) {
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 100, 80);
+        List<DisplayItem> items = TestItems.displayList(html, 100, 80);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(100, 80, 1f)) {
             if (sink == null) b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0)); else b.renderOnto(items, 0, sink);
             return b.pixmap().pixels().clone();
@@ -134,7 +135,7 @@ class BorderAttemptTest {
     void acceptedBordersAreNotPaintedByTheCpu() {
         // 背景なしの枠だけの箱は、GPU が枠を受け取れば CPU は何も塗らない
         for (String html : new String[]{DASHED, CIRCLE}) {
-            List<DisplayItem> items = SoftwareRendering.displayList(html, 100, 80);
+            List<DisplayItem> items = TestItems.displayList(html, 100, 80);
             BorderSink s = new BorderSink(true);
             try (SoftwareRenderBackend b = new SoftwareRenderBackend(100, 80, 1f)) {
                 b.renderOnto(items, 0, s);

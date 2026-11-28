@@ -41,7 +41,7 @@ public class P8AllocationReductionTest {
 
     private static List<String> sigs(StandaloneView v) {
         v.ui().flushInvalidation();
-        return sigs(v.ui().relativeElements());
+        return sigs(TestItems.of(v.ui()));
     }
 
     @Test

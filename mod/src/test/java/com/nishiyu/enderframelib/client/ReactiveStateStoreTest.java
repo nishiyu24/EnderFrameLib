@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.ReactiveStateStore;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -200,7 +201,7 @@ public class ReactiveStateStoreTest {
     }
 
     private static com.nishiyu.enderframelib.core.paint.model.DisplayItem itemById(String id) {
-        return com.nishiyu.enderframelib.common.TestFlatItems.absolute(session().relativeElements()).stream().filter(i -> id.equals(i.id())).findFirst().orElse(null);
+        return com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(session())).stream().filter(i -> id.equals(i.id())).findFirst().orElse(null);
     }
 
     @Test

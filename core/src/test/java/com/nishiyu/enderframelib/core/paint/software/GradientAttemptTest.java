@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.emit.Clip;
 import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
 import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
@@ -77,7 +78,7 @@ class GradientAttemptTest {
                     + "background:radial-gradient(circle,#fff,#000)\"></div></body></html>"};
 
     private static int[] cpu(String html, GpuSink sink) {
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 80, 60);
+        List<DisplayItem> items = TestItems.displayList(html, 80, 60);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(80, 60, 1f)) {
             if (sink == null) b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0)); else b.renderOnto(items, 0, sink);
             return b.pixmap().pixels().clone();
@@ -88,7 +89,7 @@ class GradientAttemptTest {
     void acceptedGradientIsNotPaintedByTheCpu() {
         for (String html : HTMLS) {
             GradSink s = new GradSink(true);
-            List<DisplayItem> items = SoftwareRendering.displayList(html, 80, 60);
+            List<DisplayItem> items = TestItems.displayList(html, 80, 60);
             try (SoftwareRenderBackend b = new SoftwareRenderBackend(80, 60, 1f)) {
                 b.renderOnto(items, 0, s);
                 assertNull(b.dirtyBounds(), html);

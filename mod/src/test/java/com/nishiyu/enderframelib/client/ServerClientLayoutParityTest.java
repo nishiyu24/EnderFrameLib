@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -236,9 +237,9 @@ public class ServerClientLayoutParityTest {
         session(CLIENT).flushInvalidation();
         session(REFERENCE).markInvalidation(com.nishiyu.enderframelib.common.UiView.InvalidationLevel.RELAYOUT); // 参照は毎回、前回の木と記憶を捨てて全体を作り直す
         session(REFERENCE).flushInvalidation();
-        List<DisplayItem> reference = session(REFERENCE).relativeElements();
-        assertSameDisplayList(reference, session(SERVER).relativeElements(), label + " server", history);
-        assertSameDisplayList(reference, session(CLIENT).relativeElements(), label + " client", history);
+        List<DisplayItem> reference = TestItems.of(session(REFERENCE));
+        assertSameDisplayList(reference, TestItems.of(session(SERVER)), label + " server", history);
+        assertSameDisplayList(reference, TestItems.of(session(CLIENT)), label + " client", history);
     }
 
     private static List<String> elementIds(HtmlNode root) {

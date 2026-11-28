@@ -55,7 +55,7 @@ public class EngineScrollClipRotationTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(src, "", 400, 300);
         ScrollState ss = new ScrollState();
-        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), ss, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        List<DisplayItem> items = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), ss, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
         DisplayItem a = items.stream().filter(i -> i.animDef() != null && !i.animDef().isEmpty()).findFirst().orElseThrow();
         String session = "spin-winding-test";
         ClientWebManager.clearSession(session);
@@ -126,7 +126,7 @@ public class EngineScrollClipRotationTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(src, "", 400, 300);
         ScrollState ss = new ScrollState();
-        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), ss, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        List<DisplayItem> items = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), ss, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
         DisplayItem g = items.stream().filter(i -> i.id().startsWith("o_bgl")).findFirst().orElseThrow();
         assertNotNull(g.meta().borderRadii(), "形は箱の角丸");
         assertEquals(100f, g.meta().borderRadii().topLeft(), 0.01f);

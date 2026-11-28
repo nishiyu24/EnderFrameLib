@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
@@ -119,7 +120,7 @@ public class EnderPanel extends JPanel {
         this.document = compiler.parseDocument(htmlContent, "", w, h);
         var frame = com.nishiyu.enderframelib.common.FrameRender.document(document, w, h, Map.of(), scrollState, fontResolver, interactionState);
         this.rootScene = frame.scene();
-        this.displayList = com.nishiyu.enderframelib.common.TestFlatItems.absolute(frame.items());
+        this.displayList = com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(frame));
     }
 
     private DisplayItem findItemAt(int x, int y) {

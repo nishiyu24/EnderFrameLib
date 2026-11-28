@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.bench;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
@@ -32,7 +33,7 @@ public class PaintBench {
     public void setUp() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         var document = parser.parseDocument(Workloads.html(doc), "", Workloads.VIEWPORT_W, Workloads.VIEWPORT_H);
-        items = parser.renderDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
+        items = TestItems.document(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
                 FontResolver.FALLBACK, new InteractionState());
         cpu = new SoftwareRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, 1f);
     }

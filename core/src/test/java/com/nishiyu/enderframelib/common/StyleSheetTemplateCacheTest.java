@@ -107,7 +107,7 @@ class StyleSheetTemplateCacheTest {
         com.nishiyu.enderframelib.core.kernel.Shortcut.SHEET_CACHE.set(cache);
         StandaloneView v = new StandaloneView(html, w, h, FontResolver.FALLBACK);
         v.ui().flushInvalidation();
-        return new ArrayList<>(v.ui().relativeElements());
+        return new ArrayList<>(TestItems.of(v.ui()));
     }
 
     @Test

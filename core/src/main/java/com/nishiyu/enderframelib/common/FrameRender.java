@@ -19,25 +19,23 @@ import java.util.Map;
 public final class FrameRender {
     private FrameRender() { }
 
-    /** 1 回のフレームの結果: 不変の描画シーン・動的状態（スクロール等）と表示リスト。 */
-    public record Frame(DisplayScene scene, DynamicSceneState dynamic, List<DisplayItem> items,
-                        com.nishiyu.enderframelib.core.paint.SceneSource source) {
+    /** 1 回のフレームの結果: 不変の描画シーン・動的状態（スクロール等）と、描画器へ渡すシーンの添え物（表示項目の列は持たない。M3b-4c-2b-3b-2b-3）。 */
+    public record Frame(DisplayScene scene, DynamicSceneState dynamic, com.nishiyu.enderframelib.core.paint.SceneSource source) {
         /**
          * 描画器へ渡すフレームの値（シーンつき・時刻 0。列は描画器が組む。描くホストが {@link com.nishiyu.enderframelib.core.paint.RenderFrame#at}
-         * で時刻を入れる）。シーンが無ければ列だけのフレーム。
+         * で時刻を入れる）。シーンが無ければ何も描かないフレーム。
          */
         public com.nishiyu.enderframelib.core.paint.RenderFrame renderFrame() {
-            return source != null ? new com.nishiyu.enderframelib.core.paint.RenderFrame(List.of(), List.of(), null, source, null, 0L)
-                    : com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0L);
+            return new com.nishiyu.enderframelib.core.paint.RenderFrame(List.of(), List.of(), null, source, null, 0L);
         }
     }
 
-    /** {@code frame} の結果（列はその場で組む。1 回だけの描画とテストの道具）。 */
+    /** {@code frame} の結果（1 回だけの描画とテストの道具）。 */
     private static Frame result(V3Frame frame, ScrollState scroll) {
         DisplayScene scene = frame.scene();
-        if (scene == null) return new Frame(null, null, List.of(), null);
+        if (scene == null) return new Frame(null, null, null);
         DynamicSceneState dyn = frame.dynamicState(scroll);
-        return new Frame(scene, dyn, frame.paint(),
+        return new Frame(scene, dyn,
                 new com.nishiyu.enderframelib.core.paint.SceneSource(scene, dyn, 0, frame.keyframes(), frame.devicePixelRatio()));
     }
 

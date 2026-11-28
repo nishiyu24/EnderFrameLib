@@ -303,11 +303,12 @@ public class UiView implements AutoCloseable {
     }
 
     /**
-     * 直近に {@link #relativeElements} で組んだ列の描画上の平行移動（利用者の分と、スクロールコンテナの中身の今のスクロール量での移動。不変の写し）。
-     * 列から画面の上の位置を読むときに足す（{@code DisplayItem#resolveAbsolute(…, PaintOffsets)}）。描画器へ渡すフレームは利用者の分だけを持つ。
+     * 利用者の描画上の平行移動（{@link #setPaintOffset}。不変の写し）。シーンの位置に変形とともに足す（MOD のデスクトップの要素の外形）。
+     * スクロールコンテナの中身の移動は描画器が動的な値から足し（{@code ScrollTranslation}）、ビューは持たない（M3b-4c-2b-3b-2b-3 で、列を組むテストの道具
+     * {@code TestItems#offsets} へ移した）。
      */
     public PaintOffsets paintOffsets() {
-        return com.nishiyu.enderframelib.core.paint.ScrollTranslation.apply(userPaintOffsets.snapshot(), v3.scrollContents(), scrollState);
+        return userPaintOffsets.snapshot();
     }
 
     /** 描く絵が変わり得た回数（シーンを組み直した・スクロール量が変わった・利用者の平行移動が変わった）。ホストは前と同じなら描かなくてよい。 */
@@ -607,17 +608,6 @@ public class UiView implements AutoCloseable {
     // ------------------------------------------------------------------
     // 文書・入力・描画の操作（S3: セッション ID の代わりにこのオブジェクトへ）
     // ------------------------------------------------------------------
-
-    /**
-     * 描画要素のキャッシュ（親相対。スクロールコンテナはスクロール 0 で組む）。必要なら先に環境変数と描画キューを更新する。
-     * 描画には使わない（ホストは {@link #renderFrame} を描画器へ渡す）。読むのは MOD の補助（メディアの種類と文字）とテストだけで、M3b-4c-3 で消す。
-     * 要素の位置は {@link #locate}（M3b-4b-4b で列全体を絶対座標へ直す {@code elements()}、M3b-4c-2b-1 で列から ID を引く
-     * {@code elementById}・{@code toAbsolute}・{@code nodeItemAbsolute} を削除した）。
-     */
-    public List<DisplayItem> relativeElements() {
-        beforeElements();
-        return v3.hasScene() ? v3.paint() : List.of();
-    }
 
     /**
      * ビューのフレームの値（M3b-4c-2b-1。計画書 §3.4）: 直近のシーンと動的な値・描画上の平行移動・ホストの重ね描き {@code overlays}・描かない節

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.SceneWalkAccess;
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -48,7 +49,7 @@ public class SceneWalkerTest {
     }
 
     private static List<DisplayItem> items(String body) {
-        return List.copyOf(SoftwareRendering.displayList("<html><body style='margin:0'>" + body + "</body></html>", 200, 100));
+        return List.copyOf(TestItems.displayList("<html><body style='margin:0'>" + body + "</body></html>", 200, 100));
     }
 
     private static Recorder run(SceneWalker w, List<DisplayItem> items, PaintOffsets offsets, long t, float dpr) {
@@ -190,7 +191,7 @@ public class SceneWalkerTest {
             Recorder rec = new Recorder();
             rec.walker = new SceneWalker(backend.sessionId());
             SceneWalkAccess.walk(v, rec.walker, 1000L, Matrix2D.IDENTITY, rec);
-            List<DisplayItem> items = v.ui().relativeElements();
+            List<DisplayItem> items = TestItems.of(v.ui());
             String childBg = items.stream().filter(it -> it.bgColor() == 0xFFCC3333 && it.type() != ElementType.NODE)
                     .findFirst().orElseThrow().id();
             Visit child = rec.visits.stream().filter(x -> childBg.equals(x.id())).findFirst().orElseThrow();
@@ -216,12 +217,12 @@ public class SceneWalkerTest {
             Recorder top = new Recorder();
             top.walker = walker;
             SceneWalkAccess.walk(v, walker, 1100L, Matrix2D.IDENTITY, top);
-            Map<String, String> before = boxes(v.ui().relativeElements());
+            Map<String, String> before = boxes(TestItems.of(v.ui()));
             v.scroll(0, -2, backend.sessionId());
             v.frame(1500L, backend, true);
             float dy = v.ui().dynamicState().scroll.snapshot().values().stream().findFirst().map(xy -> xy[1]).orElse(0f);
             assertTrue(dy > 0f, "前提: 中身がスクロールした");
-            assertEquals(before, boxes(v.ui().relativeElements()), "スクロールで列の項目の位置が変わった（スクロール量を焼き込んだ）");
+            assertEquals(before, boxes(TestItems.of(v.ui())), "スクロールで列の項目の位置が変わった（スクロール量を焼き込んだ）");
             Recorder scrolled = new Recorder();
             scrolled.walker = walker;
             SceneWalkAccess.walk(v, walker, 1500L, Matrix2D.IDENTITY, scrolled);
@@ -230,7 +231,7 @@ public class SceneWalkerTest {
             Map<String, Integer> afterById = new HashMap<>();
             for (int i = 0; i < scrolled.visits.size(); i++) afterById.putIfAbsent(scrolled.visits.get(i).id(), i);
             int moved = 0;
-            List<DisplayItem> items = v.ui().relativeElements();
+            List<DisplayItem> items = TestItems.of(v.ui());
             Map<String, DisplayItem> byId = new HashMap<>();
             for (DisplayItem it : items) byId.put(it.id(), it);
             for (int i = 0; i < top.visits.size(); i++) {
@@ -245,11 +246,11 @@ public class SceneWalkerTest {
             }
             assertTrue(moved >= 10, "中身の項目が少ない: " + moved);
             // スクロールしたまま列を組み直しても（ほかの箱の変化）、中身の項目はスクロール 0 の位置のまま
-            List<DisplayItem> beforeRebuild = v.ui().relativeElements();
+            List<DisplayItem> beforeRebuild = TestItems.of(v.ui());
             v.root().getNodeById("x").setAttribute("style", "width:30px;height:12px;background:#00f");
             v.frame(1600L, backend, true);
-            assertTrue(beforeRebuild != v.ui().relativeElements(), "前提: 列を組み直した");
-            Map<String, String> after = boxes(v.ui().relativeElements());
+            assertTrue(beforeRebuild != TestItems.of(v.ui()), "前提: 列を組み直した");
+            Map<String, String> after = boxes(TestItems.of(v.ui()));
             for (var e : before.entrySet()) if (e.getValue().startsWith("RECT") && after.containsKey(e.getKey()) && !e.getKey().startsWith("x")) {
                 assertEquals(e.getValue(), after.get(e.getKey()), "組み直した列にスクロール量が焼き込まれた: " + e.getKey());
             }
@@ -274,10 +275,10 @@ public class SceneWalkerTest {
             v.frame(1500L, backend, true);
             var node = v.root().getNodeById("r3");
             var loc = v.ui().locate(node);
-            List<DisplayItem> items = v.ui().relativeElements();
+            List<DisplayItem> items = TestItems.of(v.ui());
             DisplayItem bg = items.stream().filter(it -> it.type() != ElementType.NODE && it.bgColor() == 0xFFCC3333
                     && DisplayItem.nodeHandleOf(it.key()) == node.nodeId()).findFirst().orElseThrow();
-            DisplayItem abs = DisplayItem.resolveAbsolute(items, bg, v.ui().paintOffsets());
+            DisplayItem abs = DisplayItem.resolveAbsolute(items, bg, TestItems.offsets(v.ui()));
             assertTrue(loc.y() != DisplayItem.resolveAbsolute(items, bg).y(), "前提: スクロールで位置が動いた");
             assertEquals(loc.y(), abs.y(), 1.0, "画面の上の位置がシーンと違う");
         }

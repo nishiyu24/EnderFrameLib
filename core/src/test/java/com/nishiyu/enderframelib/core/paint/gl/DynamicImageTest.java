@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gl;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
@@ -50,7 +51,7 @@ class DynamicImageTest {
             };
             gl.images(provider);
             SoftwareRenderBackend cpu = new SoftwareRenderBackend(8, 8, 1f).images(provider);
-            List<DisplayItem> list = SoftwareRendering.displayList(HTML, 8, 8);
+            List<DisplayItem> list = TestItems.displayList(HTML, 8, 8);
 
             fill(frame, 0xFFFF0000);
             gl.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(list, 1000));

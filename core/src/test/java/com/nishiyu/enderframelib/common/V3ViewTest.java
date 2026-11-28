@@ -140,7 +140,7 @@ class V3ViewTest {
         try (StandaloneView sv = new StandaloneView(html, W, H, FontResolver.FALLBACK)) {
             SoftwareRenderBackend live = new SoftwareRenderBackend(W, H, 1f);
             sv.frame(1000, live, true);
-            assertTrue(sv.ui().v3.scrollContents().isEmpty(), "前提: 中身を 1 つの節にまとめないコンテナ");
+            assertTrue(TestItems.contents(sv.ui()).isEmpty(), "前提: 中身を 1 つの節にまとめないコンテナ");
             long now = 1000;
             for (float s : new float[]{30f, 75f, 0f}) {
                 sv.ui().scrollState().setScroll(sv.ui().findNode("sc"), 0f, s);

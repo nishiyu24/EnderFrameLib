@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,7 @@ class PseudoRuleIndexTest {
     void generatedContentStillAppearsWhenRulesExist() {
         String html = "<html><head><style>.k::before { content: 'PRE-'; } .k::after { content: '-POST'; }</style></head>"
                 + "<body><p class='k'>mid</p></body></html>";
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 300, 200);
+        List<DisplayItem> items = TestItems.displayList(html, 300, 200);
         assertTrue(hasText(items, "PRE-"), "::before の内容");
         assertTrue(hasText(items, "POST"), "::after の内容");
         assertTrue(items.stream().anyMatch(i -> i.id().contains("_before")));
@@ -30,7 +31,7 @@ class PseudoRuleIndexTest {
     void onlyTheDeclaredPseudoKindIsGenerated() {
         String html = "<html><head><style>.k::before { content: 'ONLY-BEFORE'; }</style></head>"
                 + "<body><p class='k'>mid</p><p>plain</p></body></html>";
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 300, 200);
+        List<DisplayItem> items = TestItems.displayList(html, 300, 200);
         assertTrue(items.stream().anyMatch(i -> i.id().contains("_before")), "宣言した ::before は生成される");
         assertTrue(items.stream().noneMatch(i -> i.id().contains("_after")), "規則の無い ::after は生成されない");
         assertTrue(hasText(items, "plain"));
@@ -39,7 +40,7 @@ class PseudoRuleIndexTest {
     @Test
     void documentsWithoutPseudoRulesRenderNormally() {
         String html = "<html><body><p>one</p><p>two</p></body></html>";
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 300, 200);
+        List<DisplayItem> items = TestItems.displayList(html, 300, 200);
         assertTrue(items.stream().anyMatch(i -> i.text() != null && i.text().contains("one")));
         assertTrue(items.stream().anyMatch(i -> i.text() != null && i.text().contains("two")));
         assertTrue(items.stream().noneMatch(i -> i.id().endsWith("_before") || i.id().endsWith("_after")));

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -78,7 +79,7 @@ class FrameBoundarySnapshotTest {
         try (var backend = new NoDrawBackend()) {
             view.frame(1000, backend, true);
             view.ui().setPaintOffset("box", 15f, 25f);
-            PaintOffsets snap1 = view.ui().paintOffsets();
+            PaintOffsets snap1 = TestItems.offsets(view.ui());
             RenderFrame frame1 = view.frameSnapshot();
             assertTrue(snap1.isImmutable());
             assertSame(snap1, frame1.offsets());
@@ -92,7 +93,7 @@ class FrameBoundarySnapshotTest {
 
             view.ui().clearPaintOffset("box");
             assertEquals(15f, snap1.dx("box"));
-            assertEquals(0f, view.ui().paintOffsets().dx("box"));
+            assertEquals(0f, TestItems.offsets(view.ui()).dx("box"));
         } finally {
             view.close();
         }

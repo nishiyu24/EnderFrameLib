@@ -24,13 +24,8 @@ import java.util.Map;
 public final class SoftwareRendering {
     private SoftwareRendering() {}
 
-    /** HTML をレイアウトして、ディスプレイリスト（アニメーションの補間前）を得る。 */
-    public static List<DisplayItem> displayList(String html, int width, int height, FontResolver fonts) {
-        return frame(html, width, height, fonts).items();
-    }
-
-    /** HTML を 1 回だけ組んだフレーム（シーンつき）。 */
-    private static FrameRender.Frame frame(String html, int width, int height, FontResolver fonts) {
+    /** HTML を 1 回だけ組んだフレーム（シーンつき。表示項目の列はテストの道具 {@code TestItems} がシーンから組む）。 */
+    public static FrameRender.Frame frame(String html, int width, int height, FontResolver fonts) {
         com.nishiyu.enderframelib.core.EngineContext.current().updateHost(h -> h.withPixelSizeFallback(com.nishiyu.enderframelib.core.paint.software.ImageSizes.STANDARD));
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", width, height);
@@ -40,11 +35,6 @@ public final class SoftwareRendering {
     /** 描画器へ渡すフレームの値（シーンから描画器が列を組む。列だけのフレームにしない〔M3b-4c-2b-3b-2a。マスクの印は組む側の階層にある〕）。 */
     private static com.nishiyu.enderframelib.core.paint.RenderFrame renderFrame(String html, int width, int height, long nowMs) {
         return frame(html, width, height, SystemFonts.system()).renderFrame().at(nowMs);
-    }
-
-    /** システムフォントで {@link #displayList(String, int, int, FontResolver)}。 */
-    public static List<DisplayItem> displayList(String html, int width, int height) {
-        return displayList(html, width, height, SystemFonts.system());
     }
 
     /** HTML を時刻 {@code nowMs} の見た目で描いた {@link SoftwareRenderBackend} を返す（等倍・透明な地）。 */

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.emit.GpuLayerAttempt;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -124,7 +125,7 @@ class GpuLayerAttemptTest {
             + "background:#0c0;margin-top:-5px\"></div></div></body></html>";
 
     private static int[] cpu(String html, GpuSink sink) {
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 80, 60);
+        List<DisplayItem> items = TestItems.displayList(html, 80, 60);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(80, 60, 1f)) {
             if (sink == null) b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0)); else b.renderOnto(items, 0, sink);
             return b.pixmap().pixels().clone();
@@ -135,7 +136,7 @@ class GpuLayerAttemptTest {
     void acceptedLayersAreOpenedAndClosedInBalance() {
         for (String html : new String[]{BLUR, OPACITY}) {
             LayerSink s = new LayerSink(true);
-            List<DisplayItem> items = SoftwareRendering.displayList(html, 80, 60);
+            List<DisplayItem> items = TestItems.displayList(html, 80, 60);
             try (SoftwareRenderBackend b = new SoftwareRenderBackend(80, 60, 1f)) {
                 b.renderOnto(items, 0, s);
             }

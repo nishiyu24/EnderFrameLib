@@ -98,7 +98,7 @@ public class ChangeLedgerTest {
         UiView ui = v.ui();
         ui.flushInvalidation();
         List<String> live = new ArrayList<>(), fresh = new ArrayList<>();
-        for (DisplayItem i : ui.relativeElements()) live.add(sig(i));
+        for (DisplayItem i : TestItems.of(ui)) live.add(sig(i));
         for (DisplayItem i : V3Fresh.displayList(ui)) fresh.add(sig(i));
         return List.of(live, fresh);
     }

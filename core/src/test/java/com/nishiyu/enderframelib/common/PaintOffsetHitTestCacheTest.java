@@ -32,7 +32,7 @@ class PaintOffsetHitTestCacheTest {
                 view.ui().setPaintOffset("b", 100 + i * 10, i * 5);
                 float expectX = 100 + i * 10;
                 float expectY = i * 5;
-                assertEquals(expectX, view.ui().paintOffsets().dx("b"), "外部表が最新の移動量を持つ");
+                assertEquals(expectX, TestItems.offsets(view.ui()).dx("b"), "外部表が最新の移動量を持つ");
                 assertEquals("kb", view.ui().hitTest(10 + expectX + 10, 10 + expectY + 10).baseId(),
                         "最新の移動量位置で直接ヒットする");
                 assertNull(view.ui().hitTest(20, 20), "元の位置は移動後に外れる");
@@ -44,7 +44,7 @@ class PaintOffsetHitTestCacheTest {
             view.ui().clearPaintOffset("b");
             assertEquals("kb", view.ui().hitTest(20, 20).baseId(), "解除後は元の位置で当たる");
             view.ui().clearPaintOffset("c");
-            assertEquals(0f, view.ui().paintOffsets().dx("b"));
+            assertEquals(0f, TestItems.offsets(view.ui()).dx("b"));
             assertEquals("kc", view.ui().hitTest(20, 210).baseId());
         } finally {
             view.close();

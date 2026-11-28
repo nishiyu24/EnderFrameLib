@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
@@ -59,11 +60,11 @@ class TextStrokeTest {
         assumeFonts();
         for (String css : new String[]{"color:#f00;-webkit-text-stroke:3px #00f", "color:#f00;-webkit-text-stroke-width:3px;-webkit-text-stroke-color:#00f",
                 "color:#f00;-webkit-text-stroke:#00f 3px"}) {
-            List<DisplayItem> items = SoftwareRendering.displayList(html(css), 200, 110);
+            List<DisplayItem> items = TestItems.displayList(html(css), 200, 110);
             DisplayItem text = items.stream().filter(i -> i.text() != null && i.text().contains("HIl")).findFirst().orElseThrow();
             assertEquals("3.0 ff0000ff", text.events().get("text-stroke"), css);
         }
-        List<DisplayItem> none = SoftwareRendering.displayList(html("color:#f00"), 200, 110);
+        List<DisplayItem> none = TestItems.displayList(html("color:#f00"), 200, 110);
         assertTrue(none.stream().noneMatch(i -> i.events() != null && i.events().containsKey("text-stroke")), "指定が無ければ縁取りは出ない");
     }
 

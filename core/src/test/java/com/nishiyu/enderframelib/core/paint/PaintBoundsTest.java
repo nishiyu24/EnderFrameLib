@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.Document;
@@ -107,7 +108,7 @@ class PaintBoundsTest {
             snapshot[i] = new float[]{b.x(), b.y(), b.w(), b.h(), b.pL(), b.pT(), b.pR(), b.pB(), b.bL(), b.bT(), b.bR(), b.bB()};
         }
 
-        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 300, 300, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        List<DisplayItem> items = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 300, 300, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
         assertTrue(items.stream().anyMatch(it -> "fs".equals(it.baseId())));
         assertTrue(items.stream().anyMatch(it -> "sp".equals(it.baseId()) && it.id().contains("_bgl")));
 

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.emit.Clip;
 import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
 import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
@@ -98,7 +99,7 @@ class ShadowAttemptTest {
             + "border-radius:8px;box-shadow:inset 3px 3px 8px rgba(0,0,0,0.7)'></div></body></html>";
 
     private static int[] cpu(String html, GpuSink sink) {
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 120, 90);
+        List<DisplayItem> items = TestItems.displayList(html, 120, 90);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(120, 90, 1f)) {
             if (sink == null) b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0)); else b.renderOnto(items, 0, sink);
             return b.pixmap().pixels().clone();

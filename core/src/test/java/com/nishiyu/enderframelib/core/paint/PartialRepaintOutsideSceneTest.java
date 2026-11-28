@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -73,7 +74,7 @@ class PartialRepaintOutsideSceneTest {
             v.frame(t, twin, true);
             v.frame(t += 16, twin, true);
             HtmlNode m = v.root().getNodeById("m");
-            String nodeItem = v.ui().relativeElements().stream().filter(it -> it.type() == ElementType.NODE
+            String nodeItem = TestItems.of(v.ui()).stream().filter(it -> it.type() == ElementType.NODE
                     && DisplayItem.nodeHandleOf(it.key()) == m.nodeId()).findFirst().orElseThrow().id();
             for (int i = 1; i <= 4; i++) {
                 v.ui().setPaintOffset(nodeItem, 30f * i, 10f * i);

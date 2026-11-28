@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
 
 import com.nishiyu.enderframelib.common.Document;
@@ -125,7 +126,7 @@ public class ClipResolverTest {
         var compiler = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 500, 400);
         ScrollState ss = new ScrollState();
-        return com.nishiyu.enderframelib.common.FrameRender.document(doc, 500, 400, java.util.Map.of(), ss, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        return TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 500, 400, java.util.Map.of(), ss, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
     }
 
     @Test

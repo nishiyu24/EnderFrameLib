@@ -72,12 +72,12 @@ class ScrollIndexReuseTest {
             String sid = backend.sessionId();
             view.mouseMove(60, 100, sid);
             Object rootBefore = view.ui().scene().root;
-            List<DisplayItem> before = view.ui().relativeElements();
-            PaintOffsets beforeOff = view.ui().paintOffsets().snapshot();
+            List<DisplayItem> before = TestItems.of(view.ui());
+            PaintOffsets beforeOff = TestItems.offsets(view.ui()).snapshot();
             view.scroll(0, -2, sid);
             view.frame(1016, backend, true);
-            List<DisplayItem> after = view.ui().relativeElements();
-            PaintOffsets afterOff = view.ui().paintOffsets();
+            List<DisplayItem> after = TestItems.of(view.ui());
+            PaintOffsets afterOff = TestItems.offsets(view.ui());
             assertSame(rootBefore, view.ui().scene().root, "スクロールだけでシーンを組み直してはならない");
             assertEquals(before.size(), after.size(), "組んだ列の形はスクロールで変わらない（中身はスクロール 0 で組む）");
             int changed = 0;

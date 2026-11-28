@@ -182,7 +182,7 @@ public final class TestBoxes {
     public static List<DisplayItem> render(String html, int w, int h) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", w, h);
-        return FrameRender.document(doc, w, h, FontResolver.FALLBACK).items();
+        return TestItems.of(FrameRender.document(doc, w, h, FontResolver.FALLBACK));
     }
 
     public static Box find(Box root, String id) {

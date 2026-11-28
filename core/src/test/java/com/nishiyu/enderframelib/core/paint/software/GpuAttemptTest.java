@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.emit.Clip;
 import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
 import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
@@ -76,7 +77,7 @@ class GpuAttemptTest {
 
     @Test
     void acceptedFillIsNotPaintedByTheCpu() {
-        List<DisplayItem> items = SoftwareRendering.displayList(HTML, 80, 50);
+        List<DisplayItem> items = TestItems.displayList(HTML, 80, 50);
         FakeSink sink = new FakeSink(true);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(80, 50, 1f)) {
             cpu.renderOnto(items, 0, sink);
@@ -88,7 +89,7 @@ class GpuAttemptTest {
 
     @Test
     void refusedFillFallsBackToExactlyTheSamePixelsAsNoSink() {
-        List<DisplayItem> items = SoftwareRendering.displayList(HTML, 80, 50);
+        List<DisplayItem> items = TestItems.displayList(HTML, 80, 50);
         int[] withRefusal, plain;
         FakeSink sink = new FakeSink(false);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(80, 50, 1f)) {

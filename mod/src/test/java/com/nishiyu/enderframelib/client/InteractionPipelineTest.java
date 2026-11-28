@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
@@ -230,7 +231,7 @@ public class InteractionPipelineTest {
 
         var frame = com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
         assertNotNull(frame.scene());
-        List<DisplayItem> elements = frame.items();
+        List<DisplayItem> elements = TestItems.of(frame);
         assertNotNull(elements);
 
         // ルート直下の要素が height: 100% の場合に高さが 0 にならず、子要素群が正しくレンダリングされること

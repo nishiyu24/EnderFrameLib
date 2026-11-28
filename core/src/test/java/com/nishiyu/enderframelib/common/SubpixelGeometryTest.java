@@ -69,7 +69,7 @@ public class SubpixelGeometryTest {
         Document doc = parser.parseDocument(THIRDS, "", VIEWPORT_W, VIEWPORT_H);
         TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
                 new ScrollState(), FontResolver.FALLBACK));
-        List<DisplayItem> elements = com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        List<DisplayItem> elements = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
 
         DisplayItem a = DisplayItem.resolveAbsolute(elements, findElement(elements, "a_bg"));
         DisplayItem b = DisplayItem.resolveAbsolute(elements, findElement(elements, "b_bg"));

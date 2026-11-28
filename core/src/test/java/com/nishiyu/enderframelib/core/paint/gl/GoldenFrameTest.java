@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gl;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -60,9 +61,9 @@ class GoldenFrameTest {
 
     private static void record(Map<String, String> out, String name, StandaloneView v, SoftwareRenderBackend sw, long now) {
         v.frame(now, sw, true);
-        List<DisplayItem> items = v.ui().relativeElements();
+        List<DisplayItem> items = TestItems.of(v.ui());
         out.put(name, Long.toHexString(pixelsHash(sw.pixmap().pixels())) + " "
-                + Long.toHexString(itemsHash(items, v.ui().paintOffsets())) + " " + items.size());
+                + Long.toHexString(itemsHash(items, TestItems.offsets(v.ui()))) + " " + items.size());
     }
 
     /** 全シナリオを実行して「名前 → 画素ハッシュ 項目ハッシュ 項目数」を返す。 */

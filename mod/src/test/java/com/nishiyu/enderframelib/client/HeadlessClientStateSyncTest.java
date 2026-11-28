@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -186,6 +187,6 @@ public class HeadlessClientStateSyncTest {
     }
 
     private static DisplayItem item(SessionContext session, String id) {
-        return com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements()).stream().filter(i -> id.equals(i.id())).findFirst().orElseThrow();
+        return com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(session)).stream().filter(i -> id.equals(i.id())).findFirst().orElseThrow();
     }
 }

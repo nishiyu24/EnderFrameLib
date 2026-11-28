@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 
 import com.nishiyu.enderframelib.common.Document;
@@ -39,7 +40,7 @@ public class VoidwaveSiteTest {
         ScrollState scrollState = new ScrollState();
         TestBoxes.Box root = TestBoxes.root(compiler.layoutDocument(doc, width, height, Map.of(), scrollState, FontResolver.FALLBACK, new InteractionState()));
         assertNotNull(root);
-        return com.nishiyu.enderframelib.common.FrameRender.document(doc, width, height, java.util.Map.of(), scrollState, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        return TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, width, height, java.util.Map.of(), scrollState, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
     }
 
     @Test

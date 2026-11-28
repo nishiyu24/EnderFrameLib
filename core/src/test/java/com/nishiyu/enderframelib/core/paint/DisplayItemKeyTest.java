@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -91,7 +92,7 @@ class DisplayItemKeyTest {
         com.nishiyu.enderframelib.common.StandaloneView view = new com.nishiyu.enderframelib.common.StandaloneView(
                 html, 300, 200, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
         try {
-            java.util.List<DisplayItem> items = view.ui().relativeElements();
+            java.util.List<DisplayItem> items = TestItems.of(view.ui());
             java.util.Set<Long> seen = new java.util.HashSet<>();
             int shadows = 0, insets = 0, frags = 0;
             for (DisplayItem it : items) {
@@ -123,7 +124,7 @@ class DisplayItemKeyTest {
         com.nishiyu.enderframelib.common.StandaloneView view = new com.nishiyu.enderframelib.common.StandaloneView(
                 html, 300, 200, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
         try {
-            java.util.List<DisplayItem> items = view.ui().relativeElements();
+            java.util.List<DisplayItem> items = TestItems.of(view.ui());
             int textCount = 0;
             for (DisplayItem it : items) {
                 if (it.type() == ElementType.TEXT) {
@@ -174,7 +175,7 @@ class DisplayItemKeyTest {
         com.nishiyu.enderframelib.common.StandaloneView view = new com.nishiyu.enderframelib.common.StandaloneView(
                 html, 300, 200, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
         try {
-            java.util.List<DisplayItem> items = view.ui().relativeElements();
+            java.util.List<DisplayItem> items = TestItems.of(view.ui());
             boolean foundNode = false, foundBg = false, foundInput = false, foundChk = false, foundSel = false;
             for (DisplayItem it : items) {
                 int handle = DisplayItem.nodeHandleOf(it.key());
@@ -289,7 +290,7 @@ class DisplayItemKeyTest {
         com.nishiyu.enderframelib.common.StandaloneView view = new com.nishiyu.enderframelib.common.StandaloneView(
                 html, 300, 200, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
         try {
-            java.util.List<DisplayItem> items = view.ui().relativeElements();
+            java.util.List<DisplayItem> items = TestItems.of(view.ui());
             boolean foundProg = false, foundBorder = false, foundSbV = false, foundSbVt = false, foundScrollc = false;
             for (DisplayItem it : items) {
                 int handle = DisplayItem.nodeHandleOf(it.key());
@@ -334,7 +335,7 @@ class DisplayItemKeyTest {
         com.nishiyu.enderframelib.common.StandaloneView view = new com.nishiyu.enderframelib.common.StandaloneView(
                 html, 300, 200, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
         try {
-            java.util.List<DisplayItem> items = view.ui().relativeElements();
+            java.util.List<DisplayItem> items = TestItems.of(view.ui());
             com.nishiyu.enderframelib.core.dom.node.HtmlNode boxNode = view.root().getNodeById("box");
             assertNotNull(boxNode);
             long expectedBoxNodeKey = DisplayItem.nodeKeyOf(boxNode.nodeId());

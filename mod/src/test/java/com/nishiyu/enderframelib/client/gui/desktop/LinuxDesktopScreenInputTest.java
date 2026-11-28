@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.gui.desktop;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.scene.SceneHit;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
@@ -54,7 +55,7 @@ public class LinuxDesktopScreenInputTest {
     /** 状態を DOM へ流し、描画キューを処理してヒットテストを最新にする。 */
     private void refresh() {
         screen.state.syncToDom();
-        com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements());
+        com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(session));
     }
 
     private void click(double x, double y) {
@@ -70,7 +71,7 @@ public class LinuxDesktopScreenInputTest {
 
     /** id がそのまま一致する描画要素（要素本体）。 */
     private DisplayItem node(String id) {
-        return com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements()).stream().filter(i -> id.equals(i.id())).findFirst().orElse(null);
+        return com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(session)).stream().filter(i -> id.equals(i.id())).findFirst().orElse(null);
     }
 
     private double[] center(String id) {
@@ -113,7 +114,7 @@ public class LinuxDesktopScreenInputTest {
         assertTrue(menuOpen());
 
         // メニューの外、ドック上の Notes を押す。閉じるだけで、エディタは起動しないこと
-        DisplayItem notes = com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements()).stream()
+        DisplayItem notes = com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(session)).stream()
                 .filter(i -> i.events() != null && "win:toggle:editor".equals(i.events().get("onclick")))
                 .findFirst().orElse(null);
         assertNotNull(notes, "ドックの Notes が描画されていること");
@@ -384,7 +385,7 @@ public class LinuxDesktopScreenInputTest {
         refresh();
 
         java.util.Map<String, DisplayItem> byId = new java.util.HashMap<>();
-        for (DisplayItem i : com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements())) {
+        for (DisplayItem i : com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(session))) {
             assertFalse(i.id().isEmpty() || i.id().startsWith("_"), "描画要素の id が空の節から作られていないこと: " + i.id());
             byId.put(i.id(), i);
         }
@@ -393,7 +394,7 @@ public class LinuxDesktopScreenInputTest {
         refresh();
         int memory = 0;
         int terminal = 0;
-        for (DisplayItem i : com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements())) {
+        for (DisplayItem i : com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(session))) {
             if (i.type() != com.nishiyu.enderframelib.core.paint.model.ElementType.TEXT) continue;
             String bound = boundTextKey(i.baseId());
             if (bound == null) continue;

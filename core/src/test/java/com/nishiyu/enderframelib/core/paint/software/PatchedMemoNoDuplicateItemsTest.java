@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -47,7 +48,7 @@ class PatchedMemoNoDuplicateItemsTest {
                     now += 16;
                     view.frame(now, cpu, true);
                     Set<String> seen = new HashSet<>();
-                    for (DisplayItem it : view.ui().relativeElements()) assertTrue(seen.add(it.id()), "seed " + seed + " 手 " + step + ": 同じ id の項目が 2 つある: " + it.id());
+                    for (DisplayItem it : TestItems.of(view.ui())) assertTrue(seen.add(it.id()), "seed " + seed + " 手 " + step + ": 同じ id の項目が 2 つある: " + it.id());
                 }
             } finally {
                 view.close();

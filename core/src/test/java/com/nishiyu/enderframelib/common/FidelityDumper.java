@@ -80,7 +80,7 @@ final class FidelityDumper {
                 new ScrollState(), FontResolver.FALLBACK, state));
 
         // 描画順は本番の描画と同じ並べ替えから取る（W5 で描画モデルを替えてもこの経路のまま）
-        List<TestBoxes.Box> painted = paintOrder(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
+        List<TestBoxes.Box> painted = paintOrder(root, TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState())));
 
         // ルート箱はパーサが作る合成ノード（html_root）なので、著者が書いた要素だけを拾う。
         // 辿るのは要素ツリー: display: contents の要素は箱を作らないが、ブラウザ側も

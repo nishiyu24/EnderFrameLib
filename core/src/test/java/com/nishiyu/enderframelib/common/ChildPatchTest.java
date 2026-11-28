@@ -145,7 +145,7 @@ class ChildPatchTest {
 
     private static List<DisplayItem> flush(StandaloneView v) {
         v.ui().flushInvalidation();
-        return v.ui().relativeElements();
+        return TestItems.of(v.ui());
     }
 
     /** 記憶の無いビルダーが、今の箱の木から作る表示リスト。 */

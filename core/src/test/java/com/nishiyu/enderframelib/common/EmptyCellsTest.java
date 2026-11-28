@@ -43,6 +43,6 @@ public class EmptyCellsTest {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument("<style>body{margin:0}</style>" + html, "", 400, 300);
         TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 400, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK));
-        return com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        return TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
     }
 }

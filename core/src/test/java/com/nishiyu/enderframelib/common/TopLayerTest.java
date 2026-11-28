@@ -84,7 +84,7 @@ public class TopLayerTest {
                 + "<div id=s style='position:absolute;left:0;top:0;width:50px;height:50px;z-index:5;background:#00f'></div>");
         c.el("p").showPopover();
         TestBoxes.Box root = c.layout();
-        var items = com.nishiyu.enderframelib.common.FrameRender.document(c.doc, W, H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, (com.nishiyu.enderframelib.core.dom.InteractionState) ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) c.doc.root).interactionState()).items();
+        var items = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(c.doc, W, H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, (com.nishiyu.enderframelib.core.dom.InteractionState) ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) c.doc.root).interactionState()));
         int ip = -1, is = -1;
         for (int i = 0; i < items.size(); i++) {
             String id = items.get(i).id();
@@ -97,7 +97,7 @@ public class TopLayerTest {
 
     private java.util.List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> render(Ctx c) {
         TestBoxes.Box root = c.layout();
-        return com.nishiyu.enderframelib.common.FrameRender.document(c.doc, W, H, java.util.Map.of(), new ScrollState(), com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, (com.nishiyu.enderframelib.core.dom.InteractionState) ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) c.doc.root).interactionState()).items();
+        return TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(c.doc, W, H, java.util.Map.of(), new ScrollState(), com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, (com.nishiyu.enderframelib.core.dom.InteractionState) ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) c.doc.root).interactionState()));
     }
 
     private static com.nishiyu.enderframelib.core.paint.model.DisplayItem item(

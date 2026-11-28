@@ -48,7 +48,19 @@ public final class ShowcaseApp {
             try (var cpu = new com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend(1280, 800, 1f)) {
                 v.frame(0, cpu, true);
             }
-            for (var it : v.ui().relativeElements()) if (it.text() != null && (it.text().contains("node-1025") || it.text().equals("1") || it.text().equals("name"))) System.out.println(it.baseId() + " " + it.type() + " x=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.ui().relativeElements(), it).x() + " y=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.ui().relativeElements(), it).y() + " w=" + it.width() + " '" + it.text() + "'");
+            // シーンの層の描画命令から文字を探し、要素の位置はシーンから引く（表示項目の列は本体に無い。M3b-4c-2b-3b-2b-3）
+            var cursor = new com.nishiyu.enderframelib.core.paint.scene.DrawOps.Cursor();
+            for (var layer : v.ui().scene().byNodeId().values()) {
+                if (layer.ops() == null) continue;
+                cursor.reset(layer.ops());
+                while (cursor.next()) {
+                    String t = cursor.text();
+                    if (t == null || !(t.contains("node-1025") || t.equals("1") || t.equals("name"))) continue;
+                    var loc = v.ui().locate(layer.node);
+                    System.out.println(layer.node.key() + " " + cursor.type() + " x=" + (loc != null ? loc.x() : Float.NaN)
+                            + " y=" + (loc != null ? loc.y() : Float.NaN) + " w=" + cursor.w() + " '" + t + "'");
+                }
+            }
             return;
         }
         if (args.length > 0 && args[0].equals("--hoverbench")) { // GL 経路で :hover の切替フレームの CPU 時間と確保量を測る
@@ -128,9 +140,9 @@ public final class ShowcaseApp {
             long start = System.currentTimeMillis();
             for (int i = 0; i < n; i++) {
                 long t0 = System.nanoTime();
-                var itemsBefore = view.ui().relativeElements();
+                var sceneBefore = view.ui().scene();
                 if (view.frame(System.currentTimeMillis(), gl, false)) drawn++;
-                if (view.ui().relativeElements() != itemsBefore) rebuilt++;
+                if (view.ui().scene() != sceneBefore) rebuilt++;
                 long took = (System.nanoTime() - t0) / 1_000_000;
                 if (i >= warm) ms[i - warm] = took;
                 if (took > 80 && Boolean.getBoolean("showcase.verbose")) System.out.println("slow frame " + i + ": " + took + "ms " + view.lastTimings());
@@ -195,14 +207,14 @@ public final class ShowcaseApp {
         try (var cpu = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(1280, 800, 1f)) {
             System.out.println("GL_RENDERER=" + org.lwjgl.opengl.GL11.glGetString(org.lwjgl.opengl.GL11.GL_RENDERER) + " / " + org.lwjgl.opengl.GL11.glGetString(org.lwjgl.opengl.GL11.GL_VERSION));
             view.frame(0, cpu, true);
-            var items = view.ui().relativeElements();
+            var frame0 = view.ui().renderFrame(java.util.List.of(), null, 0L); // シーンのフレーム（列は描画器が準備で組む）
             long t = System.currentTimeMillis();
-            for (int i = 0; i < 150; i++) cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, t + i * 16L));
+            for (int i = 0; i < 150; i++) cpu.render(frame0.at(t + i * 16L));
             int n = Integer.getInteger("render.frames", 300);
             long c0 = mx.getCurrentThreadCpuTime(), w0 = System.nanoTime();
             long wallBlock = System.nanoTime();
             for (int i = 0; i < n; i++) {
-                cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, t + 3000 + i * 16L));
+                cpu.render(frame0.at(t + 3000 + i * 16L));
                 if (Boolean.getBoolean("render.sync")) cpu.pixmap(); // GPU の完了まで待つ（読み戻し）: GPU の時間も含めて測る
                 if (Boolean.getBoolean("render.trace") && i % 100 == 99) { // 蓄積して遅くなっていないかを見る
                     System.out.printf("  frames %d-%d: %.1f ms/frame wall, heap %d MB%n", i - 99, i, (System.nanoTime() - wallBlock) / 1e6 / 100,
@@ -210,13 +222,13 @@ public final class ShowcaseApp {
                     wallBlock = System.nanoTime();
                 }
             }
-            System.out.printf("render-only: %.2f ms/frame cpu, %.1f ms/frame wall (%d items)%n", (mx.getCurrentThreadCpuTime() - c0) / 1e6 / n, (System.nanoTime() - w0) / 1e6 / n, items.size());
+            System.out.printf("render-only: %.2f ms/frame cpu, %.1f ms/frame wall (%d layers)%n", (mx.getCurrentThreadCpuTime() - c0) / 1e6 / n, (System.nanoTime() - w0) / 1e6 / n, view.ui().scene().byNodeId().size());
         }
     }
 
     private static float galleryY(StandaloneView v) {
-        for (var it : v.ui().relativeElements()) if (it.baseId().equals("gallery")) return com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.ui().relativeElements(), it).y(); // 親相対なので絶対位置へ
-        return Float.NaN;
+        var loc = v.ui().locate("gallery"); // 要素の位置はシーンから引く
+        return loc != null ? loc.y() : Float.NaN;
     }
 
     // ---- UI ビルダー部品 ----

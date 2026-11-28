@@ -318,8 +318,9 @@ tasks.register('runNoHtmlSite', JavaExec) {
 sourceSets {
     jmh {
         java.srcDir 'src/jmh/java'
-        compileClasspath += sourceSets.main.output + configurations.compileClasspath + configurations.viewerRuntime
-        runtimeClasspath += sourceSets.main.output + configurations.runtimeClasspath + configurations.viewerRuntime
+        // ベンチは表示項目の列をテストの道具（src/testFixtures の TestItems）で組む（本体は列を持たない。M3b-4c-2b-3b-2b-3）
+        compileClasspath += sourceSets.main.output + sourceSets.testFixtures.output + configurations.compileClasspath + configurations.viewerRuntime
+        runtimeClasspath += sourceSets.main.output + sourceSets.testFixtures.output + configurations.runtimeClasspath + configurations.viewerRuntime
     }
 }
 dependencies {

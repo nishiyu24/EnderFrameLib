@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.common.TextEditing;
 import org.junit.jupiter.api.Test;
@@ -79,7 +80,7 @@ class StandaloneMultiClickTest {
         StandaloneView v = new StandaloneView(html, 100, 100);
         try (SoftwareRenderBackend a = new SoftwareRenderBackend(100, 100, 1f)) {
             v.frame(0, a, true);
-            assertEquals(100, v.ui().relativeElements().stream().filter(i -> i.baseId().equals("d")).findFirst().orElseThrow().width());
+            assertEquals(100, TestItems.of(v.ui()).stream().filter(i -> i.baseId().equals("d")).findFirst().orElseThrow().width());
         }
         v.resize(240, 80);
         assertEquals(240, v.width());
@@ -87,10 +88,10 @@ class StandaloneMultiClickTest {
         assertTrue(v.needsFrame());
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(240, 80, 1f)) {
             long t = 0;
-            for (int i = 0; i < 50 && v.ui().relativeElements().stream().noneMatch(it -> it.baseId().equals("d") && it.width() == 240); i++) {
+            for (int i = 0; i < 50 && TestItems.of(v.ui()).stream().noneMatch(it -> it.baseId().equals("d") && it.width() == 240); i++) {
                 v.frame(t += 50, b, true);
             }
-            assertEquals(240, v.ui().relativeElements().stream().filter(i -> i.baseId().equals("d")).findFirst().orElseThrow().width());
+            assertEquals(240, TestItems.of(v.ui()).stream().filter(i -> i.baseId().equals("d")).findFirst().orElseThrow().width());
         }
     }
 }

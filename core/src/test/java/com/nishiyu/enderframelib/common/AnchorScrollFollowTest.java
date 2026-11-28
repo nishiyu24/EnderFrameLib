@@ -91,11 +91,11 @@ class AnchorScrollFollowTest {
             scroll(sv, 100f);
             sv.frame(now += 16, be, true);
             assertEquals(110, y(sv, "t"), 0.01f);
-            List<String> incremental = sv.ui().relativeElements().stream().map(MutationScenario::sig).toList();
+            List<String> incremental = TestItems.of(sv.ui()).stream().map(MutationScenario::sig).toList();
             sv.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
             sv.frame(now += 16, be, true);
             assertEquals(110, y(sv, "t"), 0.01f, "作り直しても反転した候補のまま");
-            assertEquals(incremental, sv.ui().relativeElements().stream().map(MutationScenario::sig).toList());
+            assertEquals(incremental, TestItems.of(sv.ui()).stream().map(MutationScenario::sig).toList());
         }
     }
 

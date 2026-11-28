@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 
 import com.nishiyu.enderframelib.common.Document;
@@ -54,7 +55,7 @@ public class FieldsetLegendTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", 400, 300);
         TestBoxes.Box root = TestBoxes.root(compiler.layoutDocument(doc, 400, 300, Map.of(), new ScrollState(), FontResolver.FALLBACK));
-        List<DisplayItem> items = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        List<DisplayItem> items = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
 
         TestBoxes.Box fs = find(root, "fs");
         TestBoxes.Box lg = find(root, "lg");

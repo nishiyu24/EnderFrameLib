@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -21,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MinecraftHostSurfaceTest {
 
     private static List<DisplayItem> items(String body) {
-        return SoftwareRendering.displayList("<html><body style='margin:0'>" + body + "</body></html>", 300, 200);
+        return TestItems.displayList("<html><body style='margin:0'>" + body + "</body></html>", 300, 200);
     }
 
     private static DisplayItem first(List<DisplayItem> list, ElementType type) {
@@ -103,8 +104,8 @@ class MinecraftHostSurfaceTest {
         var scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
         parser.layoutDocument(doc, 200, 100, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, state);
         state.setHoveredNode(doc.root.getElementById("b"));
-        List<DisplayItem> hovered = com.nishiyu.enderframelib.common.FrameRender.document(doc, 200, 100, java.util.Map.of(), scroll,
-                com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, state).items();
+        List<DisplayItem> hovered = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 200, 100, java.util.Map.of(), scroll,
+                com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK, state));
         assertTrue(hovered.stream().anyMatch(i -> "b".equals(i.baseId()) && (i.bgColor() & 0xFFFFFF) == 0x00FF00),
                 "ホバー中は緑の背景の項目が出る（コアはその項目をそのまま描く）");
     }

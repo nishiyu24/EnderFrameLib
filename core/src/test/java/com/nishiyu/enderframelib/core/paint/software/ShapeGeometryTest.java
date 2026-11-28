@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.emit.ShapeGeometry;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -141,7 +142,7 @@ class ShapeGeometryTest {
     // ---- 画像・円の枠線
 
     private static DisplayItem firstImage(String style) {
-        List<DisplayItem> items = SoftwareRendering.displayList(
+        List<DisplayItem> items = TestItems.displayList(
                 "<html><body style=\"margin:0\"><img style=\"" + style + "\" src=\"x.png\"></body></html>", 100, 80);
         for (DisplayItem it : items) if (it.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.IMAGE) return it;
         fail("no image item");

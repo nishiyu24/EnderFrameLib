@@ -692,12 +692,15 @@ class ArchitectureHealthTest {
      * 要素の位置はシーンから引く（{@code UiView#locate}）。M3b-4c-2b-2b からビューは列を持たず、{@code relativeElements()} はその場で組む。
      * M3b-4c-2b-3b-2b-1 から本体でそれを呼ぶのはビュー自身だけ（IME の位置は重ね描きから、MOD の面のキャレット・ツールチップはシーンから引く。
      * MOD のメディアはシーンの命令から読む {@code UiView#videos}）。MOD は描画器の準備した列（{@code PreparedFrame#drawList}）を読まない
-     * （Minecraft が描く中身は準備が集めた値 {@code PreparedFrame#hostContents}。M3b-4c-2b-3b-2b-2）。
+     * （Minecraft が描く中身は準備が集めた値 {@code PreparedFrame#hostContents}。M3b-4c-2b-3b-2b-2）。M3b-4c-2b-3b-2b-3 から本体は列を組む口
+     * （{@code relativeElements}・{@code FrameRender.Frame#items}・{@code SoftwareRendering.displayList}・{@code renderDocument}）を持たず、
+     * 列はテストの道具（{@code TestItems}）だけが組む。
      */
-    static final Set<String> VIEW_LIST_READERS = Set.of("UiView.java");
+    static final Set<String> VIEW_LIST_READERS = Set.of();
     static final Set<String> MOD_PREPARED_LIST_READERS = Set.of();
     private static final Pattern PREPARED_LIST_READ = Pattern.compile("\\.drawList\\(\\)");
-    private static final Pattern VIEW_LIST_READ = Pattern.compile("\\.(renderCache|relativeElements)\\(\\)");
+    private static final Pattern VIEW_LIST_READ = Pattern.compile(
+            "\\.(renderCache|relativeElements)\\(\\)|SoftwareRendering\\.displayList\\(|\\.renderDocument\\(|> relativeElements\\(|\\bdisplayList\\(String");
 
     @Test
     void hostsDrawTheViewFrameNotTheViewList() throws IOException {

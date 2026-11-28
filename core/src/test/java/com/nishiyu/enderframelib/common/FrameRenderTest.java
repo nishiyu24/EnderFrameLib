@@ -37,7 +37,7 @@ class FrameRenderTest {
                 assertEquals(v.w(), a.w(), 0f, id + " w");
                 assertEquals(v.h(), a.h(), 0f, id + " h");
             }
-            assertEquals(view.ui().relativeElements(), f.items(), "表示リストもビューの最初のフレームと同じ");
+            assertEquals(TestItems.of(view.ui()), TestItems.of(f), "表示リストもビューの最初のフレームと同じ");
         }
     }
 
@@ -61,7 +61,7 @@ class FrameRenderTest {
         assertEquals(card, root.node, "根は渡した要素");
         assertEquals(128f, root.w(), 0.01f, "幅は要素の指定（120px + padding 4px × 2）");
         assertTrue(root.h() > 0);
-        List<DisplayItem> items = f.items();
+        List<DisplayItem> items = TestItems.of(f);
         assertTrue(items.stream().anyMatch(i -> i.type() == ElementType.TEXT && "world".equals(i.text())), "子孫の文字も描く");
         assertTrue(items.stream().anyMatch(i -> (i.bgColor() & 0xFFFFFF) == 0x112233), "要素の背景を描く");
         // 幅が auto の要素は使える幅いっぱい（旧 layoutSubtree と同じ。文書の根と違い、指定のある幅はビューポートに固定しない）

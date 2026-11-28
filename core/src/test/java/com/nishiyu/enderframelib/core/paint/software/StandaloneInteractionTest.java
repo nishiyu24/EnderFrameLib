@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import org.junit.jupiter.api.Test;
@@ -66,7 +67,7 @@ class StandaloneInteractionTest {
             v.keyDown(GLFW.GLFW_KEY_BACKSPACE, 0);
             assertEquals("h", node(v, "b").attrs.get("value"));
             v.frame(16, cpu, false);
-            assertTrue(v.ui().relativeElements().stream().anyMatch(i -> i.text() != null && i.text().contains("h")), "表示にも反映される");
+            assertTrue(TestItems.of(v.ui()).stream().anyMatch(i -> i.text() != null && i.text().contains("h")), "表示にも反映される");
 
             v.mouseMove(150, 150, s); // 何も無い所
             v.mouseButton(true, s);
@@ -171,7 +172,7 @@ class StandaloneInteractionTest {
             assertEquals(1, timeout.get());
             assertTrue(v.timers().isEmpty(), "済んだタイマーは消える");
             v.frame(216, cpu, false);
-            assertTrue(v.ui().relativeElements().stream().anyMatch(i -> "timer".equals(i.text())), "タイマーでの DOM 変更が表示に出る");
+            assertTrue(TestItems.of(v.ui()).stream().anyMatch(i -> "timer".equals(i.text())), "タイマーでの DOM 変更が表示に出る");
         }
     }
 

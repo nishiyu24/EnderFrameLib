@@ -24,7 +24,7 @@ class RelativeElementsTest {
         try (StandaloneView v = new StandaloneView(HTML, 400, 300, FontResolver.FALLBACK);
              SoftwareRenderBackend sw = new SoftwareRenderBackend(400, 300, 1f)) {
             v.frame(0, sw, true);
-            List<DisplayItem> rel = v.ui().relativeElements();
+            List<DisplayItem> rel = TestItems.of(v.ui());
             assertTrue(rel.stream().anyMatch(i -> i.type() == ElementType.NODE && i.hints().relativeOrigin()), "親相対の NODE がある");
             // 一番内側の文字は、親相対では原点付近・絶対では箱の位置（20+10+5+7 だけずれる）
             DisplayItem relText = rel.stream().filter(i -> i.type() == ElementType.TEXT && "inner".equals(i.text().trim())).findFirst().orElseThrow();
@@ -51,7 +51,7 @@ class RelativeElementsTest {
         try (StandaloneView v = new StandaloneView(html, 400, 300, FontResolver.FALLBACK);
              SoftwareRenderBackend sw = new SoftwareRenderBackend(400, 300, 1f)) {
             v.frame(0, sw, true);
-            List<DisplayItem> flat = TestFlatItems.absolute(v.ui().relativeElements());
+            List<DisplayItem> flat = TestFlatItems.absolute(TestItems.of(v.ui()));
             int checked = 0;
             for (String id : List.of("outer", "inner", "b", "scroller", "tall")) {
                 DisplayItem node = flat.stream().filter(i -> i.type() == ElementType.NODE && id.equals(i.id())).findFirst().orElseThrow();

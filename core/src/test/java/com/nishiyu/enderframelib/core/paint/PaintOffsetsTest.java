@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -99,12 +100,12 @@ class PaintOffsetsTest {
             view.mouseMove(80, 70, inc.sessionId());
             view.scroll(0, -3, inc.sessionId());
             view.frame(1016, inc, true);
-            List<DisplayItem> after = view.ui().relativeElements();
+            List<DisplayItem> after = TestItems.of(view.ui());
             assertSame(rootBefore, view.ui().scene().root, "スクロールしてもシーンは組み直さない（中身の節の移動は描画器が足す）");
-            assertFalse(view.ui().paintOffsets().isEmpty());
+            assertFalse(TestItems.offsets(view.ui()).isEmpty());
 
             // 新しい SoftwareRenderBackend でゼロから描いた絵と完全一致
-            full.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(after, view.ui().paintOffsets(), 1016));
+            full.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(after, TestItems.offsets(view.ui()), 1016));
             assertArrayEquals(full.pixmap().pixels(), inc.pixmap().pixels());
 
             // GPU のスクロール丸めは項目や PaintOffsets を書き換えずに姿勢だけ丸める

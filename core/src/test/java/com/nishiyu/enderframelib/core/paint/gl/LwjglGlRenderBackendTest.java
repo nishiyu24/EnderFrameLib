@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gl;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -199,7 +200,7 @@ class LwjglGlRenderBackendTest {
         String body = "<div style='width:40px;height:40px;padding:10px;background:#ff0000;opacity:0.5'>"
                 + "<div style='width:30px;height:30px;background:#0000ff'></div></div>";
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(80, 80)) {
-            var items = SoftwareRendering.displayList(page(body), 80, 80);
+            var items = TestItems.displayList(page(body), 80, 80);
             SoftwareRenderBackend c = new SoftwareRenderBackend(80, 80);
             for (int i = 0; i < 3; i++) {
                 g.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
@@ -279,7 +280,7 @@ class LwjglGlRenderBackendTest {
         String body = "<div style='width:40px;height:40px;padding:10px;background:#ff0000;filter:blur(2px);"
                 + "mask-image:linear-gradient(#000000,#000000)'><div style='width:30px;height:30px;background:#0000ff'></div></div>";
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(90, 90)) {
-            var items = SoftwareRendering.displayList(page(body), 90, 90);
+            var items = TestItems.displayList(page(body), 90, 90);
             SoftwareRenderBackend c = new SoftwareRenderBackend(90, 90);
             for (int i = 0; i < 3; i++) {
                 g.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
@@ -529,7 +530,7 @@ class LwjglGlRenderBackendTest {
                 + "<style>@keyframes fade{from{opacity:1}to{opacity:0}}</style>";
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(60, 60)) {
             SoftwareRenderBackend c = new SoftwareRenderBackend(60, 60);
-            var items = SoftwareRendering.displayList(page(body), 60, 60);
+            var items = TestItems.displayList(page(body), 60, 60);
             int prev = -1;
             for (long t : new long[]{T0, T0 + 500, T0 + 900}) {
                 g.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, t));

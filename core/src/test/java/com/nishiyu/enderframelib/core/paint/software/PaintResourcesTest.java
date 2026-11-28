@@ -1,4 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.software;
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 
@@ -46,7 +47,7 @@ class PaintResourcesTest {
         // 2 つの描画器が同じ供給元を共有する。供給元に 1 回書けば、どちらの描画にも効く
         SoftwareRenderBackend a = new SoftwareRenderBackend(60, 40, 1f, "res-a", shared);
         SoftwareRenderBackend b = new SoftwareRenderBackend(60, 40, 1f, "res-b", shared);
-        List<DisplayItem> items = SoftwareRendering.displayList(
+        List<DisplayItem> items = TestItems.displayList(
                 "<html><body style='margin:0'><canvas style='width:40px;height:30px'></canvas></body></html>", 60, 40);
         a.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 1000L));
         assertEquals(0, a.pixmap().get(20, 15) >>> 24, "供給元が無ければ canvas は空");

@@ -41,7 +41,7 @@ class RelativeTextareaPaintTest {
         try (StandaloneView v = new StandaloneView(HTML, 300, 160, FontResolver.FALLBACK);
              SoftwareRenderBackend sw = new SoftwareRenderBackend(300, 160, 1f)) {
             v.frame(0, sw, true);
-            List<DisplayItem> rel = v.ui().relativeElements();
+            List<DisplayItem> rel = TestItems.of(v.ui());
             assertTrue(rel.stream().anyMatch(i -> i.type() == ElementType.TEXTAREA), "textarea の項目がある");
             Pixmap fromRelative = paint(rel, 300, 160);
             Pixmap fromAbsolute = paint(TestFlatItems.absolute(rel), 300, 160);

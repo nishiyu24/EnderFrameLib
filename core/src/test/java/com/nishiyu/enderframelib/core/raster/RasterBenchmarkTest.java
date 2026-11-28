@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.raster;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 
 import com.nishiyu.enderframelib.core.raster.canvas.CanvasRenderingContext2D;
@@ -110,8 +111,8 @@ class RasterBenchmarkTest {
         Document doc = parser.parseDocument("<html><head><style>body{margin:0}</style></head><body>" + html + "</body></html>", "", 800, 600);
         TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, 800, 600, Map.of(), new ScrollState(), FontResolver.FALLBACK));
         RasterImageStore.clear();
-        double first = medianMs(1, () -> com.nishiyu.enderframelib.common.FrameRender.document(doc, 800, 600, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
-        double warm = medianMs(15, () -> com.nishiyu.enderframelib.common.FrameRender.document(doc, 800, 600, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
+        double first = medianMs(1, () -> TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 800, 600, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState())));
+        double warm = medianMs(15, () -> TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 800, 600, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState())));
         System.out.printf("[R8 benchmark] display list with 40 inline svgs: cold %.2f ms, warm (raster cached) %.2f ms, rasters stored %d%n",
                 first, warm, RasterImageStore.size());
         assertTrue(RasterImageStore.size() >= 1);

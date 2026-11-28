@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 
 import com.nishiyu.enderframelib.common.SoftwareRendering;
@@ -32,8 +33,8 @@ class StyleMemoTest {
         var scroll = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
         var root = TestBoxes.root(compiler.layoutDocument(doc, 400, 300, java.util.Map.of(), scroll,
                 com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()));
-        List<DisplayItem> first = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
-        List<DisplayItem> second = com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()).items(); // メモを使う
+        List<DisplayItem> first = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState()));
+        List<DisplayItem> second = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 400, 300, java.util.Map.of(), scroll, com.nishiyu.enderframelib.core.text.font.SystemFonts.system(), new com.nishiyu.enderframelib.core.dom.InteractionState())); // メモを使う
         assertFalse(first.isEmpty());
         assertEquals(first, second);
         assertTrue(first.stream().anyMatch(i -> !i.animDef().isEmpty()), "animation が項目に載る");
@@ -41,9 +42,9 @@ class StyleMemoTest {
 
     @Test
     void memoizedListEqualsAFreshParse() {
-        List<DisplayItem> warm = SoftwareRendering.displayList(HTML, 400, 300);
-        SoftwareRendering.displayList(HTML, 400, 300); // 別の文書（別のスタイル）でも結果は同じ
-        List<DisplayItem> again = SoftwareRendering.displayList(HTML, 400, 300);
+        List<DisplayItem> warm = TestItems.displayList(HTML, 400, 300);
+        TestItems.displayList(HTML, 400, 300); // 別の文書（別のスタイル）でも結果は同じ
+        List<DisplayItem> again = TestItems.displayList(HTML, 400, 300);
         assertEquals(warm, again);
     }
 

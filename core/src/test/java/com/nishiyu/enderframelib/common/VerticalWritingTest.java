@@ -33,7 +33,7 @@ public class VerticalWritingTest {
         }
 
         List<DisplayItem> render(TestBoxes.Box root) {
-            return FrameRender.document(doc, W, H, FontResolver.FALLBACK).items();
+            return TestItems.of(FrameRender.document(doc, W, H, FontResolver.FALLBACK));
         }
 
         List<DisplayItem> render() {

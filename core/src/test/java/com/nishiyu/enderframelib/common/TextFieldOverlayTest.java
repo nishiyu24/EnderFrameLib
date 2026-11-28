@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TextFieldOverlayTest {
 
     private static DisplayItem field(String html, String part) {
-        List<DisplayItem> items = SoftwareRendering.displayList(html, 300, 150);
+        List<DisplayItem> items = TestItems.displayList(html, 300, 150);
         for (DisplayItem it : items) {
             if (it.isPart(part)) return DisplayItem.resolveAbsolute(items, it);
         }

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -105,7 +106,7 @@ public class FrameStructureTest {
     @Test
     public void listOnlyFramesDeriveParentsFromItemKeys() {
         try (StandaloneView v = view("<div id=a style='background:#eee'><div id=b style='background:#f00;height:5px'></div></div>")) {
-            List<DisplayItem> items = v.ui().relativeElements();
+            List<DisplayItem> items = TestItems.of(v.ui());
             FrameStructure s = PreparedFrame.full(RenderFrame.of(items, 0L)).structure();
             assertEquals(items.size(), s.size());
             assertEquals(indexOf(items, "a"), s.parent(indexOf(items, "b")));

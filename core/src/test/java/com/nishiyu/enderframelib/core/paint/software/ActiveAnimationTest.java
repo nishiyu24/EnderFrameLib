@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import org.junit.jupiter.api.Test;
 
@@ -23,8 +24,8 @@ class ActiveAnimationTest {
         StandaloneView v = new StandaloneView(STATIC, 60, 60);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(60, 60, 1f)) {
             v.frame(1000, cpu, true);
-            assertFalse(cpu.hasActiveAnimation(v.ui().relativeElements(), 1000));
-            assertFalse(cpu.hasActiveAnimation(v.ui().relativeElements(), 60_000));
+            assertFalse(cpu.hasActiveAnimation(TestItems.of(v.ui()), 1000));
+            assertFalse(cpu.hasActiveAnimation(TestItems.of(v.ui()), 60_000));
         }
     }
 
@@ -33,8 +34,8 @@ class ActiveAnimationTest {
         StandaloneView v = new StandaloneView(LOOP, 60, 60);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(60, 60, 1f)) {
             v.frame(1000, cpu, true);
-            assertTrue(cpu.hasActiveAnimation(v.ui().relativeElements(), 1000));
-            assertTrue(cpu.hasActiveAnimation(v.ui().relativeElements(), 600_000));
+            assertTrue(cpu.hasActiveAnimation(TestItems.of(v.ui()), 1000));
+            assertTrue(cpu.hasActiveAnimation(TestItems.of(v.ui()), 600_000));
         }
     }
 
@@ -45,8 +46,8 @@ class ActiveAnimationTest {
             v.frame(1000, cpu, true);
             v.mouseMove(10, 10, cpu.sessionId());
             v.frame(1016, cpu, false);
-            assertTrue(cpu.hasActiveAnimation(v.ui().relativeElements(), 1016));
-            assertFalse(cpu.hasActiveAnimation(v.ui().relativeElements(), 2000));
+            assertTrue(cpu.hasActiveAnimation(TestItems.of(v.ui()), 1016));
+            assertFalse(cpu.hasActiveAnimation(TestItems.of(v.ui()), 2000));
         }
     }
 }

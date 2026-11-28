@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -55,7 +56,7 @@ class FrameCullingTest {
     void longListsComposeOnlyTheVisibleChunks() {
         for (boolean inner : new boolean[]{false, true}) {
             try (StandaloneView v = new StandaloneView(list(2000, inner), W, H, FontResolver.FALLBACK)) {
-                int all = v.ui().relativeElements().size();
+                int all = TestItems.of(v.ui()).size();
                 int culled = composedCount(v, 0);
                 assertTrue(culled * 20 < all, (inner ? "内側" : "文書") + ": 見えるチャンクだけ " + culled + " / " + all);
                 assertTrue(java.util.Arrays.equals(paint(v, true, 0), paint(v, false, 0)), "画素 = カリングしない列");
@@ -110,7 +111,7 @@ class FrameCullingTest {
                 v.ui().handleScrollLocally(20, 20, 0, -11); // 文書を 330px（1 段 30px）
                 v.ui().flushInvalidation();
                 assertEquals(330f, scrollY(v), 0.5f, "前提: 先頭のチャンクがビューポートの上の外");
-                assertTrue(composedCount(v, 0) < v.ui().relativeElements().size(), "前提: 先頭のチャンクを飛ばす");
+                assertTrue(composedCount(v, 0) < TestItems.of(v.ui()).size(), "前提: 先頭のチャンクを飛ばす");
                 int[] ref = paint(v, true, 0), got = paint(v, false, 0);
                 boolean seen = false;
                 for (int p : ref) seen |= inks[ci].test(p);
@@ -150,7 +151,7 @@ class FrameCullingTest {
     void userPaintOffsetsComposeEverything() {
         try (StandaloneView v = new StandaloneView(list(400, false), W, H, FontResolver.FALLBACK)) {
             UiView ui = v.ui();
-            int all = ui.relativeElements().size();
+            int all = TestItems.of(ui).size();
             ui.setPaintOffset("z", 1f, 0f);
             List<DisplayItem> items = new FrameComposer().compose(ui.renderFrame(List.of(), null, 0)).items();
             assertEquals(all, items.size(), "利用者の平行移動があるフレームは全部を組む");

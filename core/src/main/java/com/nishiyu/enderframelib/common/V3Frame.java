@@ -14,9 +14,7 @@ import com.nishiyu.enderframelib.core.layout.fragment.FragmentPipeline;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutFragment;
 import com.nishiyu.enderframelib.core.layout.fragment.LayoutSession;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
-import com.nishiyu.enderframelib.core.paint.SceneDisplayListAdapter;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
 import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
 import com.nishiyu.enderframelib.core.paint.scene.DynamicSceneState;
 import com.nishiyu.enderframelib.core.paint.scene.SceneAnchorFollow;
@@ -30,7 +28,7 @@ import java.util.Objects;
 
 /**
  * 新経路（Engine v3）の 1 ビューの 1 フレーム（M3b-2）: 凍結した変更台帳 → 箱の木（{@code BoxTreeCompiler}）→ 断片
- * （{@code FragmentLayout}）→ {@link DisplayScene}（{@link SceneEmitter}）→ 表示リスト（一時アダプタ {@link SceneDisplayListAdapter}）。
+ * （{@code FragmentLayout}）→ {@link DisplayScene}（{@link SceneEmitter}）。表示リストはビューが持たず、描画器の準備がシーンから組む（M3b-4c-2b-3b-2b-3）。
  * 入口は台帳 1 本で、状態はこのビューに閉じる（プロセス共有はしない）。
  *
  * <p>{@link DisplayScene} は親相対座標・スクロール 0・unstuck で不変のため、スクロールだけの変化では {@code DisplayScene} を作り直さず
@@ -39,7 +37,6 @@ import java.util.Objects;
 final class V3Frame {
     private FragmentPipeline pipeline;
     private SceneEmitter emitter;
-    private SceneDisplayListAdapter adapter;
     private StyleSheet sheet;
     private Map<String, String> env;
     private FontResolver fonts;
@@ -74,7 +71,6 @@ final class V3Frame {
             width = w;
             height = h;
             pipeline.restyleWith(new StyleSource(doc.sheet, state, env, w, h));
-            adapter.setViewport(w, h);
         }
         StyleSource fresh = null;
         if (rebuild) {
@@ -97,8 +93,6 @@ final class V3Frame {
             com.nishiyu.enderframelib.core.paint.LayerOps layerOps = new com.nishiyu.enderframelib.core.paint.LayerOps(w, h, kf);
             layerOps.setDevicePixelRatio(devicePixelRatio);
             emitter.opsSource(layerOps);
-            adapter = new SceneDisplayListAdapter(w, h, kf);
-            adapter.setDevicePixelRatio(devicePixelRatio);
             ledger = null;
         }
         LayoutFragment frag = pipeline.frame(doc.root, ledger, w, h);
@@ -160,7 +154,6 @@ final class V3Frame {
         dpr = 1f; // 部分木の組み立ては装置の画素比を指定しない（一時アダプタの既定）
         emitter = new SceneEmitter(session, kf);
         emitter.opsSource(new com.nishiyu.enderframelib.core.paint.LayerOps(w, h, kf));
-        adapter = new SceneDisplayListAdapter(w, h, kf);
         LayoutFragment frag = pipeline.frameSubtree(root, w, h);
         this.scene = emitter.emit(frag, pipeline.boxRoot(), w, h);
     }
@@ -173,20 +166,6 @@ final class V3Frame {
         state.bindStyleSheet(sheet);
         if (sheet != null && sheet.usesHasSelectors()) state.propagateDirtyToAncestors();
         else state.discardUnscopedLog();
-    }
-
-    /**
-     * 直近のシーンからその場で表示リストを組む（M3b-4c-2b-2b から、描画には使わず列の外の読み手〔テスト・MOD の補助〕だけが呼ぶ。M3b-4c-3 で消す）。
-     * 中身を 1 つの節にまとめるスクロールコンテナはスクロール 0 で組む（{@link SceneDisplayListAdapter#emitUnscrolled}。M3b-4b-4a）: スクロール量は
-     * {@link #scrollContents} から平行移動として足す（{@code UiView#paintOffsets}）。
-     */
-    List<DisplayItem> paint() {
-        long t0 = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
-        try {
-            return adapter.emitUnscrolled(scene, DynamicSceneState.of(scroll, width, height));
-        } finally {
-            StageProfiler.end(PipelineStage.DISPLAY_LIST, t0);
-        }
     }
 
     private static boolean onlyRestyleOrScroll(ChangeLedger ledger) {
@@ -257,10 +236,7 @@ final class V3Frame {
         return emitter;
     }
 
-    /** 直近のフレームで中身を 1 つの節にまとめたスクロールコンテナ（スクロールだけの更新で節を動かす）。 */
-    List<ScrollContentInfo> scrollContents() {
-        return adapter != null ? adapter.scrollContents() : List.of();
-    }
+
 
     /** 要素 {@code node} の算出スタイル（CSSOM の {@code getComputedStyle}）。 */
     com.nishiyu.enderframelib.core.css.ComputedStyle styleOf(HtmlNode node) {

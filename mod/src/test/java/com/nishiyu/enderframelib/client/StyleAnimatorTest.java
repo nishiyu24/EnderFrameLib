@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 
 import com.nishiyu.enderframelib.common.Document;
@@ -154,7 +155,7 @@ public class StyleAnimatorTest {
         }
 
         List<String> render() {
-            return project(view.ui().relativeElements());
+            return project(TestItems.of(view.ui()));
         }
 
         void setClass(String id, String value, long now) {
@@ -174,7 +175,7 @@ public class StyleAnimatorTest {
         ((HtmlDocument) doc.root).setInteractionState(state);
         ScrollState scroll = new ScrollState();
         TestBoxes.Box root = TestBoxes.root(COMPILER.layoutDocument(doc, W, H, Map.of(), scroll, FontResolver.FALLBACK, state));
-        return project(com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), scroll, FontResolver.FALLBACK, state).items());
+        return project(TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), scroll, FontResolver.FALLBACK, state)));
     }
 
     @Test

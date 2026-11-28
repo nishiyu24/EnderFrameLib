@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 
 import com.nishiyu.enderframelib.common.Document;
@@ -41,7 +42,7 @@ public class MediaTestSiteTest {
         TestBoxes.Box rootBox = TestBoxes.root(compiler.layoutDocument(doc, 854, 480, Map.of(), scrollState,
                 FontResolver.FALLBACK, new InteractionState()));
         assertNotNull(rootBox);
-        return com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), scrollState, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+        return TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, 854, 480, java.util.Map.of(), scrollState, FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
     }
 
     private static List<DisplayItem> videos(List<DisplayItem> items) {

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.GoldenFiles;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
@@ -119,8 +120,8 @@ public class DisplayListGoldenTest {
     public static String dumpDisplayList(String html, int viewportW, int viewportH) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(html, "", viewportW, viewportH);
-        List<DisplayItem> elements = com.nishiyu.enderframelib.common.TestFlatItems.absolute(com.nishiyu.enderframelib.common.FrameRender.document(doc, viewportW, viewportH,
-                FontResolver.FALLBACK).items());
+        List<DisplayItem> elements = com.nishiyu.enderframelib.common.TestFlatItems.absolute(TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, viewportW, viewportH,
+                FontResolver.FALLBACK)));
 
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < elements.size(); i++) {

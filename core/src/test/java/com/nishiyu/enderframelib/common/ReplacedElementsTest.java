@@ -41,7 +41,7 @@ public class ReplacedElementsTest {
                 "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", W, H);
         doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withResolution(dppx));
         TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
-        return new Rendered(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
+        return new Rendered(root, TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, java.util.Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState())));
     }
 
     private static TestBoxes.Box find(TestBoxes.Box box, String id) {
@@ -208,8 +208,8 @@ public class ReplacedElementsTest {
         for (int round = 0; round < 2; round++) {
             TestBoxes.Box lowRoot = TestBoxes.root(parser.layoutDocument(low, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
             TestBoxes.Box highRoot = TestBoxes.root(parser.layoutDocument(high, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
-            List<DisplayItem> lowItems = com.nishiyu.enderframelib.common.FrameRender.document(low, W, H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
-            List<DisplayItem> highItems = com.nishiyu.enderframelib.common.FrameRender.document(high, W, H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items();
+            List<DisplayItem> lowItems = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(low, W, H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
+            List<DisplayItem> highItems = TestItems.of(com.nishiyu.enderframelib.common.FrameRender.document(high, W, H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()));
 
             assertEquals("a.png", item(new Rendered(lowRoot, lowItems), "i_img").text());
             assertEquals("b.png", item(new Rendered(highRoot, highItems), "i_img").text());

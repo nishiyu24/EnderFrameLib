@@ -31,7 +31,7 @@ class LocalInputValueTest {
     }
 
     private static DisplayItem item(UiView v, String id) {
-        for (DisplayItem it : v.relativeElements()) if (id.equals(it.id())) return it;
+        for (DisplayItem it : TestItems.of(v)) if (id.equals(it.id())) return it;
         return null;
     }
 

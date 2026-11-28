@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -163,9 +164,9 @@ class RealDocumentFramesTest {
         void frame(String name, long now) {
             frameUnrecorded(now);
             int[] px = backend.pixmap().pixels().clone();
-            List<DisplayItem> items = List.copyOf(v.ui().relativeElements());
+            List<DisplayItem> items = List.copyOf(TestItems.of(v.ui()));
             sink.accept(v, new Frame(doc + "/" + name, keepPixels ? px : new int[]{(int) pixelsHash(px)},
-                    items, v.ui().paintOffsets().snapshot(), hits(v)));
+                    items, TestItems.offsets(v.ui()).snapshot(), hits(v)));
         }
     }
 
@@ -188,7 +189,7 @@ class RealDocumentFramesTest {
     private static List<double[]> hoverTargets(StandaloneView v) {
         List<double[]> out = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
-        List<DisplayItem> items = v.ui().relativeElements();
+        List<DisplayItem> items = TestItems.of(v.ui());
         List<String> preferred = new ArrayList<>();
         collectHoverables(v.root(), preferred);
         for (String key : preferred) {

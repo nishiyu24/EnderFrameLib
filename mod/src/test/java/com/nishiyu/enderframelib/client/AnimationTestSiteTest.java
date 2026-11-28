@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.TestBoxes;
 
 import com.nishiyu.enderframelib.core.paint.AnimatedValues;
@@ -72,7 +73,7 @@ public class AnimationTestSiteTest {
         TestBoxes.Box rootBox = TestBoxes.root(frame);
         assertNotNull(rootBox);
 
-        List<DisplayItem> items = frame.items();
+        List<DisplayItem> items = TestItems.of(frame);
         assertNotNull(items);
         assertTrue(items.size() >= 50, "アニメーション要素やカード群が DisplayList として多数生成されていること (size=" + items.size() + ")");
 

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.scene;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -29,7 +30,7 @@ class SceneMediaTest {
             List<SceneVideo> videos = v.videos();
             assertEquals(Set.of(new SceneVideo("https://example.com/a.mp4", true, true), new SceneVideo("https://example.com/b.mp4", false, false)),
                     Set.copyOf(videos), "動画だけを、指定と属性つきで");
-            Set<String> fromList = v.relativeElements().stream().filter(i -> i.type() == ElementType.VIDEO).map(DisplayItem::text)
+            Set<String> fromList = TestItems.of(v).stream().filter(i -> i.type() == ElementType.VIDEO).map(DisplayItem::text)
                     .collect(Collectors.toSet());
             assertEquals(fromList, videos.stream().map(SceneVideo::src).collect(Collectors.toSet()), "列の動画の項目と同じ");
             assertTrue(SceneMedia.videos(null).isEmpty());

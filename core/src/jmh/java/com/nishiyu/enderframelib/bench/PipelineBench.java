@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.bench;
 
+import com.nishiyu.enderframelib.common.TestItems;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.FrameRender;
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -68,7 +69,7 @@ public class PipelineBench {
     /** 文書を一から組んで描く（前回の木も記憶も無い 1 回だけのフレーム）。 */
     @Benchmark
     public List<DisplayItem> fullFrame() {
-        return FrameRender.document(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, FontResolver.FALLBACK).items();
+        return TestItems.of(FrameRender.document(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, FontResolver.FALLBACK));
     }
 
     /** {@code :hover} を 1 回切り替えた増分の 1 フレーム（{@code <button>} が無い文書は何もしない）。 */
@@ -78,6 +79,6 @@ public class PipelineBench {
         hoverOn = !hoverOn;
         view.ui().setHoveredElement(hoverOn ? hoverTarget.key() : "");
         view.frame(now += 16, NO_DRAW, true);
-        return view.ui().relativeElements();
+        return TestItems.of(view.ui());
     }
 }
