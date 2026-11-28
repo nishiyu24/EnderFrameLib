@@ -116,7 +116,7 @@ public final class MutationFuzz {
 
     private static List<String> sigs(StandaloneView v) {
         List<String> out = new ArrayList<>();
-        for (var it : v.items()) out.add(MutationScenario.sig(it));
+        for (var it : v.ui().relativeElements()) out.add(MutationScenario.sig(it));
         return out;
     }
 

@@ -133,7 +133,7 @@ public final class StandaloneView implements AutoCloseable {
         this.interaction = ui.interactionState();
         long t0 = Clock.SYSTEM.nanos();
         ui.loadLocalHtml(html, width, height);
-        this.items = ui.renderCache();
+        this.items = ui.relativeElements();
         timings = "load=" + (Clock.SYSTEM.nanos() - t0) / 1_000_000 + "ms items=" + items.size();
     }
 
@@ -145,7 +145,7 @@ public final class StandaloneView implements AutoCloseable {
         scrollTargets.clear();
         edits.clear();
         ui.loadLocalHtml(html, width, height);
-        items = ui.renderCache();
+        items = ui.relativeElements();
         lastOffsetsVersion = -1;
         redraw = true;
         drawn = false;
@@ -204,11 +204,6 @@ public final class StandaloneView implements AutoCloseable {
 
     public int height() {
         return height;
-    }
-
-    /** 直近のフレームのディスプレイリスト。 */
-    public List<DisplayItem> items() {
-        return items;
     }
 
     /** 直近のフレームの、別のスレッドへ渡せる不変の写し（ビューのフレームの値。{@link RenderFrame#snapshot}）。 */
@@ -301,10 +296,10 @@ public final class StandaloneView implements AutoCloseable {
         ui.timers().runAnimationFrames((double) nowMs);
         ui.timers().runDueTimers();
         stepScroll(prevNow == 0 ? 16 : nowMs - prevNow);
-        List<DisplayItem> before = ui.renderCache();
+        List<DisplayItem> before = ui.relativeElements();
         long t0 = Clock.SYSTEM.nanos();
         ui.flushInvalidation();
-        List<DisplayItem> after = ui.renderCache();
+        List<DisplayItem> after = ui.relativeElements();
         boolean rebuilt = before != after;
         PaintOffsets offsets = ui.paintOffsets();
         int offsetsVer = offsets.version();

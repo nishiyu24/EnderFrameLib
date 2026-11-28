@@ -1,5 +1,6 @@
 # MemoryAndLatencyGate 基準値（キー | 基準値 | 上限）。./gradlew :core:memoryAndLatencyGate -Pgate.update で更新。
 # 内部カウンタ（memo*）不使用。ヒープは MB、交互 A/B は inc/full 比または ms。
+# 交互 A/B と latency は M3b-4c-2b-2a から CPU の描画器で描くところまでを測る（それまでは表示項目の列まで）。
 heap:showcase:open | 1.687 | 4.038
 heap:voidwave.html:open | 4.240 | 7.223
 heap:large-list-2000:open | 13.567 | 19.300
@@ -7,12 +8,12 @@ heap:varied-list-2000:open | 47.543 | 68.500
 heap:large-list-2000:child | 13.615 | 19.300
 heap:varied-list-2000:hover | 47.455 | 68.500
 heap:showcase:text | 1.766 | 4.140
-ab-inc-vs-full:showcase:hover | 0.1386 | 0.9000
-ab-inc-vs-full:showcase:text | 0.0796 | 0.9800
-ab-inc-vs-full:large-list-2000:child | 0.2705 | 1.0500
-ab-inc-vs-full:varied-list-2000:hover | 0.0861 | 0.6000
-latency:showcase:open | 7.5988 | 18.2914
-latency:showcase:resizeexact | 1.4818 | 5.3744
-latency:voidwave.html:open | 16.5252 | 34.0162
-latency:varied-list-2000:fontsize | 77.3599 | 157.7198
-latency:large-list-8000:child | 27.4250 | 57.8500
+ab-inc-vs-full:showcase:hover | 0.4900 | 0.9000
+ab-inc-vs-full:showcase:text | 0.1910 | 0.9800
+ab-inc-vs-full:large-list-2000:child | 0.4070 | 1.0500
+ab-inc-vs-full:varied-list-2000:hover | 0.3000 | 0.6000
+latency:showcase:open | 12.8349 | 28.6698
+latency:showcase:resizeexact | 1.8434 | 6.6868
+latency:voidwave.html:open | 35.3578 | 73.7156
+latency:varied-list-2000:fontsize | 121.6093 | 246.2186
+latency:large-list-8000:child | 53.2673 | 109.5346

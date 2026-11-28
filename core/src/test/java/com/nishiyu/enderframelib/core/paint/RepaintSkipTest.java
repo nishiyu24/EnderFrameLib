@@ -87,7 +87,7 @@ class RepaintSkipTest {
             long t = 1000;
             twin.step(v, t);
             assertFalse(twin.step(v, t += 16));
-            List<DisplayItem> base = v.ui().renderCache();
+            List<DisplayItem> base = v.ui().relativeElements();
             DisplayItem paint = base.stream().filter(i -> i.type() != ElementType.NODE && i.width() > 0).findFirst().orElseThrow();
             List<DisplayItem> overlay = List.of(paint.withPosition(paint.x() + 90, paint.y() + 90));
             assertTrue(twin.stepOverlays(v, overlay, t += 16), "重ね描きを足したら描く");

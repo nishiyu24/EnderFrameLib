@@ -26,7 +26,7 @@ class Scene3DConnectionTest {
     private static List<DisplayItem> render(String html) {
         StandaloneView view = new StandaloneView(html, 640, 480, FontResolver.FALLBACK);
         view.ui().flushInvalidation();
-        return view.ui().renderCache();
+        return view.ui().relativeElements();
     }
 
     private static DisplayItem scene(List<DisplayItem> items) {

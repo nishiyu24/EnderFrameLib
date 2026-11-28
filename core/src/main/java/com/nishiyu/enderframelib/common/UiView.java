@@ -312,10 +312,6 @@ public class UiView implements AutoCloseable {
         return paintOffsets.snapshot();
     }
 
-    public List<DisplayItem> renderCache() {
-        return renderCache;
-    }
-
     private void setRenderCache(List<DisplayItem> renderCache) {
         if (renderCache == null || renderCache.isEmpty()) {
             this.renderCache = Collections.emptyList();

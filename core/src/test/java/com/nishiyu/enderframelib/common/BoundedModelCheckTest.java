@@ -108,7 +108,7 @@ class BoundedModelCheckTest {
     private static String firstDifference(StandaloneView view) {
         var ui = view.ui();
         ui.flushInvalidation();
-        List<String> memoized = sigs(ui.renderCache());
+        List<String> memoized = sigs(ui.relativeElements());
         List<String> expected = sigs(V3Fresh.displayList(ui));
         if (expected.size() != memoized.size()) return "項目の数 " + memoized.size() + " != " + expected.size();
         for (int i = 0; i < expected.size(); i++) if (!expected.get(i).equals(memoized.get(i))) return "項目 " + i + " 違う所: " + around(memoized.get(i), expected.get(i));

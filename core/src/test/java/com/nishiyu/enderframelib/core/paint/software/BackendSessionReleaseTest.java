@@ -31,7 +31,7 @@ class BackendSessionReleaseTest {
         try (StandaloneView v = new StandaloneView(HTML, 200, 100, FontResolver.FALLBACK)) {
             SoftwareRenderBackend sw = new SoftwareRenderBackend(200, 100, 1f);
             v.frame(0L, sw, true);
-            List<DisplayItem> items = v.items();
+            List<DisplayItem> items = v.ui().relativeElements();
             assertTrue(statesLeft(sw.sessionId(), items) > 0, "描いた項目に補間状態ができていない（前提）");
             sw.close();
             assertEquals(0, statesLeft(sw.sessionId(), items), "閉じた描画器のセッションに補間状態が残った");
@@ -44,7 +44,7 @@ class BackendSessionReleaseTest {
         try (StandaloneView v = new StandaloneView(HTML, 200, 100, FontResolver.FALLBACK)) {
             SoftwareRenderBackend borrower = new SoftwareRenderBackend(200, 100, 1f, session, new PaintResources());
             v.frame(0L, borrower, true);
-            List<DisplayItem> items = v.items();
+            List<DisplayItem> items = v.ui().relativeElements();
             int before = statesLeft(session, items);
             assertTrue(before > 0, "描いた項目に補間状態ができていない（前提）");
             borrower.close();

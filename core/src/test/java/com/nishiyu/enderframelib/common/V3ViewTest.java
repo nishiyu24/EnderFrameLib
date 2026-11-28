@@ -290,10 +290,10 @@ class V3ViewTest {
         for (int i = 0; i < 300; i++) rows.append("<li id=r").append(i).append(">row ").append(i).append("</li>");
         try (StandaloneView sv = new StandaloneView(rows.append("</ul>").toString(), W, H, FontResolver.FALLBACK);
              var be = new MutationScenario.NoDraw()) {
-            List<DisplayItem> opened = sv.ui().renderCache();
+            List<DisplayItem> opened = sv.ui().relativeElements();
             long idle = UiView.IDLE_FRAMES.get();
             sv.frame(1000, be, true);
-            assertTrue(opened == sv.ui().renderCache(), "開いた直後のフレームで表示リストを作り直した");
+            assertTrue(opened == sv.ui().relativeElements(), "開いた直後のフレームで表示リストを作り直した");
             assertEquals(idle + 1, UiView.IDLE_FRAMES.get(), "開いた直後のフレームが静止フレームにならない");
         }
     }

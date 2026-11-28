@@ -279,7 +279,9 @@ public final class MemoryAndLatencyGate {
     private static void runChildLatency(String doc, String scenario, String mode, int warmup, int frames) throws IOException {
         String html = loadHtml(doc);
         boolean forceFull = mode.equals("full");
-        NullBackend backend = new NullBackend();
+        // 描画まで含めた 1 フレーム（M3b-4c-2b-2a。CPU の描画器で差分描画する。列の組み立ては 4c-2b-2b から描画の中へ移る）
+        com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend backend =
+                new com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend(VIEWPORT_W, VIEWPORT_H, 1f);
         StandaloneView[] view = {new StandaloneView(html, VIEWPORT_W, VIEWPORT_H, FontResolver.FALLBACK)};
         long[] now = {1000};
         view[0].frame(now[0], backend, true);
@@ -292,6 +294,7 @@ public final class MemoryAndLatencyGate {
             if (i >= 0) ms[i] = (t1 - t0) / 1e6;
         }
         view[0].close();
+        backend.close();
         double sum = 0;
         for (double v : ms) sum += v;
         Arrays.sort(ms);

@@ -92,7 +92,7 @@ class PaintDomValuesTest {
         DisplayScene scene = new SceneEmitter(session, doc.sheet.keyframes).emit(f, p.boxRoot(), w, h);
         List<DisplayItem> fresh = new SceneDisplayListAdapter(w, h, doc.sheet.keyframes)
                 .emit(scene, DynamicSceneState.of(ui.scrollState(), w, h));
-        List<DisplayItem> inc = sv.items();
+        List<DisplayItem> inc = sv.ui().relativeElements();
         for (int i = 0; i < Math.min(inc.size(), fresh.size()); i++) {
             if (!inc.get(i).equals(fresh.get(i)) || inc.get(i).hasHover() != fresh.get(i).hasHover()) {
                 throw new AssertionError(what + " #" + i + "\n  ゼロから: " + fresh.get(i) + "\n  増分:     " + inc.get(i));

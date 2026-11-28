@@ -51,9 +51,9 @@ class PipelineProfilingTest {
     @Test
     void profilingDoesNotChangeDisplayList() {
         StageProfiler.enable(false);
-        List<DisplayItem> off = new StandaloneView(HTML, 160, 120).items();
+        List<DisplayItem> off = new StandaloneView(HTML, 160, 120).ui().relativeElements();
         StageProfiler.enable(true);
-        List<DisplayItem> on = new StandaloneView(HTML, 160, 120).items();
+        List<DisplayItem> on = new StandaloneView(HTML, 160, 120).ui().relativeElements();
         assertEquals(off, on);
     }
 

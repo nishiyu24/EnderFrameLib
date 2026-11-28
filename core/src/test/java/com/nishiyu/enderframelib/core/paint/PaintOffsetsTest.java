@@ -111,11 +111,11 @@ class PaintOffsetsTest {
         try (SoftwareRenderBackend inc = new SoftwareRenderBackend(180, 160, 1f);
              SoftwareRenderBackend full = new SoftwareRenderBackend(180, 160, 1f)) {
             view.frame(1000, inc, true);
-            List<DisplayItem> before = view.ui().renderCache();
+            List<DisplayItem> before = view.ui().relativeElements();
             view.mouseMove(80, 70, inc.sessionId());
             view.scroll(0, -3, inc.sessionId());
             view.frame(1016, inc, true);
-            List<DisplayItem> after = view.ui().renderCache();
+            List<DisplayItem> after = view.ui().relativeElements();
             assertSame(before, after, "スクロールしても不変リストは同じ実体");
             assertFalse(view.ui().paintOffsets().isEmpty());
 

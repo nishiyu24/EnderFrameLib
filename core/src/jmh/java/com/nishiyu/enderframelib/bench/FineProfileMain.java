@@ -218,8 +218,8 @@ public final class FineProfileMain {
             System.out.println("COST allocBytes=" + (allocTotal / frames)
                     + " drawn=" + rendered
                     + " elements=" + countElements(view[0].root())
-                    + " items=" + view[0].ui().renderCache().size());
-            System.out.println("ITEMS " + view[0].ui().renderCache().size());
+                    + " items=" + view[0].ui().relativeElements().size());
+            System.out.println("ITEMS " + view[0].ui().relativeElements().size());
             if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             if (raw instanceof SoftwareRenderBackend sw) {
                 try {
@@ -369,7 +369,7 @@ public final class FineProfileMain {
             }
             // ホバーの往復: :hover の規則が掛かる（interactiveState の）要素を 2 つ探して、その中心を行き来する
             int found = 0;
-            for (DisplayItem it : v.ui().renderCache()) {
+            for (DisplayItem it : v.ui().relativeElements()) {
                 if (it.meta() != null && it.meta().interactiveState() && it.width() > 4 && it.height() > 4 && found < 2) {
                     t.hover[found++] = new double[]{it.x() + it.width() / 2.0, it.y() + it.height() / 2.0};
                 }

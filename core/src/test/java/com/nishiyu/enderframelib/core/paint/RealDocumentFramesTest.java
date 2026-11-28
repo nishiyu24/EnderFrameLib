@@ -163,7 +163,7 @@ class RealDocumentFramesTest {
         void frame(String name, long now) {
             frameUnrecorded(now);
             int[] px = backend.pixmap().pixels().clone();
-            List<DisplayItem> items = List.copyOf(v.ui().renderCache());
+            List<DisplayItem> items = List.copyOf(v.ui().relativeElements());
             sink.accept(v, new Frame(doc + "/" + name, keepPixels ? px : new int[]{(int) pixelsHash(px)},
                     items, v.ui().paintOffsets().snapshot(), hits(v)));
         }
@@ -188,7 +188,7 @@ class RealDocumentFramesTest {
     private static List<double[]> hoverTargets(StandaloneView v) {
         List<double[]> out = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
-        List<DisplayItem> items = v.ui().renderCache();
+        List<DisplayItem> items = v.ui().relativeElements();
         List<String> preferred = new ArrayList<>();
         collectHoverables(v.root(), preferred);
         for (String key : preferred) {

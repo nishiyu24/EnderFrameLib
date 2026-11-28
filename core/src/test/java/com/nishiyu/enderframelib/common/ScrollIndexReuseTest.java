@@ -60,7 +60,7 @@ class ScrollIndexReuseTest {
                     }
                 }
             }
-            assertTrue(view.ui().renderCache() instanceof ImmutableItemList, "スクロール中の表示リストは移動量だけを載せたスナップショット");
+            assertTrue(view.ui().relativeElements() instanceof ImmutableItemList, "スクロール中の表示リストは移動量だけを載せたスナップショット");
         } finally {
             view.close();
         }
@@ -73,12 +73,12 @@ class ScrollIndexReuseTest {
             view.frame(1000, backend, true);
             String sid = backend.sessionId();
             view.mouseMove(60, 100, sid);
-            List<DisplayItem> before = view.ui().renderCache();
+            List<DisplayItem> before = view.ui().relativeElements();
             PaintOffsets beforeOff = view.ui().paintOffsets().snapshot();
             int verBefore = view.ui().paintOffsets().version();
             view.scroll(0, -2, sid);
             view.frame(1016, backend, true);
-            List<DisplayItem> after = view.ui().renderCache();
+            List<DisplayItem> after = view.ui().relativeElements();
             PaintOffsets afterOff = view.ui().paintOffsets();
             assertSame(before, after, "スクロールだけで不変表示リストを作り直してはならない");
             assertTrue(afterOff.version() > verBefore, "移動量表の版が進む");

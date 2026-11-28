@@ -154,7 +154,7 @@ public class StyleAnimatorTest {
         }
 
         List<String> render() {
-            return project(view.ui().renderCache());
+            return project(view.ui().relativeElements());
         }
 
         void setClass(String id, String value, long now) {

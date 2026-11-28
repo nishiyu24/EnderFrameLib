@@ -104,11 +104,11 @@ class FrameOracleTest {
         try (StandaloneView v = open(s); var be = new MutationScenario.NoDraw()) {
             v.frame(1000, be, true);
             List<String> before = FrameOracle.boxes(TestBoxes.root(v.ui()), true);
-            int items = v.ui().renderCache().size();
+            int items = v.ui().relativeElements().size();
             String dom = v.root().children.toString();
             for (int i = 0; i < 3; i++) assertNull(FrameOracle.firstDifference(v, FrameOracle.Scope.GEOMETRY_AND_SCROLL_EXTENTS));
             assertEquals(before, FrameOracle.boxes(TestBoxes.root(v.ui()), true));
-            assertEquals(items, v.ui().renderCache().size());
+            assertEquals(items, v.ui().relativeElements().size());
             assertEquals(dom, v.root().children.toString());
         }
     }

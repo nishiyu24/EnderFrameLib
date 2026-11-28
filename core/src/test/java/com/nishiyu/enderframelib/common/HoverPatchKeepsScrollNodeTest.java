@@ -43,16 +43,16 @@ class HoverPatchKeepsScrollNodeTest {
             long now = 1000;
             view.frame(now, backend, true);
             String sid = backend.sessionId();
-            long before = contentNodes(view.items());
+            long before = contentNodes(view.ui().relativeElements());
             assertTrue(before > 1, "前提: カードごとにスクロールの節がある");
             for (int i = 0; i < 12; i++) {
                 view.mouseMove(20 + (i % 2) * 130, 30 + (i % 3) * 60, sid);
                 if (i % 3 == 0) view.scroll(0, -1, sid);
                 for (int k = 0; k < 4; k++) { now += 16; view.frame(now, backend, true); }
                 // 全面で描き直すと画面外の箱は省かれる（窓付き）ので、数は前より減ってよいが、画面にあるカードの節は残る
-                long now2 = contentNodes(view.items());
+                long now2 = contentNodes(view.ui().relativeElements());
                 assertTrue(now2 > 1 && now2 <= before, "手 " + i + ": スクロールの節が消えた: " + now2);
-                assertNoDuplicateIds(view.items(), "手 " + i);
+                assertNoDuplicateIds(view.ui().relativeElements(), "手 " + i);
             }
         } finally {
             view.close();

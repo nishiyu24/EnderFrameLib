@@ -71,6 +71,6 @@ class CompiledDeclarationsTest {
                 "<style>" + css + "</style><div id=a><p id=b>x</p></div>", 300, 200,
                 com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
         v.ui().flushInvalidation();
-        assertFalse(v.ui().renderCache().isEmpty());
+        assertFalse(v.ui().relativeElements().isEmpty());
     }
 }

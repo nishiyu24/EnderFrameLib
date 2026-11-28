@@ -33,7 +33,7 @@ class LocalInputValueTest {
     }
 
     private static DisplayItem item(UiView v, String id) {
-        for (DisplayItem it : v.renderCache()) if (id.equals(it.id())) return it;
+        for (DisplayItem it : v.relativeElements()) if (id.equals(it.id())) return it;
         return null;
     }
 
@@ -42,10 +42,10 @@ class LocalInputValueTest {
         try (UiView v = view()) {
             assertEquals("", item(v, "t_input").text());
             assertEquals("name", item(v, "t_ph").text(), "値が空ならプレースホルダを描く");
-            List<DisplayItem> before = v.renderCache();
+            List<DisplayItem> before = v.relativeElements();
 
             new UiInput(v).updateInputLocally("t", "hello");
-            assertSame(before, v.renderCache(), "列は書き換えない（出力のその場書き換えをしない）");
+            assertSame(before, v.relativeElements(), "列は書き換えない（出力のその場書き換えをしない）");
             assertNotEquals(UiView.InvalidationLevel.NONE, v.invalidationLevel(), "値の変化は再描画を予約する");
             v.flushInvalidation();
             assertEquals("hello", item(v, "t_input").text(), "次のフレームの欄の文字は DOM の値");

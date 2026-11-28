@@ -17,7 +17,7 @@ public class IdleFrameTest {
 
     private static List<String> sig(StandaloneView v) {
         List<String> out = new ArrayList<>();
-        for (DisplayItem i : v.ui().renderCache()) {
+        for (DisplayItem i : v.ui().relativeElements()) {
             out.add(i.id() + "|" + i.x() + "," + i.y() + "," + i.width() + "," + i.height() + "|" + i.text() + "|" + i.bgColor());
         }
         return out;

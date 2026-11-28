@@ -37,7 +37,7 @@ class FrameRenderTest {
                 assertEquals(v.w(), a.w(), 0f, id + " w");
                 assertEquals(v.h(), a.h(), 0f, id + " h");
             }
-            assertEquals(view.ui().renderCache(), f.items(), "表示リストもビューの最初のフレームと同じ");
+            assertEquals(view.ui().relativeElements(), f.items(), "表示リストもビューの最初のフレームと同じ");
         }
     }
 

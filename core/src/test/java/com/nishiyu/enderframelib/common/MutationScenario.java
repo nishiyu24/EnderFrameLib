@@ -157,7 +157,7 @@ final class MutationScenario {
                 view.frame(now, backend, true);
                 List<String> sigs = new ArrayList<>();
                 java.util.Set<String> ids = new java.util.HashSet<>();
-                for (DisplayItem it : view.items()) {
+                for (DisplayItem it : view.ui().relativeElements()) {
                     assertTrue(ids.add(it.id()), "seed " + seed + " step " + step + ": 項目の id が重複: " + it.id());
                     sigs.add(sig(it));
                 }

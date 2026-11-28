@@ -75,7 +75,7 @@ public final class UiEventFixture implements AutoCloseable {
         session.loadLocalHtml(html, WIDTH, HEIGHT);
         session.flushInvalidation();
         document = session.document();
-        elements = com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.renderCache()); // 座標を測る用（親相対を絶対へ）
+        elements = com.nishiyu.enderframelib.common.TestFlatItems.absolute(session.relativeElements()); // 座標を測る用（親相対を絶対へ）
     }
 
     public HtmlNode node(String id) {

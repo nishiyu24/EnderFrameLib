@@ -61,7 +61,7 @@ class IncrementalVsFullTest {
              var be = new MutationScenario.NoDraw()) {
             long now = 1000;
             v.frame(now, be, true);
-            java.util.function.Supplier<List<String>> sigs = () -> v.items().stream().map(MutationScenario::sig).toList();
+            java.util.function.Supplier<List<String>> sigs = () -> v.ui().relativeElements().stream().map(MutationScenario::sig).toList();
             var d1 = v.root().ownerDocument.getElementById("d1");
             d1.removeChild(v.root().ownerDocument.getElementById("z1"));
             v.frame(now += 16, be, true);
@@ -87,10 +87,10 @@ class IncrementalVsFullTest {
             change.accept(v);
             v.frame(now += 16, be, true);
             ResizeSettle.frameUntilApplied(v, be, now); // リサイズの反映は実時間で間引かれる（§6-178）
-            List<String> incremental = v.items().stream().map(MutationScenario::sig).toList();
+            List<String> incremental = v.ui().relativeElements().stream().map(MutationScenario::sig).toList();
             v.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
             v.frame(now, be, true);
-            assertEquals(v.items().stream().map(MutationScenario::sig).toList(), incremental);
+            assertEquals(v.ui().relativeElements().stream().map(MutationScenario::sig).toList(), incremental);
         }
     }
 
@@ -109,7 +109,7 @@ class IncrementalVsFullTest {
      */
     @Test
     void flexBasisPercentInsideAContentSizedFlexItemResizesTheItem() {
-        java.util.function.Function<StandaloneView, List<String>> sigs = v -> v.items().stream().map(MutationScenario::sig).toList();
+        java.util.function.Function<StandaloneView, List<String>> sigs = v -> v.ui().relativeElements().stream().map(MutationScenario::sig).toList();
         List<String> incremental, relayout, expected;
         try (StandaloneView v = new StandaloneView(String.format(CONTENT_SIZED_BODY, ""), 400, 300,
                      com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
@@ -280,7 +280,7 @@ class IncrementalVsFullTest {
 
     /** 増分の結果が、測定の記憶を全部捨てて組み直した全面（{@link MutationFuzz} の比べる相手）と、最初から変えた後の文書で作った面の両方と一致すること。 */
     private static void assertMatchesRemeasuredAndFresh(String html, java.util.function.Consumer<StandaloneView> change, String finalHtml) {
-        java.util.function.Function<StandaloneView, List<String>> sigs = v -> v.items().stream().map(MutationScenario::sig).toList();
+        java.util.function.Function<StandaloneView, List<String>> sigs = v -> v.ui().relativeElements().stream().map(MutationScenario::sig).toList();
         List<String> incremental, remeasured, fresh;
         try (StandaloneView v = new StandaloneView(html, 320, 240, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
              var be = new MutationScenario.NoDraw()) {
@@ -404,7 +404,7 @@ class IncrementalVsFullTest {
         for (long seed = 1; seed <= 8; seed++) {
             final long sd = seed;
             MutationScenario.STEP_HOOK = (step, view) -> {
-                for (var it : view.items()) if (it.width() < 0 || it.height() < 0) bad.add("nested/" + sd + " 手 " + step + " " + it.id());
+                for (var it : view.ui().relativeElements()) if (it.width() < 0 || it.height() < 0) bad.add("nested/" + sd + " 手 " + step + " " + it.id());
             };
             MutationScenario.run(MutationFuzz.NESTED, MutationFuzz.NESTED_CLASSES, MutationFuzz.NESTED_STYLES, 5 * seed + 1, 60, false);
         }
@@ -422,7 +422,7 @@ class IncrementalVsFullTest {
              var be = new MutationScenario.NoDraw()) {
             long now = 1000;
             v.frame(now, be, true);
-            java.util.function.Supplier<Integer> bg = () -> v.items().stream().filter(i -> i.id().equals("bg_root")).map(i -> i.bgColor()).findFirst().orElse(0);
+            java.util.function.Supplier<Integer> bg = () -> v.ui().relativeElements().stream().filter(i -> i.id().equals("bg_root")).map(i -> i.bgColor()).findFirst().orElse(0);
             int normal = bg.get();
             v.mouseMove(10, 10, be.sessionId());
             v.frame(now += 50, be, true);
@@ -437,7 +437,7 @@ class IncrementalVsFullTest {
 
     private static java.util.Map<String, Object> clipsOf(StandaloneView v, String prefix) {
         java.util.Map<String, Object> out = new java.util.TreeMap<>();
-        for (var it : v.items()) if (it.id().startsWith(prefix)) out.put(it.id(), it.meta() == null ? null : it.meta().clipRect());
+        for (var it : v.ui().relativeElements()) if (it.id().startsWith(prefix)) out.put(it.id(), it.meta() == null ? null : it.meta().clipRect());
         return out;
     }
 

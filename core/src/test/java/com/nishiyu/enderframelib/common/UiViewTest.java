@@ -26,7 +26,7 @@ class UiViewTest {
     }
 
     private static int[] colors(UiView view) {
-        return view.renderCache().stream().mapToInt(i -> i.bgColor() ^ i.color()).toArray();
+        return view.relativeElements().stream().mapToInt(i -> i.bgColor() ^ i.color()).toArray();
     }
 
     @Test
@@ -127,7 +127,7 @@ class UiViewTest {
         view.close();
         assertNull(view.document());
         assertNull(view.scene());
-        assertTrue(view.renderCache().isEmpty());
+        assertTrue(view.relativeElements().isEmpty());
         assertFalse(view.hasFrame(), "閉じたビューには描くフレームが無い");
         assertTrue(view.inputScrollOffsets().isEmpty());
     }

@@ -47,7 +47,7 @@ public class IncrementalBench {
     public Object textSameSize() {
         row.updateTextContent((n++ & 1) == 0 ? "Row item #250 with description A" : "Row item #250 with description B");
         view.ui().flushInvalidation();
-        return view.ui().renderCache();
+        return view.ui().relativeElements();
     }
 
     /** 真ん中に 1 行を挿入して、すぐ削除する（挿入 + 削除で 2 回の更新。1 回あたりは半分）。 */
@@ -59,6 +59,6 @@ public class IncrementalBench {
         view.ui().flushInvalidation();
         list.removeChild(added);
         view.ui().flushInvalidation();
-        return view.ui().renderCache();
+        return view.ui().relativeElements();
     }
 }

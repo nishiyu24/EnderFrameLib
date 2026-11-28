@@ -48,7 +48,7 @@ public final class ShowcaseApp {
             try (var cpu = new com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend(1280, 800, 1f)) {
                 v.frame(0, cpu, true);
             }
-            for (var it : v.items()) if (it.text() != null && (it.text().contains("node-1025") || it.text().equals("1") || it.text().equals("name"))) System.out.println(it.baseId() + " " + it.type() + " x=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).x() + " y=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).y() + " w=" + it.width() + " '" + it.text() + "'");
+            for (var it : v.ui().relativeElements()) if (it.text() != null && (it.text().contains("node-1025") || it.text().equals("1") || it.text().equals("name"))) System.out.println(it.baseId() + " " + it.type() + " x=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.ui().relativeElements(), it).x() + " y=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.ui().relativeElements(), it).y() + " w=" + it.width() + " '" + it.text() + "'");
             return;
         }
         if (args.length > 0 && args[0].equals("--hoverbench")) { // GL 経路で :hover の切替フレームの CPU 時間と確保量を測る
@@ -128,9 +128,9 @@ public final class ShowcaseApp {
             long start = System.currentTimeMillis();
             for (int i = 0; i < n; i++) {
                 long t0 = System.nanoTime();
-                var itemsBefore = view.items();
+                var itemsBefore = view.ui().relativeElements();
                 if (view.frame(System.currentTimeMillis(), gl, false)) drawn++;
-                if (view.items() != itemsBefore) rebuilt++;
+                if (view.ui().relativeElements() != itemsBefore) rebuilt++;
                 long took = (System.nanoTime() - t0) / 1_000_000;
                 if (i >= warm) ms[i - warm] = took;
                 if (took > 80 && Boolean.getBoolean("showcase.verbose")) System.out.println("slow frame " + i + ": " + took + "ms " + view.lastTimings());
@@ -195,7 +195,7 @@ public final class ShowcaseApp {
         try (var cpu = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(1280, 800, 1f)) {
             System.out.println("GL_RENDERER=" + org.lwjgl.opengl.GL11.glGetString(org.lwjgl.opengl.GL11.GL_RENDERER) + " / " + org.lwjgl.opengl.GL11.glGetString(org.lwjgl.opengl.GL11.GL_VERSION));
             view.frame(0, cpu, true);
-            var items = view.items();
+            var items = view.ui().relativeElements();
             long t = System.currentTimeMillis();
             for (int i = 0; i < 150; i++) cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, t + i * 16L));
             int n = Integer.getInteger("render.frames", 300);
@@ -215,7 +215,7 @@ public final class ShowcaseApp {
     }
 
     private static float galleryY(StandaloneView v) {
-        for (var it : v.items()) if (it.baseId().equals("gallery")) return com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).y(); // 親相対なので絶対位置へ
+        for (var it : v.ui().relativeElements()) if (it.baseId().equals("gallery")) return com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.ui().relativeElements(), it).y(); // 親相対なので絶対位置へ
         return Float.NaN;
     }
 

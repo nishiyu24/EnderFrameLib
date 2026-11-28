@@ -67,9 +67,11 @@ class RelativeElementsTest {
             assertEquals(5, checked);
             assertNull(v.ui().locate("missing"));
             List<String> names = Arrays.stream(UiView.class.getMethods()).map(java.lang.reflect.Method::getName).toList();
-            for (String gone : List.of("elements", "absoluteRenderCache", "elementById", "toAbsolute", "nodeItemAbsolute", "setRenderCache")) {
+            for (String gone : List.of("elements", "absoluteRenderCache", "elementById", "toAbsolute", "nodeItemAbsolute", "setRenderCache", "renderCache")) {
                 assertFalse(names.contains(gone), "列から引く口・列を書き換える口は戻さない: " + gone);
             }
+            // 列を読む入口はその場で組む relativeElements の 1 つだけ（M3b-4c-2b-2a。スタンドアロンのビューの items() も削除した）
+            assertFalse(Arrays.stream(StandaloneView.class.getMethods()).anyMatch(m -> m.getName().equals("items")), "StandaloneView#items は戻さない");
         }
     }
 }

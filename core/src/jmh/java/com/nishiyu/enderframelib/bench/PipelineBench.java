@@ -78,6 +78,6 @@ public class PipelineBench {
         hoverOn = !hoverOn;
         view.ui().setHoveredElement(hoverOn ? hoverTarget.key() : "");
         view.frame(now += 16, NO_DRAW, true);
-        return view.ui().renderCache();
+        return view.ui().relativeElements();
     }
 }

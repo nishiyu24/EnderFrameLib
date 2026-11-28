@@ -36,7 +36,7 @@ class CustomElementPainterTest {
     private static List<DisplayItem> render(String html) {
         StandaloneView view = new StandaloneView(html, 320, 240, FontResolver.FALLBACK);
         view.ui().flushInvalidation();
-        return view.ui().renderCache();
+        return view.ui().relativeElements();
     }
 
     private static DisplayItem first(List<DisplayItem> items, ElementType t) {

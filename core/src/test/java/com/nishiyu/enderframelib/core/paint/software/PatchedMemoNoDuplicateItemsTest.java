@@ -47,7 +47,7 @@ class PatchedMemoNoDuplicateItemsTest {
                     now += 16;
                     view.frame(now, cpu, true);
                     Set<String> seen = new HashSet<>();
-                    for (DisplayItem it : view.items()) assertTrue(seen.add(it.id()), "seed " + seed + " 手 " + step + ": 同じ id の項目が 2 つある: " + it.id());
+                    for (DisplayItem it : view.ui().relativeElements()) assertTrue(seen.add(it.id()), "seed " + seed + " 手 " + step + ": 同じ id の項目が 2 つある: " + it.id());
                 }
             } finally {
                 view.close();

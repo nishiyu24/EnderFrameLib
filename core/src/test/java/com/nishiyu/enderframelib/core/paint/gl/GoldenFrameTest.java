@@ -60,7 +60,7 @@ class GoldenFrameTest {
 
     private static void record(Map<String, String> out, String name, StandaloneView v, SoftwareRenderBackend sw, long now) {
         v.frame(now, sw, true);
-        List<DisplayItem> items = v.items();
+        List<DisplayItem> items = v.ui().relativeElements();
         out.put(name, Long.toHexString(pixelsHash(sw.pixmap().pixels())) + " "
                 + Long.toHexString(itemsHash(items, v.ui().paintOffsets())) + " " + items.size());
     }
