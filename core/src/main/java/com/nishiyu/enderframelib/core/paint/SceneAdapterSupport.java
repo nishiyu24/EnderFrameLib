@@ -185,8 +185,8 @@ final class SceneAdapterSupport {
             System.arraycopy(r, 0, d, 4, 8);
             backdropShape = new ClipShape(ClipShape.Kind.INSET, d, false);
         }
-        return new LayerSpec(0, fx.opacity(), fx.filters(), fx.blendMode(), fx.isolate(), clip,
-                fx.masked() ? LayerSpec.WANTS_MASK : -1, fx.luminanceMask(), backdrop, backdropShape);
+        return new LayerSpec(fx.opacity(), fx.filters(), fx.blendMode(), fx.isolate(), clip,
+                fx.masked() ? LayerSpec.MASK_WANTED : LayerSpec.MASK_NONE, fx.luminanceMask(), backdrop, backdropShape);
     }
 
     static void addMovingNode(OpList elements, String id, SceneAdapterBox box, RenderMeta meta, RenderMeta movingNodeMeta) {

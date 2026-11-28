@@ -647,7 +647,11 @@ class ArchitectureHealthTest {
         for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), List.of("ScrollContentRanges")));
         Path walker = repoRoot().resolve("core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneWalker.java");
         bad.addAll(checkCodeLines(walker, Pattern.compile("\\bkeyOf\\(|Long2IntOpenHashMap|\\.parentKey\\(\\)|\\.parentId\\(\\)")));
-        assertEquals(List.of(), bad, "走査器が列から鍵・ID で親・保持層を引き直している（列の階層 FrameStructure を読む。計画書 §3.4 M3b-4c-2b-3b-1）");
+        // M3b-4c-2b-3b-2a: グループ・マスクの層も列の範囲（錨から何個）でなく階層から引く
+        Path spec = repoRoot().resolve("core/src/main/java/com/nishiyu/enderframelib/core/paint/model/LayerSpec.java");
+        bad.addAll(checkCodeLines(walker, Pattern.compile("\\.span\\(\\)|maskFrom|fxAnchors")));
+        bad.addAll(checkCodeLines(spec, Pattern.compile("\\bint span\\b|\\bmaskFrom\\b|withSpan\\(")));
+        assertEquals(List.of(), bad, "走査器が列から鍵・ID・範囲で親・グループ・保持層を引き直している（列の階層 FrameStructure を読む。計画書 §3.4 M3b-4c-2b-3b）");
     }
 
     /** M3b-4b-4b で消した、項目の同一性で静止フレーム・変化を見る型と、列全体を絶対座標へ直す本番の型。 */

@@ -142,7 +142,7 @@ final class TextRunPainter {
                 long shadowKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, shadowPart) : 0L;
                 addLineElement(elements, id, id + "_txt_" + shadowPart, ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
                         sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, flipY, rot, 0, AnimationSpec.NONE, meta, baseline, lineH, shadowKey, -1);
-                LayerSpec spec = new LayerSpec(elements.size() - at, 1f, List.of(FilterOp.blur(sh.blur() / 2f)), BlendMode.NORMAL, false);
+                LayerSpec spec = new LayerSpec(1f, List.of(FilterOp.blur(sh.blur() / 2f)), BlendMode.NORMAL, false);
                 elements.withLayer(at, spec);
             } else {
                 int shadowPart = owner.fragIds.getAndIncrement();

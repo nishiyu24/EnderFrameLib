@@ -60,11 +60,12 @@ public class ClipMaskDisplayListTest {
         assertNotNull(layer);
         assertTrue(layer.masked(), "マスクの項目が付いていない");
         assertFalse(layer.maskLuminance());
-        int start = indexOf(r, "m");
-        // 中身（子の背景）は maskFrom より前、マスクの項目は後ろ（スパンの最後まで）
-        assertTrue(r.elements.subList(start, start + layer.maskFrom()).stream().anyMatch(e -> e.id().equals("c_bg")));
-        List<DisplayItem> maskItems = r.elements.subList(start + layer.maskFrom(), start + layer.span());
+        int start = indexOf(r, "m"), content = indexOf(r, "c_bg");
+        // 中身（子の背景）は層の中身でマスクの印が無く、マスクの項目は錨の子で中身の後ろ（列の階層の印）
+        assertTrue(inside(r, content, start) && !r.structure.isMask(content));
+        List<DisplayItem> maskItems = maskItemsOf(r, start);
         assertFalse(maskItems.isEmpty());
+        assertTrue(r.elements.indexOf(maskItems.getFirst()) > content, "マスクの項目は中身の後ろ");
         for (DisplayItem item : maskItems) {
             assertTrue(item.id().startsWith("m_mask"), "マスクの項目の id: " + item.id());
             assertTrue(item.hints().pointerEventsNone(), "マスクの項目がクリックを受ける: " + item.id());
@@ -78,8 +79,7 @@ public class ClipMaskDisplayListTest {
         LayerSpec layer = layerOf(r, "m");
         assertNotNull(layer, "mask ショートハンドが読めていない");
         assertTrue(layer.masked());
-        int start = indexOf(r, "m");
-        List<DisplayItem> maskItems = r.elements.subList(start + layer.maskFrom(), start + layer.span());
+        List<DisplayItem> maskItems = maskItemsOf(r, indexOf(r, "m"));
         assertFalse(maskItems.isEmpty());
         // 位置 (20, 10)・大きさ 60x60 の 1 枚だけ（no-repeat）。mask-origin の既定は border-box なので箱の左上が基準
         DisplayItem first = maskItems.getFirst();
@@ -133,14 +133,31 @@ public class ClipMaskDisplayListTest {
 
     // ==========================================
 
-    private record Rendered(TestBoxes.Box root, List<DisplayItem> elements) {}
+    /** 描画器の準備と同じく組んだ列と、その階層（層の中身は錨の子孫、マスクの項目は階層の印。M3b-4c-2b-3b-2a）。 */
+    private record Rendered(TestBoxes.Box root, List<DisplayItem> elements, com.nishiyu.enderframelib.core.paint.FrameStructure structure) {}
 
     private static Rendered render(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(
                 "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", VIEWPORT_W, VIEWPORT_H);
         TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
-                return new Rendered(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
+        FrameRender.Frame frame = FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK,
+                new com.nishiyu.enderframelib.core.dom.InteractionState());
+        var composed = new com.nishiyu.enderframelib.core.paint.FrameComposer().compose(frame.renderFrame());
+        return new Rendered(root, composed.items(), composed.structure());
+    }
+
+    /** 位置 {@code j} の項目が位置 {@code anchor} の錨の子孫か（層の中身）。 */
+    private static boolean inside(Rendered r, int j, int anchor) {
+        for (int p = r.structure.parent(j), guard = 0; p >= 0 && guard < 256; p = r.structure.parent(p), guard++) if (p == anchor) return true;
+        return false;
+    }
+
+    /** 錨 {@code anchor} の箱のマスクの項目（印のある、錨の子）。 */
+    private static List<DisplayItem> maskItemsOf(Rendered r, int anchor) {
+        List<DisplayItem> out = new java.util.ArrayList<>();
+        for (int j = 0; j < r.elements.size(); j++) if (r.structure.isMask(j) && r.structure.parent(j) == anchor) out.add(r.elements.get(j));
+        return out;
     }
 
     private static int indexOf(Rendered r, String id) {

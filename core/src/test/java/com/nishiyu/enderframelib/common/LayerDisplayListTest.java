@@ -47,14 +47,19 @@ public class LayerDisplayListTest {
         assertEquals(BlendMode.NORMAL, layer.blend());
         assertFalse(layer.isolate());
 
-        // span は錨から子孫の最後まで。直後の項目は子孫でない
+        // 層の中身は錨の子孫（列の階層）。前後の兄弟は入らない
         int start = indexOf(r, "g");
-        List<DisplayItem> inside = r.elements.subList(start, start + layer.span());
-        assertTrue(inside.stream().anyMatch(e -> e.id().equals("a_bg")));
-        assertTrue(inside.stream().anyMatch(e -> e.id().equals("b_bg")));
-        assertTrue(inside.stream().noneMatch(e -> e.id().startsWith("before") || e.id().startsWith("g2")));
-        // 不透明度のある箱は位置指定と同じ層（付録 E の 8）に描かれるので、span の直後は次のコンテキストの錨
-        assertEquals("g2", r.elements.get(start + layer.span()).id(), "span の直後は次のコンテキストの錨");
+        assertTrue(inside(r, indexOf(r, "a_bg"), start));
+        assertTrue(inside(r, indexOf(r, "b_bg"), start));
+        for (int j = 0; j < r.elements.size(); j++) {
+            String id = r.elements.get(j).id();
+            if (id.startsWith("before") || id.startsWith("g2")) assertFalse(inside(r, j, start), id);
+        }
+        // 子孫は錨の直後に描画順で続き（層にまとめて描ける）、その次は次のコンテキストの錨（付録 E の 8）
+        int last = start;
+        while (last + 1 < r.elements.size() && inside(r, last + 1, start)) last++;
+        for (int j = last + 1; j < r.elements.size(); j++) assertFalse(inside(r, j, start), "子孫が描画順で続いていない");
+        assertEquals("g2", r.elements.get(last + 1).id(), "子孫の直後は次のコンテキストの錨");
     }
 
     @Test
@@ -83,11 +88,12 @@ public class LayerDisplayListTest {
         assertNotNull(outer);
         assertNotNull(inner);
         int o = indexOf(r, "outer"), i = indexOf(r, "inner");
-        assertTrue(i > o && i + inner.span() <= o + outer.span(), "内側のレイヤーが外側の span に収まっていない");
-        // 兄弟（通常フローのブロック）は外側の中、内側の外（内側は位置指定と同じ層で、兄弟より後に描かれる）
+        assertTrue(inside(r, i, o), "内側のレイヤーの錨が外側の子孫でない");
+        assertTrue(inside(r, indexOf(r, "leaf_bg"), i) && inside(r, indexOf(r, "leaf_bg"), o), "葉は両方の層に入る");
+        // 兄弟（通常フローのブロック）は外側の中、内側の外
         int sibling = indexOf(r, "sibling");
-        assertTrue(sibling > o && sibling < o + outer.span());
-        assertTrue(sibling < i || sibling >= i + inner.span(), "兄弟が内側のレイヤーに入っている");
+        assertTrue(inside(r, sibling, o));
+        assertFalse(inside(r, sibling, i), "兄弟が内側のレイヤーに入っている");
         assertEquals(1, inner.filters().size());
         assertEquals(FilterOp.Kind.BLUR, inner.filters().getFirst().kind());
     }
@@ -182,14 +188,24 @@ public class LayerDisplayListTest {
 
     // ==========================================
 
-    private record Rendered(TestBoxes.Box root, List<DisplayItem> elements) {}
+    /** 描画器の準備と同じく組んだ列と、その階層（層の中身は錨の子孫、マスクの項目は階層の印。M3b-4c-2b-3b-2a）。 */
+    private record Rendered(TestBoxes.Box root, List<DisplayItem> elements, com.nishiyu.enderframelib.core.paint.FrameStructure structure) {}
 
     private static Rendered render(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(
                 "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", VIEWPORT_W, VIEWPORT_H);
         TestBoxes.Box root = TestBoxes.root(parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK));
-                return new Rendered(root, com.nishiyu.enderframelib.common.FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, java.util.Map.of(), new ScrollState(), FontResolver.FALLBACK, new com.nishiyu.enderframelib.core.dom.InteractionState()).items());
+        FrameRender.Frame frame = FrameRender.document(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK,
+                new com.nishiyu.enderframelib.core.dom.InteractionState());
+        var composed = new com.nishiyu.enderframelib.core.paint.FrameComposer().compose(frame.renderFrame());
+        return new Rendered(root, composed.items(), composed.structure());
+    }
+
+    /** 位置 {@code j} の項目が位置 {@code anchor} の錨の子孫か（層の中身）。 */
+    private static boolean inside(Rendered r, int j, int anchor) {
+        for (int p = r.structure.parent(j), guard = 0; p >= 0 && guard < 256; p = r.structure.parent(p), guard++) if (p == anchor) return true;
+        return false;
     }
 
     private static int indexOf(Rendered r, String id) {

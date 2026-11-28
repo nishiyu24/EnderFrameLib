@@ -34,6 +34,9 @@ interface ItemSink {
     /** 位置 {@code pos} の項目を、中身を 1 つの節にまとめたスクロールコンテナの中身の節にする（{@code token} は中身の同一性の印）。 */
     void markContent(int pos, Object token);
 
+    /** 位置 {@code [from, to)} の項目を、マスク画像を描く項目にする（M3b-4c-2b-3b-2a）。 */
+    void markMask(int from, int to);
+
     /** 表示項目の列に溜め、階層を書く受け手（組むたびに {@link #begin} して使い回す）。 */
     final class ToList implements ItemSink {
         private List<DisplayItem> out;
@@ -69,6 +72,8 @@ interface ItemSink {
         @Override public void setLayer(int anchor, LayerSpec spec) { out.set(anchor, BoxItemPainter.withLayer(out.get(anchor), spec)); }
 
         @Override public void markContent(int pos, Object token) { structure.markContent(pos, token); }
+
+        @Override public void markMask(int from, int to) { structure.markMask(from, to); }
 
         /** 組み終える: 後から足された親の錨の位置を引き、列への参照を手放す。 */
         void finish() {

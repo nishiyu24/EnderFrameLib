@@ -26,10 +26,20 @@ public final class SoftwareRendering {
 
     /** HTML をレイアウトして、ディスプレイリスト（アニメーションの補間前）を得る。 */
     public static List<DisplayItem> displayList(String html, int width, int height, FontResolver fonts) {
+        return frame(html, width, height, fonts).items();
+    }
+
+    /** HTML を 1 回だけ組んだフレーム（シーンつき）。 */
+    private static FrameRender.Frame frame(String html, int width, int height, FontResolver fonts) {
         com.nishiyu.enderframelib.core.EngineContext.current().updateHost(h -> h.withPixelSizeFallback(com.nishiyu.enderframelib.core.paint.software.ImageSizes.STANDARD));
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", width, height);
-        return FrameRender.document(doc, width, height, Map.of(), new ScrollState(), fonts, new InteractionState()).items();
+        return FrameRender.document(doc, width, height, Map.of(), new ScrollState(), fonts, new InteractionState());
+    }
+
+    /** 描画器へ渡すフレームの値（シーンから描画器が列を組む。列だけのフレームにしない〔M3b-4c-2b-3b-2a。マスクの印は組む側の階層にある〕）。 */
+    private static com.nishiyu.enderframelib.core.paint.RenderFrame renderFrame(String html, int width, int height, long nowMs) {
+        return frame(html, width, height, SystemFonts.system()).renderFrame().at(nowMs);
     }
 
     /** システムフォントで {@link #displayList(String, int, int, FontResolver)}。 */
@@ -44,13 +54,13 @@ public final class SoftwareRendering {
 
     public static SoftwareRenderBackend renderHtml(String html, int width, int height, float devicePixelRatio, long nowMs) {
         SoftwareRenderBackend backend = new SoftwareRenderBackend(width, height, devicePixelRatio);
-        backend.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(displayList(html, width, height), nowMs));
+        backend.render(renderFrame(html, width, height, nowMs));
         return backend;
     }
 
     /** HTML をレイアウトして、任意の {@link RenderBackend}（CPU でも GPU でも）に時刻 {@code nowMs} の見た目で描く。 */
     public static <B extends RenderBackend> B renderHtml(String html, int width, int height, long nowMs, B backend) {
-        backend.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(displayList(html, width, height), nowMs));
+        backend.render(renderFrame(html, width, height, nowMs));
         return backend;
     }
 }

@@ -169,7 +169,7 @@ public class DisplayListGoldenTest {
             }
             if (e.hints().layer() != null) {
                 LayerSpec layer = e.hints().layer();
-                sb.append(String.format(Locale.ROOT, " layer=[span=%d,opacity=%.2f,filters=%d,blend=%s%s]", layer.span(), layer.opacity(),
+                sb.append(String.format(Locale.ROOT, " layer=[opacity=%.2f,filters=%d,blend=%s%s]", layer.opacity(),
                         layer.filters().size(), layer.blend().cssName(), layer.isolate() ? ",isolate" : ""));
             }
             sb.append('\n');

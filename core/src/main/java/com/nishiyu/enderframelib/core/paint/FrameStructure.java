@@ -15,20 +15,25 @@ import java.util.List;
  * 順が変わるので外す）と、中身の同一性の印（コンテナの層の子の並び {@code SceneLayer#children}。中身の層が使い回される限り同じ参照で、
  * スクロール量に依らない）。並びは外側が先（先頭の昇順、同じなら長い方）。列を組み直したときだけ作る（列を使い回すフレームは作らない）。</p>
  *
+ * <p>マスク画像を描く項目（{@code mask-image} の箱が中身の後ろに出す項目）には印を持つ（{@link #isMask}。M3b-4c-2b-3b-2a）。走査器は印の項目を、
+ * 親の錨の層（マスクを持つ箱）の中身ではなくマスク用の描画先に描く。層の中身は錨の子孫で、列の範囲は持たない。</p>
+ *
  * <p>作り終えたら不変。シーンの無いフレーム（列だけのフレーム。テストと 1 回だけの描画の道具）は項目の鍵から作る（{@link #fromKeys}。
  * 列だけのフレームとともに M3b-4c-3 で消す）。</p>
  */
 public final class FrameStructure {
     /** 項目が無い・親を持たない列の階層。 */
-    public static final FrameStructure EMPTY = new FrameStructure(new int[0], 0, new int[0], new int[0], new int[0], new Object[0], 0);
+    public static final FrameStructure EMPTY = new FrameStructure(new int[0], 0, new int[0], new int[0], new int[0], new Object[0], 0, null);
 
     private final int[] parent;
     private final int size;
     private final int[] retainNode, retainFrom, retainTo;
     private final Object[] retainToken;
     private final int retainCount;
+    /** マスク画像を描く項目の印（ビットの並び。無ければ null）。 */
+    private final long[] mask;
 
-    private FrameStructure(int[] parent, int size, int[] node, int[] from, int[] to, Object[] token, int count) {
+    private FrameStructure(int[] parent, int size, int[] node, int[] from, int[] to, Object[] token, int count, long[] mask) {
         this.parent = parent;
         this.size = size;
         this.retainNode = node;
@@ -36,6 +41,7 @@ public final class FrameStructure {
         this.retainTo = to;
         this.retainToken = token;
         this.retainCount = count;
+        this.mask = mask;
     }
 
     /** 階層を持つ項目の数（列の先頭から。後ろの重ね描きは親を持たない）。 */
@@ -43,6 +49,11 @@ public final class FrameStructure {
 
     /** 位置 {@code i} の項目の親の位置（無ければ -1。{@link #size} の外も -1）。 */
     public int parent(int i) { return i >= 0 && i < size ? parent[i] : -1; }
+
+    /** 位置 {@code i} の項目がマスク画像を描く項目か（親の錨の箱のマスク用の描画先に描く）。 */
+    public boolean isMask(int i) {
+        return mask != null && i >= 0 && i < size && (mask[i >>> 6] & (1L << i)) != 0L;
+    }
 
     /** 保持層にできる範囲の数。 */
     public int retainCount() { return retainCount; }
@@ -87,7 +98,7 @@ public final class FrameStructure {
             }
             parent[i] = p;
         }
-        return new FrameStructure(parent, n, new int[0], new int[0], new int[0], new Object[0], 0);
+        return new FrameStructure(parent, n, new int[0], new int[0], new int[0], new Object[0], 0, null);
     }
 
     /**
@@ -101,9 +112,13 @@ public final class FrameStructure {
         private Object[] contentToken = new Object[4];
         private int contentCount;
         private int[] slotOf = new int[64];
+        private long[] mask = new long[1];
+        private boolean anyMask;
 
         /** 空に戻す（印の参照を手放す）。 */
         void reset() {
+            if (anyMask) Arrays.fill(mask, 0L);
+            anyMask = false;
             size = 0;
             java.util.Arrays.fill(contentToken, 0, contentCount, null);
             contentCount = 0;
@@ -116,6 +131,15 @@ public final class FrameStructure {
         }
 
         int size() { return size; }
+
+        /** 位置 {@code [from, to)} の項目を、マスク画像を描く項目にする。 */
+        void markMask(int from, int to) {
+            if (to <= from) return;
+            int words = ((to - 1) >>> 6) + 1;
+            if (mask.length < words) mask = Arrays.copyOf(mask, Math.max(words, mask.length * 2));
+            for (int i = from; i < to; i++) mask[i >>> 6] |= 1L << i;
+            anyMask = true;
+        }
 
         /** 位置 {@code pos} の項目の親を {@code parentPos} にする。 */
         void setParent(int pos, int parentPos) { parent[pos] = parentPos; }
@@ -135,8 +159,9 @@ public final class FrameStructure {
         FrameStructure build() {
             if (size == 0) return EMPTY;
             int[] p = Arrays.copyOf(parent, size);
+            long[] maskBits = anyMask ? Arrays.copyOf(mask, ((size - 1) >>> 6) + 1) : null;
             int n = contentCount;
-            if (n == 0) return new FrameStructure(p, size, new int[0], new int[0], new int[0], new Object[0], 0);
+            if (n == 0) return new FrameStructure(p, size, new int[0], new int[0], new int[0], new Object[0], 0, maskBits);
             int[] node = Arrays.copyOf(contentNode, n), from = new int[n], to = new int[n], descendants = new int[n];
             Object[] token = Arrays.copyOf(contentToken, n);
             Arrays.fill(from, Integer.MAX_VALUE);
@@ -174,7 +199,7 @@ public final class FrameStructure {
                 }
             }
             return new FrameStructure(p, size, Arrays.copyOf(node, kept), Arrays.copyOf(from, kept), Arrays.copyOf(to, kept),
-                    Arrays.copyOf(token, kept), kept);
+                    Arrays.copyOf(token, kept), kept, maskBits);
         }
     }
 }

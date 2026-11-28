@@ -59,12 +59,7 @@ public final class SceneWalker {
     @SuppressWarnings("unchecked")
     private List<Group>[] chains = new List[64];
     private int[] members = new int[64];
-    /** フィルター・マスクの錨の位置（昇順）。 */
-    private int[] fxAnchors = new int[8];
-    private int fxCount;
-    private final List<Integer> activeAnchors = new ArrayList<>();
     private final List<Group> layeredScratch = new ArrayList<>();
-    private int anchorNext;
     /** このフレームの列の階層（項目の親・保持層の範囲。1 フレームの間だけ）。 */
     private FrameStructure structure = FrameStructure.EMPTY;
     /** 保持層の範囲ごとの描画側の答え（{@link FrameStructure#retainCount} の数。1 フレームの間だけ）。 */
@@ -124,7 +119,6 @@ public final class SceneWalker {
             lastList = list;
         }
         count = 0;
-        fxCount = 0;
         if (list == null || list.isEmpty()) return;
         try {
             load(list);
@@ -153,7 +147,6 @@ public final class SceneWalker {
             retainCount = 0;
             structure = FrameStructure.EMPTY;
             offsetOf.clear();
-            activeAnchors.clear();
             layeredScratch.clear();
             count = 0;
             this.list = null;
@@ -170,14 +163,7 @@ public final class SceneWalker {
         int n = src.size();
         if (items.length < n) grow(Math.max(n, items.length * 2));
         this.list = src;
-        for (int i = 0; i < n; i++) {
-            DisplayItem it = src.get(i);
-            items[i] = it;
-            if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) {
-                if (fxCount == fxAnchors.length) fxAnchors = Arrays.copyOf(fxAnchors, fxCount * 2);
-                fxAnchors[fxCount++] = i;
-            }
-        }
+        for (int i = 0; i < n; i++) items[i] = src.get(i);
         count = n;
     }
 
@@ -314,7 +300,7 @@ public final class SceneWalker {
         for (int k = 0; k < retainCount; k++) {
             int node = s.retainNode(k);
             plan[k] = RetainPlan.NONE;
-            if (s.retainFrom(k) < coveredUntil || insideFxAnchor(node)) continue;
+            if (s.retainFrom(k) < coveredUntil) continue;
             Resolved r = resolveAt(node);
             if (!r.groups().isEmpty() || r.opacity() < 0.999f) continue;
             RetainPlan d = painter.planRetained(items[node], node, s.retainFrom(k), s.retainTo(k), s.retainToken(k));
@@ -329,20 +315,10 @@ public final class SceneWalker {
         return -1;
     }
 
-    private boolean insideFxAnchor(int index) {
-        for (int k = 0; k < fxCount; k++) {
-            int a = fxAnchors[k];
-            if (a < index && index < a + items[a].hints().layer().span()) return true;
-        }
-        return false;
-    }
-
     // ---- 走査 ----
 
     private void walk(Painter painter) {
         int n = count;
-        anchorNext = 0;
-        activeAnchors.clear();
         planRetained(painter);
         Map<String, Integer> extraMembers = null; // 錨が列に無いグループだけ
         FrameStructure s = structure;
@@ -361,7 +337,7 @@ public final class SceneWalker {
             Resolved r = resolveAt(i);
             List<Group> chain = null;
             if (r.opacity() > 0.005f) {
-                chain = r.groups().isEmpty() && fxCount == 0 ? List.of() : chainFor(i, r);
+                chain = r.groups().isEmpty() ? List.of() : structure.isMask(i) ? maskChain(i, r.groups()) : r.groups();
                 for (int k = 0, cn = chain.size(); k < cn; k++) {
                     Group g = chain.get(k);
                     if (g.maskOf() != null) continue;
@@ -434,44 +410,22 @@ public final class SceneWalker {
         painter.drawItem(el, i, flat);
     }
 
-    /** 項目 {@code i} を含むグループの鎖（親子の鎖に、範囲に入るフィルター・マスクの錨を足し、マスクの項目にはマスクの層を挟む）。 */
-    private List<Group> chainFor(int i, Resolved r) {
-        while (anchorNext < fxCount && fxAnchors[anchorNext] <= i) activeAnchors.add(fxAnchors[anchorNext++]);
-        for (int k = activeAnchors.size() - 1; k >= 0; k--) {
-            int a = activeAnchors.get(k);
-            if (i >= a + items[a].hints().layer().span()) activeAnchors.remove(k);
+    /**
+     * マスク画像を描く項目 {@code i}（列の階層の印 {@link FrameStructure#isMask}）のグループの鎖: 祖先のグループの鎖の、マスクを持つ箱（項目の親の錨）の
+     * グループの後ろにマスクの層を挟む（M3b-4c-2b-3b-2a。以前は錨からの列の範囲で引いていた）。層の中身は錨の子孫なので、ほかの項目の鎖は親子の鎖のまま。
+     */
+    private List<Group> maskChain(int i, List<Group> base) {
+        int owner = parentIdx[i];
+        for (int gi = 0, gn = base.size(); gi < gn; gi++) {
+            Group g = base.get(gi);
+            if (g.anchor() != owner || g.spec() == null || !g.spec().masked()) continue;
+            List<Group> out = new ArrayList<>(gn + 1);
+            out.addAll(base.subList(0, gi + 1));
+            out.add(new Group(g.id() + "#mask", 1f, g.anchor(), null, g.map(), g.id(), g.pose()));
+            out.addAll(base.subList(gi + 1, gn));
+            return out;
         }
-        List<Group> base = r.groups();
-        if (activeAnchors.isEmpty()) {
-            boolean plain = true;
-            for (int k = 0; k < base.size() && plain; k++) plain = base.get(k).spec() == null;
-            if (plain) return base;
-        }
-        List<Group> chain = new ArrayList<>(base);
-        for (int ai = 0, an = activeAnchors.size(); ai < an; ai++) {
-            int a = activeAnchors.get(ai);
-            DisplayItem node = items[a];
-            boolean present = false;
-            for (int gi = 0, gn = chain.size(); gi < gn; gi++) present |= chain.get(gi).id().equals(node.id());
-            if (!present) chain.add(groupFor(node, a, resolveAt(a)));
-        }
-        chain.sort((x, y) -> Integer.compare(x.anchor(), y.anchor()));
-        List<Group> out = new ArrayList<>(chain.size() + 1);
-        for (int gi = 0, gn = chain.size(); gi < gn; gi++) {
-            Group g = chain.get(gi);
-            out.add(g);
-            LayerSpec spec = g.spec();
-            if (spec != null && spec.masked() && g.anchor() >= 0 && i >= g.anchor() + spec.maskFrom() && i < g.anchor() + spec.span()) {
-                out.add(new Group(g.id() + "#mask", 1f, g.anchor(), null, g.map(), g.id(), g.pose()));
-            }
-        }
-        return out;
-    }
-
-    private static Group groupFor(DisplayItem node, int index, Resolved nr) {
-        LayerSpec spec = hasFx(node.hints().layer()) ? node.hints().layer() : null;
-        Matrix2D m = nr.pose();
-        return new Group(node.id(), Math.max(0f, nr.anim().opacity()), index, spec, new double[]{m.a(), m.b(), m.c(), m.d()}, null, m);
+        return base;
     }
 
     // ---- 描画側が drawItem の間に引く値 ----

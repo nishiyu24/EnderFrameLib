@@ -277,19 +277,18 @@ public final class SceneDisplayListAdapter {
         }
         if (spec != null && out.size() > startIdx) {
             if (spec.wantsMask()) {
-                int contentSpan = out.size() - startIdx;
                 scratch.beginLocal(box.x(), box.y());
                 fragIds.set(MASK_ID_BASE);
                 List<BoxItemPainter.MaskText> texts = BoxDecorations.clipsText(box.style()) ? maskTexts(box, new ArrayList<>()) : List.of();
                 painter.drawMask(scratch, box.layer, box.x(), box.y(), ownNode, texts);
+                spec = spec.withMask(!scratch.isEmpty());
                 if (!scratch.isEmpty()) {
-                    spec = spec.withMaskFrom(contentSpan);
+                    int maskFrom = out.size();
                     composer.composeLocal(scratch, null, null, null, null, box, null, null, out);
-                } else {
-                    spec = spec.withMaskFrom(-1);
+                    out.markMask(maskFrom, out.size()); // マスクの項目は箱の錨の子で、層の中身ではなくマスク用の描画先に描く
                 }
             }
-            out.setLayer(startIdx, spec.withSpan(out.size() - startIdx));
+            out.setLayer(startIdx, spec);
         }
     }
 
