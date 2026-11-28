@@ -137,7 +137,7 @@ public final class SceneWalker {
                 addOverlayDamage(damage, p.sceneItemCount());
                 if (!painter.beginWalk(damage)) return;
             }
-            if (source != null && source.scene() != null) ranges.compute(items, count, parentIdx, indexOf, p.contents(), source.scene());
+            if (source != null && source.scene() != null) ranges.compute(items, count, parentIdx, indexOf, p.contents());
             walk(painter);
         } finally {
             Arrays.fill(items, 0, count, null);

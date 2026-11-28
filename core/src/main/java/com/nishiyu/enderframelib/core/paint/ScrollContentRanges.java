@@ -3,8 +3,6 @@ package com.nishiyu.enderframelib.core.paint;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
-import com.nishiyu.enderframelib.core.paint.scene.DisplayScene;
-import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 
 import java.util.Arrays;
@@ -14,7 +12,7 @@ import java.util.List;
  * 走査器（{@link SceneWalker}）の 1 フレームの、保持層にできるスクロールコンテナの中身の範囲（M3b-4b-3b。保持層を中身の節に結ぶ）。
  *
  * <p>中身を 1 つの節にまとめたコンテナごとに、中身の節の位置・子孫の項目の範囲 {@code [from, to)}・中身の同一性の印・描画側の答えを持つ。
- * 印はコンテナの層の子の並び（{@code SceneLayer#children}）: 中身の層が使い回される限り同じ参照で、スクロール量に依らない
+ * 印はコンテナの層の子の並び（{@code SceneLayer#children}。組むときに {@link ScrollContentInfo#contentToken} に持たせる）: 中身の層が使い回される限り同じ参照で、スクロール量に依らない
  * （走査器はコンテナをスクロール 0 で組む）。子孫が描画順で連続しない（中身の外の項目が間に入る。重なりの文脈を作らないコンテナの中身の文字は
  * 祖先のインラインの段で描かれる）コンテナは、重ねると重なりの順が変わるので外す。並びは外側が先（先頭の昇順、同じなら長い方）。</p>
  *
@@ -30,21 +28,19 @@ final class ScrollContentRanges {
     private int[] slotOf = new int[64];
 
     /** 中身の範囲を、走査器の項目 {@code items[0, n)}・親の位置 {@code parentIdx}・鍵の索引 {@code indexOf} から求める。 */
-    void compute(DisplayItem[] items, int n, int[] parentIdx, Long2IntOpenHashMap indexOf, List<ScrollContentInfo> contents,
-                 DisplayScene scene) {
+    void compute(DisplayItem[] items, int n, int[] parentIdx, Long2IntOpenHashMap indexOf, List<ScrollContentInfo> contents) {
         clear();
         for (int c = 0, cn = contents.size(); c < cn; c++) {
             ScrollContentInfo info = contents.get(c);
             int idx = indexOf.get(DisplayItem.keyOf(info.contentId()));
             if (idx < 0 || items[idx].type() != ElementType.NODE || !info.contentId().equals(items[idx].id())) continue;
-            SceneLayer layer = scene.layerByNodeId(info.node().nodeId());
-            if (layer == null) continue;
+            if (info.contentToken() == null) continue;
             if (count == node.length) grow(count * 2);
             node[count] = idx;
             from[count] = Integer.MAX_VALUE;
             to[count] = -1;
             descendants[count] = 0;
-            token[count] = layer.children;
+            token[count] = info.contentToken();
             plan[count] = RetainPlan.NONE;
             count++;
         }

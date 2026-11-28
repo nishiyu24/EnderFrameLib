@@ -13,7 +13,7 @@ public final class SceneChildren {
     private static final float[] NO_POS = new float[0];
     private static final int[] NO_INTS = new int[0];
     public static final SceneChildren EMPTY = new SceneChildren(SceneChunk.NO_CHUNKS, NO_POS, NO_POS, true, 0, 0, false, false, 0, false, NO_INTS,
-            null);
+            null, false);
 
     public final SceneChunk[] chunks;
     /** 各チャンクの原点（親の border-box 左上基準）。 */
@@ -33,10 +33,12 @@ public final class SceneChildren {
      * 親の値で、子の層の値に持たない（同じ legend の層が、前に別の legend が入って流れの中の legend に替わっても使い回せる）。
      */
     public final BoxNode legend;
+    /** 子孫が {@code backdrop-filter} を持つか（{@link SceneChunk#backdropBelow}）。 */
+    public final boolean backdropBelow;
 
     private SceneChildren(SceneChunk[] chunks, float[] chunkX, float[] chunkY, boolean monotonicY, int size,
                           int propagatedLayers, boolean anchoredBelow, boolean propagatesBlend, int anonChain,
-                          boolean hasDynamicBounds, int[] unculledChunks, BoxNode legend) {
+                          boolean hasDynamicBounds, int[] unculledChunks, BoxNode legend, boolean backdropBelow) {
         this.chunks = chunks;
         this.chunkX = chunkX;
         this.chunkY = chunkY;
@@ -49,13 +51,14 @@ public final class SceneChildren {
         this.hasDynamicBounds = hasDynamicBounds;
         this.unculledChunks = unculledChunks;
         this.legend = legend;
+        this.backdropBelow = backdropBelow;
     }
 
     /** 描画される {@code <legend>} の子の箱を {@code box} にしたもの（null なら自分）。 */
     SceneChildren withLegend(BoxNode box) {
         if (box == legend) return this;
         return new SceneChildren(chunks, chunkX, chunkY, monotonicY, size, propagatedLayers, anchoredBelow, propagatesBlend, anonChain,
-                hasDynamicBounds, unculledChunks, box);
+                hasDynamicBounds, unculledChunks, box, backdropBelow);
     }
 
     /** 子の層 {@code c} が描画される {@code <legend>} か。 */
@@ -66,7 +69,7 @@ public final class SceneChildren {
     public static SceneChildren of(SceneChunk[] chunks, float[] chunkX, float[] chunkY) {
         if (chunks == null || chunks.length == 0) return EMPTY;
         int total = 0, prop = 0, anon = 0, dynCount = 0;
-        boolean anch = false, blend = false, mono = true;
+        boolean anch = false, blend = false, mono = true, backdrop = false;
         float prevMinY = Float.NEGATIVE_INFINITY, prevMaxY = Float.NEGATIVE_INFINITY;
         for (int k = 0; k < chunks.length; k++) {
             SceneChunk c = chunks[k];
@@ -74,6 +77,7 @@ public final class SceneChildren {
             prop |= c.propagatedLayers;
             anch |= c.anchoredBelow;
             blend |= c.propagatesBlend;
+            backdrop |= c.backdropBelow;
             anon += c.anonChain;
             if (c.hasDynamicBounds) dynCount++;
             if (mono && c.layers.length > 0) {
@@ -93,7 +97,7 @@ public final class SceneChildren {
                 if (chunks[k].hasDynamicBounds) unculled[idx++] = k;
             }
         }
-        return new SceneChildren(chunks, chunkX, chunkY, mono, total, prop, anch, blend, anon, dynCount > 0, unculled, null);
+        return new SceneChildren(chunks, chunkX, chunkY, mono, total, prop, anch, blend, anon, dynCount > 0, unculled, null, backdrop);
     }
 
     /** 親へ汲み上げる子孫の sticky 要素を集める（通常は 0 確保）。 */

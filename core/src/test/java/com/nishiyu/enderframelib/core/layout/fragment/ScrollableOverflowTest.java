@@ -47,6 +47,18 @@ class ScrollableOverflowTest {
     }
 
     @Test
+    void manyChunkFlowFoldsTheChunksAndDropsOnlyTheLastEscapingMargin() {
+        // 100 子（チャンク 4 つ）を高さ 10 で積む。70 番目の子だけ幅 300（3 つ目のチャンクの中のはみ出し）、最後の子の下の余白 40 は突き抜けるので
+        // 数えない（M3b-4c-2b-3a: 一様なチャンクはチャンクの原点からの到達範囲を足し、最後の流れのブロックの子を含むチャンクだけ余白を除いた値）
+        StringBuilder sb = new StringBuilder("<div id=s style='width:100px'>");
+        for (int i = 1; i <= 100; i++) {
+            sb.append("<div style='height:10px").append(i == 70 ? ";width:300px" : "").append(i == 100 ? ";margin-bottom:40px" : "").append("'></div>");
+        }
+        float[] r = of(sb.append("</div>").toString(), "s");
+        assertArrayEquals(new float[]{300, 1000, 300, 1000}, r, EPS);
+    }
+
+    @Test
     void escapingBottomMarginOfTheLastChildIsNotCounted() {
         // 高さ auto・下の padding も border も無い箱: 最後の子の下の余白 40 は外へ突き抜けるので数えない（高さ 20 = 子の高さ）
         float[] r = of("<div id=s style='width:100px'><div style='height:20px;margin-bottom:40px'></div></div>", "s");

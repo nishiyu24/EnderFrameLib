@@ -28,14 +28,88 @@ public final class ScrollableOverflow {
 
     /** {@code f} の {@code {scrollWidth, scrollHeight, 子孫のはみ出しの右端, 下端}}。 */
     public static float[] of(LayoutFragment f, Map<LayoutFragment, float[]> memo, LayoutSession s) {
+        return of(f, memo, s, null);
+    }
+
+    /**
+     * {@link #of(LayoutFragment, Map, LayoutSession)} と同じ値。{@code chunks} は流れのチャンク {@code k} の到達範囲（{@link #chunk}。
+     * 呼び手が作ったか、使い回したチャンクが持っていた値。null の要素・配列はその場で求める）。8,000 子の流れでも、使い回したチャンクの
+     * 中は下りない（M3b-4c-2b-3a）。
+     */
+    public static float[] of(LayoutFragment f, Map<LayoutFragment, float[]> memo, LayoutSession s, float[][] chunks) {
         float[] r = memo.get(f);
         if (r != null) return r;
-        r = compute(f, memo, s);
+        r = compute(f, memo, s, chunks);
         memo.put(f, r);
         return r;
     }
 
-    private static float[] compute(LayoutFragment f, Map<LayoutFragment, float[]> memo, LayoutSession s) {
+    /** {@link #chunk} の結果の添字。 */
+    private static final int C_EXT_R = 0, C_EXT_B = 1, C_EXT_B_LAST = 2, C_DESC_R = 3, C_DESC_B = 4, C_FLAGS = 5;
+    /** {@link #chunk} の印: 箱の子があった・流れのブロックの子があった・使い回せない（直交フローの包む箱は親の箱の値を読む）。 */
+    private static final int F_ANY = 1, F_BLOCK = 2, F_LOCAL = 4;
+
+    /**
+     * 断片 {@code f} の一様なチャンク {@code k}（{@link ChunkedFlow#isUniformChunk}）の子の到達範囲。値はチャンクの原点（親の内容ボックスの
+     * 左上から {@code chunkY[k]} 下）からで、チャンク（{@link FlowChunk} の {@code ==}）が同じなら同じ値になる（親の値を読まない）。
+     * {@code {中身の右端, 下端, 最後の流れのブロックの子の下の余白を除いた下端, 子孫のはみ出しの右端, 下端, 印}}。直交フローの包む箱を含む
+     * チャンクは親の箱を読むので、使い回せない印を付ける（{@link #reusable}）。
+     */
+    public static float[] chunk(LayoutFragment f, int k, Map<LayoutFragment, float[]> memo, LayoutSession s) {
+        FlowChunk c = f.flow.chunks[k];
+        Acc a = new Acc(Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY);
+        float extBLast = Float.NEGATIVE_INFINITY;
+        int flags = 0, lastI = -1;
+        for (int i = c.frags.length - 1; i >= 0; i--) {
+            LayoutFragment ch = c.frags[i];
+            if (ch.box != null && ch.box.kind.blockLevel()) {
+                lastI = i;
+                break;
+            }
+        }
+        for (int i = 0; i < c.frags.length; i++) {
+            LayoutFragment ch = c.frags[i];
+            float x = c.x[i], y = c.y[i];
+            if (ch.box == null) {
+                if (ch.lines == null) continue;
+                lines(ch.lines, x, y, a, memo, s);
+                if (lastI >= 0 && i > lastI) {
+                    Acc tail = new Acc(Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY);
+                    lines(ch.lines, x, y, tail, memo, s);
+                    extBLast = Math.max(extBLast, tail.extB);
+                }
+                continue;
+            }
+            float beforeB = a.extB;
+            if (ch.box.pseudo == BoxNode.Pseudo.ORTHOGONAL) {
+                orthogonal(f.box, ch, x, y, a, memo, s);
+                flags |= F_LOCAL;
+            } else {
+                child(ch, x, y, false, a, memo, s);
+            }
+            if (i == lastI) {
+                // 最後の流れのブロックの子だけ下の余白を含めない値も持つ（余白が親を突き抜けるときに親が使う。直交フローの包む箱は余白を足さない）
+                extBLast = Math.max(beforeB, ch.box.pseudo == BoxNode.Pseudo.ORTHOGONAL ? a.extB : y + ch.height);
+                flags |= F_BLOCK;
+            } else if (lastI >= 0 && i > lastI) {
+                // 最後の流れのブロックの子より後ろの子（float などの箱）は、その子の分だけを足す
+                Acc tail = new Acc(Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY);
+                if (ch.box.pseudo == BoxNode.Pseudo.ORTHOGONAL) orthogonal(f.box, ch, x, y, tail, memo, s);
+                else child(ch, x, y, false, tail, memo, s);
+                extBLast = Math.max(extBLast, tail.extB);
+            }
+            flags |= F_ANY;
+        }
+        if (lastI < 0) extBLast = a.extB;
+        return new float[]{a.extR, a.extB, extBLast, a.descR, a.descB, flags};
+    }
+
+    /** {@link #chunk} の結果を、同じチャンクを使い回す層が持ち続けてよいか（親の箱を読まない）。 */
+    public static boolean reusable(float[] chunk) {
+        return chunk != null && (((int) chunk[C_FLAGS]) & F_LOCAL) == 0;
+    }
+
+    private static float[] compute(LayoutFragment f, Map<LayoutFragment, float[]> memo, LayoutSession s, float[][] given) {
         float w = f.width, h = f.height;
         if (f.box == null) return new float[]{w, h, w, h};
         Style st = f.box.style;
@@ -64,6 +138,18 @@ public final class ScrollableOverflow {
             }
             for (int k = 0; k < cs.length; k++) {
                 FlowChunk c = cs[k];
+                if (f.flow.isUniformChunk(k)) {
+                    // 一様なチャンクはチャンクの原点からの値を足す（使い回したチャンクは呼び手が持っていた値。中を下りない）
+                    float[] e = given != null && k < given.length && given[k] != null ? given[k] : chunk(f, k, memo, s);
+                    int fl = (int) e[C_FLAGS];
+                    float ox = f.insetLeft, oy = f.insetTop + f.flow.chunkY[k];
+                    if (e[C_EXT_R] != Float.NEGATIVE_INFINITY) {
+                        a.ext(ox + e[C_EXT_R], oy + (k == lastK ? e[C_EXT_B_LAST] : e[C_EXT_B]));
+                    }
+                    if (e[C_DESC_R] != Float.NEGATIVE_INFINITY) a.desc(ox + e[C_DESC_R], oy + e[C_DESC_B]);
+                    if ((fl & F_ANY) != 0) any = true;
+                    continue;
+                }
                 for (int i = 0; i < c.frags.length; i++) {
                     LayoutFragment ch = c.frags[i];
                     float x = f.insetLeft + c.x[i], y = f.insetTop + f.flow.y(k, i);

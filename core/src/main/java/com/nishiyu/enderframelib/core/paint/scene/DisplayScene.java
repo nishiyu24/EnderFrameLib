@@ -15,8 +15,6 @@ import java.util.Objects;
 public final class DisplayScene {
     public final SceneLayer root;
     private Int2ObjectOpenHashMap<SceneLayer> byNodeIdIndex;
-    /** {@link #hasBackdropFilter} の答え（0 = まだ数えていない、1 = 無い、2 = ある）。 */
-    private byte backdrop;
 
     public DisplayScene(SceneLayer root) {
         this.root = Objects.requireNonNull(root, "root");
@@ -41,20 +39,11 @@ public final class DisplayScene {
     }
 
     /**
-     * {@code backdrop-filter} を持つ層があるか（最初に聞かれたときに 1 度だけ数える）。後ろの絵を読む層は、後ろのどこが変わっても
-     * 描き直す範囲が層の外へ広がるので、部分の描き直し（{@code SceneDamage}）は全面にする。
+     * {@code backdrop-filter} を持つ層があるか（層が子孫の分を持つ印 {@link SceneLayer#backdropBelow}。M3b-4c-2b-3a からシーンをたどらない）。
+     * 後ろの絵を読む層は、後ろのどこが変わっても描き直す範囲が層の外へ広がるので、部分の描き直し（{@code SceneDamage}）は全面にする。
      */
     public boolean hasBackdropFilter() {
-        if (backdrop == 0) backdrop = anyBackdrop(root) ? (byte) 2 : (byte) 1;
-        return backdrop == 2;
-    }
-
-    private static boolean anyBackdrop(SceneLayer layer) {
-        if (layer.effects != null && layer.effects.hasBackdrop()) return true;
-        for (SceneChunk c : layer.children.chunks) {
-            for (SceneLayer child : c.layers) if (anyBackdrop(child)) return true;
-        }
-        return false;
+        return root.backdropBelow();
     }
 
     private static void index(SceneLayer layer, Int2ObjectOpenHashMap<SceneLayer> out) {

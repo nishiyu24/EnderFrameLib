@@ -191,7 +191,7 @@ public final class SceneDisplayListAdapter {
             }
             for (ScrollContent c : scrollContentOrder) {
                 scrollInfos.add(new ScrollContentInfo(c.box.node(), c.contentId, c.thumbVId, c.thumbHId,
-                        c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0, c.stickies));
+                        c.sx0, c.sy0, c.kx, c.ky, c.fx0, c.fy0, c.stickies, c.box.layer.children));
             }
         } finally {
             this.out = null;

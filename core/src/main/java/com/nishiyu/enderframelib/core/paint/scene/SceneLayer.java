@@ -55,6 +55,8 @@ public final class SceneLayer {
     public static final int FLAG_HAS_SELF = 1 << 19;
     public static final int FLAG_DYNAMIC_BOUNDS = 1 << 20;
     public static final int FLAG_COLLAPSED_TABLE = 1 << 21;
+    /** 自身か子孫が {@code backdrop-filter} を持つ（M3b-4c-2b-3a。{@link DisplayScene#hasBackdropFilter} が根だけを見る）。 */
+    public static final int FLAG_BACKDROP_BELOW = 1 << 22;
 
     // ---- 計画書 §3.4 データモデル ----
     /** 文書内の DOM 要素の数値 ID（生成節・疑似要素は 0）。 */
@@ -136,7 +138,8 @@ public final class SceneLayer {
         boolean dynamic = follow != null || sticky != null || this.children.hasDynamicBounds;
         int resolvedFlags = (anchored ? (flags | FLAG_ANCHORED_BELOW) : flags)
                 | (dynamic ? FLAG_DYNAMIC_BOUNDS : 0)
-                | (box != null && TableBorders.collapses(box) ? FLAG_COLLAPSED_TABLE : 0);
+                | (box != null && TableBorders.collapses(box) ? FLAG_COLLAPSED_TABLE : 0)
+                | ((effects != null && effects.hasBackdrop()) || this.children.backdropBelow ? FLAG_BACKDROP_BELOW : 0);
         this.flags = resolvedFlags;
         this.propagatedLayers = propagatedLayers;
         int chain = 0;
@@ -256,6 +259,7 @@ public final class SceneLayer {
     public boolean isTopLayer() { return (flags & FLAG_TOP_LAYER) != 0; }
     public boolean contentVisibilityAuto() { return (flags & FLAG_CONTENT_VISIBILITY_AUTO) != 0; }
     public boolean anchoredBelow() { return (flags & FLAG_ANCHORED_BELOW) != 0; }
+    public boolean backdropBelow() { return (flags & FLAG_BACKDROP_BELOW) != 0; }
     public boolean hasBlendDescendant() { return (flags & FLAG_BLEND_DESCENDANT) != 0; }
     public boolean propagatesBlend() { return (flags & FLAG_PROPAGATES_BLEND) != 0; }
     public boolean wantsScrollbars() { return (flags & FLAG_WANTS_SCROLLBARS) != 0; }

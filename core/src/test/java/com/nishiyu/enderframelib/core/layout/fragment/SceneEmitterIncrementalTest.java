@@ -123,6 +123,83 @@ class SceneEmitterIncrementalTest {
         }
     }
 
+    /**
+     * 長い流れ（300 行・約 10 チャンク）の挿入・削除・寸法・最後の子の余白の変化で、使い回したチャンクが持つ到達範囲（M3b-4c-2b-3a。
+     * {@link SceneChunk#overflow}）と作り直すチャンクの分だけ引く前回の子の表から組んだシーンが、ゼロから組み直したシーンと同じ（到達範囲
+     * {@code sc} を含む）。
+     */
+    @Test
+    void longFlowMutationsKeepTheReusedChunkOverflow() {
+        SpikeView v = new SpikeView(SpikeView.largeList(300).replace("height: 400px; overflow-y: auto;", "height: 400px; overflow: auto;"), 640, 480);
+        SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+        emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        Random rnd = new Random(20261128L);
+        HtmlNode list = v.byId("list");
+        int reused = 0;
+        for (int step = 0; step < 40; step++) {
+            List<HtmlNode> rows = new ArrayList<>();
+            for (HtmlNode c : list.children) if (c instanceof HtmlElement) rows.add(c);
+            HtmlElement row = (HtmlElement) rows.get(rnd.nextInt(rows.size()));
+            HtmlElement last = (HtmlElement) rows.get(rows.size() - 1);
+            String op;
+            switch (step % 5) {
+                case 0 -> {
+                    op = "insert before " + row.getId();
+                    HtmlElement e = new HtmlElement("li");
+                    e.updateTextContent("inserted " + step);
+                    list.insertBefore(e, row);
+                }
+                case 1 -> {
+                    op = "remove " + row.getId();
+                    list.removeChild(row);
+                }
+                case 2 -> {
+                    op = "wide " + row.getId();
+                    row.setAttribute("style", rnd.nextBoolean() ? "width:" + (700 + step) + "px" : "");
+                }
+                case 3 -> {
+                    op = "last margin " + last.getId();
+                    last.setAttribute("style", "margin-bottom:" + (10 * step) + "px");
+                }
+                default -> {
+                    op = "append";
+                    HtmlElement e = new HtmlElement("li");
+                    e.updateTextContent("appended " + step);
+                    list.appendChild(e);
+                }
+            }
+            DisplayScene scene = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+            reused += emitter.reusedChunks();
+            try {
+                assertSameDump(v, scene);
+            } catch (AssertionError err) {
+                throw new AssertionError("step " + step + " (" + op + ")\n" + err.getMessage(), err);
+            }
+        }
+        assertTrue(reused > 100, "チャンクを使い回す経路を通る（" + reused + "）");
+    }
+
+    /** {@code backdrop-filter} の有無はシーンをたどらず根の印で答え、使い回したチャンクの奥の層の変化も根まで届く（M3b-4c-2b-3a）。 */
+    @Test
+    void backdropFilterDeepInAReusedFlowReachesTheRoot() {
+        SpikeView v = new SpikeView(SpikeView.largeList(300), 640, 480);
+        SceneEmitter emitter = new SceneEmitter(v.layout.session(), v.doc.sheet.keyframes);
+        DisplayScene s0 = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        assertTrue(!s0.hasBackdropFilter());
+        HtmlElement row = (HtmlElement) v.byId("item-200");
+        row.setAttribute("style", "backdrop-filter: blur(2px)");
+        DisplayScene with = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        assertTrue(emitter.reusedChunks() > 0, "他のチャンクは使い回す");
+        assertSame(find(s0.root, v.byId("item-201")), find(with.root, v.byId("item-201")),
+                "作り直すチャンクの隣の行は前回の層（前回の子の表は作り直すチャンクの分だけ引く）");
+        assertTrue(with.hasBackdropFilter(), "奥の行の backdrop-filter");
+        ((HtmlElement) v.byId("item-1")).setAttribute("style", "color: red");
+        DisplayScene stillWith = emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh);
+        assertTrue(stillWith.hasBackdropFilter(), "使い回したチャンクの奥の印も親へ伝わる");
+        row.setAttribute("style", "");
+        assertTrue(!emitter.emit(v.frame(), v.boxRoot, v.vw, v.vh).hasBackdropFilter(), "外したら消える");
+    }
+
     /** 増分シーンから出した表示リスト = ゼロから組んだシーンの表示リスト。描画だけ・寸法・属性だけの変化を混ぜる。 */
     @Test
     void adapterOutputMatchesAFreshScene() {

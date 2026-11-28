@@ -182,10 +182,12 @@ public final class SceneEmitter {
         }
     }
 
-    private static Map<Object, SceneLayer> childIndex(SceneLayer l) {
+    /** 前回の層 {@code l} の子を引く表。{@code skip} のチャンク（そのまま使い回すもの）の子は入れない（8,000 子でも作り直す分だけ。M3b-4c-2b-3a）。 */
+    private static Map<Object, SceneLayer> childIndex(SceneLayer l, Set<SceneChunk> skip) {
         if (l == null || l.children.size == 0) return null;
         Map<Object, SceneLayer> out = new IdentityHashMap<>();
         for (SceneChunk c : l.children.chunks) {
+            if (skip != null && skip.contains(c)) continue;
             for (SceneLayer k : c.layers) index(k, out);
         }
         return out;
@@ -257,20 +259,24 @@ public final class SceneEmitter {
             if (b.kind == BoxKind.TABLE_ROW || b.kind == BoxKind.TABLE_ROW_GROUP) {
                 mT = mR = mB = mL = pT = pR = pB = pL = bT = bR = bB = bL = 0f;
             }
-            float[] ov = ScrollableOverflow.of(f, overflow, session);
-            scrollWidth = ov[0];
-            scrollHeight = ov[1];
+            scrollWidth = scrollHeight = Float.NaN; // 子を組んでから求める（使い回したチャンクの到達範囲を読む）
             lineHeight = InlineFlow.lineHeight(b.style, session.face(b.style));
         }
 
         boolean sameDisplay = before != null && java.util.Objects.equals(before.display, display);
-        Map<Object, SceneLayer> kidsIdx = sameDisplay ? childIndex(before) : null;
+        boolean pureFlow = !isText && f.lines == null && isPureFlow(b, f);
+        Map<Object, SceneLayer> kidsIdx = sameDisplay && !pureFlow ? childIndex(before, null) : null;
         Display.Inner inner = display != null ? display.inner() : null;
         boolean childFlexGrid = inner == Display.Inner.FLEX || inner == Display.Inner.GRID;
         boolean childBlocksFloat = inner == Display.Inner.FLEX || inner == Display.Inner.GRID || inner == Display.Inner.TABLE
                 || inner == Display.Inner.TABLE_ROW_GROUP || inner == Display.Inner.TABLE_ROW;
 
         if (isText) {
+            if (Float.isNaN(scrollWidth)) {
+                float[] ov = ScrollableOverflow.of(f, overflow, session);
+                scrollWidth = ov[0];
+                scrollHeight = ov[1];
+            }
             SceneInlineBuilder.Draft d = new SceneInlineBuilder.Draft();
             Map<BoxNode, SceneInlineBuilder.Draft> boxes = new IdentityHashMap<>();
             boxes.put(b, d);
@@ -292,9 +298,11 @@ public final class SceneEmitter {
         SceneChildren sceneChildren;
         ComputedStyle firstLine = null;
         float[] firstLineBgRect = null;
-        if (f.lines == null && isPureFlow(b, f)) {
-            Map<FlowChunk, SceneChunk> prevChunks = sameDisplay ? chunkIndex(before) : null;
-            sceneChildren = buildChunkedFlow(f, kidsIdx, prevChunks, childFlexGrid, childBlocksFloat);
+        float[][] chunkOverflow = null;
+        if (pureFlow) {
+            Flow flow = buildChunkedFlow(f, sameDisplay ? before : null, childFlexGrid, childBlocksFloat, Float.isNaN(scrollWidth));
+            sceneChildren = flow.children();
+            chunkOverflow = flow.overflow();
         } else {
             SceneInlineBuilder.Draft d = new SceneInlineBuilder.Draft();
             d.w = f.width; d.h = f.height;
@@ -350,6 +358,11 @@ public final class SceneEmitter {
             sceneChildren = SceneInlineBuilder.freezeChildren(d.children, display, vw, vh, keyframes, this).withLegend(legend);
         }
 
+        if (Float.isNaN(scrollWidth)) {
+            float[] ov = ScrollableOverflow.of(f, overflow, session, chunkOverflow);
+            scrollWidth = ov[0];
+            scrollHeight = ov[1];
+        }
         SceneLayerProps.Computed p = SceneLayerProps.compute(lb, node, style, display, f.width, f.height,
                 bT, bR, bB, bL, pT, pR, pB, pL, mT, mR, mB, mL,
                 anonymous, verticalWrapper, interactive, parentInFlexOrGrid, parentBlocksFloat,
@@ -375,23 +388,46 @@ public final class SceneEmitter {
 
     private record ChunkEntry(SceneChunk chunk, float cx, float cy) { }
 
-    private SceneChildren buildChunkedFlow(LayoutFragment f, Map<Object, SceneLayer> kidsIdx,
-                                           Map<FlowChunk, SceneChunk> prevChunks,
-                                           boolean childFlexGrid, boolean childBlocksFloat) {
+    /** 流れの子の並びと、流れのチャンクごとの子の到達範囲（{@link ScrollableOverflow#chunk}。使い回したチャンクは持っていた値）。 */
+    private record Flow(SceneChildren children, float[][] overflow) { }
+
+    /**
+     * 純粋な流れの子を組む。チャンクは {@code FlowChunk ==} で前回のものを使い回し（§2.3）、前回の子を引く表は作り直すチャンクの分だけ作る
+     * （使い回すチャンクの子は引かれない。M3b-4c-2b-3a）。{@code before} は親の {@code display} が前回と同じときの前回の層（違えば null）。
+     * {@code needOverflow} は親が自分の到達範囲を求めるか（前回の層から写すときは作り直すチャンクの到達範囲を作らない）。
+     */
+    private Flow buildChunkedFlow(LayoutFragment f, SceneLayer before, boolean childFlexGrid, boolean childBlocksFloat,
+                                  boolean needOverflow) {
         int fcCount = f.flow != null ? f.flow.chunks.length : 0;
         List<ChunkEntry> entries = new ArrayList<>(fcCount + (f.oof != null ? f.oof.length : 0));
         float ox = f.insetLeft, oy = f.insetTop;
+        Map<FlowChunk, SceneChunk> prevChunks = chunkIndex(before);
+        SceneChunk[] hits = prevChunks != null ? new SceneChunk[fcCount] : null;
+        Set<SceneChunk> consumed = null; // 使い回すチャンク（作るのは当たったときだけ）
+        boolean rebuild = f.oof != null || prevChunks == null;
+        for (int k = 0; prevChunks != null && k < fcCount; k++) {
+            FlowChunk fc = f.flow.chunks[k];
+            boolean canReuseChunk = f.flow.isUniformChunk(k) && fc.source != null && !divergedChunks.contains(fc.source);
+            SceneChunk hit = canReuseChunk ? prevChunks.get(fc) : null;
+            if (hit != null && hit.anonChain == 0) {
+                hits[k] = hit;
+                if (consumed == null) consumed = Collections.newSetFromMap(new IdentityHashMap<>());
+                consumed.add(hit);
+            } else {
+                rebuild = true;
+            }
+        }
+        Map<Object, SceneLayer> kidsIdx = rebuild ? childIndex(before, consumed) : null;
+        float[][] chunkOverflow = fcCount > 0 ? new float[fcCount][] : null;
         for (int k = 0; k < fcCount; k++) {
             FlowChunk fc = f.flow.chunks[k];
             boolean uniform = f.flow.isUniformChunk(k);
             boolean canReuseChunk = uniform && fc.source != null && !divergedChunks.contains(fc.source);
-            if (canReuseChunk && prevChunks != null) {
-                SceneChunk hit = prevChunks.get(fc);
-                if (hit != null && hit.anonChain == 0) {
-                    reusedChunks++;
-                    entries.add(new ChunkEntry(hit, ox, oy + f.flow.chunkY[k]));
-                    continue;
-                }
+            if (hits != null && hits[k] != null) {
+                reusedChunks++;
+                entries.add(new ChunkEntry(hits[k], ox, oy + f.flow.chunkY[k]));
+                chunkOverflow[k] = hits[k].overflow;
+                continue;
             }
             int len = fc.frags.length;
             SceneLayer[] layers = new SceneLayer[len];
@@ -402,7 +438,12 @@ public final class SceneEmitter {
                 float ly = uniform ? fc.y[i] : oy + f.flow.y(k, i);
                 layers[i] = buildBlock(fc.frags[i], lx, ly, kidsIdx, childFlexGrid, childBlocksFloat, false);
             }
-            SceneChunk built = SceneChunk.of(canReuseChunk ? fc : null, layers);
+            // 到達範囲は FlowChunk で決まるので、前回の同じ FlowChunk のチャンクが持っていればその値。無ければ親が求めるときだけ作る
+            SceneChunk same = uniform && prevChunks != null ? prevChunks.get(fc) : null;
+            float[] ov = same != null ? same.overflow : null;
+            if (ov == null && uniform && needOverflow) ov = ScrollableOverflow.chunk(f, k, overflow, session);
+            chunkOverflow[k] = ov;
+            SceneChunk built = SceneChunk.of(canReuseChunk ? fc : null, layers, ScrollableOverflow.reusable(ov) ? ov : null);
             entries.add(new ChunkEntry(built, chunkOx, chunkOy));
         }
         BoxNode legend = null;
@@ -413,7 +454,7 @@ public final class SceneEmitter {
                 insertOof(entries, placed);
             }
         }
-        if (entries.isEmpty()) return SceneChildren.EMPTY;
+        if (entries.isEmpty()) return new Flow(SceneChildren.EMPTY, chunkOverflow);
         int n = entries.size();
         SceneChunk[] chunks = new SceneChunk[n];
         float[] cx = new float[n], cy = new float[n];
@@ -423,7 +464,7 @@ public final class SceneEmitter {
             cx[i] = e.cx;
             cy[i] = e.cy;
         }
-        return SceneChildren.of(chunks, cx, cy).withLegend(legend);
+        return new Flow(SceneChildren.of(chunks, cx, cy).withLegend(legend), chunkOverflow);
     }
 
     /** {@code owner} の流れの外に置いた {@code p} が fieldset の描画される {@code <legend>} か（レイアウトが流れの外に置く。親の値）。 */
