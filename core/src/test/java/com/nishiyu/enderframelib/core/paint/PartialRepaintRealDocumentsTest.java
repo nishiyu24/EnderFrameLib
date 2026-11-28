@@ -61,7 +61,7 @@ class PartialRepaintRealDocumentsTest {
             int[] got = partialBackend.pixmap().pixels();
             // 同じセッション（補間の状態）で全面に描く。同じ時刻・同じ列なので補間の状態は進まない
             try (SoftwareRenderBackend fresh = new SoftwareRenderBackend(w, h, 1f, partialBackend.sessionId())) {
-                fresh.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(f.drawList(), f.offsets(), nowMs));
+                fresh.render(f); // 新しい描画器の最初のフレームは全面（列は描画器がシーンから組む）
                 int[] want = fresh.pixmap().pixels();
                 int diff = 0, first = -1;
                 for (int i = 0; i < want.length; i++) {

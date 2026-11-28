@@ -2,11 +2,9 @@ package com.nishiyu.enderframelib.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -42,10 +40,8 @@ class LocalInputValueTest {
         try (UiView v = view()) {
             assertEquals("", item(v, "t_input").text());
             assertEquals("name", item(v, "t_ph").text(), "値が空ならプレースホルダを描く");
-            List<DisplayItem> before = v.relativeElements();
-
             new UiInput(v).updateInputLocally("t", "hello");
-            assertSame(before, v.relativeElements(), "列は書き換えない（出力のその場書き換えをしない）");
+            assertEquals("", item(v, "t_input").text(), "列は書き換えない（出力のその場書き換えをしない。次のフレームまで前のシーン）");
             assertNotEquals(UiView.InvalidationLevel.NONE, v.invalidationLevel(), "値の変化は再描画を予約する");
             v.flushInvalidation();
             assertEquals("hello", item(v, "t_input").text(), "次のフレームの欄の文字は DOM の値");

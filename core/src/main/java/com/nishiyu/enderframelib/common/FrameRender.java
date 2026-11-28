@@ -20,13 +20,25 @@ public final class FrameRender {
     private FrameRender() { }
 
     /** 1 回のフレームの結果: 不変の描画シーン・動的状態（スクロール等）と表示リスト。 */
-    public record Frame(DisplayScene scene, DynamicSceneState dynamic, List<DisplayItem> items) {
-        /** 描画器へ渡すフレームの値（シーンつき・時刻 0。描くホストが {@link com.nishiyu.enderframelib.core.paint.RenderFrame#at} で時刻を入れる）。 */
+    public record Frame(DisplayScene scene, DynamicSceneState dynamic, List<DisplayItem> items,
+                        com.nishiyu.enderframelib.core.paint.SceneSource source) {
+        /**
+         * 描画器へ渡すフレームの値（シーンつき・時刻 0。列は描画器が組む。描くホストが {@link com.nishiyu.enderframelib.core.paint.RenderFrame#at}
+         * で時刻を入れる）。シーンが無ければ列だけのフレーム。
+         */
         public com.nishiyu.enderframelib.core.paint.RenderFrame renderFrame() {
-            com.nishiyu.enderframelib.core.paint.SceneSource source = scene == null ? null
-                    : new com.nishiyu.enderframelib.core.paint.SceneSource(scene, dynamic, List.of(), 0);
-            return new com.nishiyu.enderframelib.core.paint.RenderFrame(items, List.of(), null, source, null, 0L);
+            return source != null ? new com.nishiyu.enderframelib.core.paint.RenderFrame(List.of(), List.of(), null, source, null, 0L)
+                    : com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0L);
         }
+    }
+
+    /** {@code frame} の結果（列はその場で組む。1 回だけの描画とテストの道具）。 */
+    private static Frame result(V3Frame frame, ScrollState scroll) {
+        DisplayScene scene = frame.scene();
+        if (scene == null) return new Frame(null, null, List.of(), null);
+        DynamicSceneState dyn = frame.dynamicState(scroll);
+        return new Frame(scene, dyn, frame.paint(),
+                new com.nishiyu.enderframelib.core.paint.SceneSource(scene, dyn, 0, frame.keyframes(), frame.devicePixelRatio()));
     }
 
     /**
@@ -40,8 +52,8 @@ public final class FrameRender {
         st.bindStyleLookup(frame::styleOf); // 算出スタイル（CSSOM の getComputedStyle と同じ口）はこのフレームの箱の木から読む
         float dpr = doc.sheet != null ? doc.sheet.mediaEnvironment().resolution() : 1f;
         ScrollState effectiveScroll = scroll != null ? scroll : new ScrollState();
-        List<DisplayItem> items = frame.frame(doc, null, w, h, dpr, env, st, effectiveScroll, fonts);
-        return new Frame(frame.scene(), frame.dynamicState(effectiveScroll), items);
+        frame.frame(doc, null, w, h, dpr, env, st, effectiveScroll, fonts);
+        return result(frame, effectiveScroll);
     }
 
     /** {@link #document} の、空の対話の状態・空のスクロールの状態の形。 */
@@ -56,7 +68,7 @@ public final class FrameRender {
     public static Frame subtree(HtmlNode root, StyleSheet sheet, int w, int h, ScrollState scroll, FontResolver fonts) {
         V3Frame frame = new V3Frame();
         ScrollState effectiveScroll = scroll != null ? scroll : new ScrollState();
-        List<DisplayItem> items = frame.subtree(root, sheet, w, h, effectiveScroll, fonts);
-        return new Frame(frame.scene(), frame.dynamicState(effectiveScroll), items);
+        frame.subtree(root, sheet, w, h, effectiveScroll, fonts);
+        return result(frame, effectiveScroll);
     }
 }

@@ -266,7 +266,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     /** 描く前の準備（前に描き終えた画素を今の入力でも使えるなら描き直し不要。範囲は CPU の描画器が求め、描くときは全面。M3b-4c-2a）。 */
     @Override public PreparedFrame prepare(RenderFrame f) {
         PreparedFrame c = cpu.prepare(f);
-        return lastPrepared = new PreparedFrame(f, null, closed || c.needsRepaint() || paintedClear != Integer.toUnsignedLong(clearPremul), c);
+        return lastPrepared = new PreparedFrame(f, null, null, closed || c.needsRepaint() || paintedClear != Integer.toUnsignedLong(clearPremul), c);
     }
     /** 次の準備で描き直しを要るにする（書体の登録など、描画器の外の事情で絵が変わるとホストが知ったとき）。 */
     public void invalidate() { paintedClear = -1L; }

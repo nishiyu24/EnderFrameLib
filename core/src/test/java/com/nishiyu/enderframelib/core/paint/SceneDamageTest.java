@@ -98,12 +98,12 @@ class SceneDamageTest {
         final SoftwareRenderBackend real;
         long now;
 
-        Timed(int w, int h) { real = new SoftwareRenderBackend(w, h); }
+        Timed(int w, int h) { real = new SoftwareRenderBackend(w, h).partialRepaint(false); }
 
-        // シーンを渡さず全面で描く（時刻だけを覚える）
+        // 毎回全面で描く（時刻だけを覚える）
         @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) {
             com.nishiyu.enderframelib.core.paint.RenderFrame f = frame.frame();
-            real.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(f.drawList(), f.offsets(), f.nowMs()));
+            real.render(f);
             now = f.nowMs();
         }
         @Override public Pixmap pixmap() { return real.pixmap(); }

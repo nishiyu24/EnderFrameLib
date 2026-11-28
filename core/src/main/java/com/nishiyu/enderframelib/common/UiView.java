@@ -79,11 +79,13 @@ public class UiView implements AutoCloseable {
     private static final long RESIZE_THROTTLE_FACTOR = 2;
 
     private volatile String sessionId;
-    private volatile List<DisplayItem> renderCache = Collections.emptyList();
-    /** 描画の上だけの平行移動（スクロール・ドラッグ）の外部表（C6）。 */
-    private final PaintOffsets paintOffsets = new PaintOffsets();
-    /** ユーザー操作（ドラッグ等）による描画平行移動。スクロールや sticky は {@link DynamicSceneState} が解くため分離する。 */
+    /**
+     * ユーザー操作（ドラッグ等）による描画平行移動（C6）。スクロールの中身の移動は描画器が列を組むときに足す（{@code ScrollTranslation}。
+     * M3b-4c-2b-2b でビューの列とスクロールの平行移動の表を削除した）。
+     */
     private final PaintOffsets userPaintOffsets = new PaintOffsets();
+    /** 描く絵が変わり得た回数（シーンを組み直した・スクロール量が変わった・利用者の平行移動が変わった。ホストが描くかを決める）。 */
+    private volatile int paintVersion;
     Document document;
     private final Map<Long, Scene3DWorld> scene3dWorlds = new ConcurrentHashMap<>();
     /** ワールドごとのレイキャスト（BVH を持つので使い回す）。 */
@@ -109,17 +111,7 @@ public class UiView implements AutoCloseable {
     private volatile boolean repositionPending = false;
     /** スクロール以外の理由（レイアウトの問い合わせ・JS のスクロール指定など）でも位置の更新が要求された。 */
     private volatile boolean nonScrollRepositionPending = false;
-    /**
-     * 中身を 1 つの節にまとめたスクロールコンテナ（直近に作った表示リストの）。スクロールだけの更新は、表示リストを作り直さずに
-     * この節の移動量を更新して済ませる（{@link #tryScrollTranslate}）。
-     */
-    private List<ScrollContentInfo> scrollBase = List.of();
-    private final java.util.Set<HtmlNode> handledScrollNodes =
-            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-    /** {@link #scrollBase} の表示リストを作ったときの、全ての節のスクロール位置（0 でないもの）。 */
-    Map<HtmlNode, float[]> scrollAtBuild = Map.of();
-
-    /** 診断: 位置の更新を、節の移動で済ませた回数・スクロールだけなのに作り直した回数・スクロール以外で作り直した回数。 */
+    /** 診断: スクロールだけの更新を、シーンを組み直さずに済ませた回数・アンカーの追従のためにシーンを組み直した回数。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_SCROLL_TRANSLATED = new java.util.concurrent.atomic.LongAdder(),
             STAT_SCROLL_FALLBACK = new java.util.concurrent.atomic.LongAdder();
     /** まだ反映していないビューポートの大きさ。無ければ -1。 */
@@ -199,14 +191,17 @@ public class UiView implements AutoCloseable {
 
     private com.nishiyu.enderframelib.core.paint.SceneSource cachedSource;
 
-    /** 直近の列（{@link #renderCache}）を組んだシーンと今の動的な値（M3b-4b-4a。描画器が描き直す範囲と保持層を求める）。無ければ null。 */
+    /**
+     * 直近のシーンと今の動的な値・組み方の入力（M3b-4b-4a。描画器が列を組み〔M3b-4c-2b-2b〕、描き直す範囲と保持層を求める）。無ければ null。
+     */
     public com.nishiyu.enderframelib.core.paint.SceneSource paintSource() {
         DisplayScene s = v3.scene();
         if (s == null) return null;
         com.nishiyu.enderframelib.core.paint.SceneSource c = cachedSource;
-        if (c == null || c.scene() != s || c.dynamic() != dynamicState() || c.contents() != scrollBase
-                || c.userOffsetsVersion() != userPaintOffsets.version()) {
-            c = cachedSource = new com.nishiyu.enderframelib.core.paint.SceneSource(s, dynamicState(), scrollBase, userPaintOffsets.version());
+        if (c == null || c.scene() != s || c.dynamic() != dynamicState() || c.userOffsetsVersion() != userPaintOffsets.version()
+                || c.keyframes() != v3.keyframes() || Float.compare(c.devicePixelRatio(), v3.devicePixelRatio()) != 0) {
+            c = cachedSource = new com.nishiyu.enderframelib.core.paint.SceneSource(s, dynamicState(), userPaintOffsets.version(),
+                    v3.keyframes(), v3.devicePixelRatio());
         }
         return c;
     }
@@ -224,14 +219,14 @@ public class UiView implements AutoCloseable {
         // 凍結しておかないと、次のフレームが同じ変更を読んで、もう一度全体を組み直す（静止フレームにならない）
         if (full) interactionState.changeLedger().freeze();
         com.nishiyu.enderframelib.core.dom.node.ChangeLedger ledger = full ? null : interactionState.changeLedger();
-        List<DisplayItem> elements = v3.frame(document, ledger, rootW, rootH, devicePixelRatio, env, interactionState, scrollState, fontResolver());
+        boolean changed = v3.frame(document, ledger, rootW, rootH, devicePixelRatio, env, interactionState, scrollState, fontResolver());
         interactionState.clearAllStyleDirty();
-        if (elements == null) { // シーンが前回のまま: スクロールが無ければ何もしない、あれば中身の節を動かす
-            if (!v3.hasEffectiveScrollChange(scrollState, scrollAtBuild)) return;
-            if (tryScrollTranslate()) { STAT_SCROLL_TRANSLATED.increment(); return; }
-            elements = v3.paint();
+        if (!changed) { // シーンが前回のまま: スクロールの変化は描画器が中身の節の移動で足す
+            scrolled();
+            return;
         }
-        publishBuilt(elements);
+        paintVersion++;
+        v3.takeScrollChange(scrollState); // 組み直したシーンは今のスクロール量で描く
         publishLayoutToDom();
         applyOverrides();
     }
@@ -307,20 +302,17 @@ public class UiView implements AutoCloseable {
         return clock.millis();
     }
 
-    /** この画面の描画上の平行移動表の不変スナップショット（フレーム境界越え用、{@link DisplayItem} の外に持つ）。 */
+    /**
+     * 直近に {@link #relativeElements} で組んだ列の描画上の平行移動（利用者の分と、スクロールコンテナの中身の今のスクロール量での移動。不変の写し）。
+     * 列から画面の上の位置を読むときに足す（{@code DisplayItem#resolveAbsolute(…, PaintOffsets)}）。描画器へ渡すフレームは利用者の分だけを持つ。
+     */
     public PaintOffsets paintOffsets() {
-        return paintOffsets.snapshot();
+        return com.nishiyu.enderframelib.core.paint.ScrollTranslation.apply(userPaintOffsets.snapshot(), v3.scrollContents(), scrollState);
     }
 
-    private void setRenderCache(List<DisplayItem> renderCache) {
-        if (renderCache == null || renderCache.isEmpty()) {
-            this.renderCache = Collections.emptyList();
-        } else if (renderCache instanceof ImmutableItemList) {
-            this.renderCache = renderCache;
-        } else {
-            ImmutableItemList prev = this.renderCache instanceof ImmutableItemList il ? il : null;
-            this.renderCache = ImmutableItemList.from(prev, renderCache);
-        }
+    /** 描く絵が変わり得た回数（シーンを組み直した・スクロール量が変わった・利用者の平行移動が変わった）。ホストは前と同じなら描かなくてよい。 */
+    public int paintVersion() {
+        return paintVersion;
     }
 
     /**
@@ -328,13 +320,11 @@ public class UiView implements AutoCloseable {
      * 移動量は {@link PaintOffsets} に記録し、不変の {@link DisplayItem} は作り直さない。
      */
     public void setPaintOffset(String elementId, float dx, float dy) {
-        paintOffsets.set(elementId, dx, dy);
-        userPaintOffsets.set(elementId, dx, dy);
+        if (userPaintOffsets.set(elementId, dx, dy)) paintVersion++;
     }
 
     public void clearPaintOffset(String elementId) {
-        paintOffsets.clear(elementId);
-        userPaintOffsets.clear(elementId);
+        if (userPaintOffsets.clear(elementId)) paintVersion++;
     }
 
     /** 画像の透過ヒットテスト（{@code <img data-hit-alpha>}）が不透明度を引く先。ホストが画像の読み方を差し込む。 */
@@ -626,7 +616,7 @@ public class UiView implements AutoCloseable {
      */
     public List<DisplayItem> relativeElements() {
         beforeElements();
-        return renderCache;
+        return v3.hasScene() ? v3.paint() : List.of();
     }
 
     /**
@@ -637,7 +627,13 @@ public class UiView implements AutoCloseable {
     public com.nishiyu.enderframelib.core.paint.RenderFrame renderFrame(List<DisplayItem> overlays,
                                                                        com.nishiyu.enderframelib.core.paint.ExcludedNodes exclude, long nowMs) {
         beforeElements();
-        return new com.nishiyu.enderframelib.core.paint.RenderFrame(renderCache, overlays, paintOffsets(), paintSource(), exclude, nowMs);
+        return new com.nishiyu.enderframelib.core.paint.RenderFrame(List.of(), overlays, userPaintOffsets.snapshot(), paintSource(), exclude, nowMs);
+    }
+
+    /** シーンにある動画（ホストのメディアの管理が毎ティック読む。列を組まずに層の命令から読む。M3b-4c-2b-2b）。必要なら先に描画キューを更新する。 */
+    public List<com.nishiyu.enderframelib.core.paint.scene.SceneVideo> videos() {
+        beforeElements();
+        return com.nishiyu.enderframelib.core.paint.scene.SceneMedia.videos(v3.scene());
     }
 
     /** 描くフレームがあるか（文書を組んだシーンがある。ホストの空の判定。M3b-4c-2b-1）。必要なら先に環境変数と描画キューを更新する。 */
@@ -793,61 +789,12 @@ public class UiView implements AutoCloseable {
         }
     }
 
-    /**
-     * 作り直した表示リストを公開する。前の表示リストのスクロールの移動量は新しい表示リストには当てはまらない
-     * （新しい表示リストは今のスクロール量で作ってある）ので外し、新しい表示リストのスクロールコンテナを覚え直す。
-     */
-    private void setScrollBase(List<ScrollContentInfo> base) {
-        this.scrollBase = base;
-        handledScrollNodes.clear();
-        for (int i = 0, n = base.size(); i < n; i++) handledScrollNodes.add(base.get(i).node());
-    }
-
-    void publishBuilt(List<DisplayItem> elements) {
-        List<ScrollContentInfo> oldScrollBase = scrollBase;
-        for (int i = 0, n = oldScrollBase.size(); i < n; i++) {
-            ScrollContentInfo info = oldScrollBase.get(i);
-            paintOffsets.clear(info.contentId());
-            if (info.thumbVId() != null) paintOffsets.clear(info.thumbVId());
-            if (info.thumbHId() != null) paintOffsets.clear(info.thumbHId());
-            for (int k = 0, sn = info.stickies().size(); k < sn; k++) paintOffsets.clear(info.stickies().get(k).nodeId());
-        }
-        setRenderCache(elements);
-        setScrollBase(builtScrollContents()); // 描画は常にスクロールコンテナの中身を節にまとめる
-        scrollAtBuild = scrollState.snapshot();
-        tryScrollTranslate(); // 描画の記憶は使い回した中身の節を記憶したときのスクロール量で出す。今との差を節の移動で足す
-    }
-
-    /** 直近に作った表示リストの、中身を 1 つの節にまとめたスクロールコンテナ。既定の描画（{@code DisplayListBuilder}）が持つ。 */
-    protected List<ScrollContentInfo> builtScrollContents() {
-        return v3.scrollContents();
-    }
-
-    /**
-     * スクロール量だけが変わったので、表示リストは作らずに、スクロールコンテナの中身の節とつまみの節を動かす。
-     * 動かせるのは、全てのコンテナの移動が範囲内のとき。動かせなければ false（作り直す）。
-     */
-    private boolean tryScrollTranslate() {
-        if (scrollBase.isEmpty()) return false;
-        // 節にまとめていないコンテナ（sticky などを含む）のスクロール量が変わっていたら、その中身は作り直さないと動かない
-        if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
-        for (ScrollContentInfo info : scrollBase) {
-            float dx = scrollState.getScrollX(info.node()) - info.sx0();
-            float dy = scrollState.getScrollY(info.node()) - info.sy0();
-            paintOffsets.setIfActive(info.contentId(), -dx, -dy);
-            // つまみは作り直したときと同じ整数の位置へ（小数のまま動かすと角の縁の画素が作り直しと違う。A6b ⑤）
-            if (info.thumbVId() != null) paintOffsets.setIfActive(info.thumbVId(), 0f, Math.round(info.fy0() + info.ky() * dy));
-            if (info.thumbHId() != null) paintOffsets.setIfActive(info.thumbHId(), Math.round(info.fx0() + info.kx() * dx), 0f);
-            // 中身の中の sticky の箱: 中身と一緒に動いた分に、貼り付きのずれの増減を足す（作り直したときの式と同じ。B12）
-            for (int k = 0, sn = info.stickies().size(); k < sn; k++) {
-                var st = info.stickies().get(k);
-                paintOffsets.setIfActive(st.nodeId(), 0f, st.extraAt(dy));
-            }
-        }
+    /** シーンを組み直さずにスクロール量だけが変わった（M3b-4c-2b-2b。中身の節の移動は描画器が足す）: 描く絵の版を進め、CSSOM の位置を古くする。 */
+    private void scrolled() {
+        if (!v3.takeScrollChange(scrollState)) return; // スクロールコンテナが動いていない
+        paintVersion++;
         if (boxLayoutQuery != null) boxLayoutQuery.invalidateDynamic();
-        return true;
     }
-
 
     /**
      * 予約されたリサイズを今のフレームで反映するか。連続したリサイズ中は、直前のレイアウトにかかった時間の
@@ -918,8 +865,10 @@ public class UiView implements AutoCloseable {
         repositionPending = nonScrollRepositionPending = false;
         if (level == InvalidationLevel.RELAYOUT) v3.rebuildKeepingHistory(); // 全体の作り直しの要求: 前回の木と記憶を捨てる（台帳に載らない書体の変化など）
         if (resize) recomputeLayout(pendingResizeW, pendingResizeH);
-        else if (scrollOnly && onlyScroll(ledger) && tryScrollTranslate()) STAT_SCROLL_TRANSLATED.increment();
-        else {
+        else if (scrollOnly && onlyScroll(ledger) && !v3.followsScroll()) { // アンカーが追従しなければ、シーンは同じ
+            scrolled();
+            STAT_SCROLL_TRANSLATED.increment();
+        } else {
             if (scrollOnly) STAT_SCROLL_FALLBACK.increment();
             v3Frame(false);
         }
@@ -1281,9 +1230,8 @@ public class UiView implements AutoCloseable {
 
     @Override
     public void close() {
-        renderCache = Collections.emptyList();
-        paintOffsets.clearAll();
         userPaintOffsets.clearAll();
+        paintVersion++;
         if (document != null && document.root instanceof HtmlDocument liveDocument) {
             liveDocument.setDomChangeListener(null);
         }

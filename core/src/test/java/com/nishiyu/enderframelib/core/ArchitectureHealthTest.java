@@ -431,7 +431,7 @@ class ArchitectureHealthTest {
         for (String c : List.of("SceneAdapterBox", "SceneDisplayListAdapter", "SceneAdapterSupport", "LayerOps", "OpList", "OpComposer",
                 "SceneWalker", "AnimationStates", "ItemSink", "SceneDamage", "ScrollContentRanges", "SceneSource", "FrameDamage",
                 "BoxItemPainter", "BoxDecorationPainter", "BoxDecorations", "ControlPainter", "TextRunPainter", "PaintSupport", "ItemProps",
-                "PaintBounds", "BoxAnimation", "RenderFrame", "PreparedFrame", "ExcludedNodes")) {
+                "PaintBounds", "BoxAnimation", "RenderFrame", "PreparedFrame", "ExcludedNodes", "FrameComposer", "ScrollTranslation")) {
             out.add(main + "core/paint/" + c + ".java");
         }
         for (String c : List.of("DeclarativeBindings", "InteractionChains", "ReactiveDomBinder", "StateFlags", "StyleInvalidation", "TemplateDeps",
@@ -670,10 +670,11 @@ class ArchitectureHealthTest {
 
     /**
      * M3b-4c-2b-1: ホストは表示項目の列でなくビューのフレームの値（{@code UiView#renderFrame}。シーン・除く節・重ね描き）を描画器へ渡し、
-     * 要素の位置はシーンから引く（{@code UiView#locate}）。本体でビューの列を読むのは、ビュー自身・スタンドアロンのビューの {@code items()}
-     * （M3b-4c-2b-2 で列ごと消す）・MOD のメディア（種類と文字を読む。M3b-4c-3 で消す）だけ。
+     * 要素の位置はシーンから引く（{@code UiView#locate}）。M3b-4c-2b-2b からビューは列を持たず、{@code relativeElements()} はその場で組む。
+     * 本体でそれを呼ぶのは、ビュー自身・スタンドアロンのビューの IME の位置・MOD の面のキャレット（編集中だけ。M3b-4c-3 でシーンから）だけ
+     * （MOD のメディアはシーンの命令から読む {@code UiView#videos}）。
      */
-    static final Set<String> VIEW_LIST_READERS = Set.of("UiView.java", "StandaloneView.java", "WebMediaManager.java");
+    static final Set<String> VIEW_LIST_READERS = Set.of("UiView.java", "StandaloneView.java", "SurfaceEditOverlay.java");
     private static final Pattern VIEW_LIST_READ = Pattern.compile("\\.(renderCache|relativeElements)\\(\\)");
 
     @Test

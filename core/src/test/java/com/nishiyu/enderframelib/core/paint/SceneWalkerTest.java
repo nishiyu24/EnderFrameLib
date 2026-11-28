@@ -54,7 +54,7 @@ public class SceneWalkerTest {
     private static Recorder run(SceneWalker w, List<DisplayItem> items, PaintOffsets offsets, long t, float dpr) {
         Recorder rec = new Recorder();
         rec.walker = w;
-        w.run(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, offsets, t), Matrix2D.scale(dpr, dpr), rec, null);
+        w.run(com.nishiyu.enderframelib.core.paint.PreparedFrame.full(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, offsets, t)), Matrix2D.scale(dpr, dpr), rec, null);
         return rec;
     }
 

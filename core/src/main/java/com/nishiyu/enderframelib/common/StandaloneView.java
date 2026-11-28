@@ -21,8 +21,8 @@ import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.PreparedFrame;
 import com.nishiyu.enderframelib.core.paint.RenderFrame;
-import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -79,13 +79,14 @@ public final class StandaloneView implements AutoCloseable {
     private final UiInput input;
     private final InteractionState interaction;
 
-    private List<DisplayItem> items;
+    /** 前に描いたフレームのシーンの根（変わったら補間の続く時刻を求め直す）。 */
+    private Object lastSceneRoot;
     private RenderFrame lastFrame;
     private boolean drawn;
     private boolean redraw = true;
     private boolean animating;
     private long compositorUntil;
-    private int lastOffsetsVersion = -1;
+    private int lastPaintVersion = -1;
     private long lastNow;
     private String timings = "";
     /** ホイールで動かしている最中のスクロール先（節 → {x, y}）。毎フレーム少しずつ近づける。 */
@@ -133,8 +134,7 @@ public final class StandaloneView implements AutoCloseable {
         this.interaction = ui.interactionState();
         long t0 = Clock.SYSTEM.nanos();
         ui.loadLocalHtml(html, width, height);
-        this.items = ui.relativeElements();
-        timings = "load=" + (Clock.SYSTEM.nanos() - t0) / 1_000_000 + "ms items=" + items.size();
+        timings = "load=" + (Clock.SYSTEM.nanos() - t0) / 1_000_000 + "ms";
     }
 
     /** 文書を別の HTML に差し替える（入力中の編集・ポップアップ・スクロール先は捨てる）。 */
@@ -145,8 +145,8 @@ public final class StandaloneView implements AutoCloseable {
         scrollTargets.clear();
         edits.clear();
         ui.loadLocalHtml(html, width, height);
-        items = ui.relativeElements();
-        lastOffsetsVersion = -1;
+        lastPaintVersion = -1;
+        lastSceneRoot = null;
         redraw = true;
         drawn = false;
     }
@@ -187,12 +187,11 @@ public final class StandaloneView implements AutoCloseable {
     }
 
     private long lastFlushNs = -1;
-    private int lastFlushItems;
 
     /** 直近の再レイアウトの内訳（調べる用）。 */
     public String lastTimings() {
         if (lastFlushNs >= 0) {
-            timings = "flush=" + (lastFlushNs / 1_000_000) + "ms items=" + lastFlushItems;
+            timings = "flush=" + (lastFlushNs / 1_000_000) + "ms";
             lastFlushNs = -1;
         }
         return timings;
@@ -209,7 +208,7 @@ public final class StandaloneView implements AutoCloseable {
     /** 直近のフレームの、別のスレッドへ渡せる不変の写し（ビューのフレームの値。{@link RenderFrame#snapshot}）。 */
     public RenderFrame frameSnapshot() {
         RenderFrame f = lastFrame, now = ui.renderFrame(List.of(), null, lastNow); // 列・平行移動・シーンは不変なので、写しは同じ実体を持つ
-        if (f != null && f.items() == now.items() && f.offsets() == now.offsets() && f.scene() == now.scene()) return f;
+        if (f != null && f.offsets() == now.offsets() && f.scene() == now.scene()) return f;
         return lastFrame = now.snapshot();
     }
 
@@ -296,23 +295,13 @@ public final class StandaloneView implements AutoCloseable {
         ui.timers().runAnimationFrames((double) nowMs);
         ui.timers().runDueTimers();
         stepScroll(prevNow == 0 ? 16 : nowMs - prevNow);
-        List<DisplayItem> before = ui.relativeElements();
         long t0 = Clock.SYSTEM.nanos();
         ui.flushInvalidation();
-        List<DisplayItem> after = ui.relativeElements();
-        boolean rebuilt = before != after;
-        PaintOffsets offsets = ui.paintOffsets();
-        int offsetsVer = offsets.version();
-        boolean offsetsChanged = offsetsVer != lastOffsetsVersion;
+        int paintVersion = ui.paintVersion(); // シーン・スクロール量・利用者の平行移動のどれかが変わったら進む（列はビューに無い。M3b-4c-2b-2b）
+        boolean changed = paintVersion != lastPaintVersion;
+        Object sceneRoot = ui.scene() != null ? ui.scene().root : null;
         boolean running = interaction.animator().isRunning(nowMs);
-        if (rebuilt) {
-            items = after;
-            compositorUntil = compositorUntil(after, nowMs);
-        }
-        if (rebuilt || offsetsChanged) {
-            lastFlushNs = Clock.SYSTEM.nanos() - t0;
-            lastFlushItems = items.size();
-        }
+        if (changed) lastFlushNs = Clock.SYSTEM.nanos() - t0;
         long sceneSig = ui.scene3dChangeSignature();
         if (sceneSig != sceneSignature) { // 3D のノード・カメラ・ライトなどが変わった（DOM は変わらないので、ここで拾う）
             sceneSignature = sceneSig;
@@ -322,11 +311,16 @@ public final class StandaloneView implements AutoCloseable {
         animating = running;
         boolean wasRedraw = redraw;
         redraw = false;
-        if (!rebuilt && !offsetsChanged && !force && !wasRedraw && drawn && !wasAnimating && prevNow >= compositorUntil) {
+        if (!changed && !force && !wasRedraw && drawn && !wasAnimating && prevNow >= compositorUntil) {
             return false; // 窓を抜けた最初の1枚は最終値のために描く
         }
-        lastOffsetsVersion = offsetsVer;
-        backend.render(ui.renderFrame(overlays(), null, nowMs));
+        lastPaintVersion = paintVersion;
+        PreparedFrame prepared = backend.prepare(ui.renderFrame(overlays(), null, nowMs));
+        backend.render(prepared);
+        if (sceneRoot != lastSceneRoot) { // 組み直したシーン: 補間を描き続ける時刻を、描画器が組んだ列から求め直す
+            lastSceneRoot = sceneRoot;
+            compositorUntil = compositorUntil(prepared.items(), nowMs);
+        }
         // 描画自身が世界を更新することがある（初回にビューポートの縦横比をカメラへ入れる）。それは描いた絵に含まれるので、
         // 次のフレームで「3D が変わった」と数えて一度余計に描かないよう、ここで署名を取り直す
         sceneSignature = ui.scene3dChangeSignature();
@@ -764,7 +758,7 @@ public final class StandaloneView implements AutoCloseable {
     public float[] imeCursorRect() {
         HtmlNode field = interaction.focusedNode();
         if (field == null || !isTextControl(field)) return null;
-        for (DisplayItem it : RenderFrame.of(items, 0L).withOverlays(overlays()).drawList()) {
+        for (DisplayItem it : RenderFrame.of(ui.relativeElements(), 0L).withOverlays(overlays()).drawList()) {
             if (it.baseId().equals(field.key()) && (it.isPart("_caret") || it.id().endsWith("_caret"))) {
                 return new float[]{it.x(), it.y(), it.width(), it.height()};
             }

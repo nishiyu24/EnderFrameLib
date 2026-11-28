@@ -13,6 +13,8 @@ package com.nishiyu.enderframelib.core.paint;
  */
 public final class FrameDamage {
     private final SceneDamage scene = new SceneDamage();
+    /** シーンから表示項目の列を組む（M3b-4c-2b-2b。準備で 1 フレームに 1 度）。 */
+    private final FrameComposer composer = new FrameComposer();
     private int prevClear;
     private int prevUserOffsets = -1;
     /** 前のフレームの描かない節（{@link RenderFrame#exclude}。違えば全面）。 */
@@ -45,27 +47,34 @@ public final class FrameDamage {
     }
 
     /**
-     * 描画器の準備（{@link RenderBackend#prepare}）: シーンの違いの範囲を求め、描き直しが要るかをその範囲と {@code outside}（走査器のシーンの外の
-     * 変化。{@link SceneWalker#changesOutsideScene}）で答える。シーンが無ければ全面。
+     * 描画器の準備（{@link RenderBackend#prepare}）: シーンから列を組み（{@link FrameComposer}）、シーンの違いの範囲を求め、描き直しが要るかを
+     * その範囲と {@code outside}（走査器のシーンの外の変化。{@link SceneWalker#changesOutsideScene}）で答える。シーンが無ければ全面。
      */
-    public PreparedFrame prepare(RenderFrame f, int clearColor, java.util.function.Predicate<RenderFrame> outside) {
+    public PreparedFrame prepare(RenderFrame f, int clearColor, java.util.function.Predicate<PreparedFrame> outside) {
+        FrameComposer.Composed c = composer.compose(f);
         SceneDamage.Rects rects = f.isEmpty() ? null : next(f, clearColor);
-        return last = new PreparedFrame(f, rects, rects == null || !rects.isEmpty() || outside.test(f), null);
+        PreparedFrame p = new PreparedFrame(f, c, rects, true, null);
+        return last = rects == null || !rects.isEmpty() || outside.test(p) ? p : new PreparedFrame(f, c, rects, false, null);
     }
 
-    /** 準備した値の範囲（最後に準備した値でなければ比べる相手を今のフレームへ進めて全面。1 度使ったら捨てる）。 */
-    public SceneDamage.Rects take(PreparedFrame p, int clearColor) {
+    /**
+     * 描く準備した値: 最後に準備した値ならそのまま、そうでなければ列を組み直し、比べる相手を今のフレームへ進めて全面にした値（1 度使ったら捨てる）。
+     */
+    public PreparedFrame take(PreparedFrame p, int clearColor) {
         boolean mine = p == last;
         last = null;
-        if (mine) return p.damage();
-        SceneDamage.Rects r = p.frame().isEmpty() ? null : next(p.frame(), clearColor);
+        if (mine) return p;
+        RenderFrame f = p.frame();
+        FrameComposer.Composed c = composer.compose(f);
+        SceneDamage.Rects r = f.isEmpty() ? null : next(f, clearColor);
         if (r != null) r.setFull("not-prepared");
-        return r;
+        return new PreparedFrame(f, c, r, true, null);
     }
 
     /** 比べる相手を捨てる（次は全面）。描画先が不定になったとき（例外・別の描画先・シーンの無いフレーム）。 */
     public void reset() {
         scene.reset();
+        composer.reset();
         prevUserOffsets = -1;
     }
 }

@@ -63,8 +63,8 @@ class FrameBoundarySnapshotTest {
         assertEquals(12f, frame.offsets().dx("n1"));
         assertEquals(-3f, frame.offsets().dy("n1"));
 
-        // ImmutableItemList と不変 PaintOffsets は複製せずそのまま共有される
-        ImmutableItemList frozenList = ImmutableItemList.from(null, frame.items());
+        // 不変の列と不変 PaintOffsets は複製せずそのまま共有される
+        List<DisplayItem> frozenList = List.copyOf(frame.items());
         RenderFrame shared = RenderFrame.of(frozenList, frame.offsets(), 0L).snapshot();
         assertSame(frozenList, shared.items());
         assertSame(frame.offsets(), shared.offsets());

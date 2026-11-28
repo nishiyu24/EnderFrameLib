@@ -8,7 +8,7 @@ import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import com.mojang.math.Axis;
-import com.nishiyu.enderframelib.core.paint.RenderFrame;
+import com.nishiyu.enderframelib.core.paint.PreparedFrame;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
@@ -123,11 +123,11 @@ final class MinecraftHostTextures implements HostTextures {
      * （描かないフレームは呼ばない。テクスチャは中身の鍵で引くので、前のフレームの項目を覚えない）。
      * 呼ぶ側の描きかけの頂点は先に吐き出しておくこと（ここで描画先を切り替える）。戻り値はコアの共有コンテキストに待たせるフェンス（0 なら無し）。
      */
-    long prepare(RenderFrame renderFrame, String sessionId, float dpr, boolean worldLighting) {
+    long prepare(PreparedFrame renderFrame, String sessionId, float dpr, boolean worldLighting) {
         frame.clear();
         prepares++;
         List<DisplayItem> todo = null;
-        java.util.function.Predicate<DisplayItem> skip = renderFrame.excluded(); // 描かない節の中身は用意しない
+        java.util.function.Predicate<DisplayItem> skip = renderFrame.frame().excluded(); // 描かない節の中身は用意しない
         for (DisplayItem el : renderFrame.drawList()) {
             if (el.width() <= 0 || el.height() <= 0 || kindOf(el) == null || (skip != null && skip.test(el))) continue;
             if (todo == null) todo = new java.util.ArrayList<>();

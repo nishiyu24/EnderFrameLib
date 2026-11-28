@@ -87,7 +87,7 @@ public final class MinecraftHostSurface {
         if (!RenderSystem.isOnRenderThread()) return false;
         String session = pass.sessionId() == null ? "" : pass.sessionId();
         RenderFrame base = pass.frame();
-        if (base.items().isEmpty()) return false;
+        if (base.isEmpty()) return false;
         // 面の大きさはブロック数。項目の座標は RESOLUTION 倍の px
         int w = Math.round(pass.screenWidth() * SurfaceGeometry.RESOLUTION);
         int h = Math.round(pass.screenHeight() * SurfaceGeometry.RESOLUTION);
@@ -102,13 +102,13 @@ public final class MinecraftHostSurface {
             backend.hostTextures(MinecraftHostTextures.INSTANCE);
             // 計測が有効なら GPU のタイマークエリも張る（面ごとに 1 度。無効の間は GL を呼ばない）
             if (StageProfiler.enabled() && GPU_TIMED.add(backend)) backend.enableGpuTiming();
-            // キャレットはシーンの外の重ね描き。編集中の欄の位置は M3b-4c-3 まで、フレームの値の列から読む
-            List<DisplayItem> caret = SurfaceEditOverlay.caretItems(ClientWebManager.getSession(session), session, base.items());
+            // キャレットはシーンの外の重ね描き。編集中の欄の位置は M3b-4c-3 まで、編集中だけその場で組んだ列から読む
+            List<DisplayItem> caret = SurfaceEditOverlay.caretItems(ClientWebManager.getSession(session), session);
             syncFontGeneration();
             flushPending(pass.buffer());
             RenderFrame frame = base.withOverlays(caret);
-            List<DisplayItem> items = frame.drawList();
-            PreparedFrame prepared = backend.prepare(frame);
+            PreparedFrame prepared = backend.prepare(frame); // 列は描画器が準備でシーンから組む（M3b-4c-2b-2b）
+            List<DisplayItem> items = prepared.drawList();
             if (SKIP_STATIC && !prepared.needsRepaint()) {
                 // 描き直す範囲が空: 前回描いたテクスチャをそのまま貼る（Minecraft が描く中身の用意も GPU の描画も無し）
                 StageProfiler.end(PipelineStage.SURFACE_CORE_SKIPPED, StageProfiler.begin(PipelineStage.SURFACE_CORE_SKIPPED));
@@ -121,7 +121,7 @@ public final class MinecraftHostSurface {
             } finally {
                 StageProfiler.end(PipelineStage.SURFACE_CORE_BLIT, tBlit);
             }
-            drawTooltip(pass, frame, items, w, h);
+            drawTooltip(pass, prepared, items, w, h);
             REPORTED.remove(session);
             return true;
         } catch (Throwable t) {
@@ -161,7 +161,7 @@ public final class MinecraftHostSurface {
         long tRender = StageProfiler.begin(PipelineStage.SURFACE_CORE_RENDER);
         long fence = 0L;
         try {
-            fence = MinecraftHostTextures.INSTANCE.prepare(prepared.frame(), session, dpr, !pass.screenSpaceText());
+            fence = MinecraftHostTextures.INSTANCE.prepare(prepared, session, dpr, !pass.screenSpaceText());
             if (fence != 0L) backend.waitForHost(fence);
             backend.render(prepared);
         } finally {
@@ -171,12 +171,12 @@ public final class MinecraftHostSurface {
     }
 
     /** ホバー中の要素の {@code title} をツールチップとして板の上に重ねる（ホストの飾り。コアは描かない）。 */
-    private static void drawTooltip(PaintRequest pass, RenderFrame frame, List<DisplayItem> items, int w, int h) {
+    private static void drawTooltip(PaintRequest pass, PreparedFrame prepared, List<DisplayItem> items, int w, int h) {
         String hovered = pass.hoveredId();
         if (hovered == null || hovered.isEmpty()) return;
         DisplayItem target = null;
         String text = null;
-        java.util.function.Predicate<DisplayItem> skip = frame.excluded();
+        java.util.function.Predicate<DisplayItem> skip = prepared.frame().excluded();
         for (DisplayItem it : items) {
             if (!hovered.equals(it.baseId()) || (skip != null && skip.test(it))) continue;
             text = SurfaceTooltip.textOf(it);
@@ -188,7 +188,7 @@ public final class MinecraftHostSurface {
         if (target == null || text.isEmpty()) return;
         net.minecraft.client.gui.Font font = WebFontManager.getDefaultFont();
         if (font == null) font = Minecraft.getInstance().font;
-        target = DisplayItem.resolveAbsolute(items, target, frame.offsets()); // 項目は親相対・スクロール 0 で組んだ位置（M3b-4c-3 まで列から読む）
+        target = DisplayItem.resolveAbsolute(items, target, prepared.offsets()); // 項目は親相対・スクロール 0 で組んだ位置（M3b-4c-3 まで列から読む）
         SurfaceTooltip.draw(pass.poseStack(), pass.buffer(), font, target, text, w, h, 0.2f, pass.packedLight());
         flushPending(pass.buffer());
     }

@@ -36,7 +36,7 @@ class RenderFrameTest {
 
     private static int[] fullPixels(SoftwareRenderBackend b, RenderFrame f) {
         try (SoftwareRenderBackend fresh = new SoftwareRenderBackend(W, H, 1f, b.sessionId())) {
-            fresh.render(RenderFrame.of(f.drawList(), f.offsets(), f.nowMs()));
+            fresh.render(f); // 新しい描画器の最初のフレームは全面
             return fresh.pixmap().pixels().clone();
         }
     }
@@ -49,7 +49,7 @@ class RenderFrameTest {
                 0f, 0f, 1f, 1f, 0f, 0, null, null, null);
         RenderFrame plain = RenderFrame.of(List.of(a), 0L);
         assertSame(plain.items(), plain.drawList(), "重ね描きが無ければ列そのもの");
-        assertEquals(0, plain.sceneItemCount(), "シーンが無ければシーンの部分は 0");
+        assertEquals(0, PreparedFrame.full(plain).sceneItemCount(), "シーンが無ければシーンの部分は 0");
         RenderFrame with = new RenderFrame(List.of(a), List.of(o), null, null, null, 5L);
         assertEquals(List.of(a, o), with.drawList());
         assertFalse(with.isEmpty());
@@ -67,14 +67,16 @@ class RenderFrameTest {
             v.frame(t, b, true);
             RenderFrame f = frameOf(v.ui(), List.of(), t += 16);
             assertNotNull(f.scene(), "ビューのフレームはシーンを持つ");
-            assertEquals(f.items().size(), f.sceneItemCount());
+            assertTrue(f.items().isEmpty(), "ビューのフレームは列を持たない（描画器が準備で組む）");
             PreparedFrame p = b.prepare(f);
+            assertFalse(p.items().isEmpty(), "準備した値はシーンから組んだ列を持つ");
+            assertEquals(p.items().size(), p.sceneItemCount());
             assertFalse(p.needsRepaint(), "何も変わらなければ描き直しは要らない");
             assertNotNull(p.damage());
             assertTrue(p.damage().isEmpty());
             assertSame(f, p.frame());
 
-            DisplayItem paint = f.items().stream().filter(i -> i.type() != ElementType.NODE && i.width() > 0).findFirst().orElseThrow();
+            DisplayItem paint = p.items().stream().filter(i -> i.type() != ElementType.NODE && i.width() > 0).findFirst().orElseThrow();
             RenderFrame withOverlay = frameOf(v.ui(), List.of(paint.withPosition(paint.x() + 90, paint.y() + 90)), t += 16);
             PreparedFrame q = b.prepare(withOverlay);
             assertTrue(q.needsRepaint(), "重ね描きを足したら描く");

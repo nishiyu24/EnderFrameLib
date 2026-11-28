@@ -102,14 +102,15 @@ public final class SceneWalker {
     public long generation() { return generation; }
 
     /**
-     * フレームの値 {@code f} の描く列（シーンの列の後ろに重ね描き）を、変換 {@code frame}（CSS px → デバイス画素）の見た目で描画順にたどり、
-     * {@code painter} へ渡す（M3b-4c-2a）。
+     * 準備したフレーム {@code p} の描く列（シーンから組んだ列の後ろに重ね描き。M3b-4c-2b-2b から列は準備が組む）を、変換 {@code frame}
+     * （CSS px → デバイス画素）の見た目で描画順にたどり、{@code painter} へ渡す（M3b-4c-2a）。
      *
      * @param damage 描き直す範囲（{@link SceneDamage} がシーンの違いから求めたもの）。null でなければ、補間・外の事情で変わる項目と重ね描きの範囲を足す
      */
-    public void run(RenderFrame f, Matrix2D frame, Painter painter, SceneDamage.Rects damage) {
-        List<DisplayItem> list = f.drawList();
-        PaintOffsets offsets = f.offsets();
+    public void run(PreparedFrame p, Matrix2D frame, Painter painter, SceneDamage.Rects damage) {
+        RenderFrame f = p.frame();
+        List<DisplayItem> list = p.drawList();
+        PaintOffsets offsets = p.offsets();
         SceneSource source = f.scene();
         long nowMs = f.nowMs();
         long prevNow = lastNow;
@@ -133,10 +134,10 @@ public final class SceneWalker {
             index(offsets != null ? offsets : PaintOffsets.EMPTY);
             if (damage != null) {
                 addDynamicDamage(damage, prevNow);
-                addOverlayDamage(damage, f.sceneItemCount());
+                addOverlayDamage(damage, p.sceneItemCount());
                 if (!painter.beginWalk(damage)) return;
             }
-            if (source != null && source.scene() != null) ranges.compute(items, count, parentIdx, indexOf, source.contents(), source.scene());
+            if (source != null && source.scene() != null) ranges.compute(items, count, parentIdx, indexOf, p.contents(), source.scene());
             walk(painter);
         } finally {
             Arrays.fill(items, 0, count, null);
@@ -155,7 +156,7 @@ public final class SceneWalker {
 
     /** {@link #run} の、列だけのフレーム（シーンも描き直す範囲も無い）版。 */
     public void run(List<DisplayItem> list, long nowMs, Matrix2D frame, Painter painter) {
-        run(RenderFrame.of(list, nowMs), frame, painter, null);
+        run(PreparedFrame.full(RenderFrame.of(list, nowMs)), frame, painter, null);
     }
 
     private void load(List<DisplayItem> src) {
@@ -259,10 +260,11 @@ public final class SceneWalker {
      * 索引・姿勢を作らない）: 重ね描きが今か前のフレームにある・外の事情で変わる項目がある・前の時刻か今に補間が
      * 動いている項目がある。補間は節の項目も数える（節の補間は部品の項目にも現れるので、多めに答えるだけ）。
      */
-    public boolean changesOutsideScene(RenderFrame f) {
-        List<DisplayItem> list = f.drawList();
+    public boolean changesOutsideScene(PreparedFrame p) {
+        RenderFrame f = p.frame();
+        List<DisplayItem> list = p.drawList();
         long nowMs = f.nowMs();
-        int n = list.size(), from = f.sceneItemCount();
+        int n = list.size(), from = p.sceneItemCount();
         if (prevOverlay.size() > 0) return true;
         for (int i = from; i < n; i++) if (list.get(i).type() != ElementType.NODE) return true;
         AnimationStates table = CssAnimator.states(sessionId, true);

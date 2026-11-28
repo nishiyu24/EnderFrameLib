@@ -84,22 +84,6 @@ class PaintOffsetsTest {
     }
 
     @Test
-    void immutableItemListSharesUnchangedBlocksAndPreservesIdentityWhenUnchanged() {
-        List<DisplayItem> src = new ArrayList<>();
-        for (int i = 0; i < 80; i++) src.add(rect("i" + i, i, 0, 10, 10, 0xFF000000 | i));
-        ImmutableItemList a = ImmutableItemList.from(null, src);
-        assertSame(a, ImmutableItemList.from(a, new ArrayList<>(src)), "差し替え無ければ同じスナップショット");
-
-        List<DisplayItem> mod = new ArrayList<>(src);
-        mod.set(5, rect("i5", 5, 1, 10, 10, 0xFF123456));
-        ImmutableItemList b = ImmutableItemList.from(a, mod);
-        assertNotSame(a, b);
-        assertNotSame(a.chunkAt(0), b.chunkAt(0), "変更ブロック 0 だけ新しい配列");
-        assertSame(a.chunkAt(1), b.chunkAt(1), "未変更ブロック 1 は共有");
-        assertSame(a.chunkAt(2), b.chunkAt(2), "未変更ブロック 2 は共有");
-    }
-
-    @Test
     void softwareRenderBackendRendersOffsetsAndScrollSnapWithoutMutatingItems() {
         StringBuilder rows = new StringBuilder();
         for (int i = 0; i < 30; i++) {
@@ -111,12 +95,12 @@ class PaintOffsetsTest {
         try (SoftwareRenderBackend inc = new SoftwareRenderBackend(180, 160, 1f);
              SoftwareRenderBackend full = new SoftwareRenderBackend(180, 160, 1f)) {
             view.frame(1000, inc, true);
-            List<DisplayItem> before = view.ui().relativeElements();
+            Object rootBefore = view.ui().scene().root;
             view.mouseMove(80, 70, inc.sessionId());
             view.scroll(0, -3, inc.sessionId());
             view.frame(1016, inc, true);
             List<DisplayItem> after = view.ui().relativeElements();
-            assertSame(before, after, "スクロールしても不変リストは同じ実体");
+            assertSame(rootBefore, view.ui().scene().root, "スクロールしてもシーンは組み直さない（中身の節の移動は描画器が足す）");
             assertFalse(view.ui().paintOffsets().isEmpty());
 
             // 新しい SoftwareRenderBackend でゼロから描いた絵と完全一致
@@ -132,7 +116,7 @@ class PaintOffsetsTest {
             SceneWalker walker = new SceneWalker("snap-test");
             walker.setScrollSnapDpr(2f);
             float[] f = {Float.NaN};
-            walker.run(com.nishiyu.enderframelib.core.paint.RenderFrame.of(List.of(scrollNode), o.snapshot(), 1000), Matrix2D.IDENTITY, new Painter() {
+            walker.run(com.nishiyu.enderframelib.core.paint.PreparedFrame.full(com.nishiyu.enderframelib.core.paint.RenderFrame.of(List.of(scrollNode), o.snapshot(), 1000)), Matrix2D.IDENTITY, new Painter() {
                 @Override public void syncLayers(List<SceneWalker.Group> want) { f[0] = (float) walker.resolveAt(0).pose().f(); }
                 @Override public void drawItem(DisplayItem el, int index, float flat) { }
             }, null);

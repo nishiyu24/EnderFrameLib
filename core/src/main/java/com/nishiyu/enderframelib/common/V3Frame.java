@@ -45,6 +45,8 @@ final class V3Frame {
     private FontResolver fonts;
     private int width = -1, height = -1;
     private float dpr = 1f;
+    /** シーンを組んだ文書のキーフレーム（{@link SceneEmitter} と描画器の列の組み立てが同じ実体を引く）。 */
+    private Map<String, com.nishiyu.enderframelib.core.css.model.Keyframes> keyframes = Map.of();
     private ScrollState scroll;
     private DisplayScene scene;
     /**
@@ -60,10 +62,10 @@ final class V3Frame {
      * 1 フレームを作る。{@code ledger} はこのフレームの凍結済みの台帳（null なら全体を作り直す）。環境変数・規則・書体・装置の画素比・
      * スクロールの状態の入れ物が前回と違えば、全体を作り直す。ビューポートの大きさだけの変化は増分で組む。
      *
-     * <p>シーンの根が前回と同じ実体で、台帳が再スタイルとスクロールだけなら null を返す（前回の表示リストがスクロールの移動量を除いて
-     * そのまま使える）。呼ぶ側はスクロールの移動で済ませるか、{@link #paint} で描く。</p>
+     * <p>シーンが前回から変わったかを返す（根が前回と同じ実体で、台帳が再スタイルとスクロールだけなら false）。表示項目の列は組まない
+     * （描画器が準備でシーンから組む。M3b-4c-2b-2b）。</p>
      */
-    List<DisplayItem> frame(Document doc, ChangeLedger ledger, int w, int h, float devicePixelRatio, Map<String, String> envNow,
+    boolean frame(Document doc, ChangeLedger ledger, int w, int h, float devicePixelRatio, Map<String, String> envNow,
                             InteractionState state, ScrollState scrollState, FontResolver fontResolver) {
         boolean rebuild = pipeline == null || doc.sheet != sheet || !Objects.equals(envNow == null ? Map.of() : envNow, env)
                 || fontResolver != fonts || scrollState != scroll || Float.compare(devicePixelRatio, dpr) != 0;
@@ -90,6 +92,7 @@ final class V3Frame {
             pipeline = new FragmentPipeline(fresh, session);
             pipeline.compiler().remembered(remembered);
             Map<String, com.nishiyu.enderframelib.core.css.model.Keyframes> kf = doc.sheet != null ? doc.sheet.keyframes : Map.of();
+            keyframes = kf;
             emitter = new SceneEmitter(session, kf);
             com.nishiyu.enderframelib.core.paint.LayerOps layerOps = new com.nishiyu.enderframelib.core.paint.LayerOps(w, h, kf);
             layerOps.setDevicePixelRatio(devicePixelRatio);
@@ -105,8 +108,7 @@ final class V3Frame {
         scene = emitter.emit(frag, pipeline.boxRoot(), w, h);
         StageProfiler.end(PipelineStage.PAINT_TREE, t0);
         settleAnchors(doc, w, h);
-        if (ledger != null && !resized && scene.root == prevRoot && onlyRestyleOrScroll(ledger)) return null;
-        return paint();
+        return ledger == null || resized || scene.root != prevRoot || !onlyRestyleOrScroll(ledger);
     }
 
     /**
@@ -144,7 +146,7 @@ final class V3Frame {
     /**
      * 要素 {@code root} の部分木だけを、ビューポート {@code w}×{@code h} の根として一から組んで描く（{@code FrameRender#subtree}）。
      */
-    List<DisplayItem> subtree(HtmlNode root, StyleSheet sheet, int w, int h, ScrollState scrollState, FontResolver fontResolver) {
+    void subtree(HtmlNode root, StyleSheet sheet, int w, int h, ScrollState scrollState, FontResolver fontResolver) {
         width = w;
         height = h;
         this.sheet = sheet;
@@ -154,12 +156,13 @@ final class V3Frame {
         pipeline = new FragmentPipeline(new StyleSource(sheet, new InteractionState(), Map.of(), w, h), session);
         remembered.clear();
         Map<String, com.nishiyu.enderframelib.core.css.model.Keyframes> kf = sheet != null ? sheet.keyframes : Map.of();
+        keyframes = kf;
+        dpr = 1f; // 部分木の組み立ては装置の画素比を指定しない（一時アダプタの既定）
         emitter = new SceneEmitter(session, kf);
         emitter.opsSource(new com.nishiyu.enderframelib.core.paint.LayerOps(w, h, kf));
         adapter = new SceneDisplayListAdapter(w, h, kf);
         LayoutFragment frag = pipeline.frameSubtree(root, w, h);
         this.scene = emitter.emit(frag, pipeline.boxRoot(), w, h);
-        return paint();
     }
 
     /**
@@ -173,9 +176,9 @@ final class V3Frame {
     }
 
     /**
-     * 直近のシーンから表示リストを作る（{@link #frame} が null を返したあと、スクロールの移動で済ませられないとき）。中身を 1 つの節に
-     * まとめるスクロールコンテナはスクロール 0 で組む（{@link SceneDisplayListAdapter#emitUnscrolled}。M3b-4b-4a）: スクロール量はビューの
-     * 平行移動の表で中身の節に足すので、スクロールだけの変化で列を組み直さない。
+     * 直近のシーンからその場で表示リストを組む（M3b-4c-2b-2b から、描画には使わず列の外の読み手〔テスト・MOD の補助〕だけが呼ぶ。M3b-4c-3 で消す）。
+     * 中身を 1 つの節にまとめるスクロールコンテナはスクロール 0 で組む（{@link SceneDisplayListAdapter#emitUnscrolled}。M3b-4b-4a）: スクロール量は
+     * {@link #scrollContents} から平行移動として足す（{@code UiView#paintOffsets}）。
      */
     List<DisplayItem> paint() {
         long t0 = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
@@ -195,16 +198,38 @@ final class V3Frame {
         return true;
     }
 
-    /** 前回描いた時点（{@code atBuild}）から、シーン内のスクロールコンテナの位置が変わったか（非スクロール要素の値は描画に効かない）。 */
-    boolean hasEffectiveScrollChange(ScrollState state, Map<HtmlNode, float[]> atBuild) {
+    /** ビューが最後に描く絵の版を進めたときの、全ての節のスクロール位置（{@link #takeScrollChange}）。 */
+    private Map<HtmlNode, float[]> scrollPainted = Map.of();
+
+    /**
+     * 前に呼んだときから、シーン内のスクロールコンテナの位置が変わったか（スクロールしない要素の値は描画に効かない）。今の位置を覚える
+     * （M3b-4c-2b-2b。ビューが描く絵の版を進めるかを決める）。
+     */
+    boolean takeScrollChange(ScrollState state) {
         if (state == null || scene == null) return false;
         boolean[] changed = {false};
-        state.changedSince(atBuild, n -> {
+        state.changedSince(scrollPainted, n -> {
             if (changed[0] || n == null) return;
             SceneLayer l = scene.layerByNodeId(n.nodeId());
             if (l != null && l.isScrollContainer()) changed[0] = true;
         });
+        scrollPainted = state.snapshot();
         return changed[0];
+    }
+
+    /** スクロール量の変化でシーンを組み直すか（アンカーが追従する・覚えたスクロール量がある。{@link #settleAnchors} が見る条件）。 */
+    boolean followsScroll() {
+        return scene != null && (!remembered.isEmpty() || SceneAnchorFollow.any(scene));
+    }
+
+    /** シーンを組んだ文書のキーフレーム（描画器が列を組むときに引く。{@link SceneEmitter} と同じ実体）。 */
+    Map<String, com.nishiyu.enderframelib.core.css.model.Keyframes> keyframes() {
+        return keyframes;
+    }
+
+    /** シーンを組んだ装置の画素比。 */
+    float devicePixelRatio() {
+        return dpr;
     }
 
     /** 覚えたスクロール量の表（G8）。 */

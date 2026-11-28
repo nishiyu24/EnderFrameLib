@@ -159,14 +159,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
      */
     @Override
     public void render(PreparedFrame p) {
-        RenderFrame f = p.frame();
-        SceneDamage.Rects rects = frameDamage.take(p, clearColor);
-        if (f.isEmpty()) {
+        PreparedFrame q = frameDamage.take(p, clearColor); // 最後に準備した値でなければ組み直して全面
+        SceneDamage.Rects rects = q.damage();
+        if (q.drawList().isEmpty()) { // 描く項目が無い（シーンから組んだ列が空でも）: 塗りの色だけ
             raster.clearAll(clearColor);
             frameDamage.reset();
             return;
         }
-        List<DisplayItem> items = f.drawList();
+        List<DisplayItem> items = q.drawList();
         route.begin(null);
         walker.setScrollSnapDpr(0f);
         raster.beginFrame();
@@ -174,7 +174,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         boolean done = false;
         try {
             if (rects == null) beginWalk(null);
-            walker.run(f, frame, painter, rects);
+            walker.run(q, frame, painter, rects);
             queue.flush();
             done = true;
         } finally {
@@ -218,11 +218,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * （受け取られなかったものだけ CPU が描く）。GPU 版が文字・画像などの CPU 描画を重ねるのに使う。
      */
     public void renderOnto(PreparedFrame p, GpuSink gpu) {
-        RenderFrame f = p.frame();
         // 範囲は GPU の描画器が描くかを決めるのに使う（prepare）。描くときは GPU が全面を描くので、塗りは範囲で絞らない
-        SceneDamage.Rects rects = frameDamage.take(p, clearColor);
-        if (f.isEmpty()) { frameDamage.reset(); return; }
-        List<DisplayItem> items = f.drawList();
+        PreparedFrame q = frameDamage.take(p, clearColor);
+        SceneDamage.Rects rects = q.damage();
+        if (q.drawList().isEmpty()) { frameDamage.reset(); return; }
+        List<DisplayItem> items = q.drawList();
         route.begin(gpu);
         walker.setScrollSnapDpr(gpu != null && gpu.snapsScrollOffsets() ? dpr : 0f);
         raster.beginFrame();
@@ -231,7 +231,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         boolean done = false;
         try {
             // 走査（アニメーション補間・親子の変形・グループの鎖）は走査器が受け持ち、ここは画素を塗るだけ
-            walker.run(f, frame, painter, rects);
+            walker.run(q, frame, painter, rects);
             queue.flush(); // 開いたままの層の中身も、層を捨てる前に書き切る
             done = true;
         } finally {

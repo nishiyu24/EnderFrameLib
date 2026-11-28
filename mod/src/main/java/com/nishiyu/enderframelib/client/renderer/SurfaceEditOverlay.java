@@ -19,10 +19,11 @@ final class SurfaceEditOverlay {
 
     private SurfaceEditOverlay() {}
 
-    static List<DisplayItem> caretItems(SessionContext session, String sessionId, List<DisplayItem> items) {
-        if (session == null || items.isEmpty()) return List.of();
+    static List<DisplayItem> caretItems(SessionContext session, String sessionId) {
+        if (session == null) return List.of();
         String renderId = session.activeInputId();
         if (renderId == null || renderId.isEmpty()) return List.of();
+        List<DisplayItem> items = session.relativeElements(); // 編集中だけ、その場で組んだ列から欄を引く（M3b-4c-3 でシーンから）
         DisplayItem field = null;
         for (DisplayItem it : items) {
             if (renderId.equals(it.id())) {

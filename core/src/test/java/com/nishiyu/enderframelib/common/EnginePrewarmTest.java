@@ -22,7 +22,9 @@ public class EnginePrewarmTest {
 
     private static final class Capture implements RenderBackend {
         List<DisplayItem> last = List.of();
-        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) { last = new ArrayList<>(frame.frame().drawList()); }
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) {
+            last = new ArrayList<>(new com.nishiyu.enderframelib.core.paint.FrameComposer().compose(frame.frame()).items()); // 描画器と同じく列を組む
+        }
         @Override public Pixmap pixmap() { throw new UnsupportedOperationException(); }
         @Override public float devicePixelRatio() { return 1f; }
     }

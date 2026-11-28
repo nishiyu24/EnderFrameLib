@@ -9,13 +9,12 @@ import com.nishiyu.enderframelib.core.raster.svg.SvgSources;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
-import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.gui.EnderScreenHost;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.scene.SceneVideo;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
 import com.sun.jna.NativeLibrary;
@@ -326,9 +325,9 @@ public class WebMediaManager {
      * セッションが消えている場合も、旧 {@code getElements} と同じく描画キューの処理だけは行う。
      * 消えたセッションの描画要素は常に空。
      */
-    private static List<DisplayItem> elementsOf(String sessionId) {
+    private static List<SceneVideo> elementsOf(String sessionId) {
         SessionContext session = ClientWebManager.getSession(sessionId);
-        if (session != null) return session.relativeElements(); // 種類と文字だけを読むので、位置は問わない
+        if (session != null) return session.videos(); // 動画の指定だけを読むので、列を組まずにシーンの命令から（M3b-4c-2b-2b）
         ClientWebManager.processRenderQueue();
         return List.of();
     }
@@ -353,19 +352,15 @@ public class WebMediaManager {
         }
 
         for (String sessionKey : activeIps) {
-            List<DisplayItem> els = elementsOf(sessionKey);
+            List<SceneVideo> els = elementsOf(sessionKey);
             if (els != null) {
-                for (DisplayItem el : els) {
-                    if (el.type() == ElementType.VIDEO && el.text() != null) {
-                        // まだ一度も描画されていない（折り返しの下にある）メディアもページを開いた時点で始める
-                        VideoTexture videoTex = getVideoTexture(el.text());
-                        if (videoTex != null) {
-                            videoTex.applyMediaAttributes(
-                                    el.events() != null && el.events().containsKey("media-loop"),
-                                    el.events() != null && el.events().containsKey("media-muted"));
-                            videoTex.keepAlive2D(sessionKey);
-                            videoTex.updateFrame();
-                        }
+                for (SceneVideo el : els) {
+                    // まだ一度も描画されていない（折り返しの下にある）メディアもページを開いた時点で始める
+                    VideoTexture videoTex = getVideoTexture(el.src());
+                    if (videoTex != null) {
+                        videoTex.applyMediaAttributes(el.loop(), el.muted());
+                        videoTex.keepAlive2D(sessionKey);
+                        videoTex.updateFrame();
                     }
                 }
             }
@@ -379,10 +374,10 @@ public class WebMediaManager {
             }
 
             tex.activeIps.removeIf(sessionKey -> {
-                List<DisplayItem> els = elementsOf(sessionKey);
+                List<SceneVideo> els = elementsOf(sessionKey);
                 if (els == null || els.isEmpty()) return true;
-                for (DisplayItem el : els) {
-                    if (el.type() == ElementType.VIDEO && tex.url.equals(el.text())) return false;
+                for (SceneVideo el : els) {
+                    if (tex.url.equals(el.src())) return false;
                 }
                 return true;
             });
@@ -392,10 +387,10 @@ public class WebMediaManager {
                 BlockPos pos = e.getKey();
                 if (!mc.level.isLoaded(pos)) return false;
                 if (externalContext != null && externalContext.isScreenOrSpeaker(pos)) {
-                    List<DisplayItem> els = elementsOf("block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ());
+                    List<SceneVideo> els = elementsOf("block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ());
                     if (els != null) {
-                        for (DisplayItem el : els) {
-                            if (el.type() == ElementType.VIDEO && tex.url.equals(el.text())) {
+                        for (SceneVideo el : els) {
+                            if (tex.url.equals(el.src())) {
                                 tex.activeAudioPositions.put(pos, now);
                                 return false;
                             }

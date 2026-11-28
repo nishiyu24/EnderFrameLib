@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.FrozenItemList;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 
 import java.util.AbstractList;
@@ -12,7 +11,8 @@ import java.util.RandomAccess;
  * 描画器へ渡す 1 つのフレームの値（M3b-4c-2a。計画書 §1.6 決定 V）。ホストはフレームごとにこれを 1 つ作り、描画器は
  * {@link RenderBackend#prepare}・{@link RenderBackend#render} でこれだけを読む。
  *
- * @param items    シーンから組んだ表示項目の列（シーンの無いフレームは描く列そのもの。M3b-4c-2b で走査器がシーンを直接たどるまでの仮）
+ * @param items    シーンの無いフレームの描く列（シーンのあるフレームは持たない。列は描画器が準備でシーンから組む〔{@link FrameComposer}。M3b-4c-2b-2b〕。
+ *                 列だけのフレームはテストと 1 回だけの描画の道具で、M3b-4c-3 で消す）
  * @param overlays シーンの外の重ね描き（キャレット・選択の一覧・インスペクタ。列の後ろに描く。前のフレームと今の範囲を描き直す）
  * @param offsets  節ごとの描画上の平行移動（スクロールの中身・つまみ・sticky と利用者の移動。{@code UiView#paintOffsets}）
  * @param scene    列を組んだシーンと動的な値（無ければ null。描き直す範囲を求めず全面を描く）
@@ -25,6 +25,7 @@ public record RenderFrame(List<DisplayItem> items, List<DisplayItem> overlays, P
         items = items != null ? items : List.of();
         overlays = overlays != null ? overlays : List.of();
         offsets = offsets != null ? offsets : PaintOffsets.EMPTY;
+        if (scene != null && !items.isEmpty()) throw new IllegalArgumentException("シーンのあるフレームは列を持たない（描画器が組む）");
     }
 
     /** シーンも重ね描きも無い、列だけのフレーム（全面を描く）。 */
@@ -37,7 +38,7 @@ public record RenderFrame(List<DisplayItem> items, List<DisplayItem> overlays, P
         return new RenderFrame(items, List.of(), offsets, null, null, nowMs);
     }
 
-    /** 描く列（シーンの列の後ろに重ね描き）。重ね描きがあれば 2 つの列をつないだ見え方を作る（写さない）。 */
+    /** シーンの無いフレームの描く列（列の後ろに重ね描き。写さない）。シーンのあるフレームの列は準備した値 {@link PreparedFrame#drawList}。 */
     public List<DisplayItem> drawList() {
         return overlays.isEmpty() ? items : new Joined(items, overlays);
     }
@@ -60,21 +61,16 @@ public record RenderFrame(List<DisplayItem> items, List<DisplayItem> overlays, P
         return exclude == null || scene == null ? null : exclude.itemsIn(scene.scene());
     }
 
-    /** 描く列のうちシーンから組んだ部分の長さ（シーンが無ければ 0。後ろは重ね描き）。 */
-    public int sceneItemCount() {
-        return scene != null ? items.size() : 0;
-    }
-
-    /** 描く項目が無いか。 */
+    /** 描くものが無いか（シーンも列も重ね描きも無い）。 */
     public boolean isEmpty() {
-        return items.isEmpty() && overlays.isEmpty();
+        return scene == null && items.isEmpty() && overlays.isEmpty();
     }
 
     /**
      * 別のスレッドへ渡せる写し（列は不変の列に、平行移動は不変の写しにする。不変の列はそのまま共有する）。シーンと動的な値は不変の値なので共有する。
      */
     public RenderFrame snapshot() {
-        List<DisplayItem> it = items instanceof FrozenItemList ? items : List.copyOf(items);
+        List<DisplayItem> it = List.copyOf(items); // 不変の列（List.of・List.copyOf）はそのまま共有する
         List<DisplayItem> ov = overlays.isEmpty() ? List.of() : List.copyOf(overlays);
         PaintOffsets off = offsets.snapshot();
         if (it == items && ov == overlays && off == offsets) return this;

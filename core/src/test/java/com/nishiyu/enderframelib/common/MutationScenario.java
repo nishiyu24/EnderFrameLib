@@ -54,11 +54,12 @@ final class MutationScenario {
     /** 描画先に何もしないもの（表示リストを作る経路だけを走らせたい重いページ用。ソフトウェア描画は blur などで遅い）。 */
     static final class NoDraw implements com.nishiyu.enderframelib.core.paint.RenderBackend {
         private final SoftwareRenderBackend tiny = new SoftwareRenderBackend(1, 1, 1f);
+        private final com.nishiyu.enderframelib.core.paint.FrameComposer composer = new com.nishiyu.enderframelib.core.paint.FrameComposer();
 
         @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) {
             // 本物のバックエンドは描くたびに全項目の補間状態を更新する（ヒットテストはその値を読む）
             long nowMs = frame.frame().nowMs();
-            for (DisplayItem it : frame.frame().drawList()) com.nishiyu.enderframelib.core.paint.CssAnimator.getValuesAt(sessionId(), it, nowMs);
+            for (DisplayItem it : composer.compose(frame.frame()).items()) com.nishiyu.enderframelib.core.paint.CssAnimator.getValuesAt(sessionId(), it, nowMs);
         }
         @Override public com.nishiyu.enderframelib.core.raster.Pixmap pixmap() { return tiny.pixmap(); }
         @Override public float devicePixelRatio() { return 1f; }

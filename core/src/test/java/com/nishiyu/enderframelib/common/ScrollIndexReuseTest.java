@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.common;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.core.paint.ImmutableItemList;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
@@ -60,7 +59,6 @@ class ScrollIndexReuseTest {
                     }
                 }
             }
-            assertTrue(view.ui().relativeElements() instanceof ImmutableItemList, "スクロール中の表示リストは移動量だけを載せたスナップショット");
         } finally {
             view.close();
         }
@@ -73,19 +71,21 @@ class ScrollIndexReuseTest {
             view.frame(1000, backend, true);
             String sid = backend.sessionId();
             view.mouseMove(60, 100, sid);
+            Object rootBefore = view.ui().scene().root;
             List<DisplayItem> before = view.ui().relativeElements();
             PaintOffsets beforeOff = view.ui().paintOffsets().snapshot();
-            int verBefore = view.ui().paintOffsets().version();
             view.scroll(0, -2, sid);
             view.frame(1016, backend, true);
             List<DisplayItem> after = view.ui().relativeElements();
             PaintOffsets afterOff = view.ui().paintOffsets();
-            assertSame(before, after, "スクロールだけで不変表示リストを作り直してはならない");
-            assertTrue(afterOff.version() > verBefore, "移動量表の版が進む");
+            assertSame(rootBefore, view.ui().scene().root, "スクロールだけでシーンを組み直してはならない");
+            assertEquals(before.size(), after.size(), "組んだ列の形はスクロールで変わらない（中身はスクロール 0 で組む）");
             int changed = 0;
             for (int i = 0; i < before.size(); i++) {
                 DisplayItem it = after.get(i);
-                assertSame(before.get(i), it, "項目も同一インスタンス: " + it.id());
+                assertEquals(before.get(i).id(), it.id(), "同じ並び: " + it.id());
+                assertEquals(before.get(i).x(), it.x(), "位置は変わらない（スクロール量は平行移動で足す）: " + it.id());
+                assertEquals(before.get(i).y(), it.y(), "位置は変わらない（スクロール量は平行移動で足す）: " + it.id());
                 if (it.type() == ElementType.NODE
                         && (beforeOff.dx(it) != afterOff.dx(it) || beforeOff.dy(it) != afterOff.dy(it))) {
                     changed++;

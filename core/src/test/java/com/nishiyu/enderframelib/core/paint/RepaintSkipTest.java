@@ -199,7 +199,7 @@ class RepaintSkipTest {
             int[] got = persistent.pixmap().pixels();
             try (SoftwareRenderBackend fresh = new SoftwareRenderBackend(w, h, 1f, persistent.sessionId())) {
                 fresh.clearColor(clearArgb);
-                fresh.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(f.drawList(), f.offsets(), now));
+                fresh.render(f); // 新しい描画器の最初のフレームは全面
                 int[] want = fresh.pixmap().pixels();
                 int diff = 0, first = -1;
                 for (int i = 0; i < want.length; i++) {
