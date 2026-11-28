@@ -151,7 +151,7 @@ final class SceneAdapterBox {
         List<SceneAdapterBox> ch = paintChildren();
         for (int i = 0; i < ch.size(); i++) {
             SceneAdapterBox c = ch.get(i);
-            if (c.layer.renderedLegend()) {
+            if (layer.children.isRenderedLegend(c.layer)) {
                 return c.layer.display != null && c.layer.display.isNone() ? null : c;
             }
         }

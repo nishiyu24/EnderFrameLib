@@ -27,9 +27,13 @@ import java.util.Objects;
  * <p>座標は層自身か、{@link #BASE_ORIGIN_PARENT} なら層の原点の節からの float（丸める前）。命令はフレームの文脈（祖先のクリップ・
  * 親の錨の ID・スクロール量）を持たない。文字列 ID は持たず、持ち主の節の ID と部品の綴り（接尾辞と通し番号）から組み立てる。
  * 文字の命令のメタは箱ごとに 1 つを共有し、行ごとに違うベースライン・行の高さだけを命令の語に持つ（{@link Cursor#hasLine()}）。</p>
+ *
+ * <p>メタは列の末尾の表に、層の中で別のものを 1 つずつ語で持つ（M3b-4c-1c。{@link MetaWords}）。表は 個数・各メタの位置・各メタの語の順。
+ * 命令はメタの番号を持つ。層の持ち主（最初に持ち主の ID を持った命令の ID と、最初に節の番号の鍵を持った命令の節の番号）は列に 1 つだけ持ち、
+ * 持ち主が同じ命令は持ち主の語を、鍵が持ち主の節の番号と部品の番号から組める命令は部品の番号の 1 語だけを持つ（{@link #KEY_SHORT}・{@link #BASE_OWNER}）。</p>
  */
 public final class DrawOps {
-    public static final DrawOps EMPTY = new DrawOps(new int[0], new Object[0], 0, 0);
+    public static final DrawOps EMPTY = new DrawOps(new int[0], new Object[0], 0, 0, 0, -1, 0);
 
     /** 原点: 絶対座標（ビューポートの左上）。 */
     public static final byte ORIGIN_ABSOLUTE = 0;
@@ -61,7 +65,7 @@ public final class DrawOps {
     static final int HAS_ROT = 1 << 11;
     static final int HAS_TRANS = 1 << 12;
     static final int HAS_ANIM = 1 << 13;       // 参照。無ければ AnimationSpec.NONE
-    static final int HAS_META = 1 << 14;       // 参照。無ければ null
+    static final int HAS_META = 1 << 14;       // メタの表の番号。無ければ null
     static final int HAS_LINE = 1 << 15;       // 2 語（ベースライン・行の高さ）。メタの値を上書きする
     static final int HAS_BASE = 1 << 16;       // 参照（持ち主の節の ID）
     static final int ID_SAME = 1 << 17;        // ID は持ち主の節の ID
@@ -69,6 +73,8 @@ public final class DrawOps {
     static final int ID_NUMBER = 1 << 19;      // 1 語。ID は 持ち主 + 接尾辞 + 通し番号
     static final int ID_FULL = 1 << 20;        // 参照。ID そのもの（持ち主の ID で始まらないとき）
     static final int HAS_RUN = 1 << 21;        // 座標 4 語・中身・行の値の代わりに断片の番号 1 語（断片と同じ文字の命令）
+    static final int KEY_SHORT = 1 << 22;      // HAS_KEY の鍵を部品の番号の 1 語で持つ（鍵 = 持ち主の節の番号 << 16 | 部品）
+    static final int BASE_OWNER = 1 << 23;     // 持ち主の節の ID は層の持ち主（語を持たない）
 
     /** 断片 1 つの語の数: x・y・w・h・ベースライン（float のビット）・印と {@code ::first-line} の参照・文字の参照。 */
     static final int RUN_WORDS = 7;
@@ -82,12 +88,19 @@ public final class DrawOps {
     final Object[] refs;
     final int count;
     final int runs;
+    /** メタの表の位置（メタが無ければ語の数と同じ）。 */
+    final int metaStart;
+    /** 層の持ち主の ID の参照の番号（無ければ -1）と、持ち主の節の番号（鍵を部品の番号で持つ命令の上位。無ければ 0）。 */
+    final int owner, ownerHandle;
 
-    DrawOps(int[] data, Object[] refs, int count, int runs) {
+    DrawOps(int[] data, Object[] refs, int count, int runs, int metaStart, int owner, int ownerHandle) {
         this.data = data;
         this.refs = refs;
         this.count = count;
         this.runs = runs;
+        this.metaStart = metaStart;
+        this.owner = owner;
+        this.ownerHandle = ownerHandle;
     }
 
     /** 断片だけの列（層を作るとき。命令は後で {@link DrawOpsBuilder#beginRuns} から足す）。 */
@@ -103,7 +116,7 @@ public final class DrawOps {
             if (r.text() != null) { tx = refs.size(); refs.add(r.text()); }
             writeRun(d, i * RUN_WORDS, r.x(), r.y(), r.w(), r.h(), r.baseline(), r.startEdge(), r.endEdge(), fl, tx);
         }
-        return new DrawOps(d, refs.toArray(), 0, n);
+        return new DrawOps(d, refs.toArray(), 0, n, d.length, -1, 0);
     }
 
     static void writeRun(int[] d, int p, float x, float y, float w, float h, float baseline, boolean start, boolean end,
@@ -176,6 +189,11 @@ public final class DrawOps {
         return data.length;
     }
 
+    /** 層の中で別のメタの数（調べ用）。 */
+    public int metaCount() {
+        return metaStart < data.length ? data[metaStart] : 0;
+    }
+
     /** 参照の表の大きさ（調べ用）。 */
     public int refCount() {
         return refs.length;
@@ -192,7 +210,8 @@ public final class DrawOps {
      */
     public boolean sameAs(DrawOps o) {
         if (o == this) return true;
-        if (o == null || o.count != count || o.runs != runs || !Arrays.equals(data, o.data) || refs.length != o.refs.length) {
+        if (o == null || o.count != count || o.runs != runs || o.metaStart != metaStart || o.owner != owner
+                || o.ownerHandle != ownerHandle || !Arrays.equals(data, o.data) || refs.length != o.refs.length) {
             return false;
         }
         for (int i = 0; i < refs.length; i++) {
@@ -217,22 +236,53 @@ public final class DrawOps {
         private RenderMeta meta;
         private String base, suffix;
         private int number;
+        // メタ: 組み立て中の列はオブジェクトの表、不変の列は語の表から 1 度だけ戻して覚える（同じ列を読む間だけ）
+        private RenderMeta[] metas = new RenderMeta[8];
+        private int metaStart, metasUsed;
+        private boolean fromBuilder;
+        private int owner;
+        private long ownerKey;
 
         public Cursor reset(DrawOps ops) {
-            return reset(ops.data, ops.refs, ops.count, ops.runs);
+            reset(ops.data, ops.refs, ops.count, ops.runs);
+            metaStart = ops.metaStart;
+            fromBuilder = false;
+            owner = ops.owner;
+            ownerKey = (long) ops.ownerHandle << 16;
+            return this;
         }
 
         /** 組み立て中の列（{@link DrawOpsBuilder}）を読む。 */
         public Cursor reset(DrawOpsBuilder b) {
-            return reset(b.data, b.refs, b.count, b.runs);
+            reset(b.data, b.refs, b.count, b.runs);
+            owner = b.owner;
+            ownerKey = (long) b.ownerHandle << 16;
+            if (metas.length < b.nmetas) metas = new RenderMeta[Math.max(b.nmetas, metas.length * 2)];
+            System.arraycopy(b.metas, 0, metas, 0, b.nmetas);
+            metasUsed = b.nmetas;
+            fromBuilder = true;
+            return this;
         }
 
-        private Cursor reset(int[] d, Object[] r, int count, int runs) {
+        private void reset(int[] d, Object[] r, int count, int runs) {
             this.d = d;
             this.r = r;
             this.left = count;
             this.pos = runs * RUN_WORDS;
-            return this;
+            for (int i = 0; i < metasUsed; i++) metas[i] = null;
+            metasUsed = 0;
+        }
+
+        private RenderMeta metaAt(int i) {
+            if (fromBuilder) return metas[i];
+            if (i >= metas.length) metas = java.util.Arrays.copyOf(metas, Math.max(i + 1, metas.length * 2));
+            RenderMeta m = metas[i];
+            if (m == null) {
+                m = MetaWords.read(d, d[metaStart + 1 + i], r);
+                metas[i] = m;
+                metasUsed = Math.max(metasUsed, i + 1);
+            }
+            return m;
         }
 
         /** 次の命令へ進む（無ければ偽。読み終えたら持っている参照を放す）。 */
@@ -247,6 +297,8 @@ public final class DrawOps {
                 meta = null;
                 base = null;
                 suffix = null;
+                for (int i = 0; i < metasUsed; i++) metas[i] = null;
+                metasUsed = 0;
                 return false;
             }
             left--;
@@ -268,7 +320,9 @@ public final class DrawOps {
                 w = Float.intBitsToFloat(a[p++]);
                 h = Float.intBitsToFloat(a[p++]);
             }
-            if ((m & HAS_KEY) != 0) { key = ((long) a[p] << 32) | (a[p + 1] & 0xFFFFFFFFL); p += 2; } else key = 0L;
+            if ((m & HAS_KEY) == 0) key = 0L;
+            else if ((m & KEY_SHORT) != 0) key = ownerKey | a[p++];
+            else { key = ((long) a[p] << 32) | (a[p + 1] & 0xFFFFFFFFL); p += 2; }
             text = (m & HAS_TEXT) != 0 ? (String) r[a[p++]] : "";
             color = (m & HAS_COLOR) != 0 ? a[p++] : 0;
             bgColor = (m & HAS_BG) != 0 ? a[p++] : 0;
@@ -282,7 +336,7 @@ public final class DrawOps {
             rot = (m & HAS_ROT) != 0 ? Float.intBitsToFloat(a[p++]) : 0f;
             trans = (m & HAS_TRANS) != 0 ? a[p++] : 0;
             anim = (m & HAS_ANIM) != 0 ? (AnimationSpec) r[a[p++]] : AnimationSpec.NONE;
-            meta = (m & HAS_META) != 0 ? (RenderMeta) r[a[p++]] : null;
+            meta = (m & HAS_META) != 0 ? metaAt(a[p++]) : null;
             if ((m & HAS_LINE) != 0) {
                 baseline = Float.intBitsToFloat(a[p++]);
                 lineHeight = Float.intBitsToFloat(a[p++]);
@@ -292,7 +346,7 @@ public final class DrawOps {
                 baseline = Float.intBitsToFloat(a[run + 4]);
                 lineHeight = h;
             }
-            base = (m & HAS_BASE) != 0 ? (String) r[a[p++]] : null;
+            base = (m & HAS_BASE) != 0 ? (String) r[a[p++]] : (m & BASE_OWNER) != 0 ? (String) r[owner] : null;
             suffix = (m & (ID_SUFFIX | ID_FULL)) != 0 ? (String) r[a[p++]] : null;
             number = (m & ID_NUMBER) != 0 ? a[p++] : 0;
             pos = p;

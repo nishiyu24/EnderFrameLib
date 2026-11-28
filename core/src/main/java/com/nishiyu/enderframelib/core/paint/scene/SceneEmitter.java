@@ -45,7 +45,8 @@ public final class SceneEmitter {
      */
     @FunctionalInterface
     public interface OpsSource {
-        DrawOps ops(SceneLayer layer, int viewportW, int viewportH);
+        /** 層 {@code layer}（作っている途中。{@link SceneLayer#ops()} は読まない）の命令を、層の断片 {@code runs} を写して作る。 */
+        DrawOps ops(SceneLayer layer, DrawOps runs, int viewportW, int viewportH);
     }
 
     private final LayoutSession session;
@@ -83,10 +84,13 @@ public final class SceneEmitter {
         prevVw = prevVh = -1;
     }
 
-    /** 新しく作った層に描画命令を付ける（自分を描かない層には付けない）。 */
-    SceneLayer withOps(SceneLayer layer) {
-        if (opsSource == null || !layer.hasSelf()) return layer;
-        return layer.attachOps(opsSource.ops(layer, vw, vh));
+    /** 作っている層 {@code layer} の描画の中身（自分を描かない層・命令の口が無ければ断片だけの {@code runs}）。{@link SceneLayer} のコンストラクタが呼ぶ。 */
+    DrawOps opsFor(SceneLayer layer, DrawOps runs) {
+        if (opsSource == null || !layer.hasSelf()) return runs;
+        DrawOps out = opsSource.ops(layer, runs, vw, vh);
+        if (out == null) return runs;
+        if (out.runCount() != runs.runCount()) throw new IllegalStateException("命令は層の断片を写して作る");
+        return out;
     }
 
     public int builtLayers() { return builtLayers; }
@@ -108,7 +112,7 @@ public final class SceneEmitter {
             if (prevScene != null && prevVw == viewportW && prevVh == viewportH) {
                 index(prevScene.root, prev);
             }
-            SceneLayer root = buildBlock(rootFrag, 0f, 0f, prev, false, false, false, true);
+            SceneLayer root = buildBlock(rootFrag, 0f, 0f, prev, false, false, true);
             if (prevScene != null && root == prevScene.root && prevVw == viewportW && prevVh == viewportH) {
                 return prevScene;
             }
@@ -191,15 +195,19 @@ public final class SceneEmitter {
         return out;
     }
 
-    SceneLayer buildBlock(LayoutFragment f, float x, float y, Map<Object, SceneLayer> prev, boolean legend,
+    /**
+     * 断片 {@code f} の層。前回の層は鍵 {@code (断片 ==, 最新の箱 ==)} で使い回す（§2.3 L4a）。親の文脈（flex・grid の子か・浮動を止める親か）は
+     * 親の {@code display} だけで決まり、子を引く表 {@code prev} は親の {@code display} が前回と同じときだけ渡すので、鍵が当たった層の文脈は同じ
+     * （根の断片は根でしか当たらない。M3b-4c-1c。§1.6 決定 U）。描画される {@code <legend>} は親の値（{@link SceneChildren#legend}）。
+     * 鍵のほかに残る条件は 2 つ: ブロックの文字の層は断片の座標が層の位置を含む（原点の箱から）ので作り直す。表の匿名の箱の ID は走査の順の
+     * 通し番号なので番号が同じときだけ使い回す（どちらも M3b-5 で層・箱の値にする）。
+     */
+    SceneLayer buildBlock(LayoutFragment f, float x, float y, Map<Object, SceneLayer> prev,
                           boolean parentInFlexOrGrid, boolean parentBlocksFloat, boolean isRoot) {
         BoxNode b = f.box;
         BoxNode lb = latestOf(b);
         SceneLayer old = prev != null ? prev.get(f) : null;
-        if (old != null && old.box == lb && old.renderedLegend() == legend && b.kind != BoxKind.TEXT
-                && (old.stackingKind == StackingKind.ROOT) == isRoot
-                && anonymousMatches(old, b)
-                && matchesParentContext(old, parentInFlexOrGrid, parentBlocksFloat)) {
+        if (old != null && old.box == lb && b.kind != BoxKind.TEXT && anonymousMatches(old, b)) {
             reusedLayers++;
             return old.withPosition(x, y);
         }
@@ -262,15 +270,15 @@ public final class SceneEmitter {
                     this, session, childFlexGrid, childBlocksFloat);
             SceneLayerProps.Computed p = SceneLayerProps.compute(lb, node, style, display, f.width, f.height,
                     bT, bR, bB, bL, pT, pR, pB, pL, mT, mR, mB, mL,
-                    anonymous, verticalWrapper, legend, interactive, parentInFlexOrGrid, parentBlocksFloat,
+                    anonymous, verticalWrapper, interactive, parentInFlexOrGrid, parentBlocksFloat,
                     SceneChildren.EMPTY, isRoot, vw, vh, keyframes);
             builtLayers++;
             int nid = b.generated() || node == null || node.isPseudoNode ? 0 : node.nodeId();
-            return withOps(new SceneLayer(nid, x, y, f.width, f.height, p.scrollClipW(), p.scrollClipH(), p.transform(), p.clip(),
+            return new SceneLayer(nid, x, y, f.width, f.height, p.transform(), p.clip(),
                     p.effects(), p.sticky(), DrawOps.EMPTY, SceneChildren.EMPTY, lb, f, node, style, display,
                     bT, bR, bB, bL, pT, pR, pB, pL, mT, mR, mB, mL, collapsedBorders, scrollWidth, scrollHeight, lineHeight,
                     d.firstLine, d.firstLineBgRect, d.runs.isEmpty() ? SceneLayer.NO_RUNS : d.runs.toArray(SceneLayer.NO_RUNS),
-                    null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers()));
+                    null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers(), this);
         }
 
         SceneChildren sceneChildren;
@@ -300,7 +308,7 @@ public final class SceneEmitter {
                         SceneInlineBuilder.Draft parent = direct != null && !direct.contains(child.box)
                                 ? SceneInlineBuilder.ancestors(b, lb, child.box, d, anon, cbw, false, session) : null;
                         (parent != null ? parent : d).add(
-                                buildBlock(child, cx + x1, cy + y1, kidsIdx, false, childFlexGrid, childBlocksFloat, false),
+                                buildBlock(child, cx + x1, cy + y1, kidsIdx, childFlexGrid, childBlocksFloat, false),
                                 cx + x1, cy + y1);
                     } else {
                         for (LineFragment l : child.lines) {
@@ -321,43 +329,29 @@ public final class SceneEmitter {
                     SceneInlineBuilder.fitInline(cd);
                 }
             }
+            BoxNode legend = null;
             if (f.oof != null) {
                 for (PlacedFragment p : f.oof) {
                     SceneLayer placed = buildOof(b, p, kidsIdx, childFlexGrid, childBlocksFloat);
+                    if (renderedLegend(b, p)) legend = placed.box;
                     d.children.add(documentOrderIndex(d.children, placed.node), new SceneInlineBuilder.Child(placed, p.x(), p.y()));
                 }
             }
             firstLine = d.firstLine;
             firstLineBgRect = d.firstLineBgRect;
-            sceneChildren = SceneInlineBuilder.freezeChildren(d.children, display, vw, vh, keyframes, this);
+            sceneChildren = SceneInlineBuilder.freezeChildren(d.children, display, vw, vh, keyframes, this).withLegend(legend);
         }
 
         SceneLayerProps.Computed p = SceneLayerProps.compute(lb, node, style, display, f.width, f.height,
                 bT, bR, bB, bL, pT, pR, pB, pL, mT, mR, mB, mL,
-                anonymous, verticalWrapper, legend, interactive, parentInFlexOrGrid, parentBlocksFloat,
+                anonymous, verticalWrapper, interactive, parentInFlexOrGrid, parentBlocksFloat,
                 sceneChildren, isRoot, vw, vh, keyframes);
         builtLayers++;
         int nid = b.generated() || node == null || node.isPseudoNode ? 0 : node.nodeId();
-        return withOps(new SceneLayer(nid, x, y, f.width, f.height, p.scrollClipW(), p.scrollClipH(), p.transform(), p.clip(),
+        return new SceneLayer(nid, x, y, f.width, f.height, p.transform(), p.clip(),
                 p.effects(), p.sticky(), DrawOps.EMPTY, sceneChildren, lb, f, node, style, display,
                 bT, bR, bB, bL, pT, pR, pB, pL, mT, mR, mB, mL, collapsedBorders, scrollWidth, scrollHeight, lineHeight,
-                firstLine, firstLineBgRect, SceneLayer.NO_RUNS, null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers()));
-    }
-
-    private static boolean matchesParentContext(SceneLayer old, boolean parentInFlexOrGrid, boolean parentBlocksFloat) {
-        if (old.stackingKind == StackingKind.ROOT || old.isAbsolute()) return true;
-        boolean wantAtomic = (old.display != null && old.display.isInlineLevel() && old.display.inner() != Display.Inner.FLOW)
-                || parentInFlexOrGrid;
-        if (wantAtomic != (old.stackingKind == StackingKind.ATOMIC)) {
-            if (old.stackingKind != StackingKind.STACKING) return false;
-        }
-        if (old.box != null && old.box.style.facts.floating) {
-            boolean wantFloat = !parentBlocksFloat;
-            if (wantFloat != (old.stackingKind == StackingKind.FLOAT)) {
-                if (old.stackingKind != StackingKind.STACKING) return false;
-            }
-        }
-        return true;
+                firstLine, firstLineBgRect, SceneLayer.NO_RUNS, null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers(), this);
     }
 
     private static boolean isPureFlow(BoxNode b, LayoutFragment f) {
@@ -398,14 +392,16 @@ public final class SceneEmitter {
             for (int i = 0; i < len; i++) {
                 float lx = uniform ? fc.x[i] : ox + fc.x[i];
                 float ly = uniform ? fc.y[i] : oy + f.flow.y(k, i);
-                layers[i] = buildBlock(fc.frags[i], lx, ly, kidsIdx, false, childFlexGrid, childBlocksFloat, false);
+                layers[i] = buildBlock(fc.frags[i], lx, ly, kidsIdx, childFlexGrid, childBlocksFloat, false);
             }
             SceneChunk built = SceneChunk.of(canReuseChunk ? fc : null, layers);
             entries.add(new ChunkEntry(built, chunkOx, chunkOy));
         }
+        BoxNode legend = null;
         if (f.oof != null) {
             for (PlacedFragment p : f.oof) {
                 SceneLayer placed = buildOof(f.box, p, kidsIdx, childFlexGrid, childBlocksFloat);
+                if (renderedLegend(f.box, p)) legend = placed.box;
                 insertOof(entries, placed);
             }
         }
@@ -419,16 +415,21 @@ public final class SceneEmitter {
             cx[i] = e.cx;
             cy[i] = e.cy;
         }
-        return SceneChildren.of(chunks, cx, cy);
+        return SceneChildren.of(chunks, cx, cy).withLegend(legend);
+    }
+
+    /** {@code owner} の流れの外に置いた {@code p} が fieldset の描画される {@code <legend>} か（レイアウトが流れの外に置く。親の値）。 */
+    private static boolean renderedLegend(BoxNode owner, PlacedFragment p) {
+        BoxNode cb = p.frag().box;
+        return cb != null && cb.style.box.position != Position.ABSOLUTE && cb.style.box.position != Position.FIXED
+                && ElementTraits.isFieldset(owner.node.tag) && ElementTraits.isLegend(cb.node.tag);
     }
 
     private SceneLayer buildOof(BoxNode owner, PlacedFragment p, Map<Object, SceneLayer> kidsIdx,
                                 boolean childFlexGrid, boolean childBlocksFloat) {
         BoxNode cb = p.frag().box;
-        boolean isLegend = cb != null && cb.style.box.position != Position.ABSOLUTE && cb.style.box.position != Position.FIXED
-                && ElementTraits.isFieldset(owner.node.tag) && ElementTraits.isLegend(cb.node.tag);
         boolean tries = (cb != null && cb.style.rare.positionTryFallbacks != null) || p.follow() != null;
-        SceneLayer placed = buildBlock(p.frag(), p.x(), p.y(), tries ? null : kidsIdx, isLegend, childFlexGrid, childBlocksFloat, false);
+        SceneLayer placed = buildBlock(p.frag(), p.x(), p.y(), tries ? null : kidsIdx, childFlexGrid, childBlocksFloat, false);
         float[] m = p.margins();
         AnchorScroll follow = p.follow();
         if (m == null && follow == null) return placed;
@@ -436,12 +437,12 @@ public final class SceneEmitter {
         float nmB = m != null ? m[2] : placed.mB, nmL = m != null ? m[3] : placed.mL;
         StickyConstraint sticky = StickyConstraint.of(placed.style.typed(), nmT, nmR, nmB, nmL);
         return new SceneLayer(placed.nodeId, placed.x, placed.y, placed.w, placed.h,
-                placed.scrollClipW, placed.scrollClipH, placed.transform, placed.clip, placed.effects, sticky,
+                placed.transform, placed.clip, placed.effects, sticky,
                 placed.ops(), placed.children, placed.box, placed.frag, placed.node, placed.style, placed.display,
                 placed.bT, placed.bR, placed.bB, placed.bL, placed.pT, placed.pR, placed.pB, placed.pL,
                 nmT, nmR, nmB, nmL, placed.collapsedBorders, placed.scrollWidth, placed.scrollHeight, placed.lineHeight,
                 placed.firstLine, placed.firstLineBgRect, null, follow, placed.stackingKind, placed.zIndex,
-                placed.flags, placed.propagatedLayers);
+                placed.flags, placed.propagatedLayers, null);
     }
 
     private static void insertOof(List<ChunkEntry> entries, SceneLayer oof) {

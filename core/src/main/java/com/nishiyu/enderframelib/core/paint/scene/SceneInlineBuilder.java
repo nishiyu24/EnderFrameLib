@@ -36,7 +36,7 @@ final class SceneInlineBuilder {
         HtmlNode node;
         ComputedStyle style;
         Display display;
-        boolean anonymous, verticalWrapper, renderedLegend, text, placed, interactive;
+        boolean anonymous, verticalWrapper, text, placed, interactive;
         float x, y, w, h, mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
         float[] collapsedBorders;
         float scrollWidth, scrollHeight, lineHeight;
@@ -182,7 +182,7 @@ final class SceneInlineBuilder {
             float lineBase = l.baseline();
             for (PlacedFragment a : l.atoms()) {
                 float ax = ox + l.x() + a.x(), ay = oy + l.y() + a.y();
-                block.add(emitter.buildBlock(a.frag(), ax, ay, prev, false, inFlexOrGrid, blocksFloat, false), ax, ay);
+                block.add(emitter.buildBlock(a.frag(), ax, ay, prev, inFlexOrGrid, blocksFloat, false), ax, ay);
             }
             for (LineFragment.Span sp : l.spans()) {
                 Draft eb = boxes.get(sp.box());
@@ -225,16 +225,16 @@ final class SceneInlineBuilder {
         SceneLayerProps.Computed p = SceneLayerProps.compute(
                 d.box, d.node, d.style, d.display, d.w, d.h,
                 d.bT, d.bR, d.bB, d.bL, d.pT, d.pR, d.pB, d.pL, d.mT, d.mR, d.mB, d.mL,
-                d.anonymous, d.verticalWrapper, d.renderedLegend, d.interactive,
+                d.anonymous, d.verticalWrapper, d.interactive,
                 parentInFlexOrGrid, parentBlocksFloat, kids, false, vw, vh, keyframes);
         int nid = (d.box != null && d.box.generated()) || d.node == null || d.node.isPseudoNode ? 0 : d.node.nodeId();
         SceneRun[] runArr = d.runs.isEmpty() ? SceneLayer.NO_RUNS : d.runs.toArray(SceneLayer.NO_RUNS);
         emitter.countBuilt();
-        return emitter.withOps(new SceneLayer(nid, d.x, d.y, d.w, d.h, p.scrollClipW(), p.scrollClipH(), p.transform(), p.clip(),
+        return new SceneLayer(nid, d.x, d.y, d.w, d.h, p.transform(), p.clip(),
                 p.effects(), p.sticky(), DrawOps.EMPTY, kids, d.box, null, d.node, d.style, d.display,
                 d.bT, d.bR, d.bB, d.bL, d.pT, d.pR, d.pB, d.pL, d.mT, d.mR, d.mB, d.mL,
                 d.collapsedBorders, d.scrollWidth, d.scrollHeight, d.lineHeight, d.firstLine, d.firstLineBgRect,
-                runArr, null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers()));
+                runArr, null, p.kind(), p.zIndex(), p.layerFlags(), p.propagatedLayers(), emitter);
     }
 
     static SceneChildren freezeChildren(List<Child> children, Display parentDisplay, int vw, int vh,

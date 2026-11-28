@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.core.paint.scene;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
@@ -20,6 +21,11 @@ public final class DrawOpsBuilder {
     int nrefs;
     int count;
     int runs;
+    /** 層の中で別のメタ（同一性で 1 つずつ。命令はこの番号を持ち、{@link #freeze} で語の表にする）。 */
+    RenderMeta[] metas = new RenderMeta[8];
+    int nmetas;
+    /** 層の持ち主: 最初に持ち主の ID を持った命令の ID の参照の番号（無ければ -1）と、最初に節の番号の鍵を持った命令の節の番号（無ければ 0）。 */
+    int owner = -1, ownerHandle;
     private int[] starts = new int[32];
     // 参照の表の重複を除く開番地の表（文字列は値、ほかは同一性）。使った番地だけを消す
     private Object[] slotKey = new Object[64];
@@ -36,6 +42,10 @@ public final class DrawOpsBuilder {
         nused = 0;
         for (int i = 0; i < nrefs; i++) refs[i] = null;
         nrefs = 0;
+        for (int i = 0; i < nmetas; i++) metas[i] = null;
+        nmetas = 0;
+        owner = -1;
+        ownerHandle = 0;
         nullRef = -1;
         len = 0;
         count = 0;
@@ -94,7 +104,21 @@ public final class DrawOpsBuilder {
             a[p++] = Float.floatToRawIntBits(w);
             a[p++] = Float.floatToRawIntBits(h);
         }
-        if (key != 0L) { m |= DrawOps.HAS_KEY; a[p++] = (int) (key >>> 32); a[p++] = (int) key; }
+        if (key != 0L) {
+            m |= DrawOps.HAS_KEY;
+            long handle = key >>> 16;
+            // 節の番号の鍵（文字列の鍵の印が無く、番号が int に収まる）で、番号が層の持ち主と同じなら部品の番号だけを持つ
+            if (ownerHandle == 0 && (key & DisplayItem.STRING_KEY_BIT) == 0 && handle > 0 && handle <= Integer.MAX_VALUE) {
+                ownerHandle = (int) handle;
+            }
+            if (ownerHandle != 0 && handle == ownerHandle) {
+                m |= DrawOps.KEY_SHORT;
+                a[p++] = (int) (key & 0xFFFFL);
+            } else {
+                a[p++] = (int) (key >>> 32);
+                a[p++] = (int) key;
+            }
+        }
         if (!fromRun && !"".equals(text)) { m |= DrawOps.HAS_TEXT; a[p++] = ref(text); }
         if (color != 0) { m |= DrawOps.HAS_COLOR; a[p++] = color; }
         if (bgColor != 0) { m |= DrawOps.HAS_BG; a[p++] = bgColor; }
@@ -109,13 +133,22 @@ public final class DrawOpsBuilder {
         if ((bits = Float.floatToRawIntBits(rot)) != 0) { m |= DrawOps.HAS_ROT; a[p++] = bits; }
         if (trans != 0) { m |= DrawOps.HAS_TRANS; a[p++] = trans; }
         if (animDef != AnimationSpec.NONE) { m |= DrawOps.HAS_ANIM; a[p++] = ref(animDef); }
-        if (meta != null) { m |= DrawOps.HAS_META; a[p++] = ref(meta); }
+        if (meta != null) { m |= DrawOps.HAS_META; a[p++] = metaIndex(meta); }
         if (line && meta != null && !fromRun) {
             m |= DrawOps.HAS_LINE;
             a[p++] = Float.floatToRawIntBits(baseline);
             a[p++] = Float.floatToRawIntBits(lineHeight);
         }
-        if (baseNodeId != null) { m |= DrawOps.HAS_BASE; a[p++] = ref(baseNodeId); }
+        if (baseNodeId != null) {
+            int b = ref(baseNodeId);
+            if (owner < 0) owner = b;
+            if (b == owner) {
+                m |= DrawOps.BASE_OWNER;
+            } else {
+                m |= DrawOps.HAS_BASE;
+                a[p++] = b;
+            }
+        }
         if (id != null) {
             if (baseNodeId != null && id.startsWith(baseNodeId)) {
                 int bl = baseNodeId.length(), j = id.length();
@@ -165,7 +198,7 @@ public final class DrawOpsBuilder {
     /** 命令 {@code i} のメタ（無ければ null）。 */
     public RenderMeta meta(int i) {
         int p = metaWord(i);
-        return p >= 0 ? (RenderMeta) refs[data[p]] : null;
+        return p >= 0 ? metas[data[p]] : null;
     }
 
     /** 命令 {@code i} のメタを替える（無かったら語を差し込む）。 */
@@ -173,7 +206,7 @@ public final class DrawOpsBuilder {
         Objects.requireNonNull(meta, "meta");
         int p = metaWord(i);
         if (p >= 0) {
-            data[p] = ref(meta);
+            data[p] = metaIndex(meta);
             return;
         }
         // メタの語を差し込む（錨に層の指定を載せるときだけの稀な道）
@@ -183,7 +216,7 @@ public final class DrawOpsBuilder {
         ensure(1);
         System.arraycopy(data, at, data, at + 1, len - at);
         len++;
-        data[at] = ref(meta);
+        data[at] = metaIndex(meta);
         data[s + 1] = m | DrawOps.HAS_META;
         for (int k = i + 1; k < count; k++) starts[k]++;
     }
@@ -191,7 +224,29 @@ public final class DrawOpsBuilder {
     /** 不変の列にする（空なら {@link DrawOps#EMPTY}）。 */
     public DrawOps freeze() {
         if (count == 0 && runs == 0) return DrawOps.EMPTY;
-        return new DrawOps(Arrays.copyOf(data, len), Arrays.copyOf(refs, nrefs), count, runs);
+        int metaStart = len;
+        if (nmetas > 0) {
+            // メタの表: 個数・各メタの位置・各メタの語（MetaWords）
+            ensure(1 + nmetas + nmetas * MetaWords.MAX_WORDS);
+            int p = metaStart + 1 + nmetas;
+            data[metaStart] = nmetas;
+            for (int i = 0; i < nmetas; i++) {
+                data[metaStart + 1 + i] = p;
+                p += MetaWords.write(metas[i], data, p, this::ref);
+            }
+            return new DrawOps(Arrays.copyOf(data, p), Arrays.copyOf(refs, nrefs), count, runs, metaStart, owner, ownerHandle);
+        }
+        return new DrawOps(Arrays.copyOf(data, len), Arrays.copyOf(refs, nrefs), count, runs, len, owner, ownerHandle);
+    }
+
+    /** メタの番号（同じ参照は同じ番号。箱の命令は続けて同じメタを使うので後ろから探す）。 */
+    private int metaIndex(RenderMeta meta) {
+        for (int i = nmetas - 1; i >= 0; i--) {
+            if (metas[i] == meta) return i;
+        }
+        if (nmetas == metas.length) metas = Arrays.copyOf(metas, nmetas * 2);
+        metas[nmetas] = meta;
+        return nmetas++;
     }
 
     private int metaWord(int i) {
@@ -209,7 +264,7 @@ public final class DrawOpsBuilder {
     private static int wordsBefore(int m, int bit) {
         int below = m & (bit - 1);
         int n = Integer.bitCount(below);
-        if ((below & DrawOps.HAS_KEY) != 0) n++;   // 鍵は 2 語
+        if ((below & DrawOps.HAS_KEY) != 0 && (m & DrawOps.KEY_SHORT) == 0) n++;   // 鍵は 2 語（部品の番号だけなら 1 語）
         if ((below & DrawOps.HAS_LINE) != 0) n++;  // 行の値は 2 語
         return n;
     }

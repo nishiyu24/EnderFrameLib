@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.scene;
 
+import com.nishiyu.enderframelib.core.box.BoxNode;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -10,7 +12,8 @@ import java.util.List;
 public final class SceneChildren {
     private static final float[] NO_POS = new float[0];
     private static final int[] NO_INTS = new int[0];
-    public static final SceneChildren EMPTY = new SceneChildren(SceneChunk.NO_CHUNKS, NO_POS, NO_POS, true, 0, 0, false, false, 0, false, NO_INTS);
+    public static final SceneChildren EMPTY = new SceneChildren(SceneChunk.NO_CHUNKS, NO_POS, NO_POS, true, 0, 0, false, false, 0, false, NO_INTS,
+            null);
 
     public final SceneChunk[] chunks;
     /** 各チャンクの原点（親の border-box 左上基準）。 */
@@ -25,10 +28,15 @@ public final class SceneChildren {
     public final boolean hasDynamicBounds;
     /** 動的境界を持つ（範囲カリングをバイパスすべき）チャンク添字の昇順配列。 */
     public final int[] unculledChunks;
+    /**
+     * fieldset の描画される {@code <legend>} の子の箱（無ければ null。M3b-4c-1c）。どの子が描画される legend かは親が子を並べるときに決まる
+     * 親の値で、子の層の値に持たない（同じ legend の層が、前に別の legend が入って流れの中の legend に替わっても使い回せる）。
+     */
+    public final BoxNode legend;
 
     private SceneChildren(SceneChunk[] chunks, float[] chunkX, float[] chunkY, boolean monotonicY, int size,
                           int propagatedLayers, boolean anchoredBelow, boolean propagatesBlend, int anonChain,
-                          boolean hasDynamicBounds, int[] unculledChunks) {
+                          boolean hasDynamicBounds, int[] unculledChunks, BoxNode legend) {
         this.chunks = chunks;
         this.chunkX = chunkX;
         this.chunkY = chunkY;
@@ -40,6 +48,19 @@ public final class SceneChildren {
         this.anonChain = anonChain;
         this.hasDynamicBounds = hasDynamicBounds;
         this.unculledChunks = unculledChunks;
+        this.legend = legend;
+    }
+
+    /** 描画される {@code <legend>} の子の箱を {@code box} にしたもの（null なら自分）。 */
+    SceneChildren withLegend(BoxNode box) {
+        if (box == legend) return this;
+        return new SceneChildren(chunks, chunkX, chunkY, monotonicY, size, propagatedLayers, anchoredBelow, propagatesBlend, anonChain,
+                hasDynamicBounds, unculledChunks, box);
+    }
+
+    /** 子の層 {@code c} が描画される {@code <legend>} か。 */
+    public boolean isRenderedLegend(SceneLayer c) {
+        return legend != null && c.box == legend;
     }
 
     public static SceneChildren of(SceneChunk[] chunks, float[] chunkX, float[] chunkY) {
@@ -72,7 +93,7 @@ public final class SceneChildren {
                 if (chunks[k].hasDynamicBounds) unculled[idx++] = k;
             }
         }
-        return new SceneChildren(chunks, chunkX, chunkY, mono, total, prop, anch, blend, anon, dynCount > 0, unculled);
+        return new SceneChildren(chunks, chunkX, chunkY, mono, total, prop, anch, blend, anon, dynCount > 0, unculled, null);
     }
 
     /** 親へ汲み上げる子孫の sticky 要素を集める（通常は 0 確保）。 */

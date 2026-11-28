@@ -36,7 +36,6 @@ public final class SceneLayer {
     // 素性ビットフラグ（flags）
     public static final int FLAG_ANONYMOUS = 1;
     public static final int FLAG_VERTICAL_WRAPPER = 1 << 1;
-    public static final int FLAG_RENDERED_LEGEND = 1 << 2;
     public static final int FLAG_TEXT = 1 << 3;
     public static final int FLAG_INTERACTIVE = 1 << 4;
     public static final int FLAG_SCROLL_CONTAINER = 1 << 5;
@@ -62,16 +61,17 @@ public final class SceneLayer {
     public final int nodeId;
     /** 親（チャンク内はチャンク相対、それ以外は親の原点の箱基準）からの unstuck・スクロール 0 の相対位置と寸法。 */
     public final float x, y, w, h;
-    /** スクロールコンテナの内側クリップ幅・高さ（スクロールしない要素は {@link Float#NaN}）。 */
-    public final float scrollClipW, scrollClipH;
     public final Transform2D transform;
     public final ClipShape clip;
     public final LayerEffects effects;
     public final StickyConstraint sticky;
     /** スクロールコンテナ（および根）だけ: カリング範囲外でも回収すべき子孫の sticky 節。 */
     public final SceneLayer[] stickyDescendants;
-    /** この層自身の描画命令（M3b-4a）。{@link SceneEmitter} が層を作った直後に 1 度だけ付ける（シーンを渡す前）。 */
-    private DrawOps ops;
+    /**
+     * この層自身の描画の中身（行の断片と描画命令。M3b-4a・4c-1b）。命令はコンストラクタの最後に {@link SceneEmitter#opsFor} が作る
+     * （生成器は作っている層の断片を {@code OpList#runsOf} から読み、この欄を読まない。M3b-4c-1c で final にした）。
+     */
+    private final DrawOps ops;
     public final SceneChildren children;
 
     // ---- 入力・幾何・補助（問い合わせ・一時アダプタ・増分照合用） ----
@@ -94,7 +94,7 @@ public final class SceneLayer {
     /** 自身の原点基準での部分木の包含矩形（カリング用）。 */
     public final float boundsMinX, boundsMinY, boundsMaxX, boundsMaxY;
 
-    SceneLayer(int nodeId, float x, float y, float w, float h, float scrollClipW, float scrollClipH,
+    SceneLayer(int nodeId, float x, float y, float w, float h,
                Transform2D transform, ClipShape clip, LayerEffects effects, StickyConstraint sticky,
                DrawOps ops, SceneChildren children, BoxNode box, LayoutFragment frag, HtmlNode node,
                ComputedStyle style, Display display,
@@ -102,20 +102,18 @@ public final class SceneLayer {
                float mT, float mR, float mB, float mL, float[] collapsedBorders,
                float scrollWidth, float scrollHeight, float lineHeight,
                ComputedStyle firstLine, float[] firstLineBgRect, SceneRun[] runs, AnchorScroll follow,
-               StackingKind stackingKind, int zIndex, int flags, int propagatedLayers) {
+               StackingKind stackingKind, int zIndex, int flags, int propagatedLayers, SceneEmitter opsFrom) {
         this.nodeId = nodeId;
         this.x = x;
         this.y = y;
         this.w = w;
         this.h = h;
-        this.scrollClipW = scrollClipW;
-        this.scrollClipH = scrollClipH;
         this.transform = transform;
         this.clip = clip;
         this.effects = effects;
         this.sticky = sticky;
         // 行に置かれた断片は描画の中身の列の先頭に詰める（M3b-4c-1b）。断片を渡すのは新しく作る層だけ（命令はまだ無い）
-        this.ops = runs != null && runs.length > 0 ? DrawOps.ofRuns(runs) : ops != null ? ops : DrawOps.EMPTY;
+        DrawOps own = runs != null && runs.length > 0 ? DrawOps.ofRuns(runs) : ops != null ? ops : DrawOps.EMPTY;
         this.children = children != null ? children : SceneChildren.EMPTY;
         this.box = box;
         this.frag = frag;
@@ -150,12 +148,12 @@ public final class SceneLayer {
                 ? this.children.collectStickies() : NO_LAYERS;
 
         float minX = 0f, minY = 0f, maxX = Math.max(0f, w), maxY = Math.max(0f, h);
-        for (int i = 0, n = this.ops.runCount(); i < n; i++) {
-            float rx = this.ops.runX(i), ry = this.ops.runY(i);
+        for (int i = 0, n = own.runCount(); i < n; i++) {
+            float rx = own.runX(i), ry = own.runY(i);
             minX = Math.min(minX, rx - x);
             minY = Math.min(minY, ry - y);
-            maxX = Math.max(maxX, rx + this.ops.runW(i) - x);
-            maxY = Math.max(maxY, ry + this.ops.runH(i) - y);
+            maxX = Math.max(maxX, rx + own.runW(i) - x);
+            maxY = Math.max(maxY, ry + own.runH(i) - y);
         }
         boolean clippedOwn = (flags & FLAG_CLIPS_X) != 0 && (flags & FLAG_CLIPS_Y) != 0 && (propagatedLayers & LAYER_HOIST) == 0;
         if (!clippedOwn && this.children.chunks.length > 0) {
@@ -173,22 +171,22 @@ public final class SceneLayer {
         this.boundsMinY = minY;
         this.boundsMaxX = maxX;
         this.boundsMaxY = maxY;
+        // 最後に: 命令は他の欄が全て決まった層から作る（作る間 ops() は null。生成器は断片を OpList から読む）
+        this.ops = opsFrom != null ? opsFrom.opsFor(this, own) : own;
     }
 
-    private SceneLayer(SceneLayer src, float nx, float ny) {
+    private SceneLayer(SceneLayer src, float nx, float ny, DrawOps ops) {
         this.nodeId = src.nodeId;
         this.x = nx;
         this.y = ny;
         this.w = src.w;
         this.h = src.h;
-        this.scrollClipW = src.scrollClipW;
-        this.scrollClipH = src.scrollClipH;
         this.transform = src.transform;
         this.clip = src.clip;
         this.effects = src.effects;
         this.sticky = src.sticky;
         this.stickyDescendants = src.stickyDescendants;
-        this.ops = src.ops;
+        this.ops = ops;
         this.children = src.children;
         this.box = src.box;
         this.frag = src.frag;
@@ -222,22 +220,12 @@ public final class SceneLayer {
                 && Float.floatToRawIntBits(y) == Float.floatToRawIntBits(ny)) {
             return this;
         }
-        return new SceneLayer(this, nx, ny);
+        return new SceneLayer(this, nx, ny, ops);
     }
 
     /** この層自身の描画命令（M3b-4a。座標は層自身か原点の節から。自分を描かない層は空）。 */
     public DrawOps ops() {
         return ops;
-    }
-
-    /**
-     * 作った直後の層に描画命令を付ける（{@link SceneEmitter} だけが、層をシーンに入れる前に 1 度だけ呼ぶ。複製を作らないため）。
-     */
-    SceneLayer attachOps(DrawOps newOps) {
-        if (!ops.isEmpty()) throw new IllegalStateException("描画命令は 1 度だけ付ける");
-        if (newOps != null && newOps.runCount() != ops.runCount()) throw new IllegalStateException("命令は層の断片を写して作る");
-        ops = newOps != null ? newOps : DrawOps.EMPTY;
-        return this;
     }
 
     /** 親のスクロールコンテナ（または根）へ汲み上げる sticky 要素の列。 */
@@ -255,7 +243,6 @@ public final class SceneLayer {
 
     public boolean anonymous() { return (flags & FLAG_ANONYMOUS) != 0; }
     public boolean verticalWrapper() { return (flags & FLAG_VERTICAL_WRAPPER) != 0; }
-    public boolean renderedLegend() { return (flags & FLAG_RENDERED_LEGEND) != 0; }
     public boolean isText() { return (flags & FLAG_TEXT) != 0; }
     public boolean interactive() { return (flags & FLAG_INTERACTIVE) != 0; }
     public boolean isScrollContainer() { return (flags & FLAG_SCROLL_CONTAINER) != 0; }
@@ -286,14 +273,18 @@ public final class SceneLayer {
 
     /** {@code empty-cells: hide} により背景・枠線・当たり判定を隠す空の表セルか。 */
     public boolean isEmptyCellHidden() {
+        return isEmptyCellHidden(ops);
+    }
+
+    /** 同じく、層自身の断片を {@code ownRuns} から読む（層の命令を作っている間。{@code OpList#runsOf}）。 */
+    public boolean isEmptyCellHidden(DrawOps ownRuns) {
         if (display == null || display.inner() != Display.Inner.TABLE_CELL || collapsedBorders != null) return false;
         String ec = style != null ? style.typed().inheritedPaint.emptyCells : null;
         if (ec == null || !"hide".equalsIgnoreCase(ec.trim())) return false;
-        return hasNoCellContent(this);
+        return hasNoCellContent(this, ownRuns);
     }
 
-    private static boolean hasNoCellContent(SceneLayer layer) {
-        DrawOps runs = layer.ops();
+    private static boolean hasNoCellContent(SceneLayer layer, DrawOps runs) {
         for (int i = 0, n = runs.runCount(); i < n; i++) {
             if (!runs.runIsText(i) || !runs.runText(i).isBlank()) return false;
         }
@@ -303,7 +294,7 @@ public final class SceneLayer {
                 if (child.node != null && child.node.tag != null && !child.node.tag.isEmpty() && !child.node.tag.startsWith("#")) {
                     return false;
                 }
-                if (!hasNoCellContent(child)) return false;
+                if (!hasNoCellContent(child, child.ops())) return false;
             }
         }
         return true;

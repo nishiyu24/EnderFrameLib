@@ -283,7 +283,7 @@ final class BoxItemPainter {
 
             // visibility: hidden の箱は場所だけを取る。錨（NODE）は子孫の変形と不透明度の親として残す
             // 何が壊れていたか: 以前は visibility を読んでおらず、hidden の箱が描かれクリックも受けていた
-            if (isInvisible(box) || box.isEmptyCellHidden()) return;
+            if (isInvisible(box) || box.isEmptyCellHidden(elements.runsOf(box))) return;
 
             if (useRel) elements.originSelf();
 
@@ -306,7 +306,7 @@ final class BoxItemPainter {
             }
             passiveBorderEvents.reuseCandidate(null);
 
-            if (box.ops().runCount() > 0 && !ElementTraits.isNonFragmented(box.node.tag) && !ReplacedElements.isHost(box.node.tag)
+            if (elements.runsOf(box).runCount() > 0 && !ElementTraits.isNonFragmented(box.node.tag) && !ReplacedElements.isHost(box.node.tag)
                 && !PaintSupport.atomicInline(box) && !ReplacedElements.isReplacedTag(box.node.tag)) {
                 decor.drawInlineFragments(elements, box, id, color, bgColor, rawRadii, normalizedClip, fontHVal, ox, oy, itemCount, interactive,
                         partsEvents, passiveBorderEvents, transDur, colorBgAnim);

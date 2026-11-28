@@ -179,7 +179,7 @@ public final class V3HeapBreakdownMain {
         if (scene == null) return;
         Map<String, int[]> byType = new java.util.TreeMap<>(), refKinds = new java.util.TreeMap<>();
         int ops = 0, layers = 0, withOps = 0, lines = 0;
-        long words = 0, refs = 0;
+        long words = 0, refs = 0, metas = 0;
         var c = new com.nishiyu.enderframelib.core.paint.scene.DrawOps.Cursor();
         ArrayDeque<com.nishiyu.enderframelib.core.paint.scene.SceneLayer> stack = new ArrayDeque<>();
         stack.push(scene.root);
@@ -191,6 +191,7 @@ public final class V3HeapBreakdownMain {
                 withOps++;
                 words += o.words();
                 refs += o.refCount();
+                metas += o.metaCount();
                 for (int i = 0; i < o.refCount(); i++) {
                     Object r = o.ref(i);
                     refKinds.computeIfAbsent(r == null ? "null" : r.getClass().getSimpleName(), k -> new int[1])[0]++;
@@ -206,8 +207,8 @@ public final class V3HeapBreakdownMain {
         }
         System.out.printf(Locale.ROOT, "%n  -- 層の描画命令の調べ: 層 %d（命令を持つ層 %d）・命令 %d（種類ごと %s）%n", layers, withOps, ops,
                 byType.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()[0]).collect(java.util.stream.Collectors.joining(", ")));
-        System.out.printf(Locale.ROOT, "     詰めた語 %d（命令あたり %.1f 語）・参照の表の欄 %d（%s）・行の値を持つ文字の命令 %d%n",
-                words, ops == 0 ? 0.0 : (double) words / ops, refs,
+        System.out.printf(Locale.ROOT, "     詰めた語 %d（命令あたり %.1f 語）・メタの表の欄 %d・参照の表の欄 %d（%s）・行の値を持つ文字の命令 %d%n",
+                words, ops == 0 ? 0.0 : (double) words / ops, metas, refs,
                 refKinds.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()[0]).collect(java.util.stream.Collectors.joining(", ")),
                 lines);
     }

@@ -142,22 +142,23 @@ class LayerOpsTest {
         }
         assertNotNull(text, "120 語の文字の層");
         DrawOps ops = text.ops();
-        int textOps = 0, metas = 0;
+        int textOps = 0;
         DrawOps.Cursor c = new DrawOps.Cursor().reset(ops);
         while (c.next()) {
             if (c.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.TEXT) textOps++;
         }
         for (int i = 0; i < ops.refCount(); i++) {
             Object r = ops.ref(i);
-            if (r instanceof com.nishiyu.enderframelib.core.paint.model.RenderMeta) metas++;
+            assertFalse(r instanceof com.nishiyu.enderframelib.core.paint.model.RenderMeta, "メタは語の表に持つ");
             assertFalse(r instanceof String s && s.contains("_txt_") && s.length() > "_txt_".length(), "描画 ID の文字列を持たない: " + r);
         }
         assertEquals(ops.runCount(), textOps, "語ごとに 1 つの文字の命令");
-        assertEquals(2, metas, "メタは錨の 1 つと、文字の命令が共有する 1 つだけ（行の値は命令の語）");
+        assertEquals(2, ops.metaCount(), "メタは錨の 1 つと、文字の命令が共有する 1 つだけ（行の値は命令の語）");
         assertTrue(ops.refCount() < 20, "参照の表は持ち主・接尾辞・属性・メタ・7 種の語だけ: " + ops.refCount());
         int runWords = ops.runCount() * 7;
-        // 文字の命令は 頭 2・断片の番号 1・鍵 2・色 1・属性 1・メタ 1・持ち主 1・接尾辞と番号 2 の 11 語（座標・中身・行の値は断片の語）
-        assertTrue(ops.words() - runWords <= textOps * 11 + 24, "断片を指す文字の命令は 11 語以下: " + (ops.words() - runWords) + " / " + textOps);
+        // 文字の命令は 頭 2・断片の番号 1・鍵 1（部品の番号）・色 1・属性 1・メタ 1・接尾辞と番号 2 の 9 語（座標・中身・行の値は断片の語、
+        // 持ち主は層の持ち主。M3b-4c-1c）。残りは錨の命令とメタの表（メタ 2 つ。1 つ 7 語と参照の語）
+        assertTrue(ops.words() - runWords <= textOps * 9 + 48, "断片を指す文字の命令は 9 語以下: " + (ops.words() - runWords) + " / " + textOps);
         assertEquals(items(build(html, false)), items(b));
     }
 

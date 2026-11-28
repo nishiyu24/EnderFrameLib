@@ -131,7 +131,7 @@ final class SceneHitGeometry {
         SceneChildren sc = fieldset.children;
         for (int k = 0; k < sc.chunks.length; k++) {
             for (SceneLayer c : sc.chunks[k].layers) {
-                if (c.renderedLegend()) {
+                if (sc.isRenderedLegend(c)) {
                     return c.display != null && c.display.isNone() ? null : c;
                 }
             }

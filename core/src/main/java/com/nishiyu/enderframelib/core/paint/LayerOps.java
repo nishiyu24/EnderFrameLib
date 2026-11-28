@@ -33,13 +33,13 @@ public final class LayerOps implements SceneEmitter.OpsSource {
     }
 
     @Override
-    public DrawOps ops(SceneLayer layer, int vw, int vh) {
+    public DrawOps ops(SceneLayer layer, DrawOps runs, int vw, int vh) {
         if (vw != viewportW || vh != viewportH) {
             viewportW = vw;
             viewportH = vh;
             painter.setViewport(vw, vh);
         }
-        ops.beginDeferred(layer.ops());
+        ops.beginDeferred(layer, runs);
         fragIds.set(0);
         painter.drawBox(ops, layer, 0f, 0f, 0f, 0f, null, null, null, false, PaintSupport.hasOwnNode(layer), false);
         DrawOps out = ops.freeze();

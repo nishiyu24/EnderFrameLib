@@ -216,7 +216,7 @@ public final class SceneQuery {
     /** {@code <fieldset>} 内の描画される {@code <legend>}（無ければ null）。 */
     public static SceneLocation renderedLegend(SceneLocation fieldset, DynamicSceneState dynamic) {
         for (SceneLocation c : children(fieldset, dynamic)) {
-            if (c.layer().renderedLegend()) {
+            if (fieldset.layer().children.isRenderedLegend(c.layer())) {
                 return c.layer().display != null && c.layer().display.isNone() ? null : c;
             }
         }

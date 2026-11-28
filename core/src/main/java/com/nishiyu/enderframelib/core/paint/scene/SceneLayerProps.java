@@ -44,8 +44,6 @@ final class SceneLayerProps {
             int zIndex,
             int layerFlags,
             int propagatedLayers,
-            float scrollClipW,
-            float scrollClipH,
             Transform2D transform,
             ClipShape clip,
             LayerEffects effects,
@@ -55,7 +53,7 @@ final class SceneLayerProps {
     static Computed compute(BoxNode lb, HtmlNode node, ComputedStyle style, Display display,
                             float w, float h, float bT, float bR, float bB, float bL, float pT, float pR, float pB, float pL,
                             float mT, float mR, float mB, float mL,
-                            boolean anonymous, boolean verticalWrapper, boolean renderedLegend, boolean interactive,
+                            boolean anonymous, boolean verticalWrapper, boolean interactive,
                             boolean parentInFlexOrGrid, boolean parentBlocksFloat, SceneChildren children,
                             boolean isRoot, int vw, int vh, Map<String, Keyframes> keyframes) {
         Style st = style.typed();
@@ -118,7 +116,6 @@ final class SceneLayerProps {
         int flags = 0;
         if (anonymous) flags |= SceneLayer.FLAG_ANONYMOUS;
         if (verticalWrapper) flags |= SceneLayer.FLAG_VERTICAL_WRAPPER;
-        if (renderedLegend) flags |= SceneLayer.FLAG_RENDERED_LEGEND;
         if (isText) flags |= SceneLayer.FLAG_TEXT;
         if (interactive) flags |= SceneLayer.FLAG_INTERACTIVE;
         if (scrollContainer) flags |= SceneLayer.FLAG_SCROLL_CONTAINER;
@@ -136,8 +133,6 @@ final class SceneLayerProps {
         if (displayNone) flags |= SceneLayer.FLAG_DISPLAY_NONE;
         if (hasSelf) flags |= SceneLayer.FLAG_HAS_SELF;
 
-        float scrollClipW = scrollContainer ? Math.max(0f, w - bL - bR) : Float.NaN;
-        float scrollClipH = scrollContainer ? Math.max(0f, h - bT - bB) : Float.NaN;
 
         Transform2D transform = isText ? null : Transform2D.parse(st, values, w, h, vw, vh);
         StickyConstraint sticky = isText ? null : StickyConstraint.of(st, mT, mR, mB, mL);
@@ -174,7 +169,7 @@ final class SceneLayerProps {
         int propagated = computePropagatedLayers(kind, zIndex, hidden, hasSelf, topLayer,
                 ElementTraits.isValueControl(tag), wantsScrollbars, children.propagatedLayers);
 
-        return new Computed(kind, zIndex, flags, propagated, scrollClipW, scrollClipH, transform, clip, effects, sticky);
+        return new Computed(kind, zIndex, flags, propagated, transform, clip, effects, sticky);
     }
 
     private static int computePropagatedLayers(StackingKind kind, int zIndex, boolean hidden, boolean hasSelf,

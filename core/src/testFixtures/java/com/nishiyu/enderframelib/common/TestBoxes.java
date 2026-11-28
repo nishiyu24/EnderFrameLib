@@ -136,7 +136,7 @@ public final class TestBoxes {
         public float[][] columnRules() { return null; }
         public Box renderedLegend() {
             for (Box c : paintChildren()) {
-                if (c.layer.renderedLegend()) return c.displayNone() ? null : c;
+                if (layer.children.isRenderedLegend(c.layer)) return c.displayNone() ? null : c;
             }
             return null;
         }

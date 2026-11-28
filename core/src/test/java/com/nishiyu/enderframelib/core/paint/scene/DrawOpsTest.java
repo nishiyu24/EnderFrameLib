@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.paint.scene;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
+import com.nishiyu.enderframelib.core.paint.model.RenderHints;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import org.junit.jupiter.api.Test;
 
@@ -21,10 +22,14 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>断片と同じ文字の命令は断片の番号だけを持ち、違う命令（影のずれ・-0）は自分の値を持つ。</li>
  *   <li>錨に後から載せるメタは語を差し込み、後ろの命令を壊さない。</li>
  *   <li>同じ列かは語の列と参照の表の値で答える。</li>
+ *   <li>メタは列の末尾の表に語で持ち（M3b-4c-1c）、読むと値の等しいメタに戻る。持ち主の ID・鍵・書体だけの付帯情報はオブジェクトを持たない。</li>
+ *   <li>層の持ち主と同じ持ち主の ID は語を持たず、持ち主の節の番号の鍵は部品の番号の 1 語で持つ。違う持ち主・違う節・文字列の鍵はそのまま戻る。</li>
  * </ul>
  */
 class DrawOpsTest {
     private static final RenderMeta META = new RenderMeta(null, null, null, 13f, 0f, 0f, 2f, 3f, 1, false, null);
+    /** 付帯情報も参照も持たないメタ 1 つの表: 個数 1・位置 1・固定の 7 語。 */
+    private static final int META_TABLE = 1 + 1 + 7;
 
     private static void add(DrawOpsBuilder b, ElementType type, String base, String id, float x, String text, int color,
                             RenderMeta meta, boolean line, float baseline, float lineH, int run) {
@@ -71,7 +76,7 @@ class DrawOpsTest {
         assertEquals(45f, c.rot());
         assertEquals(250, c.transitionDuration());
         assertSame(anim, c.animDef());
-        assertSame(META, c.meta());
+        assertEquals(META, c.meta());
         assertFalse(c.hasLine());
 
         assertTrue(c.next());
@@ -152,8 +157,8 @@ class DrawOpsTest {
         own.add(ElementType.TEXT, 0, ImageFitMode.FILL, "t", "t_txt_3", 0L, 5f, 6f, 30f, 12f, word, 1, 0, Map.of(), 0, 1f, 0f, 0f, 1f, 1f,
                 0f, 0, AnimationSpec.NONE, META, true, 8f, 12f, 0);
         DrawOps a = same.freeze(), b = own.freeze();
-        assertEquals(3 * DrawOps.RUN_WORDS + 2 + 1 + 1 + 1 + 1 + 2, a.words(),
-                "断片と同じ文字の命令は、頭 2・断片の番号 1・色 1・メタ 1・持ち主 1・接尾辞と番号 2 語");
+        assertEquals(3 * DrawOps.RUN_WORDS + 2 + 1 + 1 + 1 + 2 + META_TABLE, a.words(),
+                "断片と同じ文字の命令は、頭 2・断片の番号 1・色 1・メタ 1・接尾辞と番号 2 語（持ち主は層の持ち主。とメタの表）");
 
         DrawOps.Cursor c = new DrawOps.Cursor().reset(a);
         assertTrue(c.next());
@@ -179,7 +184,8 @@ class DrawOpsTest {
             assertEquals(e[2], c.baseline());
             assertEquals(e[3], c.lineHeight());
         }
-        assertEquals(3 * DrawOps.RUN_WORDS + 4 * (2 + 4 + 1 + 1 + 1 + 2 + 1 + 2), b.words(), "断片を指さない命令は座標・中身・行の値を持つ");
+        assertEquals(3 * DrawOps.RUN_WORDS + 4 * (2 + 4 + 1 + 1 + 1 + 2 + 2) + META_TABLE, b.words(),
+                "断片を指さない命令は座標・中身・行の値を持つ（4 つの命令のメタは 1 つの表の欄を共有する）");
 
         assertEquals(List.of(word, "x"), b.runList().stream().filter(SceneRun::isText).map(SceneRun::text).toList(), "断片は写した列にも残る");
         assertFalse(b.runIsText(2));
@@ -226,6 +232,78 @@ class DrawOpsTest {
     }
 
     @Test
+    void metasAreStoredAsWordsAndReadBackAsEqualValues() {
+        String base = "card-3";
+        long ownKey = com.nishiyu.enderframelib.core.paint.model.DisplayItem.keyOf(base);
+        com.nishiyu.enderframelib.core.paint.model.ClipRect clip = new com.nishiyu.enderframelib.core.paint.model.ClipRect(1f, 2f, 30f, 40f, 0f, 0f, 0f, 0f);
+        com.nishiyu.enderframelib.core.paint.model.Corners radii = new com.nishiyu.enderframelib.core.paint.model.Corners(4, 4, 4, 4);
+        RenderHints derived = new RenderHints(base, 0L, null, false, 0f, 0f, 0f, null, null, false, 0, null, null, null, 0f, false, "Serif");
+        RenderHints explicit = new RenderHints(base, 0x77L, null, false, 0f, 0f, 0f, null, null, false, 0, null, null, null, 0f, true, null);
+        RenderHints titled = new RenderHints(base, 0L, "tip", false, 0f, 0f, 0f, null, null, false, 0, null, null, null, 0f, false, null);
+        RenderHints negZero = new RenderHints(base, 0L, null, false, -0.0f, 0f, 0f, null, null, false, 0, null, null, null, 0f, false, null);
+        RenderMeta[] metas = {
+                new RenderMeta(clip, radii, null, 14f, 11f, 18f, 0.25f, 0.75f, 3, true, null, derived),
+                new RenderMeta(null, null, null, 12f, 0f, 0f, 0.5f, 0.5f, 1, false, null, explicit),
+                new RenderMeta(null, null, null, 12f, 0f, 0f, 0.5f, 0.5f, 1, false, null, titled),
+                new RenderMeta(null, null, null, -0.0f, 0f, 0f, 0.5f, 0.5f, 1, false, null, negZero),
+                RenderMeta.EMPTY
+        };
+        assertEquals(ownKey, derived.parentKey(), "鍵 0 で作った付帯情報は ID から鍵を求める");
+        DrawOpsBuilder b = new DrawOpsBuilder();
+        for (RenderMeta m : metas) {
+            add(b, ElementType.RECT, base, base + "_bg", 0f, "", 1, m, false, 0f, 0f, -1);
+            add(b, ElementType.TEXT, base, base + "_txt_0", 0f, "w", 1, m, false, 0f, 0f, -1);
+        }
+        DrawOps ops = b.freeze();
+        assertEquals(metas.length, ops.metaCount(), "同じメタを使う命令は表の 1 つの欄を共有する");
+        DrawOps.Cursor c = new DrawOps.Cursor().reset(ops);
+        for (RenderMeta m : metas) {
+            assertTrue(c.next());
+            RenderMeta first = c.meta();
+            assertEquals(m, first, "メタは値の等しいものに戻る");
+            assertEquals(Float.floatToRawIntBits(m.fontHeight()), Float.floatToRawIntBits(first.fontHeight()));
+            assertEquals(m.hints().parentKey(), first.hints().parentKey());
+            assertTrue(c.next());
+            assertSame(first, c.meta(), "同じ列を読む間は 1 つのメタを 1 度だけ作る");
+        }
+        int hintObjects = 0;
+        for (int i = 0; i < ops.refCount(); i++) {
+            Object r = ops.ref(i);
+            assertFalse(r instanceof RenderMeta, "メタのオブジェクトは持たない");
+            if (r instanceof RenderHints) hintObjects++;
+        }
+        assertEquals(2, hintObjects, "持ち主の ID・鍵・書体のほかを持つ付帯情報（title・-0 の幅）だけはオブジェクトのまま");
+        assertTrue(ops.sameAs(b.freeze()), "同じ中身を詰め直した列は同じ");
+    }
+
+    @Test
+    void ownerAndNodeKeysAreStoredOnceForTheLayer() {
+        long nodeKey = com.nishiyu.enderframelib.core.paint.model.DisplayItem.keyOf(77, 0x7001);
+        long otherNode = com.nishiyu.enderframelib.core.paint.model.DisplayItem.keyOf(78, 0x7001);
+        long stringKey = com.nishiyu.enderframelib.core.paint.model.DisplayItem.STRING_KEY_BIT | 12345L;
+        long[] keys = {0L, nodeKey, com.nishiyu.enderframelib.core.paint.model.DisplayItem.keyOf(77, 0xC003), otherNode, stringKey, -1L,
+                com.nishiyu.enderframelib.core.paint.model.DisplayItem.keyOf(77, 0)};
+        String[] bases = {null, "own", "own", "child", "own", new String("own"), "child"};
+        DrawOpsBuilder b = new DrawOpsBuilder();
+        for (int i = 0; i < keys.length; i++) {
+            b.add(ElementType.RECT, 0, ImageFitMode.FILL, bases[i], bases[i] == null ? null : bases[i] + "_p" + i, keys[i],
+                    i, 0f, 1f, 1f, "", 0, 0, Map.of(), 0, 1f, 0f, 0f, 1f, 1f, 0f, 0, AnimationSpec.NONE, null, false, 0f, 0f, -1);
+        }
+        DrawOps ops = b.freeze();
+        DrawOps.Cursor c = new DrawOps.Cursor().reset(ops);
+        for (int i = 0; i < keys.length; i++) {
+            assertTrue(c.next());
+            assertEquals(keys[i], c.key(), "鍵 #" + i);
+            assertEquals(bases[i], c.baseNodeId(), "持ち主 #" + i);
+            assertEquals(bases[i] == null ? null : bases[i] + "_p" + i, c.id(), "ID #" + i);
+        }
+        DrawOpsBuilder one = new DrawOpsBuilder();
+        one.add(ElementType.RECT, 0, ImageFitMode.FILL, "own", "own_bg", nodeKey, 0f, 0f, 1f, 1f, "", 0, 0, Map.of(), 0, 1f, 0f, 0f, 1f, 1f,
+                0f, 0, AnimationSpec.NONE, null, false, 0f, 0f, -1);
+        assertEquals(2 + 4 + 1 + 1, one.freeze().words(), "層の持ち主の命令は 頭 2・座標 4・部品の番号 1・接尾辞 1 語（持ち主の語・鍵の上位を持たない）");
+    }
+
+    @Test
     void sameAsComparesTheWordsAndTheReferenceValues() {
         DrawOps a = one(new HashMap<>(Map.of("k", "v")), 1, "word");
         assertTrue(a.sameAs(one(new HashMap<>(Map.of("k", "v")), 1, "word")), "値の等しい別の参照は同じ列");
@@ -261,7 +339,8 @@ class DrawOpsTest {
                 assertEquals(i, c.color());
                 assertEquals((float) i, c.x());
             }
-            assertEquals(1 + 1 + 1 + 300, ops.refCount(), "持ち主・接尾辞・メタ・語 300（前の層の参照は残らない）");
+            assertEquals(1 + 1 + 300, ops.refCount(), "持ち主・接尾辞・語 300（メタは語の表。前の層の参照は残らない）");
+            assertEquals(1, ops.metaCount());
         }
     }
 }

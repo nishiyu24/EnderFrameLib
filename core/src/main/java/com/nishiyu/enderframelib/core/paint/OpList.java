@@ -6,6 +6,7 @@ import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.scene.DrawOps;
+import com.nishiyu.enderframelib.core.paint.scene.SceneLayer;
 import com.nishiyu.enderframelib.core.paint.scene.DrawOpsBuilder;
 
 import java.util.List;
@@ -49,6 +50,9 @@ final class OpList {
     int originX, originY;
     /** 局所のときの、いま積む命令の原点の種類。 */
     byte originKind = DrawOps.ORIGIN_ABSOLUTE;
+    /** 命令を作っている層とその断片（{@link #beginDeferred} のときだけ。{@link #runsOf}）。 */
+    private SceneLayer building;
+    private DrawOps buildingRuns;
 
     OpList() {
     }
@@ -63,6 +67,8 @@ final class OpList {
 
     void clear() {
         ops.clear();
+        building = null;
+        buildingRuns = null;
     }
 
     /** 積んだ命令を不変の列にする。 */
@@ -92,6 +98,8 @@ final class OpList {
     /** 左上 {@code (x, y)} に置いた箱の描画を、その層の整数の原点からの局所座標で集め始める。 */
     void beginLocal(float x, float y) {
         ops.clear();
+        building = null;
+        buildingRuns = null;
         local = true;
         originX = Math.round(x);
         originY = Math.round(y);
@@ -100,16 +108,28 @@ final class OpList {
         deferred = false;
     }
 
-    /** 位置 0 に置いた層の描画を、祖先を組み立てまで残して集め始める。層の断片 {@code runs} を写し、文字の命令は断片を指せる。 */
-    void beginDeferred(DrawOps runs) {
+    /**
+     * 位置 0 に置いた層 {@code layer}（作っている途中）の描画を、祖先を組み立てまで残して集め始める。層の断片 {@code runs} を写し、文字の命令は
+     * 断片を指せる。生成器は層の断片を {@link #runsOf} から読む（作っている層の {@code ops()} はまだ無い。M3b-4c-1c）。
+     */
+    void beginDeferred(SceneLayer layer, DrawOps runs) {
         beginLocal(0f, 0f);
         ops.beginRuns(runs);
         deferred = true;
+        building = layer;
+        buildingRuns = runs;
+    }
+
+    /** 箱 {@code box} の行の断片（命令を作っている層ならその断片、ほかは層の中身）。 */
+    DrawOps runsOf(SceneLayer box) {
+        return box == building ? buildingRuns : box.ops();
     }
 
     /** 原点からの座標で集め始める（原点は 0、{@link #setOrigin} で変える）。 */
     void beginFinal() {
         ops.clear();
+        building = null;
+        buildingRuns = null;
         local = false;
         originX = 0;
         originY = 0;

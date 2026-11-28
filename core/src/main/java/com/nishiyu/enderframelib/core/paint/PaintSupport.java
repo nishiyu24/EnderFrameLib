@@ -85,7 +85,7 @@ final class PaintSupport {
         SceneChildren sc = fieldset.children;
         for (int k = 0; k < sc.chunks.length; k++) {
             for (SceneLayer c : sc.chunks[k].layers) {
-                if (!c.renderedLegend()) continue;
+                if (!sc.isRenderedLegend(c)) continue;
                 if (c.display != null && c.display.isNone()) return null;
                 if (out != null) {
                     out[0] = sc.chunkX[k] + c.x;

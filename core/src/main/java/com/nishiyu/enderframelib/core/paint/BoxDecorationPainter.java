@@ -202,7 +202,7 @@ public final class BoxDecorationPainter {
         long savedBase = elements.saveOrigin();
         elements.baseOriginParent(); // 断片は原点の節の座標（M3b-4a）
         try {
-        com.nishiyu.enderframelib.core.paint.scene.DrawOps runs = box.ops();
+        com.nishiyu.enderframelib.core.paint.scene.DrawOps runs = elements.runsOf(box);
         for (int ri = 0, rn = runs.runCount(); ri < rn; ri++) {
             if (runs.runIsText(ri)) continue;
             float fx = runs.runX(ri) + opX, fy = runs.runY(ri) + opY, fw = runs.runW(ri), fh = runs.runH(ri);

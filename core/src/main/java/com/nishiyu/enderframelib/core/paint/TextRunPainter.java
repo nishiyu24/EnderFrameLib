@@ -197,7 +197,7 @@ final class TextRunPainter {
     void drawTextNodeElement(OpList elements, SceneLayer box, float opX, float opY, String id, int color, int bgColor,
                              ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
                              int transDur, AnimationSpec colorAnim) {
-        com.nishiyu.enderframelib.core.paint.scene.DrawOps runs = box.ops();
+        com.nishiyu.enderframelib.core.paint.scene.DrawOps runs = elements.runsOf(box);
         if (runs.runCount() == 0) return;
         ItemProps baseTextEvents = null;
         List<BoxDecorations.Shadow> baseTextShadows = null;
