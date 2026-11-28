@@ -7,7 +7,6 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LightTexture;
@@ -211,8 +210,8 @@ public class WebSceneContext {
      * 箱（左上が原点の {@code w × h} CSS px）へ、ブロックの構造を描く。描く先は面の項目のテクスチャ
      * （{@link MinecraftHostTextures}）で、箱の外は描かれない。不透明度と角丸はコアが貼るときに掛ける。
      */
-    void render(DisplayItem el, PoseStack poseStack, MultiBufferSource buffer, float w, float h) {
-        syncFromHtmlAttributes(el.events());
+    void render(Map<String, String> events, PoseStack poseStack, MultiBufferSource buffer, float w, float h) {
+        syncFromHtmlAttributes(events);
         if (blocks.isEmpty()) return;
 
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;

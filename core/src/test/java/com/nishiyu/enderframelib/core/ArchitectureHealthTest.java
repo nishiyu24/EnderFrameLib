@@ -690,10 +690,13 @@ class ArchitectureHealthTest {
     /**
      * M3b-4c-2b-1: ホストは表示項目の列でなくビューのフレームの値（{@code UiView#renderFrame}。シーン・除く節・重ね描き）を描画器へ渡し、
      * 要素の位置はシーンから引く（{@code UiView#locate}）。M3b-4c-2b-2b からビューは列を持たず、{@code relativeElements()} はその場で組む。
-     * 本体でそれを呼ぶのは、ビュー自身・スタンドアロンのビューの IME の位置・MOD の面のキャレット（編集中だけ。M3b-4c-3 でシーンから）だけ
-     * （MOD のメディアはシーンの命令から読む {@code UiView#videos}）。
+     * M3b-4c-2b-3b-2b-1 から本体でそれを呼ぶのはビュー自身だけ（IME の位置は重ね描きから、MOD の面のキャレット・ツールチップはシーンから引く。
+     * MOD のメディアはシーンの命令から読む {@code UiView#videos}）。MOD は描画器の準備した列（{@code PreparedFrame#drawList}）を読まない
+     * （Minecraft が描く中身は準備が集めた値 {@code PreparedFrame#hostContents}。M3b-4c-2b-3b-2b-2）。
      */
-    static final Set<String> VIEW_LIST_READERS = Set.of("UiView.java", "StandaloneView.java", "SurfaceEditOverlay.java");
+    static final Set<String> VIEW_LIST_READERS = Set.of("UiView.java");
+    static final Set<String> MOD_PREPARED_LIST_READERS = Set.of();
+    private static final Pattern PREPARED_LIST_READ = Pattern.compile("\\.drawList\\(\\)");
     private static final Pattern VIEW_LIST_READ = Pattern.compile("\\.(renderCache|relativeElements)\\(\\)");
 
     @Test
@@ -705,7 +708,11 @@ class ArchitectureHealthTest {
                 if (!VIEW_LIST_READERS.contains(file.substring(file.lastIndexOf('/') + 1))) bad.add(root + "/" + hit);
             }
         }
-        assertEquals(List.of(), bad, "ホストがビューの表示項目の列を読んだ（描くのは UiView#renderFrame、位置は UiView#locate。計画書 §3.4 M3b-4c-2b-1）");
+        for (String hit : checkCodeLines(repoRoot().resolve("mod/src/main/java"), PREPARED_LIST_READ)) {
+            String file = hit.substring(0, hit.indexOf(':')).replace('\\', '/');
+            if (!MOD_PREPARED_LIST_READERS.contains(file.substring(file.lastIndexOf('/') + 1))) bad.add("mod/src/main/java/" + hit);
+        }
+        assertEquals(List.of(), bad, "ホストがビューの表示項目の列を読んだ（描くのは UiView#renderFrame、位置は UiView#locate。計画書 §3.4 M3b-4c-2b-1・2b-3b-2b-1）");
     }
 
     @Test

@@ -117,11 +117,18 @@ class MinecraftHostSurfaceTest {
 
     @Test
     void tooltipUsesTheTitleUnlessDisabled() {
-        DisplayItem titled = items("<div title='Hello' style='width:20px;height:20px;background:#f00'></div>").stream()
-                .filter(i -> "Hello".equals(i.hints().title())).findFirst().orElseThrow();
-        assertEquals("Hello", SurfaceTooltip.textOf(titled));
-        DisplayItem off = items("<div title='false' style='width:20px;height:20px;background:#f00'></div>").stream()
-                .filter(i -> "false".equals(i.hints().title())).findFirst().orElseThrow();
-        assertNull(SurfaceTooltip.textOf(off));
+        // 要素の位置と部品はシーンから引く（M3b-4c-2b-3b-2b-1。表示項目の列は読まない）
+        assertEquals("Hello", tooltipOf("<div id=t title='Hello' style='width:20px;height:20px;background:#f00'></div>"));
+        assertEquals("Tip", tooltipOf("<div id=t data-tooltip='Tip' style='width:20px;height:20px;background:#f00'></div>"));
+        assertNull(tooltipOf("<div id=t title='false' style='width:20px;height:20px;background:#f00'></div>"));
+        assertNull(tooltipOf("<div id=t style='width:20px;height:20px;background:#f00'></div>"));
+    }
+
+    private static String tooltipOf(String body) {
+        try (var v = new com.nishiyu.enderframelib.common.StandaloneView("<html><body>" + body + "</body></html>", 100, 100,
+                com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK)) {
+            v.frame(1000L, new com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend(100, 100, 1f), true);
+            return SurfaceTooltip.textOf(v.ui().locate("t"));
+        }
     }
 }

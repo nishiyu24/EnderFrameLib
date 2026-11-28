@@ -758,7 +758,7 @@ public final class StandaloneView implements AutoCloseable {
     public float[] imeCursorRect() {
         HtmlNode field = interaction.focusedNode();
         if (field == null || !isTextControl(field)) return null;
-        for (DisplayItem it : RenderFrame.of(ui.relativeElements(), 0L).withOverlays(overlays()).drawList()) {
+        for (DisplayItem it : overlays()) { // キャレットはシーンの外の重ね描き（TextFieldOverlay）。表示項目の列は読まない（M3b-4c-2b-3b-2b-1）
             if (it.baseId().equals(field.key()) && (it.isPart("_caret") || it.id().endsWith("_caret"))) {
                 return new float[]{it.x(), it.y(), it.width(), it.height()};
             }

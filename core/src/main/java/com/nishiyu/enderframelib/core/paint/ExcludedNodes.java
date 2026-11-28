@@ -46,8 +46,6 @@ public record ExcludedNodes(String attribute) {
 
     /** 項目 {@code it} の持ち主の節の番号（節の鍵から。文字列の鍵なら親の節の鍵から。分からなければ 0）。 */
     static int ownerOf(DisplayItem it) {
-        long key = it.key();
-        if (key == 0L || (key & DisplayItem.STRING_KEY_BIT) != 0L) key = it.hints().parentKey();
-        return key == 0L || (key & DisplayItem.STRING_KEY_BIT) != 0L ? 0 : DisplayItem.nodeHandleOf(key);
+        return com.nishiyu.enderframelib.core.paint.model.HostContent.ownerOf(it);
     }
 }

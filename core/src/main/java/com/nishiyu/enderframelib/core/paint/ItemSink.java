@@ -44,13 +44,23 @@ interface ItemSink {
         private int[] pendingPos = new int[8];
         private AnchorRef[] pendingRef = new AnchorRef[8];
         private int pending;
+        /** ホストが描く中身を聞く相手と、集めた中身（M3b-4c-2b-3b-2b-2。無ければ null）。 */
+        private com.nishiyu.enderframelib.core.paint.model.HostContent.Filter host = com.nishiyu.enderframelib.core.paint.model.HostContent.Filter.NONE;
+        private List<com.nishiyu.enderframelib.core.paint.model.HostContent> hostContents;
 
-        /** 列 {@code out} へ組み始める（階層の組み立て器を空に戻す）。 */
-        ToList begin(List<DisplayItem> out) {
+        /** 列 {@code out} へ組み始める（階層の組み立て器を空に戻す）。{@code host} にホストが描く中身を聞く。 */
+        ToList begin(List<DisplayItem> out, com.nishiyu.enderframelib.core.paint.model.HostContent.Filter host) {
             this.out = out;
+            this.host = host != null ? host : com.nishiyu.enderframelib.core.paint.model.HostContent.Filter.NONE;
+            this.hostContents = null;
             structure.reset();
             pending = 0;
             return this;
+        }
+
+        /** 直近に組み終えた列のうち、ホストが描くと答えた中身（描く順。無ければ空）。 */
+        List<com.nishiyu.enderframelib.core.paint.model.HostContent> hostContents() {
+            return hostContents != null ? hostContents : List.of();
         }
 
         @Override
@@ -65,6 +75,13 @@ interface ItemSink {
             }
             structure.add(parent);
             out.add(item);
+            if (host != com.nishiyu.enderframelib.core.paint.model.HostContent.Filter.NONE
+                    && com.nishiyu.enderframelib.core.paint.model.HostContent.asksHost(item)
+                    && host.wants(item.type(), item.text(), com.nishiyu.enderframelib.core.paint.model.HostContent.fontFamilyOf(item),
+                            item.events() != null ? item.events() : java.util.Map.of())) {
+                if (hostContents == null) hostContents = new java.util.ArrayList<>(4);
+                hostContents.add(com.nishiyu.enderframelib.core.paint.model.HostContent.of(item));
+            }
         }
 
         @Override public int size() { return out.size(); }

@@ -50,8 +50,9 @@ public final class FrameDamage {
      * 描画器の準備（{@link RenderBackend#prepare}）: シーンから列を組み（{@link FrameComposer}）、シーンの違いの範囲を求め、描き直しが要るかを
      * その範囲と {@code outside}（走査器のシーンの外の変化。{@link SceneWalker#changesOutsideScene}）で答える。シーンが無ければ全面。
      */
-    public PreparedFrame prepare(RenderFrame f, int clearColor, java.util.function.Predicate<PreparedFrame> outside) {
-        FrameComposer.Composed c = composer.compose(f);
+    public PreparedFrame prepare(RenderFrame f, int clearColor, java.util.function.Predicate<PreparedFrame> outside,
+                                 com.nishiyu.enderframelib.core.paint.model.HostContent.Filter host) {
+        FrameComposer.Composed c = composer.compose(f, host);
         SceneDamage.Rects rects = f.isEmpty() ? null : next(f, clearColor);
         PreparedFrame p = new PreparedFrame(f, c, rects, true, null);
         return last = rects == null || !rects.isEmpty() || outside.test(p) ? p : new PreparedFrame(f, c, rects, false, null);
@@ -60,12 +61,12 @@ public final class FrameDamage {
     /**
      * 描く準備した値: 最後に準備した値ならそのまま、そうでなければ列を組み直し、比べる相手を今のフレームへ進めて全面にした値（1 度使ったら捨てる）。
      */
-    public PreparedFrame take(PreparedFrame p, int clearColor) {
+    public PreparedFrame take(PreparedFrame p, int clearColor, com.nishiyu.enderframelib.core.paint.model.HostContent.Filter host) {
         boolean mine = p == last;
         last = null;
         if (mine) return p;
         RenderFrame f = p.frame();
-        FrameComposer.Composed c = composer.compose(f);
+        FrameComposer.Composed c = composer.compose(f, host);
         SceneDamage.Rects r = f.isEmpty() ? null : next(f, clearColor);
         if (r != null) r.setFull("not-prepared");
         return new PreparedFrame(f, c, r, true, null);

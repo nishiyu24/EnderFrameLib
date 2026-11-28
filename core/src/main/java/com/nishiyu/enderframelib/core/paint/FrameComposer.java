@@ -35,9 +35,15 @@ import java.util.Set;
 public final class FrameComposer {
     /**
      * 組んだ列と、そのフレームの平行移動（利用者の分にスクロールの中身の移動を足した不変の表）・中身をまとめたスクロールコンテナ・列の階層
-     * （項目ごとの親の錨の位置と保持層の範囲。シーンの無いフレームは null で、描く側が項目の鍵から作る）。
+     * （項目ごとの親の錨の位置と保持層の範囲。シーンの無いフレームは null で、描く側が項目の鍵から作る）・ホストが描く中身（重ね描きの分を含み、
+     * 描かない節の分を除く。M3b-4c-2b-3b-2b-2）。
      */
-    public record Composed(List<DisplayItem> items, PaintOffsets offsets, List<ScrollContentInfo> contents, FrameStructure structure) {}
+    public record Composed(List<DisplayItem> items, PaintOffsets offsets, List<ScrollContentInfo> contents, FrameStructure structure,
+                           List<com.nishiyu.enderframelib.core.paint.model.HostContent> hostContents) {
+        public Composed(List<DisplayItem> items, PaintOffsets offsets, List<ScrollContentInfo> contents, FrameStructure structure) {
+            this(items, offsets, contents, structure, List.of());
+        }
+    }
 
     private SceneDisplayListAdapter adapter;
     private Map<String, Keyframes> keyframes;
@@ -48,16 +54,28 @@ public final class FrameComposer {
     private List<DisplayItem> lastItems = List.of();
     private List<ScrollContentInfo> lastContents = List.of();
     private FrameStructure lastStructure = FrameStructure.EMPTY;
+    private List<com.nishiyu.enderframelib.core.paint.model.HostContent> lastHost = List.of();
+    /** 前に組んだときにホストが描く中身を聞いた相手。 */
+    private com.nishiyu.enderframelib.core.paint.model.HostContent.Filter lastHostTextures = com.nishiyu.enderframelib.core.paint.model.HostContent.Filter.NONE;
     private Map<HtmlNode, float[]> scrollAtBuild = Map.of();
     private final Set<HtmlNode> handled = Collections.newSetFromMap(new IdentityHashMap<>());
     /** 前に組んだ列がカリングしたか。 */
     private boolean lastCulled;
     private long builds;
 
-    /** シーンの無いフレームはその列のまま、シーンのあるフレームはシーンから組んだ列。 */
+    /** シーンの無いフレームはその列のまま、シーンのあるフレームはシーンから組んだ列（ホストが描く中身は聞かない）。 */
     public Composed compose(RenderFrame f) {
+        return compose(f, com.nishiyu.enderframelib.core.paint.model.HostContent.Filter.NONE);
+    }
+
+    /**
+     * {@link #compose(RenderFrame)} の、組みながらホスト {@code host} が描く中身（{@link com.nishiyu.enderframelib.core.paint.model.HostContent.Filter#wants}）を集める版
+     * （M3b-4c-2b-3b-2b-2。ホストは表示項目の列を読まず、準備した値の {@code hostContents} だけを見る）。
+     */
+    public Composed compose(RenderFrame f, com.nishiyu.enderframelib.core.paint.model.HostContent.Filter host) {
+        if (host == null) host = com.nishiyu.enderframelib.core.paint.model.HostContent.Filter.NONE;
         SceneSource s = f.scene();
-        if (s == null) return new Composed(f.items(), f.offsets(), List.of(), null);
+        if (s == null) return new Composed(f.items(), f.offsets(), List.of(), null, hostContents(List.of(), f, host));
         DynamicSceneState dyn = s.dynamic();
         int w = Math.round(dyn.viewportW), h = Math.round(dyn.viewportH);
         if (adapter == null || s.keyframes() != keyframes || Float.compare(s.devicePixelRatio(), dpr) != 0) {
@@ -76,8 +94,9 @@ public final class FrameComposer {
         }
         ScrollState scroll = dyn.scroll;
         boolean cull = f.offsets().isEmpty();
-        if (s.scene().root != lastRoot || cull != lastCulled
+        if (s.scene().root != lastRoot || cull != lastCulled || host != lastHostTextures
                 || scroll.hasUncheckedChange(scrollAtBuild, cull ? Set.of() : handled)) {
+            adapter.setHostTextures(host);
             long t0 = com.nishiyu.enderframelib.core.diag.StageProfiler.begin(com.nishiyu.enderframelib.core.diag.PipelineStage.DISPLAY_LIST);
             try {
                 float[] view = cull ? new float[]{0f, 0f, w, h} : null;
@@ -87,6 +106,8 @@ public final class FrameComposer {
             }
             lastContents = adapter.scrollContents();
             lastStructure = adapter.structure();
+            lastHost = adapter.hostContents();
+            lastHostTextures = host;
             handled.clear();
             for (int i = 0, n = lastContents.size(); i < n; i++) handled.add(lastContents.get(i).node());
             scrollAtBuild = scroll.snapshot();
@@ -94,7 +115,35 @@ public final class FrameComposer {
             lastCulled = cull;
             builds++;
         }
-        return new Composed(lastItems, ScrollTranslation.apply(f.offsets(), lastContents, scroll), lastContents, lastStructure);
+        return new Composed(lastItems, ScrollTranslation.apply(f.offsets(), lastContents, scroll), lastContents, lastStructure,
+                hostContents(lastHost, f, host));
+    }
+
+    /**
+     * このフレームのホストが描く中身: シーンから組んだ分 {@code scene}（シーンの無いフレームは列の分）に重ね描きの分を足し、描かない節の分を除く。
+     */
+    private static List<com.nishiyu.enderframelib.core.paint.model.HostContent> hostContents(List<com.nishiyu.enderframelib.core.paint.model.HostContent> scene, RenderFrame f, com.nishiyu.enderframelib.core.paint.model.HostContent.Filter host) {
+        if (host == com.nishiyu.enderframelib.core.paint.model.HostContent.Filter.NONE) return List.of();
+        List<com.nishiyu.enderframelib.core.paint.model.HostContent> out = scene;
+        List<DisplayItem> extra = f.scene() == null ? f.items() : List.of();
+        for (List<DisplayItem> list : List.of(extra, f.overlays())) {
+            for (int i = 0, n = list.size(); i < n; i++) {
+                DisplayItem it = list.get(i);
+                if (!com.nishiyu.enderframelib.core.paint.model.HostContent.asksHost(it) || !host.wants(it.type(), it.text(),
+                        com.nishiyu.enderframelib.core.paint.model.HostContent.fontFamilyOf(it), it.events() != null ? it.events() : Map.of())) continue;
+                if (out == scene) out = new java.util.ArrayList<>(scene);
+                out.add(com.nishiyu.enderframelib.core.paint.model.HostContent.of(it));
+            }
+        }
+        if (f.exclude() != null && f.scene() != null && !out.isEmpty()) {
+            it.unimi.dsi.fastutil.ints.IntSet gone = f.exclude().nodesIn(f.scene().scene());
+            if (!gone.isEmpty()) {
+                List<com.nishiyu.enderframelib.core.paint.model.HostContent> kept = new java.util.ArrayList<>(out.size());
+                for (com.nishiyu.enderframelib.core.paint.model.HostContent c : out) if (!gone.contains(c.owner())) kept.add(c);
+                out = kept;
+            }
+        }
+        return out;
     }
 
     /** 列を組んだ回数の累計（使い回しの確かめ用）。 */
@@ -106,6 +155,7 @@ public final class FrameComposer {
         lastItems = List.of();
         lastContents = List.of();
         lastStructure = FrameStructure.EMPTY;
+        lastHost = List.of();
         scrollAtBuild = Map.of();
         handled.clear();
     }

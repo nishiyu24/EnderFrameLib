@@ -13,6 +13,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.model.TextureRef;
+import com.nishiyu.enderframelib.core.paint.model.HostContent;
 import com.nishiyu.enderframelib.core.paint.resource.HostTextures;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.text.model.BitmapFontFace;
@@ -42,7 +43,6 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL32;
 
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +50,9 @@ import java.util.Map;
 /**
  * Minecraft だけが描ける中身（アイテム・エンティティ・プレイヤーの頭・{@code <mc-scene>}・ビットマップ書体の文字）を、
  * 面を描く前に Minecraft の描画で項目ごとのテクスチャへ描き、コアへ {@link HostTextures} として渡す（M3a）。
+ *
+ * <p>描く中身は、描画器の準備がフレームを組みながら {@link #wants} で聞いて集めた値（{@link PreparedFrame#hostContents}）から読み、表示項目の列は
+ * 読まない（M3b-4c-2b-3b-2b-2）。描くときは項目の鍵・中身の指定・色・大きさ（{@link HostContent#matches}）でテクスチャを引く。
  *
  * <p>コアは項目の背景・枠線・角丸・クリップ・不透明度と重なりの順を自分で描き、中身の矩形にこのテクスチャを貼る。
  * テクスチャは Minecraft の GL コンテキストで描き、フェンス（{@link #prepare} の戻り値）でコアの共有コンテキストに待たせる。
@@ -77,7 +80,11 @@ final class MinecraftHostTextures implements HostTextures {
     }
 
     private final Map<Key, Slot> slots = new HashMap<>();
-    private final Map<DisplayItem, TextureRef> frame = new IdentityHashMap<>();
+    /** このフレームに用意した中身とテクスチャ（項目の鍵で引き、{@link HostContent#matches} で確かめる）。 */
+    private record Prepared(HostContent content, TextureRef ref, Prepared next) {}
+
+    /** 鍵 → 用意した中身（項目の鍵は一意とは限らない〔背景のタイルの部品番号の折り返しほか〕ので、同じ鍵は鎖にして全部持つ）。 */
+    private final Map<Long, Prepared> frame = new HashMap<>();
     private final Map<String, Entity> previewEntities = new HashMap<>();
     private MultiBufferSource.BufferSource buffers;
     private long prepares;
@@ -86,17 +93,30 @@ final class MinecraftHostTextures implements HostTextures {
 
     @Override
     public TextureRef texture(DisplayItem item, int deviceW, int deviceH) {
-        return frame.get(item);
+        for (Prepared p = frame.get(item.key()); p != null; p = p.next()) if (p.content().matches(item)) return p.ref();
+        return null;
+    }
+
+    @Override
+    public boolean wants(ElementType type, String text, String fontFamily, Map<String, String> events) {
+        return kindOf(type, text, fontFamily, events) != null;
     }
 
     /** 中身の種類。Minecraft が描くものでなければ null。 */
     static String kindOf(DisplayItem el) {
-        ElementType t = el.type();
+        return kindOf(el.type(), el.text(), HostContent.fontFamilyOf(el), el.events());
+    }
+
+    static String kindOf(HostContent c) {
+        return kindOf(c.type(), c.text(), c.fontFamily(), c.events());
+    }
+
+    /** 種類 {@code t}・中身の指定 {@code src}・書体 {@code family}・属性 {@code events} の中身の種類。Minecraft が描くものでなければ null。 */
+    static String kindOf(ElementType t, String src, String family, Map<String, String> events) {
         if (t == ElementType.SCENE) {
-            String kind = el.events() != null ? el.events().get(Scene3DTags.KIND_ATTR) : null;
+            String kind = events != null ? events.get(Scene3DTags.KIND_ATTR) : null;
             return Scene3DTags.KIND_3D.equals(kind) ? null : "scene"; // <scene-3d> はコアが描く
         }
-        String src = el.text();
         if (t == ElementType.IMAGE) {
             if (src == null) return null;
             if (src.startsWith("item:")) return "item";
@@ -108,14 +128,7 @@ final class MinecraftHostTextures implements HostTextures {
         if (src == null || src.isEmpty() || t == ElementType.INPUT || t == ElementType.SELECT) return null;
         ElementType.RasterRoute route = t.rasterRoute();
         if (route != ElementType.RasterRoute.TEXT_ALWAYS && route != ElementType.RasterRoute.TEXT_IF_ANY) return null;
-        return isBitmapText(el) ? "text" : null;
-    }
-
-    private static boolean isBitmapText(DisplayItem el) {
-        String family = el.hints().fontFamily();
-        if (family == null && el.events() != null) family = el.events().get("font-family");
-        FontFace face = WebFontManager.McFontResolver.INSTANCE.resolve(family);
-        return face instanceof BitmapFontFace;
+        return WebFontManager.McFontResolver.INSTANCE.resolve(family) instanceof BitmapFontFace ? "text" : null;
     }
 
     /**
@@ -126,10 +139,9 @@ final class MinecraftHostTextures implements HostTextures {
     long prepare(PreparedFrame renderFrame, String sessionId, float dpr, boolean worldLighting) {
         frame.clear();
         prepares++;
-        List<DisplayItem> todo = null;
-        java.util.function.Predicate<DisplayItem> skip = renderFrame.frame().excluded(); // 描かない節の中身は用意しない
-        for (DisplayItem el : renderFrame.drawList()) {
-            if (el.width() <= 0 || el.height() <= 0 || kindOf(el) == null || (skip != null && skip.test(el))) continue;
+        List<HostContent> todo = null;
+        for (HostContent el : renderFrame.hostContents()) { // 描かない節の中身は準備が除いてある
+            if (el.width() <= 0 || el.height() <= 0 || kindOf(el) == null) continue;
             if (todo == null) todo = new java.util.ArrayList<>();
             todo.add(el);
         }
@@ -139,7 +151,7 @@ final class MinecraftHostTextures implements HostTextures {
         }
         GlState saved = GlState.save();
         try {
-            for (DisplayItem el : todo) {
+            for (HostContent el : todo) {
                 String kind = kindOf(el);
                 boolean dynamic = kind.equals("entity") || kind.equals("scene");
                 // 書体の字形は 1 画素より細い画素で描かれうる（最近傍で縮めると列・行が落ちる）ので、文字は 2 倍で描いて線形で縮める
@@ -159,7 +171,8 @@ final class MinecraftHostTextures implements HostTextures {
                     draw(slot.target, el, kind, sessionId);
                     slot.drawn = true;
                 }
-                frame.put(el, new TextureRef(slot.target.getColorTextureId(), pw, ph, 0f, 0f, 1f, 1f, true));
+                TextureRef ref = new TextureRef(slot.target.getColorTextureId(), pw, ph, 0f, 0f, 1f, 1f, true);
+                frame.merge(el.key(), new Prepared(el, ref, null), (old, add) -> new Prepared(add.content(), add.ref(), old));
             }
         } finally {
             saved.restore(worldLighting);
@@ -170,17 +183,15 @@ final class MinecraftHostTextures implements HostTextures {
         return fence;
     }
 
-    private static String textSpec(DisplayItem el) {
+    private static String textSpec(HostContent el) {
         RenderMeta meta = el.meta();
-        String family = el.hints().fontFamily();
-        if (family == null && el.events() != null) family = el.events().get("font-family");
-        return el.text() + "|" + family + "|" + (meta != null ? meta.fontHeight() + "/" + meta.baseline() : "-")
-                + "|" + (el.events() != null ? el.events().get("font-weight") + el.events().get("text-shadow")
-                + el.events().get("text-decoration") : "");
+        Map<String, String> ev = el.events();
+        return el.text() + "|" + el.fontFamily() + "|" + (meta != null ? meta.fontHeight() + "/" + meta.baseline() : "-")
+                + "|" + ev.get("font-weight") + ev.get("text-shadow") + ev.get("text-decoration");
     }
 
     /** 1 つの中身を {@code target} へ描く。座標は項目の左上を原点にした CSS px。 */
-    private void draw(TextureTarget target, DisplayItem el, String kind, String sessionId) {
+    private void draw(TextureTarget target, HostContent el, String kind, String sessionId) {
         target.setClearColor(0f, 0f, 0f, 0f);
         target.clear(Minecraft.ON_OSX);
         target.bindWrite(true);
@@ -198,7 +209,7 @@ final class MinecraftHostTextures implements HostTextures {
                 case "item" -> drawItem(g, el.text().substring(5).trim(), w, h);
                 case "entity" -> drawEntity(g, el.text().substring(7).trim(), w, h);
                 case "player" -> drawPlayer(g, el.text().substring(7).trim(), w, h);
-                case "scene" -> WebSceneContext.getOrCreate(sessionId, el.baseId()).render(el, g.pose(), g.bufferSource(), w, h);
+                case "scene" -> WebSceneContext.getOrCreate(sessionId, el.baseId()).render(el.events(), g.pose(), g.bufferSource(), w, h);
                 default -> drawText(g, el, w, h);
             }
             g.flush();
@@ -338,20 +349,18 @@ final class MinecraftHostTextures implements HostTextures {
     }
 
     /** ビットマップ書体（Minecraft の書体）の文字。測定（{@link BitmapFontFace}）と同じ倍率・ベースラインで描く。 */
-    private static void drawText(GuiGraphics g, DisplayItem el, float w, float h) {
+    private static void drawText(GuiGraphics g, HostContent el, float w, float h) {
         int color = el.color();
         if ((color >>> 24) < 4) return; // Minecraft の Font はアルファ 4 未満を不透明にして描く
-        String family = el.hints().fontFamily();
-        if (family == null && el.events() != null) family = el.events().get("font-family");
-        Font font = WebFontManager.McFontResolver.fontFor(family);
+        Font font = WebFontManager.McFontResolver.fontFor(el.fontFamily());
         if (font == null) return;
         RenderMeta meta = el.meta();
         float fontH = meta != null && meta.fontHeight() > 0 ? meta.fontHeight() : h;
         float textScale = fontH / BitmapFontFace.MC_UNITS_PER_EM;
         float ascent = BitmapFontFace.MC_ASCENT * textScale, descent = BitmapFontFace.MC_DESCENT * textScale;
-        boolean centers = el.isPart("_ph") || meta == null || meta.baseline() <= 0;
+        boolean centers = el.placeholder() || meta == null || meta.baseline() <= 0;
         float baseline = centers ? (h + ascent - descent) / 2f : meta.baseline();
-        Map<String, String> ev = el.events() != null ? el.events() : Map.of();
+        Map<String, String> ev = el.events();
         boolean bold = LayoutMetrics.isBoldWeight(ev.get("font-weight"));
         String text = el.text().replace(' ', ' '); // &nbsp; は測定と同じく空白で描く
         if (bold && !text.startsWith("§l")) text = "§l" + text;

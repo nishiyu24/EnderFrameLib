@@ -69,6 +69,14 @@ public final class PreparedFrame {
         return composed.offsets();
     }
 
+    /**
+     * ホストが描く中身（{@code HostTextures#wants}。重ね描きの分を含み、描かない節の分を除く。
+     * M3b-4c-2b-3b-2b-2）。ホストは表示項目の列を読まず、これだけを見て描く前に用意する。
+     */
+    public List<com.nishiyu.enderframelib.core.paint.model.HostContent> hostContents() {
+        return composed.hostContents();
+    }
+
     /** 中身を 1 つの節にまとめたスクロールコンテナ（シーンが無ければ空）。 */
     public List<ScrollContentInfo> contents() {
         return composed.contents();

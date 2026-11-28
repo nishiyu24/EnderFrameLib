@@ -6,6 +6,7 @@ import com.nishiyu.enderframelib.core.paint.emit.ClipPart;
 import com.nishiyu.enderframelib.core.paint.emit.GpuAttempt;
 import com.nishiyu.enderframelib.core.paint.emit.GpuRoute;
 import com.nishiyu.enderframelib.core.paint.emit.GpuLayerAttempt;
+import com.nishiyu.enderframelib.core.paint.resource.HostTextures;
 import com.nishiyu.enderframelib.core.paint.resource.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
@@ -30,6 +31,7 @@ import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.HostContent;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
@@ -150,7 +152,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
     @Override public void close() { if (ownsSession) CssAnimator.clearSession(sessionId); }
 
     /** 描く前の準備（シーンの違いと走査器のシーンの外の変化。{@link FrameDamage#prepare}。M3b-4b-4b・4c-2a）。 */
-    @Override public PreparedFrame prepare(RenderFrame f) { return frameDamage.prepare(f, clearColor, walker::changesOutsideScene); }
+    @Override public PreparedFrame prepare(RenderFrame f) { return frameDamage.prepare(f, clearColor, walker::changesOutsideScene, hostFilter()); }
+
+    /** ホストが描く中身を聞く相手（ホストが無ければ {@code Filter.NONE}。同じ相手は同じ実体で、組んだ列の使い回しの鍵になる）。 */
+    private HostContent.Filter hostFilter() { return resources.hostTextures() == HostTextures.NONE ? HostContent.Filter.NONE : resources.hostTextures(); }
 
     /**
      * 描画先を塗り直し、準備したフレームを描く。シーンがあれば、前のフレームとのシーンの違い（{@link SceneDamage}）と、補間・外の事情で変わる項目・
@@ -159,7 +164,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
      */
     @Override
     public void render(PreparedFrame p) {
-        PreparedFrame q = frameDamage.take(p, clearColor); // 最後に準備した値でなければ組み直して全面
+        PreparedFrame q = frameDamage.take(p, clearColor, hostFilter()); // 最後に準備した値でなければ組み直して全面
         SceneDamage.Rects rects = q.damage();
         if (q.drawList().isEmpty()) { // 描く項目が無い（シーンから組んだ列が空でも）: 塗りの色だけ
             raster.clearAll(clearColor);
@@ -219,7 +224,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
      */
     public void renderOnto(PreparedFrame p, GpuSink gpu) {
         // 範囲は GPU の描画器が描くかを決めるのに使う（prepare）。描くときは GPU が全面を描くので、塗りは範囲で絞らない
-        PreparedFrame q = frameDamage.take(p, clearColor);
+        PreparedFrame q = frameDamage.take(p, clearColor, hostFilter());
         SceneDamage.Rects rects = q.damage();
         if (q.drawList().isEmpty()) { frameDamage.reset(); return; }
         List<DisplayItem> items = q.drawList();

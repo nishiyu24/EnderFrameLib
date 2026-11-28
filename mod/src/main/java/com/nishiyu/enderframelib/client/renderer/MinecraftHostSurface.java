@@ -108,7 +108,6 @@ public final class MinecraftHostSurface {
             flushPending(pass.buffer());
             RenderFrame frame = base.withOverlays(caret);
             PreparedFrame prepared = backend.prepare(frame); // 列は描画器が準備でシーンから組む（M3b-4c-2b-2b）
-            List<DisplayItem> items = prepared.drawList();
             if (SKIP_STATIC && !prepared.needsRepaint()) {
                 // 描き直す範囲が空: 前回描いたテクスチャをそのまま貼る（Minecraft が描く中身の用意も GPU の描画も無し）
                 StageProfiler.end(PipelineStage.SURFACE_CORE_SKIPPED, StageProfiler.begin(PipelineStage.SURFACE_CORE_SKIPPED));
@@ -121,7 +120,7 @@ public final class MinecraftHostSurface {
             } finally {
                 StageProfiler.end(PipelineStage.SURFACE_CORE_BLIT, tBlit);
             }
-            drawTooltip(pass, prepared, items, w, h);
+            drawTooltip(pass, prepared, ClientWebManager.getSession(session), w, h);
             REPORTED.remove(session);
             return true;
         } catch (Throwable t) {
@@ -170,26 +169,22 @@ public final class MinecraftHostSurface {
         }
     }
 
-    /** ホバー中の要素の {@code title} をツールチップとして板の上に重ねる（ホストの飾り。コアは描かない）。 */
-    private static void drawTooltip(PaintRequest pass, PreparedFrame prepared, List<DisplayItem> items, int w, int h) {
+    /**
+     * ホバー中の要素の {@code title} をツールチップとして板の上に重ねる（ホストの飾り。コアは描かない）。要素の位置と部品はシーンから引く
+     * （{@code locate} と層の描画命令。表示項目の列は読まない。M3b-4c-2b-3b-2b-1）。描かない節（{@link RenderFrame#exclude}）には出さない。
+     */
+    private static void drawTooltip(PaintRequest pass, PreparedFrame prepared, com.nishiyu.enderframelib.client.SessionContext view, int w, int h) {
         String hovered = pass.hoveredId();
-        if (hovered == null || hovered.isEmpty()) return;
-        DisplayItem target = null;
-        String text = null;
-        java.util.function.Predicate<DisplayItem> skip = prepared.frame().excluded();
-        for (DisplayItem it : items) {
-            if (!hovered.equals(it.baseId()) || (skip != null && skip.test(it))) continue;
-            text = SurfaceTooltip.textOf(it);
-            if (text != null) {
-                target = it;
-                break;
-            }
-        }
-        if (target == null || text.isEmpty()) return;
+        if (view == null || hovered == null || hovered.isEmpty()) return;
+        com.nishiyu.enderframelib.core.paint.scene.SceneLocation loc = view.locate(hovered);
+        if (loc == null) return;
+        RenderFrame f = prepared.frame();
+        if (f.exclude() != null && f.scene() != null && f.exclude().nodesIn(f.scene().scene()).contains(loc.nodeId())) return;
+        String text = SurfaceTooltip.textOf(loc);
+        if (text == null || text.isEmpty()) return;
         net.minecraft.client.gui.Font font = WebFontManager.getDefaultFont();
         if (font == null) font = Minecraft.getInstance().font;
-        target = DisplayItem.resolveAbsolute(items, target, prepared.offsets()); // 項目は親相対・スクロール 0 で組んだ位置（M3b-4c-3 まで列から読む）
-        SurfaceTooltip.draw(pass.poseStack(), pass.buffer(), font, target, text, w, h, 0.2f, pass.packedLight());
+        SurfaceTooltip.draw(pass.poseStack(), pass.buffer(), font, loc.x(), loc.y(), loc.w(), loc.h(), text, w, h, 0.2f, pass.packedLight());
         flushPending(pass.buffer());
     }
 

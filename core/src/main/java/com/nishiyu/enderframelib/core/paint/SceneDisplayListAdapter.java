@@ -9,6 +9,7 @@ import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.HostContent;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo;
@@ -62,6 +63,8 @@ public final class SceneDisplayListAdapter {
     /** 列の受け手（組むたびに使い回す）と、直近に組んだ列の階層（{@link #structure} で初めて作る。M3b-4c-2b-3b-1）。 */
     private final ItemSink.ToList listSink = new ItemSink.ToList();
     private FrameStructure structure = FrameStructure.EMPTY;
+    /** ホストが描く中身を聞く相手（M3b-4c-2b-3b-2b-2。既定は聞かない）。 */
+    private HostContent.Filter host = HostContent.Filter.NONE;
     /** 描く範囲（ビューポートの座標。null なら全部を組む。{@link #emitUnscrolled(DisplayScene, DynamicSceneState, float[])}）。 */
     private float[] cull;
 
@@ -111,6 +114,12 @@ public final class SceneDisplayListAdapter {
         return new ArrayList<>(scrollInfos);
     }
 
+    /** 組むときにホストが描く中身を聞く相手（{@link #hostContents}。M3b-4c-2b-3b-2b-2）。 */
+    public void setHostTextures(HostContent.Filter host) { this.host = host != null ? host : HostContent.Filter.NONE; }
+
+    /** 直近に組んだ列のうち、ホストが描くと答えた中身（描く順）。 */
+    public List<HostContent> hostContents() { return listSink.hostContents(); }
+
     /** 直近に組んだ列の階層（項目ごとの親の錨の位置と保持層の範囲。M3b-4c-2b-3b-1）。 */
     public FrameStructure structure() {
         if (structure == null) structure = listSink.structure();
@@ -119,7 +128,7 @@ public final class SceneDisplayListAdapter {
 
     public List<DisplayItem> emit(DisplayScene scene, DynamicSceneState dynamicState) {
         List<DisplayItem> result = new ArrayList<>();
-        ItemSink.ToList sink = listSink.begin(result);
+        ItemSink.ToList sink = listSink.begin(result, host);
         structure = FrameStructure.EMPTY;
         emit(scene, dynamicState, sink);
         sink.finish();
@@ -242,7 +251,6 @@ public final class SceneDisplayListAdapter {
         if (top.layer.hasSelf()) {
             drawOwn(top, null, null, null);
         }
-        finishScrollContent(top);
         if (!valueControl) {
             emitZPass(top, cc.clip, cc.parentId, cc.parentRef, SceneLayer.LAYER_NEG);
             emitBlocksPass(top, cc.clip, cc.parentId, cc.parentRef);
@@ -263,7 +271,6 @@ public final class SceneDisplayListAdapter {
         int startIdx = out.size();
         ChildContext cc = valueControl ? null : enterChildren(box, clip, parentId, pref);
         if (hasSelf) drawOwn(box, clip, parentId, pref);
-        finishScrollContent(box);
         if (!valueControl) {
             int kidsLayers = box.layer.children.propagatedLayers;
             if ((kidsLayers & SceneLayer.LAYER_NEG) != 0) emitZPass(box, cc.clip, cc.parentId, cc.parentRef, SceneLayer.LAYER_NEG);
@@ -310,7 +317,6 @@ public final class SceneDisplayListAdapter {
         boolean valueControl = ElementTraits.isValueControl(box.node().tag);
         ChildContext cc = valueControl ? null : enterChildren(box, clip, parentId, pref);
         if (box.layer.hasSelf()) drawOwn(box, clip, parentId, pref);
-        finishScrollContent(box);
         if (!valueControl) {
             int kidsLayers = box.layer.children.propagatedLayers;
             if ((kidsLayers & SceneLayer.LAYER_BLOCK) != 0) emitBlocksPass(box, cc.clip, cc.parentId, cc.parentRef);
@@ -371,7 +377,6 @@ public final class SceneDisplayListAdapter {
                 boolean valueControl = ElementTraits.isValueControl(child.node().tag);
                 ChildContext cc = valueControl ? null : enterChildren(child, cClip, parentId, pref);
                 if (child.layer.hasSelf()) drawOwn(child, cClip, parentId, pref);
-                finishScrollContent(child);
                 if (!valueControl && (child.layer.children.propagatedLayers & SceneLayer.LAYER_BLOCK) != 0) {
                     emitBlocksPass(child, cc.clip, cc.parentId, cc.parentRef);
                 }
@@ -409,7 +414,6 @@ public final class SceneDisplayListAdapter {
                 boolean valueControl = ElementTraits.isValueControl(child.node().tag);
                 ChildContext cc = valueControl ? null : enterChildren(child, cClip, parentId, pref);
                 if (child.layer.hasSelf()) drawOwn(child, cClip, parentId, pref);
-                finishScrollContent(child);
                 if (!valueControl && (child.layer.children.propagatedLayers & SceneLayer.LAYER_INLINE) != 0) {
                     emitInlinesPass(child, cc.clip, cc.parentId, cc.parentRef);
                 }
@@ -515,10 +519,6 @@ public final class SceneDisplayListAdapter {
         ChildContext cc = new ChildContext(childClip, childParent, childRef);
         childContexts.put(box, cc);
         return cc;
-    }
-
-    private void finishScrollContent(SceneAdapterBox box) {
-        // drawScrollbars は AFTER パスで動くため、ScrollContentInfo の確定は emit の末尾で行う
     }
 
     private ClipRect clipForChild(SceneAdapterBox child, ClipRect flowClip) {
