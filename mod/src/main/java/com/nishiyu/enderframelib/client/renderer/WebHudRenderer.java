@@ -398,7 +398,7 @@ public class WebHudRenderer {
         cache.height = Math.round(frame.scene().root.h);
         cache.elements = frame.items();
         // 板ごとの 1 回の組み立て: その列を組んだシーンを添える（静止した板は描画器が前の画素を使い回せる）
-        cache.source = new com.nishiyu.enderframelib.core.paint.SceneSource(frame.scene(), frame.dynamic(), List.of(), frame.items(), 0);
+        cache.source = new com.nishiyu.enderframelib.core.paint.SceneSource(frame.scene(), frame.dynamic(), List.of(), 0);
     }
 
     private static boolean renderTrackerBillboard(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey, TrackerCache cache, TrackerTemplateConfig config) {

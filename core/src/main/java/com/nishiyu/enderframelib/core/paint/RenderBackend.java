@@ -1,17 +1,13 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.PaintFrame;
-import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.raster.PngEncoder;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.List;
 
 /**
- * ディスプレイリスト（{@link DisplayItem} の列）を画素にする描画バックエンドの共通口。
+ * 1 つのフレームの値（{@link RenderFrame}）を画素にする描画バックエンドの共通口（M3b-4c-2a。計画書 §1.6 決定 V）。
  * Minecraft に依存しない実装として、CPU の {@code SoftwareRenderBackend} と
  * 純 LWJGL の {@code LwjglGlRenderBackend}（GPU）がある。呼び出し側は実装を差し替えるだけでよい。
  *
@@ -20,36 +16,21 @@ import java.util.List;
  */
 public interface RenderBackend extends AutoCloseable {
 
-    /** 描画先を塗り直し、{@code items} を時刻 {@code nowMs}（ミリ秒）の見た目で描く。 */
-    void render(List<DisplayItem> items, long nowMs);
-
-    /** 描画先を塗り直し、描画上の平行移動 {@code offsets} を載せて {@code items} を時刻 {@code nowMs} で描く。 */
-    default void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
-        render(items, nowMs);
-    }
-
     /**
-     * {@code items} を組んだシーン {@code source}（{@code UiView#paintSource}。null 可）を添えて描く（M3b-4b-4a）。シーンがあれば、
-     * 描画器は前のフレームとのシーンの違いから描き直す範囲を求め、スクロールコンテナの中身を保持層にできる。既定はシーンを使わない。
+     * 描く前に、前に描いたフレームから描き直す範囲を求める（範囲を求めない描画器は全面）。描き直しが要るなら（{@link PreparedFrame#needsRepaint}）
+     * 返した値をそのまま {@link #render(PreparedFrame)} に渡す。要らなければ描かずに前の画素を使ってよい（前の画素を持ち続ける描画先のホスト）。
+     * 比べる相手はここで 1 度だけ進める。範囲はシーンの違い・塗りの色・利用者の平行移動と、シーンの外で変わるもの（補間・外の事情・重ね描き）から。
      */
-    default void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
-        render(items, offsets, nowMs);
+    default PreparedFrame prepare(RenderFrame frame) {
+        return PreparedFrame.full(frame);
     }
 
-    /**
-     * 前に描いたフレームの画素が、この入力（{@link #render(List, PaintOffsets, SceneSource, long)} と同じ引数）でも変わらないと描く前に分かるなら
-     * false（M3b-4b-4b）。描き直す範囲を、前のフレームとのシーンの違いと、シーンの外で変わるもの（補間・画像などの外の事情・重ね描き）から求め、
-     * それが空かを答える。true なら続けて同じ入力で描くこと（求めた範囲を描画がそのまま使う）。前の画素を持ち続ける描画先（GPU の面）の
-     * ホストが、描かないフレームに前の画素を使い回すために使う。既定（判定を持たない描画器・シーンが無い入力）は常に true。
-     */
-    default boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
-        return true;
-    }
+    /** 準備したフレームを描く（描画先を塗り直し、時刻 {@code frame.nowMs()} の見た目で描く。最後に準備した値でなければ全面）。 */
+    void render(PreparedFrame frame);
 
-    /** 不変フレーム PDU（{@link PaintFrame}）を時刻 {@code nowMs} で描く（S7 ③ / B7 フレーム境界入口）。 */
-    default void render(PaintFrame frame, long nowMs) {
-        PaintFrame eff = frame != null ? frame : PaintFrame.EMPTY;
-        render(eff.items(), eff.offsets(), nowMs);
+    /** 準備して描く（範囲を求めて描く。描き直しが要らなくても描く）。 */
+    default void render(RenderFrame frame) {
+        render(prepare(frame));
     }
 
     /**

@@ -19,16 +19,6 @@ final class SurfaceEditOverlay {
 
     private SurfaceEditOverlay() {}
 
-    /** {@code items}（親相対でよい）にキャレットを足した一覧。編集中の欄が無ければ {@code items} そのもの。 */
-    static List<DisplayItem> withCaret(SessionContext session, String sessionId, List<DisplayItem> items) {
-        List<DisplayItem> caret = caretItems(session, sessionId, items);
-        if (caret.isEmpty()) return items;
-        List<DisplayItem> all = new ArrayList<>(items.size() + caret.size());
-        all.addAll(items);
-        all.addAll(caret);
-        return all;
-    }
-
     static List<DisplayItem> caretItems(SessionContext session, String sessionId, List<DisplayItem> items) {
         if (session == null || items.isEmpty()) return List.of();
         String renderId = session.activeInputId();

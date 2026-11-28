@@ -224,7 +224,7 @@ class DisplaySceneTest {
             List<DisplayItem> items1 = new SceneDisplayListAdapter(W, H, doc.sheet.keyframes)
                     .emit(scene, DynamicSceneState.of(s1, W, H));
             SoftwareRenderBackend be1 = new SoftwareRenderBackend(W, H, 1f);
-            be1.render(items1, 1000);
+            be1.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items1, 1000));
             assertEquals(0xFF0000FF, be1.pixmap().get(20, 15), "30px スクロールで 2 行目 (#00f) が先頭に来る");
         }
     }

@@ -55,7 +55,7 @@ public class BorderImageTest {
         List<DisplayItem> items = SoftwareRendering.displayList(
                 "<html><body style='margin:0'>" + html(nineColorPngDataUrl(), "4 fill / 1 / 0 stretch") + "</body></html>", 60, 60);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(60, 60, 1f)) {
-            b.render(items, 0);
+            b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0));
             // 箱は 40×40（枠 8 + 内側 24）。角 8×8、辺は 24 に伸び、中央 24×24
             assertEquals(RED, b.pixmap().getStraight(3, 3));
             assertEquals(GREEN, b.pixmap().getStraight(20, 3));

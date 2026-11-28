@@ -7,7 +7,7 @@ import com.nishiyu.enderframelib.core.text.model.FontResolver;
 /** 新しい JVM で文書を開き、解析・初回フレーム・最初の数フレームの時間を測る（コールド JVM）。1 JVM につき 1 行出力。 */
 public class ColdStartMain {
     private static final class NullBackend implements RenderBackend {
-        @Override public void render(java.util.List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> items, long nowMs) { }
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) { }
         @Override public com.nishiyu.enderframelib.core.raster.Pixmap pixmap() { throw new UnsupportedOperationException(); }
         @Override public float devicePixelRatio() { return 1f; }
     }

@@ -205,9 +205,9 @@ public class UiView implements AutoCloseable {
         DisplayScene s = v3.scene();
         if (s == null) return null;
         com.nishiyu.enderframelib.core.paint.SceneSource c = cachedSource;
-        if (c == null || c.scene() != s || c.dynamic() != dynamicState() || c.contents() != scrollBase || c.items() != renderCache
+        if (c == null || c.scene() != s || c.dynamic() != dynamicState() || c.contents() != scrollBase
                 || c.userOffsetsVersion() != userPaintOffsets.version()) {
-            c = cachedSource = new com.nishiyu.enderframelib.core.paint.SceneSource(s, dynamicState(), scrollBase, renderCache, userPaintOffsets.version());
+            c = cachedSource = new com.nishiyu.enderframelib.core.paint.SceneSource(s, dynamicState(), scrollBase, userPaintOffsets.version());
         }
         return c;
     }

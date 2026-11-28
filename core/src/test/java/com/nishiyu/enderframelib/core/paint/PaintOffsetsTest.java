@@ -120,7 +120,7 @@ class PaintOffsetsTest {
             assertFalse(view.ui().paintOffsets().isEmpty());
 
             // 新しい SoftwareRenderBackend でゼロから描いた絵と完全一致
-            full.render(after, view.ui().paintOffsets(), 1016);
+            full.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(after, view.ui().paintOffsets(), 1016));
             assertArrayEquals(full.pixmap().pixels(), inc.pixmap().pixels());
 
             // GPU のスクロール丸めは項目や PaintOffsets を書き換えずに姿勢だけ丸める
@@ -132,7 +132,7 @@ class PaintOffsetsTest {
             SceneWalker walker = new SceneWalker("snap-test");
             walker.setScrollSnapDpr(2f);
             float[] f = {Float.NaN};
-            walker.run(List.of(scrollNode), o.snapshot(), null, 1000, Matrix2D.IDENTITY, new Painter() {
+            walker.run(com.nishiyu.enderframelib.core.paint.RenderFrame.of(List.of(scrollNode), o.snapshot(), 1000), Matrix2D.IDENTITY, new Painter() {
                 @Override public void syncLayers(List<SceneWalker.Group> want) { f[0] = (float) walker.resolveAt(0).pose().f(); }
                 @Override public void drawItem(DisplayItem el, int index, float flat) { }
             }, null);

@@ -76,7 +76,7 @@ final class SpikeView {
 
     /** 旧経路（{@code StandaloneView}）を描画なしで回すためのバックエンド（比較・A/B 用）。 */
     static final class NullBackend implements com.nishiyu.enderframelib.core.paint.RenderBackend {
-        @Override public void render(List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> items, long nowMs) { }
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) { }
         @Override public com.nishiyu.enderframelib.core.raster.Pixmap pixmap() { throw new UnsupportedOperationException(); }
         @Override public float devicePixelRatio() { return 1f; }
     }

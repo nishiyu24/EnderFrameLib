@@ -197,12 +197,12 @@ public final class ShowcaseApp {
             view.frame(0, cpu, true);
             var items = view.items();
             long t = System.currentTimeMillis();
-            for (int i = 0; i < 150; i++) cpu.render(items, t + i * 16L);
+            for (int i = 0; i < 150; i++) cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, t + i * 16L));
             int n = Integer.getInteger("render.frames", 300);
             long c0 = mx.getCurrentThreadCpuTime(), w0 = System.nanoTime();
             long wallBlock = System.nanoTime();
             for (int i = 0; i < n; i++) {
-                cpu.render(items, t + 3000 + i * 16L);
+                cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, t + 3000 + i * 16L));
                 if (Boolean.getBoolean("render.sync")) cpu.pixmap(); // GPU の完了まで待つ（読み戻し）: GPU の時間も含めて測る
                 if (Boolean.getBoolean("render.trace") && i % 100 == 99) { // 蓄積して遅くなっていないかを見る
                     System.out.printf("  frames %d-%d: %.1f ms/frame wall, heap %d MB%n", i - 99, i, (System.nanoTime() - wallBlock) / 1e6 / 100,

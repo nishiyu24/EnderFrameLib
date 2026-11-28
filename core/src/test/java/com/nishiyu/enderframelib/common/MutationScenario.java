@@ -55,9 +55,10 @@ final class MutationScenario {
     static final class NoDraw implements com.nishiyu.enderframelib.core.paint.RenderBackend {
         private final SoftwareRenderBackend tiny = new SoftwareRenderBackend(1, 1, 1f);
 
-        @Override public void render(List<DisplayItem> items, long nowMs) {
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) {
             // 本物のバックエンドは描くたびに全項目の補間状態を更新する（ヒットテストはその値を読む）
-            for (DisplayItem it : items) com.nishiyu.enderframelib.core.paint.CssAnimator.getValuesAt(sessionId(), it, nowMs);
+            long nowMs = frame.frame().nowMs();
+            for (DisplayItem it : frame.frame().drawList()) com.nishiyu.enderframelib.core.paint.CssAnimator.getValuesAt(sessionId(), it, nowMs);
         }
         @Override public com.nishiyu.enderframelib.core.raster.Pixmap pixmap() { return tiny.pixmap(); }
         @Override public float devicePixelRatio() { return 1f; }

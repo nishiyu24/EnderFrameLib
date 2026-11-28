@@ -100,8 +100,12 @@ class SceneDamageTest {
 
         Timed(int w, int h) { real = new SoftwareRenderBackend(w, h); }
 
-        @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, nowMs); }
-        @Override public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { real.render(items, offsets, nowMs); now = nowMs; }
+        // シーンを渡さず全面で描く（時刻だけを覚える）
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) {
+            com.nishiyu.enderframelib.core.paint.RenderFrame f = frame.frame();
+            real.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(f.drawList(), f.offsets(), f.nowMs()));
+            now = f.nowMs();
+        }
         @Override public Pixmap pixmap() { return real.pixmap(); }
         @Override public float devicePixelRatio() { return 1f; }
         @Override public String sessionId() { return real.sessionId(); }

@@ -11,10 +11,10 @@ import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuPass;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuPipeline;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuTexture;
 import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms;
-import com.nishiyu.enderframelib.core.paint.SceneWalker;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
-import com.nishiyu.enderframelib.core.paint.SceneSource;
+import com.nishiyu.enderframelib.core.paint.PreparedFrame;
+import com.nishiyu.enderframelib.core.paint.RenderFrame;
 import com.nishiyu.enderframelib.core.paint.resource.PaintResources;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
@@ -91,6 +91,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private Pixmap snapshotPm;
     private int clearPremul = 0;
     private boolean readbackValid;
+    private PreparedFrame lastPrepared; // 最後に準備したフレーム（render がこれでなければ CPU の準備をやり直す）
     private boolean closed;
     /** 描き終えた前のフレームの塗りの色（符号なし）。描き終えていなければ -1（{@link #needsRepaint}。M3b-4b-4b）。 */
     private long paintedClear = -1L;
@@ -262,12 +263,12 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     public Scene3DRenderer scene3dRenderer() { return scene3dRenderer; }
     @Override public String sessionId() { return sessionId; }
     @Override public float devicePixelRatio() { return dpr; }
-    /** 前に描き終えた画素を今の入力でも使えるなら false（{@code RenderBackend#needsRepaint}。範囲は CPU の保険の描画器が求め、描くときは全面）。 */
-    @Override
-    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
-        return closed || cpu.needsRepaint(items, offsets, source, nowMs) || paintedClear != Integer.toUnsignedLong(clearPremul);
+    /** 描く前の準備（前に描き終えた画素を今の入力でも使えるなら描き直し不要。範囲は CPU の描画器が求め、描くときは全面。M3b-4c-2a）。 */
+    @Override public PreparedFrame prepare(RenderFrame f) {
+        PreparedFrame c = cpu.prepare(f);
+        return lastPrepared = new PreparedFrame(f, null, closed || c.needsRepaint() || paintedClear != Integer.toUnsignedLong(clearPremul), c);
     }
-    /** 次の {@link #needsRepaint} を true にする（書体の登録など、描画器の外の事情で絵が変わるとホストが知ったとき）。 */
+    /** 次の準備で描き直しを要るにする（書体の登録など、描画器の外の事情で絵が変わるとホストが知ったとき）。 */
     public void invalidate() { paintedClear = -1L; }
     public long gpuShapeCount() { return rects != null ? rects.accepted() - gpuGlyphs - gpuImages : 0; }
     public long rectTreeDrawCalls() { return rects != null ? rects.drawCalls() : 0; }
@@ -321,13 +322,12 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
 
     // ------------------------------------------------------------------ フレーム実行
 
-    @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, nowMs); }
-    @Override public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { render(items, offsets, null, nowMs); }
-
-    /** {@code source} は描き直す範囲（{@link #needsRepaint}）と、スクロールコンテナの中身を保持層にするのに使う（{@link SceneWalker}）。 */
+    /** 準備したフレームを描く（GPU はいつも全面。最後に準備した値でなければ CPU の準備をやり直す。シーンは保持層にも使う）。 */
     @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
+    public void render(PreparedFrame p) {
         if (closed) throw new IllegalStateException("closed");
+        PreparedFrame c = p == lastPrepared && p.inner() != null ? p.inner() : cpu.prepare(p.frame());
+        lastPrepared = null;
         host.enter();
         try {
             host.beginTiming();
@@ -351,7 +351,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
                 try {
                     activePass = activeFrame.beginPass(mainTarget, LoadOp.CLEAR, clearPremul, null);
                     activeMainCleared = true;
-                    cpu.renderOnto(items, offsets, source, nowMs, this);
+                    cpu.renderOnto(c, this);
                     while (!layerStack.isEmpty()) endGroup();
                     flushAll();
                     endPass();

@@ -47,7 +47,7 @@ class Scene3DPickTest {
     }
 
     private static final class NullBackend implements com.nishiyu.enderframelib.core.paint.RenderBackend {
-        @Override public void render(java.util.List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> items, long nowMs) { }
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) { }
         @Override public com.nishiyu.enderframelib.core.raster.Pixmap pixmap() { throw new UnsupportedOperationException(); }
         @Override public float devicePixelRatio() { return 1f; }
     }

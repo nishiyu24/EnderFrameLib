@@ -54,7 +54,7 @@ class GpuRouteTest {
         List<DisplayItem> items = SoftwareRendering.displayList(html, 80, 60);
         int[] a, b;
         try (SoftwareRenderBackend s = new SoftwareRenderBackend(80, 60, 1f)) {
-            s.render(items, 0);
+            s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0));
             a = s.pixmap().pixels().clone();
         }
         try (SoftwareRenderBackend s = new SoftwareRenderBackend(80, 60, 1f)) {

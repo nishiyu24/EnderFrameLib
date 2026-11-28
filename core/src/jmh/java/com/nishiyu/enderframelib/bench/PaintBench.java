@@ -44,7 +44,7 @@ public class PaintBench {
 
     @Benchmark
     public int softwarePaint() {
-        cpu.render(items, now += 16);
+        cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, now += 16));
         return cpu.pixmap().pixels()[0];
     }
 }

@@ -108,7 +108,7 @@ class LazyCpuLayerTest {
             var itemsMoving = SoftwareRendering.displayList(HEAD + "<style>@keyframes s{from{opacity:0}to{opacity:1}}</style>"
                     + "<div style='width:10px;height:10px;background:#f00;animation:s 1s linear infinite'></div></body></html>", 64, 64);
             // 描いたあとの同じバックエンドで、動いている項目を動いていると答える
-            moving.render(itemsMoving, 10_000L);
+            moving.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(itemsMoving, 10_000L));
             assertTrue(moving.hasActiveAnimation(itemsMoving, 10_500L));
         } finally {
             still.close();

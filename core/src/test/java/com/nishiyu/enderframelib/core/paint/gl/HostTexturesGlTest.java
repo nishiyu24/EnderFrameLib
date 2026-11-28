@@ -159,7 +159,7 @@ class HostTexturesGlTest {
                 RecordingHost host = new RecordingHost(new TextureRef(tex, 4, 4), it -> "HOST".equals(it.text()));
                 g.hostTextures(host);
                 for (int frame = 0; frame < 3; frame++) {
-                    g.render(items, PaintOffsets.EMPTY, T0 + frame);
+                    g.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, PaintOffsets.EMPTY, T0 + frame));
                     assertEquals(TEX_ARGB, g.pixmap().getStraight(cx, cy), "フレーム " + frame + " で文字の中身が貼られていない");
                 }
             } finally {

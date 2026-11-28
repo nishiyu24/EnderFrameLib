@@ -315,7 +315,7 @@ class V3ViewTest {
         List<DisplayItem> fresh = new SceneDisplayListAdapter(w, h, doc.sheet.keyframes)
                 .emit(scene, DynamicSceneState.of(ui.scrollState(), w, h));
         SoftwareRenderBackend b = new SoftwareRenderBackend(W, H, 1f);
-        b.render(fresh, 0);
+        b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(fresh, 0));
         Pixmap a = live.pixmap(), z = b.pixmap();
         int diff = 0;
         for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) if (a.get(x, y) != z.get(x, y)) diff++;

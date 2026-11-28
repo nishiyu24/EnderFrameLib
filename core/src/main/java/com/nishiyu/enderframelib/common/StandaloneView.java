@@ -21,7 +21,7 @@ import com.nishiyu.enderframelib.core.paint.scene.SceneQuery;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.PaintFrame;
+import com.nishiyu.enderframelib.core.paint.RenderFrame;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
@@ -80,7 +80,7 @@ public final class StandaloneView implements AutoCloseable {
     private final InteractionState interaction;
 
     private List<DisplayItem> items;
-    private PaintFrame lastFrame;
+    private RenderFrame lastFrame;
     private boolean drawn;
     private boolean redraw = true;
     private boolean animating;
@@ -211,12 +211,12 @@ public final class StandaloneView implements AutoCloseable {
         return items;
     }
 
-    /** 直近のフレームの不変境界スナップショット PDU（{@link PaintFrame}）。 */
-    public PaintFrame frameSnapshot() {
+    /** 直近のフレームの、別のスレッドへ渡せる不変の写し（列と平行移動。{@link RenderFrame#snapshot}）。 */
+    public RenderFrame frameSnapshot() {
         PaintOffsets off = ui.paintOffsets();
-        PaintFrame f = lastFrame;
+        RenderFrame f = lastFrame; // 列は不変の列・平行移動は不変の写しなので、写しは同じ実体を持つ
         if (f != null && f.items() == items && f.offsets() == off) return f;
-        return lastFrame = PaintFrame.of(items, off);
+        return lastFrame = RenderFrame.of(items, off, lastNow).snapshot();
     }
 
     /** {@code requestAnimationFrame} / {@code setTimeout} の登録簿。 */
@@ -332,7 +332,7 @@ public final class StandaloneView implements AutoCloseable {
             return false; // 窓を抜けた最初の1枚は最終値のために描く
         }
         lastOffsetsVersion = offsetsVer;
-        backend.render(withOverlays(items), offsets, ui.paintSource(), nowMs);
+        backend.render(new RenderFrame(items, overlays(), offsets, ui.paintSource(), nowMs));
         // 描画自身が世界を更新することがある（初回にビューポートの縦横比をカメラへ入れる）。それは描いた絵に含まれるので、
         // 次のフレームで「3D が変わった」と数えて一度余計に描かないよう、ここで署名を取り直す
         sceneSignature = ui.scene3dChangeSignature();
@@ -770,7 +770,7 @@ public final class StandaloneView implements AutoCloseable {
     public float[] imeCursorRect() {
         HtmlNode field = interaction.focusedNode();
         if (field == null || !isTextControl(field)) return null;
-        for (DisplayItem it : withOverlays(items)) {
+        for (DisplayItem it : RenderFrame.of(items, 0L).withOverlays(overlays())) {
             if (it.baseId().equals(field.key()) && (it.isPart("_caret") || it.id().endsWith("_caret"))) {
                 return new float[]{it.x(), it.y(), it.width(), it.height()};
             }
@@ -884,13 +884,13 @@ public final class StandaloneView implements AutoCloseable {
         return ElementInspector.inspect(ui, ElementInspector.pick(ui, mouseX, mouseY));
     }
 
-    private List<DisplayItem> withOverlays(List<DisplayItem> base) {
+    /** シーンの外の重ね描き（テキスト欄のキャレット・選択の一覧・インスペクタ）。描画器はシーンの列の後ろに描く（{@link RenderFrame#overlays}）。 */
+    private List<DisplayItem> overlays() {
         List<DisplayItem> text = textOverlay();
         List<DisplayItem> pop = popup.overlay();
         List<DisplayItem> insp = inspector ? ElementInspector.overlay(inspected(), width, height) : List.of();
-        if (text.isEmpty() && pop.isEmpty() && insp.isEmpty()) return base;
-        List<DisplayItem> all = new ArrayList<>(base.size() + text.size() + pop.size() + insp.size());
-        all.addAll(base);
+        if (pop.isEmpty() && insp.isEmpty()) return text;
+        List<DisplayItem> all = new ArrayList<>(text.size() + pop.size() + insp.size());
         all.addAll(text);
         all.addAll(pop);
         all.addAll(insp);

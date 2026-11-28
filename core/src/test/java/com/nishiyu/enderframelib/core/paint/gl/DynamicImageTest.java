@@ -53,19 +53,19 @@ class DynamicImageTest {
             List<DisplayItem> list = SoftwareRendering.displayList(HTML, 8, 8);
 
             fill(frame, 0xFFFF0000);
-            gl.render(list, 1000);
-            cpu.render(list, 1000);
+            gl.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(list, 1000));
+            cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(list, 1000));
             assertEquals(0xFFFF0000, gl.pixmap().get(4, 4));
             assertEquals(cpu.pixmap().get(4, 4), gl.pixmap().get(4, 4));
 
             fill(frame, 0xFF0000FF);
-            gl.render(list, 1016);
-            cpu.render(list, 1016);
+            gl.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(list, 1016));
+            cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(list, 1016));
             assertEquals(0xFF0000FF, gl.pixmap().get(4, 4), "書き換えた画素が次のフレームに出る");
             assertEquals(cpu.pixmap().get(4, 4), gl.pixmap().get(4, 4));
 
             // 書き換えなければ上げ直さず、同じ絵のまま
-            gl.render(list, 1032);
+            gl.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(list, 1032));
             assertEquals(0xFF0000FF, gl.pixmap().get(4, 4));
             assertEquals(true, seen.stream().allMatch(i -> "dyn:frame".equals(i.text())));
         } finally {

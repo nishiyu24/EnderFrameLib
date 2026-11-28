@@ -53,16 +53,15 @@ class PartialRepaintRealDocumentsTest {
             this.partialBackend = new SoftwareRenderBackend(w, h);
         }
 
-        @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, null, nowMs); }
-        @Override public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { render(items, offsets, null, nowMs); }
-
         @Override
-        public void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
-            partialBackend.render(items, offsets, source, nowMs);
+        public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) {
+            com.nishiyu.enderframelib.core.paint.RenderFrame f = frame.frame();
+            long nowMs = f.nowMs();
+            partialBackend.render(f);
             int[] got = partialBackend.pixmap().pixels();
             // 同じセッション（補間の状態）で全面に描く。同じ時刻・同じ列なので補間の状態は進まない
             try (SoftwareRenderBackend fresh = new SoftwareRenderBackend(w, h, 1f, partialBackend.sessionId())) {
-                fresh.render(items, offsets, nowMs);
+                fresh.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(f.drawList(), f.offsets(), nowMs));
                 int[] want = fresh.pixmap().pixels();
                 int diff = 0, first = -1;
                 for (int i = 0; i < want.length; i++) {

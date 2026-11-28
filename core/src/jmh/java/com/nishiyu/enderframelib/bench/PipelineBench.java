@@ -38,7 +38,7 @@ public class PipelineBench {
     private long now = 1000;
 
     private static final RenderBackend NO_DRAW = new RenderBackend() {
-        @Override public void render(List<DisplayItem> items, long nowMs) { }
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) { }
         @Override public com.nishiyu.enderframelib.core.raster.Pixmap pixmap() { throw new UnsupportedOperationException(); }
         @Override public float devicePixelRatio() { return 1f; }
     };

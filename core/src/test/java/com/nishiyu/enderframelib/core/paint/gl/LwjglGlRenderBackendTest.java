@@ -202,8 +202,8 @@ class LwjglGlRenderBackendTest {
             var items = SoftwareRendering.displayList(page(body), 80, 80);
             SoftwareRenderBackend c = new SoftwareRenderBackend(80, 80);
             for (int i = 0; i < 3; i++) {
-                g.render(items, T0);
-                c.render(items, T0);
+                g.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
+                c.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
                 Diff d = diff(g.pixmap(), c.pixmap());
                 assertTrue(d.max() <= 2, "frame " + i + " diff " + d);
             }
@@ -282,8 +282,8 @@ class LwjglGlRenderBackendTest {
             var items = SoftwareRendering.displayList(page(body), 90, 90);
             SoftwareRenderBackend c = new SoftwareRenderBackend(90, 90);
             for (int i = 0; i < 3; i++) {
-                g.render(items, T0);
-                c.render(items, T0);
+                g.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
+                c.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
                 Diff d = diff(g.pixmap(), c.pixmap());
                 assertTrue(d.max() <= 5, "frame " + i + " diff " + d);
                 assertTrue(g.gpuShapeCount() > 0);
@@ -532,8 +532,8 @@ class LwjglGlRenderBackendTest {
             var items = SoftwareRendering.displayList(page(body), 60, 60);
             int prev = -1;
             for (long t : new long[]{T0, T0 + 500, T0 + 900}) {
-                g.render(items, t);
-                c.render(items, t);
+                g.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, t));
+                c.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, t));
                 Diff d = diff(g.pixmap(), c.pixmap());
                 assertTrue(d.max() <= 4, "t=" + t + " diff " + d);
                 int a = ch(g.pixmap().getStraight(20, 20), 24);

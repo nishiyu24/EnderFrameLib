@@ -19,7 +19,8 @@ import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.FrameDamage;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
 import com.nishiyu.enderframelib.core.paint.SceneDamage;
-import com.nishiyu.enderframelib.core.paint.SceneSource;
+import com.nishiyu.enderframelib.core.paint.PreparedFrame;
+import com.nishiyu.enderframelib.core.paint.RenderFrame;
 import com.nishiyu.enderframelib.core.paint.SceneWalker;
 import com.nishiyu.enderframelib.core.paint.SceneWalker.Group;
 import com.nishiyu.enderframelib.core.paint.SceneWalker.Resolved;
@@ -148,26 +149,24 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 自分のセッションの補間状態（表示項目を握る）を捨てる。捨てないと描画器を作るたびに溜まる（CI の単一 JVM が OOM）。 */
     @Override public void close() { if (ownsSession) CssAnimator.clearSession(sessionId); }
 
-    /** 描画先を {@link #clearColor} で塗り直し、{@code items} を時刻 {@code nowMs}（ミリ秒）の見た目で描く（シーンが無いので全面）。 */
-    @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, null, nowMs); }
-
-    @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { render(items, offsets, null, nowMs); }
+    /** 描く前の準備（シーンの違いと走査器のシーンの外の変化。{@link FrameDamage#prepare}。M3b-4b-4b・4c-2a）。 */
+    @Override public PreparedFrame prepare(RenderFrame f) { return frameDamage.prepare(f, clearColor, walker::changesOutsideScene); }
 
     /**
-     * 描画先を塗り直し、{@code items} を時刻 {@code nowMs} の見た目で描く。列を組んだシーン {@code source} があれば、前のフレームとの
-     * シーンの違い（{@link SceneDamage}）と、補間・外の事情で変わる項目・重ね描きの前後の範囲（走査器）だけを 64×64 タイルで塗り直し、
-     * 塗りをその外接矩形に収める（M3b-4b-4a）。初回・塗りの色や利用者の平行移動が変わったフレーム・シーンの無いフレームは全面。
+     * 描画先を塗り直し、準備したフレームを描く。シーンがあれば、前のフレームとのシーンの違い（{@link SceneDamage}）と、補間・外の事情で変わる項目・
+     * 重ね描きの前後の範囲（走査器）だけを 64×64 タイルで塗り直し、塗りをその外接矩形に収める（M3b-4b-4a）。初回・塗りの色や利用者の平行移動が
+     * 変わったフレーム・シーンの無いフレームは全面。
      */
     @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
-        if (items == null || items.isEmpty()) {
+    public void render(PreparedFrame p) {
+        RenderFrame f = p.frame();
+        SceneDamage.Rects rects = frameDamage.take(p, clearColor);
+        if (f.isEmpty()) {
             raster.clearAll(clearColor);
             frameDamage.reset();
             return;
         }
-        PaintOffsets eff = offsets != null ? offsets : PaintOffsets.EMPTY;
-        SceneDamage.Rects rects = frameDamage.take(items, source, clearColor);
+        List<DisplayItem> items = f.drawList();
         route.begin(null);
         walker.setScrollSnapDpr(0f);
         raster.beginFrame();
@@ -175,7 +174,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         boolean done = false;
         try {
             if (rects == null) beginWalk(null);
-            walker.run(items, eff, source, nowMs, frame, painter, rects);
+            walker.run(f, frame, painter, rects);
             queue.flush();
             done = true;
         } finally {
@@ -185,15 +184,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
             route.end();
             partialActive = false;
         }
-    }
-
-    /** 描き直す範囲（{@link FrameDamage}・{@link SceneWalker#changesOutsideScene}）が空でないか。true なら同じ入力で描くこと（M3b-4b-4b）。 */
-    @Override
-    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
-        if (source == null || items == null || items.isEmpty()) return true;
-        if (!frameDamage.plan(items, source, clearColor).isEmpty() || walker.changesOutsideScene(items, source, nowMs)) return true;
-        frameDamage.dropPlan();
-        return false;
     }
 
     /** 走査器が描き直す範囲を決めた（描く前）: 全面なら全面を、そうでなければ範囲のタイルを塗り直す。範囲が空なら何も描かない。 */
@@ -221,16 +211,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     /** 描画先を塗り直さずに {@code items} を重ねる（平行移動・シーンなし版）。 */
-    public void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink) { renderOnto(items, PaintOffsets.EMPTY, null, nowMs, sink); }
+    public void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink) { renderOnto(prepare(RenderFrame.of(items, nowMs)), sink); }
 
     /**
-     * 描画先を塗り直さずに {@code items} を重ねる。{@code sink} があれば、単色の角丸矩形と角丸の枠線はそちらへ渡す
+     * 描画先を塗り直さずに準備したフレームを重ねる。{@code sink} があれば、単色の角丸矩形と角丸の枠線はそちらへ渡す
      * （受け取られなかったものだけ CPU が描く）。GPU 版が文字・画像などの CPU 描画を重ねるのに使う。
      */
-    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs, GpuSink gpu) {
-        if (items == null || items.isEmpty()) { frameDamage.reset(); return; }
-        // 範囲は GPU の描画器が描くかを決めるのに使う（needsRepaint）。描くときは GPU が全面を描くので、塗りは範囲で絞らない
-        SceneDamage.Rects rects = frameDamage.take(items, source, clearColor);
+    public void renderOnto(PreparedFrame p, GpuSink gpu) {
+        RenderFrame f = p.frame();
+        // 範囲は GPU の描画器が描くかを決めるのに使う（prepare）。描くときは GPU が全面を描くので、塗りは範囲で絞らない
+        SceneDamage.Rects rects = frameDamage.take(p, clearColor);
+        if (f.isEmpty()) { frameDamage.reset(); return; }
+        List<DisplayItem> items = f.drawList();
         route.begin(gpu);
         walker.setScrollSnapDpr(gpu != null && gpu.snapsScrollOffsets() ? dpr : 0f);
         raster.beginFrame();
@@ -239,7 +231,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         boolean done = false;
         try {
             // 走査（アニメーション補間・親子の変形・グループの鎖）は走査器が受け持ち、ここは画素を塗るだけ
-            walker.run(items, offsets != null ? offsets : PaintOffsets.EMPTY, source, nowMs, frame, painter, rects);
+            walker.run(f, frame, painter, rects);
             queue.flush(); // 開いたままの層の中身も、層を捨てる前に書き切る
             done = true;
         } finally {

@@ -41,7 +41,7 @@ class SoftwarePaintCostTest {
         try {
             SoftwareRenderBackend cpu = new SoftwareRenderBackend(w, h, 1f);
             try {
-                cpu.render(items, 1000);
+                cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 1000));
                 return cpu.pixmap().pixels().clone();
             } finally {
                 cpu.close();
@@ -131,7 +131,7 @@ class SoftwarePaintCostTest {
             SoftwareRenderBackend reuse = new SoftwareRenderBackend(640, 480, 1f);
             try {
                 for (int frame = 0; frame < 4; frame++) {
-                    reuse.render(its, 1000);
+                    reuse.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(its, 1000));
                     assertArrayEquals(base, reuse.pixmap().pixels(), "使い回し 文書 " + doc + " フレーム " + frame);
                 }
             } finally {
@@ -170,10 +170,10 @@ class SoftwarePaintCostTest {
         SoftwareRenderBackend cpu = new SoftwareRenderBackend(800, 600, 1f);
         try {
             long now = 1000;
-            for (int i = 0; i < 150; i++) cpu.render(items, now += 16);
+            for (int i = 0; i < 150; i++) cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, now += 16));
             int n = 150;
             long t0 = System.nanoTime();
-            for (int i = 0; i < n; i++) cpu.render(items, now += 16);
+            for (int i = 0; i < n; i++) cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, now += 16));
             double ms = (System.nanoTime() - t0) / 1e6 / n;
             return ms;
         } finally {

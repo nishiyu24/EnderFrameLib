@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.PaintFrame;
 import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
@@ -21,13 +20,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /**
- * S7 ③: {@link PaintOffsets} のフレーム境界スナップショット契約と {@link PaintFrame} PDU の
- * 凍結・並行描画（B7 前提）を検証する。
+ * S7 ③: {@link PaintOffsets} のフレーム境界スナップショット契約と、フレームの値 {@link RenderFrame} の写し（{@link RenderFrame#snapshot}）の
+ * 凍結・並行描画（B7 前提）を検証する（M3b-4c-2a で旧 {@code PaintFrame} を置き換えた）。
  */
 class FrameBoundarySnapshotTest {
 
     private static final class NoDrawBackend implements RenderBackend, AutoCloseable {
-        @Override public void render(List<DisplayItem> items, long nowMs) {}
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) { }
         @Override public Pixmap pixmap() { return null; }
         @Override public float devicePixelRatio() { return 1f; }
         @Override public String sessionId() { return "s7-test"; }
@@ -45,14 +44,14 @@ class FrameBoundarySnapshotTest {
     }
 
     @Test
-    void paintFrameFreezesMutableInputsAndSharesImmutableInputs() {
+    void frameSnapshotFreezesMutableInputsAndSharesImmutableInputs() {
         List<DisplayItem> mutableList = new ArrayList<>();
         mutableList.add(node("n1", 0, 0, 20, 20));
         mutableList.add(rect("n1_bg", 0, 0, 20, 20, 0xFF224466));
         PaintOffsets mutableOff = new PaintOffsets();
         mutableOff.set("n1", 12f, -3f);
 
-        PaintFrame frame = PaintFrame.of(mutableList, mutableOff);
+        RenderFrame frame = RenderFrame.of(mutableList, mutableOff, 0L).snapshot();
         assertTrue(frame.offsets().isImmutable());
         assertThrows(UnsupportedOperationException.class, () -> frame.items().add(rect("x", 0, 0, 1, 1, 0)));
         assertThrows(UnsupportedOperationException.class, () -> frame.offsets().set("n1", 99f, 99f));
@@ -66,7 +65,7 @@ class FrameBoundarySnapshotTest {
 
         // ImmutableItemList と不変 PaintOffsets は複製せずそのまま共有される
         ImmutableItemList frozenList = ImmutableItemList.from(null, frame.items());
-        PaintFrame shared = PaintFrame.of(frozenList, frame.offsets());
+        RenderFrame shared = RenderFrame.of(frozenList, frame.offsets(), 0L).snapshot();
         assertSame(frozenList, shared.items());
         assertSame(frame.offsets(), shared.offsets());
     }
@@ -80,7 +79,7 @@ class FrameBoundarySnapshotTest {
             view.frame(1000, backend, true);
             view.ui().setPaintOffset("box", 15f, 25f);
             PaintOffsets snap1 = view.ui().paintOffsets();
-            PaintFrame frame1 = view.frameSnapshot();
+            RenderFrame frame1 = view.frameSnapshot();
             assertTrue(snap1.isImmutable());
             assertSame(snap1, frame1.offsets());
             assertThrows(UnsupportedOperationException.class, () -> snap1.set("box", 0f, 0f));
@@ -107,7 +106,7 @@ class FrameBoundarySnapshotTest {
         try (var noDraw = new NoDrawBackend();
              SoftwareRenderBackend sw = new SoftwareRenderBackend(100, 100, 1f)) {
             view.frame(1000, noDraw, true);
-            AtomicReference<PaintFrame> bus = new AtomicReference<>(view.frameSnapshot());
+            AtomicReference<RenderFrame> bus = new AtomicReference<>(view.frameSnapshot());
             CountDownLatch start = new CountDownLatch(1);
             ExecutorService pool = Executors.newFixedThreadPool(2);
             try {
@@ -123,12 +122,12 @@ class FrameBoundarySnapshotTest {
                 Future<?> render = pool.submit(() -> {
                     start.await();
                     for (int i = 0; i < 300; i++) {
-                        PaintFrame f = bus.get();
+                        RenderFrame f = bus.get();
                         assertTrue(f.offsets().isImmutable());
                         float dx = f.offsets().dx("box");
                         float dy = f.offsets().dy("box");
                         assertEquals(dx * 2f, dy, 0.001f, "dx/dy が別フレームの値と混ざらない");
-                        sw.render(f, 1000L + i);
+                        sw.render(new RenderFrame(f.items(), f.overlays(), f.offsets(), f.scene(), 1000L + i));
                     }
                     return null;
                 });

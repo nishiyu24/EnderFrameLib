@@ -10,6 +10,8 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry;
+import com.nishiyu.enderframelib.core.paint.PreparedFrame;
+import com.nishiyu.enderframelib.core.paint.RenderFrame;
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend;
@@ -66,7 +68,7 @@ public final class MinecraftHostSurface {
 
     /**
      * 面の再描画を飛ばせるか。既定は有効（描き直す範囲が空ならテクスチャを使い回す。判定はコアの描画器の
-     * {@link LwjglGlRenderBackend#needsRepaint}: 前のフレームとのシーンの違い・補間・外の事情・重ね描き。M3b-4b-4b）。
+     * 準備 {@link LwjglGlRenderBackend#prepare}: 前のフレームとのシーンの違い・補間・外の事情・重ね描き。M3b-4b-4b・4c-2a）。
      * 切り分け用に {@code -Denderframe.core.noskip=true} で止められる。
      */
     private static final boolean SKIP_STATIC = !Boolean.getBoolean("enderframe.core.noskip");
@@ -100,15 +102,18 @@ public final class MinecraftHostSurface {
             backend.hostTextures(MinecraftHostTextures.INSTANCE);
             // 計測が有効なら GPU のタイマークエリも張る（面ごとに 1 度。無効の間は GL を呼ばない）
             if (StageProfiler.enabled() && GPU_TIMED.add(backend)) backend.enableGpuTiming();
-            List<DisplayItem> items = SurfaceEditOverlay.withCaret(ClientWebManager.getSession(session), session, base);
+            List<DisplayItem> caret = SurfaceEditOverlay.caretItems(ClientWebManager.getSession(session), session, base);
             syncFontGeneration();
             flushPending(pass.buffer());
             long now = net.minecraft.Util.getMillis();
-            if (SKIP_STATIC && !backend.needsRepaint(items, pass.paintOffsets(), pass.sceneSource(), now)) {
+            RenderFrame frame = new RenderFrame(base, caret, pass.paintOffsets(), pass.sceneSource(), now);
+            List<DisplayItem> items = frame.drawList();
+            PreparedFrame prepared = backend.prepare(frame);
+            if (SKIP_STATIC && !prepared.needsRepaint()) {
                 // 描き直す範囲が空: 前回描いたテクスチャをそのまま貼る（Minecraft が描く中身の用意も GPU の描画も無し）
                 StageProfiler.end(PipelineStage.SURFACE_CORE_SKIPPED, StageProfiler.begin(PipelineStage.SURFACE_CORE_SKIPPED));
             } else {
-                render(backend, items, pass, session, dpr, now);
+                render(backend, prepared, pass, session, dpr);
             }
             long tBlit = StageProfiler.begin(PipelineStage.SURFACE_CORE_BLIT);
             try {
@@ -149,16 +154,16 @@ public final class MinecraftHostSurface {
     }
 
     /**
-     * Minecraft が描く中身を用意してから、コアで描く（{@link LwjglGlRenderBackend#needsRepaint} と同じ入力）。動く中身（エンティティ・
+     * Minecraft が描く中身を用意してから、準備したフレームをコアで描く。動く中身（エンティティ・
      * {@code <mc-scene>}）は画像・場面の項目で、描画器が外の事情で変わる項目として毎フレーム描き直す。
      */
-    private static void render(LwjglGlRenderBackend backend, List<DisplayItem> items, PaintRequest pass, String session, float dpr, long now) {
+    private static void render(LwjglGlRenderBackend backend, PreparedFrame prepared, PaintRequest pass, String session, float dpr) {
         long tRender = StageProfiler.begin(PipelineStage.SURFACE_CORE_RENDER);
         long fence = 0L;
         try {
-            fence = MinecraftHostTextures.INSTANCE.prepare(items, session, dpr, !pass.screenSpaceText());
+            fence = MinecraftHostTextures.INSTANCE.prepare(prepared.frame().drawList(), session, dpr, !pass.screenSpaceText());
             if (fence != 0L) backend.waitForHost(fence);
-            backend.render(items, pass.paintOffsets(), pass.sceneSource(), now);
+            backend.render(prepared);
         } finally {
             if (fence != 0L) GL32.glDeleteSync(fence);
             StageProfiler.end(PipelineStage.SURFACE_CORE_RENDER, tRender);

@@ -100,14 +100,16 @@ public final class SceneWalker {
     public long generation() { return generation; }
 
     /**
-     * 表示項目の列 {@code list} を時刻 {@code nowMs}・変換 {@code frame}（CSS px → デバイス画素）の見た目で描画順にたどり、{@code painter} へ渡す。
+     * フレームの値 {@code f} の描く列（シーンの列の後ろに重ね描き）を、変換 {@code frame}（CSS px → デバイス画素）の見た目で描画順にたどり、
+     * {@code painter} へ渡す（M3b-4c-2a）。
      *
-     * @param offsets 節ごとの描画上の平行移動（スクロールの中身の節・つまみ・中の sticky の移動と利用者の移動。{@code UiView#paintOffsets}）
-     * @param source  列を組んだシーン（null なら保持層の範囲を求めない）
-     * @param damage  描き直す範囲（{@link SceneDamage} がシーンの違いから求めたもの）。null でなければ、補間・外の事情で変わる項目の範囲を足す
+     * @param damage 描き直す範囲（{@link SceneDamage} がシーンの違いから求めたもの）。null でなければ、補間・外の事情で変わる項目と重ね描きの範囲を足す
      */
-    public void run(List<DisplayItem> list, PaintOffsets offsets, SceneSource source, long nowMs, Matrix2D frame, Painter painter,
-                    SceneDamage.Rects damage) {
+    public void run(RenderFrame f, Matrix2D frame, Painter painter, SceneDamage.Rects damage) {
+        List<DisplayItem> list = f.drawList();
+        PaintOffsets offsets = f.offsets();
+        SceneSource source = f.scene();
+        long nowMs = f.nowMs();
         long prevNow = lastNow;
         lastNow = nowMs;
         boolean newList = list != lastList;
@@ -128,7 +130,7 @@ public final class SceneWalker {
             index(offsets != null ? offsets : PaintOffsets.EMPTY);
             if (damage != null) {
                 addDynamicDamage(damage, prevNow);
-                addOverlayDamage(damage, source != null ? source.baseSizeIn(list) : 0, source != null && !source.items().isEmpty());
+                addOverlayDamage(damage, f.sceneItemCount());
                 if (!painter.beginWalk(damage)) return;
             }
             if (source != null && source.scene() != null) ranges.compute(items, count, parentIdx, indexOf, source.contents(), source.scene());
@@ -147,9 +149,9 @@ public final class SceneWalker {
         }
     }
 
-    /** {@link #run} の、シーンも描き直す範囲も渡さない版。 */
+    /** {@link #run} の、列だけのフレーム（シーンも描き直す範囲も無い）版。 */
     public void run(List<DisplayItem> list, long nowMs, Matrix2D frame, Painter painter) {
-        run(list, PaintOffsets.EMPTY, null, nowMs, frame, painter, null);
+        run(RenderFrame.of(list, nowMs), frame, painter, null);
     }
 
     private void load(List<DisplayItem> src) {
@@ -249,12 +251,14 @@ public final class SceneWalker {
 
     /**
      * {@link #addDynamicDamage}・{@link #addOverlayDamage} が前の {@link #run} から時刻 {@code nowMs} までに範囲を足すか（M3b-4b-4b。描く前の判定用で、
-     * 索引・姿勢を作らない）: 列がシーンの列で始まらない・重ね描きが今か前のフレームにある・外の事情で変わる項目がある・前の時刻か今に補間が
+     * 索引・姿勢を作らない）: 重ね描きが今か前のフレームにある・外の事情で変わる項目がある・前の時刻か今に補間が
      * 動いている項目がある。補間は節の項目も数える（節の補間は部品の項目にも現れるので、多めに答えるだけ）。
      */
-    public boolean changesOutsideScene(List<DisplayItem> list, SceneSource source, long nowMs) {
-        int n = list.size(), from = source.baseSizeIn(list);
-        if ((from == 0 && !source.items().isEmpty()) || prevOverlay.size() > 0) return true;
+    public boolean changesOutsideScene(RenderFrame f) {
+        List<DisplayItem> list = f.drawList();
+        long nowMs = f.nowMs();
+        int n = list.size(), from = f.sceneItemCount();
+        if (prevOverlay.size() > 0) return true;
         for (int i = from; i < n; i++) if (list.get(i).type() != ElementType.NODE) return true;
         AnimationStates table = CssAnimator.states(sessionId, true);
         long prevNow = lastNow;
@@ -267,12 +271,8 @@ public final class SceneWalker {
         return false;
     }
 
-    /**
-     * シーンの外から足した重ね描き（キャレット・選択の一覧・インスペクタ。列の位置 {@code from} から後ろ）の、前のフレームと今の範囲を足す。
-     * 描く列がシーンの列で始まらない（{@code from} が 0 なのにシーンの列がある）なら全面にする。
-     */
-    private void addOverlayDamage(SceneDamage.Rects damage, int from, boolean sceneHasItems) {
-        if (from == 0 && sceneHasItems) damage.setFull("list-not-from-scene");
+    /** シーンの外から足した重ね描き（キャレット・選択の一覧・インスペクタ。列の位置 {@code from} から後ろ）の、前のフレームと今の範囲を足す。 */
+    private void addOverlayDamage(SceneDamage.Rects damage, int from) {
         for (int i = 0, n = prevOverlay.size(); i < n; i++) {
             damage.add(prevOverlay.x0(i), prevOverlay.y0(i), prevOverlay.x1(i), prevOverlay.y1(i));
         }

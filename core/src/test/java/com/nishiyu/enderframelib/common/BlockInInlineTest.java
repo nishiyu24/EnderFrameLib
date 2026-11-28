@@ -110,7 +110,7 @@ class BlockInInlineTest {
         // 画素: ブロックの行は青で、その中に文字の墨がある。インラインの赤はブロックの行に無い
         TestBoxes.Box d = find(TestBoxes.layout(html, 320, 240), "d");
         try (var cpu = new SoftwareRenderBackend(320, 240, 1f).fonts(FontResolver.FALLBACK)) {
-            cpu.render(items, 10_000L);
+            cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 10_000L));
             assertBlockRowsAreBlueWithInk(cpu.pixmap(), d);
         }
     }

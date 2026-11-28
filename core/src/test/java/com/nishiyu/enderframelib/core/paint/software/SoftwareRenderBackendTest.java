@@ -192,9 +192,9 @@ class SoftwareRenderBackendTest {
     void layersDoNotLeakBetweenFrames() {
         var items = SoftwareRendering.displayList(BODY0 + OVERLAP + "</body></html>", 80, 80);
         SoftwareRenderBackend s = new SoftwareRenderBackend(80, 80);
-        s.render(items, T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
         int first = px(s, 30, 30);
-        s.render(items, T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
         assertEquals(first, px(s, 30, 30));
         assertEquals(0, a(px(s, 70, 70)));
     }
@@ -268,9 +268,9 @@ class SoftwareRenderBackendTest {
         var items = SoftwareRendering.displayList(BODY0 + "<div style='width:40px;height:40px;background:#ff0000;filter:blur(3px);"
                 + "mask-image:linear-gradient(#000000,#000000)'></div></body></html>", 80, 80);
         SoftwareRenderBackend s = new SoftwareRenderBackend(80, 80);
-        s.render(items, T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
         int first = px(s, 20, 20);
-        s.render(items, T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
         assertEquals(first, px(s, 20, 20));
         assertEquals(0, a(px(s, 70, 70)));
     }
@@ -464,7 +464,7 @@ class SoftwareRenderBackendTest {
         var canvas = items.stream().filter(i -> i.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.CANVAS).findFirst().orElseThrow();
         // 提供元が無ければ何も描かない
         SoftwareRenderBackend none = new SoftwareRenderBackend(60, 40);
-        none.render(items, T0);
+        none.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
         assertEquals(0, a(px(none, 20, 15)));
         // ホストが画素を渡せば、箱いっぱいに貼られる
         com.nishiyu.enderframelib.core.raster.Pixmap pm = new com.nishiyu.enderframelib.core.raster.Pixmap(4, 4);
@@ -476,7 +476,7 @@ class SoftwareRenderBackendTest {
                 return it.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.CANVAS ? new Image(pm, 4, 4) : null;
             }
         });
-        s.render(items, T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
         assertEquals(0xFF336699, px(s, 20, 15));
         assertEquals(0, a(px(s, 45, 15)));
     }
@@ -519,11 +519,11 @@ class SoftwareRenderBackendTest {
                 + "#b{width:30px;height:30px;background:#000;animation:fade 1s linear forwards}</style><div id='b'></div></body></html>";
         List<DisplayItem> items = SoftwareRendering.displayList(html, 40, 40);
         SoftwareRenderBackend s = new SoftwareRenderBackend(40, 40);
-        s.render(items, 5_000);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 5_000));
         int start = a(px(s, 15, 15));
-        s.render(items, 5_500);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 5_500));
         int half = a(px(s, 15, 15));
-        s.render(items, 6_500);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 6_500));
         int end = a(px(s, 15, 15));
         assertTrue(start < 40, "start " + start);
         assertEquals(128, half, 30);
@@ -544,18 +544,18 @@ class SoftwareRenderBackendTest {
         String html = BODY0 + "<div style='width:30px;height:30px;background:#123456;border-radius:6px;box-shadow:0 2px 6px #000'></div></body></html>";
         List<DisplayItem> items = SoftwareRendering.displayList(html, 60, 60);
         SoftwareRenderBackend s = new SoftwareRenderBackend(60, 60);
-        s.render(items, T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
         int[] first = s.pixmap().pixels().clone();
-        s.render(items, T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, T0));
         assertTrue(java.util.Arrays.equals(first, s.pixmap().pixels()), "same input, same pixels (no accumulation)");
-        s.render(List.of(), T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(List.of(), T0));
         for (int p : s.pixmap().pixels()) assertEquals(0, p);
     }
 
     @Test
     void clearColorFillsTheBackdrop() {
         SoftwareRenderBackend s = new SoftwareRenderBackend(10, 10).clearColor(0xFF102030);
-        s.render(SoftwareRendering.displayList(BODY0 + "</body></html>", 10, 10), T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(SoftwareRendering.displayList(BODY0 + "</body></html>", 10, 10), T0));
         assertEquals(0xFF102030, px(s, 5, 5));
     }
 
@@ -577,7 +577,7 @@ class SoftwareRenderBackendTest {
         assumeFonts();
         String html = GoldenFiles.readFixture("showcase.html");
         SoftwareRenderBackend s = new SoftwareRenderBackend(854, 480).clearColor(0xFFFFFFFF);
-        s.render(SoftwareRendering.displayList(html, 854, 480), T0);
+        s.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(SoftwareRendering.displayList(html, 854, 480), T0));
         Path out = Path.of("build/test-output/software-showcase.png");
         s.writePng(out);
         assertTrue(Files.size(out) > 2000);

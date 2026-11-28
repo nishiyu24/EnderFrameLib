@@ -79,7 +79,7 @@ class GradientAttemptTest {
     private static int[] cpu(String html, GpuSink sink) {
         List<DisplayItem> items = SoftwareRendering.displayList(html, 80, 60);
         try (SoftwareRenderBackend b = new SoftwareRenderBackend(80, 60, 1f)) {
-            if (sink == null) b.render(items, 0); else b.renderOnto(items, 0, sink);
+            if (sink == null) b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0)); else b.renderOnto(items, 0, sink);
             return b.pixmap().pixels().clone();
         }
     }

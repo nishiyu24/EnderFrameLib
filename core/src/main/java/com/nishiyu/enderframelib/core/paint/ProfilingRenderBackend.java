@@ -29,33 +29,18 @@ public final class ProfilingRenderBackend implements RenderBackend {
     }
 
     @Override
-    public void render(List<DisplayItem> items, long nowMs) {
-        render(items, PaintOffsets.EMPTY, nowMs);
+    public PreparedFrame prepare(RenderFrame frame) {
+        return delegate.prepare(frame);
     }
 
     @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
+    public void render(PreparedFrame frame) {
         long t0 = StageProfiler.begin(PipelineStage.PAINT);
         try {
-            delegate.render(items, offsets, nowMs);
+            delegate.render(frame);
         } finally {
             StageProfiler.end(PipelineStage.PAINT, t0);
         }
-    }
-
-    @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
-        long t0 = StageProfiler.begin(PipelineStage.PAINT);
-        try {
-            delegate.render(items, offsets, source, nowMs);
-        } finally {
-            StageProfiler.end(PipelineStage.PAINT, t0);
-        }
-    }
-
-    @Override
-    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
-        return delegate.needsRepaint(items, offsets, source, nowMs);
     }
 
     @Override

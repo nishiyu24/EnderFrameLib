@@ -31,7 +31,7 @@ class RelativeTextareaPaintTest {
 
     private static Pixmap paint(List<DisplayItem> items, int w, int h) {
         SoftwareRenderBackend sw = new SoftwareRenderBackend(w, h, 1f);
-        sw.render(items, PaintOffsets.EMPTY, 0L);
+        sw.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, PaintOffsets.EMPTY, 0L));
         return sw.pixmap();
     }
 

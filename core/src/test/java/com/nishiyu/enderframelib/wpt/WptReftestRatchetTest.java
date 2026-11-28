@@ -62,8 +62,8 @@ class WptReftestRatchetTest {
         com.nishiyu.enderframelib.core.dom.InteractionState state = new com.nishiyu.enderframelib.core.dom.InteractionState();
         if (doc.root instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd) hd.setInteractionState(state);
         SoftwareRenderBackend b = new SoftwareRenderBackend(W, H, 1f);
-        b.render(com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(),
-                FONTS, state).items(), T0);
+        b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(com.nishiyu.enderframelib.common.FrameRender.document(doc, W, H, Map.of(), new com.nishiyu.enderframelib.core.layout.model.ScrollState(),
+                FONTS, state).items(), T0));
         return b.pixmap();
     }
 

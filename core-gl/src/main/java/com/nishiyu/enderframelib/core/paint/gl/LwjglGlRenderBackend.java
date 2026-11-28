@@ -114,29 +114,17 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     @Override public float devicePixelRatio() { return gpu.devicePixelRatio(); }
 
     @Override
-    public void render(List<DisplayItem> items, long nowMs) {
-        syncFlags();
-        gpu.render(items, PaintOffsets.EMPTY, nowMs);
+    public com.nishiyu.enderframelib.core.paint.PreparedFrame prepare(com.nishiyu.enderframelib.core.paint.RenderFrame frame) {
+        return gpu.prepare(frame);
     }
 
     @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) {
+    public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) {
         syncFlags();
-        gpu.render(items, offsets, nowMs);
+        gpu.render(frame);
     }
 
-    @Override
-    public void render(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
-        syncFlags();
-        gpu.render(items, offsets, source, nowMs);
-    }
-
-    @Override
-    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
-        return gpu.needsRepaint(items, offsets, source, nowMs);
-    }
-
-    /** 次の {@link #needsRepaint} を true にする（{@link GpuRenderBackend#invalidate}）。 */
+    /** 次の準備で描き直しを要るにする（{@link GpuRenderBackend#invalidate}）。 */
     public void invalidate() { gpu.invalidate(); }
 
     @Override public Pixmap pixmap() { return gpu.pixmap(); }

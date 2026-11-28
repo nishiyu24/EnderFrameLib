@@ -89,10 +89,9 @@ class RepaintSkipTest {
             assertFalse(twin.step(v, t += 16));
             List<DisplayItem> base = v.ui().renderCache();
             DisplayItem paint = base.stream().filter(i -> i.type() != ElementType.NODE && i.width() > 0).findFirst().orElseThrow();
-            List<DisplayItem> withOverlay = new ArrayList<>(base);
-            withOverlay.add(paint.withPosition(paint.x() + 90, paint.y() + 90));
-            assertTrue(twin.stepList(v, withOverlay, t += 16), "重ね描きを足したら描く");
-            assertTrue(twin.stepList(v, new ArrayList<>(withOverlay), t += 16), "重ね描きがある間は描く（シーンの外なので違いを比べない）");
+            List<DisplayItem> overlay = List.of(paint.withPosition(paint.x() + 90, paint.y() + 90));
+            assertTrue(twin.stepOverlays(v, overlay, t += 16), "重ね描きを足したら描く");
+            assertTrue(twin.stepOverlays(v, new ArrayList<>(overlay), t += 16), "重ね描きがある間は描く（シーンの外なので違いを比べない）");
             assertTrue(twin.step(v, t += 16), "重ね描きを外したフレームは描く（前の重ね描きの跡を消す）");
             assertFalse(twin.step(v, t += 16), "外し終えたら描かない");
             assertEquals("", twin.report.toString());
@@ -179,9 +178,9 @@ class RepaintSkipTest {
             return lastNeed;
         }
 
-        /** ビューの今の入力の代わりに列 {@code items}（重ね描きを足した列など）を描く。描いたら true。 */
-        boolean stepList(StandaloneView v, List<DisplayItem> items, long now) {
-            return paint(items, v.ui().paintOffsets(), v.ui().paintSource(), now);
+        /** ビューの今の列に重ね描き {@code overlays} を添えたフレームを描く。描いたら true。 */
+        boolean stepOverlays(StandaloneView v, List<DisplayItem> overlays, long now) {
+            return paint(new com.nishiyu.enderframelib.core.paint.RenderFrame(v.ui().renderCache(), overlays, v.ui().paintOffsets(), v.ui().paintSource(), now));
         }
 
         void clearColor(int argb) {
@@ -191,14 +190,16 @@ class RepaintSkipTest {
 
         long partialFrames() { return persistent.partialFrames(); }
 
-        private boolean paint(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long now) {
-            boolean need = lastNeed = persistent.needsRepaint(items, offsets, source, now);
-            if (need) persistent.render(items, offsets, source, now);
+        private boolean paint(com.nishiyu.enderframelib.core.paint.RenderFrame f) {
+            long now = f.nowMs();
+            com.nishiyu.enderframelib.core.paint.PreparedFrame mine = persistent.prepare(f);
+            boolean need = lastNeed = mine.needsRepaint();
+            if (need) persistent.render(mine);
             else skipped++;
             int[] got = persistent.pixmap().pixels();
             try (SoftwareRenderBackend fresh = new SoftwareRenderBackend(w, h, 1f, persistent.sessionId())) {
                 fresh.clearColor(clearArgb);
-                fresh.render(items, offsets, now);
+                fresh.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(f.drawList(), f.offsets(), now));
                 int[] want = fresh.pixmap().pixels();
                 int diff = 0, first = -1;
                 for (int i = 0; i < want.length; i++) {
@@ -214,11 +215,7 @@ class RepaintSkipTest {
             return need;
         }
 
-        @Override public void render(List<DisplayItem> items, long nowMs) { paint(items, PaintOffsets.EMPTY, null, nowMs); }
-        @Override public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { paint(items, offsets, null, nowMs); }
-        @Override public void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
-            paint(items, offsets, source, nowMs);
-        }
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) { paint(frame.frame()); }
         @Override public Pixmap pixmap() { return persistent.pixmap(); }
         @Override public float devicePixelRatio() { return 1f; }
         @Override public String sessionId() { return persistent.sessionId(); }

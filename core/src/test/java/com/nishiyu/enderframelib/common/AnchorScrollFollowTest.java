@@ -140,7 +140,7 @@ class AnchorScrollFollowTest {
         List<DisplayItem> fresh = new SceneDisplayListAdapter(W, H, doc.sheet.keyframes)
                 .emit(scene, DynamicSceneState.of(ui.scrollState(), W, H));
         SoftwareRenderBackend b = new SoftwareRenderBackend(W, H, 1f);
-        b.render(fresh, 0);
+        b.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(fresh, 0));
         Pixmap a = live.pixmap(), z = b.pixmap();
         int diff = 0;
         for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) if (a.get(x, y) != z.get(x, y)) diff++;

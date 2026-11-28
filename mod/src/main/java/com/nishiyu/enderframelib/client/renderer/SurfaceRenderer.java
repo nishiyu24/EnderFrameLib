@@ -61,7 +61,7 @@ public final class SurfaceRenderer {
     }
 
     /**
-     * セッションの外で組んだ列（{@code source} はその列を組んだシーン。{@link SceneSource#items} が {@code elements}）を描く。
+     * セッションの外で組んだ列（{@code source} はその列 {@code elements} を組んだシーン）を描く。
      * エンティティの上の板のように、1 回だけ組んだ文書の一部を描く面が使う。
      */
     public static boolean draw(String sessionId, List<DisplayItem> elements, SceneSource source, int widthBlocks, int heightBlocks,
@@ -70,12 +70,12 @@ public final class SurfaceRenderer {
     }
 
     /**
-     * 列 {@code elements} を組んだシーン。セッションの直近の列（で始まる列）でなければ null（呼び出し側で絞り込んだ一覧には、前のフレームと
+     * 列 {@code elements} を組んだシーン。セッションの直近の列そのものでなければ null（呼び出し側で絞り込んだ一覧には、前のフレームと
      * シーンの違いで比べられるシーンが無い。描画器は毎回全部を描く）。
      */
     private static SceneSource sourceOf(SessionContext session, List<DisplayItem> elements) {
         SceneSource source = session != null ? session.paintSource() : null;
-        return source != null && source.baseSizeIn(elements) > 0 ? source : null;
+        return source != null && elements == session.renderCache() ? source : null;
     }
 
     private static boolean paint(String sessionId, List<DisplayItem> elements, SceneSource source, PaintOffsets paintOffsets,

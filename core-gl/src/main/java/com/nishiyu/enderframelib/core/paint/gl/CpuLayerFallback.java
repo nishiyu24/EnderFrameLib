@@ -24,14 +24,13 @@ public final class CpuLayerFallback implements CpuFallback {
 
     /** 表示リストを走査し、GPU が受け取らなかった図形だけを CPU の層へ描く（受け取れたものは {@code sink} へ送る）。 */
     @Override
-    public void renderOnto(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs,
-                           GpuSink sink) {
-        raster.renderOnto(items, offsets, source, nowMs, sink);
+    public void renderOnto(com.nishiyu.enderframelib.core.paint.PreparedFrame frame, GpuSink sink) {
+        raster.renderOnto(frame, sink);
     }
 
     @Override
-    public boolean needsRepaint(List<DisplayItem> items, PaintOffsets offsets, com.nishiyu.enderframelib.core.paint.SceneSource source, long nowMs) {
-        return raster.needsRepaint(items, offsets, source, nowMs);
+    public com.nishiyu.enderframelib.core.paint.PreparedFrame prepare(com.nishiyu.enderframelib.core.paint.RenderFrame frame) {
+        return raster.prepare(frame);
     }
 
     /** CPU が塗った範囲の外接矩形 {x0,y0,x1,y1}。何も塗っていなければ null。 */

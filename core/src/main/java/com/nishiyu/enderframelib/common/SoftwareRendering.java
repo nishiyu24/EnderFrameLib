@@ -44,13 +44,13 @@ public final class SoftwareRendering {
 
     public static SoftwareRenderBackend renderHtml(String html, int width, int height, float devicePixelRatio, long nowMs) {
         SoftwareRenderBackend backend = new SoftwareRenderBackend(width, height, devicePixelRatio);
-        backend.render(displayList(html, width, height), nowMs);
+        backend.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(displayList(html, width, height), nowMs));
         return backend;
     }
 
     /** HTML をレイアウトして、任意の {@link RenderBackend}（CPU でも GPU でも）に時刻 {@code nowMs} の見た目で描く。 */
     public static <B extends RenderBackend> B renderHtml(String html, int width, int height, long nowMs, B backend) {
-        backend.render(displayList(html, width, height), nowMs);
+        backend.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(displayList(html, width, height), nowMs));
         return backend;
     }
 }

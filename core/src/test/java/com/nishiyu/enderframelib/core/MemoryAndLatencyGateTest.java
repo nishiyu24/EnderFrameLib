@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
 class MemoryAndLatencyGateTest {
 
     private static final class NoOpBackend implements RenderBackend {
-        @Override public void render(List<DisplayItem> items, long nowMs) { }
+        @Override public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) { }
         @Override public Pixmap pixmap() { throw new UnsupportedOperationException(); }
         @Override public float devicePixelRatio() { return 1f; }
     }

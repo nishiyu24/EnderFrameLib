@@ -83,18 +83,17 @@ class GpuRepaintSkipTest {
             return lastNeed;
         }
 
-        @Override public void render(List<DisplayItem> items, long nowMs) { render(items, PaintOffsets.EMPTY, null, nowMs); }
-        @Override public void render(List<DisplayItem> items, PaintOffsets offsets, long nowMs) { render(items, offsets, null, nowMs); }
-
         @Override
-        public void render(List<DisplayItem> items, PaintOffsets offsets, SceneSource source, long nowMs) {
-            boolean need = lastNeed = g.needsRepaint(items, offsets, source, nowMs);
-            if (need) g.render(items, offsets, source, nowMs);
+        public void render(com.nishiyu.enderframelib.core.paint.PreparedFrame frame) {
+            com.nishiyu.enderframelib.core.paint.RenderFrame f = frame.frame();
+            com.nishiyu.enderframelib.core.paint.PreparedFrame mine = g.prepare(f);
+            boolean need = lastNeed = mine.needsRepaint();
+            if (need) g.render(mine);
             else skipped++;
             int[] got = g.pixmap().pixels().clone();
             try (LwjglGlRenderBackend fresh = new LwjglGlRenderBackend(W, H)) {
                 fresh.clearColor(clearArgb);
-                fresh.render(items, offsets, source, nowMs);
+                fresh.render(f);
                 int[] want = fresh.pixmap().pixels();
                 int diff = 0;
                 for (int i = 0; i < want.length; i++) if (want[i] != got[i]) diff++;

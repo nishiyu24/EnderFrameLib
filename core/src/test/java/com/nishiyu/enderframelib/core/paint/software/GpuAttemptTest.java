@@ -96,7 +96,7 @@ class GpuAttemptTest {
             withRefusal = cpu.pixmap().pixels().clone();
         }
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(80, 50, 1f)) {
-            cpu.render(items, 0);
+            cpu.render(com.nishiyu.enderframelib.core.paint.RenderFrame.of(items, 0));
             plain = cpu.pixmap().pixels().clone();
         }
         assertFalse(sink.fills.isEmpty());
