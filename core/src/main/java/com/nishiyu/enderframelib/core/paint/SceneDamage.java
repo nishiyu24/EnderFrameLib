@@ -39,7 +39,7 @@ import java.util.Objects;
  */
 public final class SceneDamage {
     /** 描画命令の矩形に足す余白の最小（丸め・アンチエイリアスの縁。CSS px）。 */
-    static final float PAD = 2f;
+    static final float PAD = DrawOps.INK_PAD;
 
     /** 描き直す範囲。全面（{@link #full}）か、CSS px の矩形の和。 */
     public static final class Rects {
@@ -454,7 +454,7 @@ public final class SceneDamage {
         }
         for (int i = 0, n = ops.runCount(); i < n; i++) {
             float rx = ops.runX(i), ry = ops.runY(i), rw = ops.runW(i), rh = ops.runH(i);
-            float pad = Math.max(PAD, rh + 1f);
+            float pad = DrawOps.runPad(rh);
             add(ox + rx - pad, oy + ry - pad, ox + rx + rw + pad, oy + ry + rh + pad);
         }
     }
@@ -466,14 +466,9 @@ public final class SceneDamage {
 
     /** 描画命令の余白（影のぼかし・文字の大きさ。旧 {@code DamagePlanner#estimateBounds} から引き継いだ規則）。 */
     static float padOf(RenderMeta meta, String text, float h) {
-        float pad = PAD;
         RenderHints hints = meta != null ? meta.hints() : null;
-        if (hints != null && hints.shadowBlur() > 0f) pad = Math.max(pad, BoxDecorationPainter.SHADOW_REACH * hints.shadowBlur() + 1f);
-        if (text != null && !text.isEmpty()) {
-            float font = meta != null && meta.fontHeight() > 0f ? meta.fontHeight() : h;
-            pad = Math.max(pad, font + 1f);
-        }
-        return pad;
+        return DrawOps.inkPad(meta != null ? meta.fontHeight() : 0f, hints != null ? hints.shadowBlur() : 0f,
+                text != null && !text.isEmpty(), h);
     }
 
     /** 部分木の範囲（自分・子孫。両方向を切る箱は子孫を枠で切るので下りない）。 */
@@ -505,11 +500,7 @@ public final class SceneDamage {
         SceneLayer l = box.layer;
         if (l.transform != null) chain.pushTransform(box, l.transform);
         if (l.effects != null && !l.effects.filters().isEmpty()) {
-            float outset = 0f;
-            for (FilterOp f : l.effects.filters()) {
-                if (f.kind() == FilterOp.Kind.BLUR) outset += 3f * f.amount() + PAD;
-                else if (f.kind() == FilterOp.Kind.DROP_SHADOW) outset += Math.max(Math.abs(f.dx()), Math.abs(f.dy())) + 3f * f.amount() + PAD;
-            }
+            float outset = l.effects.filterReach();
             if (outset > 0f) chain.pushOutset(outset);
         }
     }

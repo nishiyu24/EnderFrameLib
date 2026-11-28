@@ -5,6 +5,7 @@ import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.VisualStyle;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.dom.node.ElementTraits;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.ClipShape;
@@ -94,10 +95,17 @@ final class SceneAdapterSupport {
         return new float[]{limit, cbBottom, box.y() - box.stickyDy(), box.h(), box.mB(), parent != port ? 1f : 0f};
     }
 
+    /** 配置された子孫を持つ部分木の印（スタッキングコンテキスト・配置の段）。 */
+    private static final int UNSCROLLABLE_HINT = SceneLayer.LAYER_NEG | SceneLayer.LAYER_POS0 | SceneLayer.LAYER_POSZ | SceneLayer.LAYER_HOIST;
+
     static boolean hasUnscrollableDescendant(SceneAdapterBox container, SceneAdapterBox box, boolean underSticky,
                                              List<SceneAdapterBox> stickies, int rootW, int rootH) {
-        for (SceneAdapterBox child : box.paintChildren()) {
+        for (SceneAdapterBox child : box.allChildren()) {
             if (child.displayNone()) continue;
+            // 配置された子孫（絶対・固定配置は配置の段かスタッキングコンテキストの段を親へ伝える）・sticky・content-visibility: auto
+            // （どちらも包含矩形が動く層の印）を持たない部分木には、まとめられない子孫が無い（M3b-4c-2b-2c。8,000 行の中身を毎回たどらない）
+            if ((child.layer.propagatedLayers & UNSCROLLABLE_HINT) == 0 && !child.layer.hasDynamicBounds()
+                    && !ElementTraits.isValueControl(child.node().tag)) continue;
             if (child.layer.isFixed() || child.layer.contentVisibilityAuto()) return true;
             if (child.layer.sticky != null) {
                 if (underSticky || stickyScrollParams(child, container, rootW, rootH) == null) return true;

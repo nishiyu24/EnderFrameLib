@@ -3,58 +3,58 @@
 # allocBytes は ±5%（+256 B の余裕）、ほかの項目は完全一致で比べる。
 # allocTol=N の行は allocBytes を ±N% で比べる（OS・JDK の JIT の違いで確保量が揺れる小さな行。経路の回数は同じ）。更新しても保つ。
 showcase idle | allocBytes=80 drawn=0 elements=164 items=736
-showcase hover | allocBytes=89395 drawn=600 elements=164 items=736
-showcase text | allocBytes=69514 drawn=600 elements=164 items=741
-showcase style | allocBytes=51731 drawn=600 elements=164 items=736 allocTol=8
+showcase hover | allocBytes=89401 drawn=600 elements=164 items=736
+showcase text | allocBytes=69617 drawn=600 elements=164 items=741
+showcase style | allocBytes=51730 drawn=600 elements=164 items=736 allocTol=8
 showcase scroll | allocBytes=680 drawn=0 elements=164 items=736
-showcase inherited | allocBytes=1250940 drawn=600 elements=164 items=736
-showcase resizeexact | allocBytes=993291 drawn=600 elements=164 items=736
-showcase open | allocBytes=4247353 drawn=600 elements=164 items=736
-large-list hover | allocBytes=116572 drawn=600 elements=506 items=5012
+showcase inherited | allocBytes=1244762 drawn=600 elements=164 items=736
+showcase resizeexact | allocBytes=989841 drawn=600 elements=164 items=736
+showcase open | allocBytes=4238736 drawn=600 elements=164 items=736
+large-list hover | allocBytes=116336 drawn=600 elements=506 items=5012
 large-list text | allocBytes=179825 drawn=600 elements=506 items=5012 allocTol=12
-large-list style | allocBytes=100581 drawn=600 elements=506 items=5012
+large-list style | allocBytes=100530 drawn=600 elements=506 items=5012
 large-list scroll | allocBytes=1400 drawn=600 elements=506 items=5012
-large-list child | allocBytes=203681 drawn=600 elements=506 items=5012
-large-list fontsize | allocBytes=8348836 drawn=600 elements=506 items=5012
-varied-list-500 inherited | allocBytes=16838464 drawn=600 elements=868 items=24466
+large-list child | allocBytes=203870 drawn=600 elements=506 items=5012
+large-list fontsize | allocBytes=8308716 drawn=600 elements=506 items=5012
+varied-list-500 inherited | allocBytes=16842616 drawn=600 elements=868 items=24466
 varied-list-500 child | allocBytes=198484 drawn=600 elements=868 items=24466 allocTol=12
-varied-list-500 fontsize | allocBytes=23422524 drawn=600 elements=868 items=24471
-showcase hover cpu | allocBytes=648737 drawn=600 elements=164 items=736
-showcase text cpu | allocBytes=571778 drawn=600 elements=164 items=741
-showcase style cpu | allocBytes=548892 drawn=600 elements=164 items=736
+varied-list-500 fontsize | allocBytes=23424932 drawn=600 elements=868 items=24471
+showcase hover cpu | allocBytes=641793 drawn=600 elements=164 items=736
+showcase text cpu | allocBytes=565551 drawn=600 elements=164 items=741
+showcase style cpu | allocBytes=541953 drawn=600 elements=164 items=736
 showcase scroll cpu | allocBytes=680 drawn=0 elements=164 items=736
-large-list hover cpu | allocBytes=1856678 drawn=600 elements=506 items=5012 allocTol=8
-voidwave.html hover | allocBytes=193437 drawn=600 elements=503 items=2254
+large-list hover cpu | allocBytes=285040 drawn=600 elements=506 items=5012 allocTol=8
+voidwave.html hover | allocBytes=193608 drawn=600 elements=503 items=2254
 voidwave.html scroll | allocBytes=1464 drawn=600 elements=503 items=2254
-voidwave.html text | allocBytes=57475 drawn=600 elements=503 items=2259
-surface_test.html hover | allocBytes=330591 drawn=600 elements=123 items=562 allocTol=8
+voidwave.html text | allocBytes=57507 drawn=600 elements=503 items=2259
+surface_test.html hover | allocBytes=330827 drawn=600 elements=123 items=562 allocTol=8
 surface_test.html scroll | allocBytes=16392 drawn=600 elements=123 items=560
-surface_test.html text | allocBytes=61338 drawn=600 elements=123 items=564
-animation_test.html hover | allocBytes=152692 drawn=600 elements=229 items=1080 allocTol=7
-animation_test.html text | allocBytes=70721 drawn=600 elements=229 items=1085
-media_test.html text | allocBytes=68601 drawn=600 elements=332 items=2388 allocTol=25
-hud_test.html text | allocBytes=38046 drawn=600 elements=22 items=68
-item_block_test.html text | allocBytes=68275 drawn=600 elements=506 items=3380
+surface_test.html text | allocBytes=61177 drawn=600 elements=123 items=564
+animation_test.html hover | allocBytes=159862 drawn=600 elements=229 items=1080 allocTol=7
+animation_test.html text | allocBytes=71129 drawn=600 elements=229 items=1085
+media_test.html text | allocBytes=68805 drawn=600 elements=332 items=2388 allocTol=25
+hud_test.html text | allocBytes=37828 drawn=600 elements=22 items=68
+item_block_test.html text | allocBytes=68618 drawn=600 elements=506 items=3380
 machine_ui.html scroll | allocBytes=1148 drawn=0 elements=22 items=68
-machine_ui.html text | allocBytes=40217 drawn=600 elements=22 items=72 allocTol=8
-guidebook text | allocBytes=37214 drawn=600 elements=119 items=878 allocTol=20
-voidwave.html open | allocBytes=12536979 drawn=600 elements=503 items=2254
-surface_test.html open | allocBytes=4188549 drawn=600 elements=123 items=560
-animation_test.html open | allocBytes=6310186 drawn=600 elements=229 items=1080
-media_test.html open | allocBytes=8725256 drawn=600 elements=332 items=2383
-hud_test.html open | allocBytes=815206 drawn=600 elements=22 items=64 allocTol=8
-item_block_test.html open | allocBytes=12238379 drawn=600 elements=506 items=3375
-machine_ui.html open | allocBytes=764749 drawn=600 elements=22 items=68 allocTol=8
-guidebook open | allocBytes=2433527 drawn=600 elements=119 items=881
-voidwave.html hover cpu | allocBytes=16851480 drawn=600 elements=503 items=2254
-surface_test.html hover cpu | allocBytes=751125 drawn=600 elements=123 items=562
-surface_test.html scroll cpu | allocBytes=159856 drawn=600 elements=123 items=560
-surface_test.html text cpu | allocBytes=473831 drawn=600 elements=123 items=564
-animation_test.html hover cpu | allocBytes=858281 drawn=600 elements=229 items=1080
-animation_test.html text cpu | allocBytes=778662 drawn=600 elements=229 items=1085
-media_test.html text cpu | allocBytes=1100857 drawn=600 elements=332 items=2388
-hud_test.html text cpu | allocBytes=82932 drawn=600 elements=22 items=68
-item_block_test.html text cpu | allocBytes=1449191 drawn=600 elements=506 items=3380
+machine_ui.html text | allocBytes=40218 drawn=600 elements=22 items=72 allocTol=8
+guidebook text | allocBytes=37155 drawn=600 elements=119 items=878 allocTol=20
+voidwave.html open | allocBytes=12535426 drawn=600 elements=503 items=2254
+surface_test.html open | allocBytes=4186701 drawn=600 elements=123 items=560
+animation_test.html open | allocBytes=6310271 drawn=600 elements=229 items=1080
+media_test.html open | allocBytes=8720711 drawn=600 elements=332 items=2383
+hud_test.html open | allocBytes=817577 drawn=600 elements=22 items=64 allocTol=8
+item_block_test.html open | allocBytes=12238389 drawn=600 elements=506 items=3375
+machine_ui.html open | allocBytes=765375 drawn=600 elements=22 items=68 allocTol=8
+guidebook open | allocBytes=2434169 drawn=600 elements=119 items=881
+voidwave.html hover cpu | allocBytes=16766191 drawn=600 elements=503 items=2254
+surface_test.html hover cpu | allocBytes=750975 drawn=600 elements=123 items=562
+surface_test.html scroll cpu | allocBytes=159886 drawn=600 elements=123 items=560
+surface_test.html text cpu | allocBytes=473671 drawn=600 elements=123 items=564
+animation_test.html hover cpu | allocBytes=728224 drawn=600 elements=229 items=1080
+animation_test.html text cpu | allocBytes=647031 drawn=600 elements=229 items=1085
+media_test.html text cpu | allocBytes=404274 drawn=600 elements=332 items=2388
+hud_test.html text cpu | allocBytes=83087 drawn=600 elements=22 items=68
+item_block_test.html text cpu | allocBytes=521788 drawn=600 elements=506 items=3380
 machine_ui.html scroll cpu | allocBytes=1148 drawn=0 elements=22 items=68 allocTol=12
-machine_ui.html text cpu | allocBytes=84832 drawn=600 elements=22 items=72
-guidebook text cpu | allocBytes=395586 drawn=600 elements=119 items=878 allocTol=25
+machine_ui.html text cpu | allocBytes=85107 drawn=600 elements=22 items=72
+guidebook text cpu | allocBytes=283171 drawn=600 elements=119 items=878 allocTol=25

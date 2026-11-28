@@ -73,7 +73,16 @@ public final class MemoryAndLatencyGate {
             {"voidwave.html", "open", "40", "60"},
             {"varied-list-2000", "fontsize", "40", "80"},
             {"large-list-8000", "child", "40", "80"},
+            // 連続スクロール（M3b-4c-2b-2c。描くフレームは見えるチャンクだけを組み、スクロールしたら組み直す）: 内側のコンテナと文書全体。
+            // 1 段 30px ずつ下へ、32 行のチャンクの境目を何度もまたぐ。中央値と p99 を出す（旧版の子 JVM はこの場面を知らないので -Pgate.base の比較から外す）
+            {"large-list-8000", "scroll", "40", "200"},
+            {"page-list-8000", "scroll", "40", "200"},
     };
+
+    /** 旧版の子 JVM が知らない場面（{@code -Pgate.base} の交互 A/B から外す）。 */
+    private static final java.util.Set<String> NEW_SCENARIOS = java.util.Set.of("scroll");
+    /** 直前の子 JVM の時間の行（中央値と p99 の表示用）。 */
+    private static String lastLatencyLine = "";
 
     record BaselineEntry(double valueMbOrMs, double maxAllowed) {}
 
@@ -92,6 +101,7 @@ public final class MemoryAndLatencyGate {
             default -> {
                 if (doc.startsWith("large-list-")) yield largeList(Integer.parseInt(doc.substring("large-list-".length())));
                 if (doc.startsWith("varied-list-")) yield variedList(Integer.parseInt(doc.substring("varied-list-".length())));
+                if (doc.startsWith("page-list-")) yield pageList(Integer.parseInt(doc.substring("page-list-".length())));
                 throw new IllegalArgumentException("未知の文書: " + doc);
             }
         };
@@ -110,6 +120,17 @@ public final class MemoryAndLatencyGate {
             sb.append("<li id=\"item-").append(i).append("\">Row item #").append(i).append(" with description text</li>");
         }
         return sb.append("</ul></div></body></html>").toString();
+    }
+
+    /** {@link #largeList} と同じ行を、内側のスクロールコンテナでなく文書（body）のスクロールに入れた文書。 */
+    static String pageList(int count) {
+        StringBuilder sb = new StringBuilder(count * 80 + 256);
+        sb.append("<html><head><style>html, body { height: 100%; } body { margin: 0; overflow-y: auto; } ul { list-style: none; padding: 0 8px; margin: 0; }"
+                + " li { padding: 4px; border-bottom: 1px solid #ccc; }</style></head><body><ul>");
+        for (int i = 1; i <= count; i++) {
+            sb.append("<li id=\"item-").append(i).append("\">Row item #").append(i).append(" with description text</li>");
+        }
+        return sb.append("</ul></body></html>").toString();
     }
 
     private static final String[] PALETTE = {"#fff", "#eef", "#fee", "#efe", "#ffe", "#eff", "#fef", "#dde", "#edd", "#ded", "#eed"};
@@ -163,7 +184,7 @@ public final class MemoryAndLatencyGate {
 
         static ScenarioTarget find(StandaloneView v, String doc) {
             ScenarioTarget t = new ScenarioTarget();
-            boolean isList = doc.startsWith("large-list-") || doc.startsWith("varied-list-");
+            boolean isList = doc.startsWith("large-list-") || doc.startsWith("varied-list-") || doc.startsWith("page-list-");
             if (isList) {
                 HtmlNode row = v.root().getNodeById("item-250");
                 t.parent = row.parent;
@@ -241,6 +262,10 @@ public final class MemoryAndLatencyGate {
                 }
             }
             case "resizeexact" -> v.ui().recomputeLayout(VIEWPORT_W - (i & 1), VIEWPORT_H);
+            case "scroll" -> {
+                // 点の下のスクロールコンテナ（内側の #scroller か文書）を 1 段下へ。端に着いたら先頭へ戻す
+                if (!v.ui().handleScrollLocally(100, 100, 0, -1)) v.ui().handleScrollLocally(100, 100, 0, 1_000_000);
+            }
             case "open" -> {
                 view[0].close();
                 view[0] = new StandaloneView(html, VIEWPORT_W, VIEWPORT_H, FontResolver.FALLBACK);
@@ -298,8 +323,8 @@ public final class MemoryAndLatencyGate {
         double sum = 0;
         for (double v : ms) sum += v;
         Arrays.sort(ms);
-        System.out.printf(Locale.ROOT, "LATENCY scenario=%s:%s mode=%s meanMs=%.4f p50Ms=%.4f%n",
-                doc, scenario, mode, sum / frames, ms[frames / 2]);
+        System.out.printf(Locale.ROOT, "LATENCY scenario=%s:%s mode=%s meanMs=%.4f p50Ms=%.4f p99Ms=%.4f%n",
+                doc, scenario, mode, sum / frames, ms[frames / 2], ms[Math.min(frames - 1, (int) Math.ceil(frames * 0.99) - 1)]);
     }
 
     // ---- 統計・判定ヘルパ（単体テストからも利用） ----
@@ -370,6 +395,7 @@ public final class MemoryAndLatencyGate {
                 "-Denderframe.threads=1", "-Xmx1g", "-cp", cp, MemoryAndLatencyGate.class.getName(),
                 "child", "latency", doc, scenario, mode, String.valueOf(warmup), String.valueOf(frames));
         String line = runChildAndFind(cmd, "LATENCY ");
+        lastLatencyLine = line;
         for (String tok : line.split("\\s+")) {
             if (tok.startsWith("meanMs=")) return Double.parseDouble(tok.substring(7));
         }
@@ -455,7 +481,8 @@ public final class MemoryAndLatencyGate {
             }
             double med = median(rounds);
             latMeasured.put(key, med);
-            System.out.printf(Locale.ROOT, "GATE %-34s median=%.4f ms%n", key, med);
+            System.out.printf(Locale.ROOT, "GATE %-34s median=%.4f ms%s%n", key, med,
+                    NEW_SCENARIOS.contains(r[1]) ? "  (last round: " + lastLatencyLine.replaceAll(".*mode=\\S+ ", "") + ")" : "");
         }
 
         if (!baseRef.isEmpty()) {
@@ -522,6 +549,7 @@ public final class MemoryAndLatencyGate {
             double maxRatio = 1.0 + DEFAULT_AB_MAX_REGRESSION_PCT / 100.0;
             for (String[] r : LATENCY_RUNS) {
                 String key = "git-ab:" + r[0] + ":" + r[1];
+                if (NEW_SCENARIOS.contains(r[1])) continue;
                 if (!only.isEmpty() && !key.contains(only)) continue;
                 int warm = Integer.parseInt(r[2]), frames = Integer.parseInt(r[3]);
                 double[] baseRounds = new double[AB_ROUNDS], curRounds = new double[AB_ROUNDS];

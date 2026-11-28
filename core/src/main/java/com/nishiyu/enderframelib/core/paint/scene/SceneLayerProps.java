@@ -136,7 +136,10 @@ final class SceneLayerProps {
 
         Transform2D transform = isText ? null : Transform2D.parse(st, values, w, h, vw, vh);
         StickyConstraint sticky = isText ? null : StickyConstraint.of(st, mT, mR, mB, mL);
-        if (transform != null || sticky != null || topLayer || hasAnimationOrTransition(v) || children.hasDynamicBounds) {
+        // 包含矩形が描く位置・塗る範囲を表さない層（M3b-4c-2b-2c で content-visibility: auto〔描くかがビューポートで決まる〕と
+        // 縦書きの包み箱〔命令を持たず毎フレーム描く〕を足した）。当たり判定と描くフレームのカリングはこの層を含むチャンクを飛ばさない
+        if (transform != null || sticky != null || topLayer || hasAnimationOrTransition(v) || children.hasDynamicBounds
+                || style.isContentVisibilityAuto() || verticalWrapper) {
             flags |= SceneLayer.FLAG_DYNAMIC_BOUNDS;
         }
 
@@ -256,7 +259,8 @@ final class SceneLayerProps {
         return value == null || "none".equals(value) || value.isBlank() || "none".equalsIgnoreCase(value.trim());
     }
 
-    private static boolean hasAnimationOrTransition(VisualStyle v) {
+    /** アニメーションか遷移を持つか（描く位置・形を補間が動かし得る）。 */
+    public static boolean hasAnimationOrTransition(VisualStyle v) {
         return (v.animation != null && !v.animation.isBlank() && !"none".equalsIgnoreCase(v.animation.trim()))
                 || (v.animationName != null && !v.animationName.isBlank() && !"none".equalsIgnoreCase(v.animationName.trim()))
                 || (v.transition != null && !v.transition.isBlank() && !"none".equalsIgnoreCase(v.transition.trim()))

@@ -30,4 +30,17 @@ public record LayerEffects(
     public boolean hasBackdrop() {
         return !backdropFilters.isEmpty();
     }
+
+    /**
+     * フィルターが層の画素を外へ広げる幅（CSS px。ぼかしと影。無ければ 0）。描き直す範囲（{@code SceneDamage}）と層の包含矩形
+     * （{@link SceneLayer#boundsMinX} ほか。描くフレームのカリング）が同じ規則で広げる。
+     */
+    public float filterReach() {
+        float outset = 0f;
+        for (FilterOp f : filters) {
+            if (f.kind() == FilterOp.Kind.BLUR) outset += 3f * f.amount() + DrawOps.INK_PAD;
+            else if (f.kind() == FilterOp.Kind.DROP_SHADOW) outset += Math.max(Math.abs(f.dx()), Math.abs(f.dy())) + 3f * f.amount() + DrawOps.INK_PAD;
+        }
+        return outset;
+    }
 }

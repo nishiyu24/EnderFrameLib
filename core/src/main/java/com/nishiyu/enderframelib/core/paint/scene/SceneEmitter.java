@@ -85,6 +85,14 @@ public final class SceneEmitter {
     }
 
     /** 作っている層 {@code layer} の描画の中身（自分を描かない層・命令の口が無ければ断片だけの {@code runs}）。{@link SceneLayer} のコンストラクタが呼ぶ。 */
+    /** 層の包含矩形に命令の塗る範囲を足す作業用の読み手と矩形（M3b-4c-2b-2c。層を作るたびに作らない。このエミッタの作る層だけが使う）。 */
+    private final DrawOps.Cursor inkCursor = new DrawOps.Cursor();
+    private final float[] inkBounds = new float[4];
+
+    DrawOps.Cursor inkCursor() { return inkCursor; }
+
+    float[] inkBounds() { return inkBounds; }
+
     DrawOps opsFor(SceneLayer layer, DrawOps runs) {
         if (opsSource == null || !layer.hasSelf()) return runs;
         DrawOps out = opsSource.ops(layer, runs, vw, vh);

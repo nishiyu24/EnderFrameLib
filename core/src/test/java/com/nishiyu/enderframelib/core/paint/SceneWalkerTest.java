@@ -186,15 +186,19 @@ public class SceneWalkerTest {
             Recorder scrolled = new Recorder();
             scrolled.walker = walker;
             SceneWalkAccess.walk(v, walker, 1500L, Matrix2D.IDENTITY, scrolled);
-            assertEquals(top.visits.size(), scrolled.visits.size());
+            // 描くフレームは見えるチャンクだけを組む（M3b-4c-2b-2c）ので、スクロールで入ってきた項目は前に無い。両方に描いた項目を ID で対にする
+            assertTrue(scrolled.visits.size() >= top.visits.size(), "スクロールで描く項目が減った");
+            Map<String, Integer> afterById = new HashMap<>();
+            for (int i = 0; i < scrolled.visits.size(); i++) afterById.putIfAbsent(scrolled.visits.get(i).id(), i);
             int moved = 0;
             List<DisplayItem> items = v.ui().relativeElements();
             Map<String, DisplayItem> byId = new HashMap<>();
             for (DisplayItem it : items) byId.put(it.id(), it);
             for (int i = 0; i < top.visits.size(); i++) {
                 DisplayItem a = byId.get(top.visits.get(i).id());
-                if (a == null) continue;
-                double d = scrolled.visits.get(i).pose().f() - top.visits.get(i).pose().f();
+                Integer j = afterById.get(top.visits.get(i).id());
+                if (a == null || j == null) continue;
+                double d = scrolled.visits.get(j).pose().f() - top.visits.get(i).pose().f();
                 if (a.type() == ElementType.TEXT || a.bgColor() == 0xFFCC3333 || a.bgColor() == 0xFF33CC33) {
                     assertEquals(-dy, d, 1e-3, "中身の項目がスクロール量だけ動かない: " + a.id());
                     moved++;

@@ -147,32 +147,32 @@ public final class SceneLayer {
         this.stickyDescendants = ((flags & FLAG_SCROLL_CONTAINER) != 0 || stackingKind == StackingKind.ROOT)
                 ? this.children.collectStickies() : NO_LAYERS;
 
-        float minX = 0f, minY = 0f, maxX = Math.max(0f, w), maxY = Math.max(0f, h);
-        for (int i = 0, n = own.runCount(); i < n; i++) {
-            float rx = own.runX(i), ry = own.runY(i);
-            minX = Math.min(minX, rx - x);
-            minY = Math.min(minY, ry - y);
-            maxX = Math.max(maxX, rx + own.runW(i) - x);
-            maxY = Math.max(maxY, ry + own.runH(i) - y);
-        }
+        // 命令は他の欄が全て決まった層から作る（作る間 ops() は null。生成器は断片を OpList から読む。包含矩形は読まない）
+        this.ops = opsFrom != null ? opsFrom.opsFor(this, own) : own;
+        // 包含矩形は塗る範囲（M3b-4c-2b-2c。描くフレームのカリングと当たり判定の足切り）: 枠・断片と命令の塗る範囲（影・字形の余白）・子孫。
+        // 原点でない層の子は原点の節からの位置に並ぶので、自分の位置を引いて自分からの座標にする（断片と同じ）
+        float[] b = opsFrom != null ? opsFrom.inkBounds() : new float[4];
+        b[0] = 0f; b[1] = 0f; b[2] = Math.max(0f, w); b[3] = Math.max(0f, h);
+        this.ops.inkInto(opsFrom != null ? opsFrom.inkCursor() : null, b, -x, -y);
+        // 両方向を切る箱は子孫を枠で切る（絶対・固定配置の箱は包含ブロックの層の子に置かれるので、切られない子孫はこの層の下に無い）
         boolean clippedOwn = (flags & FLAG_CLIPS_X) != 0 && (flags & FLAG_CLIPS_Y) != 0 && (propagatedLayers & LAYER_HOIST) == 0;
         if (!clippedOwn && this.children.chunks.length > 0) {
+            float fx = (flags & FLAG_IS_ORIGIN) != 0 ? 0f : -x, fy = (flags & FLAG_IS_ORIGIN) != 0 ? 0f : -y;
             for (int k = 0; k < this.children.chunks.length; k++) {
                 SceneChunk c = this.children.chunks[k];
                 if (c.layers.length == 0) continue;
-                float cx = this.children.chunkX[k], cy = this.children.chunkY[k];
-                minX = Math.min(minX, cx + c.minX);
-                minY = Math.min(minY, cy + c.minY);
-                maxX = Math.max(maxX, cx + c.maxX);
-                maxY = Math.max(maxY, cy + c.maxY);
+                float cx = this.children.chunkX[k] + fx, cy = this.children.chunkY[k] + fy;
+                if (cx + c.minX < b[0]) b[0] = cx + c.minX;
+                if (cy + c.minY < b[1]) b[1] = cy + c.minY;
+                if (cx + c.maxX > b[2]) b[2] = cx + c.maxX;
+                if (cy + c.maxY > b[3]) b[3] = cy + c.maxY;
             }
         }
-        this.boundsMinX = minX;
-        this.boundsMinY = minY;
-        this.boundsMaxX = maxX;
-        this.boundsMaxY = maxY;
-        // 最後に: 命令は他の欄が全て決まった層から作る（作る間 ops() は null。生成器は断片を OpList から読む）
-        this.ops = opsFrom != null ? opsFrom.opsFor(this, own) : own;
+        float reach = effects != null ? effects.filterReach() : 0f;
+        this.boundsMinX = b[0] - reach;
+        this.boundsMinY = b[1] - reach;
+        this.boundsMaxX = b[2] + reach;
+        this.boundsMaxY = b[3] + reach;
     }
 
     private SceneLayer(SceneLayer src, float nx, float ny, DrawOps ops) {
@@ -239,6 +239,11 @@ public final class SceneLayer {
         out[0] = this;
         System.arraycopy(kids, 0, out, 1, kids.length);
         return out;
+    }
+
+    /** 補間（アニメーション・遷移）を持つか（描く位置・形が時刻で動き得る。描くフレームのカリングは子孫を飛ばさない。M3b-4c-2b-2c）。 */
+    public boolean animates() {
+        return style != null && SceneLayerProps.hasAnimationOrTransition(style.typed().visual);
     }
 
     public boolean anonymous() { return (flags & FLAG_ANONYMOUS) != 0; }

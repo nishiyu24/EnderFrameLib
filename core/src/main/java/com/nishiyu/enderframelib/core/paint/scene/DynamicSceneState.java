@@ -43,6 +43,20 @@ public final class DynamicSceneState {
         return scroller != null && scroller.node != null && !unscrolled.contains(scroller.node) ? scroll.getScrollY(scroller.node) : 0f;
     }
 
+    /** スクロール量を 0 として読むコンテナか（{@link #unscrolled}。中身は描くときにスクロール量だけ平行移動する）。 */
+    public boolean readsUnscrolled(SceneLayer scroller) {
+        return scroller != null && scroller.node != null && unscrolled.contains(scroller.node);
+    }
+
+    /** 0 として読むコンテナも含めた今のスクロール量（描くフレームのカリングが中身の見える範囲を求める。M3b-4c-2b-2c）。 */
+    public float actualScrollX(SceneLayer scroller) {
+        return scroller != null && scroller.node != null ? scroll.getScrollX(scroller.node) : 0f;
+    }
+
+    public float actualScrollY(SceneLayer scroller) {
+        return scroller != null && scroller.node != null ? scroll.getScrollY(scroller.node) : 0f;
+    }
+
     /** スクロール中のアンカーへの追従（G8）。追従しなければ {@code null}。 */
     public float[] anchorShift(SceneLayer layer) {
         return layer.follow != null ? SceneAnchorFollow.shift(layer.follow, scroll) : null;

@@ -98,6 +98,19 @@ final class MetaWords {
         return new RenderMeta(clip, radii, circle, fontH, baseline, lineH, ox, oy, items, (fl & INTERACTIVE) != 0, rounded, hints);
     }
 
+    /** {@code a[p..]} に書いたメタの書体の高さ（戻さずに読む）。 */
+    static float fontHeight(int[] a, int p) {
+        return Float.intBitsToFloat(a[p + 1]);
+    }
+
+    /** {@code a[p..]} に書いたメタの影のぼかし（戻さずに読む。付帯情報を持ち主の ID などに分けたメタは 0）。 */
+    static float shadowBlur(int[] a, int p, Object[] r) {
+        int fl = a[p];
+        if ((fl & HINTS) == 0) return 0f;
+        int q = p + 7 + Integer.bitCount(fl & (CLIP | RADII | CIRCLE | ROUNDED));
+        return ((RenderHints) r[a[q]]).shadowBlur();
+    }
+
     /** 付帯情報が持ち主の ID・鍵・書体の名前・{@code relativeOrigin} のほかは既定値か（float は -0 も既定値でないとみなす）。 */
     private static boolean ownerOnly(RenderHints h) {
         return h.title() == null && !h.scrollable() && Float.floatToRawIntBits(h.scrollWidth()) == 0

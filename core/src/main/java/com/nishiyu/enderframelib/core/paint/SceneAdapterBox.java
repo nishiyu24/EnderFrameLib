@@ -29,10 +29,18 @@ final class SceneAdapterBox {
     private final float x, y;
     private final DynamicSceneState dynamic;
     private final float stickyDy;
+    /**
+     * 子を描く範囲（M3b-4c-2b-2c。描くフレームのカリング）: 子の座標〔組む座標。中身をスクロール 0 で組むコンテナの中はスクロール 0〕での
+     * minX・minY・maxX・maxY。この外のチャンクは描かれないので組まない。null なら全部の子を組む（カリングしない・変形などの下）。
+     */
+    private final float[] cull;
     private List<SceneAdapterBox> kids;
+    /** 飛ばさずに並べた子（{@link #allChildren}。カリングでチャンクを飛ばしたときだけ別に作る）。 */
+    private List<SceneAdapterBox> allKids;
+    private boolean culledAny;
 
     private SceneAdapterBox(SceneLayer layer, SceneAdapterBox parent, float x, float y,
-                            DynamicSceneState dynamic, float stickyDy) {
+                            DynamicSceneState dynamic, float stickyDy, float[] cull) {
         this.layer = layer;
         this.node = layer.node;
         this.isAnonymous = layer.anonymous();
@@ -41,15 +49,43 @@ final class SceneAdapterBox {
         this.y = y;
         this.dynamic = dynamic;
         this.stickyDy = stickyDy;
+        this.cull = cull;
     }
 
     static SceneAdapterBox root(DisplayScene scene, DynamicSceneState dynamic) {
-        return root(scene.root, dynamic);
+        return root(scene.root, dynamic, null);
+    }
+
+    /** 根の箱。{@code cull} は描く範囲（ビューポートの座標。null ならカリングしない）。 */
+    static SceneAdapterBox root(DisplayScene scene, DynamicSceneState dynamic, float[] cull) {
+        return root(scene.root, dynamic, cull);
     }
 
     static SceneAdapterBox root(SceneLayer root, DynamicSceneState dynamic) {
+        return root(root, dynamic, null);
+    }
+
+    private static SceneAdapterBox root(SceneLayer root, DynamicSceneState dynamic, float[] cull) {
         DynamicSceneState dyn = dynamic != null ? dynamic : DynamicSceneState.of(null, root.w, root.h);
-        return new SceneAdapterBox(root, null, 0f, 0f, dyn, 0f);
+        return new SceneAdapterBox(root, null, 0f, 0f, dyn, 0f, cull);
+    }
+
+    /** 子 {@code c} の子を描く範囲（{@link #cull}）。 */
+    private float[] cullFor(SceneLayer c) {
+        float[] r = cull;
+        if (r == null) return null;
+        // 変形・フィルター〔周りの画素を広げる〕・補間〔位置と形を時刻で動かす〕・sticky とアンカーの追従〔中身をスクロール 0 で組むコンテナの中では
+        // 貼り付きのずれを描くときに足すので、組む位置と描く位置が違う〕の下は、組む座標が描く位置を表さないのでカリングしない
+        if (c.transform != null || (c.effects != null && !c.effects.filters().isEmpty()) || c.animates()
+                || c.sticky != null || c.follow != null) return null;
+        if (c.isScrollContainer() && dynamic.readsUnscrolled(c)) {
+            // 中身はスクロール 0 で組み、描くときに今のスクロール量だけ戻す: 見える中身は組む座標で（上の範囲 + 今のスクロール量）。
+            // 余白は持たず、スクロールしたフレームは組み直す（計画書 §3.4 の 2b-2c のスクロールの方針）。範囲はポートで狭めずビューポートの
+            // 大きさのまま: GPU の保持層（ビューポートの大きさの層に、記録したときのスクロール量で描く）が後のフレームで使う画素を全部含む
+            float sx = dynamic.actualScrollX(c), sy = dynamic.actualScrollY(c);
+            return new float[]{r[0] + sx, r[1] + sy, r[2] + sx, r[3] + sy};
+        }
+        return r;
     }
 
     private SceneAdapterBox createChild(SceneLayer c, float chunkOx, float chunkOy) {
@@ -61,8 +97,9 @@ final class SceneAdapterBox {
         }
         float cx = ox + chunkOx + c.x;
         float cy = oy + chunkOy + c.y;
+        float[] cc = cullFor(c);
         if (c.follow == null && c.sticky == null) {
-            return new SceneAdapterBox(c, this, cx, cy, dynamic, 0f);
+            return new SceneAdapterBox(c, this, cx, cy, dynamic, 0f, cc);
         }
         float[] d = dynamic.anchorShift(c);
         if (d != null) {
@@ -80,8 +117,8 @@ final class SceneAdapterBox {
             stick = dynamic.stickyOffset(c, cx, cy, portX, portY, portW, portH,
                     x + bL() + pL(), y + bT() + pT(), x + w() - bR() - pR(), y + h() - bB() - pB());
         }
-        if (stick == null) return new SceneAdapterBox(c, this, cx, cy, dynamic, 0f);
-        return new SceneAdapterBox(c, this, cx + stick[0], cy + stick[1], dynamic, stick[1]);
+        if (stick == null) return new SceneAdapterBox(c, this, cx, cy, dynamic, 0f, cc);
+        return new SceneAdapterBox(c, this, cx + stick[0], cy + stick[1], dynamic, stick[1], cc);
     }
 
     HtmlNode node() { return node; }
@@ -94,13 +131,29 @@ final class SceneAdapterBox {
     ComputedStyle axisStyle() { return layer.style; }
     SceneAdapterBox paintParent() { return parent; }
 
+    /**
+     * 描く子（描く順）。描く範囲（{@link #cull}）があれば、原点の箱の子のうち包含矩形（塗る範囲。M3b-4c-2b-2c）が範囲の外のチャンクを飛ばす。
+     * 包含矩形が描く位置を表さない層（変形・sticky・アンカー追従・補間・Top Layer ほか。{@code SceneChunk#hasDynamicBounds}）のチャンクは飛ばさない。
+     * 子の座標は原点の箱（スクロールコンテナならスクロール量を引く）から（{@link #createChild} と同じ）。
+     */
     List<SceneAdapterBox> paintChildren() {
         if (kids == null) {
+            float[] r = layer.isOrigin() ? cull : null;
+            float bx = x, by = y;
+            if (r != null && isScrollContainer()) {
+                bx -= dynamic.scrollX(layer);
+                by -= dynamic.scrollY(layer);
+            }
             SceneChildren sc = layer.children;
-            List<SceneAdapterBox> out = new ArrayList<>(sc.size);
+            List<SceneAdapterBox> out = new ArrayList<>(r == null ? sc.size : Math.min(sc.size, 64));
             for (int k = 0; k < sc.chunks.length; k++) {
                 SceneChunk c = sc.chunks[k];
                 float cx = sc.chunkX[k], cy = sc.chunkY[k];
+                if (r != null && !c.hasDynamicBounds && c.layers.length > 0
+                        && (bx + cx + c.maxX < r[0] || bx + cx + c.minX > r[2] || by + cy + c.maxY < r[1] || by + cy + c.minY > r[3])) {
+                    culledAny = true;
+                    continue;
+                }
                 for (SceneLayer child : c.layers) {
                     out.add(createChild(child, cx, cy));
                 }
@@ -108,6 +161,22 @@ final class SceneAdapterBox {
             kids = out;
         }
         return kids;
+    }
+
+    /** 飛ばさずに並べた子（中身を 1 つの節にまとめられるかの判定・legend。描く子を飛ばしていなければ {@link #paintChildren} と同じ列）。 */
+    List<SceneAdapterBox> allChildren() {
+        List<SceneAdapterBox> p = paintChildren();
+        if (!culledAny) return p;
+        if (allKids == null) {
+            SceneChildren sc = layer.children;
+            List<SceneAdapterBox> out = new ArrayList<>(sc.size);
+            for (int k = 0; k < sc.chunks.length; k++) {
+                float cx = sc.chunkX[k], cy = sc.chunkY[k];
+                for (SceneLayer child : sc.chunks[k].layers) out.add(createChild(child, cx, cy));
+            }
+            allKids = out;
+        }
+        return allKids;
     }
 
 
@@ -148,7 +217,7 @@ final class SceneAdapterBox {
     ComputedStyle placeholder() { return null; }
 
     SceneAdapterBox renderedLegend() {
-        List<SceneAdapterBox> ch = paintChildren();
+        List<SceneAdapterBox> ch = allChildren();
         for (int i = 0; i < ch.size(); i++) {
             SceneAdapterBox c = ch.get(i);
             if (layer.children.isRenderedLegend(c.layer)) {

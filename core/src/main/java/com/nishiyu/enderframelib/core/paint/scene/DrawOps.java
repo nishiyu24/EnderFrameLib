@@ -81,6 +81,11 @@ public final class DrawOps {
     static final int RUN_START = 1, RUN_END = 2;
 
     static final int ONE = Float.floatToRawIntBits(1f);
+
+    /** 命令の矩形の外へ塗る最小の余白（CSS px。丸め・縁のにじみ）。 */
+    public static final float INK_PAD = 2f;
+    /** 影のぼかしが届く幅のぼかしの半径に対する倍率（{@code BoxDecorationPainter} の影と同じ）。 */
+    public static final float SHADOW_REACH = 1.5f;
     private static final ElementType[] TYPES = ElementType.values();
     private static final ImageFitMode[] FITS = ImageFitMode.values();
 
@@ -184,6 +189,55 @@ public final class DrawOps {
         return out;
     }
 
+    /**
+     * 命令 1 つが矩形の外へ塗る余白（CSS px。M3b-4c-2b-2c。描き直す範囲〔{@code SceneDamage}〕と層の包含矩形が同じ規則で広げる）:
+     * 影のぼかし、文字は字形が行の箱からはみ出す分として書体の高さ（無ければ矩形の高さ）。
+     */
+    public static float inkPad(float fontHeight, float shadowBlur, boolean hasText, float h) {
+        float pad = INK_PAD;
+        if (shadowBlur > 0f) pad = Math.max(pad, SHADOW_REACH * shadowBlur + 1f);
+        if (hasText) pad = Math.max(pad, (fontHeight > 0f ? fontHeight : h) + 1f);
+        return pad;
+    }
+
+    /** 行の断片が矩形の外へ塗る余白（字形のはみ出し。断片の高さ）。 */
+    public static float runPad(float h) {
+        return Math.max(INK_PAD, h + 1f);
+    }
+
+    /**
+     * 断片と命令が塗る範囲（余白込み）の外接矩形を {@code b}（minX・minY・maxX・maxY）に足す（M3b-4c-2b-2c。層の包含矩形を塗る範囲にする）。
+     * 層自身からの命令はそのまま、原点の節からの断片・命令（{@link #BASE_ORIGIN_PARENT}）は {@code (dx, dy)} だけずらす。
+     * メタのオブジェクトを戻さず語から読む。{@code cursor} は使い回す読み手（null なら作る。層を作るエミッタが 1 つ持つ）。
+     */
+    void inkInto(Cursor cursor, float[] b, float dx, float dy) {
+        for (int i = 0; i < runs; i++) {
+            float pad = runPad(runH(i));
+            grow(b, runX(i) + dx - pad, runY(i) + dy - pad, runX(i) + runW(i) + dx + pad, runY(i) + runH(i) + dy + pad);
+        }
+        if (count == 0) return;
+        Cursor c = (cursor != null ? cursor : new Cursor()).resetGeometry(this);
+        while (c.next()) {
+            boolean fromOrigin = (c.flags() & BASE_ORIGIN_PARENT) != 0;
+            float ox = fromOrigin ? dx : 0f, oy = fromOrigin ? dy : 0f;
+            float pad;
+            int m = c.metaWord;
+            if (m >= 0) {
+                pad = inkPad(MetaWords.fontHeight(data, m), MetaWords.shadowBlur(data, m, refs), !c.text().isEmpty(), c.h());
+            } else {
+                pad = inkPad(0f, 0f, !c.text().isEmpty(), c.h());
+            }
+            grow(b, c.x() + ox - pad, c.y() + oy - pad, c.x() + c.w() + ox + pad, c.y() + c.h() + oy + pad);
+        }
+    }
+
+    private static void grow(float[] b, float x0, float y0, float x1, float y1) {
+        if (x0 < b[0]) b[0] = x0;
+        if (y0 < b[1]) b[1] = y0;
+        if (x1 > b[2]) b[2] = x1;
+        if (y1 > b[3]) b[3] = y1;
+    }
+
     /** 詰めた語の数（調べ用）。 */
     public int words() {
         return data.length;
@@ -238,6 +292,10 @@ public final class DrawOps {
         private int number;
         // メタ: 組み立て中の列はオブジェクトの表、不変の列は語の表から 1 度だけ戻して覚える（同じ列を読む間だけ）
         private RenderMeta[] metas = new RenderMeta[8];
+        /** 幾何だけを読む（メタを戻さず、語の位置 {@link #metaWord} だけを持つ。{@link #resetGeometry}）。 */
+        private boolean geometryOnly;
+        /** 幾何だけを読むときの今の命令のメタの語の位置（無ければ -1）。 */
+        int metaWord = -1;
         private int metaStart, metasUsed;
         private boolean fromBuilder;
         private int owner;
@@ -247,13 +305,22 @@ public final class DrawOps {
             reset(ops.data, ops.refs, ops.count, ops.runs);
             metaStart = ops.metaStart;
             fromBuilder = false;
+            geometryOnly = false;
             owner = ops.owner;
             ownerKey = (long) ops.ownerHandle << 16;
             return this;
         }
 
+        /** 不変の列の幾何（座標・中身の文字・メタの語の位置）だけを読む（メタのオブジェクトを作らない）。 */
+        Cursor resetGeometry(DrawOps ops) {
+            reset(ops);
+            geometryOnly = true;
+            return this;
+        }
+
         /** 組み立て中の列（{@link DrawOpsBuilder}）を読む。 */
         public Cursor reset(DrawOpsBuilder b) {
+            geometryOnly = false;
             reset(b.data, b.refs, b.count, b.runs);
             owner = b.owner;
             ownerKey = (long) b.ownerHandle << 16;
@@ -336,7 +403,12 @@ public final class DrawOps {
             rot = (m & HAS_ROT) != 0 ? Float.intBitsToFloat(a[p++]) : 0f;
             trans = (m & HAS_TRANS) != 0 ? a[p++] : 0;
             anim = (m & HAS_ANIM) != 0 ? (AnimationSpec) r[a[p++]] : AnimationSpec.NONE;
-            meta = (m & HAS_META) != 0 ? metaAt(a[p++]) : null;
+            if (geometryOnly) {
+                meta = null;
+                metaWord = (m & HAS_META) != 0 ? d[metaStart + 1 + a[p++]] : -1;
+            } else {
+                meta = (m & HAS_META) != 0 ? metaAt(a[p++]) : null;
+            }
             if ((m & HAS_LINE) != 0) {
                 baseline = Float.intBitsToFloat(a[p++]);
                 lineHeight = Float.intBitsToFloat(a[p++]);

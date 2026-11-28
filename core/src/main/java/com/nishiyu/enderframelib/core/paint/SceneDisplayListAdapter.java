@@ -59,6 +59,8 @@ public final class SceneDisplayListAdapter {
     private final List<ScrollContent> scrollContentOrder = new ArrayList<>();
     private final List<ScrollContentInfo> scrollInfos = new ArrayList<>();
     private ItemSink out;
+    /** 描く範囲（ビューポートの座標。null なら全部を組む。{@link #emitUnscrolled(DisplayScene, DynamicSceneState, float[])}）。 */
+    private float[] cull;
 
     private record ChildContext(ClipRect clip, String parentId) { }
 
@@ -113,6 +115,24 @@ public final class SceneDisplayListAdapter {
      * 今のスクロール量で組み直す（そのコンテナのスクロールは列の作り直しで届く）。中身の印（{@link #scrollContents} の {@code sx0}）は組んだ量。
      */
     public List<DisplayItem> emitUnscrolled(DisplayScene scene, DynamicSceneState real) {
+        return emitUnscrolled(scene, real, null);
+    }
+
+    /**
+     * {@link #emitUnscrolled(DisplayScene, DynamicSceneState)} のうち、描く範囲 {@code cull}（ビューポートの座標の minX・minY・maxX・maxY。
+     * null なら全部）にかかるチャンクだけを組む（M3b-4c-2b-2c。描画器の準備 {@link FrameComposer} が描くフレームに使う）。中身をスクロール 0 で
+     * 組むコンテナの中は今のスクロール量だけずらした範囲で選ぶので、列はそのスクロール量でだけ正しい（スクロールしたら組み直す）。
+     */
+    public List<DisplayItem> emitUnscrolled(DisplayScene scene, DynamicSceneState real, float[] cull) {
+        this.cull = cull;
+        try {
+            return emitUnscrolledAll(scene, real);
+        } finally {
+            this.cull = null;
+        }
+    }
+
+    private List<DisplayItem> emitUnscrolledAll(DisplayScene scene, DynamicSceneState real) {
         Map<HtmlNode, float[]> scrolled = real.scroll.snapshot();
         Set<HtmlNode> zero = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         if (!scrolled.isEmpty()) {
@@ -146,7 +166,7 @@ public final class SceneDisplayListAdapter {
         this.followedScrollers = SceneAnchorFollow.followedScrollers(scene);
         this.canvasSource = null;
 
-        SceneAdapterBox top = SceneAdapterBox.root(scene, this.dynamic);
+        SceneAdapterBox top = SceneAdapterBox.root(scene, this.dynamic, cull);
         this.out = sink;
         try {
             if ("root".equals(top.node().tag)) {

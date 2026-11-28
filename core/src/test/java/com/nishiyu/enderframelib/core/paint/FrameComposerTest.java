@@ -18,7 +18,9 @@ import org.junit.jupiter.api.Test;
  * 描画器の側の列の組み立て（M3b-4c-2b-2b。{@link FrameComposer}）: ビューは列を持たず、描画器が準備でフレームのシーンから組む。
  *
  * <ul>
- *   <li>シーンの根が同じで、中身を 1 つの節にまとめたコンテナだけがスクロールしたら組み直さず、中身の節の平行移動を足す。</li>
+ *   <li>中身を 1 つの節にまとめたコンテナはスクロール 0 の位置で組み、今のスクロール量を中身の節の平行移動で足す。描くフレームは見えるチャンク
+ *   だけを組むので、スクロールしたら組み直す（M3b-4c-2b-2c）。何も変わらなければ使い回す。</li>
+ *   <li>描くフレームは見えるチャンクだけを組み、利用者の平行移動があれば全部を組む。</li>
  *   <li>シーンが変わると組み直す。</li>
  *   <li>描いた画素は、同じ状態を新しい描画器で全面に描いた画素と同じ。</li>
  * </ul>
@@ -50,15 +52,17 @@ class FrameComposerTest {
             ui.handleScrollLocally(40, 40, 0, -3); // コンテナの上でスクロールする
             ui.flushInvalidation();
             FrameComposer.Composed b = c.compose(ui.renderFrame(List.of(), null, 16));
-            assertEquals(1, c.builds(), "まとめたコンテナのスクロールだけなら組み直さない");
-            assertSame(a.items(), b.items(), "同じ列");
+            assertEquals(2, c.builds(), "スクロールしたら見えるチャンクを組み直す");
             assertTrue(b.offsets().dy(box.contentId()) < 0f, "中身の節をスクロール量だけ上へ動かす: " + b.offsets().dy(box.contentId()));
             assertEquals(0f, a.offsets().dy(box.contentId()));
+            FrameComposer.Composed b2 = c.compose(ui.renderFrame(List.of(), null, 24));
+            assertEquals(2, c.builds(), "何も変わらなければ組み直さない");
+            assertSame(b.items(), b2.items(), "同じ列");
 
             ui.setHoveredElement("h"); // シーンが変わる
             ui.flushInvalidation();
             FrameComposer.Composed d = c.compose(ui.renderFrame(List.of(), null, 32));
-            assertEquals(2, c.builds(), "シーンが変われば組み直す");
+            assertEquals(3, c.builds(), "シーンが変われば組み直す");
             assertNotEquals(System.identityHashCode(a.items()), System.identityHashCode(d.items()));
         }
     }

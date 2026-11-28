@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /** 箱の飾り（背景・枠線・影・輪郭線・インラインの断片）を描画項目にする。 */
 public final class BoxDecorationPainter {
     /** ぼかした影の矩形が、ぼかしが消える所まで外へ広がる倍率（ぼかし半径に対して）。 */
-    public static final float SHADOW_REACH = 1.5f;
+    public static final float SHADOW_REACH = com.nishiyu.enderframelib.core.paint.scene.DrawOps.SHADOW_REACH;
 
     private int rootW;
     private int rootH;
