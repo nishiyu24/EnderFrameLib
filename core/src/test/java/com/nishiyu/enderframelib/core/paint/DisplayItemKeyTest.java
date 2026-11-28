@@ -216,25 +216,26 @@ class DisplayItemKeyTest {
             assertNotNull(cardLoc, "SceneQuery locates card node");
             assertEquals(cardHandle, cardLoc.nodeId());
 
-            // 走査器（SceneWalker）は走査の間だけ、描く項目から列の階層をたどって祖先（クリップの持ち主）を引ける（M3b-4c-2b-3b-1）
+            // 走査器（SceneWalker）は描く項目の文脈から祖先（クリップの持ち主）の姿勢を引ける（M3b-4c-2b-3b-1・2b-3b-2b-4a）
             List<DisplayItem> list = items;
             SceneWalker walker = new SceneWalker("test_session");
             DisplayItem[] bg = new DisplayItem[1];
-            int[] owner = {-2};
+            SceneWalker.Resolved[] owner = new SceneWalker.Resolved[1];
+            boolean[] noSuchOwner = {false};
             walker.run(list, 1000, com.nishiyu.enderframelib.core.raster.Matrix2D.IDENTITY, new Painter() {
                 @Override public void syncLayers(List<SceneWalker.Group> want) { }
-                @Override public void drawItem(DisplayItem el, int i, float flat) {
+                @Override public void drawItem(DisplayItem el, LayerContext.Item item, float flat) {
                     if (!"card_bg".equals(el.id())) return;
                     bg[0] = el;
-                    owner[0] = walker.ancestorById(i, "card");
+                    owner[0] = item.owner("card");
+                    noSuchOwner[0] = item.owner("no-such-box") == null;
                 }
             });
             assertNotNull(bg[0], "card_bg is drawn");
             assertEquals(cardHandle, DisplayItem.nodeHandleOf(bg[0].key()));
             assertEquals(DisplayItem.PART_BG, DisplayItem.partOrdinalOf(bg[0].key()));
-            assertTrue(owner[0] >= 0, "the card anchor is an ancestor of card_bg");
-            assertEquals(ElementType.NODE, list.get(owner[0]).type());
-            assertEquals("card", list.get(owner[0]).id());
+            assertNotNull(owner[0], "the card anchor is an ancestor of card_bg");
+            assertTrue(noSuchOwner[0], "a box that is not an ancestor has no pose");
         } finally {
             view.close();
         }

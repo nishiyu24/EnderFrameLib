@@ -114,12 +114,16 @@ class PaintOffsetsTest {
                     Map.of(), 0, 1f, 0f, 0f, 1f, 1f, 0f, 0, null, null, null,
                     DisplayItem.keyOf(7, DisplayItem.PART_SCROLL_CONTENT));
             o.set("s_scrollc", 0f, -10.3f);
+            // 中身の節の子（姿勢は節のものを共有する）の文脈から、節の姿勢を読む
+            DisplayItem child = new DisplayItem("s_row", "s", ElementType.RECT, 0, 0, 10, 10, "", 0, 0xFF000000,
+                    Map.of(), 0, 1f, 0f, 0f, 1f, 1f, 0f, 0, null, null,
+                    com.nishiyu.enderframelib.core.paint.model.RenderMeta.EMPTY.withHints(com.nishiyu.enderframelib.core.paint.model.RenderHints.NONE.withParentId("s_scrollc")), 0L);
             SceneWalker walker = new SceneWalker("snap-test");
             walker.setScrollSnapDpr(2f);
             float[] f = {Float.NaN};
-            walker.run(com.nishiyu.enderframelib.core.paint.PreparedFrame.full(com.nishiyu.enderframelib.core.paint.RenderFrame.of(List.of(scrollNode), o.snapshot(), 1000)), Matrix2D.IDENTITY, new Painter() {
-                @Override public void syncLayers(List<SceneWalker.Group> want) { f[0] = (float) walker.resolveAt(0).pose().f(); }
-                @Override public void drawItem(DisplayItem el, int index, float flat) { }
+            walker.run(com.nishiyu.enderframelib.core.paint.PreparedFrame.full(com.nishiyu.enderframelib.core.paint.RenderFrame.of(List.of(scrollNode, child), o.snapshot(), 1000)), Matrix2D.IDENTITY, new Painter() {
+                @Override public void syncLayers(List<SceneWalker.Group> want) { }
+                @Override public void drawItem(DisplayItem el, LayerContext.Item item, float flat) { f[0] = (float) item.owner("s_scrollc").pose().f(); }
             }, null);
             assertEquals(-10.5f, f[0], 1e-4f);
             assertEquals(-10.3f, o.dy("s_scrollc"), "元の PaintOffsets は丸めで上書きしない");

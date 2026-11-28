@@ -6,7 +6,6 @@ import com.nishiyu.enderframelib.common.SceneWalkAccess;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.core.paint.SceneWalker.Group;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.PaintOffsets;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -37,61 +36,64 @@ class SceneWalkerRetainTest {
         return html.append("</div><div id=tail style='height:40px;background:#9c9'>tail</div>").toString();
     }
 
-    /** 保持の問い合わせと、描いた項目・保持の呼び出しを記録する描画側。答えは {@code answer}（印と範囲から決める）。 */
+    /**
+     * 保持の問い合わせと、描いた項目・保持の呼び出しを記録する描画側。答えは {@code answer}（印と中身の節の ID から決める）。
+     * 描いた項目は、中身の節の子孫（項目の文脈から中身の節を引ける）なら {@code |c} を付けて記録する。
+     */
     private static final class Rec implements Painter {
-        final SceneWalker walker;
-        final BiFunction<Object, int[], RetainPlan> answer;
+        final BiFunction<Object, String, RetainPlan> answer;
         final List<String> calls = new ArrayList<>();
         final List<String> drawn = new ArrayList<>();
         Object token;
-        int from = -1, to = -1, node = -1;
-        /** 問い合わせた時点の、中身の節の子孫の位置（親の鎖から数え直したもの）。 */
-        final List<Integer> descendants = new ArrayList<>();
+        String contentId, ownerId;
+        com.nishiyu.enderframelib.core.paint.model.ClipRect clip;
+        boolean retainable;
         boolean endResult = true;
 
-        Rec(SceneWalker walker, BiFunction<Object, int[], RetainPlan> answer) {
-            this.walker = walker;
+        Rec(BiFunction<Object, String, RetainPlan> answer) {
             this.answer = answer;
         }
 
         @Override public void syncLayers(List<Group> want) { }
 
         @Override
-        public void drawItem(DisplayItem el, int index, float flat) {
-            drawn.add(el.id() + "@" + index);
+        public void drawItem(DisplayItem el, LayerContext.Item item, float flat) {
+            drawn.add(el.id() + (contentId != null && item.owner(contentId) != null ? "|c" : ""));
         }
 
         @Override
-        public RetainPlan planRetained(DisplayItem n, int nodeIndex, int f, int t, Object tok) {
-            token = tok;
-            from = f;
-            to = t;
-            node = nodeIndex;
-            descendants.clear();
-            for (int j = 0; j < 100_000; j++) {
-                int p = walker.parentIndex(j);
-                if (p < 0 && j > t + 64) break;
-                for (int guard = 0; p >= 0 && guard < 128; guard++, p = walker.parentIndex(p)) {
-                    if (p == nodeIndex) { descendants.add(j); break; }
-                }
-            }
-            RetainPlan r = answer.apply(tok, new int[]{f, t});
+        public RetainPlan planRetained(LayerContext.Content content) {
+            token = content.token();
+            contentId = content.id();
+            ownerId = content.ownerId();
+            clip = content.clip();
+            retainable = content.retainable();
+            assertNotNull(content.resolved(), "中身の節の姿勢");
+            assertNotNull(content.owner(ownerId), "コンテナは中身の節の祖先");
+            RetainPlan r = answer.apply(token, contentId);
             calls.add("plan " + r);
             return r;
         }
 
-        @Override public void drawRetained(DisplayItem n, int nodeIndex, int f, int t) { calls.add("draw " + f + "-" + t); }
-        @Override public void beginRetained(DisplayItem n, int nodeIndex, int f, int t) { calls.add("begin " + f + " at " + drawn.size()); }
+        @Override public void drawRetained(LayerContext.Content c) { calls.add("draw " + c.id()); }
+        @Override public void beginRetained(LayerContext.Content c) { calls.add("begin at " + drawn.size()); }
 
         @Override
-        public boolean endRetained(DisplayItem n, int nodeIndex) {
+        public boolean endRetained(LayerContext.Content c) {
             calls.add("end at " + drawn.size() + " " + endResult);
             return endResult;
         }
+
+        /** 中身の節の子孫として描いた項目の位置（描いた順）。 */
+        List<Integer> contentAt() {
+            List<Integer> at = new ArrayList<>();
+            for (int i = 0; i < drawn.size(); i++) if (drawn.get(i).endsWith("|c")) at.add(i);
+            return at;
+        }
     }
 
-    private static Rec walk(StandaloneView v, SceneWalker walker, long now, BiFunction<Object, int[], RetainPlan> answer) {
-        Rec r = new Rec(walker, answer);
+    private static Rec walk(StandaloneView v, SceneWalker walker, long now, BiFunction<Object, String, RetainPlan> answer) {
+        Rec r = new Rec(answer);
         SceneWalkAccess.walk(v, walker, now, Matrix2D.IDENTITY, r);
         return r;
     }
@@ -102,15 +104,16 @@ class SceneWalkerRetainTest {
              StandaloneView v = new StandaloneView(DOC, 300, 300, FontResolver.FALLBACK)) {
             SceneWalker walker = new SceneWalker(backend.sessionId());
             v.frame(1000L, backend, true);
-            Rec first = walk(v, walker, 1000L, (t, r) -> RetainPlan.RECORD);
+            Rec plain = walk(v, walker, 1000L, (t, id) -> RetainPlan.NONE);
+            Rec first = walk(v, walker, 1000L, (t, id) -> RetainPlan.RECORD);
             assertNotNull(first.token, "中身を 1 つの節にまとめたコンテナの保持を問わない");
-            List<Integer> range = new ArrayList<>();
-            for (int i = first.from; i < first.to; i++) range.add(i);
-            assertEquals(first.descendants, range, "範囲が中身の節の子孫と一致しない");
-            assertTrue(first.to - first.from >= 20, "中身の項目が少ない: " + (first.to - first.from));
-            // 記録: 範囲の先頭で始め、範囲の後で終える
-            assertEquals(List.of("plan RECORD", "begin " + first.from + " at " + countBefore(first, first.from),
-                    "end at " + countBefore(first, first.to) + " true"), first.calls);
+            List<Integer> content = plain.contentAt();
+            assertTrue(content.size() >= 20, "中身の項目が少ない: " + content.size());
+            int from = content.get(0), to = content.get(content.size() - 1) + 1;
+            assertEquals(to - from, content.size(), "中身の項目が描画順で連続しない: " + plain.drawn);
+            // 記録: 中身の先頭の前で始め、末尾の後で終える（記録しても描く項目は同じ）
+            assertEquals(plain.drawn, first.drawn);
+            assertEquals(List.of("plan RECORD", "begin at " + from, "end at " + to + " true"), first.calls);
 
             // スクロールだけ: 印は同じ（保持した層を重ねられる）
             v.mouseMove(50, 60, backend.sessionId());
@@ -118,24 +121,22 @@ class SceneWalkerRetainTest {
             v.frame(1500L, backend, true);
             assertTrue(v.ui().dynamicState().scroll.snapshot().values().stream().anyMatch(xy -> xy[1] > 0f), "前提: 中身がスクロールした");
             Object[] seen = {null};
-            Rec scrolled = walk(v, walker, 1500L, (t, r) -> { seen[0] = t; return t == first.token ? RetainPlan.SKIP : RetainPlan.RECORD; });
+            Rec scrolled = walk(v, walker, 1500L, (t, id) -> { seen[0] = t; return t == first.token ? RetainPlan.SKIP : RetainPlan.RECORD; });
             assertSame(first.token, seen[0], "スクロールだけで中身の印が変わった（スクロール量を中身に焼き込んだ）");
-            assertEquals(List.of("plan SKIP", "draw " + scrolled.from + "-" + scrolled.to), scrolled.calls);
-            for (String d : scrolled.drawn) {
-                int at = Integer.parseInt(d.substring(d.lastIndexOf('@') + 1));
-                assertFalse(at >= scrolled.from && at < scrolled.to, "重ねた範囲の項目を描いた: " + d);
-            }
+            assertEquals(List.of("plan SKIP", "draw " + first.contentId), scrolled.calls);
+            assertTrue(scrolled.contentAt().isEmpty(), "重ねた中身の項目を描いた: " + scrolled.drawn);
+            assertFalse(scrolled.drawn.isEmpty(), "中身の外の項目は描く");
 
             // 中身が変わると印が変わる
             v.root().getElementById("r3").setAttribute("style", "background:#ff0");
             v.frame(2000L, backend, true);
-            Rec changed = walk(v, walker, 2000L, (t, r) -> RetainPlan.NONE);
+            Rec changed = walk(v, walker, 2000L, (t, id) -> RetainPlan.NONE);
             assertNotSame(first.token, changed.token, "中身が変わったのに印が同じ");
             // 中身の外が変わっても印は変わらない
             Object before = changed.token;
             v.root().getElementById("tail").setAttribute("style", "height:40px;background:#000");
             v.frame(2500L, backend, true);
-            Rec outside = walk(v, walker, 2500L, (t, r) -> RetainPlan.NONE);
+            Rec outside = walk(v, walker, 2500L, (t, id) -> RetainPlan.NONE);
             assertSame(before, outside.token, "中身の外の変化で印が変わった");
         }
     }
@@ -146,25 +147,56 @@ class SceneWalkerRetainTest {
              StandaloneView v = new StandaloneView(DOC, 300, 300, FontResolver.FALLBACK)) {
             SceneWalker walker = new SceneWalker(backend.sessionId());
             v.frame(1000L, backend, true);
-            Rec plain = walk(v, walker, 1000L, (t, r) -> RetainPlan.NONE);
-            Rec recorded = walk(v, walker, 1000L, (t, r) -> RetainPlan.RECORD);
+            Rec plain = walk(v, walker, 1000L, (t, id) -> RetainPlan.NONE);
+            Rec recorded = walk(v, walker, 1000L, (t, id) -> RetainPlan.RECORD);
             assertEquals(plain.drawn, recorded.drawn, "記録しても描く項目は同じ");
-            Rec failing = new Rec(walker, (t, r) -> RetainPlan.RECORD);
+            Rec failing = new Rec((t, id) -> RetainPlan.RECORD);
             failing.endResult = false;
             SceneWalkAccess.walk(v, walker, 1000L, Matrix2D.IDENTITY, failing);
-            // 記録に失敗したら範囲をふつうに描き直す: 範囲の項目は 2 回（層へ・描き直し）、それ以外は 1 回
+            // 記録に失敗したら中身をふつうに描き直す: 中身の項目は 2 回（層へ・描き直し）、それ以外は 1 回
+            List<Integer> content = plain.contentAt();
+            int last = content.get(content.size() - 1);
             List<String> expected = new ArrayList<>();
-            int from = failing.from, to = failing.to;
-            for (String d : plain.drawn) {
-                expected.add(d);
-                int at = Integer.parseInt(d.substring(d.lastIndexOf('@') + 1));
-                if (at == lastDrawnIn(plain, from, to)) for (String e : plain.drawn) if (inRange(e, from, to)) expected.add(e);
+            for (int i = 0; i < plain.drawn.size(); i++) {
+                expected.add(plain.drawn.get(i));
+                if (i == last) for (int c : content) expected.add(plain.drawn.get(c));
             }
-            assertEquals(expected, failing.drawn, "記録に失敗した範囲を描き直していない");
-            Rec skipped = walk(v, walker, 1000L, (t, r) -> RetainPlan.SKIP);
+            assertEquals(expected, failing.drawn, "記録に失敗した中身を描き直していない");
+            Rec skipped = walk(v, walker, 1000L, (t, id) -> RetainPlan.SKIP);
             List<String> outside = new ArrayList<>();
-            for (String d : plain.drawn) if (!inRange(d, skipped.from, skipped.to)) outside.add(d);
-            assertEquals(outside, skipped.drawn, "重ねたとき、範囲の外の項目は同じに描く");
+            for (String d : plain.drawn) if (!d.endsWith("|c")) outside.add(d);
+            assertEquals(outside, skipped.drawn, "重ねたとき、中身の外の項目は同じに描く");
+        }
+    }
+
+    /**
+     * 中身の文脈（M3b-4c-2b-3b-2b-4a）: コンテナの ID・コンテナの切り取りを持つ中身のクリップ・中身が層に向くか。描画側は列の範囲を
+     * 読まずにこれだけで保持層を作る。中身に動くアニメーションがあると層に向かない。
+     */
+    @Test
+    void contentContextCarriesTheContainerClipAndWhetherTheContentIsRetainable() {
+        try (SoftwareRenderBackend backend = new SoftwareRenderBackend(300, 300);
+             StandaloneView v = new StandaloneView(DOC, 300, 300, FontResolver.FALLBACK)) {
+            SceneWalker walker = new SceneWalker(backend.sessionId());
+            v.frame(1000L, backend, true);
+            Rec r = walk(v, walker, 1000L, (t, id) -> RetainPlan.NONE);
+            assertTrue(r.contentId.startsWith(r.ownerId) && !r.contentId.equals(r.ownerId), r.contentId + " / " + r.ownerId);
+            assertNotNull(r.clip, "コンテナの切り取りを持つクリップ");
+            boolean owned = r.ownerId.equals(r.clip.ownerId())
+                    || r.clip.chain().stream().anyMatch(p -> r.ownerId.equals(p.ownerId()));
+            assertTrue(owned, "クリップにコンテナが持ち主の部品が無い");
+            assertTrue(r.retainable, "静止した中身は層に向く");
+        }
+        String animated = DOC.replace("<div class=r id=r4 style='",
+                "<style>@keyframes p{from{opacity:1}to{opacity:.2}}</style><div class=r id=r4 style='animation:p 1s infinite;");
+        assertNotEquals(DOC, animated, "前提: 行にアニメーションを足した");
+        try (SoftwareRenderBackend backend = new SoftwareRenderBackend(300, 300);
+             StandaloneView v = new StandaloneView(animated, 300, 300, FontResolver.FALLBACK)) {
+            SceneWalker walker = new SceneWalker(backend.sessionId());
+            v.frame(1000L, backend, true);
+            Rec r = walk(v, walker, 1000L, (t, id) -> RetainPlan.NONE);
+            assertNotNull(r.token, "前提: 中身を保持に問う");
+            assertFalse(r.retainable, "動くアニメーションのある中身を層に向くと答えた");
         }
     }
 
@@ -178,7 +210,7 @@ class SceneWalkerRetainTest {
              StandaloneView v = new StandaloneView(doc(""), 300, 300, FontResolver.FALLBACK)) {
             SceneWalker walker = new SceneWalker(backend.sessionId());
             v.frame(1000L, backend, true);
-            Rec r = walk(v, walker, 1000L, (t, x) -> RetainPlan.SKIP);
+            Rec r = walk(v, walker, 1000L, (t, id) -> RetainPlan.SKIP);
             assertTrue(r.calls.isEmpty(), "中身が連続しないコンテナを保持に問うた: " + r.calls);
         }
     }
@@ -191,27 +223,9 @@ class SceneWalkerRetainTest {
              StandaloneView v = new StandaloneView(html, 300, 200, FontResolver.FALLBACK)) {
             SceneWalker walker = new SceneWalker(backend.sessionId());
             v.frame(1000L, backend, true);
-            Rec r = walk(v, walker, 1000L, (t, x) -> RetainPlan.SKIP);
+            Rec r = walk(v, walker, 1000L, (t, id) -> RetainPlan.SKIP);
             assertTrue(r.calls.isEmpty(), "不透明度のグループの中のコンテナを保持に問うた: " + r.calls);
             assertFalse(r.drawn.isEmpty());
         }
-    }
-
-    private static boolean inRange(String drawn, int from, int to) {
-        int at = Integer.parseInt(drawn.substring(drawn.lastIndexOf('@') + 1));
-        return at >= from && at < to;
-    }
-
-    private static int lastDrawnIn(Rec plain, int from, int to) {
-        int last = -1;
-        for (String d : plain.drawn) if (inRange(d, from, to)) last = Integer.parseInt(d.substring(d.lastIndexOf('@') + 1));
-        return last;
-    }
-
-    /** 位置 {@code index} より前に描いた項目の数。 */
-    private static int countBefore(Rec r, int index) {
-        int n = 0;
-        for (String d : r.drawn) if (Integer.parseInt(d.substring(d.lastIndexOf('@') + 1)) < index) n++;
-        return n;
     }
 }

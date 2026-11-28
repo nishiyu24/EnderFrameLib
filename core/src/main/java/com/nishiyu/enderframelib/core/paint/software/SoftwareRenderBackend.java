@@ -44,6 +44,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import com.nishiyu.enderframelib.core.paint.LayerContext;
 import com.nishiyu.enderframelib.core.paint.Painter;
 
 /**
@@ -171,11 +172,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
             frameDamage.reset();
             return;
         }
-        List<DisplayItem> items = q.drawList();
         route.begin(null);
         walker.setScrollSnapDpr(0f);
         raster.beginFrame();
-        beginFrame(items);
+        beginFrame();
         boolean done = false;
         try {
             if (rects == null) beginWalk(null);
@@ -227,11 +227,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         PreparedFrame q = frameDamage.take(p, clearColor, hostFilter());
         SceneDamage.Rects rects = q.damage();
         if (q.drawList().isEmpty()) { frameDamage.reset(); return; }
-        List<DisplayItem> items = q.drawList();
         route.begin(gpu);
         walker.setScrollSnapDpr(gpu != null && gpu.snapsScrollOffsets() ? dpr : 0f);
         raster.beginFrame();
-        beginFrame(items);
+        beginFrame();
         onto = true;
         boolean done = false;
         try {
@@ -260,9 +259,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         raster.clearDirty();
     }
 
-    private void beginFrame(List<DisplayItem> items) {
+    private void beginFrame() {
         this.frame = dprFrame;
-        this.frameSize = items.size();
         this.partialActive = false;
         this.retainInfo.clear();
         this.recordOwner = null;
@@ -286,205 +284,136 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
 
         @Override
-        public void drawItem(DisplayItem el, int index, float flat) {
-            SoftwareRenderBackend.this.drawItem(el, index, flat);
+        public void drawItem(DisplayItem el, LayerContext.Item item, float flat) {
+            SoftwareRenderBackend.this.drawItem(el, item, flat);
         }
 
         @Override
-        public RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to, Object token) {
-            return SoftwareRenderBackend.this.planRetained(node, nodeIndex, from, to, token);
+        public RetainPlan planRetained(LayerContext.Content content) {
+            return SoftwareRenderBackend.this.planRetained(content);
         }
 
         @Override
-        public void drawRetained(DisplayItem node, int nodeIndex, int from, int to) {
-            GpuLayerAttempt.drawScroll(route.current(), retainInfo.get(nodeIndex));
+        public void drawRetained(LayerContext.Content content) {
+            GpuLayerAttempt.drawScroll(route.current(), retainInfo.get(content.id()));
         }
 
         @Override
-        public void beginRetained(DisplayItem node, int nodeIndex, int from, int to) {
-            if (GpuLayerAttempt.beginScroll(route.current(), retainInfo.get(nodeIndex))) recordOwner = cachedOwnerKeyOf(node, nodeIndex);
+        public void beginRetained(LayerContext.Content content) {
+            if (GpuLayerAttempt.beginScroll(route.current(), retainInfo.get(content.id()))) recordOwner = content.ownerId();
         }
 
         @Override
-        public boolean endRetained(DisplayItem node, int nodeIndex) {
+        public boolean endRetained(LayerContext.Content content) {
             recordOwner = null;
-            return GpuLayerAttempt.endScroll(route.current(), retainInfo.get(nodeIndex));
+            return GpuLayerAttempt.endScroll(route.current(), retainInfo.get(content.id()));
         }
     };
 
     // ------------------------------------------------------------------ スクロール層の保持
 
-    /** 節の添字 → 保持する層の情報（このフレームで問い合わせたもの）。 */
-    private final java.util.HashMap<Integer, GpuScrollLayer> retainInfo = new java.util.HashMap<>();
+    /** 中身の節の ID → 保持する層の情報（このフレームで問い合わせたもの）。 */
+    private final java.util.HashMap<String, GpuScrollLayer> retainInfo = new java.util.HashMap<>();
     /** 保持する層へ記録している間の、コンテナ（スクロール節の持ち主）の鍵。クリップの部品のうち、これが持ち主のものは外す。 */
     private String recordOwner;
-    /** 中身が保持に向くかの判定の覚え（基底の表示リストと節が同じなら同じ答え）。0=未判定, 1=不可, 2=可。 */
-    private Object eligibleToken;
-    private byte[] retainEligible = new byte[0];
-    private String[] retainOwner = new String[0];
     private final double[] scratchBounds4 = new double[4];
 
-    private static String ownerKeyOf(DisplayItem node) {
-        String id = node.id();
-        int suffixLen = SceneWalker.SCROLL_CONTENT_SUFFIX.length();
-        if (id.endsWith(SceneWalker.SCROLL_CONTENT_SUFFIX)) {
-            String pid = node.hints().parentId();
-            if (pid != null && pid.length() == id.length() - suffixLen) return pid;
-            return id.substring(0, id.length() - suffixLen);
-        }
-        return id;
-    }
-
-    private String cachedOwnerKeyOf(DisplayItem node, int nodeIndex) {
-        Object token = walker.items();
-        if (eligibleToken != token) {
-            eligibleToken = token;
-            java.util.Arrays.fill(retainEligible, (byte) 0);
-            java.util.Arrays.fill(retainOwner, null);
-        }
-        if (nodeIndex >= retainOwner.length) {
-            int nextLen = Math.max(nodeIndex + 1, retainOwner.length * 2 + 16);
-            retainEligible = java.util.Arrays.copyOf(retainEligible, nextLen);
-            retainOwner = java.util.Arrays.copyOf(retainOwner, nextLen);
-        }
-        String owner = retainOwner[nodeIndex];
-        if (owner == null) {
-            owner = ownerKeyOf(node);
-            retainOwner[nodeIndex] = owner;
-        }
-        return owner;
-    }
-
-    private RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to, Object token) {
+    /**
+     * 中身 {@code content} を保持した層として扱うか: 中身が層に向き（{@link LayerContext.Content#retainable}）、コンテナの切り取り
+     * （中身のクリップの鎖のうちコンテナが持ち主の部品）がある間だけ、GPU の描画先に問う。
+     */
+    private RetainPlan planRetained(LayerContext.Content content) {
         if (route.current() == null || recordOwner != null) return RetainPlan.NONE;
-        Object listToken = walker.items(); // 層に向くかの判定は列ごとに覚える。層の同一性は中身の印 token（Painter#planRetained）
-        if (eligibleToken != listToken) {
-            eligibleToken = listToken;
-            java.util.Arrays.fill(retainEligible, (byte) 0);
-            java.util.Arrays.fill(retainOwner, null);
-        }
-        if (nodeIndex >= retainEligible.length) {
-            int nextLen = Math.max(nodeIndex + 1, retainEligible.length * 2 + 16);
-            retainEligible = java.util.Arrays.copyOf(retainEligible, nextLen);
-            retainOwner = java.util.Arrays.copyOf(retainOwner, nextLen);
-        }
-        byte verdict = retainEligible[nodeIndex];
-        if (verdict == 0) {
-            verdict = rangeIsRetainable(walker.items(), from, to) ? (byte) 2 : (byte) 1;
-            retainEligible[nodeIndex] = verdict;
-        }
-        if (verdict != 2) return RetainPlan.NONE;
-
-        String owner = retainOwner[nodeIndex];
-        if (owner == null) {
-            owner = ownerKeyOf(node);
-            retainOwner[nodeIndex] = owner;
-        }
-        List<DisplayItem> items = walker.items();
+        if (!content.retainable()) return RetainPlan.NONE;
+        String owner = content.ownerId();
+        String id = content.id();
+        Object token = content.token();
+        ClipRect cr = content.clip();
         int x0 = 0, y0 = 0, x1 = raster.targetWidth(), y1 = raster.targetHeight();
         int partCount = 0;
-        for (int i = from; i < to && partCount == 0; i++) {
-            RenderMeta meta = items.get(i).meta();
-            ClipRect cr = meta != null ? meta.clipRect() : null;
-            if (cr == null) continue;
-            if (!cr.chain().isEmpty()) {
-                List<ClipChainPart> chain = cr.chain();
-                for (int k = 0, cn = chain.size(); k < cn; k++) {
-                    ClipChainPart p = chain.get(k);
-                    if (owner.equals(p.ownerId()) && p.rectLength() >= 4) {
-                        int ix = walker.ancestorById(nodeIndex, p.ownerId());
-                        Matrix2D pose = ix >= 0 ? walker.resolveAt(ix).pose() : frame;
-                        double[] b = deviceBounds(pose, p.rectAt(0), p.rectAt(1), p.rectAt(2), p.rectAt(3), scratchBounds4);
-                        x0 = Math.max(x0, (int) Math.floor(b[0]));
-                        y0 = Math.max(y0, (int) Math.floor(b[1]));
-                        x1 = Math.min(x1, (int) Math.ceil(b[2]));
-                        y1 = Math.min(y1, (int) Math.ceil(b[3]));
-                        partCount++;
-                    }
+        if (cr != null && !cr.chain().isEmpty()) {
+            List<ClipChainPart> chain = cr.chain();
+            for (int k = 0, cn = chain.size(); k < cn; k++) {
+                ClipChainPart p = chain.get(k);
+                if (owner.equals(p.ownerId()) && p.rectLength() >= 4) {
+                    Resolved o = content.owner(p.ownerId());
+                    Matrix2D pose = o != null ? o.pose() : frame;
+                    double[] b = deviceBounds(pose, p.rectAt(0), p.rectAt(1), p.rectAt(2), p.rectAt(3), scratchBounds4);
+                    x0 = Math.max(x0, (int) Math.floor(b[0]));
+                    y0 = Math.max(y0, (int) Math.floor(b[1]));
+                    x1 = Math.min(x1, (int) Math.ceil(b[2]));
+                    y1 = Math.min(y1, (int) Math.ceil(b[3]));
+                    partCount++;
                 }
-            } else if (owner.equals(cr.ownerId())) {
-                int ix = walker.ancestorById(nodeIndex, cr.ownerId());
-                Matrix2D pose = ix >= 0 ? walker.resolveAt(ix).pose() : frame;
-                double[] b = deviceBounds(pose, cr.minX(), cr.minY(), cr.maxX(), cr.maxY(), scratchBounds4);
-                x0 = Math.max(x0, (int) Math.floor(b[0]));
-                y0 = Math.max(y0, (int) Math.floor(b[1]));
-                x1 = Math.min(x1, (int) Math.ceil(b[2]));
-                y1 = Math.min(y1, (int) Math.ceil(b[3]));
-                partCount++;
             }
+        } else if (cr != null && owner.equals(cr.ownerId())) {
+            Resolved o = content.owner(cr.ownerId());
+            Matrix2D pose = o != null ? o.pose() : frame;
+            double[] b = deviceBounds(pose, cr.minX(), cr.minY(), cr.maxX(), cr.maxY(), scratchBounds4);
+            x0 = Math.max(x0, (int) Math.floor(b[0]));
+            y0 = Math.max(y0, (int) Math.floor(b[1]));
+            x1 = Math.min(x1, (int) Math.ceil(b[2]));
+            y1 = Math.min(y1, (int) Math.ceil(b[3]));
+            partCount++;
         }
         if (partCount == 0 || partCount > com.nishiyu.enderframelib.core.paint.port.GpuSink.MAX_CLIPS || x1 <= x0 || y1 <= y0) {
             return RetainPlan.NONE;
         }
-        Matrix2D nodePose = walker.resolveAt(nodeIndex).pose();
-        RetainPlan fast = GpuLayerAttempt.planScrollBounds(route.current(), node.id(), token, nodePose, x0, y0, x1, y1);
+        Matrix2D nodePose = content.resolved().pose();
+        RetainPlan fast = GpuLayerAttempt.planScrollBounds(route.current(), id, token, nodePose, x0, y0, x1, y1);
         if (fast == RetainPlan.NONE) return RetainPlan.NONE;
         if (fast == RetainPlan.SKIP) {
-            GpuScrollLayer prev = retainInfo.get(nodeIndex);
-            if (prev != null && prev.token() == token && node.id() != null && node.id().equals(prev.key())) {
+            GpuScrollLayer prev = retainInfo.get(id);
+            if (prev != null && prev.token() == token && id != null && id.equals(prev.key())) {
                 int[] pb = prev.bounds();
                 if (pb[0] == x0 && pb[1] == y0 && pb[2] == x1 && pb[3] == y1) {
                     Matrix2D pp = prev.pose();
                     if (pp.a() != nodePose.a() || pp.b() != nodePose.b() || pp.c() != nodePose.c()
                             || pp.d() != nodePose.d() || pp.e() != nodePose.e() || pp.f() != nodePose.f()) {
-                        retainInfo.put(nodeIndex, new GpuScrollLayer(prev.key(), token, nodePose, prev.clip(), pb));
+                        retainInfo.put(id, new GpuScrollLayer(prev.key(), token, nodePose, prev.clip(), pb));
                     }
                     return RetainPlan.SKIP;
                 }
             }
         }
-        GpuScrollLayer info = scrollLayerInfo(node, nodeIndex, from, to, token);
+        GpuScrollLayer info = scrollLayerInfo(content, cr);
         if (info == null) return RetainPlan.NONE;
         RetainPlan r = fast != null ? fast : GpuLayerAttempt.planScroll(route.current(), info);
-        if (r != RetainPlan.NONE) retainInfo.put(nodeIndex, info);
+        if (r != RetainPlan.NONE) retainInfo.put(id, info);
         return r;
     }
 
-    /**
-     * 範囲の項目が、保持した層に向くか: 時間や外部の状態で見た目が変わるもの（画像の読み込み・動画・キャンバス・入力欄のカーソル・
-     * 動くアニメーション）を含まないこと。どれも、表示リストが変わらないまま見た目だけが変わりうるので、層が古くなる。
-     */
-    private static boolean rangeIsRetainable(List<DisplayItem> items, int from, int to) {
-        for (int i = from; i < to; i++) {
-            DisplayItem it = items.get(i);
-            if (it.type().isExternallyDriven() || it.type().hasLiveWidgetState()) return false;
-            if (it.transitionDuration() > 0 || (it.animDef() != null && !it.animDef().isEmpty())) return false;
-        }
-        return true;
-    }
-
-    /** 層の情報。コンテナの切り取りは、中身の項目の切り取りの鎖のうち、持ち主がコンテナのもの。 */
-    private GpuScrollLayer scrollLayerInfo(DisplayItem node, int nodeIndex, int from, int to, Object token) {
-        String owner = cachedOwnerKeyOf(node, nodeIndex);
-        List<DisplayItem> items = walker.items();
+    /** 層の情報。コンテナの切り取りは、中身のクリップ {@code cr} の鎖のうち、持ち主がコンテナのもの。 */
+    private GpuScrollLayer scrollLayerInfo(LayerContext.Content content, ClipRect cr) {
+        String owner = content.ownerId();
         List<ClipPart> parts = new ArrayList<>(1);
-        clipItem = nodeIndex; // 持ち主（コンテナ）は中身の節の祖先
-        for (int i = from; i < to && parts.isEmpty(); i++) {
-            RenderMeta meta = items.get(i).meta();
-            ClipRect cr = meta != null ? meta.clipRect() : null;
-            if (cr == null) continue;
-            if (!cr.chain().isEmpty()) {
+        clipCtx = content; // 持ち主（コンテナ）は中身の節の祖先
+        try {
+            if (cr != null && !cr.chain().isEmpty()) {
                 for (ClipChainPart p : cr.chain()) {
                     if (owner.equals(p.ownerId())) { clipOwnerCount = 0; addClipPart(parts, p.rectView(), p.ownerId()); }
                 }
-            } else if (owner.equals(cr.ownerId())) {
+            } else if (cr != null && owner.equals(cr.ownerId())) {
                 clipOwnerCount = 0; // 持ち主の記録は使わない
                 addClipPart(parts, cr.toArray(), cr.ownerId());
             }
+        } finally {
+            clipCtx = null;
         }
         if (parts.isEmpty()) return null;
         Clip c = finishClip(parts);
         GpuClip[] gc = GpuAttempt.gpuClips(c);
         if (gc == null || c.x1() <= c.x0() || c.y1() <= c.y0()) return null;
-        return new GpuScrollLayer(node.id(), token, walker.resolveAt(nodeIndex).pose(), gc, new int[]{c.x0(), c.y0(), c.x1(), c.y1()});
+        return new GpuScrollLayer(content.id(), content.token(), content.resolved().pose(), gc, new int[]{c.x0(), c.y0(), c.x1(), c.y1()});
     }
 
-    /** 今のフレームの項目数と、クリップを組む項目の位置（クリップの持ち主は、その項目から列の階層の親をたどって引く）。 */
-    private int frameSize;
-    private int clipItem = -1;
-    /** 項目ごとのクリップ。入力の列が別の実体になった（{@link SceneWalker#generation}）ら捨てる。 */
-    private ClipEntry[] clipCache = new ClipEntry[0];
+    /** 描いている項目・組んでいる中身の文脈（クリップの持ち主はその文脈の祖先から引く。その間だけ）。 */
+    private LayerContext clipCtx;
+    /** 項目ごとのクリップ（項目の実体で引く）。入力の列が別の実体になった（{@link SceneWalker#generation}）ら捨てる。 */
+    private final java.util.IdentityHashMap<DisplayItem, ClipEntry> itemClips = new java.util.IdentityHashMap<>();
     private long clipGeneration = -1;
+    /** クリップを持たない項目のクリップ（描画先の大きさごとに 1 つ。部品が無いので持ち主の前提も無い）。 */
+    private Clip noClip;
     private boolean sawUnresolvedOwner;
     /**
      * 同じフレームの中で、同じクリップの元（{@link ClipRect} の同一実体）を持つ項目どうしで組んだクリップを分け合う（B12）。
@@ -496,7 +425,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 診断: 同じフレームの別の項目が組んだクリップを使い回した回数。 */
     static final java.util.concurrent.atomic.LongAdder STAT_SHARED_CLIPS = new java.util.concurrent.atomic.LongAdder();
 
-    private record SharedClip(Clip clip, int[] owner, Resolved[] ownerRes, int w, int h) { }
+    private record SharedClip(Clip clip, String[] owner, Resolved[] ownerRes, int w, int h) { }
 
     /**
      * 同じフレームの中で、連鎖の部品（{@link ClipChainPart} の同一実体。入れ子のクリップは祖先の部品を共有する）と持ち主の姿勢が同じなら、
@@ -504,7 +433,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
      */
     private final java.util.IdentityHashMap<ClipChainPart, PartMemo> frameParts = new java.util.IdentityHashMap<>();
 
-    private record PartMemo(int ownerIndex, Resolved owner, ClipPart part, int w, int h) { }
+    private record PartMemo(Resolved owner, ClipPart part, int w, int h) { }
 
     // ------------------------------------------------------------------ グループの層
 
@@ -594,20 +523,29 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return outsideBoxFor(b[1], b[3], b[0], b[2], pad, overflowsSideways, cx0, cy0, cx1, cy1);
     }
 
-    private void drawItem(DisplayItem el, int index, float flat) {
+    private void drawItem(DisplayItem el, LayerContext.Item item, float flat) {
+        clipCtx = item; // 項目を描く間、クリップの持ち主（項目自身・祖先の箱）はこの文脈から引く（TextRaster の箱の切り取りも）
+        try {
+            drawItemIn(el, item, flat);
+        } finally {
+            clipCtx = null;
+        }
+    }
+
+    private void drawItemIn(DisplayItem el, LayerContext.Item item, float flat) {
         syncClipGeneration();
-        Resolved res = walker.resolveAt(index);
+        Resolved res = item.resolved();
         if (res.opacity() <= 0.005f) return;
         float opacity = res.residual() * flat;
         if (opacity <= 0.005f) return;
-        AnimatedValues anim = walker.animAt(index);
+        AnimatedValues anim = item.anim();
         // 保持層への記録中の判定は層の実体の範囲だけで決まりクリップを要さない。記録中の buildClip は使い回しの覚えが無く
         // 毎回作り直す（確保が出る）ので、画面外項目はその前に捨てる
         if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && recordOwner != null && outsideClip(el, res.pose(), null)) {
             culledItems++;
             return;
         }
-        Clip clip = buildClip(index, el, anim);
+        Clip clip = buildClip(item, el, anim);
         if (clip.empty()) return;
         if (com.nishiyu.enderframelib.core.kernel.Shortcut.SOFT_CULL_OFFSCREEN.on() && outsideClip(el, res.pose(), clip)) {
             culledItems++;
@@ -688,73 +626,64 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ クリップ
 
-    /** クリップ無しの項目に使う {@link ClipEntry#source} の番兵。 */
-    private static final String NO_CLIP_SOURCE = "";
-
-    /** 項目のクリップの結果と、それを作ったときの前提（描画先の大きさ・持ち主の姿勢・作った項目と元）。前提が同じ間は作り直さない。 */
+    /** 項目のクリップの結果と、それを作ったときの前提（描画先の大きさ・持ち主の姿勢）。前提が同じ間は作り直さない。 */
     private static final class ClipEntry {
         Clip clip;
-        int[] owner;
+        /** 持ち主の ID（無い・見つからなければ null）と、作ったときの持ち主の姿勢（{@link Resolved} の同一実体。無ければ null）。 */
+        String[] owner;
         Resolved[] ownerRes;
         int w, h;
-        /** 作ったときの世代と項目、クリップの元（{@link ClipRect} の同一インスタンス。無クリップは {@link #NO_CLIP_SOURCE}）。 */
-        long generation;
-        DisplayItem item;
-        Object source;
-        /** 持ち主の id があるのに見つからなかった（後から現れると結果が変わるので世代をまたいで使い回さない）。 */
+        /** 持ち主の id があるのに見つからなかった（同じフレームの別の項目と分け合わない）。 */
         boolean unresolvedOwner;
     }
 
     void syncClipGeneration() {
         if (clipGeneration != walker.generation()) {
-            if (clipCache.length != frameSize) clipCache = java.util.Arrays.copyOf(clipCache, frameSize);
+            itemClips.clear();
             clipGeneration = walker.generation();
         }
     }
 
-    Clip buildClip(int index, DisplayItem el, AnimatedValues anim) {
-        clipItem = index;
-        ClipEntry ce = clipCache[index];
+    /**
+     * 項目 {@code el} のクリップ。持ち主（クリップを掛ける祖先の箱）の姿勢は項目の文脈 {@code item} から引く（列の位置で引かない）。
+     * 同じ列の間は項目ごとに覚え、持ち主の姿勢が同じ実体なら作り直さない。クリップを持たない項目は描画先の大きさだけで決まる 1 つを共有する。
+     */
+    Clip buildClip(LayerContext.Item item, DisplayItem el, AnimatedValues anim) {
         RenderMeta m0 = el.meta();
         ClipRect cr0 = m0 != null ? m0.clipRect() : null;
-        Object source = cr0 != null ? cr0 : (anim.clipData == null ? NO_CLIP_SOURCE : null);
-        // 項目の並びが変わった世代をまたぐときは、元の ClipRect（または無クリップ番兵）が同じものだけ使い回す
-        boolean recording = recordOwner != null; // 保持する層へ記録中は、コンテナの切り取りを外すので使い回しの覚えを使わない
-        if (!recording && ce != null && ce.w == raster.targetWidth() && ce.h == raster.targetHeight()
-                && ((ce.generation == clipGeneration && ce.item == el)
-                        || (source != null && ce.source == source && !ce.unresolvedOwner))) {
-            boolean same = true;
-            for (int k = 0; k < ce.owner.length && same; k++) {
-                same = (ce.owner[k] < 0 ? null : walker.resolveAt(ce.owner[k])) == ce.ownerRes[k];
-            }
-            if (same) return ce.clip;
-        }
         int tw = raster.targetWidth(), th = raster.targetHeight();
-        boolean share = com.nishiyu.enderframelib.core.kernel.Shortcut.CLIP_SHARE.on() && !recording && cr0 != null;
+        if (cr0 == null && anim.clipData == null) {
+            if (noClip == null || noClip.x1() != tw || noClip.y1() != th) noClip = finishClip(List.of());
+            return noClip;
+        }
+        return buildClip(el, cr0, anim, tw, th);
+    }
+
+    private Clip buildClip(DisplayItem el, ClipRect cr, AnimatedValues anim, int tw, int th) {
+        // cr が無く anim.clipData がある項目（補間の状態が覚えた項目のクリップの写し。文字・属性が変わるまで同じ）も項目ごとに覚える
+        boolean recording = recordOwner != null; // 保持する層へ記録中は、コンテナの切り取りを外すので使い回しの覚えを使わない
+        ClipEntry ce = itemClips.get(el);
+        if (!recording && ce != null && ce.w == tw && ce.h == th && ownersUnchanged(ce.owner, ce.ownerRes)) return ce.clip;
+        boolean share = com.nishiyu.enderframelib.core.kernel.Shortcut.CLIP_SHARE.on() && !recording && cr != null;
         if (share) {
-            SharedClip sc = frameClips.get(source);
+            SharedClip sc = frameClips.get(cr);
             if (sc != null && sc.w() == tw && sc.h() == th && ownersUnchanged(sc.owner(), sc.ownerRes())) {
-                if (ce == null) {
+                if (ce == null) { // 項目の覚えがあれば書き換えて使う（分け合うたびに作らない）
                     ce = new ClipEntry();
-                    clipCache[index] = ce;
+                    itemClips.put(el, ce);
                 }
                 ce.clip = sc.clip();
                 ce.owner = sc.owner();
                 ce.ownerRes = sc.ownerRes();
-                ce.generation = clipGeneration;
-                ce.item = el;
-                ce.source = source;
-                ce.unresolvedOwner = false;
                 ce.w = tw;
                 ce.h = th;
+                ce.unresolvedOwner = false;
                 STAT_SHARED_CLIPS.increment();
                 return sc.clip();
             }
         }
         sawUnresolvedOwner = false;
         clipOwnerCount = 0;
-        RenderMeta meta = el.meta();
-        ClipRect cr = meta != null ? meta.clipRect() : null;
         List<ClipPart> parts = clipPartsScratch;
         parts.clear();
         if (cr != null && !cr.chain().isEmpty()) {
@@ -766,31 +695,28 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
         } else if (cr != null) {
             if (!(recording && recordOwner.equals(cr.ownerId()))) addClipPart(parts, cr.toArray(), cr.ownerId());
-        } else if (anim.clipData != null) {
+        } else {
             addClipPart(parts, anim.clipData, null);
         }
         ce = new ClipEntry();
         ce.clip = finishClip(parts);
         ce.owner = clipOwnerCount == 0 ? NO_OWNERS : java.util.Arrays.copyOf(clipOwnerScratch, clipOwnerCount);
-        ce.generation = clipGeneration;
-        ce.item = el;
-        ce.source = source;
         ce.unresolvedOwner = sawUnresolvedOwner;
         ce.ownerRes = clipOwnerCount == 0 ? NO_OWNER_RES : java.util.Arrays.copyOf(clipOwnerResScratch, clipOwnerCount);
-        ce.w = raster.targetWidth();
-        ce.h = raster.targetHeight();
-        if (!recording) clipCache[index] = ce;
+        ce.w = tw;
+        ce.h = th;
+        if (!recording) itemClips.put(el, ce);
         if (share && !ce.unresolvedOwner) {
             if (frameClips.size() >= 4096) frameClips.clear();
-            frameClips.put(source, new SharedClip(ce.clip, ce.owner, ce.ownerRes, ce.w, ce.h));
+            frameClips.put(cr, new SharedClip(ce.clip, ce.owner, ce.ownerRes, ce.w, ce.h));
         }
         return ce.clip;
     }
 
-    /** クリップを組んだときの持ち主の姿勢（{@link Resolved} の同一実体）が今も同じか。 */
-    private boolean ownersUnchanged(int[] owner, Resolved[] ownerRes) {
+    /** クリップを組んだときの持ち主の姿勢（{@link Resolved} の同一実体）が、組んでいる文脈の祖先で今も同じか。 */
+    private boolean ownersUnchanged(String[] owner, Resolved[] ownerRes) {
         for (int k = 0; k < owner.length; k++) {
-            if ((owner[k] < 0 ? null : walker.resolveAt(owner[k])) != ownerRes[k]) return false;
+            if ((owner[k] == null ? null : clipCtx.owner(owner[k])) != ownerRes[k]) return false;
         }
         return true;
     }
@@ -860,16 +786,15 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
         int tw = raster.targetWidth(), th = raster.targetHeight();
-        int ix = p.ownerId() == null ? -1 : walker.ancestorById(clipItem, p.ownerId());
-        Resolved owner = ix >= 0 ? walker.resolveAt(ix) : null;
+        Resolved owner = p.ownerId() == null ? null : clipCtx.owner(p.ownerId());
+        boolean found = owner != null || p.ownerId() == null;
         PartMemo memo = frameParts.get(p);
-        if (memo != null && memo.ownerIndex() == ix && memo.owner() == owner && memo.w() == tw && memo.h() == th
-                && (ix >= 0 || p.ownerId() == null)) {
+        if (memo != null && memo.owner() == owner && memo.w() == tw && memo.h() == th && found) {
             if (clipOwnerCount == clipOwnerScratch.length) {
                 clipOwnerScratch = java.util.Arrays.copyOf(clipOwnerScratch, clipOwnerCount * 2);
                 clipOwnerResScratch = java.util.Arrays.copyOf(clipOwnerResScratch, clipOwnerCount * 2);
             }
-            clipOwnerScratch[clipOwnerCount] = ix;
+            clipOwnerScratch[clipOwnerCount] = p.ownerId();
             clipOwnerResScratch[clipOwnerCount++] = owner;
             parts.add(memo.part());
             return;
@@ -877,19 +802,19 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int before = parts.size();
         addClipPart(parts, p.rectView(), p.ownerId(), p.radiiXView(), p.radiiYView());
         // 持ち主の id があるのに見つからない部品は覚えない（後から現れると結果が変わる）
-        if (parts.size() == before + 1 && (ix >= 0 || p.ownerId() == null)) {
+        if (parts.size() == before + 1 && found) {
             if (frameParts.size() >= 4096) frameParts.clear();
-            frameParts.put(p, new PartMemo(ix, owner, parts.get(before), tw, th));
+            frameParts.put(p, new PartMemo(owner, parts.get(before), tw, th));
         }
     }
 
-    // buildClip の作業表（持ち主の位置と姿勢。1 つのクリップの部品の数だけ）
-    private int[] clipOwnerScratch = new int[4];
+    // buildClip の作業表（持ち主の ID と姿勢。1 つのクリップの部品の数だけ）
+    private String[] clipOwnerScratch = new String[4];
     private Resolved[] clipOwnerResScratch = new Resolved[4];
     int clipOwnerCount;
     /** buildClip が部品を集める作業用の一覧（finishClip が持ち続ける分は写す）。 */
     private final List<ClipPart> clipPartsScratch = new ArrayList<>(4);
-    private static final int[] NO_OWNERS = new int[0];
+    private static final String[] NO_OWNERS = new String[0];
     private static final Resolved[] NO_OWNER_RES = new Resolved[0];
 
     void addClipPart(List<ClipPart> parts, float[] rect, String ownerId) {
@@ -900,23 +825,17 @@ public final class SoftwareRenderBackend implements RenderBackend {
     void addClipPart(List<ClipPart> parts, float[] rect, String ownerId, float[] preRx, float[] preRy) {
         if (rect == null || rect.length < 4) return;
         Matrix2D pose = frame;
-        int ownerIndex = -1;
         Resolved owner = null;
         if (ownerId != null) {
-            int ix = walker.ancestorById(clipItem, ownerId);
-            if (ix >= 0) {
-                ownerIndex = ix;
-                owner = walker.resolveAt(ix);
-                pose = owner.pose();
-            } else {
-                sawUnresolvedOwner = true;
-            }
+            owner = clipCtx != null ? clipCtx.owner(ownerId) : null;
+            if (owner != null) pose = owner.pose();
+            else sawUnresolvedOwner = true;
         }
         if (clipOwnerCount == clipOwnerScratch.length) {
             clipOwnerScratch = java.util.Arrays.copyOf(clipOwnerScratch, clipOwnerCount * 2);
             clipOwnerResScratch = java.util.Arrays.copyOf(clipOwnerResScratch, clipOwnerCount * 2);
         }
-        clipOwnerScratch[clipOwnerCount] = ownerIndex;
+        clipOwnerScratch[clipOwnerCount] = owner != null ? ownerId : null;
         clipOwnerResScratch[clipOwnerCount++] = owner;
         Matrix2D inv = pose.invert();
         if (inv == null) return;

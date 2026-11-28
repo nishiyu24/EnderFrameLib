@@ -1,6 +1,9 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
+import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 
 import java.util.Arrays;
@@ -69,6 +72,40 @@ public final class FrameStructure {
 
     /** 範囲 {@code k} の中身の同一性の印。 */
     public Object retainToken(int k) { return retainToken[k]; }
+
+    /**
+     * 範囲 {@code k} の項目（{@code items} はこの階層を作った列）のうち、コンテナ {@code owner} が持ち主のクリップの部品を持つ最初の項目の
+     * クリップ（無ければ null。保持層の文脈 {@code LayerContext.Content#clip}。M3b-4c-2b-3b-2b-4a で描画側から移した）。
+     */
+    public ClipRect contentClip(int k, DisplayItem[] items, String owner) {
+        for (int i = retainFrom[k], to = retainTo[k]; i < to; i++) {
+            RenderMeta meta = items[i].meta();
+            ClipRect cr = meta != null ? meta.clipRect() : null;
+            if (cr == null) continue;
+            if (cr.chain().isEmpty()) {
+                if (owner.equals(cr.ownerId())) return cr;
+                continue;
+            }
+            for (int c = 0, cn = cr.chain().size(); c < cn; c++) {
+                ClipChainPart p = cr.chain().get(c);
+                if (owner.equals(p.ownerId()) && p.rectLength() >= 4) return cr;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 範囲 {@code k} の項目が保持した層に向くか（時間・外の事情で見た目が変わる項目〔外の事情で描く・部品の状態・補間〕を含まない。
+     * 保持層の文脈 {@code LayerContext.Content#retainable}。M3b-4c-2b-3b-2b-4a で描画側から移した）。
+     */
+    public boolean contentRetainable(int k, DisplayItem[] items) {
+        for (int i = retainFrom[k], to = retainTo[k]; i < to; i++) {
+            DisplayItem it = items[i];
+            if (it.type().isExternallyDriven() || it.type().hasLiveWidgetState()) return false;
+            if (it.transitionDuration() > 0 || (it.animDef() != null && !it.animDef().isEmpty())) return false;
+        }
+        return true;
+    }
 
     /**
      * 項目の鍵から作る階層（シーンの無いフレーム。テストと 1 回だけの描画の道具で、列だけのフレームとともに M3b-4c-3 で消す）: 親は項目の

@@ -18,7 +18,8 @@ import java.util.Map;
  * {@link SceneDisplayListAdapter} で組んだ表示項目の列（スクロールコンテナは中身を 1 つの節にまとめてスクロール 0 で組む）を
  * 描画順にたどり、描画側（{@link Painter}）へ渡す。項目の姿勢（親から引き継ぐ変形）・祖先の不透明度・グループ（不透明度・フィルター・
  * マスクの層）の鎖を解くのはここ 1 か所。項目の親と保持層の範囲は、列を組んだ側がシーンの層をたどって書いた列の階層
- * （{@link FrameStructure}。M3b-4c-2b-3b-1）から読み、項目の鍵・ID から引き直さない。
+ * （{@link FrameStructure}。M3b-4c-2b-3b-1）から読み、項目の鍵・ID から引き直さない。描画側へは項目・保持層の中身を層の文脈
+ * （{@link LayerContext}。姿勢・補間値・クリップの持ち主・中身のクリップと印）で渡し、列の位置で問わせない（M3b-4c-2b-3b-2b-4a）。
  *
  * <p>フレームをまたいで何も持たない（M3b-4b-4a で {@code PaintSceneDriver} を置き換えた）: 索引・親の位置・姿勢は毎フレーム作り直し、
  * 前のフレームの姿勢・索引の差分・画面外のブロックの覚えを持たない。持つのは補間の状態（節ごとの表 {@link AnimationStates}。
@@ -48,7 +49,6 @@ public final class SceneWalker {
     private float scrollSnapDpr;
 
     // ---- 1 フレームの間だけ使う（終わったら項目の参照を捨てる） ----
-    private List<DisplayItem> list;
     private DisplayItem[] items = new DisplayItem[64];
     private int count;
     private int[] parentIdx = new int[64];
@@ -149,7 +149,6 @@ public final class SceneWalker {
             offsetOf.clear();
             layeredScratch.clear();
             count = 0;
-            this.list = null;
             this.exclude = null;
         }
     }
@@ -162,7 +161,6 @@ public final class SceneWalker {
     private void load(List<DisplayItem> src) {
         int n = src.size();
         if (items.length < n) grow(Math.max(n, items.length * 2));
-        this.list = src;
         for (int i = 0; i < n; i++) items[i] = src.get(i);
         count = n;
     }
@@ -303,7 +301,7 @@ public final class SceneWalker {
             if (s.retainFrom(k) < coveredUntil) continue;
             Resolved r = resolveAt(node);
             if (!r.groups().isEmpty() || r.opacity() < 0.999f) continue;
-            RetainPlan d = painter.planRetained(items[node], node, s.retainFrom(k), s.retainTo(k), s.retainToken(k));
+            RetainPlan d = painter.planRetained(contentAt(k));
             plan[k] = d != null ? d : RetainPlan.NONE;
             if (plan[k] != RetainPlan.NONE) coveredUntil = s.retainTo(k);
         }
@@ -356,17 +354,15 @@ public final class SceneWalker {
             if (retainCount > 0) {
                 int skip = retainAt(i, RetainPlan.SKIP);
                 if (skip >= 0) {
-                    int node = s.retainNode(skip);
                     painter.syncLayers(List.of());
-                    painter.drawRetained(items[node], node, s.retainFrom(skip), s.retainTo(skip));
+                    painter.drawRetained(contentAt(skip));
                     i = s.retainTo(skip) - 1;
                     continue;
                 }
                 int rec = retainAt(i, RetainPlan.RECORD);
                 if (rec >= 0) {
-                    int node = s.retainNode(rec);
                     painter.syncLayers(List.of());
-                    painter.beginRetained(items[node], node, s.retainFrom(rec), s.retainTo(rec));
+                    painter.beginRetained(contentAt(rec));
                     open[openN++] = rec;
                 }
             }
@@ -375,9 +371,8 @@ public final class SceneWalker {
             // 記録中の保持層の範囲の終わり: 層を保存して重ねる。保持できなければ、範囲をふつうに描き直す
             while (openN > 0 && s.retainTo(open[openN - 1]) == i + 1) {
                 int k = open[--openN];
-                int node = s.retainNode(k);
                 painter.syncLayers(List.of());
-                if (!painter.endRetained(items[node], node)) {
+                if (!painter.endRetained(contentAt(k))) {
                     plan[k] = RetainPlan.NONE;
                     i = s.retainFrom(k) - 1;
                     openN = 0;
@@ -392,7 +387,7 @@ public final class SceneWalker {
         DisplayItem el = items[i];
         if (chain.isEmpty()) {
             painter.syncLayers(List.of());
-            painter.drawItem(el, i, 1f);
+            painter.drawItem(el, itemAt(i), 1f);
             return;
         }
         List<Group> layered = layeredScratch;
@@ -407,7 +402,7 @@ public final class SceneWalker {
             else flat *= g.opacity();
         }
         painter.syncLayers(layered);
-        painter.drawItem(el, i, flat);
+        painter.drawItem(el, itemAt(i), flat);
     }
 
     /**
@@ -428,16 +423,70 @@ public final class SceneWalker {
         return base;
     }
 
-    // ---- 描画側が drawItem の間に引く値 ----
+    // ---- 描画側へ渡す層の文脈（M3b-4c-2b-3b-2b-4a。描画側は列の位置で問わない） ----
 
-    /** 走査中の表示項目の列（描画側が範囲の項目を読む。走査の外では null）。 */
-    public List<DisplayItem> items() { return list; }
+    /** 描く項目の文脈（使い回す。{@link Painter#drawItem} の間だけ有効）。 */
+    private final class ItemView implements LayerContext.Item {
+        int i;
+
+        @Override public Resolved resolved() { return resolveAt(i); }
+
+        @Override public AnimatedValues anim() { return animAt(i); }
+
+        @Override
+        public Resolved owner(String id) {
+            int ix = ancestorById(i, id);
+            return ix >= 0 ? resolveAt(ix) : null;
+        }
+    }
+
+    /** 保持層の中身の文脈（使い回す。保持の呼び出しの間だけ有効）。範囲は列の階層の {@link FrameStructure#retainFrom} から。 */
+    private final class ContentView implements LayerContext.Content {
+        int k;
+
+        private int node() { return structure.retainNode(k); }
+
+        @Override public String id() { return items[node()].id(); }
+
+        @Override
+        public String ownerId() { // 中身の節の ID はコンテナの ID に接尾辞を足したもの（HtmlNode#scrollContentKey）
+            String id = id();
+            return id.endsWith(SCROLL_CONTENT_SUFFIX) ? id.substring(0, id.length() - SCROLL_CONTENT_SUFFIX.length()) : id;
+        }
+
+        @Override public Object token() { return structure.retainToken(k); }
+
+        @Override public Resolved resolved() { return resolveAt(node()); }
+
+        @Override
+        public Resolved owner(String id) {
+            int ix = ancestorById(node(), id);
+            return ix >= 0 ? resolveAt(ix) : null;
+        }
+
+        @Override public com.nishiyu.enderframelib.core.paint.model.ClipRect clip() { return structure.contentClip(k, items, ownerId()); }
+
+        @Override public boolean retainable() { return structure.contentRetainable(k, items); }
+    }
+
+    private final ItemView itemView = new ItemView();
+    private final ContentView contentView = new ContentView();
+
+    private LayerContext.Item itemAt(int i) {
+        itemView.i = i;
+        return itemView;
+    }
+
+    private LayerContext.Content contentAt(int k) {
+        contentView.k = k;
+        return contentView;
+    }
 
     /**
      * 走査中の項目 {@code i} 自身か祖先（列の階層の親をたどる）のうち、ID が {@code id} の項目の位置（無ければ -1）。クリップの持ち主は
      * 項目の祖先の箱なので、列全体から引かずに親をたどる。
      */
-    public int ancestorById(int i, String id) {
+    private int ancestorById(int i, String id) {
         if (id == null) return -1;
         for (int guard = 0; i >= 0 && i < count && guard < 1024; guard++) {
             if (id.equals(items[i].id())) return i;
@@ -447,7 +496,7 @@ public final class SceneWalker {
     }
 
     /** 項目 {@code i} の姿勢（このフレームで 1 回だけ作る。姿勢の変わらない部品は親のものを共有する）。 */
-    public Resolved resolveAt(int i) {
+    private Resolved resolveAt(int i) {
         Resolved r = res[i];
         if (r != null) return r;
         DisplayItem el = items[i];
@@ -467,17 +516,11 @@ public final class SceneWalker {
     }
 
     /** 項目 {@code i} の補間値（色など）。姿勢を親と共有する項目でも、その項目自身のもの。 */
-    public AnimatedValues animAt(int i) {
+    private AnimatedValues animAt(int i) {
         Resolved r = resolveAt(i);
         int p = parentIdx[i];
         return p >= 0 && p != i && res[p] == r ? states[i].getInterpolatedValues(now) : r.anim();
     }
-
-    /** 項目 {@code i} の親（節の錨）の位置。無ければ -1。 */
-    public int parentIndex(int i) { return i >= 0 && i < count ? parentIdx[i] : -1; }
-
-    /** 走査中の、フレーム全体の変換（CSS px → デバイス画素）。 */
-    public Matrix2D frame() { return frame; }
 
     private CssAnimator.AnimState stateAt(int i) {
         CssAnimator.AnimState st = states[i];

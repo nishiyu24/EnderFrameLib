@@ -91,7 +91,7 @@ class AnimationStatesTest {
             SceneWalker driver = new SceneWalker(session);
             Painter none = new Painter() {
                 @Override public void syncLayers(List<SceneWalker.Group> want) { }
-                @Override public void drawItem(DisplayItem el, int index, float flat) { }
+                @Override public void drawItem(DisplayItem el, LayerContext.Item item, float flat) { }
             };
             DisplayItem a = item("n7", DisplayItem.nodeKeyOf(BODY), ElementType.NODE, 0, 1f, 0);
             DisplayItem aBg = item("n7_bg", DisplayItem.bgKeyOf(BODY), ElementType.RECT, 0xFF000000, 1f, 0);

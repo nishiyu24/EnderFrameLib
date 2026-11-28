@@ -431,7 +431,8 @@ class ArchitectureHealthTest {
         for (String c : List.of("SceneAdapterBox", "SceneDisplayListAdapter", "SceneAdapterSupport", "LayerOps", "OpList", "OpComposer",
                 "SceneWalker", "AnimationStates", "ItemSink", "SceneDamage", "FrameStructure", "SceneSource", "FrameDamage",
                 "BoxItemPainter", "BoxDecorationPainter", "BoxDecorations", "ControlPainter", "TextRunPainter", "PaintSupport", "ItemProps",
-                "PaintBounds", "BoxAnimation", "RenderFrame", "PreparedFrame", "ExcludedNodes", "FrameComposer", "ScrollTranslation")) {
+                "PaintBounds", "BoxAnimation", "RenderFrame", "PreparedFrame", "ExcludedNodes", "FrameComposer", "ScrollTranslation",
+                "LayerContext", "Painter")) {
             out.add(main + "core/paint/" + c + ".java");
         }
         for (String c : List.of("DeclarativeBindings", "InteractionChains", "ReactiveDomBinder", "StateFlags", "StyleInvalidation", "TemplateDeps",
@@ -652,6 +653,24 @@ class ArchitectureHealthTest {
         bad.addAll(checkCodeLines(walker, Pattern.compile("\\.span\\(\\)|maskFrom|fxAnchors")));
         bad.addAll(checkCodeLines(spec, Pattern.compile("\\bint span\\b|\\bmaskFrom\\b|withSpan\\(")));
         assertEquals(List.of(), bad, "走査器が列から鍵・ID・範囲で親・グループ・保持層を引き直している（列の階層 FrameStructure を読む。計画書 §3.4 M3b-4c-2b-3b）");
+    }
+
+    /**
+     * M3b-4c-2b-3b-2b-4a: 描画側（{@code Painter} の実装）は項目・保持層の中身を層の文脈（{@code LayerContext}）で受け取り、項目の列の位置で
+     * 走査器に姿勢・祖先・範囲を問わない（走査器が列でなくシーンをたどるようになっても描画側が変わらないため）。
+     */
+    @Test
+    void paintersReadTheLayerContextNotListPositions() throws IOException {
+        List<String> bad = new ArrayList<>();
+        Pattern byPosition = Pattern.compile("\\.(resolveAt|animAt|ancestorById|parentIndex)\\(|\\bwalker\\.items\\(\\)");
+        for (String root : ALL_MODULE_MAIN_ROOTS) {
+            Path r = repoRoot().resolve(root);
+            if (!Files.isDirectory(r)) continue;
+            for (String hit : checkCodeLines(r, byPosition)) if (!hit.contains("SceneWalker.java")) bad.add(hit);
+        }
+        Path painter = repoRoot().resolve("core/src/main/java/com/nishiyu/enderframelib/core/paint/Painter.java");
+        bad.addAll(checkCodeLines(painter, Pattern.compile("\\bint\\s+(index|nodeIndex|from|to)\\b")));
+        assertEquals(List.of(), bad, "描画側が列の位置で走査器に問うている（層の文脈 LayerContext を読む。計画書 §3.4 M3b-4c-2b-3b-2b-4a）");
     }
 
     /** M3b-4b-4b で消した、項目の同一性で静止フレーム・変化を見る型と、列全体を絶対座標へ直す本番の型。 */

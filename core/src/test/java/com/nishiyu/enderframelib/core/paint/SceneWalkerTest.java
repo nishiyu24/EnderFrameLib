@@ -42,8 +42,8 @@ public class SceneWalkerTest {
         }
 
         @Override
-        public void drawItem(DisplayItem el, int index, float flat) {
-            SceneWalker.Resolved r = walker.resolveAt(index);
+        public void drawItem(DisplayItem el, LayerContext.Item item, float flat) {
+            SceneWalker.Resolved r = item.resolved();
             visits.add(new Visit(el.id(), flat, current, r.pose(), r.opacity()));
         }
     }

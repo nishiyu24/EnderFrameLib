@@ -27,7 +27,7 @@ class SceneDamageTest {
     /** 何もしない描画側（走査器に範囲を足させるだけ）。 */
     private static final Painter NOOP = new Painter() {
         @Override public void syncLayers(List<Group> want) { }
-        @Override public void drawItem(DisplayItem el, int index, float flat) { }
+        @Override public void drawItem(DisplayItem el, LayerContext.Item item, float flat) { }
     };
 
     /** 前のフレームの画素と、今のフレームの画素・範囲を比べ、範囲の外で変わった画素の数を返す（{@code where} に最初の数個）。 */

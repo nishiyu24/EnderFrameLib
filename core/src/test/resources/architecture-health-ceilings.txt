@@ -29,7 +29,7 @@ core/src/main/java/com/nishiyu/enderframelib/core/paint/CssAnimator.java | 629
 core/src/main/java/com/nishiyu/enderframelib/core/paint/Gradients.java | 878
 core/src/main/java/com/nishiyu/enderframelib/core/paint/gpu/GpuRenderBackend.java | 1138
 core/src/main/java/com/nishiyu/enderframelib/core/paint/model/ClipShape.java | 733
-core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java | 1178
+core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java | 1097
 core/src/main/java/com/nishiyu/enderframelib/core/raster/canvas/CanvasRenderingContext2D.java | 1144
 core/src/main/java/com/nishiyu/enderframelib/core/raster/svg/SvgRenderer.java | 779
 core/src/main/java/com/nishiyu/enderframelib/core/scene3d/GltfBinaryLoader.java | 761
