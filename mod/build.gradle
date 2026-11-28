@@ -173,6 +173,12 @@ tasks.named('jar', Jar) {
         from(project(path).sourceSets.main.output) { exclude 'META-INF/services/**' }
     }
     from(mergedServicesDir)
+    from(file('LICENSE')) { into 'META-INF' }
+    from(rootProject.file('LICENSE')) {
+        into 'META-INF'
+        rename { 'LICENSE-APACHE-2.0.txt' }
+    }
+    from(rootProject.file('NOTICE')) { into 'META-INF' }
     // ルート自身の META-INF/services は結合済みのファイルに入っているので、重ねて取り込まない
     exclude { e -> e.relativePath.pathString.startsWith('META-INF/services/') && !e.file.toPath().startsWith(mergedServicesDir.get().asFile.toPath()) }
 }

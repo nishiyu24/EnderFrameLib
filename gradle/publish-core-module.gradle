@@ -16,6 +16,10 @@ tasks.withType(Javadoc).configureEach {
     }
 }
 
+tasks.withType(Jar).configureEach {
+    from(rootProject.files('LICENSE', 'NOTICE')) { into 'META-INF' }
+}
+
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
@@ -27,8 +31,8 @@ publishing {
                 url = 'https://github.com/nishiyu24/EnderFrameLib'
                 licenses {
                     license {
-                        name = 'GNU Lesser General Public License, Version 3.0'
-                        url = 'https://www.gnu.org/licenses/lgpl-3.0.html'
+                        name = 'The Apache License, Version 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
                     }
                 }
                 developers {

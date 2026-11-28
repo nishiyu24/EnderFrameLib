@@ -1,7 +1,7 @@
 # EnderFrameLib `:core` — High-Performance Pure-Java HTML/CSS Engine
 
 [![Java 21+](https://img.shields.io/badge/Java-21%2B-blue.svg)](https://openjdk.org/projects/jdk/21/)
-[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL_3.0-green.svg)](https://www.gnu.org/licenses/lgpl-3.0.html)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../LICENSE)
 
 EnderFrameLib `:core` is an independent, lightweight HTML/CSS UI rendering engine written in pure Java 21, built for the per-frame budgets of in-process UIs (game HUDs, tool panels).
 

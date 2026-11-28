@@ -1,7 +1,8 @@
 # EnderFrameLib
 
 [![Java 21+](https://img.shields.io/badge/Java-21%2B-blue.svg)](https://openjdk.org/projects/jdk/21/)
-[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL_3.0-green.svg)](https://www.gnu.org/licenses/lgpl-3.0.html)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Mod License: MIT](https://img.shields.io/badge/Mod_License-MIT-green.svg)](mod/LICENSE)
 
 **EnderFrameLib** is an **in-process, pure-Java 21 HTML/CSS UI rendering engine** (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`), accompanied by an **optional Minecraft 1.21.1 (NeoForge) integration mod** built on top of the engine.
 
@@ -359,7 +360,7 @@ Known gaps are documented here so you do not have to discover them by debugging;
 The root is a plain Gradle build with no plugins. Engine-only tasks (`:core:*`, `:core-gl:*`, …) never configure `:mod`, so they run without NeoForge or Minecraft setup (configure-on-demand in `gradle.properties`; CI checks this). Dependencies point one way: `:mod` → `:core*`.
 
 ```text
-README.md, CONTRIBUTING.md, LICENSE*, NOTICE   Entry points, conventions, licenses
+README.md, CONTRIBUTING.md, LICENSE, NOTICE    Entry points, conventions, licenses
 core/         (:core) Pure-Java 21 HTML/CSS engine, layout, DOM/events, UI DSL, <scene-3d>, CPU rasterizer, RHI, SPI
 core-gl/      (:core-gl) OpenGL 3.2+ Core GPU backend
 core-vulkan/  (:core-vulkan) Vulkan 1.1 GPU backend
@@ -407,6 +408,6 @@ Build outputs stay under each project's `build/`; the published engine modules g
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for code conventions, test suites, and how known limitations are recorded across code, `docs/FIDELITY.md`, and this README.
 
-**License:** `LGPL-3.0-only`. See [LICENSE](LICENSE) and [LICENSE.GPL-3.0.txt](LICENSE.GPL-3.0.txt).
+**License:** Core engine (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`) is licensed under `Apache-2.0` (see [LICENSE](LICENSE) and [NOTICE](NOTICE)); the optional Minecraft mod (`:mod`) is licensed under `MIT` (see [mod/LICENSE](mod/LICENSE)).
 
-Third-party components — the bundled `lunex_video` native decoder (excluded from the LGPL grant), on-demand `yt-dlp`, JNA, and NeoForge MDK template files — are attributed in [NOTICE](NOTICE).
+Third-party components — the bundled `lunex_video` native decoder (excluded from the Apache-2.0 / MIT grants), on-demand `yt-dlp`, JNA, and NeoForge MDK template files — are attributed in [NOTICE](NOTICE).

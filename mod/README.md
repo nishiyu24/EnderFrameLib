@@ -61,3 +61,7 @@ Reference and in-game test specifications (Japanese):
 - [docs/TEST_SPEC_SURFACE.md](docs/TEST_SPEC_SURFACE.md) — web screens on block / item surfaces
 - [docs/TEST_SPEC_BLOCKS_ITEMS.md](docs/TEST_SPEC_BLOCKS_ITEMS.md) — block and item rendering
 - [docs/TEST_SPEC_MEDIA.md](docs/TEST_SPEC_MEDIA.md) — video, audio and images
+
+## License
+
+The Minecraft NeoForge integration (`:mod`) is licensed under the `MIT` License (see [LICENSE](LICENSE)). The bundled engine modules (`:core`, `:core-gl`, `:core-vulkan`, `:core-glfw`) are licensed under `Apache-2.0` (see [../LICENSE](../LICENSE) and [../NOTICE](../NOTICE)).
