@@ -75,7 +75,14 @@ class SceneWalkerRetainTest {
             return r;
         }
 
-        @Override public void drawRetained(LayerContext.Content c) { calls.add("draw " + c.id()); }
+        @Override
+        public void drawRetained(LayerContext.Content c) {
+            calls.add("draw " + c.id());
+            drawnBeforeRetained = drawn.size();
+        }
+
+        /** 保持済みの層を重ねたときに描き終えていた項目の数（重ねていなければ -1）。 */
+        int drawnBeforeRetained = -1;
         @Override public void beginRetained(LayerContext.Content c) { calls.add("begin at " + drawn.size()); }
 
         @Override
@@ -226,6 +233,80 @@ class SceneWalkerRetainTest {
             Rec r = walk(v, walker, 1000L, (t, id) -> RetainPlan.SKIP);
             assertTrue(r.calls.isEmpty(), "不透明度のグループの中のコンテナを保持に問うた: " + r.calls);
             assertFalse(r.drawn.isEmpty());
+        }
+    }
+
+    /**
+     * 部品が 1 つのグループで描くのを待たせた項目（M3b-4.24a。層にするかを次の項目で決める）は、保持層の範囲の前に描く: 記録する層へ描かず、
+     * 重ねる層の後ろにも回らない。範囲の始まり・終わりで待たせた項目を描かない変異で落ちる。
+     */
+    @Test
+    void itemWaitingForItsGroupIsDrawnBeforeTheRetainedRange() {
+        String html = DOC.replace("<div id=head style='height:30px;background:#999'>head</div>",
+                "<div id=head style='opacity:.5;height:30px;background:#999'></div>")
+                .replace("</div><div id=tail", "<div id=last style='opacity:.5;height:10px;background:#c3c'></div></div><div id=tail");
+        assertNotEquals(DOC, html);
+        for (RetainPlan plan : List.of(RetainPlan.RECORD, RetainPlan.SKIP)) {
+            try (SoftwareRenderBackend backend = new SoftwareRenderBackend(300, 300);
+                 StandaloneView v = new StandaloneView(html, 300, 300, FontResolver.FALLBACK)) {
+                SceneWalker walker = new SceneWalker(backend.sessionId());
+                v.frame(1000L, backend, true);
+                Rec r = walk(v, walker, 1000L, (t, id) -> plan);
+                int head = -1;
+                for (int i = 0; i < r.drawn.size(); i++) if (r.drawn.get(i).startsWith("head")) head = i;
+                assertTrue(head >= 0, "前提: 前の箱を描いた: " + r.drawn);
+                assertFalse(r.drawn.get(head).endsWith("|c"), "前の箱が中身として描かれた");
+                if (plan == RetainPlan.RECORD) {
+                    String begin = r.calls.stream().filter(c -> c.startsWith("begin at ")).findFirst().orElseThrow();
+                    assertTrue(head < Integer.parseInt(begin.substring("begin at ".length())), "前の箱を記録する層へ描いた: " + r.calls);
+                    int last = -1;
+                    for (int i = 0; i < r.drawn.size(); i++) if (r.drawn.get(i).startsWith("last")) last = i;
+                    String end = r.calls.stream().filter(c -> c.startsWith("end at ")).findFirst().orElseThrow();
+                    assertTrue(last >= 0 && r.drawn.get(last).endsWith("|c"), "前提: 中身の最後の箱を中身として描いた: " + r.drawn);
+                    assertTrue(last < Integer.parseInt(end.split(" ")[2]), "中身の最後の箱を記録する層の外へ描いた: " + r.calls);
+                } else {
+                    assertTrue(r.drawnBeforeRetained > head, "前の箱を保持した層の後ろに描いた: " + r.calls + " " + r.drawn);
+                }
+            }
+        }
+    }
+
+    /**
+     * 待たせた項目のすぐ後ろが保持層の範囲の始まりでも、範囲の前に描く。実際の文書ではコンテナ自身の背景が間に入るので、列からコンテナの背景を
+     * 外したフレームで確かめる（範囲の始まりで待たせた項目を描かない変異で落ちる）。
+     */
+    @Test
+    void itemWaitingRightBeforeTheRangeIsDrawnBeforeTheLayerBegins() {
+        String html = DOC.replace("<div id=head style='height:30px;background:#999'>head</div>",
+                "<div id=head style='opacity:.5;height:30px;background:#999'></div>");
+        try (SoftwareRenderBackend backend = new SoftwareRenderBackend(300, 300);
+             StandaloneView v = new StandaloneView(html, 300, 300, FontResolver.FALLBACK)) {
+            v.frame(1000L, backend, true);
+            RenderFrame f = v.ui().renderFrame(List.of(), null, 1000L);
+            FrameComposer.Composed c = new FrameComposer().compose(f);
+            List<DisplayItem> items = c.items();
+            FrameStructure st = c.structure();
+            assertEquals(1, st.retainCount(), "前提: 保持にできる中身が 1 つ");
+            int drop = -1;
+            for (int i = 0; i < items.size(); i++) if ("s_bg".equals(items.get(i).id())) drop = i;
+            assertTrue(drop >= 0 && drop < st.retainFrom(0), "前提: コンテナの背景が範囲の前にある");
+            List<DisplayItem> kept = new ArrayList<>();
+            FrameStructure.Builder b = new FrameStructure.Builder();
+            b.reset();
+            for (int i = 0; i < items.size(); i++) {
+                if (i == drop) continue;
+                int parent = st.parent(i);
+                b.add(parent > drop ? parent - 1 : parent);
+                kept.add(items.get(i));
+            }
+            int node = st.retainNode(0);
+            b.markContent(node > drop ? node - 1 : node, st.retainToken(0));
+            PreparedFrame p = new PreparedFrame(f, new FrameComposer.Composed(kept, c.offsets(), c.contents(), b.build()), null, true, null);
+            Rec r = new Rec((t, id) -> RetainPlan.RECORD);
+            new SceneWalker(backend.sessionId()).run(p, Matrix2D.IDENTITY, r, null);
+            int head = r.drawn.indexOf("head_bg");
+            String begin = r.calls.stream().filter(x -> x.startsWith("begin at ")).findFirst().orElseThrow();
+            assertTrue(head >= 0 && head < Integer.parseInt(begin.substring("begin at ".length())), "待たせた項目を記録する層へ描いた: " + r.calls + " " + r.drawn);
         }
     }
 }

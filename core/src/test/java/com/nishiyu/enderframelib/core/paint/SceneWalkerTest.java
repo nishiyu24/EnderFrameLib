@@ -99,6 +99,71 @@ public class SceneWalkerTest {
         assertTrue(s.visits.stream().anyMatch(v -> Math.abs(v.flat() - 0.5f) < 1e-4 || v.opacity() < 0.99f), "不透明度は項目へ");
     }
 
+    /**
+     * グループを層にするかは、項目より後ろを先に見ずに決める（M3b-4.24a）: 部品が 1 つのうちは項目を 1 つだけ待たせ、次の項目がそのグループに
+     * 続くかで決める。外側（部品 2 つ以上）は層、内側（部品 1 つ）と列の最後のグループ（終わりで 1 つと決まる）は項目に掛ける。描く順は列の順のまま。
+     */
+    @Test
+    public void groupLayeringIsDecidedByTheNextItemWithoutLookingAhead() {
+        List<DisplayItem> items = items("<div style='opacity:.5;width:60px;height:30px'>"
+                + "<div style='opacity:.4;width:20px;height:10px;background:#f00'></div>"
+                + "<div style='width:20px;height:10px;background:#00f'></div></div>"
+                + "<div style='width:20px;height:10px;background:#0f0'></div>"
+                + "<div style='opacity:.3;width:20px;height:10px;background:#ff0'></div>");
+        Recorder rec = run(new SceneWalker("w-next"), items, 0, 1f);
+        assertEquals(items.stream().filter(i -> i.type() != ElementType.NODE).map(DisplayItem::id).toList(),
+                rec.visits.stream().map(Visit::id).toList(), "描く順が列の順と違う");
+        Visit red = visitOf(rec, items, 0xFFFF0000), blue = visitOf(rec, items, 0xFF0000FF);
+        Visit green = visitOf(rec, items, 0xFF00FF00), yellow = visitOf(rec, items, 0xFFFFFF00);
+        assertEquals(1, red.layers().size(), "外側のグループ（部品 2 つ）だけが層: " + red.layers());
+        assertEquals(red.layers(), blue.layers(), "外側のグループの部品は同じ層");
+        assertEquals(0.4f, red.flat(), 1e-4, "内側のグループ（部品 1 つ）は項目に掛ける");
+        assertEquals(List.of(), green.layers());
+        assertEquals(1f, green.flat(), 1e-6);
+        assertEquals(List.of(), yellow.layers(), "列の最後のグループ（部品 1 つ）は層にしない");
+        assertEquals(0.3f, yellow.flat(), 1e-4);
+    }
+
+    private static Visit visitOf(Recorder rec, List<DisplayItem> items, int bg) {
+        String id = items.stream().filter(i -> i.type() != ElementType.NODE && i.bgColor() == bg).findFirst().orElseThrow().id();
+        return rec.visits.stream().filter(v -> v.id().equals(id)).findFirst().orElseThrow();
+    }
+
+    /**
+     * 補間で変わる項目の描き直す範囲と描く前の判定は、前の走査で描いた項目の記録から求め、描く前に列をたどらない（M3b-4.24a）。色だけの補間は項目の
+     * 範囲を、姿勢の補間は全面を足す。1 度も描いていない走査器は動く項目を知らない（最初のフレームはシーンの違いで全面を描く）。
+     */
+    @Test
+    public void outsideSceneChangesComeFromThePreviousWalk() {
+        String html = "<style>body{margin:0}@keyframes c{from{background:#f00}to{background:#00f}}"
+                + "@keyframes m{from{transform:translateX(0)}to{transform:translateX(40px)}}"
+                + "#a{position:absolute;left:10px;top:10px;width:30px;height:20px;animation:c 1s linear infinite}"
+                + "#b{position:absolute;left:200px;top:60px;width:30px;height:20px;background:#0c0}</style><div id=a></div><div id=b></div>";
+        try (SoftwareRenderBackend backend = new SoftwareRenderBackend(300, 100);
+             StandaloneView v = new StandaloneView(html, 300, 100, FontResolver.FALLBACK)) {
+            v.frame(1000L, backend, true);
+            SceneWalker walker = new SceneWalker(backend.sessionId());
+            RenderFrame f = v.ui().renderFrame(List.of(), null, 1000L);
+            PreparedFrame p = new PreparedFrame(f, new FrameComposer().compose(f), null, true, null);
+            assertTrue(!walker.changesOutsideScene(p), "描いていない走査器が列を先にたどって動く項目を見つけた");
+            SceneDamage scene = new SceneDamage();
+            SceneWalkAccess.damage(v, scene, walker, 1000L, new Recorder());
+            assertTrue(walker.changesOutsideScene(new PreparedFrame(f.at(1050L), null, null, true, p)),
+                    "前の走査で描いた補間の項目が動いているのに描かない");
+            SceneDamage.Rects r = SceneWalkAccess.damage(v, scene, walker, 1050L, new Recorder());
+            assertTrue(!r.full(), "色だけの補間で全面になった: " + r.fullReason());
+            assertTrue(r.covers(25f, 20f), "補間の項目の範囲が入っていない");
+            assertTrue(!r.covers(215f, 70f), "動かない項目まで描き直す");
+
+            v.root().getNodeById("a").setAttribute("style", "animation:m 1s linear infinite");
+            v.frame(1100L, backend, true);
+            SceneWalkAccess.damage(v, scene, walker, 1100L, new Recorder());
+            SceneDamage.Rects moved = SceneWalkAccess.damage(v, scene, walker, 1150L, new Recorder());
+            assertTrue(moved.full(), "姿勢の補間で全面にならない");
+            assertEquals("animation-geometry", moved.fullReason());
+        }
+    }
+
     @Test
     public void animationsAdvanceWithTimeAndTheGenerationFollowsTheListIdentity() {
         List<DisplayItem> items = items("<style>@keyframes mv { from { transform: translateX(0) } to { transform: translateX(100px) } }</style>"

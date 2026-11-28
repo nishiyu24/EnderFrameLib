@@ -432,7 +432,7 @@ class ArchitectureHealthTest {
                 "SceneWalker", "AnimationStates", "ItemSink", "SceneDamage", "FrameStructure", "SceneSource", "FrameDamage",
                 "BoxItemPainter", "BoxDecorationPainter", "BoxDecorations", "ControlPainter", "TextRunPainter", "PaintSupport", "ItemProps",
                 "PaintBounds", "BoxAnimation", "RenderFrame", "PreparedFrame", "ExcludedNodes", "FrameComposer", "ScrollTranslation",
-                "LayerContext", "Painter")) {
+                "LayerContext", "Painter", "OutsideSceneRecord")) {
             out.add(main + "core/paint/" + c + ".java");
         }
         for (String c : List.of("DeclarativeBindings", "InteractionChains", "ReactiveDomBinder", "StateFlags", "StyleInvalidation", "TemplateDeps",
@@ -653,6 +653,20 @@ class ArchitectureHealthTest {
         bad.addAll(checkCodeLines(walker, Pattern.compile("\\.span\\(\\)|maskFrom|fxAnchors")));
         bad.addAll(checkCodeLines(spec, Pattern.compile("\\bint span\\b|\\bmaskFrom\\b|withSpan\\(")));
         assertEquals(List.of(), bad, "走査器が列から鍵・ID・範囲で親・グループ・保持層を引き直している（列の階層 FrameStructure を読む。計画書 §3.4 M3b-4c-2b-3b）");
+    }
+
+    /**
+     * M3b-4.24a: 走査器は列を前から 1 回だけ読む（4.24b で列をシーンのたどりに替える前提）。描く前に列を先にたどる処理（グループの部品の数え・
+     * 位置ごとに保持層の範囲を全部なめる照合）を戻さない。補間・外の事情の範囲と描く前の判定は前の走査の記録（{@code OutsideSceneRecord}）から求め、
+     * 描く列を読むのは {@code run} の 1 か所だけ。
+     */
+    @Test
+    void walkerReadsTheListOnceForward() throws IOException {
+        Path walker = repoRoot().resolve("core/src/main/java/com/nishiyu/enderframelib/core/paint/SceneWalker.java");
+        List<String> bad = new ArrayList<>(checkCodeLines(walker, Pattern.compile("\\bmembers\\[|extraMembers|\\bretainAt\\(")));
+        List<String> reads = checkCodeLines(walker, Pattern.compile("\\.drawList\\(\\)"));
+        if (reads.size() != 1) bad.addAll(reads);
+        assertEquals(List.of(), bad, "走査器が描く前に列を先にたどっている（列は前から 1 回。計画書 §3.4 M3b-4.24a）");
     }
 
     /**
