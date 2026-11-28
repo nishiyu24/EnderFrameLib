@@ -8,7 +8,6 @@ import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.text.LineBreaker;
-import com.nishiyu.enderframelib.core.text.TextShaper;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import com.nishiyu.enderframelib.core.text.model.WordBreak;
@@ -27,7 +26,11 @@ import java.util.List;
  * （{@link #breaksBetween}）のときだけ。インライン水準の原子の前後と {@code <wbr>} の位置は機会になる。</p>
  */
 public final class InlineFlow {
-    static final float EPS = TextShaper.WRAP_TOLERANCE;
+    /**
+     * 折り返しの判定で「入る」とみなす誤差（Chrome の LayoutUnit の 1 単位 = 1/64px）。語ごとの送り幅を float で足した値が、
+     * 全文を 1 回で測った max-content を 1e-5px ほど上回り、内容幅ちょうどの箱で最後の語が次の行へ落ちるのを防ぐ。
+     */
+    static final float EPS = 1f / 64f;
     /** インライン水準の原子を、折り返しの判定で 1 文字として扱うときの文字（U+FFFC。表意文字と同じく前後で割れる）。 */
     static final char ATOM_CHAR = '￼';
 
@@ -130,7 +133,15 @@ public final class InlineFlow {
         FontFace face = s.face(st);
         FontStyle fs = st.facts.fontStyle;
         float asc = face.ascent(fs), desc = face.descent(fs);
-        return TextShaper.leadingAbove(lineHeight(st, face), asc, desc) + asc;
+        return leadingAbove(lineHeight(st, face), asc, desc) + asc;
+    }
+
+    /**
+     * 行の高さと文字の高さの差（leading）のうち、文字の上に置く分（CSS 2.2 §10.8.1 の half-leading）。半分を整数のピクセルに
+     * 切り捨て、残りを下に置く（Chrome の CalculateLeadingSpace と同じ。Arial 16px の行の高さ 18px なら上 0px・下 1px）。
+     */
+    static float leadingAbove(float lineHeight, float ascent, float descent) {
+        return (float) Math.floor((lineHeight - (ascent + descent)) / 2f);
     }
 
     /**

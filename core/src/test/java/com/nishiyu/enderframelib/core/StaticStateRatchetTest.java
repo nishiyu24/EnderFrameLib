@@ -44,9 +44,11 @@ class StaticStateRatchetTest {
      * {@code PaintSceneDriver.STAT_MOVE_PATCHES}・{@code SoftwareRenderBackend.STAT_SHARED_CLIPS}〕と、テストが切り替える近道の
      * 切り分けの印 2 つ〔{@code DisplayListBuilder.STACKING_PATCH_ENABLED}・{@code SoftwareRenderBackend.CLIP_SHARE}。起動時のスイッチは
      * 近道のスイッチ数のラチェットのため足さない〕）
-     * → 166（2026-11-18 B12 続き: {@code PaintOrder.STICKY_IN_SCROLL_NODE}〔sticky を含むスクロールコンテナを節にまとめるかの、テストが切り替える印〕）。
+     * → 166（2026-11-18 B12 続き: {@code PaintOrder.STICKY_IN_SCROLL_NODE}〔sticky を含むスクロールコンテナを節にまとめるかの、テストが切り替える印〕）
+     * → 60（2026-11-29 M5-5: 上限を実数に締めた。旧 {@code TextShaper} の {@code ThreadLocal}・
+     * 書体の照会用の鍵・{@code BidiText} の作業用の配列を消した後の値にした）。
      */
-    private static final int MAX_SAFE_BY_TYPE = 166;
+    private static final int MAX_SAFE_BY_TYPE = 60;
 
     private static final Pattern STATIC_FIELD = Pattern.compile("^\\s*(?:(?:private|public|protected)\\s+)?static\\s+(.*)$");
     private static final Pattern TYPE_DECL = Pattern.compile("^(final\\s+|abstract\\s+|sealed\\s+)?(class|interface|enum|record)\\b.*");

@@ -44,9 +44,6 @@ public final class EngineFlags {
     /** {@code enderframe.split}: LayoutTaskPool.SPLIT_PER_PARTICIPANT（並列区間の分割数。既定 4）（使う所: {@code LayoutTaskPool}） */
     public static final int SPLIT_PER_PARTICIPANT = Integer.getInteger("enderframe.split", 4);
 
-    /** {@code enderframe.text.cache}: TextShaper の整形キャッシュの容量（既定 4096）（使う所: {@code TextShaper}） */
-    public static final int TEXT_CACHE = Integer.getInteger("enderframe.text.cache", 4096);
-
     /** {@code enderframe.threads}: ワーカー数（A3。EnderEngine.workerThreads と同じ）（使う所: {@code LayoutTaskPool}） */
     public static final Integer THREADS = Integer.getInteger("enderframe.threads");
 

@@ -17,7 +17,6 @@ enderframe.soft.nocull | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRende
 enderframe.soft.nofastsolid | SHORTCUT | core/kernel/EngineFlags.java | SoftwareRenderBackend.fastSolid
 enderframe.soft.notiled | SHORTCUT | core/kernel/EngineFlags.java | TileQueue.tiled（タイル並列ラスタ）
 enderframe.split | TUNING | core/kernel/EngineFlags.java | LayoutTaskPool.SPLIT_PER_PARTICIPANT（並列区間の分割数。既定 4）
-enderframe.text.cache | TUNING | core/kernel/EngineFlags.java | TextShaper の整形キャッシュの容量（既定 4096）
 enderframe.threads | TUNING | core/kernel/EngineFlags.java | ワーカー数（A3。EnderEngine.workerThreads と同じ）
 env:LOCALAPPDATA | PLATFORM | core/text/font/FontCatalog.java, core/text/font/FontScanner.java | 利用者の書体のフォルダと書体の目録の置き場所（Windows）
 env:WINDIR | PLATFORM | core/text/font/FontScanner.java | システムの書体のフォルダ（Windows）

@@ -18,7 +18,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class LineBreakerTest {
 
     private static List<String> seg(String text) {
-        return TextShaper.segments(text, WordBreak.NORMAL);
+        return segments(text, WordBreak.NORMAL);
+    }
+
+    /** 折り返し候補（{@link LineBreaker#canBreakBefore}）で区切った断片。末尾の空白は直前の断片に付く（旧 {@code TextShaper.segments}）。 */
+    static List<String> segments(String text, WordBreak wordBreak) {
+        List<String> out = new java.util.ArrayList<>();
+        if (text == null || text.isEmpty()) return out;
+        int start = 0;
+        for (int i = text.offsetByCodePoints(0, 1); i < text.length(); i = text.offsetByCodePoints(i, 1)) {
+            if (LineBreaker.canBreakBefore(text, i, wordBreak)) {
+                out.add(text.substring(start, i));
+                start = i;
+            }
+        }
+        out.add(text.substring(start));
+        return out;
     }
 
     @Test
@@ -120,28 +135,28 @@ public class LineBreakerTest {
     @Test
     void hangulBreaksBetweenSyllablesLikeIdeographs() {
         assertEquals(List.of("한", "국", "어"), seg("한국어"));
-        assertEquals(List.of("한국어"), TextShaper.segments("한국어", WordBreak.KEEP_ALL));
+        assertEquals(List.of("한국어"), segments("한국어", WordBreak.KEEP_ALL));
     }
 
     @Test
     void keepAllKeepsCjkTogetherButStillBreaksAtSpaces() {
-        assertEquals(List.of("日本語"), TextShaper.segments("日本語", WordBreak.KEEP_ALL));
-        assertEquals(List.of("日本語 ", "text"), TextShaper.segments("日本語 text", WordBreak.KEEP_ALL));
-        assertEquals(List.of("a-", "b"), TextShaper.segments("a-b", WordBreak.KEEP_ALL));
+        assertEquals(List.of("日本語"), segments("日本語", WordBreak.KEEP_ALL));
+        assertEquals(List.of("日本語 ", "text"), segments("日本語 text", WordBreak.KEEP_ALL));
+        assertEquals(List.of("a-", "b"), segments("a-b", WordBreak.KEEP_ALL));
     }
 
     @Test
     void breakAllBreaksBetweenAnyLettersAndDigits() {
-        assertEquals(List.of("a", "b", "c", "1", "2"), TextShaper.segments("abc12", WordBreak.BREAK_ALL));
+        assertEquals(List.of("a", "b", "c", "1", "2"), segments("abc12", WordBreak.BREAK_ALL));
         // 閉じ括弧や句読点の前、結合文字の前は break-all でも折り返さない
-        assertEquals(List.of("a", "b)"), TextShaper.segments("ab)", WordBreak.BREAK_ALL));
-        assertEquals(List.of("é", "a"), TextShaper.segments("éa", WordBreak.BREAK_ALL));
+        assertEquals(List.of("a", "b)"), segments("ab)", WordBreak.BREAK_ALL));
+        assertEquals(List.of("é", "a"), segments("éa", WordBreak.BREAK_ALL));
     }
 
     @Test
     void surrogatePairsAreNeverSplit() {
         String text = "𠮷𠮷"; // 𠮷𠮷
-        for (String s : TextShaper.segments(text, WordBreak.NORMAL)) {
+        for (String s : segments(text, WordBreak.NORMAL)) {
             assertTrue(s.codePointCount(0, s.length()) >= 1);
             assertFalse(Character.isLowSurrogate(s.charAt(0)), "代用対の後半から始まる断片がある");
         }
@@ -157,7 +172,7 @@ public class LineBreakerTest {
         };
         for (String sample : samples) {
             for (WordBreak wb : WordBreak.values()) {
-                assertEquals(sample, String.join("", TextShaper.segments(sample, wb)), wb + ": " + sample);
+                assertEquals(sample, String.join("", segments(sample, wb)), wb + ": " + sample);
             }
         }
     }

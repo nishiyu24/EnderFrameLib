@@ -111,7 +111,7 @@ core/
 ├── layout/   fragment/（断片木の整形: Block / Inline / Flex / Grid / Table / 縦書き・LayoutCache）、model/、LayoutTaskPool
 ├── paint/    描画シーン（scene/: DisplayScene・SceneEmitter・SceneLayer・SceneChunk・DynamicSceneState）、
 │             一時アダプタ（SceneDisplayListAdapter・SceneAdapterSupport）、描画モデル（DisplayItem・BoxDecorations・Gradients）
-└── text/     テキストの測定（TextShaper）、書体（model/FontFace・BitmapFontFace）、
+└── text/     空白の処理（WhiteSpaceProcessing）・折り返しの機会（LineBreaker）、書体（model/FontFace・BitmapFontFace・TextMemo）、
               システム書体（font/: SystemFonts・FontScanner・FontCatalog・OutlineFontFace・LoadedFace・KerningTable）
 ```
 
@@ -156,7 +156,7 @@ core/
   状態・属性・子の増減で汚れた要素と関係する要素だけを再スタイルの対象にする。
 
 ### テキスト
-- **測定の出所は `TextShaper` 1 つ。** 描画側は測り直さない。
+- **測定の出所は 1 つ。** 送り幅は書体（`FontFace`。記憶は書体が持つ `TextMemo`）、行は `InlineFlow` が組む。描画側は測り直さない。
 - `font-family` は既定でシステムの書体（`SystemFonts`、CSS Fonts 4 §5.2 の照合）に解決し、`@font-face` の TTF / OTF も
   `WebFonts` を通して同じ `OutlineFontFace` の経路で測り描きする。`minecraft:*` などの名前と、TTF / OTF 以外の `@font-face`
   だけが Minecraft のビットマップ書体（`BitmapFontFace`）で描かれる。
@@ -233,7 +233,7 @@ flowchart TD
 
 ## 6. 設計原則（崩さない不変条件）
 
-- **測定の出所は 1 つ。** テキストの幅・ベースライン・折り返しは `TextShaper` が決め、描画はそれをそのまま描く。
+- **測定の出所は 1 つ。** テキストの幅は書体、ベースライン・折り返しはレイアウト（`InlineFlow`）が決め、描画はそれをそのまま描く。
 - **幾何は float、丸めは描画の 1 箇所。**
 - **プロパティの知識は 1 箇所**（`PropertyRegistry`）。
 - **DOM と箱は別物**（レイアウトの入力はボックスツリー）。

@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.core.layout.fragment;
 
 import com.nishiyu.enderframelib.core.box.BoxNode;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
-import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.List;
 
@@ -38,7 +37,7 @@ final class InlineSpans {
     record SpanAt(Open ob, float left, float right, boolean startEdge, boolean endEdge) {
         /** 縦の位置を決めた {@link LineFragment.Span}（行の高さ {@code lineH}・行のベースライン {@code lineBase}）。 */
         LineFragment.Span span(float l, float r, float lineH, float lineBase) {
-            float above = TextShaper.leadingAbove(ob.lineHeight, ob.ascent, ob.descent) + ob.ascent; // 自分の行の高さの上端からベースライン
+            float above = InlineFlow.leadingAbove(ob.lineHeight, ob.ascent, ob.descent) + ob.ascent; // 自分の行の高さの上端からベースライン
             float baseY = ob.align == VerticalAlign.TOP ? above
                     : ob.align == VerticalAlign.BOTTOM ? lineH - ob.lineHeight + above : lineBase - ob.raise;
             BoxGeometry g = ob.g;

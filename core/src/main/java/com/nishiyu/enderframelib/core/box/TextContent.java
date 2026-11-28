@@ -8,7 +8,7 @@ import java.util.List;
 
 import com.nishiyu.enderframelib.core.css.Style;
 import com.nishiyu.enderframelib.core.css.model.CssKeywords;
-import com.nishiyu.enderframelib.core.text.TextShaper;
+import com.nishiyu.enderframelib.core.text.WhiteSpaceProcessing;
 
 import java.util.Locale;
 
@@ -16,7 +16,7 @@ import java.util.Locale;
  * 文字の節の中身（Engine v3 M2b-1）。DOM の文字列から、レイアウトと描画が読む {@link BoxNode#text} を作る純粋な関数。
  *
  * <ol>
- *   <li>{@code white-space} による空白の正規化（{@link TextShaper#normalize}）。</li>
+ *   <li>{@code white-space} による空白の正規化（{@link WhiteSpaceProcessing#normalize}）。</li>
  *   <li>{@code text-transform}（{@code uppercase} / {@code lowercase} / {@code capitalize}）。大文字・小文字の写像は言語に依らない
  *       {@link Locale#ROOT}。</li>
  *   <li>描かれず幅も持たない書式文字（ゼロ幅の空白・双方向の制御文字・BOM。CSS Text 3 §4.1.1 の「描かない」制御文字）の除去。</li>
@@ -37,7 +37,7 @@ public final class TextContent {
 
     /** {@code continues} は前の節の文字が語の途中で終わっているか（{@code capitalize} で最初の語の頭を大文字にしない）。 */
     static String of(String raw, Style st, boolean continues) {
-        String text = TextShaper.normalize(raw, st.facts.whiteSpace);
+        String text = WhiteSpaceProcessing.normalize(raw, st.facts.whiteSpace);
         if (text.isEmpty()) return text;
         CssKeywords.TextTransform tt = st.inherited.textTransform;
         if (tt != null) {

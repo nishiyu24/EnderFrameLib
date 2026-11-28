@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.layout.fragment;
 
-import com.nishiyu.enderframelib.core.text.TextShaper;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import org.junit.jupiter.api.Test;
@@ -47,7 +46,7 @@ class InlineBoxSpanTest {
         assertEquals(adv("aa ", fs), s[0], EPS);
         assertEquals(2 + 5 + adv("bb", fs) + 5 + 2, s[2], EPS);
         float a = FontFace.FALLBACK.ascent(fs), d = FontFace.FALLBACK.descent(fs);
-        float base = TextShaper.leadingAbove(20, a, d) + a; // 行の高さ 20 の中のベースライン
+        float base = InlineFlow.leadingAbove(20, a, d) + a; // 行の高さ 20 の中のベースライン
         assertEquals(base - a - 2, s[1], EPS);
         assertEquals(2 + a + d + 2, s[3], EPS);
         assertEquals(1, s[4]);

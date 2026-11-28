@@ -43,6 +43,7 @@ import org.junit.jupiter.api.Test;
  *   <li>描画（{@code core/paint}）は DOM の節の属性・文字・状態の規則の照合を読まない（M3b-1・決定 F。描画が読む値は箱の木が
  *       {@code BoxNode.values} に写す）。</li>
  *   <li>DOM の木の形を写した番号の表（{@link #LEGACY_DOM_ARENA_TYPES}）が戻らない（M5-1）。</li>
+ *   <li>旧 {@code TextShaper} の整形・折り返し・区切りの記憶の型（{@link #M5_5_DELETED_TEXT_TYPES}）が戻らない（M5-5）。</li>
  * </ol>
  */
 class ArchitectureHealthTest {
@@ -50,13 +51,13 @@ class ArchitectureHealthTest {
     static final int NEW_CLASS_MAX_LINES = 600;
     static final int MAX_OVER_1000_CLASSES = 20;
     static final int MAX_VOLATILE_STATIC = 40;
-    static final int MAX_THREAD_LOCAL_STATIC = 14;
+    static final int MAX_THREAD_LOCAL_STATIC = 5;
     static final int MAX_ATOMIC_STATIC = 18;
     static final int MAX_EPOCH_STATIC = 0;
     static final int MAX_CORE_SCC = 1;
     static final int MAX_MOD_SCC = 3;
     static final int MAX_SHORTCUTS = 10;
-    static final int MAX_ENGINE_FLAGS = 18;
+    static final int MAX_ENGINE_FLAGS = 17;
 
     private static final String BASE = "com.nishiyu.enderframelib.";
     private static final String CEILINGS_TABLE = "architecture-health-ceilings.txt";
@@ -87,7 +88,7 @@ class ArchitectureHealthTest {
             "TEXT_SETUP_REUSE", "WINDOWED", "SHEET_CACHE", "SOFT_CULL_OFFSCREEN",
             "SOFT_FAST_SOLID", "SOFT_TILED", "KEEP_NEWLINE_WHITESPACE",
             "WINDOW_MIN_OWNERS", "RASTER_PARALLEL", "SPLIT_PER_PARTICIPANT",
-            "TEXT_CACHE", "THREADS", "LAYOUT_PROBE",
+            "THREADS", "LAYOUT_PROBE",
             "PROFILE", "PROFILE_ALLOC", "GL_DOWNSAMPLED_BLUR",
             "GL_BOUNDED_LAYERS", "GL_RECT_CAPACITY", "GL_RECT_TREES",
             "GL_RETAINED_SCROLL");
@@ -441,6 +442,12 @@ class ArchitectureHealthTest {
                 "parser/ActiveFormatting", "parser/BodyMode", "parser/TableModes", "parser/TagSets", "parser/TreeBuilder")) {
             out.add(main + "core/dom/" + c + ".java");
         }
+        // M5-5: 文字の測定の記憶（書体が持つ TextMemo）と、旧 TextShaper から移した空白の処理。書体の登録（core/text/font の
+        // SystemFonts・WebFonts・FontFaceRules）はプロセスの書体の一覧なので入れない
+        out.add(main + "core/text/model");
+        for (String c : List.of("WhiteSpaceProcessing", "BidiText", "LineBreaker", "font/OutlineFontFace")) {
+            out.add(main + "core/text/" + c + ".java");
+        }
         return List.copyOf(out);
     }
 
@@ -616,6 +623,25 @@ class ArchitectureHealthTest {
         roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
         for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), LEGACY_DOM_ARENA_TYPES));
         assertEquals(List.of(), bad, "DOM の木を写した番号の表が戻った（M5-1 で消した。計画書 §3.7）");
+    }
+
+    // ---- 10b. 旧 TextShaper の記憶が戻らない（M5-5。計画書 §3.7） ----
+
+    /**
+     * M5-5 で消した、旧 {@code TextShaper} の整形・折り返し・区切りの記憶（static の表・{@code ThreadLocal} 3 つ・2 世代の表）と、
+     * それだけが使っていた型。新経路の行は {@code InlineFlow}・{@code LineBreaker} が組み、送り幅は書体が持つ
+     * {@code TextMemo}（計画書 §2.3 の L1）が覚える。空白の処理は {@code WhiteSpaceProcessing}。
+     */
+    static final List<String> M5_5_DELETED_TEXT_TYPES = List.of(
+            "TextShaper", "ParagraphSegments", "ShapedInterval", "WrappedParagraph", "NaturalSegments", "SegmentBase", "TextStyle");
+
+    @Test
+    void legacyTextShaperMemoStaysGone() throws IOException {
+        List<String> bad = new ArrayList<>();
+        List<String> roots = new ArrayList<>(ALL_MODULE_MAIN_ROOTS);
+        roots.addAll(List.of("core/src/test/java", "core/src/testFixtures/java", "core/src/jmh/java", "core/demo/java", "mod/src/test/java"));
+        for (String root : roots) bad.addAll(checkTypeNames(repoRoot().resolve(root), M5_5_DELETED_TEXT_TYPES));
+        assertEquals(List.of(), bad, "M5-5 で消した TextShaper の記憶の型が戻った（計画書 §3.7）");
     }
 
     @Test

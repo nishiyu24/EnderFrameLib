@@ -6,7 +6,6 @@ core/css/ColorParser.java | 1272
 core/paint/gpu/GpuRenderBackend.java | 1164
 core/raster/canvas/CanvasRenderingContext2D.java | 1144
 core/css/StyleResolver.java | 1101
-core/text/TextShaper.java | 1065
 core/kernel/gpu/shader/ShaderSources.java | 1001
 core/paint/BoxDecorations.java | 985
 core/css/CssSyntax.java | 964

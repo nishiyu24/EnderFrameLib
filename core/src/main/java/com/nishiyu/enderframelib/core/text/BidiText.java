@@ -14,30 +14,45 @@ import java.text.Bidi;
  */
 public final class BidiText {
 
-    private static final ThreadLocal<char[]> RTL_CHECK_SCRATCH = new ThreadLocal<>();
-
     private BidiText() {}
 
-    /** 右から左の文字（R / AL / AN の強い向き）を含むか。含まなければ並べ替えは要らない。 */
+    /**
+     * 右から左の文字（R / AL / AN の強い向き・RLE / RLO）を含むか。含まなければ並べ替えは要らない。
+     * {@link Bidi#requiresBidi} と同じ答えを、文字列を {@code char[]} へ写さずに字ごとに出す（M5-5。以前はスレッドごとの
+     * 作業用の配列 {@code ThreadLocal} へ写していた）。字ごとの判定は {@code BidiTextTest} が全ての字で突き合わせる。
+     */
     public static boolean hasRtl(String text) {
         if (text == null) return false;
         int len = text.length();
-        for (int i = 0; i < len; i++) {
+        for (int i = 0; i < len; ) {
             char c = text.charAt(i);
-            // Fast-skip ASCII/Latin/Hiragana/Katakana/CJK/Hangul/PUA (never requires bidi)
+            // Fast-skip ASCII/Latin/Hiragana/Katakana/CJK/Hangul/PUA (never requires bidi)。アラビア表示形 B の末尾の
+            // 未割り当て U+FEFD・U+FEFE は Bidi が右から左とみなすので飛ばさない（以前は U+FEFC より後を全て飛ばしていた）
             if (c < 0x0590 || (c >= 0x0900 && c < 0x200E)
-                    || (c > 0x206F && c < 0xD800) || (c > 0xDFFF && c < 0xFB1D) || c > 0xFEFC) {
+                    || (c > 0x206F && c < 0xD800) || (c > 0xDFFF && c < 0xFB1D) || c > 0xFEFE) {
+                i++;
                 continue;
             }
-            char[] buf = RTL_CHECK_SCRATCH.get();
-            if (buf == null || buf.length < len) {
-                buf = new char[Math.max(64, len)];
-                RTL_CHECK_SCRATCH.set(buf);
-            }
-            text.getChars(0, len, buf, 0);
-            return Bidi.requiresBidi(buf, 0, len);
+            int cp = text.codePointAt(i);
+            if (requiresBidi(cp)) return true;
+            i += Character.charCount(cp);
         }
         return false;
+    }
+
+    /** 1 字が並べ替えを要するか（{@link Bidi#requiresBidi} の字ごとの規則）。 */
+    static boolean requiresBidi(int cp) {
+        return switch (Character.getDirectionality(cp)) {
+            case Character.DIRECTIONALITY_RIGHT_TO_LEFT, Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC,
+                 Character.DIRECTIONALITY_ARABIC_NUMBER, Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING,
+                 Character.DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE -> true;
+            // 未割り当ての字は、Bidi が区画の既定の向き（ヘブライ・アラビアの区画なら右から左）を使う。稀なので同じ規則に聞く
+            case Character.DIRECTIONALITY_UNDEFINED -> {
+                char[] one = Character.toChars(cp);
+                yield Bidi.requiresBidi(one, 0, one.length);
+            }
+            default -> false;
+        };
     }
 
     /**

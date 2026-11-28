@@ -25,12 +25,8 @@ public final class ComputedStyle {
     private final Style style;
     private volatile Object derivedFacts;
     private volatile Object paint;
-    private volatile CachedTextStyle cachedTextStyle;
     private volatile CachedFace cachedFace;
     private volatile Map<String, String> customProperties;
-
-    private record CachedTextStyle(com.nishiyu.enderframelib.core.text.model.FontFace face,
-                                   com.nishiyu.enderframelib.core.text.model.TextStyle style) {}
 
     private record CachedFace(com.nishiyu.enderframelib.core.text.model.FontResolver resolver, long generation,
                               com.nishiyu.enderframelib.core.text.model.FontFace face) {}
@@ -205,17 +201,6 @@ public final class ComputedStyle {
         if (previous == null || previous == this || derivedFacts != null) return;
         Object carried = previous.derivedFacts;
         if (carried != null && style.sameNonInherited(previous.style)) derivedFacts = carried;
-    }
-
-    public com.nishiyu.enderframelib.core.text.model.TextStyle peekTextStyle(
-            com.nishiyu.enderframelib.core.text.model.FontFace face) {
-        CachedTextStyle c = cachedTextStyle;
-        return c != null && c.face == face ? c.style : null;
-    }
-
-    public void cacheTextStyle(com.nishiyu.enderframelib.core.text.model.FontFace face,
-                               com.nishiyu.enderframelib.core.text.model.TextStyle ts) {
-        this.cachedTextStyle = new CachedTextStyle(face, ts);
     }
 
     public com.nishiyu.enderframelib.core.text.model.FontFace peekFace(

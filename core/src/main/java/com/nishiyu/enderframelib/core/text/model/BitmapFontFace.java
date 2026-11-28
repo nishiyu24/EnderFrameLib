@@ -17,29 +17,15 @@ public abstract class BitmapFontFace implements FontFace {
     /** 行間（em 比）。 */
     public static final float MC_LINE_GAP_RATIO = 0.15f;
 
-    private static final int ADVANCE_CACHE_BUCKETS = 4096;
-    private static final int ADVANCE_CACHE_MASK = ADVANCE_CACHE_BUCKETS - 1;
     private static final int ADVANCE_MAX_CACHE_LEN = 512;
-
-    private static final class AdvanceEntry {
-        final String text;
-        final boolean bold;
-        final float width;
-
-        AdvanceEntry(String text, boolean bold, float width) {
-            this.text = text;
-            this.bold = bold;
-            this.width = width;
-        }
-    }
 
     private final float unitsPerEm;
     private final float naturalAscent;
     private final float naturalDescent;
     private final float lineGapRatio;
     private final float[] asciiCharCache;
-    private final ThreadLocal<AdvanceEntry[]> advanceCache =
-            ThreadLocal.withInitial(() -> new AdvanceEntry[ADVANCE_CACHE_BUCKETS * 2]);
+    /** 語・文字列の素の送り幅の記憶（計画書 §2.3 の L1。4,096 組 × 2 = 8,192 欄。書体の実例が 1 つ持ち、スレッドで共有する）。 */
+    private final TextMemo<Boolean, Float> advanceMemo = new TextMemo<>(4096);
 
     protected BitmapFontFace() {
         this(MC_UNITS_PER_EM, MC_ASCENT, MC_DESCENT, MC_LINE_GAP_RATIO);
@@ -84,22 +70,11 @@ public abstract class BitmapFontFace implements FontFace {
         if (len > ADVANCE_MAX_CACHE_LEN) {
             return naturalAdvance(text, bold);
         }
-        AdvanceEntry[] table = advanceCache.get();
-        int h = text.hashCode();
-        int base = ((h ^ (h >>> 16) ^ (bold ? 0x5bd1e995 : 0)) & ADVANCE_CACHE_MASK) << 1;
-        AdvanceEntry e0 = table[base];
-        if (e0 != null && e0.bold == bold && (e0.text == text || e0.text.equals(text))) {
-            return e0.width;
-        }
-        AdvanceEntry e1 = table[base + 1];
-        if (e1 != null && e1.bold == bold && (e1.text == text || e1.text.equals(text))) {
-            table[base + 1] = e0;
-            table[base] = e1;
-            return e1.width;
-        }
+        Boolean b = bold; // Boolean.valueOf の共有の実例（確保しない）
+        Float hit = advanceMemo.get(text, b);
+        if (hit != null) return hit;
         float w = naturalAdvance(text, bold);
-        if (e0 != null) table[base + 1] = e0;
-        table[base] = new AdvanceEntry(text, bold, w);
+        advanceMemo.put(text, b, w);
         return w;
     }
 

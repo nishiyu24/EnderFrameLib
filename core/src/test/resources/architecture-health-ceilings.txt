@@ -33,7 +33,6 @@ core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderB
 core/src/main/java/com/nishiyu/enderframelib/core/raster/canvas/CanvasRenderingContext2D.java | 1144
 core/src/main/java/com/nishiyu/enderframelib/core/raster/svg/SvgRenderer.java | 779
 core/src/main/java/com/nishiyu/enderframelib/core/scene3d/GltfBinaryLoader.java | 761
-core/src/main/java/com/nishiyu/enderframelib/core/text/TextShaper.java | 1065
 core/src/main/java/com/nishiyu/enderframelib/core/text/font/LoadedFace.java | 948
 core-gl/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlDevice.java | 1110
 core-vulkan/src/main/java/com/nishiyu/enderframelib/core/paint/vulkan/VkDevice.java | 1428

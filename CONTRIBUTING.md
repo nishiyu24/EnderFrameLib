@@ -288,10 +288,11 @@ mod/src/test/resources/golden/      MOD の期待出力（表示リスト）
 - **UA の既定値は `ua.css` が唯一の出所。** ブラウザプレビューは
   `ua.css` と組み込みテーマをそのまま同梱して読む。
   `enderframe-devkit.css` に要素セレクタを書かないこと（`CssResourcesTest` が検査する）。
-- **テキストの測定は `core/text` の `TextShaper` が唯一の出所。** 文字幅・ascent・descent・行間は
+- **テキストの測定の出所は 1 つ。** 文字幅・ascent・descent・行間は
   `FontFace`（`font-family` の引き当ては `FontResolver`。ゲーム内は `WebFontManager.McFontResolver` が
   システムの書体 `SystemFonts` と Minecraft の書体を振り分ける）、
-  折り返し・空白の畳み方・省略は `TextShaper` だけが決める。
+  空白の畳み方は `core/text` の `WhiteSpaceProcessing`、折り返しと行の組み立ては `core/layout/fragment` の `InlineFlow` だけが決める。
+  測定の記憶は書体の実例が持つ `TextMemo` だけにし、static の表や `ThreadLocal` に持たない。
   行送りは `LayoutMetrics.lineHeightPx`、`line-height` の解析はそこだけ。
   **描画側（コアの `TextRaster`・MOD の `MinecraftHostTextures`）でテキストを測り直さないこと。**
   `font.width` / `plainSubstrByWidth` でレイアウトの決定をやり直すと、

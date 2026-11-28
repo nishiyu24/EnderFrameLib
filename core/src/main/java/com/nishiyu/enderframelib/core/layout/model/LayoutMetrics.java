@@ -8,14 +8,13 @@ import com.nishiyu.enderframelib.core.css.model.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
-import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.regex.Pattern;
 
 /**
  * レイアウト全体で共有する定数と、文字列まわりの小さな共通処理。
  *
- * 折り返し・空白・省略そのものは {@link TextShaper} が持つ。
+ * 空白の畳み方は {@code core.text.WhiteSpaceProcessing}、折り返しと行の組み立ては {@code core.layout.fragment.InlineFlow} が持つ。
  */
 public final class LayoutMetrics {
 

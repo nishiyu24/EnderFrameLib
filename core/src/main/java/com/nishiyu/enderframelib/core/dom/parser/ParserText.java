@@ -35,7 +35,7 @@ final class ParserText {
             return t.indexOf('\r') >= 0 ? t.replace("\r\n", "\n").replace('\r', '\n') : t;
         }
         // 文字を含むテキストは原文のまま持つ（DOM の値は原文。空白の畳み方は white-space で決まり、レイアウトの
-        // TextShaper.normalize が畳む）。以前はここで畳んでいて、CSS で white-space: pre / pre-wrap を指定しても
+        // WhiteSpaceProcessing.normalize が畳む）。以前はここで畳んでいて、CSS で white-space: pre / pre-wrap を指定しても
         // 空白の並びや tab が残らず、要素の後の改行（<b>a</b>⏎b）も空白にならなかった
         String t = token.text;
         return t.indexOf('\r') >= 0 ? t.replace("\r\n", "\n").replace('\r', '\n') : t;

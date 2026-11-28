@@ -6,45 +6,17 @@ import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
-import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** P8b: 保持ヒープの削減（行の文字列の使い回し・名前の共有）が、結果を変えずに効いている。 */
+/**
+ * P8b: 保持ヒープの削減（名前の共有）が、結果を変えずに効いている。行の文字列の使い回しの検証は、それを持っていた旧 {@code TextShaper} と
+ * 一緒に M5-5 で消した（新経路の行の文字列は {@code InlineFlow} が文字の節の中身から切り出す）。
+ */
 public class P8bRetentionTest {
-
-    private static final FontFace FACE = FontFace.FALLBACK;
-    private static final FontStyle FONT = new FontStyle(16.0f, false, false, 0.0f);
-    private static final TextStyle STYLE = new TextStyle(FONT, WhiteSpace.NORMAL, WordBreak.NORMAL, false, false, 20f);
-
-    @Test
-    public void aSingleLineParagraphReusesTheParagraphString() {
-        String text = "p8b-" + System.nanoTime() + " single line paragraph";
-        List<ShapedLine> lines = TextShaper.shape(text, FACE, STYLE, 10_000f);
-        assertEquals(1, lines.size());
-        assertSame(text, lines.get(0).text(), "1 行に収まる段落は、行の文字列に段落の String をそのまま使う");
-        assertEquals(0, lines.get(0).start());
-        assertEquals(text.length(), lines.get(0).end());
-    }
-
-    @Test
-    public void trailingBlankIsStillStrippedAndWrappedLinesAreUnchanged() {
-        String text = "p8b-" + System.nanoTime() + " alpha beta gamma delta epsilon zeta eta theta";
-        List<ShapedLine> narrow = TextShaper.shape(text, FACE, STYLE, 90f);
-        assertTrue(narrow.size() > 2);
-        StringBuilder joined = new StringBuilder();
-        for (ShapedLine l : narrow) {
-            assertFalse(l.text().endsWith(" "), "行末の空白は行に含めない: [" + l.text() + "]");
-            joined.append(l.text()).append(' ');
-        }
-        assertEquals(text, joined.toString().trim());
-
-        List<ShapedLine> whole = TextShaper.shape(text, FACE, STYLE, 10_000f);
-        assertEquals(text, whole.get(0).text());
-    }
 
     @Test
     public void parserSharesTagAndAttributeNames() {
